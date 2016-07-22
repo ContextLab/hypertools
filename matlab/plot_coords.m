@@ -101,6 +101,7 @@ else
     h = main_helper(x, varargin{:});
 end
 
+
 function[h] = main_helper(x, varargin)
 if isempty(varargin) && size(x, 2) >= 2, varargin = {'k.'}; end
 
@@ -126,7 +127,8 @@ elseif size(x, 2) > 3
 elseif size(x, 2) == 1
     h = bar(x, varargin{:});
 end
-    
+
+
 function[h] = plot_coords_3d_helper(x, varargin)    
 if ismatrix(varargin{1}) && (size(varargin{1}, 2) == 3) && (size(varargin{1}, 1) == size(x, 1))
     colors = varargin{1};    
@@ -163,3 +165,5 @@ for i = 1:length(strs)
     end
 end
 y = s(~remove_inds);
+
+
