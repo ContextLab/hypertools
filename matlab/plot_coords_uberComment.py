@@ -25,16 +25,13 @@ def plot_coords(x):
 	           *Nans treated as missing observations
 	    outputs: 1-, 2-, or 3-dimensional representation of the data
 	"""
-
     
-
 def main_helper(x=np.array([[1], [2], [3], [4]])):
 	import numpy as np 
 	import matplotlib.pyplot as plt 
 	from plotting import *
 	#from ggplot import *
 	#import pandas as pd
-
 
 	if x.shape[-1]==1:
 	#shape gives (rows,columns) --> x.shape[-1] == # of columns 
@@ -52,7 +49,6 @@ def main_helper(x=np.array([[1], [2], [3], [4]])):
 		# if 3 columns
 		scatter3d(x)
 
-
 def bar(data):
     pos=np.arange(len(data))
     #arrange returns evenly spaced values within given interval
@@ -63,7 +59,6 @@ def bar(data):
     plt.show()
     #display it
 
-		
 def scatter2D(data):
 	plt.scatter(data[:,0], data[:,1])
 	#uses first two columns of the input data
