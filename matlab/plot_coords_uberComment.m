@@ -172,7 +172,7 @@ elseif size(x, 2) > 3
         %help svd-  maybe only v
     score = x*v;
     %score/factor loading/weight matrix - score here is weight matrix
-    %csikit learn package &/or numpy look for pca
+    %scikit learn package &/or numpy look for pca
     h = plot_coords_3d_helper(score(:, 1:3), varargin{:});
    
     %#QUESTION: SIMPLE EXPLANATION OF SINGLE VALUE DECOMPOSITION? (videos suck)
