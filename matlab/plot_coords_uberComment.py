@@ -27,7 +27,7 @@ def plot_coords(x):
 	    outputs: 1-, 2-, or 3-dimensional representation of the data
 	"""
     
-def main_helper(x=np.array([[1], [2], [3], [4]])):
+def main_helper(x):
 	import numpy as np 
 	import matplotlib.pyplot as plt 
 	from mpl_toolkits.mplot3d import Axes3D
