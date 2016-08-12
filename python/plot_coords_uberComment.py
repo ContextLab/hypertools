@@ -18,6 +18,11 @@
 
     ##############################################################
 
+import numpy as np 
+import matplotlib.pyplot as plt 
+from mpl_toolkits.mplot3d import Axes3D
+from scipy.misc import lena
+
 def plot_coords(x):
 	"""
 		inputs: TxD matrix of observations
@@ -28,10 +33,6 @@ def plot_coords(x):
 	"""
     
 def main_helper(x):
-	import numpy as np 
-	import matplotlib.pyplot as plt 
-	from mpl_toolkits.mplot3d import Axes3D
-	from scipy.misc import lena
 	#from plotting import *
 	#from ggplot import *
 	#import pandas as pd
