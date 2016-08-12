@@ -7,7 +7,7 @@
     #x=np.array([[1, 11], [2, 12], [3, 13], [4, 14]])
 
     #OPTION 3 - 3d matrix
-    #x=np.array([[1, 11, 21] [2, 12, 22] [3, 13, 33] [4, 14, 44]])
+    #x=np.array([[1, 11, 21], [2, 12, 22], [3, 13, 33], [4, 14, 44]])
 
 
     #OPTION 4 - use "weights" --> import weights.mat and assign to x as numpy.ndarray
@@ -64,17 +64,15 @@ def main_helper(x):
 
 		#plot the first three columns of score
 
-
-
 def bar(data):
-    pos=np.arange(len(data))
-    #arange returns evenly spaced values within given interval
-    plt.xticks(pos+0.4, pos)
-    #put ticks half way between each bar
-    plt.bar(pos,data)
-    #make the plot
-    plt.show()
-    #display it
+	pos=np.arange(len(data))
+	#arange returns evenly spaced values within given interval
+	plt.xticks(pos+0.4, pos)
+	#put ticks half way between each bar
+	plt.bar(pos,data)
+	#make the plot
+	plt.show()
+	#display it
 
 def scatter2D(data):
 	plt.scatter(data[:,0], data[:,1])
