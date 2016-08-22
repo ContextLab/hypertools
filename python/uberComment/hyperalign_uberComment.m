@@ -64,17 +64,12 @@ assert(license('test','Statistics_toolbox') == 1, ...
 if length(varargin) <= 1
     aligned = varargin;
     return;
-    %if there is only one input, it does not need to be aligned (there is
-    %nothing to align to but itself)
 end
 
 %hyperalign the given patterns.  assumption: all patterns have the same
 %dimensionality.
 dims = cellfun(@ndims, varargin);
-%cellfun applies function to each cell of an array
-%we obtain the number of dimensions of each array in the input arguments
 assert(dims(1) == 2, 'trajectories must be specified in 2D matrices');
-%the first array must be be 2d
 
 sizes = cellfun(@size, varargin, 'UniformOutput', false);
 %trim rows to minimum number of rows
