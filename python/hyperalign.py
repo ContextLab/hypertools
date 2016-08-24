@@ -1,18 +1,20 @@
 ##########NOTES#############
-#currently written to take in multiple numpy arrays
+#reads numpy arrays
 
 
 ##########CLEANUP############
-#add ability to read in a single array of arrays
-#how to check that the type of each input argument is the same? (line 31)
+#ability to read other data formats?
 
+#'trajectories must be specified in 2D matriices'
+	#add this check!
+	#line80 in matlab script
 
 ##########PACKAGES###########
 import numpy as np
 
-
+########MAIN FUNCTION########
 def hyperplot(*args):
-	#use *args&args when unsure how many arguments will be passed
+
 	"""
 	Implements the "hyperalignment" algorithm described by the
 	following paper:
@@ -23,7 +25,11 @@ def hyperplot(*args):
 	404 -- 416.
 	"""
 
-	##########FUNCTIONS##########
+	#use *args & args to allow multiple input arguments
+	#creates a tuple, len==1
+
+
+	###SECONDARY FUNCTIONS###
 	def procrustes(X, Y, scaling=True, reflection='best'):
 		"""
 		This function copied from stackoverflow user ali_m 
@@ -143,8 +149,9 @@ def hyperplot(*args):
 
 		sizes_0=[]
 
-		for x in range(0, len(args)):
-			sizes_0[x]=x.shape[0]
+		#STEP 0: STANDARDIZE SIZE AND SHAPE	
+		for x in range(0, len(args[0])):
+			sizes_0[x]=args.shape[0][x]
 			T=min(sizes_0)
 			#find the smallest number of rows
 
@@ -162,46 +169,60 @@ def hyperplot(*args):
 			y=np.append(x, add, axis=1)
 			#add 'missing' number of columns (zeros) to each array
 
-		#STEP 1 (below): COMMON TEMPLATE
-			#align first two subj's data
-			#compute average of the two aligned data sets
-			
+		#STEP 1: CREATE COMMON TEMPLATE
+			#align first two subj's data, compute average of the two aligned data sets
+		
 			#for each subsequent subj:
-			#[1] align new subj to average of previous subjs
-			#[2] add this aligned subj data to the average
-			
+			#align new subj to average of previous subjs; add this aligned subj data to the average	
 		for x in range(0, len(args)):
 			if x==0:
 				template=args[x]
 			else:
 				next = procrustes((np.transpose(template/(x-1))), (np.transpose(args[x])))
-				#FIX THIS: figure out the way procrustes outputs, then select only the trasnformed data to equal 'next'
+				template = template + np.transpose(next)
+		template= template/len(args)
 
+		#STEP 2: NEW COMMON TEMPLATE
+			#align each subj to the template from STEP 1
+			#create a new template by the same means
+		template2= numpy.zeros(template.shape)
+		for x in range(0, len(args)):
+			next = procrustes((np.transpose(template)),(np.transpose(args[x])))
+			template2 = template2 + np.transpose(next)
+
+		#STEP 3 (below): ALIGN TO NEW TEMPLATE
+		for x in range(0, len(args)):
+			next = procrustes((np.transpose(template2)),(np.transpose(args[x])))
+			aligned[x] = np.transpose(next)
 
 
 	#############BODY############
-	if len(args)<= 1 and type(args[0])==int:
-		aligned=args
-		print "Only one item; aligned to itself, by definition"
+	if len(args)<=1:
+		for x in range(0,len(args[0][:])):
+			data_type[x]=type(args[0][x])
 
-	elif len(args)<=1:
-		for x in range(0,len(args[0])):
-			if type(args[x])!==numpy.ndarray:
-				print "Entires for input argument are not ints or numpy arrays..."
+			if all(z==int for z in data_types):
+				aligned=args[0]
+				print "Only one dataset"
+
+			elif all(z==np.ndarray for z in data_types):
+				align(args[0][:])
+				if each element of the array is a numpy array, then align elements to each other
+
 			else: 
-
-			#if each element of the array is a numpy array, then align elements to each other
-			
+				print "Input argument elements are neither all ints nor all numpy arrays..."
+				break
 
 	else:
-		#for now, if len(args)=>1, we'll assume a numpy array
-		
-
-		for x in range(0,len(args)):
-		if not all(isinstance(x, numpy.ndarray)):
-		print "Data sets should be numpy arrays"
-		#check that each input argument is a numpy array
+		if all(z==np.ndarray for z in args[0][:]):
+			align(args[0][:])		
+		else:
+			print "Input datasets should be numpy arrays"
+		#if each input argument is a numpy array, align them
 				
+
+
+
 
 		#align each input argument to the others
 

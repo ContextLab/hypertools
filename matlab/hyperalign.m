@@ -152,7 +152,12 @@ template2 = template2./length(varargin);
 
 %step 3: align each subject to the mean alignment from the previous round.
 %save the transformation parameters
+
+
+%CLARIFY
 [aligned, transforms] = deal(cell(size(varargin)));
+%^^what does this line do?
+
 for s = 1:length(varargin)
     [~, next, transforms{s}] = procrustes(template2', varargin{s}');
     aligned{s} = next';
