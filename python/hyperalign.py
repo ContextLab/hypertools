@@ -1,7 +1,6 @@
 ##########NOTES#############
 #reads numpy arrays
 
-
 ##########CLEANUP############
 #ability to read other data formats?
 
@@ -27,7 +26,6 @@ def hyperplot(*args):
 
 	#use *args & args to allow multiple input arguments
 	#creates a tuple, len==1
-
 
 	###SECONDARY FUNCTIONS###
 	def procrustes(X, Y, scaling=True, reflection='best'):
@@ -160,7 +158,7 @@ def hyperplot(*args):
 			T=max(sizes_1)
 			#find the largest number of columns
 
-		for x in args:
+		for x in args[0]:
 			x=x[0:T,:]
 			#reduce each input argument to the minimum number of rows by deleting excess rows
 
@@ -174,40 +172,41 @@ def hyperplot(*args):
 		
 			#for each subsequent subj:
 			#align new subj to average of previous subjs; add this aligned subj data to the average	
-		for x in range(0, len(args)):
+		for x in range(0, len(args[0])):
 			if x==0:
-				template=args[x]
+				template=args[0][x]
 			else:
-				next = procrustes((np.transpose(template/(x-1))), (np.transpose(args[x])))
+				next = procrustes((np.transpose(template/(x-1))), (np.transpose(args[0][x])))
 				template = template + np.transpose(next)
-		template= template/len(args)
+		template= template/len(args[0])
 
 		#STEP 2: NEW COMMON TEMPLATE
 			#align each subj to the template from STEP 1
 			#create a new template by the same means
 		template2= numpy.zeros(template.shape)
-		for x in range(0, len(args)):
-			next = procrustes((np.transpose(template)),(np.transpose(args[x])))
+		for x in range(0, len(args[0])):
+			next = procrustes((np.transpose(template)),(np.transpose(args[0][x])))
 			template2 = template2 + np.transpose(next)
 
 		#STEP 3 (below): ALIGN TO NEW TEMPLATE
 		for x in range(0, len(args)):
-			next = procrustes((np.transpose(template2)),(np.transpose(args[x])))
+			next = procrustes((np.transpose(template2)),(np.transpose(args[0][x])))
 			aligned[x] = np.transpose(next)
 
 
-	#############BODY############
+#############MAIN FUNCTION BODY############
+	data_type=np.zeros(len(args))
 	if len(args)<=1:
-		for x in range(0,len(args[0][:])):
-			data_type[x]=type(args[0][x])
+		for x in range(0,len(args)):
+			data_type[x]=type(args[x])
 
 			if all(z==int for z in data_types):
 				aligned=args[0]
 				print "Only one dataset"
 
-			elif all(z==np.ndarray for z in data_types):
+			elif all(z=='np.ndarray' for z in data_types):
 				align(args[0][:])
-				if each element of the array is a numpy array, then align elements to each other
+				#if each element of the input is a numpy array, then align elements to each other
 
 			else: 
 				print "Input argument elements are neither all ints nor all numpy arrays..."
@@ -219,22 +218,3 @@ def hyperplot(*args):
 		else:
 			print "Input datasets should be numpy arrays"
 		#if each input argument is a numpy array, align them
-				
-
-
-
-
-		#align each input argument to the others
-
-		
-		#dims=[]
-		#confused about how to deal with dimensions in python.. 
-		#maybe len(x.shape) ??
-
-		#need to check that trajectories are specified in 2d matrices
-
-
-
-
-
-
