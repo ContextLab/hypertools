@@ -1,9 +1,4 @@
-	#FOR CLEANUP##################################################
-	#can't call main_helper before it is defined? thus, main_helper is at the bottom of the code
-	# OPTION 5 won't work, not sure why..
-
-	#may want to add ability to read pandas data frames
-	#may want to add fancier plotting options
+	
 
 	#FOR TESTING##################################################
 
@@ -32,6 +27,7 @@ from scipy.misc import lena
 from sklearn.decomposition import PCA
 
 def plot_coords(x):
+	#main_helper(x)
 	"""
 		inputs: TxD matrix of observations
 	           T-number of coords 
@@ -41,37 +37,54 @@ def plot_coords(x):
 	"""
     
 	def main_helper(x):
-		#determine how many dimensions (number of columns)
+		#from plotting import *
+		#from ggplot import *
+		#import pandas as pd
+
 		if x.shape[-1]==1:
+		#shape gives (rows,columns) --> x.shape[-1] == # of columns 
+		#in N-dimenional data, is the column # still displayed in the same position?
 			bar(x)
+			#^if #columns==1, make a bar graph (see 'bar')
+
 		if x.shape[-1]==2:
+			#if number of columns ==2
 			scatter2D(x)
+			#make a scatterplot
+
 		if x.shape[-1]==3:
+			# if 3 columns
 			scatter3d(x)
+
 		if x.shape[-1]>3:
+			#columns>3
 			lowD(x)
 
 	def bar(data):
-		#if 1d, make a bar graph
 		pos=np.arange(len(data))
+		#arange returns evenly spaced values within given interval
 		plt.xticks(pos+0.4, pos)
+		#put ticks half way between each bar
 		plt.bar(pos,data)
+		#make the plot
 		plt.show()
+		#display it
 
 	def scatter2D(data):
-		#if 2d, make a scatter
 		plt.scatter(data[:,0], data[:,1])
+		#uses first two columns of the input data
 		plt.show()
 
 	def scatter3d(data):
-		#if 3d, make a 3d scatter
 		fig = plt.figure()
+		#ax=Axes3D(fig)
 		ax = fig.add_subplot(111, projection='3d')
 		ax.scatter(data[:,0], data[:,1], data[:,2], depthshade=True)
+		#takes single input, dataset x, with 3 columns
+		#uses each column as a dimension in 3d scatterplot
 		plt.show()
 
 	def lowD(x):
-		#if more than 3d, reduce to 3 (PCA), then re-run
 		m = PCA(n_components=3, whiten=True)
 		#n_components=3--> reduce to 3 dimensions
 		m.fit(x)
@@ -79,3 +92,8 @@ def plot_coords(x):
 		plot_coords(z)
 		
 	main_helper(x)
+
+
+
+
+
