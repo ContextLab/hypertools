@@ -7,6 +7,9 @@ def procrustes(X, Y, scaling=True, reflection='best'):
 	(http://stackoverflow.com/questions/18925181/procrustes-analysis-with-numpy) 
 	8/22/16
 
+	CREATOR: ali_m
+	EDITED: Kirsten Ziman (kirstenkmbziman@gmail.com)
+
 	A port of MATLAB's `procrustes` function to Numpy.
 
 	Procrustes analysis determines a linear transformation (translation,
@@ -112,6 +115,9 @@ def procrustes(X, Y, scaling=True, reflection='best'):
 	c = muX - b*np.dot(muY, T)
 
 	#transformation values 
-	tform = {'rotation':T, 'scale':b, 'translation':c}
+	
+	#tform = {'rotation':T, 'scale':b, 'translation':c}
+	#return d, Z, tform
 
-	return d, Z, tform
+	#edit_kz: only return the aligned matrix
+	return T
