@@ -12,7 +12,7 @@
 import numpy as np
 
 ########MAIN FUNCTION########
-def hyperplot(*args):
+def hyperalign(*args):
 
 	"""
 	Implements the "hyperalignment" algorithm described by the
