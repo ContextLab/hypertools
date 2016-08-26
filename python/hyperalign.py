@@ -145,20 +145,20 @@ def hyperalign(*args):
 
 	def align(*args):
 
-		sizes_0=[]
+		sizes_0=np.zeros((len(args)))
+		sizes_1=np.zeros((len(args)))
 
 		#STEP 0: STANDARDIZE SIZE AND SHAPE	
-		for x in range(0, len(args[0])):
-			sizes_0[x]=args.shape[0][x]
+		for x in range(0, len(args)):
+			sizes_0[x]=args[x].shape[0]
 			T=min(sizes_0)
 			#find the smallest number of rows
 
-			sizes_1=x.shape[1]
-			sizes_1[x]=x.shape[1]
+			sizes_1[x]=args[x].shape[1]
 			T=max(sizes_1)
 			#find the largest number of columns
 
-		for x in args[0]:
+		for x in args:
 			x=x[0:T,:]
 			#reduce each input argument to the minimum number of rows by deleting excess rows
 
@@ -172,49 +172,46 @@ def hyperalign(*args):
 		
 			#for each subsequent subj:
 			#align new subj to average of previous subjs; add this aligned subj data to the average	
-		for x in range(0, len(args[0])):
+		for x in range(0, len(args)):
 			if x==0:
-				template=args[0][x]
+				template=args[x]
 			else:
-				next = procrustes((np.transpose(template/(x-1))), (np.transpose(args[0][x])))
+				next = procrustes((np.transpose(template/(x-1))), (np.transpose(args[x])))
 				template = template + np.transpose(next)
-		template= template/len(args[0])
+		template= template/len(args)
 
 		#STEP 2: NEW COMMON TEMPLATE
 			#align each subj to the template from STEP 1
 			#create a new template by the same means
 		template2= numpy.zeros(template.shape)
-		for x in range(0, len(args[0])):
-			next = procrustes((np.transpose(template)),(np.transpose(args[0][x])))
+		for x in range(0, len(args)):
+			next = procrustes((np.transpose(template)),(np.transpose(args[x])))
 			template2 = template2 + np.transpose(next)
 
 		#STEP 3 (below): ALIGN TO NEW TEMPLATE
 		for x in range(0, len(args)):
-			next = procrustes((np.transpose(template2)),(np.transpose(args[0][x])))
+			next = procrustes((np.transpose(template2)),(np.transpose(args[x])))
 			aligned[x] = np.transpose(next)
 
 
 #############MAIN FUNCTION BODY############
-	data_type=np.zeros(len(args))
 	if len(args)<=1:
-		for x in range(0,len(args)):
-			data_type[x]=type(args[x])
 
-			if all(z==int for z in data_types):
-				aligned=args[0]
-				print "Only one dataset"
+		if all(isinstance(x, int) for x in args[0]):
+			aligned=args
+			print "Only one dataset"
 
-			elif all(z=='np.ndarray' for z in data_types):
-				align(args[0][:])
-				#if each element of the input is a numpy array, then align elements to each other
+		elif all(isinstance(x, np.ndarray) for x in args[0]):
+			align(*args)
+			#if each element of the input is a numpy array, then align elements to each other
 
-			else: 
-				print "Input argument elements are neither all ints nor all numpy arrays..."
-				break
+		else: 
+			print "Input argument elements are neither all ints nor all numpy arrays..."
 
 	else:
-		if all(z==np.ndarray for z in args[0][:]):
-			align(args[0][:])		
+		if all(isinstance(x, np.ndarray) for x in args):
+			align(*args)	
+
 		else:
 			print "Input datasets should be numpy arrays"
 		#if each input argument is a numpy array, align them
