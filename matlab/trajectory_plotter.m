@@ -51,8 +51,11 @@ function[] = trajectory_plotter(varargin)
 %create a movie where a sliding window of coordinates is plotted for each
 %frame.
 assert(length(varargin) >= 2, 'Usage: trajectory_plotter([outfile], W, x1, x2, ..., xn)');
+%must have at least two input args (otherwise, error)
 
 if ischar(varargin{1})
+    %if first input arg is character string, use this as the output
+    %file name and eliminate it from varargin variable
     outfile = varargin{1};
     varargin = varargin(2:end);
 else
@@ -61,11 +64,16 @@ end
 
 windowlength = varargin{1};
 varargin = varargin(2:end);
+%in new varargin variable, use first input as windowlength
 
 nfeatures = cellfun(@(x)(size(x, 2)), varargin);
+%nfeatures = rows of all input args?
 nfeatures = nfeatures(nfeatures ~= 0);
+%exclude any features equal to zero
 assert(length(unique(nfeatures)) == 1, 'All coordinates must have same number of dimensions');
+%same dimesions= only 1 unique 
 assert(nfeatures(1) >= 2, 'Must use at least 2 dimensions');
+
 
 colors = linspecer(length(varargin));
 inds = [];
