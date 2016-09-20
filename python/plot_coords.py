@@ -1,27 +1,14 @@
 	#FOR CLEANUP##################################################
-	#can't call main_helper before it is defined? thus, main_helper is at the bottom of the code
-	# OPTION 5 won't work, not sure why..
 
 	#may want to add ability to read pandas data frames
 	#may want to add fancier plotting options
 
 	#FOR TESTING##################################################
-
-	#OPTION 1 - 1D matrix
-	#x=np.array([[1], [2], [3], [4]])
-    
-    #OPTION 2 - 2D matrix 
+	
+	#x=np.array([[1], [2], [3], [4]]) 
     #x=np.array([[1, 11], [2, 12], [3, 13], [4, 14]])
-
-    #OPTION 3 - 3d matrix
     #x=np.array([[1, 11, 21], [2, 12, 22], [3, 13, 33], [4, 14, 44]])
-
-    #OPTION 4 - 4d matrix
     #x=np.array([[1, 11, 21, 31], [2, 12, 22, 32], [3, 13, 33, 43], [4, 14, 44, 54]])
-
-    #OPTION 5 - 100d matrix
-    #NOTE: this is a numpy array of numpy arrays, whereas the previous examples were numpy arrays of regular arrays. both will work.
-    #x=np.array([[np.random.uniform(size=(100,))],[np.random.uniform(size=(100,))], [np.random.uniform(size=(100,))], [np.random.uniform(size=(100,))]])
 
     ##############################################################
 

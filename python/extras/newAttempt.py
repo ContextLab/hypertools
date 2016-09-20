@@ -165,3 +165,38 @@ def procrustes(X, Y, scaling=True, reflection='best'):
 
 	#edit_kz: only return the aligned matrix
 	#return T
+
+def align(*args):
+	for x in range(0, len(args)):
+		if x==0:
+			template=args[x]
+		
+		else:
+			next = procrustes(np.transpose(template/x), np.transpose(args[x]))
+			#sometimes give SVD error
+			template = template + np.transpose(next)
+	
+	#TEST
+	template= template/len(args)
+
+
+	#STEP 2: NEW COMMON TEMPLATE
+		#align each subj to the template from STEP 1
+		#create a new template by the same means
+	template2= np.zeros(template.shape)
+	for x in range(0, len(args)):
+		next = procrustes(np.transpose(template),np.transpose(args[x]))
+		template2 = template2 + np.transpose(next)
+
+	template2=template2/len(args)
+
+
+	empty= np.zeros(template2.shape)
+	aligned=[empty]*(len(args)) 
+	#STEP 3 (below): ALIGN TO NEW TEMPLATE
+	for x in range(0, len(args)):
+		next = procrustes(np.transpose(template2),np.transpose(args[x]))
+		aligned[x] = np.transpose(next)
+
+	return aligned
+	print aligned
