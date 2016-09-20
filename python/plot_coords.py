@@ -1,16 +1,16 @@
-	#FOR CLEANUP##################################################
+#FOR CLEANUP##################################################
 
-	#may want to add ability to read pandas data frames
-	#may want to add fancier plotting options
+#may want to add ability to read pandas data frames
+#may want to add fancier plotting options
 
-	#FOR TESTING##################################################
+#FOR TESTING##################################################
 	
-	#x=np.array([[1], [2], [3], [4]]) 
-    #x=np.array([[1, 11], [2, 12], [3, 13], [4, 14]])
-    #x=np.array([[1, 11, 21], [2, 12, 22], [3, 13, 33], [4, 14, 44]])
-    #x=np.array([[1, 11, 21, 31], [2, 12, 22, 32], [3, 13, 33, 43], [4, 14, 44, 54]])
+#x=np.array([[1], [2], [3], [4]]) 
+#x=np.array([[1, 11], [2, 12], [3, 13], [4, 14]])
+#x=np.array([[1, 11, 21], [2, 12, 22], [3, 13, 33], [4, 14, 44]])
+#x=np.array([[1, 11, 21, 31], [2, 12, 22, 32], [3, 13, 33, 43], [4, 14, 44, 54]])
 
-    ##############################################################
+##############################################################
 
 import numpy as np 
 import matplotlib.pyplot as plt 
