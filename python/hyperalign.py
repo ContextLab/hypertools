@@ -1,3 +1,4 @@
+
 ##########NOTES#############
 #reads numpy arrays
 
@@ -8,11 +9,11 @@
 	#add this check!
 	#line80 in matlab script
 
-##########PACKAGES###########
+##PACKAGES##
 import numpy as np
 import numpy as np,numpy.linalg
 
-########MAIN FUNCTION########
+##MAIN FUNCTION##
 def hyperalign(*args):
 
 	"""
@@ -28,7 +29,7 @@ def hyperalign(*args):
 	#use *args & args to allow multiple input arguments
 	#creates a tuple, len==1
 
-	###SECONDARY FUNCTIONS###
+	##FUNCTIONS##
 	def _getAplus(A):
 		eigval, eigvec = np.linalg.eig(A)
 		Q = np.matrix(eigvec)
@@ -67,12 +68,40 @@ def hyperalign(*args):
 		else:
 			return nearPD(x)
 
+	def resize(*args):
+		sizes_0=np.zeros(len(args))
+		sizes_1=np.zeros(len(args))
+
+		#STEP 0: STANDARDIZE SIZE AND SHAPE	
+		for x in range(0, len(args)):
+
+			sizes_0[x]=args[x].shape[0]
+			sizes_1[x]=args[x].shape[1]
+
+		R=min(sizes_0)
+		#find the smallest number of rows
+		C=max(sizes_1)
+		#find the largest number of columns
+
+		k=np.empty((R,C), dtype=np.ndarray)
+		m=[k]*len(args)
+		
+		for idx,x in enumerate(args):
+			y=x[0:R,:]
+			#reduce each input argument to the minimum number of rows by deleting excess rows
+			
+			missing=C-y.shape[1]
+			add=np.zeros((y.shape[0], missing))
+			y=np.append(y, add, axis=1)
+
+			m[idx]=y
+
 	def procrustes(X, Y, scaling=True, reflection='best'):
 		"""
 		This function copied from stackoverflow user ali_m 
 		(http://stackoverflow.com/questions/18925181/procrustes-analysis-with-numpy) 
 		8/22/16
-	
+
 		A port of MATLAB's `procrustes` function to Numpy.
 
 		Procrustes analysis determines a linear transformation (translation,
@@ -114,7 +143,6 @@ def hyperalign(*args):
 
 		"""
 
-
 		n,m = X.shape
 		ny,my = Y.shape
 
@@ -142,6 +170,9 @@ def hyperalign(*args):
 		A = np.dot(X0.T, Y0)
 		#U,s,Vt = np.linalg.svd(A,full_matrices=False)
 		U,s,Vt = np.linalg.svd(make_pos_def(A),full_matrices=False)
+
+		#SVD error trace
+
 		V = Vt.T
 		T = np.dot(V, U.T)
 
@@ -182,96 +213,92 @@ def hyperalign(*args):
 		#transformation values 
 		tform = {'rotation':T, 'scale':b, 'translation':c}
 
-		return d, Z, tform
+		return Z
 
 	def align(*args):
 
-		#sizes_0=np.zeros((len(args)))
-		#sizes_1=np.zeros((len(args)))
+		sizes_0=np.zeros(len(args))
+		sizes_1=np.zeros(len(args))
 
 		#STEP 0: STANDARDIZE SIZE AND SHAPE	
-		#for x in range(0, len(args)):
-		#	sizes_0[x]=args[x].shape[0]
-		#	T=min(sizes_0)
-			#find the smallest number of rows
-
-		#	sizes_1[x]=args[x].shape[1]
-		#	T=max(sizes_1)
-			#find the largest number of columns
-
-
-		#for x in args:
-		#	x=x[0:T,:]
-			#reduce each input argument to the minimum number of rows by deleting excess rows
-
-		#	missing=T-x.shape[1]
-		#	add=np.zeros((T, missing))
-		#	y=np.append(x, add, axis=1)
-			#add 'missing' number of columns (zeros) to each array
-
-			#TEST
-		#	print args
-
-
-		#STEP 1: CREATE COMMON TEMPLATE
-			#align first two subj's data, compute average of the two aligned data sets
-		
-			#for each subsequent subj:
-			#align new subj to average of previous subjs; add this aligned subj data to the average	
 		for x in range(0, len(args)):
-			if x==0:
-				template=args[x]
 
-				#TESTING
-				print template
+			sizes_0[x]=args[x].shape[0]
+			sizes_1[x]=args[x].shape[1]
+
+		R=min(sizes_0)
+		#find the smallest number of rows
+		C=max(sizes_1)
+		#find the largest number of columns
+
+		k=np.empty((R,C), dtype=np.ndarray)
+		m=[k]*len(args)
+		
+		for idx,x in enumerate(args):
+			y=x[0:R,:]
+			#reduce each input argument to the minimum number of rows by deleting excess rows
+			
+			missing=C-y.shape[1]
+			add=np.zeros((y.shape[0], missing))
+			y=np.append(y, add, axis=1)
+
+			m[idx]=y
+
+		#STEP 1: TEMPLATE
+		for x in range(0, len(m)):
+			if x==0:
+				template=m[x]
 			
 			else:
-				next = procrustes(np.transpose(template/x), np.transpose(args[x]))
+				next = procrustes(np.transpose(template/x), np.transpose(m[x]))
+				#sometimes give SVD error
 				template = template + np.transpose(next)
-		template= template/len(args)
-
 		
+		
+		template= template/len(m)
+
 
 		#STEP 2: NEW COMMON TEMPLATE
 			#align each subj to the template from STEP 1
 			#create a new template by the same means
 		template2= np.zeros(template.shape)
-		for x in range(0, len(args)):
-			next = procrustes((np.transpose(template)),(np.transpose(args[x])))
+		for x in range(0, len(m)):
+			next = procrustes(np.transpose(template),np.transpose(m[x]))
 			template2 = template2 + np.transpose(next)
 
+		template2=template2/len(m)
+
+
+		empty= np.zeros(template2.shape)
+		aligned=[empty]*(len(m)) 
 		#STEP 3 (below): ALIGN TO NEW TEMPLATE
-		for x in range(0, len(args)):
-			next = procrustes((np.transpose(template2)),(np.transpose(args[x])))
+		for x in range(0, len(m)):
+			next = procrustes(np.transpose(template2),np.transpose(m[x]))
 			aligned[x] = np.transpose(next)
 
-
-		#TESTING
+		return aligned
 		print aligned
 
-
-
-#############MAIN FUNCTION BODY############
+##PARSE INPUT-- MAIN FUNCTION##
 	if len(args)<=1:
-
 		if all(isinstance(x, int) for x in args[0]):
 			aligned=args
 			print "Only one dataset"
 			return aligned
 
 		elif all(isinstance(x, np.ndarray) for x in args[0]):
-			align(*args)
-			#if each element of the input is a numpy array, then align elements to each other
 			print "single array"
+			return align(*args)
+			#if each element of single input is a numpy array, align elements to each other
 
 		else: 
 			print "Input argument elements are neither all ints nor all numpy arrays..."
 
 	else:
 		if all(isinstance(x, np.ndarray) for x in args):
-			align(*args)	
 			print "multiple arrays"
+			return align(*args)	
+			#if each input is an array, align inputs to each other
 
 		else:
 			print "Input datasets should be numpy arrays"
-		#if each input argument is a numpy array, align them
