@@ -17,48 +17,42 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.decomposition import PCA
 
-def plot_coords(x):
+def plot_coords(x, *args, **kwargs):
     """
     inputs: TxD matrix of observations
                T-number of coords
                D-dimensionality of each observation
                *Nans treated as missing observations
             type (specify the type of plot)
-               if 'scatter', make a scatterplot
-               if 'line', make a line plot
+               see http://matplotlib.org/api/axes_api.html#matplotlib.axes.Axes.plot for available options
     outputs: 1-, 2-, or 3-dimensional representation of the data
     """
-    typedict = dict()
-    typedict['scatter'] = ('k.', 'Axes3D.scatter')
-    typedict['line'] = ('k-', 'Axes3D.Line')
 
-    def dispatch(x, type='scatter'):
+    def dispatch(x):
         #determine how many dimensions (number of columns)
         if x.shape[-1]==1:
-            plot1D(x, type)
+            plot1D(x)
         elif x.shape[-1]==2:
-            plot2D(x, type)
+            plot2D(x)
         elif x.shape[-1]==3:
-            plot3D(x, type)
+            plot3D(x)
         elif x.shape[-1]>3:
-            plot3D(reduceD(x, 3), type)
+            plot3D(reduceD(x, 3))
 
-    def plot1D(data, type):
+    def plot1D(data):
         x=np.arange(len(data))
-        plot2D(np.hstack((np.transpose(x), data), type))
+        plot2D(np.hstack((np.transpose(x), data)))
 
-    def plot2D(data, type):
+    def plot2D(data):
         # type: (object) -> object
         #if 2d, make a scatter
-        plt.plot(data[:,0], data[:,1], typedict[type][0])
+        plt.plot(data[:,0], data[:,1], *args, **kwargs)
 
-    def plot3D(data, type):
+    def plot3D(data):
         #if 3d, make a 3d scatter
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
-        c = [0, 0, 0]
-        plotfun = eval('ax.' + typedict[type][1])
-        plotfun(data[:,0], data[:,1], data[:,2], c=c, depthshade=True)
+        ax.plot(data[:,0], data[:,1], data[:,2], *args, **kwargs)
 
     def reduceD(x, ndim):
         #if more than 3d, reduce to 3 (PCA), then re-run
@@ -70,6 +64,3 @@ def plot_coords(x):
     dispatch(x)
     plt.show()
 
-
-x=np.array([[1, 11, 21, 31], [2, 12, 22, 32], [3, 13, 33, 43], [4, 14, 44, 54]])
-plot_coords(x)
