@@ -55,14 +55,24 @@ def plot_coords(x, *args, **kwargs):
 
 	def dispatch(x):
 		#determine how many dimensions (number of columns)
-		if x.shape[-1]==1:
-			plot1D(x)
-		elif x.shape[-1]==2:
-			plot2D(x)
-		elif x.shape[-1]==3:
-			plot3D(x)
-		elif x.shape[-1]>3:
-			plot3D(reduceD(x, 3))
+		if not is_list(x):
+			if x.shape[-1]==1:
+				plot1D(x)
+			elif x.shape[-1]==2:
+				plot2D(x)
+			elif x.shape[-1]==3:
+				plot3D(x)
+			elif x.shape[-1]>3:
+				plot3D(reduceD(x, 3))
+		elif is_list(x):
+			if x[0].shape[-1]==1:
+				plot1D(x)
+			elif x[0].shape[-1]==2:
+				plot2D(x)
+			elif x[0].shape[-1]==3:
+				plot3D(x)
+			elif x[0].shape[-1]>3:
+				plot3D(reduceD(x, 3))
 
 	def plot1D(data):
 		x=np.arange(len(data))
@@ -87,8 +97,8 @@ def plot_coords(x, *args, **kwargs):
 		return m.transform(x)
 	
 	if is_list(x):
-		
-		#"column pad" all arrays (rows do not matter)
+		resize(x)
+		dispatch(x)
 
 		#[2] PCA over all elements
 		#[3] plot
