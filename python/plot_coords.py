@@ -33,11 +33,28 @@ def plot_coords(x, *args, **kwargs):
 	def is_list(x):
 		if type(x[0][0])==np.ndarray:
 			return True
-		elif:
-			type(x[0][0])==np.int64
+		elif type(x[0][0])==np.int64:
 			return False
-		else: 
-			print 'Input should be np array(s)'
+
+	def resize(*args):
+		sizes_1=np.zeros(len(args))
+
+		for x in range(0, len(args)):
+			sizes_1[x]=args[x].shape[1]
+
+		C=max(sizes_1)
+		#find the largest number of columns of all inputted arrays
+
+		#k=np.empty((R,C), dtype=np.ndarray)
+		#m=[k]*len(args)
+		
+		m=[]
+		for idx,x in enumerate(args):			
+			missing=C-x.shape[1]
+			add=np.zeros((x.shape[0], missing))
+			y=np.append(x, add, axis=1)
+
+			m.append(y)
 
 	def dispatch(x):
 		#determine how many dimensions (number of columns)
@@ -73,7 +90,9 @@ def plot_coords(x, *args, **kwargs):
 		return m.transform(x)
 	
 	if is_list(x):
-		#[1] column pad all elements (rows do not matter)
+
+		#"column pad" all arrays (rows do not matter)
+
 		#[2] PCA over all elements
 		#[3] plot
 
