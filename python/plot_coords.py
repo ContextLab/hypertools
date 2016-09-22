@@ -36,25 +36,22 @@ def plot_coords(x, *args, **kwargs):
 		elif type(x[0][0])==np.int64:
 			return False
 
-def resize(k):
-    sizes_1=np.zeros(len(k))
+	def resize(k):
+		sizes_1=np.zeros(len(k))
 
-    for x in range(0, len(k)):
-        sizes_1[x]=k[x].shape[1]
+		for x in range(0, len(k)):
+			sizes_1[x]=k[x].shape[1]
 
-    C=max(sizes_1)
-    #find the largest number of columns of all inputted arrays
+		C=max(sizes_1)
+		#find the largest number of columns of all inputted arrays
 
-    #k=np.empty((R,C), dtype=np.ndarray)
-    #m=[k]*len(args)
+		m=[]
+		for idx,x in enumerate(k):			
+			missing=C-x.shape[1]
+			add=np.zeros((x.shape[0], missing))
+			y=np.append(x, add, axis=1)
 
-    m=[]
-    for idx,x in enumerate(k):			
-        missing=C-x.shape[1]
-        add=np.zeros((x.shape[0], missing))
-        y=np.append(x, add, axis=1)
-
-        m.append(y)
+			m.append(y)
 
 	def dispatch(x):
 		#determine how many dimensions (number of columns)
