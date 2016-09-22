@@ -1,5 +1,7 @@
 #FOR CLEANUP##################################################
 
+#Add color options
+
 #may want to add ability to read pandas data frames
 #may want to add fancier plotting options
 
@@ -18,49 +20,64 @@ from mpl_toolkits.mplot3d import Axes3D
 from sklearn.decomposition import PCA
 
 def plot_coords(x, *args, **kwargs):
-    """
-    inputs: TxD matrix of observations
-               T-number of coords
-               D-dimensionality of each observation
-               *Nans treated as missing observations
-            type (specify the type of plot)
-               see http://matplotlib.org/api/axes_api.html#matplotlib.axes.Axes.plot for available options
-    outputs: 1-, 2-, or 3-dimensional representation of the data
-    """
+	"""
+	inputs: TxD matrix of observations
+			   T-number of coords
+			   D-dimensionality of each observation
+			   *Nans treated as missing observations
+			type (specify the type of plot)
+			   see http://matplotlib.org/api/axes_api.html#matplotlib.axes.Axes.plot for available options
+	outputs: 1-, 2-, or 3-dimensional representation of the data
+	"""
 
-    def dispatch(x):
-        #determine how many dimensions (number of columns)
-        if x.shape[-1]==1:
-            plot1D(x)
-        elif x.shape[-1]==2:
-            plot2D(x)
-        elif x.shape[-1]==3:
-            plot3D(x)
-        elif x.shape[-1]>3:
-            plot3D(reduceD(x, 3))
+	def is_list(x):
+		if type(x[0][0])==np.ndarray:
+			return True
+		elif:
+			type(x[0][0])==np.int64
+			return False
+		else: 
+			print 'Input should be np array(s)'
 
-    def plot1D(data):
-        x=np.arange(len(data))
-        plot2D(np.hstack((np.transpose(x), data)))
+	def dispatch(x):
+		#determine how many dimensions (number of columns)
+		if x.shape[-1]==1:
+			plot1D(x)
+		elif x.shape[-1]==2:
+			plot2D(x)
+		elif x.shape[-1]==3:
+			plot3D(x)
+		elif x.shape[-1]>3:
+			plot3D(reduceD(x, 3))
 
-    def plot2D(data):
-        # type: (object) -> object
-        #if 2d, make a scatter
-        plt.plot(data[:,0], data[:,1], *args, **kwargs)
+	def plot1D(data):
+		x=np.arange(len(data))
+		plot2D(np.hstack((np.transpose(x), data)))
 
-    def plot3D(data):
-        #if 3d, make a 3d scatter
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        ax.plot(data[:,0], data[:,1], data[:,2], *args, **kwargs)
+	def plot2D(data):
+		# type: (object) -> object
+		#if 2d, make a scatter
+		plt.plot(data[:,0], data[:,1], *args, **kwargs)
 
-    def reduceD(x, ndim):
-        #if more than 3d, reduce to 3 (PCA), then re-run
-        m = PCA(n_components=ndim, whiten=True)
-        #n_components=3--> reduce to 3 dimensions
-        m.fit(x)
-        return m.transform(x)
-		
-    dispatch(x)
-    plt.show()
+	def plot3D(data):
+		#if 3d, make a 3d scatter
+		fig = plt.figure()
+		ax = fig.add_subplot(111, projection='3d')
+		ax.plot(data[:,0], data[:,1], data[:,2], *args, **kwargs)
+
+	def reduceD(x, ndim):
+		#if more than 3d, reduce to 3 (PCA), then re-run
+		m = PCA(n_components=ndim, whiten=True)
+		#n_components=3--> reduce to 3 dimensions
+		m.fit(x)
+		return m.transform(x)
+	
+	if is_list(x):
+		#[1] column pad all elements (rows do not matter)
+		#[2] PCA over all elements
+		#[3] plot
+
+	else:
+		dispatch(x)
+		plt.show()
 
