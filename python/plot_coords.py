@@ -40,8 +40,8 @@ def plot_coords(x, *args, **kwargs):
             plot3D(reduceD(x, 3))
 
     def plot1D(data):
-        x=np.arange(len(data))
-        plot2D(np.hstack((np.transpose(x), data)))
+        x = np.array(np.arange(len(data)), ndmin=2).T
+        plot2D(np.hstack((x, data)))
 
     def plot2D(data):
         # type: (object) -> object
@@ -63,4 +63,3 @@ def plot_coords(x, *args, **kwargs):
 		
     dispatch(x)
     plt.show()
-
