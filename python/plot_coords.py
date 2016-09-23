@@ -30,14 +30,17 @@ def plot_coords(x, *args, **kwargs):
 
     def dispatch(x):
         #determine how many dimensions (number of columns)
-        if x.shape[-1]==1:
+        if x.shape[-1] == 1:
             plot1D(x)
-        elif x.shape[-1]==2:
+        elif x.shape[-1] == 2:
             plot2D(x)
-        elif x.shape[-1]==3:
+        elif x.shape[-1] == 3:
             plot3D(x)
-        elif x.shape[-1]>3:
-            plot3D(reduceD(x, 3))
+        elif x.shape[-1] > 3:
+            if x.shape[0] == 1:
+                plot3D(np.array([0, 0, 0], ndmin=2))
+            else:
+                plot3D(reduceD(x, 3))
 
     def plot1D(data):
         x = np.array(np.arange(len(data)), ndmin=2).T
