@@ -66,29 +66,46 @@ def plot_coords(x, *args, **kwargs):
 
 	def dispatch_list(x):
 		if x[0].shape[-1]==1:
-			plot1D(x)
+			plot1D_list(x)
 		elif x[0].shape[-1]==2:
-			plot2D(x)
+			plot2D_list(x)
 		elif x[0].shape[-1]==3:
-			plot3D(x)
+			plot3D_list(x)
 		elif x[0].shape[-1]>3:
-			plot3D(reduceD(x, 3))
+			plot3D_list(reduceD_list(x, 3))
 
 	def plot1D(data):
 		x=np.arange(len(data))
 		plot2D(np.hstack((np.transpose(x), data)))
 
+	def plot1D_list(data):
+		for i in range(0, len(data))
+			x=np.arange(len(data[i]))
+			plot2D(np.hstack((np.transpose(x), data[i])))
 
 	def plot2D(data):
 		# type: (object) -> object
 		#if 2d, make a scatter
 		plt.plot(data[:,0], data[:,1], *args, **kwargs)
 
+	def plot2D_list(data):
+		# type: (object) -> object
+		#if 2d, make a scatter
+		for i in range(0, len(data)):
+			plt.plot(data[i][:,0], data[i][:,1], *args, **kwargs)
+
 	def plot3D(data):
 		#if 3d, make a 3d scatter
 		fig = plt.figure()
 		ax = fig.add_subplot(111, projection='3d')
 		ax.plot(data[:,0], data[:,1], data[:,2], *args, **kwargs)
+
+	def plot3D(data):
+		#if 3d, make a 3d scatter
+		for i in range(0, len(data)):
+			fig = plt.figure()
+			ax = fig.add_subplot(111, projection='3d')
+			ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], *args, **kwargs)
 
 	def reduceD(x, ndim):
 		#if more than 3d, reduce to 3 (PCA), then re-run
