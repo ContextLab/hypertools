@@ -55,28 +55,29 @@ def plot_coords(x, *args, **kwargs):
 
 	def dispatch(x):
 		#determine how many dimensions (number of columns)
-		if not is_list(x):
-			if x.shape[-1]==1:
-				plot1D(x)
-			elif x.shape[-1]==2:
-				plot2D(x)
-			elif x.shape[-1]==3:
-				plot3D(x)
-			elif x.shape[-1]>3:
-				plot3D(reduceD(x, 3))
-		elif is_list(x):
-			if x[0].shape[-1]==1:
-				plot1D(x)
-			elif x[0].shape[-1]==2:
-				plot2D(x)
-			elif x[0].shape[-1]==3:
-				plot3D(x)
-			elif x[0].shape[-1]>3:
-				plot3D(reduceD(x, 3))
+		if x.shape[-1]==1:
+			plot1D(x)
+		elif x.shape[-1]==2:
+			plot2D(x)
+		elif x.shape[-1]==3:
+			plot3D(x)
+		elif x.shape[-1]>3:
+			plot3D(reduceD(x, 3))
+
+	def dispatch_list(x):
+		if x[0].shape[-1]==1:
+			plot1D(x)
+		elif x[0].shape[-1]==2:
+			plot2D(x)
+		elif x[0].shape[-1]==3:
+			plot3D(x)
+		elif x[0].shape[-1]>3:
+			plot3D(reduceD(x, 3))
 
 	def plot1D(data):
 		x=np.arange(len(data))
 		plot2D(np.hstack((np.transpose(x), data)))
+
 
 	def plot2D(data):
 		# type: (object) -> object
@@ -97,8 +98,8 @@ def plot_coords(x, *args, **kwargs):
 		return m.transform(x)
 	
 	if is_list(x):
-		resize(x)
-		dispatch(x)
+		dispatch_list(resize(x))
+
 
 		#[2] PCA over all elements
 		#[3] plot
