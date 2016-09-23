@@ -79,7 +79,7 @@ def plot_coords(x, *args, **kwargs):
 		plot2D(np.hstack((np.transpose(x), data)))
 
 	def plot1D_list(data):
-		for i in range(0, len(data))
+		for i in range(0, len(data)):
 			x=np.arange(len(data[i]))
 			plot2D(np.hstack((np.transpose(x), data[i])))
 
@@ -100,14 +100,14 @@ def plot_coords(x, *args, **kwargs):
 		ax = fig.add_subplot(111, projection='3d')
 		ax.plot(data[:,0], data[:,1], data[:,2], *args, **kwargs)
 
-	def plot3D(data):
+	def plot3D_list(data):
 		#if 3d, make a 3d scatter
 		for i in range(0, len(data)):
 			fig = plt.figure()
 			ax = fig.add_subplot(111, projection='3d')
 			ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], *args, **kwargs)
 
-	def reduceD(x, ndim):
+	def reduceD(x, ndim):	
 		#if more than 3d, reduce to 3 (PCA), then re-run
 		m = PCA(n_components=ndim, whiten=True)
 		#n_components=3--> reduce to 3 dimensions
@@ -115,7 +115,9 @@ def plot_coords(x, *args, **kwargs):
 		return m.transform(x)
 	
 	if is_list(x):
+		print resize(x)
 		dispatch_list(resize(x))
+	
 
 
 		#[2] PCA over all elements
