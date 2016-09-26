@@ -52,6 +52,8 @@ def plot_coords(x, *args, **kwargs):
 			y=np.append(x, add, axis=1)
 
 			m.append(y)
+			
+		return m
 
 	def dispatch(x):
 		#determine how many dimensions (number of columns)
