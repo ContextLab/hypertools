@@ -113,11 +113,15 @@ def plot_coords(x, *args, **kwargs):
 		#n_components=3--> reduce to 3 dimensions
 		m.fit(x)
 		return m.transform(x)
+
+	def reduceD_list(x, ndim):
+		m=PCA(n_components=ndim, whiten=True)
+		m.fit(x[0])
+		return m.transform(x[1:])
 	
 	if is_list(x):
-		print resize(x)
 		dispatch_list(resize(x))
-	
+		plt.show()
 
 
 		#[2] PCA over all elements
