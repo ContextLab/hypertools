@@ -30,6 +30,7 @@ def plot_coords(x, *args, **kwargs):
 	outputs: 1-, 2-, or 3-dimensional representation of the data
 	"""
 
+    ##SUB FUNCTIONS##
 	def is_list(x):
 		if type(x[0][0])==np.ndarray:
 			return True
@@ -52,7 +53,6 @@ def plot_coords(x, *args, **kwargs):
 			y=np.append(x, add, axis=1)
 
 			m.append(y)
-			
 		return m
 
 	def dispatch(x):
@@ -81,9 +81,10 @@ def plot_coords(x, *args, **kwargs):
 		plot2D(np.hstack((np.transpose(x), data)))
 
 	def plot1D_list(data):
+		x=[]
 		for i in range(0, len(data)):
-			x=np.arange(len(data[i]))
-			plot2D(np.hstack((np.transpose(x), data[i])))
+			x.append(np.transpose(np.arange(len(data[i]))))
+		plot2D(np.hstack((x), data))
 
 	def plot2D(data):
 		# type: (object) -> object
@@ -106,10 +107,12 @@ def plot_coords(x, *args, **kwargs):
 
 	def plot3D_list(data):
 		#if 3d, make a 3d scatter
-		for i in range(0, len(data)):
-			fig = plt.figure()
-			ax = fig.add_subplot(111, projection='3d')
-			ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], *args, **kwargs)
+		n=len(data)
+		fig,ax=plt.subplots(1,n, subplot_kw={'projection':'3d'})
+		for i in range(n):
+			#fig = plt.figure()
+			#ax = fig.add_subplot(111, projection='3d')
+			ax[i].plot(data[i][:,0], data[i][:,1], data[i][:,2], *args, **kwargs)
 
 	def reduceD(x, ndim):	
 		#if more than 3d, reduce to 3 (PCA), then re-run
@@ -122,14 +125,12 @@ def plot_coords(x, *args, **kwargs):
 		m=PCA(n_components=ndim, whiten=True)
 		m.fit(x[0])
 		return m.transform(x[1:])
-	
+
+    ##MAIN FUNCTION##
+
 	if is_list(x):
 		dispatch_list(resize(x))
 		plt.show()
-
-
-		#[2] PCA over all elements
-		#[3] plot
 
 	else:
 		dispatch(x)
