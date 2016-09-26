@@ -101,9 +101,10 @@ def plot_coords(x, *args, **kwargs):
 		# type: (object) -> object
 		#if 2d, make a scatter
 		n=len(data)
-		fig,ax=plt.subplots(1,n)
+		fig=plt.figure()
+		ax=fig.add_subplot(111)
 		for i in range(n):
-			ax[i].plot(data[i][:,0], data[i][:,1], *args, **kwargs)
+			ax.plot(data[i][:,0], data[i][:,1], *args, **kwargs)
 
 	def plot3D(data):
 		#if 3d, make a 3d scatter
@@ -123,7 +124,7 @@ def plot_coords(x, *args, **kwargs):
 			
 			#ax[i].plot(data[i][:,0], data[i][:,1], data[i][:,2], *args, **kwargs)
 			ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], *args, **kwargs)
-			
+
 	def reduceD(x, ndim):	
 		#if more than 3d, reduce to 3 (PCA), then re-run
 		m = PCA(n_components=ndim, whiten=True)
