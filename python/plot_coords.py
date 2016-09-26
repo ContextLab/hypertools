@@ -130,7 +130,11 @@ def plot_coords(x, *args, **kwargs):
 	def reduceD_list(x, ndim):
 		m=PCA(n_components=ndim, whiten=True)
 		m.fit(x[0])
-		return m.transform(x[:])
+
+		r=[]
+		for i in x:
+			r.append(m.transform(i))
+		return r
 
     ##MAIN FUNCTION##
 
