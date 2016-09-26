@@ -114,12 +114,16 @@ def plot_coords(x, *args, **kwargs):
 	def plot3D_list(data):
 		#if 3d, make a 3d scatter
 		n=len(data)
-		fig,ax=plt.subplots(1,n, subplot_kw={'projection':'3d'})
+		#fig,ax=plt.subplots(1,n, subplot_kw={'projection':'3d'})
+		fig = plt.figure()
+		ax = fig.add_subplot(111, projection='3d')
 		for i in range(n):
 			#fig = plt.figure()
 			#ax = fig.add_subplot(111, projection='3d')
-			ax[i].plot(data[i][:,0], data[i][:,1], data[i][:,2], *args, **kwargs)
-
+			
+			#ax[i].plot(data[i][:,0], data[i][:,1], data[i][:,2], *args, **kwargs)
+			ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], *args, **kwargs)
+			
 	def reduceD(x, ndim):	
 		#if more than 3d, reduce to 3 (PCA), then re-run
 		m = PCA(n_components=ndim, whiten=True)
