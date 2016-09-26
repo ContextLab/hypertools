@@ -91,8 +91,10 @@ def plot_coords(x, *args, **kwargs):
 	def plot2D_list(data):
 		# type: (object) -> object
 		#if 2d, make a scatter
-		for i in range(0, len(data)):
-			plt.plot(data[i][:,0], data[i][:,1], *args, **kwargs)
+		n=len(data)
+		fig,ax=plt.subplots(1,n)
+		for i in range(n):
+			ax[i].plot(data[i][:,0], data[i][:,1], *args, **kwargs)
 
 	def plot3D(data):
 		#if 3d, make a 3d scatter
