@@ -12,6 +12,12 @@
 #x=np.array([[1, 11, 21], [2, 12, 22], [3, 13, 33], [4, 14, 44]])
 #x=np.array([[1, 11, 21, 31], [2, 12, 22, 32], [3, 13, 33, 43], [4, 14, 44, 54]])
 
+#to test with weights.mat:
+#data=sio.loadmat('weights.mat')
+#w=data['weights'][0]
+
+#check len(w)==36 (36 subjects)
+
 ##############################################################
 
 import numpy as np 
@@ -124,7 +130,7 @@ def plot_coords(x, *args, **kwargs):
 	def reduceD_list(x, ndim):
 		m=PCA(n_components=ndim, whiten=True)
 		m.fit(x[0])
-		return m.transform(x[1:])
+		return m.transform(x[:])
 
     ##MAIN FUNCTION##
 
