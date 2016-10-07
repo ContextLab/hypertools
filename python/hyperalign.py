@@ -285,16 +285,22 @@ def hyperalign(*args):
 		return aligned
 		print aligned
 
-	def align_list(j):
+	#def align_list2(j):
+	#	for x in range(0, len(j)):
+	#		print j[0][x].shape
 
-		sizes_0=np.zeros(len(j))
-		sizes_1=np.zeros(len(j))
+	#	print len(j)
+	#	print len(j[0])
+
+	def align_list(j):
+		sizes_0=np.zeros(len(j[0]))
+		sizes_1=np.zeros(len(j[0]))
 
 		#STEP 0: STANDARDIZE SIZE AND SHAPE	
-		for x in range(0, len(j)):
+		for x in range(0, len(j[0])):
 
-			sizes_0[x]=j[x].shape[0]
-			sizes_1[x]=j[x].shape[1]
+			sizes_0[x]=j[0][x].shape[0]
+			sizes_1[x]=j[0][x].shape[1]
 
 		R=min(sizes_0)
 		#find the smallest number of rows
@@ -302,9 +308,9 @@ def hyperalign(*args):
 		#find the largest number of columns
 
 		k=np.empty((R,C), dtype=np.ndarray)
-		m=[k]*len(j)
+		m=[k]*len(j[0])
 		
-		for idx,x in enumerate(j):
+		for idx,x in enumerate(j[0]):
 			y=x[0:R,:]
 			#reduce each input argument to the minimum number of rows by deleting excess rows
 			
