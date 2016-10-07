@@ -22,6 +22,9 @@
 
 import numpy as np 
 import matplotlib.pyplot as plt 
+from matplotlib import pylab
+import matplotlib.cm as cm
+import matplotlib.colors as col
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.decomposition import PCA
 
@@ -117,6 +120,7 @@ def plot_coords(x, *args, **kwargs):
 		n=len(data)
 		#fig,ax=plt.subplots(1,n, subplot_kw={'projection':'3d'})
 		fig = plt.figure()
+		cmap = plt.get_cmap('Spectral_r')
 		ax = fig.add_subplot(111, projection='3d')
 		for i in range(n):
 			#fig = plt.figure()
@@ -145,9 +149,11 @@ def plot_coords(x, *args, **kwargs):
 
 	if is_list(x):
 		dispatch_list(resize(x))
-		plt.show()
+		plt.ion()
+		
 
 	else:
 		dispatch(x)
-		plt.show()
+		plt.ion()
+	
 
