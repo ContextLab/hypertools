@@ -13,6 +13,9 @@
 import numpy as np
 import numpy as np,numpy.linalg
 
+
+#TODO: implement searchlight hyperalignment
+
 ##MAIN FUNCTION##
 def hyperalign(*args):
 
