@@ -104,8 +104,10 @@ def plot_coords(x, *args, **kwargs):
 		# type: (object) -> object
 		#if 2d, make a scatter
 		n=len(data)
-		fig=plt.figure()
-		ax=fig.add_subplot(111)
+		#fig=plt.figure()
+		#ax=fig.add_subplot(111)
+
+		fig, ax = plt.subplots()
 		for i in range(n):
 			ax.plot(data[i][:,0], data[i][:,1], *args, **kwargs)
 
@@ -149,11 +151,11 @@ def plot_coords(x, *args, **kwargs):
 
 	if is_list(x):
 		dispatch_list(resize(x))
-		plt.ion()
+		plt.show()
 		
 
 	else:
 		dispatch(x)
-		plt.ion()
+		plt.show()
 	
 
