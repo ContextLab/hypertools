@@ -37,6 +37,8 @@ def plot_coords(x, *args, **kwargs):
 			type (specify the type of plot)
 			   see http://matplotlib.org/api/axes_api.html#matplotlib.axes.Axes.plot for available options
 	outputs: 1-, 2-, or 3-dimensional representation of the data
+
+			to edit color map, change lines 111, 126 (cm.DesiredColMap)
 	"""
 
     ##SUB FUNCTIONS##
@@ -98,7 +100,7 @@ def plot_coords(x, *args, **kwargs):
 	def plot2D(data):
 		# type: (object) -> object
 		#if 2d, make a scatter
-		plt.plot(data[:,0], data[:,1], *args, **kwargs)
+		plt.plot(data[:,0], data[:,1], c=c, *args, **kwargs)
 
 	def plot2D_list(data):
 		# type: (object) -> object
@@ -106,10 +108,11 @@ def plot_coords(x, *args, **kwargs):
 		n=len(data)
 		#fig=plt.figure()
 		#ax=fig.add_subplot(111)
-
+		color=iter(cm.plasma(np.linspace(0,1,n)))
 		fig, ax = plt.subplots()
 		for i in range(n):
-			ax.plot(data[i][:,0], data[i][:,1], *args, **kwargs)
+			c=next(color)
+			ax.plot(data[i][:,0], data[i][:,1], c=c, *args, **kwargs)
 
 	def plot3D(data):
 		#if 3d, make a 3d scatter
@@ -120,16 +123,12 @@ def plot_coords(x, *args, **kwargs):
 	def plot3D_list(data):
 		#if 3d, make a 3d scatter
 		n=len(data)
-		#fig,ax=plt.subplots(1,n, subplot_kw={'projection':'3d'})
-		fig = plt.figure()
-		cmap = plt.get_cmap('Spectral_r')
+		color=iter(cm.plasma(np.linspace(0,1,n)))
+		fig = plt.figure() 
 		ax = fig.add_subplot(111, projection='3d')
 		for i in range(n):
-			#fig = plt.figure()
-			#ax = fig.add_subplot(111, projection='3d')
-			
-			#ax[i].plot(data[i][:,0], data[i][:,1], data[i][:,2], *args, **kwargs)
-			ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], *args, **kwargs)
+			c=next(color)
+			ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], c=c, *args, **kwargs)
 
 	def reduceD(x, ndim):	
 		#if more than 3d, reduce to 3 (PCA), then re-run
