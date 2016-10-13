@@ -88,19 +88,19 @@ def plot_coords(x, *args, **kwargs):
 			plot3D_list(reduceD_list(x, 3))
 
 	def plot1D(data):
-		x=np.arange(len(data))
-		plot2D(np.hstack((np.transpose(x), data)))
+		x=np.arange(len(data)).reshape((len(data),1))
+		plot2D(np.hstack((x, data)))
 
 	def plot1D_list(data):
 		x=[]
 		for i in range(0, len(data)):
-			x.append(np.transpose(np.arange(len(data[i]))))
-		plot2D(np.hstack((x), data))
+			x.append(np.arange(len(data[i])).reshape(len(data),1))
+		plot2D(np.hstack((x, data)))
 
 	def plot2D(data):
 		# type: (object) -> object
 		#if 2d, make a scatter
-		plt.plot(data[:,0], data[:,1], c=c, *args, **kwargs)
+		plt.plot(data[:,0], data[:,1], *args, **kwargs)
 
 	def plot2D_list(data):
 		# type: (object) -> object
