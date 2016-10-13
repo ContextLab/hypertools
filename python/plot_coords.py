@@ -41,7 +41,7 @@ def plot_coords(x, *args, **kwargs):
 			to edit color map, change lines 111, 126 (cm.DesiredColMap)
 	"""
 
-    ##SUB FUNCTIONS##
+	##SUB FUNCTIONS##
 	def is_list(x):
 		if type(x[0][0])==np.ndarray:
 			return True
@@ -94,13 +94,23 @@ def plot_coords(x, *args, **kwargs):
 	def plot1D_list(data):
 		x=[]
 		for i in range(0, len(data)):
-			x.append(np.arange(len(data[i])).reshape(len(data),1))
-		plot2D(np.hstack((x, data)))
+			x.append(np.arange(len(data[i])).reshape(len(data[i]),1))
+		plot_1to2_list(np.hstack((x, data)))
 
 	def plot2D(data):
 		# type: (object) -> object
 		#if 2d, make a scatter
 		plt.plot(data[:,0], data[:,1], *args, **kwargs)
+
+	def plot_1to2_list(data):
+		n=len(data)
+		color=iter(cm.plasma(np.linspace(0,1,n)))
+		fig, ax = plt.subplots()
+		for i in range(n):
+			c=next(color)
+			m=len(data[i])
+			half=m/2
+			ax.plot(data[i][0:half,0], data[i][half:m+1,0], c=c)
 
 	def plot2D_list(data):
 		# type: (object) -> object
@@ -146,7 +156,7 @@ def plot_coords(x, *args, **kwargs):
 			r.append(m.transform(i))
 		return r
 
-    ##MAIN FUNCTION##
+	##MAIN FUNCTION##
 
 	if is_list(x):
 		dispatch_list(resize(x))
