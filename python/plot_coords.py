@@ -17,6 +17,7 @@ import numpy as np
 import matplotlib.pyplot as plt 
 import matplotlib.cm as cm
 from sklearn.decomposition import PCA
+from mpl_toolkits.mplot3d import Axes3D
 
 ##META##
 __authors__ = ["Jeremy Manning", "Kirsten Ziman"]
