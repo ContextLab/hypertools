@@ -332,7 +332,8 @@ def hyperalign(*args):
 			return align_list(y)
 
 		elif all(isinstance(x, np.ndarray) for x in args[0]) and all(isinstance(x, int) for x in args[0][0]):
-			return align(*args)
+			aligned=args
+			return aligned
 
 		else: 
 			print "Input argument elements are neither all ints nor all numpy arrays..."
