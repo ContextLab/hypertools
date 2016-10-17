@@ -8,7 +8,6 @@ Haxby JV, Guntupalli JS, Connolly AC, Halchenko YO, Conroy BR, Gobbini
 MI, Hanke M, and Ramadge PJ (2011)  A common, high-dimensional model of
 the representational space in human ventral temporal cortex.  Neuron 72,
 404 -- 416.
-
 INPUTS:
 -numpy array(s)
 -list of numpy arrays

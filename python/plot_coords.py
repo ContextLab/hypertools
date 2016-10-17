@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """
 inputs: TxD matrix of observations
 		   T-number of coords
