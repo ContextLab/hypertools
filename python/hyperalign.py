@@ -1,36 +1,40 @@
+"""
+Implements the "hyperalignment" algorithm described by the
+following paper:
 
-##########NOTES#############
-#reads numpy arrays
+Haxby JV, Guntupalli JS, Connolly AC, Halchenko YO, Conroy BR, Gobbini
+MI, Hanke M, and Ramadge PJ (2011)  A common, high-dimensional model of
+the representational space in human ventral temporal cortex.  Neuron 72,
+404 -- 416.
+INPUTS:
+-numpy array(s)
+-list of numpy arrays
 
-##########CLEANUP############
-#ability to read other data formats?
-
-#'trajectories must be specified in 2D matriices'
-	#add this check!
-	#line80 in matlab script
+OUTPUTS:
+-numpy array
+-list of aligned numpy arrays
+"""
 
 ##PACKAGES##
 import numpy as np
 import numpy as np,numpy.linalg
 
 
+##META##
+__authors__ = ["Jeremy Manning", "Kirsten Ziman"]
+__version__ = "1.0.0"
+__maintainers__ = ["Jeremy Manning", "Kirsten Ziman"] 
+__emails__ = ["Jeremy.R.Manning@dartmouth.edu", "kirstenkmbziman@gmail.com", "contextualdynamics@gmail.com"]
+#__copyright__ = ""
+#__credits__ = [""]
+#__license__ = ""
+
 #TODO: implement searchlight hyperalignment
+
 
 ##MAIN FUNCTION##
 def hyperalign(*args):
-
-	"""
-	Implements the "hyperalignment" algorithm described by the
-	following paper:
-
-	Haxby JV, Guntupalli JS, Connolly AC, Halchenko YO, Conroy BR, Gobbini
-	MI, Hanke M, and Ramadge PJ (2011)  A common, high-dimensional model of
-	the representational space in human ventral temporal cortex.  Neuron 72,
-	404 -- 416.
-	"""
-
-	#use *args & args to allow multiple input arguments
-	#creates a tuple, len==1
+	"""Implements hyperalignment"""
 
 	##FUNCTIONS##
 	def is_list(x):
@@ -77,39 +81,10 @@ def hyperalign(*args):
 		else:
 			return nearPD(x)
 
-	def resize(*args):
-		sizes_0=np.zeros(len(args))
-		sizes_1=np.zeros(len(args))
-
-		#STEP 0: STANDARDIZE SIZE AND SHAPE	
-		for x in range(0, len(args)):
-
-			sizes_0[x]=args[x].shape[0]
-			sizes_1[x]=args[x].shape[1]
-
-		R=min(sizes_0)
-		#find the smallest number of rows
-		C=max(sizes_1)
-		#find the largest number of columns
-
-		k=np.empty((R,C), dtype=np.ndarray)
-		m=[k]*len(args)
-		
-		for idx,x in enumerate(args):
-			y=x[0:R,:]
-			#reduce each input argument to the minimum number of rows by deleting excess rows
-			
-			missing=C-y.shape[1]
-			add=np.zeros((y.shape[0], missing))
-			y=np.append(y, add, axis=1)
-
-			m[idx]=y
-
 	def procrustes(X, Y, scaling=True, reflection='best'):
 		"""
-		This function copied from stackoverflow user ali_m 
+		This function written by stackoverflow user ali_m (pulled 8/22/16)
 		(http://stackoverflow.com/questions/18925181/procrustes-analysis-with-numpy) 
-		8/22/16
 
 		A port of MATLAB's `procrustes` function to Numpy.
 
@@ -221,7 +196,6 @@ def hyperalign(*args):
 
 		#transformation values 
 		tform = {'rotation':T, 'scale':b, 'translation':c}
-
 		return Z
 
 	def align(*args):
@@ -236,17 +210,81 @@ def hyperalign(*args):
 			sizes_1[x]=args[x].shape[1]
 
 		R=min(sizes_0)
-		#find the smallest number of rows
-		C=max(sizes_1)
-		#find the largest number of columns
+
+		if max(sizes_1) < 3:
+			C=3
+		else:
+			C=max(sizes_1)
 
 		k=np.empty((R,C), dtype=np.ndarray)
 		m=[k]*len(args)
 		
 		for idx,x in enumerate(args):
 			y=x[0:R,:]
-			#reduce each input argument to the minimum number of rows by deleting excess rows
+			#delete excess rows
 			
+			missing=C-y.shape[1]
+			add=np.zeros((y.shape[0], missing))
+			y=np.append(y, add, axis=1)
+
+			m[idx]=y
+
+
+		#STEP 1: TEMPLATE
+		for x in range(0, len(m)):
+			if x==0:
+				template=m[x]
+			
+			else:
+				next = procrustes(np.transpose(template/x), np.transpose(m[x]))
+				#sometimes give SVD error
+				template = template + np.transpose(next)
+
+		template= template/len(m)
+
+
+		#STEP 2: NEW COMMON TEMPLATE
+		template2= np.zeros(template.shape)
+		for x in range(0, len(m)):
+			next = procrustes(np.transpose(template),np.transpose(m[x]))
+			template2 = template2 + np.transpose(next)
+
+		template2=template2/len(m)
+		empty= np.zeros(template2.shape)
+		aligned=[empty]*(len(m)) 
+
+
+		#STEP 3 (below): ALIGN TO NEW TEMPLATE
+		for x in range(0, len(m)):
+			next = procrustes(np.transpose(template2),np.transpose(m[x]))
+			aligned[x] = np.transpose(next)
+
+		return aligned
+
+
+	def align_list(j):
+		sizes_0=np.zeros(len(j[0]))
+		sizes_1=np.zeros(len(j[0]))
+
+		#STEP 0: STANDARDIZE SIZE AND SHAPE	
+		for x in range(0, len(j[0])):
+			sizes_0[x]=j[0][x].shape[0]
+			sizes_1[x]=j[0][x].shape[1]
+
+		R=min(sizes_0)
+		#find the smallest number of rows
+
+		if max(sizes_1) < 3:
+			C=3
+		else:
+			C=max(sizes_1)
+		#find max columns; if max columns less than 3, add cols of zeros to make 3
+
+		k=np.empty((R,C), dtype=np.ndarray)
+		m=[k]*len(j[0])
+		
+		for idx,x in enumerate(j[0]):
+			y=x[0:R,:]
 			missing=C-y.shape[1]
 			add=np.zeros((y.shape[0], missing))
 			y=np.append(y, add, axis=1)
@@ -288,6 +326,9 @@ def hyperalign(*args):
 		return aligned
 		print aligned
 
+<<<<<<< HEAD
+##PARSE INPUT AND ALIGN-- MAIN FUNCTION##
+=======
 	#def align_list2(j):
 	#	for x in range(0, len(j)):
 	#		print j[0][x].shape
@@ -359,11 +400,17 @@ def hyperalign(*args):
 		print aligned
 
 ##PARSE INPUT-- MAIN FUNCTION##
-
 	if len(args)<=1:
 		if all(isinstance(x, int) for x in args[0]):
 			aligned=args
-			#print "Only one dataset"
+			return aligned
+
+		elif all(isinstance(x, np.ndarray) for x in args[0][0]): 
+			y=list(args)
+			return align_list(y)
+
+		elif all(isinstance(x, np.ndarray) for x in args[0]) and all(isinstance(x, int) for x in args[0][0]):
+			aligned=args
 			return aligned
 
 		elif all(isinstance(x, np.ndarray) for x in args[0][0]): #and all(isinstance(x, numpy.float32) for x in args[0][0][0]):
@@ -376,15 +423,13 @@ def hyperalign(*args):
 			#print "single array"
 			return align(*args)
 			#if each element of single input is a numpy array, align elements to each other
-
+            
 		else: 
 			print "Input argument elements are neither all ints nor all numpy arrays..."
 
 	else:
 		if all(isinstance(x, np.ndarray) for x in args):
-			print "multiple arrays"
 			return align(*args)	
-			#if each input is an array, align inputs to each other
 
 		else:
 			print "Input datasets should be numpy arrays"
