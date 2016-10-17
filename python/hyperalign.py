@@ -33,6 +33,12 @@ def hyperalign(*args):
 	#creates a tuple, len==1
 
 	##FUNCTIONS##
+	def is_list(x):
+		if type(x[0][0])==np.ndarray:
+			return True
+		elif type(x[0][0])==np.int64:
+			return False
+
 	def _getAplus(A):
 		eigval, eigvec = np.linalg.eig(A)
 		Q = np.matrix(eigvec)
@@ -282,15 +288,92 @@ def hyperalign(*args):
 		return aligned
 		print aligned
 
+	#def align_list2(j):
+	#	for x in range(0, len(j)):
+	#		print j[0][x].shape
+
+	#	print len(j)
+	#	print len(j[0])
+
+	def align_list(j):
+		sizes_0=np.zeros(len(j[0]))
+		sizes_1=np.zeros(len(j[0]))
+
+		#STEP 0: STANDARDIZE SIZE AND SHAPE	
+		for x in range(0, len(j[0])):
+
+			sizes_0[x]=j[0][x].shape[0]
+			sizes_1[x]=j[0][x].shape[1]
+
+		R=min(sizes_0)
+		#find the smallest number of rows
+		C=max(sizes_1)
+		#find the largest number of columns
+
+		k=np.empty((R,C), dtype=np.ndarray)
+		m=[k]*len(j[0])
+		
+		for idx,x in enumerate(j[0]):
+			y=x[0:R,:]
+			#reduce each input argument to the minimum number of rows by deleting excess rows
+			
+			missing=C-y.shape[1]
+			add=np.zeros((y.shape[0], missing))
+			y=np.append(y, add, axis=1)
+
+			m[idx]=y
+
+		#STEP 1: TEMPLATE
+		for x in range(0, len(m)):
+			if x==0:
+				template=m[x]
+			
+			else:
+				next = procrustes(np.transpose(template/x), np.transpose(m[x]))
+				#sometimes give SVD error
+				template = template + np.transpose(next)
+		
+		
+		template= template/len(m)
+
+
+		#STEP 2: NEW COMMON TEMPLATE
+			#align each subj to the template from STEP 1
+			#create a new template by the same means
+		template2= np.zeros(template.shape)
+		for x in range(0, len(m)):
+			next = procrustes(np.transpose(template),np.transpose(m[x]))
+			template2 = template2 + np.transpose(next)
+
+		template2=template2/len(m)
+
+
+		empty= np.zeros(template2.shape)
+		aligned=[empty]*(len(m)) 
+		#STEP 3 (below): ALIGN TO NEW TEMPLATE
+		for x in range(0, len(m)):
+			next = procrustes(np.transpose(template2),np.transpose(m[x]))
+			aligned[x] = np.transpose(next)
+
+		return aligned
+		print aligned
+
 ##PARSE INPUT-- MAIN FUNCTION##
+
 	if len(args)<=1:
 		if all(isinstance(x, int) for x in args[0]):
 			aligned=args
-			print "Only one dataset"
+			#print "Only one dataset"
 			return aligned
 
-		elif all(isinstance(x, np.ndarray) for x in args[0]):
-			print "single array"
+		elif all(isinstance(x, np.ndarray) for x in args[0][0]): #and all(isinstance(x, numpy.float32) for x in args[0][0][0]):
+			#print "array or list of arrays"
+			y=list(args)
+			return align_list(y)
+			#if each element of single input is a numpy array, align elements to each other
+
+		elif all(isinstance(x, np.ndarray) for x in args[0]) and all(isinstance(x, int) for x in args[0][0]):
+			#print "single array"
 			return align(*args)
 			#if each element of single input is a numpy array, align elements to each other
 
