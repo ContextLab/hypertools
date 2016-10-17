@@ -326,7 +326,7 @@ def hyperalign(*args):
 		return aligned
 		print aligned
 
-<<<<<<< HEAD
+
 ##PARSE INPUT AND ALIGN-- MAIN FUNCTION##
 =======
 	#def align_list2(j):
