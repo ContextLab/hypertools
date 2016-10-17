@@ -209,7 +209,11 @@ def hyperalign(*args):
 			sizes_1[x]=args[x].shape[1]
 
 		R=min(sizes_0)
-		C=max(sizes_1)
+
+		if max(sizes_1) < 3:
+			C=3
+		else:
+			C=max(sizes_1)
 
 		k=np.empty((R,C), dtype=np.ndarray)
 		m=[k]*len(args)
@@ -263,13 +267,15 @@ def hyperalign(*args):
 
 		#STEP 0: STANDARDIZE SIZE AND SHAPE	
 		for x in range(0, len(j[0])):
-
 			sizes_0[x]=j[0][x].shape[0]
 			sizes_1[x]=j[0][x].shape[1]
 
 		R=min(sizes_0)
 		#find the smallest number of rows
-		C=max(sizes_1)
+		if max(sizes_1) < 3:
+			C=3
+		else:
+			C=max(sizes_1)
 		#find the largest number of columns
 
 		k=np.empty((R,C), dtype=np.ndarray)
@@ -277,8 +283,6 @@ def hyperalign(*args):
 		
 		for idx,x in enumerate(j[0]):
 			y=x[0:R,:]
-			#reduce each input argument to the minimum number of rows by deleting excess rows
-			
 			missing=C-y.shape[1]
 			add=np.zeros((y.shape[0], missing))
 			y=np.append(y, add, axis=1)
