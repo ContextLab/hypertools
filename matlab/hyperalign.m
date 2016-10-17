@@ -57,6 +57,7 @@ function[aligned, transforms] = hyperalign(varargin)
 % CHANGELOG:
 % 4-18-16  jrm  wrote it.
 % 4-20-16  jrm  be more forgiving of mismatched sizes.
+% 10-17-16 jrm  ensure number of dimensions >= 3 by padding with zeros
 
 assert(license('test','Statistics_toolbox') == 1, ...
     'You must install the Statistics Toolbox to use this function');
@@ -64,100 +65,49 @@ assert(license('test','Statistics_toolbox') == 1, ...
 if length(varargin) <= 1
     aligned = varargin;
     return;
-    %if there is only one input, it does not need to be aligned (there is
-    %nothing to align to but itself)
 end
 
 %hyperalign the given patterns.  assumption: all patterns have the same
 %dimensionality.
 dims = cellfun(@ndims, varargin);
-%outputs 1x36 vector, each value the number of dimensions of the original
-%data
-%cellfun applies function to each cell of an array
-%we obtain the number of dimensions of each array in the input arguments
-
-
 assert(dims(1) == 2, 'trajectories must be specified in 2D matrices');
-%the first matrix must be be 2d, so we assert the first value of dims is 2
-%assert gives error if condition is false
 
 sizes = cellfun(@size, varargin, 'UniformOutput', false);
-%outputs an array of 2-number arrays that represent the dimensions
 %trim rows to minimum number of rows
-%options 'UniformOutput', 'false' combines the outputs into cell arrays 
 T = min(cellfun(@(s)(s(1)), sizes));
-%min- smallest elements in an array 
-%CLARIFY: I think this is taking the smallest element from the list of all
-%first elements in the sizes arrays?
 varargin = cellfun(@(x)(x(1:T, :)), varargin, 'UniformOutput', false);
-%cuts the inputs so that they all have the same number of rows (equal to
-%the smallest number of rows)
 
-%pad with zeros as needed
-D = max(cellfun(@(s)(s(2)), sizes));
-%find the max number of columns (taking the max element from the list of all
-%second elements in the sizes array)
+%pad with zeros as needed, ensure D >= 3
+D = max(max(cellfun(@(s)(s(2)), sizes)), 3);
 varargin = cellfun(@(x)([x zeros([size(x, 1) (D - size(x, 2))])]), varargin, 'UniformOutput', false);
-%all are made to match the largest number of columns
-%need to fill in extra columns? fills in with zeros
 
 sizes = cellfun(@size, varargin, 'UniformOutput', false);
-%options 'UniformOutput', 'false' combines the outputs into cell arrays 
 template = sizes{1};
-%vector with values of the first array in sizes (size of first input
-%argument dimensions)
 assert(all(cellfun(@(s)(all(s == template)), sizes)), 'all patterns must have same dimensionality');
-%make sure all in sizes have been comformed to the same size (same as
-%template)
 
 %step 1: compute common template
 for s = 1:length(varargin)        
     if s == 1
         template = varargin{s};
-        %assign template to first input argument values 
-        
     else
-        %for the 'next' input? 
         [~, next] = procrustes((template./(s - 1))', varargin{s}');
-        %determines linear transformation of points in transposed varargin{s} matrix
-    %to best conform them to the transpose of (template./(s-1))
         template = template + next';
-        %keep adding the transpose of the results to template
-        %so, in the end, each value in template matrix is a sum of all the
-        %procrustes outputs for that cell
     end
 end
 template = template./length(varargin);
-%divide each value by the number of input arguments
 
-
-%step 2: align each pattern to the common template and compute a
+%step 2: align each pattern to the common template template and compute a
 %new common template
 template2 = zeros(size(template));
 for s = 1:length(varargin)
     [~, next] = procrustes(template', varargin{s}');
-    %use the transpose of the template you just generated to generate a new
-    %template which matches the transpose of the input argument to the
-    %transpose of the first template
-    
-    %QUESTION: why transpose?
-    
-    %determines linear transformation of points in the varargin{s} matrix
-    %to best conform them to the transpose of the template
-    template2 = template2 + next';    
-    %this output becomes the template for the next transformation?
+    template2 = template2 + next';
 end
 template2 = template2./length(varargin);
-%divide each value in template2 by the number of input arguments
 
 %step 3: align each subject to the mean alignment from the previous round.
 %save the transformation parameters
-
-
-%CLARIFY
 [aligned, transforms] = deal(cell(size(varargin)));
-%^^what does this line do?
-
 for s = 1:length(varargin)
     [~, next, transforms{s}] = procrustes(template2', varargin{s}');
     aligned{s} = next';
