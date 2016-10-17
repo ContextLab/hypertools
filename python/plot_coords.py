@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 """
 inputs: TxD matrix of observations
 		   T-number of coords
@@ -10,34 +12,10 @@ outputs: 1-, 2-, or 3-dimensional representation of the data
 		to edit color map, change both instances of cm.plasma to cm.DesiredColorMap
 """
 
-#Add color options
-
-#may want to add ability to read pandas data frames
-#may want to add fancier plotting options
-
-#FOR TESTING##################################################
-	
-#x=np.array([[1], [2], [3], [4]]) 
-#x=np.array([[1, 11], [2, 12], [3, 13], [4, 14]])
-#x=np.array([[1, 11, 21], [2, 12, 22], [3, 13, 33], [4, 14, 44]])
-#x=np.array([[1, 11, 21, 31], [2, 12, 22, 32], [3, 13, 33, 43], [4, 14, 44, 54]])
-
-#to test with weights.mat:
-#data=sio.loadmat('weights.mat')
-#w=data['weights'][0]
-
-#check len(w)==36 (36 subjects)
-
-##############################################################
-
 ##PACKAGES##
 import numpy as np 
 import matplotlib.pyplot as plt 
 import matplotlib.cm as cm
-from matplotlib import pylab
-import matplotlib.cm as cm
-import matplotlib.colors as col
-from mpl_toolkits.mplot3d import Axes3D
 from sklearn.decomposition import PCA
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -54,64 +32,6 @@ __emails__ = ["Jeremy.R.Manning@dartmouth.edu", "kirstenkmbziman@gmail.com", "co
 def plot_coords(x, *args, **kwargs):
 	"""
 	implements plotting
-    
-    inputs: TxD matrix of observations
-               T-number of coords
-               D-dimensionality of each observation
-               *Nans treated as missing observations
-            type (specify the type of plot)
-               see http://matplotlib.org/api/axes_api.html#matplotlib.axes.Axes.plot for available options
-    outputs: 1-, 2-, or 3-dimensional representation of the data
-    """
-
-    def dispatch(x):
-        #determine how many dimensions (number of columns)
-        if x.shape[-1] == 1:
-            plot1D(x)
-        elif x.shape[-1] == 2:
-            plot2D(x)
-        elif x.shape[-1] == 3:
-            plot3D(x)
-        elif x.shape[-1] > 3:
-            if x.shape[0] == 1:
-                plot3D(np.array([0, 0, 0], ndmin=2))
-            else:
-                plot3D(reduceD(x, 3))
-
-    def plot1D(data):
-        x = np.array(np.arange(len(data)), ndmin=2).T
-        plot2D(np.hstack((x, data)))
-
-    def plot2D(data):
-        # type: (object) -> object
-        #if 2d, make a scatter
-        plt.plot(data[:,0], data[:,1], *args, **kwargs)
-
-    def plot3D(data):
-        #if 3d, make a 3d scatter
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        ax.plot(data[:,0], data[:,1], data[:,2], *args, **kwargs)
-
-    def reduceD(x, ndim):
-        #if more than 3d, reduce to 3 (PCA), then re-run
-        m = PCA(n_components=ndim, whiten=True)
-        #n_components=3--> reduce to 3 dimensions
-        m.fit(x)
-        return m.transform(x)
-		
-    dispatch(x)
-    plt.show()
-	"""
-	inputs: TxD matrix of observations
-			   T-number of coords
-			   D-dimensionality of each observation
-			   *Nans treated as missing observations
-			type (specify the type of plot)
-			   see http://matplotlib.org/api/axes_api.html#matplotlib.axes.Axes.plot for available options
-	outputs: 1-, 2-, or 3-dimensional representation of the data
-
-			to edit color map, change lines 111, 126 (cm.DesiredColMap)
 	"""
 
 	##SUB FUNCTIONS##
@@ -129,8 +49,7 @@ def plot_coords(x, *args, **kwargs):
 
 		C=max(sizes_1)
 		#find largest # of columns from all inputted arrays
-		#find the largest number of columns of all inputted arrays
-        
+
 		m=[]
 		for idx,x in enumerate(k):			
 			missing=C-x.shape[1]
@@ -190,9 +109,6 @@ def plot_coords(x, *args, **kwargs):
 		# type: (object) -> object
 		#if 2d, make a scatter
 		n=len(data)
-        #fig=plt.figure()
-		#ax=fig.add_subplot(111)
-        
 		color=iter(cm.plasma(np.linspace(0,1,n)))
 		fig, ax = plt.subplots()
 		for i in range(n):
@@ -218,11 +134,6 @@ def plot_coords(x, *args, **kwargs):
 	def reduceD(x, ndim):	
 		#if more than 3d, reduce and re-run
 		m = PCA(n_components=ndim, whiten=True)
-        
-		#if more than 3d, reduce to 3 (PCA), then re-run
-		m = PCA(n_components=ndim, whiten=True)
-		#n_components=3--> reduce to 3 dimensions
-        
 		m.fit(x)
 		return m.transform(x)
 
@@ -239,6 +150,9 @@ def plot_coords(x, *args, **kwargs):
 	if is_list(x):
 		dispatch_list(resize(x))
 		plt.show()
+
 	else:
 		dispatch(x)
 		plt.show()
+	
+
