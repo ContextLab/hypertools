@@ -272,11 +272,12 @@ def hyperalign(*args):
 
 		R=min(sizes_0)
 		#find the smallest number of rows
+
 		if max(sizes_1) < 3:
 			C=3
 		else:
 			C=max(sizes_1)
-		#find the largest number of columns
+		#find max columns; if max columns less than 3, add cols of zeros to make 3
 
 		k=np.empty((R,C), dtype=np.ndarray)
 		m=[k]*len(j[0])
