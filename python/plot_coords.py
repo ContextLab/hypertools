@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from sklearn.decomposition import PCA
 from mpl_toolkits.mplot3d import Axes3D
+import PCA as PCA
 
 ##META##
 __authors__ = ["Jeremy Manning", "Kirsten Ziman"]
@@ -78,7 +79,7 @@ def plot_coords(x, *args, **kwargs):
 		elif x.shape[-1]==3:
 			plot3D(x)
 		elif x.shape[-1]>3:
-			plot3D(reduceD(x, 3))
+			plot3D(PCA.reduce(x, 3))
 
 	def dispatch_list(x):
 		if x[0].shape[-1]==1:
@@ -88,7 +89,7 @@ def plot_coords(x, *args, **kwargs):
 		elif x[0].shape[-1]==3:
 			plot3D_list(x)
 		elif x[0].shape[-1]>3:
-			plot3D_list(reduceD_list(x, 3))
+			plot3D_list(PCA.reduce(x, 3))
 
 	def plot1D(data):
 		x=np.arange(len(data)).reshape((len(data),1))
@@ -141,20 +142,20 @@ def plot_coords(x, *args, **kwargs):
 			c=next(color)
 			ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], c=c, *args, **kwargs)
 
-	def reduceD(x, ndim):	
+#	def reduceD(x, ndim):	
 		#if more than 3d, reduce and re-run
-		m = PCA(n_components=ndim, whiten=True)
-		m.fit(x)
-		return m.transform(x)
+#		m = PCA(n_components=ndim, whiten=True)
+#		m.fit(x)
+#		return m.transform(x)
 
-	def reduceD_list(x, ndim):
-		m=PCA(n_components=ndim, whiten=True)
-		m.fit(x[0])
+#	def reduceD_list(x, ndim):
+#		m=PCA(n_components=ndim, whiten=True)
+#		m.fit(x[0])
 
-		r=[]
-		for i in x:
-			r.append(m.transform(i))
-		return r
+#		r=[]
+#		for i in x:
+#			r.append(m.transform(i))
+#		return r
 
 	##MAIN FUNCTION##
 	if is_list(x):
