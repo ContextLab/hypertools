@@ -41,23 +41,33 @@ def plot_coords(x, *args, **kwargs):
 		elif type(x[0][0])==np.int64:
 			return False
 
-	def resize(k):
-		sizes_1=np.zeros(len(k))
+	def col_match(k):
+		sizes_1=np.zeros(len(j[0]))
+		for x in range(0, len(j[0])):
+			sizes_1[x]=j[0][x].shape[1]
 
-		for x in range(0, len(k)):
-			sizes_1[x]=k[x].shape[1]
+		if len(np.unique(sizes_1)) == 1:
+			return True
+		else:
+			return False
 
-		C=max(sizes_1)
+	#def resize(k):
+	#	sizes_1=np.zeros(len(k))
+
+	#	for x in range(0, len(k)):
+	#		sizes_1[x]=k[x].shape[1]
+
+	#	C=max(sizes_1)
 		#find largest # of columns from all inputted arrays
 
-		m=[]
-		for idx,x in enumerate(k):			
-			missing=C-x.shape[1]
-			add=np.zeros((x.shape[0], missing))
-			y=np.append(x, add, axis=1)
+	#	m=[]
+	#	for idx,x in enumerate(k):			
+	#		missing=C-x.shape[1]
+	#		add=np.zeros((x.shape[0], missing))
+	#		y=np.append(x, add, axis=1)
 
-			m.append(y)
-		return m
+	#		m.append(y)
+	#	return m
 
 	def dispatch(x):
 		#determine how many dimensions (number of columns)
@@ -148,8 +158,12 @@ def plot_coords(x, *args, **kwargs):
 
 	##MAIN FUNCTION##
 	if is_list(x):
-		dispatch_list(resize(x))
-		plt.show()
+		#dispatch_list(resize(x))
+		if col_match(x):
+			dispatch_list(x)
+			plt.show()
+		else:
+			print "Inputted arrays must have the same number of columns"
 
 	else:
 		dispatch(x)

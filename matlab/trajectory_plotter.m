@@ -52,19 +52,23 @@ function[] = trajectory_plotter(varargin)
 %frame.
 assert(length(varargin) >= 2, 'Usage: trajectory_plotter([outfile], W, x1, x2, ..., xn)');
 %must have at least two input args (otherwise, error)
+%first input is the duration
 
 if ischar(varargin{1})
     %if first input arg is character string, use this as the output
     %file name and eliminate it from varargin variable
     outfile = varargin{1};
     varargin = varargin(2:end);
+    %option to autosave (if first input is charstring, use this as
+    %filename)
 else
     outfile = '';
 end
 
 windowlength = varargin{1};
 varargin = varargin(2:end);
-%in new varargin variable, use first input as windowlength
+%use first input (after filename, if string) as windowlength
+%new varargin again (to exclude windowlength from data
 
 nfeatures = cellfun(@(x)(size(x, 2)), varargin);
 %nfeatures = rows of all input args?
