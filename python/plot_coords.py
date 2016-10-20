@@ -41,10 +41,10 @@ def plot_coords(x, *args, **kwargs):
 		elif type(x[0][0])==np.int64:
 			return False
 
-	def col_match(k):
-		sizes_1=np.zeros(len(j[0]))
-		for x in range(0, len(j[0])):
-			sizes_1[x]=j[0][x].shape[1]
+	def col_match(j):
+		sizes_1=np.zeros(len(j))
+		for x in range(0, len(j)):
+			sizes_1[x]=j[x].shape[1]
 
 		if len(np.unique(sizes_1)) == 1:
 			return True
