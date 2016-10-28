@@ -21,7 +21,7 @@ __emails__ = ["Jeremy.R.Manning@dartmouth.edu", "kirstenkmbziman@gmail.com", "co
 #__license__ = ""  
 
 ##FUNCTION##
-def reduce(x, ndim):
+def reduc(x, ndim):
 
 ##SUB FUNCTIONS##
 	def is_list(x):

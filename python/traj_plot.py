@@ -8,6 +8,9 @@
 import numpy as np
 import PCA as PCA
 from scipy.interpolate import PchipInterpolator as pchip
+import plot_coords as plot
+import matplotlib.pyplot as plt 
+import matplotlib.animation as animation
 
 ##META##
 __authors__ = ["Jeremy Manning", "Kirsten Ziman"]
@@ -25,7 +28,7 @@ __emails__ = ["Jeremy.R.Manning@dartmouth.edu", "kirstenkmbziman@gmail.com", "co
 #use lazy evaluation to stream
 
 ##MAIN FUNCTION##
-def traj(x):
+def traj(x, window):
 
 	##SUB FUNCTIONS##
 	def is_list(x):
@@ -56,11 +59,18 @@ def traj(x):
 	new=np.zeros(data.shape)
 
 	if not is_list(data):
-		n=data.shape[0]
-		for col in range(0, data.shape[1]):
-			new[:col]=scipy.interpolate.pchip_interploate(np.arange(0, n, 1), data[:col], np.arange(0, n, .1))
+		#n=data.shape[0]
+		#for col in range(0, data.shape[1]):
+		#	new[:,col]=scipy.interpolate.pchip_interploate(np.arange(0, n, 1), data[:,col], np.arange(0, n, .1))
 
-			
+		chunks=len(data/w) 
+		extra=(data % w) 
+
+
+		for z in range(0, (len(data)/w))
+			plot()
+
+
 
 
 

@@ -79,7 +79,7 @@ def plot_coords(x, *args, **kwargs):
 		elif x.shape[-1]==3:
 			plot3D(x)
 		elif x.shape[-1]>3:
-			plot3D(PCA.reduce(x, 3))
+			plot3D(PCA.reduc(x, 3))
 
 	def dispatch_list(x):
 		if x[0].shape[-1]==1:
@@ -89,7 +89,7 @@ def plot_coords(x, *args, **kwargs):
 		elif x[0].shape[-1]==3:
 			plot3D_list(x)
 		elif x[0].shape[-1]>3:
-			plot3D_list(PCA.reduce(x, 3))
+			plot3D_list(PCA.reduc(x, 3))
 
 	def plot1D(data):
 		x=np.arange(len(data)).reshape((len(data),1))
