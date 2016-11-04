@@ -1,3 +1,4 @@
+hyperalign.py
 plot_coords.py
 hyper_tools.egg-info/PKG-INFO
 hyper_tools.egg-info/SOURCES.txt
