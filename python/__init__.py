@@ -1,5 +1,4 @@
 from plot_coords import plot_coords
+from hyperalign import hyperalign
 
-#uncomment lines below once they've been debugged
-#from hyperalign import hyperalign
 
