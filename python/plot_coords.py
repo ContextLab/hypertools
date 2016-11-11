@@ -14,6 +14,7 @@ outputs: 1-, 2-, or 3-dimensional representation of the data
 
 ##PACKAGES##
 import sys
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -52,7 +53,15 @@ def plot_coords(x, *args, **kwargs):
 	##PARSE COLORS##
 	if 'color' in kwargs:
 		if len(kwargs['color'])==len(x):
-			color=iter(kwargs['color'])
+			clist=[]
+			lslist=[]
+			for c in kwargs['color']:
+				clist.append(re.sub(r"[^A-Za-z]+", '', c))
+				lslist.append(re.sub(r"[^\W]+", '', c))
+				if lslist[-1]=='':
+					lslist[-1]='-'
+			color=iter(clist)
+			linestyle=iter(lslist)
 			del kwargs['color']
 		else:
 			print('Error: colors must be same length as x.')
@@ -134,7 +143,7 @@ def plot_coords(x, *args, **kwargs):
 	def plot2D(data):
 		# type: (object) -> object
 		#if 2d, make a scatter
-		plt.plot(data[:,0], data[:,1], *args, **kwargs)
+		plt.plot(data[:,0], data[:,1], c=colors, ls=linestyle *args, **kwargs)
 
 	def plot_1to2_list(data):
 		n=len(data)
@@ -142,7 +151,9 @@ def plot_coords(x, *args, **kwargs):
 		for i in range(n):
 			m=len(data[i])
 			half=m/2
-			ax.plot(data[i][0:half,0], data[i][half:m+1,0], c=c)
+			c=next(color)
+			ls=next(linestyle)
+			ax.plot(data[i][0:half,0], data[i][half:m+1,0], c=c, ls=ls)
 
 	def plot2D_list(data):
 		# type: (object) -> object
@@ -151,13 +162,14 @@ def plot_coords(x, *args, **kwargs):
 		fig, ax = plt.subplots()
 		for i in range(n):
 			c=next(color)
-			ax.plot(data[i][:,0], data[i][:,1], c=c, *args, **kwargs)
+			ls=next(linestyle)
+			ax.plot(data[i][:,0], data[i][:,1], c=c, ls=ls, *args, **kwargs)
 
 	def plot3D(data):
 		#if 3d, make a 3d scatter
 		fig = plt.figure()
 		ax = fig.add_subplot(111, projection='3d')
-		ax.plot(data[:,0], data[:,1], data[:,2], *args, **kwargs)
+		ax.plot(data[:,0], data[:,1], data[:,2], c=color, ls=linestyle, *args, **kwargs)
 
 	def plot3D_list(data):
 		#if 3d, make a 3d scatter
@@ -166,7 +178,8 @@ def plot_coords(x, *args, **kwargs):
 		ax = fig.add_subplot(111, projection='3d')
 		for i in range(n):
 			c=next(color)
-			ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], c=c, *args, **kwargs)
+			ls=next(linestyle)
+			ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], c=c, ls=ls, *args, **kwargs)
 
 	def reduceD(x, ndim):
 		#if more than 3d, reduce and re-run
