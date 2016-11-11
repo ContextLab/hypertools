@@ -13,26 +13,57 @@ outputs: 1-, 2-, or 3-dimensional representation of the data
 """
 
 ##PACKAGES##
-import numpy as np 
-import matplotlib.pyplot as plt 
+import sys
+import numpy as np
+import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from sklearn.decomposition import PCA
 from mpl_toolkits.mplot3d import Axes3D
+import seaborn as sns
 
 ##META##
 __authors__ = ["Jeremy Manning", "Kirsten Ziman"]
 __version__ = "1.0.0"
-__maintainers__ = ["Jeremy Manning", "Kirsten Ziman"] 
+__maintainers__ = ["Jeremy Manning", "Kirsten Ziman"]
 __emails__ = ["Jeremy.R.Manning@dartmouth.edu", "kirstenkmbziman@gmail.com", "contextualdynamics@gmail.com"]
 #__copyright__ = ""
 #__credits__ = [""]
-#__license__ = ""  
+#__license__ = ""
 
 ##MAIN FUNCTION##
 def plot_coords(x, *args, **kwargs):
 	"""
 	implements plotting
 	"""
+
+	##STYLING##
+	if 'style' in kwargs:
+		sns.set(style=kwargs['style'])
+		del kwargs['style']
+	else:
+		sns.set(style="whitegrid")
+
+	if 'palette' in kwargs:
+		sns.set_palette(palette=kwargs['palette'], n_colors=len(x))
+		del kwargs['palette']
+	else:
+		sns.set_palette(palette="GnBu_d", n_colors=len(x))
+
+	##PARSE COLORS##
+	if 'color' in kwargs:
+		if len(kwargs['color'])==len(x):
+			color=iter(kwargs['color'])
+			del kwargs['color']
+		else:
+			print('Error: colors must be same length as x.')
+			sys.exit(1)
+	else:
+		color=iter(sns.color_palette())
+
+	##PARSE PLOT_COORDS SPECIFIC ARGS##
+	if 'ndims' in kwargs:
+		ndims=kwargs['ndims']
+		del kwargs['ndims']
 
 	##SUB FUNCTIONS##
 	def is_list(x):
@@ -61,7 +92,7 @@ def plot_coords(x, *args, **kwargs):
 		#find largest # of columns from all inputted arrays
 
 	#	m=[]
-	#	for idx,x in enumerate(k):			
+	#	for idx,x in enumerate(k):
 	#		missing=C-x.shape[1]
 	#		add=np.zeros((x.shape[0], missing))
 	#		y=np.append(x, add, axis=1)
@@ -107,10 +138,8 @@ def plot_coords(x, *args, **kwargs):
 
 	def plot_1to2_list(data):
 		n=len(data)
-		color=iter(cm.plasma(np.linspace(0,1,n)))
 		fig, ax = plt.subplots()
 		for i in range(n):
-			c=next(color)
 			m=len(data[i])
 			half=m/2
 			ax.plot(data[i][0:half,0], data[i][half:m+1,0], c=c)
@@ -119,7 +148,6 @@ def plot_coords(x, *args, **kwargs):
 		# type: (object) -> object
 		#if 2d, make a scatter
 		n=len(data)
-		color=iter(cm.plasma(np.linspace(0,1,n)))
 		fig, ax = plt.subplots()
 		for i in range(n):
 			c=next(color)
@@ -134,14 +162,13 @@ def plot_coords(x, *args, **kwargs):
 	def plot3D_list(data):
 		#if 3d, make a 3d scatter
 		n=len(data)
-		color=iter(cm.plasma(np.linspace(0,1,n)))
-		fig = plt.figure() 
+		fig = plt.figure()
 		ax = fig.add_subplot(111, projection='3d')
 		for i in range(n):
 			c=next(color)
 			ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], c=c, *args, **kwargs)
 
-	def reduceD(x, ndim):	
+	def reduceD(x, ndim):
 		#if more than 3d, reduce and re-run
 		m = PCA(n_components=ndim, whiten=True)
 		m.fit(x)
@@ -168,5 +195,3 @@ def plot_coords(x, *args, **kwargs):
 	else:
 		dispatch(x)
 		plt.show()
-	
-
