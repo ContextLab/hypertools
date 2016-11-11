@@ -53,21 +53,24 @@ def plot_coords(x, *args, **kwargs):
 	##PARSE COLORS##
 	if 'color' in kwargs:
 		if len(kwargs['color'])==len(x):
-			clist=[]
-			lslist=[]
-			for c in kwargs['color']:
-				clist.append(re.sub(r"[^A-Za-z]+", '', c))
-				lslist.append(re.sub(r"[^\W]+", '', c))
-				if lslist[-1]=='':
-					lslist[-1]='-'
-			color=iter(clist)
-			linestyle=iter(lslist)
+			color=iter(kwargs['color'])
 			del kwargs['color']
 		else:
 			print('Error: colors must be same length as x.')
 			sys.exit(1)
 	else:
 		color=iter(sns.color_palette())
+
+	##PARSE LINESTYLES##
+	if 'linestyle' in kwargs:
+		if len(kwargs['linestyle'])==len(x):
+			color=iter(kwargs['linestyle'])
+			del kwargs['linestyle']
+		else:
+			print('Error: colors must be same length as x.')
+			sys.exit(1)
+	else:
+		linestyle = iter(['-' for i in range(len(x))])
 
 	##PARSE PLOT_COORDS SPECIFIC ARGS##
 	if 'ndims' in kwargs:
@@ -143,7 +146,7 @@ def plot_coords(x, *args, **kwargs):
 	def plot2D(data):
 		# type: (object) -> object
 		#if 2d, make a scatter
-		plt.plot(data[:,0], data[:,1], c=colors, ls=linestyle *args, **kwargs)
+		plt.plot(data[:,0], data[:,1], c=colors, *args, **kwargs)
 
 	def plot_1to2_list(data):
 		n=len(data)
