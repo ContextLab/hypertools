@@ -113,7 +113,7 @@ def plot_coords(x, *args, **kwargs):
 	for i,item in enumerate(x):
 		tmp = []
 		for ii,arg in enumerate(args):
-			if type(arg) is tuple:
+			if type(arg) is tuple or type(arg) is list:
 				tmp.append(arg[i])
 			else:
 				tmp.append(arg)
@@ -124,7 +124,7 @@ def plot_coords(x, *args, **kwargs):
 	for i,item in enumerate(x):
 		tmp = {}
 		for kwarg in kwargs:
-			if type(kwargs[kwarg]) is list:
+			if type(arg) is tuple or type(arg) is list:
 				tmp[kwarg]=kwargs[kwarg][i]
 			else:
 				tmp[kwarg]=kwargs[kwarg]
