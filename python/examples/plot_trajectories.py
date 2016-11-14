@@ -4,5 +4,5 @@ import scipy.io as sio
 import numpy as np
 
 data=sio.loadmat('../weights.mat')
-w=data['weights'][0][:2]
-coords.plot_coords(w,color=['k','b'])
+w=data['weights'][0][:3]
+coords.plot_coords((w[0],w[1]), ('ko','r*'))
