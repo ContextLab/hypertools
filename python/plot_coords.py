@@ -51,64 +51,7 @@ def plot_coords(x, *args, **kwargs):
 	else:
 		sns.set_palette(palette="GnBu_d", n_colors=len(x))
 
-	# set default colors
-	# cargs_list = [];
-	# palette = sns.color_palette()
-	# for idx,i in enumerate(x):
-	# 	cargs_list.append({
-	# 		'color': palette[idx],
-	# 	})
-
-	# colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w'];
-	# markers = ['.', 'o', 'x', '+', '*', 's', 'd', 'v', '^', '<', '>', 'p', 'h', 'square', 'diamond', 'pentagram', 'hexagram'];
-	# linestyles = ['-', ':', '-.', '--'];
-	# format_strs = list(itertools.chain(colors, markers, linestyles))
-
-	# def is_format_str(arg):
-	# 	format_str_set = []
-	# 	for color in colors:
-	# 		format_str_set.append(color)
-	# 	for marker in markers:
-	# 			format_str_set.append(marker)
-	# 	for linestyle in linestyles:
-	# 		format_str_set.append(linestyle)
-	# 	for marker in markers:
-	# 		format_str_set.append(color+marker)
-	# 		for linestyle in linestyles:
-	# 			format_str_set.append(color+linestyle)
-	# 	if arg in format_str_set:
-	# 		return True
-	# 	else:
-	# 		return False
-
-	# def parse_format_str(arg):
-	# 	cdict = {}
-	# 	if arg in colors:
-	# 		cdict['color']=arg
-	# 	if arg in markers:
-	# 		cdict['marker']=arg
-	# 		cdict['linestyle']=''
-	# 	if arg in linestyles:
-	# 		cdict['linestyle']=arg
-	# 	return cdict
-
-	#PARSE ARGS##
-	# def parse_args(args):
-	# 	for idx,arg in enumerate(args):
-	# 		if is_format_str(arg):
-	# 			parsed_format_str = parse_format_str(arg)
-	# 			del args[idx]
-	# 			for key in parsed_format_str:
-	# 				cargs_list[idx][key]=parsed_format_str[key]
-	# 		elif type(arg) is tuple:
-	# 			for idx,a in enumerate(arg):
-	# 				parsed_format_str = parse_format_str(a)
-	# 				for key in parsed_format_str:
-	# 					cargs_list[idx][key]=parsed_format_str[key]
-	#  	return tuple(x for x in args if type(x) is not tuple)
-	#
-	# args = parse_args(args)
-
+	##PARSE ARGS##
 	args_list = []
 	for i,item in enumerate(x):
 		tmp = []
@@ -129,25 +72,6 @@ def plot_coords(x, *args, **kwargs):
 			else:
 				tmp[kwarg]=kwargs[kwarg]
 		kwargs_list.append(tmp)
-
-	# ##PARSE KWARGS COLORS##
-	# if 'color' in kwargs:
-	# 	if len(kwargs['color'])==len(x):
-	# 		for idx,color in enumerate(kwargs['color']):
-	# 			cargs_list[idx]['color']=color
-	# 	else:
-	# 		print('Error: colors must be same length as x.')
-	# 		sys.exit(1)
-	#
-	# ##PARSE KWARGS LINESTYLES##
-	# if 'linestyle' in kwargs:
-	# 	if len(kwargs['linestyle'])==len(x):
-	# 		for idx,linestyle in enumerate(kwargs['linestyle']):
-	# 			cargs_list[idx]['linestyle']=linestyle
-	# 	else:
-	# 		print('Error: colors must be same length as x.')
-	# 		sys.exit(1)
-
 
 	##PARSE PLOT_COORDS SPECIFIC ARGS##
 	if 'ndims' in kwargs:
@@ -223,7 +147,7 @@ def plot_coords(x, *args, **kwargs):
 	def plot2D(data):
 		# type: (object) -> object
 		#if 2d, make a scatter
-		plt.plot(data[:,0], data[:,1], c=colors, *args, **kwargs)
+		plt.plot(data[:,0], data[:,1], *args, **kwargs)
 
 	def plot_1to2_list(data):
 		n=len(data)
@@ -231,10 +155,9 @@ def plot_coords(x, *args, **kwargs):
 		for i in range(n):
 			m=len(data[i])
 			half=m/2
-			cargs = cargs_list[i]
-			for key in cargs:
-				kwargs[key]=cargs[key]
-			ax.plot(data[i][0:half,0], data[i][half:m+1,0], *args, **kwargs)
+			iargs = args_list[i]
+			ikwargs = kwargs_list[i]
+			ax.plot(data[i][0:half,0], data[i][half:m+1,0], *iargs, **ikwargs)
 
 	def plot2D_list(data):
 		# type: (object) -> object
@@ -242,23 +165,15 @@ def plot_coords(x, *args, **kwargs):
 		n=len(data)
 		fig, ax = plt.subplots()
 		for i in range(n):
-			cargs = cargs_list[i]
-			for key in cargs:
-				kwargs[key]=cargs[key]
-			ax.plot(data[i][:,0], data[i][:,1], *args, **kwargs)
+			iargs = args_list[i]
+			ikwargs = kwargs_list[i]
+			ax.plot(data[i][:,0], data[i][:,1], *iargs, **ikwargs)
 
 	def plot3D(data):
 		#if 3d, make a 3d scatter
 		fig = plt.figure()
 		ax = fig.add_subplot(111, projection='3d')
-		ax.plot(data[:,0], data[:,1], data[:,2], c=color, ls=linestyle, *args, **kwargs)
-
-	# def get_ikwargs(i):
-	# 	cargs = cargs_list[i]
-	# 	ikwargs=kwargs.copy()
-	# 	for key in cargs:
-	# 		ikwargs[key]=cargs[key]
-	# 	return ikwargs
+		ax.plot(data[:,0], data[:,1], data[:,2], *args, **kwargs)
 
 	def plot3D_list(data):
 		#if 3d, make a 3d scatter
