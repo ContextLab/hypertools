@@ -15,6 +15,7 @@ outputs: 1-, 2-, or 3-dimensional representation of the data
 ##PACKAGES##
 import sys
 import re
+import itertools
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -50,27 +51,103 @@ def plot_coords(x, *args, **kwargs):
 	else:
 		sns.set_palette(palette="GnBu_d", n_colors=len(x))
 
-	##PARSE COLORS##
-	if 'color' in kwargs:
-		if len(kwargs['color'])==len(x):
-			color=iter(kwargs['color'])
-			del kwargs['color']
-		else:
-			print('Error: colors must be same length as x.')
-			sys.exit(1)
-	else:
-		color=iter(sns.color_palette())
+	# set default colors
+	# cargs_list = [];
+	# palette = sns.color_palette()
+	# for idx,i in enumerate(x):
+	# 	cargs_list.append({
+	# 		'color': palette[idx],
+	# 	})
 
-	##PARSE LINESTYLES##
-	if 'linestyle' in kwargs:
-		if len(kwargs['linestyle'])==len(x):
-			color=iter(kwargs['linestyle'])
-			del kwargs['linestyle']
-		else:
-			print('Error: colors must be same length as x.')
-			sys.exit(1)
-	else:
-		linestyle = iter(['-' for i in range(len(x))])
+	# colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w'];
+	# markers = ['.', 'o', 'x', '+', '*', 's', 'd', 'v', '^', '<', '>', 'p', 'h', 'square', 'diamond', 'pentagram', 'hexagram'];
+	# linestyles = ['-', ':', '-.', '--'];
+	# format_strs = list(itertools.chain(colors, markers, linestyles))
+
+	# def is_format_str(arg):
+	# 	format_str_set = []
+	# 	for color in colors:
+	# 		format_str_set.append(color)
+	# 	for marker in markers:
+	# 			format_str_set.append(marker)
+	# 	for linestyle in linestyles:
+	# 		format_str_set.append(linestyle)
+	# 	for marker in markers:
+	# 		format_str_set.append(color+marker)
+	# 		for linestyle in linestyles:
+	# 			format_str_set.append(color+linestyle)
+	# 	if arg in format_str_set:
+	# 		return True
+	# 	else:
+	# 		return False
+
+	# def parse_format_str(arg):
+	# 	cdict = {}
+	# 	if arg in colors:
+	# 		cdict['color']=arg
+	# 	if arg in markers:
+	# 		cdict['marker']=arg
+	# 		cdict['linestyle']=''
+	# 	if arg in linestyles:
+	# 		cdict['linestyle']=arg
+	# 	return cdict
+
+	#PARSE ARGS##
+	# def parse_args(args):
+	# 	for idx,arg in enumerate(args):
+	# 		if is_format_str(arg):
+	# 			parsed_format_str = parse_format_str(arg)
+	# 			del args[idx]
+	# 			for key in parsed_format_str:
+	# 				cargs_list[idx][key]=parsed_format_str[key]
+	# 		elif type(arg) is tuple:
+	# 			for idx,a in enumerate(arg):
+	# 				parsed_format_str = parse_format_str(a)
+	# 				for key in parsed_format_str:
+	# 					cargs_list[idx][key]=parsed_format_str[key]
+	#  	return tuple(x for x in args if type(x) is not tuple)
+	#
+	# args = parse_args(args)
+
+	args_list = []
+	for i,item in enumerate(x):
+		tmp = []
+		for ii,arg in enumerate(args):
+			if type(arg) is tuple:
+				tmp.append(arg[i])
+			else:
+				tmp.append(arg)
+		args_list.append(tuple(tmp))
+
+	##PARSE KWARGS##
+	kwargs_list = []
+	for i,item in enumerate(x):
+		tmp = {}
+		for kwarg in kwargs:
+			if type(kwargs[kwarg]) is list:
+				tmp[kwarg]=kwargs[kwarg][i]
+			else:
+				tmp[kwarg]=kwargs[kwarg]
+		kwargs_list.append(tmp)
+
+	# ##PARSE KWARGS COLORS##
+	# if 'color' in kwargs:
+	# 	if len(kwargs['color'])==len(x):
+	# 		for idx,color in enumerate(kwargs['color']):
+	# 			cargs_list[idx]['color']=color
+	# 	else:
+	# 		print('Error: colors must be same length as x.')
+	# 		sys.exit(1)
+	#
+	# ##PARSE KWARGS LINESTYLES##
+	# if 'linestyle' in kwargs:
+	# 	if len(kwargs['linestyle'])==len(x):
+	# 		for idx,linestyle in enumerate(kwargs['linestyle']):
+	# 			cargs_list[idx]['linestyle']=linestyle
+	# 	else:
+	# 		print('Error: colors must be same length as x.')
+	# 		sys.exit(1)
+
 
 	##PARSE PLOT_COORDS SPECIFIC ARGS##
 	if 'ndims' in kwargs:
@@ -154,9 +231,10 @@ def plot_coords(x, *args, **kwargs):
 		for i in range(n):
 			m=len(data[i])
 			half=m/2
-			c=next(color)
-			ls=next(linestyle)
-			ax.plot(data[i][0:half,0], data[i][half:m+1,0], c=c, ls=ls)
+			cargs = cargs_list[i]
+			for key in cargs:
+				kwargs[key]=cargs[key]
+			ax.plot(data[i][0:half,0], data[i][half:m+1,0], *args, **kwargs)
 
 	def plot2D_list(data):
 		# type: (object) -> object
@@ -164,9 +242,10 @@ def plot_coords(x, *args, **kwargs):
 		n=len(data)
 		fig, ax = plt.subplots()
 		for i in range(n):
-			c=next(color)
-			ls=next(linestyle)
-			ax.plot(data[i][:,0], data[i][:,1], c=c, ls=ls, *args, **kwargs)
+			cargs = cargs_list[i]
+			for key in cargs:
+				kwargs[key]=cargs[key]
+			ax.plot(data[i][:,0], data[i][:,1], *args, **kwargs)
 
 	def plot3D(data):
 		#if 3d, make a 3d scatter
@@ -174,15 +253,22 @@ def plot_coords(x, *args, **kwargs):
 		ax = fig.add_subplot(111, projection='3d')
 		ax.plot(data[:,0], data[:,1], data[:,2], c=color, ls=linestyle, *args, **kwargs)
 
+	# def get_ikwargs(i):
+	# 	cargs = cargs_list[i]
+	# 	ikwargs=kwargs.copy()
+	# 	for key in cargs:
+	# 		ikwargs[key]=cargs[key]
+	# 	return ikwargs
+
 	def plot3D_list(data):
 		#if 3d, make a 3d scatter
 		n=len(data)
 		fig = plt.figure()
 		ax = fig.add_subplot(111, projection='3d')
 		for i in range(n):
-			c=next(color)
-			ls=next(linestyle)
-			ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], c=c, ls=ls, *args, **kwargs)
+			iargs = args_list[i]
+			ikwargs = kwargs_list[i]
+			ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], *iargs, **ikwargs)
 
 	def reduceD(x, ndim):
 		#if more than 3d, reduce and re-run
