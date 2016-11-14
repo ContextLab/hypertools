@@ -57,7 +57,11 @@ def plot_coords(x, *args, **kwargs):
 		tmp = []
 		for ii,arg in enumerate(args):
 			if type(arg) is tuple or type(arg) is list:
-				tmp.append(arg[i])
+				if len(arg) == len(x):
+					tmp.append(arg[i])
+				else:
+					print('Error: arguments must be a list of the same length as x')
+					sys.exit(1)
 			else:
 				tmp.append(arg)
 		args_list.append(tuple(tmp))
@@ -67,11 +71,16 @@ def plot_coords(x, *args, **kwargs):
 	for i,item in enumerate(x):
 		tmp = {}
 		for kwarg in kwargs:
-			if type(arg) is tuple or type(arg) is list:
-				tmp[kwarg]=kwargs[kwarg][i]
+			if type(kwargs[kwarg]) is tuple or type(kwargs[kwarg]) is list:
+				if len(kwargs[kwarg]) == len(x):
+					tmp[kwarg]=kwargs[kwarg][i]
+				else:
+					print('Error: keyword arguments must be a list of the same length as x')
+					sys.exit(1)
 			else:
 				tmp[kwarg]=kwargs[kwarg]
 		kwargs_list.append(tmp)
+	print(kwargs_list)
 
 	##PARSE PLOT_COORDS SPECIFIC ARGS##
 	if 'ndims' in kwargs:
