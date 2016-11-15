@@ -49,7 +49,7 @@ def plot_coords(x, *args, **kwargs):
 		sns.set_palette(palette=kwargs['palette'], n_colors=len(x))
 		del kwargs['palette']
 	else:
-		sns.set_palette(palette="GnBu_d", n_colors=len(x))
+		sns.set_palette(palette="hls", n_colors=len(x))
 
 	##PARSE ARGS##
 	args_list = []
@@ -80,7 +80,6 @@ def plot_coords(x, *args, **kwargs):
 			else:
 				tmp[kwarg]=kwargs[kwarg]
 		kwargs_list.append(tmp)
-	print(kwargs_list)
 
 	##PARSE PLOT_COORDS SPECIFIC ARGS##
 	if 'ndims' in kwargs:
