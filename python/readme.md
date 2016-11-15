@@ -30,50 +30,18 @@ KEYWORD ARGUMENTS:
 
 EXAMPLE USES:
 
-Plot with default color palette
-        ```
-        import plot_coords as coords
-        coords.plot_coords(w)
-        ```
+Plot with default color palette: `coords.plot_coords(w)`
 
-Change color palette
-        ```
-        import plot_coords as coords
-        coords.plot_coords(w,palette='Reds')
-        ```
+Change color palette: `coords.plot_coords(w,palette='Reds')`
 
-Specify colors using unlabeled list of format strings
-        ```
-        import plot_coords as coords
-        coords.plot_coords([w[0],w[1]],['r:','b--'])
-        ```
+Specify colors using unlabeled list of format strings: `coords.plot_coords([w[0],w[1]],['r:','b--'])`
 
-Plot data as points
-        ```
-        import plot_coords as coords
-        coords.plot_coords([w[0],w[1]],'o')
-        ```
+Plot data as points: `coords.plot_coords([w[0],w[1]],'o')`
 
-Specify colors using keyword list of colors (color codes, rgb values, hex codes or a mix!)
-        ```
-        import plot_coords as coords
-        coords.plot_coords([w[0],w[1],[w[2]],color=['r', (.5,.2,.9), '#101010'])
-        ```
+Specify colors using keyword list of colors (color codes, rgb values, hex codes or a mix): `coords.plot_coords([w[0],w[1],[w[2]],color=['r', (.5,.2,.9), '#101010'])`
 
-Specify linestyles using keyword list
-        ```
-        import plot_coords as coords
-        coords.plot_coords([w[0],w[1],[w[2]],linestyle=[':','--','-'])
-        ```
+Specify linestyles using keyword list: `coords.plot_coords([w[0],w[1],[w[2]],linestyle=[':','--','-'])`
 
-Specify markers using keyword list
-        ```
-        import plot_coords as coords
-        coords.plot_coords([w[0],w[1],[w[2]],marker=['o','*','^'])
-        ```
+Specify markers using keyword list: `coords.plot_coords([w[0],w[1],[w[2]],marker=['o','*','^'])`
 
-Specify markers with format string and colors with keyword argument
-        ```
-        import plot_coords as coords
-        coords.plot_coords([w[0],w[1],[w[2]], 'o', color=['r','g','b'])
-        ```
+Specify markers with format string and colors with keyword argument: `coords.plot_coords([w[0],w[1],[w[2]], 'o', color=['r','g','b'])``
