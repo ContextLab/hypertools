@@ -5,6 +5,7 @@ pip install -e .
 (this assumes you have pip installed on your system: https://pip.pypa.io/en/stable/installing/)
 
 INPUTS:
+
         X: a T by D matrix of observations.  T is the number of coordinates
         and D is the dimensionality of each observation.  NaNs are
         treated as missing observations.
@@ -29,49 +30,49 @@ KEYWORD ARGUMENTS:
 
 EXAMPLE USES:
 
-        Plot with default color palette
+Plot with default color palette
         ```
         import plot_coords as coords
         coords.plot_coords(w)
         ```
 
-        Change color palette
+Change color palette
         ```
         import plot_coords as coords
         coords.plot_coords(w,palette='Reds')
         ```
 
-        Specify colors using unlabeled list of format strings
+Specify colors using unlabeled list of format strings
         ```
         import plot_coords as coords
         coords.plot_coords([w[0],w[1]],['r:','b--'])
         ```
 
-        Plot data as points
+Plot data as points
         ```
         import plot_coords as coords
         coords.plot_coords([w[0],w[1]],'o')
         ```
 
-        Specify colors using keyword list of colors (color codes, rgb values, hex codes or a mix!)
+Specify colors using keyword list of colors (color codes, rgb values, hex codes or a mix!)
         ```
         import plot_coords as coords
         coords.plot_coords([w[0],w[1],[w[2]],color=['r', (.5,.2,.9), '#101010'])
         ```
 
-        Specify linestyles using keyword list
+Specify linestyles using keyword list
         ```
         import plot_coords as coords
         coords.plot_coords([w[0],w[1],[w[2]],linestyle=[':','--','-'])
         ```
 
-        Specify markers using keyword list
+Specify markers using keyword list
         ```
         import plot_coords as coords
         coords.plot_coords([w[0],w[1],[w[2]],marker=['o','*','^'])
         ```
 
-        Specify markers with format string and colors with keyword argument
+Specify markers with format string and colors with keyword argument
         ```
         import plot_coords as coords
         coords.plot_coords([w[0],w[1],[w[2]], 'o', color=['r','g','b'])
