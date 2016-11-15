@@ -23,15 +23,6 @@ from sklearn.decomposition import PCA
 from mpl_toolkits.mplot3d import Axes3D
 import seaborn as sns
 
-##META##
-__authors__ = ["Jeremy Manning", "Kirsten Ziman"]
-__version__ = "1.0.0"
-__maintainers__ = ["Jeremy Manning", "Kirsten Ziman"]
-__emails__ = ["Jeremy.R.Manning@dartmouth.edu", "kirstenkmbziman@gmail.com", "contextualdynamics@gmail.com"]
-#__copyright__ = ""
-#__credits__ = [""]
-#__license__ = ""
-
 ##MAIN FUNCTION##
 def plot_coords(x, *args, **kwargs):
 	"""
