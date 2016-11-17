@@ -67,7 +67,7 @@ def traj(x, window):
 		extra=(data % w) 
 
 
-		for z in range(0, (len(data)/w))
+		for z in range(0, (len(data)/w)):
 			plot()
 
 
