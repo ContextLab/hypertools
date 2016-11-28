@@ -9,9 +9,9 @@ for idx,i in enumerate(w):
     tmp=[]
     for iidx,ii in enumerate(i):
         if iidx==0:
-            tmp.append(iidx)
+            tmp.append('Point ' + str(idx))
         else:
             tmp.append(None)
     labels.append(tmp)
 
-coords.plot_coords(w,'o',labels=labels,hover=True)
+coords.plot_coords(w,'o',labels=labels)
