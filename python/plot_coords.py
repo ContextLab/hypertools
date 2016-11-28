@@ -131,16 +131,16 @@ def plot_coords(x, *args, **kwargs):
 					label = plt.annotate(
 					labels[idx],
 					xy = (x2, y2), xytext = (-20, 20), textcoords = 'offset points', ha = 'right', va = 'bottom',
-					bbox = dict(boxstyle = 'round,pad=0.5', fc = 'gray', alpha = 0.5),
-					arrowprops = dict(arrowstyle = '-', connectionstyle = 'arc3,rad=0'))
+					bbox = dict(boxstyle = 'round,pad=0.5', fc = 'white', alpha = 0.5),
+					arrowprops = dict(arrowstyle = '-', connectionstyle = 'arc3,rad=0'),family='serif')
 					labels_and_points.append((label,x[0],x[1],x[2]))
 				elif data[0].shape[-1]==2:
 					x2, y2 = x[0], x[1]
 					label = plt.annotate(
 					labels[idx],
 					xy = (x2, y2), xytext = (-20, 20), textcoords = 'offset points', ha = 'right', va = 'bottom',
-					bbox = dict(boxstyle = 'round,pad=0.5', fc = 'gray', alpha = 0.5),
-					arrowprops = dict(arrowstyle = '-', connectionstyle = 'arc3,rad=0'))
+					bbox = dict(boxstyle = 'round,pad=0.5', fc = 'white', alpha = 0.5),
+					arrowprops = dict(arrowstyle = '-', connectionstyle = 'arc3,rad=0'),family='serif')
 					labels_and_points.append((label,x[0],x[1]))
 		fig.canvas.draw()
 
