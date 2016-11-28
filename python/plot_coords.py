@@ -52,12 +52,12 @@ def plot_coords(x, *args, **kwargs):
 		labels=kwargs['labels']
 		del kwargs['labels']
 
-	if 'hover' in kwargs:
+	if 'explore' in kwargs:
 		kwargs['picker']=True
-		del kwargs['hover']
-		hover=True
+		del kwargs['explore']
+		explore=True
 	else:
-		hover=False
+		explore=False
 
 
 	##PARSE ARGS##
@@ -122,18 +122,6 @@ def plot_coords(x, *args, **kwargs):
 						bbox = dict(boxstyle = 'round,pad=0.5', fc = 'yellow', alpha = 0.5),
 						arrowprops = dict(arrowstyle = '->', connectionstyle = 'arc3,rad=0'))
 
-	# def visualize3DData (X):
-    # """Visualize data in 3d plot with popover next to mouse position.
-	#
-    # Args:
-    #     X (np.array) - array of points, of shape (numPoints, 3)
-    # Returns:
-    #     None
-    # """
-    # fig = plt.figure(figsize = (16,10))
-    # ax = fig.add_subplot(111, projection = '3d')
-    # ax.scatter(X[:, 0], X[:, 1], X[:, 2], depthshade = False, picker = True)
-
 	def distance(point, event):
 		"""Return distance between mouse position and given data point
 
@@ -164,7 +152,39 @@ def plot_coords(x, *args, **kwargs):
 		distances = [distance (X[i, 0:3], event) for i in range(X.shape[0])]
 		return np.argmin(distances)
 
-	def annotatePlot(X, index):
+	global labels_and_points
+	labels_and_points = []
+
+	def annotate_plot(X, labels):
+		"""Create popover label in 3d chart
+
+		Args:
+			X (np.array) - array of points, of shape (numPoints, 3)
+			index (int) - index (into points array X) of item which should be printed
+		Returns:
+			None
+		"""
+		proj = ax.get_proj()
+		for idx,x in enumerate(X):
+			if labels[idx] is not None:
+				x2, y2, _ = proj3d.proj_transform(x[0], x[1], x[2], proj)
+				label = plt.annotate(
+				labels[idx],
+				xy = (x2, y2), xytext = (-20, 20), textcoords = 'offset points', ha = 'right', va = 'bottom',
+				bbox = dict(boxstyle = 'round,pad=0.5', fc = 'yellow', alpha = 0.5),
+				arrowprops = dict(arrowstyle = '-', connectionstyle = 'arc3,rad=0'))
+				labels_and_points.append((label,x[0],x[1],x[2]))
+		fig.canvas.draw()
+
+	def update_position(e):
+		proj = ax.get_proj()
+		for label, x, y, z in labels_and_points:
+			x2, y2, _ = proj3d.proj_transform(x, y, z, proj)
+			label.xy = x2,y2
+			label.update_positions(fig.canvas.renderer)
+		fig.canvas.draw()
+
+	def annotatePlotExplore(X, index, labels=False):
 		"""Create popover label in 3d chart
 
 		Args:
@@ -176,23 +196,34 @@ def plot_coords(x, *args, **kwargs):
 		# save clicked points
 		if not hasattr(annotatePlot, 'clicked'):
 			annotatePlot.clicked = []
+
 		# If we have previously displayed another label, remove it first
 		if hasattr(annotatePlot, 'label'):
 			if index not in annotatePlot.clicked:
 				annotatePlot.label.remove()
+
 		# Get data point from array of points X, at position index
 		x2, y2, _ = proj3d.proj_transform(X[index, 0], X[index, 1], X[index, 2], ax.get_proj())
+
+		if type(labels) is list:
+			label = labels[index]
+		else:
+			label = "Index " + str(index) + ": (" + "{0:.2f}, ".format(X[index, 0]) + "{0:.2f}, ".format(X[index, 1]) + "{0:.2f}".format(X[index, 2]) + ")"
+
 		annotatePlot.label = plt.annotate(
-		"Index " + str(index) + ": (" + "{0:.2f}, ".format(X[index, 0]) + "{0:.2f}, ".format(X[index, 1]) + "{0:.2f}".format(X[index, 2]) + ")",
+		label,
 		xy = (x2, y2), xytext = (-20, 20), textcoords = 'offset points', ha = 'right', va = 'bottom',
-			bbox = dict(boxstyle = 'round,pad=0.5', fc = 'yellow', alpha = 0.5),
-			arrowprops = dict(arrowstyle = '->', connectionstyle = 'arc3,rad=0'))
+		bbox = dict(boxstyle = 'round,pad=0.5', fc = 'yellow', alpha = 0.5),
+		arrowprops = dict(arrowstyle = '->', connectionstyle = 'arc3,rad=0'))
 		fig.canvas.draw()
 
 	def onMouseMotion(event):
 		"""Event that is triggered when mouse is moved. Shows text annotation over data point closest to mouse."""
 		closestIndex = calcClosestDatapoint(X, event)
-		annotatePlot (X, closestIndex)
+		if type(labels) is list:
+			annotatePlot (X, closestIndex, labels)
+		else:
+			annotatePlot (X, closestIndex)
 
 	def onMouseClick(event):
 		"""Event that is triggered when mouse is clicked. Preserves text annotation when mouse is clicked on datapoint."""
@@ -309,16 +340,23 @@ def plot_coords(x, *args, **kwargs):
 	if is_list(x):
 		if col_match(x):
 			fig,ax,X = dispatch_list(x)
-			if hover:
+			if explore:
 				X = np.vstack(X)
+				labels = list(itertools.chain(*labels))
 				fig.canvas.mpl_connect('motion_notify_event', onMouseMotion)  # on mouse motion
-				fig.canvas.mpl_connect('button_release_event', onMouseClick)  # on mouse motion
+				fig.canvas.mpl_connect('button_press_event', onMouseClick)  # on mouse click
+			elif labels:
+				X = np.vstack(X)
+				labels = list(itertools.chain(*labels))
+				annotate_plot(X,labels)
+				fig.canvas.mpl_connect('button_release_event', update_position)
 			plt.show()
 		else:
 			print "Inputted arrays must have the same number of columns"
 
 	else:
 		dispatch(x)
-		if hover:
+		if explore:
 			fig.canvas.mpl_connect('motion_notify_event', onMouseMotion)  # on mouse motion
+			fig.canvas.mpl_connect('button_release_event', onMouseClick)  # on mouse click
 		plt.show()
