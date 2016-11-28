@@ -211,10 +211,10 @@ def plot_coords(x, *args, **kwargs):
 		else:
 			annotate_plot_explore (X, closestIndex)
 
-	def onMouseClick(event,X):
-		"""Event that is triggered when mouse is clicked. Preserves text annotation when mouse is clicked on datapoint."""
-		closestIndex = calcClosestDatapoint(X, event)
-		annotate_plot_explore.clicked.append(closestIndex)
+	# def onMouseClick(event,X):
+	# 	"""Event that is triggered when mouse is clicked. Preserves text annotation when mouse is clicked on datapoint."""
+	# 	closestIndex = calcClosestDatapoint(X, event)
+	# 	annotate_plot_explore.clicked.append(closestIndex)
 
 	#def resize(k):
 	#	sizes_1=np.zeros(len(k))
@@ -334,7 +334,7 @@ def plot_coords(x, *args, **kwargs):
 			X = np.vstack(data)
 			labels = list(itertools.chain(*labels))
 			fig.canvas.mpl_connect('motion_notify_event', lambda event: onMouseMotion(event, X, labels)) # on mouse motion
-			fig.canvas.mpl_connect('button_press_event', lambda event: onMouseClick(event, X, labels))  # on mouse click
+			# fig.canvas.mpl_connect('button_press_event', lambda event: onMouseClick(event, X, labels))  # on mouse click
 		elif labels:
 			X = np.vstack(data)
 			labels = list(itertools.chain(*labels))
