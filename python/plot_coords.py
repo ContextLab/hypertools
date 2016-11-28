@@ -108,6 +108,51 @@ def plot_coords(x, *args, **kwargs):
 		else:
 			return False
 
+	##LABELS##
+	def annotate_plot(X, labels):
+		"""Create labels in 3d chart
+		Args:
+			X (np.array) - array of points, of shape (numPoints, 3)
+			labels (list) - list of labels of shape (numPoints,1)
+		Returns:
+			None
+		"""
+
+		global labels_and_points
+		labels_and_points = []
+		proj = ax.get_proj()
+		for idx,x in enumerate(X):
+			if labels[idx] is not None:
+				x2, y2, _ = proj3d.proj_transform(x[0], x[1], x[2], proj)
+				label = plt.annotate(
+				labels[idx],
+				xy = (x2, y2), xytext = (-20, 20), textcoords = 'offset points', ha = 'right', va = 'bottom',
+				bbox = dict(boxstyle = 'round,pad=0.5', fc = 'gray', alpha = 0.5),
+				arrowprops = dict(arrowstyle = '-', connectionstyle = 'arc3,rad=0'))
+				labels_and_points.append((label,x[0],x[1],x[2]))
+		fig.canvas.draw()
+
+	def update_position(e):
+		proj = ax.get_proj()
+		for label, x, y, z in labels_and_points:
+			x2, y2, _ = proj3d.proj_transform(x, y, z, proj)
+			label.xy = x2,y2
+			label.update_positions(fig.canvas.renderer)
+		fig.canvas.draw()
+
+	def add_labels(data,labels):
+		if explore:
+			X = np.vstack(data)
+			labels = list(itertools.chain(*labels))
+			fig.canvas.mpl_connect('motion_notify_event', lambda event: onMouseMotion(event, X, labels)) # on mouse motion
+			# fig.canvas.mpl_connect('button_press_event', lambda event: onMouseClick(event, X, labels))  # on mouse click
+		elif labels:
+			X = np.vstack(data)
+			labels = list(itertools.chain(*labels))
+			annotate_plot(X,labels)
+			fig.canvas.mpl_connect('button_release_event', update_position)
+
+	##EXPLORE MODE##
 	def distance(point, event):
 		"""Return distance between mouse position and given data point
 
@@ -137,38 +182,6 @@ def plot_coords(x, *args, **kwargs):
 		"""
 		distances = [distance (X[i, 0:3], event) for i in range(X.shape[0])]
 		return np.argmin(distances)
-
-	global labels_and_points
-	labels_and_points = []
-
-	def annotate_plot(X, labels):
-		"""Create popover label in 3d chart
-
-		Args:
-			X (np.array) - array of points, of shape (numPoints, 3)
-			index (int) - index (into points array X) of item which should be printed
-		Returns:
-			None
-		"""
-		proj = ax.get_proj()
-		for idx,x in enumerate(X):
-			if labels[idx] is not None:
-				x2, y2, _ = proj3d.proj_transform(x[0], x[1], x[2], proj)
-				label = plt.annotate(
-				labels[idx],
-				xy = (x2, y2), xytext = (-20, 20), textcoords = 'offset points', ha = 'right', va = 'bottom',
-				bbox = dict(boxstyle = 'round,pad=0.5', fc = 'gray', alpha = 0.5),
-				arrowprops = dict(arrowstyle = '-', connectionstyle = 'arc3,rad=0'))
-				labels_and_points.append((label,x[0],x[1],x[2]))
-		fig.canvas.draw()
-
-	def update_position(e):
-		proj = ax.get_proj()
-		for label, x, y, z in labels_and_points:
-			x2, y2, _ = proj3d.proj_transform(x, y, z, proj)
-			label.xy = x2,y2
-			label.update_positions(fig.canvas.renderer)
-		fig.canvas.draw()
 
 	def annotate_plot_explore(X, index, labels=False):
 		"""Create popover label in 3d chart
@@ -328,18 +341,6 @@ def plot_coords(x, *args, **kwargs):
 		for i in x:
 			r.append(m.transform(i))
 		return r
-
-	def add_labels(data,labels):
-		if explore:
-			X = np.vstack(data)
-			labels = list(itertools.chain(*labels))
-			fig.canvas.mpl_connect('motion_notify_event', lambda event: onMouseMotion(event, X, labels)) # on mouse motion
-			# fig.canvas.mpl_connect('button_press_event', lambda event: onMouseClick(event, X, labels))  # on mouse click
-		elif labels:
-			X = np.vstack(data)
-			labels = list(itertools.chain(*labels))
-			annotate_plot(X,labels)
-			fig.canvas.mpl_connect('button_release_event', update_position)
 
 	##MAIN FUNCTION##
 	if is_list(x):
