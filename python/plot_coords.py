@@ -51,6 +51,8 @@ def plot_coords(x, *args, **kwargs):
 	if 'labels' in kwargs:
 		labels=kwargs['labels']
 		del kwargs['labels']
+	else:
+		labels=False
 
 	if 'explore' in kwargs:
 		kwargs['picker']=True
@@ -58,7 +60,6 @@ def plot_coords(x, *args, **kwargs):
 		explore=True
 	else:
 		explore=False
-
 
 	##PARSE ARGS##
 	args_list = []
@@ -106,21 +107,6 @@ def plot_coords(x, *args, **kwargs):
 			return True
 		else:
 			return False
-
-	def add_labels(ax,data,labels,dims):
-		# check if labels and data are the same dims, else throw error
-		# if data.shape!=labels.shape:
-		# 	raise ValueError('Labels must be same shape as data.')
-		if dims==3:
-			for idx,point in enumerate(data):
-				if labels[idx]!=None:
-					x2, y2, _ = proj3d.proj_transform(point[0],point[1],point[2], ax.get_proj())
-					label = plt.annotate(
-						labels[idx],
-						xy = (x2, y2), xytext = (-20, 20),
-						textcoords = 'offset points', ha = 'right', va = 'bottom',
-						bbox = dict(boxstyle = 'round,pad=0.5', fc = 'yellow', alpha = 0.5),
-						arrowprops = dict(arrowstyle = '->', connectionstyle = 'arc3,rad=0'))
 
 	def distance(point, event):
 		"""Return distance between mouse position and given data point
@@ -171,7 +157,7 @@ def plot_coords(x, *args, **kwargs):
 				label = plt.annotate(
 				labels[idx],
 				xy = (x2, y2), xytext = (-20, 20), textcoords = 'offset points', ha = 'right', va = 'bottom',
-				bbox = dict(boxstyle = 'round,pad=0.5', fc = 'yellow', alpha = 0.5),
+				bbox = dict(boxstyle = 'round,pad=0.5', fc = 'gray', alpha = 0.5),
 				arrowprops = dict(arrowstyle = '-', connectionstyle = 'arc3,rad=0'))
 				labels_and_points.append((label,x[0],x[1],x[2]))
 		fig.canvas.draw()
@@ -184,7 +170,7 @@ def plot_coords(x, *args, **kwargs):
 			label.update_positions(fig.canvas.renderer)
 		fig.canvas.draw()
 
-	def annotatePlotExplore(X, index, labels=False):
+	def annotate_plot_explore(X, index, labels=False):
 		"""Create popover label in 3d chart
 
 		Args:
@@ -194,13 +180,13 @@ def plot_coords(x, *args, **kwargs):
 			None
 		"""
 		# save clicked points
-		if not hasattr(annotatePlot, 'clicked'):
-			annotatePlot.clicked = []
+		if not hasattr(annotate_plot_explore, 'clicked'):
+			annotate_plot_explore.clicked = []
 
 		# If we have previously displayed another label, remove it first
-		if hasattr(annotatePlot, 'label'):
-			if index not in annotatePlot.clicked:
-				annotatePlot.label.remove()
+		if hasattr(annotate_plot_explore, 'label'):
+			if index not in annotate_plot_explore.clicked:
+				annotate_plot_explore.label.remove()
 
 		# Get data point from array of points X, at position index
 		x2, y2, _ = proj3d.proj_transform(X[index, 0], X[index, 1], X[index, 2], ax.get_proj())
@@ -210,7 +196,7 @@ def plot_coords(x, *args, **kwargs):
 		else:
 			label = "Index " + str(index) + ": (" + "{0:.2f}, ".format(X[index, 0]) + "{0:.2f}, ".format(X[index, 1]) + "{0:.2f}".format(X[index, 2]) + ")"
 
-		annotatePlot.label = plt.annotate(
+		annotate_plot_explore.label = plt.annotate(
 		label,
 		xy = (x2, y2), xytext = (-20, 20), textcoords = 'offset points', ha = 'right', va = 'bottom',
 		bbox = dict(boxstyle = 'round,pad=0.5', fc = 'yellow', alpha = 0.5),
@@ -228,7 +214,7 @@ def plot_coords(x, *args, **kwargs):
 	def onMouseClick(event):
 		"""Event that is triggered when mouse is clicked. Preserves text annotation when mouse is clicked on datapoint."""
 		closestIndex = calcClosestDatapoint(X, event)
-		annotatePlot.clicked.append(closestIndex)
+		annotate_plot_explore.clicked.append(closestIndex)
 
 	#def resize(k):
 	#	sizes_1=np.zeros(len(k))
@@ -251,38 +237,42 @@ def plot_coords(x, *args, **kwargs):
 	def dispatch(x):
 		#determine how many dimensions (number of columns)
 		if x.shape[-1]==1:
-			plot1D(x)
+			return plot1D(x)
 		elif x.shape[-1]==2:
-			plot2D(x)
+			return plot2D(x)
 		elif x.shape[-1]==3:
-			plot3D(x)
+			return plot3D(x)
 		elif x.shape[-1]>3:
-			plot3D(reduceD(x, 3))
+			return plot3D(reduceD(x, 3))
 
 	def dispatch_list(x):
 		if x[0].shape[-1]==1:
-			plot1D_list(x)
+			return plot1D_list(x)
 		elif x[0].shape[-1]==2:
-			plot2D_list(x)
+			return plot2D_list(x)
 		elif x[0].shape[-1]==3:
 			return plot3D_list(x)
 		elif x[0].shape[-1]>3:
 			return plot3D_list(reduceD_list(x, 3))
 
 	def plot1D(data):
+		fig, ax = plt.subplots()
 		x=np.arange(len(data)).reshape((len(data),1))
 		plot2D(np.hstack((x, data)))
+		return fig, ax, data
 
 	def plot1D_list(data):
+		fig, ax = plt.subplots()
 		x=[]
 		for i in range(0, len(data)):
 			x.append(np.arange(len(data[i])).reshape(len(data[i]),1))
 		plot_1to2_list(np.hstack((x, data)))
+		return fig, ax, data
 
 	def plot2D(data):
-		# type: (object) -> object
-		#if 2d, make a scatter
+		fig, ax = plt.subplots()
 		plt.plot(data[:,0], data[:,1], *args, **kwargs)
+		return fig, ax, data
 
 	def plot_1to2_list(data):
 		n=len(data)
@@ -293,6 +283,7 @@ def plot_coords(x, *args, **kwargs):
 			iargs = args_list[i]
 			ikwargs = kwargs_list[i]
 			ax.plot(data[i][0:half,0], data[i][half:m+1,0], *iargs, **ikwargs)
+		return fig, ax, data
 
 	def plot2D_list(data):
 		# type: (object) -> object
@@ -303,12 +294,14 @@ def plot_coords(x, *args, **kwargs):
 			iargs = args_list[i]
 			ikwargs = kwargs_list[i]
 			ax.plot(data[i][:,0], data[i][:,1], *iargs, **ikwargs)
+		return fig, ax, data
 
 	def plot3D(data):
 		#if 3d, make a 3d scatter
 		fig = plt.figure()
 		ax = fig.add_subplot(111, projection='3d')
 		ax.plot(data[:,0], data[:,1], data[:,2], *args, **kwargs)
+		return fig, ax, data
 
 	def plot3D_list(data):
 		#if 3d, make a 3d scatter
@@ -319,7 +312,7 @@ def plot_coords(x, *args, **kwargs):
 			iargs = args_list[i]
 			ikwargs = kwargs_list[i]
 			ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], *iargs, **ikwargs)
-		return fig,ax,data
+		return fig, ax, data
 
 	def reduceD(x, ndim):
 		#if more than 3d, reduce and re-run
@@ -336,27 +329,27 @@ def plot_coords(x, *args, **kwargs):
 			r.append(m.transform(i))
 		return r
 
+	def add_labels(data,labels):
+		if explore:
+			X = np.vstack(data)
+			labels = list(itertools.chain(*labels))
+			fig.canvas.mpl_connect('motion_notify_event', onMouseMotion)  # on mouse motion
+			fig.canvas.mpl_connect('button_press_event', onMouseClick)  # on mouse click
+		elif labels:
+			X = np.vstack(data)
+			labels = list(itertools.chain(*labels))
+			annotate_plot(X,labels)
+			fig.canvas.mpl_connect('button_release_event', update_position)
+
 	##MAIN FUNCTION##
 	if is_list(x):
 		if col_match(x):
-			fig,ax,X = dispatch_list(x)
-			if explore:
-				X = np.vstack(X)
-				labels = list(itertools.chain(*labels))
-				fig.canvas.mpl_connect('motion_notify_event', onMouseMotion)  # on mouse motion
-				fig.canvas.mpl_connect('button_press_event', onMouseClick)  # on mouse click
-			elif labels:
-				X = np.vstack(X)
-				labels = list(itertools.chain(*labels))
-				annotate_plot(X,labels)
-				fig.canvas.mpl_connect('button_release_event', update_position)
+			fig,ax,data = dispatch_list(x)
+			add_labels(data,labels)
 			plt.show()
 		else:
 			print "Inputted arrays must have the same number of columns"
-
 	else:
-		dispatch(x)
-		if explore:
-			fig.canvas.mpl_connect('motion_notify_event', onMouseMotion)  # on mouse motion
-			fig.canvas.mpl_connect('button_release_event', onMouseClick)  # on mouse click
+		fig,ax,data = dispatch(x)
+		add_labels(data,labels)
 		plt.show()
