@@ -120,16 +120,28 @@ def plot_coords(x, *args, **kwargs):
 
 		global labels_and_points
 		labels_and_points = []
-		proj = ax.get_proj()
+
+		if data[0].shape[-1]>2:
+			proj = ax.get_proj()
+
 		for idx,x in enumerate(data):
 			if labels[idx] is not None:
-				x2, y2, _ = proj3d.proj_transform(x[0], x[1], x[2], proj)
-				label = plt.annotate(
-				labels[idx],
-				xy = (x2, y2), xytext = (-20, 20), textcoords = 'offset points', ha = 'right', va = 'bottom',
-				bbox = dict(boxstyle = 'round,pad=0.5', fc = 'gray', alpha = 0.5),
-				arrowprops = dict(arrowstyle = '-', connectionstyle = 'arc3,rad=0'))
-				labels_and_points.append((label,x[0],x[1],x[2]))
+				if data[0].shape[-1]>2:
+					x2, y2, _ = proj3d.proj_transform(x[0], x[1], x[2], proj)
+					label = plt.annotate(
+					labels[idx],
+					xy = (x2, y2), xytext = (-20, 20), textcoords = 'offset points', ha = 'right', va = 'bottom',
+					bbox = dict(boxstyle = 'round,pad=0.5', fc = 'gray', alpha = 0.5),
+					arrowprops = dict(arrowstyle = '-', connectionstyle = 'arc3,rad=0'))
+					labels_and_points.append((label,x[0],x[1],x[2]))
+				elif data[0].shape[-1]==2:
+					x2, y2 = x[0], x[1]
+					label = plt.annotate(
+					labels[idx],
+					xy = (x2, y2), xytext = (-20, 20), textcoords = 'offset points', ha = 'right', va = 'bottom',
+					bbox = dict(boxstyle = 'round,pad=0.5', fc = 'gray', alpha = 0.5),
+					arrowprops = dict(arrowstyle = '-', connectionstyle = 'arc3,rad=0'))
+					labels_and_points.append((label,x[0],x[1]))
 		fig.canvas.draw()
 
 	def update_position(e):
