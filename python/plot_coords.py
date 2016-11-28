@@ -109,7 +109,7 @@ def plot_coords(x, *args, **kwargs):
 			return False
 
 	##LABELS##
-	def annotate_plot(X, labels):
+	def annotate_plot(data, labels):
 		"""Create labels in 3d chart
 		Args:
 			X (np.array) - array of points, of shape (numPoints, 3)
@@ -121,7 +121,7 @@ def plot_coords(x, *args, **kwargs):
 		global labels_and_points
 		labels_and_points = []
 		proj = ax.get_proj()
-		for idx,x in enumerate(X):
+		for idx,x in enumerate(data):
 			if labels[idx] is not None:
 				x2, y2, _ = proj3d.proj_transform(x[0], x[1], x[2], proj)
 				label = plt.annotate(
@@ -133,6 +133,13 @@ def plot_coords(x, *args, **kwargs):
 		fig.canvas.draw()
 
 	def update_position(e):
+		"""Update label positions in 3d chart
+		Args:
+			e (event) - event handle to update on
+		Returns:
+			None
+		"""
+
 		proj = ax.get_proj()
 		for label, x, y, z in labels_and_points:
 			x2, y2, _ = proj3d.proj_transform(x, y, z, proj)
@@ -140,12 +147,25 @@ def plot_coords(x, *args, **kwargs):
 			label.update_positions(fig.canvas.renderer)
 		fig.canvas.draw()
 
-	def add_labels(data,labels):
+	def add_labels(data,labels=False):
+		"""Add labels to graph if available
+		Args:
+			data (np.ndarray) - Array containing the data points
+			labels (list) - List containing labels
+		Returns:
+			None
+		"""
+		# if explore mode is activated, implement the on hover behavior
 		if explore:
 			X = np.vstack(data)
-			labels = list(itertools.chain(*labels))
-			fig.canvas.mpl_connect('motion_notify_event', lambda event: onMouseMotion(event, X, labels)) # on mouse motion
-			# fig.canvas.mpl_connect('button_press_event', lambda event: onMouseClick(event, X, labels))  # on mouse click
+			if labels:
+				labels = list(itertools.chain(*labels))
+				fig.canvas.mpl_connect('motion_notify_event', lambda event: onMouseMotion(event, X, labels)) # on mouse motion
+				# fig.canvas.mpl_connect('button_press_event', lambda event: onMouseClick(event, X, labels))  # on mouse click
+			else:
+				fig.canvas.mpl_connect('motion_notify_event', lambda event: onMouseMotion(event, X)) # on mouse motion
+				# fig.canvas.mpl_connect('button_press_event', lambda event: onMouseClick(event, X, labels))  # on mouse click
+
 		elif labels:
 			X = np.vstack(data)
 			labels = list(itertools.chain(*labels))
@@ -216,7 +236,7 @@ def plot_coords(x, *args, **kwargs):
 		arrowprops = dict(arrowstyle = '->', connectionstyle = 'arc3,rad=0'))
 		fig.canvas.draw()
 
-	def onMouseMotion(event,X,labels):
+	def onMouseMotion(event,X,labels=False):
 		"""Event that is triggered when mouse is moved. Shows text annotation over data point closest to mouse."""
 		closestIndex = calcClosestDatapoint(X, event)
 		if type(labels) is list:
