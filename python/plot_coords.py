@@ -159,7 +159,8 @@ def plot_coords(x, *args, **kwargs):
 		if explore:
 			X = np.vstack(data)
 			if labels:
-				labels = list(itertools.chain(*labels))
+				if any(isinstance(el, list) for el in labels):
+					labels = list(itertools.chain(*labels))
 				fig.canvas.mpl_connect('motion_notify_event', lambda event: onMouseMotion(event, X, labels)) # on mouse motion
 				# fig.canvas.mpl_connect('button_press_event', lambda event: onMouseClick(event, X, labels))  # on mouse click
 			else:
@@ -168,7 +169,8 @@ def plot_coords(x, *args, **kwargs):
 
 		elif labels:
 			X = np.vstack(data)
-			labels = list(itertools.chain(*labels))
+			if any(isinstance(el, list) for el in labels):
+				labels = list(itertools.chain(*labels))
 			annotate_plot(X,labels)
 			fig.canvas.mpl_connect('button_release_event', update_position)
 
