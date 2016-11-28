@@ -51,7 +51,8 @@ Specify markers using keyword list: `coords.plot_coords([w[0],w[1],[w[2]],marker
 
 Specify markers with format string and colors with keyword argument: `coords.plot_coords([w[0],w[1],[w[2]], 'o', color=['r','g','b'])``
 
-Specify labels: ```
+Specify labels:
+```
 # Label first point of each list
 labels=[]
 for idx,i in enumerate(w):
