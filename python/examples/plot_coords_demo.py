@@ -1,8 +1,9 @@
 import plot_coords as coords
 import scipy.io as sio
+import numpy as np
 
 data=sio.loadmat('examples/weights.mat')
-w=data['weights'][0][:3]
+w=data['weights'][0][0:3]
 
 labels=[]
 for idx,i in enumerate(w):
