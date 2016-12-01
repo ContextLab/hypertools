@@ -61,6 +61,21 @@ def plot_coords(x, *args, **kwargs):
 	else:
 		explore=False
 
+	if 'point_colors' in kwargs:
+		point_colors=kwargs['point_colors']
+		del kwargs['point_colors']
+
+		if any(isinstance(el, list) for el in point_colors):
+			point_colors = list(itertools.chain(*point_colors))
+		categories = list(set(point_colors))
+
+		x_stacked = np.vstack(x)
+
+		x_reshaped = [[] for i in categories]
+		for idx,point in enumerate(point_colors):
+			x_reshaped[categories.index(point)].append(x_stacked[idx])
+		x = np.array([np.array(i) for i in x_reshaped])
+
 	##PARSE ARGS##
 	args_list = []
 	for i,item in enumerate(x):
