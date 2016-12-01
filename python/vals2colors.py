@@ -6,6 +6,7 @@ def vals2colors(vals,cmap='husl',res=100):
 	Args:
 	values (list or list of lists) - list of values to map to colors
 	cmap (str) - color map (default is 'husl')
+	res (int) - resolution of the color map (default: 100)
 	Returns:
 	list of rgb tuples
 	"""
