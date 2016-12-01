@@ -168,9 +168,9 @@ def plot_coords(x, *args, **kwargs):
 		Returns:
 			None
 		"""
+		
 		for label in labels_and_points:
 			label[0]._visible=False
-
 
 	def add_labels(data,labels=False):
 		"""Add labels to graph if available
