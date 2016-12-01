@@ -67,8 +67,8 @@ def plot_coords(x, *args, **kwargs):
 		point_colors=kwargs['point_colors']
 		del kwargs['point_colors']
 
-		warnings.warn("Using point_colors, color keyword will be ignored.")
 		if 'color' in kwargs:
+			warnings.warn("Using point_colors, color keyword will be ignored.")
 			del kwargs['color']
 
 		# if list of lists, unpack
