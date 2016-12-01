@@ -22,6 +22,8 @@ KEYWORD ARGUMENTS:
 
         color (list): A list of colors for each line to be plotted. Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes. If defined, overrides palette. See http://matplotlib.org/examples/color/named_colors.html for list of named colors. Note: must be the same length as X.
 
+        point_colors (list of str, floats or ints): A list of colors for each point. Must be dimensionality of data (X). If the data type is numerical, the values will be mapped to rgb values in the specified palette.  If the data type is strings, the points will be labeled categorically.
+
         linestyle (list): a list of line styles
 
         marker (list): a list of marker types
@@ -67,4 +69,17 @@ for idx,i in enumerate(w):
 coords.plot_coords(w, 'o', labels=labels)
 ```
 
-Turn on explore mode: `coords.plot_coords(w, 'o', explore=True)`
+Specify point_colors:
+```
+# Label first point of each list
+point_colors=[]
+for idx,i in enumerate(w):
+    tmp=[]
+    for iidx,ii in enumerate(i):
+            tmp.append(np.random.rand())
+    point_colors.append(tmp)
+
+coords.plot_coords(w, 'o', point_colors=point_colors)
+```
+
+Turn on explore mode (experimental): `coords.plot_coords(w, 'o', explore=True)`
