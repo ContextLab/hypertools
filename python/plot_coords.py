@@ -148,7 +148,7 @@ def plot_coords(x, *args, **kwargs):
 	def update_position(e):
 		"""Update label positions in 3d chart
 		Args:
-			e (event) - event handle to update on
+			e (mouse event) - event handle to update on
 		Returns:
 			None
 		"""
@@ -164,7 +164,7 @@ def plot_coords(x, *args, **kwargs):
 	def hide_labels(e):
 		"""Hides labels on button press
 		Args:
-			e (event) - event handle to update on
+			e (mouse event) - event handle to update on
 		Returns:
 			None
 		"""
@@ -205,10 +205,10 @@ def plot_coords(x, *args, **kwargs):
 		"""Return distance between mouse position and given data point
 
 		Args:
-			point (np.array): np.array of shape (3,), with x,y,z in data coords
-			event (MouseEvent): mouse event (which contains mouse position in .x and .xdata)
+			point (np.array) -  np.array of shape (3,), with x,y,z in data coords
+			event (MouseEvent) - mouse event (which contains mouse position in .x and .xdata)
 		Returns:
-			distance (np.float64): distance (in screen coords) between mouse pos and data point
+			distance (np.float64) - distance (in screen coords) between mouse pos and data point
 		"""
 		assert point.shape == (3,), "distance: point.shape is wrong: %s, must be (3,)" % point.shape
 
@@ -228,6 +228,7 @@ def plot_coords(x, *args, **kwargs):
 		Returns:
 			smallestIndex (int) - the index (into the array of points X) of the element closest to the mouse position
 		"""
+
 		distances = [distance (X[i, 0:3], event) for i in range(X.shape[0])]
 		return np.argmin(distances)
 
@@ -237,9 +238,11 @@ def plot_coords(x, *args, **kwargs):
 		Args:
 			X (np.array) - array of points, of shape (numPoints, 3)
 			index (int) - index (into points array X) of item which should be printed
+			labels (list or False) - list of data point labels (default is False)
 		Returns:
 			None
 		"""
+
 		# save clicked points
 		if not hasattr(annotate_plot_explore, 'clicked'):
 			annotate_plot_explore.clicked = []
@@ -269,11 +272,11 @@ def plot_coords(x, *args, **kwargs):
 		Args:
 			event (event) - event triggered when the mous is moved
 			X (np.ndarray) - coordinates by datapoints matrix
-			labels (list or bool) - list of data labels (default is False)
+			labels (list or False) - list of data labels (default is False)
 		Returns:
 			None
 		"""
-		
+
 		closestIndex = calcClosestDatapoint(X, event)
 		if type(labels) is list:
 			annotate_plot_explore (X, closestIndex, labels)
