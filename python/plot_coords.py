@@ -14,6 +14,7 @@ outputs: 1-, 2-, or 3-dimensional representation of the data
 
 ##PACKAGES##
 import sys
+import warnings
 import re
 import itertools
 import numpy as np
@@ -65,6 +66,10 @@ def plot_coords(x, *args, **kwargs):
 	if 'point_colors' in kwargs:
 		point_colors=kwargs['point_colors']
 		del kwargs['point_colors']
+
+		warnings.warn("Using point_colors, color keyword will be ignored.")
+		if 'color' in kwargs:
+			del kwargs['color']
 
 		# if list of lists, unpack
 		if any(isinstance(el, list) for el in point_colors):
