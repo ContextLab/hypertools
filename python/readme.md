@@ -18,15 +18,20 @@ ARGUMENTS:
 
 KEYWORD ARGUMENTS:
 
-        palette: A matplotlib or seaborn color palette
+        palette (string): A matplotlib or seaborn color palette
 
-        color: A list of colors for each line to be plotted. Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes. If defined, overrides palette. See http://matplotlib.org/examples/color/named_colors.html for list of named colors. Note: must be the same length as X.
+        color (list): A list of colors for each line to be plotted. Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes. If defined, overrides palette. See http://matplotlib.org/examples/color/named_colors.html for list of named colors. Note: must be the same length as X.
 
-        linestyle: a list of line styles
+        linestyle (list): a list of line styles
 
-        marker: a list of marker types
+        marker (list): a list of marker types
 
         See matplotlib API for more styling options
+
+        labels (list): A list of labels for each point. Must be dimensionality of data (X). If no label is wanted for a particular point, input `None`
+
+        explore (bool): (experimental feature) Displays user defined labels or PCA coordinates on hover. When a point is clicked, the label will remain on the plot (WIP). To use, set `explore=True`.
+
 
 EXAMPLE USES:
 
@@ -45,3 +50,21 @@ Specify linestyles using keyword list: `coords.plot_coords([w[0],w[1],[w[2]],lin
 Specify markers using keyword list: `coords.plot_coords([w[0],w[1],[w[2]],marker=['o','*','^'])`
 
 Specify markers with format string and colors with keyword argument: `coords.plot_coords([w[0],w[1],[w[2]], 'o', color=['r','g','b'])``
+
+Specify labels:
+```
+# Label first point of each list
+labels=[]
+for idx,i in enumerate(w):
+    tmp=[]
+    for iidx,ii in enumerate(i):
+        if iidx==0:
+            tmp.append('Point ' + str(idx))
+        else:
+            tmp.append(None)
+    labels.append(tmp)
+
+coords.plot_coords(w, 'o', labels=labels)
+```
+
+Turn on explore mode: `coords.plot_coords(w, 'o', explore=True)`
