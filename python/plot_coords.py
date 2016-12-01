@@ -141,6 +141,7 @@ def plot_coords(x, *args, **kwargs):
 					xy = (x2, y2), xytext = (-20, 20), textcoords = 'offset points', ha = 'right', va = 'bottom',
 					bbox = dict(boxstyle = 'round,pad=0.5', fc = 'white', alpha = 0.5),
 					arrowprops = dict(arrowstyle = '-', connectionstyle = 'arc3,rad=0'),family='serif')
+					label.draggable()
 					labels_and_points.append((label,x[0],x[1]))
 		fig.canvas.draw()
 
@@ -157,7 +158,19 @@ def plot_coords(x, *args, **kwargs):
 			x2, y2, _ = proj3d.proj_transform(x, y, z, proj)
 			label.xy = x2,y2
 			label.update_positions(fig.canvas.renderer)
+			label._visible=True
 		fig.canvas.draw()
+
+	def hide_labels(e):
+		"""Hides labels on button press
+		Args:
+			e (event) - event handle to update on
+		Returns:
+			None
+		"""
+		for label in labels_and_points:
+			label[0]._visible=False
+
 
 	def add_labels(data,labels=False):
 		"""Add labels to graph if available
@@ -184,6 +197,7 @@ def plot_coords(x, *args, **kwargs):
 			if any(isinstance(el, list) for el in labels):
 				labels = list(itertools.chain(*labels))
 			annotate_plot(X,labels)
+			fig.canvas.mpl_connect('button_press_event', hide_labels)
 			fig.canvas.mpl_connect('button_release_event', update_position)
 
 	##EXPLORE MODE##
