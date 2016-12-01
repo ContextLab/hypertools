@@ -23,6 +23,7 @@ from sklearn.decomposition import PCA
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d import proj3d
 import seaborn as sns
+from vals2colors import vals2colors
 
 ##MAIN FUNCTION##
 def plot_coords(x, *args, **kwargs):
@@ -65,8 +66,14 @@ def plot_coords(x, *args, **kwargs):
 		point_colors=kwargs['point_colors']
 		del kwargs['point_colors']
 
+		# if list of lists, unpack
 		if any(isinstance(el, list) for el in point_colors):
 			point_colors = list(itertools.chain(*point_colors))
+
+		# if all of the elements are numbers, map them to colors
+		if all(isinstance(el, int) or isinstance(el, float) for el in point_colors):
+			point_colors = vals2colors(point_colors)
+
 		categories = list(set(point_colors))
 
 		x_stacked = np.vstack(x)
@@ -74,7 +81,8 @@ def plot_coords(x, *args, **kwargs):
 		x_reshaped = [[] for i in categories]
 		for idx,point in enumerate(point_colors):
 			x_reshaped[categories.index(point)].append(x_stacked[idx])
-		x = np.array([np.array(i) for i in x_reshaped])
+		x = np.array([i for i in x_reshaped])
+		kwargs['color'] = categories
 
 	##PARSE ARGS##
 	args_list = []
