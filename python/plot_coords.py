@@ -168,7 +168,7 @@ def plot_coords(x, *args, **kwargs):
 		Returns:
 			None
 		"""
-		
+
 		for label in labels_and_points:
 			label[0]._visible=False
 
@@ -265,7 +265,15 @@ def plot_coords(x, *args, **kwargs):
 		fig.canvas.draw()
 
 	def onMouseMotion(event,X,labels=False):
-		"""Event that is triggered when mouse is moved. Shows text annotation over data point closest to mouse."""
+		"""Event that is triggered when mouse is moved. Shows text annotation over data point closest to mouse
+		Args:
+			event (event) - event triggered when the mous is moved
+			X (np.ndarray) - coordinates by datapoints matrix
+			labels (list or bool) - list of data labels (default is False)
+		Returns:
+			None
+		"""
+		
 		closestIndex = calcClosestDatapoint(X, event)
 		if type(labels) is list:
 			annotate_plot_explore (X, closestIndex, labels)
