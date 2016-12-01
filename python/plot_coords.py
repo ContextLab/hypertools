@@ -192,7 +192,7 @@ def plot_coords(x, *args, **kwargs):
 
 	def reduceD_list(x, ndim):
 		m=PCA(n_components=ndim, whiten=True)
-		m.fit(x[0])
+		m.fit(np.vstack(x))
 
 		r=[]
 		for i in x:
