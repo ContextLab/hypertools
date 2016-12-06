@@ -86,8 +86,8 @@ def plot_coords(x, *args, **kwargs):
 		x_reshaped = [[] for i in categories]
 		for idx,point in enumerate(point_colors):
 			x_reshaped[categories.index(point)].append(x_stacked[idx])
-		x = np.array([i for i in x_reshaped])
-		kwargs['color'] = categories
+		x = np.array([np.array(i) for i in x_reshaped])
+		# kwargs['color'] = categories
 
 	##PARSE ARGS##
 	args_list = []
@@ -441,3 +441,4 @@ def plot_coords(x, *args, **kwargs):
 		fig,ax,data = dispatch(x)
 		add_labels(data,labels)
 		plt.show()
+	return plt,fig,ax
