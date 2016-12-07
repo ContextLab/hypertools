@@ -32,30 +32,19 @@ def plot_coords(x, *args, **kwargs):
 	implements plotting
 	"""
 
-	##STYLING##
-	if 'style' in kwargs:
-		sns.set(style=kwargs['style'])
-		del kwargs['style']
-	else:
-		sns.set(style="whitegrid")
-
-	if 'palette' in kwargs:
-		sns.set_palette(palette=kwargs['palette'], n_colors=len(x))
-		del kwargs['palette']
-	else:
-		sns.set_palette(palette="hls", n_colors=len(x))
-
-	##PARSE PLOT_COORDS SPECIFIC ARGS##
+	# handle dims flag
 	if 'ndims' in kwargs:
 		ndims=kwargs['ndims']
 		del kwargs['ndims']
 
+    # handle labels flag
 	if 'labels' in kwargs:
 		labels=kwargs['labels']
 		del kwargs['labels']
 	else:
 		labels=False
 
+    # handle explore flag
 	if 'explore' in kwargs:
 		kwargs['picker']=True
 		del kwargs['explore']
@@ -63,6 +52,7 @@ def plot_coords(x, *args, **kwargs):
 	else:
 		explore=False
 
+    # handle point_colors flag
 	if 'point_colors' in kwargs:
 		point_colors=kwargs['point_colors']
 		del kwargs['point_colors']
@@ -87,9 +77,8 @@ def plot_coords(x, *args, **kwargs):
 		for idx,point in enumerate(point_colors):
 			x_reshaped[categories.index(point)].append(x_stacked[idx])
 		x = np.array([np.array(i) for i in x_reshaped])
-		# kwargs['color'] = categories
 
-	##PARSE ARGS##
+	##PARSE LEFTOVER MATPLOTLIB ARGS##
 	args_list = []
 	for i,item in enumerate(x):
 		tmp = []
@@ -104,7 +93,7 @@ def plot_coords(x, *args, **kwargs):
 				tmp.append(arg)
 		args_list.append(tuple(tmp))
 
-	##PARSE KWARGS##
+	##PARSE LEFTOVER MATPLOTLIB KWARGS##
 	kwargs_list = []
 	for i,item in enumerate(x):
 		tmp = {}

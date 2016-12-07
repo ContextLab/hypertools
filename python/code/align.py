@@ -22,17 +22,8 @@ OUTPUTS:
 import numpy as np
 import numpy as np,numpy.linalg
 
-##META##
-__authors__ = ["Jeremy Manning", "Kirsten Ziman"]
-__version__ = "1.0.0"
-__maintainers__ = ["Jeremy Manning", "Kirsten Ziman"] 
-__emails__ = ["Jeremy.R.Manning@dartmouth.edu", "kirstenkmbziman@gmail.com", "contextualdynamics@gmail.com"]
-#__copyright__ = ""
-#__credits__ = [""]
-#__license__ = ""
-
 ##MAIN FUNCTION##
-def hyperalign(*args):
+def align(*args):
 	"""Implements hyperalignment"""
 
 	##FUNCTIONS##
@@ -59,7 +50,7 @@ def hyperalign(*args):
 
 	def nearPD(A, nit=10):
 		n = A.shape[0]
-		W = np.identity(n) 
+		W = np.identity(n)
 	# W is the matrix used for the norm (assumed to be Identity matrix here)
 	# the algorithm should work for any diagonal W
 		deltaS = 0
@@ -83,7 +74,7 @@ def hyperalign(*args):
 	def procrustes(X, Y, scaling=True, reflection='best'):
 		"""
 		This function written by stackoverflow user ali_m (pulled 8/22/16)
-		(http://stackoverflow.com/questions/18925181/procrustes-analysis-with-numpy) 
+		(http://stackoverflow.com/questions/18925181/procrustes-analysis-with-numpy)
 
 		A port of MATLAB's `procrustes` function to Numpy.
 
@@ -96,12 +87,12 @@ def hyperalign(*args):
 
 		Inputs:
 		------------
-		X, Y    
+		X, Y
 			matrices of target and input coordinates. they must have equal
 			numbers of  points (rows), but Y may have fewer dimensions
 			(columns) than X.
 
-		scaling 
+		scaling
 			if False, the scaling component of the transformation is forced
 			to 1
 
@@ -113,14 +104,14 @@ def hyperalign(*args):
 
 		Outputs
 		------------
-		d       
+		d
 			the residual sum of squared errors, normalized according to a
 			measure of the scale of X, ((X - X.mean(0))**2).sum()
 
 		Z
 			the matrix of transformed Y-values
 
-		tform   
+		tform
 			a dict specifying the rotation, translation and scaling that
 			maps X --> Y
 
@@ -193,7 +184,7 @@ def hyperalign(*args):
 			T = T[:my,:]
 		c = muX - b*np.dot(muY, T)
 
-		#transformation values 
+		#transformation values
 		tform = {'rotation':T, 'scale':b, 'translation':c}
 		return Z
 
@@ -202,7 +193,7 @@ def hyperalign(*args):
 		sizes_0=np.zeros(len(args))
 		sizes_1=np.zeros(len(args))
 
-		#STEP 0: STANDARDIZE SIZE AND SHAPE	
+		#STEP 0: STANDARDIZE SIZE AND SHAPE
 		for x in range(0, len(args)):
 
 			sizes_0[x]=args[x].shape[0]
@@ -217,11 +208,11 @@ def hyperalign(*args):
 
 		k=np.empty((R,C), dtype=np.ndarray)
 		m=[k]*len(args)
-		
+
 		for idx,x in enumerate(args):
 			y=x[0:R,:]
 			#delete excess rows
-			
+
 			missing=C-y.shape[1]
 			add=np.zeros((y.shape[0], missing))
 			y=np.append(y, add, axis=1)
@@ -233,7 +224,7 @@ def hyperalign(*args):
 		for x in range(0, len(m)):
 			if x==0:
 				template=m[x]
-			
+
 			else:
 				next = procrustes(np.transpose(template/x), np.transpose(m[x]))
 				#sometimes give SVD error
@@ -250,7 +241,7 @@ def hyperalign(*args):
 
 		template2=template2/len(m)
 		empty= np.zeros(template2.shape)
-		aligned=[empty]*(len(m)) 
+		aligned=[empty]*(len(m))
 
 
 		#STEP 3 (below): ALIGN TO NEW TEMPLATE
@@ -265,7 +256,7 @@ def hyperalign(*args):
 		sizes_0=np.zeros(len(j[0]))
 		sizes_1=np.zeros(len(j[0]))
 
-		#STEP 0: STANDARDIZE SIZE AND SHAPE	
+		#STEP 0: STANDARDIZE SIZE AND SHAPE
 		for x in range(0, len(j[0])):
 			sizes_0[x]=j[0][x].shape[0]
 			sizes_1[x]=j[0][x].shape[1]
@@ -281,7 +272,7 @@ def hyperalign(*args):
 
 		k=np.empty((R,C), dtype=np.ndarray)
 		m=[k]*len(j[0])
-		
+
 		for idx,x in enumerate(j[0]):
 			y=x[0:R,:]
 			missing=C-y.shape[1]
@@ -294,13 +285,13 @@ def hyperalign(*args):
 		for x in range(0, len(m)):
 			if x==0:
 				template=m[x]
-			
+
 			else:
 				next = procrustes(np.transpose(template/x), np.transpose(m[x]))
 				#sometimes give SVD error
 				template = template + np.transpose(next)
-		
-		
+
+
 		template= template/len(m)
 
 
@@ -316,7 +307,7 @@ def hyperalign(*args):
 
 
 		empty= np.zeros(template2.shape)
-		aligned=[empty]*(len(m)) 
+		aligned=[empty]*(len(m))
 		#STEP 3 (below): ALIGN TO NEW TEMPLATE
 		for x in range(0, len(m)):
 			next = procrustes(np.transpose(template2),np.transpose(m[x]))
@@ -332,7 +323,7 @@ def hyperalign(*args):
 			aligned=args
 			return aligned
 
-		elif all(isinstance(x, np.ndarray) for x in args[0][0]): 
+		elif all(isinstance(x, np.ndarray) for x in args[0][0]):
 			y=list(args)
 			return align_list(y)
 
@@ -340,12 +331,12 @@ def hyperalign(*args):
 			aligned=args
 			return aligned
 
-		else: 
+		else:
 			print "Input argument elements are neither all ints nor all numpy arrays..."
 
 	else:
 		if all(isinstance(x, np.ndarray) for x in args):
-			return align(*args)	
+			return align(*args)
 
 		else:
 			print "Input datasets should be numpy arrays"

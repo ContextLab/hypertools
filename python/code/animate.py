@@ -9,40 +9,9 @@ from scipy.interpolate import PchipInterpolator as pchip
 from sklearn.decomposition import PCA as PCA
 import hyperalign as hyp
 
-import seaborn as sns
-sns.set_style("whitegrid")
-sns.set_palette(palette="Set2", n_colors=3)
+from .helpers import *
 
-# this will be moved to utils.py
-def is_list(x):
-    if type(x[0][0])==np.ndarray:
-        return True
-    elif type(x[0][0])==np.int64 or type(x[0][0])==int:
-        return False
-
-# #  this will be moved to utils.py
-def interp_array(arr,interp_val=10):
-    x=np.arange(0, len(arr), 1)
-    xx=np.arange(0, len(arr)-1, 1/interp_val)
-    q=pchip(x,arr)
-    return q(xx)
-
-# #  this will be moved to utils.py
-def interp_array_list(arr_list,interp_val=10):
-    smoothed= [np.zeros(arr_list[0].shape) for item in arr_list]
-    for idx,arr in enumerate(arr_list):
-        smoothed[idx] = interp_array(arr,interp_val)
-    return smoothed
-
-def get_cube_scale(x):
-    x = np.vstack(x)
-    x_square = np.square(x)
-    x_ss = np.sum(x_square,axis=1)
-    idx = [i for i in range(len(x_ss)) if x_ss[i]==np.max(x_ss)]
-    print(np.linalg.norm(x[idx,:]))
-    return np.linalg.norm(x[idx,:])
-
-def animate(x):
+def animate(x, *args, **kwargs):
 
     def update_lines(num, data_lines, lines, trail_lines, cube_scale, tail_len=50, tail_style=':', speed=1):
 
@@ -115,36 +84,3 @@ def animate(x):
     line_ani = animation.FuncAnimation(fig, update_lines, 1000, fargs=(x, lines, trail, cube_scale),
                                    interval=8, blit=False)
     plt.show()
-
-################################################################################
-################################################################################
-
-def Gen_RandLine(length, dims=2):
-    """
-    Create a line using a random walk algorithm
-
-    length is the number of points for the line.
-    dims is the number of dimensions the line has.
-    """
-    lineData = np.empty((dims, length))
-    lineData[:, 0] = np.random.rand(dims)
-    for index in range(1, length):
-        # scaling the random numbers by 0.1 so
-        # movement is small compared to position.
-        # subtraction by 0.5 is to change the range to [-0.5, 0.5]
-        # to allow a line to move backwards.
-        step = ((np.random.rand(dims) - 0.5) * 0.1)
-        lineData[:, index] = lineData[:, index - 1] + step
-
-    return lineData
-
-# import scipy.io as sio
-#
-# data = sio.loadmat('extras/example_data/weights.mat')
-# test_data=data['weights'][0][1]
-# test_data2=data['weights'][0][2]
-# test_data3=data['weights'][0][3]
-# data = np.array([test_data, test_data2, test_data3])
-
-data = [Gen_RandLine(100,3).T for index in range(3)]
-animate(data)
