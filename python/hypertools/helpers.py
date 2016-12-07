@@ -1,3 +1,4 @@
+from __future__ import division
 import numpy as np
 from scipy.interpolate import PchipInterpolator as pchip
 import seaborn as sns
@@ -29,7 +30,7 @@ def vals2colors(vals,cmap='GnBu_d',res=100):
 def is_list(x):
     if type(x[0][0])==np.ndarray:
         return True
-    elif type(x[0][0])==np.int64 or type(x[0][0])==int:
+    elif type(x[0][0])==np.int64 or type(x[0][0])==int or type(x[0][0])==np.float32:
         return False
 
 # #  this will be moved to utils.py
