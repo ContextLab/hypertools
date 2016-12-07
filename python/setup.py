@@ -1,6 +1,23 @@
-from distutils.core import setup
-setup(name='hyper-tools',
-      version='1.1',
-      py_modules=['plot_coords', 'hyperalign'],
-      install_requires=['numpy', 'scipy', 'matplotlib', 'seaborn', 'scikit-learn']
-      )
+# -*- coding: utf-8 -*-
+
+from setuptools import setup, find_packages
+
+
+with open('readme.md') as f:
+    readme = f.read()
+
+# NEED TO ADD IN LICENSE
+with open('LICENSE') as f:
+    license = f.read()
+
+setup(
+    name='hypertools',
+    version='1.0.0',
+    description='Python package for manipulating and visualizing high dimensional data',
+    long_description=readme,
+    author='Contextual Dynamics Lab',
+    author_email='contextualdynamics@gmail.com',
+    url='https://github.com/ContextLab/pyfingerprint',
+    license=license,
+    packages=find_packages(exclude=('tests', 'docs', 'examples'))
+)
