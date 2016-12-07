@@ -7,7 +7,6 @@ import matplotlib.animation as animation
 
 from scipy.interpolate import PchipInterpolator as pchip
 from sklearn.decomposition import PCA as PCA
-import hyperalign as hyp
 
 from .helpers import *
 
