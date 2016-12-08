@@ -1,8 +1,8 @@
-import plot_coords as coords
+import hypertools as hyp
 import scipy.io as sio
 import numpy as np
 
-data=sio.loadmat('examples/weights.mat')
+data=sio.loadmat('weights.mat')
 w=data['weights'][0][0:3]
 
 labels=[]
@@ -15,4 +15,4 @@ for idx,i in enumerate(w):
             tmp.append(None)
     labels.append(tmp)
 
-coords.plot_coords(w,'o',labels=labels)
+hyp.plot(w,'o',labels=labels)
