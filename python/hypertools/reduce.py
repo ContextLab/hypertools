@@ -1,4 +1,7 @@
-from sklearn.decomposition import PCA
+from .helpers import reduceD, reduceD_list
 
 def reduce(arr,ndims=3):
-    return PCA(arr,ndims)
+    if type(arr) is list:
+        return reduceD_list(arr,ndims)
+    else:
+        return reduceD(srr,ndims)
