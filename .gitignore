@@ -1,2 +1,4 @@
 python/*.pyc
 *.pyc
+*.ipynb_checkpoints
+.DS_Store
