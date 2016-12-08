@@ -1,8 +1,13 @@
 from __future__ import division
 import numpy as np
 from scipy.interpolate import PchipInterpolator as pchip
+from sklearn.decomposition import PCA as PCA
 import seaborn as sns
 import itertools
+
+def center(x):
+	x_stacked = np.vstack(x)
+	return x - np.mean(x_stacked, 0)
 
 def vals2colors(vals,cmap='GnBu_d',res=100):
 	"""Maps values to colors
@@ -47,10 +52,17 @@ def interp_array_list(arr_list,interp_val=10):
         smoothed[idx] = interp_array(arr,interp_val)
     return smoothed
 
-def get_cube_scale(x):
-    x = np.vstack(x)
-    x_square = np.square(x)
-    x_ss = np.sum(x_square,axis=1)
-    idx = [i for i in range(len(x_ss)) if x_ss[i]==np.max(x_ss)]
-    print(np.linalg.norm(x[idx,:]))
-    return np.linalg.norm(x[idx,:])
+def reduceD(x, ndim):
+	#if more than 3d, reduce and re-run
+	m = PCA(n_components=ndim, whiten=True)
+	m.fit(x)
+	return m.transform(x)
+
+def reduceD_list(x, ndim):
+	m=PCA(n_components=ndim, whiten=True)
+	m.fit(np.vstack(x))
+
+	r=[]
+	for i in x:
+		r.append(m.transform(i))
+	return r

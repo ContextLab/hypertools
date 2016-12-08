@@ -404,21 +404,6 @@ def plot_coords(x, *args, **kwargs):
 			ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], *iargs, **ikwargs)
 		return fig, ax, data
 
-	def reduceD(x, ndim):
-		#if more than 3d, reduce and re-run
-		m = PCA(n_components=ndim, whiten=True)
-		m.fit(x)
-		return m.transform(x)
-
-	def reduceD_list(x, ndim):
-		m=PCA(n_components=ndim, whiten=True)
-		m.fit(np.vstack(x))
-
-		r=[]
-		for i in x:
-			r.append(m.transform(i))
-		return r
-
 	##MAIN FUNCTION##
 	if is_list(x):
 		if col_match(x):
