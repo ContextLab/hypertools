@@ -1,34 +1,54 @@
+#!/usr/bin/env python
+
 from __future__ import division
+import warnings
 import numpy as np
-from sklearn import PCA
 from scipy.spatial.distance import pdist
+from scipy.spatial.distance import cdist
+from .align import *
+from .helpers import reduceD, reduceD_list
+import scipy.spatial.distance as sd
+import matplotlib.pyplot as plt
 
 import seaborn as sns
 sns.set(style="darkgrid")
 
-def describe(x):
+def describe(x, return_data=False):
+
+    warnings.warn('When input data is large, this computation can take a long time.')
 
     ##SUB FUNCTIONS##
 
-    def describe_align(x):
-        if type(x) not list:
-            print('Must pass a list of arrays.')
-        
-
-    def describe_PCA(x):
+    def PCA_summary(x,max_dims):
         if type(x) is list:
             x = np.vstack(x)
         cov_alldims = pdist(x,'correlation')
-        cov_PCA =  [(pdist(reduceD(x,num),'correlation')) for num in range(2,x.shape[1]+1)]
-        return [np.corrcoef(cov_alldims, cov_PCA_i)[0][1] for cov_PCA_i in cov_PCA]
+        corrs=[]
+        for num in range(2,max_dims):
+            cov_PCA = pdist(reduceD(x,num),'correlation')
+            corrs.append(np.corrcoef(cov_alldims, cov_PCA)[0][1])
+            del cov_PCA
+        return corrs
 
     if type(x) is list:
-        continue
+        pass
     else:
         x = [x]
 
     attrs = {}
 
+
     attrs['PCA_summary'] = {}
-    attrs['PCA_summary']['average'] = describe_PCA(x)
-    attrs['PCA_summary']['individual'] = [describe_PCA(x_i) for x_i in x]
+    attrs['PCA_summary']['average'] = PCA_summary(x,x[0].shape[1])
+    max_group = np.where(attrs['PCA_summary']['average']==np.max(attrs['PCA_summary']['average']))[0][0]
+    attrs['PCA_summary']['individual'] = [PCA_summary(x_i,max_group) for x_i in x]
+
+    fig, ax = plt.subplots()
+    ax = sns.tsplot(attrs['PCA_summary']['individual'], err_style="unit_traces")
+    ax.set_title('Correlation with raw data by number of PCA components')
+    ax.set_ylabel('Correlation')
+    ax.set_xlabel('Number of PCA components')
+    plt.show()
+
+    if return_data==True:
+        return attrs
