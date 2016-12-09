@@ -21,6 +21,9 @@ Coming soon: `pip install hypertools`
 
 <h2>Plot</h2>
 
+![Plot example](images/plot.gif)
+
+
 <b>Inputs:</b>
 
 A numpy array, or list of arrays
@@ -102,6 +105,14 @@ hyp.plot(data, 'o', point_colors=point_colors)
 Turn on explore mode (experimental): `hyp.plot(data, 'o', explore=True)`
 
 <h2>Align</h2>
+
+<h3><center>BEFORE</center></h3>
+
+![Align before example](images/align_before.gif)
+
+<h3><center>AFTER</center></h3>
+
+![Align after example](images/align_after.gif)
 
 <b>Inputs:</b>
 
