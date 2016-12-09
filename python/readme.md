@@ -6,11 +6,10 @@ pip install -e .
 
 <h2>Main functions</h2>
 
--hyp.plot - plots static data or movie
--hyp.align - hyperaligns multidimensional data
--hyp.reduce - implements PCA to reduce dimensionality of data
--hyp.describe - plots/analyses to evaluate how well the functions above are working
-
++ hyp.plot - plots static data or movie
++ hyp.align - hyperaligns multidimensional data
++ hyp.reduce - implements PCA to reduce dimensionality of data
++ hyp.describe - plots/analyses to evaluate how well the functions above are working
 
 <h2>hyp.plot</h2>
 
