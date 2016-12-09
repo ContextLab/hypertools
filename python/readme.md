@@ -4,6 +4,15 @@ pip install -e .
 
 (this assumes you have pip installed on your system: https://pip.pypa.io/en/stable/installing/)
 
+MAIN FUNCTIONS:
+
+        hyp.plot - plots static data or movie
+        hyp.align - hyperaligns multidimensional data
+        hyp.reduce - implements PCA to reduce dimensionality of data
+        hyp.describe - plots/analyses to evaluate how well the functions above are working
+
+PLOT - 
+
 INPUTS:
 
         X: a T by D matrix of observations.  T is the number of coordinates
