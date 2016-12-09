@@ -37,7 +37,6 @@ def describe(x, return_data=False):
 
     attrs = {}
 
-
     attrs['PCA_summary'] = {}
     attrs['PCA_summary']['average'] = PCA_summary(x,x[0].shape[1])
     max_group = np.where(attrs['PCA_summary']['average']==np.max(attrs['PCA_summary']['average']))[0][0]
