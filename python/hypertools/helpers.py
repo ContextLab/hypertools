@@ -4,6 +4,7 @@
 Helper functions
 """
 
+##PACKAGES##
 from __future__ import division
 import numpy as np
 from scipy.interpolate import PchipInterpolator as pchip
@@ -11,6 +12,7 @@ from sklearn.decomposition import PCA as PCA
 import seaborn as sns
 import itertools
 
+##HELPER FUNCTIONS##
 def center(x):
 	x_stacked = np.vstack(x)
 	return x - np.mean(x_stacked, 0)
