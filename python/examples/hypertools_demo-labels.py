@@ -10,7 +10,7 @@ for idx,i in enumerate(w):
     tmp=[]
     for iidx,ii in enumerate(i):
         if iidx==0:
-            tmp.append('Point ' + str(idx))
+            tmp.append('Subject ' + str(idx))
         else:
             tmp.append(None)
     labels.append(tmp)
