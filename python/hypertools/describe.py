@@ -10,6 +10,7 @@ from .helpers import reduceD, reduceD_list
 import scipy.spatial.distance as sd
 import matplotlib.pyplot as plt
 
+
 import seaborn as sns
 sns.set(style="darkgrid")
 
@@ -36,7 +37,6 @@ def describe(x, return_data=False):
         x = [x]
 
     attrs = {}
-
     attrs['PCA_summary'] = {}
     attrs['PCA_summary']['average'] = PCA_summary(x,x[0].shape[1])
     max_group = np.where(attrs['PCA_summary']['average']==np.max(attrs['PCA_summary']['average']))[0][0]
