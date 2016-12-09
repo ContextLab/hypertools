@@ -1,5 +1,7 @@
 <h1>Hypertools - A python package for visualizing multidimensional data</h1>
 
+![Hypertools example](images/hypertools.gif)
+
 To install, navigate to this folder in Terminal and type:
 
 pip install -e .
@@ -18,10 +20,6 @@ pip install -e .
 <b>Inputs:</b>
 
 A numpy array, or list of arrays
-
-<i>X: a T by D matrix of observations.  T is the number of coordinates
-and D is the dimensionality of each observation.  NaNs are
-treated as missing observations.</i>
 
 <b>Arguments:</b>
 
@@ -143,6 +141,6 @@ A plot summarizing the correlation between raw input data and PCA reduced data
 
 <h3>Example uses</h3>
 
-Reduce n-dimensional array to 3d: `hyp.describe(data)`
+`hyp.describe(data)`
 
 ![Describe Example](images/describe_example.png)
