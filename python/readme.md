@@ -11,7 +11,7 @@ MAIN FUNCTIONS:
         hyp.reduce - implements PCA to reduce dimensionality of data
         hyp.describe - plots/analyses to evaluate how well the functions above are working
 
-PLOT - 
+<h2>PLOT</h2>
 
 INPUTS:
 
