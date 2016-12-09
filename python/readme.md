@@ -44,21 +44,25 @@ explore (bool): (experimental feature) Displays user defined labels or PCA coord
 
 <h2>Example uses</h2>
 
-Plot with default color palette: `coords.plot_coords(w)`
+Import the library: `import hypertools as hyp`
 
-Change color palette: `coords.plot_coords(w,palette='Reds')`
+Plot with default color palette: `hyp.plot(w)`
 
-Specify colors using unlabeled list of format strings: `coords.plot_coords([w[0],w[1]],['r:','b--'])`
+Plot as movie: `hyp.plot(w, animate=True)`
 
-Plot data as points: `coords.plot_coords([w[0],w[1]],'o')`
+Change color palette: `hyp.plot(w,palette='Reds')`
 
-Specify colors using keyword list of colors (color codes, rgb values, hex codes or a mix): `coords.plot_coords([w[0],w[1],[w[2]],color=['r', (.5,.2,.9), '#101010'])`
+Specify colors using unlabeled list of format strings: `hyp.plot([w[0],w[1]],['r:','b--'])`
 
-Specify linestyles using keyword list: `coords.plot_coords([w[0],w[1],[w[2]],linestyle=[':','--','-'])`
+Plot data as points: `hyp.plot([w[0],w[1]],'o')`
 
-Specify markers using keyword list: `coords.plot_coords([w[0],w[1],[w[2]],marker=['o','*','^'])`
+Specify colors using keyword list of colors (color codes, rgb values, hex codes or a mix): `hyp.plot([w[0],w[1],[w[2]],color=['r', (.5,.2,.9), '#101010'])`
 
-Specify markers with format string and colors with keyword argument: `coords.plot_coords([w[0],w[1],[w[2]], 'o', color=['r','g','b'])``
+Specify linestyles using keyword list: `hyp.plot([w[0],w[1],[w[2]],linestyle=[':','--','-'])`
+
+Specify markers using keyword list: `hyp.plot([w[0],w[1],[w[2]],marker=['o','*','^'])`
+
+Specify markers with format string and colors with keyword argument: `hyp.plot([w[0],w[1],[w[2]], 'o', color=['r','g','b'])``
 
 Specify labels:
 ```
@@ -73,7 +77,7 @@ for idx,i in enumerate(w):
             tmp.append(None)
     labels.append(tmp)
 
-coords.plot_coords(w, 'o', labels=labels)
+hyp.plot(w, 'o', labels=labels)
 ```
 
 Specify point_colors:
@@ -86,7 +90,7 @@ for idx,i in enumerate(w):
             tmp.append(np.random.rand())
     point_colors.append(tmp)
 
-coords.plot_coords(w, 'o', point_colors=point_colors)
+hyp.plot(w, 'o', point_colors=point_colors)
 ```
 
-Turn on explore mode (experimental): `coords.plot_coords(w, 'o', explore=True)`
+Turn on explore mode (experimental): `hyp.plot(w, 'o', explore=True)`
