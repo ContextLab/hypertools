@@ -145,4 +145,4 @@ A plot summarizing the correlation between raw input data and PCA reduced data
 
 Reduce n-dimensional array to 3d: `hyp.describe(data)`
 
-![alt text](https://github.com/ContextLab/hyper-tools/tree/refactor/python/images/describe_example.png "Describe example")
+![Describe Example](images/describe_example.png)
