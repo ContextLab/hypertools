@@ -1,15 +1,12 @@
 #!/usr/bin/env python
 
 """
-inputs: TxD matrix of observations
-		   T-number of coords
-		   D-dimensionality of each observation
-		   *Nans treated as missing observations
-		type (specify the type of plot)
-		   see http://matplotlib.org/api/axes_api.html#matplotlib.axes.Axes.plot for available options
-outputs: 1-, 2-, or 3-dimensional representation of the data
+INPUTS:
+-numpy array(s)
+-list of numpy arrays
 
-		to edit color map, change both instances of cm.plasma to cm.DesiredColorMap
+OUTPUTS:
+-matplotlib plt, fig, ax handles as tuple
 """
 
 ##PACKAGES##
@@ -24,7 +21,6 @@ from sklearn.decomposition import PCA
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d import proj3d
 import seaborn as sns
-
 from .helpers import *
 
 ##MAIN FUNCTION##

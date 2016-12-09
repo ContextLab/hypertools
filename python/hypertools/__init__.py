@@ -1,8 +1,9 @@
-from .plot import *
-from .align import *
-from .reduce import *
-# from .describe import describe
-describe=[]
+#!/usr/bin/env python
+
+from .plot import plot
+from .align import align
+from .reduce import reduce
+from .describe import describe
 
 class hypertools(object):
     '''Hypertools module'''
@@ -11,4 +12,4 @@ class hypertools(object):
         self.plot = plot.plot
         self.align = align.align
         self.reduce = reduce.reduce
-        self.describe = describe
+        self.describe = describe.describe
