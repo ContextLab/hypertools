@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+"""
+Helper functions
+"""
+
 from __future__ import division
 import numpy as np
 from scipy.interpolate import PchipInterpolator as pchip

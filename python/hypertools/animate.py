@@ -1,5 +1,16 @@
 #!/usr/bin/env python
 
+"""
+Implements animated trajectory plot
+
+INPUTS:
+-numpy array(s)
+-list of numpy arrays
+
+OUTPUTS:
+-None
+"""
+
 from __future__ import division
 import numpy as np
 import matplotlib as mpl

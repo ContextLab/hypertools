@@ -1,5 +1,18 @@
 #!/usr/bin/env python
 
+"""
+Correlates raw data with PCA reduced data to get a sense for how well the data
+can be summarized with n dimensions.  Useful for evaluating quality of PCA reduced
+plots.
+
+INPUTS:
+-numpy array(s)
+-list of numpy arrays
+
+OUTPUTS:
+-Dictionary with correlation values between raw data and PCA reduced data (optional)
+"""
+
 from __future__ import division
 import warnings
 import numpy as np

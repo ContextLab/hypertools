@@ -1,5 +1,16 @@
 #!/usr/bin/env python
 
+"""
+Wrapper function that parses plot styling arguments and calls plotting functions
+
+INPUTS:
+-numpy array(s)
+-list of numpy arrays
+
+OUTPUTS:
+-None
+"""
+
 from __future__ import division
 import sys
 import warnings
