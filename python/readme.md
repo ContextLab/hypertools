@@ -2,11 +2,15 @@
 
 ![Hypertools example](images/hypertools.gif)
 
-To install, navigate to this folder in Terminal and type:
+<h2>Install</h2>
+
+To install from this repo, navigate to this folder in Terminal and type:
 
 pip install -e .
 
 (this assumes you have pip installed on your system: https://pip.pypa.io/en/stable/installing/)
+
+Coming soon: `pip install hypertools`
 
 <h2>Main functions</h2>
 
