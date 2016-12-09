@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
-from .plot import *
-from .align import *
-from .reduce import *
+from .plot import plot
+from .align import align
+from .reduce import reduce
 from .describe import describe
 
 class hypertools(object):
