@@ -11,8 +11,10 @@ OUTPUTS:
 -numpy array (or list of arrays) with dimensions reduced
 """
 
+##PACKAGES##
 from .helpers import reduceD, reduceD_list
 
+##MAIN FUNCTION##
 def reduce(arr,ndims=3):
     if type(arr) is list:
         return reduceD_list(arr,ndims)

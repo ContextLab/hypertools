@@ -13,6 +13,7 @@ OUTPUTS:
 -Dictionary with correlation values between raw data and PCA reduced data (optional)
 """
 
+##PACKAGES##
 from __future__ import division
 import warnings
 import numpy as np
@@ -22,17 +23,14 @@ from .align import *
 from .helpers import reduceD, reduceD_list
 import scipy.spatial.distance as sd
 import matplotlib.pyplot as plt
-
-
 import seaborn as sns
 sns.set(style="darkgrid")
 
+##MAIN FUNCTION##
 def describe(x, return_data=False):
-
     warnings.warn('When input data is large, this computation can take a long time.')
 
     ##SUB FUNCTIONS##
-
     def PCA_summary(x,max_dims):
         if type(x) is list:
             x = np.vstack(x)
