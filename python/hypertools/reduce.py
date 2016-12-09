@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from .helpers import reduceD, reduceD_list
 
 def reduce(arr,ndims=3):
