@@ -4,47 +4,45 @@ pip install -e .
 
 (this assumes you have pip installed on your system: https://pip.pypa.io/en/stable/installing/)
 
-MAIN FUNCTIONS:
+<h2>Main functions</h2>
 
-        hyp.plot - plots static data or movie
-        hyp.align - hyperaligns multidimensional data
-        hyp.reduce - implements PCA to reduce dimensionality of data
-        hyp.describe - plots/analyses to evaluate how well the functions above are working
+hyp.plot - plots static data or movie
+hyp.align - hyperaligns multidimensional data
+hyp.reduce - implements PCA to reduce dimensionality of data
+hyp.describe - plots/analyses to evaluate how well the functions above are working
 
-<h2>PLOT</h2>
+<h2>hyp.plot</h2>
 
-INPUTS:
+Inputs:
 
-        X: a T by D matrix of observations.  T is the number of coordinates
-        and D is the dimensionality of each observation.  NaNs are
-        treated as missing observations.
+X: a T by D matrix of observations.  T is the number of coordinates
+and D is the dimensionality of each observation.  NaNs are
+treated as missing observations.
 
-ARGUMENTS:
+Arguments:
 
-        Format strings can be passed as a string, or tuple/list of length x.
+Format strings can be passed as a string, or tuple/list of length x.
+See matplotlib API for more styling options
 
-        See matplotlib API for more styling options
+Keyword arguments:
 
-KEYWORD ARGUMENTS:
+palette (string): A matplotlib or seaborn color palette
 
-        palette (string): A matplotlib or seaborn color palette
+color (list): A list of colors for each line to be plotted. Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes. If defined, overrides palette. See http://matplotlib.org/examples/color/named_colors.html for list of named colors. Note: must be the same length as X.
 
-        color (list): A list of colors for each line to be plotted. Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes. If defined, overrides palette. See http://matplotlib.org/examples/color/named_colors.html for list of named colors. Note: must be the same length as X.
+point_colors (list of str, floats or ints): A list of colors for each point. Must be dimensionality of data (X). If the data type is numerical, the values will be mapped to rgb values in the specified palette.  If the data type is strings, the points will be labeled categorically.
 
-        point_colors (list of str, floats or ints): A list of colors for each point. Must be dimensionality of data (X). If the data type is numerical, the values will be mapped to rgb values in the specified palette.  If the data type is strings, the points will be labeled categorically.
+linestyle (list): a list of line styles
 
-        linestyle (list): a list of line styles
+marker (list): a list of marker types
 
-        marker (list): a list of marker types
+See matplotlib API for more styling options
 
-        See matplotlib API for more styling options
+labels (list): A list of labels for each point. Must be dimensionality of data (X). If no label is wanted for a particular point, input `None`
 
-        labels (list): A list of labels for each point. Must be dimensionality of data (X). If no label is wanted for a particular point, input `None`
+explore (bool): (experimental feature) Displays user defined labels or PCA coordinates on hover. When a point is clicked, the label will remain on the plot (WIP). To use, set `explore=True`.
 
-        explore (bool): (experimental feature) Displays user defined labels or PCA coordinates on hover. When a point is clicked, the label will remain on the plot (WIP). To use, set `explore=True`.
-
-
-EXAMPLE USES:
+<h2>Example uses</h2>
 
 Plot with default color palette: `coords.plot_coords(w)`
 
