@@ -2,3 +2,4 @@ python/*.pyc
 *.pyc
 *.ipynb_checkpoints
 .DS_Store
+hyper_tools.egg-info

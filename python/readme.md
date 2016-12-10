@@ -1,4 +1,4 @@
-<h1>Hypertools - A python package for visualizing multidimensional data</h1>
+<h1>Hypertools - A python package for visualizing high dimensional data</h1>
 
 ![Hypertools example](images/hypertools.gif)
 
