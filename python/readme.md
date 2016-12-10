@@ -23,7 +23,6 @@ Coming soon: `pip install hypertools`
 
 ![Plot example](images/plot.gif)
 
-
 <b>Inputs:</b>
 
 A numpy array, or list of arrays
