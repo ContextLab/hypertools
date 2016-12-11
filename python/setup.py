@@ -13,11 +13,11 @@ with open('LICENSE') as f:
 setup(
     name='hypertools',
     version='1.0.0',
-    description='Python package for manipulating and visualizing high dimensional data',
+    description='A python package for visualizing high dimensional data',
     long_description=readme,
     author='Contextual Dynamics Lab',
     author_email='contextualdynamics@gmail.com',
     url='https://github.com/ContextLab/pyfingerprint',
     license=license,
-    packages=find_packages(exclude=('tests', 'docs', 'examples'))
+    packages=find_packages(exclude=('tests', 'docs', 'examples', 'images'))
 )
