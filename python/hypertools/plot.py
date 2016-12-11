@@ -45,6 +45,6 @@ def plot(x,*args,**kwargs):
         animate=False
 
     if animate:
-        animated_plot(x)
+        animated_plot(x,*args,**kwargs)
     else:
         static_plot(x,*args,**kwargs)

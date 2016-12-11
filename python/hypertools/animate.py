@@ -85,7 +85,7 @@ def animate(x, *args, **kwargs):
     x = interp_array_list(x)
     x = center(x)
 
-    lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], linewidth=3)[0] for dat in x]
+    lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], linewidth=3, *args, **kwargs)[0] for dat in x]
     trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1])[0] for dat in x]
 
     ax.set_axis_off()
