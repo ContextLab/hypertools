@@ -3,6 +3,6 @@ import scipy.io as sio
 import numpy as np
 
 data=sio.loadmat('weights.mat')
-w=[i for i in data['weights'][0][0:3]]
+w=[i for i in data['weights'][0][0:2]]
 
-hyp.plot(w,'o', save_path='test-image.pdf')
+hyp.plot(w,'o', ndims=1)

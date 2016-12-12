@@ -3,7 +3,7 @@ import scipy.io as sio
 import numpy as np
 
 data=sio.loadmat('weights.mat')
-w=data['weights'][0][0:3]
+w=[i for i in data['weights'][0][0:3]]
 
 labels=[]
 for idx,i in enumerate(w):
