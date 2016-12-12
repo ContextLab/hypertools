@@ -14,7 +14,6 @@ OUTPUTS:
 ##PACKAGES##
 from __future__ import division
 import numpy as np
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as p3
 import matplotlib.animation as animation
@@ -22,6 +21,11 @@ from .helpers import *
 
 ##MAIN FUNCTION##
 def animate(x, *args, **kwargs):
+
+    if 'save_path' in kwargs:
+        save=True
+        save_path = kwargs['save_path']
+        del kwargs['save_path']
 
     ##SUB FUNCTIONS##
     def get_cube_scale(x, c):
@@ -101,4 +105,9 @@ def animate(x, *args, **kwargs):
     # Creating the Animation object
     line_ani = animation.FuncAnimation(fig, update_lines, 1000, fargs=(x, lines, trail, cube_scale),
                                    interval=8, blit=False)
+    if save:
+        Writer = animation.writers['ffmpeg']
+        writer = Writer(fps=30, bitrate=1800)
+        line_ani.save(save_path, writer=writer)
+
     plt.show()
