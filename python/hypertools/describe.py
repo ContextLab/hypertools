@@ -19,11 +19,13 @@ import warnings
 import numpy as np
 from scipy.spatial.distance import pdist
 from scipy.spatial.distance import cdist
-from .align import *
-from .helpers import reduceD, reduceD_list
 import scipy.spatial.distance as sd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from .align import *
+from .helpers import reduceD
+
+##SET SEABORN STYLE##
 sns.set(style="darkgrid")
 
 ##MAIN FUNCTION##

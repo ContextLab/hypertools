@@ -12,11 +12,11 @@ OUTPUTS:
 """
 
 ##PACKAGES##
-from .helpers import reduceD, reduceD_list
+from .helpers import reduceD
 
 ##MAIN FUNCTION##
 def reduce(arr,ndims=3):
     if type(arr) is list:
-        return reduceD_list(arr,ndims)
+        return reduceD(arr,ndims)
     else:
         return reduceD(srr,ndims)
