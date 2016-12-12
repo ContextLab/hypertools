@@ -16,7 +16,6 @@ import re
 import itertools
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 from sklearn.decomposition import PCA
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d import proj3d
@@ -28,6 +27,12 @@ def plot_coords(x, *args, **kwargs):
 	"""
 	implements plotting
 	"""
+
+	# save path
+	if 'save_path' in kwargs:
+		save=True
+		save_path = kwargs['save_path']
+		del kwargs['save_path']
 
 	# handle dims flag
 	if 'ndims' in kwargs:
@@ -405,11 +410,15 @@ def plot_coords(x, *args, **kwargs):
 		if col_match(x):
 			fig,ax,data = dispatch_list(x)
 			add_labels(data,labels)
+			if save:
+				plt.savefig(save_path)
 			plt.show()
 		else:
 			print "Inputted arrays must have the same number of columns"
 	else:
 		fig,ax,data = dispatch(x)
 		add_labels(data,labels)
+		if save:
+			plt.savefig(save_path)
 		plt.show()
 	return plt,fig,ax
