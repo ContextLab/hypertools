@@ -33,6 +33,8 @@ def plot_coords(x, *args, **kwargs):
 		save=True
 		save_path = kwargs['save_path']
 		del kwargs['save_path']
+	else:
+		save=False
 
 	# handle dims flag
 	if 'ndims' in kwargs:

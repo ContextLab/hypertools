@@ -26,6 +26,8 @@ def animate(x, *args, **kwargs):
         save=True
         save_path = kwargs['save_path']
         del kwargs['save_path']
+    else:
+        save=False
 
     ##SUB FUNCTIONS##
     def get_cube_scale(x, c):

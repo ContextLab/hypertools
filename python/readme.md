@@ -34,7 +34,11 @@ See matplotlib API for more styling options
 
 <b>Keyword arguments:</b>
 
-<i>palette</i> (string): A matplotlib or seaborn color palette
+<i>animate</i> (bool): If True, plots the data as an animated trajectory
+
+<i>save_path</i> (str): Path to save the image/movie.  Must include the file extension in the save path (i.e. `save_path='/path/to/file/image.png'`).  NOTE: If saving an animation, FFMPEG must be installed (this is a matplotlib req).
+
+<i>palette</i> (str): A matplotlib or seaborn color palette
 
 <i>color</i> (list): A list of colors for each line to be plotted. Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes. If defined, overrides palette. See http://matplotlib.org/examples/color/named_colors.html for list of named colors. Note: must be the same length as X.
 
