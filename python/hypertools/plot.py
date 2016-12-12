@@ -44,6 +44,10 @@ def plot(x,*args,**kwargs):
     else:
         animate=False
 
+    # if x is not a list, make it one
+    if type(x) is not list:
+        x = [x]
+
     if animate:
         animated_plot(x,*args,**kwargs)
     else:

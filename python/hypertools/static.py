@@ -28,10 +28,6 @@ def static_plot(x, *args, **kwargs):
 	implements plotting
 	"""
 
-	# if x is not a list, make it one
-	if type(x) is not list:
-		x = [x]
-
 	##PARSE HYPERTOOLS SPECIFIC ARGUMENTS##
 
 	# save path
@@ -129,8 +125,8 @@ def static_plot(x, *args, **kwargs):
 			return plot3D(reduceD(x, 3))
 
 	def plot1D(data):
-		fig, ax = plt.subplots()
 		n=len(data)
+		fig, ax = plt.subplots()
 		for i in range(n):
 			iargs = args_list[i]
 			ikwargs = kwargs_list[i]
@@ -138,8 +134,6 @@ def static_plot(x, *args, **kwargs):
 		return fig, ax, data
 
 	def plot2D(data):
-		# type: (object) -> object
-		#if 2d, make a scatter
 		n=len(data)
 		fig, ax = plt.subplots()
 		for i in range(n):
@@ -149,7 +143,6 @@ def static_plot(x, *args, **kwargs):
 		return fig, ax, data
 
 	def plot3D(data):
-		#if 3d, make a 3d scatter
 		n=len(data)
 		fig = plt.figure()
 		ax = fig.add_subplot(111, projection='3d')
