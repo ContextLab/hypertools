@@ -5,4 +5,4 @@ import numpy as np
 data=sio.loadmat('weights.mat')
 w=[i for i in data['weights'][0][0:2]]
 
-hyp.plot(w,'o', ndims=1)
+hyp.plot(w,'o')
