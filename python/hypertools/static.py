@@ -23,7 +23,7 @@ import seaborn as sns
 from .helpers import *
 
 ##MAIN FUNCTION##
-def plot_coords(x, *args, **kwargs):
+def static_plot(x, *args, **kwargs):
 	"""
 	implements plotting
 	"""
