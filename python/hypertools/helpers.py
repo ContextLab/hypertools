@@ -61,12 +61,6 @@ def interp_array_list(arr_list,interp_val=10):
     return smoothed
 
 def reduceD(x, ndim):
-	#if more than 3d, reduce and re-run
-	m = PCA(n_components=ndim, whiten=True)
-	m.fit(x)
-	return m.transform(x)
-
-def reduceD_list(x, ndim):
 	m=PCA(n_components=ndim, whiten=True)
 	m.fit(np.vstack(x))
 
@@ -74,3 +68,6 @@ def reduceD_list(x, ndim):
 	for i in x:
 		r.append(m.transform(i))
 	return r
+
+def check_data(data):
+	assert all([data[0].shape==x.shape for x in data]), 'Arrays must have the same shape.'

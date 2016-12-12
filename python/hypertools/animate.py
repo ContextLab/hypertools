@@ -72,22 +72,16 @@ def animate(x, *args, **kwargs):
             else:
                 line.set_data(data[num-tail_len:num+1, 0:2].T)
                 line.set_3d_properties(data[num-tail_len:num+1, 2])
-            # if num>=tail_len:
-            #     if num>=tail_len*2:
-            #         trail.set_data(data[num-tail_len*2:1+num-tail_len, 0:2].T)
-            #         trail.set_3d_properties(data[num-tail_len*2:1+num-tail_len, 2])
-            #         trail.set_linestyle(tail_style)
-            #     else:
-            #         trail.set_data(data[0:1+num-tail_len, 0:2].T)
-            #         trail.set_3d_properties(data[0:1+num-tail_len, 2])
-            #         trail.set_linestyle(tail_style)
         return lines,trail_lines
 
     # Attaching 3D axis to the figure
     fig = plt.figure()
     ax = p3.Axes3D(fig)
 
-    x = reduceD_list(x,3)
+    if type(x) is not list:
+        x = [x]
+
+    x = reduceD(x,3)
     x = interp_array_list(x)
     x = center(x)
 
