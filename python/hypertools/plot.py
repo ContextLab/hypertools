@@ -19,8 +19,8 @@ import re
 import itertools
 import seaborn as sns
 from .helpers import *
-from .static import plot_coords as static_plot
-from .animate import animate as animated_plot
+from .static import static_plot
+from .animate import animated_plot
 
 ##MAIN FUNCTION##
 def plot(x,*args,**kwargs):

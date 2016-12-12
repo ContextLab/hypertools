@@ -20,7 +20,7 @@ import matplotlib.animation as animation
 from .helpers import *
 
 ##MAIN FUNCTION##
-def animate(x, *args, **kwargs):
+def animated_plot(x, *args, **kwargs):
 
     if 'save_path' in kwargs:
         save=True
