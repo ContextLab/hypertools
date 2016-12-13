@@ -26,8 +26,7 @@ setup(
         "numpy",
         "scipy",
         "matplotlib",
-        "mpl_toolkits",
         "seaborn",
-        "scikit-learn"
+        "scikit-learn",
     ]
 )
