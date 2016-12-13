@@ -19,5 +19,15 @@ setup(
     author_email='contextualdynamics@gmail.com',
     url='https://github.com/ContextLab/pyfingerprint',
     license=license,
-    packages=find_packages(exclude=('tests', 'docs', 'examples', 'images'))
+    packages=find_packages(exclude=('tests', 'docs', 'examples', 'images')),
+    install_requires=[
+        "nose",
+        "sphinx",
+        "numpy",
+        "scipy",
+        "matplotlib",
+        "mpl_toolkits",
+        "seaborn",
+        "scikit-learn"
+    ]
 )
