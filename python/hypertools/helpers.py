@@ -34,8 +34,7 @@ def vals2colors(vals,cmap='GnBu_d',res=100):
 
 	# rank the values and then normalize
 	ranks = list(map(lambda x: sum([val <= x for val in vals]),vals))
-	ranks = list(map(lambda rank: int(round(res*rank/len(vals))),ranks))
-
+	ranks = list(map(lambda rank: int(res*rank/len(vals)),ranks))
 	return [palette[rank-1] for rank in ranks]
 
 # this will be moved to utils.py
