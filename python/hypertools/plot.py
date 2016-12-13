@@ -26,6 +26,30 @@ from .animate import animated_plot
 def plot(x,*args,**kwargs):
 
     ##STYLING##
+
+    # handle point_colors flag
+    if 'point_colors' in kwargs:
+        point_colors=kwargs['point_colors']
+        del kwargs['point_colors']
+
+        if 'color' in kwargs:
+            warnings.warn("Using point_colors, color keyword will be ignored.")
+            del kwargs['color']
+
+        # if list of lists, unpack
+        if any(isinstance(el, list) for el in point_colors):
+            point_colors = list(itertools.chain(*point_colors))
+
+        # if all of the elements are numbers, map them to colors
+        if all(isinstance(el, int) or isinstance(el, float) for el in point_colors):
+            point_colors = vals2colors(point_colors)
+        categories = list(set(point_colors))
+        x_stacked = np.vstack(x)
+        x_reshaped = [[] for i in categories]
+        for idx,point in enumerate(point_colors):
+            x_reshaped[categories.index(point)].append(x_stacked[idx])
+        x = [np.vstack(i) for i in x_reshaped]
+
     if 'style' in kwargs:
         sns.set(style=kwargs['style'])
         del kwargs['style']
