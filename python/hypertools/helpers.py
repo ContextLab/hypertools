@@ -8,7 +8,6 @@ Helper functions
 from __future__ import division
 import numpy as np
 from scipy.interpolate import PchipInterpolator as pchip
-from sklearn.decomposition import PCA as PCA
 import seaborn as sns
 import itertools
 
@@ -60,14 +59,5 @@ def interp_array_list(arr_list,interp_val=10):
         smoothed[idx] = interp_array(arr,interp_val)
     return smoothed
 
-def reduceD(x, ndim):
-	m=PCA(n_components=ndim, whiten=True)
-	m.fit(np.vstack(x))
-
-	r=[]
-	for i in x:
-		r.append(m.transform(i))
-	return r
-
 def check_data(data):
-	assert all([data[0].shape==x.shape for x in data]), 'Arrays must have the same shape.'
+	assert all([data[0].shape[1]==x.shape[1] for x in data]), 'Arrays must have the same shape.'

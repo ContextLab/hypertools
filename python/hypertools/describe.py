@@ -23,7 +23,7 @@ import scipy.spatial.distance as sd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from .align import *
-from .helpers import reduceD
+from .reduce import reduce as reduceD
 
 ##SET SEABORN STYLE##
 sns.set(style="darkgrid")

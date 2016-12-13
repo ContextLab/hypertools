@@ -16,11 +16,11 @@ import itertools
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from sklearn.decomposition import PCA
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d import proj3d
 import seaborn as sns
 from .helpers import *
+from .reduce import reduce as reduceD
 
 ##MAIN FUNCTION##
 def static_plot(x, *args, **kwargs):
@@ -71,6 +71,7 @@ def static_plot(x, *args, **kwargs):
 			point_colors = vals2colors(point_colors)
 
 		categories = list(set(point_colors))
+		print(categories)
 		x_stacked = np.vstack(x)
 		x_reshaped = [[] for i in categories]
 		for idx,point in enumerate(point_colors):
