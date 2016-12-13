@@ -16,6 +16,12 @@ def center(x):
 	x_stacked = np.vstack(x)
 	return x - np.mean(x_stacked, 0)
 
+def group_by_category(vals):
+	if any(isinstance(el, list) for el in vals):
+		vals = list(itertools.chain(*vals))
+	val_set = list(set(vals))
+	return [val_set.index(val) for val in vals]
+
 def vals2colors(vals,cmap='GnBu_d',res=100):
 	"""Maps values to colors
 	Args:
