@@ -7,4 +7,4 @@ w = data['weights'][0]
 w = [i for i in w]
 
 aligned = hyp.align(w)
-hyp.plot(w,animate=True)
+hyp.plot(aligned,animate=True)
