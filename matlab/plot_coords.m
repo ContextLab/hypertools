@@ -56,10 +56,9 @@ function[h] = plot_coords(x, varargin)
 % 4-20-16  jrm  support cell arrays
 
 color_specified = false;
-if iscell(x)
-%if an array
+v = get_transform(x);
+if iscell(x)    
     h = zeros(size(x));
-    %row vector, zeros, length size(x)
     args = cell(size(varargin));
     for i = 1:length(varargin)        
         if iscell(varargin{i})
@@ -96,43 +95,44 @@ if iscell(x)
                 color_args = {};
             end
         end
-        h(i) = main_helper(x{i}, next_args{:}, color_args{:});        
+        h(i) = main_helper(x{i}, v, next_args{:}, color_args{:});        
     end
     if ~h_state, hold off; end
 else
-    h = main_helper(x, varargin{:});
+    h = main_helper(x, v, varargin{:});
 end
 
+function[v] = get_transform(x)
+    %do PCA on x (don't require stats toolbox; compute with SVD)
+    
+    %center the data first...
+    if iscell(x)
+        x = cat(1, x{:});
+    end
+    x = x - repmat(nanmean(x, 1), [size(x, 1) 1]);
+    bad_inds = sum(isnan(x), 2) > 0;
+    clean_x = x(~bad_inds, :);
+    if isempty(clean_x)
+        v = [];
+        return;
+    end
+    [~, ~, v] = svd(clean_x, 'econ');
 
-function[h] = main_helper(x, varargin)
+
+function[h] = main_helper(x, v, varargin)
 if isempty(varargin) && size(x, 2) >= 2, varargin = {'k.'}; end
-    %if no additional inputs, and columns >=2
+
 if size(x, 2) == 2
     h = plot(x(:, 1), x(:, 2), varargin{:});
 elseif size(x, 2) == 3
     h = plot_coords_3d_helper(x, varargin{:});
-elseif size(x, 2) > 3    
-    %do PCA on x (don't require stats toolbox; compute with SVD)
-        %principle component analysis
-    %center the data first...
-    x = x - repmat(nanmean(x, 1), [size(x, 1) 1]);
-
-    %remove all nans
-    bad_inds = sum(isnan(x), 2) > 0;
-    clean_x = x(~bad_inds, :);
-    if isempty(clean_x)
-        h = [];
-        return;
-    end
-    [~, ~, v] = svd(clean_x, 'econ');
-        %help svd-  maybe only v
+elseif size(x, 2) > 3
     score = x*v;
     h = plot_coords_3d_helper(score(:, 1:3), varargin{:});
 elseif size(x, 2) == 1
     h = bar(x, varargin{:});
 end
-
-
+    
 function[h] = plot_coords_3d_helper(x, varargin)    
 if ismatrix(varargin{1}) && (size(varargin{1}, 2) == 3) && (size(varargin{1}, 1) == size(x, 1))
     colors = varargin{1};    
@@ -169,5 +169,3 @@ for i = 1:length(strs)
     end
 end
 y = s(~remove_inds);
-
-
