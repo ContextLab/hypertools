@@ -5,5 +5,6 @@ import numpy as np
 data=sio.loadmat('./weights.mat')
 
 w = data['weights'][0]
-aligned = hyp.align(w)
-hyp.plot(aligned,animate=True)
+w = [i for i in w]
+# aligned = hyp.align(w)
+hyp.plot(w,animate=True)
