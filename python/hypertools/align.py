@@ -27,16 +27,15 @@ from scipy.spatial import procrustes
 def align(data):
 	"""Implements hyperalignment"""
 
-	assert all(isinstance(i, np.ndarray) for i in data), "Input must be list of arrays"
+	assert all(isinstance(i, np.ndarray) for i in data) and type(data) is list and len(data)>1, "Input must be list of arrays"
 
 	##STEP 0: STANDARDIZE SIZE AND SHAPE##
+	sizes_0=np.zeros(len(data))
+	sizes_1=np.zeros(len(data))
 
-	sizes_0=np.zeros(len(data[0]))
-	sizes_1=np.zeros(len(data[0]))
-
-	for x in range(0, len(data[0])):
-		sizes_0[x]=j[0][x].shape[0]
-		sizes_1[x]=j[0][x].shape[1]
+	for x in range(0, len(data)):
+		sizes_0[x]=data[x].shape[0]
+		sizes_1[x]=data[x].shape[1]
 
 	#find the smallest number of rows
 	R=min(sizes_0)
@@ -48,9 +47,9 @@ def align(data):
 		C=max(sizes_1)
 
 	k=np.empty((R,C), dtype=np.ndarray)
-	m=[k]*len(data[0])
+	m=[k]*len(data)
 
-	for idx,x in enumerate(data[0]):
+	for idx,x in enumerate(data):
 		y=x[0:R,:]
 		missing=C-y.shape[1]
 		add=np.zeros((y.shape[0], missing))
