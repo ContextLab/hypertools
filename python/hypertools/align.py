@@ -30,57 +30,42 @@ def align(data):
 	assert all(isinstance(i, np.ndarray) for i in data) and type(data) is list and len(data)>1, "Input must be list of arrays"
 
 	##STEP 0: STANDARDIZE SIZE AND SHAPE##
-	sizes_0=np.zeros(len(data))
-	sizes_1=np.zeros(len(data))
-
-	for x in range(0, len(data)):
-		sizes_0[x]=data[x].shape[0]
-		sizes_1[x]=data[x].shape[1]
-
+    sizes_0 = map(lambda x: x.shape[0], data)
+    sizes_1 = map(lambda x: x.shape[1], data)
+    
 	#find the smallest number of rows
-	R=min(sizes_0)
+	R = min(sizes_0)
+    C = max([3, max(sizes_1)])
 
-	#find max columns; if max columns less than 3, add cols of zeros to make 3
-	if max(sizes_1) < 3:
-		C=3
-	else:
-		C=max(sizes_1)
-
-	k=np.empty((R,C), dtype=np.ndarray)
-	m=[k]*len(data)
-
+	m = np.empty((R,C), dtype=np.ndarray) * len(data)
+    
 	for idx,x in enumerate(data):
-		y=x[0:R,:]
-		missing=C-y.shape[1]
-		add=np.zeros((y.shape[0], missing))
-		y=np.append(y, add, axis=1)
+		y = x[0:R,:]
+		missing = C - y.shape[1]
+		add = np.zeros((y.shape[0], missing))
+		y = np.append(y, add, axis=1)
 		m[idx]=y
 
-	##STEP 1: TEMPLATE##
-
+	##STEP 1: TEMPLATE##    
 	for x in range(0, len(m)):
 		if x==0:
-			template=m[x]
+			template = m[x]
 		else:
-			_,next,_ = procrustes(np.transpose(template/x), np.transpose(m[x]))
-			template = template + np.transpose(next)
-	template= template/len(m)
-
+			_, next, _ = procrustes(np.transpose(template / (x + 1)), np.transpose(m[x]))
+			template += np.transpose(next)
+    template /= len(m)
+    
 	##STEP 2: NEW COMMON TEMPLATE##
 	#align each subj to the template from STEP 1
-
-	template2= np.zeros(template.shape)
+	template2 = np.zeros(template.shape)
 	for x in range(0, len(m)):
-		_,next,_ = procrustes(np.transpose(template),np.transpose(m[x]))
-		template2 = template2 + np.transpose(next)
-	template2=template2/len(m)
-
+		_, next, _ = procrustes(np.transpose(template), np.transpose(m[x]))
+		template2 += np.transpose(next)
+	template2 /= len(m)
+    
 	#STEP 3 (below): ALIGN TO NEW TEMPLATE
-
-	empty= np.zeros(template2.shape)
-	aligned=[empty]*(len(m))
+	aligned = [np.zeros(template2.shape)] * len(m)
 	for x in range(0, len(m)):
-		_,next,_ = procrustes(np.transpose(template2),np.transpose(m[x]))
+		_, next, _ = procrustes(np.transpose(template2), np.transpose(m[x]))
 		aligned[x] = np.transpose(next)
-		
 	return aligned
