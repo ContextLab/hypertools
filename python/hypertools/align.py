@@ -82,4 +82,5 @@ def align(data):
 	for x in range(0, len(m)):
 		_,next,_ = procrustes(np.transpose(template2),np.transpose(m[x]))
 		aligned[x] = np.transpose(next)
+		
 	return aligned
