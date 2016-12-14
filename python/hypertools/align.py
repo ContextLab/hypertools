@@ -30,15 +30,15 @@ def align(data):
 	assert all(isinstance(i, np.ndarray) for i in data) and type(data) is list and len(data)>1, "Input must be list of arrays"
 
 	##STEP 0: STANDARDIZE SIZE AND SHAPE##
-    sizes_0 = map(lambda x: x.shape[0], data)
-    sizes_1 = map(lambda x: x.shape[1], data)
-    
+	sizes_0 = map(lambda x: x.shape[0], data)
+	sizes_1 = map(lambda x: x.shape[1], data)
+
 	#find the smallest number of rows
 	R = min(sizes_0)
-    C = max([3, max(sizes_1)])
+	C = max([3, max(sizes_1)])
 
-	m = np.empty((R,C), dtype=np.ndarray) * len(data)
-    
+	m = [np.empty((R,C), dtype=np.ndarray)] * len(data)
+
 	for idx,x in enumerate(data):
 		y = x[0:R,:]
 		missing = C - y.shape[1]
@@ -46,15 +46,15 @@ def align(data):
 		y = np.append(y, add, axis=1)
 		m[idx]=y
 
-	##STEP 1: TEMPLATE##    
+	##STEP 1: TEMPLATE##
 	for x in range(0, len(m)):
 		if x==0:
 			template = m[x]
 		else:
 			_, next, _ = procrustes(np.transpose(template / (x + 1)), np.transpose(m[x]))
 			template += np.transpose(next)
-    template /= len(m)
-    
+	template /= len(m)
+
 	##STEP 2: NEW COMMON TEMPLATE##
 	#align each subj to the template from STEP 1
 	template2 = np.zeros(template.shape)
@@ -62,7 +62,7 @@ def align(data):
 		_, next, _ = procrustes(np.transpose(template), np.transpose(m[x]))
 		template2 += np.transpose(next)
 	template2 /= len(m)
-    
+
 	#STEP 3 (below): ALIGN TO NEW TEMPLATE
 	aligned = [np.zeros(template2.shape)] * len(m)
 	for x in range(0, len(m)):
