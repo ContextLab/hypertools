@@ -28,7 +28,7 @@ def align(data):
 
 	assert all(isinstance(i, np.ndarray) for i in data) and type(data) is list and len(data)>1, "Input must be list of arrays"
 	data = [i.T for i in data]
-	srm = SRM(features=data[0].shape[0])
+	srm = SRM(features=np.min([i.shape[0] for i in data]))
 	fit = srm.fit(data)
 
 	return [i.T for i in srm.transform(data)]
