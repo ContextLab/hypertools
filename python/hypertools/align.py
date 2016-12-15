@@ -27,8 +27,8 @@ def align(data):
 	"""Implements hyperalignment"""
 
 	assert all(isinstance(i, np.ndarray) for i in data) and type(data) is list and len(data)>1, "Input must be list of arrays"
-
-	srm = SRM(features=data[0].shape[1])
+	data = [i.T for i in data]
+	srm = SRM(features=data[0].shape[0])
 	fit = srm.fit(data)
 
-	return srm.transform(data)
+	return [i.T for i in srm.transform(data)]
