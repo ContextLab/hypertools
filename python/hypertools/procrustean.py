@@ -168,7 +168,7 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=True, ob
             d = d - _offset_in
 
         # Do projection
-        res = (d * np.linalg.pinv(proj)).A
+        res = (d * proj).A
 
         # Add output offset if present
         if demean and _offset_out is not None:
