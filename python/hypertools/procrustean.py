@@ -6,29 +6,15 @@
 #   copyright and license terms.
 #
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
-"""Procrustean rotation mapper"""
-
-# __docformat__ = 'restructuredtext'
-
 import numpy as np
-# from mvpa2.base import externals
-# from mvpa2.base.param import Parameter
-# from mvpa2.base.constraints import EnsureChoice
-# from mvpa2.base.types import is_datasetlike
-# from mvpa2.mappers.projection import ProjectionMapper
 
-# from mvpa2.base import warning
-# if __debug__:
-#     from mvpa2.base import debug
-
-
-
-class Procrustes(object):
-    """Mapper to project from one space to another using Procrustean
+##MAIN FUNCTION##
+def procrustes(template, target, scaling=True, reflection=True, reduction=True, oblique=False, oblique_rcond=-1):
+    """Function to project from one space to another using Procrustean
     transformation (shift + scaling + rotation).
 
-    Training this mapper requires data for both source and target space to be
-    present in the training dataset. The source space data is taken from the
+    Training this mapper requires data for both template and target space to be
+    present in the training dataset. The template space data is taken from the
     training dataset's ``samples``, while the target space is taken from a
     sample attribute corresponding to the ``space`` setting of the
     ProcrusteanMapper.
@@ -59,38 +45,20 @@ class Procrustes(object):
     #              doc="""Implementation of SVD to use. dgesvd requires ctypes to
     #              be available.""")
 
-    def __init__(self, scaling=True, reflection=True, reduction=True, oblique=False, oblique_rcond=-1):
-        self._scale = None
-        self._demean = False
-        def params():
-            self.scaling = scaling
-            self.reflection = reflection
-            self.reduction = reduction
-            self.oblique = oblique
-            self.oblique_rcond = oblique_rcond
-            self.svd = 'numpy'
-            return self
-        self.params = params()
+    _scale = None
+    _demean = False
 
-    def fit(self, source, target):
-        params = self.params
+    def fit(template, target):
         # Since it is unsupervised, we don't care about labels
         datas = ()
-        odatas = ()
         means = ()
         shapes = ()
 
-        assess_residuals = False
-
-        # target = source.sa[self.get_space()].value
-
-        for i, ds in enumerate((source, target)):
+        for i, ds in enumerate((template, target)):
             data = ds
-            if assess_residuals:
-                odatas += (data,)
-            if self._demean:
+            if _demean:
                 if i == 0:
-                    mean = self._offset_in
+                    mean = _offset_in
                 else:
                     mean = data.mean(axis=0)
                 data = data - mean
@@ -108,7 +76,7 @@ class Procrustes(object):
         # Check the sizes
         if sn != tn:
             raise ValueError, "Data for both spaces should have the same " \
-                  "number of samples. Got %d in source and %d in target space" \
+                  "number of samples. Got %d in template and %d in target space" \
                   % (sn, tn)
 
         # Sums of squares
@@ -124,36 +92,36 @@ class Procrustes(object):
         norms = [ np.sqrt(np.sum(ssq)) for ssq in ssqs ]
         normed = [ data/norm for (data, norm) in zip(datas, norms) ]
 
-        # add new blank dimensions to source space if needed
+        # add new blank dimensions to template space if needed
         if sm < tm:
             normed[0] = np.hstack( (normed[0], np.zeros((sn, tm-sm))) )
 
         if sm > tm:
-            if params.reduction:
+            if reduction:
                 normed[1] = np.hstack( (normed[1], np.zeros((sn, sm-tm))) )
             else:
                 raise ValueError, "reduction=False, so mapping from " \
                       "higher dimensionality " \
-                      "source space is not supported. Source space had %d " \
+                      "template space is not supported. template space had %d " \
                       "while target %d dimensions (features)" % (sm, tm)
 
-        source, target = normed
-        if params.oblique:
+        template, target = normed
+        if oblique:
             # Just do silly linear system of equations ;) or naive
             # inverse problem
             if sn == sm and tm == 1:
-                T = np.linalg.solve(source, target)
+                T = np.linalg.solve(template, target)
             else:
-                T = np.linalg.lstsq(source, target, rcond=params.oblique_rcond)[0]
+                T = np.linalg.lstsq(template, target, rcond=oblique_rcond)[0]
             ss = 1.0
         else:
             # Orthogonal transformation
             # figure out optimal rotation
-            U, s, Vh = np.linalg.svd(np.dot(target.T, source),
+            U, s, Vh = np.linalg.svd(np.dot(target.T, template),
                                full_matrices=False)
             T = np.dot(Vh.T, U.T)
 
-            if not params.reflection:
+            if not reflection:
                 # then we need to assure that it is only rotation
                 # "recipe" from
                 # http://en.wikipedia.org/wiki/Orthogonal_Procrustes_problem
@@ -175,35 +143,38 @@ class Procrustes(object):
         if sm != tm:
             T = T[:sm, :tm]
 
-        self._scale = scale = ss * norms[1] / norms[0]
+        _scale = scale = ss * norms[1] / norms[0]
         # Assign projection
-        if self.params.scaling:
+        if scaling:
             proj = scale * T
         else:
             proj = T
-        self._proj = proj
+        return proj
 
-        if self._demean:
-            self._offset_out = means[1]
+        if _demean:
+            _offset_out = means[1]
 
-    def transform(self,data):
-        if self._proj is None:
+    def transform(data,proj):
+        if proj is None:
             raise RuntimeError, "Mapper needs to be train before used."
 
         # local binding
-        demean = self._demean
+        demean = _demean
 
         d = np.asmatrix(data)
 
         # Remove input offset if present
-        if demean and self._offset_in is not None:
-            d = d - self._offset_in
+        if demean and _offset_in is not None:
+            d = d - _offset_in
 
         # Do projection
-        res = (d * np.linalg.pinv(self._proj)).A
+        res = (d * np.linalg.pinv(proj)).A
 
         # Add output offset if present
-        if demean and self._offset_out is not None:
-            res += self._offset_out
+        if demean and _offset_out is not None:
+            res += _offset_out
 
         return res
+
+    proj = fit(template, target)
+    return transform(target,proj)
