@@ -20,15 +20,25 @@ OUTPUTS:
 
 ##PACKAGES##
 from srm import SRM
+from procrustean import Procrustes
 import numpy as np
 
 ##MAIN FUNCTION##
-def align(data):
+def align(data, method='HYP'):
 	"""Implements hyperalignment"""
 
 	assert all(isinstance(i, np.ndarray) for i in data) and type(data) is list and len(data)>1, "Input must be list of arrays"
-	data = [i.T for i in data]
-	srm = SRM(features=np.min([i.shape[0] for i in data]))
-	fit = srm.fit(data)
 
-	return [i.T for i in srm.transform(data)]
+	if method=='HYP':
+		for item in data:
+			pc = Procrustes()
+			pc._train(w1[0],w1[1].T)
+
+
+
+
+	elif method=='SRM':
+		data = [i.T for i in data]
+		srm = SRM(features=np.min([i.shape[0] for i in data]))
+		fit = srm.fit(data)
+		return [i.T for i in srm.transform(data)]
