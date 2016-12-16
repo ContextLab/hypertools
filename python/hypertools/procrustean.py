@@ -9,7 +9,7 @@
 import numpy as np
 
 ##MAIN FUNCTION##
-def procrustes(template, target, scaling=True, reflection=True, reduction=True, oblique=False, oblique_rcond=-1):
+def procrustes(source, target, scaling=True, reflection=True, reduction=True, oblique=False, oblique_rcond=-1):
     """Function to project from one space to another using Procrustean
     transformation (shift + scaling + rotation).
 
@@ -48,13 +48,13 @@ def procrustes(template, target, scaling=True, reflection=True, reduction=True, 
     _scale = None
     _demean = False
 
-    def fit(template, target):
+    def fit(source, target):
         # Since it is unsupervised, we don't care about labels
         datas = ()
         means = ()
         shapes = ()
 
-        for i, ds in enumerate((template, target)):
+        for i, ds in enumerate((source, target)):
             data = ds
             if _demean:
                 if i == 0:
@@ -105,20 +105,20 @@ def procrustes(template, target, scaling=True, reflection=True, reduction=True, 
                       "template space is not supported. template space had %d " \
                       "while target %d dimensions (features)" % (sm, tm)
 
-        template, target = normed
+        source, target = normed
         if oblique:
             # Just do silly linear system of equations ;) or naive
             # inverse problem
             if sn == sm and tm == 1:
-                T = np.linalg.solve(template, target)
+                T = np.linalg.solve(source, target)
             else:
-                T = np.linalg.lstsq(template, target, rcond=oblique_rcond)[0]
+                T = np.linalg.lstsq(source, target, rcond=oblique_rcond)[0]
             ss = 1.0
         else:
             # Orthogonal transformation
             # figure out optimal rotation
-            U, s, Vh = np.linalg.svd(np.dot(target.T, template),
-                               full_matrices=False)
+            U, s, Vh = np.linalg.svd(np.dot(target.T, source),
+                                     full_matrices=False)
             T = np.dot(Vh.T, U.T)
 
             if not reflection:
@@ -176,5 +176,5 @@ def procrustes(template, target, scaling=True, reflection=True, reduction=True, 
 
         return res
 
-    proj = fit(template, target)
-    return transform(target,proj)
+    proj = fit(source, target)
+    return transform(source, proj)
