@@ -51,25 +51,25 @@ def align(data, method='HYPER'):
 		##STEP 1: TEMPLATE##
 		for x in range(0, len(m)):
 			if x==0:
-				template = m[x]
+				template = np.copy(m[x])
 			else:
-				next = procrustes(np.transpose(template / (x + 1)), np.transpose(m[x]))
-				template += np.transpose(next)
+				next = procrustes(m[x], template / (x + 1))
+				template += next
 		template /= len(m)
 
 		##STEP 2: NEW COMMON TEMPLATE##
 		#align each subj to the template from STEP 1
 		template2 = np.zeros(template.shape)
 		for x in range(0, len(m)):
-			next = procrustes(np.transpose(template), np.transpose(m[x]))
-			template2 += np.transpose(next)
+			next = procrustes(m[x], template)
+			template2 += next
 		template2 /= len(m)
 
 		#STEP 3 (below): ALIGN TO NEW TEMPLATE
 		aligned = [np.zeros(template2.shape)] * len(m)
 		for x in range(0, len(m)):
-			next = procrustes(np.transpose(template2), np.transpose(m[x]))
-			aligned[x] = np.transpose(next)
+			next = procrustes(m[x], template2)
+			aligned[x] = next
 		return aligned
 
 	elif method=='SRM':
