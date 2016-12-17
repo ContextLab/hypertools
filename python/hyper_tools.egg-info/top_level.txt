@@ -1,2 +1,0 @@
-hyperalign
-plot_coords
