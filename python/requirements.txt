@@ -6,3 +6,4 @@ matplotlib
 mpl_toolkits
 seaborn
 scikit-learn
+PPCA
