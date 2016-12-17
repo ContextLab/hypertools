@@ -1,0 +1,9 @@
+nose
+sphinx
+numpy
+scipy
+matplotlib
+mpl_toolkits
+seaborn
+scikit-learn
+PPCA

@@ -1,63 +1,88 @@
-To install, navigate to this folder in Terminal and type:
+<h1>Hypertools - A python package for visualizing high dimensional data</h1>
+
+![Hypertools example](images/hypertools.gif)
+
+<h2>Install</h2>
+
+To install from this repo, navigate to this folder in Terminal and type:
 
 pip install -e .
 
 (this assumes you have pip installed on your system: https://pip.pypa.io/en/stable/installing/)
 
-INPUTS:
+Coming soon: `pip install hypertools`
 
-        X: a T by D matrix of observations.  T is the number of coordinates
-        and D is the dimensionality of each observation.  NaNs are
-        treated as missing observations.
+<h2>Main functions</h2>
 
-ARGUMENTS:
++ <b>plot</b> - plots multidimensional data as static image or movie
++ <b>align</b> - align multidimensional data (See here for details)
++ <b>reduce</b> - implements PCA to reduce dimensionality of data
++ <b>describe</b> - plots/analyses to evaluate how well the functions above are working
 
-        Format strings can be passed as a string, or tuple/list of length x.
+<h2>Plot</h2>
 
-        See matplotlib API for more styling options
+![Plot example](images/plot.gif)
 
-KEYWORD ARGUMENTS:
+<b>Inputs:</b>
 
-        palette (string): A matplotlib or seaborn color palette
+A numpy array, or list of arrays
 
-        color (list): A list of colors for each line to be plotted. Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes. If defined, overrides palette. See http://matplotlib.org/examples/color/named_colors.html for list of named colors. Note: must be the same length as X.
+<b>Arguments:</b>
 
-        point_colors (list of str, floats or ints): A list of colors for each point. Must be dimensionality of data (X). If the data type is numerical, the values will be mapped to rgb values in the specified palette.  If the data type is strings, the points will be labeled categorically.
+Format strings can be passed as a string, or tuple/list of length x.
+See matplotlib API for more styling options
 
-        linestyle (list): a list of line styles
+<b>Keyword arguments:</b>
 
-        marker (list): a list of marker types
+<i>animate</i> (bool): If True, plots the data as an animated trajectory
 
-        See matplotlib API for more styling options
+<i>save_path</i> (str): Path to save the image/movie.  Must include the file extension in the save path (i.e. `save_path='/path/to/file/image.png'`).  NOTE: If saving an animation, FFMPEG must be installed (this is a matplotlib req).
 
-        labels (list): A list of labels for each point. Must be dimensionality of data (X). If no label is wanted for a particular point, input `None`
+<i>palette</i> (str): A matplotlib or seaborn color palette
 
-        explore (bool): (experimental feature) Displays user defined labels or PCA coordinates on hover. When a point is clicked, the label will remain on the plot (WIP). To use, set `explore=True`.
+<i>color</i> (list): A list of colors for each line to be plotted. Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes. If defined, overrides palette. See http://matplotlib.org/examples/color/named_colors.html for list of named colors. Note: must be the same length as X.
 
+<i>point_colors</i> (list of str, floats or ints): A list of colors for each point. Must be dimensionality of data (X). If the data type is numerical, the values will be mapped to rgb values in the specified palette.  If the data type is strings, the points will be labeled categorically.
 
-EXAMPLE USES:
+<i>linestyle</i> (list): a list of line styles
 
-Plot with default color palette: `coords.plot_coords(w)`
+<i>marker</i> (list): a list of marker types
 
-Change color palette: `coords.plot_coords(w,palette='Reds')`
+<i>ndims</i> (int): an int representing the number of dims to plot in. Must be 1,2, or 3.  NOTE: Currently only works with static plots.
 
-Specify colors using unlabeled list of format strings: `coords.plot_coords([w[0],w[1]],['r:','b--'])`
+See matplotlib API for more styling options
 
-Plot data as points: `coords.plot_coords([w[0],w[1]],'o')`
+<i>labels</i> (list): A list of labels for each point. Must be dimensionality of data (X). If no label is wanted for a particular point, input `None`
 
-Specify colors using keyword list of colors (color codes, rgb values, hex codes or a mix): `coords.plot_coords([w[0],w[1],[w[2]],color=['r', (.5,.2,.9), '#101010'])`
+<i>explore</i> (bool): Displays user defined labels or PCA coordinates on hover. When a point is clicked, the label will remain on the plot (dataarning: experimental feature, use at your own discretion!). To use, set `explore=True`.
 
-Specify linestyles using keyword list: `coords.plot_coords([w[0],w[1],[w[2]],linestyle=[':','--','-'])`
+<h3>Example uses</h3>
 
-Specify markers using keyword list: `coords.plot_coords([w[0],w[1],[w[2]],marker=['o','*','^'])`
+Import the library: `import hypertools as hyp`
 
-Specify markers with format string and colors with keyword argument: `coords.plot_coords([w[0],w[1],[w[2]], 'o', color=['r','g','b'])``
+Plot with default color palette: `hyp.plot(data)`
+
+Plot as movie: `hyp.plot(data, animate=True)`
+
+Change color palette: `hyp.plot(data,palette='Reds')`
+
+Specify colors using unlabeled list of format strings: `hyp.plot([data[0],data[1]],['r:','b--'])`
+
+Plot data as points: `hyp.plot([data[0],data[1]],'o')`
+
+Specify colors using keyword list of colors (color codes, rgb values, hex codes or a mix): `hyp.plot([data[0],data[1],[data[2]],color=['r', (.5,.2,.9), '#101010'])`
+
+Specify linestyles using keyword list: `hyp.plot([data[0],data[1],[data[2]],linestyle=[':','--','-'])`
+
+Specify markers using keyword list: `hyp.plot([data[0],data[1],[data[2]],marker=['o','*','^'])`
+
+Specify markers with format string and colors with keyword argument: `hyp.plot([data[0],data[1],[data[2]], 'o', color=['r','g','b'])`
 
 Specify labels:
 ```
 # Label first point of each list
 labels=[]
-for idx,i in enumerate(w):
+for idx,i in enumerate(data):
     tmp=[]
     for iidx,ii in enumerate(i):
         if iidx==0:
@@ -66,20 +91,76 @@ for idx,i in enumerate(w):
             tmp.append(None)
     labels.append(tmp)
 
-coords.plot_coords(w, 'o', labels=labels)
+hyp.plot(data, 'o', labels=labels)
 ```
 
 Specify point_colors:
 ```
 # Label first point of each list
 point_colors=[]
-for idx,i in enumerate(w):
+for idx,i in enumerate(data):
     tmp=[]
     for iidx,ii in enumerate(i):
             tmp.append(np.random.rand())
     point_colors.append(tmp)
 
-coords.plot_coords(w, 'o', point_colors=point_colors)
+hyp.plot(data, 'o', point_colors=point_colors)
 ```
 
-Turn on explore mode (experimental): `coords.plot_coords(w, 'o', explore=True)`
+Turn on explore mode (experimental): `hyp.plot(data, 'o', explore=True)`
+
+<h2>Align</h2>
+
+<h3><center>BEFORE</center></h3>
+
+![Align before example](images/align_before.gif)
+
+<h3><center>AFTER</center></h3>
+
+![Align after example](images/align_after.gif)
+
+<b>Inputs:</b>
+
+A list of numpy arrays
+
+<b>Outputs</b>
+
+An aligned list of numpy arrays
+
+<h3>Example uses</h3>
+
+align a list of arrays: `aligned_data = hyp.align(data)`
+
+<h2>Reduce</h2>
+
+<b>Inputs:</b>
+
+A numpy array or list of numpy arrays
+
+<b>Keyword arguments:</b>
+
+ndims - dimensionality of output data
+
+<b>Outputs</b>
+
+An aligned list of numpy arrays
+
+<h3>Example uses</h3>
+
+Reduce n-dimensional array to 3d: `aligned_data = hyp.align(data, ndims=3)`
+
+<h2>Describe</h2>
+
+<b>Inputs:</b>
+
+A numpy array or list of numpy arrays
+
+<b>Outputs</b>
+
+A plot summarizing the correlation between raw input data and PCA reduced data
+
+<h3>Example uses</h3>
+
+`hyp.describe(data)`
+
+![Describe Example](images/describe_example.png)
