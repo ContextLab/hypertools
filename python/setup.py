@@ -28,5 +28,6 @@ setup(
         "matplotlib",
         "seaborn",
         "scikit-learn",
+        "PPCA",
     ]
 )
