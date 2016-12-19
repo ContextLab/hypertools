@@ -18,7 +18,7 @@ import warnings
 import re
 import itertools
 import seaborn as sns
-from .helpers import *
+from ..util.helpers import *
 from .static import static_plot
 from .animate import animated_plot
 
@@ -45,7 +45,7 @@ def plot(x,*args,**kwargs):
             point_colors = vals2colors(point_colors)
         elif all(isinstance(el, str) for el in point_colors):
             point_colors = group_by_category(point_colors)
-        
+
         categories = list(set(point_colors))
         x_stacked = np.vstack(x)
         x_reshaped = [[] for i in categories]

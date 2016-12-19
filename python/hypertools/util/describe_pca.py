@@ -29,11 +29,11 @@ from .reduce import reduce as reduceD
 sns.set(style="darkgrid")
 
 ##MAIN FUNCTION##
-def describe(x, return_data=False):
+def describe_pca(x, return_data=False):
     warnings.warn('When input data is large, this computation can take a long time.')
 
     ##SUB FUNCTIONS##
-    def PCA_summary(x,max_dims):
+    def PCA_summary(x,max_dims=10):
         if type(x) is list:
             x = np.vstack(x)
         cov_alldims = pdist(x,'correlation')
