@@ -19,8 +19,8 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d import proj3d
 import seaborn as sns
-from .helpers import *
-from .reduce import reduce as reduceD
+from ..util.helpers import *
+from ..util.reduce import reduce as reduceD
 
 ##MAIN FUNCTION##
 def static_plot(x, *args, **kwargs):

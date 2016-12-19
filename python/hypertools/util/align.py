@@ -19,8 +19,8 @@ OUTPUTS:
 """
 
 ##PACKAGES##
-from srm import SRM
-from procrustean import procrustes
+from .._externals.srm import SRM
+from .._externals.procrustean import procrustes
 import numpy as np
 
 ##MAIN FUNCTION##
