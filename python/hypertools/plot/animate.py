@@ -17,7 +17,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as p3
 import matplotlib.animation as animation
-from ..util.helpers import *
+from .._shared.helpers import *
 from ..util.reduce import reduce as reduceD
 
 ##MAIN FUNCTION##
@@ -75,6 +75,9 @@ def animated_plot(x, *args, **kwargs):
                 line.set_3d_properties(data[num-tail_len:num+1, 2])
         return lines,trail_lines
 
+    args_list = parse_args(x,args)
+    kwargs_list = parse_kwargs(x,kwargs)
+
     # Attaching 3D axis to the figure
     fig = plt.figure()
     ax = p3.Axes3D(fig)
@@ -86,7 +89,7 @@ def animated_plot(x, *args, **kwargs):
     x = interp_array_list(x)
     x = center(x)
 
-    lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], linewidth=3, *args, **kwargs)[0] for dat in x]
+    lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], linewidth=3, *args_list[idx], **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
     trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1])[0] for dat in x]
 
     ax.set_axis_off()

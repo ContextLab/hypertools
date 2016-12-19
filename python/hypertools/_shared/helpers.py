@@ -125,3 +125,35 @@ def interp_col_nans(data):
 		y[nans]= np.interp(x(nans), x(~nans), y[~nans])
 		data_interp[:,col] = y
 	return data_interp
+
+def parse_args(x,args):
+	args_list = []
+	for i,item in enumerate(x):
+		tmp = []
+		for ii,arg in enumerate(args):
+			if type(arg) is tuple or type(arg) is list:
+				if len(arg) == len(x):
+					tmp.append(arg[i])
+				else:
+					print('Error: arguments must be a list of the same length as x')
+					sys.exit(1)
+			else:
+				tmp.append(arg)
+		args_list.append(tuple(tmp))
+	return args_list
+
+def parse_kwargs(x,kwargs):
+	kwargs_list = []
+	for i,item in enumerate(x):
+		tmp = {}
+		for kwarg in kwargs:
+			if type(kwargs[kwarg]) is tuple or type(kwargs[kwarg]) is list:
+				if len(kwargs[kwarg]) == len(x):
+					tmp[kwarg]=kwargs[kwarg][i]
+				else:
+					print('Error: keyword arguments must be a list of the same length as x')
+					sys.exit(1)
+			else:
+				tmp[kwarg]=kwargs[kwarg]
+		kwargs_list.append(tmp)
+	return kwargs_list
