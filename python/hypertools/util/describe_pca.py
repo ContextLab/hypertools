@@ -33,9 +33,11 @@ def describe_pca(x, return_data=False):
     warnings.warn('When input data is large, this computation can take a long time.')
 
     ##SUB FUNCTIONS##
-    def PCA_summary(x,max_dims=10):
+    def PCA_summary(x,max_dims=None):
         if type(x) is list:
             x = np.vstack(x)
+        if max_dims is None:
+            max_dims = x.shape[1]
         cov_alldims = pdist(x,'correlation')
         corrs=[]
         for num in range(2,max_dims):
