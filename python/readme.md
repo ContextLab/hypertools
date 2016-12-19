@@ -12,12 +12,16 @@ pip install -e .
 
 Coming soon: `pip install hypertools`
 
-<h2>Main functions</h2>
+<h2>Main function</h2>
 
 + <b>plot</b> - plots multidimensional data as static image or movie
-+ <b>align</b> - align multidimensional data (See here for details)
-+ <b>reduce</b> - implements PCA to reduce dimensionality of data
-+ <b>describe</b> - plots/analyses to evaluate how well the functions above are working
+
+<h2>Sub functions</h2>
+
++ <b>util.align</b> - align multidimensional data (See here for details)
++ <b>util.reduce</b> - implements PCA to reduce dimensionality of data
++ <b>util.describe_pca</b> - plotting tool to evaluate how well the principle components describe the data
++ <b>util.missing_inds</b> - function that returns indices of missing data (nans)
 
 <h2>Plot</h2>
 
@@ -129,7 +133,7 @@ An aligned list of numpy arrays
 
 <h3>Example uses</h3>
 
-align a list of arrays: `aligned_data = hyp.align(data)`
+align a list of arrays: `aligned_data = hyp.util.align(data)`
 
 <h2>Reduce</h2>
 
@@ -147,9 +151,9 @@ An aligned list of numpy arrays
 
 <h3>Example uses</h3>
 
-Reduce n-dimensional array to 3d: `aligned_data = hyp.align(data, ndims=3)`
+Reduce n-dimensional array to 3d: `aligned_data = hyp.util.align(data, ndims=3)`
 
-<h2>Describe</h2>
+<h2>Describe PCA</h2>
 
 <b>Inputs:</b>
 
@@ -161,6 +165,6 @@ A plot summarizing the correlation between raw input data and PCA reduced data
 
 <h3>Example uses</h3>
 
-`hyp.describe(data)`
+`hyp.util.describe_pca(data)`
 
 ![Describe Example](images/describe_example.png)
