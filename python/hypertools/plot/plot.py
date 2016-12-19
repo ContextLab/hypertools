@@ -18,7 +18,7 @@ import warnings
 import re
 import itertools
 import seaborn as sns
-from ..util.helpers import *
+from .._shared.helpers import *
 from .static import static_plot
 from .animate import animated_plot
 
