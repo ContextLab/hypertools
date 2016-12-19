@@ -7,7 +7,7 @@ data1 = data['spiral']
 data2 = data['randwalk']
 hyp.plot([data1, data2])
 
-hyp.plot(hyp.align([data1, data2]))
+hyp.plot(hyp.util.align([data1, data2]))
 
 # A random rotation matrix
 rot = np.array([[-0.89433495, -0.44719485, -0.01348182],
@@ -18,4 +18,4 @@ data_rot = np.dot(data1, rot) + np.random.randn(data1.shape[0], data1.shape[1])*
 # before hyperalignment
 hyp.plot([data1, data_rot])
 # After hyperalignment
-hyp.plot(hyp.align([data1, data_rot]))
+hyp.plot(hyp.util.align([data1, data_rot]))
