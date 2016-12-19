@@ -111,3 +111,17 @@ def make_pos_def(x):
 		return x
 	else:
 		return nearPD(x)
+
+def nan_helper(y):
+	"""Helper to handle indices and logical indices of NaNs.
+	"""
+	return np.isnan(y), lambda z: z.nonzero()[0]
+
+def interp_col_nans(data):
+	data_interp = np.zeros(data.shape)
+	for col in range(data.shape[1]):
+		y = data[:,col]
+		nans, x= nan_helper(y)
+		y[nans]= np.interp(x(nans), x(~nans), y[~nans])
+		data_interp[:,col] = y
+	return data_interp

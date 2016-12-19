@@ -16,6 +16,7 @@ import warnings
 import numpy as np
 from ppca import PPCA
 from sklearn.decomposition import PCA as PCA
+from .helpers import *
 
 def reducePCA(x, ndim):
 	if np.isnan(np.vstack(x)).any():
@@ -23,8 +24,9 @@ def reducePCA(x, ndim):
 		x_split= np.cumsum([i.shape[0] for i in x][:-1])
 		m = PPCA(np.vstack(x))
 		m.fit(d=ndim)
-		x_pca = m.transform()
-		return list(np.split(x_pca,x_split,axis=0))
+		x_pca = m.transform(np.vstack(x))
+		x_pca_interp = interp_col_nans(x_pca)
+		return list(np.split(x_pca_interp,x_split,axis=0))
 	else:
 		m=PCA(n_components=ndim, whiten=True)
 		m.fit(np.vstack(x))
