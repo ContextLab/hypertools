@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d import proj3d
 import seaborn as sns
-from ..util.helpers import *
+from .._shared.helpers import *
 from ..util.reduce import reduce as reduceD
 
 ##MAIN FUNCTION##
@@ -60,34 +60,10 @@ def static_plot(x, *args, **kwargs):
 		del kwargs['ndims']
 
 	##PARSE LEFTOVER MATPLOTLIB ARGS##
-	args_list = []
-	for i,item in enumerate(x):
-		tmp = []
-		for ii,arg in enumerate(args):
-			if type(arg) is tuple or type(arg) is list:
-				if len(arg) == len(x):
-					tmp.append(arg[i])
-				else:
-					print('Error: arguments must be a list of the same length as x')
-					sys.exit(1)
-			else:
-				tmp.append(arg)
-		args_list.append(tuple(tmp))
+	args_list = parse_args(x,args)
 
 	##PARSE LEFTOVER MATPLOTLIB KWARGS##
-	kwargs_list = []
-	for i,item in enumerate(x):
-		tmp = {}
-		for kwarg in kwargs:
-			if type(kwargs[kwarg]) is tuple or type(kwargs[kwarg]) is list:
-				if len(kwargs[kwarg]) == len(x):
-					tmp[kwarg]=kwargs[kwarg][i]
-				else:
-					print('Error: keyword arguments must be a list of the same length as x')
-					sys.exit(1)
-			else:
-				tmp[kwarg]=kwargs[kwarg]
-		kwargs_list.append(tmp)
+	kwargs_list = parse_kwargs(x,kwargs)
 
 	##SUB FUNCTIONS##
 	def dispatch(x):
