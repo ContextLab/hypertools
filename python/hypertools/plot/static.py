@@ -22,6 +22,8 @@ import seaborn as sns
 from .._shared.helpers import *
 from ..util.reduce import reduce as reduceD
 
+mpl.rcParams['pdf.fonttype'] = 42
+
 ##MAIN FUNCTION##
 def static_plot(x, *args, **kwargs):
 	"""
@@ -289,7 +291,6 @@ def static_plot(x, *args, **kwargs):
 	fig,ax,data = dispatch(x)
 	add_labels(data,labels)
 	if save:
-		mpl.rcParams['svg.fonttype'] = 'none' # makes pdf text is editable
 		plt.savefig(save_path)
 	plt.show()
 	return plt,fig,ax
