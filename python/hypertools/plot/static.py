@@ -289,7 +289,7 @@ def static_plot(x, *args, **kwargs):
 	fig,ax,data = dispatch(x)
 	add_labels(data,labels)
 	if save:
-		# mpl.rcParams['svg.fonttype'] = 'none' # makes pdf text is editable
+		mpl.rcParams['svg.fonttype'] = 'none' # makes pdf text is editable
 		plt.savefig(save_path)
 	plt.show()
 	return plt,fig,ax
