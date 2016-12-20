@@ -36,12 +36,9 @@ def vals2colors(vals,cmap='GnBu_d',res=100):
 		vals = list(itertools.chain(*vals))
 
 	# get palette from seaborn
-	palette = sns.color_palette(cmap, res)
-
-	# rank the values and then normalize
-	ranks = list(map(lambda x: sum([val <= x for val in vals]),vals))
-	ranks = list(map(lambda rank: int(res*rank/len(vals)),ranks))
-	return [palette[rank-1] for rank in ranks]
+	palette = np.array(sns.color_palette(cmap, res))
+	ranks = np.digitize(vals, np.linspace(np.min(vals), np.max(vals)+1, res+1)) - 1
+	return palette[ranks, :]
 
 # this will be moved to utils.py
 def is_list(x):
