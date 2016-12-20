@@ -17,8 +17,6 @@ import numpy as np
 from ppca import PPCA
 from sklearn.decomposition import PCA as PCA
 from .._shared import helpers
-from sklearn.manifold import TSNE
-
 
 ##SUB FUNCTIONS##
 def reducePCA(x, ndim):
@@ -46,8 +44,7 @@ def reducePCA(x, ndim):
 			return x_pca
 
 	else:
-		# m=PCA(n_components=ndim, whiten=True)
-		m = TSNE(n_components=ndim)
+		m=PCA(n_components=ndim, whiten=True)
 		m.fit(np.vstack(x))
 		if len(x)>1:
 			return [m.transform(i) for i in x]
