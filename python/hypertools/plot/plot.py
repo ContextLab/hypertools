@@ -42,11 +42,11 @@ def plot(x,*args,**kwargs):
 
         # if all of the elements are numbers, map them to colors
         if all(isinstance(el, int) or isinstance(el, float) for el in point_colors):
-            point_colors = vals2colors(point_colors)
+            point_colors = vals2bins(point_colors)
         elif all(isinstance(el, str) for el in point_colors):
             point_colors = group_by_category(point_colors)
 
-        categories = list(set(point_colors))
+        categories = list(set(np.sort(point_colors)))
         x_stacked = np.vstack(x)
         x_reshaped = [[] for i in categories]
         for idx,point in enumerate(point_colors):

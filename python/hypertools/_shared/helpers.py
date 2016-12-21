@@ -40,6 +40,21 @@ def vals2colors(vals,cmap='GnBu_d',res=100):
 	ranks = np.digitize(vals, np.linspace(np.min(vals), np.max(vals)+1, res+1)) - 1
 	return [tuple(i) for i in palette[ranks, :]]
 
+def vals2bins(vals,res=100):
+	"""Maps values to colors
+	Args:
+	values (list or list of lists) - list of values to map to colors
+	cmap (str) - color map (default is 'husl')
+	res (int) - resolution of the color map (default: 100)
+	Returns:
+	list of rgb tuples
+	"""
+	# flatten if list of lists
+	if any(isinstance(el, list) for el in vals):
+		vals = list(itertools.chain(*vals))
+
+	return np.digitize(vals, np.linspace(np.min(vals), np.max(vals)+1, res+1)) - 1
+
 # this will be moved to utils.py
 def is_list(x):
     if type(x[0][0])==np.ndarray:
