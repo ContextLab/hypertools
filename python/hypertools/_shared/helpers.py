@@ -38,7 +38,7 @@ def vals2colors(vals,cmap='GnBu_d',res=100):
 	# get palette from seaborn
 	palette = np.array(sns.color_palette(cmap, res))
 	ranks = np.digitize(vals, np.linspace(np.min(vals), np.max(vals)+1, res+1)) - 1
-	return palette[ranks, :]
+	return [tuple(i) for i in palette[ranks, :]]
 
 # this will be moved to utils.py
 def is_list(x):

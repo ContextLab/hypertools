@@ -10,9 +10,9 @@ for idx,i in enumerate(w):
     tmp=[]
     for iidx,ii in enumerate(i):
         if iidx==0:
-            tmp.append('first')
+            tmp.append(0)
         else:
-            tmp.append('not first')
+            tmp.append(1)
     point_colors.append(tmp)
 
 hyp.plot(w,'o',point_colors=point_colors)
