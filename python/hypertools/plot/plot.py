@@ -25,7 +25,23 @@ from .animate import animated_plot
 ##MAIN FUNCTION##
 def plot(x,*args,**kwargs):
 
-    ##STYLING##
+    ##HYPERTOOLS-SPECIFIC ARG PARSING##
+
+    if 'n_clusters' in kwargs:
+        n_clusters=kwargs['n_clusters']
+
+        if 'ndims' in kwargs:
+            ndims = kwargs['ndims']
+        else:
+            ndims = 3
+
+        cluster_labels = get_clusters(x, ndims, n_clusters)
+        x = reshape_data(x,cluster_labels)
+        del kwargs['n_clusters']
+        
+        if 'point_colors' in kwargs:
+            warnings.warn('n_clusters overrides point_colors, ignoring point_colors.')
+            del kwargs['point_colors']
 
     # handle point_colors flag
     if 'point_colors' in kwargs:
@@ -46,12 +62,8 @@ def plot(x,*args,**kwargs):
         elif all(isinstance(el, str) for el in point_colors):
             point_colors = group_by_category(point_colors)
 
-        categories = list(set(np.sort(point_colors)))
-        x_stacked = np.vstack(x)
-        x_reshaped = [[] for i in categories]
-        for idx,point in enumerate(point_colors):
-            x_reshaped[categories.index(point)].append(x_stacked[idx])
-        x = [np.vstack(i) for i in x_reshaped]
+        # reshape the data according to point_colors
+        x = reshape_data(x,point_colors)
 
     if 'style' in kwargs:
         sns.set(style=kwargs['style'])
