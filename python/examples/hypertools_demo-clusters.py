@@ -15,4 +15,4 @@ ind_vars = df[df.columns[1:]]
 m = PCA(n_components=3)
 reduced_data = m.fit_transform(ind_vars)
 
-hyp.plot(reduced_data,'o',n_clusters=10,animate=True)
+hyp.plot(reduced_data,'o',n_clusters=10)
