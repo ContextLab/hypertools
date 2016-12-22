@@ -10,8 +10,6 @@ import numpy as np
 from scipy.interpolate import PchipInterpolator as pchip
 import seaborn as sns
 import itertools
-from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
 
 ##HELPER FUNCTIONS##
 def center(x):
@@ -179,11 +177,3 @@ def reshape_data(x,labels):
 	for idx,point in enumerate(labels):
 		x_reshaped[categories.index(point)].append(x_stacked[idx])
 	return [np.vstack(i) for i in x_reshaped]
-
-def get_clusters(x, ndims, n_clusters):
-	if type(x) is list:
-		x = np.vstack(x)
-	reduced_data = PCA(n_components=ndims).fit_transform(x)
-	kmeans = KMeans(init='k-means++', n_clusters=n_clusters, n_init=10)
-	kmeans.fit(reduced_data)
-	return kmeans.labels_

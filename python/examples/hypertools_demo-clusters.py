@@ -16,3 +16,8 @@ m = PCA(n_components=3)
 reduced_data = m.fit_transform(ind_vars)
 
 hyp.plot(reduced_data,'o',n_clusters=10)
+
+# OR
+
+cluster_labels = hyp.util.cluster(reduced_data, n_clusters=10)
+hyp.plot(reduced_data,'o',point_colors=cluster_labels)
