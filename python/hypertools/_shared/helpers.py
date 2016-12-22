@@ -16,7 +16,7 @@ from sklearn.decomposition import PCA
 ##HELPER FUNCTIONS##
 def center(x):
 	x_stacked = np.vstack(x)
-	return x - np.mean(x_stacked, 0)
+	return [i - np.mean(x_stacked, 0) for i in x]
 
 def group_by_category(vals):
 	if any(isinstance(el, list) for el in vals):
