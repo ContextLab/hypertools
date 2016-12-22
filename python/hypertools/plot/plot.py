@@ -21,6 +21,7 @@ import seaborn as sns
 from .._shared.helpers import *
 from .static import static_plot
 from .animate import animated_plot
+from ..util.cluster import cluster
 
 ##MAIN FUNCTION##
 def plot(x,*args,**kwargs):
@@ -35,10 +36,10 @@ def plot(x,*args,**kwargs):
         else:
             ndims = 3
 
-        cluster_labels = get_clusters(x, ndims, n_clusters)
+        cluster_labels = cluster(x, n_clusters=n_clusters, ndims=ndims)
         x = reshape_data(x,cluster_labels)
         del kwargs['n_clusters']
-        
+
         if 'point_colors' in kwargs:
             warnings.warn('n_clusters overrides point_colors, ignoring point_colors.')
             del kwargs['point_colors']
