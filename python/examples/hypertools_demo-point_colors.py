@@ -12,4 +12,4 @@ for idx,i in enumerate(w):
             tmp.append(int(np.random.randint(10, size=1)))
     point_colors.append(tmp)
 
-hyp.plot(w,'o',point_colors=point_colors,animate=True)
+hyp.plot(w,'o',point_colors=point_colors)
