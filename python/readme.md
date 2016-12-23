@@ -20,9 +20,9 @@ Coming soon: `pip install hypertools`
 
 + <b>util.align</b> - align multidimensional data (See here for details)
 + <b>util.reduce</b> - implements PCA to reduce dimensionality of data
++ <b>util.cluster</b> - function that runs k-means clustering and returns cluster labels
 + <b>util.describe_pca</b> - plotting tool to evaluate how well the principle components describe the data
 + <b>util.missing_inds</b> - function that returns indices of missing data (nans)
-+ <b>util.cluster</b> - function that runs k-means clustering and returns cluster labels
 
 <h2>Plot</h2>
 
@@ -150,27 +150,11 @@ ndims - dimensionality of output data
 
 <b>Outputs</b>
 
-An aligned list of numpy arrays
+An array or list of arrays with reduced dimensionality
 
 <h3>Example uses</h3>
 
-Reduce n-dimensional array to 3d: `aligned_data = hyp.util.align(data, ndims=3)`
-
-<h2>Describe PCA</h2>
-
-<b>Inputs:</b>
-
-A numpy array or list of numpy arrays
-
-<b>Outputs</b>
-
-A plot summarizing the correlation between raw input data and PCA reduced data
-
-<h3>Example uses</h3>
-
-`hyp.util.describe_pca(data)`
-
-![Describe Example](images/describe_example.png)
+Reduce n-dimensional array to 3d: `reduced_data = hyp.util.reduce(data, ndims=3)`
 
 <h2>Cluster</h2>
 
@@ -195,3 +179,19 @@ hyp.plot(data, 'o', point_colors = cluster_labels)
 ```
 
 ![Cluster Example](images/cluster_example.png)
+
+<h2>Describe PCA</h2>
+
+<b>Inputs:</b>
+
+A numpy array or list of numpy arrays
+
+<b>Outputs</b>
+
+A plot summarizing the correlation between raw input data and PCA reduced data
+
+<h3>Example uses</h3>
+
+`hyp.util.describe_pca(data)`
+
+![Describe Example](images/describe_example.png)
