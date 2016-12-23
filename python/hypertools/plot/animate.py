@@ -23,6 +23,16 @@ from ..util.reduce import reduce as reduceD
 ##MAIN FUNCTION##
 def animated_plot(x, *args, **kwargs):
 
+    if 'legend' in kwargs:
+        legend=True
+        legend_data = kwargs['legend']
+        del kwargs['legend']
+
+        palette = kwargs['color_palette']
+        del kwargs['color_palette']
+    else:
+        legend=False
+
     if 'save_path' in kwargs:
         save=True
         save_path = kwargs['save_path']
@@ -101,6 +111,11 @@ def animated_plot(x, *args, **kwargs):
     ax.set_xlim3d([-cube_scale, cube_scale])
     ax.set_ylim3d([-cube_scale, cube_scale])
     ax.set_zlim3d([-cube_scale, cube_scale])
+
+    #add legend
+    if legend:
+        proxies = [plt.Rectangle((0, 0), 1, 1, fc=palette[idx]) for idx,label in enumerate(legend_data)]
+        ax.legend(proxies,legend_data)
 
     # Creating the Animation object
     line_ani = animation.FuncAnimation(fig, update_lines, 1000, fargs=(x, lines, trail, cube_scale),

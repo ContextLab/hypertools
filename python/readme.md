@@ -54,7 +54,7 @@ See matplotlib API for more styling options
 
 <i>ndims</i> (int): an int representing the number of dims to plot in. Must be 1,2, or 3.  NOTE: Currently only works with static plots.
 
-See matplotlib API for more styling options
+<i>legend</i> (list): A list of string labels to be plotted in a legend (one for each list item)
 
 <i>labels</i> (list): A list of labels for each point. Must be dimensionality of data (X). If no label is wanted for a particular point, input `None`
 
