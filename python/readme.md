@@ -22,7 +22,7 @@ Coming soon: `pip install hypertools`
 + <b>util.reduce</b> - implements PCA to reduce dimensionality of data
 + <b>util.describe_pca</b> - plotting tool to evaluate how well the principle components describe the data
 + <b>util.missing_inds</b> - function that returns indices of missing data (nans)
-+ <b>util.clusters</b> - function that runs k-means clustering and returns cluster labels
++ <b>util.cluster</b> - function that runs k-means clustering and returns cluster labels
 
 <h2>Plot</h2>
 
