@@ -1,7 +1,5 @@
 import hypertools as hyp
 import pandas as pd
-import numpy as np
-from sklearn.decomposition import PCA
 
 data=pd.read_csv('sample_data/mushrooms.csv')
 
