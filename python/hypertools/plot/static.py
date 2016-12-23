@@ -32,6 +32,14 @@ def static_plot(x, *args, **kwargs):
 
 	##PARSE HYPERTOOLS SPECIFIC ARGUMENTS##
 
+	# maplotlib takes a label argument for each dataset plotted.
+	if 'legend' in kwargs:
+		kwargs['label'] = kwargs['legend']
+		del kwargs['legend']
+		legend=True
+	else:
+		legend=False
+
 	# save path
 	if 'save_path' in kwargs:
 		save=True
@@ -293,6 +301,8 @@ def static_plot(x, *args, **kwargs):
 	check_data(x) # throws error if the arrays are not the same shape
 	fig,ax,data = dispatch(x)
 	add_labels(data,labels)
+	if legend:
+		plt.legend()
 	if save:
 		plt.savefig(save_path)
 	plt.show()
