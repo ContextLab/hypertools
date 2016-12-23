@@ -61,13 +61,19 @@ def plot(x,*args,**kwargs):
 
     if 'palette' in kwargs:
         sns.set_palette(palette=kwargs['palette'], n_colors=len(x))
+        palette = sns.color_palette(palette=kwargs['palette'], n_colors=len(x))
         del kwargs['palette']
     else:
         sns.set_palette(palette="hls", n_colors=len(x))
+        palette=sns.color_palette(palette="hls", n_colors=len(x))
 
     if 'animate' in kwargs:
         animate=kwargs['animate']
         del kwargs['animate']
+
+        # if animate mode, pass the color palette via kwargs so we can build a legend
+        kwargs['color_palette']=palette
+        
     else:
         animate=False
 
