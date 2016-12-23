@@ -76,7 +76,10 @@ def static_plot(x, *args, **kwargs):
 		elif x[0].shape[-1]==3:
 			return plot3D(x)
 		elif x[0].shape[-1]>3:
-			return plot3D(reduceD(x, 3))
+			if type(x) is list:
+				return plot3D(reduceD(x, 3))
+			else:
+				return plot3D([reduceD(x, 3)])
 
 	def plot1D(data):
 		n=len(data)
