@@ -22,6 +22,7 @@ Coming soon: `pip install hypertools`
 + <b>util.reduce</b> - implements PCA to reduce dimensionality of data
 + <b>util.describe_pca</b> - plotting tool to evaluate how well the principle components describe the data
 + <b>util.missing_inds</b> - function that returns indices of missing data (nans)
++ <b>util.clusters</b> - function that runs k-means clustering and returns cluster labels
 
 <h2>Plot</h2>
 
@@ -170,3 +171,27 @@ A plot summarizing the correlation between raw input data and PCA reduced data
 `hyp.util.describe_pca(data)`
 
 ![Describe Example](images/describe_example.png)
+
+<h2>Cluster</h2>
+
+<b>Inputs:</b>
+
+A numpy array or list of numpy arrays
+
+<b>Keyword arguments:</b>
+
++ n_clusters (int) - number of clusters to fit (default=8)
++ ndims (int) - reduce data to ndims before running k-means (optional)
+
+<b>Outputs</b>
+
+A list of cluster labels corresponding to each data point.  NOTE: During the cluster fitting, the data are stacked across lists, so if multiple lists are passed, the returned list of cluster labels will need to be reshaped.
+
+<h3>Example use:</h3>
+
+```
+cluster_labels = hyp.util.cluster(data, n_clusters=10)
+hyp.plot(data, 'o', point_colors = cluster_labels)
+```
+
+![Cluster Example](images/cluster_example.png)
