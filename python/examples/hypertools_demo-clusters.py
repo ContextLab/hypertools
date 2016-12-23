@@ -11,13 +11,9 @@ df['class'] = df['class'].replace('p', 1).replace('e', 0)
 for colname in data.columns[1:]:
     df = df.join(pd.get_dummies(data[colname], prefix=colname))
 
-ind_vars = df[df.columns[1:]]
-m = PCA(n_components=3)
-reduced_data = m.fit_transform(ind_vars)
-
-hyp.plot(reduced_data,'o',n_clusters=10)
+data = df[df.columns[1:]].as_matrix()
+hyp.plot(data,'o',n_clusters=10)
 
 # OR
-
-cluster_labels = hyp.util.cluster(reduced_data, n_clusters=10)
-hyp.plot(reduced_data,'o',point_colors=cluster_labels)
+# cluster_labels = hyp.util.cluster(data, n_clusters=10)
+# hyp.plot(data,'o',point_colors=cluster_labels)
