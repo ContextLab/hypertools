@@ -77,7 +77,8 @@ def interp_array_list(arr_list,interp_val=10):
     return smoothed
 
 def check_data(data):
-    assert all([data[0].shape[1]==x.shape[1] for x in data]), 'Arrays must have the same shape.'
+	if type(data) is list:
+		assert all([data[0].shape[1]==x.shape[1] for x in data]), 'Arrays must have the same shape.'
 
     ##FUNCTIONS##
 def is_list(x):
