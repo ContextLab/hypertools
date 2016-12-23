@@ -18,6 +18,7 @@ import warnings
 import re
 import itertools
 import seaborn as sns
+import pandas as pd
 from .._shared.helpers import *
 from .static import static_plot
 from .animate import animated_plot
@@ -43,6 +44,13 @@ def plot(x,*args,**kwargs):
         if 'point_colors' in kwargs:
             warnings.warn('n_clusters overrides point_colors, ignoring point_colors.')
             del kwargs['point_colors']
+
+    ##CHECK DATA FORMAT##
+    if isinstance(x, pd.DataFrame):
+        x = pandas_to_list(x)
+        print(x)
+
+    ##STYLING##
 
     # handle point_colors flag
     if 'point_colors' in kwargs:
@@ -86,7 +94,7 @@ def plot(x,*args,**kwargs):
 
         # if animate mode, pass the color palette via kwargs so we can build a legend
         kwargs['color_palette']=palette
-        
+
     else:
         animate=False
 

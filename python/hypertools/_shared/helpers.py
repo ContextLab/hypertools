@@ -178,3 +178,22 @@ def reshape_data(x,labels):
 	for idx,point in enumerate(labels):
 		x_reshaped[categories.index(point)].append(x_stacked[idx])
 	return [np.vstack(i) for i in x_reshaped]
+
+def pandas_to_list(data):
+	# Order the data correctly
+	if order is None:
+		order = []
+	# Reduce to just numeric columns
+	for col in data:
+		try:
+			data[col].astype(np.float)
+			order.append(col)
+		except ValueError:
+			pass
+	plot_data = data[order]
+	group_names = order
+	group_label = data.columns.name
+
+	# Convert to a list of arrays, the common representation
+	iter_data = plot_data.iteritems()
+	return [np.asarray(s, np.float) for k, s in iter_data]
