@@ -28,5 +28,6 @@ setup(
         "seaborn",
         "scikit-learn",
         "PPCA",
+        "pandas",
     ]
 )
