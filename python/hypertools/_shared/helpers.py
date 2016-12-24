@@ -14,7 +14,7 @@ import itertools
 ##HELPER FUNCTIONS##
 def center(x):
 	x_stacked = np.vstack(x)
-	return x - np.mean(x_stacked, 0)
+	return [i - np.mean(x_stacked, 0) for i in x]
 
 def group_by_category(vals):
 	if any(isinstance(el, list) for el in vals):
@@ -77,7 +77,8 @@ def interp_array_list(arr_list,interp_val=10):
     return smoothed
 
 def check_data(data):
-    assert all([data[0].shape[1]==x.shape[1] for x in data]), 'Arrays must have the same shape.'
+	if type(data) is list:
+		assert all([data[0].shape[1]==x.shape[1] for x in data]), 'Arrays must have the same shape.'
 
     ##FUNCTIONS##
 def is_list(x):
@@ -169,3 +170,11 @@ def parse_kwargs(x,kwargs):
 				tmp[kwarg]=kwargs[kwarg]
 		kwargs_list.append(tmp)
 	return kwargs_list
+
+def reshape_data(x,labels):
+	categories = list(set(np.sort(labels)))
+	x_stacked = np.vstack(x)
+	x_reshaped = [[] for i in categories]
+	for idx,point in enumerate(labels):
+		x_reshaped[categories.index(point)].append(x_stacked[idx])
+	return [np.vstack(i) for i in x_reshaped]

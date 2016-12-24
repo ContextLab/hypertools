@@ -41,7 +41,7 @@ def reducePCA(x, ndim):
 			x_split = np.cumsum([i.shape[0] for i in x][:-1])
 			return list(np.split(x_pca,x_split,axis=0))
 		else:
-			return x_pca
+			return [x_pca]
 
 	else:
 		m=PCA(n_components=ndim, whiten=True)
@@ -49,7 +49,7 @@ def reducePCA(x, ndim):
 		if len(x)>1:
 			return [m.transform(i) for i in x]
 		else:
-			return m.transform(x[0])
+			return [m.transform(x[0])]
 
 ##MAIN FUNCTION##
 def reduce(arr, ndims=3, method=reducePCA):

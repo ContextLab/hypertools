@@ -20,6 +20,7 @@ Coming soon: `pip install hypertools`
 
 + <b>util.align</b> - align multidimensional data (See here for details)
 + <b>util.reduce</b> - implements PCA to reduce dimensionality of data
++ <b>util.cluster</b> - function that runs k-means clustering and returns cluster labels
 + <b>util.describe_pca</b> - plotting tool to evaluate how well the principle components describe the data
 + <b>util.missing_inds</b> - function that returns indices of missing data (nans)
 
@@ -58,7 +59,9 @@ See matplotlib API for more styling options
 
 <i>labels</i> (list): A list of labels for each point. Must be dimensionality of data (X). If no label is wanted for a particular point, input `None`
 
-<i>explore</i> (bool): Displays user defined labels or PCA coordinates on hover. When a point is clicked, the label will remain on the plot (dataarning: experimental feature, use at your own discretion!). To use, set `explore=True`.
+<i>n_clusters</i> (int): If n_clusters is passed, hypertools will perform k-means clustering with the k parameter set to n_clusters. The resulting clusters will be plotted in different colors according to the color palette.
+
+<i>explore</i> (bool): Displays user defined labels or PCA coordinates on hover. When a point is clicked, the label will remain on the plot (warning: experimental feature, use at your own discretion!). To use, set `explore=True`.
 
 <h3>Example uses</h3>
 
@@ -147,11 +150,35 @@ ndims - dimensionality of output data
 
 <b>Outputs</b>
 
-An aligned list of numpy arrays
+An array or list of arrays with reduced dimensionality
 
 <h3>Example uses</h3>
 
-Reduce n-dimensional array to 3d: `aligned_data = hyp.util.align(data, ndims=3)`
+Reduce n-dimensional array to 3d: `reduced_data = hyp.util.reduce(data, ndims=3)`
+
+<h2>Cluster</h2>
+
+<b>Inputs:</b>
+
+A numpy array or list of numpy arrays
+
+<b>Keyword arguments:</b>
+
++ n_clusters (int) - number of clusters to fit (default=8)
++ ndims (int) - reduce data to ndims before running k-means (optional)
+
+<b>Outputs</b>
+
+A list of cluster labels corresponding to each data point.  NOTE: During the cluster fitting, the data are stacked across lists, so if multiple lists are passed, the returned list of cluster labels will need to be reshaped.
+
+<h3>Example use:</h3>
+
+```
+cluster_labels = hyp.util.cluster(data, n_clusters=10)
+hyp.plot(data, 'o', point_colors = cluster_labels)
+```
+
+![Cluster Example](images/cluster_example.png)
 
 <h2>Describe PCA</h2>
 
