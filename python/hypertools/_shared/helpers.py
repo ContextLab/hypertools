@@ -10,6 +10,7 @@ import numpy as np
 from scipy.interpolate import PchipInterpolator as pchip
 import seaborn as sns
 import itertools
+import pandas as pd
 
 ##HELPER FUNCTIONS##
 def center(x):
@@ -179,21 +180,34 @@ def reshape_data(x,labels):
 		x_reshaped[categories.index(point)].append(x_stacked[idx])
 	return [np.vstack(i) for i in x_reshaped]
 
-def pandas_to_list(data):
-	# Order the data correctly
-	if order is None:
-		order = []
-	# Reduce to just numeric columns
-	for col in data:
-		try:
-			data[col].astype(np.float)
-			order.append(col)
-		except ValueError:
-			pass
-	plot_data = data[order]
-	group_names = order
-	group_label = data.columns.name
+def pandas_to_list(data, order=None, text_vars='dummy'):
 
-	# Convert to a list of arrays, the common representation
-	iter_data = plot_data.iteritems()
-	return [np.asarray(s, np.float) for k, s in iter_data]
+	if text_vars=='dummy':
+		df_str = data.select_dtypes(include=['object'])
+		df_num = data.select_dtypes(exclude=['object'])
+		for colname in df_str.columns:
+			df_num = df_num.join(pd.get_dummies(data[colname], prefix=colname))
+		plot_data = df_num.as_matrix()
+
+	elif text_vars=='numerical':
+		df_str = data.select_dtypes(include=['object'])
+		df_num = data.select_dtypes(exclude=['object'])
+		for col in df_str:
+			for idx,label in enumerate(set(df_str[col].values)):
+				df_str[col] = df_str[col].replace(label,idx)
+		plot_data = df_num.join(df_str).as_matrix()
+
+	# elif text_vars=='ignore':
+	# 	# Order the data correctly
+	# 	if order is None:
+	# 		order = []
+	# 	# Reduce to just numeric columns
+	# 	for col in data:
+	# 		try:
+	# 			data[col].astype(np.float)
+	# 			order.append(col)
+	# 		except ValueError:
+	# 			pass
+	# 	plot_data = data[order]
+
+	return plot_data

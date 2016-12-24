@@ -27,6 +27,17 @@ from ..util.cluster import cluster
 ##MAIN FUNCTION##
 def plot(x,*args,**kwargs):
 
+    ##HANDLE TEXT VARIABLES FOR PANDAS DF##
+    if 'text_vars' in kwargs:
+        text_vars = kwargs['text_vars']
+        del kwargs['text_vars']
+    else:
+        text_vars = 'dummy'
+
+    ##CHECK DATA FORMAT##
+    if isinstance(x, pd.DataFrame):
+        x = pandas_to_list(x, text_vars=text_vars)
+
     ##HYPERTOOLS-SPECIFIC ARG PARSING##
 
     if 'n_clusters' in kwargs:
@@ -44,11 +55,6 @@ def plot(x,*args,**kwargs):
         if 'point_colors' in kwargs:
             warnings.warn('n_clusters overrides point_colors, ignoring point_colors.')
             del kwargs['point_colors']
-
-    ##CHECK DATA FORMAT##
-    if isinstance(x, pd.DataFrame):
-        x = pandas_to_list(x)
-        print(x)
 
     ##STYLING##
 
