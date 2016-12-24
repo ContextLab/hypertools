@@ -14,4 +14,4 @@ missing_data = [inds[i] for i in np.random.choice(len(inds), len(inds)*missing)]
 for i,j in missing_data:
     data2[i,j]=np.nan
 
-hyp.plot([data1,data2],linestyle=['-',':'])
+hyp.plot([data1,data2],linestyle=['-',':'], legend=['Original', 'PPCA'], animate=True)
