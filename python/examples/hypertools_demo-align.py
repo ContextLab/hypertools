@@ -2,7 +2,7 @@ import hypertools as hyp
 import scipy.io as sio
 import numpy as np
 
-data=sio.loadmat('weights.mat')
+data=sio.loadmat('sample_data/weights.mat')
 w=data['weights'][0]
 w = [i for i in w]
 aligned_w = hyp.util.align(w)
