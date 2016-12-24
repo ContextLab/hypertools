@@ -41,7 +41,7 @@ def describe_pca(x, return_data=False):
         cov_alldims = pdist(x,'correlation')
         corrs=[]
         for num in range(2,max_dims):
-            cov_PCA = pdist(reduceD(x,num),'correlation')
+            cov_PCA = pdist(np.vstack(reduceD(x,num)),'correlation')
             corrs.append(np.corrcoef(cov_alldims, cov_PCA)[0][1])
             del cov_PCA
         return corrs
