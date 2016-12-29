@@ -27,11 +27,12 @@ def animated_plot(x, *args, **kwargs):
         legend=True
         legend_data = kwargs['legend']
         del kwargs['legend']
-
-        palette = kwargs['color_palette']
-        del kwargs['color_palette']
     else:
         legend=False
+
+    if 'color_palette' in kwargs:
+        palette = kwargs['color_palette']
+        del kwargs['color_palette']
 
     if 'save_path' in kwargs:
         save=True
@@ -99,7 +100,7 @@ def animated_plot(x, *args, **kwargs):
         x = reduceD(x,3)
     x = interp_array_list(x)
     x = center(x)
-    
+
 
     lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], linewidth=3, *args_list[idx], **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
     trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1])[0] for dat in x]
