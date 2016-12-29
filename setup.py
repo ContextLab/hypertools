@@ -17,7 +17,7 @@ setup(
     author='Contextual Dynamics Lab',
     author_email='contextualdynamics@gmail.com',
     url='https://github.com/ContextLab/pyfingerprint',
-    license=LICENSE,
+    license=license,
     packages=find_packages(exclude=('tests', 'docs', 'examples', 'images')),
     install_requires=[
         "nose",

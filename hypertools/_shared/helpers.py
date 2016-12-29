@@ -14,6 +14,7 @@ import pandas as pd
 
 ##HELPER FUNCTIONS##
 def center(x):
+	assert type(x) is list, "Input to center must be list"
 	x_stacked = np.vstack(x)
 	return [i - np.mean(x_stacked, 0) for i in x]
 
@@ -53,15 +54,7 @@ def vals2bins(vals,res=100):
 	# flatten if list of lists
 	if any(isinstance(el, list) for el in vals):
 		vals = list(itertools.chain(*vals))
-
 	return np.digitize(vals, np.linspace(np.min(vals), np.max(vals)+1, res+1)) - 1
-
-# this will be moved to utils.py
-def is_list(x):
-    if type(x[0][0])==np.ndarray:
-        return True
-    elif type(x[0][0])==np.int64 or type(x[0][0])==int or type(x[0][0])==np.float32:
-        return False
 
 # #  this will be moved to utils.py
 def interp_array(arr,interp_val=10):
@@ -80,6 +73,11 @@ def interp_array_list(arr_list,interp_val=10):
 def check_data(data):
 	if type(data) is list:
 		assert all([data[0].shape[1]==x.shape[1] for x in data]), 'Arrays must have the same shape.'
+		return 'list'
+	elif isinstance(data, pd.DataFrame):
+		return 'df'
+	else:
+		raise ValueError("Data must be numpy array, list of numpy array or pandas dataframe.")
 
     ##FUNCTIONS##
 def is_list(x):
