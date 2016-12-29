@@ -61,3 +61,32 @@ def test_check_data_int():
 def test_check_data_str():
     with pytest.raises(Exception) as e_info:
         helpers.check_data(str(1))
+
+def test_parse_args_array():
+    x = [np.random.random((3,3))]
+    args=('o',)
+    assert helpers.parse_args(x, args)==[('o',)]
+
+def test_parse_args_list():
+    x = [np.random.random((3,3))]*2
+    args=('o',)
+    assert helpers.parse_args(x, args)==[('o',),('o',)]
+
+def test_parse_kwargs_array():
+    x = [np.random.random((3,3))]
+    kwargs={'label': ['Group A']}
+    assert helpers.parse_kwargs(x, kwargs)==[{'label': 'Group A'}]
+
+def test_parse_kwargs_list():
+    x = [np.random.random((3,3))]*2
+    kwargs={'label': ['Group A', 'Group B']}
+    assert helpers.parse_kwargs(x, kwargs)==[{'label': 'Group A'}, {'label': 'Group B'}]
+
+def test_reshape_data():
+    x = [[1,2],[3,4]]*2
+    labels = ['a','b','a','b']
+    assert np.array_equal(helpers.reshape_data(x,labels),[np.array([[1,2],[1,2]]),np.array([[3,4],[3,4]])])
+
+def test_pandas_to_list_dummy():
+    df = pd.DataFrame(['a','b'])
+    assert np.array_equal(helpers.pandas_to_list(df),np.array([[1,0],[0,1]]))
