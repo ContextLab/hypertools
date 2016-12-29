@@ -78,20 +78,6 @@ def check_data(data):
 	else:
 		raise ValueError("Data must be numpy array, list of numpy array or pandas dataframe.")
 
-def nan_helper(y):
-	"""Helper to handle indices and logical indices of NaNs.
-	"""
-	return np.isnan(y), lambda z: z.nonzero()[0]
-
-def interp_col_nans(data):
-	data_interp = np.zeros(data.shape)
-	for col in range(data.shape[1]):
-		y = data[:,col]
-		nans, x= nan_helper(y)
-		y[nans]= np.interp(x(nans), x(~nans), y[~nans])
-		data_interp[:,col] = y
-	return data_interp
-
 def parse_args(x,args):
 	args_list = []
 	for i,item in enumerate(x):
