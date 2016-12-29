@@ -3,3 +3,4 @@ python/*.pyc
 *.ipynb_checkpoints
 .DS_Store
 hypertools.egg-info/
+.cache/
