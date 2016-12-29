@@ -6,6 +6,7 @@ Wrapper function that parses plot styling arguments and calls plotting functions
 INPUTS:
 -numpy array(s)
 -list of numpy arrays
+-pandas dataframe
 
 OUTPUTS:
 -None
@@ -24,22 +25,26 @@ from .static import static_plot
 from .animate import animated_plot
 from ..util.cluster import cluster
 
-##MAIN FUNCTION##
+## MAIN FUNCTION ##
 def plot(x,*args,**kwargs):
 
-    ##HANDLE TEXT VARIABLES FOR PANDAS DF##
-    if 'text_vars' in kwargs:
-        text_vars = kwargs['text_vars']
-        del kwargs['text_vars']
-    else:
-        text_vars = 'dummy'
+    ## CHECK DATA TYPE ##
+    data_type = check_data(x)
 
-    ##CHECK DATA FORMAT##
-    if isinstance(x, pd.DataFrame):
+    ## IF DATAFRAME, CONVERT TO ARRAY ##
+    if data_type=='df':
+
+        ## PANDAS-SPECIFIC KWARGS ##
+        if 'text_vars' in kwargs:
+            text_vars = kwargs['text_vars']
+            del kwargs['text_vars']
+        else:
+            text_vars = 'dummy'
+
+        # convert df to common format
         x = pandas_to_list(x, text_vars=text_vars)
 
-    ##HYPERTOOLS-SPECIFIC ARG PARSING##
-
+    ## HYPERTOOLS-SPECIFIC ARG PARSING ##
     if 'n_clusters' in kwargs:
         n_clusters=kwargs['n_clusters']
 
@@ -56,9 +61,6 @@ def plot(x,*args,**kwargs):
             warnings.warn('n_clusters overrides point_colors, ignoring point_colors.')
             del kwargs['point_colors']
 
-    ##STYLING##
-
-    # handle point_colors flag
     if 'point_colors' in kwargs:
         point_colors=kwargs['point_colors']
         del kwargs['point_colors']

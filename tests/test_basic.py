@@ -1,16 +1,19 @@
-# -*- coding: utf-8 -*-
+# # -*- coding: utf-8 -*-
 
-from .context import sample
+import pytest
 
-import unittest
+## LIBRARIES ##
 
+import numpy as np
 
-class BasicTestSuite(unittest.TestCase):
-    """Basic test cases."""
+## LOAD TEST DATA ##
 
-    def test_absolute_truth_and_meaning(self):
-        assert True
+# import scipy.io.loadmat as load
+# test_dataset = load('examples/test_data.mat')
+# test_data = test_dataset['spiral']
 
+## HELPERS ##
 
-if __name__ == '__main__':
-    unittest.main()
+from hypertools._shared.helpers import center
+def test_center():
+    assert np.array_equal(center([np.array([[1,2,3],[4,5,6]])]),[np.array([[-1.5,-1.5,-1.5],[1.5,1.5,1.5]])])
