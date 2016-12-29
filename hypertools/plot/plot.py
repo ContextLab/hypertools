@@ -33,16 +33,8 @@ def plot(x,*args,**kwargs):
 
     ## IF DATAFRAME, CONVERT TO ARRAY ##
     if data_type=='df':
-
-        ## PANDAS-SPECIFIC KWARGS ##
-        if 'text_vars' in kwargs:
-            text_vars = kwargs['text_vars']
-            del kwargs['text_vars']
-        else:
-            text_vars = 'dummy'
-
         # convert df to common format
-        x = pandas_to_list(x, text_vars=text_vars)
+        x = pandas_to_list(x)
 
     ## HYPERTOOLS-SPECIFIC ARG PARSING ##
     if 'n_clusters' in kwargs:

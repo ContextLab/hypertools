@@ -118,34 +118,11 @@ def reshape_data(x,labels):
 		x_reshaped[categories.index(point)].append(x_stacked[idx])
 	return [np.vstack(i) for i in x_reshaped]
 
-def pandas_to_list(data, order=None, text_vars='dummy'):
-
-	if text_vars=='dummy':
-		df_str = data.select_dtypes(include=['object'])
-		df_num = data.select_dtypes(exclude=['object'])
-		for colname in df_str.columns:
-			df_num = df_num.join(pd.get_dummies(data[colname], prefix=colname))
-		plot_data = df_num.as_matrix()
-
-	elif text_vars=='numerical':
-		df_str = data.select_dtypes(include=['object'])
-		df_num = data.select_dtypes(exclude=['object'])
-		for col in df_str:
-			for idx,label in enumerate(set(df_str[col].values)):
-				df_str[col] = df_str[col].replace(label,idx)
-		plot_data = df_num.join(df_str).as_matrix()
-
-	# elif text_vars=='ignore':
-	# 	# Order the data correctly
-	# 	if order is None:
-	# 		order = []
-	# 	# Reduce to just numeric columns
-	# 	for col in data:
-	# 		try:
-	# 			data[col].astype(np.float)
-	# 			order.append(col)
-	# 		except ValueError:
-	# 			pass
-	# 	plot_data = data[order]
+def pandas_to_list(data):
+	df_str = data.select_dtypes(include=['object'])
+	df_num = data.select_dtypes(exclude=['object'])
+	for colname in df_str.columns:
+		df_num = df_num.join(pd.get_dummies(data[colname], prefix=colname))
+	plot_data = df_num.as_matrix()
 
 	return plot_data
