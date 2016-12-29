@@ -32,6 +32,8 @@ Coming soon: `pip install hypertools`
 
 A numpy array, list of arrays, or pandas dataframe
 
+<i><b>NOTE:</b> Hypertools currently only supports single-level indexing for pandas dataframes, but we plan to support multi-level indices in the future. Additionally, be aware that if columns containing text are passed to hypertools, those columns will be automatically converted into dummy variables (see pandas.get_dummies for details).</i>
+
 <b>Arguments:</b>
 
 Format strings can be passed as a string, or tuple/list of length x.

@@ -124,5 +124,4 @@ def pandas_to_list(data):
 	for colname in df_str.columns:
 		df_num = df_num.join(pd.get_dummies(data[colname], prefix=colname))
 	plot_data = df_num.as_matrix()
-
 	return plot_data
