@@ -108,7 +108,7 @@ def nearPD(A, nit=10):
 	return Yk
 
 def is_pos_def(x):
-	return np.all(np.linalg.eig(x)>0)
+	return np.all(np.linalg.eigvals(x)>0)
 
 def make_pos_def(x):
 	if is_pos_def(x):
