@@ -62,4 +62,29 @@ def test_check_data_str():
     with pytest.raises(Exception) as e_info:
         helpers.check_data(str(1))
 
-# def test_is_list():
+def test__getAplus():
+    assert np.allclose(helpers._getAplus(np.array([[1,2,3],[4,5,6],[7,8,9]])),np.matrix([[0.86725382,1.96398776,3.0607217 ], [1.96398776,   4.44765748,   6.93132719],[  3.0607217 ,   6.93132719,  10.80193268]]))
+
+def test__getPs():
+    mtx = np.matrix([[1,2,3],[4,5,6],[7,8,9]])
+    n = mtx.shape[0]
+    W = np.identity(n)
+    assert np.allclose(helpers._getPs(mtx, W=W),np.matrix([[0.86725382,1.96398776,3.0607217 ], [1.96398776,   4.44765748,   6.93132719],[  3.0607217 ,   6.93132719,  10.80193268]]))
+
+def test__getPu():
+    mtx = np.matrix([[1,2,3],[4,5,6],[7,8,9]])
+    n = mtx.shape[0]
+    W = np.identity(n)
+    assert np.allclose(helpers._getPs(mtx,W=W), np.matrix([[  0.86725382,   1.96398776,   3.0607217 ],[  1.96398776,   4.44765748,   6.93132719],[  3.0607217 ,   6.93132719,  10.80193268]]))
+
+def test_nearPD():
+    mtx = np.matrix([[1,2,3],[4,5,6],[7,8,9]])
+    assert np.allclose(helpers.nearPD(mtx), np.matrix([[ 1.        ,  1.09304495,  1.12692214],[ 1.09304495,1.        ,  1.14165415],[ 1.12692214,  1.14165415,  1.        ]]))
+
+def test_is_pos_def_true():
+    mtx = np.matrix([[1,0],[0,1]])
+    assert helpers.is_pos_def(mtx)==True
+
+def test_is_pos_def_false():
+    mtx = np.matrix([[-3,2,0],[2,-3,0],[0,0,-5]])
+    assert helpers.is_pos_def(mtx)==False
