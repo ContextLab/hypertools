@@ -61,8 +61,6 @@ See matplotlib API for more styling options
 
 <i>n_clusters</i> (int): If n_clusters is passed, hypertools will perform k-means clustering with the k parameter set to n_clusters. The resulting clusters will be plotted in different colors according to the color palette.
 
-<i>text_vars</i> (string): If a pandas dataframe is passed, this argument specifies how you want hypertools to handle columns that contain text.  If 'binary' is passed, hypertools will create a series of binary vectors for each unique text label in each column (this is the default). For example, if `df=pd.Dataframe({'column a':['group1', 'group2'], 'column b':['group3', 'group3']})` would be mapped to the array `array([[1,0],[0,1],[1,1]])`  If 'numeric' is passed, hypertools will map each text label to a number in the order that it is listed in the column of the data frame. Note: this argument will only work if the data passed is a pandas dataframe.
-
 <i>explore</i> (bool): Displays user defined labels will appear on hover. If no labels are passed, The point index and coordinate will be plotted. To use, set `explore=True`.
 
 <h3>Example uses</h3>
