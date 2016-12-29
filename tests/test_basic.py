@@ -5,6 +5,7 @@ import pytest
 ## LIBRARIES ##
 
 import numpy as np
+import pandas as pd
 
 ## LOAD TEST DATA ##
 
@@ -35,4 +36,30 @@ def test_vals2bins():
     assert helpers.vals2bins([0,1,2])==[0, 33, 66]
 
 def test_interp_array():
-    assert np.allclose(helpers.interp_array(np.array([1,2,3])),np.array([ 1. ,  1.1,  1.2,  1.3,  1.4,  1.5,  1.6,  1.7,  1.8,  1.9,  2.,  2.1,  2.2,  2.3,  2.4,  2.5,  2.6,  2.7,  2.8,  2.9]))
+    assert np.allclose(helpers.interp_array(np.array([1,2,3])),np.linspace(1,2.9,20))
+
+def test_interp_array_list():
+    assert np.allclose(helpers.interp_array_list(np.array([[1,2,3],[1,2,3]])),[np.linspace(1,2.9,20)] * 2)
+
+def test_check_data_list_of_arrays():
+    helpers.check_data([np.random.random((3,3))]*2)=='list'
+
+def test_check_data_list_of_other():
+    with pytest.raises(Exception) as e_info:
+        helpers.check_data([1,2,3])
+
+def test_check_data_array():
+    helpers.check_data(np.array([[0,1,2],[1,2,3]]))=='array'
+
+def test_check_data_df():
+    helpers.check_data(pd.DataFrame([0,1,2]))=='df'
+
+def test_check_data_int():
+    with pytest.raises(Exception) as e_info:
+        helpers.check_data(int(1))
+
+def test_check_data_str():
+    with pytest.raises(Exception) as e_info:
+        helpers.check_data(str(1))
+
+# def test_is_list():

@@ -71,17 +71,12 @@ def check_data(data):
 	if type(data) is list:
 		assert all([data[0].shape[1]==x.shape[1] for x in data]), 'Arrays must have the same shape.'
 		return 'list'
+	elif isinstance(data, np.ndarray):
+		return 'array'
 	elif isinstance(data, pd.DataFrame):
 		return 'df'
 	else:
 		raise ValueError("Data must be numpy array, list of numpy array or pandas dataframe.")
-
-    ##FUNCTIONS##
-def is_list(x):
-	if type(x[0][0])==np.ndarray:
-		return True
-	elif type(x[0][0])==np.int64:
-		return False
 
 def _getAplus(A):
 	eigval, eigvec = np.linalg.eig(A)
