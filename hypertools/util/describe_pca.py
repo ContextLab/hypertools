@@ -29,7 +29,7 @@ from .reduce import reduce as reduceD
 sns.set(style="darkgrid")
 
 ##MAIN FUNCTION##
-def describe_pca(x, return_data=False):
+def describe_pca(x, show=True):
     warnings.warn('When input data is large, this computation can take a long time.')
 
     ##SUB FUNCTIONS##
@@ -57,12 +57,13 @@ def describe_pca(x, return_data=False):
     max_group = np.where(attrs['PCA_summary']['average']==np.max(attrs['PCA_summary']['average']))[0][0]
     attrs['PCA_summary']['individual'] = [PCA_summary(x_i,max_group) for x_i in x]
 
-    fig, ax = plt.subplots()
-    ax = sns.tsplot(attrs['PCA_summary']['individual'], err_style="unit_traces")
-    ax.set_title('Correlation with raw data by number of PCA components')
-    ax.set_ylabel('Correlation')
-    ax.set_xlabel('Number of PCA components')
-    plt.show()
-
-    if return_data==True:
+    if show:
+        fig, ax = plt.subplots()
+        ax = sns.tsplot(attrs['PCA_summary']['individual'], err_style="unit_traces")
+        ax.set_title('Correlation with raw data by number of PCA components')
+        ax.set_ylabel('Correlation')
+        ax.set_xlabel('Number of PCA components')
+        plt.show()
+        return fig, ax, attrs
+    else:
         return attrs

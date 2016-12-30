@@ -194,6 +194,10 @@ hyp.plot(data, 'o', point_colors = cluster_labels)
 
 A numpy array or list of numpy arrays
 
+<b>Keyword arguments:</b>
+
++ show (bool) - if true, returns figure handle, axis handle and dictionary containing the plotted data.  If false, the function just returns a dictionary containing the data
+
 <b>Outputs</b>
 
 A plot summarizing the correlation between raw input data and PCA reduced data
