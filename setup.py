@@ -2,7 +2,7 @@
 
 from setuptools import setup, find_packages
 
-with open('readme.md') as f:
+with open('README.md') as f:
     readme = f.read()
 
 # NEED TO ADD IN LICENSE

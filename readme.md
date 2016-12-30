@@ -210,8 +210,22 @@ A numpy array or list of numpy arrays
 
 A plot summarizing the correlation between raw input data and PCA reduced data
 
-<h3>Example uses</h3>
+<h3>Example use:</h3>
 
 `hyp.util.describe_pca(data)`
 
 ![Describe Example](images/describe_example.png)
+
+<h2>Missing inds</h2>
+
+<b>Inputs:</b>
+
+A numpy array or list of numpy arrays
+
+<b>Outputs</b>
+
+A list of indices representing rows with missing data.  If a list of numpy arrays is passed, a list of lists will be returned.
+
+<h3>Example use:</h3>
+
+`missing_data_inds = hyp.util.missing_inds(data)`
