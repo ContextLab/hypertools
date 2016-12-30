@@ -69,6 +69,12 @@ def static_plot(x, *args, **kwargs):
 		x = reduceD(x,kwargs['ndims'])
 		del kwargs['ndims']
 
+	if 'show' in kwargs:
+		show=kwargs['show']
+		del kwargs['show']
+	else:
+		show=True
+
 	##PARSE LEFTOVER MATPLOTLIB ARGS##
 	args_list = parse_args(x,args)
 
@@ -88,6 +94,7 @@ def static_plot(x, *args, **kwargs):
 				return plot3D(reduceD(x, 3))
 			else:
 				return plot3D([reduceD(x, 3)])
+	static_plot.dispatch = dispatch
 
 	def plot1D(data):
 		n=len(data)
@@ -305,5 +312,6 @@ def static_plot(x, *args, **kwargs):
 		plt.legend()
 	if save:
 		plt.savefig(save_path)
-	plt.show()
-	return plt,fig,ax
+	if show:
+		plt.show()
+	return fig,ax,data
