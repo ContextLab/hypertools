@@ -55,4 +55,5 @@ def reducePCA(x, ndim):
 def reduce(arr, ndims=3, method=reducePCA):
 	if type(arr) is not list:
 		arr = [arr]
+	assert all([i.shape[1]>ndims for i in arr]), "In order to reduce the data, ndims must be less than the number of dimensions"
 	return method(arr,ndims)

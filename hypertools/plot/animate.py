@@ -23,6 +23,8 @@ from ..util.reduce import reduce as reduceD
 ##MAIN FUNCTION##
 def animated_plot(x, *args, **kwargs):
 
+    assert x[0].shape[1]>2, "Hypertools currently only supports animation for data with > 2 dims."
+
     if 'legend' in kwargs:
         legend=True
         legend_data = kwargs['legend']
@@ -40,6 +42,12 @@ def animated_plot(x, *args, **kwargs):
         del kwargs['save_path']
     else:
         save=False
+
+    if 'show' in kwargs:
+        show=kwargs['show']
+        del kwargs['show']
+    else:
+        show=True
 
     ##SUB FUNCTIONS##
     def get_cube_scale(x, c):
@@ -128,4 +136,7 @@ def animated_plot(x, *args, **kwargs):
         writer = Writer(fps=30, bitrate=1800)
         line_ani.save(save_path, writer=writer)
 
-    plt.show()
+    if show:
+        plt.show()
+
+    return fig,ax,x,line_ani

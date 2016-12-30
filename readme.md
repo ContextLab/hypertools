@@ -32,6 +32,8 @@ Coming soon: `pip install hypertools`
 
 A numpy array, list of arrays, or pandas dataframe
 
+<i><b>NOTE:</b> Hypertools currently only supports single-level indexing for pandas dataframes, but we plan to support multi-level indices in the future. Additionally, be aware that if columns containing text are passed to hypertools, those columns will be automatically converted into dummy variables (see pandas.get_dummies for details).</i>
+
 <b>Arguments:</b>
 
 Format strings can be passed as a string, or tuple/list of length x.
@@ -39,7 +41,9 @@ See matplotlib API for more styling options
 
 <b>Keyword arguments:</b>
 
-<i>animate</i> (bool): If True, plots the data as an animated trajectory
+<i>show</i> (bool): If set to False, the figure will not be displayed, but the figure, axis and data objects will still be returned (see Outputs) (default: True).
+
+<i>animate</i> (bool): If True, plots the data as an animated trajectory (default: False)
 
 <i>save_path</i> (str): Path to save the image/movie.  Must include the file extension in the save path (i.e. `save_path='/path/to/file/image.png'`).  NOTE: If saving an animation, FFMPEG must be installed (this is a matplotlib req). FFMPEG can be easily installed on a mac via homebrew `brew install ffmpeg` or linux via apt-get `apt-get install ffmpeg`.  If you don't have homebrew (mac only), you can install it like this: `/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"`.
 
@@ -61,9 +65,13 @@ See matplotlib API for more styling options
 
 <i>n_clusters</i> (int): If n_clusters is passed, hypertools will perform k-means clustering with the k parameter set to n_clusters. The resulting clusters will be plotted in different colors according to the color palette.
 
-<i>text_vars</i> (string): If a pandas dataframe is passed, this argument specifies how you want hypertools to handle columns that contain text.  If 'binary' is passed, hypertools will create a series of binary vectors for each unique text label in each column (this is the default). For example, if `df=pd.Dataframe({'column a':['group1', 'group2'], 'column b':['group3', 'group3']})` would be mapped to the array `array([[1,0],[0,1],[1,1]])`  If 'numeric' is passed, hypertools will map each text label to a number in the order that it is listed in the column of the data frame. Note: this argument will only work if the data passed is a pandas dataframe.
-
 <i>explore</i> (bool): Displays user defined labels will appear on hover. If no labels are passed, The point index and coordinate will be plotted. To use, set `explore=True`.
+
+<b>Outputs:</b>
+
+-By default, the plot function outputs a figure handle (matplotlib.figure.Figure), axis handle (matplotlib.axes.\_axes.Axes) and data (list of numpy arrays), e.g. `fig,axis,data = hyp.plot(x)`
+
+-If `animate=True`, the plot function additionally outputs an animation handle (matplotlib.animation.FuncAnimation) e.g. `fig,axis,data,line_ani = hyp.plot(x, animate=True)`
 
 <h3>Example uses</h3>
 
@@ -138,7 +146,7 @@ Turn on explore mode (experimental): `hyp.plot(data, 'o', explore=True)`
 
 A list of numpy arrays
 
-<b>Outputs</b>
+<b>Outputs:</b>
 
 An aligned list of numpy arrays
 
@@ -193,6 +201,10 @@ hyp.plot(data, 'o', point_colors = cluster_labels)
 <b>Inputs:</b>
 
 A numpy array or list of numpy arrays
+
+<b>Keyword arguments:</b>
+
++ show (bool) - if true, returns figure handle, axis handle and dictionary containing the plotted data.  If false, the function just returns a dictionary containing the data
 
 <b>Outputs</b>
 
