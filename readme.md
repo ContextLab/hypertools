@@ -1,16 +1,37 @@
-<h1>Hypertools - A python package for visualizing high dimensional data</h1>
+<h1>Hypertools - A python library for visualizing high dimensional data based on matplotlib</h1>
 
 ![Hypertools example](images/hypertools.gif)
 
 <h2>Install</h2>
 
-To install from this repo, navigate to this folder in Terminal and type:
+`pip install hypertools`
 
-pip install -e .
+or
+
+To install from this repo:
+
+`git clone https://github.com/ContextLab/hypertools.git`
+
+Then, navigate to the folder and type:
+
+`pip install -e .`
 
 (this assumes you have pip installed on your system: https://pip.pypa.io/en/stable/installing/)
 
-Coming soon: `pip install hypertools`
+<h2>Requirements</h2>
+
++ Python 2.7.x
++ numpy
++ scipy
++ matplotlib
++ mpl_toolkits
++ seaborn
++ scikit-learn
++ PPCA
++ pandas
+
+If installing from github (instead of pip), you must also install the requirements:
+`pip install -r requirements.txt`
 
 <h2>Main function</h2>
 
