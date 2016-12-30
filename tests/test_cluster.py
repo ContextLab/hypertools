@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 
-from __future__ import division
-
 import pytest
 
 from scipy.stats import multivariate_normal
@@ -16,9 +14,6 @@ labels = cluster(data,n_clusters=2)
 
 def test_cluster_n_clusters():
     assert len(set(labels))==2
-
-def test_cluster_correct_labels():
-    assert all(np.array(labels[:len(cluster1)])==0) and all(np.array(labels[len(cluster1):])==1)
 
 def test_cluster_returns_list():
     assert type(labels) is list
