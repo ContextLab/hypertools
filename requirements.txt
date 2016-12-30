@@ -1,5 +1,4 @@
-nose
-sphinx
+pytest
 numpy
 scipy
 matplotlib
