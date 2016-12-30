@@ -4,4 +4,4 @@ python/*.pyc
 .DS_Store
 hypertools.egg-info/
 .cache/
-tests/__pycache__
+tests/__pycache__/
