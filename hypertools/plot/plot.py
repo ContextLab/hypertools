@@ -103,6 +103,6 @@ def plot(x,*args,**kwargs):
         x = [x]
 
     if animate:
-        animated_plot(x,*args,**kwargs)
+        return animated_plot(x,*args,**kwargs)
     else:
-        static_plot(x,*args,**kwargs)
+        return static_plot(x,*args,**kwargs)

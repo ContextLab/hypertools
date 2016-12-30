@@ -41,7 +41,9 @@ See matplotlib API for more styling options
 
 <b>Keyword arguments:</b>
 
-<i>animate</i> (bool): If True, plots the data as an animated trajectory
+<i>show</i> (bool): If set to False, the figure will not be displayed, but the figure, axis and data objects will still be returned (see Outputs) (default: True).
+
+<i>animate</i> (bool): If True, plots the data as an animated trajectory (default: False)
 
 <i>save_path</i> (str): Path to save the image/movie.  Must include the file extension in the save path (i.e. `save_path='/path/to/file/image.png'`).  NOTE: If saving an animation, FFMPEG must be installed (this is a matplotlib req). FFMPEG can be easily installed on a mac via homebrew `brew install ffmpeg` or linux via apt-get `apt-get install ffmpeg`.  If you don't have homebrew (mac only), you can install it like this: `/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"`.
 
@@ -64,6 +66,12 @@ See matplotlib API for more styling options
 <i>n_clusters</i> (int): If n_clusters is passed, hypertools will perform k-means clustering with the k parameter set to n_clusters. The resulting clusters will be plotted in different colors according to the color palette.
 
 <i>explore</i> (bool): Displays user defined labels will appear on hover. If no labels are passed, The point index and coordinate will be plotted. To use, set `explore=True`.
+
+<b>Outputs:</b>
+
+-By default, the plot function outputs a figure handle (matplotlib.figure.Figure), axis handle (matplotlib.axes.\_axes.Axes) and data (list of numpy arrays), e.g. `fig,axis,data = hyp.plot(x)`
+
+-If `animate=True`, the plot function additionally outputs an animation handle (matplotlib.animation.FuncAnimation) e.g. `fig,axis,data,line_ani = hyp.plot(x, animate=True)`
 
 <h3>Example uses</h3>
 
@@ -138,7 +146,7 @@ Turn on explore mode (experimental): `hyp.plot(data, 'o', explore=True)`
 
 A list of numpy arrays
 
-<b>Outputs</b>
+<b>Outputs:</b>
 
 An aligned list of numpy arrays
 
