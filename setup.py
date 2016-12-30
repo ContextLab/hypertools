@@ -20,8 +20,7 @@ setup(
     license=license,
     packages=find_packages(exclude=('tests', 'docs', 'examples', 'images')),
     install_requires=[
-        "nose",
-        "sphinx",
+        "pytest",
         "numpy",
         "scipy",
         "matplotlib",
