@@ -150,7 +150,7 @@ A list of numpy arrays
 
 An aligned list of numpy arrays
 
-<h3>Example uses</h3>
+<h3>Example use:</h3>
 
 align a list of arrays: `aligned_data = hyp.util.align(data)`
 
