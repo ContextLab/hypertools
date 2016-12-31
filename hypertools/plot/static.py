@@ -32,7 +32,7 @@ def static_plot(x, *args, **kwargs):
 
 	##PARSE HYPERTOOLS SPECIFIC ARGUMENTS##
 
-	# maplotlib takes a label argument for each dataset plotted.
+	# handle legend
 	if 'legend' in kwargs:
 		kwargs['label'] = kwargs['legend']
 		del kwargs['legend']
@@ -69,6 +69,7 @@ def static_plot(x, *args, **kwargs):
 		x = reduceD(x,kwargs['ndims'])
 		del kwargs['ndims']
 
+	# handle show flag
 	if 'show' in kwargs:
 		show=kwargs['show']
 		del kwargs['show']
@@ -96,6 +97,7 @@ def static_plot(x, *args, **kwargs):
 				return plot3D([reduceD(x, 3)])
 	static_plot.dispatch = dispatch
 
+	# plot data in 1D
 	def plot1D(data):
 		n=len(data)
 		fig, ax = plt.subplots()
@@ -105,6 +107,7 @@ def static_plot(x, *args, **kwargs):
 			ax.plot(data[i][:,0], *iargs, **ikwargs)
 		return fig, ax, data
 
+	# plot data in 2D
 	def plot2D(data):
 		n=len(data)
 		fig, ax = plt.subplots()
@@ -114,6 +117,7 @@ def static_plot(x, *args, **kwargs):
 			ax.plot(data[i][:,0], data[i][:,1], *iargs, **ikwargs)
 		return fig, ax, data
 
+	# plot data in 3D
 	def plot3D(data):
 		n=len(data)
 		fig = plt.figure()
@@ -283,6 +287,8 @@ def static_plot(x, *args, **kwargs):
 		arrowprops = dict(arrowstyle = '->', connectionstyle = 'arc3,rad=0'))
 		fig.canvas.draw()
 
+
+
 	def onMouseMotion(event,X,labels=False):
 		"""Event that is triggered when mouse is moved. Shows text annotation over data point closest to mouse
 		Args:
@@ -294,10 +300,20 @@ def static_plot(x, *args, **kwargs):
 		"""
 
 		closestIndex = calcClosestDatapoint(X, event)
-		if type(labels) is list:
-			annotate_plot_explore (X, closestIndex, labels)
+
+		if hasattr(onMouseMotion, 'first'):
+			pass
 		else:
-			annotate_plot_explore (X, closestIndex)
+			onMouseMotion.first = False
+			onMouseMotion.closestIndex_prev = calcClosestDatapoint(X, event)
+
+		if closestIndex!=onMouseMotion.closestIndex_prev:
+			if type(labels) is list:
+				annotate_plot_explore (X, closestIndex, labels)
+				closestIndex_prev = closestIndex
+			else:
+				annotate_plot_explore (X, closestIndex)
+				closestIndex_prev = closestIndex
 
 	# def onMouseClick(event,X):
 	# 	"""Event that is triggered when mouse is clicked. Preserves text annotation when mouse is clicked on datapoint."""

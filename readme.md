@@ -35,7 +35,7 @@ If installing from github (instead of pip), you must also install the requiremen
 
 <h2>Main function</h2>
 
-+ <b>plot</b> - plots multidimensional data as static image or movie
++ <b>plot</b> - Plots high dimensional data in 1, 2, or 3 dimensions as static image, 3d interactive plot or animated plot.
 
 <h2>Sub functions</h2>
 
@@ -94,7 +94,9 @@ See matplotlib API for more styling options
 
 -If `animate=True`, the plot function additionally outputs an animation handle (matplotlib.animation.FuncAnimation) e.g. `fig,axis,data,line_ani = hyp.plot(x, animate=True)`
 
-<h3>Example uses</h3>
+<h3>Example uses:</h3>
+
+_Please see the examples folder for many more implementation examples._
 
 Import the library: `import hypertools as hyp`
 

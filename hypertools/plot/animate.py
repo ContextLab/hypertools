@@ -25,6 +25,7 @@ def animated_plot(x, *args, **kwargs):
 
     assert x[0].shape[1]>2, "Hypertools currently only supports animation for data with > 2 dims."
 
+    ## HYPERTOOLS-SPECIFIC ARG PARSING ##
     if 'legend' in kwargs:
         legend=True
         legend_data = kwargs['legend']
