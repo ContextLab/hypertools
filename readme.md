@@ -1,4 +1,4 @@
-<h1>Hypertools - A python library for visualizing high dimensional data based on matplotlib</h1>
+<h1>Hypertools - A python library for visualizing high dimensional data</h1>
 
 ![Hypertools example](images/hypertools.gif)
 
