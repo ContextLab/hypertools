@@ -14,9 +14,17 @@ import pandas as pd
 
 ##HELPER FUNCTIONS##
 def center(x):
-	assert type(x) is list, "Input data to center must be list"
-	x_stacked = np.vstack(x)
-	return [i - np.mean(x_stacked, 0) for i in x]
+    assert type(x) is list, "Input data to center must be list"
+    x_stacked = np.vstack(x)
+    return [i - np.mean(x_stacked, 0) for i in x]
+
+def normalize(x):
+    assert type(x) is list, "Input data to center must be list"
+    x_stacked = np.vstack(x)
+    m1 = np.min(x_stacked)
+    m2 = np.max(x_stacked - m1)    
+    f = lambda(x): 2*((x - m1) / m2) - 1
+    return [f(i) for i in x]
 
 def group_by_category(vals):
 	if any(isinstance(el, list) for el in vals):
