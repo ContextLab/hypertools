@@ -32,6 +32,13 @@ def static_plot(x, *args, **kwargs):
 
 	##PARSE HYPERTOOLS SPECIFIC ARGUMENTS##
 
+	# optionally return data
+	if 'return_data' in kwargs:
+		return_data=kwargs['return_data']
+		del kwargs['return_data']
+	else:
+		return_data=False
+
 	# handle legend
 	if 'legend' in kwargs:
 		kwargs['label'] = kwargs['legend']
@@ -330,4 +337,5 @@ def static_plot(x, *args, **kwargs):
 		plt.savefig(save_path)
 	if show:
 		plt.show()
-	return fig,ax,data
+	if return_data:
+		return fig,ax,data

@@ -26,6 +26,13 @@ def animated_plot(x, *args, **kwargs):
     assert x[0].shape[1]>2, "Hypertools currently only supports animation for data with > 2 dims."
 
     ## HYPERTOOLS-SPECIFIC ARG PARSING ##
+
+    if 'return_data' in kwargs:
+        return_data = kwargs['return_data']
+        del kwargs['return_data']
+    else:
+        return_data=False
+
     if 'legend' in kwargs:
         legend=True
         legend_data = kwargs['legend']
@@ -105,7 +112,7 @@ def animated_plot(x, *args, **kwargs):
     x = interp_array_list(x)
     x = center(x)
     x = normalize(x)
-    
+
     lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], linewidth=3, *args_list[idx], **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
     trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1])[0] for dat in x]
 

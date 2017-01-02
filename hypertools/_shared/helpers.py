@@ -125,11 +125,3 @@ def reshape_data(x,labels):
 	for idx,point in enumerate(labels):
 		x_reshaped[categories.index(point)].append(x_stacked[idx])
 	return [np.vstack(i) for i in x_reshaped]
-
-def pandas_to_list(data):
-	df_str = data.select_dtypes(include=['object'])
-	df_num = data.select_dtypes(exclude=['object'])
-	for colname in df_str.columns:
-		df_num = df_num.join(pd.get_dummies(data[colname], prefix=colname))
-	plot_data = df_num.as_matrix()
-	return plot_data

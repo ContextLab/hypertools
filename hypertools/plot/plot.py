@@ -24,6 +24,7 @@ from .._shared.helpers import *
 from .static import static_plot
 from .animate import animated_plot
 from ..util.cluster import cluster
+from ..util.pandas_to_matrix import pandas_to_matrix
 
 ## MAIN FUNCTION ##
 def plot(x,*args,**kwargs):
@@ -34,7 +35,7 @@ def plot(x,*args,**kwargs):
     ## IF DATAFRAME, CONVERT TO ARRAY ##
     if data_type=='df':
         # convert df to common format
-        x = pandas_to_list(x)
+        x = pandas_to_matrix(x)
 
     ## HYPERTOOLS-SPECIFIC ARG PARSING ##
     if 'n_clusters' in kwargs:

@@ -86,7 +86,3 @@ def test_reshape_data():
     x = [[1,2],[3,4]]*2
     labels = ['a','b','a','b']
     assert np.array_equal(helpers.reshape_data(x,labels),[np.array([[1,2],[1,2]]),np.array([[3,4],[3,4]])])
-
-def test_pandas_to_list_dummy():
-    df = pd.DataFrame(['a','b'])
-    assert np.array_equal(helpers.pandas_to_list(df),np.array([[1,0],[0,1]]))
