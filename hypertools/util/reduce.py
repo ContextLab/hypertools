@@ -54,7 +54,7 @@ def reducePCA(x, ndim):
 			return [m.transform(x[0])]
 
 ##MAIN FUNCTION##
-def reduce(x, ndims=3, method=reducePCA, normalize='across'):
+def reduce(x, ndims=3, method=reducePCA, normalize=None):
 
 	## CHECK DATA TYPE ##
 	data_type = check_data(x)
