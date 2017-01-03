@@ -11,7 +11,7 @@ with open('LICENSE') as f:
 
 setup(
     name='hypertools',
-    version='0.9.0',
+    version='1.0.0',
     description='A python package for visualizing high dimensional data',
     long_description=readme,
     author='Contextual Dynamics Lab',
