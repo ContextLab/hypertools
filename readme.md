@@ -44,6 +44,7 @@ If installing from github (instead of pip), you must also install the requiremen
 + <b>util.cluster</b> - function that runs k-means clustering and returns cluster labels
 + <b>util.describe_pca</b> - plotting tool to evaluate how well the principle components describe the data
 + <b>util.missing_inds</b> - function that returns indices of missing data (nans)
++ <b>util.normalize</b> - function that returns normalized data
 
 <h2>Plot</h2>
 
@@ -62,14 +63,6 @@ See matplotlib API for more styling options
 
 <b>Keyword arguments:</b>
 
-<i>show</i> (bool): If set to False, the figure will not be displayed, but the figure, axis and data objects will still be returned (see Outputs) (default: True).
-
-<i>animate</i> (bool): If True, plots the data as an animated trajectory (default: False)
-
-<i>save_path</i> (str): Path to save the image/movie.  Must include the file extension in the save path (i.e. `save_path='/path/to/file/image.png'`).  NOTE: If saving an animation, FFMPEG must be installed (this is a matplotlib req). FFMPEG can be easily installed on a mac via homebrew `brew install ffmpeg` or linux via apt-get `apt-get install ffmpeg`.  If you don't have homebrew (mac only), you can install it like this: `/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"`.
-
-<i>palette</i> (str): A matplotlib or seaborn color palette
-
 <i>color</i> (list): A list of colors for each line to be plotted. Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes. If defined, overrides palette. See http://matplotlib.org/examples/color/named_colors.html for list of named colors. Note: must be the same length as X.
 
 <i>point_colors</i> (list of str, floats or ints): A list of colors for each point. Must be dimensionality of data (X). If the data type is numerical, the values will be mapped to rgb values in the specified palette.  If the data type is strings, the points will be labeled categorically.
@@ -78,13 +71,23 @@ See matplotlib API for more styling options
 
 <i>marker</i> (list): a list of marker types
 
-<i>ndims</i> (int): an int representing the number of dims to plot in. Must be 1,2, or 3.  NOTE: Currently only works with static plots.
-
-<i>legend</i> (list): A list of string labels to be plotted in a legend (one for each list item)
+<i>palette</i> (str): A matplotlib or seaborn color palette
 
 <i>labels</i> (list): A list of labels for each point. Must be dimensionality of data (X). If no label is wanted for a particular point, input `None`
 
+<i>legend</i> (list): A list of string labels to be plotted in a legend (one for each list item)
+
+<i>ndims</i> (int): an int representing the number of dims to plot in. Must be 1,2, or 3.  NOTE: Currently only works with static plots.
+
+<i>normalize</i> (str or False) - If set to 'across', the columns of the input data will be z-scored across lists (default). If set to 'within', the columns will be z-scored within each list that is passed.  If set to 'row', each row of the input data will be z-scored.  If set to False, the input data will be returned.
+
 <i>n_clusters</i> (int): If n_clusters is passed, hypertools will perform k-means clustering with the k parameter set to n_clusters. The resulting clusters will be plotted in different colors according to the color palette.
+
+<i>animate</i> (bool): If True, plots the data as an animated trajectory (default: False)
+
+<i>show</i> (bool): If set to False, the figure will not be displayed, but the figure, axis and data objects will still be returned (see Outputs) (default: True).
+
+<i>save_path</i> (str): Path to save the image/movie.  Must include the file extension in the save path (i.e. `save_path='/path/to/file/image.png'`).  NOTE: If saving an animation, FFMPEG must be installed (this is a matplotlib req). FFMPEG can be easily installed on a mac via homebrew `brew install ffmpeg` or linux via apt-get `apt-get install ffmpeg`.  If you don't have homebrew (mac only), you can install it like this: `/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"`.
 
 <i>explore</i> (bool): Displays user defined labels will appear on hover. If no labels are passed, The point index and coordinate will be plotted. To use, set `explore=True`.
 
@@ -185,7 +188,8 @@ A numpy array or list of numpy arrays
 
 <b>Keyword arguments:</b>
 
-ndims - dimensionality of output data
++ ndims - dimensionality of output data
++ normalize (str or False) - If set to 'across', the columns of the input data will be z-scored across lists. If set to 'within', the columns will be z-scored within each list that is passed.  If set to 'row', each row of the input data will be z-scored.  If set to False, the input data will be returned.
 
 <b>Outputs</b>
 
@@ -252,3 +256,21 @@ A list of indices representing rows with missing data.  If a list of numpy array
 <h3>Example use:</h3>
 
 `missing_data_inds = hyp.util.missing_inds(data)`
+
+<h2>Normalize</h2>
+
+<b>Inputs:</b>
+
+A numpy array or list of numpy arrays
+
+<b>Keyword arguments:</b>
+
++ normalize (str or False) - If set to 'across', the columns of the input data will be z-scored across lists. If set to 'within', the columns will be z-scored within each list that is passed.  If set to 'row', each row of the input data will be z-scored.  If set to False, the input data will be returned.
+
+<b>Outputs</b>
+
+An array or list of normalized data
+
+<h3>Example use:</h3>
+
+`normalized_data = hyp.util.normalize(data, normalize='within')`
