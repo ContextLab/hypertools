@@ -107,11 +107,9 @@ def animated_plot(x, *args, **kwargs):
     if type(x) is not list:
         x = [x]
 
-    if x[0].shape[1]>3:
-        x = reduceD(x,3)
     x = interp_array_list(x)
     x = center(x)
-    x = normalize(x)
+    x = scale(x)
 
     lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], linewidth=3, *args_list[idx], **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
     trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1])[0] for dat in x]
