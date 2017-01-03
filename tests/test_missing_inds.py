@@ -4,7 +4,7 @@ import pytest
 
 import numpy as np
 
-from hypertools.util.missing_inds import missing_inds
+from hypertools.tools.missing_inds import missing_inds
 
 data = np.random.multivariate_normal(np.zeros(2), np.eye(2), size=10)
 data[3,0]=np.nan

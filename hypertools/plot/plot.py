@@ -23,10 +23,10 @@ import pandas as pd
 from .._shared.helpers import *
 from .static import static_plot
 from .animate import animated_plot
-from ..util.cluster import cluster
-from ..util.pandas_to_matrix import pandas_to_matrix
-from ..util.reduce import reduce as reduceD
-from ..util.normalize import normalize as normalizer
+from ..tools.cluster import cluster
+from ..tools.pandas_to_matrix import pandas_to_matrix
+from ..tools.reduce import reduce as reduceD
+from ..tools.normalize import normalize as normalizer
 
 ## MAIN FUNCTION ##
 def plot(x,*args,**kwargs):
