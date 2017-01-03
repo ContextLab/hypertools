@@ -20,7 +20,6 @@ from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d import proj3d
 import seaborn as sns
 from .._shared.helpers import *
-from ..util.reduce import reduce as reduceD
 
 mpl.rcParams['pdf.fonttype'] = 42
 
@@ -97,12 +96,6 @@ def static_plot(x, *args, **kwargs):
 			return plot2D(x)
 		elif x[0].shape[-1]==3:
 			return plot3D(x)
-		elif x[0].shape[-1]>3:
-			if type(x) is list:
-				return plot3D(reduceD(x, 3))
-			else:
-				return plot3D([reduceD(x, 3)])
-	static_plot.dispatch = dispatch
 
 	# plot data in 1D
 	def plot1D(data):

@@ -16,7 +16,9 @@ import warnings
 import numpy as np
 from ppca import PPCA
 from sklearn.decomposition import PCA as PCA
-from .._shared import helpers
+from ..util.pandas_to_matrix import pandas_to_matrix
+from ..util.normalize import normalize as normalizer
+from .._shared.helpers import *
 
 ##SUB FUNCTIONS##
 def reducePCA(x, ndim):
@@ -52,8 +54,20 @@ def reducePCA(x, ndim):
 			return [m.transform(x[0])]
 
 ##MAIN FUNCTION##
-def reduce(arr, ndims=3, method=reducePCA):
-	if type(arr) is not list:
-		arr = [arr]
-	assert all([i.shape[1]>ndims for i in arr]), "In order to reduce the data, ndims must be less than the number of dimensions"
-	return method(arr,ndims)
+def reduce(x, ndims=3, method=reducePCA, normalize='across'):
+
+	## CHECK DATA TYPE ##
+	data_type = check_data(x)
+
+	## IF DATAFRAME, CONVERT TO ARRAY ##
+	if data_type=='df':
+	    # convert df to common format
+	    x = pandas_to_matrix(x)
+
+	if type(x) is not list:
+		x = [x]
+	assert all([i.shape[1]>ndims for i in x]), "In order to reduce the data, ndims must be less than the number of dimensions"
+
+	x = normalizer(x, normalize=normalize)
+
+	return method(x,ndims)
