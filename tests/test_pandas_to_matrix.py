@@ -9,4 +9,4 @@ from hypertools.tools.pandas_to_matrix import pandas_to_matrix
 
 def test_pandas_to_matrix():
     df = pd.DataFrame(['a','b'])
-    assert np.array_equal(helpers.pandas_to_matrix(df),np.array([[1,0],[0,1]]))
+    assert np.array_equal(pandas_to_matrix(df),np.array([[1,0],[0,1]]))
