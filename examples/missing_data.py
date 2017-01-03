@@ -13,9 +13,9 @@ missing_data = [inds[i] for i in np.random.choice(len(inds), len(inds)*missing)]
 for i,j in missing_data:
     data2[i,j]=np.nan
 
-data1_r,data2_r = hyp.util.reduce([data1,data2],ndims=3)
+data1_r,data2_r = hyp.tools.reduce([data1,data2],ndims=3)
 
-missing_inds = hyp.util.missing_inds(data2)
+missing_inds = hyp.tools.missing_inds(data2)
 missing_data = data2_r[missing_inds,:]
 
 hyp.plot([data1_r, data2_r, missing_data], ['r','b--','b*'])

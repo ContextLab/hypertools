@@ -16,8 +16,8 @@ import warnings
 import numpy as np
 from ppca import PPCA
 from sklearn.decomposition import PCA as PCA
-from ..util.pandas_to_matrix import pandas_to_matrix
-from ..util.normalize import normalize as normalizer
+from ..tools.pandas_to_matrix import pandas_to_matrix
+from ..tools.normalize import normalize as normalizer
 from .._shared.helpers import *
 
 ##SUB FUNCTIONS##

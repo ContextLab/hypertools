@@ -22,6 +22,6 @@ ax.set_title('Before Alignment')
 plt.show()
 
 # After hyperalignment
-fig,ax,data = hyp.plot(hyp.util.align([data1, data_rot]), show=False, return_data=True)
+fig,ax,data = hyp.plot(hyp.tools.align([data1, data_rot]), show=False, return_data=True)
 ax.set_title('After Alignment')
 plt.show()
