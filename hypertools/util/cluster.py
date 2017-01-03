@@ -2,6 +2,7 @@
 
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
+import numpy as np
 
 def cluster(x, n_clusters=8, ndims=None):
     if type(x) is list:

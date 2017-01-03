@@ -25,6 +25,8 @@ from .static import static_plot
 from .animate import animated_plot
 from ..util.cluster import cluster
 from ..util.pandas_to_matrix import pandas_to_matrix
+from ..util.reduce import reduce as reduceD
+
 
 ## MAIN FUNCTION ##
 def plot(x,*args,**kwargs):
@@ -37,14 +39,25 @@ def plot(x,*args,**kwargs):
         # convert df to common format
         x = pandas_to_matrix(x)
 
+    # if x is not a list, make it one
+    if type(x) is not list:
+        x = [x]
+
+    # reduce dimensionality of the data
+    if 'ndims' in kwargs:
+        ndims=kwargs['ndims']
+        x = reduceD(x,ndims)
+        del kwargs['ndims']
+    elif x[0].shape[1]>3:
+        x = reduceD(x,3)
+        ndims=3
+    else:
+        ndims=x[0].shape[1]
+
+
     ## HYPERTOOLS-SPECIFIC ARG PARSING ##
     if 'n_clusters' in kwargs:
         n_clusters=kwargs['n_clusters']
-
-        if 'ndims' in kwargs:
-            ndims = kwargs['ndims']
-        else:
-            ndims = 3
 
         cluster_labels = cluster(x, n_clusters=n_clusters, ndims=ndims)
         x = reshape_data(x,cluster_labels)
@@ -98,10 +111,6 @@ def plot(x,*args,**kwargs):
 
     else:
         animate=False
-
-    # if x is not a list, make it one
-    if type(x) is not list:
-        x = [x]
 
     if animate:
         return animated_plot(x,*args,**kwargs)
