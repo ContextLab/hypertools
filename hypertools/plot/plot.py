@@ -26,7 +26,7 @@ from .animate import animated_plot
 from ..util.cluster import cluster
 from ..util.pandas_to_matrix import pandas_to_matrix
 from ..util.reduce import reduce as reduceD
-
+from ..util.normalize import normalize as normalizer
 
 ## MAIN FUNCTION ##
 def plot(x,*args,**kwargs):
@@ -42,6 +42,13 @@ def plot(x,*args,**kwargs):
     # if x is not a list, make it one
     if type(x) is not list:
         x = [x]
+
+    if 'normalize' in kwargs:
+        normalize = kwargs['normalize']
+        x = normalizer(x, normalize=normalize)
+        del kwargs['normalize']
+    else:
+        x = normalizer(x, normalize='across')
 
     # reduce dimensionality of the data
     if 'ndims' in kwargs:
