@@ -39,12 +39,12 @@ If installing from github (instead of pip), you must also install the requiremen
 
 <h2>Sub functions</h2>
 
-+ <b>util.align</b> - align multidimensional data (See here for details)
-+ <b>util.reduce</b> - implements PCA to reduce dimensionality of data
-+ <b>util.cluster</b> - function that runs k-means clustering and returns cluster labels
-+ <b>util.describe_pca</b> - plotting tool to evaluate how well the principle components describe the data
-+ <b>util.missing_inds</b> - function that returns indices of missing data (nans)
-+ <b>util.normalize</b> - function that returns normalized data
++ <b>tools.align</b> - align multidimensional data (See here for details)
++ <b>tools.reduce</b> - implements PCA to reduce dimensionality of data
++ <b>tools.cluster</b> - function that runs k-means clustering and returns cluster labels
++ <b>tools.describe_pca</b> - plotting tool to evaluate how well the principle components describe the data
++ <b>tools.missing_inds</b> - function that returns indices of missing data (nans)
++ <b>tools.normalize</b> - function that returns normalized data
 
 <h2>Plot</h2>
 
@@ -178,7 +178,7 @@ An aligned list of numpy arrays
 
 <h3>Example use:</h3>
 
-align a list of arrays: `aligned_data = hyp.util.align(data)`
+align a list of arrays: `aligned_data = hyp.tools.align(data)`
 
 <h2>Reduce</h2>
 
@@ -197,7 +197,7 @@ An array or list of arrays with reduced dimensionality
 
 <h3>Example uses</h3>
 
-Reduce n-dimensional array to 3d: `reduced_data = hyp.util.reduce(data, ndims=3)`
+Reduce n-dimensional array to 3d: `reduced_data = hyp.tools.reduce(data, ndims=3)`
 
 <h2>Cluster</h2>
 
@@ -217,7 +217,7 @@ A list of cluster labels corresponding to each data point.  NOTE: During the clu
 <h3>Example use:</h3>
 
 ```
-cluster_labels = hyp.util.cluster(data, n_clusters=10)
+cluster_labels = hyp.tools.cluster(data, n_clusters=10)
 hyp.plot(data, 'o', point_colors = cluster_labels)
 ```
 
@@ -239,7 +239,7 @@ A plot summarizing the correlation between raw input data and PCA reduced data
 
 <h3>Example use:</h3>
 
-`hyp.util.describe_pca(data)`
+`hyp.tools.describe_pca(data)`
 
 ![Describe Example](images/describe_example.png)
 
@@ -255,7 +255,7 @@ A list of indices representing rows with missing data.  If a list of numpy array
 
 <h3>Example use:</h3>
 
-`missing_data_inds = hyp.util.missing_inds(data)`
+`missing_data_inds = hyp.tools.missing_inds(data)`
 
 <h2>Normalize</h2>
 
@@ -273,4 +273,4 @@ An array or list of normalized data
 
 <h3>Example use:</h3>
 
-`normalized_data = hyp.util.normalize(data, normalize='within')`
+`normalized_data = hyp.tools.normalize(data, normalize='within')`

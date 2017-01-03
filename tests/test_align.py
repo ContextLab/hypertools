@@ -5,7 +5,7 @@ import pytest
 import scipy.io as sio
 import numpy as np
 
-from hypertools.util.align import align
+from hypertools.tools.align import align
 def test_procrustes():
     data = sio.loadmat('examples/sample_data/test_data.mat')
     data1 = data['spiral']

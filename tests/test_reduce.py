@@ -4,7 +4,7 @@ import pytest
 
 import numpy as np
 
-from hypertools.util.reduce import reduce as reduc
+from hypertools.tools.reduce import reduce as reduc
 
 data = [np.random.multivariate_normal(np.zeros(4), np.eye(4), size=100) for i in range(2)]
 reduced_data_3d = reduc(data)

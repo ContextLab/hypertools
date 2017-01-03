@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib as mpl
 
 from hypertools.plot import plot
-from hypertools.util.reduce import reduce as reduc
+from hypertools.tools.reduce import reduce as reduc
 
 data = [np.random.multivariate_normal(np.zeros(4), np.eye(4), size=100) for i in range(2)]
 
