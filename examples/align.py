@@ -1,8 +1,11 @@
 import hypertools as hyp
 import scipy.io as sio
 import numpy as np
+import os
 
-data=sio.loadmat('sample_data/weights.mat')
+datadir = os.path.join(os.path.dirname(os.path.abspath(__file__)),'sample_data/')
+data=sio.loadmat(datadir + 'weights.mat')
+
 w=data['weights'][0]
 w = [i for i in w]
 aligned_w = hyp.util.align(w)

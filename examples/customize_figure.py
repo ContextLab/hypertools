@@ -2,8 +2,10 @@ import hypertools as hyp
 import scipy.io as sio
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
-data=sio.loadmat('sample_data/weights.mat')
+datadir = os.path.join(os.path.dirname(os.path.abspath(__file__)),'sample_data/')
+data=sio.loadmat(datadir + 'weights.mat')
 w=[i for i in data['weights'][0][0:2]]
 
 fig,ax,data = hyp.plot(w,'o', ndims=2, legend=['Group A', 'Group B'], show=False, return_data=True)
