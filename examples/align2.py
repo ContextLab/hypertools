@@ -2,8 +2,11 @@ import hypertools as hyp
 import scipy.io as sio
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
-data = sio.loadmat('sample_data/test_data.mat')
+datadir = os.path.join(os.path.dirname(os.path.abspath(__file__)),'sample_data/')
+
+data = sio.loadmat(datadir + 'test_data.mat')
 data1 = data['spiral']
 
 # A random rotation matrix
