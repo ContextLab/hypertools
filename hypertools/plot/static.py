@@ -14,14 +14,13 @@ import sys
 import warnings
 import itertools
 import numpy as np
-import matplotlib as mpl
-import matplotlib.pyplot as plt
+import matplotlib
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d import proj3d
 import seaborn as sns
 from .._shared.helpers import *
 
-mpl.rcParams['pdf.fonttype'] = 42
+matplotlib.rcParams['pdf.fonttype'] = 42
 
 ##MAIN FUNCTION##
 def static_plot(x, *args, **kwargs):
@@ -79,8 +78,11 @@ def static_plot(x, *args, **kwargs):
 	if 'show' in kwargs:
 		show=kwargs['show']
 		del kwargs['show']
+		matplotlib.use('Agg')
+		import matplotlib.pyplot as plt
 	else:
 		show=True
+		import matplotlib.pyplot as plt
 
 	##PARSE LEFTOVER MATPLOTLIB ARGS##
 	args_list = parse_args(x,args)

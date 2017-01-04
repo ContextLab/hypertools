@@ -1,5 +1,7 @@
 <h1>Hypertools - A python library for visualizing high dimensional data</h1>
 
+[![Build Status](https://travis-ci.com/ContextLab/hypertools.svg?token=hxjzzuVkr2GZrDkPGN5n&branch=master)](https://travis-ci.com/ContextLab/hypertools)
+
 ![Hypertools example](images/hypertools.gif)
 
 <h2>Install</h2>

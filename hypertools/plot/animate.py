@@ -14,7 +14,7 @@ OUTPUTS:
 ##PACKAGES##
 from __future__ import division
 import numpy as np
-import matplotlib.pyplot as plt
+import matplotlib
 import mpl_toolkits.mplot3d.axes3d as p3
 import matplotlib.animation as animation
 from .._shared.helpers import *
@@ -51,11 +51,15 @@ def animated_plot(x, *args, **kwargs):
     else:
         save=False
 
+    # handle show flag
     if 'show' in kwargs:
         show=kwargs['show']
         del kwargs['show']
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
     else:
         show=True
+        import matplotlib.pyplot as plt
 
     ##SUB FUNCTIONS##
     def plot_cube(scale, const=1):
