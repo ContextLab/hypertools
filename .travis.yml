@@ -16,5 +16,5 @@ install:
   - source activate testenv
   - pip install -r requirements.txt
   - python setup.py install
-  - cp testing/matplotlibrc .
+  - cp tests/matplotlibrc .
 script: py.test
