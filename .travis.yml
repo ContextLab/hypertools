@@ -2,11 +2,12 @@ notifications:
   slack: context-lab:HbiEYsCVdh8R8Zpu0uqnMsoK
 os:
   - osx
-  - linux
 language: python
 python:
   - "2.7"
 # command to install dependencies
-install: "pip install -e ."
+install:
+  - pip install .
+  - pip install -r requirements.txt
 # command to run tests
 script: pytest

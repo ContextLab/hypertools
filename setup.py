@@ -18,15 +18,5 @@ setup(
     author_email='contextualdynamics@gmail.com',
     url='https://github.com/ContextLab/hypertools',
     license=license,
-    packages=find_packages(exclude=('tests', 'examples', 'images')),
-    install_requires=[
-        "pytest",
-        "numpy",
-        "scipy",
-        "matplotlib",
-        "seaborn",
-        "scikit-learn",
-        "PPCA",
-        "pandas",
-    ]
+    packages=find_packages(exclude=('tests', 'examples', 'images'))
 )
