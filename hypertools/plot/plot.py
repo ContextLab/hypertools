@@ -39,6 +39,9 @@ def plot(x,*args,**kwargs):
         # convert df to common format
         x = pandas_to_matrix(x)
 
+    if data_type=='dflist':
+        x = [pandas_to_matrix(i) for i in x]
+
     # if x is not a list, make it one
     if type(x) is not list:
         x = [x]
