@@ -1,11 +1,19 @@
 notifications:
   slack: context-lab:HbiEYsCVdh8R8Zpu0uqnMsoK
-os:
-  - osx
 language: python
+sudo: false
 python:
   - "2.7"
-# command to install dependencies
-install: "pip install -r requirements.txt"
-# command to run tests
-script: pytest
+install:
+  - wget http://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh -O miniconda.sh
+  - bash miniconda.sh -b -p $HOME/miniconda
+  - export PATH="$HOME/miniconda/bin:$PATH"
+  - hash -r
+  - conda config --set always_yes yes --set changeps1 no
+  - conda update -q conda
+  - conda info -a
+  - conda create -q -n testenv python=$TRAVIS_PYTHON_VERSION pip pytest numpy pandas scipy matplotlib seaborn scikit-learn PPCA
+  - source activate testenv
+  - pip install -r requirements.txt
+  - python setup.py install
+script: py.test
