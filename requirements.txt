@@ -1,8 +1,0 @@
-pytest
-numpy
-scipy
-matplotlib
-seaborn
-scikit-learn
-PPCA
-pandas
