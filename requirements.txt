@@ -1,7 +1,7 @@
-pandas
-numpy
-scipy
-matplotlib
-seaborn
-scikit-learn
 PPCA
+scikit-learn
+pandas
+seaborn
+matplotlib
+scipy
+numpy
