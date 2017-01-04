@@ -3,5 +3,5 @@ scikit-learn
 pandas
 seaborn
 matplotlib
-scipy==0.18.1
-numpy==1.10.4
+scipy
+numpy
