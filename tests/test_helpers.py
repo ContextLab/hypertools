@@ -45,7 +45,7 @@ def test_check_data_list_of_arrays():
     helpers.check_data([np.random.random((3,3))]*2)=='list'
 
 def test_check_data_list_of_other():
-    with pytest.raises(Exception) as e_info:
+    with pytest.raises(ValueError) as e_info:
         helpers.check_data([1,2,3])
 
 def test_check_data_array():
@@ -53,6 +53,9 @@ def test_check_data_array():
 
 def test_check_data_df():
     helpers.check_data(pd.DataFrame([0,1,2]))=='df'
+
+def test_check_data_df_list():
+    helpers.check_data([pd.DataFrame([0,1,2]),pd.DataFrame([0,1,2])])=='dflist'
 
 def test_check_data_int():
     with pytest.raises(Exception) as e_info:
