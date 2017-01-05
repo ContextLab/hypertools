@@ -82,7 +82,7 @@ def animated_plot(x, *args, **kwargs):
             plane_list.append(ax.plot_wireframe(Xs, Ys, Zs, rstride=1, cstride=1, color='black', linewidth=2))
         return plane_list
 
-    def update_lines(num, data_lines, lines, trail_lines, cube_scale, tail_len=30, tail_style=':', speed=0.2):
+    def update_lines(num, data_lines, lines, trail_lines, cube_scale, tail_len=1000, tail_style=':', speed=0.2):
 
         if hasattr(update_lines, 'planes'):
             for plane in update_lines.planes:
@@ -134,7 +134,7 @@ def animated_plot(x, *args, **kwargs):
         ax.legend(proxies,legend_data)
 
     # Creating the Animation object
-    line_ani = animation.FuncAnimation(fig, update_lines, 1000, fargs=(x, lines, trail, cube_scale),
+    line_ani = animation.FuncAnimation(fig, update_lines, x[0].shape[0], fargs=(x, lines, trail, cube_scale),
                                    interval=8, blit=False)
     if save:
         Writer = animation.writers['ffmpeg']
