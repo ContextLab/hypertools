@@ -76,15 +76,19 @@ def interp_array_list(arr_list,interp_val=10):
     return smoothed
 
 def check_data(data):
-	if type(data) is list:
-		assert all([data[0].shape[1]==x.shape[1] for x in data]), 'Arrays must have the same shape.'
-		return 'list'
-	elif isinstance(data, np.ndarray):
-		return 'array'
-	elif isinstance(data, pd.DataFrame):
-		return 'df'
-	else:
-		raise ValueError("Data must be numpy array, list of numpy array or pandas dataframe.")
+    if type(data) is list:
+        if all([isinstance(x, np.ndarray) for x in data]):
+            return 'list'
+        elif all([isinstance(x, pd.DataFrame) for x in data]):
+            return 'dflist'
+        else:
+            raise ValueError("Data must be numpy array, list of numpy array, pandas dataframe or list of pandas dataframes.")
+    elif isinstance(data, np.ndarray):
+        return 'array'
+    elif isinstance(data, pd.DataFrame):
+        return 'df'
+    else:
+        raise ValueError("Data must be numpy array, list of numpy array, pandas dataframe or list of pandas dataframes.")
 
 def parse_args(x,args):
 	args_list = []
