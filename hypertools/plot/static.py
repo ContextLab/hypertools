@@ -92,7 +92,7 @@ def static_plot(x, *args, **kwargs):
 
 	##SUB FUNCTIONS##
 	def dispatch(x):
-		if x[0].shape[-1]==1:
+		if x[0].ndim==1 or x[0].shape[-1]==1:
 			return plot1D(x)
 		elif x[0].shape[-1]==2:
 			return plot2D(x)
