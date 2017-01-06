@@ -107,6 +107,8 @@ Note: Explore more is currently only supported for 3D static plots.
 
 <i>zoom</i> (int): Zoom, positive numbers will zoom in (default: 0)
 
+<i>chem_trails</i> (bool): Added trail with change in opacity  (default: False)
+
 <b>Outputs:</b>
 
 -By default, the plot function outputs a figure handle (matplotlib.figure.Figure), axis handle (matplotlib.axes.\_axes.Axes) and data (list of numpy arrays), e.g. `fig,axis,data = hyp.plot(x)`
