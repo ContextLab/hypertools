@@ -7,3 +7,4 @@ from .missing_inds import missing_inds
 from .cluster import cluster
 from .pandas_to_matrix import pandas_to_matrix
 from .normalize import normalize
+from .procrustes import procrustes

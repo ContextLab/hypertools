@@ -43,10 +43,12 @@ If installing from github (instead of pip), you must also install the requiremen
 
 + <b>tools.align</b> - align multidimensional data (See here for details)
 + <b>tools.reduce</b> - implements PCA to reduce dimensionality of data
-+ <b>tools.cluster</b> - function that runs k-means clustering and returns cluster labels
++ <b>tools.cluster</b> - runs k-means clustering and returns cluster labels
 + <b>tools.describe_pca</b> - plotting tool to evaluate how well the principle components describe the data
-+ <b>tools.missing_inds</b> - function that returns indices of missing data (nans)
-+ <b>tools.normalize</b> - function that returns normalized data
++ <b>tools.missing_inds</b> - returns indices of missing data (nans)
++ <b>tools.normalize</b> - z-scores the columns/rows of a matrix or list of matrices
++ <b>tools.procrustes</b> - projects from one space to another using Procrustean
+  transformation (shift + scaling + rotation) (Adapted from [pyMVPA](https://github.com/PyMVPA/PyMVPA/blob/master/mvpa2/mappers/procrustean.py) implementation)
 
 <h2>Plot</h2>
 
@@ -276,3 +278,18 @@ An array or list of normalized data
 <h3>Example use:</h3>
 
 `normalized_data = hyp.tools.normalize(data, normalize='within')`
+
+<h2>Procrustes</h2>
+
+<b>Inputs:</b>
+
+- source - a numpy array to be transformed
+- target - a numpy array to serve as template
+
+<b>Outputs</b>
+
+A (shifted + scaled + rotated) version of source that best matches target
+
+<h3>Example use:</h3>
+
+`source_aligned_to_target = hyp.tools.procrustes(source, target)`
