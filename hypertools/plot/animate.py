@@ -33,6 +33,12 @@ def animated_plot(x, *args, **kwargs):
     else:
         zoom=0
 
+    if 'chem_trails' in kwargs:
+        chem_trails= kwargs['chem_trails']
+        del kwargs['chem_trails']
+    else:
+        chem_trails=False
+
     if 'n_rot' in kwargs:
         n_rot=kwargs['n_rot']
         del kwargs['n_rot']
@@ -129,6 +135,9 @@ def animated_plot(x, *args, **kwargs):
             else:
                 line.set_data(data[num-tail_duration:num+1, 0:2].T)
                 line.set_3d_properties(data[num-tail_duration:num+1, 2])
+            if chem_trails:
+                trail.set_data(data[0:num + 1, 0:2].T)
+                trail.set_3d_properties(data[0:num + 1, 2])
         return lines,trail_lines
 
     args_list = parse_args(x,args)
@@ -152,7 +161,9 @@ def animated_plot(x, *args, **kwargs):
         tail_duration = frame_rate*tail_duration
 
     lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], linewidth=3, *args_list[idx], **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
-    trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1])[0] for dat in x]
+    trail = [
+        ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], alpha=.3, linewidth=3, *args_list[idx], **kwargs_list[idx])[0]
+        for idx, dat in enumerate(x)]
 
     ax.set_axis_off()
 
