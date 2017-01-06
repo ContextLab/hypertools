@@ -1,5 +1,8 @@
 notifications:
   slack: context-lab:HbiEYsCVdh8R8Zpu0uqnMsoK
+    template:
+      - "Build <%{build_url}|#%{build_number}> (<%{compare_url}|%{commit}>) of %{repository}@%{branch} by %{author} %{result} in %{duration}"
+      - ":parrotdad: :parrotdad: :parrotdad:"
 language: python
 sudo: false
 python:
