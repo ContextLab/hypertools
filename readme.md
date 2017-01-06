@@ -95,6 +95,8 @@ See matplotlib API for more styling options
 
 <i>explore</i> (bool): Displays user defined labels will appear on hover. If no labels are passed, The point index and coordinate will be plotted. To use, set `explore=True`.
 
+Note: Explore more is currently only supported for 3D static plots.
+
 <b>Animation-specific keyword arguments:</b>
 
 <i>duration</i> (int): Length of the animation in seconds (default: 30 seconds)

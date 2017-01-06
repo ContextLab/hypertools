@@ -60,19 +60,20 @@ def static_plot(x, *args, **kwargs):
 	else:
 		labels=False
 
-    # handle explore flag
-	if 'explore' in kwargs:
-		kwargs['picker']=True
-		del kwargs['explore']
-		explore=True
-	else:
-		explore=False
-
 	# handle dims flag
 	if 'ndims' in kwargs:
 		assert (kwargs['ndims'] in [1,2,3]), 'ndims must be 1,2 or 3.'
 		x = reduceD(x,kwargs['ndims'])
 		del kwargs['ndims']
+
+	# handle explore flag
+	if 'explore' in kwargs:
+		assert x[0].ndim>1, "Explore mode is currently only supported for 3D plots."
+		kwargs['picker']=True
+		del kwargs['explore']
+		explore=True
+	else:
+		explore=False
 
 	# handle show flag
 	if 'show' in kwargs:
