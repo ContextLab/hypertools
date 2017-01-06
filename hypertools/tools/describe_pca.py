@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from .align import *
 from .reduce import reduce as reduceD
+from .._shared.helpers import format_data
 
 ##SET SEABORN STYLE##
 sns.set(style="darkgrid")
@@ -46,10 +47,7 @@ def describe_pca(x, show=True):
             del cov_PCA
         return corrs
 
-    if type(x) is list:
-        pass
-    else:
-        x = [x]
+    x = format_data(x)
 
     attrs = {}
     attrs['PCA_summary'] = {}

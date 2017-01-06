@@ -22,12 +22,13 @@ OUTPUTS:
 from .._externals.srm import SRM
 from .._externals.procrustean import procrustes
 import numpy as np
+from .._shared.helpers import format_data
 
 ##MAIN FUNCTION##
 def align(data, method='HYPER'):
 	"""Implements hyperalignment"""
 
-	assert all(isinstance(i, np.ndarray) for i in data) and type(data) is list and len(data)>1, "Input must be list of arrays"
+	data = format_data(data)
 
 	if method=='HYPER':
 

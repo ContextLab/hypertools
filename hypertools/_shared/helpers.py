@@ -129,3 +129,21 @@ def reshape_data(x,labels):
 	for idx,point in enumerate(labels):
 		x_reshaped[categories.index(point)].append(x_stacked[idx])
 	return [np.vstack(i) for i in x_reshaped]
+
+def format_data(x):
+
+    data_type = check_data(x)
+
+    if data_type=='df':
+        x = pandas_to_matrix(x)
+
+    if data_type=='dflist':
+        x = [pandas_to_matrix(i) for i in x]
+
+    if type(x) is not list:
+        x = [x]
+
+    if any([i.ndim==1 for i in x]):
+        x = [np.reshape(i,(i.shape[0],1)) if i.ndim==1 else i for i in x]
+
+    return x

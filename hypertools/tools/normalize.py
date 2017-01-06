@@ -3,13 +3,13 @@
 from __future__ import division
 from sklearn.preprocessing import FunctionTransformer
 import numpy as np
+from .._shared.helpers import format_data
 
 def normalize(x, normalize='across'):
 
     assert normalize in ['across','within','row', False], "scale_type must be across, within, row or none."
 
-    if type(x) is not list:
-        x = [x]
+    x = format_data(x)
 
     zscore = lambda X,y: (y - np.mean(X)) / np.std(X)
 

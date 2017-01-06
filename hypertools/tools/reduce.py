@@ -56,16 +56,8 @@ def reducePCA(x, ndim):
 ##MAIN FUNCTION##
 def reduce(x, ndims=3, method=reducePCA, normalize='across'):
 
-	## CHECK DATA TYPE ##
-	data_type = check_data(x)
+	x = format_data(x)
 
-	## IF DATAFRAME, CONVERT TO ARRAY ##
-	if data_type=='df':
-	    # convert df to common format
-	    x = pandas_to_matrix(x)
-
-	if type(x) is not list:
-		x = [x]
 	assert all([i.shape[1]>ndims for i in x]), "In order to reduce the data, ndims must be less than the number of dimensions"
 
 	x = normalizer(x, normalize=normalize)
