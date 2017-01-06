@@ -1,5 +1,9 @@
 notifications:
   slack: context-lab:HbiEYsCVdh8R8Zpu0uqnMsoK
+    template:
+      - "%{repository} (%{commit}) : %{message}"
+      - "Build details: %{build_url}"
+      - ":parrotdad: :parrotdad: :parrotdad:"
 language: python
 sudo: false
 python:
