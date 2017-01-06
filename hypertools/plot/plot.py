@@ -31,20 +31,10 @@ from ..tools.normalize import normalize as normalizer
 ## MAIN FUNCTION ##
 def plot(x,*args,**kwargs):
 
-    ## CHECK DATA TYPE ##
-    data_type = check_data(x)
+    # turn data into common format - a list of arrays
+    x = format_data(x)
 
-    ## IF DATAFRAME, CONVERT TO ARRAY ##
-    if data_type=='df':
-        # convert df to common format
-        x = pandas_to_matrix(x)
-
-    if data_type=='dflist':
-        x = [pandas_to_matrix(i) for i in x]
-
-    # if x is not a list, make it one
-    if type(x) is not list:
-        x = [x]
+    ## HYPERTOOLS-SPECIFIC ARG PARSING ##
 
     if 'normalize' in kwargs:
         normalize = kwargs['normalize']
@@ -63,9 +53,7 @@ def plot(x,*args,**kwargs):
         ndims=3
     else:
         ndims=x[0].shape[1]
-
-
-    ## HYPERTOOLS-SPECIFIC ARG PARSING ##
+        
     if 'n_clusters' in kwargs:
         n_clusters=kwargs['n_clusters']
 

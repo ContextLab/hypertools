@@ -3,8 +3,12 @@
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 import numpy as np
+from .._shared.helpers import *
 
 def cluster(x, n_clusters=8, ndims=None):
+
+    x = format_data(x)
+
     if type(x) is list:
         x = np.vstack(x)
     if ndims:

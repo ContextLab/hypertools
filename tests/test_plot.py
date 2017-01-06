@@ -16,6 +16,10 @@ def test_plot_1d():
     _,_,data_1d = plot.plot(data_reduced_1d, show=False, return_data=True)
     assert all([i.shape[1]==1 for i in data_1d])
 
+def test_plot_1dim():
+    _,_,data_1dim = plot.plot(np.array([1,2,3,4]), show=False, return_data=True)
+    assert data_1dim[0].ndim==2
+
 def test_plot_2d():
     data_reduced_2d = reduc(data,ndims=2)
     _,_,data_2d = plot.plot(data_reduced_2d, show=False, return_data=True)
