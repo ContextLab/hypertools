@@ -20,7 +20,7 @@ OUTPUTS:
 
 ##PACKAGES##
 from .._externals.srm import SRM
-from .._externals.procrustean import procrustes
+from .procrustes import procrustes
 import numpy as np
 from .._shared.helpers import format_data
 
