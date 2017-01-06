@@ -41,6 +41,9 @@ def test_interp_array():
 def test_interp_array_list():
     assert np.allclose(helpers.interp_array_list(np.array([[1,2,3],[1,2,3]])),[np.linspace(1,2.9,20)] * 2)
 
+def test_interp_array_list_interpval():
+    assert helpers.interp_array_list([np.array([[1,2,3],[1,2,3],[1,2,3]])],interp_val=10)[0].shape[0]==20
+
 def test_check_data_list_of_arrays():
     helpers.check_data([np.random.random((3,3))]*2)=='list'
 

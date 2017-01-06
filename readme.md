@@ -56,7 +56,7 @@ If installing from github (instead of pip), you must also install the requiremen
 
 <b>Inputs:</b>
 
-A numpy array, list of arrays, or pandas dataframe
+A numpy array, list of arrays, or pandas dataframe or list of dataframes
 
 <i><b>NOTE:</b> Hypertools currently only supports single-level indexing for pandas dataframes, but we plan to support multi-level indices in the future. Additionally, be aware that if columns containing text are passed to hypertools, those columns will be automatically converted into dummy variables (see pandas.get_dummies for details).</i>
 
@@ -94,6 +94,16 @@ See matplotlib API for more styling options
 <i>save_path</i> (str): Path to save the image/movie.  Must include the file extension in the save path (i.e. `save_path='/path/to/file/image.png'`).  NOTE: If saving an animation, FFMPEG must be installed (this is a matplotlib req). FFMPEG can be easily installed on a mac via homebrew `brew install ffmpeg` or linux via apt-get `apt-get install ffmpeg`.  If you don't have homebrew (mac only), you can install it like this: `/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"`.
 
 <i>explore</i> (bool): Displays user defined labels will appear on hover. If no labels are passed, The point index and coordinate will be plotted. To use, set `explore=True`.
+
+<b>Animation-specific keyword arguments:</b>
+
+<i>duration</i> (int): Length of the animation in seconds (default: 30 seconds)
+
+<i>tail_duration</i> (int): Sets the length of the tail of the data (default: 2 seconds)
+
+<i>n_rots</i> (int): Number of rotations around the box (default: 2)
+
+<i>zoom</i> (int): Zoom, positive numbers will zoom in (default: 0)
 
 <b>Outputs:</b>
 

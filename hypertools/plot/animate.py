@@ -27,6 +27,36 @@ def animated_plot(x, *args, **kwargs):
 
     ## HYPERTOOLS-SPECIFIC ARG PARSING ##
 
+    if 'zoom' in kwargs:
+        zoom=kwargs['zoom']
+        del kwargs['zoom']
+    else:
+        zoom=0
+
+    if 'n_rot' in kwargs:
+        n_rot=kwargs['n_rot']
+        del kwargs['n_rot']
+    else:
+        n_rot=2
+
+    if 'duration' in kwargs:
+        duration=kwargs['duration']
+        del kwargs['duration']
+    else:
+        duration=30
+
+    if 'frame_rate' in kwargs:
+        frame_rate=kwargs['frame_rate']
+        del kwargs['frame_rate']
+    else:
+        frame_rate=50
+
+    if 'tail_duration' in kwargs:
+        tail_duration=kwargs['tail_duration']
+        del kwargs['tail_duration']
+    else:
+        tail_duration=2
+
     if 'return_data' in kwargs:
         return_data = kwargs['return_data']
         del kwargs['return_data']
@@ -82,23 +112,23 @@ def animated_plot(x, *args, **kwargs):
             plane_list.append(ax.plot_wireframe(Xs, Ys, Zs, rstride=1, cstride=1, color='black', linewidth=2))
         return plane_list
 
-    def update_lines(num, data_lines, lines, trail_lines, cube_scale, tail_len=1000, tail_style=':', speed=0.2):
+    def update_lines(num, data_lines, lines, trail_lines, cube_scale, tail_duration):
 
         if hasattr(update_lines, 'planes'):
             for plane in update_lines.planes:
                 plane.remove()
 
         update_lines.planes = plot_cube(cube_scale)
-        ax.view_init(elev=10, azim=speed*num)
-        ax.dist=8*cube_scale
+        ax.view_init(elev=10, azim=n_rot*(360*(num/data_lines[0].shape[0])))
+        ax.dist=8-zoom
 
         for line, data, trail in zip(lines, data_lines, trail_lines):
-            if num<=tail_len:
+            if num<=tail_duration:
                     line.set_data(data[0:num+1, 0:2].T)
                     line.set_3d_properties(data[0:num+1, 2])
             else:
-                line.set_data(data[num-tail_len:num+1, 0:2].T)
-                line.set_3d_properties(data[num-tail_len:num+1, 2])
+                line.set_data(data[num-tail_duration:num+1, 0:2].T)
+                line.set_3d_properties(data[num-tail_duration:num+1, 2])
         return lines,trail_lines
 
     args_list = parse_args(x,args)
@@ -111,9 +141,15 @@ def animated_plot(x, *args, **kwargs):
     if type(x) is not list:
         x = [x]
 
-    x = interp_array_list(x)
+    interp_val = frame_rate*duration/(x[0].shape[0] - 1)
+    x = interp_array_list(x, interp_val=interp_val)
     x = center(x)
     x = scale(x)
+
+    if tail_duration==0:
+        tail_duration=1
+    else:
+        tail_duration = frame_rate*tail_duration
 
     lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], linewidth=3, *args_list[idx], **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
     trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1])[0] for dat in x]
@@ -134,11 +170,11 @@ def animated_plot(x, *args, **kwargs):
         ax.legend(proxies,legend_data)
 
     # Creating the Animation object
-    line_ani = animation.FuncAnimation(fig, update_lines, x[0].shape[0], fargs=(x, lines, trail, cube_scale),
-                                   interval=8, blit=False)
+    line_ani = animation.FuncAnimation(fig, update_lines, x[0].shape[0], fargs=(x, lines, trail, cube_scale, tail_duration),
+                                   interval=1000/frame_rate, blit=False, repeat=False)
     if save:
         Writer = animation.writers['ffmpeg']
-        writer = Writer(fps=30, bitrate=1800)
+        writer = Writer(fps=frame_rate, bitrate=1800)
         line_ani.save(save_path, writer=writer)
 
     if show:

@@ -84,6 +84,20 @@ def static_plot(x, *args, **kwargs):
 		show=True
 		import matplotlib.pyplot as plt
 
+	# ignore and remove animation specific kwargs - better way to do this?
+	if 'tail_len' in kwargs:
+		del kwargs['tail_len']
+	if 'zoom' in kwargs:
+		del kwargs['zoom']
+	if 'n_rot' in kwargs:
+		del kwargs['n_rot']
+	if 'duration' in kwargs:
+		del kwargs['duration']
+	if 'frame_rate' in kwargs:
+		del kwargs['frame_rate']
+	if 'trail_duration' in kwargs:
+		del kwargs['tail_duration']
+
 	##PARSE LEFTOVER MATPLOTLIB ARGS##
 	args_list = parse_args(x,args)
 
