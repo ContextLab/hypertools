@@ -53,7 +53,7 @@ def plot(x,*args,**kwargs):
         ndims=3
     else:
         ndims=x[0].shape[1]
-        
+
     if 'n_clusters' in kwargs:
         n_clusters=kwargs['n_clusters']
 
