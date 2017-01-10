@@ -54,12 +54,13 @@ def reducePCA(x, ndim):
 			return [m.transform(x[0])]
 
 ##MAIN FUNCTION##
-def reduce(x, ndims=3, method=reducePCA, normalize='across'):
+def reduce(x, ndims=3, method=reducePCA, normalize=False):
 
 	x = format_data(x)
 
 	assert all([i.shape[1]>ndims for i in x]), "In order to reduce the data, ndims must be less than the number of dimensions"
 
-	x = normalizer(x, normalize=normalize)
+	if normalize:
+		x = normalizer(x, normalize=normalize)
 
 	return method(x,ndims)

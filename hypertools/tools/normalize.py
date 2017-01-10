@@ -11,7 +11,7 @@ def normalize(x, normalize='across'):
 
     x = format_data(x)
 
-    zscore = lambda X,y: (y - np.mean(X)) / np.std(X)
+    zscore = lambda X,y: (y - np.mean(X)) / np.std(X) if len(set(y))>1 else np.zeros(y.shape)
 
     if normalize=='across':
         x_stacked=np.vstack(x)
