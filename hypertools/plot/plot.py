@@ -24,7 +24,7 @@ from .._shared.helpers import *
 from .static import static_plot
 from .animate import animated_plot
 from ..tools.cluster import cluster
-from ..tools.pandas_to_matrix import pandas_to_matrix
+from ..tools.df2mat import df2mat
 from ..tools.reduce import reduce as reduceD
 from ..tools.normalize import normalize as normalizer
 

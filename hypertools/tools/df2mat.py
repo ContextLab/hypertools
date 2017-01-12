@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-def pandas_to_matrix(data, return_labels=False):
+def df2mat(data, return_labels=False):
     df_str = data.select_dtypes(include=['object'])
     df_num = data.select_dtypes(exclude=['object'])
     for colname in df_str.columns:

@@ -133,15 +133,15 @@ def reshape_data(x,labels):
 def format_data(x):
 
     # not sure why i needed to import here, but its the only way I could get it to work
-    from ..tools.pandas_to_matrix import pandas_to_matrix
+    from ..tools.df2mat import df2mat
 
     data_type = check_data(x)
 
     if data_type=='df':
-        x = pandas_to_matrix(x)
+        x = df2mat(x)
 
     if data_type=='dflist':
-        x = [pandas_to_matrix(i) for i in x]
+        x = [df2mat(i) for i in x]
 
     if type(x) is not list:
         x = [x]
