@@ -51,6 +51,7 @@ If installing from github (instead of pip), you must also install the requiremen
 + <b>tools.normalize</b> - z-scores the columns/rows of a matrix or list of matrices
 + <b>tools.procrustes</b> - projects from one space to another using Procrustean
   transformation (shift + scaling + rotation) (Adapted from [pyMVPA](https://github.com/PyMVPA/PyMVPA/blob/master/mvpa2/mappers/procrustean.py) implementation)
++ <b>tools.df2mat</b> - converts single-level pandas dataframe to numpy matrix
 
 <h2>Plot</h2>
 
@@ -309,3 +310,17 @@ A (shifted + scaled + rotated) version of source that best matches target
 <h3>Example use:</h3>
 
 `source_aligned_to_target = hyp.tools.procrustes(source, target)`
+
+<h2>df2mat</h2>
+
+<b>Inputs:</b>
+
+- a single-level pandas dataframe
+
+<b>Outputs</b>
+
+A numpy matrix built from the dataframe with text columns replaced with dummy variables (see http://pandas.pydata.org/pandas-docs/stable/generated/pandas.get_dummies.html)
+
+<h3>Example use:</h3>
+
+`matrix = hyp.tools.df2mat(df)`
