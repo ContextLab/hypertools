@@ -2,6 +2,8 @@
 
 <h1>Hypertools - A python library for visualizing high dimensional data</h1>
 
+"_To deal with hyper-planes in a 14 dimensional space, visualize a 3D space and say 'fourteen' very loudly.  Everyone does it._" - Geoff Hinton
+
 ![Hypertools example](images/hypertools.gif)
 
 <h2>Install</h2>
