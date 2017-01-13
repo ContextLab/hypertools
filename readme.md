@@ -72,7 +72,7 @@ See matplotlib API for more styling options
 
 <i>color</i> (list): A list of colors for each line to be plotted. Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes. If defined, overrides palette. See http://matplotlib.org/examples/color/named_colors.html for list of named colors. Note: must be the same length as X.
 
-<i>point_colors</i> (list of str, floats or ints): A list of colors for each point. Must be dimensionality of data (X). If the data type is numerical, the values will be mapped to rgb values in the specified palette.  If the data type is strings, the points will be labeled categorically.
+<i>group</i> (list of str, floats or ints): A list of group labels. Length must match the number of rows in your dataset. If the data type is numerical, the values will be mapped to rgb values in the specified palette.  If the data type is strings, the points will be labeled categorically.  To label a subset of points, use `None` (i.e. `['a', None, 'b','a']`)
 
 <i>linestyle</i> (list): a list of line styles
 
@@ -158,17 +158,17 @@ for idx,i in enumerate(data):
 hyp.plot(data, 'o', labels=labels)
 ```
 
-Specify point_colors:
+Specify group:
 ```
 # Label first point of each list
-point_colors=[]
+group=[]
 for idx,i in enumerate(data):
     tmp=[]
     for iidx,ii in enumerate(i):
             tmp.append(np.random.rand())
-    point_colors.append(tmp)
+    group.append(tmp)
 
-hyp.plot(data, 'o', point_colors=point_colors)
+hyp.plot(data, 'o', group=group)
 ```
 
 Plot in 2d: `hyp.plot(data, ndims=2)`
@@ -239,7 +239,7 @@ A list of cluster labels corresponding to each data point.  NOTE: During the clu
 
 ```
 cluster_labels = hyp.tools.cluster(data, n_clusters=10)
-hyp.plot(data, 'o', point_colors = cluster_labels)
+hyp.plot(data, 'o', group = cluster_labels)
 ```
 
 ![Cluster Example](images/cluster_example.png)
