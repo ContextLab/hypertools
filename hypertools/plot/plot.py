@@ -61,30 +61,30 @@ def plot(x,*args,**kwargs):
         x = reshape_data(x,cluster_labels)
         del kwargs['n_clusters']
 
-        if 'point_colors' in kwargs:
-            warnings.warn('n_clusters overrides point_colors, ignoring point_colors.')
-            del kwargs['point_colors']
+        if 'group' in kwargs:
+            warnings.warn('n_clusters overrides group, ignoring group.')
+            del kwargs['group']
 
-    if 'point_colors' in kwargs:
-        point_colors=kwargs['point_colors']
-        del kwargs['point_colors']
+    if 'group' in kwargs:
+        group=kwargs['group']
+        del kwargs['group']
 
         if 'color' in kwargs:
-            warnings.warn("Using point_colors, color keyword will be ignored.")
+            warnings.warn("Using group, color keyword will be ignored.")
             del kwargs['color']
 
         # if list of lists, unpack
-        if any(isinstance(el, list) for el in point_colors):
-            point_colors = list(itertools.chain(*point_colors))
+        if any(isinstance(el, list) for el in group):
+            group = list(itertools.chain(*group))
 
         # if all of the elements are numbers, map them to colors
-        if all(isinstance(el, int) or isinstance(el, float) for el in point_colors):
-            point_colors = vals2bins(point_colors)
-        elif all(isinstance(el, str) for el in point_colors):
-            point_colors = group_by_category(point_colors)
+        if all(isinstance(el, int) or isinstance(el, float) for el in group):
+            group = vals2bins(group)
+        elif all(isinstance(el, str) for el in group):
+            group = group_by_category(group)
 
-        # reshape the data according to point_colors
-        x = reshape_data(x,point_colors)
+        # reshape the data according to group
+        x = reshape_data(x,group)
 
     if 'style' in kwargs:
         sns.set(style=kwargs['style'])
