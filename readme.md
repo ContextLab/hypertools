@@ -86,7 +86,7 @@ See matplotlib API for more styling options
 
 <i>ndims</i> (int): an int representing the number of dims to plot in. Must be 1,2, or 3.  NOTE: Currently only works with static plots.
 
-<i>normalize</i> (str or False) - If set to 'across', the columns of the input data will be z-scored across lists (default). If set to 'within', the columns will be z-scored within each list that is passed.  If set to 'row', each row of the input data will be z-scored.  If set to False, the input data will be returned.
+<i>normalize</i> (str or False) - If set to 'across', the columns of the input data will be z-scored across lists (default). If set to 'within', the columns will be z-scored within each list that is passed.  If set to 'row', each row of the input data will be z-scored.  If set to False, the input data will be returned (default is False).
 
 <i>n_clusters</i> (int): If n_clusters is passed, hypertools will perform k-means clustering with the k parameter set to n_clusters. The resulting clusters will be plotted in different colors according to the color palette.
 
@@ -210,7 +210,7 @@ A numpy array or list of numpy arrays
 <b>Keyword arguments:</b>
 
 + ndims - dimensionality of output data
-+ normalize (str or False) - If set to 'across', the columns of the input data will be z-scored across lists. If set to 'within', the columns will be z-scored within each list that is passed.  If set to 'row', each row of the input data will be z-scored.  If set to False, the input data will be returned.
++ normalize (str or False) - If set to 'across', the columns of the input data will be z-scored across lists. If set to 'within', the columns will be z-scored within each list that is passed.  If set to 'row', each row of the input data will be z-scored.  If set to False, the input data will be returned. (default is False).
 
 <b>Outputs</b>
 
@@ -286,7 +286,7 @@ A numpy array or list of numpy arrays
 
 <b>Keyword arguments:</b>
 
-+ normalize (str or False) - If set to 'across', the columns of the input data will be z-scored across lists. If set to 'within', the columns will be z-scored within each list that is passed.  If set to 'row', each row of the input data will be z-scored.  If set to False, the input data will be returned.
++ normalize (str or False) - If set to 'across', the columns of the input data will be z-scored across lists. If set to 'within', the columns will be z-scored within each list that is passed.  If set to 'row', each row of the input data will be z-scored.  If set to False, the input data will be returned. Note: you MUST set the normalize flag equal to 'across', 'within' or 'row or else you will get the same data back that you put in!
 
 <b>Outputs</b>
 
