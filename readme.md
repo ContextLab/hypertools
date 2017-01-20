@@ -24,7 +24,7 @@ Then, navigate to the folder and type:
 
 <h2>Requirements</h2>
 
-+ Python 2.7.x
++ python 2.7.x
 + numpy
 + scipy
 + matplotlib
@@ -70,13 +70,13 @@ See matplotlib API for more styling options
 
 <b>Keyword arguments:</b>
 
-<i>color</i> (list): A list of colors for each line to be plotted. Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes. If defined, overrides palette. See http://matplotlib.org/examples/color/named_colors.html for list of named colors. Note: must be the same length as X.
+<i>color(s)</i> (list): A list of colors for each line to be plotted. Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes. If defined, overrides palette. See http://matplotlib.org/examples/color/named_colors.html for list of named colors. Note: must be the same length as X.
 
 <i>group</i> (list of str, floats or ints): A list of group labels. Length must match the number of rows in your dataset. If the data type is numerical, the values will be mapped to rgb values in the specified palette.  If the data type is strings, the points will be labeled categorically.  To label a subset of points, use `None` (i.e. `['a', None, 'b','a']`)
 
-<i>linestyle</i> (list): a list of line styles
+<i>linestyle(s)</i> (list): a list of line styles
 
-<i>marker</i> (list): a list of marker types
+<i>marker(s)</i> (list): a list of marker types
 
 <i>palette</i> (str): A matplotlib or seaborn color palette
 
