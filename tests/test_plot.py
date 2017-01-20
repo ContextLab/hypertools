@@ -82,3 +82,7 @@ def test_plot_animate_check_ax():
 def test_plot_animate_check_line_ani():
     _,_,_,line_ani = plot.plot(data, animate=True, show=False, return_data=True)
     assert isinstance(line_ani,mpl.animation.FuncAnimation)
+
+def test_plot_mpl_kwargs():
+    _,_,data_3d = plot.plot(data, colors=['b','r'], linestyles=['--',':'], markers=['o','*'], show=False, return_data=True)
+    assert all([i.shape[1]==3 for i in data_3d])
