@@ -36,6 +36,18 @@ def plot(x,*args,**kwargs):
 
     ## HYPERTOOLS-SPECIFIC ARG PARSING ##
 
+    if 'colors' in kwargs:
+        kwargs['color'] = kwargs['colors']
+        del kwargs['colors']
+
+    if 'linestyles' in kwargs:
+        kwargs['linestyle'] = kwargs['linestyles']
+        del kwargs['linestyles']
+
+    if 'markers' in kwargs:
+        kwargs['marker'] = kwargs['markers']
+        del kwargs['markers']
+
     if 'normalize' in kwargs:
         normalize = kwargs['normalize']
         x = normalizer(x, normalize=normalize)
