@@ -6,7 +6,7 @@
 
 ![Hypertools example](images/hypertools.gif)
 
-<h2>Install</h2>
+<h2>Installation</h2>
 
 `pip install hypertools`
 
@@ -25,17 +25,42 @@ Then, navigate to the folder and type:
 <h2>Requirements</h2>
 
 + python 2.7.x
-+ numpy
-+ scipy
-+ matplotlib
-+ mpl_toolkits
-+ seaborn
-+ scikit-learn
-+ PPCA
-+ pandas
++ PPCA>=0.0.2
++ scikit-learn>=0.18.1
++ pandas>=0.18.0
++ seaborn>=0.7.1
++ matplotlib>=1.5.1
++ scipy>=0.17.1
++ numpy>=1.10.4
++ pytest (for development)
 
 If installing from github (instead of pip), you must also install the requirements:
 `pip install -r requirements.txt`
+
+<h2>Contributing</h2>
+(some text borrowed from Matplotlib contributing [guide](http://matplotlib.org/devdocs/devel/contributing.html))
+
+<h3>Submitting a bug report</h3>
+If you are reporting a bug, please do your best to include the following -
+
+1. A short, top-level summary of the bug. In most cases, this should be 1-2 sentences.
+2. A short, self-contained code snippet to reproduce the bug, ideally allowing a simple copy and paste to reproduce. Please do your best to reduce the code snippet to the minimum required.
+3. The actual outcome of the code snippet
+4. The expected outcome of the code snippet
+
+<h3>Contributing code</h3>
+
+The preferred way to contribute to Hypertools is to fork the main repository on GitHub, then submit a pull request.
+
++ If your pull request addresses an issue, please use the title to describe the issue and mention the issue number in the pull request description to ensure a link is created to the original issue.
+
++ All public methods should be documented in the README.
+
++ Each high-level plotting function should have a simple example in the examples folder. This should be as simple as possible to demonstrate the method.
+
++ Changes (both new features and bugfixes) should be tested using `pytest`.  Add tests for your new feature to the `tests/` repo folder.
+
+<h1>Documentation</h1>
 
 <h2>Main function</h2>
 
