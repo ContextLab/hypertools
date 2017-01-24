@@ -1,7 +1,6 @@
 [![Build Status](https://travis-ci.com/ContextLab/hypertools.svg?token=hxjzzuVkr2GZrDkPGN5n&branch=master)](https://travis-ci.com/ContextLab/hypertools)
 
-<h1>Hypertools - A python library for visualizing high dimensional data</h1>
-<p align="center">![Hypertools logo](images/hypercube.png)</p>
+![Hypertools logo](images/hypercube.png)
 
 "_To deal with hyper-planes in a 14 dimensional space, visualize a 3D space and say 'fourteen' very loudly.  Everyone does it._" - Geoff Hinton
 
