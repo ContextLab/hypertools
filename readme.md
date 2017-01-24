@@ -1,7 +1,7 @@
 ![Hypertools logo](images/hypercube.png)
 
 
-"_To deal with hyper-planes in a 14 dimensional space, visualize a 3D space and say 'fourteen' very loudly.  Everyone does it._" - Geoff Hinton
+<p align="center">"_To deal with hyper-planes in a 14 dimensional space, visualize a 3D space and say 'fourteen' very loudly.  Everyone does it._" - Geoff Hinton</p>
 
 
 ![Hypertools example](images/hypertools.gif)
@@ -63,6 +63,7 @@ The preferred way to contribute to Hypertools is to fork the main repository on 
 <h2>Testing</h2>
 
 [![Build Status](https://travis-ci.com/ContextLab/hypertools.svg?token=hxjzzuVkr2GZrDkPGN5n&branch=master)](https://travis-ci.com/ContextLab/hypertools)
+
 To test Hypertools, install pytest (`pip install pytest`) and run `pytest` in the hypertools folder.
 
 <h1>Documentation</h1>
