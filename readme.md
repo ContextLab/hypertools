@@ -60,12 +60,6 @@ The preferred way to contribute to Hypertools is to fork the main repository on 
 
 + Changes (both new features and bugfixes) should be tested using `pytest`.  Add tests for your new feature to the `tests/` repo folder.
 
-<h2>Testing</h2>
-
-[![Build Status](https://travis-ci.com/ContextLab/hypertools.svg?token=hxjzzuVkr2GZrDkPGN5n&branch=master)](https://travis-ci.com/ContextLab/hypertools)
-
-To test Hypertools, install pytest (`pip install pytest`) and run `pytest` in the hypertools folder.
-
 <h1>Documentation</h1>
 
 <h2>Main function</h2>
