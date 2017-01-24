@@ -1,7 +1,7 @@
 ![Hypertools logo](images/hypercube.png)
 
 
-<p align="center">"_To deal with hyper-planes in a 14 dimensional space, visualize a 3D space and say 'fourteen' very loudly.  Everyone does it._" - Geoff Hinton</p>
+"_To deal with hyper-planes in a 14 dimensional space, visualize a 3D space and say 'fourteen' very loudly.  Everyone does it._" - Geoff Hinton
 
 
 ![Hypertools example](images/hypertools.gif)
