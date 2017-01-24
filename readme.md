@@ -1,9 +1,8 @@
-[![Build Status](https://travis-ci.com/ContextLab/hypertools.svg?token=hxjzzuVkr2GZrDkPGN5n&branch=master)](https://travis-ci.com/ContextLab/hypertools)
-
-<h1>Hypertools - A python library for visualizing high dimensional data</h1>
 ![Hypertools logo](images/hypercube.png)
 
+
 "_To deal with hyper-planes in a 14 dimensional space, visualize a 3D space and say 'fourteen' very loudly.  Everyone does it._" - Geoff Hinton
+
 
 ![Hypertools example](images/hypertools.gif)
 
@@ -60,6 +59,11 @@ The preferred way to contribute to Hypertools is to fork the main repository on 
 + Each high-level plotting function should have a simple example in the examples folder. This should be as simple as possible to demonstrate the method.
 
 + Changes (both new features and bugfixes) should be tested using `pytest`.  Add tests for your new feature to the `tests/` repo folder.
+
+<h2>Testing</h2>
+[![Build Status](https://travis-ci.com/ContextLab/hypertools.svg?token=hxjzzuVkr2GZrDkPGN5n&branch=master)](https://travis-ci.com/ContextLab/hypertools)
+
+To test Hypertools, install pytest (`pip install pytest`) and run `pytest` in the Hypertools folder
 
 <h1>Documentation</h1>
 
