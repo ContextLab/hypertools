@@ -242,7 +242,7 @@ A numpy array or list of numpy arrays
 <b>Keyword arguments:</b>
 
 + ndims - dimensionality of output data
-+ normalize (str or False) - If set to 'across', the columns of the input data will be z-scored across lists. If set to 'within', the columns will be z-scored within each list that is passed.  If set to 'row', each row of the input data will be z-scored.  If set to False, the input data will be returned. (default is False).
++ normalize (str or False) - If set to 'across', the columns of the input data will be z-scored across lists. If set to 'within', the columns will be z-scored within each list that is passed.  If set to 'row', each row of the input data will be z-scored.  If set to False, the input data will be returned. (default is 'across').
 
 <b>Outputs</b>
 
