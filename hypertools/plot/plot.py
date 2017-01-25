@@ -53,7 +53,7 @@ def plot(x,*args,**kwargs):
         x = normalizer(x, normalize=normalize)
         del kwargs['normalize']
     else:
-        x = normalizer(x)
+        x = normalizer(x, normalize=False)
 
     # reduce dimensionality of the data
     if 'ndims' in kwargs:
