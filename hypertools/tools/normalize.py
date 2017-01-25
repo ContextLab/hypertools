@@ -5,7 +5,7 @@ from sklearn.preprocessing import FunctionTransformer
 import numpy as np
 from .._shared.helpers import format_data
 
-def normalize(x, normalize=False):
+def normalize(x, normalize='across'):
 
     assert normalize in ['across','within','row', False], "scale_type must be across, within, row or none."
 
