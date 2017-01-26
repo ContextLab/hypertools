@@ -6,6 +6,25 @@
 
 ![Hypertools example](images/hypertools.gif)
 
+<h2>Try it!</h2>
+
+Hypercubes (Example 1 in the HyperTools [paper](www.linktoarchivpaper.com)):
+
+[![Binder](http://mybinder.org/badge.svg)](http://mybinder.org/repo/binder-project/example-requirements)
+
+
+Mushrooms (Example 2):
+
+[![Binder](http://mybinder.org/badge.svg)](http://mybinder.org/repo/binder-project/example-requirements)
+
+Education (Example 3):
+
+[![Binder](http://mybinder.org/badge.svg)](http://mybinder.org/repo/binder-project/example-requirements)
+
+Temperatures (Example 5):
+
+[![Binder](http://mybinder.org/badge.svg)](http://mybinder.org/repo/binder-project/example-requirements)
+
 <h2>Installation</h2>
 
 `pip install hypertools`
