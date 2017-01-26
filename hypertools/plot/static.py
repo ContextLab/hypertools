@@ -90,8 +90,8 @@ def static_plot(x, *args, **kwargs):
 		del kwargs['tail_len']
 	if 'zoom' in kwargs:
 		del kwargs['zoom']
-	if 'n_rot' in kwargs:
-		del kwargs['n_rot']
+	if 'rotations' in kwargs:
+		del kwargs['rotations']
 	if 'duration' in kwargs:
 		del kwargs['duration']
 	if 'frame_rate' in kwargs:

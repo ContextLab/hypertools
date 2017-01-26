@@ -138,7 +138,7 @@ Note: Explore more is currently only supported for 3D static plots.
 
 <i>tail_duration</i> (int): Sets the length of the tail of the data (default: 2 seconds)
 
-<i>n_rots</i> (int): Number of rotations around the box (default: 2)
+<i>rotations</i> (int): Number of rotations around the box (default: 2)
 
 <i>zoom</i> (int): Zoom, positive numbers will zoom in (default: 0)
 

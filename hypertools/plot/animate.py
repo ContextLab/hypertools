@@ -39,11 +39,11 @@ def animated_plot(x, *args, **kwargs):
     else:
         chem_trails=False
 
-    if 'n_rot' in kwargs:
-        n_rot=kwargs['n_rot']
-        del kwargs['n_rot']
+    if 'rotations' in kwargs:
+        rotations=kwargs['rotations']
+        del kwargs['rotations']
     else:
-        n_rot=2
+        rotations=2
 
     if 'duration' in kwargs:
         duration=kwargs['duration']
@@ -125,7 +125,7 @@ def animated_plot(x, *args, **kwargs):
                 plane.remove()
 
         update_lines.planes = plot_cube(cube_scale)
-        ax.view_init(elev=10, azim=n_rot*(360*(num/data_lines[0].shape[0])))
+        ax.view_init(elev=10, azim=rotations*(360*(num/data_lines[0].shape[0])))
         ax.dist=8-zoom
 
         for line, data, trail in zip(lines, data_lines, trail_lines):
