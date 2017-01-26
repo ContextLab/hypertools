@@ -39,7 +39,7 @@ If installing from github (instead of pip), you must also install the requiremen
 
 <h2>Citing</h2>
 
-We wrote a paper about HyperTools, which you can read [here](http://www.google.com).  Here is a bibtex formatted reference:
+We wrote a paper about HyperTools, which you can read [here](http://www.google.com). We also have a repo with example notebooks from the paper [here](https://github.com/ContextLab/hypertools-paper-notebooks) Here is a bibtex formatted reference:
 
 ```
 @ARTICLE {,
