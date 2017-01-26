@@ -37,6 +37,22 @@ Then, navigate to the folder and type:
 If installing from github (instead of pip), you must also install the requirements:
 `pip install -r requirements.txt`
 
+<h2>Citing</h2>
+
+We wrote a paper about HyperTools, which you can read [here](http://www.google.com).  Here is a bibtex formatted reference:
+
+```
+@ARTICLE {,
+    author  = "A C Heusser and K Ziman and L L W Owen and J R Manning",
+    title   = "HyperTools: A Python toolbox for visualizing and manipulating high-dimensional data",
+    journal = "ArXiv",
+    year    = "2017",
+    volume  = "X",
+    number  = "X",
+    month   = "jan"
+}
+```
+
 <h2>Contributing</h2>
 (some text borrowed from Matplotlib contributing [guide](http://matplotlib.org/devdocs/devel/contributing.html))
 
