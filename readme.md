@@ -75,7 +75,7 @@ To test Hypertools, install pytest (`pip install pytest`) and run `pytest` in th
 
 <h2>Sub functions</h2>
 
-+ <b>tools.align</b> - align multidimensional data (See here for details)
++ <b>tools.align</b> - align multidimensional data (See [here](http://haxbylab.dartmouth.edu/publications/HGC+11.pdf) for details)
 + <b>tools.reduce</b> - implements PCA to reduce dimensionality of data
 + <b>tools.cluster</b> - runs k-means clustering and returns cluster labels
 + <b>tools.describe_pca</b> - plotting tool to evaluate how well the principle components describe the data
@@ -288,7 +288,7 @@ A numpy array or list of numpy arrays
 
 <b>Outputs</b>
 
-A plot summarizing the correlation between raw input data and PCA reduced data
+A plot summarizing the correlation of the covariance matrixes for the raw input data and PCA reduced data
 
 <h3>Example use:</h3>
 

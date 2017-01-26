@@ -57,7 +57,7 @@ def describe_pca(x, show=True):
 
     if show:
         fig, ax = plt.subplots()
-        ax = sns.tsplot(attrs['PCA_summary']['individual'], err_style="unit_traces")
+        ax = sns.tsplot(data=attrs['PCA_summary']['individual'], time=[i for i in range(2,max_group)], err_style="unit_traces")
         ax.set_title('Correlation with raw data by number of PCA components')
         ax.set_ylabel('Correlation')
         ax.set_xlabel('Number of PCA components')
