@@ -66,7 +66,7 @@ If you are reporting a bug, please do your best to include the following -
 
 <h3>Contributing code</h3>
 
-The preferred way to contribute to Hypertools is to fork the main repository on GitHub, then submit a pull request.
+The preferred way to contribute to HyperTools is to fork the main repository on GitHub, then submit a pull request.
 
 + If your pull request addresses an issue, please use the title to describe the issue and mention the issue number in the pull request description to ensure a link is created to the original issue.
 
@@ -81,7 +81,7 @@ The preferred way to contribute to Hypertools is to fork the main repository on 
 [![Build Status](https://travis-ci.com/ContextLab/hypertools.svg?token=hxjzzuVkr2GZrDkPGN5n&branch=master)](https://travis-ci.com/ContextLab/hypertools)
 
 
-To test Hypertools, install pytest (`pip install pytest`) and run `pytest` in the Hypertools folder
+To test HyperTools, install pytest (`pip install pytest`) and run `pytest` in the HyperTools folder
 
 <h1>Documentation</h1>
 
@@ -109,7 +109,7 @@ To test Hypertools, install pytest (`pip install pytest`) and run `pytest` in th
 
 A numpy array, list of arrays, or pandas dataframe or list of dataframes
 
-<i><b>NOTE:</b> Hypertools currently only supports single-level indexing for pandas dataframes, but we plan to support multi-level indices in the future. Additionally, be aware that if columns containing text are passed to hypertools, those columns will be automatically converted into dummy variables (see pandas.get_dummies for details).</i>
+<i><b>NOTE:</b> HyperTools currently only supports single-level indexing for pandas dataframes, but we plan to support multi-level indices in the future. Additionally, be aware that if columns containing text are passed to HyperTools, those columns will be automatically converted into dummy variables (see pandas.get_dummies for details).</i>
 
 <b>Arguments:</b>
 
@@ -136,7 +136,7 @@ See matplotlib API for more styling options
 
 <i>normalize</i> (str or False) - If set to 'across', the columns of the input data will be z-scored across lists (default). If set to 'within', the columns will be z-scored within each list that is passed.  If set to 'row', each row of the input data will be z-scored.  If set to False, the input data will be returned (default is False).
 
-<i>n_clusters</i> (int): If n_clusters is passed, hypertools will perform k-means clustering with the k parameter set to n_clusters. The resulting clusters will be plotted in different colors according to the color palette.
+<i>n_clusters</i> (int): If n_clusters is passed, HyperTools will perform k-means clustering with the k parameter set to n_clusters. The resulting clusters will be plotted in different colors according to the color palette.
 
 <i>animate</i> (bool): If True, plots the data as an animated trajectory (default: False)
 
