@@ -1,20 +1,23 @@
-notifications:
-  slack: context-lab:HbiEYsCVdh8R8Zpu0uqnMsoK
 language: python
 sudo: false
 python:
-  - "2.7"
+- '2.7'
 install:
-  - wget http://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh -O miniconda.sh
-  - bash miniconda.sh -b -p $HOME/miniconda
-  - export PATH="$HOME/miniconda/bin:$PATH"
-  - hash -r
-  - conda config --set always_yes yes --set changeps1 no
-  - conda update -q conda
-  - conda info -a
-  - conda create -q -n testenv python=$TRAVIS_PYTHON_VERSION pip pytest numpy pandas scipy matplotlib seaborn scikit-learn
-  - source activate testenv
-  - pip install -r requirements.txt
-  - python setup.py install
-  - cp tests/matplotlibrc .
+- wget http://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh -O miniconda.sh
+- bash miniconda.sh -b -p $HOME/miniconda
+- export PATH="$HOME/miniconda/bin:$PATH"
+- hash -r
+- conda config --set always_yes yes --set changeps1 no
+- conda update -q conda
+- conda info -a
+- conda create -q -n testenv python=$TRAVIS_PYTHON_VERSION pip pytest numpy pandas
+  scipy matplotlib seaborn scikit-learn
+- source activate testenv
+- pip install -r requirements.txt
+- python setup.py install
+- cp tests/matplotlibrc .
 script: py.test
+notifications:
+  slack:
+    rooms:
+      secure: BhLZdh14a8WQlNUcJ6WD7AXu/TzCiryJgKiW8RMtX8eRiNKGlZo7mPJ4b+hdODtB5satKBt9d3GYrozJu19IDLDuppcwOw4zXFCbW9WwNJQHXEt6JHU2t51q41CZF75s5H7/qTkplwuhqn2NYwVQQ00KqKjrkbS0oQOiQypU+LZaUUXlITdSeKo/npUY6J0xkvnWFqIOgD8MoGyrR15U0bm7eG4IPSTeu/WJBINMmPdQcxjcJ8kmWv/WjhvdoypI+mgBeALi2HEpQ5SVRWk7HFvB0jRQZAhEutDQOjo/J0dudXCAxvBcD8uZCAF0fxiJx3TTz7Svj2tJd5jnrPJ41BTic9qT5yQiir+SkacgRgs1UFKMxznVT4jXBDP+16mVwbVxGFcNOVMWAkaeB/wVB1i5LQkh0VbWofjZuG8Fi+2geMaAWaGcWPHL9ZdGHc1MCdvW5zL/sq+NJwDDjtSKZB74i4qkL5mnoSl4Q9VArPUxVH7QxKBDkO9i51dsYNjrP8sEmb4EeyedqdGo/jVJaB5NXtlktQONhcpTKT77gDXel8KYhKLfIfemebpMqELXZEoigDUxr/37GXnf6sBIiDzQZitk6vAd8W4fYi8Xjia3px2OyrvZTwm14tQYRF0zZJWkZVEaJ/nQd4b0+B65YNcRrmNP9TQh9spYWYqLFQg=
