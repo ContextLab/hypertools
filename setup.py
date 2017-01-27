@@ -14,11 +14,12 @@ with open('LICENSE') as f:
 setup(
     name='hypertools',
     version='0.1.0',
-    description='A python package for visualizing high dimensional data',
+    description='A python package for visualizing and manipulating high-dimensional data',
     long_description=readme,
     author='Contextual Dynamics Lab',
     author_email='contextualdynamics@gmail.com',
     url='https://github.com/ContextLab/hypertools',
+    download_url = 'https://github.com/ContextLab/hypertools/tarball/0.1',
     license=license,
     packages=find_packages(exclude=('tests', 'examples', 'images')),
     install_requires=[
