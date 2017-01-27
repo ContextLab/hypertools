@@ -6,7 +6,11 @@ from setuptools import setup, find_packages
 
 DESCRIPTION = 'A python package for visualizing and manipulating high-dimensional data'
 LONG_DESCRIPTION = """\
-HyperTools is a library for visualizing and manipulating high-dimensional data in Python. It is built on top of matplotlib (for plotting) and scikit-learn (for data manipulation), and seaborn (for plot styling).
+HyperTools is a library for visualizing and manipulating high-dimensional data in Python. It is built on top of matplotlib (for plotting), seaborn (for plot styling), and scikit-learn (for data manipulation).
+
+For sample Jupyter notebooks using the package: https://github.com/ContextLab/hypertools-paper-notebooks
+
+For more examples: https://github.com/ContextLab/hypertools/tree/master/examples
 
 Some key features of HyperTools are:
 
@@ -31,7 +35,7 @@ setup(
     url='https://github.com/ContextLab/hypertools',
     download_url = 'https://github.com/ContextLab/hypertools/tarball/0.1',
     license=license,
-    packages=find_packages(exclude=('images')),
+    packages=find_packages(exclude=('images', 'examples', 'tests')),
     install_requires=[
    'PPCA>=0.0.2',
    'scikit-learn>=0.18.1',
