@@ -8,7 +8,7 @@
 
 <h2>Try it!</h2>
 
-Check out our [repo](https://github.com/ContextLab/hypertools-paper-notebooks) of Jupyter notebooks from the [paper](http://www.linktoarchivpaper.com)
+Check out our [repo](https://github.com/ContextLab/hypertools-paper-notebooks) of Jupyter notebooks from the HyperTools [paper](http://www.linktoarchivpaper.com)
 
 <!-- Hypercubes (Example 1 in the HyperTools [paper](www.linktoarchivpaper.com)):
 
@@ -40,7 +40,7 @@ Then, navigate to the folder and type:
 
 `pip install -e .`
 
-(this assumes you have pip installed on your system: https://pip.pypa.io/en/stable/installing/)
+(this assumes you have [pip](https://pip.pypa.io/en/stable/installing/) installed on your system)
 
 <h2>Requirements</h2>
 
