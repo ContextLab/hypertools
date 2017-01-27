@@ -179,7 +179,7 @@ Note: Explore more is currently only supported for 3D static plots.
 
 <i>zoom</i> (float): Zoom, positive numbers will zoom in (default: 0)
 
-<i>chem_trails</i> (bool): Added trail with change in opacity  (default: False)
+<i>chemtrails</i> (bool): Added trail with change in opacity  (default: False)
 
 <b>Outputs:</b>
 

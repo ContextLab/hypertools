@@ -33,11 +33,11 @@ def animated_plot(x, *args, **kwargs):
     else:
         zoom=0
 
-    if 'chem_trails' in kwargs:
-        chem_trails= kwargs['chem_trails']
-        del kwargs['chem_trails']
+    if 'chemtrails' in kwargs:
+        chemtrails= kwargs['chemtrails']
+        del kwargs['chemtrails']
     else:
-        chem_trails=False
+        chemtrails=False
 
     if 'rotations' in kwargs:
         rotations=kwargs['rotations']
@@ -135,7 +135,7 @@ def animated_plot(x, *args, **kwargs):
             else:
                 line.set_data(data[num-tail_duration:num+1, 0:2].T)
                 line.set_3d_properties(data[num-tail_duration:num+1, 2])
-            if chem_trails:
+            if chemtrails:
                 trail.set_data(data[0:num + 1, 0:2].T)
                 trail.set_3d_properties(data[0:num + 1, 2])
         return lines,trail_lines
