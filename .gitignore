@@ -5,3 +5,4 @@ python/*.pyc
 hypertools.egg-info/
 .cache/
 tests/__pycache__/
+dist/
