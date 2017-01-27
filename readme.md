@@ -53,6 +53,7 @@ Then, navigate to the folder and type:
 + scipy>=0.17.1
 + numpy>=1.10.4
 + pytest (for development)
++ ffmpeg (for saving animations)
 
 If installing from github (instead of pip), you must also install the requirements:
 `pip install -r requirements.txt`
@@ -170,13 +171,13 @@ Note: Explore more is currently only supported for 3D static plots.
 
 <b>Animation-specific keyword arguments:</b>
 
-<i>duration</i> (int): Length of the animation in seconds (default: 30 seconds)
+<i>duration</i> (float): Length of the animation in seconds (default: 30 seconds)
 
-<i>tail_duration</i> (int): Sets the length of the tail of the data (default: 2 seconds)
+<i>tail_duration</i> (float): Sets the length of the tail of the data (default: 2 seconds)
 
-<i>rotations</i> (int): Number of rotations around the box (default: 2)
+<i>rotations</i> (float): Number of rotations around the box (default: 2)
 
-<i>zoom</i> (int): Zoom, positive numbers will zoom in (default: 0)
+<i>zoom</i> (float): Zoom, positive numbers will zoom in (default: 0)
 
 <i>chem_trails</i> (bool): Added trail with change in opacity  (default: False)
 
