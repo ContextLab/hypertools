@@ -8,10 +8,11 @@
 
 <h2>Try it!</h2>
 
-Hypercubes (Example 1 in the HyperTools [paper](www.linktoarchivpaper.com)):
+Check out our [repo](https://github.com/ContextLab/hypertools-paper-notebooks) of Jupyter notebooks from the [paper](http://www.linktoarchivpaper.com)
+
+<!-- Hypercubes (Example 1 in the HyperTools [paper](www.linktoarchivpaper.com)):
 
 [![Binder](http://mybinder.org/badge.svg)](http://mybinder.org/repo/binder-project/example-requirements)
-
 
 Mushrooms (Example 2):
 
@@ -23,7 +24,7 @@ Education (Example 3):
 
 Temperatures (Example 5):
 
-[![Binder](http://mybinder.org/badge.svg)](http://mybinder.org/repo/binder-project/example-requirements)
+[![Binder](http://mybinder.org/badge.svg)](http://mybinder.org/repo/binder-project/example-requirements) -->
 
 <h2>Installation</h2>
 
