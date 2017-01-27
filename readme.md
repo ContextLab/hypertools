@@ -8,7 +8,7 @@
 
 <h2>Try it!</h2>
 
-Check out our [repo](https://github.com/ContextLab/hypertools-paper-notebooks) of Jupyter notebooks from the HyperTools [paper](http://www.linktoarchivpaper.com)
+Check out our [repo](https://github.com/ContextLab/hypertools-paper-notebooks) of Jupyter notebooks from the HyperTools [paper](https://github.com/ContextLab/hypertools-paper/blob/master/HeusEtal17.pdf)
 
 <!-- Hypercubes (Example 1 in the HyperTools [paper](www.linktoarchivpaper.com)):
 
@@ -60,7 +60,9 @@ If installing from github (instead of pip), you must also install the requiremen
 
 <h2>Citing</h2>
 
-We wrote a paper about HyperTools, which you can read [here](http://www.google.com). We also have a repo with example notebooks from the paper [here](https://github.com/ContextLab/hypertools-paper-notebooks) Here is a bibtex formatted reference:
+We wrote a paper about HyperTools, which you can read [here](https://github.com/ContextLab/hypertools-paper/blob/master/HeusEtal17.pdf). We also have a repo with example notebooks from the paper [here](https://github.com/ContextLab/hypertools-paper-notebooks).
+
+<!-- Here is a bibtex formatted reference:
 
 ```
 @ARTICLE {,
@@ -72,7 +74,7 @@ We wrote a paper about HyperTools, which you can read [here](http://www.google.c
     number  = "X",
     month   = "jan"
 }
-```
+``` -->
 
 <h2>Contributing</h2>
 (some text borrowed from Matplotlib contributing [guide](http://matplotlib.org/devdocs/devel/contributing.html))
