@@ -23,7 +23,7 @@ with open('LICENSE') as f:
 
 setup(
     name='hypertools',
-    version='0.1.2',
+    version='0.1.0',
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
     author='Contextual Dynamics Lab',
