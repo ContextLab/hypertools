@@ -130,7 +130,7 @@ To test HyperTools, install pytest (`pip install pytest`) and run `pytest` in th
 
 <b>Inputs:</b>
 
-A numpy array, list of arrays, or pandas dataframe or list of dataframes
+A numpy array, list of arrays, or pandas dataframe or list of dataframes. Format should be samples (rows) by features (columns)
 
 <i><b>NOTE:</b> HyperTools currently only supports single-level indexing for pandas dataframes, but we plan to support multi-level indices in the future. Additionally, be aware that if columns containing text are passed to HyperTools, those columns will be automatically converted into dummy variables (see pandas.get_dummies for details).</i>
 
