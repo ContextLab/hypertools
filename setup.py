@@ -21,20 +21,18 @@ Some key features of HyperTools are:
 - Support for lists of Numpy arrays or Pandas dataframes
 """
 
-# NEED TO ADD IN LICENSE
-with open('LICENSE') as f:
-    license = f.read()
+LICENSE = 'MIT'
 
 setup(
     name='hypertools',
-    version='0.1.0',
+    version='0.1.1',
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
     author='Contextual Dynamics Lab',
     author_email='contextualdynamics@gmail.com',
     url='https://github.com/ContextLab/hypertools',
-    download_url = 'https://github.com/ContextLab/hypertools/tarball/0.1',
-    license=license,
+    download_url = 'https://github.com/ContextLab/hypertools',
+    license=LICENSE,
     packages=find_packages(exclude=('images', 'examples', 'tests')),
     install_requires=[
    'PPCA>=0.0.2',
