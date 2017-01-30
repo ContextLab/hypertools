@@ -8,7 +8,15 @@
 
 <h2>Try it!</h2>
 
-Check out our [repo](https://github.com/ContextLab/hypertools-paper-notebooks) of Jupyter notebooks from the HyperTools [paper](https://github.com/ContextLab/hypertools-paper/blob/master/HeusEtal17.pdf).
+Click the badge to launch a binder instance with example uses:
+
+[![Binder](http://mybinder.org/badge.svg)](http://mybinder.org:/repo/contextlab/hypertools-paper-notebooks)
+
+or 
+
+Check the [repo](https://github.com/ContextLab/hypertools-paper-notebooks) of Jupyter notebooks from the HyperTools [paper](https://github.com/ContextLab/hypertools-paper/blob/master/HeusEtal17.pdf).
+
+
 
 <!-- Hypercubes (Example 1 in the HyperTools [paper](www.linktoarchivpaper.com)):
 
