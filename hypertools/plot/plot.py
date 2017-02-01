@@ -144,10 +144,10 @@ def plot(x,*args,**kwargs):
 
     if 'normalize' in kwargs:
         normalize = kwargs['normalize']
-        x = normalizer(x, normalize=normalize)
+        x = normalizer(x, normalize=normalize, internal=True)
         del kwargs['normalize']
     else:
-        x = normalizer(x, normalize=False)
+        x = normalizer(x, normalize=False, internal=True)
 
     # reduce dimensionality of the data
     if 'ndims' in kwargs:
