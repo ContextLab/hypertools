@@ -28,24 +28,24 @@ def describe_pca(x, show=True):
     Parameters
     ----------
     x : Numpy array, DataFrame or list of arrays/dfs
-            A list of Numpy arrays or Pandas Dataframes
+        A list of Numpy arrays or Pandas Dataframes
 
     Returns
     ----------
     fig, ax, attr : maplotlib.Figure, matplotlib.Axes, dict
-            By default, a matplotlib figure and axis handle, and a data
-            dictionary are returned. The dictionary comprises:
-                - PCA_summary : dict
-                    - average : list
-                        This is a list of the average (over input lists)
-                        correlation between the raw data and the
-                        dimensionality reduced data.  The length is determined
-                        by the number of components that explain the most data.
-                        Note: the length is typically not as long as the number
-                        of features because the PCA model is whitened.
-            If show=False, only attr is returned
+        By default, a matplotlib figure and axis handle, and a data
+        dictionary are returned. The dictionary comprises:
+            - PCA_summary : dict
+                - average : list
+                    This is a list of the average (over input lists)
+                    correlation between the raw data and the
+                    dimensionality reduced data.  The length is determined
+                    by the number of components that explain the most data.
+                    Note: the length is typically not as long as the number
+                    of features because the PCA model is whitened.
+        If show=False, only attr is returned
     """
-    
+
     warnings.warn('When input data is large, this computation can take a long time.')
 
     ##SUB FUNCTIONS##
