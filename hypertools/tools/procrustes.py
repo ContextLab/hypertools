@@ -1,49 +1,58 @@
-# emacs: -*- mode: python; py-indent-offset: 4; indent-tabs-mode: nil -*-
-# vi: set ft=python sts=4 ts=4 sw=4 et:
-### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
-#
-#   See COPYING file distributed along with the PyMVPA package for the
-#   copyright and license terms.
-#
-### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#!/usr/bin/env python
+
+##PACKAGES##
 import numpy as np
 
 ##MAIN FUNCTION##
-def procrustes(source, target, scaling=True, reflection=True, reduction=True, oblique=False, oblique_rcond=-1):
-    """Function to project from one space to another using Procrustean
-    transformation (shift + scaling + rotation).
-
-    Training this mapper requires data for both template and target space to be
-    present in the training dataset. The template space data is taken from the
-    training dataset's ``samples``, while the target space is taken from a
-    sample attribute corresponding to the ``space`` setting of the
-    ProcrusteanMapper.
-
-    See: http://en.wikipedia.org/wiki/Procrustes_transformation
+def procrustes(source, target, scaling=True, reflection=True, reduction=False, oblique=False, oblique_rcond=-1):
     """
-    # scaling = Parameter(True, constraints='bool',
-    #             doc="""Estimate a global scaling factor for the transformation
-    #                    (no longer rigid body)""")
-    # reflection = Parameter(True, constraints='bool',
-    #              doc="""Allow for the data to be reflected (so it might not be
-    #                  a rotation. Effective only for non-oblique transformations.
-    #                  """)
-    # reduction = Parameter(True, constraints='bool',
-    #              doc="""If true, it is allowed to map into lower-dimensional
-    #                  space. Forward transformation might be suboptimal then and
-    #                  reverse transformation might not recover all original
-    #                  variance.""")
-    # oblique = Parameter(False, constraints='bool',
-    #              doc="""Either to allow non-orthogonal transformation -- might
-    #                  heavily overfit the data if there is less samples than
-    #                  dimensions. Use `oblique_rcond`.""")
-    # oblique_rcond = Parameter(-1, constraints='float',
-    #              doc="""Cutoff for 'small' singular values to regularize the
-    #                  inverse. See :class:`~numpy.linalg.lstsq` for more
-    #                  information.""")
-    # svd = Parameter('numpy', constraints=EnsureChoice('numpy', 'scipy', 'dgesvd'),
-    #              doc="""Implementation of SVD to use. dgesvd requires ctypes to
-    #              be available.""")
+    Function to project from one space to another using Procrustean
+    transformation (shift + scaling + rotation + reflection).
+
+    The implementation of this function was based on the ProcrusteanMapper in
+    pyMVPA: https://github.com/PyMVPA/PyMVPA
+
+    See also: http://en.wikipedia.org/wiki/Procrustes_transformation
+
+    Parameters
+    ----------
+
+    source : Numpy array
+        Array to be aligned to target's coordinate system.
+
+    target: Numpy array
+        Source is aligned to this target space
+
+    scaling : bool
+        Estimate a global scaling factor for the transformation
+        (no longer rigid body)
+
+    reflection : bool
+        Allow for the data to be reflected (so it might not be
+        a rotation. Effective only for non-oblique transformations.
+
+    reduction : bool
+        If true, it is allowed to map into lower-dimensional
+        space. Forward transformation might be suboptimal then and
+        reverse transformation might not recover all original
+        variance.
+
+    oblique : bool
+        Either to allow non-orthogonal transformation -- might
+        heavily overfit the data if there is less samples than
+        dimensions. Use `oblique_rcond`.
+
+    oblique_rcond : float
+        Cutoff for 'small' singular values to regularize the
+        inverse. See :class:`~numpy.linalg.lstsq` for more
+        information.
+
+    Returns
+    ----------
+    aligned_source : Numpy array
+        The array source is aligned to target and returned
+
+    """
 
     _scale = None
     _demean = False
