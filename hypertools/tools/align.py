@@ -39,6 +39,11 @@ def align(data, method='hyper'):
 	cortex of a group of subjects watching the same movie: The brain responses
 	should be highly similar, but the coordinates may not be aligned.
 
+	Haxby JV, Guntupalli JS, Connolly AC, Halchenko YO, Conroy BR, Gobbini
+	MI, Hanke M, and Ramadge PJ (2011)  A common, high-dimensional model of
+	the representational space in human ventral temporal cortex.  Neuron 72,
+	404 -- 416.
+
 	Parameters
 	----------
 	data : list
