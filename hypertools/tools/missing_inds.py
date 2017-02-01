@@ -20,9 +20,6 @@ def missing_inds(x):
 
     Returns
     ----------
-    x : Numpy array or list of arrays
-        This can be either a single array, or a list of arrays
-
     inds : list, or list of lists
         A list of indices representing rows with missing data. If a list of
         numpy arrays is passed, a list of lists will be returned.
