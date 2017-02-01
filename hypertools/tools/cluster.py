@@ -27,15 +27,15 @@ def cluster(x, n_clusters=8, ndims=None):
     Parameters
     ----------
     data : list
-            A list of Numpy arrays or Pandas Dataframes
+        A list of Numpy arrays or Pandas Dataframes
 
     method : str
-            Either 'hyper' or 'SRM'.  If 'hyper' (default),
+        Either 'hyper' or 'SRM'.  If 'hyper' (default),
 
     Returns
     ----------
     aligned : list
-            An aligned list of numpy arrays
+        An aligned list of numpy arrays
 
     """
 
@@ -48,5 +48,5 @@ def cluster(x, n_clusters=8, ndims=None):
 
     kmeans = KMeans(init='k-means++', n_clusters=n_clusters, n_init=10)
     kmeans.fit(x)
-    
+
     return list(kmeans.labels_)
