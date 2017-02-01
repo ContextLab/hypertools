@@ -1,18 +1,5 @@
 #!/usr/bin/env python
 
-"""
-Correlates raw data with PCA reduced data to get a sense for how well the data
-can be summarized with n dimensions.  Useful for evaluating quality of PCA reduced
-plots.
-
-INPUTS:
--numpy array(s)
--list of numpy arrays
-
-OUTPUTS:
--Dictionary with correlation values between raw data and PCA reduced data (optional)
-"""
-
 ##PACKAGES##
 from __future__ import division
 import warnings
@@ -31,6 +18,34 @@ sns.set(style="darkgrid")
 
 ##MAIN FUNCTION##
 def describe_pca(x, show=True):
+    """
+    Create plot describing covariance with as a function of number of dimensions
+
+    This function correlates the raw data with PCA reduced data to get a sense
+    for how well the data can be summarized with n dimensions.  Useful for
+    evaluating quality of PCA reduced plots.
+
+    Parameters
+    ----------
+    x : Numpy array, DataFrame or list of arrays/dfs
+            A list of Numpy arrays or Pandas Dataframes
+
+    Returns
+    ----------
+    fig, ax, attr : maplotlib.Figure, matplotlib.Axes, dict
+            By default, a matplotlib figure and axis handle, and a data
+            dictionary are returned. The dictionary comprises:
+                - PCA_summary : dict
+                    - average : list
+                        This is a list of the average (over input lists)
+                        correlation between the raw data and the
+                        dimensionality reduced data.  The length is determined
+                        by the number of components that explain the most data.
+                        Note: the length is typically not as long as the number
+                        of features because the PCA model is whitened.
+            If show=False, only attr is returned
+    """
+    
     warnings.warn('When input data is large, this computation can take a long time.')
 
     ##SUB FUNCTIONS##
