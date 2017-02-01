@@ -16,7 +16,6 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False, o
 
     Parameters
     ----------
-
     source : Numpy array
         Array to be aligned to target's coordinate system.
 
