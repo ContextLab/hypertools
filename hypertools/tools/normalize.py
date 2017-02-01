@@ -5,7 +5,7 @@ from sklearn.preprocessing import FunctionTransformer
 import numpy as np
 from .._shared.helpers import format_data
 
-def normalize(x, normalize='across'):
+def normalize(x, normalize='across', internal=False):
     """
     Z-transform the columns or rows of an array, or list of arrays
 
@@ -58,7 +58,7 @@ def normalize(x, normalize='across'):
     elif normalize==False:
         normalized_x = x
 
-    if len(normalized_x)>1:
+    if internal or len(normalized_x)>1:
         return normalized_x
     else:
         return normalized_x[0]
