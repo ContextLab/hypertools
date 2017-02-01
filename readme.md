@@ -12,27 +12,9 @@ Click the badge to launch a binder instance with example uses:
 
 [![Binder](http://mybinder.org/badge.svg)](http://mybinder.org:/repo/contextlab/hypertools-paper-notebooks)
 
-or 
+or
 
-Check the [repo](https://github.com/ContextLab/hypertools-paper-notebooks) of Jupyter notebooks from the HyperTools [paper](https://github.com/ContextLab/hypertools-paper/blob/master/HeusEtal17.pdf).
-
-
-
-<!-- Hypercubes (Example 1 in the HyperTools [paper](www.linktoarchivpaper.com)):
-
-[![Binder](http://mybinder.org/badge.svg)](http://mybinder.org/repo/binder-project/example-requirements)
-
-Mushrooms (Example 2):
-
-[![Binder](http://mybinder.org/badge.svg)](http://mybinder.org/repo/binder-project/example-requirements)
-
-Education (Example 3):
-
-[![Binder](http://mybinder.org/badge.svg)](http://mybinder.org/repo/binder-project/example-requirements)
-
-Temperatures (Example 5):
-
-[![Binder](http://mybinder.org/badge.svg)](http://mybinder.org/repo/binder-project/example-requirements) -->
+Check the [repo](https://github.com/ContextLab/hypertools-paper-notebooks) of Jupyter notebooks from the HyperTools [paper](https://arxiv.org/abs/1701.08290).
 
 <h2>Installation</h2>
 
@@ -68,7 +50,11 @@ If installing from github (instead of pip), you must also install the requiremen
 
 <h2>Citing</h2>
 
-We wrote a paper about HyperTools, which you can read [here](https://github.com/ContextLab/hypertools-paper/blob/master/HeusEtal17.pdf). We also have a repo with example notebooks from the paper [here](https://github.com/ContextLab/hypertools-paper-notebooks).
+We wrote a paper about HyperTools, which you can read [here](https://arxiv.org/abs/1701.08290). We also have a repo with example notebooks from the paper [here](https://github.com/ContextLab/hypertools-paper-notebooks).
+
+Please cite as:
+
+`A C Heusser, K Ziman, Lucy L W Owen, and J R Manning (2017) HyperTools: A Python toolbox for visualizing and manipulating high-dimensional data.  arXiv: 1701.08290`
 
 <!-- Here is a bibtex formatted reference:
 
@@ -76,10 +62,10 @@ We wrote a paper about HyperTools, which you can read [here](https://github.com/
 @ARTICLE {,
     author  = "A C Heusser and K Ziman and L L W Owen and J R Manning",
     title   = "HyperTools: A Python toolbox for visualizing and manipulating high-dimensional data",
-    journal = "ArXiv",
+    journal = "arXiv",
     year    = "2017",
-    volume  = "X",
-    number  = "X",
+    volume  = "1701",
+    number  = "08290",
     month   = "jan"
 }
 ``` -->
@@ -149,7 +135,7 @@ See matplotlib API for more styling options
 
 <b>Keyword arguments:</b>
 
-<i>color(s)</i> (list): A list of colors for each line to be plotted. Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes. If defined, overrides palette. See http://matplotlib.org/examples/color/named_colors.html for list of named colors. Note: must be the same length as X.
+<i>color(s)</i> (list): A list of colors for each line to be plotted. Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes. If defined, overrides palette. See [here](http://matplotlib.org/examples/color/named_colors.html) for list of named colors. Note: must be the same length as X.
 
 <i>group</i> (list of str, floats or ints): A list of group labels. Length must match the number of rows in your dataset. If the data type is numerical, the values will be mapped to rgb values in the specified palette.  If the data type is strings, the points will be labeled categorically.  To label a subset of points, use `None` (i.e. `['a', None, 'b','a']`)
 
@@ -398,7 +384,7 @@ A (shifted + scaled + rotated) version of source that best matches target
 
 <b>Outputs</b>
 
-A numpy matrix built from the dataframe with text columns replaced with dummy variables (see http://pandas.pydata.org/pandas-docs/stable/generated/pandas.get_dummies.html)
+A numpy matrix built from the dataframe with text columns replaced with dummy variables (see [here](http://pandas.pydata.org/pandas-docs/stable/generated/pandas.get_dummies.html)).
 
 <h3>Example use:</h3>
 
