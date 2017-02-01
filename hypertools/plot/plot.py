@@ -152,10 +152,10 @@ def plot(x,*args,**kwargs):
     # reduce dimensionality of the data
     if 'ndims' in kwargs:
         ndims=kwargs['ndims']
-        x = reduceD(x,ndims)
+        x = reduceD(x,ndims, internal=True)
         del kwargs['ndims']
     elif x[0].shape[1]>3:
-        x = reduceD(x,3)
+        x = reduceD(x,3, internal=True)
         ndims=3
     else:
         ndims=x[0].shape[1]

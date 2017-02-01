@@ -1,14 +1,5 @@
 #!/usr/bin/env python
 
-"""
-INPUTS:
--numpy array(s)
--list of numpy arrays
-
-OUTPUTS:
--matplotlib plt, fig, ax handles as tuple
-"""
-
 ##PACKAGES##
 import sys
 import warnings
@@ -25,7 +16,12 @@ matplotlib.rcParams['pdf.fonttype'] = 42
 ##MAIN FUNCTION##
 def static_plot(x, *args, **kwargs):
 	"""
-	implements plotting
+	INPUTS:
+	-numpy array(s)
+	-list of numpy arrays
+
+	OUTPUTS:
+	-matplotlib plt, fig, ax handles as tuple
 	"""
 
 	##PARSE HYPERTOOLS SPECIFIC ARGUMENTS##
@@ -63,7 +59,7 @@ def static_plot(x, *args, **kwargs):
 	# handle dims flag
 	if 'ndims' in kwargs:
 		assert (kwargs['ndims'] in [1,2,3]), 'ndims must be 1,2 or 3.'
-		x = reduceD(x,kwargs['ndims'])
+		x = reduceD(x,kwargs['ndims'], internal=True)
 		del kwargs['ndims']
 
 	# handle explore flag

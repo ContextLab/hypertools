@@ -1,16 +1,5 @@
 #!/usr/bin/env python
 
-"""
-Implements animated trajectory plot
-
-INPUTS:
--numpy array(s)
--list of numpy arrays
-
-OUTPUTS:
--None
-"""
-
 ##PACKAGES##
 from __future__ import division
 import numpy as np
@@ -22,6 +11,17 @@ from ..tools.reduce import reduce as reduceD
 
 ##MAIN FUNCTION##
 def animated_plot(x, *args, **kwargs):
+    """
+    Implements animated trajectory plot
+
+    INPUTS:
+    -numpy array(s)
+    -list of numpy arrays
+
+    OUTPUTS:
+    -returns fig, ax, data, line_ani. fig, ax and line_ani are matplotlib figure, axis, and animation handles,
+    respectively. Data is a numpy array of (reduced) data. (Optional, to use set return_data=True)
+    """
 
     assert x[0].shape[1]>2, "Hypertools currently only supports animation for data with > 2 dims."
 
@@ -191,4 +191,5 @@ def animated_plot(x, *args, **kwargs):
     if show:
         plt.show()
 
-    return fig,ax,x,line_ani
+    if return_data:
+        return fig,ax,x,line_ani
