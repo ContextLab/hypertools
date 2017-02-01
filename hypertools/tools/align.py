@@ -25,12 +25,38 @@ import numpy as np
 from .._shared.helpers import format_data
 
 ##MAIN FUNCTION##
-def align(data, method='HYPER'):
-	"""Implements hyperalignment"""
+def align(data, method='hyper'):
+	"""
+	Aligns a list of arrays
+
+	This function takes a list of high dimensional arrays and 'hyperaligns' them
+	to a 'common' space, or coordinate system following the approach outlined by
+	Haxby et al, 2011. Hyperalignment uses linear transformations (rotation,
+	reflection, translation, scaling) to register a group of arrays to a common
+	space. This can be useful when two or more datasets describe an identical
+	or similar system, but may not be in same coordinate system. For example,
+	consider the example of fMRI recordings (voxels by time) from the visual
+	cortex of a group of subjects watching the same movie: The brain responses
+	should be highly similar, but the coordinates may not be aligned.
+
+	Parameters
+	----------
+	data : list
+			A list of Numpy arrays or Pandas Dataframes
+
+	method : str
+			Either 'hyper' or 'SRM'.  If 'hyper' (default),
+
+	Returns
+	----------
+	aligned : list
+			An aligned list of numpy arrays
+
+	"""
 
 	data = format_data(data)
 
-	if method=='HYPER':
+	if method=='hyper':
 
 		##STEP 0: STANDARDIZE SIZE AND SHAPE##
 		sizes_0 = map(lambda x: x.shape[0], data)
