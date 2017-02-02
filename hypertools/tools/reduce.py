@@ -14,33 +14,35 @@ def reduce(x, ndims=3, method='PCA', normalize=False, internal=False):
     """
     Reduces dimensionality of an array, or list of arrays
 
-    Parameters:
-        x : Numpy array or list of arrays
-            Dimensionality reduction using PCA is performed on this array.  If
-            there are nans present in the data, the function will try to use
-            PPCA to interpolate the missing values.
+    Parameters
+    ----------
+    x : Numpy array or list of arrays
+        Dimensionality reduction using PCA is performed on this array.  If
+        there are nans present in the data, the function will try to use
+        PPCA to interpolate the missing values.
 
-        ndims : int
-            Number of dimensions to reduce
+    ndims : int
+        Number of dimensions to reduce
 
-        method : str
-            Reduction model to use.  Currently, only 'PCA' (PCA/PPCA) is
-            implemented. In next release this kwarg will support all scikit-learn
-            reduction models.
+    method : str
+        Reduction model to use.  Currently, only 'PCA' (PCA/PPCA) is
+        implemented. In next release this kwarg will support all scikit-learn
+        reduction models.
 
-        normalize : str or False
-            Normalizes the data before reducing. If set to 'across', the columns
-            of the input data will be z-scored across lists (default). That is,
-            the z-scores will be computed with repect to column n across all arrays
-            passed in the list. If set to 'within', the columns will be z-scored
-            within each list that is passed. If set to 'row', each row of the
-            input data will be z-scored. If set to False, the input data will be
-            returned with no z-scoring.
+    normalize : str or False
+        Normalizes the data before reducing. If set to 'across', the columns
+        of the input data will be z-scored across lists (default). That is,
+        the z-scores will be computed with repect to column n across all arrays
+        passed in the list. If set to 'within', the columns will be z-scored
+        within each list that is passed. If set to 'row', each row of the
+        input data will be z-scored. If set to False, the input data will be
+        returned with no z-scoring.
 
-    Returns:
-        x_reduced : Numpy array or list of arrays
-            The reduced data with ndims dimensionality is returned.  If the input
-            is a list, a list is returned.
+    Returns
+    ----------
+    x_reduced : Numpy array or list of arrays
+        The reduced data with ndims dimensionality is returned.  If the input
+        is a list, a list is returned.
 
     """
 

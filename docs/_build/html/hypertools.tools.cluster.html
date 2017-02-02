@@ -118,28 +118,33 @@
 <dt id="hypertools.tools.cluster">
 <code class="descclassname">hypertools.tools.</code><code class="descname">cluster</code><span class="sig-paren">(</span><em>x</em>, <em>n_clusters=8</em>, <em>ndims=None</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/hypertools/tools/cluster.html#cluster"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#hypertools.tools.cluster" title="Permalink to this definition">¶</a></dt>
 <dd><p>Performs k-means clustering and returns a list of cluster labels</p>
-<dl class="docutils">
-<dt>Parameters:</dt>
-<dd><dl class="first last docutils">
-<dt>x <span class="classifier-delimiter">:</span> <span class="classifier">A Numpy array, Pandas Dataframe or list of numpy arrays/dfs</span></dt>
-<dd><p class="first">The data to be clustered.  You can pass a single array/df or a list.
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><p class="first"><strong>x</strong> : A Numpy array, Pandas Dataframe or list of arrays/dfs</p>
+<blockquote>
+<div><p>The data to be clustered.  You can pass a single array/df or a list.
 If a list is passed, the arrays will be stacked and the clustering
 will be performed across all lists (i.e. not within each list).</p>
-<p class="last">n_clusters : int
+<p>n_clusters : int
 The number of clusters to discover (i.e. k)</p>
-</dd>
-<dt>ndims <span class="classifier-delimiter">:</span> <span class="classifier">int or None</span></dt>
-<dd>This parameter allows you to first reduce dimensionality before
-running k-means</dd>
-</dl>
-</dd>
-<dt>Returns:</dt>
-<dd><dl class="first last docutils">
-<dt>cluster_labels <span class="classifier-delimiter">:</span> <span class="classifier">list</span></dt>
-<dd>An list of cluster labels</dd>
-</dl>
-</dd>
-</dl>
+</div></blockquote>
+<p><strong>ndims</strong> : int or None</p>
+<blockquote>
+<div><p>This parameter allows you to first reduce dimensionality before
+running k-means</p>
+</div></blockquote>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first"><strong>cluster_labels</strong> : list</p>
+<blockquote class="last">
+<div><p>An list of cluster labels</p>
+</div></blockquote>
+</td>
+</tr>
+</tbody>
+</table>
 </dd></dl>
 
 </div>

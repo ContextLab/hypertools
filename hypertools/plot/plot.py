@@ -21,97 +21,98 @@ def plot(x,*args,**kwargs):
     """
     Plots dimensionality reduced data and parses plot arguments
 
-    Parameters:
-        x : Numpy array, DataFrame or list of arrays/dfs
-            Data for the plot. The form should be samples (rows) by features (cols).
+    Parameters
+    ----------
+    x : Numpy array, DataFrame or list of arrays/dfs
+        Data for the plot. The form should be samples (rows) by features (cols).
 
-            color(s) (list): A list of colors for each line to be plotted.
-            Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes.
-            If defined, overrides palette. See here for list of named colors.
-            Note: must be the same length as X.
+        color(s) (list): A list of colors for each line to be plotted.
+        Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes.
+        If defined, overrides palette. See here for list of named colors.
+        Note: must be the same length as X.
 
-        group : list of str, floats or ints
-            A list of group labels. Length must match the number of rows in your
-            dataset. If the data type is numerical, the values will be mapped to
-            rgb values in the specified palette. If the data type is strings,
-            the points will be labeled categorically. To label a subset of points,
-            use None (i.e. ['a', None, 'b','a']).
+    group : list of str, floats or ints
+        A list of group labels. Length must match the number of rows in your
+        dataset. If the data type is numerical, the values will be mapped to
+        rgb values in the specified palette. If the data type is strings,
+        the points will be labeled categorically. To label a subset of points,
+        use None (i.e. ['a', None, 'b','a']).
 
-        linestyle(s) : list
-            A list of line styles
+    linestyle(s) : list
+        A list of line styles
 
-        marker(s) : list
-            A list of marker types
+    marker(s) : list
+        A list of marker types
 
-        palette : str
-            A matplotlib or seaborn color palette
+    palette : str
+        A matplotlib or seaborn color palette
 
-        labels : list
-            A list of labels for each point. Must be dimensionality of data (x).
-            If no label is wanted for a particular point, input None.
+    labels : list
+        A list of labels for each point. Must be dimensionality of data (x).
+        If no label is wanted for a particular point, input None.
 
-        legend : list
-            A list of string labels to be plotted in a legend (one for each list
-            item).
+    legend : list
+        A list of string labels to be plotted in a legend (one for each list
+        item).
 
-        ndims : int
-            An `int` representing the number of dims to plot in. Must be 1,2, or 3.
-            NOTE: Currently only works with static plots.
+    ndims : int
+        An `int` representing the number of dims to plot in. Must be 1,2, or 3.
+        NOTE: Currently only works with static plots.
 
-        normalize : str or False
-            If set to 'across', the columns of the input data will be z-scored
-            across lists (default). If set to 'within', the columns will be
-            z-scored within each list that is passed. If set to 'row', each row of
-            the input data will be z-scored. If set to False, the input data will
-            be returned (default is False).
+    normalize : str or False
+        If set to 'across', the columns of the input data will be z-scored
+        across lists (default). If set to 'within', the columns will be
+        z-scored within each list that is passed. If set to 'row', each row of
+        the input data will be z-scored. If set to False, the input data will
+        be returned (default is False).
 
-        n_clusters : int
-            If n_clusters is passed, HyperTools will perform k-means clustering
-            with the k parameter set to n_clusters. The resulting clusters will
-            be plotted in different colors according to the color palette.
+    n_clusters : int
+        If n_clusters is passed, HyperTools will perform k-means clustering
+        with the k parameter set to n_clusters. The resulting clusters will
+        be plotted in different colors according to the color palette.
 
-        animate : bool
-            If True, plots the data as an animated trajectory (default: False).
+    animate : bool
+        If True, plots the data as an animated trajectory (default: False).
 
-        show : bool
-            If set to False, the figure will not be displayed, but the figure,
-            axis and data objects will still be returned (see Outputs)
-            (default: True).
+    show : bool
+        If set to False, the figure will not be displayed, but the figure,
+        axis and data objects will still be returned (see Outputs)
+        (default: True).
 
-        save_path str :
-            Path to save the image/movie. Must include the file extension in the
-            save path (i.e. save_path='/path/to/file/image.png'). NOTE: If saving
-            an animation, FFMPEG must be installed (this is a matplotlib req).
-            FFMPEG can be easily installed on a mac via homebrew brew install
-            ffmpeg or linux via apt-get apt-get install ffmpeg. If you don't
-            have homebrew (mac only), you can install it like this:
-            /usr/bin/ruby -e "$(curl -fsSL
-            https://raw.githubusercontent.com/Homebrew/install/master/install)".
+    save_path str :
+        Path to save the image/movie. Must include the file extension in the
+        save path (i.e. save_path='/path/to/file/image.png'). NOTE: If saving
+        an animation, FFMPEG must be installed (this is a matplotlib req).
+        FFMPEG can be easily installed on a mac via homebrew brew install
+        ffmpeg or linux via apt-get apt-get install ffmpeg. If you don't
+        have homebrew (mac only), you can install it like this:
+        /usr/bin/ruby -e "$(curl -fsSL
+        https://raw.githubusercontent.com/Homebrew/install/master/install)".
 
-        explore : bool
-            Displays user defined labels will appear on hover. If no labels are
-            passed, the point index and coordinate will be plotted. To use,
-            set explore=True. Note: Explore more is currently only supported
-            for 3D static plots.
+    explore : bool
+        Displays user defined labels will appear on hover. If no labels are
+        passed, the point index and coordinate will be plotted. To use,
+        set explore=True. Note: Explore more is currently only supported
+        for 3D static plots.
 
-        Animation-specific keyword arguments:
+    duration (animation only) : float
+        Length of the animation in seconds (default: 30 seconds)
 
-        duration : float
-            Length of the animation in seconds (default: 30 seconds)
+    tail_duration (animation only) : float
+        Sets the length of the tail of the data (default: 2 seconds)
 
-        tail_duration : float
-            Sets the length of the tail of the data (default: 2 seconds)
+    rotations (animation only) : float
+        Number of rotations around the box (default: 2)
 
-        rotations : float
-            Number of rotations around the box (default: 2)
+    zoom (animation only) : float
+        Zoom, positive numbers will zoom in (default: 0)
 
-        zoom : float
-            Zoom, positive numbers will zoom in (default: 0)
+    chemtrails (animation only) : bool
+        Added trail with change in opacity (default: False)
 
-        chemtrails : bool
-            Added trail with change in opacity (default: False)
-
-    Returns:
+    Returns
+    ----------
+    fig, ax, data : Matplotlib.Figure.figure, Matplotlib.Axes.axis, Numpy array
         By default, the plot function outputs a figure handle
         (matplotlib.figure.Figure), axis handle (matplotlib.axes._axes.Axes)
         and data (list of numpy arrays), e.g. fig,axis,data = hyp.plot(x)

@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools &#8212; hypertools 0.1.2 documentation</title>
+    <title>Visualizing the digits dataset &#8212; hypertools 0.1.2 documentation</title>
     
     <link rel="stylesheet" href="../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
@@ -58,7 +58,7 @@
           <ul class="nav navbar-nav">
             
                 <li><a href="../api.html">API</a></li>
-                <li><a href="../auto_examples/index.html">Gallery</a></li>
+                <li><a href="index.html">Gallery</a></li>
                 <li><a href="http://www.github.com/ContextLab/hypertools">Download</a></li>
             
             
@@ -81,7 +81,10 @@
      href="#">Page <b class="caret"></b></a>
   <ul class="dropdown-menu localtoc"
       role="menu"
-      aria-labelledby="dLabelLocalToc"></ul>
+      aria-labelledby="dLabelLocalToc"><ul>
+<li><a class="reference internal" href="#">Visualizing the digits dataset</a></li>
+</ul>
+</ul>
 </li>
               
             
@@ -109,19 +112,34 @@
   <div class="row">
     <div class="col-md-12 content">
       
-  <h1>Source code for hypertools</h1><div class="highlight"><pre>
-<span></span><span class="ch">#!/usr/bin/env python</span>
+  <div class="section" id="visualizing-the-digits-dataset">
+<span id="sphx-glr-auto-examples-plot-digits-py"></span><h1>Visualizing the digits dataset<a class="headerlink" href="#visualizing-the-digits-dataset" title="Permalink to this headline">¶</a></h1>
+<p>This example loads in some data from the scikit-learn digits dataset and plots
+it.</p>
+<img alt="../_images/sphx_glr_plot_digits_001.png" class="align-center" src="../_images/sphx_glr_plot_digits_001.png" />
+<div class="highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Code source: Andrew Heusser</span>
+<span class="c1"># License: MIT</span>
 
-<span class="kn">from</span> <span class="nn">plot.plot</span> <span class="k">import</span> <span class="n">plot</span>
-<span class="kn">from</span> <span class="nn">tools</span> <span class="k">import</span> <span class="o">*</span>
+<span class="kn">from</span> <span class="nn">sklearn</span> <span class="kn">import</span> <span class="n">datasets</span>
+<span class="kn">import</span> <span class="nn">hypertools</span> <span class="kn">as</span> <span class="nn">hyp</span>
 
-<div class="viewcode-block" id="hypertools"><a class="viewcode-back" href="../api.html#hypertools.hypertools">[docs]</a><span class="k">class</span> <span class="nc">hypertools</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
-    <span class="sd">&#39;&#39;&#39;Hypertools module&#39;&#39;&#39;</span>
+<span class="n">digits</span> <span class="o">=</span> <span class="n">datasets</span><span class="o">.</span><span class="n">load_digits</span><span class="p">(</span><span class="n">n_class</span><span class="o">=</span><span class="mi">6</span><span class="p">)</span>
+<span class="n">data</span> <span class="o">=</span> <span class="n">digits</span><span class="o">.</span><span class="n">data</span>
+<span class="n">group</span> <span class="o">=</span> <span class="n">digits</span><span class="o">.</span><span class="n">target</span>
 
-    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">plot</span><span class="o">=</span><span class="n">plot</span><span class="p">,</span> <span class="n">tools</span><span class="o">=</span><span class="n">tools</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">plot</span> <span class="o">=</span> <span class="n">plot</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">tools</span> <span class="o">=</span> <span class="n">tools</span></div>
+<span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s1">&#39;o&#39;</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="n">group</span><span class="p">)</span>
 </pre></div>
+</div>
+<p><strong>Total running time of the script:</strong> ( 0 minutes  0.230 seconds)</p>
+<div class="sphx-glr-footer docutils container">
+<div class="sphx-glr-download docutils container">
+<a class="reference download internal" href="../_downloads/plot_digits.py" download=""><code class="xref download docutils literal"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">plot_digits.py</span></code></a></div>
+<div class="sphx-glr-download docutils container">
+<a class="reference download internal" href="../_downloads/plot_digits.ipynb" download=""><code class="xref download docutils literal"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">plot_digits.ipynb</span></code></a></div>
+</div>
+<p class="sphx-glr-signature"><a class="reference external" href="http://sphinx-gallery.readthedocs.io">Generated by Sphinx-Gallery</a></p>
+</div>
+
 
     </div>
       
@@ -134,6 +152,10 @@
       
         <br/>
         
+<div id="sourcelink">
+  <a href="../_sources/auto_examples/plot_digits.rst.txt"
+     rel="nofollow">Source</a>
+</div>
       
     </p>
     <p>

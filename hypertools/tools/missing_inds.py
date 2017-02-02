@@ -13,13 +13,15 @@ def missing_inds(x):
     missing data, or label the missing data points that are interpolated
     using PPCA.
 
-    Parameters:
-        x : array or list of arrays
+    Parameters
+    ----------
+    x : array or list of arrays
 
-    Returns:
-        inds : list, or list of lists
-            A list of indices representing rows with missing data. If a list of
-            numpy arrays is passed, a list of lists will be returned.
+    Returns
+    ----------
+    inds : list, or list of lists
+        A list of indices representing rows with missing data. If a list of
+        numpy arrays is passed, a list of lists will be returned.
 
     """
 
