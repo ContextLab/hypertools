@@ -54,9 +54,9 @@ We wrote a paper about HyperTools, which you can read [here](https://arxiv.org/a
 
 Please cite as:
 
-`A C Heusser, K Ziman, Lucy L W Owen, and J R Manning (2017) HyperTools: A Python toolbox for visualizing and manipulating high-dimensional data.  arXiv: 1701.08290`
+`Heusser AC, Ziman K, Owen LLW, Manning JR (2017) HyperTools: A Python toolbox for visualizing and manipulating high-dimensional data.  arXiv: 1701.08290`
 
-<!-- Here is a bibtex formatted reference:
+Here is a bibtex formatted reference:
 
 ```
 @ARTICLE {,
@@ -68,7 +68,7 @@ Please cite as:
     number  = "08290",
     month   = "jan"
 }
-``` -->
+```
 
 <h2>Contributing</h2>
 (some text borrowed from Matplotlib contributing [guide](http://matplotlib.org/devdocs/devel/contributing.html))
