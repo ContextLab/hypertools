@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>hypertools.tools.procrustes &#8212; hypertools 0.1.2 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/basic.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/gallery.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/bootswatch-3.3.6/yeti/bootstrap.min.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/bootstrap-sphinx.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.1.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <script type="text/javascript" src="../../../_static/js/jquery-1.11.0.min.js"></script>
+    <script type="text/javascript" src="../../../_static/js/jquery-fix.js"></script>
+    <script type="text/javascript" src="../../../_static/bootstrap-3.3.6/js/bootstrap.min.js"></script>
+    <script type="text/javascript" src="../../../_static/bootstrap-sphinx.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+
+  </head>
+  <body role="document">
+
+  <div id="navbar" class="navbar navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="../../../index.html">
+          hypertools</a>
+        <span class="navbar-text navbar-version pull-left"><b>0.1</b></span>
+      </div>
+
+        <div class="collapse navbar-collapse nav-collapse">
+          <ul class="nav navbar-nav">
+            
+                <li><a href="../../../api.html">API</a></li>
+                <li><a href="../../../auto_examples/index.html">Gallery</a></li>
+            
+            
+              <li class="dropdown globaltoc-container">
+  <a role="button"
+     id="dLabelGlobalToc"
+     data-toggle="dropdown"
+     data-target="#"
+     href="../../../index.html">Site <b class="caret"></b></a>
+  <ul class="dropdown-menu globaltoc"
+      role="menu"
+      aria-labelledby="dLabelGlobalToc"></ul>
+</li>
+              
+                <li class="dropdown">
+  <a role="button"
+     id="dLabelLocalToc"
+     data-toggle="dropdown"
+     data-target="#"
+     href="#">Page <b class="caret"></b></a>
+  <ul class="dropdown-menu localtoc"
+      role="menu"
+      aria-labelledby="dLabelLocalToc"></ul>
+</li>
+              
+            
+            
+            
+            
+            
+          </ul>
+
+          
+            
+<form class="navbar-form navbar-right" action="../../../search.html" method="get">
+ <div class="form-group">
+  <input type="text" name="q" class="form-control" placeholder="Search" />
+ </div>
+  <input type="hidden" name="check_keywords" value="yes" />
+  <input type="hidden" name="area" value="default" />
+</form>
+          
+        </div>
+    </div>
+  </div>
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-12 content">
+      
+  <h1>Source code for hypertools.tools.procrustes</h1><div class="highlight"><pre>
+<span></span><span class="ch">#!/usr/bin/env python</span>
+
+<span class="c1">##PACKAGES##</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="c1">##MAIN FUNCTION##</span>
+<div class="viewcode-block" id="procrustes"><a class="viewcode-back" href="../../../hypertools.tools.procrustes.html#hypertools.tools.procrustes">[docs]</a><span class="k">def</span> <span class="nf">procrustes</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">scaling</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reflection</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reduction</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">oblique</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">oblique_rcond</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Function to project from one space to another using Procrustean</span>
+<span class="sd">    transformation (shift + scaling + rotation + reflection).</span>
+
+<span class="sd">    The implementation of this function was based on the ProcrusteanMapper in</span>
+<span class="sd">    pyMVPA: https://github.com/PyMVPA/PyMVPA</span>
+
+<span class="sd">    See also: http://en.wikipedia.org/wiki/Procrustes_transformation</span>
+
+<span class="sd">    Parameters:</span>
+<span class="sd">        source : Numpy array</span>
+<span class="sd">            Array to be aligned to target&#39;s coordinate system.</span>
+
+<span class="sd">        target: Numpy array</span>
+<span class="sd">            Source is aligned to this target space</span>
+
+<span class="sd">        scaling : bool</span>
+<span class="sd">            Estimate a global scaling factor for the transformation</span>
+<span class="sd">            (no longer rigid body)</span>
+
+<span class="sd">        reflection : bool</span>
+<span class="sd">            Allow for the data to be reflected (so it might not be</span>
+<span class="sd">            a rotation. Effective only for non-oblique transformations.</span>
+
+<span class="sd">        reduction : bool</span>
+<span class="sd">            If true, it is allowed to map into lower-dimensional</span>
+<span class="sd">            space. Forward transformation might be suboptimal then and</span>
+<span class="sd">            reverse transformation might not recover all original</span>
+<span class="sd">            variance.</span>
+
+<span class="sd">        oblique : bool</span>
+<span class="sd">            Either to allow non-orthogonal transformation -- might</span>
+<span class="sd">            heavily overfit the data if there is less samples than</span>
+<span class="sd">            dimensions. Use `oblique_rcond`.</span>
+
+<span class="sd">        oblique_rcond : float</span>
+<span class="sd">            Cutoff for &#39;small&#39; singular values to regularize the</span>
+<span class="sd">            inverse. See :class:`~numpy.linalg.lstsq` for more</span>
+<span class="sd">            information.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">        aligned_source : Numpy array</span>
+<span class="sd">            The array source is aligned to target and returned</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">_scale</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">_demean</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="k">def</span> <span class="nf">fit</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">target</span><span class="p">):</span>
+        <span class="c1"># Since it is unsupervised, we don&#39;t care about labels</span>
+        <span class="n">datas</span> <span class="o">=</span> <span class="p">()</span>
+        <span class="n">means</span> <span class="o">=</span> <span class="p">()</span>
+        <span class="n">shapes</span> <span class="o">=</span> <span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">ds</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">((</span><span class="n">source</span><span class="p">,</span> <span class="n">target</span><span class="p">)):</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">ds</span>
+            <span class="k">if</span> <span class="n">_demean</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">mean</span> <span class="o">=</span> <span class="n">_offset_in</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">mean</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">data</span> <span class="o">-</span> <span class="n">mean</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># no demeaning === zero means</span>
+                <span class="n">mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+            <span class="n">means</span> <span class="o">+=</span> <span class="p">(</span><span class="n">mean</span><span class="p">,)</span>
+            <span class="n">datas</span> <span class="o">+=</span> <span class="p">(</span><span class="n">data</span><span class="p">,)</span>
+            <span class="n">shapes</span> <span class="o">+=</span> <span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">shape</span><span class="p">,)</span>
+
+        <span class="c1"># shortcuts for sizes</span>
+        <span class="n">sn</span><span class="p">,</span> <span class="n">sm</span> <span class="o">=</span> <span class="n">shapes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">tn</span><span class="p">,</span> <span class="n">tm</span> <span class="o">=</span> <span class="n">shapes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="c1"># Check the sizes</span>
+        <span class="k">if</span> <span class="n">sn</span> <span class="o">!=</span> <span class="n">tn</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="s2">&quot;Data for both spaces should have the same &quot;</span> \
+                  <span class="s2">&quot;number of samples. Got </span><span class="si">%d</span><span class="s2"> in template and </span><span class="si">%d</span><span class="s2"> in target space&quot;</span> \
+                  <span class="o">%</span> <span class="p">(</span><span class="n">sn</span><span class="p">,</span> <span class="n">tn</span><span class="p">)</span>
+
+        <span class="c1"># Sums of squares</span>
+        <span class="n">ssqs</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">d</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">datas</span><span class="p">]</span>
+
+        <span class="c1"># XXX check for being invariant?</span>
+        <span class="c1">#     needs to be tuned up properly and not raise but handle</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">ssqs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">((</span><span class="n">np</span><span class="o">.</span><span class="n">finfo</span><span class="p">(</span><span class="n">datas</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span><span class="o">.</span><span class="n">eps</span>
+                                       <span class="o">*</span> <span class="n">sn</span> <span class="o">*</span> <span class="n">means</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">)):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="s2">&quot;For now do not handle invariant in time datasets&quot;</span>
+
+        <span class="n">norms</span> <span class="o">=</span> <span class="p">[</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">ssq</span><span class="p">))</span> <span class="k">for</span> <span class="n">ssq</span> <span class="ow">in</span> <span class="n">ssqs</span> <span class="p">]</span>
+        <span class="n">normed</span> <span class="o">=</span> <span class="p">[</span> <span class="n">data</span><span class="o">/</span><span class="n">norm</span> <span class="k">for</span> <span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">norm</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">datas</span><span class="p">,</span> <span class="n">norms</span><span class="p">)</span> <span class="p">]</span>
+
+        <span class="c1"># add new blank dimensions to template space if needed</span>
+        <span class="k">if</span> <span class="n">sm</span> <span class="o">&lt;</span> <span class="n">tm</span><span class="p">:</span>
+            <span class="n">normed</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">(</span> <span class="p">(</span><span class="n">normed</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">sn</span><span class="p">,</span> <span class="n">tm</span><span class="o">-</span><span class="n">sm</span><span class="p">)))</span> <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">sm</span> <span class="o">&gt;</span> <span class="n">tm</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">reduction</span><span class="p">:</span>
+                <span class="n">normed</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">(</span> <span class="p">(</span><span class="n">normed</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">sn</span><span class="p">,</span> <span class="n">sm</span><span class="o">-</span><span class="n">tm</span><span class="p">)))</span> <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="s2">&quot;reduction=False, so mapping from &quot;</span> \
+                      <span class="s2">&quot;higher dimensionality &quot;</span> \
+                      <span class="s2">&quot;template space is not supported. template space had </span><span class="si">%d</span><span class="s2"> &quot;</span> \
+                      <span class="s2">&quot;while target </span><span class="si">%d</span><span class="s2"> dimensions (features)&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">sm</span><span class="p">,</span> <span class="n">tm</span><span class="p">)</span>
+
+        <span class="n">source</span><span class="p">,</span> <span class="n">target</span> <span class="o">=</span> <span class="n">normed</span>
+        <span class="k">if</span> <span class="n">oblique</span><span class="p">:</span>
+            <span class="c1"># Just do silly linear system of equations ;) or naive</span>
+            <span class="c1"># inverse problem</span>
+            <span class="k">if</span> <span class="n">sn</span> <span class="o">==</span> <span class="n">sm</span> <span class="ow">and</span> <span class="n">tm</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">T</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">T</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">lstsq</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">rcond</span><span class="o">=</span><span class="n">oblique_rcond</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">ss</span> <span class="o">=</span> <span class="mf">1.0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Orthogonal transformation</span>
+            <span class="c1"># figure out optimal rotation</span>
+            <span class="n">U</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="n">Vh</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">svd</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">target</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">source</span><span class="p">),</span>
+                                     <span class="n">full_matrices</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">T</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">Vh</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">U</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">reflection</span><span class="p">:</span>
+                <span class="c1"># then we need to assure that it is only rotation</span>
+                <span class="c1"># &quot;recipe&quot; from</span>
+                <span class="c1"># http://en.wikipedia.org/wiki/Orthogonal_Procrustes_problem</span>
+                <span class="c1"># for more and info and original references, see</span>
+                <span class="c1"># http://dx.doi.org/10.1007%2FBF02289451</span>
+                <span class="n">nsv</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+                <span class="n">s</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+                <span class="n">s</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">det</span><span class="p">(</span><span class="n">T</span><span class="p">)</span>
+                <span class="n">T</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">U</span><span class="p">[:,</span> <span class="p">:</span><span class="n">nsv</span><span class="p">]</span> <span class="o">*</span> <span class="n">s</span><span class="p">,</span> <span class="n">Vh</span><span class="p">)</span>
+
+            <span class="c1"># figure out scale and final translation</span>
+            <span class="c1"># XXX with reflection False -- not sure if here or there or anywhere...</span>
+            <span class="n">ss</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+
+        <span class="c1"># if we were to collect standardized distance</span>
+        <span class="c1"># std_d = 1 - sD**2</span>
+
+        <span class="c1"># select out only relevant dimensions</span>
+        <span class="k">if</span> <span class="n">sm</span> <span class="o">!=</span> <span class="n">tm</span><span class="p">:</span>
+            <span class="n">T</span> <span class="o">=</span> <span class="n">T</span><span class="p">[:</span><span class="n">sm</span><span class="p">,</span> <span class="p">:</span><span class="n">tm</span><span class="p">]</span>
+
+        <span class="n">_scale</span> <span class="o">=</span> <span class="n">scale</span> <span class="o">=</span> <span class="n">ss</span> <span class="o">*</span> <span class="n">norms</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="n">norms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="c1"># Assign projection</span>
+        <span class="k">if</span> <span class="n">scaling</span><span class="p">:</span>
+            <span class="n">proj</span> <span class="o">=</span> <span class="n">scale</span> <span class="o">*</span> <span class="n">T</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">proj</span> <span class="o">=</span> <span class="n">T</span>
+        <span class="k">return</span> <span class="n">proj</span>
+
+        <span class="k">if</span> <span class="n">_demean</span><span class="p">:</span>
+            <span class="n">_offset_out</span> <span class="o">=</span> <span class="n">means</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">transform</span><span class="p">(</span><span class="n">data</span><span class="p">,</span><span class="n">proj</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">proj</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">,</span> <span class="s2">&quot;Mapper needs to be train before used.&quot;</span>
+
+        <span class="c1"># local binding</span>
+        <span class="n">demean</span> <span class="o">=</span> <span class="n">_demean</span>
+
+        <span class="n">d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asmatrix</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+        <span class="c1"># Remove input offset if present</span>
+        <span class="k">if</span> <span class="n">demean</span> <span class="ow">and</span> <span class="n">_offset_in</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">d</span> <span class="o">=</span> <span class="n">d</span> <span class="o">-</span> <span class="n">_offset_in</span>
+
+        <span class="c1"># Do projection</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="p">(</span><span class="n">d</span> <span class="o">*</span> <span class="n">proj</span><span class="p">)</span><span class="o">.</span><span class="n">A</span>
+
+        <span class="c1"># Add output offset if present</span>
+        <span class="k">if</span> <span class="n">demean</span> <span class="ow">and</span> <span class="n">_offset_out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">res</span> <span class="o">+=</span> <span class="n">_offset_out</span>
+
+        <span class="k">return</span> <span class="n">res</span>
+
+    <span class="n">proj</span> <span class="o">=</span> <span class="n">fit</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">transform</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">proj</span><span class="p">)</span></div>
+</pre></div>
+
+    </div>
+      
+  </div>
+</div>
+<footer class="footer">
+  <div class="container">
+    <p class="pull-right">
+      <a href="#">Back to top</a>
+      
+        <br/>
+        
+      
+    </p>
+    <p>
+        &copy; Copyright 2017, Andrew C. Heusser, Kirsten Ziman, Lucy L. W. Owen, Jeremy R. Manning.<br/>
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.2.<br/>
+    </p>
+  </div>
+</footer>
+  </body>
+</html>
