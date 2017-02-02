@@ -121,22 +121,24 @@
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Performs k-means clustering and returns a list of cluster labels</span>
 
-<span class="sd">    Parameters:</span>
-<span class="sd">        x : A Numpy array, Pandas Dataframe or list of numpy arrays/dfs</span>
-<span class="sd">            The data to be clustered.  You can pass a single array/df or a list.</span>
-<span class="sd">            If a list is passed, the arrays will be stacked and the clustering</span>
-<span class="sd">            will be performed across all lists (i.e. not within each list).</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : A Numpy array, Pandas Dataframe or list of arrays/dfs</span>
+<span class="sd">        The data to be clustered.  You can pass a single array/df or a list.</span>
+<span class="sd">        If a list is passed, the arrays will be stacked and the clustering</span>
+<span class="sd">        will be performed across all lists (i.e. not within each list).</span>
 
-<span class="sd">            n_clusters : int</span>
-<span class="sd">            The number of clusters to discover (i.e. k)</span>
+<span class="sd">        n_clusters : int</span>
+<span class="sd">        The number of clusters to discover (i.e. k)</span>
 
-<span class="sd">        ndims : int or None</span>
-<span class="sd">            This parameter allows you to first reduce dimensionality before</span>
-<span class="sd">            running k-means</span>
+<span class="sd">    ndims : int or None</span>
+<span class="sd">        This parameter allows you to first reduce dimensionality before</span>
+<span class="sd">        running k-means</span>
 
-<span class="sd">    Returns:</span>
-<span class="sd">        cluster_labels : list</span>
-<span class="sd">            An list of cluster labels</span>
+<span class="sd">    Returns</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cluster_labels : list</span>
+<span class="sd">        An list of cluster labels</span>
 
 <span class="sd">    &quot;&quot;&quot;</span>
 

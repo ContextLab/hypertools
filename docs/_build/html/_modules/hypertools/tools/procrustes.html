@@ -126,40 +126,42 @@
 
 <span class="sd">    See also: http://en.wikipedia.org/wiki/Procrustes_transformation</span>
 
-<span class="sd">    Parameters:</span>
-<span class="sd">        source : Numpy array</span>
-<span class="sd">            Array to be aligned to target&#39;s coordinate system.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    source : Numpy array</span>
+<span class="sd">        Array to be aligned to target&#39;s coordinate system.</span>
 
-<span class="sd">        target: Numpy array</span>
-<span class="sd">            Source is aligned to this target space</span>
+<span class="sd">    target: Numpy array</span>
+<span class="sd">        Source is aligned to this target space</span>
 
-<span class="sd">        scaling : bool</span>
-<span class="sd">            Estimate a global scaling factor for the transformation</span>
-<span class="sd">            (no longer rigid body)</span>
+<span class="sd">    scaling : bool</span>
+<span class="sd">        Estimate a global scaling factor for the transformation</span>
+<span class="sd">        (no longer rigid body)</span>
 
-<span class="sd">        reflection : bool</span>
-<span class="sd">            Allow for the data to be reflected (so it might not be</span>
-<span class="sd">            a rotation. Effective only for non-oblique transformations.</span>
+<span class="sd">    reflection : bool</span>
+<span class="sd">        Allow for the data to be reflected (so it might not be</span>
+<span class="sd">        a rotation. Effective only for non-oblique transformations.</span>
 
-<span class="sd">        reduction : bool</span>
-<span class="sd">            If true, it is allowed to map into lower-dimensional</span>
-<span class="sd">            space. Forward transformation might be suboptimal then and</span>
-<span class="sd">            reverse transformation might not recover all original</span>
-<span class="sd">            variance.</span>
+<span class="sd">    reduction : bool</span>
+<span class="sd">        If true, it is allowed to map into lower-dimensional</span>
+<span class="sd">        space. Forward transformation might be suboptimal then and</span>
+<span class="sd">        reverse transformation might not recover all original</span>
+<span class="sd">        variance.</span>
 
-<span class="sd">        oblique : bool</span>
-<span class="sd">            Either to allow non-orthogonal transformation -- might</span>
-<span class="sd">            heavily overfit the data if there is less samples than</span>
-<span class="sd">            dimensions. Use `oblique_rcond`.</span>
+<span class="sd">    oblique : bool</span>
+<span class="sd">        Either to allow non-orthogonal transformation -- might</span>
+<span class="sd">        heavily overfit the data if there is less samples than</span>
+<span class="sd">        dimensions. Use `oblique_rcond`.</span>
 
-<span class="sd">        oblique_rcond : float</span>
-<span class="sd">            Cutoff for &#39;small&#39; singular values to regularize the</span>
-<span class="sd">            inverse. See :class:`~numpy.linalg.lstsq` for more</span>
-<span class="sd">            information.</span>
+<span class="sd">    oblique_rcond : float</span>
+<span class="sd">        Cutoff for &#39;small&#39; singular values to regularize the</span>
+<span class="sd">        inverse. See :class:`~numpy.linalg.lstsq` for more</span>
+<span class="sd">        information.</span>
 
 <span class="sd">    Returns</span>
-<span class="sd">        aligned_source : Numpy array</span>
-<span class="sd">            The array source is aligned to target and returned</span>
+<span class="sd">    ----------</span>
+<span class="sd">    aligned_source : Numpy array</span>
+<span class="sd">        The array source is aligned to target and returned</span>
 
 <span class="sd">    &quot;&quot;&quot;</span>
 

@@ -16,23 +16,25 @@ def normalize(x, normalize='across', internal=False):
     normalize the columns 'within' each individual list, or alternatively, for
     each row in the array.
 
-    Parameters:
-        x : Numpy array or list of arrays
-            This can either be a single array, or list of arrays
+    Parameters
+    ----------
+    x : Numpy array or list of arrays
+        This can either be a single array, or list of arrays
 
-        normalize : str or False
-            If set to 'across', the columns of the input data will be z-scored
-            across lists (default). That is, the z-scores will be computed with
-            with repect to column n across all arrays passed in the list. If set
-            to 'within', the columns will be z-scored within each list that is
-            passed. If set to 'row', each row of the input data will be z-scored.
-            If set to False, the input data will be returned with no z-scoring.
+    normalize : str or False
+        If set to 'across', the columns of the input data will be z-scored
+        across lists (default). That is, the z-scores will be computed with
+        with repect to column n across all arrays passed in the list. If set
+        to 'within', the columns will be z-scored within each list that is
+        passed. If set to 'row', each row of the input data will be z-scored.
+        If set to False, the input data will be returned with no z-scoring.
 
-    Returns:
-        normalized_x : Numpy array or list of arrays
-            An array or list of arrays where the columns or rows are z-scored. If
-            the input was a list, a list is returned.  Otherwise, an array is
-            returned.
+    Returns
+    ----------
+    normalized_x : Numpy array or list of arrays
+        An array or list of arrays where the columns or rows are z-scored. If
+        the input was a list, a list is returned.  Otherwise, an array is
+        returned.
 
     """
 

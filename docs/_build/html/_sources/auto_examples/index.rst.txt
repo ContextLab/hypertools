@@ -73,9 +73,9 @@ Gallery of Examples
 
 .. only:: html
 
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_mnist_thumb.png
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_digits_thumb.png
 
-        :ref:`sphx_glr_auto_examples_plot_mnist.py`
+        :ref:`sphx_glr_auto_examples_plot_digits.py`
 
 .. raw:: html
 
@@ -85,7 +85,7 @@ Gallery of Examples
 .. toctree::
    :hidden:
 
-   /auto_examples/plot_mnist
+   /auto_examples/plot_digits
 
 .. raw:: html
 

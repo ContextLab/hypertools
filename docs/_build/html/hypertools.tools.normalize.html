@@ -124,29 +124,35 @@ sensitive to scaling differences between features. By default, the function
 is set to normalize &#8216;across&#8217; the columns of all lists, but it can also
 normalize the columns &#8216;within&#8217; each individual list, or alternatively, for
 each row in the array.</p>
-<dl class="docutils">
-<dt>Parameters:</dt>
-<dd><dl class="first last docutils">
-<dt>x <span class="classifier-delimiter">:</span> <span class="classifier">Numpy array or list of arrays</span></dt>
-<dd>This can either be a single array, or list of arrays</dd>
-<dt>normalize <span class="classifier-delimiter">:</span> <span class="classifier">str or False</span></dt>
-<dd>If set to &#8216;across&#8217;, the columns of the input data will be z-scored
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><p class="first"><strong>x</strong> : Numpy array or list of arrays</p>
+<blockquote>
+<div><p>This can either be a single array, or list of arrays</p>
+</div></blockquote>
+<p><strong>normalize</strong> : str or False</p>
+<blockquote>
+<div><p>If set to &#8216;across&#8217;, the columns of the input data will be z-scored
 across lists (default). That is, the z-scores will be computed with
 with repect to column n across all arrays passed in the list. If set
 to &#8216;within&#8217;, the columns will be z-scored within each list that is
 passed. If set to &#8216;row&#8217;, each row of the input data will be z-scored.
-If set to False, the input data will be returned with no z-scoring.</dd>
-</dl>
-</dd>
-<dt>Returns:</dt>
-<dd><dl class="first last docutils">
-<dt>normalized_x <span class="classifier-delimiter">:</span> <span class="classifier">Numpy array or list of arrays</span></dt>
-<dd>An array or list of arrays where the columns or rows are z-scored. If
+If set to False, the input data will be returned with no z-scoring.</p>
+</div></blockquote>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first"><strong>normalized_x</strong> : Numpy array or list of arrays</p>
+<blockquote class="last">
+<div><p>An array or list of arrays where the columns or rows are z-scored. If
 the input was a list, a list is returned.  Otherwise, an array is
-returned.</dd>
-</dl>
-</dd>
-</dl>
+returned.</p>
+</div></blockquote>
+</td>
+</tr>
+</tbody>
+</table>
 </dd></dl>
 
 </div>

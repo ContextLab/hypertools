@@ -121,17 +121,19 @@
 <p>This function correlates the raw data with PCA reduced data to get a sense
 for how well the data can be summarized with n dimensions.  Useful for
 evaluating quality of PCA reduced plots.</p>
-<dl class="docutils">
-<dt>Parameters:</dt>
-<dd><dl class="first last docutils">
-<dt>x <span class="classifier-delimiter">:</span> <span class="classifier">Numpy array, DataFrame or list of arrays/dfs</span></dt>
-<dd>A list of Numpy arrays or Pandas Dataframes</dd>
-</dl>
-</dd>
-<dt>Returns:</dt>
-<dd><dl class="first last docutils">
-<dt>fig, ax, attr <span class="classifier-delimiter">:</span> <span class="classifier">maplotlib.Figure, matplotlib.Axes, dict</span></dt>
-<dd>By default, a matplotlib figure and axis handle, and a data
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><p class="first"><strong>x</strong> : Numpy array, DataFrame or list of arrays/dfs</p>
+<blockquote>
+<div><p>A list of Numpy arrays or Pandas Dataframes</p>
+</div></blockquote>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first"><strong>fig, ax, attr</strong> : maplotlib.Figure, matplotlib.Axes, dict</p>
+<blockquote class="last">
+<div><p>By default, a matplotlib figure and axis handle, and a data
 dictionary are returned. The dictionary comprises:
 PCA_summary : dict and average : list. This is a list of the
 average (over input lists) correlation between the raw data and the
@@ -139,10 +141,12 @@ dimensionality reduced data.  The length is determined
 by the number of components that explain the most data.
 Note: the length is typically not as long as the number
 of features because the PCA model is whitened.
-If show=False, only attr is returned</dd>
-</dl>
-</dd>
-</dl>
+If show=False, only attr is returned</p>
+</div></blockquote>
+</td>
+</tr>
+</tbody>
+</table>
 </dd></dl>
 
 </div>

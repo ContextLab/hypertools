@@ -44,16 +44,18 @@ def align(data, method='hyper'):
     the representational space in human ventral temporal cortex.  Neuron 72,
     404 -- 416.
 
-    Parameters:
-        data : list
-            A list of Numpy arrays or Pandas Dataframes
+    Parameters
+    ----------
+    data : list
+        A list of Numpy arrays or Pandas Dataframes
 
     method : str
         Either 'hyper' or 'SRM'.  If 'hyper' (default),
 
-    Returns:
-        aligned : list
-            An aligned list of numpy arrays
+    Returns
+    ----------
+    aligned : list
+        An aligned list of numpy arrays
 
     """
 

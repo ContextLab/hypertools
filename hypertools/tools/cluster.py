@@ -9,22 +9,24 @@ def cluster(x, n_clusters=8, ndims=None):
     """
     Performs k-means clustering and returns a list of cluster labels
 
-    Parameters:
-        x : A Numpy array, Pandas Dataframe or list of numpy arrays/dfs
-            The data to be clustered.  You can pass a single array/df or a list.
-            If a list is passed, the arrays will be stacked and the clustering
-            will be performed across all lists (i.e. not within each list).
+    Parameters
+    ----------
+    x : A Numpy array, Pandas Dataframe or list of arrays/dfs
+        The data to be clustered.  You can pass a single array/df or a list.
+        If a list is passed, the arrays will be stacked and the clustering
+        will be performed across all lists (i.e. not within each list).
 
-            n_clusters : int
-            The number of clusters to discover (i.e. k)
+        n_clusters : int
+        The number of clusters to discover (i.e. k)
 
-        ndims : int or None
-            This parameter allows you to first reduce dimensionality before
-            running k-means
+    ndims : int or None
+        This parameter allows you to first reduce dimensionality before
+        running k-means
 
-    Returns:
-        cluster_labels : list
-            An list of cluster labels
+    Returns
+    ----------
+    cluster_labels : list
+        An list of cluster labels
 
     """
 

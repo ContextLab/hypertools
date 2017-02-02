@@ -137,21 +137,23 @@
 <span class="sd">    for how well the data can be summarized with n dimensions.  Useful for</span>
 <span class="sd">    evaluating quality of PCA reduced plots.</span>
 
-<span class="sd">    Parameters:</span>
-<span class="sd">        x : Numpy array, DataFrame or list of arrays/dfs</span>
-<span class="sd">            A list of Numpy arrays or Pandas Dataframes</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : Numpy array, DataFrame or list of arrays/dfs</span>
+<span class="sd">        A list of Numpy arrays or Pandas Dataframes</span>
 
-<span class="sd">    Returns:</span>
-<span class="sd">        fig, ax, attr : maplotlib.Figure, matplotlib.Axes, dict</span>
-<span class="sd">            By default, a matplotlib figure and axis handle, and a data</span>
-<span class="sd">            dictionary are returned. The dictionary comprises:</span>
-<span class="sd">            PCA_summary : dict and average : list. This is a list of the</span>
-<span class="sd">            average (over input lists) correlation between the raw data and the</span>
-<span class="sd">            dimensionality reduced data.  The length is determined</span>
-<span class="sd">            by the number of components that explain the most data.</span>
-<span class="sd">            Note: the length is typically not as long as the number</span>
-<span class="sd">            of features because the PCA model is whitened.</span>
-<span class="sd">            If show=False, only attr is returned</span>
+<span class="sd">    Returns</span>
+<span class="sd">    ----------</span>
+<span class="sd">    fig, ax, attr : maplotlib.Figure, matplotlib.Axes, dict</span>
+<span class="sd">        By default, a matplotlib figure and axis handle, and a data</span>
+<span class="sd">        dictionary are returned. The dictionary comprises:</span>
+<span class="sd">        PCA_summary : dict and average : list. This is a list of the</span>
+<span class="sd">        average (over input lists) correlation between the raw data and the</span>
+<span class="sd">        dimensionality reduced data.  The length is determined</span>
+<span class="sd">        by the number of components that explain the most data.</span>
+<span class="sd">        Note: the length is typically not as long as the number</span>
+<span class="sd">        of features because the PCA model is whitened.</span>
+<span class="sd">        If show=False, only attr is returned</span>
 
 <span class="sd">    &quot;&quot;&quot;</span>
 

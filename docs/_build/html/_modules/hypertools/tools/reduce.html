@@ -126,33 +126,35 @@
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Reduces dimensionality of an array, or list of arrays</span>
 
-<span class="sd">    Parameters:</span>
-<span class="sd">        x : Numpy array or list of arrays</span>
-<span class="sd">            Dimensionality reduction using PCA is performed on this array.  If</span>
-<span class="sd">            there are nans present in the data, the function will try to use</span>
-<span class="sd">            PPCA to interpolate the missing values.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : Numpy array or list of arrays</span>
+<span class="sd">        Dimensionality reduction using PCA is performed on this array.  If</span>
+<span class="sd">        there are nans present in the data, the function will try to use</span>
+<span class="sd">        PPCA to interpolate the missing values.</span>
 
-<span class="sd">        ndims : int</span>
-<span class="sd">            Number of dimensions to reduce</span>
+<span class="sd">    ndims : int</span>
+<span class="sd">        Number of dimensions to reduce</span>
 
-<span class="sd">        method : str</span>
-<span class="sd">            Reduction model to use.  Currently, only &#39;PCA&#39; (PCA/PPCA) is</span>
-<span class="sd">            implemented. In next release this kwarg will support all scikit-learn</span>
-<span class="sd">            reduction models.</span>
+<span class="sd">    method : str</span>
+<span class="sd">        Reduction model to use.  Currently, only &#39;PCA&#39; (PCA/PPCA) is</span>
+<span class="sd">        implemented. In next release this kwarg will support all scikit-learn</span>
+<span class="sd">        reduction models.</span>
 
-<span class="sd">        normalize : str or False</span>
-<span class="sd">            Normalizes the data before reducing. If set to &#39;across&#39;, the columns</span>
-<span class="sd">            of the input data will be z-scored across lists (default). That is,</span>
-<span class="sd">            the z-scores will be computed with repect to column n across all arrays</span>
-<span class="sd">            passed in the list. If set to &#39;within&#39;, the columns will be z-scored</span>
-<span class="sd">            within each list that is passed. If set to &#39;row&#39;, each row of the</span>
-<span class="sd">            input data will be z-scored. If set to False, the input data will be</span>
-<span class="sd">            returned with no z-scoring.</span>
+<span class="sd">    normalize : str or False</span>
+<span class="sd">        Normalizes the data before reducing. If set to &#39;across&#39;, the columns</span>
+<span class="sd">        of the input data will be z-scored across lists (default). That is,</span>
+<span class="sd">        the z-scores will be computed with repect to column n across all arrays</span>
+<span class="sd">        passed in the list. If set to &#39;within&#39;, the columns will be z-scored</span>
+<span class="sd">        within each list that is passed. If set to &#39;row&#39;, each row of the</span>
+<span class="sd">        input data will be z-scored. If set to False, the input data will be</span>
+<span class="sd">        returned with no z-scoring.</span>
 
-<span class="sd">    Returns:</span>
-<span class="sd">        x_reduced : Numpy array or list of arrays</span>
-<span class="sd">            The reduced data with ndims dimensionality is returned.  If the input</span>
-<span class="sd">            is a list, a list is returned.</span>
+<span class="sd">    Returns</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x_reduced : Numpy array or list of arrays</span>
+<span class="sd">        The reduced data with ndims dimensionality is returned.  If the input</span>
+<span class="sd">        is a list, a list is returned.</span>
 
 <span class="sd">    &quot;&quot;&quot;</span>
 

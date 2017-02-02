@@ -133,97 +133,98 @@
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Plots dimensionality reduced data and parses plot arguments</span>
 
-<span class="sd">    Parameters:</span>
-<span class="sd">        x : Numpy array, DataFrame or list of arrays/dfs</span>
-<span class="sd">            Data for the plot. The form should be samples (rows) by features (cols).</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : Numpy array, DataFrame or list of arrays/dfs</span>
+<span class="sd">        Data for the plot. The form should be samples (rows) by features (cols).</span>
 
-<span class="sd">            color(s) (list): A list of colors for each line to be plotted.</span>
-<span class="sd">            Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes.</span>
-<span class="sd">            If defined, overrides palette. See here for list of named colors.</span>
-<span class="sd">            Note: must be the same length as X.</span>
+<span class="sd">        color(s) (list): A list of colors for each line to be plotted.</span>
+<span class="sd">        Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes.</span>
+<span class="sd">        If defined, overrides palette. See here for list of named colors.</span>
+<span class="sd">        Note: must be the same length as X.</span>
 
-<span class="sd">        group : list of str, floats or ints</span>
-<span class="sd">            A list of group labels. Length must match the number of rows in your</span>
-<span class="sd">            dataset. If the data type is numerical, the values will be mapped to</span>
-<span class="sd">            rgb values in the specified palette. If the data type is strings,</span>
-<span class="sd">            the points will be labeled categorically. To label a subset of points,</span>
-<span class="sd">            use None (i.e. [&#39;a&#39;, None, &#39;b&#39;,&#39;a&#39;]).</span>
+<span class="sd">    group : list of str, floats or ints</span>
+<span class="sd">        A list of group labels. Length must match the number of rows in your</span>
+<span class="sd">        dataset. If the data type is numerical, the values will be mapped to</span>
+<span class="sd">        rgb values in the specified palette. If the data type is strings,</span>
+<span class="sd">        the points will be labeled categorically. To label a subset of points,</span>
+<span class="sd">        use None (i.e. [&#39;a&#39;, None, &#39;b&#39;,&#39;a&#39;]).</span>
 
-<span class="sd">        linestyle(s) : list</span>
-<span class="sd">            A list of line styles</span>
+<span class="sd">    linestyle(s) : list</span>
+<span class="sd">        A list of line styles</span>
 
-<span class="sd">        marker(s) : list</span>
-<span class="sd">            A list of marker types</span>
+<span class="sd">    marker(s) : list</span>
+<span class="sd">        A list of marker types</span>
 
-<span class="sd">        palette : str</span>
-<span class="sd">            A matplotlib or seaborn color palette</span>
+<span class="sd">    palette : str</span>
+<span class="sd">        A matplotlib or seaborn color palette</span>
 
-<span class="sd">        labels : list</span>
-<span class="sd">            A list of labels for each point. Must be dimensionality of data (x).</span>
-<span class="sd">            If no label is wanted for a particular point, input None.</span>
+<span class="sd">    labels : list</span>
+<span class="sd">        A list of labels for each point. Must be dimensionality of data (x).</span>
+<span class="sd">        If no label is wanted for a particular point, input None.</span>
 
-<span class="sd">        legend : list</span>
-<span class="sd">            A list of string labels to be plotted in a legend (one for each list</span>
-<span class="sd">            item).</span>
+<span class="sd">    legend : list</span>
+<span class="sd">        A list of string labels to be plotted in a legend (one for each list</span>
+<span class="sd">        item).</span>
 
-<span class="sd">        ndims : int</span>
-<span class="sd">            An `int` representing the number of dims to plot in. Must be 1,2, or 3.</span>
-<span class="sd">            NOTE: Currently only works with static plots.</span>
+<span class="sd">    ndims : int</span>
+<span class="sd">        An `int` representing the number of dims to plot in. Must be 1,2, or 3.</span>
+<span class="sd">        NOTE: Currently only works with static plots.</span>
 
-<span class="sd">        normalize : str or False</span>
-<span class="sd">            If set to &#39;across&#39;, the columns of the input data will be z-scored</span>
-<span class="sd">            across lists (default). If set to &#39;within&#39;, the columns will be</span>
-<span class="sd">            z-scored within each list that is passed. If set to &#39;row&#39;, each row of</span>
-<span class="sd">            the input data will be z-scored. If set to False, the input data will</span>
-<span class="sd">            be returned (default is False).</span>
+<span class="sd">    normalize : str or False</span>
+<span class="sd">        If set to &#39;across&#39;, the columns of the input data will be z-scored</span>
+<span class="sd">        across lists (default). If set to &#39;within&#39;, the columns will be</span>
+<span class="sd">        z-scored within each list that is passed. If set to &#39;row&#39;, each row of</span>
+<span class="sd">        the input data will be z-scored. If set to False, the input data will</span>
+<span class="sd">        be returned (default is False).</span>
 
-<span class="sd">        n_clusters : int</span>
-<span class="sd">            If n_clusters is passed, HyperTools will perform k-means clustering</span>
-<span class="sd">            with the k parameter set to n_clusters. The resulting clusters will</span>
-<span class="sd">            be plotted in different colors according to the color palette.</span>
+<span class="sd">    n_clusters : int</span>
+<span class="sd">        If n_clusters is passed, HyperTools will perform k-means clustering</span>
+<span class="sd">        with the k parameter set to n_clusters. The resulting clusters will</span>
+<span class="sd">        be plotted in different colors according to the color palette.</span>
 
-<span class="sd">        animate : bool</span>
-<span class="sd">            If True, plots the data as an animated trajectory (default: False).</span>
+<span class="sd">    animate : bool</span>
+<span class="sd">        If True, plots the data as an animated trajectory (default: False).</span>
 
-<span class="sd">        show : bool</span>
-<span class="sd">            If set to False, the figure will not be displayed, but the figure,</span>
-<span class="sd">            axis and data objects will still be returned (see Outputs)</span>
-<span class="sd">            (default: True).</span>
+<span class="sd">    show : bool</span>
+<span class="sd">        If set to False, the figure will not be displayed, but the figure,</span>
+<span class="sd">        axis and data objects will still be returned (see Outputs)</span>
+<span class="sd">        (default: True).</span>
 
-<span class="sd">        save_path str :</span>
-<span class="sd">            Path to save the image/movie. Must include the file extension in the</span>
-<span class="sd">            save path (i.e. save_path=&#39;/path/to/file/image.png&#39;). NOTE: If saving</span>
-<span class="sd">            an animation, FFMPEG must be installed (this is a matplotlib req).</span>
-<span class="sd">            FFMPEG can be easily installed on a mac via homebrew brew install</span>
-<span class="sd">            ffmpeg or linux via apt-get apt-get install ffmpeg. If you don&#39;t</span>
-<span class="sd">            have homebrew (mac only), you can install it like this:</span>
-<span class="sd">            /usr/bin/ruby -e &quot;$(curl -fsSL</span>
-<span class="sd">            https://raw.githubusercontent.com/Homebrew/install/master/install)&quot;.</span>
+<span class="sd">    save_path str :</span>
+<span class="sd">        Path to save the image/movie. Must include the file extension in the</span>
+<span class="sd">        save path (i.e. save_path=&#39;/path/to/file/image.png&#39;). NOTE: If saving</span>
+<span class="sd">        an animation, FFMPEG must be installed (this is a matplotlib req).</span>
+<span class="sd">        FFMPEG can be easily installed on a mac via homebrew brew install</span>
+<span class="sd">        ffmpeg or linux via apt-get apt-get install ffmpeg. If you don&#39;t</span>
+<span class="sd">        have homebrew (mac only), you can install it like this:</span>
+<span class="sd">        /usr/bin/ruby -e &quot;$(curl -fsSL</span>
+<span class="sd">        https://raw.githubusercontent.com/Homebrew/install/master/install)&quot;.</span>
 
-<span class="sd">        explore : bool</span>
-<span class="sd">            Displays user defined labels will appear on hover. If no labels are</span>
-<span class="sd">            passed, the point index and coordinate will be plotted. To use,</span>
-<span class="sd">            set explore=True. Note: Explore more is currently only supported</span>
-<span class="sd">            for 3D static plots.</span>
+<span class="sd">    explore : bool</span>
+<span class="sd">        Displays user defined labels will appear on hover. If no labels are</span>
+<span class="sd">        passed, the point index and coordinate will be plotted. To use,</span>
+<span class="sd">        set explore=True. Note: Explore more is currently only supported</span>
+<span class="sd">        for 3D static plots.</span>
 
-<span class="sd">        Animation-specific keyword arguments:</span>
+<span class="sd">    duration (animation only) : float</span>
+<span class="sd">        Length of the animation in seconds (default: 30 seconds)</span>
 
-<span class="sd">        duration : float</span>
-<span class="sd">            Length of the animation in seconds (default: 30 seconds)</span>
+<span class="sd">    tail_duration (animation only) : float</span>
+<span class="sd">        Sets the length of the tail of the data (default: 2 seconds)</span>
 
-<span class="sd">        tail_duration : float</span>
-<span class="sd">            Sets the length of the tail of the data (default: 2 seconds)</span>
+<span class="sd">    rotations (animation only) : float</span>
+<span class="sd">        Number of rotations around the box (default: 2)</span>
 
-<span class="sd">        rotations : float</span>
-<span class="sd">            Number of rotations around the box (default: 2)</span>
+<span class="sd">    zoom (animation only) : float</span>
+<span class="sd">        Zoom, positive numbers will zoom in (default: 0)</span>
 
-<span class="sd">        zoom : float</span>
-<span class="sd">            Zoom, positive numbers will zoom in (default: 0)</span>
+<span class="sd">    chemtrails (animation only) : bool</span>
+<span class="sd">        Added trail with change in opacity (default: False)</span>
 
-<span class="sd">        chemtrails : bool</span>
-<span class="sd">            Added trail with change in opacity (default: False)</span>
-
-<span class="sd">    Returns:</span>
+<span class="sd">    Returns</span>
+<span class="sd">    ----------</span>
+<span class="sd">    fig, ax, data : Matplotlib.Figure.figure, Matplotlib.Axes.axis, Numpy array</span>
 <span class="sd">        By default, the plot function outputs a figure handle</span>
 <span class="sd">        (matplotlib.figure.Figure), axis handle (matplotlib.axes._axes.Axes)</span>
 <span class="sd">        and data (list of numpy arrays), e.g. fig,axis,data = hyp.plot(x)</span>

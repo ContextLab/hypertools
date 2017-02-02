@@ -12,18 +12,20 @@ def df2mat(data, return_labels=False):
     function to transform text columns into binary vectors, or
     'dummy variables'.
 
-    Parameters:
-        data : A single-level Pandas DataFrame
-            The df that you want to convert.  Note that this currently only works
-            with single-level (not Multi-level indices).
+    Parameters
+    ----------
+    data : A single-level Pandas DataFrame
+        The df that you want to convert.  Note that this currently only works
+        with single-level (not Multi-level indices).
 
-    Returns:
-        plot_data : Numpy array
-            A Numpy array where text columns are turned into binary vectors.
+    Returns
+    ----------
+    plot_data : Numpy array
+        A Numpy array where text columns are turned into binary vectors.
 
-        labels : list (optional)
-            A list of column labels for the numpy array. To return this, set
-            return_labels=True.
+    labels : list (optional)
+        A list of column labels for the numpy array. To return this, set
+        return_labels=True.
 
     """
 
