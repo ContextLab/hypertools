@@ -69,6 +69,26 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="This example loads in some data from the scikit-learn digits dataset and plots it. ">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_mnist_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_mnist.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_mnist
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="The downside to using PCA to visualize your data is that some variance will likely be removed. ...">
 
 .. only:: html

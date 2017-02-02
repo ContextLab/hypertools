@@ -53,7 +53,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'hypertools'
-copyright = u'2017, Andrew C. Heusser, Kirsten Ziman, Lucy L. W. Owen, Jeremy R. Manning'
+copyright = u'2017, Contextual Dynamics Laboratory'
 author = u'Andrew C. Heusser, Kirsten Ziman, Lucy L. W. Owen, Jeremy R. Manning'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -111,13 +111,16 @@ html_theme = 'bootstrap'
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
 # documentation.
+extlinks = {'github': 'https://github.com/ContextLab/hypertools'}
+
 html_theme_options = {
     'source_link_position': "footer",
     'bootswatch_theme': "yeti",
     'navbar_sidebarrel': False,
     'bootstrap_version': "3",
     'navbar_links': [("API", "api"),
-                     ("Gallery", "auto_examples/index")],
+                     ("Gallery", "auto_examples/index"),
+                     ("Download", "http://www.github.com/ContextLab/hypertools", True)],
 
     }
 
@@ -155,7 +158,7 @@ latex_elements = {
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
     (master_doc, 'hypertools.tex', u'hypertools Documentation',
-     u'Andrew C. Heusser, Kirsten Ziman, Lucy L. W. Owen, Jeremy R. Manning', 'manual'),
+     u'Contextual Dynamics Laboratory', 'manual'),
 ]
 
 
