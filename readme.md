@@ -111,7 +111,7 @@ See [here](http://hypertools.readthedocs.io/en/latest/auto_examples/index.html) 
 
 ```
 import hypertools as hyp
-hyp.plot(list_of_arrays, 'o', labels=labels)
+hyp.plot(list_of_arrays, 'o', group=list_of_labels)
 ```
 
 ![Plot example](images/plot.gif)
