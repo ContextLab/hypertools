@@ -14,42 +14,40 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False, o
 
     See also: http://en.wikipedia.org/wiki/Procrustes_transformation
 
-    Parameters
-    ----------
-    source : Numpy array
-        Array to be aligned to target's coordinate system.
+    Parameters:
+        source : Numpy array
+            Array to be aligned to target's coordinate system.
 
-    target: Numpy array
-        Source is aligned to this target space
+        target: Numpy array
+            Source is aligned to this target space
 
-    scaling : bool
-        Estimate a global scaling factor for the transformation
-        (no longer rigid body)
+        scaling : bool
+            Estimate a global scaling factor for the transformation
+            (no longer rigid body)
 
-    reflection : bool
-        Allow for the data to be reflected (so it might not be
-        a rotation. Effective only for non-oblique transformations.
+        reflection : bool
+            Allow for the data to be reflected (so it might not be
+            a rotation. Effective only for non-oblique transformations.
 
-    reduction : bool
-        If true, it is allowed to map into lower-dimensional
-        space. Forward transformation might be suboptimal then and
-        reverse transformation might not recover all original
-        variance.
+        reduction : bool
+            If true, it is allowed to map into lower-dimensional
+            space. Forward transformation might be suboptimal then and
+            reverse transformation might not recover all original
+            variance.
 
-    oblique : bool
-        Either to allow non-orthogonal transformation -- might
-        heavily overfit the data if there is less samples than
-        dimensions. Use `oblique_rcond`.
+        oblique : bool
+            Either to allow non-orthogonal transformation -- might
+            heavily overfit the data if there is less samples than
+            dimensions. Use `oblique_rcond`.
 
-    oblique_rcond : float
-        Cutoff for 'small' singular values to regularize the
-        inverse. See :class:`~numpy.linalg.lstsq` for more
-        information.
+        oblique_rcond : float
+            Cutoff for 'small' singular values to regularize the
+            inverse. See :class:`~numpy.linalg.lstsq` for more
+            information.
 
     Returns
-    ----------
-    aligned_source : Numpy array
-        The array source is aligned to target and returned
+        aligned_source : Numpy array
+            The array source is aligned to target and returned
 
     """
 
