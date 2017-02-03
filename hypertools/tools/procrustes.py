@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 ##PACKAGES##
+from __future__ import division
 import numpy as np
 
 ##MAIN FUNCTION##

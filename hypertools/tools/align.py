@@ -19,6 +19,7 @@ OUTPUTS:
 """
 
 ##PACKAGES##
+from __future__ import division
 from .._externals.srm import SRM
 from .procrustes import procrustes
 import numpy as np
