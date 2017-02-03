@@ -3,7 +3,7 @@
 ##PACKAGES##
 import warnings
 import numpy as np
-from ppca import PPCA
+from .._externals.ppca import PPCA
 from sklearn.decomposition import PCA as PCA
 from ..tools.df2mat import df2mat
 from ..tools.normalize import normalize as normalizer

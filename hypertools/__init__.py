@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
-from . import plot
-from . import tools
+from builtins import object
+from .plot.plot import plot
+from .tools import *
 
 class hypertools(object):
     '''Hypertools module'''

@@ -30,7 +30,7 @@ def scale(x):
 def group_by_category(vals):
 	if any(isinstance(el, list) for el in vals):
 		vals = list(itertools.chain(*vals))
-	val_set = list(set(vals))
+	val_set = list(sorted(set(vals), key=vals.index))
 	return [val_set.index(val) for val in vals]
 
 def vals2colors(vals,cmap='GnBu_d',res=100):
@@ -124,7 +124,7 @@ def parse_kwargs(x,kwargs):
 	return kwargs_list
 
 def reshape_data(x,labels):
-	categories = list(set(np.sort(labels)))
+	categories = list(sorted(set(labels), key=labels.index))
 	x_stacked = np.vstack(x)
 	x_reshaped = [[] for i in categories]
 	for idx,point in enumerate(labels):
