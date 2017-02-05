@@ -34,7 +34,7 @@ Then, navigate to the folder and type:
 
 <h2>Requirements</h2>
 
-+ python 2.7.x
++ python 2.7, 3.4+
 + PPCA>=0.0.2
 + scikit-learn>=0.18.1
 + pandas>=0.18.0
@@ -42,6 +42,7 @@ Then, navigate to the folder and type:
 + matplotlib>=1.5.1,<2.0 (working on getting it running on 2.0)
 + scipy>=0.17.1
 + numpy>=1.10.4
++ future
 + pytest (for development)
 + ffmpeg (for saving animations)
 
