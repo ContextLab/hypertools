@@ -25,7 +25,7 @@ LICENSE = 'MIT'
 
 setup(
     name='hypertools',
-    version='0.1.4',
+    version='0.1.5',
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
     author='Contextual Dynamics Lab',
