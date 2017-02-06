@@ -25,7 +25,7 @@ LICENSE = 'MIT'
 
 setup(
     name='hypertools',
-    version='0.1.3',
+    version='0.1.4',
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
     author='Contextual Dynamics Lab',
@@ -46,6 +46,7 @@ setup(
     classifiers=[
              'Intended Audience :: Science/Research',
              'Programming Language :: Python :: 2.7',
+             'Programming Language :: Python :: 3.4',
              'Topic :: Scientific/Engineering :: Visualization',
              'Topic :: Multimedia :: Graphics',
              'Operating System :: POSIX',

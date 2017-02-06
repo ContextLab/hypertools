@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from __future__ import division
+from builtins import range
 from sklearn.preprocessing import FunctionTransformer
 import numpy as np
 from .._shared.helpers import format_data
