@@ -41,7 +41,8 @@ setup(
    'seaborn>=0.7.1',
    'matplotlib>=1.5.1,<2.0',
    'scipy>=0.17.1',
-   'numpy>=1.10.4'
+   'numpy>=1.10.4',
+   'future'
    ],
     classifiers=[
              'Intended Audience :: Science/Research',
