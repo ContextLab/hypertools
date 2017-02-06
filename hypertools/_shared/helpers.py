@@ -6,6 +6,7 @@ Helper functions
 
 ##PACKAGES##
 from __future__ import division
+from __future__ import print_function
 import numpy as np
 from scipy.interpolate import PchipInterpolator as pchip
 import seaborn as sns
@@ -23,7 +24,7 @@ def scale(x):
     x_stacked = np.vstack(x)
     m1 = np.min(x_stacked)
     m2 = np.max(x_stacked - m1)
-    f = lambda(x): 2*((x - m1) / m2) - 1
+    f = lambda x: 2*((x - m1) / m2) - 1
     return [f(i) for i in x]
 
 def group_by_category(vals):

@@ -2,6 +2,7 @@
 
 ##PACKAGES##
 from __future__ import division
+from builtins import zip
 import numpy as np
 import matplotlib
 import mpl_toolkits.mplot3d.axes3d as p3

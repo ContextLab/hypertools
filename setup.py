@@ -46,6 +46,7 @@ setup(
     classifiers=[
              'Intended Audience :: Science/Research',
              'Programming Language :: Python :: 2.7',
+             'Programming Language :: Python :: 3.4',
              'Topic :: Scientific/Engineering :: Visualization',
              'Topic :: Multimedia :: Graphics',
              'Operating System :: POSIX',
