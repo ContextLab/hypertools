@@ -2,6 +2,8 @@
 
 ##PACKAGES##
 from __future__ import division
+from builtins import zip
+from builtins import range
 import numpy as np
 
 ##MAIN FUNCTION##
@@ -84,19 +86,20 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False, o
 
         # Check the sizes
         if sn != tn:
-            raise ValueError, "Data for both spaces should have the same " \
+            pass
+            raise ValueError("Data for both spaces should have the same " \
                   "number of samples. Got %d in template and %d in target space" \
-                  % (sn, tn)
+                  % (sn, tn))
 
         # Sums of squares
         ssqs = [np.sum(d**2, axis=0) for d in datas]
 
         # XXX check for being invariant?
         #     needs to be tuned up properly and not raise but handle
-        for i in xrange(2):
+        for i in range(2):
             if np.all(ssqs[i] <= np.abs((np.finfo(datas[i].dtype).eps
                                        * sn * means[i] )**2)):
-                raise ValueError, "For now do not handle invariant in time datasets"
+                raise ValueError("For now do not handle invariant in time datasets")
 
         norms = [ np.sqrt(np.sum(ssq)) for ssq in ssqs ]
         normed = [ data/norm for (data, norm) in zip(datas, norms) ]
@@ -109,10 +112,10 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False, o
             if reduction:
                 normed[1] = np.hstack( (normed[1], np.zeros((sn, sm-tm))) )
             else:
-                raise ValueError, "reduction=False, so mapping from " \
+                raise ValueError("reduction=False, so mapping from " \
                       "higher dimensionality " \
                       "template space is not supported. template space had %d " \
-                      "while target %d dimensions (features)" % (sm, tm)
+                      "while target %d dimensions (features)" % (sm, tm))
 
         source, target = normed
         if oblique:
@@ -165,7 +168,7 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False, o
 
     def transform(data,proj):
         if proj is None:
-            raise RuntimeError, "Mapper needs to be train before used."
+            raise RuntimeError("Mapper needs to be train before used.")
 
         # local binding
         demean = _demean

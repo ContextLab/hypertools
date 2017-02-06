@@ -20,6 +20,7 @@ OUTPUTS:
 
 ##PACKAGES##
 from __future__ import division
+from builtins import range
 from .._externals.srm import SRM
 from .procrustes import procrustes
 import numpy as np
@@ -65,8 +66,8 @@ def align(data, method='hyper'):
     if method=='hyper':
 
         ##STEP 0: STANDARDIZE SIZE AND SHAPE##
-        sizes_0 = map(lambda x: x.shape[0], data)
-        sizes_1 = map(lambda x: x.shape[1], data)
+        sizes_0 = [x.shape[0] for x in data]
+        sizes_1 = [x.shape[1] for x in data]
 
         #find the smallest number of rows
         R = min(sizes_0)
