@@ -39,7 +39,7 @@ setup(
    'scikit-learn>=0.18.1',
    'pandas>=0.18.0',
    'seaborn>=0.7.1',
-   'matplotlib>=1.5.1,<2.0',
+   'matplotlib>=1.5.1',
    'scipy>=0.17.1',
    'numpy>=1.10.4',
    'future'
