@@ -159,7 +159,7 @@ def animated_plot(x, *args, **kwargs):
     if tail_duration==0:
         tail_duration=1
     else:
-        tail_duration = frame_rate*tail_duration
+        tail_duration = int(frame_rate*tail_duration)
 
     lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], linewidth=3, *args_list[idx], **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
     trail = [
