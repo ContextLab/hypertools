@@ -25,6 +25,7 @@ from .._externals.srm import SRM
 from .procrustes import procrustes
 import numpy as np
 from .._shared.helpers import format_data
+from warnings import warn
 
 ##MAIN FUNCTION##
 def align(data, method='hyper'):
@@ -62,6 +63,11 @@ def align(data, method='hyper'):
     """
 
     data = format_data(data)
+
+    if data[0].shape[1]>=data[0].shape[0]:
+        warn('The number of features exceeds number of samples. This can lead \
+             to overfitting.  We recommend reducing the dimensionality to be \
+             less than the number of samples prior to hyperalignment.')
 
     if method=='hyper':
 
