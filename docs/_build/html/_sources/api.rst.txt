@@ -50,5 +50,10 @@ Tools
 
 .. autosummary::
   :toctree:
-  
+
   hypertools.tools.missing_inds
+
+.. autosummary::
+  :toctree:
+
+  hypertools.tools.load

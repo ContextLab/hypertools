@@ -132,8 +132,8 @@ space of a target matrix.</p>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="kn">as</span> <span class="nn">np</span>
 <span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="kn">as</span> <span class="nn">plt</span>
 
-<span class="n">data</span> <span class="o">=</span> <span class="n">sio</span><span class="o">.</span><span class="n">loadmat</span><span class="p">(</span><span class="s1">&#39;sample_data/test_data.mat&#39;</span><span class="p">)</span>
-<span class="n">target</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s1">&#39;spiral&#39;</span><span class="p">]</span>
+<span class="n">data</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">tools</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s1">&#39;spiral&#39;</span><span class="p">)</span>
+<span class="n">target</span> <span class="o">=</span> <span class="n">data</span>
 
 <span class="c1"># A random rotation matrix</span>
 <span class="n">rot</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="o">-</span><span class="mf">0.89433495</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.44719485</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.01348182</span><span class="p">],</span>
@@ -153,7 +153,7 @@ space of a target matrix.</p>
 <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 </pre></div>
 </div>
-<p><strong>Total running time of the script:</strong> ( 0 minutes  0.151 seconds)</p>
+<p><strong>Total running time of the script:</strong> ( 0 minutes  0.563 seconds)</p>
 <div class="sphx-glr-footer docutils container">
 <div class="sphx-glr-download docutils container">
 <a class="reference download internal" href="../_downloads/plot_procrustes.py" download=""><code class="xref download docutils literal"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">plot_procrustes.py</span></code></a></div>

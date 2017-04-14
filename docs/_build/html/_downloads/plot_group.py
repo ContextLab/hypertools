@@ -20,8 +20,8 @@ import hypertools as hyp
 import scipy.io as sio
 import numpy as np
 
-data=sio.loadmat('sample_data/weights.mat')
-w=[i for i in data['weights'][0][0:3]]
+data = hyp.tools.load('weights')
+w=[i for i in data[0:3]]
 
 group = [['a' if idx % 2 == 0 else 'b' for idx,j in enumerate(i)] for i in w]
 hyp.plot(w,'o',group=group)

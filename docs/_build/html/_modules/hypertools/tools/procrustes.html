@@ -114,6 +114,8 @@
 
 <span class="c1">##PACKAGES##</span>
 <span class="kn">from</span> <span class="nn">__future__</span> <span class="k">import</span> <span class="n">division</span>
+<span class="kn">from</span> <span class="nn">builtins</span> <span class="k">import</span> <span class="nb">zip</span>
+<span class="kn">from</span> <span class="nn">builtins</span> <span class="k">import</span> <span class="nb">range</span>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 
 <span class="c1">##MAIN FUNCTION##</span>
@@ -196,19 +198,20 @@
 
         <span class="c1"># Check the sizes</span>
         <span class="k">if</span> <span class="n">sn</span> <span class="o">!=</span> <span class="n">tn</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="s2">&quot;Data for both spaces should have the same &quot;</span> \
+            <span class="k">pass</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Data for both spaces should have the same &quot;</span> \
                   <span class="s2">&quot;number of samples. Got </span><span class="si">%d</span><span class="s2"> in template and </span><span class="si">%d</span><span class="s2"> in target space&quot;</span> \
-                  <span class="o">%</span> <span class="p">(</span><span class="n">sn</span><span class="p">,</span> <span class="n">tn</span><span class="p">)</span>
+                  <span class="o">%</span> <span class="p">(</span><span class="n">sn</span><span class="p">,</span> <span class="n">tn</span><span class="p">))</span>
 
         <span class="c1"># Sums of squares</span>
         <span class="n">ssqs</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">d</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">datas</span><span class="p">]</span>
 
         <span class="c1"># XXX check for being invariant?</span>
         <span class="c1">#     needs to be tuned up properly and not raise but handle</span>
-        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
             <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">ssqs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">((</span><span class="n">np</span><span class="o">.</span><span class="n">finfo</span><span class="p">(</span><span class="n">datas</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span><span class="o">.</span><span class="n">eps</span>
                                        <span class="o">*</span> <span class="n">sn</span> <span class="o">*</span> <span class="n">means</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">)):</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="s2">&quot;For now do not handle invariant in time datasets&quot;</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;For now do not handle invariant in time datasets&quot;</span><span class="p">)</span>
 
         <span class="n">norms</span> <span class="o">=</span> <span class="p">[</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">ssq</span><span class="p">))</span> <span class="k">for</span> <span class="n">ssq</span> <span class="ow">in</span> <span class="n">ssqs</span> <span class="p">]</span>
         <span class="n">normed</span> <span class="o">=</span> <span class="p">[</span> <span class="n">data</span><span class="o">/</span><span class="n">norm</span> <span class="k">for</span> <span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">norm</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">datas</span><span class="p">,</span> <span class="n">norms</span><span class="p">)</span> <span class="p">]</span>
@@ -221,10 +224,10 @@
             <span class="k">if</span> <span class="n">reduction</span><span class="p">:</span>
                 <span class="n">normed</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">(</span> <span class="p">(</span><span class="n">normed</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">sn</span><span class="p">,</span> <span class="n">sm</span><span class="o">-</span><span class="n">tm</span><span class="p">)))</span> <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="s2">&quot;reduction=False, so mapping from &quot;</span> \
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;reduction=False, so mapping from &quot;</span> \
                       <span class="s2">&quot;higher dimensionality &quot;</span> \
                       <span class="s2">&quot;template space is not supported. template space had </span><span class="si">%d</span><span class="s2"> &quot;</span> \
-                      <span class="s2">&quot;while target </span><span class="si">%d</span><span class="s2"> dimensions (features)&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">sm</span><span class="p">,</span> <span class="n">tm</span><span class="p">)</span>
+                      <span class="s2">&quot;while target </span><span class="si">%d</span><span class="s2"> dimensions (features)&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">sm</span><span class="p">,</span> <span class="n">tm</span><span class="p">))</span>
 
         <span class="n">source</span><span class="p">,</span> <span class="n">target</span> <span class="o">=</span> <span class="n">normed</span>
         <span class="k">if</span> <span class="n">oblique</span><span class="p">:</span>
@@ -277,7 +280,7 @@
 
     <span class="k">def</span> <span class="nf">transform</span><span class="p">(</span><span class="n">data</span><span class="p">,</span><span class="n">proj</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">proj</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">,</span> <span class="s2">&quot;Mapper needs to be train before used.&quot;</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Mapper needs to be train before used.&quot;</span><span class="p">)</span>
 
         <span class="c1"># local binding</span>
         <span class="n">demean</span> <span class="o">=</span> <span class="n">_demean</span>
