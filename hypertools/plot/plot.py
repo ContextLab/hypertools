@@ -15,6 +15,7 @@ from ..tools.cluster import cluster
 from ..tools.df2mat import df2mat
 from ..tools.reduce import reduce as reduceD
 from ..tools.normalize import normalize as normalizer
+from matplotlib.lines import Line2D
 
 ## MAIN FUNCTION ##
 def plot(x,*args,**kwargs):
@@ -189,6 +190,10 @@ def plot(x,*args,**kwargs):
 
         # reshape the data according to group
         x = reshape_data(x,group)
+
+        # interpolate lines if they are grouped
+        if all([symbol not in args for symbol in Line2D.markers.keys()]):
+            x = patch_lines(x)
 
     if 'style' in kwargs:
         sns.set(style=kwargs['style'])

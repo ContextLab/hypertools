@@ -152,3 +152,11 @@ def format_data(x):
 		x = [np.reshape(i,(i.shape[0],1)) if i.ndim==1 else i for i in x]
 
 	return x
+
+def patch_lines(x):
+	"""
+	Draw lines between groups
+	"""
+	for idx in range(len(x)-1):
+		x[idx] = np.vstack([x[idx], x[idx+1][0,:]])
+	return x
