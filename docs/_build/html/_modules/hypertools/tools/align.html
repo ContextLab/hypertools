@@ -132,10 +132,12 @@
 
 <span class="c1">##PACKAGES##</span>
 <span class="kn">from</span> <span class="nn">__future__</span> <span class="k">import</span> <span class="n">division</span>
+<span class="kn">from</span> <span class="nn">builtins</span> <span class="k">import</span> <span class="nb">range</span>
 <span class="kn">from</span> <span class="nn">.._externals.srm</span> <span class="k">import</span> <span class="n">SRM</span>
 <span class="kn">from</span> <span class="nn">.procrustes</span> <span class="k">import</span> <span class="n">procrustes</span>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 <span class="kn">from</span> <span class="nn">.._shared.helpers</span> <span class="k">import</span> <span class="n">format_data</span>
+<span class="kn">from</span> <span class="nn">warnings</span> <span class="k">import</span> <span class="n">warn</span>
 
 <span class="c1">##MAIN FUNCTION##</span>
 <div class="viewcode-block" id="align"><a class="viewcode-back" href="../../../hypertools.tools.align.html#hypertools.tools.align">[docs]</a><span class="k">def</span> <span class="nf">align</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;hyper&#39;</span><span class="p">):</span>
@@ -174,11 +176,16 @@
 
     <span class="n">data</span> <span class="o">=</span> <span class="n">format_data</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 
+    <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">&gt;=</span><span class="n">data</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+        <span class="n">warn</span><span class="p">(</span><span class="s1">&#39;The number of features exceeds number of samples. This can lead </span><span class="se">\</span>
+<span class="s1">             to overfitting.  We recommend reducing the dimensionality to be </span><span class="se">\</span>
+<span class="s1">             less than the number of samples prior to hyperalignment.&#39;</span><span class="p">)</span>
+
     <span class="k">if</span> <span class="n">method</span><span class="o">==</span><span class="s1">&#39;hyper&#39;</span><span class="p">:</span>
 
         <span class="c1">##STEP 0: STANDARDIZE SIZE AND SHAPE##</span>
-        <span class="n">sizes_0</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">data</span><span class="p">)</span>
-        <span class="n">sizes_1</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">data</span><span class="p">)</span>
+        <span class="n">sizes_0</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">data</span><span class="p">]</span>
+        <span class="n">sizes_1</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">data</span><span class="p">]</span>
 
         <span class="c1">#find the smallest number of rows</span>
         <span class="n">R</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">sizes_0</span><span class="p">)</span>
