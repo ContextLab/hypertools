@@ -91,11 +91,11 @@ Here is a bibtex formatted reference:
 
 <h2>Contributing</h2>
 
-Some text borrowed from Matplotlib contributing [guide](http://matplotlib.org/devdocs/devel/contributing.html).
+(Some text borrowed from the [Matplotlib contributing guide](http://matplotlib.org/devdocs/devel/contributing.html).)
 
 <h3>Submitting a bug report</h3>
 
-If you are reporting a bug, please do your best to include the following -
+If you are reporting a bug, please do your best to include the following:
 
 1. A short, top-level summary of the bug. In most cases, this should be 1-2 sentences.
 2. A short, self-contained code snippet to reproduce the bug, ideally allowing a simple copy and paste to reproduce. Please do your best to reduce the code snippet to the minimum required.
