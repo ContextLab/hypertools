@@ -93,7 +93,7 @@ Here is a bibtex formatted reference:
 ```
 
 <h2>Contributing</h2>
-(some text borrowed from the [Matplotlib contributing guide](http://matplotlib.org/devdocs/devel/contributing.html))
+Note: some text borrowed from the [Matplotlib contributing guide](http://matplotlib.org/devdocs/devel/contributing.html).
 
 <h3>Submitting a bug report</h3>
 If you are reporting a bug, please do your best to include the following:
