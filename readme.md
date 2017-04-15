@@ -1,25 +1,10 @@
 ![Hypertools logo](images/hypercube.png)
 
 
-"_To deal with hyper-planes in a 14 dimensional space, visualize a 3D
-space and say 'fourteen' very loudly.  Everyone does it._" - Geoff
-Hinton
+"_To deal with hyper-planes in a 14 dimensional space, visualize a 3D space and say 'fourteen' very loudly.  Everyone does it._" - Geoff Hinton
+
 
 ![Hypertools example](images/hypertools.gif)
-
-<h2>Overview</h2>
-
-HyperTools is designed to facilitate
-[dimensionality reduction](https://en.wikipedia.org/wiki/Dimensionality_reduction)-based
-visual explorations of high-dimensional data.  The basic pipeline is
-to feed in a high-dimensional dataset (or a series of high-dimensional
-datasets) and, in a single function call, reduce the dimensionality of
-the dataset(s) and create a plot.  The package is built atop many
-familiar friends, including [matplotlib](https://matplotlib.org/),
-[scikit-learn](http://scikit-learn.org/) and
-[seaborn](https://seaborn.pydata.org/).  Our package was recently
-featured on
-[Kaggle's No Free Hunch blog](http://blog.kaggle.com/2017/04/10/exploring-the-structure-of-high-dimensional-data-with-hypertools-in-kaggle-kernels/).
 
 <h2>Try it!</h2>
 
@@ -66,9 +51,7 @@ If installing from github (instead of pip), you must also install the requiremen
 
 <h2>Documentation</h2>
 
-Check out our
-[readthedocs page](http://hypertools.readthedocs.io/en/latest/) for
-the full API specifications.
+Check out our readthedocs [here](http://hypertools.readthedocs.io/en/latest/).
 
 <h2>Citing</h2>
 
@@ -93,10 +76,10 @@ Here is a bibtex formatted reference:
 ```
 
 <h2>Contributing</h2>
-Note: some text borrowed from the [Matplotlib contributing guide](http://matplotlib.org/devdocs/devel/contributing.html).
+(some text borrowed from Matplotlib contributing [guide](http://matplotlib.org/devdocs/devel/contributing.html))
 
 <h3>Submitting a bug report</h3>
-If you are reporting a bug, please do your best to include the following:
+If you are reporting a bug, please do your best to include the following -
 
 1. A short, top-level summary of the bug. In most cases, this should be 1-2 sentences.
 2. A short, self-contained code snippet to reproduce the bug, ideally allowing a simple copy and paste to reproduce. Please do your best to reduce the code snippet to the minimum required.
@@ -105,8 +88,7 @@ If you are reporting a bug, please do your best to include the following:
 
 <h3>Contributing code</h3>
 
-The preferred way to contribute to HyperTools is to fork the main
-repository on GitHub, and then submit a pull request.
+The preferred way to contribute to HyperTools is to fork the main repository on GitHub, then submit a pull request.
 
 + If your pull request addresses an issue, please use the title to describe the issue and mention the issue number in the pull request description to ensure a link is created to the original issue.
 
