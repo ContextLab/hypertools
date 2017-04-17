@@ -26,4 +26,3 @@ Some key features of HyperTools are:
 5. Support for lists of Numpy arrays or Pandas dataframes
 
 .. toctree::
-   :maxdepth: 2
