@@ -32,10 +32,8 @@ Then we average the data into two groups, and plot.
     import scipy.io as sio
     import numpy as np
 
-    data=sio.loadmat('sample_data/weights.mat')
-
-    w=data['weights'][0]
-    w = [i for i in w]
+    data = hyp.tools.load('weights')
+    w = [i for i in data]
     aligned_w = hyp.tools.align(w)
 
     w1 = np.mean(aligned_w[:17],0)
@@ -43,7 +41,7 @@ Then we average the data into two groups, and plot.
 
     hyp.plot([w1[:100,:],w2[:100,:]])
 
-**Total running time of the script:** ( 0 minutes  0.407 seconds)
+**Total running time of the script:** ( 0 minutes  5.852 seconds)
 
 
 

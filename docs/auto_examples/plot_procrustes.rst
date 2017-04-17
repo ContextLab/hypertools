@@ -43,8 +43,8 @@ space of a target matrix.
     import numpy as np
     import matplotlib.pyplot as plt
 
-    data = sio.loadmat('sample_data/test_data.mat')
-    target = data['spiral']
+    data = hyp.tools.load('spiral')
+    target = data
 
     # A random rotation matrix
     rot = np.array([[-0.89433495, -0.44719485, -0.01348182],
@@ -63,7 +63,7 @@ space of a target matrix.
     ax.set_title('After Procrustes')
     plt.show()
 
-**Total running time of the script:** ( 0 minutes  0.151 seconds)
+**Total running time of the script:** ( 0 minutes  0.563 seconds)
 
 
 

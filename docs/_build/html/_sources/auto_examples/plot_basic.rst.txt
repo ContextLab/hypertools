@@ -28,15 +28,12 @@ with the 'o'.  Hypertools can handle all format strings supported by matplotlib.
     # License: MIT
 
     import hypertools as hyp
-    import scipy.io as sio
-    import numpy as np
 
-    data=sio.loadmat('sample_data/weights.mat')
-    w=[i for i in data['weights'][0][0:2]]
+    data = hyp.tools.load('weights_sample')
 
-    hyp.plot(w,'o')
+    hyp.plot(data,'o')
 
-**Total running time of the script:** ( 0 minutes  0.064 seconds)
+**Total running time of the script:** ( 0 minutes  7.001 seconds)
 
 
 
