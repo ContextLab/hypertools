@@ -26,10 +26,9 @@ along with the PCA coordinate.
     import scipy.io as sio
     import numpy as np
 
-    data=sio.loadmat('sample_data/weights.mat')
-    w=[i for i in data['weights'][0][0:2]]
+    data = hyp.tools.load('weights_sample')
 
-    hyp.plot(w,'o', explore=True)
+    hyp.plot(data, 'o', explore=True)
 
 **Total running time of the script:** ( 0 minutes  0.000 seconds)
 

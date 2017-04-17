@@ -17,10 +17,8 @@ import hypertools as hyp
 import scipy.io as sio
 import numpy as np
 
-data=sio.loadmat('sample_data/weights.mat')
-
-w=data['weights'][0]
-w = [i for i in w]
+data = hyp.tools.load('weights')
+w = [i for i in data]
 aligned_w = hyp.tools.align(w)
 
 w1 = np.mean(aligned_w[:17],0)

@@ -16,6 +16,6 @@ yourself.
 import hypertools as hyp
 import pandas as pd
 
-data=pd.read_csv('sample_data/mushrooms.csv')
+data = hyp.tools.load('mushrooms')
 
 hyp.plot(data,'o',n_clusters=10)

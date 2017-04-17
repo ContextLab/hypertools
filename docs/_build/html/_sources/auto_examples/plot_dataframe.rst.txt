@@ -32,12 +32,13 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
     import hypertools as hyp
     import pandas as pd
 
-    data = pd.read_csv('sample_data/mushrooms.csv')
+    data = hyp.tools.load('mushrooms')
+
     group = data.pop('class')
 
-    hyp.plot(data,'o', group=group)
+    hyp.plot(data, 'o', group=group)
 
-**Total running time of the script:** ( 0 minutes  0.199 seconds)
+**Total running time of the script:** ( 0 minutes  1.579 seconds)
 
 
 

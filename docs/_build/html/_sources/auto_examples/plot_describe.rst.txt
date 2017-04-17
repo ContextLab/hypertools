@@ -13,7 +13,7 @@ dimensional visualizations, we built the `describe_pca` function, which computes
 the covariance (samples by samples) of both the raw and reduced datasets, and
 plots their correlation.  The function repeats this analysis from 2:N dimensions
 until the correlation reaches a local maximum.  Often times this will be less
-than the total number of dimensions because the PCA model is whitened. 
+than the total number of dimensions because the PCA model is whitened.
 
 
 
@@ -35,12 +35,11 @@ than the total number of dimensions because the PCA model is whitened.
     import scipy.io as sio
     import numpy as np
 
-    data=sio.loadmat('sample_data/weights.mat')
-    w=[i for i in data['weights'][0][0:3]]
+    data = hyp.tools.load('weights_sample')
 
-    hyp.tools.describe_pca(w)
+    hyp.tools.describe_pca(data)
 
-**Total running time of the script:** ( 0 minutes  3.749 seconds)
+**Total running time of the script:** ( 0 minutes  5.902 seconds)
 
 
 

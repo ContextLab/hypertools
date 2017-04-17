@@ -1,3 +1,5 @@
+:orphan:
+
 .. _api_ref:
 
 .. currentmodule:: hypertools
@@ -50,5 +52,10 @@ Tools
 
 .. autosummary::
   :toctree:
-  
+
   hypertools.tools.missing_inds
+
+.. autosummary::
+  :toctree:
+
+  hypertools.tools.load

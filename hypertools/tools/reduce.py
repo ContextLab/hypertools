@@ -54,8 +54,8 @@ def reduce(x, ndims=3, method='PCA', normalize=False, internal=False):
             warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
 
             # ppca if missing data
-            m = PPCA(np.vstack(x))
-            m.fit(d=ndim)
+            m = PPCA()
+            m.fit(data=np.vstack(x), d=ndim)
             x_pca = m.transform()
 
             # if the whole row is missing, return nans

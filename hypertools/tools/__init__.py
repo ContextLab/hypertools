@@ -8,3 +8,4 @@ from .cluster import cluster
 from .df2mat import df2mat
 from .normalize import normalize
 from .procrustes import procrustes
+from .load import load

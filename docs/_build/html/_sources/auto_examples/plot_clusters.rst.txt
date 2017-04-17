@@ -31,11 +31,11 @@ yourself.
     import hypertools as hyp
     import pandas as pd
 
-    data=pd.read_csv('sample_data/mushrooms.csv')
+    data = hyp.tools.load('mushrooms')
 
     hyp.plot(data,'o',n_clusters=10)
 
-**Total running time of the script:** ( 0 minutes  0.390 seconds)
+**Total running time of the script:** ( 0 minutes  1.426 seconds)
 
 
 
