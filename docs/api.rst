@@ -1,3 +1,5 @@
+:orphan:
+
 .. _api_ref:
 
 .. currentmodule:: hypertools
