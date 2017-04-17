@@ -26,7 +26,7 @@ data2 = copy(data1)
 
 missing = .1
 inds = [(i,j) for i in range(data2.shape[0]) for j in range(data2.shape[1])]
-missing_data = [inds[i] for i in np.random.choice(len(inds), len(inds)*missing)]
+missing_data = [inds[i] for i in np.random.choice(int(len(inds)), int(len(inds)*missing))]
 for i,j in missing_data:
     data2[i,j]=np.nan
 

@@ -36,9 +36,9 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
 
     group = data.pop('class')
 
-    hyp.plot(data,'o', group=group)
+    hyp.plot(data, 'o', group=group)
 
-**Total running time of the script:** ( 0 minutes  0.976 seconds)
+**Total running time of the script:** ( 0 minutes  1.579 seconds)
 
 
 

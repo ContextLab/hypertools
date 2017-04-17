@@ -20,7 +20,6 @@ import hypertools as hyp
 import scipy.io as sio
 import numpy as np
 
-data = hyp.tools.load('weights')
-w=[i for i in data[0:3]]
+data = hyp.tools.load('weights_sample')
 
-hyp.tools.describe_pca(w)
+hyp.tools.describe_pca(data)

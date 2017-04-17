@@ -14,7 +14,6 @@ import hypertools as hyp
 import scipy.io as sio
 import numpy as np
 
-data = hyp.tools.load('weights')
-w=[i for i in data[0:2]]
+data = hyp.tools.load('weights_sample')
 
-hyp.plot(w,'o', legend=['Group A', 'Group B'])
+hyp.plot(data, 'o', legend=['Group A', 'Group B', 'Group C'])

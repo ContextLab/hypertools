@@ -31,11 +31,10 @@ are simply labeling the first datapoint for each matrix in the list.
     import scipy.io as sio
     import numpy as np
 
-    data = hyp.tools.load('weights')
-    w=[i for i in data[0:3]]
+    data = hyp.tools.load('weights_sample')
 
     labels=[]
-    for idx,i in enumerate(w):
+    for idx,i in enumerate(data):
         tmp=[]
         for iidx,ii in enumerate(i):
             if iidx==0:
@@ -44,9 +43,9 @@ are simply labeling the first datapoint for each matrix in the list.
                 tmp.append(None)
         labels.append(tmp)
 
-    hyp.plot(w,'o',labels=labels)
+    hyp.plot(data, 'o', labels=labels)
 
-**Total running time of the script:** ( 0 minutes  5.334 seconds)
+**Total running time of the script:** ( 0 minutes  1.602 seconds)
 
 
 
