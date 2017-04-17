@@ -21,4 +21,4 @@ data = hyp.tools.load('mushrooms')
 
 group = data.pop('class')
 
-hyp.plot(data,'o', group=group)
+hyp.plot(data, 'o', group=group)

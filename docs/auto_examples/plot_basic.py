@@ -14,7 +14,6 @@ with the 'o'.  Hypertools can handle all format strings supported by matplotlib.
 
 import hypertools as hyp
 
-data = hyp.tools.load('weights')
-w=[i for i in data[0:2]]
+data = hyp.tools.load('weights_sample')
 
-hyp.plot(w,'o')
+hyp.plot(data,'o')

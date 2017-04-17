@@ -111,10 +111,6 @@ class PPCA(object):
         self.eig_vals = vals
         self._calc_var()
 
-        import IPython
-        IPython.embed()
-        assert False
-
     def transform(self, data=None):
 
         if self.C is None:

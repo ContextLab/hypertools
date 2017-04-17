@@ -29,12 +29,11 @@ An example of how to use the `legend` kwarg to generate a legend.
     import scipy.io as sio
     import numpy as np
 
-    data = hyp.tools.load('weights')
-    w=[i for i in data[0:2]]
+    data = hyp.tools.load('weights_sample')
 
-    hyp.plot(w,'o', legend=['Group A', 'Group B'])
+    hyp.plot(data, 'o', legend=['Group A', 'Group B', 'Group C'])
 
-**Total running time of the script:** ( 0 minutes  7.113 seconds)
+**Total running time of the script:** ( 0 minutes  1.146 seconds)
 
 
 

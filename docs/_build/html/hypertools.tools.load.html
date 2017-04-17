@@ -117,15 +117,20 @@
 <dl class="function">
 <dt id="hypertools.tools.load">
 <code class="descclassname">hypertools.tools.</code><code class="descname">load</code><span class="sig-paren">(</span><em>dataset</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/hypertools/tools/load.html#load"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#hypertools.tools.load" title="Permalink to this definition">¶</a></dt>
-<dd><blockquote>
-<div>Load example data</div></blockquote>
+<dd><p>Load example data</p>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
 <col class="field-body" />
 <tbody valign="top">
 <tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><p class="first"><strong>dataset</strong> : string</p>
 <blockquote>
-<div><p>The name of the example dataset.  This can be weights, spiral or mushrooms.</p>
+<div><p>The name of the example dataset.  <cite>weights</cite> is an fmri dataset comprised of
+36 subjects.  For each subject, the rows are fMRI measurements and the columns
+are parameters of a model fit to the fMRI data. <cite>weights_sample</cite> is a
+sample of 3 subjects from that dataset.  <cite>weights_avg</cite> is the dataset split
+in half and averaged into two groups. <cite>spiral</cite> is 3D spiral to
+highlight the <cite>procrustes</cite> function.  <cite>mushrooms</cite> is an example dataset
+comprised of features (columns) of a collection of mushroomm samples (rows).</p>
 </div></blockquote>
 </td>
 </tr>

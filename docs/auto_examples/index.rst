@@ -49,26 +49,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="Hypertools supports single-index Pandas Dataframes as input. In this example, we plot the mushr...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_dataframe_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_dataframe.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_dataframe
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="The downside to using PCA to visualize your data is that some variance will likely be removed. ...">
 
 .. only:: html
@@ -89,6 +69,26 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="Hypertools supports single-index Pandas Dataframes as input. In this example, we plot the mushr...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_dataframe_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_dataframe.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_dataframe
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="Explore mode is an experimental feature that allows you to (not surprisingly) explore the point...">
 
 .. only:: html
@@ -106,6 +106,26 @@ Gallery of Examples
    :hidden:
 
    /auto_examples/explore
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="An example of how to use the `legend` kwarg to generate a legend. ">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_legend_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_legend.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_legend
 
 .. raw:: html
 
@@ -146,26 +166,6 @@ Gallery of Examples
    :hidden:
 
    /auto_examples/save_image
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="An example of how to use the `legend` kwarg to generate a legend. ">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_legend_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_legend.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_legend
 
 .. raw:: html
 

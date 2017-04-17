@@ -116,13 +116,19 @@
 <span class="kn">import</span> <span class="nn">sys</span>
 
 <div class="viewcode-block" id="load"><a class="viewcode-back" href="../../../hypertools.tools.load.html#hypertools.tools.load">[docs]</a><span class="k">def</span> <span class="nf">load</span><span class="p">(</span><span class="n">dataset</span><span class="p">):</span>
-	<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">	Load example data</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Load example data</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    dataset : string</span>
-<span class="sd">        The name of the example dataset.  This can be weights, spiral or mushrooms.</span>
+<span class="sd">        The name of the example dataset.  `weights` is an fmri dataset comprised of</span>
+<span class="sd">        36 subjects.  For each subject, the rows are fMRI measurements and the columns</span>
+<span class="sd">        are parameters of a model fit to the fMRI data. `weights_sample` is a</span>
+<span class="sd">        sample of 3 subjects from that dataset.  `weights_avg` is the dataset split</span>
+<span class="sd">        in half and averaged into two groups. `spiral` is 3D spiral to</span>
+<span class="sd">        highlight the `procrustes` function.  `mushrooms` is an example dataset</span>
+<span class="sd">        comprised of features (columns) of a collection of mushroomm samples (rows).</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    ----------</span>
@@ -130,27 +136,35 @@
 <span class="sd">        Example data</span>
 
 <span class="sd">    &quot;&quot;&quot;</span>
-	<span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">version_info</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">==</span><span class="mi">3</span><span class="p">:</span>
-		<span class="n">pickle_options</span> <span class="o">=</span> <span class="p">{</span>
-			<span class="s1">&#39;encoding&#39;</span> <span class="p">:</span> <span class="s1">&#39;latin1&#39;</span>
-		<span class="p">}</span>
-	<span class="k">else</span><span class="p">:</span>
-		<span class="n">pickle_options</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">version_info</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">==</span><span class="mi">3</span><span class="p">:</span>
+        <span class="n">pickle_options</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s1">&#39;encoding&#39;</span> <span class="p">:</span> <span class="s1">&#39;latin1&#39;</span>
+        <span class="p">}</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">pickle_options</span> <span class="o">=</span> <span class="p">{}</span>
 
-	<span class="k">if</span> <span class="n">dataset</span> <span class="ow">is</span> <span class="s1">&#39;weights&#39;</span><span class="p">:</span>
-		<span class="n">fileid</span> <span class="o">=</span> <span class="s1">&#39;0B7Ycm4aSYdPPREJrZ2stdHBFdjg&#39;</span>
-		<span class="n">url</span> <span class="o">=</span> <span class="s1">&#39;https://docs.google.com/uc?export=download&amp;id=&#39;</span> <span class="o">+</span> <span class="n">fileid</span>
-		<span class="n">data</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">content</span><span class="p">,</span> <span class="o">**</span><span class="n">pickle_options</span><span class="p">)</span>
-	<span class="k">elif</span> <span class="n">dataset</span> <span class="ow">is</span> <span class="s1">&#39;spiral&#39;</span><span class="p">:</span>
-		<span class="n">fileid</span> <span class="o">=</span> <span class="s1">&#39;0B7Ycm4aSYdPPQS0xN3FmQ1FZSzg&#39;</span>
-		<span class="n">url</span> <span class="o">=</span> <span class="s1">&#39;https://docs.google.com/uc?export=download&amp;id=&#39;</span> <span class="o">+</span> <span class="n">fileid</span>
-		<span class="n">data</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">content</span><span class="p">,</span> <span class="o">**</span><span class="n">pickle_options</span><span class="p">)</span>
-	<span class="k">elif</span> <span class="n">dataset</span> <span class="ow">is</span> <span class="s1">&#39;mushrooms&#39;</span><span class="p">:</span>
-		<span class="n">fileid</span> <span class="o">=</span> <span class="s1">&#39;0B7Ycm4aSYdPPY3J0U2tRNFB4T3c&#39;</span>
-		<span class="n">url</span> <span class="o">=</span> <span class="s1">&#39;https://docs.google.com/uc?export=download&amp;id=&#39;</span> <span class="o">+</span> <span class="n">fileid</span>
-		<span class="n">data</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">dataset</span> <span class="ow">is</span> <span class="s1">&#39;weights&#39;</span><span class="p">:</span>
+        <span class="n">fileid</span> <span class="o">=</span> <span class="s1">&#39;0B7Ycm4aSYdPPREJrZ2stdHBFdjg&#39;</span>
+        <span class="n">url</span> <span class="o">=</span> <span class="s1">&#39;https://docs.google.com/uc?export=download&amp;id=&#39;</span> <span class="o">+</span> <span class="n">fileid</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">content</span><span class="p">,</span> <span class="o">**</span><span class="n">pickle_options</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">dataset</span> <span class="ow">is</span> <span class="s1">&#39;weights_avg&#39;</span><span class="p">:</span>
+        <span class="n">fileid</span> <span class="o">=</span> <span class="s1">&#39;0B7Ycm4aSYdPPRmtPRnBJc3pieDg&#39;</span>
+        <span class="n">url</span> <span class="o">=</span> <span class="s1">&#39;https://docs.google.com/uc?export=download&amp;id=&#39;</span> <span class="o">+</span> <span class="n">fileid</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">content</span><span class="p">,</span> <span class="o">**</span><span class="n">pickle_options</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">dataset</span> <span class="ow">is</span> <span class="s1">&#39;weights_sample&#39;</span><span class="p">:</span>
+        <span class="n">fileid</span> <span class="o">=</span> <span class="s1">&#39;0B7Ycm4aSYdPPTl9IUUVlamJ2VjQ&#39;</span>
+        <span class="n">url</span> <span class="o">=</span> <span class="s1">&#39;https://docs.google.com/uc?export=download&amp;id=&#39;</span> <span class="o">+</span> <span class="n">fileid</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">content</span><span class="p">,</span> <span class="o">**</span><span class="n">pickle_options</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">dataset</span> <span class="ow">is</span> <span class="s1">&#39;spiral&#39;</span><span class="p">:</span>
+        <span class="n">fileid</span> <span class="o">=</span> <span class="s1">&#39;0B7Ycm4aSYdPPQS0xN3FmQ1FZSzg&#39;</span>
+        <span class="n">url</span> <span class="o">=</span> <span class="s1">&#39;https://docs.google.com/uc?export=download&amp;id=&#39;</span> <span class="o">+</span> <span class="n">fileid</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">content</span><span class="p">,</span> <span class="o">**</span><span class="n">pickle_options</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">dataset</span> <span class="ow">is</span> <span class="s1">&#39;mushrooms&#39;</span><span class="p">:</span>
+        <span class="n">fileid</span> <span class="o">=</span> <span class="s1">&#39;0B7Ycm4aSYdPPY3J0U2tRNFB4T3c&#39;</span>
+        <span class="n">url</span> <span class="o">=</span> <span class="s1">&#39;https://docs.google.com/uc?export=download&amp;id=&#39;</span> <span class="o">+</span> <span class="n">fileid</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
 
-	<span class="k">return</span> <span class="n">data</span></div>
+    <span class="k">return</span> <span class="n">data</span></div>
 </pre></div>
 
     </div>

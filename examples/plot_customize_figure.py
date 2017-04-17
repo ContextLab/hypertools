@@ -16,10 +16,9 @@ import scipy.io as sio
 import numpy as np
 import matplotlib.pyplot as plt
 
-data = hyp.tools.load('weights')
-w=[i for i in data[0:2]]
+data = hyp.tools.load('weights_sample')
 
-fig,ax,data = hyp.plot(w,'o', ndims=2, legend=['Group A', 'Group B'], show=False, return_data=True)
+fig,ax,data = hyp.plot(data[:2], 'o', ndims=2, legend=['Group A', 'Group B'], show=False, return_data=True)
 
 ax.set_title('This is an example title', fontsize=20)
 ax.set_ylabel('PCA Dimension 2', fontsize=15)
