@@ -18,10 +18,9 @@ import scipy.io as sio
 import numpy as np
 
 data = hyp.tools.load('weights')
-w = [i for i in data]
-aligned_w = hyp.tools.align(w)
+aligned_data = hyp.tools.align(data)
 
-w1 = np.mean(aligned_w[:17],0)
-w2 = np.mean(aligned_w[18:],0)
+group1 = np.mean(aligned_data[:17],0)
+group2 = np.mean(aligned_data[18:],0)
 
-hyp.plot([w1[:100,:],w2[:100,:]])
+hyp.plot([group1[:100,:],group2[:100,:]])
