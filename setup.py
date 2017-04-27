@@ -42,7 +42,8 @@ setup(
    'matplotlib>=1.5.1',
    'scipy>=0.17.1',
    'numpy>=1.10.4',
-   'future'
+   'future',
+   'requests'
    ],
     classifiers=[
              'Intended Audience :: Science/Research',
