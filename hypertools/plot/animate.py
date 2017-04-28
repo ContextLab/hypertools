@@ -92,11 +92,10 @@ def animated_plot(x, *args, **kwargs):
     if 'show' in kwargs:
         show=kwargs['show']
         del kwargs['show']
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
+        matplotlib.use('Agg')    
     else:
         show=True
-        import matplotlib.pyplot as plt
+    import matplotlib.pyplot as plt
 
     ##SUB FUNCTIONS##
     def plot_cube(scale, const=1):
