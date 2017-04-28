@@ -79,10 +79,9 @@ def static_plot(x, *args, **kwargs):
 		show=kwargs['show']
 		del kwargs['show']
 		matplotlib.use('Agg')
-		import matplotlib.pyplot as plt
 	else:
 		show=True
-		import matplotlib.pyplot as plt
+	import matplotlib.pyplot as plt
 
 	# ignore and remove animation specific kwargs - better way to do this?
 	if 'tail_len' in kwargs:
