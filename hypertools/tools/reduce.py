@@ -131,6 +131,7 @@ def reduce(x, ndims=3, model='PCA', model_params={}, normalize=False, internal=F
         from .align import align as aligner
         x_reduced = aligner(x_reduced)
 
+    # return data
     if internal or len(x_reduced)>1:
         return x_reduced
     else:
