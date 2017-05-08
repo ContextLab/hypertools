@@ -32,6 +32,17 @@ def plot(x,*args,**kwargs):
         If defined, overrides palette. See here for list of named colors.
         Note: must be the same length as X.
 
+    model : str
+        Reduction model to use.  Models supported: PCA, TSNE, MDS, Isomap,
+        SpectralEmbedding, LocallyLinearEmbedding, FastICA. See
+        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.manifold
+        for details.
+
+    model_params : dict
+        Optional dictionary to pass parameters to reduction model. See
+        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.manifold
+        for details.
+
     group : list of str, floats or ints
         A list of group labels. Length must match the number of rows in your
         dataset. If the data type is numerical, the values will be mapped to
@@ -148,13 +159,25 @@ def plot(x,*args,**kwargs):
     else:
         x = normalizer(x, normalize=False, internal=True)
 
+    if 'model' in kwargs:
+        model = kwargs['model']
+        del kwargs['model']
+    else:
+        model = 'PCA'
+
+    if 'model_params' in kwargs:
+        model_params = kwargs['model_params']
+        del kwargs['model_paramss']
+    else:
+        model_params = {}
+
     # reduce dimensionality of the data
     if 'ndims' in kwargs:
         ndims=kwargs['ndims']
-        x = reduceD(x,ndims, internal=True)
+        x = reduceD(x, ndims=ndims, model=model, model_params=model_params, internal=True)
         del kwargs['ndims']
     elif x[0].shape[1]>3:
-        x = reduceD(x,3, internal=True)
+        x = reduceD(x, ndims=3, model=model, model_params=model_params, internal=True)
         ndims=3
     else:
         ndims=x[0].shape[1]
