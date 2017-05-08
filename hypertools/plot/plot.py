@@ -69,6 +69,17 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         An `int` representing the number of dims to plot in. Must be 1,2, or 3.
         NOTE: Currently only works with static plots.
 
+    model : str
+        Reduction model to use.  Models supported: PCA, TSNE, MDS, Isomap,
+        SpectralEmbedding, LocallyLinearEmbedding, FastICA. See
+        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.manifold
+        for details.
+
+    model_params : dict
+        Optional dictionary to pass parameters to reduction model. See
+        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.manifold
+        for details.
+
     normalize : str or False
         If set to 'across', the columns of the input data will be z-scored
         across lists (default). If set to 'within', the columns will be
