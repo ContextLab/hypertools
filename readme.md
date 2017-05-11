@@ -91,28 +91,9 @@ Here is a bibtex formatted reference:
 
 <h2>Contributing</h2>
 
-(Some text borrowed from the [Matplotlib contributing guide](http://matplotlib.org/devdocs/devel/contributing.html).)
+If you'd like to contribute, please first read our [Code of Conduct](https://www.mozilla.org/en-US/about/governance/policies/participation/).
 
-<h3>Submitting a bug report</h3>
-
-If you are reporting a bug, please do your best to include the following:
-
-1. A short, top-level summary of the bug. In most cases, this should be 1-2 sentences.
-2. A short, self-contained code snippet to reproduce the bug, ideally allowing a simple copy and paste to reproduce. Please do your best to reduce the code snippet to the minimum required.
-3. The actual outcome of the code snippet
-4. The expected outcome of the code snippet
-
-<h3>Contributing code</h3>
-
-The preferred way to contribute to HyperTools is to fork the main repository on GitHub, then submit a pull request.
-
-+ If your pull request addresses an issue, please use the title to describe the issue and mention the issue number in the pull request description to ensure a link is created to the original issue.
-
-+ All public methods should be documented in the README.
-
-+ Each high-level plotting function should have a simple example in the examples folder. This should be as simple as possible to demonstrate the method.
-
-+ Changes (both new features and bugfixes) should be tested using `pytest`.  Add tests for your new feature to the `tests/` repo folder.
+For specific information on how to contribute to the project, please see our [Contributing](https://github.com/ContextLab/hypertools/blob/master/CONTRIBUTING.md) page.
 
 <h2>Testing</h2>
 
