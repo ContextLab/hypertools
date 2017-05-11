@@ -15,7 +15,7 @@ This documents is a set of guidelines for contributing to HyperTools on GitHub. 
 
 ## Participation guidelines
 
-This project adheres to a [code of conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. Please report unacceptable behavior to contextualdyanmics@gmail.com.
+This project adheres to a [code of conduct](https://www.mozilla.org/en-US/about/governance/policies/participation/). By participating, you are expected to uphold this code. Please report unacceptable behavior to contextualdyanmics@gmail.com.
 
 ## What we're working on
 
