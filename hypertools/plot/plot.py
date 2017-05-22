@@ -16,9 +16,13 @@ from ..tools.df2mat import df2mat
 from ..tools.reduce import reduce as reduceD
 from ..tools.normalize import normalize as normalizer
 from matplotlib.lines import Line2D
+from .draw import draw
 
-## MAIN FUNCTION ##
-def plot(x,*args,**kwargs):
+def plot(x, format_string='-', marker=None, linestyle=None, color=None, style='whitegrid', palette='hls',
+         group=None, labels=None, legend=False, ndims=3, normalize=False,
+         n_clusters=None, animate=False, show=True, save_path=None,
+         explore=False, duration=30, tail_duration=2, rotations=2, zoom=0,
+         chemtrails=False, return_data=False, frame_rate=50, **kwargs):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -27,26 +31,24 @@ def plot(x,*args,**kwargs):
     x : Numpy array, DataFrame or list of arrays/dfs
         Data for the plot. The form should be samples (rows) by features (cols).
 
-        color(s) (list): A list of colors for each line to be plotted.
-        Can be named colors, RGB values (e.g. (.3, .4, .1)) or hex codes.
-        If defined, overrides palette. See here for list of named colors.
-        Note: must be the same length as X.
+    linestyle : str or list of str
+        A list of line styles
 
-    group : list of str, floats or ints
+    marker : str or list of str
+        A list of marker types
+
+    color : str or list of str
+        A list of marker types
+
+    palette : str
+        A matplotlib or seaborn color palette
+
+    group : str/int/float or list
         A list of group labels. Length must match the number of rows in your
         dataset. If the data type is numerical, the values will be mapped to
         rgb values in the specified palette. If the data type is strings,
         the points will be labeled categorically. To label a subset of points,
         use None (i.e. ['a', None, 'b','a']).
-
-    linestyle(s) : list
-        A list of line styles
-
-    marker(s) : list
-        A list of marker types
-
-    palette : str
-        A matplotlib or seaborn color palette
 
     labels : list
         A list of labels for each point. Must be dimensionality of data (x).
@@ -127,56 +129,49 @@ def plot(x,*args,**kwargs):
     # turn data into common format - a list of arrays
     x = format_data(x)
 
-    ## HYPERTOOLS-SPECIFIC ARG PARSING ##
+    # handle styling and palette with seaborn
+    sns.set_style(style=style)
+    sns.set_palette(palette=palette, n_colors=len(x))
 
-    if 'colors' in kwargs:
-        kwargs['color'] = kwargs['colors']
-        del kwargs['colors']
+    # catch all non-hypertools kwargs here to pass on to matplotlib
+    mpl_kwargs = kwargs
 
-    if 'linestyles' in kwargs:
-        kwargs['linestyle'] = kwargs['linestyles']
-        del kwargs['linestyles']
+    # handle color (to be passed onto matplotlib)
+    if color:
+        mpl_kwargs['color'] = color
 
-    if 'markers' in kwargs:
-        kwargs['marker'] = kwargs['markers']
-        del kwargs['markers']
+    # handle linestyle (to be passed onto matplotlib)
+    if linestyle:
+        mpl_kwargs['linestyle'] = linestyle
 
-    if 'normalize' in kwargs:
-        normalize = kwargs['normalize']
-        x = normalizer(x, normalize=normalize, internal=True)
-        del kwargs['normalize']
-    else:
-        x = normalizer(x, normalize=False, internal=True)
+    # handle marker (to be passed onto matplotlib)
+    if marker:
+        mpl_kwargs['marker'] = marker
+        mpl_kwargs['linestyle'] = None
 
-    # reduce dimensionality of the data
-    if 'ndims' in kwargs:
-        ndims=kwargs['ndims']
-        x = reduceD(x,ndims, internal=True)
-        del kwargs['ndims']
-    elif x[0].shape[1]>3:
-        x = reduceD(x,3, internal=True)
-        ndims=3
-    else:
-        ndims=x[0].shape[1]
+    # handle marker (to be passed onto matplotlib)
+    if legend:
+        mpl_kwargs['label'] = legend
 
-    if 'n_clusters' in kwargs:
-        n_clusters=kwargs['n_clusters']
+    # normalize
+    x = normalizer(x, normalize=normalize, internal=True)
 
+    # reduce data
+    if x[0].shape[1]>3:
+        x = reduceD(x, ndims, internal=True)
+
+    # find cluster and reshape if n_clusters
+    if n_clusters:
         cluster_labels = cluster(x, n_clusters=n_clusters, ndims=ndims)
-        x = reshape_data(x,cluster_labels)
-        del kwargs['n_clusters']
-
-        if 'group' in kwargs:
+        x = reshape_data(x, cluster_labels)
+        if group:
             warnings.warn('n_clusters overrides group, ignoring group.')
-            del kwargs['group']
 
-    if 'group' in kwargs:
-        group=kwargs['group']
-        del kwargs['group']
+    # group data if there is a grouping var
+    if group:
 
-        if 'color' in kwargs:
+        if color:
             warnings.warn("Using group, color keyword will be ignored.")
-            del kwargs['color']
 
         # if list of lists, unpack
         if any(isinstance(el, list) for el in group):
@@ -192,34 +187,20 @@ def plot(x,*args,**kwargs):
         x = reshape_data(x,group)
 
         # interpolate lines if they are grouped
-        if all([symbol not in args for symbol in Line2D.markers.keys()]):
+        if all([symbol is not format_string for symbol in Line2D.markers.keys()]):
             x = patch_lines(x)
 
-    if 'style' in kwargs:
-        sns.set(style=kwargs['style'])
-        del kwargs['style']
-    else:
-        sns.set(style="whitegrid")
+    # interpolate
+    if format_string is '-':
+        interp_val = frame_rate*duration/(x[0].shape[0] - 1)
+        x = interp_array_list(x, interp_val=interp_val)
 
-    if 'palette' in kwargs:
-        sns.set_palette(palette=kwargs['palette'], n_colors=len(x))
-        palette = sns.color_palette(palette=kwargs['palette'], n_colors=len(x))
-        del kwargs['palette']
-    else:
-        sns.set_palette(palette="hls", n_colors=len(x))
-        palette=sns.color_palette(palette="hls", n_colors=len(x))
+    # center
+    x = center(x)
 
-    if 'animate' in kwargs:
-        animate=kwargs['animate']
-        del kwargs['animate']
+    # scale
+    x = scale(x)
 
-        # if animate mode, pass the color palette via kwargs so we can build a legend
-        kwargs['color_palette']=palette
-
-    else:
-        animate=False
-
-    if animate:
-        return animated_plot(x,*args,**kwargs)
-    else:
-        return static_plot(x,*args,**kwargs)
+    return draw(x, format_string=format_string, return_data=return_data,
+                mpl_kwargs=mpl_kwargs, save_path=save_path, group=group,
+                labels=labels, explore=explore, legend=legend, animate=animate)
