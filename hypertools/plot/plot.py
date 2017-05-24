@@ -8,6 +8,8 @@ import re
 import itertools
 import seaborn as sns
 import pandas as pd
+from matplotlib.lines import Line2D
+import matplotlib.pyplot as plt
 from .._shared.helpers import *
 from .static import static_plot
 from .animate import animated_plot
@@ -15,14 +17,15 @@ from ..tools.cluster import cluster
 from ..tools.df2mat import df2mat
 from ..tools.reduce import reduce as reduceD
 from ..tools.normalize import normalize as normalizer
-from matplotlib.lines import Line2D
 from .draw import draw
 
-def plot(x, format_string='-', marker=None, linestyle=None, color=None, style='whitegrid', palette='hls',
-         group=None, labels=None, legend=False, ndims=3, normalize=False,
-         n_clusters=None, animate=False, show=True, save_path=None,
-         explore=False, duration=30, tail_duration=2, rotations=2, zoom=0,
-         chemtrails=False, return_data=False, frame_rate=50, **kwargs):
+def plot(x, format_string='-', marker=None, markers=None, linestyle=None,
+         linestyles=None, color=None, colors=None, style='whitegrid',
+         palette='hls', group=None, labels=None, legend=None, ndims=3,
+         normalize=False, n_clusters=None, animate=False, show=True,
+         save_path=None, explore=False, duration=30, tail_duration=2,
+         rotations=2, zoom=0, chemtrails=False, return_data=False,
+         frame_rate=50, **kwargs):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -139,15 +142,20 @@ def plot(x, format_string='-', marker=None, linestyle=None, color=None, style='w
     # handle color (to be passed onto matplotlib)
     if color is not None:
         mpl_kwargs['color'] = color
+    if colors is not None:
+        mpl_kwargs['color'] = colors
 
     # handle linestyle (to be passed onto matplotlib)
-    if linestyle is not False:
+    if linestyle is not None:
         mpl_kwargs['linestyle'] = linestyle
+    if linestyles is not None:
+        mpl_kwargs['linestyle'] = linestyles
 
     # handle marker (to be passed onto matplotlib)
     if marker is not None:
         mpl_kwargs['marker'] = marker
-        mpl_kwargs['linestyle'] = None
+    if markers is not None:
+        mpl_kwargs['marker'] = markers
 
     # handle marker (to be passed onto matplotlib)
     if legend is not False:
@@ -201,6 +209,22 @@ def plot(x, format_string='-', marker=None, linestyle=None, color=None, style='w
     # scale
     x = scale(x)
 
-    return draw(x, format_string=format_string, return_data=return_data,
-                mpl_kwargs=mpl_kwargs, save_path=save_path, group=group,
-                labels=labels, explore=explore, legend=legend, animate=animate)
+    # draw the plot
+    fig, ax, data, line_ani = draw(x, format_string=format_string,
+                            mpl_kwargs=mpl_kwargs,
+                            labels=labels,
+                            explore=explore,
+                            legend=legend,
+                            animate=animate)
+
+    if save_path is not None:
+        if animate:
+            Writer = animation.writers['ffmpeg']
+            writer = Writer(fps=frame_rate, bitrate=1800)
+            line_ani.save(save_path, writer=writer)
+        else:
+            plt.savefig(save_path)
+    if show:
+        plt.show()
+
+    return fig, ax, data, line_ani
