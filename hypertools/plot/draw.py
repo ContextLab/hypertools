@@ -10,6 +10,8 @@ import numpy as np
 import matplotlib
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d import proj3d
+import mpl_toolkits.mplot3d.axes3d as p3
+import matplotlib.animation as animation
 import seaborn as sns
 from .._shared.helpers import *
 from .helpers import *
@@ -18,7 +20,8 @@ matplotlib.rcParams['pdf.fonttype'] = 42
 
 def draw(x, return_data=False, legend=False, save_path=False, labels=False,
          explore=False, show=True, mpl_kwargs=None, format_string=None,
-         group=False, animate=False):
+         group=False, animate=False, tail_duration=2, rotations=2, zoom=1,
+         chemtrails=False, frame_rate=50):
 
     # sub-functions
     def dispatch(x):
@@ -261,8 +264,52 @@ def draw(x, return_data=False, legend=False, save_path=False, labels=False,
                 np.asarray(cube[side][1])*scale*const,
                 np.asarray(cube[side][2])*scale*const
                 )
-            plane_list.append(ax.plot_wireframe(Xs, Ys, Zs, rstride=1, cstride=1, color='black', linewidth=.75))
+            plane_list.append(ax.plot_wireframe(Xs, Ys, Zs, rstride=1, cstride=1, color='black', linewidth=1))
         return plane_list
+
+    def update_lines(num, data_lines, lines, trail_lines, cube_scale, tail_duration=2, rotations=2, zoom=1, chemtrails=False):
+
+        if hasattr(update_lines, 'planes'):
+            for plane in update_lines.planes:
+                plane.remove()
+
+        update_lines.planes = plot_cube(cube_scale)
+        ax.view_init(elev=10, azim=rotations*(360*(num/data_lines[0].shape[0])))
+        ax.dist=8-zoom
+
+        for line, data, trail in zip(lines, data_lines, trail_lines):
+            if num<=tail_duration:
+                    line.set_data(data[0:num+1, 0:2].T)
+                    line.set_3d_properties(data[0:num+1, 2])
+            else:
+                line.set_data(data[num-tail_duration:num+1, 0:2].T)
+                line.set_3d_properties(data[num-tail_duration:num+1, 2])
+            if chemtrails:
+                trail.set_data(data[0:num + 1, 0:2].T)
+                trail.set_3d_properties(data[0:num + 1, 2])
+        return lines, trail_lines
+
+    def dispatch_animate(x, ani_params):
+        if x[0].shape[-1]==3:
+            return plot3D_animate(x, **ani_params)
+
+    # plot data in 3D
+    def plot3D_animate(data, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
+                       frame_rate=50):
+        fig = plt.figure()
+        ax = p3.Axes3D(fig)
+        lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], format_string[idx],
+                         linewidth=1, **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
+        trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], format_string[idx],
+                         alpha=.3, linewidth=1, **kwargs_list[idx])[0] for idx, dat in enumerate(x)]
+        if tail_duration==0:
+            tail_duration=1
+        else:
+            tail_duration = int(frame_rate*tail_duration)
+        line_ani = animation.FuncAnimation(fig, update_lines, x[0].shape[0],
+                        fargs=(x, lines, trail, 1, tail_duration, rotations, zoom, chemtrails),
+                        interval=1000/frame_rate, blit=False, repeat=False)
+        return fig, ax, data, line_ani
 
 
     # handle explore flag
@@ -270,33 +317,46 @@ def draw(x, return_data=False, legend=False, save_path=False, labels=False,
         assert x[0].ndim>1, "Explore mode is currently only supported for 3D plots."
         kwargs['picker']=True
 
+    # turn kwargs into a list
     kwargs_list = parse_kwargs(x,mpl_kwargs)
 
+    # turn format string into a list
     if format_string is not list:
         format_string = [(format_string) for i in range(len(x))]
 
     # draw the plot
-    if animate is True:
-        pass
+    if animate:
+
+        # animation params
+        ani_params = dict(tail_duration=tail_duration,
+                          rotations=rotations,
+                          zoom=zoom,
+                          chemtrails=chemtrails,
+                          frame_rate=frame_rate)
+
+        # dispatch animation
+        fig, ax, data, line_ani = dispatch_animate(x, ani_params)
     else:
-        fig, ax, data = dispatch(x)
+
+        # dispatch statis
+        fig, ax, data = dispatch_static(x)
+
+        # if 3d, plot the cube
+        if x[0].shape[1] is 3:
+
+            # Get cube scale from data
+            cube_scale = 1
+
+            # plot cube
+            plot_cube(cube_scale)
+
+            # Setting the axes properties
+            ax.set_xlim3d([-cube_scale, cube_scale])
+            ax.set_ylim3d([-cube_scale, cube_scale])
+            ax.set_zlim3d([-cube_scale, cube_scale])
 
     # remove axes
     ax.set_axis_off()
-
-    # if 3d, plot the cube
-    if x[0].shape[1] is 3:
-        
-        # Get cube scale from data
-        cube_scale = 1
-
-        # plot cube
-        plot_cube(cube_scale)
-
-        # Setting the axes properties
-        ax.set_xlim3d([-cube_scale, cube_scale])
-        ax.set_ylim3d([-cube_scale, cube_scale])
-        ax.set_zlim3d([-cube_scale, cube_scale])
 
     if labels:
         add_labels(x, labels)
