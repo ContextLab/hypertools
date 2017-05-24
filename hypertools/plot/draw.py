@@ -18,13 +18,13 @@ from .helpers import *
 
 matplotlib.rcParams['pdf.fonttype'] = 42
 
-def draw(x, return_data=False, legend=False, save_path=False, labels=False,
+def draw(x, return_data=False, legend=None, save_path=False, labels=False,
          explore=False, show=True, mpl_kwargs=None, format_string=None,
          group=False, animate=False, tail_duration=2, rotations=2, zoom=1,
-         chemtrails=False, frame_rate=50):
+         chemtrails=False, frame_rate=50, elev=30, azim=-60):
 
-    # sub-functions
-    def dispatch(x):
+    # handle static plots
+    def dispatch_static(x):
         if x[0].ndim==1 or x[0].shape[-1]==1:
             return plot1D(x)
         elif x[0].shape[-1]==2:
@@ -60,6 +60,7 @@ def draw(x, return_data=False, legend=False, save_path=False, labels=False,
         for i in range(n):
             ifmt = format_string[i]
             ikwargs = kwargs_list[i]
+            print(ifmt, ikwargs)
             ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], ifmt, **ikwargs)
         return fig, ax, data
 
@@ -247,7 +248,7 @@ def draw(x, return_data=False, legend=False, save_path=False, labels=False,
                 annotate_plot_explore (X, closestIndex)
                 closestIndex_prev = closestIndex
 
-    def plot_cube(scale, const=1):
+    def plot_cube(scale):
         cube = {
             "top"    : ( [[-1,1],[-1,1]], [[-1,-1],[1,1]], [[1,1],[1,1]] ),
             "bottom" : ( [[-1,1],[-1,1]], [[-1,-1],[1,1]], [[-1,-1],[-1,-1]] ),
@@ -260,22 +261,23 @@ def draw(x, return_data=False, legend=False, save_path=False, labels=False,
         plane_list = []
         for side in cube:
             (Xs, Ys, Zs) = (
-                np.asarray(cube[side][0])*scale*const,
-                np.asarray(cube[side][1])*scale*const,
-                np.asarray(cube[side][2])*scale*const
+                np.asarray(cube[side][0])*scale,
+                np.asarray(cube[side][1])*scale,
+                np.asarray(cube[side][2])*scale
                 )
             plane_list.append(ax.plot_wireframe(Xs, Ys, Zs, rstride=1, cstride=1, color='black', linewidth=1))
         return plane_list
 
-    def update_lines(num, data_lines, lines, trail_lines, cube_scale, tail_duration=2, rotations=2, zoom=1, chemtrails=False):
+    def update_lines_parallel(num, data_lines, lines, trail_lines, cube_scale, tail_duration=2,
+                     rotations=2, zoom=1, chemtrails=False, elev=10):
 
-        if hasattr(update_lines, 'planes'):
-            for plane in update_lines.planes:
+        if hasattr(update_lines_parallel, 'planes'):
+            for plane in update_lines_parallel.planes:
                 plane.remove()
 
-        update_lines.planes = plot_cube(cube_scale)
-        ax.view_init(elev=10, azim=rotations*(360*(num/data_lines[0].shape[0])))
-        ax.dist=8-zoom
+        update_lines_parallel.planes = plot_cube(cube_scale)
+        ax.view_init(elev=elev, azim=rotations*(360*(num/data_lines[0].shape[0])))
+        # ax.dist=8-zoom
 
         for line, data, trail in zip(lines, data_lines, trail_lines):
             if num<=tail_duration:
@@ -289,15 +291,35 @@ def draw(x, return_data=False, legend=False, save_path=False, labels=False,
                 trail.set_3d_properties(data[0:num + 1, 2])
         return lines, trail_lines
 
-    def dispatch_animate(x, ani_params):
-        if x[0].shape[-1]==3:
-            return plot3D_animate(x, **ani_params)
+    def update_lines_spin(num, data_lines, lines, cube_scale, rotations=2,
+                          zoom=1, elev=10):
 
-    # plot data in 3D
-    def plot3D_animate(data, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
-                       frame_rate=50):
+        if hasattr(update_lines_spin, 'planes'):
+            for plane in update_lines_spin.planes:
+                plane.remove()
+
+        update_lines_spin.planes = plot_cube(cube_scale)
+        ax.view_init(elev=elev, azim=rotations*(360*(num/data_lines[0].shape[0])))
+        # ax.dist=8-zoom
+
+        for line, data in zip(lines, data_lines):
+            line.set_data(data[:, 0:2].T)
+            line.set_3d_properties(data[:, 2])
+
+        return lines
+
+    def dispatch_animate(x, ani_params):
+        if x[0].shape[1] is 3:
+            return animate_plot(x, **ani_params)
+
+    def animate_plot(data, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
+                       frame_rate=50, elev=10, style='parallel'):
+
+        # inialize plot
         fig = plt.figure()
-        ax = p3.Axes3D(fig)
+        ax = fig.add_subplot(111, projection='3d')
+
+        # create lines
         lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], format_string[idx],
                          linewidth=1, **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
         trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], format_string[idx],
@@ -306,11 +328,22 @@ def draw(x, return_data=False, legend=False, save_path=False, labels=False,
             tail_duration=1
         else:
             tail_duration = int(frame_rate*tail_duration)
-        line_ani = animation.FuncAnimation(fig, update_lines, x[0].shape[0],
-                        fargs=(x, lines, trail, 1, tail_duration, rotations, zoom, chemtrails),
-                        interval=1000/frame_rate, blit=False, repeat=False)
-        return fig, ax, data, line_ani
 
+        # get line animation
+        if style in ['parallel', True]:
+            line_ani = animation.FuncAnimation(fig, update_lines_parallel, x[0].shape[0],
+                            fargs=(x, lines, trail, 1, tail_duration, rotations, zoom, chemtrails, elev),
+                            interval=1000/frame_rate, blit=False, repeat=False)
+        elif style is 'serial':
+            line_ani = animation.FuncAnimation(fig, update_lines_parallel, x[0].shape[0],
+                            fargs=(x, lines, trail, 1, tail_duration, rotations, zoom, chemtrails, elev),
+                            interval=1000/frame_rate, blit=False, repeat=False)
+        elif style is 'spin':
+            line_ani = animation.FuncAnimation(fig, update_lines_spin, x[0].shape[0],
+                            fargs=(x, lines, 1, rotations, zoom, elev),
+                            interval=1000/frame_rate, blit=False, repeat=False)
+
+        return fig, ax, data, line_ani
 
     # handle explore flag
     if explore:
@@ -318,27 +351,30 @@ def draw(x, return_data=False, legend=False, save_path=False, labels=False,
         kwargs['picker']=True
 
     # turn kwargs into a list
-    kwargs_list = parse_kwargs(x,mpl_kwargs)
+    kwargs_list = parse_kwargs(x, mpl_kwargs)
 
     # turn format string into a list
     if format_string is not list:
         format_string = [(format_string) for i in range(len(x))]
 
     # draw the plot
-    if animate:
+    if animate in [True, 'parallel', 'serial', 'spin']:
 
         # animation params
         ani_params = dict(tail_duration=tail_duration,
                           rotations=rotations,
                           zoom=zoom,
                           chemtrails=chemtrails,
-                          frame_rate=frame_rate)
+                          frame_rate=frame_rate,
+                          elev=elev,
+                          style=animate)
 
         # dispatch animation
         fig, ax, data, line_ani = dispatch_animate(x, ani_params)
+
     else:
 
-        # dispatch statis
+        # dispatch static
         fig, ax, data = dispatch_static(x)
 
         # if 3d, plot the cube
@@ -355,14 +391,22 @@ def draw(x, return_data=False, legend=False, save_path=False, labels=False,
             ax.set_ylim3d([-cube_scale, cube_scale])
             ax.set_zlim3d([-cube_scale, cube_scale])
 
+            # initialize the view
+            ax.view_init(elev=elev, azim=azim)
+
+        # set line_ani to empty
+        line_ani = None
+
     # remove axes
     ax.set_axis_off()
 
-    if labels:
+    # add labels
+    if labels is not None:
         add_labels(x, labels)
-    if legend:
-        plt.legend()
-    if save_path:
-        plt.savefig(save_path)
-    if show:
-        plt.show()
+
+    # add legend
+    if legend is not None:
+        proxies = [plt.Rectangle((0, 0), 1, 1, fc=sns.color_palette()[idx]) for idx,label in enumerate(legend)]
+        ax.legend(proxies,legend)
+
+    return fig, ax, data, line_ani
