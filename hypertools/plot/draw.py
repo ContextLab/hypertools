@@ -21,7 +21,7 @@ matplotlib.rcParams['pdf.fonttype'] = 42
 def draw(x, return_data=False, legend=None, save_path=False, labels=False,
          explore=False, show=True, mpl_kwargs=None, format_string=None,
          group=False, animate=False, tail_duration=2, rotations=2, zoom=1,
-         chemtrails=False, frame_rate=50, elev=30, azim=-60):
+         chemtrails=False, frame_rate=50, elev=10, azim=-60):
 
     # handle static plots
     def dispatch_static(x):
@@ -276,8 +276,8 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
                 plane.remove()
 
         update_lines_parallel.planes = plot_cube(cube_scale)
-        ax.view_init(elev=elev, azim=rotations*(360*(num/data_lines[0].shape[0])))
-        # ax.dist=8-zoom
+        ax.view_init(elev=10, azim=rotations*(360*(num/data_lines[0].shape[0])))
+        ax.dist=9-zoom
 
         for line, data, trail in zip(lines, data_lines, trail_lines):
             if num<=tail_duration:
@@ -300,7 +300,7 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
 
         update_lines_spin.planes = plot_cube(cube_scale)
         ax.view_init(elev=elev, azim=rotations*(360*(num/data_lines[0].shape[0])))
-        # ax.dist=8-zoom
+        ax.dist=9-zoom
 
         for line, data in zip(lines, data_lines):
             line.set_data(data[:, 0:2].T)
