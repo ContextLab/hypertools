@@ -14,7 +14,6 @@ import mpl_toolkits.mplot3d.axes3d as p3
 import matplotlib.animation as animation
 import seaborn as sns
 from .._shared.helpers import *
-from .helpers import *
 
 matplotlib.rcParams['pdf.fonttype'] = 42
 
