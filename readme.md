@@ -91,6 +91,8 @@ Here is a bibtex formatted reference:
 
 <h2>Contributing</h2>
 
+[![Join the chat at https://gitter.im/hypertools/Lobby](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/hypertools/Lobby)
+
 If you'd like to contribute, please first read our [Code of Conduct](https://www.mozilla.org/en-US/about/governance/policies/participation/).
 
 For specific information on how to contribute to the project, please see our [Contributing](https://github.com/ContextLab/hypertools/blob/master/CONTRIBUTING.md) page.
