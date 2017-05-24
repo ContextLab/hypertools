@@ -137,20 +137,20 @@ def plot(x, format_string='-', marker=None, linestyle=None, color=None, style='w
     mpl_kwargs = kwargs
 
     # handle color (to be passed onto matplotlib)
-    if color:
+    if color is not None:
         mpl_kwargs['color'] = color
 
     # handle linestyle (to be passed onto matplotlib)
-    if linestyle:
+    if linestyle is not False:
         mpl_kwargs['linestyle'] = linestyle
 
     # handle marker (to be passed onto matplotlib)
-    if marker:
+    if marker is not None:
         mpl_kwargs['marker'] = marker
         mpl_kwargs['linestyle'] = None
 
     # handle marker (to be passed onto matplotlib)
-    if legend:
+    if legend is not False:
         mpl_kwargs['label'] = legend
 
     # normalize
@@ -161,16 +161,16 @@ def plot(x, format_string='-', marker=None, linestyle=None, color=None, style='w
         x = reduceD(x, ndims, internal=True)
 
     # find cluster and reshape if n_clusters
-    if n_clusters:
+    if n_clusters is not None:
         cluster_labels = cluster(x, n_clusters=n_clusters, ndims=ndims)
         x = reshape_data(x, cluster_labels)
         if group:
             warnings.warn('n_clusters overrides group, ignoring group.')
 
     # group data if there is a grouping var
-    if group:
+    if group is not None:
 
-        if color:
+        if color is not None:
             warnings.warn("Using group, color keyword will be ignored.")
 
         # if list of lists, unpack
@@ -184,7 +184,7 @@ def plot(x, format_string='-', marker=None, linestyle=None, color=None, style='w
             group = group_by_category(group)
 
         # reshape the data according to group
-        x = reshape_data(x,group)
+        x = reshape_data(x, group)
 
         # interpolate lines if they are grouped
         if all([symbol is not format_string for symbol in Line2D.markers.keys()]):
