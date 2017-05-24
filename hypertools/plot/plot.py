@@ -116,10 +116,10 @@ def plot(x, format_string='-', marker=None, markers=None, linestyle=None,
 
     Returns
     ----------
-    fig, ax, data : Matplotlib.Figure.figure, Matplotlib.Axes.axis, Numpy array
-        By default, the plot function outputs a figure handle
-        (matplotlib.figure.Figure), axis handle (matplotlib.axes._axes.Axes)
-        and data (list of numpy arrays), e.g. fig,axis,data = hyp.plot(x)
+    fig, ax, data, line_ani : Matplotlib.Figure.figure, Matplotlib.Axes.axis, Numpy array, 
+        The plot function outputs a figure handle (matplotlib.figure.Figure),
+        axis handle (matplotlib.axes._axes.Axes) and data (list of numpy arrays),
+        e.g. fig,axis,data = hyp.plot(x)
 
         If animate=True, the plot function additionally outputs an animation
         handle (matplotlib.animation.FuncAnimation)
