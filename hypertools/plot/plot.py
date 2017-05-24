@@ -11,8 +11,6 @@ import pandas as pd
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 from .._shared.helpers import *
-from .static import static_plot
-from .animate import animated_plot
 from ..tools.cluster import cluster
 from ..tools.df2mat import df2mat
 from ..tools.reduce import reduce as reduceD
