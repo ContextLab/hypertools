@@ -116,9 +116,9 @@ def plot(x, format_string='-', marker=None, markers=None, linestyle=None,
 
     Returns
     ----------
-    fig, ax, data, line_ani : Matplotlib.Figure.figure, Matplotlib.Axes.axis, Numpy array, 
-        The plot function outputs a figure handle (matplotlib.figure.Figure),
-        axis handle (matplotlib.axes._axes.Axes) and data (list of numpy arrays),
+    fig, ax, data, line_ani : matplotlib.figure.figure, matplotlib.axis.axes, numpy.array, matplotlib.animation.funcanimation
+        The plot function outputs a figure handle ,
+        axis handle, reduced data,
         e.g. fig,axis,data = hyp.plot(x)
 
         If animate=True, the plot function additionally outputs an animation
