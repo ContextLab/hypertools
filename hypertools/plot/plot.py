@@ -17,7 +17,7 @@ from ..tools.reduce import reduce as reduceD
 from ..tools.normalize import normalize as normalizer
 from .draw import draw
 
-def plot(x, format_string='-', marker=None, markers=None, linestyle=None,
+def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, style='whitegrid',
          palette='hls', group=None, labels=None, legend=None, ndims=3,
          normalize=False, n_clusters=None, animate=False, show=True,
@@ -130,10 +130,6 @@ def plot(x, format_string='-', marker=None, markers=None, linestyle=None,
     # turn data into common format - a list of arrays
     x = format_data(x)
 
-    # handle styling and palette with seaborn
-    sns.set_style(style=style)
-    sns.set_palette(palette=palette, n_colors=len(x))
-
     # catch all non-hypertools kwargs here to pass on to matplotlib
     mpl_kwargs = kwargs
 
@@ -193,11 +189,11 @@ def plot(x, format_string='-', marker=None, markers=None, linestyle=None,
         x = reshape_data(x, group)
 
         # interpolate lines if they are grouped
-        if all([symbol is not format_string for symbol in Line2D.markers.keys()]):
+        if all([symbol is not fmt for symbol in Line2D.markers.keys()]):
             x = patch_lines(x)
 
     # interpolate
-    if format_string is '-':
+    if fmt is '-' or fmt is None:
         interp_val = frame_rate*duration/(x[0].shape[0] - 1)
         x = interp_array_list(x, interp_val=interp_val)
 
@@ -207,8 +203,12 @@ def plot(x, format_string='-', marker=None, markers=None, linestyle=None,
     # scale
     x = scale(x)
 
+    # handle styling and palette with seaborn
+    sns.set_style(style=style)
+    sns.set_palette(palette=palette, n_colors=len(x))
+
     # draw the plot
-    fig, ax, data, line_ani = draw(x, format_string=format_string,
+    fig, ax, data, line_ani = draw(x, fmt=fmt,
                             mpl_kwargs=mpl_kwargs,
                             labels=labels,
                             explore=explore,
