@@ -22,7 +22,7 @@ import numpy as np
 
 data = hyp.tools.load('weights_sample')
 
-group = [['a' if idx % 2 == 0 else 'b' for idx,j in enumerate(i)] for i in data]
+group = [['a' if idx % 2 == 0 else 'b' for idx, j in enumerate(i)] for i in data]
 hyp.plot(data, 'o', group=group)
 
 group=[]

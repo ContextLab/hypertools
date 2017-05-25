@@ -19,7 +19,7 @@ from .._shared.helpers import *
 matplotlib.rcParams['pdf.fonttype'] = 42
 
 def draw(x, return_data=False, legend=None, save_path=False, labels=False,
-         explore=False, show=True, mpl_kwargs=None, format_string=None,
+         explore=False, show=True, mpl_kwargs=None, fmt=None,
          group=False, animate=False, tail_duration=2, rotations=2, zoom=1,
          chemtrails=False, frame_rate=50, elev=10, azim=-60):
 
@@ -38,8 +38,10 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
         fig, ax = plt.subplots()
         for i in range(n):
             ikwargs = kwargs_list[i]
-            ifmt = format_string[i]
-            ax.plot(data[i][:,0], ifmt, **ikwargs)
+            if fmt is None:
+                ax.plot(data[i][:,0], **ikwargs)
+            else:
+                ax.plot(data[i][:,0], fmt[i], **ikwargs)
         return fig, ax, data
 
     # plot data in 2D
@@ -47,9 +49,11 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
         n=len(data)
         fig, ax = plt.subplots()
         for i in range(n):
-            ifmt = format_string[i]
             ikwargs = kwargs_list[i]
-            ax.plot(data[i][:,0], data[i][:,1], ifmt, **ikwargs)
+            if fmt is None:
+                ax.plot(data[i][:,0], data[i][:,1], **ikwargs)
+            else:
+                ax.plot(data[i][:,0], data[i][:,1], fmt[i], **ikwargs)
         return fig, ax, data
 
     # plot data in 3D
@@ -58,10 +62,11 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
         for i in range(n):
-            ifmt = format_string[i]
             ikwargs = kwargs_list[i]
-            print(ifmt, ikwargs)
-            ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], ifmt, **ikwargs)
+            if fmt is None:
+                ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], **ikwargs)
+            else:
+                ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], fmt[i], **ikwargs)
         return fig, ax, data
 
     def annotate_plot(data, labels):
@@ -291,6 +296,36 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
                 trail.set_3d_properties(data[0:num + 1, 2])
         return lines, trail_lines
 
+    def update_lines_serial(num, data_lines, lines, trail_lines, cube_scale, dataset_idx, plot_idx, tail_duration=2,
+                     rotations=2, zoom=1, chemtrails=False, elev=10):
+
+        if hasattr(update_lines_serial, 'planes'):
+            for plane in update_lines_serial.planes:
+                plane.remove()
+
+        update_lines_serial.planes = plot_cube(cube_scale)
+        ax.view_init(elev=10, azim=rotations*(360*(num/data_lines[0].shape[0])))
+        ax.dist=9-zoom
+
+        for idx, (line, data, trail) in enumerate(zip(lines, data_lines, trail_lines)):
+            if num<=tail_duration and idx is 0:
+                    line.set_data(data[0:int(plot_idx[num, idx])+1, 0:2].T)
+                    line.set_3d_properties(data[0:int(plot_idx[num, idx])+1, 2])
+            elif dataset_idx[num-tail_duration] >= idx:
+                line.set_data(data[int(plot_idx[num, idx])-tail_duration:int(plot_idx[num, idx])+1, 0:2].T)
+                line.set_3d_properties(data[int(plot_idx[num, idx])-tail_duration:int(plot_idx[num, idx])+1, 2])
+                if chemtrails:
+                    trail.set_data(data[0:int(plot_idx[num, idx]) + 1, 0:2].T)
+                    trail.set_3d_properties(data[0:int(plot_idx[num, idx]) + 1, 2])
+            if dataset_idx[num] > idx:
+                line.set_data(data[num-tail_duration:num+1, 0:2].T)
+                line.set_3d_properties(data[num-tail_duration:num+1, 2])
+                if chemtrails:
+                    trail.set_data(data[0:int(plot_idx[num, idx]) + 1, 0:2].T)
+                    trail.set_3d_properties(data[0:int(plot_idx[num, idx]) + 1, 2])
+
+        return lines, trail_lines
+
     def update_lines_spin(num, data_lines, lines, cube_scale, rotations=2,
                           zoom=1, elev=10):
 
@@ -312,7 +347,7 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
         if x[0].shape[1] is 3:
             return animate_plot(x, **ani_params)
 
-    def animate_plot(data, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
+    def animate_plot(x, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
                        frame_rate=50, elev=10, style='parallel'):
 
         # inialize plot
@@ -320,10 +355,16 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
         ax = fig.add_subplot(111, projection='3d')
 
         # create lines
-        lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], format_string[idx],
-                         linewidth=1, **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
-        trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], format_string[idx],
-                         alpha=.3, linewidth=1, **kwargs_list[idx])[0] for idx, dat in enumerate(x)]
+        if fmt is not None:
+            lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], fmt[idx],
+                             linewidth=1, **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
+            trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], fmt[idx],
+                             alpha=.3, linewidth=1, **kwargs_list[idx])[0] for idx, dat in enumerate(x)]
+        else:
+            lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1],
+                             linewidth=1, **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
+            trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1],
+                             alpha=.3, linewidth=1, **kwargs_list[idx])[0] for idx, dat in enumerate(x)]
         if tail_duration==0:
             tail_duration=1
         else:
@@ -335,15 +376,29 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
                             fargs=(x, lines, trail, 1, tail_duration, rotations, zoom, chemtrails, elev),
                             interval=1000/frame_rate, blit=False, repeat=False)
         elif style is 'serial':
-            line_ani = animation.FuncAnimation(fig, update_lines_parallel, x[0].shape[0],
-                            fargs=(x, lines, trail, 1, tail_duration, rotations, zoom, chemtrails, elev),
+            dataset_idx = []
+            for idx, data in enumerate(x):
+                for i in range(data.shape[0]):
+                    dataset_idx.append(idx)
+            plot_idx = np.empty((np.sum([data.shape[0] for data in x]), len(x))) * 0
+            start=int(0)
+            end=int(x[0].shape[0])
+            for idx, d in enumerate(x):
+                plot_idx[start:end,idx] = [int(i) for i in range(d.shape[0])]
+                plot_idx[end:,idx]=int(d.shape[0])
+                if idx+1 < len(x):
+                    start+=int(d.shape[0])-tail_duration
+                    end+=int(x[idx+1].shape[0])-tail_duration
+            line_ani = animation.FuncAnimation(fig, update_lines_serial, np.sum([i.shape[0] for i in x]),
+                            fargs=(x, lines, trail, 1, dataset_idx, plot_idx,
+                            tail_duration, rotations, zoom, chemtrails, elev),
                             interval=1000/frame_rate, blit=False, repeat=False)
         elif style is 'spin':
             line_ani = animation.FuncAnimation(fig, update_lines_spin, x[0].shape[0],
                             fargs=(x, lines, 1, rotations, zoom, elev),
                             interval=1000/frame_rate, blit=False, repeat=False)
 
-        return fig, ax, data, line_ani
+        return fig, ax, x, line_ani
 
     # handle explore flag
     if explore:
@@ -353,9 +408,10 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
     # turn kwargs into a list
     kwargs_list = parse_kwargs(x, mpl_kwargs)
 
-    # turn format string into a list
-    if format_string is not list:
-        format_string = [(format_string) for i in range(len(x))]
+    # handle format strings
+    if fmt is not None:
+        if ~isinstance(fmt, list):
+            fmt = [fmt for i in x]
 
     # draw the plot
     if animate in [True, 'parallel', 'serial', 'spin']:
