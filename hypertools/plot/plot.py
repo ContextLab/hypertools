@@ -19,10 +19,10 @@ from .draw import draw
 
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
-         labels=None, legend=None, elev=10, azim=-60, ndims=3, normalize=False,
-         n_clusters=None, save_path=None, animate=False, duration=30,
-         tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False,
-         frame_rate=50, explore=False, show=True):
+         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=3,
+         normalize=False, n_clusters=None, save_path=None, animate=False,
+         duration=30, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
+         precog=False, frame_rate=50, explore=False, show=True):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -60,6 +60,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     legend : list
         A list of string labels to be plotted in a legend (one for each list
         item).
+
+    title : str
+        A title for the plot
 
     ndims : int
         An `int` representing the number of dims to plot in. Must be 1,2, or 3.
@@ -228,6 +231,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
                             kwargs_list=kwargs_list,
                             labels=labels,
                             legend=legend,
+                            title=title,
                             animate=animate,
                             duration=duration,
                             tail_duration=tail_duration,

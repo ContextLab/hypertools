@@ -369,13 +369,13 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="Since Hypertools is based on matplotlib, you can use matplotlib to change plot attributes. ">
+    <div class="sphx-glr-thumbcontainer" tooltip="Often times its useful to normalize (z-score) you features before plotting, so that they are on...">
 
 .. only:: html
 
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_customize_figure_thumb.png
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_normalize_thumb.png
 
-        :ref:`sphx_glr_auto_examples_plot_customize_figure.py`
+        :ref:`sphx_glr_auto_examples_plot_normalize.py`
 
 .. raw:: html
 
@@ -385,7 +385,7 @@ Gallery of Examples
 .. toctree::
    :hidden:
 
-   /auto_examples/plot_customize_figure
+   /auto_examples/plot_normalize
 
 .. raw:: html
 
@@ -406,26 +406,6 @@ Gallery of Examples
    :hidden:
 
    /auto_examples/plot_PPCA
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="Often times its useful to normalize (z-score) you features before plotting, so that they are on...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_normalize_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_normalize.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_normalize
 
 .. raw:: html
 

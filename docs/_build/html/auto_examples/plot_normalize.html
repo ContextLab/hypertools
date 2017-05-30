@@ -123,13 +123,14 @@ lists passed.  Conversely, if <cite>normalize</cite> is set to &#8216;within&#82
 be computed separately for each column in each list.  Finally, if <cite>normalize</cite> is
 set to &#8216;row&#8217;, each row of the matrix will be zscored.  Alternative, you can use
 the normalize function found in tools (see the third example).</p>
-<div class="highlight-pytb"><div class="highlight"><pre><span></span><span class="gt">Traceback (most recent call last):</span>
-  File <span class="nb">&quot;/Users/andyheusser/Library/Enthought/Canopy_64bit/User/lib/python2.7/site-packages/sphinx_gallery/gen_rst.py&quot;</span>, line <span class="m">475</span>, in <span class="n">execute_code_block</span>
-    <span class="k">exec</span><span class="p">(</span><span class="n">code_block</span><span class="p">,</span> <span class="n">example_globals</span><span class="p">)</span>
-  File <span class="nb">&quot;&lt;string&gt;&quot;</span>, line <span class="m">15</span>, in <span class="n">&lt;module&gt;</span>
-<span class="gr">ValueError</span>: <span class="n">too many values to unpack</span>
-</pre></div>
-</div>
+<ul class="sphx-glr-horizontal">
+<li><a class="first reference internal image-reference" href="../_images/sphx_glr_plot_normalize_001.png"><img alt="../_images/sphx_glr_plot_normalize_001.png" src="../_images/sphx_glr_plot_normalize_001.png" style="width: 300.8px; height: 225.6px;" /></a>
+</li>
+<li><a class="first reference internal image-reference" href="../_images/sphx_glr_plot_normalize_002.png"><img alt="../_images/sphx_glr_plot_normalize_002.png" src="../_images/sphx_glr_plot_normalize_002.png" style="width: 300.8px; height: 225.6px;" /></a>
+</li>
+<li><a class="first reference internal image-reference" href="../_images/sphx_glr_plot_normalize_003.png"><img alt="../_images/sphx_glr_plot_normalize_003.png" src="../_images/sphx_glr_plot_normalize_003.png" style="width: 300.8px; height: 225.6px;" /></a>
+</li>
+</ul>
 <div class="highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Code source: Andrew Heusser</span>
 <span class="c1"># License: MIT</span>
 
@@ -141,23 +142,17 @@ the normalize function found in tools (see the third example).</p>
 <span class="n">cluster1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">multivariate_normal</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="mi">3</span><span class="p">),</span> <span class="n">size</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
 <span class="n">cluster2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">multivariate_normal</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="o">+</span><span class="mi">10</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="mi">3</span><span class="p">),</span> <span class="n">size</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
 
-<span class="n">data</span> <span class="o">=</span> <span class="p">[</span><span class="n">cluster1</span><span class="p">,</span><span class="n">cluster2</span><span class="p">]</span>
+<span class="n">data</span> <span class="o">=</span> <span class="p">[</span><span class="n">cluster1</span><span class="p">,</span> <span class="n">cluster2</span><span class="p">]</span>
 
-<span class="n">fig</span><span class="p">,</span><span class="n">ax</span><span class="p">,</span><span class="n">data</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="s1">&#39;across&#39;</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;z-score columns across all lists&#39;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="s1">&#39;across&#39;</span><span class="p">)</span>
 
-<span class="n">fig</span><span class="p">,</span><span class="n">ax</span><span class="p">,</span><span class="n">data</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="s1">&#39;within&#39;</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;z-score columns within each list&#39;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="s1">&#39;within&#39;</span><span class="p">)</span>
 
 <span class="n">normalized_row</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">tools</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="s1">&#39;row&#39;</span><span class="p">)</span>
-<span class="n">fig</span><span class="p">,</span><span class="n">ax</span><span class="p">,</span><span class="n">data</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">normalized_row</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;z-score each row&#39;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">normalized_row</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">)</span>
 </pre></div>
 </div>
-<p><strong>Total running time of the script:</strong> ( 0 minutes  0.000 seconds)</p>
+<p><strong>Total running time of the script:</strong> ( 0 minutes  0.134 seconds)</p>
 <div class="sphx-glr-footer docutils container">
 <div class="sphx-glr-download docutils container">
 <a class="reference download internal" href="../_downloads/plot_normalize.py" download=""><code class="xref download docutils literal"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">plot_normalize.py</span></code></a></div>
