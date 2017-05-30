@@ -18,18 +18,7 @@ are simply labeling the first datapoint for each matrix in the list.
     :align: center
 
 
-.. rst-class:: sphx-glr-script-out
 
- Out::
-
-    ['.', '.', '.']
-    ['.', '.', '.']
-    ['.', '.', '.']
-
-
-
-
-|
 
 
 .. code-block:: python
@@ -56,7 +45,7 @@ are simply labeling the first datapoint for each matrix in the list.
 
     hyp.plot(data, '.', labels=labels)
 
-**Total running time of the script:** ( 0 minutes  0.919 seconds)
+**Total running time of the script:** ( 0 minutes  1.299 seconds)
 
 
 

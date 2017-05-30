@@ -28,7 +28,7 @@ rot = np.random.rand(3,3)
 source = np.dot(target, rot)
 
 # Before hyperalignment
-hyp.plot([target, source])
+hyp.plot([target, source], title='Before alignment')
 
 # After hyperalignment
-hyp.plot([hyp.tools.procrustes(source, target), target], ['-','--'])
+hyp.plot([hyp.tools.procrustes(source, target), target], ['-','--'], title='After alignment')

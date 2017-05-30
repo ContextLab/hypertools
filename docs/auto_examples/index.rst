@@ -329,26 +329,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="In this example, we load in some synthetic data, rotate it, and then use the procustes function...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_procrustes_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_procrustes.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_procrustes
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="When plotting, its useful to have a way to color points by some category or variable.  Hypertoo...">
 
 .. only:: html
@@ -366,6 +346,26 @@ Gallery of Examples
    :hidden:
 
    /auto_examples/plot_group
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="In this example, we load in some synthetic data, rotate it, and then use the procustes function...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_procrustes_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_procrustes.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_procrustes
 
 .. raw:: html
 

@@ -20,17 +20,7 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
     :align: center
 
 
-.. rst-class:: sphx-glr-script-out
 
- Out::
-
-    ['.', '.']
-    ['.', '.']
-
-
-
-
-|
 
 
 .. code-block:: python
@@ -48,7 +38,7 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
 
     hyp.plot(data, '.', group=group)
 
-**Total running time of the script:** ( 0 minutes  0.999 seconds)
+**Total running time of the script:** ( 0 minutes  1.374 seconds)
 
 
 

@@ -29,7 +29,7 @@ from one subject.  The rows are timepoints and the columns are neural
     w1 = np.mean(aligned_w[:17],0)
     w2 = np.mean(aligned_w[18:],0)
 
-    hyp.plot([w1,w2], animate=True)
+    hyp.plot([w1, w2], animate=True)
 
 **Total running time of the script:** ( 0 minutes  0.000 seconds)
 

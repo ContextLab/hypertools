@@ -18,17 +18,7 @@ kwarg to color our points by cluster.
     :align: center
 
 
-.. rst-class:: sphx-glr-script-out
 
- Out::
-
-    ['.', '.']
-    ['.', '.']
-
-
-
-
-|
 
 
 .. code-block:: python
@@ -48,7 +38,7 @@ kwarg to color our points by cluster.
     cluster_labels = hyp.tools.cluster(data, n_clusters=2)
     hyp.plot(data, '.', group=cluster_labels)
 
-**Total running time of the script:** ( 0 minutes  0.157 seconds)
+**Total running time of the script:** ( 0 minutes  0.060 seconds)
 
 
 

@@ -29,17 +29,7 @@ space of a target matrix.
             :scale: 47
 
 
-.. rst-class:: sphx-glr-script-out
 
- Out::
-
-    ['-', '--']
-    ['-', '--']
-
-
-
-
-|
 
 
 .. code-block:: python
@@ -63,12 +53,12 @@ space of a target matrix.
     source = np.dot(target, rot)
 
     # Before hyperalignment
-    hyp.plot([target, source])
+    hyp.plot([target, source], title='Before alignment')
 
     # After hyperalignment
-    hyp.plot([hyp.tools.procrustes(source, target), target], ['-','--'])
+    hyp.plot([hyp.tools.procrustes(source, target), target], ['-','--'], title='After alignment')
 
-**Total running time of the script:** ( 0 minutes  0.881 seconds)
+**Total running time of the script:** ( 0 minutes  1.100 seconds)
 
 
 
