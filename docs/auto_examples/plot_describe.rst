@@ -39,7 +39,7 @@ than the total number of dimensions because the PCA model is whitened.
 
     hyp.tools.describe_pca(data)
 
-**Total running time of the script:** ( 0 minutes  5.902 seconds)
+**Total running time of the script:** ( 0 minutes  5.940 seconds)
 
 
 

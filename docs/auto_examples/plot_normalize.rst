@@ -60,12 +60,12 @@ the normalize function found in tools (see the third example).
 
     fig, ax, data, _ = hyp.plot(data, '.', normalize='across', title='Normalized across datasets')
 
-    fig, ax, data, _ = hyp.plot(data, '.', normalize='within')
+    fig, ax, data, _ = hyp.plot(data, '.', normalize='within', title='Normalized within dataset')
 
     normalized_row = hyp.tools.normalize(data, normalize='row')
-    fig, ax, data, _ = hyp.plot(normalized_row, '.')
+    fig, ax, data, _ = hyp.plot(normalized_row, '.', title='Normalized across row')
 
-**Total running time of the script:** ( 0 minutes  0.128 seconds)
+**Total running time of the script:** ( 0 minutes  0.157 seconds)
 
 
 

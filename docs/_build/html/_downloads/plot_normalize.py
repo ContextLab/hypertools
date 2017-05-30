@@ -30,7 +30,7 @@ data = [cluster1, cluster2]
 
 fig, ax, data, _ = hyp.plot(data, '.', normalize='across', title='Normalized across datasets')
 
-fig, ax, data, _ = hyp.plot(data, '.', normalize='within')
+fig, ax, data, _ = hyp.plot(data, '.', normalize='within', title='Normalized within dataset')
 
 normalized_row = hyp.tools.normalize(data, normalize='row')
-fig, ax, data, _ = hyp.plot(normalized_row, '.')
+fig, ax, data, _ = hyp.plot(normalized_row, '.', title='Normalized across row')
