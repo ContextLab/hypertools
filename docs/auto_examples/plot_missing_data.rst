@@ -52,7 +52,7 @@ with stars.
 
     hyp.plot([data1_r, data2_r, missing_data], ['r','b--','b*'])
 
-**Total running time of the script:** ( 0 minutes  0.210 seconds)
+**Total running time of the script:** ( 0 minutes  0.168 seconds)
 
 
 

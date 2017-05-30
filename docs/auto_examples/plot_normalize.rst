@@ -65,7 +65,7 @@ the normalize function found in tools (see the third example).
     normalized_row = hyp.tools.normalize(data, normalize='row')
     fig, ax, data, _ = hyp.plot(normalized_row, '.', title='Normalized across row')
 
-**Total running time of the script:** ( 0 minutes  0.157 seconds)
+**Total running time of the script:** ( 0 minutes  0.128 seconds)
 
 
 

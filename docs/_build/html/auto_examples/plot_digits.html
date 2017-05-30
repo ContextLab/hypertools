@@ -116,17 +116,7 @@
 <span id="sphx-glr-auto-examples-plot-digits-py"></span><h1>Visualizing the digits dataset<a class="headerlink" href="#visualizing-the-digits-dataset" title="Permalink to this headline">¶</a></h1>
 <p>This example loads in some data from the scikit-learn digits dataset and plots
 it.</p>
-<div class="highlight-pytb"><div class="highlight"><pre><span></span><span class="gt">Traceback (most recent call last):</span>
-  File <span class="nb">&quot;/Users/andyheusser/Library/Enthought/Canopy_64bit/User/lib/python2.7/site-packages/sphinx_gallery/gen_rst.py&quot;</span>, line <span class="m">475</span>, in <span class="n">execute_code_block</span>
-    <span class="k">exec</span><span class="p">(</span><span class="n">code_block</span><span class="p">,</span> <span class="n">example_globals</span><span class="p">)</span>
-  File <span class="nb">&quot;&lt;string&gt;&quot;</span>, line <span class="m">12</span>, in <span class="n">&lt;module&gt;</span>
-  File <span class="nb">&quot;/Users/andyheusser/Documents/github/hypertools/hypertools/plot/plot.py&quot;</span>, line <span class="m">251</span>, in <span class="n">plot</span>
-    <span class="n">explore</span><span class="o">=</span><span class="n">explore</span><span class="p">)</span>
-  File <span class="nb">&quot;/Users/andyheusser/Documents/github/hypertools/hypertools/plot/draw.py&quot;</span>, line <span class="m">485</span>, in <span class="n">draw</span>
-    <span class="n">proxies</span> <span class="o">=</span> <span class="p">[</span><span class="n">plt</span><span class="o">.</span><span class="n">Rectangle</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">fc</span><span class="o">=</span><span class="n">sns</span><span class="o">.</span><span class="n">color_palette</span><span class="p">()[</span><span class="n">idx</span><span class="p">])</span> <span class="k">for</span> <span class="n">idx</span><span class="p">,</span><span class="n">label</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">legend</span><span class="p">)]</span>
-<span class="gr">IndexError</span>: <span class="n">list index out of range</span>
-</pre></div>
-</div>
+<img alt="../_images/sphx_glr_plot_digits_001.png" class="align-center" src="../_images/sphx_glr_plot_digits_001.png" />
 <div class="highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Code source: Andrew Heusser</span>
 <span class="c1"># License: MIT</span>
 
@@ -137,10 +127,10 @@ it.</p>
 <span class="n">data</span> <span class="o">=</span> <span class="n">digits</span><span class="o">.</span><span class="n">data</span>
 <span class="n">group</span> <span class="o">=</span> <span class="n">digits</span><span class="o">.</span><span class="n">target</span>
 
-<span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="n">group</span><span class="p">,</span> <span class="n">legend</span><span class="o">=</span><span class="n">group</span><span class="p">)</span>
+<span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="n">group</span><span class="p">)</span>
 </pre></div>
 </div>
-<p><strong>Total running time of the script:</strong> ( 0 minutes  0.000 seconds)</p>
+<p><strong>Total running time of the script:</strong> ( 0 minutes  0.148 seconds)</p>
 <div class="sphx-glr-footer docutils container">
 <div class="sphx-glr-download docutils container">
 <a class="reference download internal" href="../_downloads/plot_digits.py" download=""><code class="xref download docutils literal"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">plot_digits.py</span></code></a></div>

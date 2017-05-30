@@ -40,7 +40,7 @@ Then we average the data into two groups, and plot.
 
     hyp.plot([group1[:100,:],group2[:100,:]])
 
-**Total running time of the script:** ( 0 minutes  17.684 seconds)
+**Total running time of the script:** ( 0 minutes  5.462 seconds)
 
 
 

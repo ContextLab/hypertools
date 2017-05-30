@@ -47,7 +47,7 @@ both the original and data with missing values together to see how it performed.
 
     hyp.plot([data1, data2], linestyle=['-',':'], legend=['Original', 'PPCA'])
 
-**Total running time of the script:** ( 0 minutes  0.099 seconds)
+**Total running time of the script:** ( 0 minutes  0.091 seconds)
 
 
 
