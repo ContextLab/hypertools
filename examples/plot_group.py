@@ -23,7 +23,7 @@ import numpy as np
 data = hyp.tools.load('weights_sample')
 
 group = [['a' if idx % 2 == 0 else 'b' for idx, j in enumerate(i)] for i in data]
-hyp.plot(data, 'o', group=group)
+hyp.plot(data, '.', group=group)
 
 group=[]
 for idx,i in enumerate(data):
@@ -32,4 +32,4 @@ for idx,i in enumerate(data):
             tmp.append(int(np.random.randint(1000, size=1)))
     group.append(tmp)
 
-hyp.plot(data, 'o', group=group)
+hyp.plot(data, '.', group=group)

@@ -28,15 +28,15 @@ cluster2 = np.random.multivariate_normal(np.zeros(3)+10, np.eye(3), size=100)
 
 data = [cluster1,cluster2]
 
-fig,ax,data = hyp.plot(data, 'o', normalize='across', show=False, return_data=True)
+fig,ax,data = hyp.plot(data, '.', normalize='across')
 ax.set_title('z-score columns across all lists')
 plt.show()
 
-fig,ax,data = hyp.plot(data, 'o', normalize='within', show=False, return_data=True)
+fig,ax,data = hyp.plot(data, '.', normalize='within')
 ax.set_title('z-score columns within each list')
 plt.show()
 
-normalized_row = hyp.tools.normalize(data,normalize='row')
-fig,ax,data = hyp.plot(normalized_row, 'o', show=False, return_data=True)
+normalized_row = hyp.tools.normalize(data, normalize='row')
+fig,ax,data = hyp.plot(normalized_row, '.')
 ax.set_title('z-score each row')
 plt.show()

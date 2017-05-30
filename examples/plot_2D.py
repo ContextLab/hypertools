@@ -1,19 +1,20 @@
 # -*- coding: utf-8 -*-
 """
 =============================
-Generating a legend
+A 2D Plot
 =============================
 
-An example of how to use the `legend` kwarg to generate a legend.
+A 2D plot can be created by setting ndims=2.
 """
 
 # Code source: Andrew Heusser
 # License: MIT
 
+# import
 import hypertools as hyp
-import scipy.io as sio
-import numpy as np
 
+# load data
 data = hyp.tools.load('weights_sample')
 
-hyp.plot(data, '.', legend=['Group A', 'Group B', 'Group C'])
+# plot
+hyp.plot(data, '.', ndims=2)
