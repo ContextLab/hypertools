@@ -33,7 +33,7 @@ with the 'o'.  Hypertools can handle all format strings supported by matplotlib.
 
     hyp.plot(data, '.')
 
-**Total running time of the script:** ( 0 minutes  1.402 seconds)
+**Total running time of the script:** ( 0 minutes  1.234 seconds)
 
 
 

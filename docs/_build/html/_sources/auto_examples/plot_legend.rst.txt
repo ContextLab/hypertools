@@ -33,7 +33,7 @@ An example of how to use the `legend` kwarg to generate a legend.
 
     hyp.plot(data, '.', legend=['Group A', 'Group B', 'Group C'])
 
-**Total running time of the script:** ( 0 minutes  1.039 seconds)
+**Total running time of the script:** ( 0 minutes  1.084 seconds)
 
 
 

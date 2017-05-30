@@ -38,7 +38,7 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
 
     hyp.plot(data, '.', group=group)
 
-**Total running time of the script:** ( 0 minutes  1.374 seconds)
+**Total running time of the script:** ( 0 minutes  1.254 seconds)
 
 
 

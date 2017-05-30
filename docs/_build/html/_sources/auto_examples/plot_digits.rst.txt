@@ -13,17 +13,8 @@ it.
 
 
 
-.. code-block:: pytb
-
-    Traceback (most recent call last):
-      File "/Users/andyheusser/Library/Enthought/Canopy_64bit/User/lib/python2.7/site-packages/sphinx_gallery/gen_rst.py", line 475, in execute_code_block
-        exec(code_block, example_globals)
-      File "<string>", line 12, in <module>
-      File "/Users/andyheusser/Documents/github/hypertools/hypertools/plot/plot.py", line 251, in plot
-        explore=explore)
-      File "/Users/andyheusser/Documents/github/hypertools/hypertools/plot/draw.py", line 485, in draw
-        proxies = [plt.Rectangle((0, 0), 1, 1, fc=sns.color_palette()[idx]) for idx,label in enumerate(legend)]
-    IndexError: list index out of range
+.. image:: /auto_examples/images/sphx_glr_plot_digits_001.png
+    :align: center
 
 
 
@@ -42,9 +33,9 @@ it.
     data = digits.data
     group = digits.target
 
-    hyp.plot(data, '.', group=group, legend=group)
+    hyp.plot(data, '.', group=group)
 
-**Total running time of the script:** ( 0 minutes  0.000 seconds)
+**Total running time of the script:** ( 0 minutes  0.148 seconds)
 
 
 

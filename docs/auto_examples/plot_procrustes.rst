@@ -58,7 +58,7 @@ space of a target matrix.
     # After hyperalignment
     hyp.plot([hyp.tools.procrustes(source, target), target], ['-','--'], title='After alignment')
 
-**Total running time of the script:** ( 0 minutes  1.100 seconds)
+**Total running time of the script:** ( 0 minutes  0.713 seconds)
 
 
 
