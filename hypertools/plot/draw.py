@@ -22,7 +22,8 @@ matplotlib.rcParams['pdf.fonttype'] = 42
 def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=False,
          show=True, kwargs_list=None, fmt=None, group=False, animate=False,
          tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False,
-         frame_rate=50, elev=10, azim=-60, duration=30, explore=False):
+         bullettime=False, frame_rate=50, elev=10, azim=-60, duration=30,
+         explore=False):
     """
     Draws the plot
     """
@@ -292,7 +293,7 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
 
         for line, data, trail in zip(lines, data_lines, trail_lines):
 
-            if precog and chemtrails:
+            if (precog and chemtrails) or bullettime:
                 trail.set_data(data[:, 0:2].T)
                 trail.set_3d_properties(data[:, 2])
             elif chemtrails:
