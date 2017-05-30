@@ -22,7 +22,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          labels=None, legend=None, title=None, elev=10, azim=-60, ndims=3,
          normalize=False, n_clusters=None, save_path=None, animate=False,
          duration=30, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
-         precog=False, frame_rate=50, explore=False, show=True):
+         precog=False, bullettime=False, frame_rate=50, explore=False,
+         show=True):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -110,6 +111,10 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     precog (animation only) : bool
         A low-opacity trail is plotted ahead of the trajectory (default: False).
+
+    bullettime (animation only) : bool
+        A low-opacity trail is plotted ahead and behind the trajectory
+        (default: False).
 
     frame_rate (animation only) : int or float
         Frame rate for animation (default: 50)
@@ -239,6 +244,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
                             zoom=zoom,
                             chemtrails=chemtrails,
                             precog=precog,
+                            bullettime=bullettime,
                             frame_rate=frame_rate,
                             elev=elev,
                             azim=azim,
