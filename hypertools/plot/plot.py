@@ -18,12 +18,11 @@ from ..tools.normalize import normalize as normalizer
 from .draw import draw
 
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
-         linestyles=None, color=None, colors=None, style='whitegrid',
-         palette='hls', group=None, labels=None, legend=None, ndims=3,
-         normalize=False, n_clusters=None, animate=False, show=True,
-         save_path=None, explore=False, duration=30, tail_duration=2,
-         rotations=2, zoom=0, chemtrails=False, return_data=False,
-         frame_rate=50, **kwargs):
+         linestyles=None, color=None, colors=None, palette='hls', group=None,
+         labels=None, legend=None, elev=10, azim=-60, ndims=3, normalize=False,
+         n_clusters=None, save_path=None, animate=False, duration=30,
+         tail_duration=2, rotations=2, zoom=1, chemtrails=False, frame_rate=50,
+         explore=False, show=True):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -32,13 +31,16 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     x : Numpy array, DataFrame or list of arrays/dfs
         Data for the plot. The form should be samples (rows) by features (cols).
 
-    linestyle : str or list of str
+    fmt : str or list of strings
+        A list of format strings.  All matplotlib format strings are supported.
+
+    linestyle(s) : str or list of str
         A list of line styles
 
-    marker : str or list of str
+    marker(s) : str or list of str
         A list of marker types
 
-    color : str or list of str
+    color(s) : str or list of str
         A list of marker types
 
     palette : str
@@ -75,14 +77,6 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         with the k parameter set to n_clusters. The resulting clusters will
         be plotted in different colors according to the color palette.
 
-    animate : bool
-        If True, plots the data as an animated trajectory (default: False).
-
-    show : bool
-        If set to False, the figure will not be displayed, but the figure,
-        axis and data objects will still be returned (see Outputs)
-        (default: True).
-
     save_path str :
         Path to save the image/movie. Must include the file extension in the
         save path (i.e. save_path='/path/to/file/image.png'). NOTE: If saving
@@ -93,11 +87,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         /usr/bin/ruby -e "$(curl -fsSL
         https://raw.githubusercontent.com/Homebrew/install/master/install)".
 
-    explore : bool
-        Displays user defined labels will appear on hover. If no labels are
-        passed, the point index and coordinate will be plotted. To use,
-        set explore=True. Note: Explore more is currently only supported
-        for 3D static plots.
+    animate : bool
+        If True, plots the data as an animated trajectory (default: False).
 
     duration (animation only) : float
         Length of the animation in seconds (default: 30 seconds)
@@ -114,24 +105,33 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     chemtrails (animation only) : bool
         Added trail with change in opacity (default: False)
 
+    frame_rate (animation only) : int or float
+        Frame rate for animation (default: 50)
+
+    explore : bool
+        Displays user defined labels will appear on hover. If no labels are
+        passed, the point index and coordinate will be plotted. To use,
+        set explore=True. Note: Explore mode is currently only supported
+        for 3D static plots, and is an experimental feature (i.e it may not yet
+        work properly).
+
+    show : bool
+        If set to False, the figure will not be displayed, but the figure,
+        axis and data objects will still be returned (default: True).
+
     Returns
     ----------
     fig, ax, data, line_ani : matplotlib.figure.figure, matplotlib.axis.axes, numpy.array, matplotlib.animation.funcanimation
-        The plot function outputs a figure handle ,
-        axis handle, reduced data,
-        e.g. fig,axis,data = hyp.plot(x)
-
-        If animate=True, the plot function additionally outputs an animation
-        handle (matplotlib.animation.FuncAnimation)
-        e.g. fig,axis,data,line_ani = hyp.plot(x, animate=True).
+        The plot function outputs a figure handle, axis handle, data, and line
+        animation object.  The line animation object is None if animation=False.
 
     """
 
     # turn data into common format - a list of arrays
     x = format_data(x)
 
-    # catch all non-hypertools kwargs here to pass on to matplotlib
-    mpl_kwargs = kwargs
+    # catch all matplotlib kwargs here to pass on
+    mpl_kwargs = {}
 
     # handle color (to be passed onto matplotlib)
     if color is not None:
@@ -151,8 +151,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     if markers is not None:
         mpl_kwargs['marker'] = markers
 
-    # handle marker (to be passed onto matplotlib)
-    if legend is not False:
+    # handle legend
+    if legend is not None:
         mpl_kwargs['label'] = legend
 
     # normalize
@@ -192,10 +192,15 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         if all([symbol is not fmt for symbol in Line2D.markers.keys()]):
             x = patch_lines(x)
 
-    # interpolate
-    if fmt is '-' or fmt is None:
+    # interpolate if its a line plot
+    if fmt in ['-', '--', '-.', ':'] or fmt is None:
         interp_val = frame_rate*duration/(x[0].shape[0] - 1)
         x = interp_array_list(x, interp_val=interp_val)
+
+    # handle explore flag
+    if explore:
+        assert x[0].shape[1] is 3, "Explore mode is currently only supported for 3D plots."
+        mpl_kwargs['picker']=True
 
     # center
     x = center(x)
@@ -203,18 +208,38 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # scale
     x = scale(x)
 
-    # handle styling and palette with seaborn
-    sns.set_style(style=style)
+    # handle palette with seaborn
     sns.set_palette(palette=palette, n_colors=len(x))
+    sns.set_style(style='whitegrid')
+
+    # turn kwargs into a list
+    kwargs_list = parse_kwargs(x, mpl_kwargs)
+
+    # handle format strings
+    if fmt is not None:
+        if type(fmt) is not list:
+            fmt = [fmt for i in x]
 
     # draw the plot
     fig, ax, data, line_ani = draw(x, fmt=fmt,
-                            mpl_kwargs=mpl_kwargs,
+                            kwargs_list=kwargs_list,
                             labels=labels,
-                            explore=explore,
                             legend=legend,
-                            animate=animate)
+                            animate=animate,
+                            duration=duration,
+                            tail_duration=tail_duration,
+                            rotations=rotations,
+                            zoom=zoom,
+                            chemtrails=chemtrails,
+                            frame_rate=frame_rate,
+                            elev=elev,
+                            azim=azim,
+                            explore=explore)
 
+    # tighten layout
+    plt.tight_layout()
+
+    # save
     if save_path is not None:
         if animate:
             Writer = animation.writers['ffmpeg']
@@ -222,6 +247,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
             line_ani.save(save_path, writer=writer)
         else:
             plt.savefig(save_path)
+
+    # show the plot
     if show:
         plt.show()
 

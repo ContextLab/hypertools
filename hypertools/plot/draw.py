@@ -13,16 +13,19 @@ from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d import proj3d
 import mpl_toolkits.mplot3d.axes3d as p3
 import matplotlib.animation as animation
+import matplotlib.patches as patches
 import seaborn as sns
 from .._shared.helpers import *
 
 matplotlib.rcParams['pdf.fonttype'] = 42
 
 def draw(x, return_data=False, legend=None, save_path=False, labels=False,
-         explore=False, show=True, mpl_kwargs=None, fmt=None,
-         group=False, animate=False, tail_duration=2, rotations=2, zoom=1,
-         chemtrails=False, frame_rate=50, elev=10, azim=-60):
-
+         show=True, kwargs_list=None, fmt=None, group=False, animate=False,
+         tail_duration=2, rotations=2, zoom=1, chemtrails=False, frame_rate=50,
+         elev=10, azim=-60, duration=30, explore=False):
+    """
+    Draws the plot
+    """
     # handle static plots
     def dispatch_static(x):
         if x[0].ndim==1 or x[0].shape[-1]==1:
@@ -66,6 +69,7 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
             if fmt is None:
                 ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], **ikwargs)
             else:
+                print(fmt)
                 ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], fmt[i], **ikwargs)
         return fig, ax, data
 
@@ -132,7 +136,7 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
         for label in labels_and_points:
             label[0]._visible=False
 
-    def add_labels(x, labels):
+    def add_labels(x, labels, explore=False):
         """Add labels to graph if available
         Args:
             data (np.ndarray) - Array containing the data points
@@ -142,6 +146,7 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
         """
         # if explore mode is activated, implement the on hover behavior
         if explore:
+            print('gothere')
             X = np.vstack(x)
             if labels:
                 if any(isinstance(el, list) for el in labels):
@@ -273,6 +278,9 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
             plane_list.append(ax.plot_wireframe(Xs, Ys, Zs, rstride=1, cstride=1, color='black', linewidth=1))
         return plane_list
 
+    def plot_square(ax):
+        ax.add_patch(patches.Rectangle((-1.05, -1.05), 2.05, 2.05, fill=False, edgecolor='black', linewidth=1))
+
     def update_lines_parallel(num, data_lines, lines, trail_lines, cube_scale, tail_duration=2,
                      rotations=2, zoom=1, chemtrails=False, elev=10):
 
@@ -296,35 +304,38 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
                 trail.set_3d_properties(data[0:num + 1, 2])
         return lines, trail_lines
 
-    def update_lines_serial(num, data_lines, lines, trail_lines, cube_scale, dataset_idx, plot_idx, tail_duration=2,
-                     rotations=2, zoom=1, chemtrails=False, elev=10):
+    # NOTE: We will include a serial animation version in a future release.  This
+    # commented code currently does not work
 
-        if hasattr(update_lines_serial, 'planes'):
-            for plane in update_lines_serial.planes:
-                plane.remove()
-
-        update_lines_serial.planes = plot_cube(cube_scale)
-        ax.view_init(elev=10, azim=rotations*(360*(num/data_lines[0].shape[0])))
-        ax.dist=9-zoom
-
-        for idx, (line, data, trail) in enumerate(zip(lines, data_lines, trail_lines)):
-            if num<=tail_duration and idx is 0:
-                    line.set_data(data[0:int(plot_idx[num, idx])+1, 0:2].T)
-                    line.set_3d_properties(data[0:int(plot_idx[num, idx])+1, 2])
-            elif dataset_idx[num-tail_duration] >= idx:
-                line.set_data(data[int(plot_idx[num, idx])-tail_duration:int(plot_idx[num, idx])+1, 0:2].T)
-                line.set_3d_properties(data[int(plot_idx[num, idx])-tail_duration:int(plot_idx[num, idx])+1, 2])
-                if chemtrails:
-                    trail.set_data(data[0:int(plot_idx[num, idx]) + 1, 0:2].T)
-                    trail.set_3d_properties(data[0:int(plot_idx[num, idx]) + 1, 2])
-            if dataset_idx[num] > idx:
-                line.set_data(data[num-tail_duration:num+1, 0:2].T)
-                line.set_3d_properties(data[num-tail_duration:num+1, 2])
-                if chemtrails:
-                    trail.set_data(data[0:int(plot_idx[num, idx]) + 1, 0:2].T)
-                    trail.set_3d_properties(data[0:int(plot_idx[num, idx]) + 1, 2])
-
-        return lines, trail_lines
+    # def update_lines_serial(num, data_lines, lines, trail_lines, cube_scale, dataset_idx, plot_idx, tail_duration=2,
+    #                  rotations=2, zoom=1, chemtrails=False, elev=10):
+    #
+    #     if hasattr(update_lines_serial, 'planes'):
+    #         for plane in update_lines_serial.planes:
+    #             plane.remove()
+    #
+    #     update_lines_serial.planes = plot_cube(cube_scale)
+    #     ax.view_init(elev=10, azim=rotations*(360*(num/data_lines[0].shape[0])))
+    #     ax.dist=9-zoom
+    #
+    #     for idx, (line, data, trail) in enumerate(zip(lines, data_lines, trail_lines)):
+    #         if num<=tail_duration and idx is 0:
+    #                 line.set_data(data[0:int(plot_idx[num, idx])+1, 0:2].T)
+    #                 line.set_3d_properties(data[0:int(plot_idx[num, idx])+1, 2])
+    #         elif dataset_idx[num-tail_duration] >= idx:
+    #             line.set_data(data[int(plot_idx[num, idx])-tail_duration:int(plot_idx[num, idx])+1, 0:2].T)
+    #             line.set_3d_properties(data[int(plot_idx[num, idx])-tail_duration:int(plot_idx[num, idx])+1, 2])
+    #             if chemtrails:
+    #                 trail.set_data(data[0:int(plot_idx[num, idx]) + 1, 0:2].T)
+    #                 trail.set_3d_properties(data[0:int(plot_idx[num, idx]) + 1, 2])
+    #         if dataset_idx[num] > idx:
+    #             line.set_data(data[num-tail_duration:num+1, 0:2].T)
+    #             line.set_3d_properties(data[num-tail_duration:num+1, 2])
+    #             if chemtrails:
+    #                 trail.set_data(data[0:int(plot_idx[num, idx]) + 1, 0:2].T)
+    #                 trail.set_3d_properties(data[0:int(plot_idx[num, idx]) + 1, 2])
+    #
+    #     return lines, trail_lines
 
     def update_lines_spin(num, data_lines, lines, cube_scale, rotations=2,
                           zoom=1, elev=10):
@@ -334,7 +345,7 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
                 plane.remove()
 
         update_lines_spin.planes = plot_cube(cube_scale)
-        ax.view_init(elev=elev, azim=rotations*(360*(num/data_lines[0].shape[0])))
+        ax.view_init(elev=elev, azim=rotations*(360*(num/(frame_rate*duration))))
         ax.dist=9-zoom
 
         for line, data in zip(lines, data_lines):
@@ -345,9 +356,9 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
 
     def dispatch_animate(x, ani_params):
         if x[0].shape[1] is 3:
-            return animate_plot(x, **ani_params)
+            return animate_plot3D(x, **ani_params)
 
-    def animate_plot(x, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
+    def animate_plot3D(x, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
                        frame_rate=50, elev=10, style='parallel'):
 
         # inialize plot
@@ -375,46 +386,35 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
             line_ani = animation.FuncAnimation(fig, update_lines_parallel, x[0].shape[0],
                             fargs=(x, lines, trail, 1, tail_duration, rotations, zoom, chemtrails, elev),
                             interval=1000/frame_rate, blit=False, repeat=False)
-        elif style is 'serial':
-            dataset_idx = []
-            for idx, data in enumerate(x):
-                for i in range(data.shape[0]):
-                    dataset_idx.append(idx)
-            plot_idx = np.empty((np.sum([data.shape[0] for data in x]), len(x))) * 0
-            start=int(0)
-            end=int(x[0].shape[0])
-            for idx, d in enumerate(x):
-                plot_idx[start:end,idx] = [int(i) for i in range(d.shape[0])]
-                plot_idx[end:,idx]=int(d.shape[0])
-                if idx+1 < len(x):
-                    start+=int(d.shape[0])-tail_duration
-                    end+=int(x[idx+1].shape[0])-tail_duration
-            line_ani = animation.FuncAnimation(fig, update_lines_serial, np.sum([i.shape[0] for i in x]),
-                            fargs=(x, lines, trail, 1, dataset_idx, plot_idx,
-                            tail_duration, rotations, zoom, chemtrails, elev),
-                            interval=1000/frame_rate, blit=False, repeat=False)
+        # elif style is 'serial':
+        #     dataset_idx = []
+        #     for idx, data in enumerate(x):
+        #         for i in range(data.shape[0]):
+        #             dataset_idx.append(idx)
+        #     plot_idx = np.empty((np.sum([data.shape[0] for data in x]), len(x))) * 0
+        #     start=int(0)
+        #     end=int(x[0].shape[0])
+        #     for idx, d in enumerate(x):
+        #         plot_idx[start:end,idx] = [int(i) for i in range(d.shape[0])]
+        #         plot_idx[end:,idx]=int(d.shape[0])
+        #         if idx+1 < len(x):
+        #             start+=int(d.shape[0])-tail_duration
+        #             end+=int(x[idx+1].shape[0])-tail_duration
+        #     line_ani = animation.FuncAnimation(fig, update_lines_serial, np.sum([i.shape[0] for i in x]),
+        #                     fargs=(x, lines, trail, 1, dataset_idx, plot_idx,
+        #                     tail_duration, rotations, zoom, chemtrails, elev),
+        #                     interval=1000/frame_rate, blit=False, repeat=False)
         elif style is 'spin':
-            line_ani = animation.FuncAnimation(fig, update_lines_spin, x[0].shape[0],
+            line_ani = animation.FuncAnimation(fig, update_lines_spin, frame_rate*duration,
                             fargs=(x, lines, 1, rotations, zoom, elev),
                             interval=1000/frame_rate, blit=False, repeat=False)
 
         return fig, ax, x, line_ani
 
-    # handle explore flag
-    if explore:
-        assert x[0].ndim>1, "Explore mode is currently only supported for 3D plots."
-        kwargs['picker']=True
-
-    # turn kwargs into a list
-    kwargs_list = parse_kwargs(x, mpl_kwargs)
-
-    # handle format strings
-    if fmt is not None:
-        if ~isinstance(fmt, list):
-            fmt = [fmt for i in x]
-
     # draw the plot
-    if animate in [True, 'parallel', 'serial', 'spin']:
+    if animate in [True, 'parallel', 'spin']:
+
+        assert x[0].shape[1] is 3, "Animations are currently only supported for 3d plots."
 
         # animation params
         ani_params = dict(tail_duration=tail_duration,
@@ -436,19 +436,28 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
         # if 3d, plot the cube
         if x[0].shape[1] is 3:
 
-            # Get cube scale from data
+            # set cube scale
             cube_scale = 1
 
             # plot cube
             plot_cube(cube_scale)
 
-            # Setting the axes properties
+            # set the axes properties
             ax.set_xlim3d([-cube_scale, cube_scale])
             ax.set_ylim3d([-cube_scale, cube_scale])
             ax.set_zlim3d([-cube_scale, cube_scale])
 
             # initialize the view
             ax.view_init(elev=elev, azim=azim)
+
+        elif x[0].shape[1] is 2:
+
+            # plot square
+            plot_square(ax)
+
+            # set axes
+            ax.set_xlim(-1.1, 1.1)
+            ax.set_ylim(-1.1, 1.1)
 
         # set line_ani to empty
         line_ani = None
@@ -457,8 +466,7 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
     ax.set_axis_off()
 
     # add labels
-    if labels is not None:
-        add_labels(x, labels)
+    add_labels(x, labels, explore=explore)
 
     # add legend
     if legend is not None:
