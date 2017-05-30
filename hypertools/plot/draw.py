@@ -21,8 +21,8 @@ matplotlib.rcParams['pdf.fonttype'] = 42
 
 def draw(x, return_data=False, legend=None, save_path=False, labels=False,
          show=True, kwargs_list=None, fmt=None, group=False, animate=False,
-         tail_duration=2, rotations=2, zoom=1, chemtrails=False, frame_rate=50,
-         elev=10, azim=-60, duration=30, explore=False):
+         tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False,
+         frame_rate=50, elev=10, azim=-60, duration=30, explore=False):
     """
     Draws the plot
     """
@@ -293,15 +293,24 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
         ax.dist=9-zoom
 
         for line, data, trail in zip(lines, data_lines, trail_lines):
+
+            if precog and chemtrails:
+                trail.set_data(data[:, 0:2].T)
+                trail.set_3d_properties(data[:, 2])
+            elif chemtrails:
+                trail.set_data(data[0:num-tail_duration + 1, 0:2].T)
+                trail.set_3d_properties(data[0:num-tail_duration + 1, 2])
+            elif precog:
+                trail.set_data(data[num+1:, 0:2].T)
+                trail.set_3d_properties(data[num+1:, 2])
+
             if num<=tail_duration:
                     line.set_data(data[0:num+1, 0:2].T)
                     line.set_3d_properties(data[0:num+1, 2])
             else:
                 line.set_data(data[num-tail_duration:num+1, 0:2].T)
                 line.set_3d_properties(data[num-tail_duration:num+1, 2])
-            if chemtrails:
-                trail.set_data(data[0:num + 1, 0:2].T)
-                trail.set_3d_properties(data[0:num + 1, 2])
+
         return lines, trail_lines
 
     # NOTE: We will include a serial animation version in a future release.  This

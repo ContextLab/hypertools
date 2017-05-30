@@ -21,8 +21,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
          labels=None, legend=None, elev=10, azim=-60, ndims=3, normalize=False,
          n_clusters=None, save_path=None, animate=False, duration=30,
-         tail_duration=2, rotations=2, zoom=1, chemtrails=False, frame_rate=50,
-         explore=False, show=True):
+         tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False,
+         frame_rate=50, explore=False, show=True):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -100,10 +100,13 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         Number of rotations around the box (default: 2)
 
     zoom (animation only) : float
-        Zoom, positive numbers will zoom in (default: 0)
+        How far to zoom into the plot, positive numbers will zoom in (default: 0)
 
     chemtrails (animation only) : bool
-        Added trail with change in opacity (default: False)
+        A low-opacity trail is left behind the trajectory (default: False).
+
+    precog (animation only) : bool
+        A low-opacity trail is plotted ahead of the trajectory (default: False).
 
     frame_rate (animation only) : int or float
         Frame rate for animation (default: 50)
@@ -231,6 +234,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
                             rotations=rotations,
                             zoom=zoom,
                             chemtrails=chemtrails,
+                            precog=precog,
                             frame_rate=frame_rate,
                             elev=elev,
                             azim=azim,
