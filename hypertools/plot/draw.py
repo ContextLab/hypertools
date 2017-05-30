@@ -69,7 +69,6 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
             if fmt is None:
                 ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], **ikwargs)
             else:
-                print(fmt)
                 ax.plot(data[i][:,0], data[i][:,1], data[i][:,2], fmt[i], **ikwargs)
         return fig, ax, data
 
@@ -146,7 +145,6 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
         """
         # if explore mode is activated, implement the on hover behavior
         if explore:
-            print('gothere')
             X = np.vstack(x)
             if labels:
                 if any(isinstance(el, list) for el in labels):
