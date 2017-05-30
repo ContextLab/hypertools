@@ -19,7 +19,7 @@ from .._shared.helpers import *
 
 matplotlib.rcParams['pdf.fonttype'] = 42
 
-def draw(x, return_data=False, legend=None, save_path=False, labels=False,
+def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=False,
          show=True, kwargs_list=None, fmt=None, group=False, animate=False,
          tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False,
          frame_rate=50, elev=10, azim=-60, duration=30, explore=False):
@@ -474,6 +474,10 @@ def draw(x, return_data=False, legend=None, save_path=False, labels=False,
 
     # add labels
     add_labels(x, labels, explore=explore)
+
+    # add title
+    if title is not None:
+        ax.set_title(title)
 
     # add legend
     if legend is not None:

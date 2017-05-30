@@ -20,13 +20,23 @@ the normalize function found in tools (see the third example).
 
 
 
-.. code-block:: pytb
+.. rst-class:: sphx-glr-horizontal
 
-    Traceback (most recent call last):
-      File "/Users/andyheusser/Library/Enthought/Canopy_64bit/User/lib/python2.7/site-packages/sphinx_gallery/gen_rst.py", line 475, in execute_code_block
-        exec(code_block, example_globals)
-      File "<string>", line 15, in <module>
-    ValueError: too many values to unpack
+
+    *
+
+      .. image:: /auto_examples/images/sphx_glr_plot_normalize_001.png
+            :scale: 47
+
+    *
+
+      .. image:: /auto_examples/images/sphx_glr_plot_normalize_002.png
+            :scale: 47
+
+    *
+
+      .. image:: /auto_examples/images/sphx_glr_plot_normalize_003.png
+            :scale: 47
 
 
 
@@ -46,22 +56,16 @@ the normalize function found in tools (see the third example).
     cluster1 = np.random.multivariate_normal(np.zeros(3), np.eye(3), size=100)
     cluster2 = np.random.multivariate_normal(np.zeros(3)+10, np.eye(3), size=100)
 
-    data = [cluster1,cluster2]
+    data = [cluster1, cluster2]
 
-    fig,ax,data = hyp.plot(data, '.', normalize='across')
-    ax.set_title('z-score columns across all lists')
-    plt.show()
+    fig, ax, data, _ = hyp.plot(data, '.', normalize='across')
 
-    fig,ax,data = hyp.plot(data, '.', normalize='within')
-    ax.set_title('z-score columns within each list')
-    plt.show()
+    fig, ax, data, _ = hyp.plot(data, '.', normalize='within')
 
     normalized_row = hyp.tools.normalize(data, normalize='row')
-    fig,ax,data = hyp.plot(normalized_row, '.')
-    ax.set_title('z-score each row')
-    plt.show()
+    fig, ax, data, _ = hyp.plot(normalized_row, '.')
 
-**Total running time of the script:** ( 0 minutes  0.000 seconds)
+**Total running time of the script:** ( 0 minutes  0.134 seconds)
 
 
 
