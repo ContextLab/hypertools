@@ -58,14 +58,14 @@ the normalize function found in tools (see the third example).
 
     data = [cluster1, cluster2]
 
-    fig, ax, data, _ = hyp.plot(data, '.', normalize='across')
+    fig, ax, data, _ = hyp.plot(data, '.', normalize='across', title='Normalized across datasets')
 
     fig, ax, data, _ = hyp.plot(data, '.', normalize='within')
 
     normalized_row = hyp.tools.normalize(data, normalize='row')
     fig, ax, data, _ = hyp.plot(normalized_row, '.')
 
-**Total running time of the script:** ( 0 minutes  0.134 seconds)
+**Total running time of the script:** ( 0 minutes  0.128 seconds)
 
 
 

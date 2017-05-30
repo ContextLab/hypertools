@@ -369,26 +369,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="Often times its useful to normalize (z-score) you features before plotting, so that they are on...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_normalize_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_normalize.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_normalize
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="When you pass a matrix with with missing data, hypertools will attempt to fill in the values us...">
 
 .. only:: html
@@ -406,6 +386,26 @@ Gallery of Examples
    :hidden:
 
    /auto_examples/plot_PPCA
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="Often times its useful to normalize (z-score) you features before plotting, so that they are on...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_normalize_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_normalize.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_normalize
 
 .. raw:: html
 

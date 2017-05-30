@@ -28,7 +28,7 @@ cluster2 = np.random.multivariate_normal(np.zeros(3)+10, np.eye(3), size=100)
 
 data = [cluster1, cluster2]
 
-fig, ax, data, _ = hyp.plot(data, '.', normalize='across')
+fig, ax, data, _ = hyp.plot(data, '.', normalize='across', title='Normalized across datasets')
 
 fig, ax, data, _ = hyp.plot(data, '.', normalize='within')
 
