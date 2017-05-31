@@ -147,20 +147,26 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # handle color (to be passed onto matplotlib)
     if color is not None:
         mpl_kwargs['color'] = color
-    if colors is not None:
-        mpl_kwargs['color'] = colors
+        if colors is not None:
+            mpl_kwargs['color'] = colors
+            warnings.warn('Both color and colors defined: color will be ignored \
+                          in favor of colors.')
 
     # handle linestyle (to be passed onto matplotlib)
     if linestyle is not None:
         mpl_kwargs['linestyle'] = linestyle
-    if linestyles is not None:
-        mpl_kwargs['linestyle'] = linestyles
+        if linestyles is not None:
+            mpl_kwargs['linestyle'] = linestyles
+            warnings.warn('Both linestyle and linestyles defined: linestyle  \
+                          will be ignored in favor of linestyles.')
 
     # handle marker (to be passed onto matplotlib)
     if marker is not None:
         mpl_kwargs['marker'] = marker
-    if markers is not None:
-        mpl_kwargs['marker'] = markers
+        if markers is not None:
+            mpl_kwargs['marker'] = markers
+            warnings.warn('Both marker and markers defined: marker will be \
+                          ignored in favor of markers.')
 
     # handle legend
     if legend is not None:
