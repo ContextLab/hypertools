@@ -206,13 +206,19 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         x = reshape_data(x, group)
 
         # interpolate lines if they are grouped
-        if all([symbol is not fmt for symbol in Line2D.markers.keys()]):
+        if is_line(fmt):
             x = patch_lines(x)
 
     # interpolate if its a line plot
-    if fmt in ['-', '--', '-.', ':'] or fmt is None:
-        interp_val = frame_rate*duration/(x[0].shape[0] - 1)
-        x = interp_array_list(x, interp_val=interp_val)
+    if fmt is None or type(fmt) is str:
+        if is_line(fmt):
+            if x[0].shape[0] > 1:
+                x = interp_array_list(x, interp_val=frame_rate*duration/(x[0].shape[0] - 1))
+    elif type(fmt) is list:
+        for idx, xi in enumerate(x):
+            if is_line(fmt[idx]):
+                if xi.shape[0] > 1:
+                    x[idx] = interp_array_list(xi, interp_val=frame_rate*duration/(xi.shape[0] - 1))
 
     # handle explore flag
     if explore:
