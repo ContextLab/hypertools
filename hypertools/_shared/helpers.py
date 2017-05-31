@@ -13,6 +13,7 @@ from scipy.interpolate import PchipInterpolator as pchip
 import seaborn as sns
 import itertools
 import pandas as pd
+from matplotlib.lines import Line2D
 
 ##HELPER FUNCTIONS##
 def center(x):
@@ -160,3 +161,6 @@ def patch_lines(x):
 	for idx in range(len(x)-1):
 		x[idx] = np.vstack([x[idx], x[idx+1][0,:]])
 	return x
+
+def is_line(format_str):
+	return (format_str is None) or (all([str(symbol) not in format_str for symbol in Line2D.markers.keys()]))

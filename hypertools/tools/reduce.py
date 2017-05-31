@@ -83,11 +83,18 @@ def reduce(x, ndims=3, method='PCA', normalize=False, internal=False):
 
     assert all([i.shape[1]>ndims for i in x]), "In order to reduce the data, ndims must be less than the number of dimensions"
 
+    # normalize data
     if normalize:
         x = normalizer(x, normalize=normalize)
 
+    # run the reduction
     if method=='PCA':
         x_reduced = reducePCA(x,ndims)
+
+    # pad cols with zeros if ndims returned is less than ndims
+    if x_reduced[0].shape[1] < ndims:
+        for idx, x_r in enumerate(x_reduced):
+            x_reduced[idx] = np.hstack([x_r, np.zeros((x_r.shape[0], ndims-x_reduced[0].shape[1]))])
 
     if internal or len(x_reduced)>1:
         return x_reduced

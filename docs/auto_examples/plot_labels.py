@@ -28,4 +28,4 @@ for idx,i in enumerate(data):
             tmp.append(None)
     labels.append(tmp)
 
-hyp.plot(data, 'o', labels=labels)
+hyp.plot(data, '.', labels=labels)

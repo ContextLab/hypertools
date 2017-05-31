@@ -16,4 +16,4 @@ import numpy as np
 
 data = hyp.tools.load('weights_sample')
 
-hyp.plot(data, 'o', legend=['Group A', 'Group B', 'Group C'])
+hyp.plot(data, '.', legend=['Group A', 'Group B', 'Group C'])

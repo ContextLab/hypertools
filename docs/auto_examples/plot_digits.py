@@ -18,4 +18,4 @@ digits = datasets.load_digits(n_class=6)
 data = digits.data
 group = digits.target
 
-hyp.plot(data, 'o', group=group)
+hyp.plot(data, '.', group=group)

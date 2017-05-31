@@ -21,4 +21,4 @@ import numpy as np
 
 data = hyp.tools.load('weights_sample')
 
-hyp.plot(data, 'o', explore=True)
+hyp.plot(data, '.', explore=True)
