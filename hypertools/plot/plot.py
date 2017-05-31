@@ -91,8 +91,10 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         /usr/bin/ruby -e "$(curl -fsSL
         https://raw.githubusercontent.com/Homebrew/install/master/install)".
 
-    animate : bool
-        If True, plots the data as an animated trajectory (default: False).
+    animate : bool, 'parallel' or 'spin'
+        If True or 'parallel', plots the data as an animated trajectory, with
+        each dataset plotted simultaneously. If 'spin', all the data is plotted
+        at once but the camera spins around the plot (default: False).
 
     duration (animation only) : float
         Length of the animation in seconds (default: 30 seconds)
