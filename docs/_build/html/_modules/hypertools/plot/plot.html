@@ -203,8 +203,10 @@
 <span class="sd">        /usr/bin/ruby -e &quot;$(curl -fsSL</span>
 <span class="sd">        https://raw.githubusercontent.com/Homebrew/install/master/install)&quot;.</span>
 
-<span class="sd">    animate : bool</span>
-<span class="sd">        If True, plots the data as an animated trajectory (default: False).</span>
+<span class="sd">    animate : bool, &#39;parallel&#39; or &#39;spin&#39;</span>
+<span class="sd">        If True or &#39;parallel&#39;, plots the data as an animated trajectory, with</span>
+<span class="sd">        each dataset plotted simultaneously. If &#39;spin&#39;, all the data is plotted</span>
+<span class="sd">        at once but the camera spins around the plot (default: False).</span>
 
 <span class="sd">    duration (animation only) : float</span>
 <span class="sd">        Length of the animation in seconds (default: 30 seconds)</span>
@@ -259,20 +261,26 @@
     <span class="c1"># handle color (to be passed onto matplotlib)</span>
     <span class="k">if</span> <span class="n">color</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">mpl_kwargs</span><span class="p">[</span><span class="s1">&#39;color&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">color</span>
-    <span class="k">if</span> <span class="n">colors</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">mpl_kwargs</span><span class="p">[</span><span class="s1">&#39;color&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">colors</span>
+        <span class="k">if</span> <span class="n">colors</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">mpl_kwargs</span><span class="p">[</span><span class="s1">&#39;color&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">colors</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s1">&#39;Both color and colors defined: color will be ignored </span><span class="se">\</span>
+<span class="s1">                          in favor of colors.&#39;</span><span class="p">)</span>
 
     <span class="c1"># handle linestyle (to be passed onto matplotlib)</span>
     <span class="k">if</span> <span class="n">linestyle</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">mpl_kwargs</span><span class="p">[</span><span class="s1">&#39;linestyle&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">linestyle</span>
-    <span class="k">if</span> <span class="n">linestyles</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">mpl_kwargs</span><span class="p">[</span><span class="s1">&#39;linestyle&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">linestyles</span>
+        <span class="k">if</span> <span class="n">linestyles</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">mpl_kwargs</span><span class="p">[</span><span class="s1">&#39;linestyle&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">linestyles</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s1">&#39;Both linestyle and linestyles defined: linestyle  </span><span class="se">\</span>
+<span class="s1">                          will be ignored in favor of linestyles.&#39;</span><span class="p">)</span>
 
     <span class="c1"># handle marker (to be passed onto matplotlib)</span>
     <span class="k">if</span> <span class="n">marker</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">mpl_kwargs</span><span class="p">[</span><span class="s1">&#39;marker&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">marker</span>
-    <span class="k">if</span> <span class="n">markers</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">mpl_kwargs</span><span class="p">[</span><span class="s1">&#39;marker&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">markers</span>
+        <span class="k">if</span> <span class="n">markers</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">mpl_kwargs</span><span class="p">[</span><span class="s1">&#39;marker&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">markers</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s1">&#39;Both marker and markers defined: marker will be </span><span class="se">\</span>
+<span class="s1">                          ignored in favor of markers.&#39;</span><span class="p">)</span>
 
     <span class="c1"># handle legend</span>
     <span class="k">if</span> <span class="n">legend</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -312,13 +320,19 @@
         <span class="n">x</span> <span class="o">=</span> <span class="n">reshape_data</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">group</span><span class="p">)</span>
 
         <span class="c1"># interpolate lines if they are grouped</span>
-        <span class="k">if</span> <span class="nb">all</span><span class="p">([</span><span class="n">symbol</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">fmt</span> <span class="k">for</span> <span class="n">symbol</span> <span class="ow">in</span> <span class="n">Line2D</span><span class="o">.</span><span class="n">markers</span><span class="o">.</span><span class="n">keys</span><span class="p">()]):</span>
+        <span class="k">if</span> <span class="n">is_line</span><span class="p">(</span><span class="n">fmt</span><span class="p">):</span>
             <span class="n">x</span> <span class="o">=</span> <span class="n">patch_lines</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
     <span class="c1"># interpolate if its a line plot</span>
-    <span class="k">if</span> <span class="n">fmt</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;-&#39;</span><span class="p">,</span> <span class="s1">&#39;--&#39;</span><span class="p">,</span> <span class="s1">&#39;-.&#39;</span><span class="p">,</span> <span class="s1">&#39;:&#39;</span><span class="p">]</span> <span class="ow">or</span> <span class="n">fmt</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">interp_val</span> <span class="o">=</span> <span class="n">frame_rate</span><span class="o">*</span><span class="n">duration</span><span class="o">/</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">interp_array_list</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">interp_val</span><span class="o">=</span><span class="n">interp_val</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">fmt</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">type</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">is_line</span><span class="p">(</span><span class="n">fmt</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">x</span> <span class="o">=</span> <span class="n">interp_array_list</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">interp_val</span><span class="o">=</span><span class="n">frame_rate</span><span class="o">*</span><span class="n">duration</span><span class="o">/</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="k">elif</span> <span class="nb">type</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">list</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">xi</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">is_line</span><span class="p">(</span><span class="n">fmt</span><span class="p">[</span><span class="n">idx</span><span class="p">]):</span>
+                <span class="k">if</span> <span class="n">xi</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="n">x</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">interp_array_list</span><span class="p">(</span><span class="n">xi</span><span class="p">,</span> <span class="n">interp_val</span><span class="o">=</span><span class="n">frame_rate</span><span class="o">*</span><span class="n">duration</span><span class="o">/</span><span class="p">(</span><span class="n">xi</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
 
     <span class="c1"># handle explore flag</span>
     <span class="k">if</span> <span class="n">explore</span><span class="p">:</span>
