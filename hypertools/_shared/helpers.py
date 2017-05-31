@@ -163,4 +163,4 @@ def patch_lines(x):
 	return x
 
 def is_line(format_str):
-	return (format_str is None) or (all([symbol not in format_str for symbol in Line2D.markers.keys()]))
+	return (format_str is None) or (all([str(symbol) not in format_str for symbol in Line2D.markers.keys()]))

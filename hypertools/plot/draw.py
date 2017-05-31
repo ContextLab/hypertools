@@ -277,8 +277,8 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
             plane_list.append(ax.plot_wireframe(Xs, Ys, Zs, rstride=1, cstride=1, color='black', linewidth=1))
         return plane_list
 
-    def plot_square(ax):
-        ax.add_patch(patches.Rectangle((-1.05, -1.05), 2.05, 2.05, fill=False, edgecolor='black', linewidth=1))
+    def plot_square(ax, scale=1):
+        ax.add_patch(patches.Rectangle(scale*[-1, -1], scale*2, scale*2, fill=False, edgecolor='black', linewidth=1))
 
     def update_lines_parallel(num, data_lines, lines, trail_lines, cube_scale, tail_duration=2,
                      rotations=2, zoom=1, chemtrails=False, elev=10):
