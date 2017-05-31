@@ -198,9 +198,11 @@ have homebrew (mac only), you can install it like this:
 /usr/bin/ruby -e &#8220;$(curl -fsSL
 <a class="reference external" href="https://raw.githubusercontent.com/Homebrew/install/master/install">https://raw.githubusercontent.com/Homebrew/install/master/install</a>)&#8221;.</p>
 </div></blockquote>
-<p><strong>animate</strong> : bool</p>
+<p><strong>animate</strong> : bool, &#8216;parallel&#8217; or &#8216;spin&#8217;</p>
 <blockquote>
-<div><p>If True, plots the data as an animated trajectory (default: False).</p>
+<div><p>If True or &#8216;parallel&#8217;, plots the data as an animated trajectory, with
+each dataset plotted simultaneously. If &#8216;spin&#8217;, all the data is plotted
+at once but the camera spins around the plot (default: False).</p>
 </div></blockquote>
 <p><strong>duration (animation only)</strong> : float</p>
 <blockquote>
