@@ -9,3 +9,4 @@ dist/
 .tox/
 *.bak
 tox.ini
+.vscode/
