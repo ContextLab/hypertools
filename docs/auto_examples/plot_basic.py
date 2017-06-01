@@ -16,4 +16,4 @@ import hypertools as hyp
 
 data = hyp.tools.load('weights_sample')
 
-hyp.plot(data,'o')
+hyp.plot(data, '.')

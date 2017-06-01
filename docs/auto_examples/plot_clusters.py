@@ -18,4 +18,4 @@ import pandas as pd
 
 data = hyp.tools.load('mushrooms')
 
-hyp.plot(data,'o',n_clusters=10)
+hyp.plot(data, '.', n_clusters=10)

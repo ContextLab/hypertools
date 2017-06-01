@@ -34,11 +34,15 @@ Check the [repo](https://github.com/ContextLab/hypertools-paper-notebooks) of Ju
 
 <h2>Installation</h2>
 
+To install the latest stable version run:
+
 `pip install hypertools`
 
-or
+To install the latest unstable version directly from GitHub, run:
 
-To install from this repo:
+`pip install -U git+https://github.com/ContextLab/hypertools.git`
+
+Or alternatively, clone the repository to your local machine:
 
 `git clone https://github.com/ContextLab/hypertools.git`
 
@@ -46,7 +50,7 @@ Then, navigate to the folder and type:
 
 `pip install -e .`
 
-(this assumes you have [pip](https://pip.pypa.io/en/stable/installing/) installed on your system)
+(These instructions assume that you have [pip](https://pip.pypa.io/en/stable/installing/) installed on your system)
 
 <h2>Requirements</h2>
 
@@ -92,6 +96,8 @@ Here is a bibtex formatted reference:
 ```
 
 <h2>Contributing</h2>
+
+[![Join the chat at https://gitter.im/hypertools/Lobby](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/hypertools/Lobby)
 
 If you'd like to contribute, please first read our [Code of Conduct](https://www.mozilla.org/en-US/about/governance/policies/participation/).
 
