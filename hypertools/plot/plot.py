@@ -170,10 +170,6 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
             warnings.warn('Both marker and markers defined: marker will be \
                           ignored in favor of markers.')
 
-    # handle legend
-    if legend is not None:
-        mpl_kwargs['label'] = legend
-
     # normalize
     x = normalizer(x, normalize=normalize, internal=True)
 
@@ -210,6 +206,17 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         # interpolate lines if they are grouped
         if is_line(fmt):
             x = patch_lines(x)
+
+    # handle legend
+    if legend is not None:
+        if legend is False:
+            legend = None
+        elif legend is True and group is not None:
+            legend = [item for item in set(group)]
+        elif legend is True and group is None:
+            legend = [i + 1 for i in range(len(x))]
+
+        mpl_kwargs['label'] = legend
 
     # interpolate if its a line plot
     if fmt is None or type(fmt) is str:
