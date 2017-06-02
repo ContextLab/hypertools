@@ -58,9 +58,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         A list of labels for each point. Must be dimensionality of data (x).
         If no label is wanted for a particular point, input None.
 
-    legend : list
-        A list of string labels to be plotted in a legend (one for each list
-        item).
+    legend : list or bool
+        If set to True, legend is implicitly computed from data. Passing a
+        list will add string labels to the legend (one for each list item).
 
     title : str
         A title for the plot
