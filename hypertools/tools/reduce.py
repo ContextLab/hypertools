@@ -125,6 +125,11 @@ def reduce(x, ndims=3, model='PCA', model_params={}, normalize=False, internal=F
     # reduce data
     x_reduced = reduce_list(x, models[model], model_params)
 
+    # pad cols with zeros if ndims returned is less than ndims
+    if x_reduced[0].shape[1] < ndims:
+        for idx, x_r in enumerate(x_reduced):
+            x_reduced[idx] = np.hstack([x_r, np.zeros((x_r.shape[0], ndims-x_reduced[0].shape[1]))])
+
     # return data
     if internal or len(x_reduced)>1:
         return x_reduced
