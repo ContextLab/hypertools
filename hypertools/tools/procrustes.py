@@ -6,8 +6,12 @@ from builtins import zip
 from builtins import range
 import numpy as np
 
+from .reduce import reduce as reduceD
+
+
 ##MAIN FUNCTION##
-def procrustes(source, target, scaling=True, reflection=True, reduction=False, oblique=False, oblique_rcond=-1):
+def procrustes(source, target, scaling=True, reflection=True, reduction=False,
+               oblique=False, oblique_rcond=-1, ndims=None):
     """
     Function to project from one space to another using Procrustean
     transformation (shift + scaling + rotation + reflection).
@@ -48,6 +52,9 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False, o
         Cutoff for 'small' singular values to regularize the
         inverse. See :class:`~numpy.linalg.lstsq` for more
         information.
+
+    ndims : int
+        Number of dimensions to reduce the dataset to *prior* to alignment
 
     Returns
     ----------
@@ -188,5 +195,10 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False, o
 
         return res
 
+    # reduce if ndims is specified
+    if ndims is not None:
+        source = reduceD(source, ndims, internal=True)
+
+    # Fit and transform
     proj = fit(source, target)
     return transform(source, proj)
