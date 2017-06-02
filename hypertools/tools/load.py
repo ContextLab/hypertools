@@ -2,8 +2,12 @@ import requests
 import pickle
 import pandas as pd
 import sys
+from warnings import warn
 
-def load(dataset):
+from .reduce import reduce as reduceD
+from .align import align as aligner
+
+def load(dataset, ndims=None, align=False):
     """
     Load example data
 
@@ -22,6 +26,12 @@ def load(dataset):
     ----------
     data : Numpy Array
         Example data
+
+    ndims : int
+        If not None, reduce data to ndims dimensions
+
+    align : bool
+        If True, run data through alignment algorithm in tools.alignment
 
     """
     if sys.version_info[0]==3:
@@ -51,5 +61,14 @@ def load(dataset):
         fileid = '0B7Ycm4aSYdPPY3J0U2tRNFB4T3c'
         url = 'https://docs.google.com/uc?export=download&id=' + fileid
         data = pd.read_csv(url)
+
+    if ndims is not None:
+        data = reduceD(data, ndims, internal=True)
+    if align:
+        if len(data) == 1:
+            warn('Data in list of length 1 can not be aligned. '
+                 'Skipping the alignment.')
+        else:
+            data = aligner(data)
 
     return data
