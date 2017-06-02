@@ -21,11 +21,11 @@ from .draw import draw
 
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
-         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=None,
-         align=False, normalize=False, n_clusters=None, save_path=None,
-         animate=False, duration=30, tail_duration=2, rotations=2, zoom=1,
-         chemtrails=False, precog=False, bullettime=False, frame_rate=50,
-         explore=False, show=True):
+         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=3,
+         model='PCA', model_params={}, align=False, normalize=False, n_clusters=None,
+         save_path=None, animate=False, duration=30, tail_duration=2,
+         rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
+         frame_rate=50, explore=False, show=True):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -89,17 +89,6 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     align : bool
         If set to True, data will be run through the ``hyperalignment''
         algorithm implemented in hypertools.tools.align (default: False).
-
-    model : str
-        Reduction model to use.  Models supported: PCA, TSNE, MDS, Isomap,
-        SpectralEmbedding, LocallyLinearEmbedding, FastICA. See
-        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.manifold
-        for details.
-
-    model_params : dict
-        Optional dictionary to pass parameters to reduction model. See
-        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.manifold
-        for details.
 
     normalize : str or False
         If set to 'across', the columns of the input data will be z-scored
@@ -221,7 +210,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     # reduce data to 3 dims for plotting, if ndims is None, return this
     if (ndims and ndims > 3) or (ndims is None and x[0].shape[1] > 3):
-        x = reduceD(x, ndims=3, internal=True)
+        x = reduceD(x, ndims=3, model=model, model_params=model_params, internal=True)
 
     # find cluster and reshape if n_clusters
     if n_clusters is not None:
