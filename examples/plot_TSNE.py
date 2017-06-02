@@ -20,4 +20,4 @@ digits = datasets.load_digits(n_class=6)
 data = digits.data
 group = digits.target
 
-hyp.plot(data, 'o', model='TSNE', group=group)
+hyp.plot(data, '.', model='TSNE', group=group, ndims=2, legend=True)

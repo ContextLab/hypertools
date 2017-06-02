@@ -94,7 +94,8 @@ def reduce(x, ndims=3, model='PCA', model_params={}, normalize=False, internal=F
         'TSNE' : TSNE,
         'Isomap' : Isomap,
         'SpectralEmbedding' : SpectralEmbedding,
-        'LocallyLinearEmbedding' : LocallyLinearEmbedding
+        'LocallyLinearEmbedding' : LocallyLinearEmbedding,
+        'MDS' : MDS
     }
 
     # main
