@@ -123,7 +123,7 @@ def reduce(x, ndims=3, model='PCA', model_params={}, normalize=False, internal=F
 
     # reduce data
     x_reduced = reduce_list(x, models[model], model_params)
-
+    
     # pad cols with zeros if ndims returned is less than ndims
     if x_reduced[0].shape[1] < ndims:
         for idx, x_r in enumerate(x_reduced):
