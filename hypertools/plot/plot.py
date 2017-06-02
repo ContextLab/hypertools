@@ -10,6 +10,7 @@ import seaborn as sns
 import pandas as pd
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 from .._shared.helpers import *
 from ..tools.cluster import cluster
 from ..tools.df2mat import df2mat
