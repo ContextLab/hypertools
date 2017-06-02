@@ -25,7 +25,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          align=False, normalize=False, n_clusters=None, save_path=None,
          animate=False, duration=30, tail_duration=2, rotations=2, zoom=1,
          chemtrails=False, precog=False, bullettime=False, frame_rate=50,
-         explore=False, show=True, ):
+         explore=False, show=True):
     """
     Plots dimensionality reduced data and parses plot arguments
 
