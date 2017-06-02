@@ -26,9 +26,10 @@ from .procrustes import procrustes
 import numpy as np
 from .._shared.helpers import format_data
 from warnings import warn
+from .reduce import reduce as reduceD
 
 ##MAIN FUNCTION##
-def align(data, method='hyper'):
+def align(data, method='hyper', ndims=None):
     """
     Aligns a list of arrays
 
@@ -55,6 +56,9 @@ def align(data, method='hyper'):
     method : str
         Either 'hyper' or 'SRM'.  If 'hyper' (default),
 
+    ndims : int
+        Number of dimensions to reduce the dataset to *prior* to alignment
+
     Returns
     ----------
     aligned : list
@@ -68,6 +72,10 @@ def align(data, method='hyper'):
         warn('The number of features exceeds number of samples. This can lead \
              to overfitting.  We recommend reducing the dimensionality to be \
              less than the number of samples prior to hyperalignment.')
+
+    # reduce if ndims is specified
+    if ndims is not None:
+        data = reduceD(data, ndims, internal=True)
 
     if method=='hyper':
 
