@@ -26,7 +26,6 @@ from .procrustes import procrustes
 import numpy as np
 from .._shared.helpers import format_data
 from warnings import warn
-from .reduce import reduce as reduceD
 
 ##MAIN FUNCTION##
 def align(data, method='hyper', ndims=None):
@@ -75,7 +74,8 @@ def align(data, method='hyper', ndims=None):
 
     # reduce if ndims is specified
     if ndims is not None:
-        data = reduceD(data, ndims, internal=True)
+        from .reduce import reduce as reducer
+        data = reducer(data, ndims, internal=True)
 
     if method=='hyper':
 
@@ -85,7 +85,7 @@ def align(data, method='hyper', ndims=None):
 
         #find the smallest number of rows
         R = min(sizes_0)
-        C = max([3, max(sizes_1)])
+        C = max(sizes_1)
 
         m = [np.empty((R,C), dtype=np.ndarray)] * len(data)
 
