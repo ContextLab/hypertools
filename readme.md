@@ -71,7 +71,7 @@ If installing from github (instead of pip), you must also install the requiremen
 
 <h2>Documentation</h2>
 
-Check out our readthedocs [here](http://hypertools.readthedocs.io/en/latest/).
+Check out our [readthedocs](http://hypertools.readthedocs.io/en/latest/) page for further documentation, complete API details, and additional examples.
 
 <h2>Citing</h2>
 
