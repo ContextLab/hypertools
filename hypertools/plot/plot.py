@@ -9,8 +9,8 @@ import itertools
 import seaborn as sns
 import pandas as pd
 from matplotlib.lines import Line2D
-import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import matplotlib.pyplot as plt
 from .._shared.helpers import *
 from ..tools.cluster import cluster
 from ..tools.df2mat import df2mat
@@ -21,7 +21,7 @@ from .draw import draw
 
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
-         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=3,
+         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=None,
          align=False, normalize=False, n_clusters=None, save_path=None,
          animate=False, duration=30, tail_duration=2, rotations=2, zoom=1,
          chemtrails=False, precog=False, bullettime=False, frame_rate=50,
@@ -60,16 +60,18 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         A list of labels for each point. Must be dimensionality of data (x).
         If no label is wanted for a particular point, input None.
 
-    legend : list or bool
-        If set to True, legend is implicitly computed from data. Passing a
-        list will add string labels to the legend (one for each list item).
+    legend : list
+        A list of string labels to be plotted in a legend (one for each list
+        item).
 
     title : str
         A title for the plot
 
     ndims : int
-        An `int` representing the number of dims to plot in. Must be 1,2, or 3.
-        NOTE: Currently only works with static plots.
+        An `int` representing the number of dims to reduce the data x
+        to. If ndims > 3, will plot in 3 dimensions but return the higher
+        dimensional data. Default is None, which will reduce data to 3
+        dimensions  and plot in 3 dimensions.
 
     align : bool
         If set to True, data will be run through the ``hyperalignment''
@@ -149,6 +151,20 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # turn data into common format - a list of arrays
     x = format_data(x)
 
+    # reduce data to ndims
+    if ndims is not None:
+        x = reduceD(x, ndims=ndims, internal=True)
+
+    # align data
+    if align:
+        if len(x) == 1:
+            warn('Data in list of length 1 can not be aligned. '
+                 'Skipping the alignment.')
+        else:
+            x = aligner(x)
+    # This is what gets returned, unless ndim is None (see below)
+    reduced_and_aligned = x
+
     # catch all matplotlib kwargs here to pass on
     mpl_kwargs = {}
 
@@ -176,20 +192,18 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
             warnings.warn('Both marker and markers defined: marker will be \
                           ignored in favor of markers.')
 
+    # handle legend
+    if legend is not None:
+        mpl_kwargs['label'] = legend
+
     # normalize
     x = normalizer(x, normalize=normalize, internal=True)
 
-    # reduce data
-    if x[0].shape[1]>3:
-        x = reduceD(x, ndims, internal=True)
-
-    # align data
-    if align:
-        if len(x) == 1:
-            warn('Data in list of length 1 can not be aligned. '
-                 'Skipping the alignment.')
-        else:
-            x = aligner(x)
+    # reduce data to 3 dims for plotting, if ndims is None, return this
+    if (ndims and ndims > 3) or (ndims is None and x[0].shape[1] > 3):
+        x = reduceD(x, ndims=3, internal=True)
+        if ndims is None:
+            reduced_and_aligned = x
 
     # find cluster and reshape if n_clusters
     if n_clusters is not None:
@@ -220,17 +234,6 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         # interpolate lines if they are grouped
         if is_line(fmt):
             x = patch_lines(x)
-
-    # handle legend
-    if legend is not None:
-        if legend is False:
-            legend = None
-        elif legend is True and group is not None:
-            legend = [item for item in sorted(set(group), key=list(group).index)]
-        elif legend is True and group is None:
-            legend = [i + 1 for i in range(len(x))]
-
-        mpl_kwargs['label'] = legend
 
     # interpolate if its a line plot
     if fmt is None or type(fmt) is str:
@@ -294,6 +297,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
             Writer = animation.writers['ffmpeg']
             writer = Writer(fps=frame_rate, bitrate=1800)
             line_ani.save(save_path, writer=writer)
+
         else:
             plt.savefig(save_path)
 
@@ -301,4 +305,4 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     if show:
         plt.show()
 
-    return fig, ax, data, line_ani
+    return fig, ax, reduced_and_aligned, line_ani
