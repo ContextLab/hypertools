@@ -10,7 +10,6 @@ import seaborn as sns
 import pandas as pd
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 from .._shared.helpers import *
 from ..tools.cluster import cluster
 from ..tools.df2mat import df2mat
@@ -60,9 +59,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         A list of labels for each point. Must be dimensionality of data (x).
         If no label is wanted for a particular point, input None.
 
-    legend : list or bool
-        If set to True, legend is implicitly computed from data. Passing a
-        list will add string labels to the legend (one for each list item).
+    legend : list
+        A list of string labels to be plotted in a legend (one for each list
+        item).
 
     title : str
         A title for the plot
@@ -176,6 +175,10 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
             warnings.warn('Both marker and markers defined: marker will be \
                           ignored in favor of markers.')
 
+    # handle legend
+    if legend is not None:
+        mpl_kwargs['label'] = legend
+
     # normalize
     x = normalizer(x, normalize=normalize, internal=True)
 
@@ -185,7 +188,11 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     # align data
     if align:
-        x = aligner(x)
+        if len(data) == 1:
+            warn('Data in list of length 1 can not be aligned. '
+                 'Skipping the alignment.')
+        else:
+            x = aligner(x)
 
     # find cluster and reshape if n_clusters
     if n_clusters is not None:
@@ -216,17 +223,6 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         # interpolate lines if they are grouped
         if is_line(fmt):
             x = patch_lines(x)
-
-    # handle legend
-    if legend is not None:
-        if legend is False:
-            legend = None
-        elif legend is True and group is not None:
-            legend = [item for item in sorted(set(group), key=list(group).index)]
-        elif legend is True and group is None:
-            legend = [i + 1 for i in range(len(x))]
-
-        mpl_kwargs['label'] = legend
 
     # interpolate if its a line plot
     if fmt is None or type(fmt) is str:
