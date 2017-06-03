@@ -185,7 +185,11 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     # align data
     if align:
-        x = aligner(x)
+        if len(data) == 1:
+            warn('Data in list of length 1 can not be aligned. '
+                 'Skipping the alignment.')
+        else:
+            data = aligner(data)
 
     # find cluster and reshape if n_clusters
     if n_clusters is not None:
