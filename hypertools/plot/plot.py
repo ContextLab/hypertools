@@ -70,8 +70,10 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     ndims : int
         An `int` representing the number of dims to reduce the data x
         to. If ndims > 3, will plot in 3 dimensions but return the higher
-        dimensional data. Default is None, which will reduce data to 3
-        dimensions  and plot in 3 dimensions.
+        dimensional data. Default is None, which will plot data in 3
+        dimensions and return the data with the same number of dimensions
+        possibly normalized and/or aligned according to normalize/align
+        kwargs.
 
     align : bool
         If set to True, data will be run through the ``hyperalignment''
@@ -151,6 +153,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # turn data into common format - a list of arrays
     x = format_data(x)
 
+    # normalize
+    x = normalizer(x, normalize=normalize, internal=True)
+
     # reduce data to ndims
     if ndims is not None:
         x = reduceD(x, ndims=ndims, internal=True)
@@ -162,8 +167,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
                  'Skipping the alignment.')
         else:
             x = aligner(x)
-    # This is what gets returned, unless ndim is None (see below)
-    reduced_and_aligned = x
+    # Return data that has been normalized and possibly reduced and/or aligned
+    return_data = x
 
     # catch all matplotlib kwargs here to pass on
     mpl_kwargs = {}
@@ -192,14 +197,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
             warnings.warn('Both marker and markers defined: marker will be \
                           ignored in favor of markers.')
 
-    # normalize
-    x = normalizer(x, normalize=normalize, internal=True)
-
     # reduce data to 3 dims for plotting, if ndims is None, return this
     if (ndims and ndims > 3) or (ndims is None and x[0].shape[1] > 3):
         x = reduceD(x, ndims=3, internal=True)
-        if ndims is None:
-            reduced_and_aligned = x
 
     # find cluster and reshape if n_clusters
     if n_clusters is not None:
@@ -312,4 +312,4 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     if show:
         plt.show()
 
-    return fig, ax, reduced_and_aligned, line_ani
+    return fig, ax, return_data, line_ani
