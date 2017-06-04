@@ -38,9 +38,9 @@ def test_plot_3d():
     assert all([i.shape[1]==3 for i in data_3d])
 
 def test_plot_reduce_none():
-    # Should return 3d data if ndims is None
-    _, _, data_3d, _ = plot.plot(data, show=False)
-    assert all([i.shape[1] == 3 for i in data_3d])
+    # Should return same dimensional data if ndims is None
+    _, _, data_new, _ = plot.plot(data, show=False)
+    assert all([i.shape[1] == d.shape[1] for i, d in zip(data_new, data)])
 
 def test_plot_reduce3d():
     # should return 3d data since ndims=3
@@ -69,7 +69,7 @@ def test_plot_reduce10d():
 
 def test_plot_nd():
     _, _, data_nd, _  = plot.plot(data, show=False)
-    assert all([i.shape[1]==3 for i in data_nd])
+    assert all([i.shape[1]==d.shape[1] for i, d in zip(data_nd, data)])
 
 def test_plot_data_is_list():
     _, _, data_nd, _  = plot.plot(data, show=False)
@@ -102,7 +102,7 @@ def test_plot_3d_animate():
 
 def test_plot_nd_animate():
     _,_,data_nd,_ = plot.plot(data, animate=True, show=False)
-    assert all([i.shape[1]==3 for i in data_nd])
+    assert all([i.shape[1]==d.shape[1] for i, d in zip(data_nd, data)])
 
 def test_plot_data_animate_is_list():
     _,_,data_nd,_ = plot.plot(data, animate=True, show=False)
@@ -121,5 +121,5 @@ def test_plot_animate_check_line_ani():
     assert isinstance(line_ani,mpl.animation.FuncAnimation)
 
 def test_plot_mpl_kwargs():
-    _, _, data_3d, _  = plot.plot(data, colors=['b','r'], linestyles=['--',':'], markers=['o','*'], show=False)
-    assert all([i.shape[1]==3 for i in data_3d])
+    _, _, data_new, _  = plot.plot(data, colors=['b','r'], linestyles=['--',':'], markers=['o','*'], show=False)
+    assert all([i.shape[1]==d.shape[1] for i, d in zip(data_new, data)])

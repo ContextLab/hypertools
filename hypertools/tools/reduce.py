@@ -31,13 +31,11 @@ def reduce(x, ndims=3, method='PCA', normalize=False, internal=False,
         reduction models.
 
     normalize : str or False
-        Normalizes the data before reducing. If set to 'across', the columns
-        of the input data will be z-scored across lists (default). That is,
-        the z-scores will be computed with repect to column n across all arrays
-        passed in the list. If set to 'within', the columns will be z-scored
-        within each list that is passed. If set to 'row', each row of the
-        input data will be z-scored. If set to False, the input data will be
-        returned with no z-scoring.
+        If set to 'across', the columns of the input data will be z-scored
+        across lists (default). If set to 'within', the columns will be
+        z-scored within each list that is passed. If set to 'row', each row of
+        the input data will be z-scored. If set to False, the input data will
+        be returned (default is False).
 
     align : bool
         If set to True, data will be run through the ``hyperalignment''
@@ -102,6 +100,7 @@ def reduce(x, ndims=3, method='PCA', normalize=False, internal=False,
             x_reduced[idx] = np.hstack([x_r, np.zeros((x_r.shape[0], ndims-x_reduced[0].shape[1]))])
 
     if align == True:
+        # Import is here to avoid circular imports with reduce.py
         from .align import align as aligner
         x_reduced = aligner(x_reduced)
 
