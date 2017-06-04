@@ -235,7 +235,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     if legend is not None:
         if legend is False:
             legend = None
-        elif leged is True and group is not None:
+        elif legend is True and group is not None:
             legend = [item for item in sorted(set(group), key=list(group).index)]
         elif legend is True and group is None:
             legend = [i + 1 for i in range(len(x))]
