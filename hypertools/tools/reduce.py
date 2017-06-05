@@ -6,7 +6,7 @@ import numpy as np
 
 ## reduction models
 from .._externals.ppca import PPCA
-from sklearn.decomposition import PCA, FastICA
+from sklearn.decomposition import PCA, FastICA, IncrementalPCA, ProjectedGradientNMF, KernelPCA, FactorAnalysis, TruncatedSVD, NMF, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
 from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
 
 # internal libraries
@@ -90,7 +90,17 @@ def reduce(x, ndims=3, model='PCA', model_params={}, normalize=False, internal=F
     # dictionary of models
     models = {
         'PCA' : PCA,
+        'IncrementalPCA' : IncrementalPCA,
+        'SparsePCA' : SparsePCA,
+        'MiniBatchSparsePCA' : MiniBatchSparsePCA,
+        'KernelPCA' : KernelPCA,
         'FastICA' : FastICA,
+        'NMF' : NMF,
+        'ProjectedGradientNMF' : ProjectedGradientNMF,
+        'FactorAnalysis' : FactorAnalysis,
+        'TruncatedSVD' : TruncatedSVD,
+        'DictionaryLearning' : DictionaryLearning,
+        'MiniBatchDictionaryLearning' : MiniBatchDictionaryLearning,
         'TSNE' : TSNE,
         'Isomap' : Isomap,
         'SpectralEmbedding' : SpectralEmbedding,
