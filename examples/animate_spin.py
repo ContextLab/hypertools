@@ -14,7 +14,7 @@ visualize static data in an animated rotating plot.
 # load
 import hypertools as hyp
 
-# load data
+# load example data
 data = hyp.tools.load('weights_sample')
 
 # plot

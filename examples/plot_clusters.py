@@ -13,9 +13,12 @@ yourself.
 # Code source: Andrew Heusser
 # License: MIT
 
+# import
 import hypertools as hyp
 import pandas as pd
 
+# load example data
 data = hyp.tools.load('mushrooms')
 
+# plot
 hyp.plot(data, '.', n_clusters=10)

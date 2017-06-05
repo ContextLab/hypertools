@@ -18,19 +18,24 @@ the normalize function found in tools (see the third example).
 # Code source: Andrew Heusser
 # License: MIT
 
+# import
 import hypertools as hyp
-import scipy.io as sio
 import numpy as np
 import matplotlib.pyplot as plt
 
+# simulate data
 cluster1 = np.random.multivariate_normal(np.zeros(3), np.eye(3), size=100)
 cluster2 = np.random.multivariate_normal(np.zeros(3)+10, np.eye(3), size=100)
-
 data = [cluster1, cluster2]
 
-fig, ax, data, _ = hyp.plot(data, '.', normalize='across', title='Normalized across datasets')
+# plot normalized across lists
+hyp.plot(data, '.', normalize='across', title='Normalized across datasets')
 
-fig, ax, data, _ = hyp.plot(data, '.', normalize='within', title='Normalized within dataset')
+# plot normalized within list
+hyp.plot(data, '.', normalize='within', title='Normalized within dataset')
 
+# normalize by row
 normalized_row = hyp.tools.normalize(data, normalize='row')
-fig, ax, data, _ = hyp.plot(normalized_row, '.', title='Normalized across row')
+
+# plot normalized by row
+hyp.plot(normalized_row, '.', title='Normalized across row')

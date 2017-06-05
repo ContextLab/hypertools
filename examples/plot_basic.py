@@ -12,8 +12,11 @@ with the 'o'.  Hypertools can handle all format strings supported by matplotlib.
 # Code source: Andrew Heusser
 # License: MIT
 
+# import
 import hypertools as hyp
 
+# load example data
 data = hyp.tools.load('weights_sample')
 
+# plot
 hyp.plot(data, '.')
