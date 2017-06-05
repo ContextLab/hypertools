@@ -61,6 +61,7 @@ Then, navigate to the folder and type:
 + scipy>=0.17.1
 + numpy>=1.10.4
 + future
++ requests
 + pytest (for development)
 + ffmpeg (for saving animations)
 
