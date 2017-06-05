@@ -5,12 +5,13 @@ import warnings
 import numpy as np
 from .._externals.ppca import PPCA
 from sklearn.decomposition import PCA as PCA
-from ..tools.df2mat import df2mat
-from ..tools.normalize import normalize as normalizer
+from .df2mat import df2mat
+from .normalize import normalize as normalizer
 from .._shared.helpers import *
 
 ##MAIN FUNCTION##
-def reduce(x, ndims=3, method='PCA', normalize=False, internal=False):
+def reduce(x, ndims=3, method='PCA', normalize=False, internal=False,
+           align=False):
     """
     Reduces dimensionality of an array, or list of arrays
 
@@ -30,13 +31,15 @@ def reduce(x, ndims=3, method='PCA', normalize=False, internal=False):
         reduction models.
 
     normalize : str or False
-        Normalizes the data before reducing. If set to 'across', the columns
-        of the input data will be z-scored across lists (default). That is,
-        the z-scores will be computed with repect to column n across all arrays
-        passed in the list. If set to 'within', the columns will be z-scored
-        within each list that is passed. If set to 'row', each row of the
-        input data will be z-scored. If set to False, the input data will be
-        returned with no z-scoring.
+        If set to 'across', the columns of the input data will be z-scored
+        across lists (default). If set to 'within', the columns will be
+        z-scored within each list that is passed. If set to 'row', each row of
+        the input data will be z-scored. If set to False, the input data will
+        be returned (default is False).
+
+    align : bool
+        If set to True, data will be run through the ``hyperalignment''
+        algorithm implemented in hypertools.tools.align (default: False).
 
     Returns
     ----------
@@ -95,6 +98,11 @@ def reduce(x, ndims=3, method='PCA', normalize=False, internal=False):
     if x_reduced[0].shape[1] < ndims:
         for idx, x_r in enumerate(x_reduced):
             x_reduced[idx] = np.hstack([x_r, np.zeros((x_r.shape[0], ndims-x_reduced[0].shape[1]))])
+
+    if align == True:
+        # Import is here to avoid circular imports with reduce.py
+        from .align import align as aligner
+        x_reduced = aligner(x_reduced)
 
     if internal or len(x_reduced)>1:
         return x_reduced

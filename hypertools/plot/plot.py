@@ -9,22 +9,23 @@ import itertools
 import seaborn as sns
 import pandas as pd
 from matplotlib.lines import Line2D
-import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import matplotlib.pyplot as plt
 from .._shared.helpers import *
 from ..tools.cluster import cluster
 from ..tools.df2mat import df2mat
 from ..tools.reduce import reduce as reduceD
 from ..tools.normalize import normalize as normalizer
+from ..tools.align import align as aligner
 from .draw import draw
 
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
-         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=3,
-         normalize=False, n_clusters=None, save_path=None, animate=False,
-         duration=30, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
-         precog=False, bullettime=False, frame_rate=50, explore=False,
-         show=True):
+         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=None,
+         align=False, normalize=False, n_clusters=None, save_path=None,
+         animate=False, duration=30, tail_duration=2, rotations=2, zoom=1,
+         chemtrails=False, precog=False, bullettime=False, frame_rate=50,
+         explore=False, show=True):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -67,8 +68,16 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         A title for the plot
 
     ndims : int
-        An `int` representing the number of dims to plot in. Must be 1,2, or 3.
-        NOTE: Currently only works with static plots.
+        An `int` representing the number of dims to reduce the data x
+        to. If ndims > 3, will plot in 3 dimensions but return the higher
+        dimensional data. Default is None, which will plot data in 3
+        dimensions and return the data with the same number of dimensions
+        possibly normalized and/or aligned according to normalize/align
+        kwargs.
+
+    align : bool
+        If set to True, data will be run through the ``hyperalignment''
+        algorithm implemented in hypertools.tools.align (default: False).
 
     normalize : str or False
         If set to 'across', the columns of the input data will be z-scored
@@ -144,6 +153,23 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # turn data into common format - a list of arrays
     x = format_data(x)
 
+    # normalize
+    x = normalizer(x, normalize=normalize, internal=True)
+
+    # reduce data to ndims
+    if ndims is not None:
+        x = reduceD(x, ndims=ndims, internal=True)
+
+    # align data
+    if align:
+        if len(x) == 1:
+            warn('Data in list of length 1 can not be aligned. '
+                 'Skipping the alignment.')
+        else:
+            x = aligner(x)
+    # Return data that has been normalized and possibly reduced and/or aligned
+    return_data = x
+
     # catch all matplotlib kwargs here to pass on
     mpl_kwargs = {}
 
@@ -171,12 +197,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
             warnings.warn('Both marker and markers defined: marker will be \
                           ignored in favor of markers.')
 
-    # normalize
-    x = normalizer(x, normalize=normalize, internal=True)
-
-    # reduce data
-    if x[0].shape[1]>3:
-        x = reduceD(x, ndims, internal=True)
+    # reduce data to 3 dims for plotting, if ndims is None, return this
+    if (ndims and ndims > 3) or (ndims is None and x[0].shape[1] > 3):
+        x = reduceD(x, ndims=3, internal=True)
 
     # find cluster and reshape if n_clusters
     if n_clusters is not None:
@@ -281,6 +304,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
             Writer = animation.writers['ffmpeg']
             writer = Writer(fps=frame_rate, bitrate=1800)
             line_ani.save(save_path, writer=writer)
+
         else:
             plt.savefig(save_path)
 
@@ -288,4 +312,4 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     if show:
         plt.show()
 
-    return fig, ax, data, line_ani
+    return fig, ax, return_data, line_ani
