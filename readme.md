@@ -127,8 +127,7 @@ hyp.plot(list_of_arrays, 'o', group=list_of_labels)
 
 ```
 import hypertools as hyp
-aligned_list = hyp.tools.align(list_of_arrays)
-hyp.plot(aligned_list)
+hyp.plot(list_of_arrays, align=True)
 ```
 
 <h3><center>BEFORE</center></h3>
