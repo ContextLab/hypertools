@@ -1,5 +1,3 @@
-## If you are here for the Mozilla Sprint 2017, head over to our [gitter](https://gitter.im/hypertools/Lobby) to get started!
-
 ![Hypertools logo](images/hypercube.png)
 
 
