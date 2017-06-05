@@ -25,10 +25,11 @@ from .._externals.srm import SRM
 from .procrustes import procrustes
 import numpy as np
 from .._shared.helpers import format_data
+from .normalize import normalize as normalizer
 from warnings import warn
 
 ##MAIN FUNCTION##
-def align(data, method='hyper'):
+def align(data, method='hyper', normalize=False, ndims=None):
     """
     Aligns a list of arrays
 
@@ -55,6 +56,16 @@ def align(data, method='hyper'):
     method : str
         Either 'hyper' or 'SRM'.  If 'hyper' (default),
 
+    normalize : str or False
+        If set to 'across', the columns of the input data will be z-scored
+        across lists (default). If set to 'within', the columns will be
+        z-scored within each list that is passed. If set to 'row', each row of
+        the input data will be z-scored. If set to False, the input data will
+        be returned (default is False).
+
+    ndims : int
+        Number of dimensions to reduce the dataset to *prior* to alignment
+
     Returns
     ----------
     aligned : list
@@ -69,6 +80,16 @@ def align(data, method='hyper'):
              to overfitting.  We recommend reducing the dimensionality to be \
              less than the number of samples prior to hyperalignment.')
 
+    # normalize data
+    if normalize:
+        x = normalizer(x, normalize=normalize)
+
+    # reduce if ndims is specified
+    if ndims is not None:
+        # Import is here to avoid circular imports with align.py        
+        from .reduce import reduce as reducer
+        data = reducer(data, ndims, internal=True)
+
     if method=='hyper':
 
         ##STEP 0: STANDARDIZE SIZE AND SHAPE##
@@ -77,7 +98,7 @@ def align(data, method='hyper'):
 
         #find the smallest number of rows
         R = min(sizes_0)
-        C = max([3, max(sizes_1)])
+        C = max(sizes_1)
 
         m = [np.empty((R,C), dtype=np.ndarray)] * len(data)
 
