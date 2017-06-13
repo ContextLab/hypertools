@@ -16,13 +16,14 @@ space of a target matrix.
 # import
 import hypertools as hyp
 import numpy as np
+import scipy
 
 # load example data
 data = hyp.tools.load('spiral')
 target = data
 
 # a random rotation matrix
-rot = np.random.rand(3,3)
+rot = scipy.linalg.orth(np.random.rand(3,3))
 
 # creating new spiral with some noise
 source = np.dot(target, rot)
