@@ -5,8 +5,7 @@ Visualizing the digits dataset using t-SNE
 =============================
 
 This example loads in some data from the scikit-learn digits dataset and plots
-it using t-SNE. Other supported models include PCA, FastICA, MDS, Isomap,
-SpectralEmbedding and LocallyLinearEmbedding
+it using t-SNE.
 
 """
 
