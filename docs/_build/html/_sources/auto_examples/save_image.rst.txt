@@ -18,12 +18,14 @@ the image to be saved, including the file extension (e.g. pdf)
     # Code source: Andrew Heusser
     # License: MIT
 
+    # import
     import hypertools as hyp
-    import scipy.io as sio
     import numpy as np
 
+    # load example data
     data = hyp.tools.load('weights_sample')
 
+    # plot
     hyp.plot(data, 'o', save_path='test-image.pdf')
 
 **Total running time of the script:** ( 0 minutes  0.000 seconds)

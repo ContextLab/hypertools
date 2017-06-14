@@ -31,15 +31,17 @@ than the total number of dimensions because the PCA model is whitened.
     # Code source: Andrew Heusser
     # License: MIT
 
+    # import
     import hypertools as hyp
-    import scipy.io as sio
     import numpy as np
 
+    # load example data
     data = hyp.tools.load('weights_sample')
 
+    # plot
     hyp.tools.describe_pca(data)
 
-**Total running time of the script:** ( 0 minutes  5.225 seconds)
+**Total running time of the script:** ( 0 minutes  6.870 seconds)
 
 
 

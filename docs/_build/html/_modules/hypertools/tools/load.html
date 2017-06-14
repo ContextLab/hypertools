@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.tools.load &#8212; hypertools 0.2.0 documentation</title>
+    <title>hypertools.tools.load &#8212; hypertools 0.3.0 documentation</title>
     
     <link rel="stylesheet" href="../../../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../../',
-        VERSION:     '0.2.0',
+        VERSION:     '0.3.0',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -51,7 +51,7 @@
         </button>
         <a class="navbar-brand" href="../../../index.html">
           hypertools</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.2</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.3</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -114,8 +114,12 @@
 <span class="kn">import</span> <span class="nn">pickle</span>
 <span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
 <span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">from</span> <span class="nn">warnings</span> <span class="k">import</span> <span class="n">warn</span>
 
-<div class="viewcode-block" id="load"><a class="viewcode-back" href="../../../hypertools.tools.load.html#hypertools.tools.load">[docs]</a><span class="k">def</span> <span class="nf">load</span><span class="p">(</span><span class="n">dataset</span><span class="p">):</span>
+<span class="kn">from</span> <span class="nn">.reduce</span> <span class="k">import</span> <span class="n">reduce</span> <span class="k">as</span> <span class="n">reduceD</span>
+<span class="kn">from</span> <span class="nn">.align</span> <span class="k">import</span> <span class="n">align</span> <span class="k">as</span> <span class="n">aligner</span>
+
+<div class="viewcode-block" id="load"><a class="viewcode-back" href="../../../hypertools.tools.load.html#hypertools.tools.load">[docs]</a><span class="k">def</span> <span class="nf">load</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">align</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Load example data</span>
 
@@ -134,6 +138,12 @@
 <span class="sd">    ----------</span>
 <span class="sd">    data : Numpy Array</span>
 <span class="sd">        Example data</span>
+
+<span class="sd">    ndims : int</span>
+<span class="sd">        If not None, reduce data to ndims dimensions</span>
+
+<span class="sd">    align : bool</span>
+<span class="sd">        If True, run data through alignment algorithm in tools.alignment</span>
 
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">version_info</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">==</span><span class="mi">3</span><span class="p">:</span>
@@ -163,6 +173,15 @@
         <span class="n">fileid</span> <span class="o">=</span> <span class="s1">&#39;0B7Ycm4aSYdPPY3J0U2tRNFB4T3c&#39;</span>
         <span class="n">url</span> <span class="o">=</span> <span class="s1">&#39;https://docs.google.com/uc?export=download&amp;id=&#39;</span> <span class="o">+</span> <span class="n">fileid</span>
         <span class="n">data</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">ndims</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">reduceD</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">ndims</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">align</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">warn</span><span class="p">(</span><span class="s1">&#39;Data in list of length 1 can not be aligned. &#39;</span>
+                 <span class="s1">&#39;Skipping the alignment.&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">aligner</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">data</span></div>
 </pre></div>

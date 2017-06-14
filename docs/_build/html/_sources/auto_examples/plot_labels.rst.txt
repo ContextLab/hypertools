@@ -27,12 +27,14 @@ are simply labeling the first datapoint for each matrix in the list.
     # Code source: Andrew Heusser
     # License: MIT
 
+    # import
     import hypertools as hyp
-    import scipy.io as sio
     import numpy as np
 
+    # load example data
     data = hyp.tools.load('weights_sample')
 
+    # simulate labels
     labels=[]
     for idx,i in enumerate(data):
         tmp=[]
@@ -43,9 +45,10 @@ are simply labeling the first datapoint for each matrix in the list.
                 tmp.append(None)
         labels.append(tmp)
 
+    # plot
     hyp.plot(data, '.', labels=labels)
 
-**Total running time of the script:** ( 0 minutes  1.063 seconds)
+**Total running time of the script:** ( 0 minutes  0.932 seconds)
 
 
 

@@ -38,27 +38,28 @@ space of a target matrix.
     # Code source: Andrew Heusser
     # License: MIT
 
+    # import
     import hypertools as hyp
-    import scipy.io as sio
     import numpy as np
-    import matplotlib.pyplot as plt
+    import scipy
 
+    # load example data
     data = hyp.tools.load('spiral')
     target = data
 
-    # A random rotation matrix
-    rot = np.random.rand(3,3)
+    # a random rotation matrix
+    rot = scipy.linalg.orth(np.random.rand(3,3))
 
     # creating new spiral with some noise
     source = np.dot(target, rot)
 
-    # Before hyperalignment
+    # before hyperalignment
     hyp.plot([target, source], title='Before alignment')
 
-    # After hyperalignment
+    # after hyperalignment
     hyp.plot([hyp.tools.procrustes(source, target), target], ['-','--'], title='After alignment')
 
-**Total running time of the script:** ( 0 minutes  0.713 seconds)
+**Total running time of the script:** ( 0 minutes  11.210 seconds)
 
 
 

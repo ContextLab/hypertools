@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.tools.procrustes &#8212; hypertools 0.2.0 documentation</title>
+    <title>hypertools.tools.procrustes &#8212; hypertools 0.3.0 documentation</title>
     
     <link rel="stylesheet" href="../../../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../../',
-        VERSION:     '0.2.0',
+        VERSION:     '0.3.0',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -51,7 +51,7 @@
         </button>
         <a class="navbar-brand" href="../../../index.html">
           hypertools</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.2</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.3</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -117,11 +117,14 @@
 <span class="kn">from</span> <span class="nn">builtins</span> <span class="k">import</span> <span class="nb">zip</span>
 <span class="kn">from</span> <span class="nn">builtins</span> <span class="k">import</span> <span class="nb">range</span>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">.normalize</span> <span class="k">import</span> <span class="n">normalize</span> <span class="k">as</span> <span class="n">normalizer</span>
+<span class="kn">from</span> <span class="nn">.reduce</span> <span class="k">import</span> <span class="n">reduce</span> <span class="k">as</span> <span class="n">reduceD</span>
+
 
 <span class="c1">##MAIN FUNCTION##</span>
-<div class="viewcode-block" id="procrustes"><a class="viewcode-back" href="../../../hypertools.tools.procrustes.html#hypertools.tools.procrustes">[docs]</a><span class="k">def</span> <span class="nf">procrustes</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">scaling</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reflection</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reduction</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">oblique</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">oblique_rcond</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Function to project from one space to another using Procrustean</span>
+<div class="viewcode-block" id="procrustes"><a class="viewcode-back" href="../../../hypertools.tools.procrustes.html#hypertools.tools.procrustes">[docs]</a><span class="k">def</span> <span class="nf">procrustes</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">scaling</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reflection</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reduction</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+               <span class="n">oblique</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">oblique_rcond</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Function to project from one space to another using Procrustean</span>
 <span class="sd">    transformation (shift + scaling + rotation + reflection).</span>
 
 <span class="sd">    The implementation of this function was based on the ProcrusteanMapper in</span>
@@ -160,6 +163,16 @@
 <span class="sd">        Cutoff for &#39;small&#39; singular values to regularize the</span>
 <span class="sd">        inverse. See :class:`~numpy.linalg.lstsq` for more</span>
 <span class="sd">        information.</span>
+
+<span class="sd">    normalize : str or False</span>
+<span class="sd">        If set to &#39;across&#39;, the columns of the input data will be z-scored</span>
+<span class="sd">        across lists (default). If set to &#39;within&#39;, the columns will be</span>
+<span class="sd">        z-scored within each list that is passed. If set to &#39;row&#39;, each row of</span>
+<span class="sd">        the input data will be z-scored. If set to False, the input data will</span>
+<span class="sd">        be returned (default is False).</span>
+
+<span class="sd">    ndims : int</span>
+<span class="sd">        Number of dimensions to reduce the dataset to *prior* to alignment</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    ----------</span>
@@ -300,6 +313,15 @@
 
         <span class="k">return</span> <span class="n">res</span>
 
+    <span class="c1"># normalize data</span>
+    <span class="k">if</span> <span class="n">normalize</span><span class="p">:</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">normalizer</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="n">normalize</span><span class="p">)</span>
+
+    <span class="c1"># reduce if ndims is specified</span>
+    <span class="k">if</span> <span class="n">ndims</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">source</span> <span class="o">=</span> <span class="n">reduceD</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">ndims</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="c1"># Fit and transform</span>
     <span class="n">proj</span> <span class="o">=</span> <span class="n">fit</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">transform</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">proj</span><span class="p">)</span></div>
 </pre></div>

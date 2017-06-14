@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.plot.plot &#8212; hypertools 0.2.0 documentation</title>
+    <title>hypertools.plot.plot &#8212; hypertools 0.3.0 documentation</title>
     
     <link rel="stylesheet" href="../../../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../../',
-        VERSION:     '0.2.0',
+        VERSION:     '0.3.0',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -51,7 +51,7 @@
         </button>
         <a class="navbar-brand" href="../../../index.html">
           hypertools</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.2</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.3</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -121,21 +121,23 @@
 <span class="kn">import</span> <span class="nn">seaborn</span> <span class="k">as</span> <span class="nn">sns</span>
 <span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
 <span class="kn">from</span> <span class="nn">matplotlib.lines</span> <span class="k">import</span> <span class="n">Line2D</span>
+<span class="kn">import</span> <span class="nn">matplotlib.animation</span> <span class="k">as</span> <span class="nn">animation</span>
 <span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
 <span class="kn">from</span> <span class="nn">.._shared.helpers</span> <span class="k">import</span> <span class="o">*</span>
 <span class="kn">from</span> <span class="nn">..tools.cluster</span> <span class="k">import</span> <span class="n">cluster</span>
 <span class="kn">from</span> <span class="nn">..tools.df2mat</span> <span class="k">import</span> <span class="n">df2mat</span>
-<span class="kn">from</span> <span class="nn">..tools.reduce</span> <span class="k">import</span> <span class="n">reduce</span> <span class="k">as</span> <span class="n">reduceD</span>
+<span class="kn">from</span> <span class="nn">..tools.reduce</span> <span class="k">import</span> <span class="n">reduce</span> <span class="k">as</span> <span class="n">reducer</span>
 <span class="kn">from</span> <span class="nn">..tools.normalize</span> <span class="k">import</span> <span class="n">normalize</span> <span class="k">as</span> <span class="n">normalizer</span>
+<span class="kn">from</span> <span class="nn">..tools.align</span> <span class="k">import</span> <span class="n">align</span> <span class="k">as</span> <span class="n">aligner</span>
 <span class="kn">from</span> <span class="nn">.draw</span> <span class="k">import</span> <span class="n">draw</span>
 
 <div class="viewcode-block" id="plot"><a class="viewcode-back" href="../../../hypertools.plot.html#hypertools.plot">[docs]</a><span class="k">def</span> <span class="nf">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">fmt</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">marker</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">markers</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
          <span class="n">linestyles</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">colors</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">palette</span><span class="o">=</span><span class="s1">&#39;hls&#39;</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-         <span class="n">labels</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">legend</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">elev</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">azim</span><span class="o">=-</span><span class="mi">60</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
-         <span class="n">normalize</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">n_clusters</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">save_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">animate</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-         <span class="n">duration</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">tail_duration</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">rotations</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">zoom</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">chemtrails</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-         <span class="n">precog</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">bullettime</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">frame_rate</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">explore</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-         <span class="n">show</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+         <span class="n">labels</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">legend</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">elev</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">azim</span><span class="o">=-</span><span class="mi">60</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+         <span class="n">model</span><span class="o">=</span><span class="s1">&#39;IncrementalPCA&#39;</span><span class="p">,</span> <span class="n">model_params</span><span class="o">=</span><span class="p">{},</span> <span class="n">align</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+         <span class="n">n_clusters</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">save_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">animate</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">duration</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">tail_duration</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+         <span class="n">rotations</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">zoom</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">chemtrails</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">precog</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">bullettime</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+         <span class="n">frame_rate</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">explore</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">show</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Plots dimensionality reduced data and parses plot arguments</span>
 
@@ -170,16 +172,45 @@
 <span class="sd">        A list of labels for each point. Must be dimensionality of data (x).</span>
 <span class="sd">        If no label is wanted for a particular point, input None.</span>
 
-<span class="sd">    legend : list</span>
-<span class="sd">        A list of string labels to be plotted in a legend (one for each list</span>
-<span class="sd">        item).</span>
+<span class="sd">    legend : list or bool</span>
+<span class="sd">        If set to True, legend is implicitly computed from data. Passing a</span>
+<span class="sd">        list will add string labels to the legend (one for each list item).</span>
 
 <span class="sd">    title : str</span>
 <span class="sd">        A title for the plot</span>
 
 <span class="sd">    ndims : int</span>
-<span class="sd">        An `int` representing the number of dims to plot in. Must be 1,2, or 3.</span>
-<span class="sd">        NOTE: Currently only works with static plots.</span>
+<span class="sd">        An `int` representing the number of dims to reduce the data x</span>
+<span class="sd">        to. If ndims &gt; 3, will plot in 3 dimensions but return the higher</span>
+<span class="sd">        dimensional data. Default is None, which will plot data in 3</span>
+<span class="sd">        dimensions and return the data with the same number of dimensions</span>
+<span class="sd">        possibly normalized and/or aligned according to normalize/align</span>
+<span class="sd">        kwargs.</span>
+
+<span class="sd">    model : str</span>
+<span class="sd">        Decomposition/manifold learning model to use.  Models supported: PCA,</span>
+<span class="sd">        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,</span>
+<span class="sd">        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,</span>
+<span class="sd">        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS.</span>
+
+<span class="sd">    model_params : dict</span>
+<span class="sd">        Optional dictionary of scikit-learn parameters to pass to reduction model.</span>
+<span class="sd">        See scikit-learn specific model docs for details.</span>
+
+<span class="sd">    align : bool</span>
+<span class="sd">        If set to True, data will be run through the ``hyperalignment&#39;&#39;</span>
+<span class="sd">        algorithm implemented in hypertools.tools.align (default: False).</span>
+
+<span class="sd">    model : str</span>
+<span class="sd">        Reduction model to use.  Models supported: PCA, TSNE, MDS, Isomap,</span>
+<span class="sd">        SpectralEmbedding, LocallyLinearEmbedding, FastICA. See</span>
+<span class="sd">        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.manifold</span>
+<span class="sd">        for details.</span>
+
+<span class="sd">    model_params : dict</span>
+<span class="sd">        Optional dictionary to pass parameters to reduction model. See</span>
+<span class="sd">        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.manifold</span>
+<span class="sd">        for details.</span>
 
 <span class="sd">    normalize : str or False</span>
 <span class="sd">        If set to &#39;across&#39;, the columns of the input data will be z-scored</span>
@@ -255,6 +286,24 @@
     <span class="c1"># turn data into common format - a list of arrays</span>
     <span class="n">x</span> <span class="o">=</span> <span class="n">format_data</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
+    <span class="c1"># normalize</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">normalizer</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="n">normalize</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="c1"># reduce data to ndims</span>
+    <span class="k">if</span> <span class="n">ndims</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">reducer</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="n">ndims</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span> <span class="n">model_params</span><span class="o">=</span><span class="n">model_params</span><span class="p">,</span>
+                    <span class="n">internal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="c1"># align data</span>
+    <span class="k">if</span> <span class="n">align</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">warn</span><span class="p">(</span><span class="s1">&#39;Data in list of length 1 can not be aligned. &#39;</span>
+                 <span class="s1">&#39;Skipping the alignment.&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">aligner</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="c1"># Return data that has been normalized and possibly reduced and/or aligned</span>
+    <span class="n">return_data</span> <span class="o">=</span> <span class="n">x</span>
+
     <span class="c1"># catch all matplotlib kwargs here to pass on</span>
     <span class="n">mpl_kwargs</span> <span class="o">=</span> <span class="p">{}</span>
 
@@ -282,16 +331,9 @@
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s1">&#39;Both marker and markers defined: marker will be </span><span class="se">\</span>
 <span class="s1">                          ignored in favor of markers.&#39;</span><span class="p">)</span>
 
-    <span class="c1"># handle legend</span>
-    <span class="k">if</span> <span class="n">legend</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">mpl_kwargs</span><span class="p">[</span><span class="s1">&#39;label&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">legend</span>
-
-    <span class="c1"># normalize</span>
-    <span class="n">x</span> <span class="o">=</span> <span class="n">normalizer</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="n">normalize</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-
-    <span class="c1"># reduce data</span>
-    <span class="k">if</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">&gt;</span><span class="mi">3</span><span class="p">:</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">reduceD</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">ndims</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="c1"># reduce data to 3 dims for plotting, if ndims is None, return this</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">ndims</span> <span class="ow">and</span> <span class="n">ndims</span> <span class="o">&gt;</span> <span class="mi">3</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">ndims</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">3</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">reducer</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span> <span class="n">model_params</span><span class="o">=</span><span class="n">model_params</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
     <span class="c1"># find cluster and reshape if n_clusters</span>
     <span class="k">if</span> <span class="n">n_clusters</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -322,6 +364,17 @@
         <span class="c1"># interpolate lines if they are grouped</span>
         <span class="k">if</span> <span class="n">is_line</span><span class="p">(</span><span class="n">fmt</span><span class="p">):</span>
             <span class="n">x</span> <span class="o">=</span> <span class="n">patch_lines</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+    <span class="c1"># handle legend</span>
+    <span class="k">if</span> <span class="n">legend</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">legend</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">:</span>
+            <span class="n">legend</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">elif</span> <span class="n">legend</span> <span class="ow">is</span> <span class="kc">True</span> <span class="ow">and</span> <span class="n">group</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">legend</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">group</span><span class="p">),</span> <span class="n">key</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">group</span><span class="p">)</span><span class="o">.</span><span class="n">index</span><span class="p">)]</span>
+        <span class="k">elif</span> <span class="n">legend</span> <span class="ow">is</span> <span class="kc">True</span> <span class="ow">and</span> <span class="n">group</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">legend</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">))]</span>
+
+        <span class="n">mpl_kwargs</span><span class="p">[</span><span class="s1">&#39;label&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">legend</span>
 
     <span class="c1"># interpolate if its a line plot</span>
     <span class="k">if</span> <span class="n">fmt</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">type</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">str</span><span class="p">:</span>
@@ -385,6 +438,7 @@
             <span class="n">Writer</span> <span class="o">=</span> <span class="n">animation</span><span class="o">.</span><span class="n">writers</span><span class="p">[</span><span class="s1">&#39;ffmpeg&#39;</span><span class="p">]</span>
             <span class="n">writer</span> <span class="o">=</span> <span class="n">Writer</span><span class="p">(</span><span class="n">fps</span><span class="o">=</span><span class="n">frame_rate</span><span class="p">,</span> <span class="n">bitrate</span><span class="o">=</span><span class="mi">1800</span><span class="p">)</span>
             <span class="n">line_ani</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="n">writer</span><span class="o">=</span><span class="n">writer</span><span class="p">)</span>
+
         <span class="k">else</span><span class="p">:</span>
             <span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">save_path</span><span class="p">)</span>
 
@@ -392,7 +446,7 @@
     <span class="k">if</span> <span class="n">show</span><span class="p">:</span>
         <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 
-    <span class="k">return</span> <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">line_ani</span></div>
+    <span class="k">return</span> <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span> <span class="n">return_data</span><span class="p">,</span> <span class="n">line_ani</span></div>
 </pre></div>
 
     </div>

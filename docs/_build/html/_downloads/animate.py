@@ -12,14 +12,16 @@ from one subject.  The rows are timepoints and the columns are neural
 # Code source: Andrew Heusser
 # License: MIT
 
+# import
 import hypertools as hyp
-import scipy.io as sio
 import numpy as np
 
-data = hyp.tools.load('weights')
-aligned_w = hyp.tools.align(data)
+# load example data
+data = hyp.tools.load('weights', align=True)
 
-w1 = np.mean(aligned_w[:17],0)
-w2 = np.mean(aligned_w[18:],0)
+# average into two groups
+w1 = np.mean(data[:17],0)
+w2 = np.mean(data[18:],0)
 
+# plot
 hyp.plot([w1, w2], animate=True)

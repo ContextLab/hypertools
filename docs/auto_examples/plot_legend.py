@@ -10,10 +10,11 @@ An example of how to use the `legend` kwarg to generate a legend.
 # Code source: Andrew Heusser
 # License: MIT
 
+# import
 import hypertools as hyp
-import scipy.io as sio
-import numpy as np
 
+# load example data
 data = hyp.tools.load('weights_sample')
 
+# plot
 hyp.plot(data, '.', legend=['Group A', 'Group B', 'Group C'])

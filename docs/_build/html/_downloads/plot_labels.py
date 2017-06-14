@@ -12,12 +12,14 @@ are simply labeling the first datapoint for each matrix in the list.
 # Code source: Andrew Heusser
 # License: MIT
 
+# import
 import hypertools as hyp
-import scipy.io as sio
 import numpy as np
 
+# load example data
 data = hyp.tools.load('weights_sample')
 
+# simulate labels
 labels=[]
 for idx,i in enumerate(data):
     tmp=[]
@@ -28,4 +30,5 @@ for idx,i in enumerate(data):
             tmp.append(None)
     labels.append(tmp)
 
+# plot
 hyp.plot(data, '.', labels=labels)

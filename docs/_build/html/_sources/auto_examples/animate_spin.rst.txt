@@ -18,10 +18,10 @@ visualize static data in an animated rotating plot.
     # Code source: Andrew Heusser
     # License: MIT
 
-    # load
+    # import
     import hypertools as hyp
 
-    # load data
+    # load example data
     data = hyp.tools.load('weights_sample')
 
     # plot
