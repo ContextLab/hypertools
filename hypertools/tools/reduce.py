@@ -64,7 +64,7 @@ def reduce(x, ndims=3, model='IncrementalPCA', model_params={}, normalize=False,
 
         # ppca if missing data
         m = PPCA()
-        m.fit(data=np.vstack(x), d=ndim)
+        m.fit(data=np.vstack(x))
         x_pca = m.transform()
 
         # if the whole row is missing, return nans
