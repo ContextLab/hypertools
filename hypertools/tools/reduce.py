@@ -32,14 +32,13 @@ def reduce(x, ndims=3, model='PCA', model_params={}, normalize=False, internal=F
 
     model : str
         Decomposition/manifold learning model to use.  Models supported: PCA,
-        FastICA, TSNE, MDS, Isomap, SpectralEmbedding, and LocallyLinearEmbedding.
-        See http://scikit-learn.org/stable/modules/classes.html#module-sklearn.manifold
-        for details.
+        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
+        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
+        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS.
 
     model_params : dict
-        Optional dictionary to pass parameters to model. See
-        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.manifold
-        for details of each model.
+        Optional dictionary of scikit-learn parameters to pass to reduction model.
+        See scikit-learn specific model docs for details.
 
     normalize : str or False
         If set to 'across', the columns of the input data will be z-scored
