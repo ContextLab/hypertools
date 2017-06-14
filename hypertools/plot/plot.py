@@ -14,14 +14,14 @@ import matplotlib.pyplot as plt
 from .._shared.helpers import *
 from ..tools.cluster import cluster
 from ..tools.df2mat import df2mat
-from ..tools.reduce import reduce as reduceD
+from ..tools.reduce import reduce as reducer
 from ..tools.normalize import normalize as normalizer
 from ..tools.align import align as aligner
 from .draw import draw
 
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
-         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=3,
+         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=None,
          model='PCA', model_params={}, align=False, normalize=False, n_clusters=None,
          save_path=None, animate=False, duration=30, tail_duration=2,
          rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
@@ -180,7 +180,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     # reduce data to ndims
     if ndims is not None:
-        x = reduceD(x, ndims=ndims, internal=True)
+        x = reducer(x, ndims=ndims, model=model, model_params=model_params,
+                    internal=True)
 
     # align data
     if align:
@@ -221,7 +222,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     # reduce data to 3 dims for plotting, if ndims is None, return this
     if (ndims and ndims > 3) or (ndims is None and x[0].shape[1] > 3):
-        x = reduceD(x, ndims=3, model=model, model_params=model_params, internal=True)
+        x = reducer(x, ndims=3, model=model, model_params=model_params, internal=True)
 
     # find cluster and reshape if n_clusters
     if n_clusters is not None:
