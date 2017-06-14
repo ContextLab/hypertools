@@ -76,15 +76,14 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         kwargs.
 
     model : str
-        Reduction model to use.  Models supported: PCA, TSNE, MDS, Isomap,
-        SpectralEmbedding, LocallyLinearEmbedding, FastICA. See
-        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.manifold
-        for details.
+        Decomposition/manifold learning model to use.  Models supported: PCA,
+        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
+        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
+        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS.
 
     model_params : dict
-        Optional dictionary to pass parameters to reduction model. See
-        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.manifold
-        for details.
+        Optional dictionary of scikit-learn parameters to pass to reduction model.
+        See scikit-learn specific model docs for details.
 
     align : bool
         If set to True, data will be run through the ``hyperalignment''
