@@ -1,16 +1,21 @@
 #!/usr/bin/env python
 
-##PACKAGES##
+# libraries
 import warnings
 import numpy as np
+
+## reduction models
 from .._externals.ppca import PPCA
-from sklearn.decomposition import PCA as PCA
-from .df2mat import df2mat
-from .normalize import normalize as normalizer
+from sklearn.decomposition import PCA, FastICA, IncrementalPCA, KernelPCA, FactorAnalysis, TruncatedSVD, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
+from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
+
+# internal libraries
+from ..tools.df2mat import df2mat
+from ..tools.normalize import normalize as normalizer
 from .._shared.helpers import *
 
-##MAIN FUNCTION##
-def reduce(x, ndims=3, method='PCA', normalize=False, internal=False,
+# main function
+def reduce(x, ndims=3, model='IncrementalPCA', model_params={}, normalize=False, internal=False,
            align=False):
     """
     Reduces dimensionality of an array, or list of arrays
@@ -25,10 +30,15 @@ def reduce(x, ndims=3, method='PCA', normalize=False, internal=False,
     ndims : int
         Number of dimensions to reduce
 
-    method : str
-        Reduction model to use.  Currently, only 'PCA' (PCA/PPCA) is
-        implemented. In next release this kwarg will support all scikit-learn
-        reduction models.
+    model : str
+        Decomposition/manifold learning model to use.  Models supported: PCA,
+        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
+        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
+        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS.
+
+    model_params : dict
+        Optional dictionary of scikit-learn parameters to pass to reduction model.
+        See scikit-learn specific model docs for details.
 
     normalize : str or False
         If set to 'across', the columns of the input data will be z-scored
@@ -49,61 +59,88 @@ def reduce(x, ndims=3, method='PCA', normalize=False, internal=False,
 
     """
 
-    ##SUB FUNCTIONS##
-    def reducePCA(x, ndim):
+    # sub functions
+    def fill_missing(x):
 
-        # if there are any nans in any of the lists, use ppca
-        if np.isnan(np.vstack(x)).any():
-            warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
+        # ppca if missing data
+        m = PPCA()
+        m.fit(data=np.vstack(x), d=ndim)
+        x_pca = m.transform()
 
-            # ppca if missing data
-            m = PPCA()
-            m.fit(data=np.vstack(x), d=ndim)
-            x_pca = m.transform()
+        # if the whole row is missing, return nans
+        all_missing = [idx for idx,a in enumerate(np.vstack(x)) if all([type(b)==np.nan for b in a])]
+        if len(all_missing)>0:
+            for i in all_missing:
+                x_pca[i,:]=np.nan
 
-            # if the whole row is missing, return nans
-            all_missing = [idx for idx,a in enumerate(np.vstack(x)) if all([type(b)==np.nan for b in a])]
-            if len(all_missing)>0:
-                for i in all_missing:
-                    x_pca[i,:]=np.nan
-
-            # get the original lists back
-            if len(x)>1:
-                x_split = np.cumsum([i.shape[0] for i in x][:-1])
-                return list(np.split(x_pca,x_split,axis=0))
-            else:
-                return [x_pca]
-
+        # get the original lists back
+        if len(x)>1:
+            x_split = np.cumsum([i.shape[0] for i in x][:-1])
+            return list(np.split(x_pca,x_split,axis=0))
         else:
-            m=PCA(n_components=ndim, whiten=True)
-            m.fit(np.vstack(x))
-            if len(x)>1:
-                return [m.transform(i) for i in x]
-            else:
-                return [m.transform(x[0])]
+            return [x_pca]
 
+    def reduce_list(x, model, model_params):
+        split = np.cumsum([len(xi) for xi in x])[:-1]
+        m=model(**model_params)
+        x_r = np.vsplit(m.fit_transform(np.vstack(x)), split)
+        if len(x)>1:
+            return [xi for xi in x_r]
+        else:
+            return [x_r[0]]
+
+    # dictionary of models
+    models = {
+        'PCA' : PCA,
+        'IncrementalPCA' : IncrementalPCA,
+        'SparsePCA' : SparsePCA,
+        'MiniBatchSparsePCA' : MiniBatchSparsePCA,
+        'KernelPCA' : KernelPCA,
+        'FastICA' : FastICA,
+        'FactorAnalysis' : FactorAnalysis,
+        'TruncatedSVD' : TruncatedSVD,
+        'DictionaryLearning' : DictionaryLearning,
+        'MiniBatchDictionaryLearning' : MiniBatchDictionaryLearning,
+        'TSNE' : TSNE,
+        'Isomap' : Isomap,
+        'SpectralEmbedding' : SpectralEmbedding,
+        'LocallyLinearEmbedding' : LocallyLinearEmbedding,
+        'MDS' : MDS
+    }
+
+    # main
     x = format_data(x)
 
     assert all([i.shape[1]>ndims for i in x]), "In order to reduce the data, ndims must be less than the number of dimensions"
 
-    # normalize data
+    # if there are any nans in any of the lists, use ppca
+    if np.isnan(np.vstack(x)).any():
+        warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
+        x = fill_missing(x)
+
+    # normalize
     if normalize:
         x = normalizer(x, normalize=normalize)
 
-    # run the reduction
-    if method=='PCA':
-        x_reduced = reducePCA(x,ndims)
+    # build model params dict
+    if model_params=={}:
+        model_params = {
+            'n_components' : ndims
+        }
+    elif 'n_components' in model_params:
+        pass
+    else:
+        model_params['n_components']=ndims
 
-    # pad cols with zeros if ndims returned is less than ndims
-    if x_reduced[0].shape[1] < ndims:
-        for idx, x_r in enumerate(x_reduced):
-            x_reduced[idx] = np.hstack([x_r, np.zeros((x_r.shape[0], ndims-x_reduced[0].shape[1]))])
+    # reduce data
+    x_reduced = reduce_list(x, models[model], model_params)
 
     if align == True:
         # Import is here to avoid circular imports with reduce.py
         from .align import align as aligner
         x_reduced = aligner(x_reduced)
 
+    # return data
     if internal or len(x_reduced)>1:
         return x_reduced
     else:
