@@ -89,17 +89,6 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         If set to True, data will be run through the ``hyperalignment''
         algorithm implemented in hypertools.tools.align (default: False).
 
-    model : str
-        Reduction model to use.  Models supported: PCA, TSNE, MDS, Isomap,
-        SpectralEmbedding, LocallyLinearEmbedding, FastICA. See
-        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.manifold
-        for details.
-
-    model_params : dict
-        Optional dictionary to pass parameters to reduction model. See
-        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.manifold
-        for details.
-
     normalize : str or False
         If set to 'across', the columns of the input data will be z-scored
         across lists (default). If set to 'within', the columns will be
