@@ -15,7 +15,7 @@ from ..tools.normalize import normalize as normalizer
 from .._shared.helpers import *
 
 # main function
-def reduce(x, ndims=3, model='PCA', model_params={}, normalize=False, internal=False,
+def reduce(x, ndims=3, model='IncrementalPCA', model_params={}, normalize=False, internal=False,
            align=False):
     """
     Reduces dimensionality of an array, or list of arrays

@@ -22,8 +22,8 @@ from .draw import draw
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
          labels=None, legend=None, title=None, elev=10, azim=-60, ndims=None,
-         model='PCA', model_params={}, align=False, normalize=False, n_clusters=None,
-         save_path=None, animate=False, duration=30, tail_duration=2,
+         model='IncrementalPCA', model_params={}, align=False, normalize=False,
+         n_clusters=None, save_path=None, animate=False, duration=30, tail_duration=2,
          rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
          frame_rate=50, explore=False, show=True):
     """
