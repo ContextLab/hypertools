@@ -75,10 +75,6 @@ def test_reduce_FastICA():
     reduced_data_3d = reducer(data, model='FastICA', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
 
-# def test_reduce_NMF():
-#     reduced_data_3d = reducer(np.abs(data), model='NMF', ndims=3)
-#     assert reduced_data_3d[0].shape==(100,3)
-
 def test_reduce_FactorAnalysis():
     reduced_data_3d = reducer(data, model='FactorAnalysis', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
