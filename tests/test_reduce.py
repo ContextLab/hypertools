@@ -34,17 +34,17 @@ def test_reduce_dims_1d():
 
 def test_reduce_dims_3d_align():
     # Should return aligned data that is reduced to 3 dims
-    reduced_aligned_data_3d = reduc(data, align=True)
+    reduced_aligned_data_3d = reducer(data, align=True)
     assert all(rad.shape == (100, 3) for rad in reduced_aligned_data_3d)
 
 def test_reduce_dims_2d_align():
     # Should return aligned data that is reduced to 2 dims
-    reduced_aligned_data_2d = reduc(data, ndims=2, align=True)
+    reduced_aligned_data_2d = reducer(data, ndims=2, align=True)
     assert all(rad.shape == (100, 2) for rad in reduced_aligned_data_2d)
 
 def test_reduce_dims_1d_align():
     # Should return aligned data that is reduced to 1 dim
-    reduced_aligned_data_1d = reduc(data, ndims=1, align=True)
+    reduced_aligned_data_1d = reducer(data, ndims=1, align=True)
     assert all(rad.shape == (100, 1) for rad in reduced_aligned_data_1d)
     
 def test_reduce_assert_exception():
