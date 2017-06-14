@@ -13,13 +13,11 @@ depends on having ffmpeg installed on your computer.
 # License: MIT
 
 import hypertools as hyp
-import scipy.io as sio
 import numpy as np
 
-data = hyp.tools.load('weights')
-aligned_data = hyp.tools.align(data)
+data = hyp.tools.load('weights', align=True)
 
-group1 = np.mean(aligned_data[:17], 0)
-group2 = np.mean(aligned_data[18:], 0)
+group1 = np.mean(data[:17], 0)
+group2 = np.mean(data[18:], 0)
 
-hyp.plot([group1, group2], animate=True, zoom=2.5, save_path='animation.mp4')
+hyp.plot([group1, group2], animate=True, save_path='animation.mp4')

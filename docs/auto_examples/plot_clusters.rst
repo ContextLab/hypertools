@@ -28,14 +28,17 @@ yourself.
     # Code source: Andrew Heusser
     # License: MIT
 
+    # import
     import hypertools as hyp
     import pandas as pd
 
+    # load example data
     data = hyp.tools.load('mushrooms')
 
+    # plot
     hyp.plot(data, '.', n_clusters=10)
 
-**Total running time of the script:** ( 0 minutes  1.757 seconds)
+**Total running time of the script:** ( 0 minutes  1.748 seconds)
 
 
 

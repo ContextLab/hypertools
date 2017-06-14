@@ -14,11 +14,14 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
 # Code source: Andrew Heusser
 # License: MIT
 
+# import
 import hypertools as hyp
-import pandas as pd
 
+# load example data
 data = hyp.tools.load('mushrooms')
 
+# pop off the class (poisonousness)
 group = data.pop('class')
 
+# plot
 hyp.plot(data, '.', group=group)

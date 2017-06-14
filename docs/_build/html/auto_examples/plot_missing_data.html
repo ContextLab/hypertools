@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>Using the missing_inds function to label interpolated values &#8212; hypertools 0.2.0 documentation</title>
+    <title>Using the missing_inds function to label interpolated values &#8212; hypertools 0.3.0 documentation</title>
     
     <link rel="stylesheet" href="../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../',
-        VERSION:     '0.2.0',
+        VERSION:     '0.3.0',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -51,7 +51,7 @@
         </button>
         <a class="navbar-brand" href="../index.html">
           hypertools</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.2</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.3</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -124,30 +124,37 @@ with stars.</p>
 <div class="highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Code source: Andrew Heusser</span>
 <span class="c1"># License: MIT</span>
 
+<span class="c1"># import</span>
 <span class="kn">from</span> <span class="nn">scipy.linalg</span> <span class="kn">import</span> <span class="n">toeplitz</span>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="kn">as</span> <span class="nn">np</span>
 <span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">copy</span>
 <span class="kn">import</span> <span class="nn">hypertools</span> <span class="kn">as</span> <span class="nn">hyp</span>
 
+<span class="c1"># simulate data</span>
 <span class="n">K</span> <span class="o">=</span> <span class="mi">10</span> <span class="o">-</span> <span class="n">toeplitz</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span>
 <span class="n">data1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">multivariate_normal</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">10</span><span class="p">),</span> <span class="n">K</span><span class="p">,</span> <span class="mi">250</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 <span class="n">data2</span> <span class="o">=</span> <span class="n">copy</span><span class="p">(</span><span class="n">data1</span><span class="p">)</span>
 
+<span class="c1"># randomly remove 5% of the data</span>
 <span class="n">missing</span> <span class="o">=</span> <span class="o">.</span><span class="mo">05</span>
 <span class="n">inds</span> <span class="o">=</span> <span class="p">[(</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">data1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">data1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])]</span>
 <span class="n">missing_data</span> <span class="o">=</span> <span class="p">[</span><span class="n">inds</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">inds</span><span class="p">)),</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">inds</span><span class="p">)</span><span class="o">*</span><span class="n">missing</span><span class="p">))]</span>
 <span class="k">for</span> <span class="n">i</span><span class="p">,</span><span class="n">j</span> <span class="ow">in</span> <span class="n">missing_data</span><span class="p">:</span>
     <span class="n">data2</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">]</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span>
 
-<span class="n">data1_r</span><span class="p">,</span><span class="n">data2_r</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">tools</span><span class="o">.</span><span class="n">reduce</span><span class="p">([</span><span class="n">data1</span><span class="p">,</span><span class="n">data2</span><span class="p">],</span><span class="n">ndims</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<span class="c1"># reduce the data</span>
+<span class="n">data1_r</span><span class="p">,</span><span class="n">data2_r</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">tools</span><span class="o">.</span><span class="n">reduce</span><span class="p">([</span><span class="n">data1</span><span class="p">,</span> <span class="n">data2</span><span class="p">],</span> <span class="n">ndims</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
 
+<span class="c1"># pull out missing inds</span>
 <span class="n">missing_inds</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">tools</span><span class="o">.</span><span class="n">missing_inds</span><span class="p">(</span><span class="n">data2</span><span class="p">)</span>
-<span class="n">missing_data</span> <span class="o">=</span> <span class="n">data2_r</span><span class="p">[</span><span class="n">missing_inds</span><span class="p">,:]</span>
+<span class="n">missing_data</span> <span class="o">=</span> <span class="n">data2_r</span><span class="p">[</span><span class="n">missing_inds</span><span class="p">,</span> <span class="p">:]</span>
 
-<span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">([</span><span class="n">data1_r</span><span class="p">,</span> <span class="n">data2_r</span><span class="p">,</span> <span class="n">missing_data</span><span class="p">],</span> <span class="p">[</span><span class="s1">&#39;r&#39;</span><span class="p">,</span><span class="s1">&#39;b--&#39;</span><span class="p">,</span><span class="s1">&#39;b*&#39;</span><span class="p">])</span>
+<span class="c1"># plot</span>
+<span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">([</span><span class="n">data1_r</span><span class="p">,</span> <span class="n">data2_r</span><span class="p">,</span> <span class="n">missing_data</span><span class="p">],</span> <span class="p">[</span><span class="s1">&#39;-&#39;</span><span class="p">,</span> <span class="s1">&#39;--&#39;</span><span class="p">,</span> <span class="s1">&#39;*&#39;</span><span class="p">],</span>
+         <span class="n">legend</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;Full&#39;</span><span class="p">,</span> <span class="s1">&#39;Missing&#39;</span><span class="p">,</span> <span class="s1">&#39;Missing Points&#39;</span><span class="p">])</span>
 </pre></div>
 </div>
-<p><strong>Total running time of the script:</strong> ( 0 minutes  0.168 seconds)</p>
+<p><strong>Total running time of the script:</strong> ( 0 minutes  0.077 seconds)</p>
 <div class="sphx-glr-footer docutils container">
 <div class="sphx-glr-download docutils container">
 <a class="reference download internal" href="../_downloads/plot_missing_data.py" download=""><code class="xref download docutils literal"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">plot_missing_data.py</span></code></a></div>

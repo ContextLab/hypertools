@@ -29,16 +29,19 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
     # Code source: Andrew Heusser
     # License: MIT
 
+    # import
     import hypertools as hyp
-    import pandas as pd
 
+    # load example data
     data = hyp.tools.load('mushrooms')
 
+    # pop off the class (poisonousness)
     group = data.pop('class')
 
+    # plot
     hyp.plot(data, '.', group=group)
 
-**Total running time of the script:** ( 0 minutes  1.254 seconds)
+**Total running time of the script:** ( 0 minutes  1.103 seconds)
 
 
 

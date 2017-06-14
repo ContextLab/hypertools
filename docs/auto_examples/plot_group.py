@@ -16,15 +16,20 @@ palette.
 # Code source: Andrew Heusser
 # License: MIT
 
+# import
 import hypertools as hyp
-import scipy.io as sio
 import numpy as np
 
+# load example data
 data = hyp.tools.load('weights_sample')
 
+# simulate groups
 group = [['a' if idx % 2 == 0 else 'b' for idx, j in enumerate(i)] for i in data]
+
+# plot
 hyp.plot(data, '.', group=group)
 
+# simulate random groups
 group=[]
 for idx,i in enumerate(data):
     tmp=[]
@@ -32,4 +37,5 @@ for idx,i in enumerate(data):
             tmp.append(int(np.random.randint(1000, size=1)))
     group.append(tmp)
 
+# plot
 hyp.plot(data, '.', group=group)

@@ -13,14 +13,16 @@ Then we average the data into two groups, and plot.
 # Code source: Andrew Heusser
 # License: MIT
 
+# import
 import hypertools as hyp
-import scipy.io as sio
 import numpy as np
 
-data = hyp.tools.load('weights')
-aligned_data = hyp.tools.align(data)
+# load example data
+data = hyp.tools.load('weights', align=True)
 
-group1 = np.mean(aligned_data[:17],0)
-group2 = np.mean(aligned_data[18:],0)
+# average into two groups
+group1 = np.mean(data[:17], 0)
+group2 = np.mean(data[18:], 0)
 
-hyp.plot([group1[:100,:],group2[:100,:]])
+# plot
+hyp.plot([group1[:100, :], group2[:100, :]])

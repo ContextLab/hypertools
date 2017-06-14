@@ -22,12 +22,13 @@ along with the PCA coordinate.
     # Code source: Andrew Heusser
     # License: MIT
 
+    # import
     import hypertools as hyp
-    import scipy.io as sio
-    import numpy as np
 
+    # load example data
     data = hyp.tools.load('weights_sample')
 
+    # plot
     hyp.plot(data, '.', explore=True)
 
 **Total running time of the script:** ( 0 minutes  0.000 seconds)
