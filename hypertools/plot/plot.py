@@ -174,8 +174,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # align data
     if align:
         if len(x) == 1:
-            warn('Data in list of length 1 can not be aligned. '
-                 'Skipping the alignment.')
+            warnings.warn('Data in list of length 1 can not be aligned. '
+                          'Skipping the alignment.')
         else:
             x = aligner(x)
     # Return data that has been normalized and possibly reduced and/or aligned
