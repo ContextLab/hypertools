@@ -4,12 +4,12 @@ from sklearn.cluster import KMeans
 import warnings
 import numpy as np
 from .._shared.helpers import *
-from .reduce import reduce as reducer
+from .reduce import reduce as _reduce
 from .align import align as aligner
 from .normalize import normalize as normalizer
 
-def cluster(x, n_clusters=8, ndims=None, model='IncrementalPCA',
-            model_params=None, align=False, normalize=False):
+def cluster(x, n_clusters=8, ndims=None, reducer='IncrementalPCA',
+            reducer_params=None, align=False, normalize=False):
     """
     Performs k-means clustering and returns a list of cluster labels
 
@@ -27,13 +27,13 @@ def cluster(x, n_clusters=8, ndims=None, model='IncrementalPCA',
         This parameter allows you to first reduce dimensionality before
         running k-means
 
-    model : str
+    reducer : str
         Decomposition/manifold learning model to use.  Models supported: PCA,
         IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
         FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
         TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS.
 
-    model_params : dict
+    reducer_params : dict
         Optional dictionary of scikit-learn parameters to pass to reduction model.
         See scikit-learn specific model docs for details.
 
@@ -66,7 +66,7 @@ def cluster(x, n_clusters=8, ndims=None, model='IncrementalPCA',
 
     # reduce data
     if ndims:
-        x = reducer(x, ndims=ndims, model=model, model_params=model_params)
+        x = _reduce(x, ndims=ndims, model=reducer, model_params=reducer_params)
 
     # align data
     if align:

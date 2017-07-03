@@ -15,8 +15,8 @@ from ..tools.normalize import normalize as normalizer
 from .._shared.helpers import *
 
 # main function
-def reduce(x, ndims=3, model='IncrementalPCA', model_params={}, normalize=False, internal=False,
-           align=False):
+def reduce(x, ndims=3, model='IncrementalPCA', model_params=None,
+           normalize=False, internal=False, align=False):
     """
     Reduces dimensionality of an array, or list of arrays
 
@@ -123,7 +123,7 @@ def reduce(x, ndims=3, model='IncrementalPCA', model_params={}, normalize=False,
         x = normalizer(x, normalize=normalize)
 
     # build model params dict
-    if model_params=={}:
+    if model_params is None:
         model_params = {
             'n_components' : ndims
         }

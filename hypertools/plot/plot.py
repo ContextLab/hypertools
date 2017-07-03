@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from .._shared.helpers import *
 from ..tools.cluster import cluster
 from ..tools.df2mat import df2mat
-from ..tools.reduce import reduce as reducer
+from ..tools.reduce import reduce as _reduce
 from ..tools.normalize import normalize as normalizer
 from ..tools.align import align as aligner
 from .draw import draw
@@ -22,10 +22,11 @@ from .draw import draw
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
          labels=None, legend=None, title=None, elev=10, azim=-60, ndims=None,
-         model='IncrementalPCA', model_params={}, align=False, normalize=False,
-         n_clusters=None, save_path=None, animate=False, duration=30, tail_duration=2,
-         rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
-         frame_rate=50, explore=False, show=True):
+         reducer='IncrementalPCA', reducer_params=None, align=False,
+         normalize=False, n_clusters=None, save_path=None, animate=False,
+         duration=30, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
+         precog=False, bullettime=False, frame_rate=50, explore=False,
+         show=True, model=None, model_params=None):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -75,19 +76,21 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         possibly normalized and/or aligned according to normalize/align
         kwargs.
 
-    model : str
+    reducer : str
         Decomposition/manifold learning model to use.  Models supported: PCA,
         IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
         FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
         TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS.
 
-    model_params : dict
+    reducer_params : dict
         Optional dictionary of scikit-learn parameters to pass to reduction model.
         See scikit-learn specific model docs for details.
 
-    align : bool
+    align : bool or str
         If set to True, data will be run through the ``hyperalignment''
-        algorithm implemented in hypertools.tools.align (default: False).
+        algorithm implemented in hypertools.tools.align. User may also specify
+        align='hyperalign' to run hyperalignment algorithm on data or
+        align='SRM' to run SRM alignment algorithm on data. (default: False).
 
     normalize : str or False
         If set to 'across', the columns of the input data will be z-scored
@@ -152,6 +155,12 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         If set to False, the figure will not be displayed, but the figure,
         axis and data objects will still be returned (default: True).
 
+    model : str
+        Deprecated in a future version; use `reducer` kwarg instead
+
+    model_params : dict
+        Deprecated in a future version; use `reducer_params` kwarg instead
+
     Returns
     ----------
     fig, ax, data, line_ani : matplotlib.figure.figure, matplotlib.axis.axes, numpy.array, matplotlib.animation.funcanimation
@@ -168,7 +177,15 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     # reduce data to ndims
     if ndims is not None:
-        x = reducer(x, ndims=ndims, model=model, model_params=model_params,
+        if model:
+            warnings.warn('Kwarg `model` will soon be deprecated; '
+                          'use `reducer`')
+            reducer = model
+        if model_params:
+            warnings.warn('Kwarg `model_params` will soon be deprecated; '
+                          'use `reducer_params`')
+            reducer_params = model_params
+        x = _reduce(x, ndims=ndims, model=reducer, model_params=reducer_params,
                     internal=True)
 
     # align data
@@ -177,7 +194,14 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
             warnings.warn('Data in list of length 1 can not be aligned. '
                           'Skipping the alignment.')
         else:
-            x = aligner(x)
+            if align==True or align=='hyper':
+                x = aligner(x)
+            elif align=='SRM':
+                x = aligner(x, method=align)
+            else:
+                warnings.warn('Unknown parameter passed for `align` kwarg. '
+                              'Skipping the alignment.')
+
     # Return data that has been normalized and possibly reduced and/or aligned
     return_data = x
 
@@ -210,7 +234,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     # reduce data to 3 dims for plotting, if ndims is None, return this
     if (ndims and ndims > 3) or (ndims is None and x[0].shape[1] > 3):
-        x = reducer(x, ndims=3, model=model, model_params=model_params, internal=True)
+        x = _reduce(x, ndims=3, model=reducer, model_params=reducer_params,
+                    internal=True)
 
     # find cluster and reshape if n_clusters
     if n_clusters is not None:
