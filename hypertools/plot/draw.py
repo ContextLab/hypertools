@@ -367,10 +367,7 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
             return animate_plot3D(x, **ani_params)
 
     def animate_plot3D(x, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
-                       frame_rate=50, elev=10, style='parallel', show=True):
-
-        if not show:
-            plt.ioff()
+                       frame_rate=50, elev=10, style='parallel'):
         
         # inialize plot
         fig = plt.figure()
@@ -423,6 +420,10 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
         return fig, ax, x, line_ani
 
     # draw the plot
+
+    if not show:
+        plt.ioff() 
+    
     if animate in [True, 'parallel', 'spin']:
 
         assert x[0].shape[1] is 3, "Animations are currently only supported for 3d plots."
@@ -434,8 +435,7 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
                           chemtrails=chemtrails,
                           frame_rate=frame_rate,
                           elev=elev,
-                          style=animate,
-                          show=show)
+                          style=animate)
 
         # dispatch animation
         fig, ax, data, line_ani = dispatch_animate(x, ani_params)

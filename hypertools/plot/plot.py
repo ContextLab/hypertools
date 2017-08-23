@@ -276,9 +276,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     x = scale(x)
 
     # handle palette with seaborn
-    if not show:
-        sns.set_palette(palette=palette, n_colors=len(x))
-        sns.set_style(style='whitegrid')
+    sns.set_palette(palette=palette, n_colors=len(x))
+    sns.set_style(style='whitegrid')
 
     # turn kwargs into a list
     kwargs_list = parse_kwargs(x, mpl_kwargs)
@@ -306,7 +305,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
                             elev=elev,
                             azim=azim,
                             explore=explore,
-                            show=False)
+                            show=show)
 
     # tighten layout
     plt.tight_layout()
