@@ -422,6 +422,7 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
     # draw the plot
 
     if not show:
+        # prevents the backend from rendering this plot
         plt.ioff() 
     
     if animate in [True, 'parallel', 'spin']:

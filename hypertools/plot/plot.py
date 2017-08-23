@@ -324,6 +324,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     if show:
         plt.show()
     else:
+        # safely closes the plot so it doesn't pop up in another call to this function
         plt.close()
 
     return fig, ax, return_data, line_ani
