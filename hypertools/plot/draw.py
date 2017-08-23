@@ -367,8 +367,11 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
             return animate_plot3D(x, **ani_params)
 
     def animate_plot3D(x, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
-                       frame_rate=50, elev=10, style='parallel'):
+                       frame_rate=50, elev=10, style='parallel', show=True):
 
+        if not show:
+            plt.ioff()
+        
         # inialize plot
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
@@ -431,7 +434,8 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
                           chemtrails=chemtrails,
                           frame_rate=frame_rate,
                           elev=elev,
-                          style=animate)
+                          style=animate,
+                          show=show)
 
         # dispatch animation
         fig, ax, data, line_ani = dispatch_animate(x, ani_params)
