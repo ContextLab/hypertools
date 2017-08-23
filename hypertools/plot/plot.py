@@ -323,5 +323,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # show the plot
     if show:
         plt.show()
+    else:
+        plt.close()
 
     return fig, ax, return_data, line_ani
