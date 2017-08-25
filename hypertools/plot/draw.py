@@ -368,7 +368,7 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
 
     def animate_plot3D(x, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
                        frame_rate=50, elev=10, style='parallel'):
-
+        
         # inialize plot
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
@@ -420,6 +420,11 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
         return fig, ax, x, line_ani
 
     # draw the plot
+
+    if not show:
+        # prevents the backend from rendering this plot
+        plt.ioff() 
+    
     if animate in [True, 'parallel', 'spin']:
 
         assert x[0].shape[1] is 3, "Animations are currently only supported for 3d plots."
