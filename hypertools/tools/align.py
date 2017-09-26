@@ -48,7 +48,7 @@ def align(data, method='hyper', normalize=False, ndims=None):
     the representational space in human ventral temporal cortex.  Neuron 72,
     404 -- 416. (used to implement hyperalignment, see https://github.com/PyMVPA/PyMVPA)
 
-    Brain Imaging Analysis Kit, http://brainiak.org. (used to implement SRM, see https://github.com/IntelPNI/brainiak)
+    Brain Imaging Analysis Kit, http://brainiak.org. (used to implement Shared Response Model [SRM], see https://github.com/IntelPNI/brainiak)
 
     Parameters
     ----------
@@ -56,11 +56,13 @@ def align(data, method='hyper', normalize=False, ndims=None):
         A list of Numpy arrays or Pandas Dataframes
 
     method : str
-        Either 'hyper' or 'SRM'.  If 'hyper' (default),
+        Either 'hyper' or 'SRM'.  If 'hyper', alignment algorithm will be
+        hyperalignment. If 'SRM', alignment algorithm will be shared response
+        model (default : 'hyper')
 
     normalize : str or False
         If set to 'across', the columns of the input data will be z-scored
-        across lists (default). If set to 'within', the columns will be
+        across lists. If set to 'within', the columns will be
         z-scored within each list that is passed. If set to 'row', each row of
         the input data will be z-scored. If set to False, the input data will
         be returned (default is False).
