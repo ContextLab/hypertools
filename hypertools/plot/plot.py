@@ -304,7 +304,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
                             frame_rate=frame_rate,
                             elev=elev,
                             azim=azim,
-                            explore=explore)
+                            explore=explore,
+                            show=show)
 
     # tighten layout
     plt.tight_layout()
@@ -322,5 +323,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # show the plot
     if show:
         plt.show()
+    else:
+        # safely closes the plot so it doesn't pop up in another call to this function
+        plt.close()
 
     return fig, ax, return_data, line_ani
