@@ -46,7 +46,9 @@ def align(data, method='hyper', normalize=False, ndims=None):
     Haxby JV, Guntupalli JS, Connolly AC, Halchenko YO, Conroy BR, Gobbini
     MI, Hanke M, and Ramadge PJ (2011)  A common, high-dimensional model of
     the representational space in human ventral temporal cortex.  Neuron 72,
-    404 -- 416.
+    404 -- 416. (used to implement hyperalignment, see https://github.com/PyMVPA/PyMVPA)
+
+    Brain Imaging Analysis Kit, http://brainiak.org. (used to implement SRM, see https://github.com/IntelPNI/brainiak)
 
     Parameters
     ----------
@@ -86,7 +88,7 @@ def align(data, method='hyper', normalize=False, ndims=None):
 
     # reduce if ndims is specified
     if ndims is not None:
-        # Import is here to avoid circular imports with align.py        
+        # Import is here to avoid circular imports with align.py
         from .reduce import reduce as reducer
         data = reducer(data, ndims, internal=True)
 
