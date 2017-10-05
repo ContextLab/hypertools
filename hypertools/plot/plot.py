@@ -11,6 +11,7 @@ import pandas as pd
 from matplotlib.lines import Line2D
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
+from ..analyze import analyze
 from .._shared.helpers import *
 from ..tools.cluster import cluster
 from ..tools.df2mat import df2mat
@@ -22,7 +23,9 @@ from .draw import draw
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
          labels=None, legend=None, title=None, elev=10, azim=-60, ndims=None,
-         model='IncrementalPCA', model_params={}, align=False, normalize=False,
+         model=None, model_params=None, reduce_model='IncrementalPCA',
+         reduce_params=None, align_model=None, align_params=None,
+         cluster_model=None, cluster_params=None, align=False, normalize=False,
          n_clusters=None, save_path=None, animate=False, duration=30, tail_duration=2,
          rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
          frame_rate=50, explore=False, show=True):
@@ -160,24 +163,26 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     """
 
-    # turn data into common format - a list of arrays
+    # warnings for deprecated API args
+    if model is not None:
+        warnings.warn('Model and model_params arguments are deprecated. Please use \
+                      reduce_model and reduce_params')
+        reduce_model = model
+
+    if model_params is not None:
+        warnings.warn('Model and model_params arguments are deprecated. Please use \
+                      reduce_model and reduce_params')
+        reduce_params = model_params
+
+    # put into common format
     x = format_data(x)
 
-    # normalize
-    x = normalizer(x, normalize=normalize, internal=True)
+    # analyze the data
+    x = analyze(x, ndims=ndims, n_clusters=n_clusters,
+                reduce_model=reduce_model, reduce_params=reduce_params,
+                align_model=align_model, align_params=align_params,
+                scale_model=scale_model, scale_params=scale_params)
 
-    # reduce data to ndims
-    if ndims is not None:
-        x = reducer(x, ndims=ndims, model=model, model_params=model_params,
-                    internal=True)
-
-    # align data
-    if align:
-        if len(x) == 1:
-            warn('Data in list of length 1 can not be aligned. '
-                 'Skipping the alignment.')
-        else:
-            x = aligner(x)
     # Return data that has been normalized and possibly reduced and/or aligned
     return_data = x
 
@@ -214,7 +219,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     # find cluster and reshape if n_clusters
     if n_clusters is not None:
-        cluster_labels = cluster(x, n_clusters=n_clusters, ndims=ndims)
+        cluster_labels = cluster(x, n_clusters=n_clusters)
         x = reshape_data(x, cluster_labels)
         if group:
             warnings.warn('n_clusters overrides group, ignoring group.')
