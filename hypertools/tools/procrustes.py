@@ -5,13 +5,10 @@ from __future__ import division
 from builtins import zip
 from builtins import range
 import numpy as np
-from .normalize import normalize as normalizer
-from .reduce import reduce as reduceD
-
 
 ##MAIN FUNCTION##
 def procrustes(source, target, scaling=True, reflection=True, reduction=False,
-               oblique=False, oblique_rcond=-1, normalize=False, ndims=None):
+               oblique=False, oblique_rcond=-1):
     """Function to project from one space to another using Procrustean
     transformation (shift + scaling + rotation + reflection).
 
@@ -51,16 +48,6 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
         Cutoff for 'small' singular values to regularize the
         inverse. See :class:`~numpy.linalg.lstsq` for more
         information.
-
-    normalize : str or False
-        If set to 'across', the columns of the input data will be z-scored
-        across lists (default). If set to 'within', the columns will be
-        z-scored within each list that is passed. If set to 'row', each row of
-        the input data will be z-scored. If set to False, the input data will
-        be returned (default is False).
-
-    ndims : int
-        Number of dimensions to reduce the dataset to *prior* to alignment
 
     Returns
     ----------
@@ -200,14 +187,6 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
             res += _offset_out
 
         return res
-
-    # normalize data
-    if normalize:
-        x = normalizer(x, normalize=normalize)
-
-    # reduce if ndims is specified
-    if ndims is not None:
-        source = reduceD(source, ndims, internal=True)
 
     # Fit and transform
     proj = fit(source, target)

@@ -5,18 +5,15 @@ import warnings
 import numpy as np
 
 ## reduction models
-from .._externals.ppca import PPCA
 from sklearn.decomposition import PCA, FastICA, IncrementalPCA, KernelPCA, FactorAnalysis, TruncatedSVD, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
 from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
 
 # internal libraries
 from ..tools.df2mat import df2mat
-from ..tools.normalize import normalize as normalizer
 from .._shared.helpers import *
 
 # main function
-def reduce(x, ndims=3, model='IncrementalPCA', model_params={}, normalize=False, internal=False,
-           align=False):
+def reduce(x, ndims=3, model='IncrementalPCA', model_params=None, internal=False):
     """
     Reduces dimensionality of an array, or list of arrays
 
@@ -40,17 +37,6 @@ def reduce(x, ndims=3, model='IncrementalPCA', model_params={}, normalize=False,
         Optional dictionary of scikit-learn parameters to pass to reduction model.
         See scikit-learn specific model docs for details.
 
-    normalize : str or False
-        If set to 'across', the columns of the input data will be z-scored
-        across lists (default). If set to 'within', the columns will be
-        z-scored within each list that is passed. If set to 'row', each row of
-        the input data will be z-scored. If set to False, the input data will
-        be returned (default is False).
-
-    align : bool
-        If set to True, data will be run through the ``hyperalignment''
-        algorithm implemented in hypertools.tools.align (default: False).
-
     Returns
     ----------
     x_reduced : Numpy array or list of arrays
@@ -60,30 +46,9 @@ def reduce(x, ndims=3, model='IncrementalPCA', model_params={}, normalize=False,
     """
 
     # sub functions
-    def fill_missing(x):
-
-        # ppca if missing data
-        m = PPCA()
-        m.fit(data=np.vstack(x))
-        x_pca = m.transform()
-
-        # if the whole row is missing, return nans
-        all_missing = [idx for idx,a in enumerate(np.vstack(x)) if all([type(b)==np.nan for b in a])]
-        if len(all_missing)>0:
-            for i in all_missing:
-                x_pca[i,:]=np.nan
-
-        # get the original lists back
-        if len(x)>1:
-            x_split = np.cumsum([i.shape[0] for i in x][:-1])
-            return list(np.split(x_pca,x_split,axis=0))
-        else:
-            return [x_pca]
-
-    def reduce_list(x, model, model_params):
+    def reduce_list(x, model):
         split = np.cumsum([len(xi) for xi in x])[:-1]
-        m=model(**model_params)
-        x_r = np.vsplit(m.fit_transform(np.vstack(x)), split)
+        x_r = np.vsplit(model.fit_transform(np.vstack(x)), split)
         if len(x)>1:
             return [xi for xi in x_r]
         else:
@@ -108,26 +73,18 @@ def reduce(x, ndims=3, model='IncrementalPCA', model_params={}, normalize=False,
         'MDS' : MDS
     }
 
-    # main
+    # common format
     x = format_data(x)
 
-    # if model is None, just return the data
+    # if model is None, just return data
     if model is None:
         return x
     else:
+
         assert all([i.shape[1]>ndims for i in x]), "In order to reduce the data, ndims must be less than the number of dimensions"
 
-        # if there are any nans in any of the lists, use ppca
-        if np.isnan(np.vstack(x)).any():
-            warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
-            x = fill_missing(x)
-
-        # normalize
-        if normalize:
-            x = normalizer(x, normalize=normalize)
-
         # build model params dict
-        if model_params=={}:
+        if model_params is None:
             model_params = {
                 'n_components' : ndims
             }
@@ -136,13 +93,14 @@ def reduce(x, ndims=3, model='IncrementalPCA', model_params={}, normalize=False,
         else:
             model_params['n_components']=ndims
 
-        # reduce data
-        x_reduced = reduce_list(x, models[model], model_params)
+        # intialize the model instance
+        if callable(model):
+            model = model(**model_params)
+        else:
+            model = models[model](**model_params)
 
-        if align == True:
-            # Import is here to avoid circular imports with reduce.py
-            from .align import align as aligner
-            x_reduced = aligner(x_reduced)
+        # reduce data
+        x_reduced = reduce_list(x, model)
 
         # return data
         if internal or len(x_reduced)>1:

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 from __future__ import division
 from builtins import range
 from sklearn.preprocessing import FunctionTransformer
@@ -43,22 +42,26 @@ def normalize(x, normalize='across', internal=False):
 
     x = format_data(x)
 
-    zscore = lambda X,y: (y - np.mean(X)) / np.std(X) if len(set(y))>1 else np.zeros(y.shape)
-
-    if normalize=='across':
-        x_stacked=np.vstack(x)
-        normalized_x = [np.array([zscore(x_stacked[:,j], i[:,j]) for j in range(i.shape[1])]).T for i in x]
-
-    elif normalize=='within':
-        normalized_x = [np.array([zscore(i[:,j], i[:,j]) for j in range(i.shape[1])]).T for i in x]
-
-    elif normalize=='row':
-        normalized_x = [np.array([zscore(i[j,:], i[j,:]) for j in range(i.shape[0])]) for i in x]
-
-    elif normalize==False:
-        normalized_x = x
-
-    if internal or len(normalized_x)>1:
-        return normalized_x
+    if normalize is False:
+        return x
     else:
-        return normalized_x[0]
+
+        zscore = lambda X,y: (y - np.mean(X)) / np.std(X) if len(set(y))>1 else np.zeros(y.shape)
+
+        if normalize=='across':
+            x_stacked=np.vstack(x)
+            normalized_x = [np.array([zscore(x_stacked[:,j], i[:,j]) for j in range(i.shape[1])]).T for i in x]
+
+        elif normalize=='within':
+            normalized_x = [np.array([zscore(i[:,j], i[:,j]) for j in range(i.shape[1])]).T for i in x]
+
+        elif normalize=='row':
+            normalized_x = [np.array([zscore(i[j,:], i[j,:]) for j in range(i.shape[0])]) for i in x]
+
+        elif normalize==False:
+            normalized_x = x
+
+        if internal or len(normalized_x)>1:
+            return normalized_x
+        else:
+            return normalized_x[0]
