@@ -214,7 +214,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
                           ignored in favor of markers.')
 
     # reduce data to 3 dims for plotting, if ndims is None, return this
-    if (ndims and ndims > 3) or (ndims is None and x[0].shape[1] > 3):
+    if (ndims and ndims > 3) or (ndims is None):
         x = reducer(x, ndims=3, model=reduce_model, model_params=reduce_params, internal=True)
 
     # find cluster and reshape if n_clusters
@@ -332,4 +332,16 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         # safely closes the plot so it doesn't pop up in another call to this function
         plt.close()
 
-    return fig, ax, return_data, line_ani
+    reduce_dict = {
+        'model' : reduce_model,
+        'params' : reduce_params,
+        'ndims' : ndims
+    }
+
+    align_dict = {
+        'model' : align_model,
+        'params' : align_params
+    }
+
+    return HypO(fig=fig, ax=ax, data=return_data, line_ani=line_ani, reduce=reduce_dict,
+                align=align_dict, normalize=normalize)

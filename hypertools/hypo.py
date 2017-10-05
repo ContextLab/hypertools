@@ -1,6 +1,7 @@
 from .tools.normalize import normalize as normalizer
 from .tools.reduce import reduce as reducer
 from .tools.align import align as aligner
+import copy
 
 class HypO(object):
     """
@@ -14,9 +15,8 @@ class HypO(object):
 
     """
 
-    def __init__(self, fig=None, ax=None, line_ani=None, data=None,
-                 reduce=None, align=None, normalize=None, xform=None, args=None,
-                 plot=None, version=None):
+    def __init__(self, fig=None, ax=None, line_ani=None, data=None, reduce=None,
+                 align=None, normalize=None, args=None, version=None):
 
         # matplotlib figure handle
         self.fig = fig
@@ -45,13 +45,13 @@ class HypO(object):
         # hypertools version
         self.version = version
 
-        # a function to transform new data
-        def transform(data):
-            return aligner(reducer(normalizer(data, normalize=self.normalize), model=self.reduce['model'], model_params=self.reduce['model_params']), model=self.align['model'], model_params=self.align['model_params'])
-        self.transform = transform
+    # a function to transform new data
+    def transform(self, data):
+        hypO = copy.copy(self)
+        hypO.data =  aligner(reducer(normalizer(data, normalize=self.normalize), model=self.reduce['model'], model_params=self.reduce['params'], ndims=self.reduce['ndims']), model=self.align['model'], model_params=self.align['params'])
+        return hypO
 
-        # a function to plot the data
-        def plot(self):
-            from .plot.plot import plot as plotter
-            plotter(self.data, **self.args)
-        self.plot = plot
+    # a function to plot the data
+    def plot(self, *args, **kwargs):
+        from .plot.plot import plot as plotter
+        plotter(self.data, *args, **kwargs)
