@@ -172,12 +172,6 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         x = reducer(x, ndims=ndims, model=model, model_params=model_params,
                     internal=True)
 
-    # save model params
-    reduce_params = {
-        'model' : model,
-        'model_params' : model_params
-    }
-
     # align data
     if align:
         if len(x) == 1:
@@ -335,7 +329,4 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         # safely closes the plot so it doesn't pop up in another call to this function
         plt.close()
 
-    return HypO(fig=fig, ax=ax, data=return_data, line_ani=line_ani,
-                reduce=reduce_params, align=align, normalize=normalize,
-                args=mpl_kwargs)
-    # return fig, ax, return_data, line_ani
+    return fig, ax, return_data, line_ani

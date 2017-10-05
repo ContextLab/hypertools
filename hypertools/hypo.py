@@ -18,8 +18,6 @@ class HypO(object):
                  reduce=None, align=None, normalize=None, xform=None, args=None,
                  plot=None, version=None):
 
-        # add fields to instance
-
         # matplotlib figure handle
         self.fig = fig
 
@@ -49,11 +47,11 @@ class HypO(object):
 
         # a function to transform new data
         def transform(data):
-            return aligner(reducer(normalizer(data, normalize=self.normalize), model=self.reduce['model'], model_params=self.reduce['model_params']), method=self.align)
+            return aligner(reducer(normalizer(data, normalize=self.normalize), model=self.reduce['model'], model_params=self.reduce['model_params']), model=self.align['model'], model_params=self.align['model_params'])
         self.transform = transform
 
-        # a function to plot the data (or new data)
-        def plot(data=self.data):
+        # a function to plot the data
+        def plot(self):
             from .plot.plot import plot as plotter
-            plotter(data, **args)
+            plotter(self.data, **self.args)
         self.plot = plot
