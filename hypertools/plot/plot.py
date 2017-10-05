@@ -11,8 +11,8 @@ import pandas as pd
 from matplotlib.lines import Line2D
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
-from ..analyze import analyze
 from .._shared.helpers import *
+from ..tools.analyze import analyze
 from ..tools.cluster import cluster
 from ..tools.df2mat import df2mat
 from ..tools.reduce import reduce as reducer
@@ -178,10 +178,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     x = format_data(x)
 
     # analyze the data
-    x = analyze(x, ndims=ndims, n_clusters=n_clusters,
+    x = analyze(x, ndims=ndims, normalize=normalize,
                 reduce_model=reduce_model, reduce_params=reduce_params,
-                align_model=align_model, align_params=align_params,
-                scale_model=scale_model, scale_params=scale_params)
+                align_model=align_model, align_params=align_params)
 
     # Return data that has been normalized and possibly reduced and/or aligned
     return_data = x
@@ -215,7 +214,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     # reduce data to 3 dims for plotting, if ndims is None, return this
     if (ndims and ndims > 3) or (ndims is None and x[0].shape[1] > 3):
-        x = reducer(x, ndims=3, model=model, model_params=model_params, internal=True)
+        x = reducer(x, ndims=3, model=reduce_model, model_params=reduce_params, internal=True)
 
     # find cluster and reshape if n_clusters
     if n_clusters is not None:

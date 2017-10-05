@@ -73,32 +73,37 @@ def reduce(x, ndims=3, model='IncrementalPCA', model_params=None, internal=False
         'MDS' : MDS
     }
 
-    # main
+    # common format
     x = format_data(x)
 
-    assert all([i.shape[1]>ndims for i in x]), "In order to reduce the data, ndims must be less than the number of dimensions"
-
-    # build model params dict
-    if model_params is None:
-        model_params = {
-            'n_components' : ndims
-        }
-    elif 'n_components' in model_params:
-        pass
+    # if model is None, just return data
+    if model is None:
+        return x
     else:
-        model_params['n_components']=ndims
 
-    # intialize the model instance
-    if callable(model):
-        model = model(**model_params)
-    else:
-        model = models[model](**model_params)
+        assert all([i.shape[1]>ndims for i in x]), "In order to reduce the data, ndims must be less than the number of dimensions"
 
-    # reduce data
-    x_reduced = reduce_list(x, model)
+        # build model params dict
+        if model_params is None:
+            model_params = {
+                'n_components' : ndims
+            }
+        elif 'n_components' in model_params:
+            pass
+        else:
+            model_params['n_components']=ndims
 
-    # return data
-    if internal or len(x_reduced)>1:
-        return x_reduced
-    else:
-        return x_reduced[0]
+        # intialize the model instance
+        if callable(model):
+            model = model(**model_params)
+        else:
+            model = models[model](**model_params)
+
+        # reduce data
+        x_reduced = reduce_list(x, model)
+
+        # return data
+        if internal or len(x_reduced)>1:
+            return x_reduced
+        else:
+            return x_reduced[0]

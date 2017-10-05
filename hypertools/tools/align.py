@@ -52,62 +52,67 @@ def align(data, model='hyper', model_params=None, method=None):
 
     """
 
-    if method is not None:
-        warnings.warn('The method arg is deprecated.  Please use model.')
-        model = method
+    # if model is None, just return data
+    if model is None:
+        return data
+    else:
+        if method is not None:
+            warnings.warn('The method arg is deprecated.  Please use model.')
+            model = method
 
-    data = format_data(data)
+        # common format
+        data = format_data(data)
 
-    if data[0].shape[1]>=data[0].shape[0]:
-        warn('The number of features exceeds number of samples. This can lead \
-             to overfitting.  We recommend reducing the dimensionality to be \
-             less than the number of samples prior to hyperalignment.')
+        if data[0].shape[1]>=data[0].shape[0]:
+            warn('The number of features exceeds number of samples. This can lead \
+                 to overfitting.  We recommend reducing the dimensionality to be \
+                 less than the number of samples prior to hyperalignment.')
 
-    if model=='hyper':
+        if model=='hyper':
 
-        ##STEP 0: STANDARDIZE SIZE AND SHAPE##
-        sizes_0 = [x.shape[0] for x in data]
-        sizes_1 = [x.shape[1] for x in data]
+            ##STEP 0: STANDARDIZE SIZE AND SHAPE##
+            sizes_0 = [x.shape[0] for x in data]
+            sizes_1 = [x.shape[1] for x in data]
 
-        #find the smallest number of rows
-        R = min(sizes_0)
-        C = max(sizes_1)
+            #find the smallest number of rows
+            R = min(sizes_0)
+            C = max(sizes_1)
 
-        m = [np.empty((R,C), dtype=np.ndarray)] * len(data)
+            m = [np.empty((R,C), dtype=np.ndarray)] * len(data)
 
-        for idx,x in enumerate(data):
-            y = x[0:R,:]
-            missing = C - y.shape[1]
-            add = np.zeros((y.shape[0], missing))
-            y = np.append(y, add, axis=1)
-            m[idx]=y
+            for idx,x in enumerate(data):
+                y = x[0:R,:]
+                missing = C - y.shape[1]
+                add = np.zeros((y.shape[0], missing))
+                y = np.append(y, add, axis=1)
+                m[idx]=y
 
-        ##STEP 1: TEMPLATE##
-        for x in range(0, len(m)):
-            if x==0:
-                template = np.copy(m[x])
-            else:
-                next = procrustes(m[x], template / (x + 1))
-                template += next
-        template /= len(m)
+            ##STEP 1: TEMPLATE##
+            for x in range(0, len(m)):
+                if x==0:
+                    template = np.copy(m[x])
+                else:
+                    next = procrustes(m[x], template / (x + 1))
+                    template += next
+            template /= len(m)
 
-        ##STEP 2: NEW COMMON TEMPLATE##
-        #align each subj to the template from STEP 1
-        template2 = np.zeros(template.shape)
-        for x in range(0, len(m)):
-            next = procrustes(m[x], template)
-            template2 += next
-        template2 /= len(m)
+            ##STEP 2: NEW COMMON TEMPLATE##
+            #align each subj to the template from STEP 1
+            template2 = np.zeros(template.shape)
+            for x in range(0, len(m)):
+                next = procrustes(m[x], template)
+                template2 += next
+            template2 /= len(m)
 
-        #STEP 3 (below): ALIGN TO NEW TEMPLATE
-        aligned = [np.zeros(template2.shape)] * len(m)
-        for x in range(0, len(m)):
-            next = procrustes(m[x], template2)
-            aligned[x] = next
-        return aligned
+            #STEP 3 (below): ALIGN TO NEW TEMPLATE
+            aligned = [np.zeros(template2.shape)] * len(m)
+            for x in range(0, len(m)):
+                next = procrustes(m[x], template2)
+                aligned[x] = next
+            return aligned
 
-    elif method=='SRM':
-        data = [i.T for i in data]
-        srm = SRM(features=np.min([i.shape[0] for i in data]))
-        fit = srm.fit(data)
-        return [i.T for i in srm.transform(data)]
+        elif method=='SRM':
+            data = [i.T for i in data]
+            srm = SRM(features=np.min([i.shape[0] for i in data]))
+            fit = srm.fit(data)
+            return [i.T for i in srm.transform(data)]
