@@ -1,11 +1,10 @@
 #!/usr/bin/env python
 
-from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering
 import numpy as np
 from .._shared.helpers import *
 
-def cluster(x, n_clusters=8, ndims=None):
+def cluster(x, model='KMeans', model_params=None, n_clusters=3):
     """
     Performs k-means clustering and returns a list of cluster labels
 
@@ -16,12 +15,11 @@ def cluster(x, n_clusters=8, ndims=None):
         If a list is passed, the arrays will be stacked and the clustering
         will be performed across all lists (i.e. not within each list).
 
-        n_clusters : int
-        The number of clusters to discover (i.e. k)
+    model : str or function
+        Model to use to discover clusters (default: KMeans)
 
-    ndims : int or None
-        This parameter allows you to first reduce dimensionality before
-        running k-means
+    model_params : dict
+        Parameters for the model (default: None)
 
     Returns
     ----------
@@ -32,12 +30,34 @@ def cluster(x, n_clusters=8, ndims=None):
 
     x = format_data(x)
 
-    if type(x) is list:
-        x = np.vstack(x)
-    if ndims:
-        x = PCA(n_components=ndims).fit_transform(x)
+    # dictionary of models
+    models = {
+        'KMeans' : KMeans,
+        'MiniBatchKMeans' : MiniBatchKMeans,
+        'AgglomerativeClustering' : AgglomerativeClustering,
+        'FeatureAgglomeration' : FeatureAgglomeration,
+        'Birch' : Birch,
+        'SpectralClustering' : SpectralClustering
+    }
 
-    kmeans = KMeans(init='k-means++', n_clusters=n_clusters, n_init=10)
-    kmeans.fit(x)
+    # build model params dict
+    if model_params is None:
+        model_params = {
+            'n_clusters' : n_clusters
+        }
+    elif 'n_clusters' in model_params:
+        pass
+    else:
+        model_params['n_clusters']=n_clusters
 
-    return list(kmeans.labels_)
+    # intialize the model instance
+    if callable(model):
+        model = model(**model_params)
+    else:
+        model = models[model](**model_params)
+
+    # fit the model
+    model.fit(np.vstack(x))
+
+    # return the labels
+    return list(model.labels_)
