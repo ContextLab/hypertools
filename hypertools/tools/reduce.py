@@ -111,37 +111,41 @@ def reduce(x, ndims=3, model='IncrementalPCA', model_params={}, normalize=False,
     # main
     x = format_data(x)
 
-    assert all([i.shape[1]>ndims for i in x]), "In order to reduce the data, ndims must be less than the number of dimensions"
-
-    # if there are any nans in any of the lists, use ppca
-    if np.isnan(np.vstack(x)).any():
-        warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
-        x = fill_missing(x)
-
-    # normalize
-    if normalize:
-        x = normalizer(x, normalize=normalize)
-
-    # build model params dict
-    if model_params=={}:
-        model_params = {
-            'n_components' : ndims
-        }
-    elif 'n_components' in model_params:
-        pass
+    # if model is None, just return the data
+    if model is None:
+        return x
     else:
-        model_params['n_components']=ndims
+        assert all([i.shape[1]>ndims for i in x]), "In order to reduce the data, ndims must be less than the number of dimensions"
 
-    # reduce data
-    x_reduced = reduce_list(x, models[model], model_params)
+        # if there are any nans in any of the lists, use ppca
+        if np.isnan(np.vstack(x)).any():
+            warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
+            x = fill_missing(x)
 
-    if align == True:
-        # Import is here to avoid circular imports with reduce.py
-        from .align import align as aligner
-        x_reduced = aligner(x_reduced)
+        # normalize
+        if normalize:
+            x = normalizer(x, normalize=normalize)
 
-    # return data
-    if internal or len(x_reduced)>1:
-        return x_reduced
-    else:
-        return x_reduced[0]
+        # build model params dict
+        if model_params=={}:
+            model_params = {
+                'n_components' : ndims
+            }
+        elif 'n_components' in model_params:
+            pass
+        else:
+            model_params['n_components']=ndims
+
+        # reduce data
+        x_reduced = reduce_list(x, models[model], model_params)
+
+        if align == True:
+            # Import is here to avoid circular imports with reduce.py
+            from .align import align as aligner
+            x_reduced = aligner(x_reduced)
+
+        # return data
+        if internal or len(x_reduced)>1:
+            return x_reduced
+        else:
+            return x_reduced[0]

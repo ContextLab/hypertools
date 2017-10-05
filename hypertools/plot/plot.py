@@ -18,6 +18,7 @@ from ..tools.reduce import reduce as reducer
 from ..tools.normalize import normalize as normalizer
 from ..tools.align import align as aligner
 from .draw import draw
+from ..hypo import HypO
 
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
@@ -171,6 +172,12 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         x = reducer(x, ndims=ndims, model=model, model_params=model_params,
                     internal=True)
 
+    # save model params
+    reduce_params = {
+        'model' : model,
+        'model_params' : model_params
+    }
+
     # align data
     if align:
         if len(x) == 1:
@@ -178,6 +185,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
                  'Skipping the alignment.')
         else:
             x = aligner(x)
+
     # Return data that has been normalized and possibly reduced and/or aligned
     return_data = x
 
@@ -327,4 +335,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         # safely closes the plot so it doesn't pop up in another call to this function
         plt.close()
 
-    return fig, ax, return_data, line_ani
+    return HypO(fig=fig, ax=ax, data=return_data, line_ani=line_ani,
+                reduce=reduce_params, align=align, normalize=normalize,
+                args=mpl_kwargs)
+    # return fig, ax, return_data, line_ani

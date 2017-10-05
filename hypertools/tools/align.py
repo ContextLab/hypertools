@@ -142,3 +142,7 @@ def align(data, method='hyper', normalize=False, ndims=None):
         srm = SRM(features=np.min([i.shape[0] for i in data]))
         fit = srm.fit(data)
         return [i.T for i in srm.transform(data)]
+
+    # if method is None, just return data
+    elif method in [None, False]:
+        return data
