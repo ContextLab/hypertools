@@ -1,23 +1,5 @@
 #!/usr/bin/env python
 
-"""
-Implements the "hyperalignment" algorithm described by the
-following paper:
-
-Haxby JV, Guntupalli JS, Connolly AC, Halchenko YO, Conroy BR, Gobbini
-MI, Hanke M, and Ramadge PJ (2011)  A common, high-dimensional model of
-the representational space in human ventral temporal cortex.  Neuron 72,
-404 -- 416.
-
-INPUTS:
--numpy array(s)
--list of numpy arrays
-
-OUTPUTS:
--numpy array
--list of aligned numpy arrays
-"""
-
 ##PACKAGES##
 from __future__ import division
 from builtins import range
@@ -29,7 +11,7 @@ from .normalize import normalize as normalizer
 from warnings import warn
 
 ##MAIN FUNCTION##
-def align(data, method='hyper', normalize=False, ndims=None):
+def align(data, model='hyper', model_params=None, method=None):
     """
     Aligns a list of arrays
 
@@ -55,20 +37,13 @@ def align(data, method='hyper', normalize=False, ndims=None):
     data : list
         A list of Numpy arrays or Pandas Dataframes
 
-    method : str
+    model : str
         Either 'hyper' or 'SRM'.  If 'hyper', alignment algorithm will be
         hyperalignment. If 'SRM', alignment algorithm will be shared response
         model (default : 'hyper')
 
-    normalize : str or False
-        If set to 'across', the columns of the input data will be z-scored
-        across lists. If set to 'within', the columns will be
-        z-scored within each list that is passed. If set to 'row', each row of
-        the input data will be z-scored. If set to False, the input data will
-        be returned (default is False).
-
-    ndims : int
-        Number of dimensions to reduce the dataset to *prior* to alignment
+    model_params : dict
+        Dictionary of model parameters.
 
     Returns
     ----------
@@ -77,6 +52,10 @@ def align(data, method='hyper', normalize=False, ndims=None):
 
     """
 
+    if method is not None:
+        warnings.warn('The method arg is deprecated.  Please use model.')
+        model = method
+
     data = format_data(data)
 
     if data[0].shape[1]>=data[0].shape[0]:
@@ -84,17 +63,7 @@ def align(data, method='hyper', normalize=False, ndims=None):
              to overfitting.  We recommend reducing the dimensionality to be \
              less than the number of samples prior to hyperalignment.')
 
-    # normalize data
-    if normalize:
-        x = normalizer(x, normalize=normalize)
-
-    # reduce if ndims is specified
-    if ndims is not None:
-        # Import is here to avoid circular imports with align.py
-        from .reduce import reduce as reducer
-        data = reducer(data, ndims, internal=True)
-
-    if method=='hyper':
+    if model=='hyper':
 
         ##STEP 0: STANDARDIZE SIZE AND SHAPE##
         sizes_0 = [x.shape[0] for x in data]
