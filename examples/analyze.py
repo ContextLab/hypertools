@@ -20,11 +20,11 @@ visualized.
 import hypertools as hyp
 
 # load the data
-data = hyp.tools.load('weights')
+data = hyp.load('weights')
 
 # process the data
-data = hyp.analyze(data, normalize='within', reduce_model='PCA', ndims=10,
-                align_model='hyper')
+data = hyp.analyze(data, normalize='within', reduce='PCA', ndims=10,
+                align='hyper')
 
 # plot it
 hyp.plot(data)
