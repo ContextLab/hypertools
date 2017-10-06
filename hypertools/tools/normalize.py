@@ -3,8 +3,9 @@ from __future__ import division
 from builtins import range
 from sklearn.preprocessing import FunctionTransformer
 import numpy as np
-from .._shared.helpers import format_data
+from .._shared.helpers import format_data, memoize
 
+@memoize
 def normalize(x, normalize='across', internal=False):
     """
     Z-transform the columns or rows of an array, or list of arrays
