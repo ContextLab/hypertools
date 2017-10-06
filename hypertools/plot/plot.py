@@ -218,7 +218,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
                           ignored in favor of markers.')
 
     # reduce data to 3 dims for plotting, if ndims is None, return this
-    if (ndims and ndims > 3) or (ndims is None):
+    if (ndims and ndims > 3):
+        x = reducer(x, ndims=3, reduce=reduce, internal=True)
+    elif ndims is None:
         x = reducer(x, ndims=3, reduce=reduce, internal=True)
         xform_data = x
 

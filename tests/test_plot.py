@@ -20,68 +20,68 @@ mpl.rcParams['figure.max_open_warning'] = 25
 ## STATIC ##
 def test_plot_1d():
     data_reduced_1d = reducer(data, ndims=1)
-    hypO = plot.plot(data_reduced_1d, show=False)
-    assert all([i.shape[1]==1 for i in hypO.data])
+    geo = plot.plot(data_reduced_1d, show=False)
+    assert all([i.shape[1]==1 for i in geo.data])
 #
 def test_plot_1dim():
-    hypO  = plot.plot(np.array([1,2,3,4]), show=False)
-    assert hypO.data[0].ndim==2
+    geo  = plot.plot(np.array([1,2,3,4]), show=False)
+    assert geo.data[0].ndim==2
 #
 def test_plot_2d():
     data_reduced_2d = reducer(data, ndims=2)
-    hypO = plot.plot(data_reduced_2d, show=False)
-    assert all([i.shape[1]==2 for i in hypO.data])
+    geo = plot.plot(data_reduced_2d, show=False)
+    assert all([i.shape[1]==2 for i in geo.data])
 #
 def test_plot_3d():
     data_reduced_3d = reducer(data, ndims=3)
-    hypO = plot.plot(data_reduced_3d, show=False)
-    assert all([i.shape[1]==3 for i in hypO.data])
+    geo = plot.plot(data_reduced_3d, show=False)
+    assert all([i.shape[1]==3 for i in geo.data])
 #
 def test_plot_reduce_none():
     # Should return same dimensional data if ndims is None
-    hypO = plot.plot(data, show=False)
-    assert all([i.shape[1] == d.shape[1] for i, d in zip(hypO.data, data)])
+    geo = plot.plot(data, show=False)
+    assert all([i.shape[1] == d.shape[1] for i, d in zip(geo.data, data)])
 
 def test_plot_reduce3d():
     # should return 3d data since ndims=3
-    hypO = plot.plot(data, ndims=3, show=False)
-    assert all([i.shape[1] == 3 for i in hypO.data])
+    geo = plot.plot(data, ndims=3, show=False)
+    assert all([i.shape[1] == 3 for i in geo.xform_data])
 
 def test_plot_reduce2d():
     # should return 2d data since ndims=2
-    hypO = plot.plot(data, ndims=2, show=False)
-    assert all([i.shape[1] == 2 for i in hypO.data])
+    geo = plot.plot(data, ndims=2, show=False)
+    assert all([i.shape[1] == 2 for i in geo.xform_data])
 
 def test_plot_reduce1d():
     # should return 1d data since ndims=1
-    hypO = plot.plot(data, ndims=1, show=False)
-    assert all([i.shape[1] == 1 for i in hypO.data])
+    geo = plot.plot(data, ndims=1, show=False)
+    assert all([i.shape[1] == 1 for i in geo.xform_data])
 #
 def test_plot_reduce_align5d():
     # should return 5d data since ndims=5
-    hypO = plot.plot(weights, ndims=5, align=True, show=False)
-    assert all([i.shape[1] == 5 for i in hypO.data])
+    geo = plot.plot(weights, ndims=5, align=True, show=False)
+    assert all([i.shape[1] == 5 for i in geo.xform_data])
 
 def test_plot_reduce10d():
     # should return 10d data since ndims=10
-    hypO = plot.plot(weights, ndims=10, show=False)
-    assert all([i.shape[1] == 10 for i in hypO.data])
+    geo = plot.plot(weights, ndims=10, show=False)
+    assert all([i.shape[1] == 10 for i in geo.xform_data])
 
 def test_plot_nd():
-    hypO  = plot.plot(data, show=False)
-    assert all([i.shape[1]==d.shape[1] for i, d in zip(hypO.data, data)])
+    geo  = plot.plot(data, show=False)
+    assert all([i.shape[1]==d.shape[1] for i, d in zip(geo.data, data)])
 
 def test_plot_data_is_list():
-    hypO  = plot.plot(data, show=False)
-    assert type(hypO.data) is list
+    geo  = plot.plot(data, show=False)
+    assert type(geo.data) is list
 #
 def test_plot_check_fig():
-    hypO  = plot.plot(data, show=False)
-    assert isinstance(hypO.fig, mpl.figure.Figure)
+    geo  = plot.plot(data, show=False)
+    assert isinstance(geo.fig, mpl.figure.Figure)
 
 def test_plot_check_ax():
-    hypO  = plot.plot(data, show=False)
-    assert isinstance(hypO.ax, mpl.axes._axes.Axes)
+    geo  = plot.plot(data, show=False)
+    assert isinstance(geo.ax, mpl.axes._axes.Axes)
 
 # ## ANIMATED ##
 
@@ -97,25 +97,25 @@ def test_plot_2d_animate():
 
 def test_plot_3d_animate():
     data_reduced_3d = reducer(data,ndims=3)
-    hypO = plot.plot(data_reduced_3d, animate=True, show=False)
-    assert all([i.shape[1]==3 for i in hypO.data])
+    geo = plot.plot(data_reduced_3d, animate=True, show=False)
+    assert all([i.shape[1]==3 for i in geo.data])
 
 def test_plot_nd_animate():
-    hypO = plot.plot(data, animate=True, show=False)
-    assert all([i.shape[1]==d.shape[1] for i, d in zip(hypO.data, data)])
+    geo = plot.plot(data, animate=True, show=False)
+    assert all([i.shape[1]==d.shape[1] for i, d in zip(geo.data, data)])
 
 def test_plot_data_animate_is_list():
-    hypO = plot.plot(data, animate=True, show=False)
-    assert type(hypO.data) is list
+    geo = plot.plot(data, animate=True, show=False)
+    assert type(geo.data) is list
 
 def test_plot_animate_check_fig():
-    hypO = plot.plot(data, animate=True, show=False)
-    assert isinstance(hypO.fig, mpl.figure.Figure)
+    geo = plot.plot(data, animate=True, show=False)
+    assert isinstance(geo.fig, mpl.figure.Figure)
 
 def test_plot_animate_check_ax():
-    hypO = plot.plot(data, animate=True, show=False)
-    assert isinstance(hypO.ax, mpl.axes._axes.Axes)
+    geo = plot.plot(data, animate=True, show=False)
+    assert isinstance(geo.ax, mpl.axes._axes.Axes)
 
 def test_plot_animate_check_line_ani():
-    hypO = plot.plot(data, animate=True, show=False)
-    assert isinstance(hypO.line_ani, mpl.animation.FuncAnimation)
+    geo = plot.plot(data, animate=True, show=False)
+    assert isinstance(geo.line_ani, mpl.animation.FuncAnimation)
