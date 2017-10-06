@@ -1,8 +1,8 @@
+import copy
 from .tools.normalize import normalize as normalizer
 from .tools.reduce import reduce as reducer
 from .tools.align import align as aligner
-import copy
-from . import version
+from .config import __version__
 
 class DataGeometry(object):
     """
@@ -16,8 +16,9 @@ class DataGeometry(object):
 
     """
 
-    def __init__(self, fig=None, ax=None, line_ani=None, data=None, reduce=None,
-                 align=None, normalize=None, kwargs=None, version=version):
+    def __init__(self, fig=None, ax=None, line_ani=None, data=None, xform_data=None,
+                 reduce=None, align=None, normalize=None, kwargs=None,
+                 version=__version__):
 
         # matplotlib figure handle
         self.fig = fig
@@ -28,8 +29,11 @@ class DataGeometry(object):
         # matplotlib line_ani handle (if its an animation)
         self.line_ani = line_ani
 
-        # the transformed data
+        # the raw data
         self.data = data
+
+        # the transformed data
+        self.xform_data = xform_data
 
         # dictionary of model and model_params
         self.reduce = reduce
@@ -67,13 +71,18 @@ class DataGeometry(object):
         # import plot here to avoid circular imports
         from .plot.plot import plot as plotter
 
+        if data is None:
+            data = self.xform_data
+            transform = False
+            if any([k in kwargs for k in ['reduce', 'align', 'normalize']]):
+                data = self.data
+                transform = True
+        else:
+            transform = True
+
         # get kwargs and update with new kwargs
         new_kwargs = copy.copy(self.kwargs)
         for key in kwargs:
             new_kwargs.update({key : kwargs[key]})
 
-        # if data is none, plot the
-        if data is None:
-            data = self.data
-
-        return plotter(data, **kwargs)
+        return plotter(data, transform=transform, **new_kwargs)

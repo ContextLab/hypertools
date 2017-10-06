@@ -13,13 +13,13 @@ import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 from .._shared.helpers import *
 from ..tools.analyze import analyze
-from ..tools.cluster import cluster
+from ..tools.cluster import cluster as clusterer
 from ..tools.df2mat import df2mat
 from ..tools.reduce import reduce as reducer
 from ..tools.normalize import normalize as normalizer
 from ..tools.align import align as aligner
 from .draw import draw
-from ..hypo import HypO
+from ..DataGeometry import DataGeometry
 
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
@@ -28,7 +28,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          align=None, normalize=None,
          n_clusters=None, save_path=None, animate=False, duration=30, tail_duration=2,
          rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
-         frame_rate=50, explore=False, show=True, xform_data=False):
+         frame_rate=50, explore=False, show=True, transform=True):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -172,21 +172,23 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         reduce['params'] = model_params
 
 
-    if align is not False:
-        warnings.warn("The align kwarg is being deprecated. Please use \
-                      align_model='hyper'")
-        if align is True:
-            align = 'hyper'
+    if align is True:
+        warnings.warn("Setting align=True will be deprecated.  Please specify the \
+                      type of alignment, i.e. align='hyper'")
+        align = 'hyper'
 
     # put into common format
-    x = format_data(x)
+    raw = format_data(x)
 
     # analyze the data
-    x = analyze(x, ndims=ndims, normalize=normalize, reduce=reduce,
-                align=align, internal=True)
+    if transform is True:
+        x = analyze(raw, ndims=ndims, normalize=normalize, reduce=reduce,
+                    align=align, internal=True)
+    else:
+        x = raw
 
     # Return data that has been normalized and possibly reduced and/or aligned
-    return_data = x
+    xform_data = x
 
     # catch all matplotlib kwargs here to pass on
     mpl_kwargs = {}
@@ -218,10 +220,11 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # reduce data to 3 dims for plotting, if ndims is None, return this
     if (ndims and ndims > 3) or (ndims is None):
         x = reducer(x, ndims=3, reduce=reduce, internal=True)
+        xform_data = x
 
     # find cluster and reshape if n_clusters
     if n_clusters is not None:
-        cluster_labels = cluster(x, n_clusters=n_clusters)
+        cluster_labels = clusterer(x, cluster=cluster, n_clusters=n_clusters)
         x = reshape_data(x, cluster_labels)
         if group:
             warnings.warn('n_clusters overrides group, ignoring group.')
@@ -343,14 +346,13 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         reduce_dict = reduce
     else:
         reduce_dict = {
-            'model' : model,
+            'model' : reduce,
             'params' : {
                 'n_components' : ndims
             },
             'ndims' : ndims
         }
 
-    print(align)
     # gather align params
     if isinstance(align, dict):
         align_dict = align
@@ -387,7 +389,11 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         'explore' : explore,
         'n_clusters' : n_clusters,
         'cluster' : cluster,
+        'reduce' : reduce,
+        'align' : align,
+        'normalize' : normalize,
     }
 
-    return HypO(fig=fig, ax=ax, data=return_data, line_ani=line_ani, reduce=reduce_dict,
-                align=align_dict, normalize=normalize, kwargs=kwargs)
+    return DataGeometry(fig=fig, ax=ax, data=raw, xform_data=xform_data,
+                        line_ani=line_ani, reduce=reduce_dict, align=align_dict,
+                        normalize=normalize, kwargs=kwargs)

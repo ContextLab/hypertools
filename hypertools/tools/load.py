@@ -63,9 +63,6 @@ def load(dataset, ndims=None, align=False):
         url = 'https://docs.google.com/uc?export=download&id=' + fileid
         data = pd.read_csv(url)
 
-    # # common format
-    # data = format_data(data)
-
     if ndims is not None:
         data = reducer(data, ndims=ndims, internal=True)
     if align:

@@ -54,6 +54,9 @@ def align(data, align='hyper', method=None):
     # if model is None, just return data
     if align is None:
         return data
+    elif isinstance(align, dict):
+        if align['model'] is None:
+            return data
     else:
         if method is not None:
             warnings.warn('The method arg is deprecated.  Please use align.')
@@ -63,7 +66,7 @@ def align(data, align='hyper', method=None):
         data = format_data(data)
 
         if len(data) is 1:
-            warn('Data in list of length 1 can not be aligned. '
+            warnings.warn('Data in list of length 1 can not be aligned. '
                  'Skipping the alignment.')
 
         if data[0].shape[1]>=data[0].shape[0]:

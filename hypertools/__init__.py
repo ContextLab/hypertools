@@ -6,5 +6,3 @@ from .tools.reduce import reduce
 from .tools.align import align
 from .tools.normalize import normalize
 from .tools.describe import describe
-
-__version__ = "0.4.0"
