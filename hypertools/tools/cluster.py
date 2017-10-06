@@ -4,6 +4,7 @@ from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Bi
 import numpy as np
 from .._shared.helpers import *
 
+@memoize
 def cluster(x, model='KMeans', model_params=None, n_clusters=3):
     """
     Performs k-means clustering and returns a list of cluster labels
