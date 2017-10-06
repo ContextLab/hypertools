@@ -135,7 +135,7 @@ def reshape_data(x,labels):
 		x_reshaped[categories.index(point)].append(x_stacked[idx])
 	return [np.vstack(i) for i in x_reshaped]
 
-def format_data(x):
+def format_data(x, ppca=True):
 
 	def fill_missing(x):
 
@@ -175,9 +175,10 @@ def format_data(x):
 		x = [np.reshape(i,(i.shape[0],1)) if i.ndim==1 else i for i in x]
 
 	# if there are any nans in any of the lists, use ppca
-	if np.isnan(np.vstack(x)).any():
-		warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
-		x = fill_missing(x)
+	if ppca is True:
+		if np.isnan(np.vstack(x)).any():
+			warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
+			x = fill_missing(x)
 
 	return x
 

@@ -25,9 +25,14 @@ def missing_inds(x):
 
     """
 
-    x = format_data(x)
+    x = format_data(x, ppca=False)
 
-    inds = [[idx for idx,row in enumerate(arr) if any(np.isnan(row))] for arr in x]
+    inds = []
+    for arr in x:
+        if np.argwhere(np.isnan(arr)).size is 0:
+            inds.append(None)
+        else:
+            inds.append(np.argwhere(np.isnan(arr)))
 
     if len(inds) > 1:
         return inds

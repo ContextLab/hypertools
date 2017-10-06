@@ -14,7 +14,7 @@ from .._shared.helpers import *
 
 # main function
 @memoize
-def reduce(x, ndims=3, model='IncrementalPCA', model_params=None, internal=False):
+def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False):
     """
     Reduces dimensionality of an array, or list of arrays
 
@@ -78,27 +78,28 @@ def reduce(x, ndims=3, model='IncrementalPCA', model_params=None, internal=False
     x = format_data(x)
 
     # if model is None, just return data
-    if (model is None) or (ndims is None) or (all([i.shape[1]<=ndims for i in x])):
+    if (reduce is None) or (ndims is None) or (all([i.shape[1]<=ndims for i in x])):
         return x
     else:
 
-        assert all([i.shape[1]>=ndims for i in x]), "In order to reduce the data, ndims must be less than the number of dimensions"
-
-        # build model params dict
-        if model_params is None:
+        # if reduce is a string, find the corresponding model
+        if type(reduce) is str:
+            model = models[reduce]
             model_params = {
                 'n_components' : ndims
             }
-        elif 'n_components' in model_params:
-            pass
-        else:
-            model_params['n_components']=ndims
+        # if its a dict, use custom params
+        elif type(reduce) is dict:
+            if type(reduce['model']) is str:
+                model = models[reduce['model']]
+                model_params = reduce['params']
+            # if the user specifies a function, set that to the model
+            elif callable(reduce['model']):
+                model = reduce['model']
+                model_params = reduce['params']
 
-        # intialize the model instance
-        if callable(model):
-            model = model(**model_params)
-        else:
-            model = models[model](**model_params)
+        # initialize model
+        model = model(**model_params)
 
         # reduce data
         x_reduced = reduce_list(x, model)

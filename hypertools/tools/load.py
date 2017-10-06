@@ -4,8 +4,9 @@ import pandas as pd
 import sys
 from warnings import warn
 
-from .reduce import reduce as reduceD
+from .reduce import reduce as reducer
 from .align import align as aligner
+from .._shared.helpers import format_data
 
 def load(dataset, ndims=None, align=False):
     """
@@ -62,13 +63,12 @@ def load(dataset, ndims=None, align=False):
         url = 'https://docs.google.com/uc?export=download&id=' + fileid
         data = pd.read_csv(url)
 
+    # # common format
+    # data = format_data(data)
+
     if ndims is not None:
-        data = reduceD(data, ndims, internal=True)
+        data = reducer(data, ndims=ndims, internal=True)
     if align:
-        if len(data) == 1:
-            warn('Data in list of length 1 can not be aligned. '
-                 'Skipping the alignment.')
-        else:
-            data = aligner(data)
+        data = aligner(data)
 
     return data

@@ -37,61 +37,61 @@ def test_reduce_assert_exception():
         reduc(data,ndims=4)
 
 def test_reduce_PCA():
-    reduced_data_3d = reducer(data, model='PCA', ndims=3)
+    reduced_data_3d = reducer(data, reduce='PCA', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
 
 def test_reduce_IncrementalPCA():
-    reduced_data_3d = reducer(data, model='IncrementalPCA', ndims=3)
+    reduced_data_3d = reducer(data, reduce='IncrementalPCA', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
 
 def test_reduce_SparsePCA():
-    reduced_data_3d = reducer(data, model='SparsePCA', ndims=3)
+    reduced_data_3d = reducer(data, reduce='SparsePCA', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
 
 def test_reduce_MiniBatchSparsePCA():
-    reduced_data_3d = reducer(data, model='MiniBatchSparsePCA', ndims=3)
+    reduced_data_3d = reducer(data, reduce='MiniBatchSparsePCA', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
 
 def test_reduce_KernelPCA():
-    reduced_data_3d = reducer(data, model='KernelPCA', ndims=3)
+    reduced_data_3d = reducer(data, reduce='KernelPCA', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
 
 def test_reduce_FastICA():
-    reduced_data_3d = reducer(data, model='FastICA', ndims=3)
+    reduced_data_3d = reducer(data, reduce='FastICA', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
 
 def test_reduce_FactorAnalysis():
-    reduced_data_3d = reducer(data, model='FactorAnalysis', ndims=3)
+    reduced_data_3d = reducer(data, reduce='FactorAnalysis', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
 
 def test_reduce_TruncatedSVD():
-    reduced_data_3d = reducer(data, model='TruncatedSVD', ndims=3)
+    reduced_data_3d = reducer(data, reduce='TruncatedSVD', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
 
 def test_reduce_DictionaryLearning():
-    reduced_data_3d = reducer(data, model='DictionaryLearning', ndims=3)
+    reduced_data_3d = reducer(data, reduce='DictionaryLearning', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
 
 def test_reduce_MiniBatchDictionaryLearning():
-    reduced_data_3d = reducer(data, model='MiniBatchDictionaryLearning', ndims=3)
+    reduced_data_3d = reducer(data, reduce='MiniBatchDictionaryLearning', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
 
 def test_reduce_TSNE():
-    reduced_data_3d = reducer(data, model='TSNE', ndims=3)
+    reduced_data_3d = reducer(data, reduce='TSNE', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
 
 def test_reduce_Isomap():
-    reduced_data_3d = reducer(data, model='Isomap', ndims=3)
+    reduced_data_3d = reducer(data, reduce='Isomap', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
 
 def test_reduce_SpectralEmbedding():
-    reduced_data_3d = reducer(data, model='SpectralEmbedding', ndims=3)
+    reduced_data_3d = reducer(data, reduce='SpectralEmbedding', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
 
 def test_reduce_LocallyLinearEmbedding():
-    reduced_data_3d = reducer(data, model='LocallyLinearEmbedding', ndims=3)
+    reduced_data_3d = reducer(data, reduce='LocallyLinearEmbedding', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
 
 def test_reduce_MDS():
-    reduced_data_3d = reducer(data, model='MDS', ndims=3)
+    reduced_data_3d = reducer(data, reduce='MDS', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)

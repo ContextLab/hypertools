@@ -23,7 +23,7 @@ def test_hyper():
            [-0.43426149,  0.87492975, -0.21427761],
            [-0.10761949,  0.18578133,  0.97667976]])
     data2 = np.dot(data1, rot)
-    result = align([data1,data2], model='hyper')
+    result = align([data1,data2], align='hyper')
     assert np.allclose(result[0],result[1], rtol=1) #note: this tolerance is probably too high, but fails at anything lower
 
 def test_SRM():
@@ -31,7 +31,7 @@ def test_SRM():
            [-0.43426149,  0.87492975, -0.21427761],
            [-0.10761949,  0.18578133,  0.97667976]])
     data2 = np.dot(data1, rot)
-    result = align([data1,data2], model='SRM')
+    result = align([data1,data2], align='SRM')
     assert np.allclose(result[0],result[1], rtol=1)
 
 def test_align_shapes():

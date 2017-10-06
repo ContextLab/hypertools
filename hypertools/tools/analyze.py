@@ -3,12 +3,11 @@ from .align import align as aligner
 from .normalize import normalize as normalizer
 from .._shared.helpers import format_data
 
-def analyze(data, reduce_model=None, reduce_params=None, align_model=None,
-            align_params=None, normalize=False, ndims=None, internal=False):
+def analyze(data, reduce=None, align=None, normalize=None, ndims=None, internal=False):
 
     # put data into common format
     data = format_data(data)
 
     # return processed data
     return aligner(reducer(normalizer(data, normalize=normalize, internal=internal),
-                   model=reduce_model, model_params=reduce_params, ndims=ndims, internal=internal), model=align_model, model_params=align_params)
+                   reduce=reduce, ndims=ndims, internal=internal), align=align)

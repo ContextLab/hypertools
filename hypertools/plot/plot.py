@@ -24,12 +24,11 @@ from ..hypo import HypO
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
          labels=None, legend=None, title=None, elev=10, azim=-60, ndims=None,
-         model=None, model_params=None, reduce_model='IncrementalPCA',
-         reduce_params=None, align_model=None, align_params=None,
-         cluster_model=None, cluster_params=None, align=False, normalize=False,
+         model=None, model_params=None, reduce='IncrementalPCA', cluster='KMeans',
+         align=None, normalize=None,
          n_clusters=None, save_path=None, animate=False, duration=30, tail_duration=2,
          rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
-         frame_rate=50, explore=False, show=True):
+         frame_rate=50, explore=False, show=True, xform_data=False):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -165,28 +164,26 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     """
 
     # warnings for deprecated API args
-    if model is not None:
+    if (model is not None) or (model_params is not None):
         warnings.warn('Model and model_params arguments are deprecated. Please use \
-                      reduce_model and reduce_params')
-        reduce_model = model
+                      reduce')
+        reduce = {}
+        reduce['model'] = model
+        reduce['params'] = model_params
 
-    if model_params is not None:
-        warnings.warn('Model and model_params arguments are deprecated. Please use \
-                      reduce_model and reduce_params')
-        reduce_params = model_params
 
-    if align is not None:
-        warnings.warn('Align is being deprecated. Please use \
-                      reduce_model and reduce_params')
-        reduce_model = model
+    if align is not False:
+        warnings.warn("The align kwarg is being deprecated. Please use \
+                      align_model='hyper'")
+        if align is True:
+            align = 'hyper'
 
     # put into common format
     x = format_data(x)
 
     # analyze the data
-    x = analyze(x, ndims=ndims, normalize=normalize,
-                reduce_model=reduce_model, reduce_params=reduce_params,
-                align_model=align_model, align_params=align_params, internal=True)
+    x = analyze(x, ndims=ndims, normalize=normalize, reduce=reduce,
+                align=align, internal=True)
 
     # Return data that has been normalized and possibly reduced and/or aligned
     return_data = x
@@ -220,7 +217,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     # reduce data to 3 dims for plotting, if ndims is None, return this
     if (ndims and ndims > 3) or (ndims is None):
-        x = reducer(x, ndims=3, model=reduce_model, model_params=reduce_params, internal=True)
+        x = reducer(x, ndims=3, reduce=reduce, internal=True)
 
     # find cluster and reshape if n_clusters
     if n_clusters is not None:
@@ -342,17 +339,26 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         plt.close()
 
     # gather reduce params
-    reduce_dict = {
-        'model' : reduce_model,
-        'params' : reduce_params,
-        'ndims' : ndims
-    }
+    if isinstance(reduce, dict):
+        reduce_dict = reduce
+    else:
+        reduce_dict = {
+            'model' : model,
+            'params' : {
+                'n_components' : ndims
+            },
+            'ndims' : ndims
+        }
 
+    print(align)
     # gather align params
-    align_dict = {
-        'model' : align_model,
-        'params' : align_params
-    }
+    if isinstance(align, dict):
+        align_dict = align
+    else:
+        align_dict = {
+            'model' : align,
+            'params' : {}
+        }
 
     # gather all other kwargs
     kwargs = {
@@ -380,8 +386,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         'azim' : azim,
         'explore' : explore,
         'n_clusters' : n_clusters,
-        'cluster_model' : cluster_model,
-        'cluster_params' : cluster_params
+        'cluster' : cluster,
     }
 
     return HypO(fig=fig, ax=ax, data=return_data, line_ani=line_ani, reduce=reduce_dict,

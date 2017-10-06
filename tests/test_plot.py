@@ -33,7 +33,7 @@ def test_plot_2d():
     assert all([i.shape[1]==2 for i in hypO.data])
 #
 def test_plot_3d():
-    data_reduced_3d = reducer(data,ndims=3)
+    data_reduced_3d = reducer(data, ndims=3)
     hypO = plot.plot(data_reduced_3d, show=False)
     assert all([i.shape[1]==3 for i in hypO.data])
 #
@@ -62,65 +62,60 @@ def test_plot_reduce_align5d():
     hypO = plot.plot(weights, ndims=5, align=True, show=False)
     assert all([i.shape[1] == 5 for i in hypO.data])
 
-# def test_plot_reduce10d():
-#     # should return 10d data since ndims=10
-#     _, _, weights_10d, _ = plot.plot(weights, ndims=10, show=False)
-#     assert all([i.shape[1] == 10 for i in weights_10d])
+def test_plot_reduce10d():
+    # should return 10d data since ndims=10
+    hypO = plot.plot(weights, ndims=10, show=False)
+    assert all([i.shape[1] == 10 for i in hypO.data])
+
+def test_plot_nd():
+    hypO  = plot.plot(data, show=False)
+    assert all([i.shape[1]==d.shape[1] for i, d in zip(hypO.data, data)])
+
+def test_plot_data_is_list():
+    hypO  = plot.plot(data, show=False)
+    assert type(hypO.data) is list
 #
-# def test_plot_nd():
-#     _, _, data_nd, _  = plot.plot(data, show=False)
-#     assert all([i.shape[1]==d.shape[1] for i, d in zip(data_nd, data)])
-#
-# def test_plot_data_is_list():
-#     _, _, data_nd, _  = plot.plot(data, show=False)
-#     assert type(data_nd) is list
-#
-# def test_plot_check_fig():
-#     fig, _, _, _  = plot.plot(data, show=False)
-#     assert isinstance(fig,mpl.figure.Figure)
-#
-# def test_plot_check_ax():
-#     _, ax, _, _  = plot.plot(data, show=False)
-#     assert isinstance(ax,mpl.axes._axes.Axes)
-#
+def test_plot_check_fig():
+    hypO  = plot.plot(data, show=False)
+    assert isinstance(hypO.fig, mpl.figure.Figure)
+
+def test_plot_check_ax():
+    hypO  = plot.plot(data, show=False)
+    assert isinstance(hypO.ax, mpl.axes._axes.Axes)
+
 # ## ANIMATED ##
-#
-# def test_plot_1d_animate():
-#     data_reduced_1d = reducer(data,ndims=1)
-#     with pytest.raises(Exception) as e_info:
-#         plot.plot(data_reduced_1d, animate=True, show=False)
-#
-# def test_plot_2d_animate():
-#     data_reduced_2d = reducer(data,ndims=2)
-#     with pytest.raises(Exception) as e_info:
-#         plot.plot(data_reduced_2d, animate=True, show=False)
-#
-# def test_plot_3d_animate():
-#     data_reduced_3d = reducer(data,ndims=3)
-#     _,_,data_3d,_ = plot.plot(data_reduced_3d, animate=True, show=False)
-#     assert all([i.shape[1]==3 for i in data_3d])
-#
-# def test_plot_nd_animate():
-#     _,_,data_nd,_ = plot.plot(data, animate=True, show=False)
-#     assert all([i.shape[1]==d.shape[1] for i, d in zip(data_nd, data)])
-#
-# def test_plot_data_animate_is_list():
-#     _,_,data_nd,_ = plot.plot(data, animate=True, show=False)
-#     assert type(data_nd) is list
-#
-# def test_plot_animate_check_fig():
-#     fig,_,_,_ = plot.plot(data, animate=True, show=False)
-#     assert isinstance(fig,mpl.figure.Figure)
-#
-# def test_plot_animate_check_ax():
-#     _,ax,_,_ = plot.plot(data, animate=True, show=False)
-#     assert isinstance(ax,mpl.axes._axes.Axes)
-#
-# def test_plot_animate_check_line_ani():
-#     _,_,_,line_ani = plot.plot(data, animate=True, show=False)
-#     assert isinstance(line_ani,mpl.animation.FuncAnimation)
-#
-# def test_plot_mpl_kwargs():
-#     _, _, data_new, _  = plot.plot(data, colors=['b','r'], linestyles=['--',':'], markers=['o','*'], show=False)
-#     print([i.shape for i in data_new], [i.shape for i in data])
-#     assert all([i.shape[1]==d.shape[1] for i, d in zip(data_new, data)])
+
+def test_plot_1d_animate():
+    d = reducer(data, ndims=1)
+    with pytest.raises(Exception) as e_info:
+        plot.plot(d, animate=True, show=False)
+
+def test_plot_2d_animate():
+    data_reduced_2d = reducer(data, ndims=2)
+    with pytest.raises(Exception) as e_info:
+        plot.plot(data_reduced_2d, animate=True, show=False)
+
+def test_plot_3d_animate():
+    data_reduced_3d = reducer(data,ndims=3)
+    hypO = plot.plot(data_reduced_3d, animate=True, show=False)
+    assert all([i.shape[1]==3 for i in hypO.data])
+
+def test_plot_nd_animate():
+    hypO = plot.plot(data, animate=True, show=False)
+    assert all([i.shape[1]==d.shape[1] for i, d in zip(hypO.data, data)])
+
+def test_plot_data_animate_is_list():
+    hypO = plot.plot(data, animate=True, show=False)
+    assert type(hypO.data) is list
+
+def test_plot_animate_check_fig():
+    hypO = plot.plot(data, animate=True, show=False)
+    assert isinstance(hypO.fig, mpl.figure.Figure)
+
+def test_plot_animate_check_ax():
+    hypO = plot.plot(data, animate=True, show=False)
+    assert isinstance(hypO.ax, mpl.axes._axes.Axes)
+
+def test_plot_animate_check_line_ani():
+    hypO = plot.plot(data, animate=True, show=False)
+    assert isinstance(hypO.line_ani, mpl.animation.FuncAnimation)

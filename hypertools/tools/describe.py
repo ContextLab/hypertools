@@ -12,7 +12,7 @@ import seaborn as sns
 from .reduce import reduce as reducer
 from .._shared.helpers import format_data
 
-def describe(x, reduce_model=None, reduce_params=None, max_dims=None, show=True):
+def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
     """
     Create plot describing covariance with as a function of number of dimensions
 
@@ -54,8 +54,7 @@ def describe(x, reduce_model=None, reduce_params=None, max_dims=None, show=True)
 
         corrs=[]
         for dims in range(2, max_dims):
-            reduced = pdist(reducer(x, ndims=dims, model=reduce_model,
-                    model_params=reduce_params),'correlation')
+            reduced = pdist(reducer(x, ndims=dims, reduce=reduce),'correlation')
             corrs.append(np.corrcoef(alldims, reduced)[0][1])
             del reduced
         return corrs

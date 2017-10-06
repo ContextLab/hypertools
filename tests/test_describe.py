@@ -14,5 +14,5 @@ def test_describe_pca_data_is_dict():
     assert type(result) is dict
 
 def test_describe_data_is_dict():
-    result = describe(data, reduce_model='PCA', show=False)
+    result = describe(data, reduce='PCA', show=False)
     assert type(result) is dict

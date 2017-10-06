@@ -11,7 +11,7 @@ from .normalize import normalize as normalizer
 import warnings
 
 @memoize
-def align(data, model='hyper', model_params=None, method=None):
+def align(data, align='hyper', method=None):
     """
     Aligns a list of arrays
 
@@ -37,13 +37,12 @@ def align(data, model='hyper', model_params=None, method=None):
     data : list
         A list of Numpy arrays or Pandas Dataframes
 
-    model : str
-        Either 'hyper' or 'SRM'.  If 'hyper', alignment algorithm will be
+    align : str or dict
+        If str, either 'hyper' or 'SRM'.  If 'hyper', alignment algorithm will be
         hyperalignment. If 'SRM', alignment algorithm will be shared response
-        model (default : 'hyper')
-
-    model_params : dict
-        Dictionary of model parameters.
+        model.  You can also pass a dictionary for finer control, where the 'model'
+        key is a string that specifies the model and the params key is a dictionary
+        of parameter values (default : 'hyper').
 
     Returns
     ----------
@@ -53,22 +52,26 @@ def align(data, model='hyper', model_params=None, method=None):
     """
 
     # if model is None, just return data
-    if model is None:
+    if align is None:
         return data
     else:
         if method is not None:
-            warnings.warn('The method arg is deprecated.  Please use model.')
-            model = method
+            warnings.warn('The method arg is deprecated.  Please use align.')
+            align = method
 
         # common format
         data = format_data(data)
+
+        if len(data) is 1:
+            warn('Data in list of length 1 can not be aligned. '
+                 'Skipping the alignment.')
 
         if data[0].shape[1]>=data[0].shape[0]:
             warnings.warn('The number of features exceeds number of samples. This can lead \
                  to overfitting.  We recommend reducing the dimensionality to be \
                  less than the number of samples prior to hyperalignment.')
 
-        if (model is 'hyper') or (method is 'hyper'):
+        if (align is 'hyper') or (method is 'hyper'):
 
             ##STEP 0: STANDARDIZE SIZE AND SHAPE##
             sizes_0 = [x.shape[0] for x in data]
@@ -111,7 +114,7 @@ def align(data, model='hyper', model_params=None, method=None):
                 aligned[x] = next
             return aligned
 
-        elif (model is 'SRM') or (method is 'SRM'):
+        elif (align is 'SRM') or (method is 'SRM'):
             data = [i.T for i in data]
             srm = SRM(features=np.min([i.shape[0] for i in data]))
             fit = srm.fit(data)

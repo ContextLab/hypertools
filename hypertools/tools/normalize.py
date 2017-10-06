@@ -39,11 +39,11 @@ def normalize(x, normalize='across', internal=False):
 
     """
 
-    assert normalize in ['across','within','row', False], "scale_type must be across, within, row or none."
+    assert normalize in ['across','within','row', False, None], "scale_type must be across, within, row or none."
 
     x = format_data(x)
 
-    if normalize is False:
+    if normalize in [False, None]:
         return x
     else:
 
