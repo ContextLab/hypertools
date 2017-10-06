@@ -16,7 +16,7 @@ class HypO(object):
     """
 
     def __init__(self, fig=None, ax=None, line_ani=None, data=None, reduce=None,
-                 align=None, normalize=None, args=None, version=None):
+                 align=None, normalize=None, kwargs=None, version=None):
 
         # matplotlib figure handle
         self.fig = fig
@@ -39,8 +39,8 @@ class HypO(object):
         # 'within', 'across', 'row' or False
         self.normalize = normalize
 
-        # dictionary of non-transform args
-        self.args = args
+        # dictionary of kwargs
+        self.kwargs = kwargs
 
         # hypertools version
         self.version = version
@@ -52,6 +52,9 @@ class HypO(object):
         return hypO
 
     # a function to plot the data
-    def plot(self, *args, **kwargs):
+    def plot(self, **kwargs):
         from .plot.plot import plot as plotter
-        plotter(self.data, *args, **kwargs)
+        new_kwargs = copy.copy(self.kwargs)
+        for key in kwargs:
+            new_kwargs.update({key : kwargs[key]})
+        plotter(self.data, **new_kwargs)

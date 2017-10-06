@@ -23,7 +23,7 @@ from ..hypo import HypO
 
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
-         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=None,
+         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=3,
          model=None, model_params=None, reduce_model='IncrementalPCA',
          reduce_params=None, align_model=None, align_params=None,
          cluster_model=None, cluster_params=None, align=False, normalize=False,
@@ -181,7 +181,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # analyze the data
     x = analyze(x, ndims=ndims, normalize=normalize,
                 reduce_model=reduce_model, reduce_params=reduce_params,
-                align_model=align_model, align_params=align_params)
+                align_model=align_model, align_params=align_params, internal=True)
 
     # Return data that has been normalized and possibly reduced and/or aligned
     return_data = x
@@ -290,10 +290,10 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # handle format strings
     if fmt is not None:
         if type(fmt) is not list:
-            fmt = [fmt for i in x]
+            draw_fmt = [fmt for i in x]
 
     # draw the plot
-    fig, ax, data, line_ani = draw(x, fmt=fmt,
+    fig, ax, data, line_ani = draw(x, fmt=draw_fmt,
                             kwargs_list=kwargs_list,
                             labels=labels,
                             legend=legend,
@@ -332,16 +332,48 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         # safely closes the plot so it doesn't pop up in another call to this function
         plt.close()
 
+    # gather reduce params
     reduce_dict = {
         'model' : reduce_model,
         'params' : reduce_params,
         'ndims' : ndims
     }
 
+    # gather align params
     align_dict = {
         'model' : align_model,
         'params' : align_params
     }
 
+    # gather all other kwargs
+    kwargs = {
+        'fmt' : fmt,
+        'marker': marker,
+        'markers' : markers,
+        'linestyle' : linestyle,
+        'linestyles' : linestyles,
+        'color' : color,
+        'colors' : colors,
+        'palette' : palette,
+        'labels' : labels,
+        'legend' : legend,
+        'title' : title,
+        'animate' : animate,
+        'duration' : duration,
+        'tail_duration' : tail_duration,
+        'rotations' : rotations,
+        'zoom' : zoom,
+        'chemtrails' : chemtrails,
+        'precog' : precog,
+        'bullettime' : bullettime,
+        'frame_rate' : frame_rate,
+        'elev' : elev,
+        'azim' : azim,
+        'explore' : explore,
+        'n_clusters' : n_clusters,
+        'cluster_model' : cluster_model,
+        'cluster_params' : cluster_params
+    }
+
     return HypO(fig=fig, ax=ax, data=return_data, line_ani=line_ani, reduce=reduce_dict,
-                align=align_dict, normalize=normalize)
+                align=align_dict, normalize=normalize, kwargs=kwargs)

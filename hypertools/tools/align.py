@@ -6,11 +6,11 @@ from builtins import range
 from .._externals.srm import SRM
 from .procrustes import procrustes
 import numpy as np
-from .._shared.helpers import format_data
+from .._shared.helpers import format_data, memoize
 from .normalize import normalize as normalizer
 from warnings import warn
 
-##MAIN FUNCTION##
+@memoize
 def align(data, model='hyper', model_params=None, method=None):
     """
     Aligns a list of arrays

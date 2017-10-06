@@ -13,6 +13,7 @@ from ..tools.df2mat import df2mat
 from .._shared.helpers import *
 
 # main function
+@memoize
 def reduce(x, ndims=3, model='IncrementalPCA', model_params=None, internal=False):
     """
     Reduces dimensionality of an array, or list of arrays
@@ -81,7 +82,7 @@ def reduce(x, ndims=3, model='IncrementalPCA', model_params=None, internal=False
         return x
     else:
 
-        assert all([i.shape[1]>ndims for i in x]), "In order to reduce the data, ndims must be less than the number of dimensions"
+        assert all([i.shape[1]>=ndims for i in x]), "In order to reduce the data, ndims must be less than the number of dimensions"
 
         # build model params dict
         if model_params is None:
