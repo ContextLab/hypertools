@@ -78,7 +78,7 @@ def reduce(x, ndims=3, model='IncrementalPCA', model_params=None, internal=False
     x = format_data(x)
 
     # if model is None, just return data
-    if model is None:
+    if (model is None) or (ndims is None) or (all([i.shape[1]<=ndims for i in x])):
         return x
     else:
 

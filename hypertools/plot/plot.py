@@ -23,7 +23,7 @@ from ..hypo import HypO
 
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
-         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=3,
+         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=None,
          model=None, model_params=None, reduce_model='IncrementalPCA',
          reduce_params=None, align_model=None, align_params=None,
          cluster_model=None, cluster_params=None, align=False, normalize=False,
@@ -175,6 +175,11 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
                       reduce_model and reduce_params')
         reduce_params = model_params
 
+    if align is not None:
+        warnings.warn('Align is being deprecated. Please use \
+                      reduce_model and reduce_params')
+        reduce_model = model
+
     # put into common format
     x = format_data(x)
 
@@ -291,6 +296,10 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     if fmt is not None:
         if type(fmt) is not list:
             draw_fmt = [fmt for i in x]
+        else:
+            draw_fmt = fmt
+    else:
+        draw_fmt = fmt
 
     # draw the plot
     fig, ax, data, line_ani = draw(x, fmt=draw_fmt,

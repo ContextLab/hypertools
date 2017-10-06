@@ -8,7 +8,7 @@ from .procrustes import procrustes
 import numpy as np
 from .._shared.helpers import format_data, memoize
 from .normalize import normalize as normalizer
-from warnings import warn
+import warnings
 
 @memoize
 def align(data, model='hyper', model_params=None, method=None):
@@ -64,11 +64,11 @@ def align(data, model='hyper', model_params=None, method=None):
         data = format_data(data)
 
         if data[0].shape[1]>=data[0].shape[0]:
-            warn('The number of features exceeds number of samples. This can lead \
+            warnings.warn('The number of features exceeds number of samples. This can lead \
                  to overfitting.  We recommend reducing the dimensionality to be \
                  less than the number of samples prior to hyperalignment.')
 
-        if model=='hyper':
+        if (model is 'hyper') or (method is 'hyper'):
 
             ##STEP 0: STANDARDIZE SIZE AND SHAPE##
             sizes_0 = [x.shape[0] for x in data]
@@ -111,7 +111,7 @@ def align(data, model='hyper', model_params=None, method=None):
                 aligned[x] = next
             return aligned
 
-        elif method=='SRM':
+        elif (model is 'SRM') or (method is 'SRM'):
             data = [i.T for i in data]
             srm = SRM(features=np.min([i.shape[0] for i in data]))
             fit = srm.fit(data)
