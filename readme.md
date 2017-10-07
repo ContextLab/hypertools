@@ -90,7 +90,6 @@ Here is a bibtex formatted reference:
     year    = "2017",
     volume  = "1701",
     number  = "08290",
-    month   = "jan"
 }
 ```
 
