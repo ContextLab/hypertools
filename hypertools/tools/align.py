@@ -10,7 +10,7 @@ from .normalize import normalize as normalizer
 import warnings
 
 @memoize
-def align(data, align='hyper', method=None):
+def align(data, align='hyper', normalize=None, ndims=None, method=None):
     """
     Aligns a list of arrays
 
@@ -43,6 +43,14 @@ def align(data, align='hyper', method=None):
         key is a string that specifies the model and the params key is a dictionary
         of parameter values (default : 'hyper').
 
+    normalize : None
+        Deprecated argument.  Please use new analyze function to perform
+        combinations of transformations
+
+    ndims : None
+        Deprecated argument.  Please use new analyze function to perform
+        combinations of transformations
+
     Returns
     ----------
     aligned : list
@@ -58,12 +66,12 @@ def align(data, align='hyper', method=None):
             return data
     else:
         if method is not None:
-            warnings.warn('The method arg is deprecated.  Please use align.')
+            warnings.warn('The method argument will be deprecated.  Please use align. See the API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.tools.align.html#hypertools.tools.align')
             align = method
 
         if align is True:
             warnings.warn("Setting align=True will be deprecated.  Please specify the \
-                          type of alignment, i.e. align='hyper'")
+                          type of alignment, i.e. align='hyper'. See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.tools.align.html#hypertools.tools.align")
             align = 'hyper'
 
         # common format

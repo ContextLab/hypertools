@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-
+import warnings
 from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering
 import numpy as np
 from .._shared.helpers import *
 
 @memoize
-def cluster(x, cluster='KMeans', n_clusters=3):
+def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
     """
     Performs clustering analysis and returns a list of cluster labels
 
@@ -28,6 +28,10 @@ def cluster(x, cluster='KMeans', n_clusters=3):
     n_clusters : int
         Number of clusters to discover
 
+    ndims : None
+        Deprecated argument.  Please use new analyze function to perform
+        combinations of transformations
+
     Returns
     ----------
     cluster_labels : list
@@ -39,6 +43,10 @@ def cluster(x, cluster='KMeans', n_clusters=3):
     if cluster is None:
         return x
     else:
+
+        if ndims is not None:
+            warnings.warn('The ndims argument is now deprecated. Ignoring dimensionality reduction step.')
+
         x = format_data(x)
 
         # dictionary of models
@@ -61,10 +69,6 @@ def cluster(x, cluster='KMeans', n_clusters=3):
         elif type(cluster) is dict:
             if type(cluster['model']) is str:
                 model = models[cluster['model']]
-                model_params = cluster['params']
-            # if the user specifies a function, set that to the model
-            elif callable(cluster['model']):
-                model = cluster['model']
                 model_params = cluster['params']
 
         # initialize model
