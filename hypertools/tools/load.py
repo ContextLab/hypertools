@@ -7,7 +7,7 @@ from warnings import warn
 from .reduce import reduce as reducer
 from .align import align as aligner
 from .._shared.helpers import format_data
-from ..DataGeometry import DataGeometry
+from ..datageometry import DataGeometry
 
 def load(dataset, ndims=None, align=False):
     """

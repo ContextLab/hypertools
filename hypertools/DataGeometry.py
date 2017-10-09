@@ -8,13 +8,44 @@ from .config import __version__
 
 class DataGeometry(object):
     """
-    Hypertools data object
+    Hypertools data object class
 
-    A DataGeometry data object contains the data, figure handles and transform
-    functions used to create a plot.
+    A DataGeometry object contains the data, figure handles and transform
+    functions used to create a plot.  Note: this class should not be called
+    directly, but is used by the `hyp.plot` function to create a plot object.
 
     Parameters
     ----------
+
+    fig : matplotlib.Figure
+        The matplotlib figure handle for the plot
+
+    ax : matplotlib.Axes
+        The matplotlib axes handle for the plot
+
+    line_ani : matplotlib.animation.FuncAnimation
+        The matplotlib animation handle (if the plot is an animation)
+
+    data : list
+        A list of numpy arrays representing the raw data
+
+    xform_data : list
+        A list of numpy arrays representing the transformed data
+
+    reduce : dict
+        A dictionary containing the reduction model and parameters
+
+    align : dict
+        A dictionary containing align model and parameters
+
+    normalize : str
+        A string representing the kind of normalization
+
+    kwargs : dict
+        A dictionary containing all kwargs passed to the plot function
+
+    version : str
+        The version of the software used to create the class instance
 
     """
 
@@ -55,7 +86,20 @@ class DataGeometry(object):
     # a function to transform new data
     def transform(self, data=None):
         """
-        Return transformed data, or transform new data
+        Return transformed data, or transform new data using the same model
+        parameters
+
+        Parameters
+        ----------
+        data : numpy array, pandas dataframe or list of arrays/dfs
+            The data to transform.  If no data is passed, the xform_data from
+            the DataGeometry object will be returned.
+
+        Returns
+        ----------
+        xformed_data : list of numpy arrays
+            The transformed data
+
         """
         # if no new data passed,
         if data is None:
@@ -68,8 +112,25 @@ class DataGeometry(object):
     # a function to plot the data
     def plot(self, data=None, **kwargs):
         """
-        Plot the data object
+        Plot the data
+
+        Parameters
+        ----------
+        data : numpy array, pandas dataframe or list of arrays/dfs
+            The data to plot.  If no data is passed, the xform_data from
+            the DataGeometry object will be returned.
+
+        kwargs : keyword arguments
+            Any keyword arguments supported by `hypertools.plot` are also supported
+            by this method
+
+        Returns
+        ----------
+        geo : hypertools.DataGeometry
+            A new data geometry object
+
         """
+
         # import plot here to avoid circular imports
         from .plot.plot import plot as plotter
 
@@ -90,6 +151,24 @@ class DataGeometry(object):
         return plotter(data, transform=transform, **new_kwargs)
 
     def save(self, fname, compression='blosc'):
+        """
+        Save method for the data geometry object
+
+        The data will be saved as a 'geo' file, which is a dictionary containing
+        the elements of a data geometry object saved in the hd5 format using
+        `deepdish`.
+
+        fname : str
+            A name for the file.  If the file extension (.geo) is not specified,
+            it will be appended.
+
+        compression : str
+            The kind of compression to use.  See the deepdish documentation for
+            options: http://deepdish.readthedocs.io/en/latest/api_io.html#deepdish.io.save
+
+        """
+
+
         # put geo vars into a dict
         geo = {
             'data' : self.data,

@@ -22,17 +22,34 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
 
     Parameters
     ----------
+    
     x : Numpy array, DataFrame or list of arrays/dfs
         A list of Numpy arrays or Pandas Dataframes
 
+    reduce : str or dict
+        Decomposition/manifold learning model to use.  Models supported: PCA,
+        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
+        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
+        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be
+        passed as a string, but for finer control of the model parameters, pass
+        as a dictionary, e.g. reduce={'model' : 'PCA', 'params' : {'whiten' : True}}.
+        See scikit-learn specific model docs for details on parameters supported
+        for each model.
+
+    max_dims : int
+        Maximum number of dimensions to consider
+
+    show : bool
+        Plot the result (default : true)
+
     Returns
     ----------
-    fig, ax, result : maplotlib.Figure, matplotlib.Axes, dict
-        By default, a matplotlib figure and axis handle, and a data
-        dictionary with the analysis results. 'average' is the correlation
+
+    result : dict
+        A dictionary with the analysis results. 'average' is the correlation
         by number of components for all data. 'individual' is a list of lists,
         where each list is a correlation by number of components vector (for each
-        input list). If show=False, only result is returned.
+        input list).
 
     """
 
@@ -50,7 +67,6 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
 
         # correlation matrix for all dimensions
         alldims = pdist(x,'correlation')
-
 
         corrs=[]
         for dims in range(2, max_dims):
@@ -79,6 +95,4 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
         ax.set_ylabel('Correlation')
         ax.set_xlabel('Number of components')
         plt.show()
-        return fig, ax, result
-    else:
-        return result
+    return result

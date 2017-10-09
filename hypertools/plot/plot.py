@@ -19,7 +19,7 @@ from ..tools.reduce import reduce as reducer
 from ..tools.normalize import normalize as normalizer
 from ..tools.align import align as aligner
 from .draw import draw
-from ..DataGeometry import DataGeometry
+from ..datageometry import DataGeometry
 
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
