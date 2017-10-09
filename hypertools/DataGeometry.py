@@ -158,6 +158,9 @@ class DataGeometry(object):
         the elements of a data geometry object saved in the hd5 format using
         `deepdish`.
 
+        Parameters
+        ----------
+        
         fname : str
             A name for the file.  If the file extension (.geo) is not specified,
             it will be appended.

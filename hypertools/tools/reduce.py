@@ -25,18 +25,18 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False):
         there are nans present in the data, the function will try to use
         PPCA to interpolate the missing values.
 
-    ndims : int
-        Number of dimensions to reduce
-
-    model : str
+    reduce : str or dict
         Decomposition/manifold learning model to use.  Models supported: PCA,
         IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
         FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
-        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS.
+        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be
+        passed as a string, but for finer control of the model parameters, pass
+        as a dictionary, e.g. reduce={'model' : 'PCA', 'params' : {'whiten' : True}}.
+        See scikit-learn specific model docs for details on parameters supported
+        for each model.
 
-    model_params : dict
-        Optional dictionary of scikit-learn parameters to pass to reduction model.
-        See scikit-learn specific model docs for details.
+    ndims : int
+        Number of dimensions to reduce
 
     Returns
     ----------
@@ -74,13 +74,16 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False):
         'MDS' : MDS
     }
 
-    # common format
-    x = format_data(x)
-
     # if model is None, just return data
-    if (reduce is None) or (ndims is None) or (all([i.shape[1]<=ndims for i in x])):
+    if (reduce is None) or (ndims is None):
         return x
     else:
+
+        # common format
+        x = format_data(x)
+
+        if all([i.shape[1]<=ndims for i in x]):
+            return x
 
         # if reduce is a string, find the corresponding model
         if type(reduce) in [str, np.string_]:

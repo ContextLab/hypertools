@@ -41,11 +41,11 @@ def normalize(x, normalize='across', internal=False):
 
     assert normalize in ['across','within','row', False, None], "scale_type must be across, within, row or none."
 
-    x = format_data(x)
-
     if normalize in [False, None]:
         return x
     else:
+
+        x = format_data(x)
 
         zscore = lambda X,y: (y - np.mean(X)) / np.std(X) if len(set(y))>1 else np.zeros(y.shape)
 

@@ -34,7 +34,7 @@ def align(data, align='hyper', method=None):
 
     Parameters
     ----------
-    data : list
+    data : numpy array, pandas df, or list of arrays/dfs
         A list of Numpy arrays or Pandas Dataframes
 
     align : str or dict
@@ -61,6 +61,9 @@ def align(data, align='hyper', method=None):
         if method is not None:
             warnings.warn('The method arg is deprecated.  Please use align.')
             align = method
+
+        if align is True:
+            align = 'hyper'
 
         # common format
         data = format_data(data)

@@ -4,9 +4,18 @@ from .normalize import normalize as normalizer
 from .._shared.helpers import format_data
 
 def analyze(data, reduce=None, align=None, normalize=None, ndims=None, internal=False):
+    """
+    Wrapper function for normalize -> reduce -> align transformations.
 
-    # put data into common format
-    data = format_data(data)
+    Parameters
+    ----------
+
+    data : numpy array, pandas df, or list of arrays/dfs
+        The data to analyze
+
+    reduce : str or dict
+    """
+
 
     # return processed data
     return aligner(reducer(normalizer(data, normalize=normalize, internal=internal),
