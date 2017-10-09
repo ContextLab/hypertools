@@ -96,10 +96,6 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False):
             if type(reduce['model']) is str:
                 model = models[reduce['model']]
                 model_params = reduce['params']
-            # if the user specifies a function, set that to the model
-            elif callable(reduce['model']):
-                model = reduce['model']
-                model_params = reduce['params']
 
         # initialize model
         model = model(**model_params)

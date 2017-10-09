@@ -16,11 +16,17 @@ def cluster(x, cluster='KMeans', n_clusters=3):
         If a list is passed, the arrays will be stacked and the clustering
         will be performed across all lists (i.e. not within each list).
 
-    model : str or function
-        Model to use to discover clusters (default: KMeans)
+    cluster : str or dict
+        Model to use to discover clusters.  Support algorithms are: KMeans,
+        MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
+        SpectralClustering (default: KMeans).Can be passed as a string, but for
+        finer control of the model parameters, pass as a dictionary, e.g.
+        reduce={'model' : 'KMeans', 'params' : {'max_iter' : 100}}. See
+        scikit-learn specific model docs for details on parameters supported for
+        each model.
 
-    model_params : dict
-        Parameters for the model (default: None)
+    n_clusters : int
+        Number of clusters to discover
 
     Returns
     ----------

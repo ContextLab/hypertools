@@ -160,7 +160,7 @@ class DataGeometry(object):
 
         Parameters
         ----------
-        
+
         fname : str
             A name for the file.  If the file extension (.geo) is not specified,
             it will be appended.

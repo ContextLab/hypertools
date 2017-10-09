@@ -1,15 +1,13 @@
 #!/usr/bin/env python
-
-##PACKAGES##
 from __future__ import division
 from builtins import zip
 from builtins import range
 import numpy as np
 
-##MAIN FUNCTION##
 def procrustes(source, target, scaling=True, reflection=True, reduction=False,
                oblique=False, oblique_rcond=-1):
-    """Function to project from one space to another using Procrustean
+    """
+    Function to project from one space to another using Procrustean
     transformation (shift + scaling + rotation + reflection).
 
     The implementation of this function was based on the ProcrusteanMapper in

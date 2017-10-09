@@ -22,7 +22,7 @@ def normalize(x, normalize='across', internal=False):
     x : Numpy array or list of arrays
         This can either be a single array, or list of arrays
 
-    normalize : str or False
+    normalize : str or False or None
         If set to 'across', the columns of the input data will be z-scored
         across lists (default). That is, the z-scores will be computed with
         with repect to column n across all arrays passed in the list. If set

@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-##PACKAGES##
 from __future__ import division
 from builtins import range
 from .._externals.srm import SRM
