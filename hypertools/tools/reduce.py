@@ -95,8 +95,12 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False):
         elif type(reduce) is dict:
             if type(reduce['model']) is str:
                 model = models[reduce['model']]
-                model_params = reduce['params']
-
+                if reduce['params'] is None:
+                    model_params = {
+                        'n_components' : ndims
+                    }
+                else:
+                    model_params = reduce['params']
         # initialize model
         model = model(**model_params)
 

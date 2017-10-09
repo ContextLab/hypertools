@@ -178,7 +178,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # warnings for deprecated API args
     if (model is not None) or (model_params is not None):
         warnings.warn('Model and model_params arguments will be deprecated. Please use \
-                      reduce. See docs for details.')
+                      reduce keyword argument. See docs for details: http://hypertools.readthedocs.io/en/latest/hypertools.plot.html#hypertools.plot')
         reduce = {}
         reduce['model'] = model
         reduce['params'] = model_params
