@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.tools.cluster &#8212; hypertools 0.3.0 documentation</title>
+    <title>hypertools.tools.cluster &#8212; hypertools 0.4.0 documentation</title>
     
     <link rel="stylesheet" href="_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    './',
-        VERSION:     '0.3.0',
+        VERSION:     '0.4.0',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -51,7 +51,7 @@
         </button>
         <a class="navbar-brand" href="index.html">
           hypertools</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.3</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.4</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -117,7 +117,7 @@
 <dl class="function">
 <dt id="hypertools.tools.cluster">
 <code class="descclassname">hypertools.tools.</code><code class="descname">cluster</code><span class="sig-paren">(</span><em>*args</em>, <em>**kwargs</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/hypertools/tools/cluster.html#cluster"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#hypertools.tools.cluster" title="Permalink to this definition">¶</a></dt>
-<dd><p>Performs k-means clustering and returns a list of cluster labels</p>
+<dd><p>Performs clustering analysis and returns a list of cluster labels</p>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
 <col class="field-body" />
@@ -128,13 +128,19 @@
 If a list is passed, the arrays will be stacked and the clustering
 will be performed across all lists (i.e. not within each list).</p>
 </div></blockquote>
-<p><strong>model</strong> : str or function</p>
+<p><strong>cluster</strong> : str or dict</p>
 <blockquote>
-<div><p>Model to use to discover clusters (default: KMeans)</p>
+<div><p>Model to use to discover clusters.  Support algorithms are: KMeans,
+MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
+SpectralClustering (default: KMeans).Can be passed as a string, but for
+finer control of the model parameters, pass as a dictionary, e.g.
+reduce={&#8216;model&#8217; : &#8216;KMeans&#8217;, &#8216;params&#8217; : {&#8216;max_iter&#8217; : 100}}. See
+scikit-learn specific model docs for details on parameters supported for
+each model.</p>
 </div></blockquote>
-<p><strong>model_params</strong> : dict</p>
+<p><strong>n_clusters</strong> : int</p>
 <blockquote>
-<div><p>Parameters for the model (default: None)</p>
+<div><p>Number of clusters to discover</p>
 </div></blockquote>
 </td>
 </tr>

@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.tools.reduce &#8212; hypertools 0.3.0 documentation</title>
+    <title>hypertools.tools.reduce &#8212; hypertools 0.4.0 documentation</title>
     
     <link rel="stylesheet" href="../../../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../../',
-        VERSION:     '0.3.0',
+        VERSION:     '0.4.0',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -51,7 +51,7 @@
         </button>
         <a class="navbar-brand" href="../../../index.html">
           hypertools</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.3</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.4</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -126,7 +126,7 @@
 
 <span class="c1"># main function</span>
 <span class="nd">@memoize</span>
-<div class="viewcode-block" id="reduce"><a class="viewcode-back" href="../../../hypertools.tools.reduce.html#hypertools.tools.reduce">[docs]</a><span class="k">def</span> <span class="nf">reduce</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">reduce</span><span class="o">=</span><span class="s1">&#39;IncrementalPCA&#39;</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<div class="viewcode-block" id="reduce"><a class="viewcode-back" href="../../../hypertools.tools.reduce.html#hypertools.reduce">[docs]</a><span class="k">def</span> <span class="nf">reduce</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">reduce</span><span class="o">=</span><span class="s1">&#39;IncrementalPCA&#39;</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Reduces dimensionality of an array, or list of arrays</span>
 
@@ -137,18 +137,18 @@
 <span class="sd">        there are nans present in the data, the function will try to use</span>
 <span class="sd">        PPCA to interpolate the missing values.</span>
 
-<span class="sd">    ndims : int</span>
-<span class="sd">        Number of dimensions to reduce</span>
-
-<span class="sd">    model : str</span>
+<span class="sd">    reduce : str or dict</span>
 <span class="sd">        Decomposition/manifold learning model to use.  Models supported: PCA,</span>
 <span class="sd">        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,</span>
 <span class="sd">        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,</span>
-<span class="sd">        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS.</span>
+<span class="sd">        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be</span>
+<span class="sd">        passed as a string, but for finer control of the model parameters, pass</span>
+<span class="sd">        as a dictionary, e.g. reduce={&#39;model&#39; : &#39;PCA&#39;, &#39;params&#39; : {&#39;whiten&#39; : True}}.</span>
+<span class="sd">        See scikit-learn specific model docs for details on parameters supported</span>
+<span class="sd">        for each model.</span>
 
-<span class="sd">    model_params : dict</span>
-<span class="sd">        Optional dictionary of scikit-learn parameters to pass to reduction model.</span>
-<span class="sd">        See scikit-learn specific model docs for details.</span>
+<span class="sd">    ndims : int</span>
+<span class="sd">        Number of dimensions to reduce</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    ----------</span>
@@ -186,16 +186,19 @@
         <span class="s1">&#39;MDS&#39;</span> <span class="p">:</span> <span class="n">MDS</span>
     <span class="p">}</span>
 
-    <span class="c1"># common format</span>
-    <span class="n">x</span> <span class="o">=</span> <span class="n">format_data</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-
     <span class="c1"># if model is None, just return data</span>
-    <span class="k">if</span> <span class="p">(</span><span class="n">reduce</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">ndims</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="nb">all</span><span class="p">([</span><span class="n">i</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">&lt;=</span><span class="n">ndims</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">x</span><span class="p">])):</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">reduce</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">ndims</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">x</span>
     <span class="k">else</span><span class="p">:</span>
 
+        <span class="c1"># common format</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">format_data</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">all</span><span class="p">([</span><span class="n">i</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">&lt;=</span><span class="n">ndims</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]):</span>
+            <span class="k">return</span> <span class="n">x</span>
+
         <span class="c1"># if reduce is a string, find the corresponding model</span>
-        <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">reduce</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">reduce</span><span class="p">)</span> <span class="ow">in</span> <span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">string_</span><span class="p">]:</span>
             <span class="n">model</span> <span class="o">=</span> <span class="n">models</span><span class="p">[</span><span class="n">reduce</span><span class="p">]</span>
             <span class="n">model_params</span> <span class="o">=</span> <span class="p">{</span>
                 <span class="s1">&#39;n_components&#39;</span> <span class="p">:</span> <span class="n">ndims</span>
@@ -204,10 +207,6 @@
         <span class="k">elif</span> <span class="nb">type</span><span class="p">(</span><span class="n">reduce</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">dict</span><span class="p">:</span>
             <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">])</span> <span class="ow">is</span> <span class="nb">str</span><span class="p">:</span>
                 <span class="n">model</span> <span class="o">=</span> <span class="n">models</span><span class="p">[</span><span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">]]</span>
-                <span class="n">model_params</span> <span class="o">=</span> <span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;params&#39;</span><span class="p">]</span>
-            <span class="c1"># if the user specifies a function, set that to the model</span>
-            <span class="k">elif</span> <span class="n">callable</span><span class="p">(</span><span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">]):</span>
-                <span class="n">model</span> <span class="o">=</span> <span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">]</span>
                 <span class="n">model_params</span> <span class="o">=</span> <span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;params&#39;</span><span class="p">]</span>
 
         <span class="c1"># initialize model</span>

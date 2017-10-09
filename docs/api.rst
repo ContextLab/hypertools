@@ -9,6 +9,30 @@ API reference
 
 .. _plot_api:
 
+DataGeometry class
+------------------
+
+.. autosummary::
+  :toctree:
+
+  hypertools.DataGeometry
+
+Load
+------------------
+
+.. autosummary::
+  :toctree:
+
+  hypertools.load
+
+Analyze
+------------------
+
+.. autosummary::
+  :toctree:
+
+  hypertools.analyze
+
 Plot
 ------------------
 
@@ -17,28 +41,48 @@ Plot
 
   hypertools.plot
 
-Tools
+Normalize
 ------------------
 
 .. autosummary::
   :toctree:
 
-  hypertools.tools.align
+  hypertools.normalize
+
+Reduce
+------------------
 
 .. autosummary::
   :toctree:
 
-  hypertools.tools.reduce
+  hypertools.reduce
+
+Align
+------------------
 
 .. autosummary::
   :toctree:
 
-  hypertools.tools.cluster
+  hypertools.align
+
+Cluster
+------------------
 
 .. autosummary::
   :toctree:
 
-  hypertools.tools.normalize
+  hypertools.cluster
+
+Describe
+------------------
+
+.. autosummary::
+  :toctree:
+
+  hypertools.describe
+
+Tools
+------------------
 
 .. autosummary::
   :toctree:
@@ -58,4 +102,4 @@ Tools
 .. autosummary::
   :toctree:
 
-  hypertools.tools.load
+  hypertools.tools.df2mat

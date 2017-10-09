@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>API reference &#8212; hypertools 0.3.0 documentation</title>
+    <title>API reference &#8212; hypertools 0.4.0 documentation</title>
     
     <link rel="stylesheet" href="_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    './',
-        VERSION:     '0.3.0',
+        VERSION:     '0.4.0',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -51,7 +51,7 @@
         </button>
         <a class="navbar-brand" href="index.html">
           hypertools</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.3</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.4</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -83,7 +83,15 @@
       role="menu"
       aria-labelledby="dLabelLocalToc"><ul>
 <li><a class="reference internal" href="#">API reference</a><ul>
+<li><a class="reference internal" href="#datageometry-class">DataGeometry class</a></li>
+<li><a class="reference internal" href="#load">Load</a></li>
+<li><a class="reference internal" href="#analyze">Analyze</a></li>
 <li><a class="reference internal" href="#plot">Plot</a></li>
+<li><a class="reference internal" href="#normalize">Normalize</a></li>
+<li><a class="reference internal" href="#reduce">Reduce</a></li>
+<li><a class="reference internal" href="#align">Align</a></li>
+<li><a class="reference internal" href="#cluster">Cluster</a></li>
+<li><a class="reference internal" href="#describe">Describe</a></li>
 <li><a class="reference internal" href="#tools">Tools</a><ul>
 </ul>
 </li>
@@ -120,8 +128,50 @@
       
   <div class="section" id="api-reference">
 <span id="api-ref"></span><h1>API reference<a class="headerlink" href="#api-reference" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="datageometry-class">
+<span id="plot-api"></span><h2>DataGeometry class<a class="headerlink" href="#datageometry-class" title="Permalink to this headline">¶</a></h2>
+<table border="1" class="longtable docutils">
+<colgroup>
+<col width="10%" />
+<col width="90%" />
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td><a class="reference internal" href="hypertools.DataGeometry.html#hypertools.DataGeometry" title="hypertools.DataGeometry"><code class="xref py py-obj docutils literal"><span class="pre">hypertools.DataGeometry</span></code></a>([fig,&nbsp;ax,&nbsp;line_ani,&nbsp;...])</td>
+<td>Hypertools data object class</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="load">
+<h2>Load<a class="headerlink" href="#load" title="Permalink to this headline">¶</a></h2>
+<table border="1" class="longtable docutils">
+<colgroup>
+<col width="10%" />
+<col width="90%" />
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td><a class="reference internal" href="hypertools.load.html#hypertools.load" title="hypertools.load"><code class="xref py py-obj docutils literal"><span class="pre">hypertools.load</span></code></a>(dataset[,&nbsp;reduce,&nbsp;ndims,&nbsp;...])</td>
+<td>Load a .geo file or example data</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="analyze">
+<h2>Analyze<a class="headerlink" href="#analyze" title="Permalink to this headline">¶</a></h2>
+<table border="1" class="longtable docutils">
+<colgroup>
+<col width="10%" />
+<col width="90%" />
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td><a class="reference internal" href="hypertools.analyze.html#hypertools.analyze" title="hypertools.analyze"><code class="xref py py-obj docutils literal"><span class="pre">hypertools.analyze</span></code></a>(data[,&nbsp;normalize,&nbsp;...])</td>
+<td>Wrapper function for normalize -&gt; reduce -&gt; align transformations.</td>
+</tr>
+</tbody>
+</table>
+</div>
 <div class="section" id="plot">
-<span id="plot-api"></span><h2>Plot<a class="headerlink" href="#plot" title="Permalink to this headline">¶</a></h2>
+<h2>Plot<a class="headerlink" href="#plot" title="Permalink to this headline">¶</a></h2>
 <table border="1" class="longtable docutils">
 <colgroup>
 <col width="10%" />
@@ -134,52 +184,78 @@
 </tbody>
 </table>
 </div>
-<div class="section" id="tools">
-<h2>Tools<a class="headerlink" href="#tools" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="normalize">
+<h2>Normalize<a class="headerlink" href="#normalize" title="Permalink to this headline">¶</a></h2>
 <table border="1" class="longtable docutils">
 <colgroup>
 <col width="10%" />
 <col width="90%" />
 </colgroup>
 <tbody valign="top">
-<tr class="row-odd"><td><a class="reference internal" href="hypertools.tools.align.html#hypertools.tools.align" title="hypertools.tools.align"><code class="xref py py-obj docutils literal"><span class="pre">hypertools.tools.align</span></code></a>(*args,&nbsp;**kwargs)</td>
-<td>Aligns a list of arrays</td>
-</tr>
-</tbody>
-</table>
-<table border="1" class="longtable docutils">
-<colgroup>
-<col width="10%" />
-<col width="90%" />
-</colgroup>
-<tbody valign="top">
-<tr class="row-odd"><td><a class="reference internal" href="hypertools.tools.reduce.html#hypertools.tools.reduce" title="hypertools.tools.reduce"><code class="xref py py-obj docutils literal"><span class="pre">hypertools.tools.reduce</span></code></a>(*args,&nbsp;**kwargs)</td>
-<td>Reduces dimensionality of an array, or list of arrays</td>
-</tr>
-</tbody>
-</table>
-<table border="1" class="longtable docutils">
-<colgroup>
-<col width="10%" />
-<col width="90%" />
-</colgroup>
-<tbody valign="top">
-<tr class="row-odd"><td><a class="reference internal" href="hypertools.tools.cluster.html#hypertools.tools.cluster" title="hypertools.tools.cluster"><code class="xref py py-obj docutils literal"><span class="pre">hypertools.tools.cluster</span></code></a>(*args,&nbsp;**kwargs)</td>
-<td>Performs k-means clustering and returns a list of cluster labels</td>
-</tr>
-</tbody>
-</table>
-<table border="1" class="longtable docutils">
-<colgroup>
-<col width="10%" />
-<col width="90%" />
-</colgroup>
-<tbody valign="top">
-<tr class="row-odd"><td><a class="reference internal" href="hypertools.tools.normalize.html#hypertools.tools.normalize" title="hypertools.tools.normalize"><code class="xref py py-obj docutils literal"><span class="pre">hypertools.tools.normalize</span></code></a>(*args,&nbsp;**kwargs)</td>
+<tr class="row-odd"><td><a class="reference internal" href="hypertools.normalize.html#hypertools.normalize" title="hypertools.normalize"><code class="xref py py-obj docutils literal"><span class="pre">hypertools.normalize</span></code></a>(*args,&nbsp;**kwargs)</td>
 <td>Z-transform the columns or rows of an array, or list of arrays</td>
 </tr>
 </tbody>
 </table>
+</div>
+<div class="section" id="reduce">
+<h2>Reduce<a class="headerlink" href="#reduce" title="Permalink to this headline">¶</a></h2>
+<table border="1" class="longtable docutils">
+<colgroup>
+<col width="10%" />
+<col width="90%" />
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td><a class="reference internal" href="hypertools.reduce.html#hypertools.reduce" title="hypertools.reduce"><code class="xref py py-obj docutils literal"><span class="pre">hypertools.reduce</span></code></a>(*args,&nbsp;**kwargs)</td>
+<td>Reduces dimensionality of an array, or list of arrays</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="align">
+<h2>Align<a class="headerlink" href="#align" title="Permalink to this headline">¶</a></h2>
+<table border="1" class="longtable docutils">
+<colgroup>
+<col width="10%" />
+<col width="90%" />
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td><a class="reference internal" href="hypertools.align.html#hypertools.align" title="hypertools.align"><code class="xref py py-obj docutils literal"><span class="pre">hypertools.align</span></code></a>(*args,&nbsp;**kwargs)</td>
+<td>Aligns a list of arrays</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="cluster">
+<h2>Cluster<a class="headerlink" href="#cluster" title="Permalink to this headline">¶</a></h2>
+<table border="1" class="longtable docutils">
+<colgroup>
+<col width="10%" />
+<col width="90%" />
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td><a class="reference internal" href="hypertools.cluster.html#hypertools.cluster" title="hypertools.cluster"><code class="xref py py-obj docutils literal"><span class="pre">hypertools.cluster</span></code></a>(*args,&nbsp;**kwargs)</td>
+<td>Performs clustering analysis and returns a list of cluster labels</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="describe">
+<h2>Describe<a class="headerlink" href="#describe" title="Permalink to this headline">¶</a></h2>
+<table border="1" class="longtable docutils">
+<colgroup>
+<col width="10%" />
+<col width="90%" />
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td><a class="reference internal" href="hypertools.describe.html#hypertools.describe" title="hypertools.describe"><code class="xref py py-obj docutils literal"><span class="pre">hypertools.describe</span></code></a>(x[,&nbsp;reduce,&nbsp;max_dims,&nbsp;show])</td>
+<td>Create plot describing covariance with as a function of number of dimensions</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="tools">
+<h2>Tools<a class="headerlink" href="#tools" title="Permalink to this headline">¶</a></h2>
 <table border="1" class="longtable docutils">
 <colgroup>
 <col width="10%" />
@@ -219,8 +295,8 @@
 <col width="90%" />
 </colgroup>
 <tbody valign="top">
-<tr class="row-odd"><td><a class="reference internal" href="hypertools.tools.load.html#hypertools.tools.load" title="hypertools.tools.load"><code class="xref py py-obj docutils literal"><span class="pre">hypertools.tools.load</span></code></a>(dataset[,&nbsp;ndims,&nbsp;align])</td>
-<td>Load example data</td>
+<tr class="row-odd"><td><a class="reference internal" href="hypertools.tools.df2mat.html#hypertools.tools.df2mat" title="hypertools.tools.df2mat"><code class="xref py py-obj docutils literal"><span class="pre">hypertools.tools.df2mat</span></code></a>(data[,&nbsp;return_labels])</td>
+<td>Transforms a Pandas DataFrame into a Numpy array with binarized text columns</td>
 </tr>
 </tbody>
 </table>

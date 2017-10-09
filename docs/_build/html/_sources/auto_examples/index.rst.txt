@@ -249,6 +249,26 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="To save a plot, simply use the `save_path` kwarg, and specify where you want the image to be sa...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_save_geo_thumb.png
+
+        :ref:`sphx_glr_auto_examples_save_geo.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/save_geo
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="To save an animation, simply add the `save_path` kwarg and specify the path where you want to s...">
 
 .. only:: html

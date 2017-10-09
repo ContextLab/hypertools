@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.tools.reduce &#8212; hypertools 0.3.0 documentation</title>
+    <title>hypertools.tools.reduce &#8212; hypertools 0.4.0 documentation</title>
     
     <link rel="stylesheet" href="_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    './',
-        VERSION:     '0.3.0',
+        VERSION:     '0.4.0',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -51,7 +51,7 @@
         </button>
         <a class="navbar-brand" href="index.html">
           hypertools</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.3</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.4</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -128,21 +128,20 @@
 there are nans present in the data, the function will try to use
 PPCA to interpolate the missing values.</p>
 </div></blockquote>
-<p><strong>ndims</strong> : int</p>
-<blockquote>
-<div><p>Number of dimensions to reduce</p>
-</div></blockquote>
-<p><strong>model</strong> : str</p>
+<p><strong>reduce</strong> : str or dict</p>
 <blockquote>
 <div><p>Decomposition/manifold learning model to use.  Models supported: PCA,
 IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
 FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
-TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS.</p>
+TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be
+passed as a string, but for finer control of the model parameters, pass
+as a dictionary, e.g. reduce={&#8216;model&#8217; : &#8216;PCA&#8217;, &#8216;params&#8217; : {&#8216;whiten&#8217; : True}}.
+See scikit-learn specific model docs for details on parameters supported
+for each model.</p>
 </div></blockquote>
-<p><strong>model_params</strong> : dict</p>
+<p><strong>ndims</strong> : int</p>
 <blockquote>
-<div><p>Optional dictionary of scikit-learn parameters to pass to reduction model.
-See scikit-learn specific model docs for details.</p>
+<div><p>Number of dimensions to reduce</p>
 </div></blockquote>
 </td>
 </tr>

@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.tools.cluster &#8212; hypertools 0.3.0 documentation</title>
+    <title>hypertools.tools.cluster &#8212; hypertools 0.4.0 documentation</title>
     
     <link rel="stylesheet" href="../../../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../../',
-        VERSION:     '0.3.0',
+        VERSION:     '0.4.0',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -51,7 +51,7 @@
         </button>
         <a class="navbar-brand" href="../../../index.html">
           hypertools</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.3</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.4</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -117,9 +117,9 @@
 <span class="kn">from</span> <span class="nn">.._shared.helpers</span> <span class="k">import</span> <span class="o">*</span>
 
 <span class="nd">@memoize</span>
-<div class="viewcode-block" id="cluster"><a class="viewcode-back" href="../../../hypertools.tools.cluster.html#hypertools.tools.cluster">[docs]</a><span class="k">def</span> <span class="nf">cluster</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">cluster</span><span class="o">=</span><span class="s1">&#39;KMeans&#39;</span><span class="p">,</span> <span class="n">n_clusters</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
+<div class="viewcode-block" id="cluster"><a class="viewcode-back" href="../../../hypertools.tools.cluster.html#hypertools.cluster">[docs]</a><span class="k">def</span> <span class="nf">cluster</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">cluster</span><span class="o">=</span><span class="s1">&#39;KMeans&#39;</span><span class="p">,</span> <span class="n">n_clusters</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Performs k-means clustering and returns a list of cluster labels</span>
+<span class="sd">    Performs clustering analysis and returns a list of cluster labels</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
@@ -128,11 +128,17 @@
 <span class="sd">        If a list is passed, the arrays will be stacked and the clustering</span>
 <span class="sd">        will be performed across all lists (i.e. not within each list).</span>
 
-<span class="sd">    model : str or function</span>
-<span class="sd">        Model to use to discover clusters (default: KMeans)</span>
+<span class="sd">    cluster : str or dict</span>
+<span class="sd">        Model to use to discover clusters.  Support algorithms are: KMeans,</span>
+<span class="sd">        MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,</span>
+<span class="sd">        SpectralClustering (default: KMeans).Can be passed as a string, but for</span>
+<span class="sd">        finer control of the model parameters, pass as a dictionary, e.g.</span>
+<span class="sd">        reduce={&#39;model&#39; : &#39;KMeans&#39;, &#39;params&#39; : {&#39;max_iter&#39; : 100}}. See</span>
+<span class="sd">        scikit-learn specific model docs for details on parameters supported for</span>
+<span class="sd">        each model.</span>
 
-<span class="sd">    model_params : dict</span>
-<span class="sd">        Parameters for the model (default: None)</span>
+<span class="sd">    n_clusters : int</span>
+<span class="sd">        Number of clusters to discover</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    ----------</span>

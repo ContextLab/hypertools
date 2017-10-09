@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.plot &#8212; hypertools 0.3.0 documentation</title>
+    <title>hypertools.plot &#8212; hypertools 0.4.0 documentation</title>
     
     <link rel="stylesheet" href="_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    './',
-        VERSION:     '0.3.0',
+        VERSION:     '0.4.0',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -51,7 +51,7 @@
         </button>
         <a class="navbar-brand" href="index.html">
           hypertools</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.3</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.4</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -168,6 +168,25 @@ list will add string labels to the legend (one for each list item).</p>
 <blockquote>
 <div><p>A title for the plot</p>
 </div></blockquote>
+<p><strong>normalize</strong> : str or False</p>
+<blockquote>
+<div><p>If set to &#8216;across&#8217;, the columns of the input data will be z-scored
+across lists (default). If set to &#8216;within&#8217;, the columns will be
+z-scored within each list that is passed. If set to &#8216;row&#8217;, each row of
+the input data will be z-scored. If set to False, the input data will
+be returned (default is False).</p>
+</div></blockquote>
+<p><strong>reduce</strong> : str or dict</p>
+<blockquote>
+<div><p>Decomposition/manifold learning model to use.  Models supported: PCA,
+IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
+FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
+TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be
+passed as a string, but for finer control of the model parameters, pass
+as a dictionary, e.g. reduce={&#8216;model&#8217; : &#8216;PCA&#8217;, &#8216;params&#8217; : {&#8216;whiten&#8217; : True}}.
+See scikit-learn specific model docs for details on parameters supported
+for each model.</p>
+</div></blockquote>
 <p><strong>ndims</strong> : int</p>
 <blockquote>
 <div><p>An <cite>int</cite> representing the number of dims to reduce the data x
@@ -177,30 +196,23 @@ dimensions and return the data with the same number of dimensions
 possibly normalized and/or aligned according to normalize/align
 kwargs.</p>
 </div></blockquote>
-<p><strong>model</strong> : str</p>
+<p><strong>align</strong> : str or dict or False/None</p>
 <blockquote>
-<div><p>Decomposition/manifold learning model to use.  Models supported: PCA,
-IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
-FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
-TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS.</p>
+<div><p>If str, either &#8216;hyper&#8217; or &#8216;SRM&#8217;.  If &#8216;hyper&#8217;, alignment algorithm will be
+hyperalignment. If &#8216;SRM&#8217;, alignment algorithm will be shared response
+model.  You can also pass a dictionary for finer control, where the &#8216;model&#8217;
+key is a string that specifies the model and the params key is a dictionary
+of parameter values (default : &#8216;hyper&#8217;).</p>
 </div></blockquote>
-<p><strong>model_params</strong> : dict</p>
+<p><strong>cluster</strong> : str or dict or False/None</p>
 <blockquote>
-<div><p>Optional dictionary of scikit-learn parameters to pass to reduction model.
-See scikit-learn specific model docs for details.</p>
-</div></blockquote>
-<p><strong>align</strong> : bool</p>
-<blockquote>
-<div><p>If set to True, data will be run through the <a href="#id1"><span class="problematic" id="id2">``</span></a>hyperalignment&#8217;&#8217;
-algorithm implemented in hypertools.tools.align (default: False).</p>
-</div></blockquote>
-<p><strong>normalize</strong> : str or False</p>
-<blockquote>
-<div><p>If set to &#8216;across&#8217;, the columns of the input data will be z-scored
-across lists (default). If set to &#8216;within&#8217;, the columns will be
-z-scored within each list that is passed. If set to &#8216;row&#8217;, each row of
-the input data will be z-scored. If set to False, the input data will
-be returned (default is False).</p>
+<div><p>Model to use to discover clusters.  Support algorithms are: KMeans,
+MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
+SpectralClustering (default: KMeans).Can be passed as a string, but for
+finer control of the model parameters, pass as a dictionary, e.g.
+reduce={&#8216;model&#8217; : &#8216;KMeans&#8217;, &#8216;params&#8217; : {&#8216;max_iter&#8217; : 100}}. See
+scikit-learn specific model docs for details on parameters supported for
+each model.</p>
 </div></blockquote>
 <p><strong>n_clusters</strong> : int</p>
 <blockquote>
@@ -208,7 +220,7 @@ be returned (default is False).</p>
 with the k parameter set to n_clusters. The resulting clusters will
 be plotted in different colors according to the color palette.</p>
 </div></blockquote>
-<p><strong>save_path str :</strong></p>
+<p><strong>save_path</strong> : str</p>
 <blockquote>
 <div><p>Path to save the image/movie. Must include the file extension in the
 save path (i.e. save_path=&#8217;/path/to/file/image.png&#8217;). NOTE: If saving
@@ -270,6 +282,10 @@ work properly).</p>
 <blockquote>
 <div><p>If set to False, the figure will not be displayed, but the figure,
 axis and data objects will still be returned (default: True).</p>
+</div></blockquote>
+<p><strong>transform</strong> : bool</p>
+<blockquote>
+<div><p>If set to false, skip data transformations (default : True)</p>
 </div></blockquote>
 </td>
 </tr>

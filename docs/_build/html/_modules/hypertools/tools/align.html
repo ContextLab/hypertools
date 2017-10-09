@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.tools.align &#8212; hypertools 0.3.0 documentation</title>
+    <title>hypertools.tools.align &#8212; hypertools 0.4.0 documentation</title>
     
     <link rel="stylesheet" href="../../../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../../',
-        VERSION:     '0.3.0',
+        VERSION:     '0.4.0',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -51,7 +51,7 @@
         </button>
         <a class="navbar-brand" href="../../../index.html">
           hypertools</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.3</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.4</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -112,7 +112,6 @@
   <h1>Source code for hypertools.tools.align</h1><div class="highlight"><pre>
 <span></span><span class="ch">#!/usr/bin/env python</span>
 
-<span class="c1">##PACKAGES##</span>
 <span class="kn">from</span> <span class="nn">__future__</span> <span class="k">import</span> <span class="n">division</span>
 <span class="kn">from</span> <span class="nn">builtins</span> <span class="k">import</span> <span class="nb">range</span>
 <span class="kn">from</span> <span class="nn">.._externals.srm</span> <span class="k">import</span> <span class="n">SRM</span>
@@ -123,7 +122,7 @@
 <span class="kn">import</span> <span class="nn">warnings</span>
 
 <span class="nd">@memoize</span>
-<div class="viewcode-block" id="align"><a class="viewcode-back" href="../../../hypertools.tools.align.html#hypertools.tools.align">[docs]</a><span class="k">def</span> <span class="nf">align</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">align</span><span class="o">=</span><span class="s1">&#39;hyper&#39;</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="align"><a class="viewcode-back" href="../../../hypertools.tools.align.html#hypertools.align">[docs]</a><span class="k">def</span> <span class="nf">align</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">align</span><span class="o">=</span><span class="s1">&#39;hyper&#39;</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Aligns a list of arrays</span>
 
@@ -146,7 +145,7 @@
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
-<span class="sd">    data : list</span>
+<span class="sd">    data : numpy array, pandas df, or list of arrays/dfs</span>
 <span class="sd">        A list of Numpy arrays or Pandas Dataframes</span>
 
 <span class="sd">    align : str or dict</span>
@@ -173,6 +172,11 @@
         <span class="k">if</span> <span class="n">method</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s1">&#39;The method arg is deprecated.  Please use align.&#39;</span><span class="p">)</span>
             <span class="n">align</span> <span class="o">=</span> <span class="n">method</span>
+
+        <span class="k">if</span> <span class="n">align</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;Setting align=True will be deprecated.  Please specify the </span><span class="se">\</span>
+<span class="s2">                          type of alignment, i.e. align=&#39;hyper&#39;&quot;</span><span class="p">)</span>
+            <span class="n">align</span> <span class="o">=</span> <span class="s1">&#39;hyper&#39;</span>
 
         <span class="c1"># common format</span>
         <span class="n">data</span> <span class="o">=</span> <span class="n">format_data</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
