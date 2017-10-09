@@ -45,11 +45,7 @@ def describe_pca(x, show=True):
         If show=False, only attr is returned
 
     """
-<<<<<<< HEAD
     warnings.warn('This function is deprecated.  Please use the new "describe" function.')
-=======
-
->>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
     warnings.warn('When input data is large, this computation can take a long time.')
 
     ##SUB FUNCTIONS##

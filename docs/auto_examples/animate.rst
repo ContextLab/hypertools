@@ -24,11 +24,7 @@ from one subject.  The rows are timepoints and the columns are neural
     import numpy as np
 
     # load example data
-<<<<<<< HEAD
     data = hyp.load('weights', align=True)
-=======
-    data = hyp.tools.load('weights', align=True)
->>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
     # average into two groups
     w1 = np.mean(data[:17],0)
