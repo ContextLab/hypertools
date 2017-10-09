@@ -19,7 +19,11 @@ along with the PCA coordinate.
 import hypertools as hyp
 
 # load example data
+<<<<<<< HEAD
 data = hyp.load('weights_sample')
+=======
+data = hyp.tools.load('weights_sample')
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
 # plot
 hyp.plot(data, '.', explore=True)

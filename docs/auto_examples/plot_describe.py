@@ -21,7 +21,14 @@ import hypertools as hyp
 import numpy as np
 
 # load example data
+<<<<<<< HEAD
 data = hyp.load('weights_sample')
 
 # plot
 hyp.describe(data)
+=======
+data = hyp.tools.load('weights_sample')
+
+# plot
+hyp.tools.describe_pca(data)
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764

@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+<<<<<<< HEAD
 import warnings
 from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering
 import numpy as np
@@ -8,6 +9,17 @@ from .._shared.helpers import *
 def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
     """
     Performs clustering analysis and returns a list of cluster labels
+=======
+
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+import numpy as np
+from .._shared.helpers import *
+
+def cluster(x, n_clusters=8, ndims=None):
+    """
+    Performs k-means clustering and returns a list of cluster labels
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
     Parameters
     ----------
@@ -16,6 +28,7 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
         If a list is passed, the arrays will be stacked and the clustering
         will be performed across all lists (i.e. not within each list).
 
+<<<<<<< HEAD
     cluster : str or dict
         Model to use to discover clusters.  Support algorithms are: KMeans,
         MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
@@ -31,6 +44,14 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
     ndims : None
         Deprecated argument.  Please use new analyze function to perform
         combinations of transformations
+=======
+        n_clusters : int
+        The number of clusters to discover (i.e. k)
+
+    ndims : int or None
+        This parameter allows you to first reduce dimensionality before
+        running k-means
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
     Returns
     ----------
@@ -39,6 +60,7 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
 
     """
 
+<<<<<<< HEAD
     # if cluster is None, just return data
     if cluster is None:
         return x
@@ -79,3 +101,16 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
 
         # return the labels
         return list(model.labels_)
+=======
+    x = format_data(x)
+
+    if type(x) is list:
+        x = np.vstack(x)
+    if ndims:
+        x = PCA(n_components=ndims).fit_transform(x)
+
+    kmeans = KMeans(init='k-means++', n_clusters=n_clusters, n_init=10)
+    kmeans.fit(x)
+
+    return list(kmeans.labels_)
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764

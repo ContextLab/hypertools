@@ -9,6 +9,7 @@ API reference
 
 .. _plot_api:
 
+<<<<<<< HEAD
 DataGeometry class
 ------------------
 
@@ -33,6 +34,8 @@ Analyze
 
   hypertools.analyze
 
+=======
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 Plot
 ------------------
 
@@ -41,36 +44,53 @@ Plot
 
   hypertools.plot
 
+<<<<<<< HEAD
 Normalize
+=======
+Tools
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 ------------------
 
 .. autosummary::
   :toctree:
 
+<<<<<<< HEAD
   hypertools.normalize
 
 Reduce
 ------------------
+=======
+  hypertools.tools.align
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
 .. autosummary::
   :toctree:
 
+<<<<<<< HEAD
   hypertools.reduce
 
 Align
 ------------------
+=======
+  hypertools.tools.reduce
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
 .. autosummary::
   :toctree:
 
+<<<<<<< HEAD
   hypertools.align
 
 Cluster
 ------------------
+=======
+  hypertools.tools.cluster
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
 .. autosummary::
   :toctree:
 
+<<<<<<< HEAD
   hypertools.cluster
 
 Describe
@@ -83,6 +103,9 @@ Describe
 
 Tools
 ------------------
+=======
+  hypertools.tools.normalize
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
 .. autosummary::
   :toctree:
@@ -102,4 +125,8 @@ Tools
 .. autosummary::
   :toctree:
 
+<<<<<<< HEAD
   hypertools.tools.df2mat
+=======
+  hypertools.tools.load
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764

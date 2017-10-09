@@ -18,7 +18,11 @@ import hypertools as hyp
 import pandas as pd
 
 # load example data
+<<<<<<< HEAD
 data = hyp.load('mushrooms')
+=======
+data = hyp.tools.load('mushrooms')
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
 # plot
 hyp.plot(data, '.', n_clusters=10)

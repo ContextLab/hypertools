@@ -27,14 +27,22 @@ data1 = np.cumsum(np.random.multivariate_normal(np.zeros(10), K, 250), axis=0)
 data2 = copy(data1)
 
 # randomly remove 5% of the data
+<<<<<<< HEAD
 missing = .01
+=======
+missing = .05
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 inds = [(i,j) for i in range(data1.shape[0]) for j in range(data1.shape[1])]
 missing_data = [inds[i] for i in np.random.choice(int(len(inds)), int(len(inds)*missing))]
 for i,j in missing_data:
     data2[i,j]=np.nan
 
 # reduce the data
+<<<<<<< HEAD
 data1_r,data2_r = hyp.reduce([data1, data2], ndims=3)
+=======
+data1_r,data2_r = hyp.tools.reduce([data1, data2], ndims=3)
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
 # pull out missing inds
 missing_inds = hyp.tools.missing_inds(data2)

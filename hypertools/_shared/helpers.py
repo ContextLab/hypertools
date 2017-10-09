@@ -8,14 +8,20 @@ Helper functions
 from __future__ import division
 from __future__ import print_function
 import sys
+<<<<<<< HEAD
 import warnings
+=======
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 import numpy as np
 from scipy.interpolate import PchipInterpolator as pchip
 import seaborn as sns
 import itertools
 import pandas as pd
 from matplotlib.lines import Line2D
+<<<<<<< HEAD
 from .._externals.ppca import PPCA
+=======
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
 ##HELPER FUNCTIONS##
 def center(x):
@@ -135,6 +141,7 @@ def reshape_data(x,labels):
 		x_reshaped[categories.index(point)].append(x_stacked[idx])
 	return [np.vstack(i) for i in x_reshaped]
 
+<<<<<<< HEAD
 def format_data(x, ppca=True):
 
 	def fill_missing(x):
@@ -156,6 +163,9 @@ def format_data(x, ppca=True):
 	        return list(np.split(x_pca,x_split,axis=0))
 	    else:
 	        return [x_pca]
+=======
+def format_data(x):
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
 	# not sure why i needed to import here, but its the only way I could get it to work
 	from ..tools.df2mat import df2mat
@@ -174,12 +184,15 @@ def format_data(x, ppca=True):
 	if any([i.ndim==1 for i in x]):
 		x = [np.reshape(i,(i.shape[0],1)) if i.ndim==1 else i for i in x]
 
+<<<<<<< HEAD
 	# if there are any nans in any of the lists, use ppca
 	if ppca is True:
 		if np.isnan(np.vstack(x)).any():
 			warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
 			x = fill_missing(x)
 
+=======
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 	return x
 
 def patch_lines(x):
@@ -192,6 +205,7 @@ def patch_lines(x):
 
 def is_line(format_str):
 	return (format_str is None) or (all([str(symbol) not in format_str for symbol in Line2D.markers.keys()]))
+<<<<<<< HEAD
 
 import collections
 import functools
@@ -206,3 +220,5 @@ def memoize(obj):
             cache[key] = obj(*args, **kwargs)
         return cache[key]
     return memoizer
+=======
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764

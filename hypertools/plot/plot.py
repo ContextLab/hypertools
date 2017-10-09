@@ -12,20 +12,34 @@ from matplotlib.lines import Line2D
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 from .._shared.helpers import *
+<<<<<<< HEAD
 from ..tools.analyze import analyze
 from ..tools.cluster import cluster as clusterer
+=======
+from ..tools.cluster import cluster
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 from ..tools.df2mat import df2mat
 from ..tools.reduce import reduce as reducer
 from ..tools.normalize import normalize as normalizer
 from ..tools.align import align as aligner
 from .draw import draw
+<<<<<<< HEAD
 from ..datageometry import DataGeometry
+=======
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
          labels=None, legend=None, title=None, elev=10, azim=-60, ndims=None,
+<<<<<<< HEAD
          model=None, model_params=None, reduce='IncrementalPCA', cluster='KMeans',
          align=None, normalize=None, n_clusters=None, save_path=None, animate=False, duration=30, tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False, frame_rate=50, explore=False, show=True, transform=True):
+=======
+         model='IncrementalPCA', model_params={}, align=False, normalize=False,
+         n_clusters=None, save_path=None, animate=False, duration=30, tail_duration=2,
+         rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
+         frame_rate=50, explore=False, show=True):
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -67,6 +81,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     title : str
         A title for the plot
 
+<<<<<<< HEAD
     normalize : str or False
         If set to 'across', the columns of the input data will be z-scored
         across lists (default). If set to 'within', the columns will be
@@ -84,6 +99,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         See scikit-learn specific model docs for details on parameters supported
         for each model.
 
+=======
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
     ndims : int
         An `int` representing the number of dims to reduce the data x
         to. If ndims > 3, will plot in 3 dimensions but return the higher
@@ -92,6 +109,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         possibly normalized and/or aligned according to normalize/align
         kwargs.
 
+<<<<<<< HEAD
     align : str or dict or False/None
         If str, either 'hyper' or 'SRM'.  If 'hyper', alignment algorithm will be
         hyperalignment. If 'SRM', alignment algorithm will be shared response
@@ -107,13 +125,39 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         reduce={'model' : 'KMeans', 'params' : {'max_iter' : 100}}. See
         scikit-learn specific model docs for details on parameters supported for
         each model.
+=======
+    model : str
+        Decomposition/manifold learning model to use.  Models supported: PCA,
+        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
+        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
+        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS.
+
+    model_params : dict
+        Optional dictionary of scikit-learn parameters to pass to reduction model.
+        See scikit-learn specific model docs for details.
+
+    align : bool
+        If set to True, data will be run through the ``hyperalignment''
+        algorithm implemented in hypertools.tools.align (default: False).
+
+    normalize : str or False
+        If set to 'across', the columns of the input data will be z-scored
+        across lists (default). If set to 'within', the columns will be
+        z-scored within each list that is passed. If set to 'row', each row of
+        the input data will be z-scored. If set to False, the input data will
+        be returned (default is False).
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
     n_clusters : int
         If n_clusters is passed, HyperTools will perform k-means clustering
         with the k parameter set to n_clusters. The resulting clusters will
         be plotted in different colors according to the color palette.
 
+<<<<<<< HEAD
     save_path : str
+=======
+    save_path str :
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
         Path to save the image/movie. Must include the file extension in the
         save path (i.e. save_path='/path/to/file/image.png'). NOTE: If saving
         an animation, FFMPEG must be installed (this is a matplotlib req).
@@ -164,9 +208,12 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         If set to False, the figure will not be displayed, but the figure,
         axis and data objects will still be returned (default: True).
 
+<<<<<<< HEAD
     transform : bool
         If set to false, skip data transformations (default : True)
 
+=======
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
     Returns
     ----------
     fig, ax, data, line_ani : matplotlib.figure.figure, matplotlib.axis.axes, numpy.array, matplotlib.animation.funcanimation
@@ -175,6 +222,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     """
 
+<<<<<<< HEAD
     # warnings for deprecated API args
     if (model is not None) or (model_params is not None):
         warnings.warn('Model and model_params arguments will be deprecated. Please use \
@@ -195,6 +243,28 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     # Return data that has been normalized and possibly reduced and/or aligned
     xform_data = x
+=======
+    # turn data into common format - a list of arrays
+    x = format_data(x)
+
+    # normalize
+    x = normalizer(x, normalize=normalize, internal=True)
+
+    # reduce data to ndims
+    if ndims is not None:
+        x = reducer(x, ndims=ndims, model=model, model_params=model_params,
+                    internal=True)
+
+    # align data
+    if align:
+        if len(x) == 1:
+            warn('Data in list of length 1 can not be aligned. '
+                 'Skipping the alignment.')
+        else:
+            x = aligner(x)
+    # Return data that has been normalized and possibly reduced and/or aligned
+    return_data = x
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
     # catch all matplotlib kwargs here to pass on
     mpl_kwargs = {}
@@ -224,6 +294,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
                           ignored in favor of markers.')
 
     # reduce data to 3 dims for plotting, if ndims is None, return this
+<<<<<<< HEAD
     if (ndims and ndims > 3):
         x = reducer(x, ndims=3, reduce=reduce, internal=True)
     elif ndims is None:
@@ -233,6 +304,14 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # find cluster and reshape if n_clusters
     if n_clusters is not None:
         cluster_labels = clusterer(x, cluster=cluster, n_clusters=n_clusters)
+=======
+    if (ndims and ndims > 3) or (ndims is None and x[0].shape[1] > 3):
+        x = reducer(x, ndims=3, model=model, model_params=model_params, internal=True)
+
+    # find cluster and reshape if n_clusters
+    if n_clusters is not None:
+        cluster_labels = cluster(x, n_clusters=n_clusters, ndims=ndims)
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
         x = reshape_data(x, cluster_labels)
         if group:
             warnings.warn('n_clusters overrides group, ignoring group.')
@@ -303,6 +382,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # handle format strings
     if fmt is not None:
         if type(fmt) is not list:
+<<<<<<< HEAD
             draw_fmt = [fmt for i in x]
         else:
             draw_fmt = fmt
@@ -311,6 +391,12 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     # draw the plot
     fig, ax, data, line_ani = draw(x, fmt=draw_fmt,
+=======
+            fmt = [fmt for i in x]
+
+    # draw the plot
+    fig, ax, data, line_ani = draw(x, fmt=fmt,
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
                             kwargs_list=kwargs_list,
                             labels=labels,
                             legend=legend,
@@ -349,6 +435,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         # safely closes the plot so it doesn't pop up in another call to this function
         plt.close()
 
+<<<<<<< HEAD
     # gather reduce params
     if isinstance(reduce, dict):
         reduce_dict = reduce
@@ -404,3 +491,6 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     return DataGeometry(fig=fig, ax=ax, data=raw, xform_data=xform_data,
                         line_ani=line_ani, reduce=reduce_dict, align=align_dict,
                         normalize=normalize, kwargs=kwargs)
+=======
+    return fig, ax, return_data, line_ani
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764

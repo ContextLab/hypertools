@@ -25,7 +25,11 @@ LICENSE = 'MIT'
 
 setup(
     name='hypertools',
+<<<<<<< HEAD
     version='0.4.0',
+=======
+    version='0.3.2',
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
     author='Contextual Dynamics Lab',
@@ -38,7 +42,11 @@ setup(
    'PPCA>=0.0.2',
    'scikit-learn>=0.18.1',
    'pandas>=0.18.0',
+<<<<<<< HEAD
    'seaborn>=0.8.1',
+=======
+   'seaborn>=0.7.1',
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
    'matplotlib>=1.5.1',
    'scipy>=0.17.1',
    'numpy>=1.10.4',

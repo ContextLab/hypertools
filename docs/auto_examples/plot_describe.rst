@@ -36,12 +36,21 @@ than the total number of dimensions because the PCA model is whitened.
     import numpy as np
 
     # load example data
+<<<<<<< HEAD
     data = hyp.load('weights_sample')
 
     # plot
     hyp.describe(data)
 
 **Total running time of the script:** ( 0 minutes  7.333 seconds)
+=======
+    data = hyp.tools.load('weights_sample')
+
+    # plot
+    hyp.tools.describe_pca(data)
+
+**Total running time of the script:** ( 0 minutes  6.870 seconds)
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
 
 

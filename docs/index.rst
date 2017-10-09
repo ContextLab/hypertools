@@ -3,7 +3,11 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
+<<<<<<< HEAD
 **HyperTools**: A python toolbox for gaining geometric insights into high-dimensional data
+=======
+**HyperTools**: A python toolbox for visualizing and manipulating high-dimensional data
+>>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 ======================================
 
 .. image:: ../images/hypertools.gif
