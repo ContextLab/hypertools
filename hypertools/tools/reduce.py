@@ -11,10 +11,13 @@ from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbeddin
 # internal libraries
 from ..tools.df2mat import df2mat
 from .._shared.helpers import *
+from .normalize import normalize as normalizer
+from .align import align as aligner
 
 # main function
 @memoize
-def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False):
+def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
+           model=None, model_params=None, internal=False):
     """
     Reduces dimensionality of an array, or list of arrays
 
@@ -35,6 +38,20 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False):
 
     ndims : int
         Number of dimensions to reduce
+
+    model : None
+        Deprecated argument.  Please use reduce.
+
+    model_params : None
+        Deprecated argument.  Please use reduce.
+
+    align : None
+        Deprecated argument.  Please use new analyze function to perform
+        combinations of transformations
+
+    normalize : None
+        Deprecated argument.  Please use new analyze function to perform
+        combinations of transformations
 
     Returns
     ----------
@@ -72,6 +89,14 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False):
         'MDS' : MDS
     }
 
+    # deprecated warning
+    if (model is not None) or (model_params is not None):
+        warnings.warn('Model and model params will be deprecated.  Please use the \
+                      reduce keyword.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce')
+        reduce = {}
+        reduce['model'] = model
+        reduce['params'] = model_params
+
     # if model is None, just return data
     if (reduce is None) or (ndims is None):
         return x
@@ -80,6 +105,18 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False):
         # common format
         x = format_data(x)
 
+        # deprecation warnings
+        if normalize is not None:
+            warnings.warn('The normalize argument will be deprecated for this function.  Please use the \
+                          analyze function to perform combinations of these transformations.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.analyze.html#hypertools.analyze')
+            x = normalizer(x, normalize=normalize)
+
+        if align is not None:
+            warnings.warn('The align argument will be deprecated for this function.  Please use the \
+                          analyze function to perform combinations of these transformations.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.analyze.html#hypertools.analyze')
+            x = aligner(x, align=align)
+
+        # if the shape of the data is already less than ndims, just return it
         if all([i.shape[1]<=ndims for i in x]):
             return x
 
