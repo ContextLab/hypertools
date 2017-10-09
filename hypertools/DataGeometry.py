@@ -1,4 +1,6 @@
 import copy
+import deepdish as dd
+import numpy as np
 from .tools.normalize import normalize as normalizer
 from .tools.reduce import reduce as reducer
 from .tools.align import align as aligner
@@ -8,8 +10,8 @@ class DataGeometry(object):
     """
     Hypertools data object
 
-    A DataGeometry data object contains the data, figure handles and transform functions
-    used to create a plot.
+    A DataGeometry data object contains the data, figure handles and transform
+    functions used to create a plot.
 
     Parameters
     ----------
@@ -61,7 +63,7 @@ class DataGeometry(object):
         else:
             reduce_model = {'model' : self.reduce['model'], 'params' : self.reduce['params']}
             align_model = {'model' : self.align['model'], 'params' : self.align['params']}
-            return aligner(reducer(normalizer(data, normalize=self.normalize), reduce=reduce_model, ndims=self.reduce['ndims']), align=align_model)
+            return aligner(reducer(normalizer(data, normalize=self.normalize), reduce=reduce_model, ndims=self.reduce['params']['n_components']), align=align_model)
 
     # a function to plot the data
     def plot(self, data=None, **kwargs):
@@ -86,3 +88,22 @@ class DataGeometry(object):
             new_kwargs.update({key : kwargs[key]})
 
         return plotter(data, transform=transform, **new_kwargs)
+
+    def save(self, fname, compression='blosc'):
+        # put geo vars into a dict
+        geo = {
+            'data' : self.data,
+            'xform_data' : self.xform_data,
+            'reduce' : self.reduce,
+            'align' : self.align,
+            'normalize' : self.normalize,
+            'kwargs' : self.kwargs,
+            'version' : self.version
+        }
+
+        # if extension wasn't included, add it
+        if fname[-4:]!='.geo':
+            fname+='.geo'
+
+        # save
+        dd.io.save(fname, geo, compression=compression)

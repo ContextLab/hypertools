@@ -116,7 +116,7 @@
 <h1>hypertools.tools.align<a class="headerlink" href="#hypertools-tools-align" title="Permalink to this headline">¶</a></h1>
 <dl class="function">
 <dt id="hypertools.tools.align">
-<code class="descclassname">hypertools.tools.</code><code class="descname">align</code><span class="sig-paren">(</span><em>data</em>, <em>method='hyper'</em>, <em>normalize=False</em>, <em>ndims=None</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/hypertools/tools/align.html#align"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#hypertools.tools.align" title="Permalink to this definition">¶</a></dt>
+<code class="descclassname">hypertools.tools.</code><code class="descname">align</code><span class="sig-paren">(</span><em>*args</em>, <em>**kwargs</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/hypertools/tools/align.html#align"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#hypertools.tools.align" title="Permalink to this definition">¶</a></dt>
 <dd><p>Aligns a list of arrays</p>
 <p>This function takes a list of high dimensional arrays and &#8216;hyperaligns&#8217; them
 to a &#8216;common&#8217; space, or coordinate system following the approach outlined by
@@ -130,7 +130,8 @@ should be highly similar, but the coordinates may not be aligned.</p>
 <p>Haxby JV, Guntupalli JS, Connolly AC, Halchenko YO, Conroy BR, Gobbini
 MI, Hanke M, and Ramadge PJ (2011)  A common, high-dimensional model of
 the representational space in human ventral temporal cortex.  Neuron 72,
-404 &#8211; 416.</p>
+404 &#8211; 416. (used to implement hyperalignment, see <a class="reference external" href="https://github.com/PyMVPA/PyMVPA">https://github.com/PyMVPA/PyMVPA</a>)</p>
+<p>Brain Imaging Analysis Kit, <a class="reference external" href="http://brainiak.org">http://brainiak.org</a>. (used to implement Shared Response Model [SRM], see <a class="reference external" href="https://github.com/IntelPNI/brainiak">https://github.com/IntelPNI/brainiak</a>)</p>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
 <col class="field-body" />
@@ -139,21 +140,13 @@ the representational space in human ventral temporal cortex.  Neuron 72,
 <blockquote>
 <div><p>A list of Numpy arrays or Pandas Dataframes</p>
 </div></blockquote>
-<p><strong>method</strong> : str</p>
+<p><strong>align</strong> : str or dict</p>
 <blockquote>
-<div><p>Either &#8216;hyper&#8217; or &#8216;SRM&#8217;.  If &#8216;hyper&#8217; (default),</p>
-</div></blockquote>
-<p><strong>normalize</strong> : str or False</p>
-<blockquote>
-<div><p>If set to &#8216;across&#8217;, the columns of the input data will be z-scored
-across lists (default). If set to &#8216;within&#8217;, the columns will be
-z-scored within each list that is passed. If set to &#8216;row&#8217;, each row of
-the input data will be z-scored. If set to False, the input data will
-be returned (default is False).</p>
-</div></blockquote>
-<p><strong>ndims</strong> : int</p>
-<blockquote>
-<div><p>Number of dimensions to reduce the dataset to <em>prior</em> to alignment</p>
+<div><p>If str, either &#8216;hyper&#8217; or &#8216;SRM&#8217;.  If &#8216;hyper&#8217;, alignment algorithm will be
+hyperalignment. If &#8216;SRM&#8217;, alignment algorithm will be shared response
+model.  You can also pass a dictionary for finer control, where the &#8216;model&#8217;
+key is a string that specifies the model and the params key is a dictionary
+of parameter values (default : &#8216;hyper&#8217;).</p>
 </div></blockquote>
 </td>
 </tr>

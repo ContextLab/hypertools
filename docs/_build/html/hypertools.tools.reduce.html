@@ -116,7 +116,7 @@
 <h1>hypertools.tools.reduce<a class="headerlink" href="#hypertools-tools-reduce" title="Permalink to this headline">¶</a></h1>
 <dl class="function">
 <dt id="hypertools.tools.reduce">
-<code class="descclassname">hypertools.tools.</code><code class="descname">reduce</code><span class="sig-paren">(</span><em>x</em>, <em>ndims=3</em>, <em>model='IncrementalPCA'</em>, <em>model_params={}</em>, <em>normalize=False</em>, <em>internal=False</em>, <em>align=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/hypertools/tools/reduce.html#reduce"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#hypertools.tools.reduce" title="Permalink to this definition">¶</a></dt>
+<code class="descclassname">hypertools.tools.</code><code class="descname">reduce</code><span class="sig-paren">(</span><em>*args</em>, <em>**kwargs</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/hypertools/tools/reduce.html#reduce"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#hypertools.tools.reduce" title="Permalink to this definition">¶</a></dt>
 <dd><p>Reduces dimensionality of an array, or list of arrays</p>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
@@ -143,19 +143,6 @@ TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS.</p>
 <blockquote>
 <div><p>Optional dictionary of scikit-learn parameters to pass to reduction model.
 See scikit-learn specific model docs for details.</p>
-</div></blockquote>
-<p><strong>normalize</strong> : str or False</p>
-<blockquote>
-<div><p>If set to &#8216;across&#8217;, the columns of the input data will be z-scored
-across lists (default). If set to &#8216;within&#8217;, the columns will be
-z-scored within each list that is passed. If set to &#8216;row&#8217;, each row of
-the input data will be z-scored. If set to False, the input data will
-be returned (default is False).</p>
-</div></blockquote>
-<p><strong>align</strong> : bool</p>
-<blockquote>
-<div><p>If set to True, data will be run through the <a href="#id1"><span class="problematic" id="id2">``</span></a>hyperalignment&#8217;&#8217;
-algorithm implemented in hypertools.tools.align (default: False).</p>
 </div></blockquote>
 </td>
 </tr>

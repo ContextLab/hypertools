@@ -352,7 +352,6 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
             'params' : {
                 'n_components' : ndims
             },
-            'ndims' : ndims
         }
 
     # gather align params

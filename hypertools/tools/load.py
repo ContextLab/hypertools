@@ -1,12 +1,13 @@
 import requests
 import pickle
 import pandas as pd
+import deepdish as dd
 import sys
 from warnings import warn
-
 from .reduce import reduce as reducer
 from .align import align as aligner
 from .._shared.helpers import format_data
+from ..DataGeometry import DataGeometry
 
 def load(dataset, ndims=None, align=False):
     """
@@ -42,15 +43,23 @@ def load(dataset, ndims=None, align=False):
     else:
         pickle_options = {}
 
-    if dataset is 'weights':
+    if dataset[-4:] == '.geo':
+        geo = dd.io.load(dataset)
+        data = DataGeometry(fig=None, ax=None, data=geo['data'],
+                            xform_data=geo['xform_data'], line_ani=None,
+                            reduce=geo['reduce'], align=geo['align'],
+                            normalize=geo['normalize'], kwargs=geo['kwargs'],
+                            version=geo['version'])
+        print(data.reduce)
+    elif dataset is 'weights':
         fileid = '0B7Ycm4aSYdPPREJrZ2stdHBFdjg'
         url = 'https://docs.google.com/uc?export=download&id=' + fileid
         data = pickle.loads(requests.get(url, stream=True).content, **pickle_options)
-    if dataset is 'weights_avg':
+    elif dataset is 'weights_avg':
         fileid = '0B7Ycm4aSYdPPRmtPRnBJc3pieDg'
         url = 'https://docs.google.com/uc?export=download&id=' + fileid
         data = pickle.loads(requests.get(url, stream=True).content, **pickle_options)
-    if dataset is 'weights_sample':
+    elif dataset is 'weights_sample':
         fileid = '0B7Ycm4aSYdPPTl9IUUVlamJ2VjQ'
         url = 'https://docs.google.com/uc?export=download&id=' + fileid
         data = pickle.loads(requests.get(url, stream=True).content, **pickle_options)

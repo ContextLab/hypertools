@@ -17,7 +17,7 @@ import hypertools as hyp
 import numpy as np
 
 # load example data
-data = hyp.tools.load('weights_sample')
+data = hyp.load('weights_sample')
 
 # simulate labels
 labels=[]

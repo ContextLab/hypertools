@@ -83,7 +83,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False):
     else:
 
         # if reduce is a string, find the corresponding model
-        if type(reduce) is str:
+        if type(reduce) in [str, np.string_]:
             model = models[reduce]
             model_params = {
                 'n_components' : ndims

@@ -117,18 +117,16 @@
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 
 <span class="c1">## reduction models</span>
-<span class="kn">from</span> <span class="nn">.._externals.ppca</span> <span class="k">import</span> <span class="n">PPCA</span>
 <span class="kn">from</span> <span class="nn">sklearn.decomposition</span> <span class="k">import</span> <span class="n">PCA</span><span class="p">,</span> <span class="n">FastICA</span><span class="p">,</span> <span class="n">IncrementalPCA</span><span class="p">,</span> <span class="n">KernelPCA</span><span class="p">,</span> <span class="n">FactorAnalysis</span><span class="p">,</span> <span class="n">TruncatedSVD</span><span class="p">,</span> <span class="n">SparsePCA</span><span class="p">,</span> <span class="n">MiniBatchSparsePCA</span><span class="p">,</span> <span class="n">DictionaryLearning</span><span class="p">,</span> <span class="n">MiniBatchDictionaryLearning</span>
 <span class="kn">from</span> <span class="nn">sklearn.manifold</span> <span class="k">import</span> <span class="n">TSNE</span><span class="p">,</span> <span class="n">MDS</span><span class="p">,</span> <span class="n">SpectralEmbedding</span><span class="p">,</span> <span class="n">LocallyLinearEmbedding</span><span class="p">,</span> <span class="n">Isomap</span>
 
 <span class="c1"># internal libraries</span>
 <span class="kn">from</span> <span class="nn">..tools.df2mat</span> <span class="k">import</span> <span class="n">df2mat</span>
-<span class="kn">from</span> <span class="nn">..tools.normalize</span> <span class="k">import</span> <span class="n">normalize</span> <span class="k">as</span> <span class="n">normalizer</span>
 <span class="kn">from</span> <span class="nn">.._shared.helpers</span> <span class="k">import</span> <span class="o">*</span>
 
 <span class="c1"># main function</span>
-<div class="viewcode-block" id="reduce"><a class="viewcode-back" href="../../../hypertools.tools.reduce.html#hypertools.tools.reduce">[docs]</a><span class="k">def</span> <span class="nf">reduce</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s1">&#39;IncrementalPCA&#39;</span><span class="p">,</span> <span class="n">model_params</span><span class="o">=</span><span class="p">{},</span> <span class="n">normalize</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-           <span class="n">align</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="nd">@memoize</span>
+<div class="viewcode-block" id="reduce"><a class="viewcode-back" href="../../../hypertools.tools.reduce.html#hypertools.tools.reduce">[docs]</a><span class="k">def</span> <span class="nf">reduce</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">reduce</span><span class="o">=</span><span class="s1">&#39;IncrementalPCA&#39;</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Reduces dimensionality of an array, or list of arrays</span>
 
@@ -152,17 +150,6 @@
 <span class="sd">        Optional dictionary of scikit-learn parameters to pass to reduction model.</span>
 <span class="sd">        See scikit-learn specific model docs for details.</span>
 
-<span class="sd">    normalize : str or False</span>
-<span class="sd">        If set to &#39;across&#39;, the columns of the input data will be z-scored</span>
-<span class="sd">        across lists (default). If set to &#39;within&#39;, the columns will be</span>
-<span class="sd">        z-scored within each list that is passed. If set to &#39;row&#39;, each row of</span>
-<span class="sd">        the input data will be z-scored. If set to False, the input data will</span>
-<span class="sd">        be returned (default is False).</span>
-
-<span class="sd">    align : bool</span>
-<span class="sd">        If set to True, data will be run through the ``hyperalignment&#39;&#39;</span>
-<span class="sd">        algorithm implemented in hypertools.tools.align (default: False).</span>
-
 <span class="sd">    Returns</span>
 <span class="sd">    ----------</span>
 <span class="sd">    x_reduced : Numpy array or list of arrays</span>
@@ -172,30 +159,9 @@
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="c1"># sub functions</span>
-    <span class="k">def</span> <span class="nf">fill_missing</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
-
-        <span class="c1"># ppca if missing data</span>
-        <span class="n">m</span> <span class="o">=</span> <span class="n">PPCA</span><span class="p">()</span>
-        <span class="n">m</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
-        <span class="n">x_pca</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">transform</span><span class="p">()</span>
-
-        <span class="c1"># if the whole row is missing, return nans</span>
-        <span class="n">all_missing</span> <span class="o">=</span> <span class="p">[</span><span class="n">idx</span> <span class="k">for</span> <span class="n">idx</span><span class="p">,</span><span class="n">a</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">x</span><span class="p">))</span> <span class="k">if</span> <span class="nb">all</span><span class="p">([</span><span class="nb">type</span><span class="p">(</span><span class="n">b</span><span class="p">)</span><span class="o">==</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">a</span><span class="p">])]</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_missing</span><span class="p">)</span><span class="o">&gt;</span><span class="mi">0</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">all_missing</span><span class="p">:</span>
-                <span class="n">x_pca</span><span class="p">[</span><span class="n">i</span><span class="p">,:]</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span>
-
-        <span class="c1"># get the original lists back</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">&gt;</span><span class="mi">1</span><span class="p">:</span>
-            <span class="n">x_split</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">([</span><span class="n">i</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">x</span><span class="p">][:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
-            <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">x_pca</span><span class="p">,</span><span class="n">x_split</span><span class="p">,</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">return</span> <span class="p">[</span><span class="n">x_pca</span><span class="p">]</span>
-
-    <span class="k">def</span> <span class="nf">reduce_list</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">model_params</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">reduce_list</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">model</span><span class="p">):</span>
         <span class="n">split</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">([</span><span class="nb">len</span><span class="p">(</span><span class="n">xi</span><span class="p">)</span> <span class="k">for</span> <span class="n">xi</span> <span class="ow">in</span> <span class="n">x</span><span class="p">])[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
-        <span class="n">m</span><span class="o">=</span><span class="n">model</span><span class="p">(</span><span class="o">**</span><span class="n">model_params</span><span class="p">)</span>
-        <span class="n">x_r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vsplit</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">fit_transform</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">x</span><span class="p">)),</span> <span class="n">split</span><span class="p">)</span>
+        <span class="n">x_r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vsplit</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">fit_transform</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">x</span><span class="p">)),</span> <span class="n">split</span><span class="p">)</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">&gt;</span><span class="mi">1</span><span class="p">:</span>
             <span class="k">return</span> <span class="p">[</span><span class="n">xi</span> <span class="k">for</span> <span class="n">xi</span> <span class="ow">in</span> <span class="n">x_r</span><span class="p">]</span>
         <span class="k">else</span><span class="p">:</span>
@@ -220,43 +186,41 @@
         <span class="s1">&#39;MDS&#39;</span> <span class="p">:</span> <span class="n">MDS</span>
     <span class="p">}</span>
 
-    <span class="c1"># main</span>
+    <span class="c1"># common format</span>
     <span class="n">x</span> <span class="o">=</span> <span class="n">format_data</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
-    <span class="k">assert</span> <span class="nb">all</span><span class="p">([</span><span class="n">i</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">&gt;</span><span class="n">ndims</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]),</span> <span class="s2">&quot;In order to reduce the data, ndims must be less than the number of dimensions&quot;</span>
-
-    <span class="c1"># if there are any nans in any of the lists, use ppca</span>
-    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">x</span><span class="p">))</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s1">&#39;Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)&#39;</span><span class="p">)</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">fill_missing</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-
-    <span class="c1"># normalize</span>
-    <span class="k">if</span> <span class="n">normalize</span><span class="p">:</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">normalizer</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="n">normalize</span><span class="p">)</span>
-
-    <span class="c1"># build model params dict</span>
-    <span class="k">if</span> <span class="n">model_params</span><span class="o">==</span><span class="p">{}:</span>
-        <span class="n">model_params</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="s1">&#39;n_components&#39;</span> <span class="p">:</span> <span class="n">ndims</span>
-        <span class="p">}</span>
-    <span class="k">elif</span> <span class="s1">&#39;n_components&#39;</span> <span class="ow">in</span> <span class="n">model_params</span><span class="p">:</span>
-        <span class="k">pass</span>
+    <span class="c1"># if model is None, just return data</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">reduce</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">ndims</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="nb">all</span><span class="p">([</span><span class="n">i</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">&lt;=</span><span class="n">ndims</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">x</span><span class="p">])):</span>
+        <span class="k">return</span> <span class="n">x</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">model_params</span><span class="p">[</span><span class="s1">&#39;n_components&#39;</span><span class="p">]</span><span class="o">=</span><span class="n">ndims</span>
 
-    <span class="c1"># reduce data</span>
-    <span class="n">x_reduced</span> <span class="o">=</span> <span class="n">reduce_list</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">models</span><span class="p">[</span><span class="n">model</span><span class="p">],</span> <span class="n">model_params</span><span class="p">)</span>
+        <span class="c1"># if reduce is a string, find the corresponding model</span>
+        <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">reduce</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">str</span><span class="p">:</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">models</span><span class="p">[</span><span class="n">reduce</span><span class="p">]</span>
+            <span class="n">model_params</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s1">&#39;n_components&#39;</span> <span class="p">:</span> <span class="n">ndims</span>
+            <span class="p">}</span>
+        <span class="c1"># if its a dict, use custom params</span>
+        <span class="k">elif</span> <span class="nb">type</span><span class="p">(</span><span class="n">reduce</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">dict</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">])</span> <span class="ow">is</span> <span class="nb">str</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">models</span><span class="p">[</span><span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">]]</span>
+                <span class="n">model_params</span> <span class="o">=</span> <span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;params&#39;</span><span class="p">]</span>
+            <span class="c1"># if the user specifies a function, set that to the model</span>
+            <span class="k">elif</span> <span class="n">callable</span><span class="p">(</span><span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">]):</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">]</span>
+                <span class="n">model_params</span> <span class="o">=</span> <span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;params&#39;</span><span class="p">]</span>
 
-    <span class="k">if</span> <span class="n">align</span> <span class="o">==</span> <span class="kc">True</span><span class="p">:</span>
-        <span class="c1"># Import is here to avoid circular imports with reduce.py</span>
-        <span class="kn">from</span> <span class="nn">.align</span> <span class="k">import</span> <span class="n">align</span> <span class="k">as</span> <span class="n">aligner</span>
-        <span class="n">x_reduced</span> <span class="o">=</span> <span class="n">aligner</span><span class="p">(</span><span class="n">x_reduced</span><span class="p">)</span>
+        <span class="c1"># initialize model</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="o">**</span><span class="n">model_params</span><span class="p">)</span>
 
-    <span class="c1"># return data</span>
-    <span class="k">if</span> <span class="n">internal</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">x_reduced</span><span class="p">)</span><span class="o">&gt;</span><span class="mi">1</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">x_reduced</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">x_reduced</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></div>
+        <span class="c1"># reduce data</span>
+        <span class="n">x_reduced</span> <span class="o">=</span> <span class="n">reduce_list</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">model</span><span class="p">)</span>
+
+        <span class="c1"># return data</span>
+        <span class="k">if</span> <span class="n">internal</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">x_reduced</span><span class="p">)</span><span class="o">&gt;</span><span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">x_reduced</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">x_reduced</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></div>
 </pre></div>
 
     </div>

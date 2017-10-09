@@ -116,7 +116,7 @@
 <h1>hypertools.tools.cluster<a class="headerlink" href="#hypertools-tools-cluster" title="Permalink to this headline">¶</a></h1>
 <dl class="function">
 <dt id="hypertools.tools.cluster">
-<code class="descclassname">hypertools.tools.</code><code class="descname">cluster</code><span class="sig-paren">(</span><em>x</em>, <em>n_clusters=8</em>, <em>ndims=None</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/hypertools/tools/cluster.html#cluster"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#hypertools.tools.cluster" title="Permalink to this definition">¶</a></dt>
+<code class="descclassname">hypertools.tools.</code><code class="descname">cluster</code><span class="sig-paren">(</span><em>*args</em>, <em>**kwargs</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/hypertools/tools/cluster.html#cluster"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#hypertools.tools.cluster" title="Permalink to this definition">¶</a></dt>
 <dd><p>Performs k-means clustering and returns a list of cluster labels</p>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
@@ -127,13 +127,14 @@
 <div><p>The data to be clustered.  You can pass a single array/df or a list.
 If a list is passed, the arrays will be stacked and the clustering
 will be performed across all lists (i.e. not within each list).</p>
-<p>n_clusters : int
-The number of clusters to discover (i.e. k)</p>
 </div></blockquote>
-<p><strong>ndims</strong> : int or None</p>
+<p><strong>model</strong> : str or function</p>
 <blockquote>
-<div><p>This parameter allows you to first reduce dimensionality before
-running k-means</p>
+<div><p>Model to use to discover clusters (default: KMeans)</p>
+</div></blockquote>
+<p><strong>model_params</strong> : dict</p>
+<blockquote>
+<div><p>Parameters for the model (default: None)</p>
 </div></blockquote>
 </td>
 </tr>

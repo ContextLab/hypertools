@@ -111,13 +111,13 @@
       
   <h1>Source code for hypertools.tools.normalize</h1><div class="highlight"><pre>
 <span></span><span class="ch">#!/usr/bin/env python</span>
-
 <span class="kn">from</span> <span class="nn">__future__</span> <span class="k">import</span> <span class="n">division</span>
 <span class="kn">from</span> <span class="nn">builtins</span> <span class="k">import</span> <span class="nb">range</span>
 <span class="kn">from</span> <span class="nn">sklearn.preprocessing</span> <span class="k">import</span> <span class="n">FunctionTransformer</span>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
-<span class="kn">from</span> <span class="nn">.._shared.helpers</span> <span class="k">import</span> <span class="n">format_data</span>
+<span class="kn">from</span> <span class="nn">.._shared.helpers</span> <span class="k">import</span> <span class="n">format_data</span><span class="p">,</span> <span class="n">memoize</span>
 
+<span class="nd">@memoize</span>
 <div class="viewcode-block" id="normalize"><a class="viewcode-back" href="../../../hypertools.tools.normalize.html#hypertools.tools.normalize">[docs]</a><span class="k">def</span> <span class="nf">normalize</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="s1">&#39;across&#39;</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Z-transform the columns or rows of an array, or list of arrays</span>
@@ -151,29 +151,33 @@
 
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">assert</span> <span class="n">normalize</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;across&#39;</span><span class="p">,</span><span class="s1">&#39;within&#39;</span><span class="p">,</span><span class="s1">&#39;row&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">],</span> <span class="s2">&quot;scale_type must be across, within, row or none.&quot;</span>
+    <span class="k">assert</span> <span class="n">normalize</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;across&#39;</span><span class="p">,</span><span class="s1">&#39;within&#39;</span><span class="p">,</span><span class="s1">&#39;row&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span> <span class="s2">&quot;scale_type must be across, within, row or none.&quot;</span>
 
     <span class="n">x</span> <span class="o">=</span> <span class="n">format_data</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
-    <span class="n">zscore</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">X</span><span class="p">,</span><span class="n">y</span><span class="p">:</span> <span class="p">(</span><span class="n">y</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">X</span><span class="p">))</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">X</span><span class="p">)</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">y</span><span class="p">))</span><span class="o">&gt;</span><span class="mi">1</span> <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">y</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-
-    <span class="k">if</span> <span class="n">normalize</span><span class="o">==</span><span class="s1">&#39;across&#39;</span><span class="p">:</span>
-        <span class="n">x_stacked</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-        <span class="n">normalized_x</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">zscore</span><span class="p">(</span><span class="n">x_stacked</span><span class="p">[:,</span><span class="n">j</span><span class="p">],</span> <span class="n">i</span><span class="p">[:,</span><span class="n">j</span><span class="p">])</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])])</span><span class="o">.</span><span class="n">T</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]</span>
-
-    <span class="k">elif</span> <span class="n">normalize</span><span class="o">==</span><span class="s1">&#39;within&#39;</span><span class="p">:</span>
-        <span class="n">normalized_x</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">zscore</span><span class="p">(</span><span class="n">i</span><span class="p">[:,</span><span class="n">j</span><span class="p">],</span> <span class="n">i</span><span class="p">[:,</span><span class="n">j</span><span class="p">])</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])])</span><span class="o">.</span><span class="n">T</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]</span>
-
-    <span class="k">elif</span> <span class="n">normalize</span><span class="o">==</span><span class="s1">&#39;row&#39;</span><span class="p">:</span>
-        <span class="n">normalized_x</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">zscore</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="n">j</span><span class="p">,:],</span> <span class="n">i</span><span class="p">[</span><span class="n">j</span><span class="p">,:])</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]</span>
-
-    <span class="k">elif</span> <span class="n">normalize</span><span class="o">==</span><span class="kc">False</span><span class="p">:</span>
-        <span class="n">normalized_x</span> <span class="o">=</span> <span class="n">x</span>
-
-    <span class="k">if</span> <span class="n">internal</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">normalized_x</span><span class="p">)</span><span class="o">&gt;</span><span class="mi">1</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">normalized_x</span>
+    <span class="k">if</span> <span class="n">normalize</span> <span class="ow">in</span> <span class="p">[</span><span class="kc">False</span><span class="p">,</span> <span class="kc">None</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="n">x</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">normalized_x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></div>
+
+        <span class="n">zscore</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">X</span><span class="p">,</span><span class="n">y</span><span class="p">:</span> <span class="p">(</span><span class="n">y</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">X</span><span class="p">))</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">X</span><span class="p">)</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">y</span><span class="p">))</span><span class="o">&gt;</span><span class="mi">1</span> <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">y</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">normalize</span><span class="o">==</span><span class="s1">&#39;across&#39;</span><span class="p">:</span>
+            <span class="n">x_stacked</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+            <span class="n">normalized_x</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">zscore</span><span class="p">(</span><span class="n">x_stacked</span><span class="p">[:,</span><span class="n">j</span><span class="p">],</span> <span class="n">i</span><span class="p">[:,</span><span class="n">j</span><span class="p">])</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])])</span><span class="o">.</span><span class="n">T</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]</span>
+
+        <span class="k">elif</span> <span class="n">normalize</span><span class="o">==</span><span class="s1">&#39;within&#39;</span><span class="p">:</span>
+            <span class="n">normalized_x</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">zscore</span><span class="p">(</span><span class="n">i</span><span class="p">[:,</span><span class="n">j</span><span class="p">],</span> <span class="n">i</span><span class="p">[:,</span><span class="n">j</span><span class="p">])</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])])</span><span class="o">.</span><span class="n">T</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]</span>
+
+        <span class="k">elif</span> <span class="n">normalize</span><span class="o">==</span><span class="s1">&#39;row&#39;</span><span class="p">:</span>
+            <span class="n">normalized_x</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">zscore</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="n">j</span><span class="p">,:],</span> <span class="n">i</span><span class="p">[</span><span class="n">j</span><span class="p">,:])</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]</span>
+
+        <span class="k">elif</span> <span class="n">normalize</span><span class="o">==</span><span class="kc">False</span><span class="p">:</span>
+            <span class="n">normalized_x</span> <span class="o">=</span> <span class="n">x</span>
+
+        <span class="k">if</span> <span class="n">internal</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">normalized_x</span><span class="p">)</span><span class="o">&gt;</span><span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">normalized_x</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">normalized_x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></div>
 </pre></div>
 
     </div>

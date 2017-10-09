@@ -22,7 +22,7 @@ visualize static data in an animated rotating plot.
     import hypertools as hyp
 
     # load example data
-    data = hyp.tools.load('weights_sample')
+    data = hyp.load('weights_sample')
 
     # plot
     hyp.plot(data, '.', animate='spin')

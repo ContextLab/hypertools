@@ -42,14 +42,14 @@ with stars.
     data2 = copy(data1)
 
     # randomly remove 5% of the data
-    missing = .05
+    missing = .01
     inds = [(i,j) for i in range(data1.shape[0]) for j in range(data1.shape[1])]
     missing_data = [inds[i] for i in np.random.choice(int(len(inds)), int(len(inds)*missing))]
     for i,j in missing_data:
         data2[i,j]=np.nan
 
     # reduce the data
-    data1_r,data2_r = hyp.tools.reduce([data1, data2], ndims=3)
+    data1_r,data2_r = hyp.reduce([data1, data2], ndims=3)
 
     # pull out missing inds
     missing_inds = hyp.tools.missing_inds(data2)
@@ -59,7 +59,7 @@ with stars.
     hyp.plot([data1_r, data2_r, missing_data], ['-', '--', '*'],
              legend=['Full', 'Missing', 'Missing Points'])
 
-**Total running time of the script:** ( 0 minutes  0.077 seconds)
+**Total running time of the script:** ( 0 minutes  0.399 seconds)
 
 
 

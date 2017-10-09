@@ -116,8 +116,9 @@
 <span class="kn">import</span> <span class="nn">sys</span>
 <span class="kn">from</span> <span class="nn">warnings</span> <span class="k">import</span> <span class="n">warn</span>
 
-<span class="kn">from</span> <span class="nn">.reduce</span> <span class="k">import</span> <span class="n">reduce</span> <span class="k">as</span> <span class="n">reduceD</span>
+<span class="kn">from</span> <span class="nn">.reduce</span> <span class="k">import</span> <span class="n">reduce</span> <span class="k">as</span> <span class="n">reducer</span>
 <span class="kn">from</span> <span class="nn">.align</span> <span class="k">import</span> <span class="n">align</span> <span class="k">as</span> <span class="n">aligner</span>
+<span class="kn">from</span> <span class="nn">.._shared.helpers</span> <span class="k">import</span> <span class="n">format_data</span>
 
 <div class="viewcode-block" id="load"><a class="viewcode-back" href="../../../hypertools.tools.load.html#hypertools.tools.load">[docs]</a><span class="k">def</span> <span class="nf">load</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">align</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
@@ -175,13 +176,9 @@
         <span class="n">data</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="n">ndims</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">data</span> <span class="o">=</span> <span class="n">reduceD</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">ndims</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">reducer</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="n">ndims</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">align</span><span class="p">:</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="n">warn</span><span class="p">(</span><span class="s1">&#39;Data in list of length 1 can not be aligned. &#39;</span>
-                 <span class="s1">&#39;Skipping the alignment.&#39;</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">data</span> <span class="o">=</span> <span class="n">aligner</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">aligner</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">data</span></div>
 </pre></div>
