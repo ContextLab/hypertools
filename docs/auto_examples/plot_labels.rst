@@ -32,11 +32,7 @@ are simply labeling the first datapoint for each matrix in the list.
     import numpy as np
 
     # load example data
-<<<<<<< HEAD
     data = hyp.load('weights_sample')
-=======
-    data = hyp.tools.load('weights_sample')
->>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
     # simulate labels
     labels=[]
@@ -52,11 +48,7 @@ are simply labeling the first datapoint for each matrix in the list.
     # plot
     hyp.plot(data, '.', labels=labels)
 
-<<<<<<< HEAD
 **Total running time of the script:** ( 0 minutes  0.838 seconds)
-=======
-**Total running time of the script:** ( 0 minutes  0.932 seconds)
->>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
 
 

@@ -33,20 +33,12 @@ yourself.
     import pandas as pd
 
     # load example data
-<<<<<<< HEAD
     data = hyp.load('mushrooms')
-=======
-    data = hyp.tools.load('mushrooms')
->>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
     # plot
     hyp.plot(data, '.', n_clusters=10)
 
-<<<<<<< HEAD
 **Total running time of the script:** ( 0 minutes  1.488 seconds)
-=======
-**Total running time of the script:** ( 0 minutes  1.748 seconds)
->>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
 
 

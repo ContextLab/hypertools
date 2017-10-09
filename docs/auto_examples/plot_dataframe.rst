@@ -33,11 +33,7 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
     import hypertools as hyp
 
     # load example data
-<<<<<<< HEAD
     data = hyp.load('mushrooms')
-=======
-    data = hyp.tools.load('mushrooms')
->>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
     # pop off the class (poisonousness)
     group = data.pop('class')
@@ -45,11 +41,7 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
     # plot
     hyp.plot(data, '.', group=group)
 
-<<<<<<< HEAD
 **Total running time of the script:** ( 0 minutes  1.012 seconds)
-=======
-**Total running time of the script:** ( 0 minutes  1.103 seconds)
->>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
 
 

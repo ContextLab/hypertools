@@ -18,8 +18,4 @@ digits = datasets.load_digits(n_class=6)
 data = digits.data
 group = digits.target.astype('str')
 
-<<<<<<< HEAD
 hyp.plot(data, '.', reduce='TSNE', group=group, ndims=2)
-=======
-hyp.plot(data, '.', model='TSNE', group=group, ndims=2)
->>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764

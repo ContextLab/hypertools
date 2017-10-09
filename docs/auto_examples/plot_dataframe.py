@@ -18,11 +18,7 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
 import hypertools as hyp
 
 # load example data
-<<<<<<< HEAD
 data = hyp.load('mushrooms')
-=======
-data = hyp.tools.load('mushrooms')
->>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 
 # pop off the class (poisonousness)
 group = data.pop('class')

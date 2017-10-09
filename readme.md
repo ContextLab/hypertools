@@ -83,22 +83,14 @@ Please cite as:
 Here is a bibtex formatted reference:
 
 ```
-<<<<<<< HEAD
 @ARTICLE {,
-=======
-@ARTICLE {
->>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
     author  = "A C Heusser and K Ziman and L L W Owen and J R Manning",
     title   = "HyperTools: A Python toolbox for visualizing and manipulating high-dimensional data",
     journal = "arXiv",
     year    = "2017",
     volume  = "1701",
-<<<<<<< HEAD
     number  = "08290",
     month   = "jan"
-=======
-    number  = "08290"
->>>>>>> 44fe07e96e8f109b3023a70c8716b20c71f07764
 }
 ```
 
