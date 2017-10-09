@@ -21,9 +21,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False):
     Parameters
     ----------
     x : Numpy array or list of arrays
-        Dimensionality reduction using PCA is performed on this array.  If
-        there are nans present in the data, the function will try to use
-        PPCA to interpolate the missing values.
+        Dimensionality reduction using PCA is performed on this array.
 
     reduce : str or dict
         Decomposition/manifold learning model to use.  Models supported: PCA,
