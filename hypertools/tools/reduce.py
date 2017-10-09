@@ -5,51 +5,53 @@ import warnings
 import numpy as np
 
 ## reduction models
-from .._externals.ppca import PPCA
 from sklearn.decomposition import PCA, FastICA, IncrementalPCA, KernelPCA, FactorAnalysis, TruncatedSVD, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
 from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
 
 # internal libraries
 from ..tools.df2mat import df2mat
-from ..tools.normalize import normalize as normalizer
 from .._shared.helpers import *
+from .normalize import normalize as normalizer
+from .align import align as aligner
 
 # main function
-def reduce(x, ndims=3, model='IncrementalPCA', model_params={}, normalize=False, internal=False,
-           align=False):
+@memoize
+def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
+           model=None, model_params=None, internal=False):
     """
     Reduces dimensionality of an array, or list of arrays
 
     Parameters
     ----------
     x : Numpy array or list of arrays
-        Dimensionality reduction using PCA is performed on this array.  If
-        there are nans present in the data, the function will try to use
-        PPCA to interpolate the missing values.
+        Dimensionality reduction using PCA is performed on this array.
+
+    reduce : str or dict
+        Decomposition/manifold learning model to use.  Models supported: PCA,
+        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
+        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
+        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be
+        passed as a string, but for finer control of the model parameters, pass
+        as a dictionary, e.g. reduce={'model' : 'PCA', 'params' : {'whiten' : True}}.
+        See scikit-learn specific model docs for details on parameters supported
+        for each model.
 
     ndims : int
         Number of dimensions to reduce
 
-    model : str
-        Decomposition/manifold learning model to use.  Models supported: PCA,
-        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
-        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
-        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS.
+    model : None
+        Deprecated argument.  Please use reduce.
 
-    model_params : dict
-        Optional dictionary of scikit-learn parameters to pass to reduction model.
-        See scikit-learn specific model docs for details.
+    model_params : None
+        Deprecated argument.  Please use reduce.
 
-    normalize : str or False
-        If set to 'across', the columns of the input data will be z-scored
-        across lists (default). If set to 'within', the columns will be
-        z-scored within each list that is passed. If set to 'row', each row of
-        the input data will be z-scored. If set to False, the input data will
-        be returned (default is False).
+    align : None
+        Deprecated argument.  Please use new analyze function to perform
+        combinations of transformations
 
-    align : bool
-        If set to True, data will be run through the ``hyperalignment''
-        algorithm implemented in hypertools.tools.align (default: False).
+    normalize : None
+        Deprecated argument.  Please use new analyze function to perform
+        combinations of transformations
 
     Returns
     ----------
@@ -60,30 +62,9 @@ def reduce(x, ndims=3, model='IncrementalPCA', model_params={}, normalize=False,
     """
 
     # sub functions
-    def fill_missing(x):
-
-        # ppca if missing data
-        m = PPCA()
-        m.fit(data=np.vstack(x))
-        x_pca = m.transform()
-
-        # if the whole row is missing, return nans
-        all_missing = [idx for idx,a in enumerate(np.vstack(x)) if all([type(b)==np.nan for b in a])]
-        if len(all_missing)>0:
-            for i in all_missing:
-                x_pca[i,:]=np.nan
-
-        # get the original lists back
-        if len(x)>1:
-            x_split = np.cumsum([i.shape[0] for i in x][:-1])
-            return list(np.split(x_pca,x_split,axis=0))
-        else:
-            return [x_pca]
-
-    def reduce_list(x, model, model_params):
+    def reduce_list(x, model):
         split = np.cumsum([len(xi) for xi in x])[:-1]
-        m=model(**model_params)
-        x_r = np.vsplit(m.fit_transform(np.vstack(x)), split)
+        x_r = np.vsplit(model.fit_transform(np.vstack(x)), split)
         if len(x)>1:
             return [xi for xi in x_r]
         else:
@@ -108,40 +89,61 @@ def reduce(x, ndims=3, model='IncrementalPCA', model_params={}, normalize=False,
         'MDS' : MDS
     }
 
-    # main
-    x = format_data(x)
+    # deprecated warning
+    if (model is not None) or (model_params is not None):
+        warnings.warn('Model and model params will be deprecated.  Please use the \
+                      reduce keyword.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce')
+        reduce = {}
+        reduce['model'] = model
+        reduce['params'] = model_params
 
-    assert all([i.shape[1]>ndims for i in x]), "In order to reduce the data, ndims must be less than the number of dimensions"
-
-    # if there are any nans in any of the lists, use ppca
-    if np.isnan(np.vstack(x)).any():
-        warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
-        x = fill_missing(x)
-
-    # normalize
-    if normalize:
-        x = normalizer(x, normalize=normalize)
-
-    # build model params dict
-    if model_params=={}:
-        model_params = {
-            'n_components' : ndims
-        }
-    elif 'n_components' in model_params:
-        pass
+    # if model is None, just return data
+    if (reduce is None) or (ndims is None):
+        return x
     else:
-        model_params['n_components']=ndims
 
-    # reduce data
-    x_reduced = reduce_list(x, models[model], model_params)
+        # common format
+        x = format_data(x)
 
-    if align == True:
-        # Import is here to avoid circular imports with reduce.py
-        from .align import align as aligner
-        x_reduced = aligner(x_reduced)
+        # deprecation warnings
+        if normalize is not None:
+            warnings.warn('The normalize argument will be deprecated for this function.  Please use the \
+                          analyze function to perform combinations of these transformations.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.analyze.html#hypertools.analyze')
+            x = normalizer(x, normalize=normalize)
 
-    # return data
-    if internal or len(x_reduced)>1:
-        return x_reduced
-    else:
-        return x_reduced[0]
+        if align is not None:
+            warnings.warn('The align argument will be deprecated for this function.  Please use the \
+                          analyze function to perform combinations of these transformations.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.analyze.html#hypertools.analyze')
+            x = aligner(x, align=align)
+
+        # if the shape of the data is already less than ndims, just return it
+        if all([i.shape[1]<=ndims for i in x]):
+            return x
+
+        # if reduce is a string, find the corresponding model
+        if type(reduce) in [str, np.string_]:
+            model = models[reduce]
+            model_params = {
+                'n_components' : ndims
+            }
+        # if its a dict, use custom params
+        elif type(reduce) is dict:
+            if type(reduce['model']) is str:
+                model = models[reduce['model']]
+                if reduce['params'] is None:
+                    model_params = {
+                        'n_components' : ndims
+                    }
+                else:
+                    model_params = reduce['params']
+        # initialize model
+        model = model(**model_params)
+
+        # reduce data
+        x_reduced = reduce_list(x, model)
+
+        # return data
+        if internal or len(x_reduced)>1:
+            return x_reduced
+        else:
+            return x_reduced[0]

@@ -46,7 +46,7 @@ palette.
     import numpy as np
 
     # load example data
-    data = hyp.tools.load('weights_sample')
+    data = hyp.load('weights_sample')
 
     # simulate groups
     group = [['a' if idx % 2 == 0 else 'b' for idx, j in enumerate(i)] for i in data]
@@ -65,7 +65,7 @@ palette.
     # plot
     hyp.plot(data, '.', group=group)
 
-**Total running time of the script:** ( 0 minutes  1.141 seconds)
+**Total running time of the script:** ( 0 minutes  1.146 seconds)
 
 
 

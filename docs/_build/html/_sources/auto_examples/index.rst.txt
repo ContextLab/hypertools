@@ -229,6 +229,26 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="This is a trajectory of brain data, hyperaligned and then plotted in 3D with multidimensional s...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_animate_MDS_thumb.png
+
+        :ref:`sphx_glr_auto_examples_animate_MDS.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/animate_MDS
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="To save an animation, simply add the `save_path` kwarg and specify the path where you want to s...">
 
 .. only:: html
@@ -269,13 +289,13 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="This is a trajectory of brain data, hyperaligned and then plotted in 3D with multidimensional s...">
+    <div class="sphx-glr-thumbcontainer" tooltip="This example demonstrates how to use the `analyze` function to process data prior to plotting. ...">
 
 .. only:: html
 
-    .. figure:: /auto_examples/images/thumb/sphx_glr_animate_MDS_thumb.png
+    .. figure:: /auto_examples/images/thumb/sphx_glr_analyze_thumb.png
 
-        :ref:`sphx_glr_auto_examples_animate_MDS.py`
+        :ref:`sphx_glr_auto_examples_analyze.py`
 
 .. raw:: html
 
@@ -285,7 +305,7 @@ Gallery of Examples
 .. toctree::
    :hidden:
 
-   /auto_examples/animate_MDS
+   /auto_examples/analyze
 
 .. raw:: html
 
@@ -366,6 +386,26 @@ Gallery of Examples
    :hidden:
 
    /auto_examples/plot_clusters2
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="When the plot function is called, it returns a DataGeometry object, or geo. A geo contains all ...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_geo_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_geo.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_geo
 
 .. raw:: html
 

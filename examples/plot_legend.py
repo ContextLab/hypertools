@@ -14,7 +14,7 @@ An example of how to use the `legend` kwarg to generate a legend.
 import hypertools as hyp
 
 # load example data
-data = hyp.tools.load('weights_sample')
+data = hyp.load('weights_sample')
 
 # plot
 hyp.plot(data, '.', legend=['Group A', 'Group B', 'Group C'])

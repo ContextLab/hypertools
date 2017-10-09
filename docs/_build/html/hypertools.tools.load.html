@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.tools.load &#8212; hypertools 0.3.0 documentation</title>
+    <title>hypertools.tools.load &#8212; hypertools 0.4.0 documentation</title>
     
     <link rel="stylesheet" href="_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    './',
-        VERSION:     '0.3.0',
+        VERSION:     '0.4.0',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -51,7 +51,7 @@
         </button>
         <a class="navbar-brand" href="index.html">
           hypertools</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.3</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.4</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -116,35 +116,58 @@
 <h1>hypertools.tools.load<a class="headerlink" href="#hypertools-tools-load" title="Permalink to this headline">¶</a></h1>
 <dl class="function">
 <dt id="hypertools.tools.load">
-<code class="descclassname">hypertools.tools.</code><code class="descname">load</code><span class="sig-paren">(</span><em>dataset</em>, <em>ndims=None</em>, <em>align=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/hypertools/tools/load.html#load"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#hypertools.tools.load" title="Permalink to this definition">¶</a></dt>
-<dd><p>Load example data</p>
+<code class="descclassname">hypertools.tools.</code><code class="descname">load</code><span class="sig-paren">(</span><em>dataset</em>, <em>reduce=None</em>, <em>ndims=None</em>, <em>align=None</em>, <em>normalize=None</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/hypertools/tools/load.html#load"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#hypertools.tools.load" title="Permalink to this definition">¶</a></dt>
+<dd><p>Load a .geo file or example data</p>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
 <col class="field-body" />
 <tbody valign="top">
 <tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><p class="first"><strong>dataset</strong> : string</p>
 <blockquote>
-<div><p>The name of the example dataset.  <cite>weights</cite> is an fmri dataset comprised of
-36 subjects.  For each subject, the rows are fMRI measurements and the columns
-are parameters of a model fit to the fMRI data. <cite>weights_sample</cite> is a
-sample of 3 subjects from that dataset.  <cite>weights_avg</cite> is the dataset split
-in half and averaged into two groups. <cite>spiral</cite> is 3D spiral to
+<div><p>The name of the example dataset.  Can be a <cite>.geo</cite> file, or one of a
+number of example datasets listed below. <cite>weights</cite> is an fmri dataset
+comprised of 36 subjects.  For each subject, the rows are fMRI
+measurements and the columns are parameters of a model fit to the fMRI data. <cite>weights_sample</cite> is a sample of 3 subjects from that dataset.  <cite>weights_avg</cite> is the dataset split in half and averaged into two groups. <cite>spiral</cite> is 3D spiral to
 highlight the <cite>procrustes</cite> function.  <cite>mushrooms</cite> is an example dataset
 comprised of features (columns) of a collection of mushroomm samples (rows).</p>
+</div></blockquote>
+<p><strong>normalize</strong> : str or False or None</p>
+<blockquote>
+<div><p>If set to &#8216;across&#8217;, the columns of the input data will be z-scored
+across lists (default). That is, the z-scores will be computed with
+with repect to column n across all arrays passed in the list. If set
+to &#8216;within&#8217;, the columns will be z-scored within each list that is
+passed. If set to &#8216;row&#8217;, each row of the input data will be z-scored.
+If set to False, the input data will be returned with no z-scoring.</p>
+</div></blockquote>
+<p><strong>reduce</strong> : str or dict</p>
+<blockquote>
+<div><p>Decomposition/manifold learning model to use.  Models supported: PCA,
+IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
+FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
+TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be
+passed as a string, but for finer control of the model parameters, pass
+as a dictionary, e.g. reduce={&#8216;model&#8217; : &#8216;PCA&#8217;, &#8216;params&#8217; : {&#8216;whiten&#8217; : True}}.
+See scikit-learn specific model docs for details on parameters supported
+for each model.</p>
+</div></blockquote>
+<p><strong>ndims</strong> : int</p>
+<blockquote>
+<div><p>Number of dimensions to reduce</p>
+</div></blockquote>
+<p><strong>align</strong> : str or dict</p>
+<blockquote>
+<div><p>If str, either &#8216;hyper&#8217; or &#8216;SRM&#8217;.  If &#8216;hyper&#8217;, alignment algorithm will be
+hyperalignment. If &#8216;SRM&#8217;, alignment algorithm will be shared response
+model.  You can also pass a dictionary for finer control, where the &#8216;model&#8217;
+key is a string that specifies the model and the params key is a dictionary
+of parameter values (default : &#8216;hyper&#8217;).</p>
 </div></blockquote>
 </td>
 </tr>
 <tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first"><strong>data</strong> : Numpy Array</p>
-<blockquote>
-<div><p>Example data</p>
-</div></blockquote>
-<p><strong>ndims</strong> : int</p>
-<blockquote>
-<div><p>If not None, reduce data to ndims dimensions</p>
-</div></blockquote>
-<p><strong>align</strong> : bool</p>
 <blockquote class="last">
-<div><p>If True, run data through alignment algorithm in tools.alignment</p>
+<div><p>Example data</p>
 </div></blockquote>
 </td>
 </tr>

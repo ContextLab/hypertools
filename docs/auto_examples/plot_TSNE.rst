@@ -33,9 +33,9 @@ it using t-SNE.
     data = digits.data
     group = digits.target.astype('str')
 
-    hyp.plot(data, '.', model='TSNE', group=group, ndims=2)
+    hyp.plot(data, '.', reduce='TSNE', group=group, ndims=2)
 
-**Total running time of the script:** ( 0 minutes  5.902 seconds)
+**Total running time of the script:** ( 0 minutes  4.985 seconds)
 
 
 

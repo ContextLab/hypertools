@@ -33,7 +33,7 @@ Then we average the data into two groups, and plot.
     import numpy as np
 
     # load example data
-    data = hyp.tools.load('weights', align=True)
+    data = hyp.load('weights', align='hyper')
 
     # average into two groups
     group1 = np.mean(data[:17], 0)
@@ -42,7 +42,7 @@ Then we average the data into two groups, and plot.
     # plot
     hyp.plot([group1[:100, :], group2[:100, :]])
 
-**Total running time of the script:** ( 0 minutes  5.544 seconds)
+**Total running time of the script:** ( 0 minutes  5.365 seconds)
 
 
 

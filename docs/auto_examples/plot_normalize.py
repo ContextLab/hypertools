@@ -35,7 +35,7 @@ hyp.plot(data, '.', normalize='across', title='Normalized across datasets')
 hyp.plot(data, '.', normalize='within', title='Normalized within dataset')
 
 # normalize by row
-normalized_row = hyp.tools.normalize(data, normalize='row')
+normalized_row = hyp.normalize(data, normalize='row')
 
 # plot normalized by row
 hyp.plot(normalized_row, '.', title='Normalized across row')

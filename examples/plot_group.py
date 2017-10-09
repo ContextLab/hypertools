@@ -21,7 +21,7 @@ import hypertools as hyp
 import numpy as np
 
 # load example data
-data = hyp.tools.load('weights_sample')
+data = hyp.load('weights_sample')
 
 # simulate groups
 group = [['a' if idx % 2 == 0 else 'b' for idx, j in enumerate(i)] for i in data]

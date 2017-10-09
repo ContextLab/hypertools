@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.tools.cluster &#8212; hypertools 0.3.0 documentation</title>
+    <title>hypertools.tools.cluster &#8212; hypertools 0.4.0 documentation</title>
     
     <link rel="stylesheet" href="../../../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../../',
-        VERSION:     '0.3.0',
+        VERSION:     '0.4.0',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -51,7 +51,7 @@
         </button>
         <a class="navbar-brand" href="../../../index.html">
           hypertools</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.3</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.4</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -112,14 +112,14 @@
   <h1>Source code for hypertools.tools.cluster</h1><div class="highlight"><pre>
 <span></span><span class="ch">#!/usr/bin/env python</span>
 
-<span class="kn">from</span> <span class="nn">sklearn.cluster</span> <span class="k">import</span> <span class="n">KMeans</span>
-<span class="kn">from</span> <span class="nn">sklearn.decomposition</span> <span class="k">import</span> <span class="n">PCA</span>
+<span class="kn">from</span> <span class="nn">sklearn.cluster</span> <span class="k">import</span> <span class="n">KMeans</span><span class="p">,</span> <span class="n">MiniBatchKMeans</span><span class="p">,</span> <span class="n">AgglomerativeClustering</span><span class="p">,</span> <span class="n">Birch</span><span class="p">,</span> <span class="n">FeatureAgglomeration</span><span class="p">,</span> <span class="n">SpectralClustering</span>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 <span class="kn">from</span> <span class="nn">.._shared.helpers</span> <span class="k">import</span> <span class="o">*</span>
 
-<div class="viewcode-block" id="cluster"><a class="viewcode-back" href="../../../hypertools.tools.cluster.html#hypertools.tools.cluster">[docs]</a><span class="k">def</span> <span class="nf">cluster</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">n_clusters</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="nd">@memoize</span>
+<div class="viewcode-block" id="cluster"><a class="viewcode-back" href="../../../hypertools.tools.cluster.html#hypertools.cluster">[docs]</a><span class="k">def</span> <span class="nf">cluster</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">cluster</span><span class="o">=</span><span class="s1">&#39;KMeans&#39;</span><span class="p">,</span> <span class="n">n_clusters</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Performs k-means clustering and returns a list of cluster labels</span>
+<span class="sd">    Performs clustering analysis and returns a list of cluster labels</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
@@ -128,12 +128,17 @@
 <span class="sd">        If a list is passed, the arrays will be stacked and the clustering</span>
 <span class="sd">        will be performed across all lists (i.e. not within each list).</span>
 
-<span class="sd">        n_clusters : int</span>
-<span class="sd">        The number of clusters to discover (i.e. k)</span>
+<span class="sd">    cluster : str or dict</span>
+<span class="sd">        Model to use to discover clusters.  Support algorithms are: KMeans,</span>
+<span class="sd">        MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,</span>
+<span class="sd">        SpectralClustering (default: KMeans).Can be passed as a string, but for</span>
+<span class="sd">        finer control of the model parameters, pass as a dictionary, e.g.</span>
+<span class="sd">        reduce={&#39;model&#39; : &#39;KMeans&#39;, &#39;params&#39; : {&#39;max_iter&#39; : 100}}. See</span>
+<span class="sd">        scikit-learn specific model docs for details on parameters supported for</span>
+<span class="sd">        each model.</span>
 
-<span class="sd">    ndims : int or None</span>
-<span class="sd">        This parameter allows you to first reduce dimensionality before</span>
-<span class="sd">        running k-means</span>
+<span class="sd">    n_clusters : int</span>
+<span class="sd">        Number of clusters to discover</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    ----------</span>
@@ -142,17 +147,46 @@
 
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">x</span> <span class="o">=</span> <span class="n">format_data</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="c1"># if cluster is None, just return data</span>
+    <span class="k">if</span> <span class="n">cluster</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">x</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">format_data</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
-    <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">list</span><span class="p">:</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">ndims</span><span class="p">:</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">PCA</span><span class="p">(</span><span class="n">n_components</span><span class="o">=</span><span class="n">ndims</span><span class="p">)</span><span class="o">.</span><span class="n">fit_transform</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="c1"># dictionary of models</span>
+        <span class="n">models</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s1">&#39;KMeans&#39;</span> <span class="p">:</span> <span class="n">KMeans</span><span class="p">,</span>
+            <span class="s1">&#39;MiniBatchKMeans&#39;</span> <span class="p">:</span> <span class="n">MiniBatchKMeans</span><span class="p">,</span>
+            <span class="s1">&#39;AgglomerativeClustering&#39;</span> <span class="p">:</span> <span class="n">AgglomerativeClustering</span><span class="p">,</span>
+            <span class="s1">&#39;FeatureAgglomeration&#39;</span> <span class="p">:</span> <span class="n">FeatureAgglomeration</span><span class="p">,</span>
+            <span class="s1">&#39;Birch&#39;</span> <span class="p">:</span> <span class="n">Birch</span><span class="p">,</span>
+            <span class="s1">&#39;SpectralClustering&#39;</span> <span class="p">:</span> <span class="n">SpectralClustering</span>
+        <span class="p">}</span>
 
-    <span class="n">kmeans</span> <span class="o">=</span> <span class="n">KMeans</span><span class="p">(</span><span class="n">init</span><span class="o">=</span><span class="s1">&#39;k-means++&#39;</span><span class="p">,</span> <span class="n">n_clusters</span><span class="o">=</span><span class="n">n_clusters</span><span class="p">,</span> <span class="n">n_init</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-    <span class="n">kmeans</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="c1"># if reduce is a string, find the corresponding model</span>
+        <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">cluster</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">str</span><span class="p">:</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">models</span><span class="p">[</span><span class="n">cluster</span><span class="p">]</span>
+            <span class="n">model_params</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s1">&#39;n_clusters&#39;</span> <span class="p">:</span> <span class="n">n_clusters</span>
+            <span class="p">}</span>
+        <span class="c1"># if its a dict, use custom params</span>
+        <span class="k">elif</span> <span class="nb">type</span><span class="p">(</span><span class="n">cluster</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">dict</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">cluster</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">])</span> <span class="ow">is</span> <span class="nb">str</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">models</span><span class="p">[</span><span class="n">cluster</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">]]</span>
+                <span class="n">model_params</span> <span class="o">=</span> <span class="n">cluster</span><span class="p">[</span><span class="s1">&#39;params&#39;</span><span class="p">]</span>
+            <span class="c1"># if the user specifies a function, set that to the model</span>
+            <span class="k">elif</span> <span class="n">callable</span><span class="p">(</span><span class="n">cluster</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">]):</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">cluster</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">]</span>
+                <span class="n">model_params</span> <span class="o">=</span> <span class="n">cluster</span><span class="p">[</span><span class="s1">&#39;params&#39;</span><span class="p">]</span>
 
-    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">kmeans</span><span class="o">.</span><span class="n">labels_</span><span class="p">)</span></div>
+        <span class="c1"># initialize model</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="o">**</span><span class="n">model_params</span><span class="p">)</span>
+
+        <span class="c1"># fit the model</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+
+        <span class="c1"># return the labels</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">labels_</span><span class="p">)</span></div>
 </pre></div>
 
     </div>

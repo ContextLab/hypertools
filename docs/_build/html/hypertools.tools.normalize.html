@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.tools.normalize &#8212; hypertools 0.3.0 documentation</title>
+    <title>hypertools.tools.normalize &#8212; hypertools 0.4.0 documentation</title>
     
     <link rel="stylesheet" href="_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    './',
-        VERSION:     '0.3.0',
+        VERSION:     '0.4.0',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -51,7 +51,7 @@
         </button>
         <a class="navbar-brand" href="index.html">
           hypertools</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.3</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.4</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -116,7 +116,7 @@
 <h1>hypertools.tools.normalize<a class="headerlink" href="#hypertools-tools-normalize" title="Permalink to this headline">¶</a></h1>
 <dl class="function">
 <dt id="hypertools.tools.normalize">
-<code class="descclassname">hypertools.tools.</code><code class="descname">normalize</code><span class="sig-paren">(</span><em>x</em>, <em>normalize='across'</em>, <em>internal=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/hypertools/tools/normalize.html#normalize"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#hypertools.tools.normalize" title="Permalink to this definition">¶</a></dt>
+<code class="descclassname">hypertools.tools.</code><code class="descname">normalize</code><span class="sig-paren">(</span><em>*args</em>, <em>**kwargs</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/hypertools/tools/normalize.html#normalize"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#hypertools.tools.normalize" title="Permalink to this definition">¶</a></dt>
 <dd><p>Z-transform the columns or rows of an array, or list of arrays</p>
 <p>This function normalizes the rows or columns of the input array(s).  This
 can be useful because data reduction and machine learning techniques are
@@ -132,7 +132,7 @@ each row in the array.</p>
 <blockquote>
 <div><p>This can either be a single array, or list of arrays</p>
 </div></blockquote>
-<p><strong>normalize</strong> : str or False</p>
+<p><strong>normalize</strong> : str or False or None</p>
 <blockquote>
 <div><p>If set to &#8216;across&#8217;, the columns of the input data will be z-scored
 across lists (default). That is, the z-scores will be computed with

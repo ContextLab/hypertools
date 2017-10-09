@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>Grouping data by category &#8212; hypertools 0.3.0 documentation</title>
+    <title>Grouping data by category &#8212; hypertools 0.4.0 documentation</title>
     
     <link rel="stylesheet" href="../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../',
-        VERSION:     '0.3.0',
+        VERSION:     '0.4.0',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -51,7 +51,7 @@
         </button>
         <a class="navbar-brand" href="../index.html">
           hypertools</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.3</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.4</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -135,7 +135,7 @@ palette.</p>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="kn">as</span> <span class="nn">np</span>
 
 <span class="c1"># load example data</span>
-<span class="n">data</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">tools</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s1">&#39;weights_sample&#39;</span><span class="p">)</span>
+<span class="n">data</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s1">&#39;weights_sample&#39;</span><span class="p">)</span>
 
 <span class="c1"># simulate groups</span>
 <span class="n">group</span> <span class="o">=</span> <span class="p">[[</span><span class="s1">&#39;a&#39;</span> <span class="k">if</span> <span class="n">idx</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="s1">&#39;b&#39;</span> <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">i</span><span class="p">)]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">data</span><span class="p">]</span>
@@ -155,7 +155,7 @@ palette.</p>
 <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="n">group</span><span class="p">)</span>
 </pre></div>
 </div>
-<p><strong>Total running time of the script:</strong> ( 0 minutes  1.141 seconds)</p>
+<p><strong>Total running time of the script:</strong> ( 0 minutes  1.146 seconds)</p>
 <div class="sphx-glr-footer docutils container">
 <div class="sphx-glr-download docutils container">
 <a class="reference download internal" href="../_downloads/plot_group.py" download=""><code class="xref download docutils literal"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">plot_group.py</span></code></a></div>

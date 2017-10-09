@@ -23,7 +23,7 @@ cluster2 = np.random.multivariate_normal(np.zeros(3)+3, np.eye(3), size=100)
 data = np.vstack([cluster1, cluster2])
 
 # get cluster labels
-cluster_labels = hyp.tools.cluster(data, n_clusters=2)
+cluster_labels = hyp.cluster(data, n_clusters=2)
 
 # plot
 hyp.plot(data, '.', group=cluster_labels)

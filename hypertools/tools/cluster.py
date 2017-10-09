@@ -1,13 +1,13 @@
 #!/usr/bin/env python
-
-from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
+import warnings
+from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering
 import numpy as np
 from .._shared.helpers import *
 
-def cluster(x, n_clusters=8, ndims=None):
+@memoize
+def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
     """
-    Performs k-means clustering and returns a list of cluster labels
+    Performs clustering analysis and returns a list of cluster labels
 
     Parameters
     ----------
@@ -16,12 +16,21 @@ def cluster(x, n_clusters=8, ndims=None):
         If a list is passed, the arrays will be stacked and the clustering
         will be performed across all lists (i.e. not within each list).
 
-        n_clusters : int
-        The number of clusters to discover (i.e. k)
+    cluster : str or dict
+        Model to use to discover clusters.  Support algorithms are: KMeans,
+        MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
+        SpectralClustering (default: KMeans).Can be passed as a string, but for
+        finer control of the model parameters, pass as a dictionary, e.g.
+        reduce={'model' : 'KMeans', 'params' : {'max_iter' : 100}}. See
+        scikit-learn specific model docs for details on parameters supported for
+        each model.
 
-    ndims : int or None
-        This parameter allows you to first reduce dimensionality before
-        running k-means
+    n_clusters : int
+        Number of clusters to discover
+
+    ndims : None
+        Deprecated argument.  Please use new analyze function to perform
+        combinations of transformations
 
     Returns
     ----------
@@ -30,14 +39,43 @@ def cluster(x, n_clusters=8, ndims=None):
 
     """
 
-    x = format_data(x)
+    # if cluster is None, just return data
+    if cluster is None:
+        return x
+    else:
 
-    if type(x) is list:
-        x = np.vstack(x)
-    if ndims:
-        x = PCA(n_components=ndims).fit_transform(x)
+        if ndims is not None:
+            warnings.warn('The ndims argument is now deprecated. Ignoring dimensionality reduction step.')
 
-    kmeans = KMeans(init='k-means++', n_clusters=n_clusters, n_init=10)
-    kmeans.fit(x)
+        x = format_data(x)
 
-    return list(kmeans.labels_)
+        # dictionary of models
+        models = {
+            'KMeans' : KMeans,
+            'MiniBatchKMeans' : MiniBatchKMeans,
+            'AgglomerativeClustering' : AgglomerativeClustering,
+            'FeatureAgglomeration' : FeatureAgglomeration,
+            'Birch' : Birch,
+            'SpectralClustering' : SpectralClustering
+        }
+
+        # if reduce is a string, find the corresponding model
+        if type(cluster) is str:
+            model = models[cluster]
+            model_params = {
+                'n_clusters' : n_clusters
+            }
+        # if its a dict, use custom params
+        elif type(cluster) is dict:
+            if type(cluster['model']) is str:
+                model = models[cluster['model']]
+                model_params = cluster['params']
+
+        # initialize model
+        model = model(**model_params)
+
+        # fit the model
+        model.fit(np.vstack(x))
+
+        # return the labels
+        return list(model.labels_)

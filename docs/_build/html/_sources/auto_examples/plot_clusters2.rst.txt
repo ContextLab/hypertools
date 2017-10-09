@@ -38,12 +38,12 @@ kwarg to color our points by cluster.
     data = np.vstack([cluster1, cluster2])
 
     # get cluster labels
-    cluster_labels = hyp.tools.cluster(data, n_clusters=2)
+    cluster_labels = hyp.cluster(data, n_clusters=2)
 
     # plot
     hyp.plot(data, '.', group=cluster_labels)
 
-**Total running time of the script:** ( 0 minutes  0.060 seconds)
+**Total running time of the script:** ( 0 minutes  0.274 seconds)
 
 
 

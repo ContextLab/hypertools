@@ -1,35 +1,16 @@
 #!/usr/bin/env python
 
-"""
-Implements the "hyperalignment" algorithm described by the
-following paper:
-
-Haxby JV, Guntupalli JS, Connolly AC, Halchenko YO, Conroy BR, Gobbini
-MI, Hanke M, and Ramadge PJ (2011)  A common, high-dimensional model of
-the representational space in human ventral temporal cortex.  Neuron 72,
-404 -- 416.
-
-INPUTS:
--numpy array(s)
--list of numpy arrays
-
-OUTPUTS:
--numpy array
--list of aligned numpy arrays
-"""
-
-##PACKAGES##
 from __future__ import division
 from builtins import range
 from .._externals.srm import SRM
 from .procrustes import procrustes
 import numpy as np
-from .._shared.helpers import format_data
+from .._shared.helpers import format_data, memoize
 from .normalize import normalize as normalizer
-from warnings import warn
+import warnings
 
-##MAIN FUNCTION##
-def align(data, method='hyper', normalize=False, ndims=None):
+@memoize
+def align(data, align='hyper', normalize=None, ndims=None, method=None):
     """
     Aligns a list of arrays
 
@@ -52,23 +33,23 @@ def align(data, method='hyper', normalize=False, ndims=None):
 
     Parameters
     ----------
-    data : list
+    data : numpy array, pandas df, or list of arrays/dfs
         A list of Numpy arrays or Pandas Dataframes
 
-    method : str
-        Either 'hyper' or 'SRM'.  If 'hyper', alignment algorithm will be
+    align : str or dict
+        If str, either 'hyper' or 'SRM'.  If 'hyper', alignment algorithm will be
         hyperalignment. If 'SRM', alignment algorithm will be shared response
-        model (default : 'hyper')
+        model.  You can also pass a dictionary for finer control, where the 'model'
+        key is a string that specifies the model and the params key is a dictionary
+        of parameter values (default : 'hyper').
 
-    normalize : str or False
-        If set to 'across', the columns of the input data will be z-scored
-        across lists. If set to 'within', the columns will be
-        z-scored within each list that is passed. If set to 'row', each row of
-        the input data will be z-scored. If set to False, the input data will
-        be returned (default is False).
+    normalize : None
+        Deprecated argument.  Please use new analyze function to perform
+        combinations of transformations
 
-    ndims : int
-        Number of dimensions to reduce the dataset to *prior* to alignment
+    ndims : None
+        Deprecated argument.  Please use new analyze function to perform
+        combinations of transformations
 
     Returns
     ----------
@@ -77,68 +58,79 @@ def align(data, method='hyper', normalize=False, ndims=None):
 
     """
 
-    data = format_data(data)
+    # if model is None, just return data
+    if align is None:
+        return data
+    elif isinstance(align, dict):
+        if align['model'] is None:
+            return data
+    else:
+        if method is not None:
+            warnings.warn('The method argument will be deprecated.  Please use align. See the API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.tools.align.html#hypertools.tools.align')
+            align = method
 
-    if data[0].shape[1]>=data[0].shape[0]:
-        warn('The number of features exceeds number of samples. This can lead \
-             to overfitting.  We recommend reducing the dimensionality to be \
-             less than the number of samples prior to hyperalignment.')
+        if align is True:
+            warnings.warn("Setting align=True will be deprecated.  Please specify the \
+                          type of alignment, i.e. align='hyper'. See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.tools.align.html#hypertools.tools.align")
+            align = 'hyper'
 
-    # normalize data
-    if normalize:
-        x = normalizer(x, normalize=normalize)
+        # common format
+        data = format_data(data)
 
-    # reduce if ndims is specified
-    if ndims is not None:
-        # Import is here to avoid circular imports with align.py
-        from .reduce import reduce as reducer
-        data = reducer(data, ndims, internal=True)
+        if len(data) is 1:
+            warnings.warn('Data in list of length 1 can not be aligned. '
+                 'Skipping the alignment.')
 
-    if method=='hyper':
+        if data[0].shape[1]>=data[0].shape[0]:
+            warnings.warn('The number of features exceeds number of samples. This can lead \
+                 to overfitting.  We recommend reducing the dimensionality to be \
+                 less than the number of samples prior to hyperalignment.')
 
-        ##STEP 0: STANDARDIZE SIZE AND SHAPE##
-        sizes_0 = [x.shape[0] for x in data]
-        sizes_1 = [x.shape[1] for x in data]
+        if (align is 'hyper') or (method is 'hyper'):
 
-        #find the smallest number of rows
-        R = min(sizes_0)
-        C = max(sizes_1)
+            ##STEP 0: STANDARDIZE SIZE AND SHAPE##
+            sizes_0 = [x.shape[0] for x in data]
+            sizes_1 = [x.shape[1] for x in data]
 
-        m = [np.empty((R,C), dtype=np.ndarray)] * len(data)
+            #find the smallest number of rows
+            R = min(sizes_0)
+            C = max(sizes_1)
 
-        for idx,x in enumerate(data):
-            y = x[0:R,:]
-            missing = C - y.shape[1]
-            add = np.zeros((y.shape[0], missing))
-            y = np.append(y, add, axis=1)
-            m[idx]=y
+            m = [np.empty((R,C), dtype=np.ndarray)] * len(data)
 
-        ##STEP 1: TEMPLATE##
-        for x in range(0, len(m)):
-            if x==0:
-                template = np.copy(m[x])
-            else:
-                next = procrustes(m[x], template / (x + 1))
-                template += next
-        template /= len(m)
+            for idx,x in enumerate(data):
+                y = x[0:R,:]
+                missing = C - y.shape[1]
+                add = np.zeros((y.shape[0], missing))
+                y = np.append(y, add, axis=1)
+                m[idx]=y
 
-        ##STEP 2: NEW COMMON TEMPLATE##
-        #align each subj to the template from STEP 1
-        template2 = np.zeros(template.shape)
-        for x in range(0, len(m)):
-            next = procrustes(m[x], template)
-            template2 += next
-        template2 /= len(m)
+            ##STEP 1: TEMPLATE##
+            for x in range(0, len(m)):
+                if x==0:
+                    template = np.copy(m[x])
+                else:
+                    next = procrustes(m[x], template / (x + 1))
+                    template += next
+            template /= len(m)
 
-        #STEP 3 (below): ALIGN TO NEW TEMPLATE
-        aligned = [np.zeros(template2.shape)] * len(m)
-        for x in range(0, len(m)):
-            next = procrustes(m[x], template2)
-            aligned[x] = next
-        return aligned
+            ##STEP 2: NEW COMMON TEMPLATE##
+            #align each subj to the template from STEP 1
+            template2 = np.zeros(template.shape)
+            for x in range(0, len(m)):
+                next = procrustes(m[x], template)
+                template2 += next
+            template2 /= len(m)
 
-    elif method=='SRM':
-        data = [i.T for i in data]
-        srm = SRM(features=np.min([i.shape[0] for i in data]))
-        fit = srm.fit(data)
-        return [i.T for i in srm.transform(data)]
+            #STEP 3 (below): ALIGN TO NEW TEMPLATE
+            aligned = [np.zeros(template2.shape)] * len(m)
+            for x in range(0, len(m)):
+                next = procrustes(m[x], template2)
+                aligned[x] = next
+            return aligned
+
+        elif (align is 'SRM') or (method is 'SRM'):
+            data = [i.T for i in data]
+            srm = SRM(features=np.min([i.shape[0] for i in data]))
+            fit = srm.fit(data)
+            return [i.T for i in srm.transform(data)]
