@@ -134,13 +134,33 @@
 <span class="sd">        highlight the `procrustes` function.  `mushrooms` is an example dataset</span>
 <span class="sd">        comprised of features (columns) of a collection of mushroomm samples (rows).</span>
 
-<span class="sd">    normalize : str or None</span>
+<span class="sd">    normalize : str or False or None</span>
+<span class="sd">        If set to &#39;across&#39;, the columns of the input data will be z-scored</span>
+<span class="sd">        across lists (default). That is, the z-scores will be computed with</span>
+<span class="sd">        with repect to column n across all arrays passed in the list. If set</span>
+<span class="sd">        to &#39;within&#39;, the columns will be z-scored within each list that is</span>
+<span class="sd">        passed. If set to &#39;row&#39;, each row of the input data will be z-scored.</span>
+<span class="sd">        If set to False, the input data will be returned with no z-scoring.</span>
 
-<span class="sd">    reduce : str or dict or None</span>
-<span class="sd">        If not None, reduce data to ndims dimensions</span>
+<span class="sd">    reduce : str or dict</span>
+<span class="sd">        Decomposition/manifold learning model to use.  Models supported: PCA,</span>
+<span class="sd">        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,</span>
+<span class="sd">        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,</span>
+<span class="sd">        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be</span>
+<span class="sd">        passed as a string, but for finer control of the model parameters, pass</span>
+<span class="sd">        as a dictionary, e.g. reduce={&#39;model&#39; : &#39;PCA&#39;, &#39;params&#39; : {&#39;whiten&#39; : True}}.</span>
+<span class="sd">        See scikit-learn specific model docs for details on parameters supported</span>
+<span class="sd">        for each model.</span>
 
-<span class="sd">    align : str or None</span>
-<span class="sd">        If True, run data through alignment algorithm in tools.alignment</span>
+<span class="sd">    ndims : int</span>
+<span class="sd">        Number of dimensions to reduce</span>
+
+<span class="sd">    align : str or dict</span>
+<span class="sd">        If str, either &#39;hyper&#39; or &#39;SRM&#39;.  If &#39;hyper&#39;, alignment algorithm will be</span>
+<span class="sd">        hyperalignment. If &#39;SRM&#39;, alignment algorithm will be shared response</span>
+<span class="sd">        model.  You can also pass a dictionary for finer control, where the &#39;model&#39;</span>
+<span class="sd">        key is a string that specifies the model and the params key is a dictionary</span>
+<span class="sd">        of parameter values (default : &#39;hyper&#39;).</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    ----------</span>

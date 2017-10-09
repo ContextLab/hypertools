@@ -131,14 +131,37 @@ measurements and the columns are parameters of a model fit to the fMRI data. <ci
 highlight the <cite>procrustes</cite> function.  <cite>mushrooms</cite> is an example dataset
 comprised of features (columns) of a collection of mushroomm samples (rows).</p>
 </div></blockquote>
-<p><strong>normalize</strong> : str or None</p>
-<p><strong>reduce</strong> : str or dict or None</p>
+<p><strong>normalize</strong> : str or False or None</p>
 <blockquote>
-<div><p>If not None, reduce data to ndims dimensions</p>
+<div><p>If set to &#8216;across&#8217;, the columns of the input data will be z-scored
+across lists (default). That is, the z-scores will be computed with
+with repect to column n across all arrays passed in the list. If set
+to &#8216;within&#8217;, the columns will be z-scored within each list that is
+passed. If set to &#8216;row&#8217;, each row of the input data will be z-scored.
+If set to False, the input data will be returned with no z-scoring.</p>
 </div></blockquote>
-<p><strong>align</strong> : str or None</p>
+<p><strong>reduce</strong> : str or dict</p>
 <blockquote>
-<div><p>If True, run data through alignment algorithm in tools.alignment</p>
+<div><p>Decomposition/manifold learning model to use.  Models supported: PCA,
+IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
+FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
+TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be
+passed as a string, but for finer control of the model parameters, pass
+as a dictionary, e.g. reduce={&#8216;model&#8217; : &#8216;PCA&#8217;, &#8216;params&#8217; : {&#8216;whiten&#8217; : True}}.
+See scikit-learn specific model docs for details on parameters supported
+for each model.</p>
+</div></blockquote>
+<p><strong>ndims</strong> : int</p>
+<blockquote>
+<div><p>Number of dimensions to reduce</p>
+</div></blockquote>
+<p><strong>align</strong> : str or dict</p>
+<blockquote>
+<div><p>If str, either &#8216;hyper&#8217; or &#8216;SRM&#8217;.  If &#8216;hyper&#8217;, alignment algorithm will be
+hyperalignment. If &#8216;SRM&#8217;, alignment algorithm will be shared response
+model.  You can also pass a dictionary for finer control, where the &#8216;model&#8217;
+key is a string that specifies the model and the params key is a dictionary
+of parameter values (default : &#8216;hyper&#8217;).</p>
 </div></blockquote>
 </td>
 </tr>
