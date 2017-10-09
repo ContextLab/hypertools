@@ -1,5 +1,5 @@
-sphinx
-sphinx_bootstrap_theme
+sphinx==1.5.5
+sphinx_bootstrap_theme==0.4.13
 sphinx-gallery
 numpydoc
 deepdish
