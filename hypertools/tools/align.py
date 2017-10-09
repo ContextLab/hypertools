@@ -62,6 +62,8 @@ def align(data, align='hyper', method=None):
             align = method
 
         if align is True:
+            warnings.warn("Setting align=True will be deprecated.  Please specify the \
+                          type of alignment, i.e. align='hyper'")
             align = 'hyper'
 
         # common format

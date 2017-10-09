@@ -10,7 +10,7 @@ from ..datageometry import DataGeometry
 
 def load(dataset, reduce=None, ndims=None, align=None, normalize=None):
     """
-    Load example data
+    Load a .geo file or example data
 
     Parameters
     ----------

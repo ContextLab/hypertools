@@ -7,7 +7,7 @@ from .._shared.helpers import *
 @memoize
 def cluster(x, cluster='KMeans', n_clusters=3):
     """
-    Performs k-means clustering and returns a list of cluster labels
+    Performs clustering analysis and returns a list of cluster labels
 
     Parameters
     ----------

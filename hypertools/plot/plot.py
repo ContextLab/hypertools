@@ -25,10 +25,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
          labels=None, legend=None, title=None, elev=10, azim=-60, ndims=None,
          model=None, model_params=None, reduce='IncrementalPCA', cluster='KMeans',
-         align=None, normalize=None,
-         n_clusters=None, save_path=None, animate=False, duration=30, tail_duration=2,
-         rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
-         frame_rate=50, explore=False, show=True, transform=True):
+         align=None, normalize=None, n_clusters=None, save_path=None, animate=False, duration=30, tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False, frame_rate=50, explore=False, show=True, transform=True):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -70,6 +67,23 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     title : str
         A title for the plot
 
+    normalize : str or False
+        If set to 'across', the columns of the input data will be z-scored
+        across lists (default). If set to 'within', the columns will be
+        z-scored within each list that is passed. If set to 'row', each row of
+        the input data will be z-scored. If set to False, the input data will
+        be returned (default is False).
+
+    reduce : str or dict
+        Decomposition/manifold learning model to use.  Models supported: PCA,
+        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
+        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
+        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be
+        passed as a string, but for finer control of the model parameters, pass
+        as a dictionary, e.g. reduce={'model' : 'PCA', 'params' : {'whiten' : True}}.
+        See scikit-learn specific model docs for details on parameters supported
+        for each model.
+
     ndims : int
         An `int` representing the number of dims to reduce the data x
         to. If ndims > 3, will plot in 3 dimensions but return the higher
@@ -78,33 +92,28 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         possibly normalized and/or aligned according to normalize/align
         kwargs.
 
-    model : str
-        Decomposition/manifold learning model to use.  Models supported: PCA,
-        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
-        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
-        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS.
+    align : str or dict or False/None
+        If str, either 'hyper' or 'SRM'.  If 'hyper', alignment algorithm will be
+        hyperalignment. If 'SRM', alignment algorithm will be shared response
+        model.  You can also pass a dictionary for finer control, where the 'model'
+        key is a string that specifies the model and the params key is a dictionary
+        of parameter values (default : 'hyper').
 
-    model_params : dict
-        Optional dictionary of scikit-learn parameters to pass to reduction model.
-        See scikit-learn specific model docs for details.
-
-    align : bool
-        If set to True, data will be run through the ``hyperalignment''
-        algorithm implemented in hypertools.tools.align (default: False).
-
-    normalize : str or False
-        If set to 'across', the columns of the input data will be z-scored
-        across lists (default). If set to 'within', the columns will be
-        z-scored within each list that is passed. If set to 'row', each row of
-        the input data will be z-scored. If set to False, the input data will
-        be returned (default is False).
+    cluster : str or dict or False/None
+        Model to use to discover clusters.  Support algorithms are: KMeans,
+        MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
+        SpectralClustering (default: KMeans).Can be passed as a string, but for
+        finer control of the model parameters, pass as a dictionary, e.g.
+        reduce={'model' : 'KMeans', 'params' : {'max_iter' : 100}}. See
+        scikit-learn specific model docs for details on parameters supported for
+        each model.
 
     n_clusters : int
         If n_clusters is passed, HyperTools will perform k-means clustering
         with the k parameter set to n_clusters. The resulting clusters will
         be plotted in different colors according to the color palette.
 
-    save_path str :
+    save_path : str
         Path to save the image/movie. Must include the file extension in the
         save path (i.e. save_path='/path/to/file/image.png'). NOTE: If saving
         an animation, FFMPEG must be installed (this is a matplotlib req).
@@ -155,6 +164,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         If set to False, the figure will not be displayed, but the figure,
         axis and data objects will still be returned (default: True).
 
+    transform : bool
+        If set to false, skip data transformations (default : True)
+
     Returns
     ----------
     fig, ax, data, line_ani : matplotlib.figure.figure, matplotlib.axis.axes, numpy.array, matplotlib.animation.funcanimation
@@ -165,17 +177,11 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     # warnings for deprecated API args
     if (model is not None) or (model_params is not None):
-        warnings.warn('Model and model_params arguments are deprecated. Please use \
-                      reduce')
+        warnings.warn('Model and model_params arguments will be deprecated. Please use \
+                      reduce. See docs for details.')
         reduce = {}
         reduce['model'] = model
         reduce['params'] = model_params
-
-
-    if align is True:
-        warnings.warn("Setting align=True will be deprecated.  Please specify the \
-                      type of alignment, i.e. align='hyper'")
-        align = 'hyper'
 
     # put into common format
     raw = format_data(x)
