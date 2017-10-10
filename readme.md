@@ -104,7 +104,7 @@ For specific information on how to contribute to the project, please see our [Co
 
 <h2>Testing</h2>
 
-[![Build Status](https://travis-ci.com/ContextLab/hypertools.svg?token=hxjzzuVkr2GZrDkPGN5n&branch=master)](https://travis-ci.com/ContextLab/hypertools)
+[![Build Status](https://travis-ci.org/ContextLab/hypertools.svg?branch=master)](https://travis-ci.com/ContextLab/hypertools)
 
 
 To test HyperTools, install pytest (`pip install pytest`) and run `pytest` in the HyperTools folder
