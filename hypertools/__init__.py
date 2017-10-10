@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+from .config import __version__
 from .plot.plot import plot
 from .tools.load import load
 from .tools.analyze import analyze
