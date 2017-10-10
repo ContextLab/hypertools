@@ -16,7 +16,7 @@ from .align import align as aligner
 
 # main function
 @memoize
-def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
+def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
            model=None, model_params=None, internal=False):
     """
     Reduces dimensionality of an array, or list of arrays
