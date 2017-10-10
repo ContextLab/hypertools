@@ -98,7 +98,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
         reduce['params'] = model_params
 
     # if model is None, just return data
-    if (reduce is None) or (ndims is None):
+    if reduce is None:
         return x
     else:
 

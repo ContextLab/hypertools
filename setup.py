@@ -43,7 +43,8 @@ setup(
    'scipy>=0.17.1',
    'numpy>=1.10.4',
    'future',
-   'requests'
+   'requests',
+   'deepdish'
    ],
     classifiers=[
              'Intended Audience :: Science/Research',
