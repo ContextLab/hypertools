@@ -69,7 +69,7 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
         alldims = pdist(x,'correlation')
 
         corrs=[]
-        for dims in list(range(2, max_dims)):
+        for dims in range(2, max_dims):
             reduced = pdist(reducer(x, ndims=dims, reduce=reduce),'correlation')
             corrs.append(np.corrcoef(alldims, reduced)[0][1])
             del reduced
@@ -80,7 +80,7 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
 
     # if max dims is not set, make it the length of the minimum number of columns
     if max_dims is None:
-        max_dims = np.min(map(lambda xi: xi.shape[1], x))
+        max_dims = np.min([xi.shape[1] for xi in x])
 
     # a dictionary to store results
     result = {}
