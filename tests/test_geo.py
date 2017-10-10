@@ -37,4 +37,4 @@ def test_geo_transform():
     assert isinstance(geo.transform(data), list)
 
 def test_geo_transform_dims():
-    assert geo.transform(data)[0].shape[1]==4
+    assert geo.transform(data)[0].shape[1]==3

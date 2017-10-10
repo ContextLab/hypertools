@@ -23,7 +23,7 @@ from ..datageometry import DataGeometry
 
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
-         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=None,
+         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=3,
          model=None, model_params=None, reduce='IncrementalPCA', cluster='KMeans',
          align=None, normalize=None, n_clusters=None, save_path=None, animate=False, duration=30, tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False, frame_rate=50, explore=False, show=True, transform=True):
     """
