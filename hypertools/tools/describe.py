@@ -63,13 +63,13 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
 
         # if no max dims are specified, compute for all of them
         if max_dims is None:
-            max_dims = int(x.shape[1])
+            max_dims = x.shape[1]
 
         # correlation matrix for all dimensions
         alldims = pdist(x,'correlation')
 
         corrs=[]
-        for dims in range(2, max_dims):
+        for dims in list(range(2, max_dims)):
             reduced = pdist(reducer(x, ndims=dims, reduce=reduce),'correlation')
             corrs.append(np.corrcoef(alldims, reduced)[0][1])
             del reduced
