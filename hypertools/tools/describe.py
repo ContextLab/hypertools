@@ -22,7 +22,7 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
 
     Parameters
     ----------
-    
+
     x : Numpy array, DataFrame or list of arrays/dfs
         A list of Numpy arrays or Pandas Dataframes
 
@@ -63,7 +63,7 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
 
         # if no max dims are specified, compute for all of them
         if max_dims is None:
-            max_dims = x.shape[1]
+            max_dims = int(x.shape[1])
 
         # correlation matrix for all dimensions
         alldims = pdist(x,'correlation')
