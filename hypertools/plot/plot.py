@@ -226,9 +226,13 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # reduce data to 3 dims for plotting, if ndims is None, return this
     if (ndims and ndims > 3):
         x = reducer(x, ndims=3, reduce=reduce, internal=True)
+    elif ndims < 3:
+        x = reducer(x, ndims=ndims, reduce=reduce, internal=True)
+        xform_data = x
     elif ndims is None:
         x = reducer(x, ndims=3, reduce=reduce, internal=True)
         xform_data = x
+
 
     # find cluster and reshape if n_clusters
     if n_clusters is not None:
@@ -254,7 +258,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
             group = group_by_category(group)
 
         # reshape the data according to group
-        x = reshape_data(x, group)
+        if n_clusters is None:
+            x = reshape_data(x, group)
 
         # interpolate lines if they are grouped
         if is_line(fmt):
@@ -379,6 +384,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         'color' : color,
         'colors' : colors,
         'palette' : palette,
+        'group' : group,
+        'ndims' : ndims,
         'labels' : labels,
         'legend' : legend,
         'title' : title,

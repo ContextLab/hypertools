@@ -111,7 +111,7 @@ def parse_args(x,args):
 		args_list.append(tuple(tmp))
 	return args_list
 
-def parse_kwargs(x,kwargs):
+def parse_kwargs(x, kwargs):
 	kwargs_list = []
 	for i,item in enumerate(x):
 		tmp = {}
@@ -120,8 +120,9 @@ def parse_kwargs(x,kwargs):
 				if len(kwargs[kwarg]) == len(x):
 					tmp[kwarg]=kwargs[kwarg][i]
 				else:
-					print('Error: keyword arguments must be a list of the same length as x')
-					sys.exit(1)
+					# print('Error: keyword arguments must be a list of the same length as x')
+					# sys.exit(1)
+					tmp[kwarg]=None
 			else:
 				tmp[kwarg]=kwargs[kwarg]
 		kwargs_list.append(tmp)
