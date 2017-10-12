@@ -117,7 +117,7 @@ See [here](http://hypertools.readthedocs.io/en/latest/auto_examples/index.html) 
 
 ```
 import hypertools as hyp
-hyp.plot(list_of_arrays, 'o', group=list_of_labels)
+hyp.plot(list_of_arrays, '.', group=list_of_labels)
 ```
 
 ![Plot example](images/plot.gif)
@@ -126,7 +126,7 @@ hyp.plot(list_of_arrays, 'o', group=list_of_labels)
 
 ```
 import hypertools as hyp
-hyp.plot(list_of_arrays, align=True)
+hyp.plot(list_of_arrays, align='hyper')
 ```
 
 <h3><center>BEFORE</center></h3>
@@ -142,7 +142,7 @@ hyp.plot(list_of_arrays, align=True)
 
 ```
 import hypertools as hyp
-hyp.plot(array, 'o', n_clusters=10)
+hyp.plot(array, '.', n_clusters=10)
 ```
 
 ![Cluster Example](images/cluster_example.png)
@@ -152,6 +152,6 @@ hyp.plot(array, 'o', n_clusters=10)
 
 ```
 import hypertools as hyp
-hyp.tools.describe_pca(list_of_arrays)
+hyp.tools.describe(list_of_arrays, reduce='PCA', max_dims=14)
 ```
 ![Describe Example](images/describe_example.png)
