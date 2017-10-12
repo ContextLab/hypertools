@@ -148,7 +148,7 @@ hyp.plot(array, '.', n_clusters=10)
 ![Cluster Example](images/cluster_example.png)
 
 
-<h2>Describe PCA</h2>
+<h2>Describe</h2>
 
 ```
 import hypertools as hyp
