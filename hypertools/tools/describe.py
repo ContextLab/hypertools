@@ -10,7 +10,7 @@ import scipy.spatial.distance as sd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from .reduce import reduce as reducer
-from .._shared.helpers import format_data
+from .._shared.helpers import format_data, memoize
 
 def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
     """
@@ -66,12 +66,12 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
             max_dims = x.shape[1]
 
         # correlation matrix for all dimensions
-        alldims = pdist(x,'correlation')
+        alldims = get_pdist(x)
 
         corrs=[]
         for dims in range(2, max_dims):
-            reduced = pdist(reducer(x, ndims=dims, reduce=reduce),'correlation')
-            corrs.append(np.corrcoef(alldims, reduced)[0][1])
+            reduced = get_pdist(reducer(x, ndims=dims, reduce=reduce))
+            corrs.append(get_corr(alldims, reduced))
             del reduced
         return corrs
 
@@ -96,3 +96,11 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
         ax.set_xlabel('Number of components')
         plt.show()
     return result
+
+@memoize
+def get_corr(reduced, alldims):
+    return np.corrcoef(alldims, reduced)[0][1]
+
+@memoize
+def get_pdist(x):
+    return pdist(x, 'correlation')
