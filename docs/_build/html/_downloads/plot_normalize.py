@@ -11,7 +11,7 @@ The `normalize` kwarg can be passed to the plot function.  If `normalize` is
 set to 'across', the zscore will be computed for the column across all of the
 lists passed.  Conversely, if `normalize` is set to 'within', the z-score will
 be computed separately for each column in each list.  Finally, if `normalize` is
-set to 'row', each row of the matrix will be zscored.  Alternative, you can use
+set to 'row', each row of the matrix will be zscored.  Alternatively, you can use
 the normalize function found in tools (see the third example).
 """
 

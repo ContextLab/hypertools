@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.tools.reduce &#8212; hypertools 0.4.0 documentation</title>
+    <title>hypertools.tools.format_data &#8212; hypertools 0.4.0 documentation</title>
     
     <link rel="stylesheet" href="_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
@@ -82,7 +82,7 @@
   <ul class="dropdown-menu localtoc"
       role="menu"
       aria-labelledby="dLabelLocalToc"><ul>
-<li><a class="reference internal" href="#">hypertools.tools.reduce</a></li>
+<li><a class="reference internal" href="#">hypertools.tools.format_data</a></li>
 </ul>
 </ul>
 </li>
@@ -112,59 +112,33 @@
   <div class="row">
     <div class="col-md-12 content">
       
-  <div class="section" id="hypertools-tools-reduce">
-<h1>hypertools.tools.reduce<a class="headerlink" href="#hypertools-tools-reduce" title="Permalink to this headline">¶</a></h1>
+  <div class="section" id="hypertools-tools-format-data">
+<h1>hypertools.tools.format_data<a class="headerlink" href="#hypertools-tools-format-data" title="Permalink to this headline">¶</a></h1>
 <dl class="function">
-<dt id="hypertools.tools.reduce">
-<code class="descclassname">hypertools.tools.</code><code class="descname">reduce</code><span class="sig-paren">(</span><em>*args</em>, <em>**kwargs</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/hypertools/tools/reduce.html#reduce"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#hypertools.tools.reduce" title="Permalink to this definition">¶</a></dt>
-<dd><p>Reduces dimensionality of an array, or list of arrays</p>
+<dt id="hypertools.tools.format_data">
+<code class="descclassname">hypertools.tools.</code><code class="descname">format_data</code><span class="sig-paren">(</span><em>x</em>, <em>ppca=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/hypertools/_shared/helpers.html#format_data"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#hypertools.tools.format_data" title="Permalink to this definition">¶</a></dt>
+<dd><p>Formats data into a list of numpy arrays</p>
+<p>This function is useful to identify rows of your array that contain missing
+data or nans.  The returned indices can be used to remove the rows with
+missing data, or label the missing data points that are interpolated
+using PPCA.</p>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
 <col class="field-body" />
 <tbody valign="top">
-<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><p class="first"><strong>x</strong> : Numpy array or list of arrays</p>
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><p class="first"><strong>x</strong> : numpy array, dataframe or (mixed) list</p>
 <blockquote>
-<div><p>Dimensionality reduction using PCA is performed on this array.</p>
+<div><p>The data to convert</p>
 </div></blockquote>
-<p><strong>reduce</strong> : str or dict</p>
+<p><strong>ppca</strong> : bool</p>
 <blockquote>
-<div><p>Decomposition/manifold learning model to use.  Models supported: PCA,
-IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
-FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
-TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be
-passed as a string, but for finer control of the model parameters, pass
-as a dictionary, e.g. reduce={&#8216;model&#8217; : &#8216;PCA&#8217;, &#8216;params&#8217; : {&#8216;whiten&#8217; : True}}.
-See scikit-learn specific model docs for details on parameters supported
-for each model.</p>
-</div></blockquote>
-<p><strong>ndims</strong> : int</p>
-<blockquote>
-<div><p>Number of dimensions to reduce</p>
-</div></blockquote>
-<p><strong>model</strong> : None</p>
-<blockquote>
-<div><p>Deprecated argument.  Please use reduce.</p>
-</div></blockquote>
-<p><strong>model_params</strong> : None</p>
-<blockquote>
-<div><p>Deprecated argument.  Please use reduce.</p>
-</div></blockquote>
-<p><strong>align</strong> : None</p>
-<blockquote>
-<div><p>Deprecated argument.  Please use new analyze function to perform
-combinations of transformations</p>
-</div></blockquote>
-<p><strong>normalize</strong> : None</p>
-<blockquote>
-<div><p>Deprecated argument.  Please use new analyze function to perform
-combinations of transformations</p>
+<div><p>Performs PPCA to fill in missing values (default: False)</p>
 </div></blockquote>
 </td>
 </tr>
-<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first"><strong>x_reduced</strong> : Numpy array or list of arrays</p>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first"><strong>data</strong> : list of numpy arrays</p>
 <blockquote class="last">
-<div><p>The reduced data with ndims dimensionality is returned.  If the input
-is a list, a list is returned.</p>
+<div><p>A list of formatted arrays</p>
 </div></blockquote>
 </td>
 </tr>
@@ -187,7 +161,7 @@ is a list, a list is returned.</p>
         <br/>
         
 <div id="sourcelink">
-  <a href="_sources/hypertools.tools.reduce.rst.txt"
+  <a href="_sources/hypertools.tools.format_data.rst.txt"
      rel="nofollow">Source</a>
 </div>
       

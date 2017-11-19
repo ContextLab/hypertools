@@ -47,7 +47,7 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
         if ndims is not None:
             warnings.warn('The ndims argument is now deprecated. Ignoring dimensionality reduction step.')
 
-        x = format_data(x)
+        x = format_data(x, ppca=True)
 
         # dictionary of models
         models = {

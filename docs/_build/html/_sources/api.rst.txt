@@ -83,6 +83,10 @@ Describe
 
 Tools
 ------------------
+.. autosummary::
+  :toctree:
+
+  hypertools.tools.format_data
 
 .. autosummary::
   :toctree:

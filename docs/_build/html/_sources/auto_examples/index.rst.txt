@@ -89,7 +89,7 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The downside to using PCA to visualize your data is that some variance will likely be removed. ...">
+    <div class="sphx-glr-thumbcontainer" tooltip="The downside to using dimensionality reduction to visualize your data is that some variance wil...">
 
 .. only:: html
 

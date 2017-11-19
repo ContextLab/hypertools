@@ -62,7 +62,7 @@ def describe_pca(x, show=True):
             del cov_PCA
         return corrs
 
-    x = format_data(x)
+    x = format_data(x, ppca=True)
 
     attrs = {}
     attrs['PCA_summary'] = {}

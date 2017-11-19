@@ -103,7 +103,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
     else:
 
         # common format
-        x = format_data(x)
+        x = format_data(x, ppca=True)
 
         # deprecation warnings
         if normalize is not None:
