@@ -75,7 +75,7 @@ def align(data, align='hyper', normalize=None, ndims=None, method=None):
             align = 'hyper'
 
         # common format
-        data = format_data(data)
+        data = format_data(data, ppca=True)
 
         if len(data) is 1:
             warnings.warn('Data in list of length 1 can not be aligned. '

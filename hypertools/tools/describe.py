@@ -76,7 +76,7 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
         return corrs
 
     # common format
-    x = format_data(x)
+    x = format_data(x, ppca=True)
 
     # if max dims is not set, make it the length of the minimum number of columns
     if max_dims is None:

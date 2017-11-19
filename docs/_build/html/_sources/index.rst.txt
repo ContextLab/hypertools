@@ -19,10 +19,10 @@ and to read the paper, click
 
 Some key features of HyperTools are:
 
-1. Functions for plotting high-dimensional datasets in 2/3D.
+1. Functions for plotting high-dimensional datasets in 2/3D
 2. Static and animated plots
 3. Simple API for customizing plot styles
-4. Set of powerful data manipulation tools including hyperalignment, k-means clustering, normalizing and more.
+4. Set of powerful data manipulation tools including hyperalignment, k-means clustering, normalizing and more
 5. Support for lists of Numpy arrays or Pandas dataframes
 
 .. toctree::

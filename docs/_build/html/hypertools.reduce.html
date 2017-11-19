@@ -124,9 +124,7 @@
 <tbody valign="top">
 <tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><p class="first"><strong>x</strong> : Numpy array or list of arrays</p>
 <blockquote>
-<div><p>Dimensionality reduction using PCA is performed on this array.  If
-there are nans present in the data, the function will try to use
-PPCA to interpolate the missing values.</p>
+<div><p>Dimensionality reduction using PCA is performed on this array.</p>
 </div></blockquote>
 <p><strong>reduce</strong> : str or dict</p>
 <blockquote>
@@ -142,6 +140,24 @@ for each model.</p>
 <p><strong>ndims</strong> : int</p>
 <blockquote>
 <div><p>Number of dimensions to reduce</p>
+</div></blockquote>
+<p><strong>model</strong> : None</p>
+<blockquote>
+<div><p>Deprecated argument.  Please use reduce.</p>
+</div></blockquote>
+<p><strong>model_params</strong> : None</p>
+<blockquote>
+<div><p>Deprecated argument.  Please use reduce.</p>
+</div></blockquote>
+<p><strong>align</strong> : None</p>
+<blockquote>
+<div><p>Deprecated argument.  Please use new analyze function to perform
+combinations of transformations</p>
+</div></blockquote>
+<p><strong>normalize</strong> : None</p>
+<blockquote>
+<div><p>Deprecated argument.  Please use new analyze function to perform
+combinations of transformations</p>
 </div></blockquote>
 </td>
 </tr>

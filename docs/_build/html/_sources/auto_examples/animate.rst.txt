@@ -9,7 +9,8 @@ Hyperalign a list of arrays and create an animated plot
 
 The sample data is a list of 2D arrays, where each array is fMRI brain activity
 from one subject.  The rows are timepoints and the columns are neural
-'features'.  First, the matrices are hyperaligned using hyp.tools.align.
+'features'.  First, the matrices are hyperaligned using hyp.align.  Then, the data
+are split into 2 groups of 18. and averaged.  Finally the aligned data is plotted.
 
 
 

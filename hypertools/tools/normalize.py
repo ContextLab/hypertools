@@ -45,7 +45,7 @@ def normalize(x, normalize='across', internal=False):
         return x
     else:
 
-        x = format_data(x)
+        x = format_data(x, ppca=True)
 
         zscore = lambda X,y: (y - np.mean(X)) / np.std(X) if len(set(y))>1 else np.zeros(y.shape)
 

@@ -184,7 +184,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         reduce['params'] = model_params
 
     # put into common format
-    raw = format_data(x)
+    raw = format_data(x, ppca=True)
 
     # analyze the data
     if transform is True:

@@ -5,7 +5,7 @@ Discovering clusters
 =============================
 
 The `n_clusters` kwarg can be used to discover clusters in your dataset.  It
-relies on scikit-learn's implementation of k-mean clustering to fin clusters,
+relies on scikit-learn's implementation of k-mean clustering to find clusters,
 and then labels the points accordingly. You must set the number of clusters
 yourself.
 """

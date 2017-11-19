@@ -14,7 +14,7 @@ The `normalize` kwarg can be passed to the plot function.  If `normalize` is
 set to 'across', the zscore will be computed for the column across all of the
 lists passed.  Conversely, if `normalize` is set to 'within', the z-score will
 be computed separately for each column in each list.  Finally, if `normalize` is
-set to 'row', each row of the matrix will be zscored.  Alternative, you can use
+set to 'row', each row of the matrix will be zscored.  Alternatively, you can use
 the normalize function found in tools (see the third example).
 
 
@@ -70,7 +70,7 @@ the normalize function found in tools (see the third example).
     # plot normalized by row
     hyp.plot(normalized_row, '.', title='Normalized across row')
 
-**Total running time of the script:** ( 0 minutes  0.382 seconds)
+**Total running time of the script:** ( 0 minutes  0.328 seconds)
 
 
 
