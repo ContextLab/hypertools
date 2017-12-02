@@ -8,6 +8,8 @@ from .analyze import analyze
 from .._shared.helpers import format_data
 from ..datageometry import DataGeometry
 
+BASE_URL = 'https://docs.google.com/uc?export=download&id='
+
 def load(dataset, reduce=None, ndims=None, align=None, normalize=None):
     """
     Load a .geo file or example data
@@ -56,12 +58,7 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None):
         Example data
 
     """
-    if sys.version_info[0]==3:
-        pickle_options = {
-            'encoding' : 'latin1'
-        }
-    else:
-        pickle_options = {}
+    data = None
 
     if dataset[-4:] == '.geo':
         geo = dd.io.load(dataset)
@@ -71,24 +68,27 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None):
                             normalize=geo['normalize'], kwargs=geo['kwargs'],
                             version=geo['version'])
     elif dataset is 'weights':
-        fileid = '0B7Ycm4aSYdPPREJrZ2stdHBFdjg'
-        url = 'https://docs.google.com/uc?export=download&id=' + fileid
-        data = pickle.loads(requests.get(url, stream=True).content, **pickle_options)
+        data = _load_stream('0B7Ycm4aSYdPPREJrZ2stdHBFdjg')
     elif dataset is 'weights_avg':
-        fileid = '0B7Ycm4aSYdPPRmtPRnBJc3pieDg'
-        url = 'https://docs.google.com/uc?export=download&id=' + fileid
-        data = pickle.loads(requests.get(url, stream=True).content, **pickle_options)
+        data = _load_stream('0B7Ycm4aSYdPPRmtPRnBJc3pieDg')
     elif dataset is 'weights_sample':
-        fileid = '0B7Ycm4aSYdPPTl9IUUVlamJ2VjQ'
-        url = 'https://docs.google.com/uc?export=download&id=' + fileid
-        data = pickle.loads(requests.get(url, stream=True).content, **pickle_options)
+        data = _load_stream('0B7Ycm4aSYdPPTl9IUUVlamJ2VjQ')
     elif dataset is 'spiral':
-        fileid = '0B7Ycm4aSYdPPQS0xN3FmQ1FZSzg'
-        url = 'https://docs.google.com/uc?export=download&id=' + fileid
-        data = pickle.loads(requests.get(url, stream=True).content, **pickle_options)
+        data = _load_stream('0B7Ycm4aSYdPPQS0xN3FmQ1FZSzg')
     elif dataset is 'mushrooms':
-        fileid = '0B7Ycm4aSYdPPY3J0U2tRNFB4T3c'
-        url = 'https://docs.google.com/uc?export=download&id=' + fileid
-        data = pd.read_csv(url)
+        data = pd.read_csv(BASE_URL + '0B7Ycm4aSYdPPY3J0U2tRNFB4T3c')
 
-    return analyze(data, reduce=reduce, ndims=ndims, align=align, normalize=normalize)
+    if data:
+        return analyze(data, reduce=reduce, ndims=ndims, align=align, normalize=normalize)
+    else:
+        raise RuntimeError('No data loaded. Please specify a .geo file or '
+                           'one of the following sample files: weights, '
+                           'weights_avg, weights_sample, spiral, mushrooms')
+
+
+def _load_stream(fileid):
+    url = BASE_URL + fileid
+
+    pickle_options = {'encoding': 'latin1'} if sys.version_info[0] == 3 else {}
+
+    return pickle.loads(requests.get(url, stream=True).content, **pickle_options)
