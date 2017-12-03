@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import warnings
 from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering
+from sklearn.mixture import GaussianMixture
 import numpy as np
 from .._shared.helpers import *
 
@@ -19,7 +20,7 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
     cluster : str or dict
         Model to use to discover clusters.  Support algorithms are: KMeans,
         MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
-        SpectralClustering (default: KMeans).Can be passed as a string, but for
+        SpectralClustering, GaussianMixture (default: KMeans).Can be passed as a string, but for
         finer control of the model parameters, pass as a dictionary, e.g.
         reduce={'model' : 'KMeans', 'params' : {'max_iter' : 100}}. See
         scikit-learn specific model docs for details on parameters supported for
@@ -56,20 +57,48 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
             'AgglomerativeClustering' : AgglomerativeClustering,
             'FeatureAgglomeration' : FeatureAgglomeration,
             'Birch' : Birch,
-            'SpectralClustering' : SpectralClustering
+            'SpectralClustering' : SpectralClustering,
+            'GaussianMixture'   :GaussianMixture
         }
 
         # if reduce is a string, find the corresponding model
         if type(cluster) is str:
             model = models[cluster]
-            model_params = {
+            #GaussianMixture in Scikit-Learn Expects the the key 'n_components', Hence 'n_clusters' is mapped to 'n_components'
+            if cluster == 'GaussianMixture':
+                model_params = {
+                'n_components' : n_clusters
+                }
+            else:
+                model_params = {
                 'n_clusters' : n_clusters
-            }
+                }
         # if its a dict, use custom params
         elif type(cluster) is dict:
             if type(cluster['model']) is str:
                 model = models[cluster['model']]
-                model_params = cluster['params']
+                if cluster['model'] == 'GaussianMixture':
+                    if cluster.has_key('params') == False:
+                        #Parameters are not passed properly; Hence falling Back to the default parameters.
+                        model_params = {
+                        'n_components' : n_clusters
+                        }
+                    else:
+                        if type(cluster['params']) is dict and cluster['params'].has_key('n_clusters'):
+                            #Handling the Case where the key 'n_clusters' is used for the GaussianMixture
+                            model_params= cluster['params'].copy()
+                            model_params['n_components']=model_params.get('n_clusters')
+                            model_params.pop('n_clusters')
+                        else:
+                            model_params=cluster['params']
+                else:
+                    if cluster.has_key('params') == False:
+                        #Parameters are not passed properly; Hence falling Back to the default parameters.
+                        model_params = {
+                        'n_clusters' : n_clusters
+                        }
+                    else:
+                        model_params = cluster['params']
 
         # initialize model
         model = model(**model_params)
@@ -78,4 +107,7 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
         model.fit(np.vstack(x))
 
         # return the labels
+        if type(model) is GaussianMixture:
+            # The trained GaussianMixture Model is used to Predict the labels for the passed input data samples in X.
+            return list(model.predict(np.vstack(x)))
         return list(model.labels_)
