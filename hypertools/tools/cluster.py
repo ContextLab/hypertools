@@ -2,8 +2,55 @@
 import warnings
 from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering
 from sklearn.mixture import GaussianMixture
+
 import numpy as np
 from .._shared.helpers import *
+
+
+class Cluster(object):
+    def __init__(self,x,model):
+        self.x=x
+        self.model=model
+    def set_num_clusters(self,n_clusters):
+        self.model_params = {
+        'n_clusters' : n_clusters
+        }
+    def set_custom_params(self,custom_params):
+        self.model_params = custom_params
+    def initialize_model(self):
+        self.model = self.model(**self.model_params)
+    def fit_model(self):
+        self.model.fit(np.vstack(self.x))
+    def get_labels(self):
+        return list(self.model.labels_)
+class KMeansCluster(Cluster):
+    def __init__(self,x):
+        Cluster.__init__(self,x,KMeans)
+class MiniBatchKMeansCluster(Cluster):
+    def __init__(self,x):
+        Cluster.__init__(self,x,MiniBatchKMeans)
+class AgglomerativeClusteringCluster(Cluster):
+    def __init__(self,x):
+        Cluster.__init__(self,x,AgglomerativeClustering)
+class BirchCluster(Cluster):
+    def __init__(self,x):
+        Cluster.__init__(self,x,Birch)
+class FeatureAgglomerationCluster(Cluster):
+    def __init__(self,x):
+        Cluster.__init__(self,x,FeatureAgglomeration)
+class SpectralClusteringCluster(Cluster):
+    def __init__(self,x):
+        Cluster.__init__(self,x,SpectralClustering)
+class GaussianMixtureCluster(Cluster):
+    def __init__(self,x):
+        Cluster.__init__(self,x,GaussianMixture)
+    def set_num_clusters(self,n_clusters):
+        self.model_params = {
+        'n_components' : n_clusters
+        }
+    def get_labels(self):
+        return list(self.model.predict(np.vstack(self.x)))
+
 
 @memoize
 def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
@@ -52,62 +99,32 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
 
         # dictionary of models
         models = {
-            'KMeans' : KMeans,
-            'MiniBatchKMeans' : MiniBatchKMeans,
-            'AgglomerativeClustering' : AgglomerativeClustering,
-            'FeatureAgglomeration' : FeatureAgglomeration,
-            'Birch' : Birch,
-            'SpectralClustering' : SpectralClustering,
-            'GaussianMixture'   :GaussianMixture
+            'KMeans' : KMeansCluster,
+            'MiniBatchKMeans' : MiniBatchKMeansCluster,
+            'AgglomerativeClustering' : AgglomerativeClusteringCluster,
+            'FeatureAgglomeration' : FeatureAgglomerationCluster,
+            'Birch' : BirchCluster,
+            'SpectralClustering' : SpectralClusteringCluster,
+            'GaussianMixture'   : GaussianMixtureCluster
         }
+
 
         # if reduce is a string, find the corresponding model
         if type(cluster) is str:
-            model = models[cluster]
-            #GaussianMixture in Scikit-Learn Expects the the key 'n_components', Hence 'n_clusters' is mapped to 'n_components'
-            if cluster == 'GaussianMixture':
-                model_params = {
-                'n_components' : n_clusters
-                }
-            else:
-                model_params = {
-                'n_clusters' : n_clusters
-                }
+            model = models[cluster](x)
+            model.set_num_clusters(n_clusters)
+ 
         # if its a dict, use custom params
         elif type(cluster) is dict:
             if type(cluster['model']) is str:
-                model = models[cluster['model']]
-                if cluster['model'] == 'GaussianMixture':
-                    if cluster.has_key('params') == False:
-                        #Parameters are not passed properly; Hence falling Back to the default parameters.
-                        model_params = {
-                        'n_components' : n_clusters
-                        }
-                    else:
-                        if type(cluster['params']) is dict and cluster['params'].has_key('n_clusters'):
-                            #Handling the Case where the key 'n_clusters' is used for the GaussianMixture
-                            model_params= cluster['params'].copy()
-                            model_params['n_components']=model_params.get('n_clusters')
-                            model_params.pop('n_clusters')
-                        else:
-                            model_params=cluster['params']
-                else:
-                    if cluster.has_key('params') == False:
-                        #Parameters are not passed properly; Hence falling Back to the default parameters.
-                        model_params = {
-                        'n_clusters' : n_clusters
-                        }
-                    else:
-                        model_params = cluster['params']
+                model = models[cluster['model']](x)
+                model.set_custom_params(cluster['params'])
 
         # initialize model
-        model = model(**model_params)
+        model.initialize_model()
 
         # fit the model
-        model.fit(np.vstack(x))
+        model.fit_model()
 
         # return the labels
-        if type(model) is GaussianMixture:
-            # The trained GaussianMixture Model is used to Predict the labels for the passed input data samples in X.
-            return list(model.predict(np.vstack(x)))
-        return list(model.labels_)
+        return model.get_labels()
