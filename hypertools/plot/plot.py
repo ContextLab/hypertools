@@ -224,15 +224,10 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
                           ignored in favor of markers.')
 
     # reduce data to 3 dims for plotting, if ndims is None, return this
-    if (ndims and ndims > 3):
-        x = reducer(x, ndims=3, reduce=reduce, internal=True)
-    elif ndims < 3:
+    if (ndims and ndims < 3):
         x = reducer(x, ndims=ndims, reduce=reduce, internal=True)
-        xform_data = x
-    elif ndims is None:
+    else:
         x = reducer(x, ndims=3, reduce=reduce, internal=True)
-        xform_data = x
-
 
     # find cluster and reshape if n_clusters
     if n_clusters is not None:
