@@ -137,7 +137,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
                 else:
                     model_params = reduce['params']
         if 'n_components' not in model_params:
-            model_params["n_components"] = ndims
+            model_params['n_components'] = ndims
 
         # initialize model
         model = model(**model_params)

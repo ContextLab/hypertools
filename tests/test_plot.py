@@ -70,7 +70,7 @@ def test_plot_reduce10d():
 
 def test_plot_model_dict():
     # should return 10d data since ndims=10
-    geo = plot.plot(weights, reduce={'model' : 'PCA', 'params' : {'whiten' : True}})
+    geo = plot.plot(weights, reduce={'model' : 'PCA', 'params' : {'whiten' : True}}, show=False)
     assert isinstance(geo, DataGeometry)
 
 def test_plot_nd():
