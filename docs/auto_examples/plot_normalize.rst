@@ -70,7 +70,11 @@ the normalize function found in tools (see the third example).
     # plot normalized by row
     hyp.plot(normalized_row, '.', title='Normalized across row')
 
+<<<<<<< HEAD
 **Total running time of the script:** ( 0 minutes  0.328 seconds)
+=======
+**Total running time of the script:** ( 0 minutes  0.266 seconds)
+>>>>>>> finished tutorial edits
 
 
 
