@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Normalization &#8212; hypertools 0.4.2 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/basic.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/gallery.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/bootswatch-3.3.6/yeti/bootstrap.min.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/bootstrap-sphinx.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '0.4.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <script type="text/javascript" src="../_static/js/jquery-1.11.0.min.js"></script>
+    <script type="text/javascript" src="../_static/js/jquery-fix.js"></script>
+    <script type="text/javascript" src="../_static/bootstrap-3.3.6/js/bootstrap.min.js"></script>
+    <script type="text/javascript" src="../_static/bootstrap-sphinx.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+
+  </head>
+  <body role="document">
+
+  <div id="navbar" class="navbar navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="../index.html">
+          hypertools</a>
+        <span class="navbar-text navbar-version pull-left"><b>0.4</b></span>
+      </div>
+
+        <div class="collapse navbar-collapse nav-collapse">
+          <ul class="nav navbar-nav">
+            
+                <li><a href="../api.html">API</a></li>
+                <li><a href="../auto_examples/index.html">Gallery</a></li>
+                <li><a href="../tutorials.html">Tutorials</a></li>
+                <li><a href="http://www.github.com/ContextLab/hypertools">Download</a></li>
+            
+            
+              <li class="dropdown globaltoc-container">
+  <a role="button"
+     id="dLabelGlobalToc"
+     data-toggle="dropdown"
+     data-target="#"
+     href="../index.html">Site <b class="caret"></b></a>
+  <ul class="dropdown-menu globaltoc"
+      role="menu"
+      aria-labelledby="dLabelGlobalToc"></ul>
+</li>
+              
+                <li class="dropdown">
+  <a role="button"
+     id="dLabelLocalToc"
+     data-toggle="dropdown"
+     data-target="#"
+     href="#">Page <b class="caret"></b></a>
+  <ul class="dropdown-menu localtoc"
+      role="menu"
+      aria-labelledby="dLabelLocalToc"><ul>
+<li><a class="reference internal" href="#">Normalization</a><ul>
+<li><a class="reference internal" href="#import-packages">Import packages</a></li>
+<li><a class="reference internal" href="#generate-synthetic-data">Generate synthetic data</a></li>
+<li><a class="reference internal" href="#visualize-the-data">Visualize the data</a></li>
+<li><a class="reference internal" href="#normalizing-specified-cols-or-rows">Normalizing (Specified Cols or Rows)</a><ul>
+<li><a class="reference internal" href="#normalizing-across">Normalizing &#8216;across&#8217;</a></li>
+<li><a class="reference internal" href="#normalizing-within">Normalizing &#8216;within&#8217;</a></li>
+<li><a class="reference internal" href="#normalizing-by-row">Normalizing by &#8216;row&#8217;</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</ul>
+</li>
+              
+            
+            
+            
+            
+            
+          </ul>
+
+          
+            
+<form class="navbar-form navbar-right" action="../search.html" method="get">
+ <div class="form-group">
+  <input type="text" name="q" class="form-control" placeholder="Search" />
+ </div>
+  <input type="hidden" name="check_keywords" value="yes" />
+  <input type="hidden" name="area" value="default" />
+</form>
+          
+        </div>
+    </div>
+  </div>
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-12 content">
+      
+  <div class="section" id="normalization">
+<h1>Normalization<a class="headerlink" href="#normalization" title="Permalink to this headline">¶</a></h1>
+<p>The <code class="docutils literal"><span class="pre">normalize</span></code> is a helper function to z-score your data. This is
+useful if your features (columns) are scaled differently within or
+across datasets. By default, hypertools normalizes <em>across</em> the columns
+of all datasets passed, but also affords the option to normalize columns
+<em>within</em> individual lists. Alternatively, you can also normalize each
+row. The function returns an array or list of arrays where the columns
+or rows are z-scored (output type same as input type).</p>
+<div class="section" id="import-packages">
+<h2>Import packages<a class="headerlink" href="#import-packages" title="Permalink to this headline">¶</a></h2>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">hypertools</span> <span class="k">as</span> <span class="nn">hyp</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="o">%</span><span class="k">matplotlib</span> inline
+</pre></div>
+</div>
+</div>
+<div class="section" id="generate-synthetic-data">
+<h2>Generate synthetic data<a class="headerlink" href="#generate-synthetic-data" title="Permalink to this headline">¶</a></h2>
+<p>First, we generate two sets of synthetic data. We pull points randomly
+from a multivariate normal distribution for each set, so the sets will
+exhibit unique statistical properties.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">x1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span><span class="mi">10</span><span class="p">)</span>
+<span class="n">x2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span><span class="mi">10</span><span class="p">)</span>
+
+<span class="n">c1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">x1</span><span class="p">,</span> <span class="n">x1</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+<span class="n">c2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">x2</span><span class="p">,</span> <span class="n">x2</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+
+<span class="n">m1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span><span class="mi">10</span><span class="p">])</span>
+<span class="n">m2</span> <span class="o">=</span> <span class="mi">10</span> <span class="o">+</span> <span class="n">m1</span>
+
+<span class="n">data1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">multivariate_normal</span><span class="p">(</span><span class="n">m1</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">c1</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+<span class="n">data2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">multivariate_normal</span><span class="p">(</span><span class="n">m2</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">c2</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+
+<span class="n">data</span> <span class="o">=</span> <span class="p">[</span><span class="n">data1</span><span class="p">,</span> <span class="n">data2</span><span class="p">]</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="visualize-the-data">
+<h2>Visualize the data<a class="headerlink" href="#visualize-the-data" title="Permalink to this headline">¶</a></h2>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">geo</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<img alt="../_images/normalize_8_0.png" src="../_images/normalize_8_0.png" />
+</div>
+<div class="section" id="normalizing-specified-cols-or-rows">
+<h2>Normalizing (Specified Cols or Rows)<a class="headerlink" href="#normalizing-specified-cols-or-rows" title="Permalink to this headline">¶</a></h2>
+<p>Or, to specify a different normalization, pass one of the following
+arguments as a string, as shown in the examples below.</p>
+<ul class="simple">
+<li>&#8216;across&#8217; - columns z-scored across passed lists (default)</li>
+<li>&#8216;within&#8217; - columns z-scored within passed lists</li>
+<li>&#8216;row&#8217; - rows z-scored</li>
+</ul>
+<div class="section" id="normalizing-across">
+<h3>Normalizing &#8216;across&#8217;<a class="headerlink" href="#normalizing-across" title="Permalink to this headline">¶</a></h3>
+<p>When you normalize &#8216;across&#8217;, all of the data is stacked/combined, and
+the normalization is done on the columns of the full dataset. Then the
+data is split back into separate elements.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">norm</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">normalize</span> <span class="o">=</span> <span class="s1">&#39;across&#39;</span><span class="p">)</span>
+<span class="n">geo</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">norm</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<img alt="../_images/normalize_13_0.png" src="../_images/normalize_13_0.png" />
+</div>
+<div class="section" id="normalizing-within">
+<h3>Normalizing &#8216;within&#8217;<a class="headerlink" href="#normalizing-within" title="Permalink to this headline">¶</a></h3>
+<p>When you normalize &#8216;within&#8217;, normalization is done on the columns of
+each element of the data, separately.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">norm</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">normalize</span> <span class="o">=</span> <span class="s1">&#39;within&#39;</span><span class="p">)</span>
+<span class="n">geo</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">norm</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<img alt="../_images/normalize_16_0.png" src="../_images/normalize_16_0.png" />
+</div>
+<div class="section" id="normalizing-by-row">
+<h3>Normalizing by &#8216;row&#8217;<a class="headerlink" href="#normalizing-by-row" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">norm</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">normalize</span> <span class="o">=</span> <span class="s1">&#39;row&#39;</span><span class="p">)</span>
+<span class="n">geo</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">norm</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<img alt="../_images/normalize_18_0.png" src="../_images/normalize_18_0.png" />
+</div>
+</div>
+</div>
+
+
+    </div>
+      
+  </div>
+</div>
+<footer class="footer">
+  <div class="container">
+    <p class="pull-right">
+      <a href="#">Back to top</a>
+      
+        <br/>
+        
+<div id="sourcelink">
+  <a href="../_sources/tutorials/normalize.rst.txt"
+     rel="nofollow">Source</a>
+</div>
+      
+    </p>
+    <p>
+        &copy; Copyright 2017, Contextual Dynamics Laboratory.<br/>
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.2.<br/>
+    </p>
+  </div>
+</footer>
+  </body>
+</html>
