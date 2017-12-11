@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.tools.reduce &#8212; hypertools 0.4.0 documentation</title>
+    <title>hypertools.tools.reduce &#8212; hypertools 0.4.2 documentation</title>
     
     <link rel="stylesheet" href="../../../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../../',
-        VERSION:     '0.4.0',
+        VERSION:     '0.4.2',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -59,6 +59,7 @@
             
                 <li><a href="../../../api.html">API</a></li>
                 <li><a href="../../../auto_examples/index.html">Gallery</a></li>
+                <li><a href="../../../tutorials.html">Tutorials</a></li>
                 <li><a href="http://www.github.com/ContextLab/hypertools">Download</a></li>
             
             
@@ -123,19 +124,20 @@
 <span class="c1"># internal libraries</span>
 <span class="kn">from</span> <span class="nn">..tools.df2mat</span> <span class="k">import</span> <span class="n">df2mat</span>
 <span class="kn">from</span> <span class="nn">.._shared.helpers</span> <span class="k">import</span> <span class="o">*</span>
+<span class="kn">from</span> <span class="nn">.normalize</span> <span class="k">import</span> <span class="n">normalize</span> <span class="k">as</span> <span class="n">normalizer</span>
+<span class="kn">from</span> <span class="nn">.align</span> <span class="k">import</span> <span class="n">align</span> <span class="k">as</span> <span class="n">aligner</span>
 
 <span class="c1"># main function</span>
 <span class="nd">@memoize</span>
-<div class="viewcode-block" id="reduce"><a class="viewcode-back" href="../../../hypertools.tools.reduce.html#hypertools.reduce">[docs]</a><span class="k">def</span> <span class="nf">reduce</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">reduce</span><span class="o">=</span><span class="s1">&#39;IncrementalPCA&#39;</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<div class="viewcode-block" id="reduce"><a class="viewcode-back" href="../../../hypertools.tools.reduce.html#hypertools.reduce">[docs]</a><span class="k">def</span> <span class="nf">reduce</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">reduce</span><span class="o">=</span><span class="s1">&#39;IncrementalPCA&#39;</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">align</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+           <span class="n">model</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">model_params</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Reduces dimensionality of an array, or list of arrays</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    x : Numpy array or list of arrays</span>
-<span class="sd">        Dimensionality reduction using PCA is performed on this array.  If</span>
-<span class="sd">        there are nans present in the data, the function will try to use</span>
-<span class="sd">        PPCA to interpolate the missing values.</span>
+<span class="sd">        Dimensionality reduction using PCA is performed on this array.</span>
 
 <span class="sd">    reduce : str or dict</span>
 <span class="sd">        Decomposition/manifold learning model to use.  Models supported: PCA,</span>
@@ -149,6 +151,20 @@
 
 <span class="sd">    ndims : int</span>
 <span class="sd">        Number of dimensions to reduce</span>
+
+<span class="sd">    model : None</span>
+<span class="sd">        Deprecated argument.  Please use reduce.</span>
+
+<span class="sd">    model_params : None</span>
+<span class="sd">        Deprecated argument.  Please use reduce.</span>
+
+<span class="sd">    align : None</span>
+<span class="sd">        Deprecated argument.  Please use new analyze function to perform</span>
+<span class="sd">        combinations of transformations</span>
+
+<span class="sd">    normalize : None</span>
+<span class="sd">        Deprecated argument.  Please use new analyze function to perform</span>
+<span class="sd">        combinations of transformations</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    ----------</span>
@@ -186,14 +202,34 @@
         <span class="s1">&#39;MDS&#39;</span> <span class="p">:</span> <span class="n">MDS</span>
     <span class="p">}</span>
 
+    <span class="c1"># deprecated warning</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">model</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">model_params</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s1">&#39;Model and model params will be deprecated.  Please use the </span><span class="se">\</span>
+<span class="s1">                      reduce keyword.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce&#39;</span><span class="p">)</span>
+        <span class="n">reduce</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">model</span>
+        <span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;params&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">model_params</span>
+
     <span class="c1"># if model is None, just return data</span>
-    <span class="k">if</span> <span class="p">(</span><span class="n">reduce</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">ndims</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">reduce</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">x</span>
     <span class="k">else</span><span class="p">:</span>
 
         <span class="c1"># common format</span>
         <span class="n">x</span> <span class="o">=</span> <span class="n">format_data</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
+        <span class="c1"># deprecation warnings</span>
+        <span class="k">if</span> <span class="n">normalize</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s1">&#39;The normalize argument will be deprecated for this function.  Please use the </span><span class="se">\</span>
+<span class="s1">                          analyze function to perform combinations of these transformations.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.analyze.html#hypertools.analyze&#39;</span><span class="p">)</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">normalizer</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="n">normalize</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">align</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s1">&#39;The align argument will be deprecated for this function.  Please use the </span><span class="se">\</span>
+<span class="s1">                          analyze function to perform combinations of these transformations.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.analyze.html#hypertools.analyze&#39;</span><span class="p">)</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">aligner</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">align</span><span class="o">=</span><span class="n">align</span><span class="p">)</span>
+
+        <span class="c1"># if the shape of the data is already less than ndims, just return it</span>
         <span class="k">if</span> <span class="nb">all</span><span class="p">([</span><span class="n">i</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">&lt;=</span><span class="n">ndims</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]):</span>
             <span class="k">return</span> <span class="n">x</span>
 
@@ -207,7 +243,14 @@
         <span class="k">elif</span> <span class="nb">type</span><span class="p">(</span><span class="n">reduce</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">dict</span><span class="p">:</span>
             <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">])</span> <span class="ow">is</span> <span class="nb">str</span><span class="p">:</span>
                 <span class="n">model</span> <span class="o">=</span> <span class="n">models</span><span class="p">[</span><span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">]]</span>
-                <span class="n">model_params</span> <span class="o">=</span> <span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;params&#39;</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;params&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">model_params</span> <span class="o">=</span> <span class="p">{</span>
+                        <span class="s1">&#39;n_components&#39;</span> <span class="p">:</span> <span class="n">ndims</span>
+                    <span class="p">}</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">model_params</span> <span class="o">=</span> <span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;params&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="s1">&#39;n_components&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">model_params</span><span class="p">:</span>
+            <span class="n">model_params</span><span class="p">[</span><span class="s1">&#39;n_components&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ndims</span>
 
         <span class="c1"># initialize model</span>
         <span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="o">**</span><span class="n">model_params</span><span class="p">)</span>

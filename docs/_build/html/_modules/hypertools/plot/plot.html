@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.plot.plot &#8212; hypertools 0.4.0 documentation</title>
+    <title>hypertools.plot.plot &#8212; hypertools 0.4.2 documentation</title>
     
     <link rel="stylesheet" href="../../../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../../',
-        VERSION:     '0.4.0',
+        VERSION:     '0.4.2',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -59,6 +59,7 @@
             
                 <li><a href="../../../api.html">API</a></li>
                 <li><a href="../../../auto_examples/index.html">Gallery</a></li>
+                <li><a href="../../../tutorials.html">Tutorials</a></li>
                 <li><a href="http://www.github.com/ContextLab/hypertools">Download</a></li>
             
             
@@ -135,7 +136,7 @@
 
 <div class="viewcode-block" id="plot"><a class="viewcode-back" href="../../../hypertools.plot.html#hypertools.plot">[docs]</a><span class="k">def</span> <span class="nf">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">fmt</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">marker</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">markers</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
          <span class="n">linestyles</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">colors</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">palette</span><span class="o">=</span><span class="s1">&#39;hls&#39;</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-         <span class="n">labels</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">legend</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">elev</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">azim</span><span class="o">=-</span><span class="mi">60</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+         <span class="n">labels</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">legend</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">elev</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">azim</span><span class="o">=-</span><span class="mi">60</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
          <span class="n">model</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">model_params</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">reduce</span><span class="o">=</span><span class="s1">&#39;IncrementalPCA&#39;</span><span class="p">,</span> <span class="n">cluster</span><span class="o">=</span><span class="s1">&#39;KMeans&#39;</span><span class="p">,</span>
          <span class="n">align</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">n_clusters</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">save_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">animate</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">duration</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">tail_duration</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">rotations</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">zoom</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">chemtrails</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">precog</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">bullettime</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">frame_rate</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">explore</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">show</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
@@ -290,7 +291,7 @@
     <span class="c1"># warnings for deprecated API args</span>
     <span class="k">if</span> <span class="p">(</span><span class="n">model</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">model_params</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">):</span>
         <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s1">&#39;Model and model_params arguments will be deprecated. Please use </span><span class="se">\</span>
-<span class="s1">                      reduce. See docs for details.&#39;</span><span class="p">)</span>
+<span class="s1">                      reduce keyword argument. See docs for details: http://hypertools.readthedocs.io/en/latest/hypertools.plot.html#hypertools.plot&#39;</span><span class="p">)</span>
         <span class="n">reduce</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">model</span>
         <span class="n">reduce</span><span class="p">[</span><span class="s1">&#39;params&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">model_params</span>
@@ -336,11 +337,10 @@
 <span class="s1">                          ignored in favor of markers.&#39;</span><span class="p">)</span>
 
     <span class="c1"># reduce data to 3 dims for plotting, if ndims is None, return this</span>
-    <span class="k">if</span> <span class="p">(</span><span class="n">ndims</span> <span class="ow">and</span> <span class="n">ndims</span> <span class="o">&gt;</span> <span class="mi">3</span><span class="p">):</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">ndims</span> <span class="ow">and</span> <span class="n">ndims</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">reducer</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="n">ndims</span><span class="p">,</span> <span class="n">reduce</span><span class="o">=</span><span class="n">reduce</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
         <span class="n">x</span> <span class="o">=</span> <span class="n">reducer</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">reduce</span><span class="o">=</span><span class="n">reduce</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="k">elif</span> <span class="n">ndims</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">reducer</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">reduce</span><span class="o">=</span><span class="n">reduce</span><span class="p">,</span> <span class="n">internal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="n">xform_data</span> <span class="o">=</span> <span class="n">x</span>
 
     <span class="c1"># find cluster and reshape if n_clusters</span>
     <span class="k">if</span> <span class="n">n_clusters</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -366,7 +366,8 @@
             <span class="n">group</span> <span class="o">=</span> <span class="n">group_by_category</span><span class="p">(</span><span class="n">group</span><span class="p">)</span>
 
         <span class="c1"># reshape the data according to group</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">reshape_data</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">group</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">n_clusters</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">reshape_data</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">group</span><span class="p">)</span>
 
         <span class="c1"># interpolate lines if they are grouped</span>
         <span class="k">if</span> <span class="n">is_line</span><span class="p">(</span><span class="n">fmt</span><span class="p">):</span>
@@ -491,6 +492,8 @@
         <span class="s1">&#39;color&#39;</span> <span class="p">:</span> <span class="n">color</span><span class="p">,</span>
         <span class="s1">&#39;colors&#39;</span> <span class="p">:</span> <span class="n">colors</span><span class="p">,</span>
         <span class="s1">&#39;palette&#39;</span> <span class="p">:</span> <span class="n">palette</span><span class="p">,</span>
+        <span class="s1">&#39;group&#39;</span> <span class="p">:</span> <span class="n">group</span><span class="p">,</span>
+        <span class="s1">&#39;ndims&#39;</span> <span class="p">:</span> <span class="n">ndims</span><span class="p">,</span>
         <span class="s1">&#39;labels&#39;</span> <span class="p">:</span> <span class="n">labels</span><span class="p">,</span>
         <span class="s1">&#39;legend&#39;</span> <span class="p">:</span> <span class="n">legend</span><span class="p">,</span>
         <span class="s1">&#39;title&#39;</span> <span class="p">:</span> <span class="n">title</span><span class="p">,</span>

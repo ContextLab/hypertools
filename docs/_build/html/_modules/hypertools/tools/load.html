@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.tools.load &#8212; hypertools 0.4.0 documentation</title>
+    <title>hypertools.tools.load &#8212; hypertools 0.4.2 documentation</title>
     
     <link rel="stylesheet" href="../../../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../../',
-        VERSION:     '0.4.0',
+        VERSION:     '0.4.2',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -59,6 +59,7 @@
             
                 <li><a href="../../../api.html">API</a></li>
                 <li><a href="../../../auto_examples/index.html">Gallery</a></li>
+                <li><a href="../../../tutorials.html">Tutorials</a></li>
                 <li><a href="http://www.github.com/ContextLab/hypertools">Download</a></li>
             
             
@@ -128,11 +129,10 @@
 <span class="sd">    ----------</span>
 <span class="sd">    dataset : string</span>
 <span class="sd">        The name of the example dataset.  Can be a `.geo` file, or one of a</span>
-<span class="sd">        number of example datasets listed below. `weights` is an fmri dataset</span>
-<span class="sd">        comprised of 36 subjects.  For each subject, the rows are fMRI</span>
-<span class="sd">        measurements and the columns are parameters of a model fit to the fMRI data. `weights_sample` is a sample of 3 subjects from that dataset.  `weights_avg` is the dataset split in half and averaged into two groups. `spiral` is 3D spiral to</span>
-<span class="sd">        highlight the `procrustes` function.  `mushrooms` is an example dataset</span>
-<span class="sd">        comprised of features (columns) of a collection of mushroomm samples (rows).</span>
+<span class="sd">        number of example datasets listed below. `weights` is list of 2 numpy arrays, each containing average brain activity (fMRI) from 18 subjects listening to the same story, fit using Hierarchical Topographic Factor Analysis (HTFA) with 100 nodes. The rows are fMRI</span>
+<span class="sd">        measurements and the columns are parameters of the model. `weights_sample` is a sample of 3 subjects from that dataset.  `weights_avg` is the dataset split in half and averaged into two groups. `spiral` is numpy array containing data for a 3D spiral, used to</span>
+<span class="sd">        highlight the `procrustes` function.  `mushrooms` is a numopy array</span>
+<span class="sd">        comprised of features (columns) of a collection of 8,124 mushroomm samples (rows).</span>
 
 <span class="sd">    normalize : str or False or None</span>
 <span class="sd">        If set to &#39;across&#39;, the columns of the input data will be z-scored</span>

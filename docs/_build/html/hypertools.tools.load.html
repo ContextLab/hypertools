@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.tools.load &#8212; hypertools 0.4.0 documentation</title>
+    <title>hypertools.tools.load &#8212; hypertools 0.4.2 documentation</title>
     
     <link rel="stylesheet" href="_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    './',
-        VERSION:     '0.4.0',
+        VERSION:     '0.4.2',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -59,6 +59,7 @@
             
                 <li><a href="api.html">API</a></li>
                 <li><a href="auto_examples/index.html">Gallery</a></li>
+                <li><a href="tutorials.html">Tutorials</a></li>
                 <li><a href="http://www.github.com/ContextLab/hypertools">Download</a></li>
             
             
@@ -125,11 +126,10 @@
 <tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><p class="first"><strong>dataset</strong> : string</p>
 <blockquote>
 <div><p>The name of the example dataset.  Can be a <cite>.geo</cite> file, or one of a
-number of example datasets listed below. <cite>weights</cite> is an fmri dataset
-comprised of 36 subjects.  For each subject, the rows are fMRI
-measurements and the columns are parameters of a model fit to the fMRI data. <cite>weights_sample</cite> is a sample of 3 subjects from that dataset.  <cite>weights_avg</cite> is the dataset split in half and averaged into two groups. <cite>spiral</cite> is 3D spiral to
-highlight the <cite>procrustes</cite> function.  <cite>mushrooms</cite> is an example dataset
-comprised of features (columns) of a collection of mushroomm samples (rows).</p>
+number of example datasets listed below. <cite>weights</cite> is list of 2 numpy arrays, each containing average brain activity (fMRI) from 18 subjects listening to the same story, fit using Hierarchical Topographic Factor Analysis (HTFA) with 100 nodes. The rows are fMRI
+measurements and the columns are parameters of the model. <cite>weights_sample</cite> is a sample of 3 subjects from that dataset.  <cite>weights_avg</cite> is the dataset split in half and averaged into two groups. <cite>spiral</cite> is numpy array containing data for a 3D spiral, used to
+highlight the <cite>procrustes</cite> function.  <cite>mushrooms</cite> is a numopy array
+comprised of features (columns) of a collection of 8,124 mushroomm samples (rows).</p>
 </div></blockquote>
 <p><strong>normalize</strong> : str or False or None</p>
 <blockquote>

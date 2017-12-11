@@ -8,7 +8,7 @@ Discovering clusters
 =============================
 
 The `n_clusters` kwarg can be used to discover clusters in your dataset.  It
-relies on scikit-learn's implementation of k-mean clustering to fin clusters,
+relies on scikit-learn's implementation of k-mean clustering to find clusters,
 and then labels the points accordingly. You must set the number of clusters
 yourself.
 
@@ -38,7 +38,7 @@ yourself.
     # plot
     hyp.plot(data, '.', n_clusters=10)
 
-**Total running time of the script:** ( 0 minutes  1.488 seconds)
+**Total running time of the script:** ( 0 minutes  2.761 seconds)
 
 
 

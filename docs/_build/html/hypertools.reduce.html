@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.reduce &#8212; hypertools 0.4.0 documentation</title>
+    <title>hypertools.reduce &#8212; hypertools 0.4.2 documentation</title>
     
     <link rel="stylesheet" href="_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    './',
-        VERSION:     '0.4.0',
+        VERSION:     '0.4.2',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -59,6 +59,7 @@
             
                 <li><a href="api.html">API</a></li>
                 <li><a href="auto_examples/index.html">Gallery</a></li>
+                <li><a href="tutorials.html">Tutorials</a></li>
                 <li><a href="http://www.github.com/ContextLab/hypertools">Download</a></li>
             
             
@@ -124,9 +125,7 @@
 <tbody valign="top">
 <tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><p class="first"><strong>x</strong> : Numpy array or list of arrays</p>
 <blockquote>
-<div><p>Dimensionality reduction using PCA is performed on this array.  If
-there are nans present in the data, the function will try to use
-PPCA to interpolate the missing values.</p>
+<div><p>Dimensionality reduction using PCA is performed on this array.</p>
 </div></blockquote>
 <p><strong>reduce</strong> : str or dict</p>
 <blockquote>
@@ -142,6 +141,24 @@ for each model.</p>
 <p><strong>ndims</strong> : int</p>
 <blockquote>
 <div><p>Number of dimensions to reduce</p>
+</div></blockquote>
+<p><strong>model</strong> : None</p>
+<blockquote>
+<div><p>Deprecated argument.  Please use reduce.</p>
+</div></blockquote>
+<p><strong>model_params</strong> : None</p>
+<blockquote>
+<div><p>Deprecated argument.  Please use reduce.</p>
+</div></blockquote>
+<p><strong>align</strong> : None</p>
+<blockquote>
+<div><p>Deprecated argument.  Please use new analyze function to perform
+combinations of transformations</p>
+</div></blockquote>
+<p><strong>normalize</strong> : None</p>
+<blockquote>
+<div><p>Deprecated argument.  Please use new analyze function to perform
+combinations of transformations</p>
 </div></blockquote>
 </td>
 </tr>

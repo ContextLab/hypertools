@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>DataGeometry objects (geo) &#8212; hypertools 0.4.2 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/basic.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/gallery.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/bootswatch-3.3.6/yeti/bootstrap.min.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/bootstrap-sphinx.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '0.4.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <script type="text/javascript" src="../_static/js/jquery-1.11.0.min.js"></script>
+    <script type="text/javascript" src="../_static/js/jquery-fix.js"></script>
+    <script type="text/javascript" src="../_static/bootstrap-3.3.6/js/bootstrap.min.js"></script>
+    <script type="text/javascript" src="../_static/bootstrap-sphinx.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+
+  </head>
+  <body role="document">
+
+  <div id="navbar" class="navbar navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="../index.html">
+          hypertools</a>
+        <span class="navbar-text navbar-version pull-left"><b>0.4</b></span>
+      </div>
+
+        <div class="collapse navbar-collapse nav-collapse">
+          <ul class="nav navbar-nav">
+            
+                <li><a href="../api.html">API</a></li>
+                <li><a href="../auto_examples/index.html">Gallery</a></li>
+                <li><a href="../tutorials.html">Tutorials</a></li>
+                <li><a href="http://www.github.com/ContextLab/hypertools">Download</a></li>
+            
+            
+              <li class="dropdown globaltoc-container">
+  <a role="button"
+     id="dLabelGlobalToc"
+     data-toggle="dropdown"
+     data-target="#"
+     href="../index.html">Site <b class="caret"></b></a>
+  <ul class="dropdown-menu globaltoc"
+      role="menu"
+      aria-labelledby="dLabelGlobalToc"></ul>
+</li>
+              
+                <li class="dropdown">
+  <a role="button"
+     id="dLabelLocalToc"
+     data-toggle="dropdown"
+     data-target="#"
+     href="#">Page <b class="caret"></b></a>
+  <ul class="dropdown-menu localtoc"
+      role="menu"
+      aria-labelledby="dLabelLocalToc"><ul>
+<li><a class="reference internal" href="#">DataGeometry objects (<code class="docutils literal"><span class="pre">geo</span></code>)</a><ul>
+<li><a class="reference internal" href="#import-hypertools">Import Hypertools</a></li>
+<li><a class="reference internal" href="#load-your-data">Load your data</a></li>
+<li><a class="reference internal" href="#plot-data">Plot data</a></li>
+<li><a class="reference internal" href="#exploring-the-geo">Exploring the geo</a><ul>
+<li><a class="reference internal" href="#hypertools-version">Hypertools version</a></li>
+<li><a class="reference internal" href="#data-and-plot">Data and plot</a></li>
+<li><a class="reference internal" href="#transformed-data">Transformed data</a></li>
+<li><a class="reference internal" href="#normalize-reduce-and-align-metadata">Normalize, reduce and align metadata</a></li>
+<li><a class="reference internal" href="#plotting-axes-and-animations">Plotting axes and animations</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#plotting-with-geos">Plotting with geos</a></li>
+<li><a class="reference internal" href="#tranforming-data-using-geos">Tranforming data using geos</a></li>
+<li><a class="reference internal" href="#saving-geos">Saving geos</a></li>
+</ul>
+</li>
+</ul>
+</ul>
+</li>
+              
+            
+            
+            
+            
+            
+          </ul>
+
+          
+            
+<form class="navbar-form navbar-right" action="../search.html" method="get">
+ <div class="form-group">
+  <input type="text" name="q" class="form-control" placeholder="Search" />
+ </div>
+  <input type="hidden" name="check_keywords" value="yes" />
+  <input type="hidden" name="area" value="default" />
+</form>
+          
+        </div>
+    </div>
+  </div>
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-12 content">
+      
+  <div class="section" id="datageometry-objects-geo">
+<h1>DataGeometry objects (<code class="docutils literal"><span class="pre">geo</span></code>)<a class="headerlink" href="#datageometry-objects-geo" title="Permalink to this headline">¶</a></h1>
+<p>The DataGeometry object is the hypertools data object class. A <code class="docutils literal"><span class="pre">geo</span></code>
+contains the data, figure handles, and transform functions used to
+create a plot. Note that this class should not be called directly, but
+is used by the hyp.plot function to create a plot object.</p>
+<p>In this tutorial we will explore the features of a geo and how it may be
+used.</p>
+<div class="section" id="import-hypertools">
+<h2>Import Hypertools<a class="headerlink" href="#import-hypertools" title="Permalink to this headline">¶</a></h2>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">hypertools</span> <span class="k">as</span> <span class="nn">hyp</span>
+<span class="kn">import</span> <span class="nn">seaborn</span> <span class="k">as</span> <span class="nn">sb</span>
+
+<span class="o">%</span><span class="k">matplotlib</span> inline
+</pre></div>
+</div>
+</div>
+<div class="section" id="load-your-data">
+<h2>Load your data<a class="headerlink" href="#load-your-data" title="Permalink to this headline">¶</a></h2>
+<p>In this case, we have used one of the sample datasets built into the
+package.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">mushrooms</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s1">&#39;mushrooms&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>We can peek at the first few rows of the dataframe using the pandas
+function <code class="docutils literal"><span class="pre">head</span></code>.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">mushrooms</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+<div>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>class</th>
+      <th>cap-shape</th>
+      <th>cap-surface</th>
+      <th>cap-color</th>
+      <th>bruises</th>
+      <th>odor</th>
+      <th>gill-attachment</th>
+      <th>gill-spacing</th>
+      <th>gill-size</th>
+      <th>gill-color</th>
+      <th>...</th>
+      <th>stalk-surface-below-ring</th>
+      <th>stalk-color-above-ring</th>
+      <th>stalk-color-below-ring</th>
+      <th>veil-type</th>
+      <th>veil-color</th>
+      <th>ring-number</th>
+      <th>ring-type</th>
+      <th>spore-print-color</th>
+      <th>population</th>
+      <th>habitat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>p</td>
+      <td>x</td>
+      <td>s</td>
+      <td>n</td>
+      <td>t</td>
+      <td>p</td>
+      <td>f</td>
+      <td>c</td>
+      <td>n</td>
+      <td>k</td>
+      <td>...</td>
+      <td>s</td>
+      <td>w</td>
+      <td>w</td>
+      <td>p</td>
+      <td>w</td>
+      <td>o</td>
+      <td>p</td>
+      <td>k</td>
+      <td>s</td>
+      <td>u</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>e</td>
+      <td>x</td>
+      <td>s</td>
+      <td>y</td>
+      <td>t</td>
+      <td>a</td>
+      <td>f</td>
+      <td>c</td>
+      <td>b</td>
+      <td>k</td>
+      <td>...</td>
+      <td>s</td>
+      <td>w</td>
+      <td>w</td>
+      <td>p</td>
+      <td>w</td>
+      <td>o</td>
+      <td>p</td>
+      <td>n</td>
+      <td>n</td>
+      <td>g</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>e</td>
+      <td>b</td>
+      <td>s</td>
+      <td>w</td>
+      <td>t</td>
+      <td>l</td>
+      <td>f</td>
+      <td>c</td>
+      <td>b</td>
+      <td>n</td>
+      <td>...</td>
+      <td>s</td>
+      <td>w</td>
+      <td>w</td>
+      <td>p</td>
+      <td>w</td>
+      <td>o</td>
+      <td>p</td>
+      <td>n</td>
+      <td>n</td>
+      <td>m</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>p</td>
+      <td>x</td>
+      <td>y</td>
+      <td>w</td>
+      <td>t</td>
+      <td>p</td>
+      <td>f</td>
+      <td>c</td>
+      <td>n</td>
+      <td>n</td>
+      <td>...</td>
+      <td>s</td>
+      <td>w</td>
+      <td>w</td>
+      <td>p</td>
+      <td>w</td>
+      <td>o</td>
+      <td>p</td>
+      <td>k</td>
+      <td>s</td>
+      <td>u</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>e</td>
+      <td>x</td>
+      <td>s</td>
+      <td>g</td>
+      <td>f</td>
+      <td>n</td>
+      <td>f</td>
+      <td>w</td>
+      <td>b</td>
+      <td>k</td>
+      <td>...</td>
+      <td>s</td>
+      <td>w</td>
+      <td>w</td>
+      <td>p</td>
+      <td>w</td>
+      <td>o</td>
+      <td>e</td>
+      <td>n</td>
+      <td>a</td>
+      <td>g</td>
+    </tr>
+  </tbody>
+</table>
+<p>5 rows × 23 columns</p>
+</div></div>
+<div class="section" id="plot-data">
+<h2>Plot data<a class="headerlink" href="#plot-data" title="Permalink to this headline">¶</a></h2>
+<p>First, we will plot the data, generating a geo.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">geo</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">mushrooms</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<img alt="../_images/geo_11_01.png" src="../_images/geo_11_01.png" />
+</div>
+<div class="section" id="exploring-the-geo">
+<h2>Exploring the geo<a class="headerlink" href="#exploring-the-geo" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="hypertools-version">
+<h3>Hypertools version<a class="headerlink" href="#hypertools-version" title="Permalink to this headline">¶</a></h3>
+<p>The version field contains the version number of hypertools that the geo
+was generated with.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">geo</span><span class="o">.</span><span class="n">version</span>
+</pre></div>
+</div>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="s1">&#39;0.4.0&#39;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="data-and-plot">
+<h3>Data and plot<a class="headerlink" href="#data-and-plot" title="Permalink to this headline">¶</a></h3>
+<p>The data field contains the preprocessed data. That is, all strings have
+been converted to indicator vectors and the data are stored as a numpy
+array.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">geo</span><span class="o">.</span><span class="n">data</span>
+</pre></div>
+</div>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">array</span><span class="p">([[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>
+        <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>
+        <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>
+        <span class="o">...</span><span class="p">,</span>
+        <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>
+        <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>
+        <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">uint8</span><span class="p">)]</span>
+</pre></div>
+</div>
+<p>We can see by comparing the dimensions of the geo data with the original
+data that the data stored in the geo has been expanded.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;size of original data: &quot;</span><span class="p">,</span><span class="n">mushrooms</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;size of geo data field: &quot;</span><span class="p">,</span><span class="n">geo</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="n">size</span> <span class="n">of</span> <span class="n">original</span> <span class="n">data</span><span class="p">:</span>  <span class="p">(</span><span class="mi">8124</span><span class="p">,</span> <span class="mi">23</span><span class="p">)</span>
+<span class="n">size</span> <span class="n">of</span> <span class="n">geo</span> <span class="n">data</span> <span class="n">field</span><span class="p">:</span>  <span class="p">(</span><span class="mi">8124</span><span class="p">,</span> <span class="mi">119</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Additionally, plotting the original data and the geo data yield the same
+plot.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">geo_plot1</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">mushrooms</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<img alt="../_images/geo_22_0.png" src="../_images/geo_22_0.png" />
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">geo_plot2</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">geo</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<img alt="../_images/geo_23_0.png" src="../_images/geo_23_0.png" />
+<p>The <code class="docutils literal"><span class="pre">fig</span></code> field contains the matplotlib figure handle for the plot
+that gave rise to the geo.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">geo</span><span class="o">.</span><span class="n">fig</span>
+</pre></div>
+</div>
+<img alt="../_images/geo_25_0.png" src="../_images/geo_25_0.png" />
+</div>
+<div class="section" id="transformed-data">
+<h3>Transformed data<a class="headerlink" href="#transformed-data" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal"><span class="pre">xform_data</span></code> field contains the data that have been transformed
+according to the user-specified normalize, reduce, and align options (in
+this case, the data was automatically reduced to 3 dimensions for
+plotting when we called <code class="docutils literal"><span class="pre">hyp.plot</span></code>).</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">geo</span><span class="o">.</span><span class="n">xform_data</span>
+</pre></div>
+</div>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">array</span><span class="p">([[</span> <span class="mf">0.66282511</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.50030606</span><span class="p">,</span>  <span class="mf">1.60971357</span><span class="p">],</span>
+        <span class="p">[</span> <span class="mf">1.5395065</span> <span class="p">,</span> <span class="o">-</span><span class="mf">0.25964717</span><span class="p">,</span>  <span class="mf">1.89064114</span><span class="p">],</span>
+        <span class="p">[</span> <span class="mf">1.69285148</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.2652148</span> <span class="p">,</span>  <span class="mf">1.89496073</span><span class="p">],</span>
+        <span class="o">...</span><span class="p">,</span>
+        <span class="p">[</span> <span class="mf">0.68330896</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.29900591</span><span class="p">,</span>  <span class="mf">0.38257187</span><span class="p">],</span>
+        <span class="p">[</span><span class="o">-</span><span class="mf">1.47676276</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.45182833</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.16606786</span><span class="p">],</span>
+        <span class="p">[</span> <span class="mf">0.66276601</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.3111866</span> <span class="p">,</span>  <span class="mf">0.60080039</span><span class="p">]])]</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="normalize-reduce-and-align-metadata">
+<h3>Normalize, reduce and align metadata<a class="headerlink" href="#normalize-reduce-and-align-metadata" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal"><span class="pre">reduce</span></code>, <code class="docutils literal"><span class="pre">align</span></code> and <code class="docutils literal"><span class="pre">normalize</span></code> fields contain information
+about the model and parameters used in each of the analyses.</p>
+<p>The reduce and align fields contain dictionaries with the model
+information and the normalize field contains a string.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">geo</span><span class="o">.</span><span class="n">normalize</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">geo</span><span class="o">.</span><span class="n">reduce</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">geo</span><span class="o">.</span><span class="n">align</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="kc">None</span>
+<span class="p">{</span><span class="s1">&#39;model&#39;</span><span class="p">:</span> <span class="s1">&#39;IncrementalPCA&#39;</span><span class="p">,</span> <span class="s1">&#39;params&#39;</span><span class="p">:</span> <span class="p">{</span><span class="s1">&#39;n_components&#39;</span><span class="p">:</span> <span class="mi">3</span><span class="p">}}</span>
+<span class="p">{</span><span class="s1">&#39;model&#39;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s1">&#39;params&#39;</span><span class="p">:</span> <span class="p">{}}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="plotting-axes-and-animations">
+<h3>Plotting axes and animations<a class="headerlink" href="#plotting-axes-and-animations" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal"><span class="pre">ax</span></code> and <code class="docutils literal"><span class="pre">line_ani</span></code> fields hold the plot axes and the animation
+setting (in this case None) for plotting, respectively.</p>
+<p>To read more about the plot axes and line animation objects and their
+utility, see the matlplotlib documentation for
+<a class="reference external" href="http://matplotlib.org/api/axes_api.html">axes</a> and
+<a class="reference external" href="http://matplotlib.org/api/animation_api.html">animations</a>,
+respectively.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">geo</span><span class="o">.</span><span class="n">ax</span>
+</pre></div>
+</div>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="o">&lt;</span><span class="n">matplotlib</span><span class="o">.</span><span class="n">axes</span><span class="o">.</span><span class="n">_subplots</span><span class="o">.</span><span class="n">Axes3DSubplot</span> <span class="n">at</span> <span class="mh">0x1113f1048</span><span class="o">&gt;</span>
+</pre></div>
+</div>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">geo</span><span class="o">.</span><span class="n">line_ani</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="plotting-with-geos">
+<h2>Plotting with geos<a class="headerlink" href="#plotting-with-geos" title="Permalink to this headline">¶</a></h2>
+<p>You can also generate a new plot (a new geo) from data stored in the geo
+using geo.plot.</p>
+<p>This plotting feature accepts all of the keyword arguments supported by
+hypertools.plot.</p>
+<p>First, let&#8217;s plot without making any changes.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">geo</span><span class="o">.</span><span class="n">plot</span><span class="p">()</span>
+</pre></div>
+</div>
+<img alt="../_images/geo_38_0.png" src="../_images/geo_38_0.png" />
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="o">&lt;</span><span class="n">hypertools</span><span class="o">.</span><span class="n">datageometry</span><span class="o">.</span><span class="n">DataGeometry</span> <span class="n">at</span> <span class="mh">0x111935080</span><span class="o">&gt;</span>
+</pre></div>
+</div>
+<p>Now, let&#8217;s change the plot using some keyword arguments.</p>
+<p>In the example below, the data are re-transformed using all of the same
+options as in the original plot, but with the number of dimensions
+specified by the reduce model set to 2.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">geo</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ndims</span> <span class="o">=</span> <span class="mi">2</span><span class="p">)</span>
+</pre></div>
+</div>
+<img alt="../_images/geo_40_0.png" src="../_images/geo_40_0.png" />
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="o">&lt;</span><span class="n">hypertools</span><span class="o">.</span><span class="n">datageometry</span><span class="o">.</span><span class="n">DataGeometry</span> <span class="n">at</span> <span class="mh">0x11187b3c8</span><span class="o">&gt;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="tranforming-data-using-geos">
+<h2>Tranforming data using geos<a class="headerlink" href="#tranforming-data-using-geos" title="Permalink to this headline">¶</a></h2>
+<p>An additional feature afforded by geos is the ability to later analyze
+other datasets using the same transformations performed on the original
+data in the geo. That is, whatever normalization, alignment, and
+reduction parameters were used on the original data in the geo can be
+quickly and easily applied to any new dataset using a single line of
+code!</p>
+<p>This allows for easy comparison of multiple datasets. Here, we load a
+built in dataset (the weights dataset) and apply the transform from the
+geo data to the first element of weights.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">weights</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s1">&#39;weights_avg&#39;</span><span class="p">)</span>
+<span class="n">transformed</span> <span class="o">=</span> <span class="n">geo</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">weights</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>We can use heatmaps to visualized an element of the new data before and
+after it has been transformed by the same means as the geo data.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">ax</span> <span class="o">=</span> <span class="n">sb</span><span class="o">.</span><span class="n">heatmap</span><span class="p">(</span><span class="n">weights</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+</pre></div>
+</div>
+<img alt="../_images/geo_45_0.png" src="../_images/geo_45_0.png" />
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">ax</span> <span class="o">=</span> <span class="n">sb</span><span class="o">.</span><span class="n">heatmap</span><span class="p">(</span><span class="n">transformed</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+</pre></div>
+</div>
+<img alt="../_images/geo_46_0.png" src="../_images/geo_46_0.png" />
+</div>
+<div class="section" id="saving-geos">
+<h2>Saving geos<a class="headerlink" href="#saving-geos" title="Permalink to this headline">¶</a></h2>
+<p>You can also easily save a geo using geo.save. The geo will save as a
+&#8216;geo&#8217; file, which is a dictionary containing the elements of a data
+geometry object saved in the hd5 format using deepdish.</p>
+<p>To specify the compression type, pass a string to the compression
+argument, as below. See the deepdish documentation for the full list of
+compression options:
+<a class="reference external" href="http://deepdish.readthedocs.io/en/latest/api_io.html#deepdish.io.save">http://deepdish.readthedocs.io/en/latest/api_io.html#deepdish.io.save</a></p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="c1"># geo.save(&#39;MyGeoFile&#39;)</span>
+<span class="c1"># geo.save(&#39;MyGeoFile&#39;, compression = &#39;blosc&#39;)</span>
+</pre></div>
+</div>
+</div>
+</div>
+
+
+    </div>
+      
+  </div>
+</div>
+<footer class="footer">
+  <div class="container">
+    <p class="pull-right">
+      <a href="#">Back to top</a>
+      
+        <br/>
+        
+<div id="sourcelink">
+  <a href="../_sources/tutorials/geo.rst.txt"
+     rel="nofollow">Source</a>
+</div>
+      
+    </p>
+    <p>
+        &copy; Copyright 2017, Contextual Dynamics Laboratory.<br/>
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.2.<br/>
+    </p>
+  </div>
+</footer>
+  </body>
+</html>

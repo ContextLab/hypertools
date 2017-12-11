@@ -1,0 +1,62 @@
+:orphan:
+
+.. _tutorial:
+
+How to use `HyperTools`
+================
+
+Plot
+----------------
+
+.. toctree::
+   :maxdepth: 2
+
+   tutorial/plot.ipynb
+
+Analyze
+----------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorial/analyze.ipynb
+
+Normalize
+----------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorial/normalize.ipynb
+
+Reduce
+----------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorial/reduce.ipynb
+
+Align
+----------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorial/align.ipynb
+
+Cluster
+----------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorial/cluster.ipynb
+
+DataGeometry Objects
+----------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorial/geo.ipynb

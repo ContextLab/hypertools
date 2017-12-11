@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>Hyperalign a list of arrays and create an animated plot &#8212; hypertools 0.4.0 documentation</title>
+    <title>Hyperalign a list of arrays and create an animated plot &#8212; hypertools 0.4.2 documentation</title>
     
     <link rel="stylesheet" href="../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../',
-        VERSION:     '0.4.0',
+        VERSION:     '0.4.2',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -59,6 +59,7 @@
             
                 <li><a href="../api.html">API</a></li>
                 <li><a href="index.html">Gallery</a></li>
+                <li><a href="../tutorials.html">Tutorials</a></li>
                 <li><a href="http://www.github.com/ContextLab/hypertools">Download</a></li>
             
             
@@ -116,7 +117,8 @@
 <span id="sphx-glr-auto-examples-animate-py"></span><h1>Hyperalign a list of arrays and create an animated plot<a class="headerlink" href="#hyperalign-a-list-of-arrays-and-create-an-animated-plot" title="Permalink to this headline">¶</a></h1>
 <p>The sample data is a list of 2D arrays, where each array is fMRI brain activity
 from one subject.  The rows are timepoints and the columns are neural
-&#8216;features&#8217;.  First, the matrices are hyperaligned using hyp.tools.align.</p>
+&#8216;features&#8217;.  First, the matrices are hyperaligned using hyp.align.  Then, the data
+are split into 2 groups of 18. and averaged.  Finally the aligned data is plotted.</p>
 <div class="highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Code source: Andrew Heusser</span>
 <span class="c1"># License: MIT</span>
 

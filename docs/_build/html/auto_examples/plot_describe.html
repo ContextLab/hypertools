@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>Using describe_pca to evaluate the integrity of your visualization &#8212; hypertools 0.4.0 documentation</title>
+    <title>Using describe_pca to evaluate the integrity of your visualization &#8212; hypertools 0.4.2 documentation</title>
     
     <link rel="stylesheet" href="../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../',
-        VERSION:     '0.4.0',
+        VERSION:     '0.4.2',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -59,6 +59,7 @@
             
                 <li><a href="../api.html">API</a></li>
                 <li><a href="index.html">Gallery</a></li>
+                <li><a href="../tutorials.html">Tutorials</a></li>
                 <li><a href="http://www.github.com/ContextLab/hypertools">Download</a></li>
             
             
@@ -114,13 +115,11 @@
       
   <div class="section" id="using-describe-pca-to-evaluate-the-integrity-of-your-visualization">
 <span id="sphx-glr-auto-examples-plot-describe-py"></span><h1>Using describe_pca to evaluate the integrity of your visualization<a class="headerlink" href="#using-describe-pca-to-evaluate-the-integrity-of-your-visualization" title="Permalink to this headline">¶</a></h1>
-<p>The downside to using PCA to visualize your data is that some variance will
-likely be removed. To help get a sense for the integrity of your low
-dimensional visualizations, we built the <cite>describe_pca</cite> function, which computes
+<p>The downside to using dimensionality reduction to visualize your data is that
+some variance will likely be removed. To help get a sense for the integrity of your low
+dimensional visualizations, we built the <cite>describe</cite> function, which computes
 the covariance (samples by samples) of both the raw and reduced datasets, and
-plots their correlation.  The function repeats this analysis from 2:N dimensions
-until the correlation reaches a local maximum.  Often times this will be less
-than the total number of dimensions because the PCA model is whitened.</p>
+plots their correlation.</p>
 <img alt="../_images/sphx_glr_plot_describe_001.png" class="align-center" src="../_images/sphx_glr_plot_describe_001.png" />
 <div class="highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Code source: Andrew Heusser</span>
 <span class="c1"># License: MIT</span>
@@ -136,7 +135,7 @@ than the total number of dimensions because the PCA model is whitened.</p>
 <span class="n">hyp</span><span class="o">.</span><span class="n">describe</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 </pre></div>
 </div>
-<p><strong>Total running time of the script:</strong> ( 0 minutes  7.333 seconds)</p>
+<p><strong>Total running time of the script:</strong> ( 0 minutes  8.633 seconds)</p>
 <div class="sphx-glr-footer docutils container">
 <div class="sphx-glr-download docutils container">
 <a class="reference download internal" href="../_downloads/plot_describe.py" download=""><code class="xref download docutils literal"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">plot_describe.py</span></code></a></div>

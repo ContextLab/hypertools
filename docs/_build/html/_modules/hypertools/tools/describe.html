@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>hypertools.tools.describe &#8212; hypertools 0.4.0 documentation</title>
+    <title>hypertools.tools.describe &#8212; hypertools 0.4.2 documentation</title>
     
     <link rel="stylesheet" href="../../../_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../../',
-        VERSION:     '0.4.0',
+        VERSION:     '0.4.2',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -59,6 +59,7 @@
             
                 <li><a href="../../../api.html">API</a></li>
                 <li><a href="../../../auto_examples/index.html">Gallery</a></li>
+                <li><a href="../../../tutorials.html">Tutorials</a></li>
                 <li><a href="http://www.github.com/ContextLab/hypertools">Download</a></li>
             
             
@@ -122,7 +123,7 @@
 <span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
 <span class="kn">import</span> <span class="nn">seaborn</span> <span class="k">as</span> <span class="nn">sns</span>
 <span class="kn">from</span> <span class="nn">.reduce</span> <span class="k">import</span> <span class="n">reduce</span> <span class="k">as</span> <span class="n">reducer</span>
-<span class="kn">from</span> <span class="nn">.._shared.helpers</span> <span class="k">import</span> <span class="n">format_data</span>
+<span class="kn">from</span> <span class="nn">.._shared.helpers</span> <span class="k">import</span> <span class="n">format_data</span><span class="p">,</span> <span class="n">memoize</span>
 
 <div class="viewcode-block" id="describe"><a class="viewcode-back" href="../../../hypertools.describe.html#hypertools.describe">[docs]</a><span class="k">def</span> <span class="nf">describe</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">reduce</span><span class="o">=</span><span class="s1">&#39;IncrementalPCA&#39;</span><span class="p">,</span> <span class="n">max_dims</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">show</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
@@ -134,7 +135,7 @@
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
-<span class="sd">    </span>
+
 <span class="sd">    x : Numpy array, DataFrame or list of arrays/dfs</span>
 <span class="sd">        A list of Numpy arrays or Pandas Dataframes</span>
 
@@ -178,12 +179,12 @@
             <span class="n">max_dims</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
 
         <span class="c1"># correlation matrix for all dimensions</span>
-        <span class="n">alldims</span> <span class="o">=</span> <span class="n">pdist</span><span class="p">(</span><span class="n">x</span><span class="p">,</span><span class="s1">&#39;correlation&#39;</span><span class="p">)</span>
+        <span class="n">alldims</span> <span class="o">=</span> <span class="n">get_pdist</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
         <span class="n">corrs</span><span class="o">=</span><span class="p">[]</span>
         <span class="k">for</span> <span class="n">dims</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">max_dims</span><span class="p">):</span>
-            <span class="n">reduced</span> <span class="o">=</span> <span class="n">pdist</span><span class="p">(</span><span class="n">reducer</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="n">dims</span><span class="p">,</span> <span class="n">reduce</span><span class="o">=</span><span class="n">reduce</span><span class="p">),</span><span class="s1">&#39;correlation&#39;</span><span class="p">)</span>
-            <span class="n">corrs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">corrcoef</span><span class="p">(</span><span class="n">alldims</span><span class="p">,</span> <span class="n">reduced</span><span class="p">)[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">reduced</span> <span class="o">=</span> <span class="n">get_pdist</span><span class="p">(</span><span class="n">reducer</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">ndims</span><span class="o">=</span><span class="n">dims</span><span class="p">,</span> <span class="n">reduce</span><span class="o">=</span><span class="n">reduce</span><span class="p">))</span>
+            <span class="n">corrs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">get_corr</span><span class="p">(</span><span class="n">alldims</span><span class="p">,</span> <span class="n">reduced</span><span class="p">))</span>
             <span class="k">del</span> <span class="n">reduced</span>
         <span class="k">return</span> <span class="n">corrs</span>
 
@@ -192,7 +193,7 @@
 
     <span class="c1"># if max dims is not set, make it the length of the minimum number of columns</span>
     <span class="k">if</span> <span class="n">max_dims</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">max_dims</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">xi</span><span class="p">:</span> <span class="n">xi</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">x</span><span class="p">))</span>
+        <span class="n">max_dims</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">([</span><span class="n">xi</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">xi</span> <span class="ow">in</span> <span class="n">x</span><span class="p">])</span>
 
     <span class="c1"># a dictionary to store results</span>
     <span class="n">result</span> <span class="o">=</span> <span class="p">{}</span>
@@ -208,6 +209,14 @@
         <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Number of components&#39;</span><span class="p">)</span>
         <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
     <span class="k">return</span> <span class="n">result</span></div>
+
+<span class="nd">@memoize</span>
+<span class="k">def</span> <span class="nf">get_corr</span><span class="p">(</span><span class="n">reduced</span><span class="p">,</span> <span class="n">alldims</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">corrcoef</span><span class="p">(</span><span class="n">alldims</span><span class="p">,</span> <span class="n">reduced</span><span class="p">)[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span>
+
+<span class="nd">@memoize</span>
+<span class="k">def</span> <span class="nf">get_pdist</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">pdist</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s1">&#39;correlation&#39;</span><span class="p">)</span>
 </pre></div>
 
     </div>

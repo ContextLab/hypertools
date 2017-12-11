@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Alignment &#8212; hypertools 0.4.2 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/basic.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/gallery.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/bootswatch-3.3.6/yeti/bootstrap.min.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/bootstrap-sphinx.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '0.4.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <script type="text/javascript" src="../_static/js/jquery-1.11.0.min.js"></script>
+    <script type="text/javascript" src="../_static/js/jquery-fix.js"></script>
+    <script type="text/javascript" src="../_static/bootstrap-3.3.6/js/bootstrap.min.js"></script>
+    <script type="text/javascript" src="../_static/bootstrap-sphinx.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+
+  </head>
+  <body role="document">
+
+  <div id="navbar" class="navbar navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="../index.html">
+          hypertools</a>
+        <span class="navbar-text navbar-version pull-left"><b>0.4</b></span>
+      </div>
+
+        <div class="collapse navbar-collapse nav-collapse">
+          <ul class="nav navbar-nav">
+            
+                <li><a href="../api.html">API</a></li>
+                <li><a href="../auto_examples/index.html">Gallery</a></li>
+                <li><a href="../tutorials.html">Tutorials</a></li>
+                <li><a href="http://www.github.com/ContextLab/hypertools">Download</a></li>
+            
+            
+              <li class="dropdown globaltoc-container">
+  <a role="button"
+     id="dLabelGlobalToc"
+     data-toggle="dropdown"
+     data-target="#"
+     href="../index.html">Site <b class="caret"></b></a>
+  <ul class="dropdown-menu globaltoc"
+      role="menu"
+      aria-labelledby="dLabelGlobalToc"></ul>
+</li>
+              
+                <li class="dropdown">
+  <a role="button"
+     id="dLabelLocalToc"
+     data-toggle="dropdown"
+     data-target="#"
+     href="#">Page <b class="caret"></b></a>
+  <ul class="dropdown-menu localtoc"
+      role="menu"
+      aria-labelledby="dLabelLocalToc"><ul>
+<li><a class="reference internal" href="#">Alignment</a><ul>
+<li><a class="reference internal" href="#import-hypertools">Import Hypertools</a></li>
+<li><a class="reference internal" href="#load-your-data">Load your data</a></li>
+<li><a class="reference internal" href="#visualize-unaligned-data">Visualize unaligned data</a></li>
+<li><a class="reference internal" href="#aligning-data-with-hyperalignment">Aligning data with Hyperalignment</a></li>
+<li><a class="reference internal" href="#aligning-data-with-the-shared-response-model">Aligning data with the Shared Response Model</a></li>
+</ul>
+</li>
+</ul>
+</ul>
+</li>
+              
+            
+            
+            
+            
+            
+          </ul>
+
+          
+            
+<form class="navbar-form navbar-right" action="../search.html" method="get">
+ <div class="form-group">
+  <input type="text" name="q" class="form-control" placeholder="Search" />
+ </div>
+  <input type="hidden" name="check_keywords" value="yes" />
+  <input type="hidden" name="area" value="default" />
+</form>
+          
+        </div>
+    </div>
+  </div>
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-12 content">
+      
+  <div class="section" id="alignment">
+<h1>Alignment<a class="headerlink" href="#alignment" title="Permalink to this headline">¶</a></h1>
+<p>The <code class="docutils literal"><span class="pre">align</span></code> function projects 2 or more datasets with different
+coordinate systems into a common space. By default it uses the
+hyperalignment algorithm (Haxby et al, 2011), but also provides the
+option to use the Shared Response Model (SRM) for alignment, if
+preferred, via the Brain Imaging Analysis Kit (brainiak).</p>
+<p>Alignment can be particularly useful in exploring statistical properties
+and/or similarities of datasets that are not in the same coordinate
+system (such as fMRI data from visual areas of participants watching a
+movie, and the movie data itself).</p>
+<p>Alignment algorithms use linear transformations to rotate and scale your
+datasets so they match as best as possible. For example, take these
+three distinct datasets. Each has a similar shape (an S), but are scaled
+and rotated differently. Aligning these datasets finds the
+transformation that minimizes the distance between them.</p>
+<div class="section" id="import-hypertools">
+<h2>Import Hypertools<a class="headerlink" href="#import-hypertools" title="Permalink to this headline">¶</a></h2>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">hypertools</span> <span class="k">as</span> <span class="nn">hyp</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="o">%</span><span class="k">matplotlib</span> inline
+</pre></div>
+</div>
+<pre class="literal-block">
+/usr/local/lib/python3.6/site-packages/IPython/html.py:14: ShimWarning: The <cite>IPython.html</cite> package has been deprecated since IPython 4.0. You should import from <cite>notebook</cite> instead. <cite>IPython.html.widgets</cite> has moved to <cite>ipywidgets</cite>.
+  &quot;<cite>IPython.html.widgets</cite> has moved to <cite>ipywidgets</cite>.&quot;, ShimWarning)
+</pre>
+</div>
+<div class="section" id="load-your-data">
+<h2>Load your data<a class="headerlink" href="#load-your-data" title="Permalink to this headline">¶</a></h2>
+<p>First, we&#8217;ll load one of the sample datasets. This dataset is a list of
+36 <code class="docutils literal"><span class="pre">numpy</span></code> arrays, each containing brain activity (fMRI) from subjects
+watching the same movie. The rows are timepoints and the columns are
+fMRI components.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">data</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s1">&#39;weights&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="visualize-unaligned-data">
+<h2>Visualize unaligned data<a class="headerlink" href="#visualize-unaligned-data" title="Permalink to this headline">¶</a></h2>
+<p>First, we can see how the first hundred data points from two arrays in
+the weights data look when plotted together.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="c1"># average into two groups</span>
+<span class="n">group1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">data</span><span class="p">[:</span><span class="mi">17</span><span class="p">],</span> <span class="mi">0</span><span class="p">)</span>
+<span class="n">group2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="mi">18</span><span class="p">:],</span> <span class="mi">0</span><span class="p">)</span>
+
+<span class="c1"># plot</span>
+<span class="n">geo</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">([</span><span class="n">group1</span><span class="p">[:</span><span class="mi">100</span><span class="p">,</span> <span class="p">:],</span> <span class="n">group2</span><span class="p">[:</span><span class="mi">100</span><span class="p">,</span> <span class="p">:]])</span>
+</pre></div>
+</div>
+<img alt="../_images/align_9_0.png" src="../_images/align_9_0.png" />
+</div>
+<div class="section" id="aligning-data-with-hyperalignment">
+<h2>Aligning data with Hyperalignment<a class="headerlink" href="#aligning-data-with-hyperalignment" title="Permalink to this headline">¶</a></h2>
+<p>Next, we can align the two datasets and visualize the aligned data. Note
+that the two datasets are now much more similar to each other.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">aligned_data</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">align</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+<span class="c1"># average into two groups</span>
+<span class="n">group1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">aligned_data</span><span class="p">[:</span><span class="mi">17</span><span class="p">],</span> <span class="mi">0</span><span class="p">)</span>
+<span class="n">group2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">aligned_data</span><span class="p">[</span><span class="mi">18</span><span class="p">:],</span> <span class="mi">0</span><span class="p">)</span>
+
+<span class="c1"># plot</span>
+<span class="n">geo</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">([</span><span class="n">group1</span><span class="p">[:</span><span class="mi">100</span><span class="p">,</span> <span class="p">:],</span> <span class="n">group2</span><span class="p">[:</span><span class="mi">100</span><span class="p">,</span> <span class="p">:]])</span>
+</pre></div>
+</div>
+<img alt="../_images/align_12_0.png" src="../_images/align_12_0.png" />
+</div>
+<div class="section" id="aligning-data-with-the-shared-response-model">
+<h2>Aligning data with the Shared Response Model<a class="headerlink" href="#aligning-data-with-the-shared-response-model" title="Permalink to this headline">¶</a></h2>
+<p>You may use the Shared Response Model for alignment by setting <code class="docutils literal"><span class="pre">align</span></code>
+to &#8216;SRM&#8217;.</p>
+<div class="highlight-ipython3"><div class="highlight"><pre><span></span><span class="n">aligned_data</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">align</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">align</span><span class="o">=</span><span class="s1">&#39;SRM&#39;</span><span class="p">)</span>
+
+<span class="c1"># average into two groups</span>
+<span class="n">group1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">aligned_data</span><span class="p">[:</span><span class="mi">17</span><span class="p">],</span> <span class="mi">0</span><span class="p">)</span>
+<span class="n">group2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">aligned_data</span><span class="p">[</span><span class="mi">18</span><span class="p">:],</span> <span class="mi">0</span><span class="p">)</span>
+
+<span class="c1"># plot</span>
+<span class="n">geo</span> <span class="o">=</span> <span class="n">hyp</span><span class="o">.</span><span class="n">plot</span><span class="p">([</span><span class="n">group1</span><span class="p">[:</span><span class="mi">100</span><span class="p">,</span> <span class="p">:],</span> <span class="n">group2</span><span class="p">[:</span><span class="mi">100</span><span class="p">,</span> <span class="p">:]])</span>
+</pre></div>
+</div>
+<img alt="../_images/align_15_0.png" src="../_images/align_15_0.png" />
+</div>
+</div>
+
+
+    </div>
+      
+  </div>
+</div>
+<footer class="footer">
+  <div class="container">
+    <p class="pull-right">
+      <a href="#">Back to top</a>
+      
+        <br/>
+        
+<div id="sourcelink">
+  <a href="../_sources/tutorial/align.rst.txt"
+     rel="nofollow">Source</a>
+</div>
+      
+    </p>
+    <p>
+        &copy; Copyright 2017, Contextual Dynamics Laboratory.<br/>
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.2.<br/>
+    </p>
+  </div>
+</footer>
+  </body>
+</html>
