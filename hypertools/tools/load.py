@@ -16,11 +16,10 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None):
     ----------
     dataset : string
         The name of the example dataset.  Can be a `.geo` file, or one of a
-        number of example datasets listed below. `weights` is an fmri dataset
-        comprised of 36 subjects.  For each subject, the rows are fMRI
-        measurements and the columns are parameters of a model fit to the fMRI data. `weights_sample` is a sample of 3 subjects from that dataset.  `weights_avg` is the dataset split in half and averaged into two groups. `spiral` is 3D spiral to
-        highlight the `procrustes` function.  `mushrooms` is an example dataset
-        comprised of features (columns) of a collection of mushroomm samples (rows).
+        number of example datasets listed below. `weights` is list of 2 numpy arrays, each containing average brain activity (fMRI) from 18 subjects listening to the same story, fit using Hierarchical Topographic Factor Analysis (HTFA) with 100 nodes. The rows are fMRI
+        measurements and the columns are parameters of the model. `weights_sample` is a sample of 3 subjects from that dataset.  `weights_avg` is the dataset split in half and averaged into two groups. `spiral` is numpy array containing data for a 3D spiral, used to
+        highlight the `procrustes` function.  `mushrooms` is a numopy array
+        comprised of features (columns) of a collection of 8,124 mushroomm samples (rows).
 
     normalize : str or False or None
         If set to 'across', the columns of the input data will be z-scored

@@ -423,8 +423,8 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
 
     if not show:
         # prevents the backend from rendering this plot
-        plt.ioff() 
-    
+        plt.ioff()
+
     if animate in [True, 'parallel', 'spin']:
 
         assert x[0].shape[1] is 3, "Animations are currently only supported for 3d plots."
