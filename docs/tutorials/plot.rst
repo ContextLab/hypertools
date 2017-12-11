@@ -377,7 +377,11 @@ no data for PPCA to base its guess on, so the inference will fail.
 
 .. parsed-literal::
 
+<<<<<<< HEAD
     /Users/andyheusser/Documents/github/hypertools/hypertools/_shared/helpers.py:206: UserWarning: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)
+=======
+    /Users/andyheusser/Documents/github/hypertools/hypertools/_shared/helpers.py:181: UserWarning: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)
+>>>>>>> c46e7a9822fb6d89bac77708762d883add1dae6e
       warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
 
 

@@ -233,7 +233,11 @@ We can further examine the number of datapoints assigned each label.
 
 .. parsed-literal::
 
+<<<<<<< HEAD
     Counter({0: 1332, 1: 1768, 2: 5024})
+=======
+    Counter({0: 1332, 1: 5024, 2: 1768})
+>>>>>>> c46e7a9822fb6d89bac77708762d883add1dae6e
 
 
 

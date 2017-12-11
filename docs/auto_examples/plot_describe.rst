@@ -40,10 +40,14 @@ plots their correlation.
     hyp.describe(data)
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 **Total running time of the script:** ( 0 minutes  7.652 seconds)
 =======
 **Total running time of the script:** ( 0 minutes  8.633 seconds)
 >>>>>>> finished tutorial edits
+=======
+**Total running time of the script:** ( 0 minutes  8.633 seconds)
+>>>>>>> c46e7a9822fb6d89bac77708762d883add1dae6e
 
 
 

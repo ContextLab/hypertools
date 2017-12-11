@@ -39,10 +39,14 @@ yourself.
     hyp.plot(data, '.', n_clusters=10)
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 **Total running time of the script:** ( 0 minutes  2.357 seconds)
 =======
 **Total running time of the script:** ( 0 minutes  2.761 seconds)
 >>>>>>> finished tutorial edits
+=======
+**Total running time of the script:** ( 0 minutes  2.761 seconds)
+>>>>>>> c46e7a9822fb6d89bac77708762d883add1dae6e
 
 
 

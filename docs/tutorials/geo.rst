@@ -381,7 +381,11 @@ respectively.
 
 .. parsed-literal::
 
+<<<<<<< HEAD
     <matplotlib.axes._subplots.Axes3DSubplot at 0x112fe0cc0>
+=======
+    <matplotlib.axes._subplots.Axes3DSubplot at 0x1113f1048>
+>>>>>>> c46e7a9822fb6d89bac77708762d883add1dae6e
 
 
 
@@ -413,7 +417,11 @@ First, let's plot without making any changes.
 
 .. parsed-literal::
 
+<<<<<<< HEAD
     <hypertools.datageometry.DataGeometry at 0x113511048>
+=======
+    <hypertools.datageometry.DataGeometry at 0x111935080>
+>>>>>>> c46e7a9822fb6d89bac77708762d883add1dae6e
 
 
 
@@ -436,7 +444,11 @@ specified by the reduce model set to 2.
 
 .. parsed-literal::
 
+<<<<<<< HEAD
     <hypertools.datageometry.DataGeometry at 0x113a7fd30>
+=======
+    <hypertools.datageometry.DataGeometry at 0x11187b3c8>
+>>>>>>> c46e7a9822fb6d89bac77708762d883add1dae6e
 
 
 
