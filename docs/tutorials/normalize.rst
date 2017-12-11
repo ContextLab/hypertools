@@ -17,17 +17,12 @@ Import packages
 
     import hypertools as hyp
     import numpy as np
-<<<<<<< HEAD
-=======
-    from scipy.linalg import toeplitz
->>>>>>> c46e7a9822fb6d89bac77708762d883add1dae6e
     
     %matplotlib inline
 
 Generate synthetic data
 -----------------------
 
-<<<<<<< HEAD
 First, we generate two sets of synthetic data. We pull points randomly
 from a multivariate normal distribution for each set, so the sets will
 exhibit unique statistical properties.
@@ -47,13 +42,6 @@ exhibit unique statistical properties.
     data2 = np.random.multivariate_normal(m2[0], c2, 100)
     
     data = [data1, data2]
-=======
-.. code:: ipython3
-
-    cluster1 = np.random.multivariate_normal(np.zeros(10), 10 - toeplitz(np.arange(10)), size=100)
-    cluster2 = np.random.multivariate_normal(np.zeros(10)+10, 10 - toeplitz(np.arange(10)), size=100)
-    data = [cluster1, cluster2]
->>>>>>> c46e7a9822fb6d89bac77708762d883add1dae6e
 
 Visualize the data
 ------------------
@@ -64,11 +52,7 @@ Visualize the data
 
 
 
-<<<<<<< HEAD
 .. image:: normalize_files/normalize_8_0.png
-=======
-.. image:: normalize_files/normalize_7_0.png
->>>>>>> c46e7a9822fb6d89bac77708762d883add1dae6e
 
 
 Normalizing (Specified Cols or Rows)
@@ -95,11 +79,7 @@ data is split back into separate elements.
 
 
 
-<<<<<<< HEAD
 .. image:: normalize_files/normalize_13_0.png
-=======
-.. image:: normalize_files/normalize_12_0.png
->>>>>>> c46e7a9822fb6d89bac77708762d883add1dae6e
 
 
 Normalizing 'within'
@@ -115,11 +95,7 @@ each element of the data, separately.
 
 
 
-<<<<<<< HEAD
 .. image:: normalize_files/normalize_16_0.png
-=======
-.. image:: normalize_files/normalize_15_0.png
->>>>>>> c46e7a9822fb6d89bac77708762d883add1dae6e
 
 
 Normalizing by 'row'
@@ -132,9 +108,5 @@ Normalizing by 'row'
 
 
 
-<<<<<<< HEAD
 .. image:: normalize_files/normalize_18_0.png
-=======
-.. image:: normalize_files/normalize_17_0.png
->>>>>>> c46e7a9822fb6d89bac77708762d883add1dae6e
 
