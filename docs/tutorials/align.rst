@@ -21,6 +21,8 @@ three distinct datasets. Each has a similar shape (an S), but are scaled
 and rotated differently. Aligning these datasets finds the
 transformation that minimizes the distance between them.
 
+.. image:: align_files/alignment.png
+
 Import Hypertools
 -----------------
 
@@ -28,7 +30,7 @@ Import Hypertools
 
     import hypertools as hyp
     import numpy as np
-    
+
     %matplotlib inline
 
 Load your data
@@ -61,7 +63,7 @@ the weights data look when plotted together.
     # average into two groups
     group1 = np.mean(data[:17], 0)
     group2 = np.mean(data[18:], 0)
-    
+
     # plot
     geo = hyp.plot([group1[:100, :], group2[:100, :]])
 
@@ -81,11 +83,11 @@ more similar to each other.
 .. code:: ipython3
 
     aligned_data = hyp.align(data)
-    
+
     # average into two groups
     group1 = np.mean(aligned_data[:17], 0)
     group2 = np.mean(aligned_data[18:], 0)
-    
+
     # plot
     geo = hyp.plot([group1[:100, :], group2[:100, :]])
 
@@ -103,15 +105,14 @@ to 'SRM'.
 .. code:: ipython3
 
     aligned_data = hyp.align(data, align='SRM')
-    
+
     # average into two groups
     group1 = np.mean(aligned_data[:17], 0)
     group2 = np.mean(aligned_data[18:], 0)
-    
+
     # plot
     geo = hyp.plot([group1[:100, :], group2[:100, :]])
 
 
 
 .. image:: align_files/align_15_0.png
-

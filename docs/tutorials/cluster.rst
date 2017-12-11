@@ -233,7 +233,7 @@ We can further examine the number of datapoints assigned each label.
 
 .. parsed-literal::
 
-    Counter({0: 5024, 1: 1768, 2: 1332})
+    Counter({0: 1768, 1: 5024, 2: 1332})
 
 
 
