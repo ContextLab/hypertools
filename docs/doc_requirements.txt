@@ -3,3 +3,5 @@ sphinx_bootstrap_theme==0.4.13
 sphinx-gallery
 numpydoc
 deepdish
+nbsphinx
+jupyter_client
