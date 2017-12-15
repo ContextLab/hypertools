@@ -24,7 +24,7 @@ from ..datageometry import DataGeometry
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
          labels=None, legend=None, title=None, elev=10, azim=-60, ndims=3,
-         model=None, model_params=None, reduce='IncrementalPCA', cluster='KMeans',
+         model=None, model_params=None, reduce='IncrementalPCA', cluster=None,
          align=None, normalize=None, n_clusters=None, save_path=None, animate=False, duration=30, tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False, frame_rate=50, explore=False, show=True, transform=True):
     """
     Plots dimensionality reduced data and parses plot arguments
@@ -102,7 +102,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     cluster : str or dict or False/None
         Model to use to discover clusters.  Support algorithms are: KMeans,
         MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
-        SpectralClustering (default: KMeans).Can be passed as a string, but for
+        SpectralClustering, GaussianMixture, BayesianGaussianMixture (default: KMeans).Can be passed as a string, but for
         finer control of the model parameters, pass as a dictionary, e.g.
         reduce={'model' : 'KMeans', 'params' : {'max_iter' : 100}}. See
         scikit-learn specific model docs for details on parameters supported for
@@ -230,11 +230,11 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         x = reducer(x, ndims=3, reduce=reduce, internal=True)
 
     # find cluster and reshape if n_clusters
-    if n_clusters is not None:
-        cluster_labels = clusterer(x, cluster=cluster, n_clusters=n_clusters)
+    if cluster is not None:
+        cluster_labels= clusterer(x,cluster=cluster,n_clusters=n_clusters) if n_clusters is not None else clusterer(x,cluster=cluster)
         x = reshape_data(x, cluster_labels)
         if group:
-            warnings.warn('n_clusters overrides group, ignoring group.')
+            warnings.warn('clusters overrides group, ignoring group.')
 
     # group data if there is a grouping var
     if group is not None:
