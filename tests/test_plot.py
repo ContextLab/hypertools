@@ -20,25 +20,25 @@ mpl.rcParams['figure.max_open_warning'] = 25
 
 ## STATIC ##
 def test_plot_1d():
-    data_reduced_1d = reducer(data, ndims=1)
-    geo = plot.plot(data_reduced_1d, show=False)
-    assert all([i.shape[1]==1 for i in geo.data])
+	data_reduced_1d = reducer(data, ndims=1)
+	geo = plot.plot(data_reduced_1d, show=False)
+	assert all([i.shape[1]==1 for i in geo.data])
 
 def test_plot_1d_cluster():
-    data_reduced_1d = reducer(data, ndims=1)
+	data_reduced_1d = reducer(data, ndims=1)
 	geo = plot.plot(data_reduced_1d,cluster='KMeans',show=False)
 	assert all([i.shape[1]==1 for i in geo.data]) and len(geo.ax.get_lines())==3
 
 def test_plot_1d_cluster_custom_1():
-    data_reduced_1d = reducer(data, ndims=1)
-    NUM_CLUSTERS=4
+	data_reduced_1d = reducer(data, ndims=1)
+	NUM_CLUSTERS=4
 	geo = plot.plot(data_reduced_1d,cluster='KMeans',n_clusters=NUM_CLUSTERS,show=False)
 	assert all([i.shape[1]==1 for i in geo.data]) and len(geo.ax.get_lines())==NUM_CLUSTERS
 
 def test_plot_1d_cluster_custom_2():
-    data_reduced_1d = reducer(data, ndims=1)
-    NUM_CLUSTERS=6
-    geo = plot.plot(data_reduced_1d,cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}},show=False)
+	data_reduced_1d = reducer(data, ndims=1)
+	NUM_CLUSTERS=6
+	geo = plot.plot(data_reduced_1d,cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}},show=False)
 	assert all([i.shape[1]==1 for i in geo.data]) and len(geo.ax.get_lines())==NUM_CLUSTERS
 
 #
@@ -119,8 +119,8 @@ def test_plot_reduce_align5d():
 def test_plot_reduce_align5d_cluster():
     # should return 5d data since ndims=5
     NUM_CLUSTERS=4
-	geo = plot.plot(weights, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}}, ndims=5, align=True, show=False)
-	assert all([i.shape[1] == 5 for i in geo.xform_data]) and len(geo.ax.get_lines())==NUM_CLUSTERS
+    geo = plot.plot(weights, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}}, ndims=5, align=True, show=False)
+    assert all([i.shape[1] == 5 for i in geo.xform_data]) and len(geo.ax.get_lines())==NUM_CLUSTERS
 
 def test_plot_reduce10d():
     # should return 10d data since ndims=10
@@ -129,8 +129,8 @@ def test_plot_reduce10d():
 def test_plot_reduce_align10d_cluster():
     # should return 10d data since ndims=10
     NUM_CLUSTERS=4
-	geo = plot.plot(weights, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}}, ndims=10, align=True, show=False)
-	assert all([i.shape[1] == 10 for i in geo.xform_data]) and len(geo.ax.get_lines())==NUM_CLUSTERS
+    geo = plot.plot(weights, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}}, ndims=10, align=True, show=False)
+    assert all([i.shape[1] == 10 for i in geo.xform_data]) and len(geo.ax.get_lines())==NUM_CLUSTERS
 
 def test_plot_model_dict():
     # should return an instance of DataGeometry
@@ -138,41 +138,41 @@ def test_plot_model_dict():
     assert isinstance(geo, DataGeometry)
 def test_plot_model_dict_cluster():
     # should return an instance of DataGeometry and 4 Clusters
-	NUM_CLUSTERS=4
-	geo = plot.plot(weights, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}}, reduce={'model' : 'PCA', 'params' : {'whiten' : True}}, show=False)
-	assert isinstance(geo, DataGeometry) and len(geo.ax.get_lines())==NUM_CLUSTERS
+    NUM_CLUSTERS=4
+    geo = plot.plot(weights, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}}, reduce={'model' : 'PCA', 'params' : {'whiten' : True}}, show=False)
+    assert isinstance(geo, DataGeometry) and len(geo.ax.get_lines())==NUM_CLUSTERS
 
 def test_plot_nd():
     geo  = plot.plot(data, show=False)
     assert all([i.shape[1]==d.shape[1] for i, d in zip(geo.data, data)])
 def test_plot_nd_cluster():
 	NUM_CLUSTERS=4
-    geo  = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}} ,show=False)
-    assert all([i.shape[1]==d.shape[1] for i, d in zip(geo.data, data)]) and len(geo.ax.get_lines())==NUM_CLUSTERS
+	geo  = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}} ,show=False)
+	assert all([i.shape[1]==d.shape[1] for i, d in zip(geo.data, data)]) and len(geo.ax.get_lines())==NUM_CLUSTERS
 
 def test_plot_data_is_list():
     geo  = plot.plot(data, show=False)
     assert type(geo.data) is list
 def test_plot_data_is_list_cluster():
 	NUM_CLUSTERS=4
-    geo  = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}} ,show=False)
-    assert type(geo.data) is list and len(geo.ax.get_lines())==NUM_CLUSTERS
+	geo  = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}} ,show=False)
+	assert type(geo.data) is list and len(geo.ax.get_lines())==NUM_CLUSTERS
 #
 def test_plot_check_fig():
     geo  = plot.plot(data, show=False)
     assert isinstance(geo.fig, mpl.figure.Figure)
 def test_plot_check_fig_cluster():
 	NUM_CLUSTERS=4
-    geo  = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}}, show=False)
-    assert isinstance(geo.fig, mpl.figure.Figure) and len(geo.ax.get_lines())==NUM_CLUSTERS
+	geo  = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}}, show=False)
+	assert isinstance(geo.fig, mpl.figure.Figure) and len(geo.ax.get_lines())==NUM_CLUSTERS
 
 def test_plot_check_ax():
     geo  = plot.plot(data, show=False)
     assert isinstance(geo.ax, mpl.axes._axes.Axes)
 def test_plot_check_ax_cluster():
 	NUM_CLUSTERS=4
-    geo  = plot.plot(data,cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}}, show=False)
-    assert isinstance(geo.ax, mpl.axes._axes.Axes) and len(geo.ax.get_lines())==NUM_CLUSTERS
+	geo  = plot.plot(data,cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}}, show=False)
+	assert isinstance(geo.ax, mpl.axes._axes.Axes) and len(geo.ax.get_lines())==NUM_CLUSTERS
 
 # ## ANIMATED ##
 
@@ -181,21 +181,21 @@ def test_plot_1d_animate():
     with pytest.raises(Exception) as e_info:
         plot.plot(d, animate=True, show=False)
 def test_plot_1d_animate_cluster():
-    NUM_CLUSTERS=4
-    d = reducer(data, ndims=1)
-    with pytest.raises(Exception) as e_info:
-        plot.plot(d, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}}, animate=True, show=False)
+	NUM_CLUSTERS=4
+	d = reducer(data, ndims=1)
+	with pytest.raises(Exception) as e_info:
+		plot.plot(d, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}}, animate=True, show=False)
 
 
 def test_plot_2d_animate():
     data_reduced_2d = reducer(data, ndims=2)
     with pytest.raises(Exception) as e_info:
-        plot.plot(data_reduced_2d, animate=True, show=False)
+    	plot.plot(data_reduced_2d, animate=True, show=False)
 def test_plot_2d_animate_cluster():
-    NUM_CLUSTERS=4
-    data_reduced_2d = reducer(data, ndims=2)
-    with pytest.raises(Exception) as e_info:
-        plot.plot(data_reduced_2d, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}}, animate=True, show=False)
+	NUM_CLUSTERS=4
+	data_reduced_2d = reducer(data, ndims=2)
+	with pytest.raises(Exception) as e_info:
+		plot.plot(data_reduced_2d, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}}, animate=True, show=False)
 
 
 def test_plot_3d_animate():
@@ -213,37 +213,37 @@ def test_plot_nd_animate():
     assert all([i.shape[1]==d.shape[1] for i, d in zip(geo.data, data)])
 def test_plot_nd_animate_cluster():
 	NUM_CLUSTERS=4
-    geo = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}} , animate=True, show=False)
-    assert all([i.shape[1]==d.shape[1] for i, d in zip(geo.data, data)])
+	geo = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}} , animate=True, show=False)
+	assert all([i.shape[1]==d.shape[1] for i, d in zip(geo.data, data)])
 
 def test_plot_data_animate_is_list():
     geo = plot.plot(data, animate=True, show=False)
     assert type(geo.data) is list
 def test_plot_data_animate_is_list_cluster():
 	NUM_CLUSTERS=4
-    geo = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}} , animate=True, show=False)
-    assert type(geo.data) is list    
+	geo = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}} , animate=True, show=False)
+	assert type(geo.data) is list    
 
 def test_plot_animate_check_fig():
     geo = plot.plot(data, animate=True, show=False)
     assert isinstance(geo.fig, mpl.figure.Figure)
 def test_plot_animate_check_fig_cluster():
-    NUM_CLUSTERS=4
-    geo = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}} , animate=True, show=False)
-    assert isinstance(geo.fig, mpl.figure.Figure)
+	NUM_CLUSTERS=4
+	geo = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}} , animate=True, show=False)
+	assert isinstance(geo.fig, mpl.figure.Figure)
 
 def test_plot_animate_check_ax():
     geo = plot.plot(data, animate=True, show=False)
     assert isinstance(geo.ax, mpl.axes._axes.Axes)
 def test_plot_animate_check_ax_cluster():
 	NUM_CLUSTERS=4
-    geo = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}} ,animate=True, show=False)
-    assert isinstance(geo.ax, mpl.axes._axes.Axes)
+	geo = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}} ,animate=True, show=False)
+	assert isinstance(geo.ax, mpl.axes._axes.Axes)
 
 def test_plot_animate_check_line_ani():
     geo = plot.plot(data, animate=True, show=False)
     assert isinstance(geo.line_ani, mpl.animation.FuncAnimation)
 def test_plot_animate_check_line_ani_cluster():
 	NUM_CLUSTERS=4
-    geo = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}} , animate=True, show=False)
-    assert isinstance(geo.line_ani, mpl.animation.FuncAnimation)
+	geo = plot.plot(data, cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}} , animate=True, show=False)
+	assert isinstance(geo.line_ani, mpl.animation.FuncAnimation)
