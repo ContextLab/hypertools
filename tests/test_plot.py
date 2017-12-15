@@ -37,7 +37,7 @@ def test_plot_1d_cluster_custom_1():
 
 def test_plot_1d_cluster_custom_2():
 	data_reduced_1d = reducer(data, ndims=1)
-	NUM_CLUSTERS=6
+	NUM_CLUSTERS=4
 	geo = plot.plot(data_reduced_1d,cluster={'model':'KMeans','params':{'n_clusters':NUM_CLUSTERS}},show=False)
 	assert all([i.shape[1]==1 for i in geo.data]) and len(geo.ax.get_lines())==NUM_CLUSTERS
 
