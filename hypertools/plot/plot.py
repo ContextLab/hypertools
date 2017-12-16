@@ -232,7 +232,12 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     # find cluster and reshape if n_clusters
     if cluster is not None:
         cluster_labels= clusterer(x,cluster=cluster,n_clusters=n_clusters) if n_clusters is not None else clusterer(x,cluster=cluster)
-        x = reshape_data(x, cluster_labels)
+        if is_label_probabilistic(cluster_labels):
+            cluster_discrete_labels=reshape_labels(cluster_labels)
+            x = reshape_data(x, cluster_discrete_labels)
+            mpl_kwargs['color']=transform_labels2RGB(len(x),cluster_discrete_labels,cluster_labels)#Currently, Only plot1D is Handled
+        else:
+            x = reshape_data(x, cluster_labels)
         if group:
             warnings.warn('clusters overrides group, ignoring group.')
 

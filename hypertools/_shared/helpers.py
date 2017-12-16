@@ -16,7 +16,7 @@ import itertools
 import pandas as pd
 from matplotlib.lines import Line2D
 from .._externals.ppca import PPCA
-
+import matplotlib.pyplot as plt
 ##HELPER FUNCTIONS##
 def center(x):
     assert type(x) is list, "Input data to center must be list"
@@ -135,6 +135,44 @@ def reshape_data(x,labels):
     for idx,point in enumerate(labels):
         x_reshaped[categories.index(point)].append(x_stacked[idx])
     return [np.vstack(i) for i in x_reshaped]
+
+def is_label_probabilistic(labels):
+    """
+        Tells Whether the Assigned Label is a Scalar or Not[Case for GaussianMixture models]
+    """
+    if type(labels[0]) is np.ndarray or type(labels[0]) is list:
+        return True
+    return False
+def reshape_labels(labels):
+    """
+        Since, Most of the functionalities in Hypertool work with Scalar(To be Precise, Categorical in nature) Value of Label.
+        This method assigns the label/cluster to which the data point(s) most probably belong.  
+    """
+    if labels==None or len(labels)<1:
+        return labels
+    return [label.argmax() for label in labels]
+
+def get_plt_cluster_colors(n_clusters):
+    fig,ax= plt.subplots()#This Line needs a Fix: It assumes that the color palette is default. Ignores Users Input, if any.
+    color_cycle=ax._get_lines.prop_cycler
+    cluster_colors=range(n_clusters)
+    for i,color in enumerate(color_cycle):
+        if i<n_clusters:
+            cluster_colors[i]=color["color"]
+        else:
+            break
+    return np.array(cluster_colors)
+
+def transform_labels2RGB(n_clusters,cluster_discrete_labels,cluster_labels):
+    cluster_colors=get_plt_cluster_colors(n_clusters)#List of colors(In Order) which will be used for next n_cluster calls to ax.plot().
+    clustered_labels=[ [] for _ in range(n_clusters)]
+    for i in range(len(cluster_labels)):
+        clustered_labels[cluster_discrete_labels[i]].append(cluster_labels[i])#Breaks the cluster_lables into n_cluster Groups
+    rgbLabels=[]
+    #Below rgbLabels is weighted sum by considering the confidence which point belongs to various clusters and the rgb color of those clusters.
+    for i in range(len(cluster_colors)):
+        rgbLabels.append([np.dot(clustered_label,cluster_colors)/np.sum(clustered_label) for clustered_label in clustered_labels[i]])
+    return rgbLabels
 
 def format_data(x, ppca=False):
     """

@@ -42,6 +42,13 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
         fig, ax = plt.subplots()
         for i in range(n):
             ikwargs = kwargs_list[i]
+            if ikwargs.has_key('color'):
+                if type(ikwargs['color']) is list and len(ikwargs['color'])>1:
+                    #Special Case of Gaussian Models
+                    color_params=ikwargs['color']
+                    ikwargs.pop('color')#Removing from Dictionary, else the plot function will break
+                    ax.scatter(np.array(range(data[i][:,0].shape[0]))+15,data[i][:,0],color=color_params)#Scatter Plot can be used to Color Code the Exact points
+                    #Trying to Color Code is complicated and Computationally expensive: If there is a strong reason of directly implementing color in ax.plot(); I can try alternatives.
             if fmt is None:
                 ax.plot(data[i][:,0], **ikwargs)
             else:
