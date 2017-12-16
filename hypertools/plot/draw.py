@@ -42,7 +42,7 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
         fig, ax = plt.subplots()
         for i in range(n):
             ikwargs = kwargs_list[i]
-            if ikwargs.has_key('color'):
+            if 'color' in ikwargs:
                 if type(ikwargs['color']) is list and len(ikwargs['color'])>1:
                     #Special Case of Gaussian Models
                     color_params=ikwargs['color']
