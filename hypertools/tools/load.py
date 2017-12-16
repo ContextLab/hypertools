@@ -78,7 +78,7 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None):
     elif dataset is 'mushrooms':
         data = pd.read_csv(BASE_URL + '0B7Ycm4aSYdPPY3J0U2tRNFB4T3c')
 
-    if data:
+    if data is not None:
         return analyze(data, reduce=reduce, ndims=ndims, align=align, normalize=normalize)
     else:
         raise RuntimeError('No data loaded. Please specify a .geo file or '
