@@ -9,26 +9,25 @@ from .._shared.helpers import *
 
 class Cluster(object):
     """ 
-        Cluster Class holds generic attributes
-        Parameters
-        ---------- 
-        x : A Numpy array, Pandas Dataframe or list of arrays/dfs
-        The data to be clustered.  You can pass a single array/df or a list.
-        If a list is passed, the arrays will be stacked and the clustering
-        will be performed across all lists (i.e. not within each list).
+    Cluster Class holds generic attributes
+    Parameters
+    ---------- 
+    x : A Numpy array, Pandas Dataframe or list of arrays/dfs
+    The data to be clustered.  You can pass a single array/df or a list.
+    If a list is passed, the arrays will be stacked and the clustering
+    will be performed across all lists (i.e. not within each list).
 
-        model: Model to use to discover clusters.  Support algorithms are: KMeans,
-        MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
-        SpectralClustering, GaussianMixture, BayesianGaussianMixture. See scikit-learn specific model docs 
-        for details on parameters supported for each model.
+    model: Model to use to discover clusters.  Support algorithms are: KMeans,
+    MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
+    SpectralClustering, GaussianMixture, BayesianGaussianMixture. See scikit-learn specific model docs 
+    for details on parameters supported for each model.
 
-        Attributes
-        ----------
-        model_params: dict  
-            This parameter is especially useful for a finer control of the model parameters, e.g. one can 
-            set the maximum number of iteration for KMeans by setting the value of model_params as {'max_iter' : 100}. See
-            scikit-learn specific model docs for details on parameters supported for each model.
-
+    Attributes
+    ----------
+    model_params: dict  
+        This parameter is especially useful for a finer control of the model parameters, e.g. one can 
+        set the maximum number of iteration for KMeans by setting the value of model_params as {'max_iter' : 100}. See
+        scikit-learn specific model docs for details on parameters supported for each model.
     """
     def __init__(self,x,model):
         self.x=x
@@ -111,7 +110,7 @@ class BayesianGaussianMixtureCluster(GaussianMixtureCluster):
 @memoize
 def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
     """
-    Performs clustering analysis and returns a list of cluster labels or label probabilities(In the case of Gaussian Mixture models).
+    Performs clustering analysis and returns a list of cluster labels or label probabilities (In the case of Gaussian Mixture models).
 
     Parameters
     ----------

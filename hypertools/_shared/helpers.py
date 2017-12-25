@@ -16,7 +16,6 @@ import itertools
 import pandas as pd
 from matplotlib.lines import Line2D
 from .._externals.ppca import PPCA
-import matplotlib.pyplot as plt
 ##HELPER FUNCTIONS##
 def center(x):
     assert type(x) is list, "Input data to center must be list"
@@ -128,8 +127,10 @@ def parse_kwargs(x, kwargs):
         kwargs_list.append(tmp)
     return kwargs_list
 
-def reshape_data(x,labels):
-    categories = list(sorted(set(labels), key=list(labels).index))
+def reshape_data(x,labels,comparison_key=None):
+    if comparison_key==None:
+        comparison_key=list(labels).index
+    categories = list(sorted(set(labels), key=comparison_key))
     x_stacked = np.vstack(x)
     x_reshaped = [[] for i in categories]
     for idx,point in enumerate(labels):
@@ -140,7 +141,7 @@ def is_label_probabilistic(labels):
     """
         Tells Whether the Assigned Label is a Scalar or Not[Case for GaussianMixture models]
     """
-    if type(labels[0]) is np.ndarray or type(labels[0]) is list:
+    if type(labels[0]) is np.ndarray or type(labels) is pd.DataFrame or type(labels[0]) is list:
         return True
     return False
 def reshape_labels(labels):
@@ -152,27 +153,27 @@ def reshape_labels(labels):
         return labels
     return [label.argmax() for label in labels]
 
-def get_plt_cluster_colors(n_clusters):
-    fig,ax= plt.subplots()#This Line needs a Fix: It assumes that the color palette is default. Ignores Users Input, if any.
-    color_cycle=ax._get_lines.prop_cycler
-    cluster_colors=range(n_clusters)
-    for i,color in enumerate(color_cycle):
-        if i<n_clusters:
-            cluster_colors[i]=color["color"]
-        else:
-            break
-    return np.array(cluster_colors)
-
-def transform_labels2RGB(n_clusters,cluster_discrete_labels,cluster_labels):
-    cluster_colors=get_plt_cluster_colors(n_clusters)#List of colors(In Order) which will be used for next n_cluster calls to ax.plot().
+def labels2RGB(n_clusters,cluster_colors,cluster_discrete_labels,cluster_labels):
     clustered_labels=[ [] for _ in range(n_clusters)]
     for i in range(len(cluster_labels)):
         clustered_labels[cluster_discrete_labels[i]].append(cluster_labels[i])#Breaks the cluster_lables into n_cluster Groups
     rgbLabels=[]
-    #Below rgbLabels is weighted sum by considering the confidence which point belongs to various clusters and the rgb color of those clusters.
-    for i in range(len(cluster_colors)):
-        rgbLabels.append([np.dot(clustered_label,cluster_colors)/np.sum(clustered_label) for clustered_label in clustered_labels[i]])
+    #Below rgbLabels is weighted sum by considering the confidence which point belongs to various clusters and the RGB color of those clusters.
+    for i in range(n_clusters):
+        rgbLabels.append(list(map(lambda x, c=cluster_colors: np.dot(x[:n_clusters], c)/np.sum(x[:n_clusters]), clustered_labels[i])))
     return rgbLabels
+
+def bin_cluster_colors(x,labels):
+    categories = list(sorted(set(labels)))
+    x_stacked = np.vstack(x)
+    x_reshaped = [[] for i in categories]
+    for idx,point in enumerate(labels):
+        x_reshaped[categories.index(point)].append(x_stacked[idx])
+    return {ind:np.apply_over_axes(np.average,np.vstack(i),[0])[0] for ind,i in enumerate(x_reshaped)}
+
+def compute_bins_resolution(resolution,clustered_x):
+    cluster_cnts=np.array([len(cluster) for cluster in clustered_x])
+    return np.minimum(np.ceil(cluster_cnts*(resolution/np.sum(cluster_cnts))),cluster_cnts)
 
 def format_data(x, ppca=False):
     """

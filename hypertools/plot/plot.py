@@ -233,11 +233,11 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     if cluster is not None:
         cluster_labels= clusterer(x,cluster=cluster,n_clusters=n_clusters) if n_clusters is not None else clusterer(x,cluster=cluster)
         if is_label_probabilistic(cluster_labels):
-            cluster_discrete_labels=reshape_labels(cluster_labels)
-            x = reshape_data(x, cluster_discrete_labels)
-            mpl_kwargs['color']=transform_labels2RGB(len(x),cluster_discrete_labels,cluster_labels)#Currently, Only plot1D is Handled
+            RESOLUTION=4#Here 4 is Resolution: Will expose it as a parameter to Users Once your review
+            x,mpl_kwargs['color']=bin_probabilistic_clusters(cluster_labels,x,palette,RESOLUTION)
         else:
             x = reshape_data(x, cluster_labels)
+        #Put a Check Here(Or in draw.py) for Clusters With Only 1 Points; Line Plot Will Ignore these points
         if group:
             warnings.warn('clusters overrides group, ignoring group.')
 
@@ -411,3 +411,26 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     return DataGeometry(fig=fig, ax=ax, data=raw, xform_data=xform_data,
                         line_ani=line_ani, reduce=reduce_dict, align=align_dict,
                         normalize=normalize, kwargs=kwargs)
+
+def bin_probabilistic_clusters(cluster_labels,x,palette,resolution):
+    cluster_discrete_labels=reshape_labels(cluster_labels)
+    x = reshape_data(x, cluster_discrete_labels,type(cluster_discrete_labels[0]))
+    cluster_colors=get_plt_cluster_colors(palette,len(x))
+    raw_weighted_colors=labels2RGB(len(x),cluster_colors,cluster_discrete_labels,cluster_labels)
+    clusters_resolution=compute_bins_resolution(resolution,x)
+    cluster_colors=[]
+    x_reshaped=[]
+    for i in range(len(x)):
+        mini_cluster_labels=clusterer(x[i],n_clusters=int(clusters_resolution[i]))#Currently this is Hardwired to K-Means Clustering- Can be exposed to Client Later[Needs refactoring]
+        x_mini_clustered=reshape_data(x[i],mini_cluster_labels,type(mini_cluster_labels[0]))
+        bin_colors=bin_cluster_colors(raw_weighted_colors[i],mini_cluster_labels)
+        x_reshaped.extend(x_mini_clustered)
+        for bin_no in range(len(x_mini_clustered)):
+            cluster_colors.append(bin_colors[bin_no])
+    return x_reshaped,cluster_colors
+
+def get_plt_cluster_colors(palette,n_clusters):
+    if palette==None:
+        return np.array(sns.color_palette(n_colors=n_clusters))
+    else:
+        return np.array(sns.color_palette(palette=palette,n_colors=n_clusters))
