@@ -139,21 +139,31 @@ def reshape_data(x,labels,comparison_key=None):
 
 def is_label_probabilistic(labels):
     """
-        Tells Whether the Assigned Label is a Scalar or Not[Case for GaussianMixture models]
+    Tells Whether the Assigned Label is a Scalar or Not[Case for GaussianMixture models]
     """
     if type(labels[0]) is np.ndarray or type(labels) is pd.DataFrame or type(labels[0]) is list:
         return True
     return False
 def reshape_labels(labels):
     """
-        Since, Most of the functionalities in Hypertool work with Scalar(To be Precise, Categorical in nature) Value of Label.
-        This method assigns the label/cluster to which the data point(s) most probably belong.  
+    Since, Most of the functionalities in Hypertool work with Scalar(To be Precise, Categorical in nature) Value of Label.
+    This method assigns the label/cluster to which the data point(s) most probably belong.  
     """
     if labels==None or len(labels)<1:
         return labels
     return [label.argmax() for label in labels]
 
 def labels2RGB(n_clusters,cluster_colors,cluster_discrete_labels,cluster_labels):
+    """
+    Args:
+        n_clusters: Total number of clusters
+        cluster_colors: A list of size n_clusters, whose elements hold the color assigned to respective clusters
+        cluster_discrete_labels: A list of integers, which tells the cluster to which each individual data point belongs.
+        cluster_labels: A list of probability distributions, which tells the probabilities of each individual data point belonging to each cluster.
+    Returns:
+        color of each datapoint grouped basis the cluster to which they belong; Each datapoint's color is the weighted sum by considering the confidence with which 
+        the point belongs to various clusters and the RGB color of those clusters. 
+    """
     clustered_labels=[ [] for _ in range(n_clusters)]
     for i in range(len(cluster_labels)):
         clustered_labels[cluster_discrete_labels[i]].append(cluster_labels[i])#Breaks the cluster_lables into n_cluster Groups
@@ -164,6 +174,9 @@ def labels2RGB(n_clusters,cluster_colors,cluster_discrete_labels,cluster_labels)
     return rgbLabels
 
 def bin_cluster_colors(x,labels):
+    """
+    This method assigns the cluster's mean color to its member datapoints.
+    """
     categories = list(sorted(set(labels)))
     x_stacked = np.vstack(x)
     x_reshaped = [[] for i in categories]
@@ -172,6 +185,9 @@ def bin_cluster_colors(x,labels):
     return {ind:np.apply_over_axes(np.average,np.vstack(i),[0])[0] for ind,i in enumerate(x_reshaped)}
 
 def compute_bins_resolution(resolution,clustered_x):
+    """
+    Computes the resolution for individual clusters basis the total number of data points it contains and the overall resolution specified by the user.
+    """
     cluster_cnts=np.array([len(cluster) for cluster in clustered_x])
     return np.minimum(np.ceil(cluster_cnts*(resolution/np.sum(cluster_cnts))),cluster_cnts)
 

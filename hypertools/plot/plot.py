@@ -25,7 +25,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
          labels=None, legend=None, title=None, elev=10, azim=-60, ndims=3,
          model=None, model_params=None, reduce='IncrementalPCA', cluster=None,
-         align=None, normalize=None, n_clusters=None, save_path=None, animate=False, duration=30, tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False, frame_rate=50, explore=False, show=True, transform=True):
+         align=None, normalize=None, n_clusters=None, save_path=None, animate=False, duration=30, tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False, frame_rate=50, explore=False, show=True, transform=True,resolution=100):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -167,6 +167,10 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     transform : bool
         If set to false, skip data transformations (default : True)
 
+    resolution: int
+        This parameter is only appplicable when GaussianMixture, BayesianGaussianMixture 
+        is specified as the clustering algorithm. (default: 100)
+
     Returns
     ----------
     fig, ax, data, line_ani : matplotlib.figure.figure, matplotlib.axis.axes, numpy.array, matplotlib.animation.funcanimation
@@ -233,8 +237,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     if cluster is not None:
         cluster_labels= clusterer(x,cluster=cluster,n_clusters=n_clusters) if n_clusters is not None else clusterer(x,cluster=cluster)
         if is_label_probabilistic(cluster_labels):
-            RESOLUTION=4#Here 4 is Resolution: Will expose it as a parameter to Users Once your review
-            x,mpl_kwargs['color']=bin_probabilistic_clusters(cluster_labels,x,palette,RESOLUTION)
+            x,mpl_kwargs['color']=bin_probabilistic_clusters(cluster_labels,x,palette,resolution)
         else:
             x = reshape_data(x, cluster_labels)
         #Put a Check Here(Or in draw.py) for Clusters With Only 1 Points; Line Plot Will Ignore these points
@@ -413,6 +416,20 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
                         normalize=normalize, kwargs=kwargs)
 
 def bin_probabilistic_clusters(cluster_labels,x,palette,resolution):
+    """
+    This method should only be called when user specifies to use GaussianMixture or BayesianGaussianMixture clustering algorithm.
+    Args:
+        cluster_labels: A list of probability distributions, which tells the probabilities of each individual data point belonging to each cluster.
+        x : Numpy array, DataFrame or list of arrays/dfs
+        palette : str
+            A matplotlib or seaborn color palette
+        resolution: int
+        
+    Returns:
+         A tuple containing - Input Array reshaped into buckets, and the color assigned to each bucket. 
+         Number of buckets is derived basis the resolution parameter.
+         Buckets are assigned color basis both n_clusters and resolution parameters.
+    """
     cluster_discrete_labels=reshape_labels(cluster_labels)
     x = reshape_data(x, cluster_discrete_labels,type(cluster_discrete_labels[0]))
     cluster_colors=get_plt_cluster_colors(palette,len(x))
@@ -421,7 +438,7 @@ def bin_probabilistic_clusters(cluster_labels,x,palette,resolution):
     cluster_colors=[]
     x_reshaped=[]
     for i in range(len(x)):
-        mini_cluster_labels=clusterer(x[i],n_clusters=int(clusters_resolution[i]))#Currently this is Hardwired to K-Means Clustering- Can be exposed to Client Later[Needs refactoring]
+        mini_cluster_labels=clusterer(x[i],n_clusters=int(clusters_resolution[i]))#Currently this is Hardwired to K-Means Clustering- Do we need it to be configurable? If yes,then requires code change
         x_mini_clustered=reshape_data(x[i],mini_cluster_labels,type(mini_cluster_labels[0]))
         bin_colors=bin_cluster_colors(raw_weighted_colors[i],mini_cluster_labels)
         x_reshaped.extend(x_mini_clustered)
@@ -430,6 +447,10 @@ def bin_probabilistic_clusters(cluster_labels,x,palette,resolution):
     return x_reshaped,cluster_colors
 
 def get_plt_cluster_colors(palette,n_clusters):
+    """
+    Basis the specified palette and n_clusters, this method returns the colors pertaining 
+    to each one of the n_clusters clusters.
+    """
     if palette==None:
         return np.array(sns.color_palette(n_colors=n_clusters))
     else:
