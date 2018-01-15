@@ -19,6 +19,7 @@ from ..tools.df2mat import df2mat
 from ..tools.reduce import reduce as reducer
 from ..tools.normalize import normalize as normalizer
 from ..tools.align import align as aligner
+from ..tools.text2mat import text2mat
 from .draw import draw
 from ..datageometry import DataGeometry
 
@@ -30,7 +31,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          align=None, normalize=None, n_clusters=None, save_path=None,
          animate=False, duration=30, tail_duration=2, rotations=2, zoom=1,
          chemtrails=False, precog=False, bullettime=False, frame_rate=50,
-         explore=False, show=True, transform=True):
+         explore=False, show=True, transform=True, vectorizer='CountVectorizer',
+         vectorizer_params=None, text='LatentDirichletAllocation',
+         text_params=None):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -191,8 +194,20 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         reduce['model'] = model
         reduce['params'] = model_params
 
-    # put into common format
-    raw = format_data(x, ppca=True)
+    # check the data type
+    dtype = check_data(x)
+
+    # if the data is text
+    if dtype is 'text':
+        # convert text to matrix
+        raw = text2mat(x, vectorizer=vectorizer,
+                       vectorizer_params=vectorizer_params,
+                       text_model=text_model,
+                       text_params=text_params,
+                       ndims=ndims)
+    else:
+        # put into common format
+        raw = format_data(x, ppca=True)
 
     # analyze the data
     if transform is True:

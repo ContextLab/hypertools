@@ -10,3 +10,4 @@ from .normalize import normalize
 from .procrustes import procrustes
 from .load import load
 from .._shared.helpers import format_data
+from text2mat import text2mat
