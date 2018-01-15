@@ -86,6 +86,11 @@ def check_data(data):
             return 'list'
         elif all([isinstance(x, pd.DataFrame) for x in data]):
             return 'dflist'
+        elif all([isinstance(x, str) for x in data]):
+                return 'text'
+        elif isinstance(data[0], collections.Iterable):
+            if all([isinstance(x, str) for x in data[0]]):
+                    return 'text'
         else:
             raise ValueError("Data must be numpy array, list of numpy array, pandas dataframe or list of pandas dataframes.")
     elif isinstance(data, np.ndarray):
@@ -188,14 +193,21 @@ def format_data(x, ppca=False):
 
     formatted_data = []
 
-    for xi in x:
+    # if its a single list of strings
+    if all([isinstance(xi, str) for xi in x]):
+        formatted_data.append(np.array(x))
 
-        data_type = check_data(xi)
+    else:
+        for xi in x:
+            data_type = check_data(xi)
 
-        if data_type=='df':
-            xi = df2mat(xi)
+            if data_type=='df':
+                xi = df2mat(xi)
 
-        formatted_data.append(xi)
+            if data_type=='text':
+                xi = np.array(xi)
+
+            formatted_data.append(xi)
 
     if any([i.ndim==1 for i in formatted_data]):
         formatted_data = [np.reshape(i,(i.shape[0],1)) if i.ndim==1 else i for i in formatted_data]
