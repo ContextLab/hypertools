@@ -8,6 +8,7 @@ try:
 except ImportError:
     warnings.warn('The hdbscan clustering library is not installed;'
                   ' HDBSCAN clustering will be unavailable.')
+    HDBSCAN = None
 
 from .._shared.helpers import *
 

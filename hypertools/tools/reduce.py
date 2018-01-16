@@ -12,6 +12,7 @@ try:
     from umap import UMAP
 except ImportError:
     warnings.warn('umap library is not installed; UMAP will be unavailable.')
+    UMAP = None
 
 # internal libraries
 from ..tools.df2mat import df2mat
