@@ -2,13 +2,7 @@
 import warnings
 from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering
 import numpy as np
-
-try:
-    from hdbscan import HDBSCAN
-except ImportError:
-    warnings.warn('The hdbscan clustering library is not installed;'
-                  ' HDBSCAN clustering will be unavailable.')
-    HDBSCAN = None
+from hdbscan import HDBSCAN
 
 from .._shared.helpers import *
 
@@ -27,14 +21,14 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
     cluster : str or dict
         Model to use to discover clusters.  Support algorithms are: KMeans,
         MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
-        SpectralClustering (default: KMeans).Can be passed as a string, but for
-        finer control of the model parameters, pass as a dictionary, e.g.
-        reduce={'model' : 'KMeans', 'params' : {'max_iter' : 100}}. See
-        scikit-learn specific model docs for details on parameters supported for
+        SpectralClustering and HDBSCAN (default: KMeans). Can be passed as a
+        string, but for finer control of the model parameters, pass as a
+        dictionary, e.g. reduce={'model' : 'KMeans', 'params' : {'max_iter' : 100}}.
+        See scikit-learn specific model docs for details on parameters supported for
         each model.
 
     n_clusters : int
-        Number of clusters to discover
+        Number of clusters to discover. Not required for HDBSCAN.
 
     ndims : None
         Deprecated argument.  Please use new analyze function to perform
