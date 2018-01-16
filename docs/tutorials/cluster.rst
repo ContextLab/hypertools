@@ -7,7 +7,7 @@ dataframe, or list) and returns a list of cluster labels.
 
 The default clustering method is K-Means (argument 'KMeans') with
 MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
-and SpectralClustering also supported.
+SpectralClustering and HDBSCAN also supported.
 
 Note that, if a list is passed, the arrays will be stacked and
 clustering will be performed *across* all lists (not within each list).
