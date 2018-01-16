@@ -36,7 +36,7 @@ setup(
     packages=find_packages(exclude=('images', 'examples', 'tests')),
     install_requires=[
    'PPCA>=0.0.2',
-   'scikit-learn>=0.18.1',
+   'scikit-learn>=0.19.1',
    'pandas>=0.18.0',
    'seaborn>=0.8.1',
    'matplotlib>=1.5.1',

@@ -25,7 +25,7 @@ data = [['i like cats alot', 'cats r pretty cool', 'cats are better than dogs'],
 hyp.plot(data, 'o')
 
 # plot the word counts
-hyp.plot(data, 'o', text_model=None)
+hyp.plot(data, 'o', text_model=None, labels=data[0]+data[1])
 
 # convert text to matrix without plotting
 mtx = hyp.tools.text2mat(data, vectorizer='tfidf', text_model='NMF')
