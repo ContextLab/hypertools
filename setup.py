@@ -42,6 +42,8 @@ setup(
    'matplotlib>=1.5.1',
    'scipy>=0.17.1',
    'numpy>=1.10.4',
+   'hdbscan>=0.8.11',
+   'umap-learn>=0.1.5',
    'future',
    'requests',
    'deepdish'
