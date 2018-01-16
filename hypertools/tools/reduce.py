@@ -7,12 +7,7 @@ import numpy as np
 ## reduction models
 from sklearn.decomposition import PCA, FastICA, IncrementalPCA, KernelPCA, FactorAnalysis, TruncatedSVD, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
 from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
-
-try:
-    from umap import UMAP
-except ImportError:
-    warnings.warn('umap library is not installed; UMAP will be unavailable.')
-    UMAP = None
+from umap import UMAP
 
 # internal libraries
 from ..tools.df2mat import df2mat
@@ -36,11 +31,11 @@ def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
         Decomposition/manifold learning model to use.  Models supported: PCA,
         IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
         FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
-        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be
-        passed as a string, but for finer control of the model parameters, pass
-        as a dictionary, e.g. reduce={'model' : 'PCA', 'params' : {'whiten' : True}}.
-        See scikit-learn specific model docs for details on parameters supported
-        for each model.
+        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, MDSand UMAP.
+        Can be passed as a string, but for finer control of the model
+        parameters, pass as a dictionary, e.g. reduce={'model' : 'PCA',
+        'params' : {'whiten' : True}}. See scikit-learn specific model docs
+        for details on parameters supported for each model.
 
     ndims : int
         Number of dimensions to reduce
