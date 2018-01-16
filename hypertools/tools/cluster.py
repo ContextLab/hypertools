@@ -2,6 +2,13 @@
 import warnings
 from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering
 import numpy as np
+
+try:
+    from hdbscan import HDBSCAN
+except ImportError:
+    warnings.warn('The hdbscan clustering library is not installed;'
+                  ' HDBSCAN clustering will be unavailable.')
+
 from .._shared.helpers import *
 
 @memoize
@@ -56,15 +63,17 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
             'AgglomerativeClustering' : AgglomerativeClustering,
             'FeatureAgglomeration' : FeatureAgglomeration,
             'Birch' : Birch,
-            'SpectralClustering' : SpectralClustering
+            'SpectralClustering' : SpectralClustering,
+            'HDBSCAN' : HDBSCAN
         }
 
         # if reduce is a string, find the corresponding model
         if type(cluster) is str:
             model = models[cluster]
-            model_params = {
-                'n_clusters' : n_clusters
-            }
+            if cluster != 'HDBSCAN':
+                model_params = {
+                    'n_clusters' : n_clusters
+                }
         # if its a dict, use custom params
         elif type(cluster) is dict:
             if type(cluster['model']) is str:

@@ -8,6 +8,11 @@ import numpy as np
 from sklearn.decomposition import PCA, FastICA, IncrementalPCA, KernelPCA, FactorAnalysis, TruncatedSVD, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
 from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
 
+try:
+    from umap import UMAP
+except ImportError:
+    warnings.warn('umap library is not installed; UMAP will be unavailable.')
+
 # internal libraries
 from ..tools.df2mat import df2mat
 from .._shared.helpers import *
@@ -86,7 +91,8 @@ def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
         'Isomap' : Isomap,
         'SpectralEmbedding' : SpectralEmbedding,
         'LocallyLinearEmbedding' : LocallyLinearEmbedding,
-        'MDS' : MDS
+        'MDS' : MDS,
+        'UMAP' : UMAP
     }
 
     # deprecated warning
