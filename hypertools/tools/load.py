@@ -4,6 +4,7 @@ import pandas as pd
 import deepdish as dd
 import sys
 from warnings import warn
+from sklearn.externals import joblib
 from .analyze import analyze
 from .._shared.helpers import format_data
 from ..datageometry import DataGeometry
