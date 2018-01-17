@@ -12,6 +12,7 @@ from matplotlib.lines import Line2D
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 from .._shared.helpers import *
+from .._shared.params import default_params
 from ..tools.analyze import analyze
 from ..tools.cluster import cluster as clusterer
 from ..tools.df2mat import df2mat
@@ -21,17 +22,6 @@ from ..tools.align import align as aligner
 from .draw import draw
 from ..datageometry import DataGeometry
 
-_default_cluster_params = {
-    'KMeans': {'n_clusters': 5},
-    'MiniBatchKMeans': {'n_clusters': 5},
-    'SpectralClustering': {'n_clusters': 5,
-                           'affinity' : 'nearest_neighbors',
-                           'n_neighbors' : 10},
-    'AgglomerativeClustering': {'n_clusters': 5, 'linkage' : 'ward'},
-    'FeatureAgglomeration': {'n_clusters': 5},
-    'Birch': {'n_clusters': 5},
-    'HDBSCAN': {'min_samples': 5, 'min_cluster_size': 15}
-}
 
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
@@ -251,11 +241,10 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     if cluster is not None:
         if type(cluster) is str:
             model = cluster
-            params = _default_cluster_params[model].copy()
+            params = default_params(model)
         elif type(cluster) is dict:
             model = cluster['model']
-            params = _default_cluster_params[model].copy()
-            params.update(cluster['params'])
+            params = default_params(model, cluster['params'])
         else:
             raise ValueError('Invalid cluster model specified; should be'
                              ' string or dictionary!')
