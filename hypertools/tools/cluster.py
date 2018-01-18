@@ -69,6 +69,8 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
                 model_params = {
                     'n_clusters' : n_clusters
                 }
+            else:
+                model_params = {}
         # if its a dict, use custom params
         elif type(cluster) is dict:
             if type(cluster['model']) is str:
