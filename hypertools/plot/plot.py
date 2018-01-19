@@ -202,9 +202,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         # convert text to matrix
         raw = text2mat(x, vectorizer=vectorizer,
                        vectorizer_params=vectorizer_params,
-                       text_model=text_model,
+                       text=text,
                        text_params=text_params,
-                       ndims=ndims)
+                       n_components=ndims)
     else:
         # put into common format
         raw = format_data(x, ppca=True)
