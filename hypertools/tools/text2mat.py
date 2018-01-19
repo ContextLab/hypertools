@@ -5,7 +5,7 @@ from sklearn.pipeline import Pipeline
 from .._shared.helpers import format_data
 
 def text2mat(data, vectorizer='count', vectorizer_params=None, text_model='LDA',
-             text_params=None, ndims=20, fit_model=False):
+             text_params=None, n_components=20, fit_model=False):
     """
     Turns a list of text samples into a matrix using a vectorizer and a text model
 
@@ -40,7 +40,7 @@ def text2mat(data, vectorizer='count', vectorizer_params=None, text_model='LDA',
     text_params : dict
         Parameters for text model. See link above for details
 
-    ndims : int
+    n_components : int
         The number of components to estimate in the text model
 
     Returns
@@ -112,8 +112,8 @@ def text2mat(data, vectorizer='count', vectorizer_params=None, text_model='LDA',
     if text_params is None:
         text_params = {}
 
-    # update text dict with ndims
-    text_params.update({'n_components' : ndims})
+    # update text dict with n_topics
+    text_params.update({'n_components' : n_topics})
 
     # if it has a __name__, it is a class (not a class instance)
     if hasattr(vectorizer_models[vectorizer], '__name__'):
