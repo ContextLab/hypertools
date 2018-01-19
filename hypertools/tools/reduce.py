@@ -31,7 +31,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
         Decomposition/manifold learning model to use.  Models supported: PCA,
         IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
         FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
-        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, MDSand UMAP.
+        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, MDS and UMAP.
         Can be passed as a string, but for finer control of the model
         parameters, pass as a dictionary, e.g. reduce={'model' : 'PCA',
         'params' : {'whiten' : True}}. See scikit-learn specific model docs
