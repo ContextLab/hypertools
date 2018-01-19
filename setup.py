@@ -40,7 +40,7 @@ setup(
    'pandas>=0.18.0',
    'seaborn>=0.8.1',
    'matplotlib>=1.5.1',
-   'scipy>=0.17.1',
+   'scipy>=1.0.0',
    'numpy>=1.10.4',
    'hdbscan>=0.8.11',
    'umap-learn>=0.1.5',
