@@ -2,6 +2,8 @@
 import warnings
 from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering
 import numpy as np
+from hdbscan import HDBSCAN
+
 from .._shared.helpers import *
 
 @memoize
@@ -19,14 +21,14 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
     cluster : str or dict
         Model to use to discover clusters.  Support algorithms are: KMeans,
         MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
-        SpectralClustering (default: KMeans).Can be passed as a string, but for
-        finer control of the model parameters, pass as a dictionary, e.g.
-        reduce={'model' : 'KMeans', 'params' : {'max_iter' : 100}}. See
-        scikit-learn specific model docs for details on parameters supported for
+        SpectralClustering and HDBSCAN (default: KMeans). Can be passed as a
+        string, but for finer control of the model parameters, pass as a
+        dictionary, e.g. reduce={'model' : 'KMeans', 'params' : {'max_iter' : 100}}.
+        See scikit-learn specific model docs for details on parameters supported for
         each model.
 
     n_clusters : int
-        Number of clusters to discover
+        Number of clusters to discover. Not required for HDBSCAN.
 
     ndims : None
         Deprecated argument.  Please use new analyze function to perform
@@ -56,15 +58,19 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
             'AgglomerativeClustering' : AgglomerativeClustering,
             'FeatureAgglomeration' : FeatureAgglomeration,
             'Birch' : Birch,
-            'SpectralClustering' : SpectralClustering
+            'SpectralClustering' : SpectralClustering,
+            'HDBSCAN' : HDBSCAN
         }
 
         # if reduce is a string, find the corresponding model
         if type(cluster) is str:
             model = models[cluster]
-            model_params = {
-                'n_clusters' : n_clusters
-            }
+            if cluster != 'HDBSCAN':
+                model_params = {
+                    'n_clusters' : n_clusters
+                }
+            else:
+                model_params = {}
         # if its a dict, use custom params
         elif type(cluster) is dict:
             if type(cluster['model']) is str:

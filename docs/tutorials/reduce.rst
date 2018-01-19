@@ -10,7 +10,7 @@ specify a desired number of dimensions other than three.
 Supported models include: PCA, IncrementalPCA, SparsePCA,
 MiniBatchSparsePCA, KernelPCA, FastICA, FactorAnalysis, TruncatedSVD,
 DictionaryLearning, MiniBatchDictionaryLearning, TSNE, Isomap,
-SpectralEmbedding, LocallyLinearEmbedding, and MDS.
+SpectralEmbedding, LocallyLinearEmbedding, MDS and UMAP.
 
 Import Hypertools
 -----------------
@@ -152,7 +152,7 @@ model docs for details on parameters supported for each model.
 Supported models include: PCA, IncrementalPCA, SparsePCA,
 MiniBatchSparsePCA, KernelPCA, FastICA, FactorAnalysis, TruncatedSVD,
 DictionaryLearning, MiniBatchDictionaryLearning, TSNE, Isomap,
-SpectralEmbedding, LocallyLinearEmbedding, and MDS.
+SpectralEmbedding, LocallyLinearEmbedding, MDS and UMAP.
 
 The example below will reduce to the default of three features, since
 the desired number of features is not specified.

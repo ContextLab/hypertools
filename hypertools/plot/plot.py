@@ -12,6 +12,7 @@ from matplotlib.lines import Line2D
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 from .._shared.helpers import *
+from .._shared.params import default_params
 from ..tools.analyze import analyze
 from ..tools.cluster import cluster as clusterer
 from ..tools.df2mat import df2mat
@@ -21,11 +22,15 @@ from ..tools.align import align as aligner
 from .draw import draw
 from ..datageometry import DataGeometry
 
+
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
          labels=None, legend=None, title=None, elev=10, azim=-60, ndims=3,
-         model=None, model_params=None, reduce='IncrementalPCA', cluster='KMeans',
-         align=None, normalize=None, n_clusters=None, save_path=None, animate=False, duration=30, tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False, frame_rate=50, explore=False, show=True, transform=True):
+         model=None, model_params=None, reduce='IncrementalPCA', cluster=None,
+         align=None, normalize=None, n_clusters=None, save_path=None,
+         animate=False, duration=30, tail_duration=2, rotations=2, zoom=1,
+         chemtrails=False, precog=False, bullettime=False, frame_rate=50,
+         explore=False, show=True, transform=True):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -100,13 +105,16 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         of parameter values (default : 'hyper').
 
     cluster : str or dict or False/None
-        Model to use to discover clusters.  Support algorithms are: KMeans,
-        MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
-        SpectralClustering (default: KMeans).Can be passed as a string, but for
-        finer control of the model parameters, pass as a dictionary, e.g.
+        If cluster is passed, HyperTools will perform clustering using the
+        specified clustering clustering model. Supportted algorithms are:
+        KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch,
+        FeatureAgglomeration, SpectralClustering and HDBSCAN (default: None).
+        Can be passed as a string, but for finer control of the model
+        parameters, pass as a dictionary, e.g.
         reduce={'model' : 'KMeans', 'params' : {'max_iter' : 100}}. See
         scikit-learn specific model docs for details on parameters supported for
-        each model.
+        each model. If no parameters are specified in the string a default set
+        of parameters will be used.
 
     n_clusters : int
         If n_clusters is passed, HyperTools will perform k-means clustering
@@ -230,8 +238,33 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         x = reducer(x, ndims=3, reduce=reduce, internal=True)
 
     # find cluster and reshape if n_clusters
-    if n_clusters is not None:
-        cluster_labels = clusterer(x, cluster=cluster, n_clusters=n_clusters)
+    if cluster is not None:
+        if type(cluster) is str:
+            model = cluster
+            params = default_params(model)
+        elif type(cluster) is dict:
+            model = cluster['model']
+            params = default_params(model, cluster['params'])
+        else:
+            raise ValueError('Invalid cluster model specified; should be'
+                             ' string or dictionary!')
+
+        if n_clusters is not None:
+            if cluster in ('HDBSCAN',):
+                warnings.warn('n_clusters is not a valid parameter for '
+                              'HDBSCAN clustering and will be ignored.')
+            else:
+                params['n_clusters'] = n_clusters
+
+        cluster_labels = clusterer(x, cluster={'model': model,
+                                               'params': params})
+        x = reshape_data(x, cluster_labels)
+        if group:
+            warnings.warn('cluster overrides group, ignoring group.')
+
+    elif n_clusters is not None:
+        # If cluster was None default to KMeans
+        cluster_labels = clusterer(x, cluster='KMeans', n_clusters=n_clusters)
         x = reshape_data(x, cluster_labels)
         if group:
             warnings.warn('n_clusters overrides group, ignoring group.')

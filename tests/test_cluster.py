@@ -17,3 +17,8 @@ def test_cluster_n_clusters():
 
 def test_cluster_returns_list():
     assert type(labels) is list
+
+def test_cluster_hdbscan():
+    # Given well separated clusters this should "just work"
+    hdbscan_labels = cluster(data, cluster='HDBSCAN')
+    assert len(set(hdbscan_labels)) == 2

@@ -73,6 +73,26 @@ def test_plot_model_dict():
     geo = plot.plot(weights, reduce={'model' : 'PCA', 'params' : {'whiten' : True}}, show=False)
     assert isinstance(geo, DataGeometry)
 
+def test_plot_cluster_str():
+    # should return 10d data since ndims=10
+    geo = plot.plot(weights, cluster='KMeans', show=False)
+    assert isinstance(geo, DataGeometry)
+
+def test_plot_cluster_dict():
+    # should return 10d data since ndims=10
+    geo = plot.plot(weights, cluster={'model' : 'KMeans', 'params' : {'n_clusters' : 3}}, show=False)
+    assert isinstance(geo, DataGeometry)
+
+def test_plot_cluster_n_clusters():
+    # should return 10d data since ndims=10
+    geo = plot.plot(weights, n_clusters=3, show=False)
+    assert isinstance(geo, DataGeometry)
+
+def test_plot_cluster_HDBSCAN():
+    # should return 10d data since ndims=10
+    geo = plot.plot(weights, cluster='HDBSCAN', show=False)
+    assert isinstance(geo, DataGeometry)
+
 def test_plot_nd():
     geo  = plot.plot(data, show=False)
     assert all([i.shape[1]==d.shape[1] for i, d in zip(geo.data, data)])

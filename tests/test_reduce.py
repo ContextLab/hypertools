@@ -95,3 +95,8 @@ def test_reduce_LocallyLinearEmbedding():
 def test_reduce_MDS():
     reduced_data_3d = reducer(data, reduce='MDS', ndims=3)
     assert reduced_data_3d[0].shape==(100,3)
+
+def test_reduce_UMAP():
+    reduced_data_3d = reducer(data, reduce='UMAP', ndims=3)
+    assert reduced_data_3d[0].shape==(100,3)
+
