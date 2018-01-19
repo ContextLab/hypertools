@@ -4,8 +4,9 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.utils.validation import check_is_fitted
 from sklearn.pipeline import Pipeline
-from .._shared.helpers import format_data
+from .._shared.helpers import format_data, memoize
 
+@memoize
 def text2mat(data, vectorizer='CountVectorizer', vectorizer_params=None,
              text='LatentDirichletAllocation', text_params=None,
              n_components=20, fit_model=False):

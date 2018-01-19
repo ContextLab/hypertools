@@ -80,25 +80,25 @@ def interp_array_list(arr_list,interp_val=10):
         smoothed[idx] = interp_array(arr,interp_val)
     return smoothed
 
-def check_data(data):
-    if type(data) is list:
-        if all([isinstance(x, np.ndarray) for x in data]):
-            return 'list'
-        elif all([isinstance(x, pd.DataFrame) for x in data]):
-            return 'dflist'
-        elif all([isinstance(x, str) for x in data]):
-                return 'text'
-        elif isinstance(data[0], collections.Iterable):
-            if all([isinstance(x, str) for x in data[0]]):
-                    return 'text'
-        else:
-            raise ValueError("Data must be numpy array, list of numpy array, pandas dataframe or list of pandas dataframes.")
-    elif isinstance(data, np.ndarray):
-        return 'array'
-    elif isinstance(data, pd.DataFrame):
-        return 'df'
-    else:
-        raise ValueError("Data must be numpy array, list of numpy array, pandas dataframe or list of pandas dataframes.")
+# def check_data(data):
+#     if type(data) is list:
+#         if all([isinstance(x, np.ndarray) for x in data]):
+#             return 'list'
+#         elif all([isinstance(x, pd.DataFrame) for x in data]):
+#             return 'dflist'
+#         elif all([isinstance(x, str) for x in data]):
+#                 return 'text'
+#         elif isinstance(data[0], collections.Iterable):
+#             if all([isinstance(x, str) for x in data[0]]):
+#                     return 'text'
+#         else:
+#             raise ValueError("Data must be numpy array, list of numpy array, pandas dataframe or list of pandas dataframes.")
+#     elif isinstance(data, np.ndarray):
+#         return 'array'
+#     elif isinstance(data, pd.DataFrame):
+#         return 'df'
+#     else:
+#         raise ValueError("Data must be numpy array, list of numpy array, pandas dataframe or list of pandas dataframes.")
 
 def parse_args(x,args):
     args_list = []
@@ -165,6 +165,26 @@ def format_data(x, ppca=False):
         A list of formatted arrays
     """
 
+    def get_type(data):
+        """
+        Checks what the data type is and returns it as a string label
+        """
+        if isinstance(data, list):
+            if isinstance(data[0], str):
+                return 'list_str'
+        elif isinstance(data[0], (int, long, float, complex)):
+                return 'list_num'
+        elif isinstance(data, np.ndarray):
+            return 'array'
+        elif isinstance(data, pd.DataFrame):
+            return 'df'
+        elif isinstance(data, str):
+            return 'str'
+        else:
+            raise TypeError('Unsupported data type passed. Supported types: '
+                            'Numpy Array, Pandas DataFrame, String, List of strings'
+                            ', List of numbers')
+
     def fill_missing(x):
 
         # ppca if missing data
@@ -188,26 +208,34 @@ def format_data(x, ppca=False):
     # not sure why i needed to import here, but its the only way I could get it to work
     from ..tools.df2mat import df2mat
 
+    # if x is not a list, make it one
     if type(x) is not list:
         x = [x]
 
-    formatted_data = []
+    # check data type for each element in list
+    dtypes = list(map(get_type, x))
 
-    # if its a single list of strings
-    if all([isinstance(xi, str) for xi in x]):
-        formatted_data.append(np.array(x))
+    # handle text data:
+    if any(map(lambda x: x in ['list_str', 'str'], dtypes)):
 
-    else:
-        for xi in x:
-            data_type = check_data(xi)
+        # filter and convert to numpy array
+        text_data = [np.array(t) for in list(filter(lambda x: x in ['list_str', 'str'], dtypes))]
 
-            if data_type=='df':
-                xi = df2mat(xi)
+        # convert to numerical matrix
+        text_data = text2mat(text_data, **text_kwargs, internal=True)
 
-            if data_type=='text':
-                xi = np.array(xi)
-
-            formatted_data.append(xi)
+        
+    # else:
+    #     for xi in x:
+    #         data_type = check_data(xi)
+    #
+    #         if data_type=='df':
+    #             xi = df2mat(xi)
+    #
+    #         if data_type=='text':
+    #             xi = np.array(xi)
+    #
+    #         formatted_data.append(xi)
 
     if any([i.ndim==1 for i in formatted_data]):
         formatted_data = [np.reshape(i,(i.shape[0],1)) if i.ndim==1 else i for i in formatted_data]
