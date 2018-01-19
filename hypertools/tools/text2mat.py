@@ -6,8 +6,9 @@ from sklearn.utils.validation import check_is_fitted
 from sklearn.pipeline import Pipeline
 from .._shared.helpers import format_data
 
-def text2mat(data, vectorizer='count', vectorizer_params=None, text_model='LDA',
-             text_params=None, n_components=20, fit_model=False):
+def text2mat(data, vectorizer='CountVectorizer', vectorizer_params=None,
+             text='LatentDirichletAllocation', text_params=None,
+             n_components=20, fit_model=False):
     """
     Turns a list of text samples into a matrix using a vectorizer and a text model
 
@@ -18,7 +19,7 @@ def text2mat(data, vectorizer='count', vectorizer_params=None, text_model='LDA',
         The text data to transform
 
     vectorizer : str, class or class instance
-        The vectorizer to use. Can be count or tfidf.  See
+        The vectorizer to use. Can be CountVectorizer or TfidfVectorizer.  See
         http://scikit-learn.org/stable/modules/classes.html#module-sklearn.feature_extraction.text
         for details. You can also specify your own vectorizer model as a class,
         or class instance.  With either option, the class must have a
@@ -29,9 +30,10 @@ def text2mat(data, vectorizer='count', vectorizer_params=None, text_model='LDA',
     vectorizer_params : dict
         Parameters for vectorizer model. See link above for details
 
-    text_model : str, class or class instance
-        Text model to use to transform the data. Can be LDA, NMF or None
-        (default: LDA). If None, the text will be vectorized but not modeled. See http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
+    text : str, class or class instance
+        Text model to use to transform the data. Can be
+        LatentDirichletAllocation, NMF or None (default: LDA).
+        If None, the text will be vectorized but not modeled. See http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
         for details on the two model options. You can also specify your own
         text model as a class, or class instance.  With either option, the class
         must have a fit_transform method (see here:
@@ -55,7 +57,7 @@ def text2mat(data, vectorizer='count', vectorizer_params=None, text_model='LDA',
     # subfunction to loop over arrays
     def transform_list(x, model, fit_model):
         split = np.cumsum([len(xi) for xi in x])[:-1]
-        if text_model is None:
+        if text is None:
             if fit_model:
                 x_r = np.vsplit(model.transform(np.vstack(x).ravel()).toarray(), split)
             else:
@@ -93,17 +95,17 @@ def text2mat(data, vectorizer='count', vectorizer_params=None, text_model='LDA',
     vtype = check_type(vectorizer)
 
     # check the type of the vectorizer model
-    ttype = check_type(text_model)
+    ttype = check_type(text)
 
     # vector models
     vectorizer_models = {
-        'count' : CountVectorizer,
-        'tfidf' : TfidfVectorizer
+        'CountVectorizer' : CountVectorizer,
+        'TfidfVectorizer' : TfidfVectorizer
     }
 
     # text models
-    text_models = {
-        'LDA' : LatentDirichletAllocation,
+    texts = {
+        'LatentDirichletAllocation' : LatentDirichletAllocation,
         'NMF' : NMF
     }
 
@@ -120,9 +122,9 @@ def text2mat(data, vectorizer='count', vectorizer_params=None, text_model='LDA',
 
     # support user defined text model
     if ttype in ('class', 'class_instance'):
-        if hasattr(text_model, 'fit_transform'):
-            text_models.update({'user_model' : text_model})
-            text_model = 'user_model'
+        if hasattr(text, 'fit_transform'):
+            texts.update({'user_model' : text})
+            text = 'user_model'
         else:
             raise RuntimeError('Error: Text model must have fit_transform '
                                'method following the scikit-learn API. See here '
@@ -148,18 +150,18 @@ def text2mat(data, vectorizer='count', vectorizer_params=None, text_model='LDA',
             # otherwise, its a class instance so don't iniatilize it
             vmodel = vectorizer_models[vectorizer]
 
-    if text_model:
+    if text:
         # initialize text model
         if ttype in ('str', 'dict', 'class'):
-            tmodel = text_models[text_model](**text_params)
+            tmodel = texts[text](**text_params)
         elif ttype is 'class_instance':
             # otherwise, its a class instance so don't iniatilize it
-            tmodel = text_models[text_model]
+            tmodel = texts[text]
 
     # if both vectorizer and text model, put them in a pipeline
-    if vectorizer and text_model:
+    if vectorizer and text:
         model = Pipeline([(vectorizer, vmodel),
-                          (text_model, tmodel)])
+                          (text, tmodel)])
     elif vectorizer:
         model = vmodel
     else:
