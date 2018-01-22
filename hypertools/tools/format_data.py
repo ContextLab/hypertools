@@ -1,9 +1,10 @@
 import numpy as np
 import pandas as pd
+import warnings
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from .._externals.ppca import PPCA
 
-def format_data(x, ppca=False, text_args=None):
+def format_data(x, ppca=False, text_args=None, align='hyper'):
     """
     Formats data into a list of numpy arrays
 
@@ -44,8 +45,6 @@ def format_data(x, ppca=False, text_args=None):
             return 'df'
         elif isinstance(data, str):
             return 'str'
-        elif isinstance(data, (CountVectorizer, TfidfVectorizer)):
-            return 'vecobj'
         else:
             raise TypeError('Unsupported data type passed. Supported types: '
                             'Numpy Array, Pandas DataFrame, String, List of strings'
@@ -83,7 +82,7 @@ def format_data(x, ppca=False, text_args=None):
     dtypes = list(map(get_type, x))
 
     # handle text data:
-    if any(map(lambda x: x in ['list_str', 'str', 'vecobj'], dtypes)):
+    if any(map(lambda x: x in ['list_str', 'str'], dtypes)):
 
         # default text args
         kwargs = {
@@ -103,15 +102,13 @@ def format_data(x, ppca=False, text_args=None):
         for i,j in zip(x, dtypes):
             if j in ['list_str', 'str']:
                 text_data.append(np.array(i).reshape(-1, 1))
-            elif j is 'vecobj':
-                text_data.append(i)
 
         # convert text to numerical matrices
         text_data = text2mat(text_data, **kwargs)
 
     # replace the text data with transformed data
     for i, dtype in enumerate(dtypes):
-        if dtype in ['list_str', 'str', 'vecobj']:
+        if dtype in ['list_str', 'str']:
             x[i] = text_data.pop(0)
         elif dtype is 'df':
             x[i] = df2mat(x[i])
@@ -121,9 +118,25 @@ def format_data(x, ppca=False, text_args=None):
         x = [np.reshape(i,(i.shape[0],1)) if i.ndim==1 else i for i in x]
 
     # if there are any nans in any of the lists, use ppca
-    if ppca is True:
-        if np.isnan(np.vstack(x)).any():
-            warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
-            x = fill_missing(x)
+    # if ppca is True:
+    #     if np.isnan(np.vstack(x)).any():
+    #         warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
+    #         x = fill_missing(x)
+
+    contains_text = any([dtype in ['list_str', 'str'] for dtype in dtypes])
+    contains_num = any([dtype in ['list_num', 'array', 'df'] for dtype in dtypes])
+
+    # if input data contains both text and numerical data
+    if contains_num and contains_text:
+
+        # and if they have the same number of samples
+        if np.unique(np.array([i.shape[0] for i, j in zip(x, dtypes)])).shape[0]==1:
+
+            from .align import align as aligner
+
+            # align the data
+            warnings.warn('Numerical and text data with same number of '
+                          'samples detected.  Aligning data to a common space.')
+            x = aligner(x, align=align)
 
     return x
