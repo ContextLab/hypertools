@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from .align import *
 from .reduce import reduce as reduceD
-from .._shared.helpers import format_data
+from .format_data import format_data
 
 ##SET SEABORN STYLE##
 sns.set(style="darkgrid")

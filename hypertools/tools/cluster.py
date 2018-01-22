@@ -3,8 +3,8 @@ import warnings
 from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering
 import numpy as np
 from hdbscan import HDBSCAN
-
 from .._shared.helpers import *
+from .format_data import format_data
 
 @memoize
 def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):

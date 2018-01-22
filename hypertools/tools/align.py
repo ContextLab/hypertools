@@ -5,7 +5,8 @@ from builtins import range
 from .._externals.srm import SRM
 from .procrustes import procrustes
 import numpy as np
-from .._shared.helpers import format_data, memoize
+from .format_data import format_data
+from .._shared.helpers import memoize
 from .normalize import normalize as normalizer
 import warnings
 

@@ -6,7 +6,7 @@ import sys
 from warnings import warn
 from sklearn.externals import joblib
 from .analyze import analyze
-from .._shared.helpers import format_data
+from .format_data import format_data
 from ..datageometry import DataGeometry
 
 BASE_URL = 'https://docs.google.com/uc?export=download&id='

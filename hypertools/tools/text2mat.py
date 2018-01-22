@@ -4,7 +4,8 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.utils.validation import check_is_fitted
 from sklearn.pipeline import Pipeline
-from .._shared.helpers import format_data, memoize
+from .._shared.helpers import memoize
+from .format_data import format_data
 
 @memoize
 def text2mat(data, vectorizer='CountVectorizer', vectorizer_params=None,
@@ -69,10 +70,7 @@ def text2mat(data, vectorizer='CountVectorizer', vectorizer_params=None,
             else:
                 x_r = np.vsplit(model.fit_transform(np.vstack(x).ravel()), split)
 
-        if len(x)>1:
-            return [xi for xi in x_r]
-        else:
-            return [x_r[0]]
+        return [xi for xi in x_r]
 
     # check the type of the  param
     def check_type(x):
@@ -95,7 +93,7 @@ def text2mat(data, vectorizer='CountVectorizer', vectorizer_params=None,
     # check the type of the vectorizer model
     vtype = check_type(vectorizer)
 
-    # check the type of the vectorizer model
+    # check the type of the text model
     ttype = check_type(text)
 
     # vector models
@@ -168,7 +166,7 @@ def text2mat(data, vectorizer='CountVectorizer', vectorizer_params=None,
     else:
         model = tmodel
 
-    # format data into list of arrays
-    x = format_data(data)
+    if type(data) is not list:
+        data = [data]
 
-    return transform_list(x, model, fit_model)
+    return transform_list(data, model, fit_model)

@@ -3,17 +3,14 @@
 # libraries
 import warnings
 import numpy as np
-
-## reduction models
 from sklearn.decomposition import PCA, FastICA, IncrementalPCA, KernelPCA, FactorAnalysis, TruncatedSVD, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
 from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
 from umap import UMAP
-
-# internal libraries
 from ..tools.df2mat import df2mat
 from .._shared.helpers import *
 from .normalize import normalize as normalizer
 from .align import align as aligner
+from .format_data import format_data
 
 # main function
 @memoize

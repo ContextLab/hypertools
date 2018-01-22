@@ -2,7 +2,7 @@
 
 ##PACKAGES##
 import numpy as np
-from .._shared.helpers import format_data
+from .format_data import format_data
 
 def missing_inds(x):
     """

@@ -3,7 +3,7 @@
 from .reduce import reduce as reducer
 from .align import align as aligner
 from .normalize import normalize as normalizer
-from .._shared.helpers import format_data
+from .format_data import format_data
 
 def analyze(data, normalize=None, reduce=None, ndims=None, align=None, internal=False):
     """

@@ -20,6 +20,7 @@ from ..tools.reduce import reduce as reducer
 from ..tools.normalize import normalize as normalizer
 from ..tools.align import align as aligner
 from ..tools.text2mat import text2mat
+from ..tools.format_data import format_data
 from .draw import draw
 from ..datageometry import DataGeometry
 
@@ -194,20 +195,16 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         reduce['model'] = model
         reduce['params'] = model_params
 
-    # check the data type
-    dtype = check_data(x)
+    text_args = {
+        'vectorizer' : vectorizer,
+        'vectorizer_params' : vectorizer_params,
+        'text' : text,
+        'text_params' : text_params,
+        'n_components' : 20
+    }
 
-    # if the data is text
-    if dtype is 'text':
-        # convert text to matrix
-        raw = text2mat(x, vectorizer=vectorizer,
-                       vectorizer_params=vectorizer_params,
-                       text=text,
-                       text_params=text_params,
-                       n_components=ndims)
-    else:
-        # put into common format
-        raw = format_data(x, ppca=True)
+    # put into a common format
+    raw = format_data(x, ppca=True, text_args=text_args)
 
     # analyze the data
     if transform is True:

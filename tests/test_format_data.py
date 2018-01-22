@@ -16,9 +16,21 @@ def test_df():
     assert isinstance(format_data(data), list)
     assert isinstance(format_data(data)[0], np.ndarray)
 
+def test_text():
+    data = ['here is some test text', 'and a little more', 'and more']
+    assert isinstance(format_data(data), list)
+    assert isinstance(format_data(data)[0], np.ndarray)
+
+def test_str():
+    res = format_data('here is some test text')
+    assert isinstance(res, list)
+    assert isinstance(res[0], np.ndarray)
+
 def test_mixed_list():
-    data1 = np.random.rand(100,10)
-    data2 = pd.DataFrame(np.random.rand(100,10))
-    assert isinstance(format_data([data1, data2]), list)
-    assert isinstance(format_data([data1, data2])[0], np.ndarray)
-    assert isinstance(format_data([data1, data2])[1], np.ndarray)
+    mat = np.random.rand(3,20)
+    df = pd.DataFrame(np.random.rand(3,20))
+    text = ['here is some test text', 'and a little more', 'and more']
+    string = 'a string'
+    res = format_data([mat, df, text, string])
+    assert isinstance(res, list)
+    assert all(map(lambda x: isinstance(x, np.ndarray), res))

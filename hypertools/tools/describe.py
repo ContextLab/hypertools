@@ -10,7 +10,8 @@ import scipy.spatial.distance as sd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from .reduce import reduce as reducer
-from .._shared.helpers import format_data, memoize
+from .format_data import format_data
+from .._shared.helpers import memoize
 
 def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
     """

@@ -3,7 +3,8 @@ from __future__ import division
 from builtins import range
 from sklearn.preprocessing import FunctionTransformer
 import numpy as np
-from .._shared.helpers import format_data, memoize
+from .format_data import format_data
+from .._shared.helpers import memoize
 
 @memoize
 def normalize(x, normalize='across', internal=False):
