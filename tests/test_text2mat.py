@@ -4,6 +4,7 @@ import pytest
 import numpy as np
 from hypertools.tools import text2mat
 from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.feature_extraction.text import CountVectorizer
 
 data = [['i like cats alot', 'cats r pretty cool', 'cats are better than dogs'],
         ['dogs rule the haus', 'dogs are my jam', 'dogs are a mans best friend']]
@@ -43,3 +44,9 @@ def test_LDA_class():
 def test_LDA_class_instance():
     user_model = LatentDirichletAllocation(n_components=10)
     assert text2mat(data, text=user_model)[0].shape[1]==10
+
+def test_count_vectorizer():
+    data = ['i like cats alot', 'cats r pretty cool', 'cats are better than dogs']
+    data = CountVectorizer().fit(data)
+    res = text2mat(data)
+    assert 0

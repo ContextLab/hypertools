@@ -1,11 +1,24 @@
 import numpy as np
 import inspect
+import warnings
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.utils.validation import check_is_fitted
 from sklearn.pipeline import Pipeline
 from .._shared.helpers import memoize
 from .format_data import format_data
+
+# vector models
+vectorizer_models = {
+    'CountVectorizer' : CountVectorizer,
+    'TfidfVectorizer' : TfidfVectorizer
+}
+
+# text models
+texts = {
+    'LatentDirichletAllocation' : LatentDirichletAllocation,
+    'NMF' : NMF
+}
 
 @memoize
 def text2mat(data, vectorizer='CountVectorizer', vectorizer_params=None,
@@ -72,8 +85,15 @@ def text2mat(data, vectorizer='CountVectorizer', vectorizer_params=None,
 
         return [xi for xi in x_r]
 
-    # check the type of the  param
-    def check_type(x):
+    # check the data type
+    def check_dtype(x):
+        if isinstance(x, (CountVectorizer, TfidfVectorizer)):
+            return 'vecobj'
+        elif np.array(x).dtype.type is np.string_:
+            return 'str'
+
+    # check the type of the param
+    def check_mtype(x):
         if type(x) is str:
             return 'str'
         elif type(x) is dict:
@@ -90,23 +110,42 @@ def text2mat(data, vectorizer='CountVectorizer', vectorizer_params=None,
                 raise TypeError('Parameter must of type string, dict, class, or'
                                 ' class instance.')
 
+    def inv_vecobj(x):
+        "If vector object, "
+        dtype = check_dtype(x)
+        if dtype is 'vecobj':
+            return x.inverse_transform()
+        else:
+            return x
+
+    def all_vocabs_same(x):
+        "Check if all vocabs are the same for a set of vectorized objects"
+        if len(x)>1:
+            filt_x = list(filter(lambda x: check_dtype(x) is 'vecobj', data))
+            features = list(map(lambda x: x.get_feature_names(), filt_x))
+            return (np.diff(np.vstack(features).reshape(len(features), -1), axis=0)==0).all()
+        else:
+            return True
+
+    # convert data to a list if its not already
+    if type(data) is not list:
+        data = [data]
+
+    # get data types
+    dtypes = list(map(check_dtype, data))
+
+    # if all data are vectorizer objects and have the same vocab, skip vectorizing
+    if all([dtype is 'vecobj' for dtype in dtypes]):
+        if all_vocabs_same(data):
+            vectorizer=None
+            warnings.warn('Skipping vectorization step. Vectorizer objects '
+                          'have the same vocabulary.')
+    else:
+        # otherwise, recover the original data for any vectorizer object
+        data = list(map(inv_vecobj, data))
+
     # check the type of the vectorizer model
-    vtype = check_type(vectorizer)
-
-    # check the type of the text model
-    ttype = check_type(text)
-
-    # vector models
-    vectorizer_models = {
-        'CountVectorizer' : CountVectorizer,
-        'TfidfVectorizer' : TfidfVectorizer
-    }
-
-    # text models
-    texts = {
-        'LatentDirichletAllocation' : LatentDirichletAllocation,
-        'NMF' : NMF
-    }
+    vtype = check_mtype(vectorizer)
 
     # support user defined vectorizer model
     if vtype in ('class', 'class_instance'):
@@ -119,6 +158,9 @@ def text2mat(data, vectorizer='CountVectorizer', vectorizer_params=None,
                                'for more details: '
                                'http://scikit-learn.org/stable/data_transforms.html')
 
+    # check the type of the text model
+    ttype = check_mtype(text)
+
     # support user defined text model
     if ttype in ('class', 'class_instance'):
         if hasattr(text, 'fit_transform'):
@@ -130,16 +172,12 @@ def text2mat(data, vectorizer='CountVectorizer', vectorizer_params=None,
                                'for more details: '
                                'http://scikit-learn.org/stable/data_transforms.html')
 
-
-    # init model params
+    # initialize params
     if vectorizer_params is None:
         vectorizer_params = {}
     if text_params is None:
         text_params = {}
-
-    # update text dict with n_topics
     text_params.update({'n_components' : n_components})
-
 
     if vectorizer:
         # intialize vectorizer model
@@ -165,8 +203,5 @@ def text2mat(data, vectorizer='CountVectorizer', vectorizer_params=None,
         model = vmodel
     else:
         model = tmodel
-
-    if type(data) is not list:
-        data = [data]
 
     return transform_list(data, model, fit_model)

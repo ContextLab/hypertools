@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from .._externals.ppca import PPCA
 
 def format_data(x, ppca=False, text_args=None):
@@ -35,7 +36,7 @@ def format_data(x, ppca=False, text_args=None):
         if isinstance(data, list):
             if isinstance(data[0], str):
                 return 'list_str'
-        elif isinstance(data[0], (int, float)):
+            elif isinstance(data[0], (int, float)):
                 return 'list_num'
         elif isinstance(data, np.ndarray):
             return 'array'
@@ -43,6 +44,8 @@ def format_data(x, ppca=False, text_args=None):
             return 'df'
         elif isinstance(data, str):
             return 'str'
+        elif isinstance(data, (CountVectorizer, TfidfVectorizer)):
+            return 'vecobj'
         else:
             raise TypeError('Unsupported data type passed. Supported types: '
                             'Numpy Array, Pandas DataFrame, String, List of strings'
@@ -80,9 +83,10 @@ def format_data(x, ppca=False, text_args=None):
     dtypes = list(map(get_type, x))
 
     # handle text data:
-    if any(map(lambda x: x in ['list_str', 'str'], dtypes)):
+    if any(map(lambda x: x in ['list_str', 'str', 'vecobj'], dtypes)):
 
-        text_args = {
+        # default text args
+        kwargs = {
             'vectorizer' : 'CountVectorizer',
             'vectorizer_params' : None,
             'text' : 'LatentDirichletAllocation',
@@ -90,15 +94,24 @@ def format_data(x, ppca=False, text_args=None):
             'n_components' : 20
         }
 
-        # filter and convert to numpy array
-        text_data = [np.array(i).reshape(-1, 1) for i,j in zip(x, dtypes) if j in ['list_str', 'str']]
+        # update with user specified args
+        if text_args:
+            kwargs.update(text_args)
+
+        # filter text data
+        text_data = []
+        for i,j in zip(x, dtypes):
+            if j in ['list_str', 'str']:
+                text_data.append(np.array(i).reshape(-1, 1))
+            elif j is 'vecobj':
+                text_data.append(i)
 
         # convert text to numerical matrices
-        text_data = text2mat(text_data, **text_args)
+        text_data = text2mat(text_data, **kwargs)
 
     # replace the text data with transformed data
     for i, dtype in enumerate(dtypes):
-        if dtype in ['list_str', 'str']:
+        if dtype in ['list_str', 'str', 'vecobj']:
             x[i] = text_data.pop(0)
         elif dtype is 'df':
             x[i] = df2mat(x[i])
