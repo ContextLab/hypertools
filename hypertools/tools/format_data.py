@@ -35,7 +35,7 @@ def format_data(x, ppca=False, text_args=None):
         if isinstance(data, list):
             if isinstance(data[0], str):
                 return 'list_str'
-        elif isinstance(data[0], (int, long, float, complex)):
+        elif isinstance(data[0], (int, float)):
                 return 'list_num'
         elif isinstance(data, np.ndarray):
             return 'array'
