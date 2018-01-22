@@ -44,9 +44,3 @@ def test_LDA_class():
 def test_LDA_class_instance():
     user_model = LatentDirichletAllocation(n_components=10)
     assert text2mat(data, text=user_model)[0].shape[1]==10
-
-def test_count_vectorizer():
-    data = ['i like cats alot', 'cats r pretty cool', 'cats are better than dogs']
-    data = CountVectorizer().fit(data)
-    res = text2mat(data)
-    assert 0
