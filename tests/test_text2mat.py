@@ -26,21 +26,28 @@ def test_count_NMF():
 def test_tfidf_NMF():
     isinstance(text2mat(data, vectorizer='TfidfVectorizer', text='NMF')[0], np.ndarray)
 
-def test_transform_ndims():
-    assert text2mat(data, n_components=10)[0].shape[1]==10
-
 def test_transform_no_text_model():
     assert isinstance(text2mat(data, text=None)[0], np.ndarray)
 
 def test_text_model_params():
-    assert isinstance(text2mat(data, text_params={'learning_method' : 'batch'})[0], np.ndarray)
+    assert isinstance(text2mat(data, text={
+        'model' : 'LatentDirichletAllocation',
+        'params' : {
+            'learning_method' : 'batch'
+            }}
+        )[0], np.ndarray)
 
 def test_vectorizer_params():
-    assert text2mat(data, vectorizer_params={'max_features' : 2}, text=None)[0].shape[1]==2
+    assert text2mat(data, vectorizer={
+        'model' : 'CountVectorizer',
+        'params': {
+        'max_features' : 2
+        }},
+        text=None)[0].shape[1]==2
 
 def test_LDA_class():
-    assert text2mat(data, text=LatentDirichletAllocation)[0].shape[1]==20
+    assert text2mat(data, text=LatentDirichletAllocation)[0].shape[1]==10
 
 def test_LDA_class_instance():
-    user_model = LatentDirichletAllocation(n_components=10)
-    assert text2mat(data, text=user_model)[0].shape[1]==10
+    user_model = LatentDirichletAllocation(n_components=15)
+    assert text2mat(data, text=user_model)[0].shape[1]==15

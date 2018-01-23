@@ -5,8 +5,8 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from .._externals.ppca import PPCA
 from .._shared.params import default_params
 
-def format_data(x, vectorizer='CountVectorizer', vectorizer_params=None,
-                text='LatentDirichletAllocation', text_params=None,
+def format_data(x, vectorizer='CountVectorizer',
+                text='LatentDirichletAllocation',
                 ppca=True, text_align='hyper'):
     """
     Formats data into a list of numpy arrays
@@ -22,7 +22,7 @@ def format_data(x, vectorizer='CountVectorizer', vectorizer_params=None,
     x : numpy array, dataframe or (mixed) list
         The data to convert
 
-    vectorizer : str, class or class instance
+    vectorizer : str, dict, class or class instance
         The vectorizer to use for tet data. Can be CountVectorizer or
         TfidfVectorizer.  See
         http://scikit-learn.org/stable/modules/classes.html#module-sklearn.feature_extraction.text
@@ -32,10 +32,7 @@ def format_data(x, vectorizer='CountVectorizer', vectorizer_params=None,
         If a class, pass any parameters as a dictionary to vectorizer_params. If
         a class instance, no parameters can be passed.
 
-    vectorizer_params : dict
-        Parameters for vectorizer model for text data. See link above for details
-
-    text : str, class or class instance
+    text : str, dict, class or class instance
         Text model to use to transform text data. Can be
         LatentDirichletAllocation, NMF or None (default: LDA).
         If None, the text will be vectorized but not modeled. See http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
@@ -45,9 +42,6 @@ def format_data(x, vectorizer='CountVectorizer', vectorizer_params=None,
         http://scikit-learn.org/stable/data_transforms.html).
         If a class, pass any parameters as a dictionary to text_params. If
         a class instance, no parameters can be passed.
-
-    text_params : dict
-        Parameters for text model. See link above for details
 
     ppca : bool
         Performs PPCA to fill in missing values (default: True)
@@ -126,9 +120,7 @@ def format_data(x, vectorizer='CountVectorizer', vectorizer_params=None,
         # default text args
         text_args = {
             'vectorizer' : vectorizer,
-            'vectorizer_params' : default_params(vectorizer, vectorizer_params),
             'text' : text,
-            'text_params' : default_params(text, text_params),
         }
 
         # filter text data

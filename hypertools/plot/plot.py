@@ -32,9 +32,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          align=None, normalize=None, n_clusters=None, save_path=None,
          animate=False, duration=30, tail_duration=2, rotations=2, zoom=1,
          chemtrails=False, precog=False, bullettime=False, frame_rate=50,
-         explore=False, show=True, transform=True, vectorizer='CountVectorizer',
-         vectorizer_params=None, text='LatentDirichletAllocation',
-         text_params=None):
+         explore=False, show=True, transform=True, vectorizer='CountVectorizer', text='LatentDirichletAllocation'):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -197,9 +195,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     text_args = {
         'vectorizer' : vectorizer,
-        'vectorizer_params' : vectorizer_params,
         'text' : text,
-        'text_params' : text_params,
     }
 
     # put into a common format
