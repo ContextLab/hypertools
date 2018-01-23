@@ -177,12 +177,30 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     transform : bool
         If set to false, skip data transformations (default : True)
 
+    vectorizer : str, dict, class or class instance
+        The vectorizer to use. Can be CountVectorizer or TfidfVectorizer.  See
+        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.feature_extraction.text
+        for details. You can also specify your own vectorizer model as a class,
+        or class instance.  With either option, the class must have a
+        fit_transform method (see here: http://scikit-learn.org/stable/data_transforms.html).
+        If a class, pass any parameters as a dictionary to vectorizer_params. If
+        a class instance, no parameters can be passed.
+
+    text : str, dict, class or class instance
+        Text model to use to transform the data. Can be
+        LatentDirichletAllocation, NMF or None (default: LDA).
+        If None, the text will be vectorized but not modeled. See http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
+        for details on the two model options. You can also specify your own
+        text model as a class, or class instance.  With either option, the class
+        must have a fit_transform method (see here:
+        http://scikit-learn.org/stable/data_transforms.html).
+        If a class, pass any parameters as a dictionary to text_params. If
+        a class instance, no parameters can be passed.
+
     Returns
     ----------
-    fig, ax, data, line_ani : matplotlib.figure.figure, matplotlib.axis.axes, numpy.array, matplotlib.animation.funcanimation
-        The plot function outputs a figure handle, axis handle, data, and line
-        animation object.  The line animation object is None if animation=False.
-
+    geo : hypertools.DataGeometry
+        A new data geometry object
     """
 
     # warnings for deprecated API args

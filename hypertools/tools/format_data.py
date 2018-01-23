@@ -133,15 +133,20 @@ def format_data(x, vectorizer='CountVectorizer',
         text_data = text2mat(text_data, **text_args)
 
     # replace the text data with transformed data
+    processed_x = []
+    textidx=0
     for i, dtype in enumerate(dtypes):
         if dtype in ['list_str', 'str']:
-            x[i] = text_data.pop(0)
+            processed_x.append(text_data[textidx])
+            textidx+=1
         elif dtype is 'df':
-            x[i] = df2mat(x[i])
+            processed_x.append(df2mat(x[i]))
+        else:
+            processed_x.append(x[i])
 
     # reshape anything that is 1d
-    if any([i.ndim<=1 for i in x]):
-        x = [np.reshape(i,(i.shape[0],1)) if i.ndim==1 else i for i in x]
+    if any([i.ndim<=1 for i in processed_x]):
+        processed_x = [np.reshape(i,(i.shape[0],1)) if i.ndim==1 else i for i in processed_x]
 
     contains_text = any([dtype in ['list_str', 'str'] for dtype in dtypes])
     contains_num = any([dtype in ['list_num', 'array', 'df'] for dtype in dtypes])
@@ -150,7 +155,7 @@ def format_data(x, vectorizer='CountVectorizer',
     if ppca is True:
         if contains_num:
             num_data = []
-            for i,j in zip(x, dtypes):
+            for i,j in zip(processed_x, dtypes):
                 if j in ['list_num', 'array', 'df']:
                     num_data.append(i)
             if np.isnan(np.vstack(num_data)).any():
@@ -162,19 +167,19 @@ def format_data(x, vectorizer='CountVectorizer',
                         x_temp.append(text_data.pop(0))
                     elif dtype in ['list_num', 'array', 'df']:
                         x_temp.append(num_data.pop(0))
-                x = x_temp
+                processed_x = x_temp
 
     # if input data contains both text and numerical data
     if contains_num and contains_text:
 
         # and if they have the same number of samples
-        if np.unique(np.array([i.shape[0] for i, j in zip(x, dtypes)])).shape[0]==1:
+        if np.unique(np.array([i.shape[0] for i, j in zip(processed_x, dtypes)])).shape[0]==1:
 
             from .align import align as aligner
 
             # align the data
             warnings.warn('Numerical and text data with same number of '
                           'samples detected.  Aligning data to a common space.')
-            x = aligner(x, align=text_align, format_data=False)
+            processed_x = aligner(processed_x, align=text_align, format_data=False)
 
-    return x
+    return processed_x

@@ -110,9 +110,9 @@ def test_plot_check_ax():
     assert isinstance(geo.ax, mpl.axes._axes.Axes)
 
 def test_plot_text():
-    data = [['i like cats alot', 'cats r pretty cool', 'cats are better than dogs'],
+    text_data = [['i like cats alot', 'cats r pretty cool', 'cats are better than dogs'],
             ['dogs rule the haus', 'dogs are my jam', 'dogs are a mans best friend']]
-    geo = plot.plot(data, show=False)
+    geo = plot.plot(text_data, show=False)
     assert isinstance(geo, DataGeometry)
 
 # ## ANIMATED ##
