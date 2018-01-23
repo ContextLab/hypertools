@@ -36,7 +36,7 @@ def test_mixed_list():
     assert all(map(lambda x: isinstance(x, np.ndarray), res))
 
 def test_force_align():
-    mat = np.random.rand(4,4)
+    mat = np.random.rand(4,3)
     df = pd.DataFrame(np.random.rand(4,3))
     text = ['here is some test text', 'and a little more', 'and more', 'just a bit more']
     res = format_data([mat, df, text])

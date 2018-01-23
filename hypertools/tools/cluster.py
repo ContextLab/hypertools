@@ -4,10 +4,10 @@ from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Bi
 import numpy as np
 from hdbscan import HDBSCAN
 from .._shared.helpers import *
-from .format_data import format_data
+from .format_data import format_data as formatter
 
 @memoize
-def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
+def cluster(x, cluster='KMeans', n_clusters=3, ndims=None, format_data=True):
     """
     Performs clustering analysis and returns a list of cluster labels
 
@@ -30,6 +30,9 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
     n_clusters : int
         Number of clusters to discover. Not required for HDBSCAN.
 
+    format_data : bool
+        Whether or not to first call the format_data function (default: True).
+
     ndims : None
         Deprecated argument.  Please use new analyze function to perform
         combinations of transformations
@@ -49,7 +52,8 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
         if ndims is not None:
             warnings.warn('The ndims argument is now deprecated. Ignoring dimensionality reduction step.')
 
-        x = format_data(x, ppca=True)
+        if format_data:
+            x = formatter(x, ppca=True)
 
         # dictionary of models
         models = {

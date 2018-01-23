@@ -3,8 +3,11 @@ import pandas as pd
 import warnings
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from .._externals.ppca import PPCA
+from .._shared.params import default_params
 
-def format_data(x, ppca=False, text_args=None, align='hyper'):
+def format_data(x, vectorizer='CountVectorizer', vectorizer_params=None,
+                text='LatentDirichletAllocation', text_params=None,
+                ppca=True, text_align='hyper'):
     """
     Formats data into a list of numpy arrays
 
@@ -19,8 +22,44 @@ def format_data(x, ppca=False, text_args=None, align='hyper'):
     x : numpy array, dataframe or (mixed) list
         The data to convert
 
+    vectorizer : str, class or class instance
+        The vectorizer to use for tet data. Can be CountVectorizer or
+        TfidfVectorizer.  See
+        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.feature_extraction.text
+        for details. You can also specify your own vectorizer model as a class,
+        or class instance.  With either option, the class must have a
+        fit_transform method (see here: http://scikit-learn.org/stable/data_transforms.html).
+        If a class, pass any parameters as a dictionary to vectorizer_params. If
+        a class instance, no parameters can be passed.
+
+    vectorizer_params : dict
+        Parameters for vectorizer model for text data. See link above for details
+
+    text : str, class or class instance
+        Text model to use to transform text data. Can be
+        LatentDirichletAllocation, NMF or None (default: LDA).
+        If None, the text will be vectorized but not modeled. See http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
+        for details on the two model options. You can also specify your own
+        text model as a class, or class instance.  With either option, the class
+        must have a fit_transform method (see here:
+        http://scikit-learn.org/stable/data_transforms.html).
+        If a class, pass any parameters as a dictionary to text_params. If
+        a class instance, no parameters can be passed.
+
+    text_params : dict
+        Parameters for text model. See link above for details
+
     ppca : bool
-        Performs PPCA to fill in missing values (default: False)
+        Performs PPCA to fill in missing values (default: True)
+
+    text_align : str
+        Alignment algorithm to use when both text and numerical data are passed.
+        If numerical arrays have the same shape, and the text data contains the
+        same number of samples, the text and numerical data are automatically
+        aligned to a common space. Example use case: an array of movie frames
+        (frames by pixels) and text descriptions of the frame.  In this case,
+        the movie and text will be automatically aligned to the same space
+        (default: hyperalignment).
 
     Returns
     ----------
@@ -85,17 +124,12 @@ def format_data(x, ppca=False, text_args=None, align='hyper'):
     if any(map(lambda x: x in ['list_str', 'str'], dtypes)):
 
         # default text args
-        kwargs = {
-            'vectorizer' : 'CountVectorizer',
-            'vectorizer_params' : None,
-            'text' : 'LatentDirichletAllocation',
-            'text_params' : None,
-            'n_components' : 20
+        text_args = {
+            'vectorizer' : vectorizer,
+            'vectorizer_params' : default_params(vectorizer, vectorizer_params),
+            'text' : text,
+            'text_params' : default_params(text, text_params),
         }
-
-        # update with user specified args
-        if text_args:
-            kwargs.update(text_args)
 
         # filter text data
         text_data = []
@@ -104,7 +138,7 @@ def format_data(x, ppca=False, text_args=None, align='hyper'):
                 text_data.append(np.array(i).reshape(-1, 1))
 
         # convert text to numerical matrices
-        text_data = text2mat(text_data, **kwargs)
+        text_data = text2mat(text_data, **text_args)
 
     # replace the text data with transformed data
     for i, dtype in enumerate(dtypes):
@@ -117,14 +151,27 @@ def format_data(x, ppca=False, text_args=None, align='hyper'):
     if any([i.ndim<=1 for i in x]):
         x = [np.reshape(i,(i.shape[0],1)) if i.ndim==1 else i for i in x]
 
-    # if there are any nans in any of the lists, use ppca
-    # if ppca is True:
-    #     if np.isnan(np.vstack(x)).any():
-    #         warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
-    #         x = fill_missing(x)
-
     contains_text = any([dtype in ['list_str', 'str'] for dtype in dtypes])
     contains_num = any([dtype in ['list_num', 'array', 'df'] for dtype in dtypes])
+
+    # if there are any nans in any of the lists, use ppca
+    if ppca is True:
+        if contains_num:
+            num_data = []
+            for i,j in zip(x, dtypes):
+                if j in ['list_num', 'array', 'df']:
+                    num_data.append(i)
+            print([n.shape for n in num_data])
+            if np.isnan(np.vstack(num_data)).any():
+                warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
+                num_data = fill_missing(num_data)
+                x_temp = []
+                for dtype in dtypes:
+                    if dtype in ['list_str', 'str']:
+                        x_temp.append(text_data.pop(0))
+                    elif dtype in ['list_num', 'array', 'df']:
+                        x_temp.append(num_data.pop(0))
+                x = x_temp
 
     # if input data contains both text and numerical data
     if contains_num and contains_text:
@@ -137,6 +184,8 @@ def format_data(x, ppca=False, text_args=None, align='hyper'):
             # align the data
             warnings.warn('Numerical and text data with same number of '
                           'samples detected.  Aligning data to a common space.')
-            x = aligner(x, align=align)
+            x = aligner(x, align=text_align, format_data=False)
+
+            print([xi.shape for xi in x])
 
     return x

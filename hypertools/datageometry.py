@@ -4,6 +4,7 @@ import numpy as np
 from .tools.normalize import normalize as normalizer
 from .tools.reduce import reduce as reducer
 from .tools.align import align as aligner
+from .tools.format_data import format_data
 from .config import __version__
 
 class DataGeometry(object):
@@ -50,7 +51,7 @@ class DataGeometry(object):
     """
 
     def __init__(self, fig=None, ax=None, line_ani=None, data=None, xform_data=None,
-                 reduce=None, align=None, normalize=None, kwargs=None,
+                 reduce=None, align=None, normalize=None, text=None, kwargs=None,
                  version=__version__):
 
         # matplotlib figure handle
@@ -76,6 +77,9 @@ class DataGeometry(object):
 
         # 'within', 'across', 'row' or False
         self.normalize = normalize
+
+        # text params
+        self.text = text
 
         # dictionary of kwargs
         self.kwargs = kwargs
@@ -105,9 +109,21 @@ class DataGeometry(object):
         if data is None:
             return self.xform_data
         else:
-            reduce_model = {'model' : self.reduce['model'], 'params' : self.reduce['params']}
-            align_model = {'model' : self.align['model'], 'params' : self.align['params']}
-            return aligner(reducer(normalizer(data, normalize=self.normalize), reduce=reduce_model, ndims=self.reduce['params']['n_components']), align=align_model)
+            reduce_model = {'model' : self.reduce['model'],
+                            'params' : self.reduce['params']}
+            align_model = {'model' : self.align['model'],
+                           'params' : self.align['params']}
+            text_model = {'model' : self.text['model'],
+                          'params' : self.text['params']}
+            return format_data(
+                aligner(
+                reducer(
+                normalizer(data,
+                normalize=self.normalize),
+                reduce=reduce_model,
+                ndims=self.reduce['params']['n_components']),
+                align=align_model),
+                text=text_model, ppca=True)
 
     # a function to plot the data
     def plot(self, data=None, **kwargs):
@@ -137,7 +153,7 @@ class DataGeometry(object):
         if data is None:
             data = self.xform_data
             transform = False
-            if any([k in kwargs for k in ['reduce', 'align', 'normalize']]):
+            if any([k in kwargs for k in ['reduce', 'align', 'normalize', 'text']]):
                 data = self.data
                 transform = True
         else:
@@ -179,6 +195,7 @@ class DataGeometry(object):
             'reduce' : self.reduce,
             'align' : self.align,
             'normalize' : self.normalize,
+            'text' : self.text,
             'kwargs' : self.kwargs,
             'version' : self.version
         }

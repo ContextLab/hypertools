@@ -3,11 +3,11 @@ from __future__ import division
 from builtins import range
 from sklearn.preprocessing import FunctionTransformer
 import numpy as np
-from .format_data import format_data
+from .format_data import format_data as formatter
 from .._shared.helpers import memoize
 
 @memoize
-def normalize(x, normalize='across', internal=False):
+def normalize(x, normalize='across', internal=False, format_data=True):
     """
     Z-transform the columns or rows of an array, or list of arrays
 
@@ -31,6 +31,9 @@ def normalize(x, normalize='across', internal=False):
         passed. If set to 'row', each row of the input data will be z-scored.
         If set to False, the input data will be returned with no z-scoring.
 
+    format_data : bool
+        Whether or not to first call the format_data function (default: True).
+
     Returns
     ----------
     normalized_x : Numpy array or list of arrays
@@ -46,7 +49,8 @@ def normalize(x, normalize='across', internal=False):
         return x
     else:
 
-        x = format_data(x, ppca=True)
+        if format_data:
+            x = formatter(x, ppca=True)
 
         zscore = lambda X,y: (y - np.mean(X)) / np.std(X) if len(set(y))>1 else np.zeros(y.shape)
 

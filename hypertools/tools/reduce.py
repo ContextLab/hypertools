@@ -10,12 +10,12 @@ from ..tools.df2mat import df2mat
 from .._shared.helpers import *
 from .normalize import normalize as normalizer
 from .align import align as aligner
-from .format_data import format_data
+from .format_data import format_data as formatter
 
 # main function
 @memoize
 def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
-           model=None, model_params=None, internal=False):
+           model=None, model_params=None, internal=False, format_data=True):
     """
     Reduces dimensionality of an array, or list of arrays
 
@@ -36,6 +36,9 @@ def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
 
     ndims : int
         Number of dimensions to reduce
+
+    format_data : bool
+        Whether or not to first call the format_data function (default: True).
 
     model : None
         Deprecated argument.  Please use reduce.
@@ -102,7 +105,8 @@ def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
     else:
 
         # common format
-        x = format_data(x, ppca=True)
+        if format_data:
+            x = formatter(x, ppca=True)
 
         # deprecation warnings
         if normalize is not None:

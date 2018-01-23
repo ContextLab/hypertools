@@ -10,10 +10,11 @@ import scipy.spatial.distance as sd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from .reduce import reduce as reducer
-from .format_data import format_data
+from .format_data import format_data as formatter
 from .._shared.helpers import memoize
 
-def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
+def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
+             format_data=True):
     """
     Create plot describing covariance with as a function of number of dimensions
 
@@ -42,6 +43,9 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
 
     show : bool
         Plot the result (default : true)
+
+    format_data : bool
+        Whether or not to first call the format_data function (default: True).
 
     Returns
     ----------
@@ -77,7 +81,8 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
         return corrs
 
     # common format
-    x = format_data(x, ppca=True)
+    if format_data:
+        x = formatter(x, ppca=True)
 
     # if max dims is not set, make it the length of the minimum number of columns
     if max_dims is None:

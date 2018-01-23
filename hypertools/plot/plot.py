@@ -200,11 +200,10 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         'vectorizer_params' : vectorizer_params,
         'text' : text,
         'text_params' : text_params,
-        'n_components' : 20
     }
 
     # put into a common format
-    raw = format_data(x, ppca=True, text_args=text_args)
+    raw = format_data(x, **text_args)
 
     # analyze the data
     if transform is True:
@@ -414,6 +413,17 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
             'params' : {}
         }
 
+    # gather text params
+    if isinstance(text, dict):
+        text_dict = text
+    else:
+        text_dict = {
+            'model' : text,
+            'params' : {
+                'n_components' : 20
+            }
+        }
+
     # gather all other kwargs
     kwargs = {
         'fmt' : fmt,
@@ -443,11 +453,12 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         'explore' : explore,
         'n_clusters' : n_clusters,
         'cluster' : cluster,
-        'reduce' : reduce,
-        'align' : align,
+        'reduce' : reduce_dict,
+        'align' : align_dict,
         'normalize' : normalize,
+        'text' : text
     }
 
     return DataGeometry(fig=fig, ax=ax, data=raw, xform_data=xform_data,
                         line_ani=line_ani, reduce=reduce_dict, align=align_dict,
-                        normalize=normalize, kwargs=kwargs)
+                        normalize=normalize, text=text_dict, kwargs=kwargs)

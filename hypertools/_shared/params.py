@@ -7,7 +7,9 @@ parameters = {
     'AgglomerativeClustering': {'n_clusters': 5, 'linkage' : 'ward'},
     'FeatureAgglomeration': {'n_clusters': 5},
     'Birch': {'n_clusters': 5},
-    'HDBSCAN': {'min_samples': 5, 'min_cluster_size': 15}
+    'HDBSCAN': {'min_samples': 5, 'min_cluster_size': 15},
+    'LatentDirichletAllocation': {'n_components' : 20, 'learning_method' : 'batch'},
+    'NMF': {'n_components' : 20, 'learning_method' : 'batch'}
 }
 
 def default_params(model, update_dict=None):
@@ -29,9 +31,15 @@ def default_params(model, update_dict=None):
     params : dict
         A dictionary of parameters
     """
+    
+    if model in parameters:
+        params = parameters[model].copy()
+    else:
+        params = None
 
-    params = parameters[model].copy()
     if update_dict:
+        if params is None:
+            params = {}
         params.update(update_dict)
 
     return params
