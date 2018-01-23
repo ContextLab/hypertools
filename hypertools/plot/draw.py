@@ -368,7 +368,7 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
 
     def animate_plot3D(x, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
                        frame_rate=50, elev=10, style='parallel'):
-        
+
         # inialize plot
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
@@ -377,13 +377,15 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
         if fmt is not None:
             lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], fmt[idx],
                              linewidth=1, **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
-            trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], fmt[idx],
-                             alpha=.3, linewidth=1, **kwargs_list[idx])[0] for idx, dat in enumerate(x)]
+            if is_line(fmt):
+                trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], fmt[idx],
+                                 alpha=.3, linewidth=1, **kwargs_list[idx])[0] for idx, dat in enumerate(x)]
         else:
             lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1],
                              linewidth=1, **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
-            trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1],
-                             alpha=.3, linewidth=1, **kwargs_list[idx])[0] for idx, dat in enumerate(x)]
+            if is_line(fmt):
+                trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1],
+                                 alpha=.3, linewidth=1, **kwargs_list[idx])[0] for idx, dat in enumerate(x)]
         if tail_duration==0:
             tail_duration=1
         else:
