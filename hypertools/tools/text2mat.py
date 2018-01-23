@@ -2,7 +2,6 @@ import numpy as np
 import inspect
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
-from sklearn.utils.validation import check_is_fitted
 from sklearn.pipeline import Pipeline
 from .._shared.helpers import memoize
 from .format_data import format_data

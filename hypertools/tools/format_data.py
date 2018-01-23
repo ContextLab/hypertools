@@ -161,7 +161,6 @@ def format_data(x, vectorizer='CountVectorizer', vectorizer_params=None,
             for i,j in zip(x, dtypes):
                 if j in ['list_num', 'array', 'df']:
                     num_data.append(i)
-            print([n.shape for n in num_data])
             if np.isnan(np.vstack(num_data)).any():
                 warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
                 num_data = fill_missing(num_data)
@@ -185,7 +184,5 @@ def format_data(x, vectorizer='CountVectorizer', vectorizer_params=None,
             warnings.warn('Numerical and text data with same number of '
                           'samples detected.  Aligning data to a common space.')
             x = aligner(x, align=text_align, format_data=False)
-
-            print([xi.shape for xi in x])
 
     return x
