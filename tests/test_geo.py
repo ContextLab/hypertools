@@ -39,6 +39,9 @@ def test_geo_transform():
 def test_geo_transform_dims():
     assert geo.transform(data)[0].shape[1]==3
 
+def test_geo_plot():
+    assert isinstance(geo.plot(show=False), DataGeometry)
+
 def test_geo_text_data():
     data = [['i like cats alot', 'cats r pretty cool', 'cats are better than dogs'],
             ['dogs rule the haus', 'dogs are my jam', 'dogs are a mans best friend']]
@@ -47,3 +50,4 @@ def test_geo_text_data():
     assert geo.transform(data)[0].shape[1]==3
     assert geo.text['model'] is 'LatentDirichletAllocation'
     assert geo.text['params']=={'n_components' : 20}
+    assert isinstance(geo.plot(show=False), DataGeometry)

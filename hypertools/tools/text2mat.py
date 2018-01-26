@@ -2,7 +2,7 @@ import numpy as np
 import inspect
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
-from sklearn.pipeline import Pipeline
+from sklearn.utils.validation import check_is_fitted
 from .._shared.helpers import memoize
 from .format_data import format_data
 from .._shared.params import default_params
@@ -16,12 +16,12 @@ vectorizer_models = {
 # text models
 texts = {
     'LatentDirichletAllocation' : LatentDirichletAllocation,
-    'NMF' : NMF
+    'NMF' : NMF,
 }
 
 @memoize
 def text2mat(data, vectorizer='CountVectorizer',
-             text='LatentDirichletAllocation', fit_model=False):
+             text='LatentDirichletAllocation'):
     """
     Turns a list of text samples into a matrix using a vectorizer and a text model
 
@@ -59,20 +59,21 @@ def text2mat(data, vectorizer='CountVectorizer',
     """
 
     # subfunction to loop over arrays
-    def transform_list(x, model, fit_model):
+    def transform_list(x, vmodel, tmodel):
         split = np.cumsum([len(xi) for xi in x])[:-1]
-        if text is None:
-            if fit_model:
-                x_r = np.vsplit(model.transform(np.vstack(x).ravel()).toarray(), split)
-            else:
-                x_r = np.vsplit(model.fit_transform(np.vstack(x).ravel()).toarray(), split)
-        else:
-            if fit_model:
-                x_r = np.vsplit(model.transform(np.vstack(x).ravel()), split)
-            else:
-                x_r = np.vsplit(model.fit_transform(np.vstack(x).ravel()), split)
+        if vmodel is not None:
+            try:
+                x = np.vsplit(vmodel.transform(np.vstack(x).ravel()).toarray(), split)
+            except:
+                x = np.vsplit(vmodel.fit_transform(np.vstack(x).ravel()).toarray(), split)
+        if tmodel is not None:
+            try :
+                x = np.vsplit(tmodel.transform(np.vstack(x)), split)
+            except:
+                x = np.vsplit(tmodel.fit_transform(np.vstack(x)), split)
+            #     print('topic model transform didnt work')
 
-        return [xi for xi in x_r]
+        return [xi for xi in x]
 
     # check the type of the param
     def check_mtype(x):
@@ -137,6 +138,8 @@ def text2mat(data, vectorizer='CountVectorizer',
             vmodel = vectorizer_models[vectorizer]()
         elif vtype is 'class_instance':
             vmodel = vectorizer_models[vectorizer]
+    else:
+        vmodel = None
 
     if text:
         if ttype in ('str', 'dict'):
@@ -145,17 +148,10 @@ def text2mat(data, vectorizer='CountVectorizer',
             tmodel = texts[text]()
         elif ttype is 'class_instance':
             tmodel = texts[text]
-
-    # if both vectorizer and text model, put them in a pipeline
-    if vectorizer and text:
-        model = Pipeline([(vectorizer, vmodel),
-                          (text, tmodel)])
-    elif vectorizer:
-        model = vmodel
     else:
-        model = tmodel
+        tmodel = None
 
     if type(data) is not list:
         data = [data]
 
-    return transform_list(data, model, fit_model)
+    return transform_list(data, vmodel, tmodel)

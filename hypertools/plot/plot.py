@@ -468,6 +468,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         'n_clusters' : n_clusters,
         'cluster' : cluster,
         'reduce' : reduce_dict,
+        'ndims' : ndims,
         'align' : align_dict,
         'normalize' : normalize,
         'text' : text

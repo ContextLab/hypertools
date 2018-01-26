@@ -14,7 +14,7 @@ from .format_data import format_data as formatter
 
 # main function
 @memoize
-def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
+def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
            model=None, model_params=None, internal=False, format_data=True):
     """
     Reduces dimensionality of an array, or list of arrays
@@ -139,7 +139,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
                     }
                 else:
                     model_params = reduce['params']
-        if 'n_components' not in model_params:
+        if ndims:
             model_params['n_components'] = ndims
 
         # initialize model
