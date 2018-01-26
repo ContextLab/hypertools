@@ -120,7 +120,9 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
             x = aligner(x, align=align)
 
         # if the shape of the data is already less than ndims, just return it
-        if all([i.shape[1]<=ndims for i in x]):
+        if ndims is None:
+            return x
+        elif all([i.shape[1]<=ndims for i in x]):
             return x
 
         # if reduce is a string, find the corresponding model
