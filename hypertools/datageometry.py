@@ -115,15 +115,16 @@ class DataGeometry(object):
                            'params' : self.align['params']}
             text_model = {'model' : self.text['model'],
                           'params' : self.text['params']}
-            return format_data(
-                aligner(
+            return aligner(
                 reducer(
-                normalizer(data,
+                normalizer(
+                format_data(data,
+                text=text_model, ppca=True),
                 normalize=self.normalize),
                 reduce=reduce_model,
-                ndims=self.reduce['params']['n_components']),
-                align=align_model),
-                text=text_model, ppca=True)
+                ndims=self.reduce['params']['n_components']), 
+                align=align_model)
+
 
     # a function to plot the data
     def plot(self, data=None, **kwargs):
