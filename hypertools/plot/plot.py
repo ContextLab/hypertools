@@ -27,12 +27,13 @@ from ..datageometry import DataGeometry
 
 def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          linestyles=None, color=None, colors=None, palette='hls', group=None,
-         labels=None, legend=None, title=None, elev=10, azim=-60, ndims=3,
-         model=None, model_params=None, reduce='IncrementalPCA', cluster=None,
-         align=None, normalize=None, n_clusters=None, save_path=None,
-         animate=False, duration=30, tail_duration=2, rotations=2, zoom=1,
-         chemtrails=False, precog=False, bullettime=False, frame_rate=50,
-         explore=False, show=True, transform=True, vectorizer='CountVectorizer', text='LatentDirichletAllocation'):
+         labels=None, legend=None, title=None, size=None, elev=10, azim=-60,
+         ndims=3, model=None, model_params=None, reduce='IncrementalPCA',
+         cluster=None, align=None, normalize=None, n_clusters=None,
+         save_path=None, animate=False, duration=30, tail_duration=2,
+         rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
+         frame_rate=50, explore=False, show=True, transform=True,
+         vectorizer='CountVectorizer', text='LatentDirichletAllocation'):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -73,6 +74,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     title : str
         A title for the plot
+
+    size : list
+        A list of [width, height] in inches to resize the figure
 
     normalize : str or False
         If set to 'across', the columns of the input data will be z-scored
@@ -385,7 +389,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
                             elev=elev,
                             azim=azim,
                             explore=explore,
-                            show=show)
+                            show=show,
+                            size=size)
 
     # tighten layout
     plt.tight_layout()
@@ -471,7 +476,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         'ndims' : ndims,
         'align' : align_dict,
         'normalize' : normalize,
-        'text' : text
+        'text' : text,
+        'size' : size
     }
 
     return DataGeometry(fig=fig, ax=ax, data=raw, xform_data=xform_data,

@@ -23,7 +23,7 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
          show=True, kwargs_list=None, fmt=None, group=False, animate=False,
          tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False,
          bullettime=False, frame_rate=50, elev=10, azim=-60, duration=30,
-         explore=False):
+         explore=False, size=None):
     """
     Draws the plot
     """
@@ -491,5 +491,8 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
     if legend is not None:
         proxies = [plt.Rectangle((0, 0), 1, 1, fc=sns.color_palette()[idx]) for idx,label in enumerate(legend)]
         ax.legend(proxies,legend)
+
+    if size is not None:
+        fig.set_size_inches(size)
 
     return fig, ax, data, line_ani

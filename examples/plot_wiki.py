@@ -17,12 +17,10 @@ a matrix (or list of matrices), we also expose the text2mat function.
 # load hypertools
 import hypertools as hyp
 
-# load the data
+# text data
 data = [['i like cats alot', 'cats r pretty cool', 'cats are better than dogs'],
         ['dogs rule the haus', 'dogs are my jam', 'dogs are a mans best friend'],
         'hampsters are a mans best friend']
-
-wiki = hyp.load('wiki')
 
 # plot it
 hyp.plot(data, 'o', text='wiki')
