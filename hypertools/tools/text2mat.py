@@ -3,9 +3,11 @@ import inspect
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.utils.validation import check_is_fitted
+from sklearn.pipeline import Pipeline
 from .._shared.helpers import memoize
 from .format_data import format_data
 from .._shared.params import default_params
+from .load import load
 
 # vector models
 vectorizer_models = {
@@ -68,10 +70,15 @@ def text2mat(data, vectorizer='CountVectorizer',
                 x = np.vsplit(vmodel.fit_transform(np.vstack(x).ravel()).toarray(), split)
         if tmodel is not None:
             try :
-                x = np.vsplit(tmodel.transform(np.vstack(x)), split)
+                if isinstance(tmodel, Pipeline):
+                    x = np.vsplit(tmodel.transform(np.vstack(x).ravel()), split)
+                else:
+                    x = np.vsplit(tmodel.transform(np.vstack(x)), split)
             except:
-                x = np.vsplit(tmodel.fit_transform(np.vstack(x)), split)
-            #     print('topic model transform didnt work')
+                if isinstance(tmodel, Pipeline):
+                    x = np.vsplit(tmodel.fit_transform(np.vstack(x).ravel()), split)
+                else:
+                    x = np.vsplit(tmodel.fit_transform(np.vstack(x)), split)
 
         return [xi for xi in x]
 
@@ -92,6 +99,10 @@ def text2mat(data, vectorizer='CountVectorizer',
             except:
                 raise TypeError('Parameter must of type string, dict, class, or'
                                 ' class instance.')
+
+    if text is 'wiki':
+        text = load('wiki')
+        vectorizer = None
 
     # check the type of the vectorizer model
     vtype = check_mtype(vectorizer)

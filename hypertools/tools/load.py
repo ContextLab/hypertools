@@ -3,15 +3,28 @@ import pickle
 import pandas as pd
 import deepdish as dd
 import sys
+import os
 from warnings import warn
 from sklearn.externals import joblib
 from .analyze import analyze
 from .format_data import format_data
 from ..datageometry import DataGeometry
 
-BASE_URL = 'https://docs.google.com/uc?export=download&id='
+BASE_URL = 'https://docs.google.com/uc?export=download'
+homedir = os.path.expanduser('~/')
+datadir = os.path.join(homedir, 'hypertools_data')
 
-def load(dataset, reduce=None, ndims=None, align=None, normalize=None):
+datadict = {
+    'weights' : '0B7Ycm4aSYdPPREJrZ2stdHBFdjg',
+    'weights_avg' : '0B7Ycm4aSYdPPRmtPRnBJc3pieDg',
+    'weights_sample' : '0B7Ycm4aSYdPPTl9IUUVlamJ2VjQ',
+    'spiral' : '0B7Ycm4aSYdPPQS0xN3FmQ1FZSzg',
+    'mushrooms' : '0B7Ycm4aSYdPPY3J0U2tRNFB4T3c',
+    'wiki' : '1IOtLJf5ZnpmPvf2MRP7xAMcNwZruL23M'
+}
+
+def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
+         download=True):
     """
     Load a .geo file or example data
 
@@ -58,37 +71,53 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None):
         Example data
 
     """
-    data = None
 
     if dataset[-4:] == '.geo':
-        geo = dd.io.load(dataset)
-        data = DataGeometry(fig=None, ax=None, data=geo['data'],
-                            xform_data=geo['xform_data'], line_ani=None,
-                            reduce=geo['reduce'], align=geo['align'],
-                            normalize=geo['normalize'], kwargs=geo['kwargs'],
-                            version=geo['version'])
-    elif dataset is 'weights':
-        data = _load_stream('0B7Ycm4aSYdPPREJrZ2stdHBFdjg')
-    elif dataset is 'weights_avg':
-        data = _load_stream('0B7Ycm4aSYdPPRmtPRnBJc3pieDg')
-    elif dataset is 'weights_sample':
-        data = _load_stream('0B7Ycm4aSYdPPTl9IUUVlamJ2VjQ')
-    elif dataset is 'spiral':
-        data = _load_stream('0B7Ycm4aSYdPPQS0xN3FmQ1FZSzg')
-    elif dataset is 'mushrooms':
-        data = pd.read_csv(BASE_URL + '0B7Ycm4aSYdPPY3J0U2tRNFB4T3c')
+        data = DataGeometry(**dd.io.load(dataset))
+    elif dataset in datadict.keys():
+        data = _load_data(dataset, datadict[dataset])
 
     if data is not None:
         return analyze(data, reduce=reduce, ndims=ndims, align=align, normalize=normalize)
     else:
         raise RuntimeError('No data loaded. Please specify a .geo file or '
                            'one of the following sample files: weights, '
-                           'weights_avg, weights_sample, spiral, mushrooms')
+                           'weights_avg, weights_sample, spiral, mushrooms or '
+                           'wiki.')
 
+def _load_data(dataset, fileid):
+    fullpath = os.path.join(homedir, 'hypertools_data', dataset)
+    if not os.path.exists(datadir):
+        os.makedirs(datadir)
+    if not os.path.exists(fullpath):
+        data = _load_stream(fileid)
+        _download(dataset, data)
+    else:
+        data = _load_from_disk(dataset)
+    return data
 
 def _load_stream(fileid):
+    def _get_confirm_token(response):
+        for key, value in response.cookies.items():
+            if key.startswith('download_warning'):
+                return value
+        return None
     url = BASE_URL + fileid
-
+    session = requests.Session()
+    response = session.get(BASE_URL, params = { 'id' : fileid }, stream = True)
+    token = _get_confirm_token(response)
+    if token:
+        params = { 'id' : fileid, 'confirm' : token }
+        response = session.get(BASE_URL, params = params, stream = True)
     pickle_options = {'encoding': 'latin1'} if sys.version_info[0] == 3 else {}
+    return pickle.loads(response.content, **pickle_options)
 
-    return pickle.loads(requests.get(url, stream=True).content, **pickle_options)
+def _download(dataset, data):
+    fullpath = os.path.join(homedir, 'hypertools_data', dataset)
+    with open(fullpath, 'wb') as f:
+        pickle.dump(data, f, protocol=2)
+
+def _load_from_disk(dataset):
+    fullpath = os.path.join(homedir, 'hypertools_data', dataset)
+    with open(fullpath, 'rb') as f:
+        return pickle.load(f)
