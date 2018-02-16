@@ -1,6 +1,4 @@
 #!/usr/bin/env python
-
-##PACKAGES##
 from __future__ import division
 import sys
 import warnings
@@ -24,9 +22,8 @@ from ..tools.format_data import format_data
 from .draw import draw
 from ..datageometry import DataGeometry
 
-
-def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
-         linestyles=None, color=None, colors=None, palette='hls', group=None,
+def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None,
+         color=None, colors=None, palette='hls', group=None, hue=None,
          labels=None, legend=None, title=None, size=None, elev=10, azim=-60,
          ndims=3, model=None, model_params=None, reduce='IncrementalPCA',
          cluster=None, align=None, normalize=None, n_clusters=None,
@@ -212,6 +209,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     ----------
     geo : hypertools.DataGeometry
         A new data geometry object
+
     """
 
     # warnings for deprecated API args
@@ -221,6 +219,11 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         reduce = {}
         reduce['model'] = model
         reduce['params'] = model_params
+
+    if group is not None:
+        warnings.warn('Group will be deprecated. Please use '
+                      'hue keyword argument. See docs for details: ' 'http://hypertools.readthedocs.io/en/latest/hypertools.plot.html#hypertools.plot')
+        hue = group
 
     text_args = {
         'vectorizer' : vectorizer,
@@ -296,35 +299,34 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         cluster_labels = clusterer(x, cluster={'model': model,
                                                'params': params})
         x = reshape_data(x, cluster_labels)
-        if group:
-            warnings.warn('cluster overrides group, ignoring group.')
+        if hue:
+            warnings.warn('cluster overrides hue, ignoring hue.')
 
     elif n_clusters is not None:
         # If cluster was None default to KMeans
         cluster_labels = clusterer(x, cluster='KMeans', n_clusters=n_clusters)
         x = reshape_data(x, cluster_labels)
-        if group:
-            warnings.warn('n_clusters overrides group, ignoring group.')
+        if hue:
+            warnings.warn('n_clusters overrides hue, ignoring hue.')
 
     # group data if there is a grouping var
-    if group is not None:
-
+    if hue is not None:
         if color is not None:
             warnings.warn("Using group, color keyword will be ignored.")
 
         # if list of lists, unpack
-        if any(isinstance(el, list) for el in group):
-            group = list(itertools.chain(*group))
+        if any(isinstance(el, list) for el in hue):
+            hue = list(itertools.chain(*hue))
 
         # if all of the elements are numbers, map them to colors
-        if all(isinstance(el, int) or isinstance(el, float) for el in group):
-            group = vals2bins(group)
-        elif all(isinstance(el, str) for el in group):
-            group = group_by_category(group)
+        if all(isinstance(el, int) or isinstance(el, float) for el in hue):
+            hue = vals2bins(hue)
+        elif all(isinstance(el, str) for el in hue):
+            hue = group_by_category(hue)
 
         # reshape the data according to group
         if n_clusters is None:
-            x = reshape_data(x, group)
+            x = reshape_data(x, hue)
 
         # interpolate lines if they are grouped
         if is_line(fmt):
@@ -334,9 +336,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     if legend is not None:
         if legend is False:
             legend = None
-        elif legend is True and group is not None:
-            legend = [item for item in sorted(set(group), key=list(group).index)]
-        elif legend is True and group is None:
+        elif legend is True and hue is not None:
+            legend = [item for item in sorted(set(hue), key=list(hue).index)]
+        elif legend is True and hue is None:
             legend = [i + 1 for i in range(len(x))]
 
         mpl_kwargs['label'] = legend
@@ -450,7 +452,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         'color' : color,
         'colors' : colors,
         'palette' : palette,
-        'group' : group,
+        'hue' : hue,
         'ndims' : ndims,
         'labels' : labels,
         'legend' : legend,
