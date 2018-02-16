@@ -23,23 +23,32 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
          show=True, kwargs_list=None, fmt=None, group=False, animate=False,
          tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False,
          bullettime=False, frame_rate=50, elev=10, azim=-60, duration=30,
-         explore=False, size=None):
+         explore=False, size=None, ax=None):
     """
     Draws the plot
     """
     # handle static plots
-    def dispatch_static(x):
+    def dispatch_static(x, ax=None):
+        shape = x[0].shape[1]
+        if shape==3:
+            opts = dict(projection='3d')
+        else:
+            opts = dict()
+        if not ax:
+            fig = plt.figure()
+            ax = fig.add_subplot(111, **opts)
+        else:
+            fig = ax.figure
         if x[0].ndim==1 or x[0].shape[-1]==1:
-            return plot1D(x)
+            return plot1D(x, fig, ax)
         elif x[0].shape[-1]==2:
-            return plot2D(x)
+            return plot2D(x, fig, ax)
         elif x[0].shape[-1]==3:
-            return plot3D(x)
+            return plot3D(x, fig, ax)
 
     # plot data in 1D
-    def plot1D(data):
+    def plot1D(data, fig, ax):
         n=len(data)
-        fig, ax = plt.subplots()
         for i in range(n):
             ikwargs = kwargs_list[i]
             if fmt is None:
@@ -49,9 +58,8 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
         return fig, ax, data
 
     # plot data in 2D
-    def plot2D(data):
+    def plot2D(data, fig, ax):
         n=len(data)
-        fig, ax = plt.subplots()
         for i in range(n):
             ikwargs = kwargs_list[i]
             if fmt is None:
@@ -61,10 +69,8 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
         return fig, ax, data
 
     # plot data in 3D
-    def plot3D(data):
+    def plot3D(data, fig, ax):
         n=len(data)
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
         for i in range(n):
             ikwargs = kwargs_list[i]
             if fmt is None:
@@ -446,7 +452,7 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
     else:
 
         # dispatch static
-        fig, ax, data = dispatch_static(x)
+        fig, ax, data = dispatch_static(x, ax)
 
         # if 3d, plot the cube
         if x[0].shape[1] is 3:

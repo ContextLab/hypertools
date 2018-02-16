@@ -30,7 +30,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
          save_path=None, animate=False, duration=30, tail_duration=2,
          rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
          frame_rate=50, explore=False, show=True, transform=True,
-         vectorizer='CountVectorizer', semantic='wiki', corpus=None):
+         vectorizer='CountVectorizer', semantic='wiki', corpus=None, ax=None):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -400,7 +400,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
                             azim=azim,
                             explore=explore,
                             show=show,
-                            size=size)
+                            size=size,
+                            ax=ax)
 
     # tighten layout
     plt.tight_layout()

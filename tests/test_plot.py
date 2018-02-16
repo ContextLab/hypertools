@@ -5,6 +5,7 @@ import pytest
 
 import numpy as np
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 from hypertools.plot import plot
 from hypertools.tools.reduce import reduce as reducer
@@ -113,6 +114,12 @@ def test_plot_text():
     text_data = [['i like cats alot', 'cats r pretty cool', 'cats are better than dogs'],
             ['dogs rule the haus', 'dogs are my jam', 'dogs are a mans best friend']]
     geo = plot.plot(text_data, show=False)
+    assert isinstance(geo, DataGeometry)
+
+def test_plot_ax():
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    geo = plot.plot(data, ax=ax, show=False)
     assert isinstance(geo, DataGeometry)
 
 # ## ANIMATED ##
