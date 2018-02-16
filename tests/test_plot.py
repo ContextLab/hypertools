@@ -122,8 +122,18 @@ def test_plot_ax():
     geo = plot.plot(data, ax=ax, show=False)
     assert isinstance(geo, DataGeometry)
 
-# ## ANIMATED ##
+def test_plot_ax_2d():
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    geo = plot.plot(data, ax=ax, show=False, ndims=2)
 
+def test_plot_ax_error():
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    with pytest.raises(ValueError) as e_info:
+        geo = plot.plot(data, ax=ax, show=False)
+
+# ## ANIMATED ##
 def test_plot_1d_animate():
     d = reducer(data, ndims=1)
     with pytest.raises(Exception) as e_info:

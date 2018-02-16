@@ -225,6 +225,12 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
                       'hue keyword argument. See docs for details: ' 'http://hypertools.readthedocs.io/en/latest/hypertools.plot.html#hypertools.plot')
         hue = group
 
+    if ax is not None:
+        if ndims>2:
+            if ax.name!='3d':
+                raise ValueError('If passing ax and the plot is 3D, ax must '
+                                 'also be 3d')
+
     text_args = {
         'vectorizer' : vectorizer,
         'semantic' : semantic,
