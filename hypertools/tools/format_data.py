@@ -5,8 +5,8 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from .._externals.ppca import PPCA
 from .._shared.params import default_params
 
-def format_data(x, vectorizer='CountVectorizer', semantic='wiki', ppca=True,
-                text_align='hyper'):
+def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
+                ppca=True, text_align='hyper'):
     """
     Formats data into a list of numpy arrays
 
@@ -43,6 +43,11 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', ppca=True,
         a class instance, no parameters can be passed. By default, this is set to
         'wiki', which is a prefit model trained on sample of wikipedia articles.
 
+    corpus : list (or list of lists) of text samples or 'wiki'
+        Text to use to fit the semantic model (optional). Note: if you pass this
+        parameter with an already-fit-model, corpus will be ignored. If 'wiki',
+        corpus will be set to a list of sampled wikipedia articles (same
+        articles used to fit the wiki model).
 
     ppca : bool
         Performs PPCA to fill in missing values (default: True)
@@ -122,6 +127,7 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', ppca=True,
         text_args = {
             'vectorizer' : vectorizer,
             'semantic' : semantic,
+            'corpus' : corpus
         }
 
         # filter text data

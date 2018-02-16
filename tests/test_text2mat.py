@@ -51,3 +51,6 @@ def test_LDA_class():
 def test_LDA_class_instance():
     user_model = LatentDirichletAllocation(n_components=15)
     assert text2mat(data, semantic=user_model)[0].shape[1]==15
+
+def test_corpus():
+    assert text2mat(data, corpus=data)[0].shape[1]==20

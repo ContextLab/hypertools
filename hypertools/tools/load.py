@@ -20,7 +20,7 @@ datadict = {
     'weights_sample' : '0B7Ycm4aSYdPPTl9IUUVlamJ2VjQ',
     'spiral' : '0B7Ycm4aSYdPPQS0xN3FmQ1FZSzg',
     'mushrooms' : '0B7Ycm4aSYdPPY3J0U2tRNFB4T3c',
-    'wiki' : '1IOtLJf5ZnpmPvf2MRP7xAMcNwZruL23M',
+    'wiki-model' : '1IOtLJf5ZnpmPvf2MRP7xAMcNwZruL23M',
     'sotus' : '1EgCUfqjBRlv8Q1Eml7r_sgJ_A8LWuvwT'
 }
 
@@ -51,8 +51,8 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
         collection of 8,124 mushroomm samples (rows).
 
         `sotus` is a collection of State of the Union speeches from 1989-2018.
-        
-        `wiki` is a sklearn Pipeline (CountVectorizer->LatentDirichletAllocation)
+
+        `wiki-model` is a sklearn Pipeline (CountVectorizer->LatentDirichletAllocation)
         trained on a sample of wikipedia articles. It can be used to transform
         text to topic vectors.
 

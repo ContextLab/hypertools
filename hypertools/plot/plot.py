@@ -33,7 +33,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          save_path=None, animate=False, duration=30, tail_duration=2,
          rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
          frame_rate=50, explore=False, show=True, transform=True,
-         vectorizer='CountVectorizer', semantic='wiki'):
+         vectorizer='CountVectorizer', semantic='wiki', corpus=None):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -190,7 +190,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         If a class, pass any parameters as a dictionary to vectorizer_params. If
         a class instance, no parameters can be passed.
 
-    text : str, dict, class or class instance
+    semantic : str, dict, class or class instance
         Text model to use to transform the data. Can be
         LatentDirichletAllocation, NMF or None (default: LDA).
         If None, the text will be vectorized but not modeled. See http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
@@ -201,6 +201,12 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         If a class, pass any parameters as a dictionary to text_params. If
         a class instance, no parameters can be passed. By default, this is set to
         'wiki', which is a prefit model trained on sample of wikipedia articles.
+
+    corpus : list (or list of lists) of text samples or 'wiki'
+        Text to use to fit the semantic model (optional). Note: if you pass this
+        parameter with an already-fit-model, corpus will be ignored. If 'wiki',
+        corpus will be set to a list of sampled wikipedia articles (same
+        articles used to fit the wiki model).
 
     Returns
     ----------
@@ -219,6 +225,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
     text_args = {
         'vectorizer' : vectorizer,
         'semantic' : semantic,
+        'corpus' : corpus
     }
 
     # put into a common format
@@ -466,7 +473,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         'ndims' : ndims,
         'align' : align_dict,
         'normalize' : normalize,
+        'vectorizer' : vectorizer,
         'semantic' : semantic,
+        'corpus' : corpus,
         'size' : size
     }
 
