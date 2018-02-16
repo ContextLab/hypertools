@@ -5,9 +5,8 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from .._externals.ppca import PPCA
 from .._shared.params import default_params
 
-def format_data(x, vectorizer='CountVectorizer',
-                text='LatentDirichletAllocation',
-                ppca=True, text_align='hyper'):
+def format_data(x, vectorizer='CountVectorizer', semantic='wiki', ppca=True,
+                text_align='hyper'):
     """
     Formats data into a list of numpy arrays
 
@@ -32,7 +31,7 @@ def format_data(x, vectorizer='CountVectorizer',
         If a class, pass any parameters as a dictionary to vectorizer_params. If
         a class instance, no parameters can be passed.
 
-    text : str, dict, class or class instance
+    semantic : str, dict, class or class instance
         Text model to use to transform text data. Can be
         LatentDirichletAllocation, NMF or None (default: LDA).
         If None, the text will be vectorized but not modeled. See http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
@@ -41,7 +40,9 @@ def format_data(x, vectorizer='CountVectorizer',
         must have a fit_transform method (see here:
         http://scikit-learn.org/stable/data_transforms.html).
         If a class, pass any parameters as a dictionary to text_params. If
-        a class instance, no parameters can be passed.
+        a class instance, no parameters can be passed. By default, this is set to
+        'wiki', which is a prefit model trained on sample of wikipedia articles.
+
 
     ppca : bool
         Performs PPCA to fill in missing values (default: True)
@@ -120,7 +121,7 @@ def format_data(x, vectorizer='CountVectorizer',
         # default text args
         text_args = {
             'vectorizer' : vectorizer,
-            'text' : text,
+            'semantic' : semantic,
         }
 
         # filter text data

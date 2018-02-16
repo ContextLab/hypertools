@@ -48,6 +48,5 @@ def test_geo_text_data():
     geo = plot(data, show=False)
     assert isinstance(geo, DataGeometry)
     assert geo.transform(data)[0].shape[1]==3
-    assert geo.text['model'] is 'LatentDirichletAllocation'
-    assert geo.text['params']=={'n_components' : 20}
+    assert geo.semantic is 'wiki'
     assert isinstance(geo.plot(show=False), DataGeometry)

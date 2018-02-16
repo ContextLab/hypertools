@@ -33,7 +33,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
          save_path=None, animate=False, duration=30, tail_duration=2,
          rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
          frame_rate=50, explore=False, show=True, transform=True,
-         vectorizer='CountVectorizer', text='LatentDirichletAllocation'):
+         vectorizer='CountVectorizer', semantic='wiki'):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -199,7 +199,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         must have a fit_transform method (see here:
         http://scikit-learn.org/stable/data_transforms.html).
         If a class, pass any parameters as a dictionary to text_params. If
-        a class instance, no parameters can be passed.
+        a class instance, no parameters can be passed. By default, this is set to
+        'wiki', which is a prefit model trained on sample of wikipedia articles.
 
     Returns
     ----------
@@ -217,7 +218,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
 
     text_args = {
         'vectorizer' : vectorizer,
-        'text' : text,
+        'semantic' : semantic,
     }
 
     # put into a common format
@@ -432,17 +433,6 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
             'params' : {}
         }
 
-    # gather text params
-    if isinstance(text, dict):
-        text_dict = text
-    else:
-        text_dict = {
-            'model' : text,
-            'params' : {
-                'n_components' : 20
-            }
-        }
-
     # gather all other kwargs
     kwargs = {
         'fmt' : fmt,
@@ -476,10 +466,10 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None,
         'ndims' : ndims,
         'align' : align_dict,
         'normalize' : normalize,
-        'text' : text,
+        'semantic' : semantic,
         'size' : size
     }
 
     return DataGeometry(fig=fig, ax=ax, data=raw, xform_data=xform_data,
                         line_ani=line_ani, reduce=reduce_dict, align=align_dict,
-                        normalize=normalize, text=text_dict, kwargs=kwargs)
+                        normalize=normalize, semantic=semantic, kwargs=kwargs)

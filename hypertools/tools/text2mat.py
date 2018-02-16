@@ -23,7 +23,7 @@ texts = {
 
 @memoize
 def text2mat(data, vectorizer='CountVectorizer',
-             text='LatentDirichletAllocation'):
+             semantic='LatentDirichletAllocation'):
     """
     Turns a list of text samples into a matrix using a vectorizer and a text model
 
@@ -42,7 +42,7 @@ def text2mat(data, vectorizer='CountVectorizer',
         If a class, pass any parameters as a dictionary to vectorizer_params. If
         a class instance, no parameters can be passed.
 
-    text : str, dict, class or class instance
+    semantic : str, dict, class or class instance
         Text model to use to transform the data. Can be
         LatentDirichletAllocation, NMF or None (default: LDA).
         If None, the text will be vectorized but not modeled. See http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
@@ -100,9 +100,13 @@ def text2mat(data, vectorizer='CountVectorizer',
                 raise TypeError('Parameter must of type string, dict, class, or'
                                 ' class instance.')
 
-    if text is 'wiki':
-        text = load('wiki')
+    if semantic is 'wiki':
+        semantic = load('wiki')
         vectorizer = None
+    if isinstance(semantic, dict):
+        if semantic['model'] is 'wiki':
+            semantic = load('wiki')
+            vectorizer = None
 
     # check the type of the vectorizer model
     vtype = check_mtype(vectorizer)
@@ -124,18 +128,18 @@ def text2mat(data, vectorizer='CountVectorizer',
                                'http://scikit-learn.org/stable/data_transforms.html')
 
     # check the type of the text model
-    ttype = check_mtype(text)
+    ttype = check_mtype(semantic)
 
     # unpack text model args
     if ttype is 'str':
-        text_params = default_params(text)
+        text_params = default_params(semantic)
     elif ttype is 'dict':
-        text_params = default_params(text['model'], text['params'])
-        text = text['model']
+        text_params = default_params(semantic['model'], semantic['params'])
+        semantic = semantic['model']
     elif ttype in ('class', 'class_instance'):
-        if hasattr(text, 'fit_transform'):
-            texts.update({'user_model' : text})
-            text = 'user_model'
+        if hasattr(semantic, 'fit_transform'):
+            texts.update({'user_model' : semantic})
+            semantic = 'user_model'
         else:
             raise RuntimeError('Text model must have fit_transform '
                                'method following the scikit-learn API. See here '
@@ -152,13 +156,13 @@ def text2mat(data, vectorizer='CountVectorizer',
     else:
         vmodel = None
 
-    if text:
+    if semantic:
         if ttype in ('str', 'dict'):
-            tmodel = texts[text](**text_params)
+            tmodel = texts[semantic](**text_params)
         elif ttype is 'class':
-            tmodel = texts[text]()
+            tmodel = texts[semantic]()
         elif ttype is 'class_instance':
-            tmodel = texts[text]
+            tmodel = texts[semantic]
     else:
         tmodel = None
 

@@ -42,4 +42,4 @@ def test_force_align():
     res = format_data([mat, df, text])
     assert isinstance(res, list)
     assert all(map(lambda x: isinstance(x, np.ndarray), res))
-    assert all(map(lambda x: x.shape[1]==20, res))
+    assert all(map(lambda x: x.shape[1]==100, res))

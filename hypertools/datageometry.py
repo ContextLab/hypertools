@@ -51,8 +51,8 @@ class DataGeometry(object):
     """
 
     def __init__(self, fig=None, ax=None, line_ani=None, data=None, xform_data=None,
-                 reduce=None, align=None, normalize=None, text=None, kwargs=None,
-                 version=__version__):
+                 reduce=None, align=None, normalize=None, semantic=None,
+                 kwargs=None, version=__version__):
 
         # matplotlib figure handle
         self.fig = fig
@@ -79,7 +79,7 @@ class DataGeometry(object):
         self.normalize = normalize
 
         # text params
-        self.text = text
+        self.semantic = semantic
 
         # dictionary of kwargs
         self.kwargs = kwargs
@@ -109,22 +109,15 @@ class DataGeometry(object):
         if data is None:
             return self.xform_data
         else:
-            reduce_model = {'model' : self.reduce['model'],
-                            'params' : self.reduce['params']}
-            align_model = {'model' : self.align['model'],
-                           'params' : self.align['params']}
-            text_model = {'model' : self.text['model'],
-                          'params' : self.text['params']}
             return aligner(
                 reducer(
                 normalizer(
                 format_data(data,
-                text=text_model, ppca=True),
+                semantic=self.semantic, ppca=True),
                 normalize=self.normalize),
-                reduce=reduce_model,
-                ndims=self.reduce['params']['n_components']), 
-                align=align_model)
-
+                reduce=self.reduce,
+                ndims=self.reduce['params']['n_components']),
+                align=self.align)
 
     # a function to plot the data
     def plot(self, data=None, **kwargs):
@@ -154,7 +147,7 @@ class DataGeometry(object):
         if data is None:
             data = self.xform_data
             transform = False
-            if any([k in kwargs for k in ['reduce', 'align', 'normalize', 'text']]):
+            if any([k in kwargs for k in ['reduce', 'align', 'normalize', 'semantic']]):
                 data = self.data
                 transform = True
         else:
@@ -196,7 +189,7 @@ class DataGeometry(object):
             'reduce' : self.reduce,
             'align' : self.align,
             'normalize' : self.normalize,
-            'text' : self.text,
+            'semantic' : self.semantic,
             'kwargs' : self.kwargs,
             'version' : self.version
         }
