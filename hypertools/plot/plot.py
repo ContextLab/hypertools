@@ -205,6 +205,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         corpus will be set to a list of sampled wikipedia articles (same
         articles used to fit the wiki model).
 
+    ax : matplotlib.Axes
+        Axis handle to plot the figure
+
     Returns
     ----------
     geo : hypertools.DataGeometry
