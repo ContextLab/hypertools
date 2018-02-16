@@ -495,8 +495,7 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
 
     # add legend
     if legend is not None:
-        proxies = [plt.Rectangle((0, 0), 1, 1, fc=sns.color_palette()[idx]) for idx,label in enumerate(legend)]
-        ax.legend(proxies,legend)
+        ax.legend()
 
     if size is not None:
         fig.set_size_inches(size)
