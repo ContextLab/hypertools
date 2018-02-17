@@ -1,5 +1,6 @@
 import numpy as np
 import inspect
+import warnings
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.utils.validation import check_is_fitted
@@ -66,10 +67,12 @@ def text2mat(data, vectorizer='CountVectorizer',
     transformed data : list of numpy arrays
         The transformed text data
     """
+    fit=None
 
     if semantic in ('wiki',):
         semantic = load(semantic + '-model')
         vectorizer = None
+        fit = True
         if corpus is not None:
             warnings.warn('Fit model was passed, ignoring corpus.')
             corpus = None
@@ -131,9 +134,9 @@ def text2mat(data, vectorizer='CountVectorizer',
         data = [data]
 
     if corpus is None:
-        _fit_models(vmodel, tmodel, data)
+        _fit_models(vmodel, tmodel, data, fit)
     else:
-        _fit_models(vmodel, tmodel, corpus)
+        _fit_models(vmodel, tmodel, corpus, fit)
 
     return _transform(vmodel, tmodel, data)
 
@@ -148,7 +151,9 @@ def _transform(vmodel, tmodel, x):
             x = np.vsplit(tmodel.transform(np.vstack(x)), split)
     return [xi for xi in x]
 
-def _fit_models(vmodel, tmodel, x):
+def _fit_models(vmodel, tmodel, x, fit):
+    if fit:
+        return
     if vmodel is not None:
         try:
             check_is_fitted(vmodel, ['vocabulary_'])

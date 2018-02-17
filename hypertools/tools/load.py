@@ -21,6 +21,7 @@ datadict = {
     'spiral' : '0B7Ycm4aSYdPPQS0xN3FmQ1FZSzg',
     'mushrooms' : '0B7Ycm4aSYdPPY3J0U2tRNFB4T3c',
     'wiki-model' : '1IOtLJf5ZnpmPvf2MRP7xAMcNwZruL23M',
+    'wiki-text' : '17l75sep6MDztpMASXRN4ZZ5ZETlb8qi9',
     'sotus' : '1EgCUfqjBRlv8Q1Eml7r_sgJ_A8LWuvwT'
 }
 
