@@ -52,7 +52,7 @@ class DataGeometry(object):
 
     def __init__(self, fig=None, ax=None, line_ani=None, data=None, xform_data=None,
                  reduce=None, align=None, normalize=None, semantic=None,
-                 kwargs=None, version=__version__):
+                 vectorizer=None, corpus=None, kwargs=None, version=__version__):
 
         # matplotlib figure handle
         self.fig = fig
@@ -80,12 +80,22 @@ class DataGeometry(object):
 
         # text params
         self.semantic = semantic
+        self.vectorizer = vectorizer
+        self.corpus = corpus
 
         # dictionary of kwargs
         self.kwargs = kwargs
 
         # hypertools version
         self.version = version
+
+    def get_data(self):
+        """Return a copy of the data"""
+        return copy.copy(self.data)
+
+    def get_formatted_data(self):
+        """Return a formatted copy of the data"""
+        return format_data(self.data)
 
     # a function to transform new data
     def transform(self, data=None):
@@ -113,7 +123,10 @@ class DataGeometry(object):
                 reducer(
                 normalizer(
                 format_data(data,
-                semantic=self.semantic, ppca=True),
+                semantic=self.semantic,
+                vectorizer=self.vectorizer,
+                corpus=self.corpus,
+                ppca=True),
                 normalize=self.normalize),
                 reduce=self.reduce,
                 ndims=self.reduce['params']['n_components']),
@@ -147,7 +160,8 @@ class DataGeometry(object):
         if data is None:
             data = self.xform_data
             transform = False
-            if any([k in kwargs for k in ['reduce', 'align', 'normalize', 'semantic']]):
+            if any([k in kwargs for k in ['reduce', 'align', 'normalize',
+                                          'semantic', 'vectorizer', 'corpus']]):
                 data = self.data
                 transform = True
         else:

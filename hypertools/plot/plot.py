@@ -245,13 +245,13 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
 
     # analyze the data
     if transform is True:
-        x = analyze(raw, ndims=ndims, normalize=normalize, reduce=reduce,
+        xform = analyze(raw, ndims=ndims, normalize=normalize, reduce=reduce,
                     align=align, internal=True)
     else:
-        x = raw
+        xform = raw
 
     # Return data that has been normalized and possibly reduced and/or aligned
-    xform_data = x
+    xform_data = xform
 
     # catch all matplotlib kwargs here to pass on
     mpl_kwargs = {}
@@ -282,9 +282,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
 
     # reduce data to 3 dims for plotting, if ndims is None, return this
     if (ndims and ndims < 3):
-        x = reducer(x, ndims=ndims, reduce=reduce, internal=True)
+        xform = reducer(xform, ndims=ndims, reduce=reduce, internal=True)
     else:
-        x = reducer(x, ndims=3, reduce=reduce, internal=True)
+        xform = reducer(xform, ndims=3, reduce=reduce, internal=True)
 
     # find cluster and reshape if n_clusters
     if cluster is not None:
@@ -305,16 +305,16 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
             else:
                 params['n_clusters'] = n_clusters
 
-        cluster_labels = clusterer(x, cluster={'model': model,
+        cluster_labels = clusterer(xform, cluster={'model': model,
                                                'params': params})
-        x = reshape_data(x, cluster_labels)
+        xform = reshape_data(xform, cluster_labels)
         if hue:
             warnings.warn('cluster overrides hue, ignoring hue.')
 
     elif n_clusters is not None:
         # If cluster was None default to KMeans
-        cluster_labels = clusterer(x, cluster='KMeans', n_clusters=n_clusters)
-        x = reshape_data(x, cluster_labels)
+        cluster_labels = clusterer(xform, cluster='KMeans', n_clusters=n_clusters)
+        xform = reshape_data(xform, cluster_labels)
         if hue:
             warnings.warn('n_clusters overrides hue, ignoring hue.')
 
@@ -335,11 +335,11 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
 
         # reshape the data according to group
         if n_clusters is None:
-            x = reshape_data(x, hue)
+            xform = reshape_data(xform, hue)
 
         # interpolate lines if they are grouped
         if is_line(fmt):
-            x = patch_lines(x)
+            xform = patch_lines(xform)
 
     # handle legend
     if legend is not None:
@@ -348,17 +348,17 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         elif legend is True and hue is not None:
             legend = [item for item in sorted(set(hue), key=list(hue).index)]
         elif legend is True and hue is None:
-            legend = [i + 1 for i in range(len(x))]
+            legend = [i + 1 for i in range(len(xform))]
 
         mpl_kwargs['label'] = legend
 
     # interpolate if its a line plot
     if fmt is None or type(fmt) is str:
         if is_line(fmt):
-            if x[0].shape[0] > 1:
-                x = interp_array_list(x, interp_val=frame_rate*duration/(x[0].shape[0] - 1))
+            if xform[0].shape[0] > 1:
+                xform = interp_array_list(xform, interp_val=frame_rate*duration/(xform[0].shape[0] - 1))
     elif type(fmt) is list:
-        for idx, xi in enumerate(x):
+        for idx, xi in enumerate(xform):
             if is_line(fmt[idx]):
                 if xi.shape[0] > 1:
                     x[idx] = interp_array_list(xi, interp_val=frame_rate*duration/(xi.shape[0] - 1))
@@ -369,29 +369,29 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         mpl_kwargs['picker']=True
 
     # center
-    x = center(x)
+    xform = center(xform)
 
     # scale
-    x = scale(x)
+    xform = scale(xform)
 
     # handle palette with seaborn
-    sns.set_palette(palette=palette, n_colors=len(x))
+    sns.set_palette(palette=palette, n_colors=len(xform))
     sns.set_style(style='whitegrid')
 
     # turn kwargs into a list
-    kwargs_list = parse_kwargs(x, mpl_kwargs)
+    kwargs_list = parse_kwargs(xform, mpl_kwargs)
 
     # handle format strings
     if fmt is not None:
         if type(fmt) is not list:
-            draw_fmt = [fmt for i in x]
+            draw_fmt = [fmt for i in xform]
         else:
             draw_fmt = fmt
     else:
         draw_fmt = fmt
 
     # draw the plot
-    fig, ax, data, line_ani = draw(x, fmt=draw_fmt,
+    fig, ax, data, line_ani = draw(xform, fmt=draw_fmt,
                             kwargs_list=kwargs_list,
                             labels=labels,
                             legend=legend,
@@ -491,6 +491,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         'size' : size
     }
 
-    return DataGeometry(fig=fig, ax=ax, data=raw, xform_data=xform_data,
+    return DataGeometry(fig=fig, ax=ax, data=x, xform_data=xform_data,
                         line_ani=line_ani, reduce=reduce_dict, align=align_dict,
-                        normalize=normalize, semantic=semantic, kwargs=kwargs)
+                        normalize=normalize, semantic=semantic,
+                        vectorizer=vectorizer, corpus=corpus, kwargs=kwargs)

@@ -21,7 +21,7 @@ import hypertools as hyp
 data = hyp.load('mushrooms')
 
 # pop off the class (poisonousness)
-group = data.pop('class')
+hue = data.pop('class')
 
 # plot
-hyp.plot(data, '.', group=group)
+hyp.plot(data, '.', hue=hue)

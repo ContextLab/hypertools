@@ -67,17 +67,19 @@ def text2mat(data, vectorizer='CountVectorizer',
     transformed data : list of numpy arrays
         The transformed text data
     """
-    fit=None
-
-    if semantic in ('wiki',):
+    model_is_fit=False
+    if corpus is not None:
+        if corpus in ('wiki',):
+            corpus = load(corpus)
+            model_is_fit = False
+        if semantic in ('wiki',):
+            warnings.warn('Both corpus and already-fit-model passed.  Setting'
+                          'semantic to LatentDirichletAllocation.')
+            semantic = 'LatentDirichletAllocation'
+    elif semantic in ('wiki',):
         semantic = load(semantic + '_model')
         vectorizer = None
-        fit = True
-        if corpus is not None:
-            warnings.warn('Fit model was passed, ignoring corpus.')
-            corpus = None
-    elif corpus in ('wiki',):
-        corpus = load(corpus)
+        model_is_fit = True
 
     vtype = _check_mtype(vectorizer)
     if vtype is 'str':
@@ -134,9 +136,9 @@ def text2mat(data, vectorizer='CountVectorizer',
         data = [data]
 
     if corpus is None:
-        _fit_models(vmodel, tmodel, data, fit)
+        _fit_models(vmodel, tmodel, data, model_is_fit)
     else:
-        _fit_models(vmodel, tmodel, corpus, fit)
+        _fit_models(vmodel, tmodel, corpus, model_is_fit)
 
     return _transform(vmodel, tmodel, data)
 
@@ -151,8 +153,8 @@ def _transform(vmodel, tmodel, x):
             x = np.vsplit(tmodel.transform(np.vstack(x)), split)
     return [xi for xi in x]
 
-def _fit_models(vmodel, tmodel, x, fit):
-    if fit:
+def _fit_models(vmodel, tmodel, x, model_is_fit):
+    if model_is_fit==True:
         return
     if vmodel is not None:
         try:

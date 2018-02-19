@@ -25,10 +25,6 @@ def test_plot_1d():
     geo = plot.plot(data_reduced_1d, show=False)
     assert all([i.shape[1]==1 for i in geo.data])
 #
-def test_plot_1dim():
-    geo  = plot.plot(np.array([1,2,3,4]), show=False)
-    assert geo.data[0].ndim==2
-#
 def test_plot_2d():
     data_reduced_2d = reducer(data, ndims=2)
     geo = plot.plot(data_reduced_2d, show=False)

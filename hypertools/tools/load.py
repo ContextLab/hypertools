@@ -122,15 +122,18 @@ def _load_stream(fileid):
             if key.startswith('download_warning'):
                 return value
         return None
-    url = BASE_URL + fileid
-    session = requests.Session()
-    response = session.get(BASE_URL, params = { 'id' : fileid }, stream = True)
-    token = _get_confirm_token(response)
-    if token:
-        params = { 'id' : fileid, 'confirm' : token }
-        response = session.get(BASE_URL, params = params, stream = True)
-    pickle_options = {'encoding': 'latin1'} if sys.version_info[0] == 3 else {}
-    return pickle.loads(response.content, **pickle_options)
+    if fileid is '0B7Ycm4aSYdPPY3J0U2tRNFB4T3c':
+        return pd.read_csv(BASE_URL+'&id='+fileid)
+    else:
+        url = BASE_URL + fileid
+        session = requests.Session()
+        response = session.get(BASE_URL, params = { 'id' : fileid }, stream = True)
+        token = _get_confirm_token(response)
+        if token:
+            params = { 'id' : fileid, 'confirm' : token }
+            response = session.get(BASE_URL, params = params, stream = True)
+        pickle_options = {'encoding': 'latin1'} if sys.version_info[0] == 3 else {}
+        return pickle.loads(response.content, **pickle_options)
 
 def _download(dataset, data):
     fullpath = os.path.join(homedir, 'hypertools_data', dataset)

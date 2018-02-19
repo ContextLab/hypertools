@@ -74,7 +74,7 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
         Checks what the data type is and returns it as a string label
         """
         if isinstance(data, list):
-            if isinstance(data[0], str):
+            if isinstance(data[0].encode('utf-8'), str):
                 return 'list_str'
             elif isinstance(data[0], (int, float)):
                 return 'list_num'

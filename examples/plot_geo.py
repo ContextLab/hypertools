@@ -19,6 +19,7 @@ that were applied to the geo.
 
 # import
 import hypertools as hyp
+%matplotlib inline
 
 # load some data
 data = hyp.load('mushrooms')
@@ -40,3 +41,9 @@ geo.plot(color='green', normalize='across')
 
 # transform some 'new' data and plot it
 # hyp.plot(transformed_data, '.')
+
+# get a copy of the data
+# geo.get_data()
+
+# get the formatted data
+# geo.get_formatted_data()

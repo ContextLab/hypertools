@@ -17,6 +17,12 @@ def test_geo():
 def test_geo_data():
     assert isinstance(geo.data, list)
 
+def test_geo_get_data():
+    assert np.array_equal(data[0], geo.get_data()[0])
+
+def test_geo_get_formatted_data():
+    assert np.array_equal(data[0], geo.get_formatted_data()[0])
+
 def test_geo_data_dims():
     assert (geo.data[0].shape[0]==100) and (geo.data[0].shape[1]==4)
 

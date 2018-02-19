@@ -22,4 +22,6 @@ import hypertools as hyp
 data, hue, labels = hyp.load('sotus')
 
 # plot it
-hyp.plot(data, 'o', hue=labels, labels=labels)
+geo = hyp.plot(data, 'o', hue=labels, labels=labels, title='Transformed using wiki model')
+
+geo.plot(corpus=data, title='Transformed using sotus data')

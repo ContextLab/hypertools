@@ -18,7 +18,7 @@ import hypertools as hyp
 import numpy as np
 
 # load example data
-data = hyp.load('weights', align=True)
+data = hyp.load('weights', align='hyper')
 
 # average into 2 groups
 w1 = np.mean(data[:17],0)
