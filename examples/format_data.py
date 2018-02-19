@@ -21,8 +21,8 @@ import hypertools as hyp
 import numpy as np
 import pandas as pd
 
-mat = np.random.rand(3,20)
-df = pd.DataFrame(np.random.rand(3,20))
+mat = np.random.rand(1000,100)
+df = pd.DataFrame(np.random.rand(1000,100))
 text = ['here is some test text', 'and a little more', 'and more']
 
 # return formatted data

@@ -25,4 +25,4 @@ w1 = np.mean(data[:17],0)
 w2 = np.mean(data[18:],0)
 
 # plot
-hyp.plot([w1, w2], animate=True, precog=True)
+hyp.plot([w1, w2], animate=True, chemtrails=True)

@@ -16,6 +16,6 @@ import hypertools as hyp
 
 digits = datasets.load_digits(n_class=6)
 data = digits.data
-group = digits.target.astype('str')
+hue = digits.target.astype('str')
 
-hyp.plot(data, '.', reduce='TSNE', group=group, ndims=2)
+hyp.plot(data, '.', reduce='TSNE', hue=hue, ndims=2)
