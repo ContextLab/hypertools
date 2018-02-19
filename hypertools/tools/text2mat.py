@@ -70,14 +70,14 @@ def text2mat(data, vectorizer='CountVectorizer',
     fit=None
 
     if semantic in ('wiki',):
-        semantic = load(semantic + '-model')
+        semantic = load(semantic + '_model')
         vectorizer = None
         fit = True
         if corpus is not None:
             warnings.warn('Fit model was passed, ignoring corpus.')
             corpus = None
     elif corpus in ('wiki',):
-        corpus = load(corpus + '-text')
+        corpus = load(corpus)
 
     vtype = _check_mtype(vectorizer)
     if vtype is 'str':
