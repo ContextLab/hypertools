@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
 =============================
-Precognition
+Chemtrails
 =============================
 
-The future trajectory of an animated plot can be visualized with the precog
-argument.  This displays a low opacity version of the trace ahead of the
+The past trajectory of an animated plot can be visualized with the chemtrails
+argument.  This displays a low opacity version of the trace behind the
 current points being plotted.  This can be used in conjunction with the
-chemtrails argument to plot a low-opacity trace of the entire timeseries.
+precog argument to plot a low-opacity trace of the entire timeseries.
 """
 
 # Code source: Andrew Heusser
