@@ -46,7 +46,8 @@ setup(
    'umap-learn>=0.1.5',
    'future',
    'requests',
-   'deepdish'
+   'deepdish',
+   'six'
    ],
     classifiers=[
              'Intended Audience :: Science/Research',

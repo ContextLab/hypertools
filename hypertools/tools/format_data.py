@@ -4,6 +4,7 @@ import warnings
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from .._externals.ppca import PPCA
 from .._shared.params import default_params
+import six
 
 def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
                 ppca=True, text_align='hyper'):
@@ -74,7 +75,7 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
         Checks what the data type is and returns it as a string label
         """
         if isinstance(data, list):
-            if isinstance(data[0].encode('utf-8'), str):
+            if isinstance(data[0], (six.string_types, six.text_type, six.binary_type)):
                 return 'list_str'
             elif isinstance(data[0], (int, float)):
                 return 'list_num'
