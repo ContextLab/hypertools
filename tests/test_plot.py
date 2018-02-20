@@ -14,7 +14,7 @@ from hypertools.datageometry import DataGeometry
 
 data = [np.random.multivariate_normal(np.zeros(4), np.eye(4), size=100) for i
         in range(2)]
-weights = load('weights_avg')
+weights, labels = load('weights_avg')
 
 # To prevent warning about 20+ figs being open
 mpl.rcParams['figure.max_open_warning'] = 25

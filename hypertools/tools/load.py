@@ -15,14 +15,14 @@ homedir = os.path.expanduser('~/')
 datadir = os.path.join(homedir, 'hypertools_data')
 
 datadict = {
-    'weights' : '0B7Ycm4aSYdPPREJrZ2stdHBFdjg',
-    'weights_avg' : '0B7Ycm4aSYdPPRmtPRnBJc3pieDg',
-    'weights_sample' : '0B7Ycm4aSYdPPTl9IUUVlamJ2VjQ',
-    'spiral' : '0B7Ycm4aSYdPPQS0xN3FmQ1FZSzg',
-    'mushrooms' : '0B7Ycm4aSYdPPY3J0U2tRNFB4T3c',
+    'weights' : '1VktreKU1SgYMpjsE2yzg8EmfSr-5SbeL',
+    'weights_avg' : '1gPOoK6oEeFWY3zAql9MuDxP-oPosMsn0',
+    'weights_sample' : '1WDAKRmK4O-NSWP8CiBJ80M-6o_N8LjqQ',
+    'spiral' : '15Twh8AjncPN0YIymJ6wvP02quXnI8Pv9',
+    'mushrooms' : '1ZoItEheTTwXpKJlqKA2yxfy6gDAhsJWc',
     'wiki_model' : '1IOtLJf5ZnpmPvf2MRP7xAMcNwZruL23M',
-    'wiki' : '17l75sep6MDztpMASXRN4ZZ5ZETlb8qi9',
-    'sotus' : '1EgCUfqjBRlv8Q1Eml7r_sgJ_A8LWuvwT'
+    'wiki' : '17mZ8rs_r1KwT9vxPEym6wLCZejJVevlo',
+    'sotus' : '1JTUzf9_mFFZ38-Wu4D6xaYfG0zP-_p43'
 }
 
 def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
@@ -52,6 +52,8 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
         collection of 8,124 mushroomm samples (rows).
 
         `sotus` is a collection of State of the Union speeches from 1989-2018.
+
+        `wiki` is a collection of wikipedia pages used to fit wiki-model.
 
         `wiki-model` is a sklearn Pipeline (CountVectorizer->LatentDirichletAllocation)
         trained on a sample of wikipedia articles. It can be used to transform
@@ -98,7 +100,10 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
         data = _load_data(dataset, datadict[dataset])
 
     if data is not None:
-        return analyze(data, reduce=reduce, ndims=ndims, align=align, normalize=normalize)
+        if dataset in ('wiki_model', 'sotus'):
+            return data
+        else:
+            return (analyze(data[0], reduce=reduce, ndims=ndims, align=align, normalize=normalize), data[1])
     else:
         raise RuntimeError('No data loaded. Please specify a .geo file or '
                            'one of the following sample files: weights, '
@@ -122,18 +127,15 @@ def _load_stream(fileid):
             if key.startswith('download_warning'):
                 return value
         return None
-    if fileid is '0B7Ycm4aSYdPPY3J0U2tRNFB4T3c':
-        return pd.read_csv(BASE_URL+'&id='+fileid)
-    else:
-        url = BASE_URL + fileid
-        session = requests.Session()
-        response = session.get(BASE_URL, params = { 'id' : fileid }, stream = True)
-        token = _get_confirm_token(response)
-        if token:
-            params = { 'id' : fileid, 'confirm' : token }
-            response = session.get(BASE_URL, params = params, stream = True)
-        pickle_options = {'encoding': 'latin1'} if sys.version_info[0] == 3 else {}
-        return pickle.loads(response.content, **pickle_options)
+    url = BASE_URL + fileid
+    session = requests.Session()
+    response = session.get(BASE_URL, params = { 'id' : fileid }, stream = True)
+    token = _get_confirm_token(response)
+    if token:
+        params = { 'id' : fileid, 'confirm' : token }
+        response = session.get(BASE_URL, params = params, stream = True)
+    pickle_options = {'encoding': 'latin1'} if sys.version_info[0] == 3 else {}
+    return pickle.loads(response.content, **pickle_options)
 
 def _download(dataset, data):
     fullpath = os.path.join(homedir, 'hypertools_data', dataset)

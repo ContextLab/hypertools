@@ -8,7 +8,7 @@ from hypertools.tools.load import load
 
 # weights = load('weights')
 weights = [np.random.rand(10, 300) for i in range(3)]
-data1 = load('spiral')
+data1, labels = load('spiral')
 
 def test_procrustes():
     rot = np.array([[-0.89433495, -0.44719485, -0.01348182],

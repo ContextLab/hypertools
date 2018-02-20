@@ -15,7 +15,7 @@ depends on having ffmpeg installed on your computer.
 import hypertools as hyp
 import numpy as np
 
-data = hyp.tools.load('weights', align=True)
+data, labels = hyp.tools.load('weights', align=True)
 
 group1 = np.mean(data[:17], 0)
 group2 = np.mean(data[18:], 0)

@@ -18,7 +18,7 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
 import hypertools as hyp
 
 # load example data
-data = hyp.load('mushrooms')
+data, labels = hyp.load('mushrooms')
 
 # pop off the class (poisonousness)
 hue = data.pop('class')

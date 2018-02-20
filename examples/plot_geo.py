@@ -19,10 +19,9 @@ that were applied to the geo.
 
 # import
 import hypertools as hyp
-%matplotlib inline
 
 # load some data
-data = hyp.load('mushrooms')
+data, labels = hyp.load('mushrooms')
 
 # create a DataGeometry object
 geo = hyp.plot(data, '.')

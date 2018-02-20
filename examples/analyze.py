@@ -20,7 +20,7 @@ visualized.
 import hypertools as hyp
 
 # load the data
-data = hyp.load('weights')
+data, labels = hyp.load('weights')
 
 # process the data
 data = hyp.analyze(data, normalize='within', reduce='PCA', ndims=10,

@@ -361,11 +361,11 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         for idx, xi in enumerate(xform):
             if is_line(fmt[idx]):
                 if xi.shape[0] > 1:
-                    x[idx] = interp_array_list(xi, interp_val=frame_rate*duration/(xi.shape[0] - 1))
+                    xform[idx] = interp_array_list(xi, interp_val=frame_rate*duration/(xi.shape[0] - 1))
 
     # handle explore flag
     if explore:
-        assert x[0].shape[1] is 3, "Explore mode is currently only supported for 3D plots."
+        assert xform[0].shape[1] is 3, "Explore mode is currently only supported for 3D plots."
         mpl_kwargs['picker']=True
 
     # center

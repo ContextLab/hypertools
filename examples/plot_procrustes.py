@@ -19,7 +19,7 @@ import numpy as np
 import scipy
 
 # load example data
-data = hyp.tools.load('spiral')
+data, labels = hyp.tools.load('spiral')
 target = data
 
 # a random rotation matrix
