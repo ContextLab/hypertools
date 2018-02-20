@@ -100,7 +100,7 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
         data = _load_data(dataset, datadict[dataset])
 
     if data is not None:
-        if dataset in ('wiki_model', 'sotus'):
+        if dataset in ('wiki_model', 'sotus', 'wiki'):
             return data
         else:
             return (analyze(data[0], reduce=reduce, ndims=ndims, align=align, normalize=normalize), data[1])
