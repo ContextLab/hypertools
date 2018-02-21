@@ -30,7 +30,7 @@ samples of mushrooms with various text features.
 
 .. code:: ipython3
 
-    mushrooms = hyp.load('mushrooms')
+    mushrooms, labels = hyp.load('mushrooms')
 
 We can peek at the first few rows of the dataframe using the pandas
 function ``head()``
@@ -45,6 +45,19 @@ function ``head()``
 .. raw:: html
 
     <div>
+    <style scoped>
+        .dataframe tbody tr th:only-of-type {
+            vertical-align: middle;
+        }
+    
+        .dataframe tbody tr th {
+            vertical-align: top;
+        }
+    
+        .dataframe thead th {
+            text-align: right;
+        }
+    </style>
     <table border="1" class="dataframe">
       <thead>
         <tr style="text-align: right;">
@@ -233,7 +246,7 @@ We can further examine the number of datapoints assigned each label.
 
 .. parsed-literal::
 
-    Counter({0: 1768, 1: 5024, 2: 1332})
+    Counter({0: 1332, 1: 5024, 2: 1768})
 
 
 
@@ -282,10 +295,16 @@ number of clusters (10).
     geo  = hyp.plot(mushrooms, '.', group=labels_birch, title='Birch clustering')
 
 
+.. parsed-literal::
 
-.. image:: cluster_files/cluster_20_0.png
+    /Users/andyheusser/Documents/github/hypertools/hypertools/plot/plot.py:227: UserWarning: Group will be deprecated. Please use hue keyword argument. See docs for details: http://hypertools.readthedocs.io/en/latest/hypertools.plot.html#hypertools.plot
+      warnings.warn('Group will be deprecated. Please use '
 
 
 
 .. image:: cluster_files/cluster_20_1.png
+
+
+
+.. image:: cluster_files/cluster_20_2.png
 

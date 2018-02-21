@@ -31,7 +31,7 @@ samples of mushrooms with various text features.
 
 .. code:: ipython3
 
-    mushrooms = hyp.load('mushrooms')
+    mushrooms, labels = hyp.load('mushrooms')
 
 We can peek at the first few rows of the dataframe using the pandas
 function ``head()``.
@@ -46,6 +46,19 @@ function ``head()``.
 .. raw:: html
 
     <div>
+    <style scoped>
+        .dataframe tbody tr th:only-of-type {
+            vertical-align: middle;
+        }
+    
+        .dataframe tbody tr th {
+            vertical-align: top;
+        }
+    
+        .dataframe thead th {
+            text-align: right;
+        }
+    </style>
     <table border="1" class="dataframe">
       <thead>
         <tr style="text-align: right;">
@@ -298,22 +311,22 @@ specific reduction techniques).
 .. image:: plot_files/plot_22_0.png
 
 
-Coloring by group
------------------
+Coloring by hue
+---------------
 
-To color your datapoints by group labels, pass the ``group`` argument.
-It accepts strings, ints, and floats, or a list of these. You must pass
-group the same number of labels as you have rows in your data matrix.
+To color your datapoints by group labels, pass the ``hue`` argument. It
+accepts strings, ints, and floats, or a list of these. You must pass hue
+the same number of labels as you have rows in your data matrix.
 
 Here, we group the data in five different chunks of equal size (size
 #points / 5) for simplicity. Note that we pass ints, strings, floats,
-and None in the same list to the group argument.
+and None in the same list to the hue argument.
 
 .. code:: ipython3
 
     split = int(mushrooms.shape[0]/ 5)
-    groupings = [1]*split + ['two']*split + [3.0]*split + [None]*split + ['four']*split
-    geo_group = hyp.plot(mushrooms, '.', group=groupings)
+    hue = [1]*split + ['two']*split + [3.0]*split + [None]*split + ['four']*split
+    geo_group = hyp.plot(mushrooms, '.', hue=hue)
 
 
 
@@ -323,15 +336,14 @@ and None in the same list to the group argument.
 Adding a legend
 ~~~~~~~~~~~~~~~
 
-When coloring by group, you may want a legend to indicate group type.
-Passing ``legend=True`` will generate the legend based on your
-groupings.
+When coloring, you may want a legend to indicate group type. Passing
+``legend=True`` will generate the legend based on your groupings.
 
 .. code:: ipython3
 
     split = int(mushrooms.shape[0]/5)
-    groupings = [1]*split + ['two']*split + [3.0]*split + [None]*split + ['four']*split
-    geo_group = hyp.plot(mushrooms, '.', group=groupings, legend=True)
+    hue = [1]*split + ['two']*split + [3.0]*split + [None]*split + ['four']*split
+    geo_hue = hyp.plot(mushrooms, '.', hue=hue, legend=True)
 
 
 
@@ -377,7 +389,7 @@ no data for PPCA to base its guess on, so the inference will fail.
 
 .. parsed-literal::
 
-    /Users/andyheusser/Documents/github/hypertools/hypertools/_shared/helpers.py:206: UserWarning: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)
+    /Users/andyheusser/Documents/github/hypertools/hypertools/tools/format_data.py:170: UserWarning: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)
       warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
 
 
@@ -464,7 +476,7 @@ Below, is a simple example of a spiral.
 .. code:: ipython3
 
     # load example data
-    data = hyp.load('spiral')
+    data, labels = hyp.load('spiral')
     target = data.copy()
     
     # a random rotation matrix
@@ -497,3 +509,42 @@ argument.
 .. code:: ipython3
 
     # geo_cluster = hyp.plot(mushrooms, '.', save_path='cluster_plot.pdf')
+
+Plotting text using semantic models
+-----------------------------------
+
+In addition to numerical data, ``hypertools`` supports the plotting of
+text data by fitting the data to a semantic model. We'll load in an
+example text dataset to get started which is comprised of all State of
+the Union Addresses from 1989-2017.
+
+.. code:: ipython3
+
+    docs, labels = hyp.load('sotus')
+
+By default, the text data will be transformed using a Latent Dirichlet
+Model trained on a sample of wikipedia pages. Simply pass the list of
+text data to the ``plot`` function, and under the hood it will be
+transformed to a topic vector and then reduced for plotting.
+
+.. code:: ipython3
+
+    geo = hyp.plot(docs, 'o', hue=labels, labels=labels, size=[10, 8])
+
+
+
+.. image:: plot_files/plot_50_0.png
+
+
+You can also specify a ``corpus``, which will fit a semantic model to
+whatever text data you pass using this parameter. We'll use the SOTUs
+dataset to fit the model:
+
+.. code:: ipython3
+
+    geo2 = geo.plot(corpus=docs, semantic='LatentDirichletAllocation')
+
+
+
+.. image:: plot_files/plot_52_0.png
+

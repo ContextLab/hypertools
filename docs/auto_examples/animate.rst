@@ -25,7 +25,7 @@ are split into 2 groups of 18. and averaged.  Finally the aligned data is plotte
     import numpy as np
 
     # load example data
-    data = hyp.load('weights', align='hyper')
+    data, labels = hyp.load('weights', align='hyper')
 
     # average into two groups
     w1 = np.mean(data[:17],0)

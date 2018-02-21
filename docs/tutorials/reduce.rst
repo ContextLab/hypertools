@@ -38,7 +38,7 @@ more info on the data and HTFA, respectively.
 
 .. code:: ipython3
 
-    weights = hyp.load('weights_avg')
+    weights, labels = hyp.load('weights_avg')
 
 Reduce one array
 ----------------
@@ -62,12 +62,12 @@ features (the default when desired number of features is not specified).
 .. code:: ipython3
 
     reduced_array = hyp.reduce(weights[0])
-    print('Reduced array shape: (%d, %d)' % reduced_array.shape)
+    print('Reduced array shape: (%d, %d)' % reduced_array[0].shape)
 
 
 .. parsed-literal::
 
-    Reduced array shape: (300, 3)
+    Reduced array shape: (300, 100)
 
 
 Reduce list of arrays
@@ -92,8 +92,8 @@ weights data) and re-examine the data.
 
 .. parsed-literal::
 
-    Shape of first reduced array:  (300, 3)
-    Shape of second reduced array:  (300, 3)
+    Shape of first reduced array:  (300, 100)
+    Shape of second reduced array:  (300, 100)
 
 
 We can see that each array has been reduced from 100 features to 3
@@ -117,8 +117,8 @@ not specified).
 
 .. parsed-literal::
 
-    Shape of first reduced array:  (300, 3)
-    Shape of second reduced array:  (300, 3)
+    Shape of first reduced array:  (300, 100)
+    Shape of second reduced array:  (300, 100)
 
 
 Reduce to specified number of dimensions
@@ -152,7 +152,7 @@ model docs for details on parameters supported for each model.
 Supported models include: PCA, IncrementalPCA, SparsePCA,
 MiniBatchSparsePCA, KernelPCA, FastICA, FactorAnalysis, TruncatedSVD,
 DictionaryLearning, MiniBatchDictionaryLearning, TSNE, Isomap,
-SpectralEmbedding, LocallyLinearEmbedding, MDS and UMAP.
+SpectralEmbedding, LocallyLinearEmbedding, and MDS.
 
 The example below will reduce to the default of three features, since
 the desired number of features is not specified.

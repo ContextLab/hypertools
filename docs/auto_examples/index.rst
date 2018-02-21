@@ -129,6 +129,26 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="Here, we will plot a collection of wikipedia pages, transformed using a topic model (the defaul...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_wiki_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_wiki.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_wiki
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="An example of how to use the `legend` kwarg to generate a legend. ">
 
 .. only:: html
@@ -289,6 +309,26 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="Here, we will plot a collection of NIPS papers, transformed using a topic model that was fit on...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_nips_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_nips.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_nips
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="This example demonstrates how to use the `analyze` function to process data prior to plotting. ...">
 
 .. only:: html
@@ -326,6 +366,26 @@ Gallery of Examples
    :hidden:
 
    /auto_examples/animate
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="To plot text, simply pass the text data to the plot function.  Here, we will plot each SOTU add...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_sotus_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_sotus.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_sotus
 
 .. raw:: html
 
@@ -469,46 +529,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="Here is an example where we generate some synthetic data, and then use the cluster function to ...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_clusters2_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_clusters2.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_clusters2
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="When the plot function is called, it returns a DataGeometry object, or geo. A geo contains all ...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_geo_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_geo.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_geo
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="When plotting, its useful to have a way to color points by some category or variable.  Hypertoo...">
 
 .. only:: html
@@ -529,6 +549,26 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="Here is an example where we generate some synthetic data, and then use the cluster function to ...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_clusters2_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_clusters2.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_clusters2
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="In this example, we load in some synthetic data, rotate it, and then use the procustes function...">
 
 .. only:: html
@@ -546,6 +586,26 @@ Gallery of Examples
    :hidden:
 
    /auto_examples/plot_procrustes
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="When the plot function is called, it returns a DataGeometry object, or geo. A geo contains all ...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_geo_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_geo.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_geo
 
 .. raw:: html
 

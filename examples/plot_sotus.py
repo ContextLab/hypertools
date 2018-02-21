@@ -23,5 +23,4 @@ data, labels = hyp.load('sotus')
 
 # plot it
 geo = hyp.plot(data, 'o', hue=labels, labels=labels, title='Transformed using wiki model')
-
 geo.plot(corpus=data, title='Transformed using sotus data')

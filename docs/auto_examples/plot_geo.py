@@ -21,7 +21,7 @@ that were applied to the geo.
 import hypertools as hyp
 
 # load some data
-data = hyp.load('mushrooms')
+data, labels = hyp.load('mushrooms')
 
 # create a DataGeometry object
 geo = hyp.plot(data, '.')
@@ -40,3 +40,9 @@ geo.plot(color='green', normalize='across')
 
 # transform some 'new' data and plot it
 # hyp.plot(transformed_data, '.')
+
+# get a copy of the data
+# geo.get_data()
+
+# get the formatted data
+# geo.get_formatted_data()

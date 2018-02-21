@@ -14,7 +14,7 @@ with multidimensional scaling.
 import hypertools as hyp
 import numpy as np
 
-data = hyp.load('weights')
+data, labels = hyp.load('weights')
 aligned_w = hyp.align(data)
 
 w1 = np.mean(aligned_w[:17],0)

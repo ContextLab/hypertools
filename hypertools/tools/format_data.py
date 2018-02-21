@@ -23,7 +23,7 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
         The data to convert
 
     vectorizer : str, dict, class or class instance
-        The vectorizer to use for tet data. Can be CountVectorizer or
+        The vectorizer to use for text data. Can be CountVectorizer or
         TfidfVectorizer.  See
         http://scikit-learn.org/stable/modules/classes.html#module-sklearn.feature_extraction.text
         for details. You can also specify your own vectorizer model as a class,

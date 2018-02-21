@@ -37,7 +37,7 @@ more info on the data and HTFA, respectively.
 
 .. code:: ipython3
 
-    weights = hyp.load('weights_avg')
+    weights, labels = hyp.load('weights_avg')
     print(weights[0].shape) # 300 TRs and 100 components
     print(weights[1].shape)
 

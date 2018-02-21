@@ -22,7 +22,8 @@ datadict = {
     'mushrooms' : '1ZoItEheTTwXpKJlqKA2yxfy6gDAhsJWc',
     'wiki_model' : '1IOtLJf5ZnpmPvf2MRP7xAMcNwZruL23M',
     'wiki' : '17mZ8rs_r1KwT9vxPEym6wLCZejJVevlo',
-    'sotus' : '1JTUzf9_mFFZ38-Wu4D6xaYfG0zP-_p43'
+    'sotus' : '1JTUzf9_mFFZ38-Wu4D6xaYfG0zP-_p43',
+    'nips' : '1QSP5esFknjaxa_3_XCC0tX_yPh-Dmxcx'
 }
 
 def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
@@ -145,4 +146,5 @@ def _download(dataset, data):
 def _load_from_disk(dataset):
     fullpath = os.path.join(homedir, 'hypertools_data', dataset)
     with open(fullpath, 'rb') as f:
-        return pickle.load(f)
+        pickle_options = {'encoding': 'latin1'} if sys.version_info[0] == 3 else {}
+        return pickle.load(f, **pickle_options)
