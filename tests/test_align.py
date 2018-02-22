@@ -8,7 +8,8 @@ from hypertools.tools.load import load
 
 # weights = load('weights')
 weights = [np.random.rand(10, 300) for i in range(3)]
-data1 = load('spiral').get_data()[0]
+geo = load('spiral')
+data1 = geo.get_data()[0]
 
 def test_procrustes():
     rot = np.array([[-0.89433495, -0.44719485, -0.01348182],
@@ -38,3 +39,7 @@ def test_align_shapes():
     # Should return data with the same shape as input data
     aligned = align(weights)
     assert all(al.shape == wt.shape for al, wt in zip(aligned, weights))
+
+def test_align_geo():
+    aligned = align(geo)
+    assert np.allclose(aligned[0], aligned[1])

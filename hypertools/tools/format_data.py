@@ -85,6 +85,8 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
             return 'df'
         elif isinstance(data, str):
             return 'str'
+        elif isinstance(data, DataGeometry):
+            return 'geo'
         else:
             raise TypeError('Unsupported data type passed. Supported types: '
                             'Numpy Array, Pandas DataFrame, String, List of strings'
@@ -113,6 +115,7 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
     # not sure why i needed to import here, but its the only way I could get it to work
     from .df2mat import df2mat
     from .text2mat import text2mat
+    from ..datageometry import DataGeometry
 
     # if x is not a list, make it one
     if type(x) is not list:
@@ -149,6 +152,9 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
             textidx+=1
         elif dtype is 'df':
             processed_x.append(df2mat(x[i]))
+        elif dtype is 'geo':
+            for j in format_data(x[i].get_data()):
+                processed_x.append(j)
         else:
             processed_x.append(x[i])
 

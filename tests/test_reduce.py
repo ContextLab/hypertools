@@ -7,6 +7,7 @@ import numpy as np
 import scipy
 
 from hypertools.tools.reduce import reduce as reducer
+from hypertools.plot.plot import plot
 
 data = [np.random.multivariate_normal(np.zeros(4), np.eye(4), size=10) for i in range(2)]
 reduced_data_2d = reducer(data,ndims=2)
@@ -35,6 +36,11 @@ def test_reduce_dims_1d():
 def test_reduce_assert_exception():
     with pytest.raises(Exception) as e_info:
         reduc(data,ndims=4)
+
+def test_reduce_geo():
+    geo = plot(data, show=False)
+    reduced_data_3d = reducer(geo, ndims=3)
+    assert reduced_data_3d[0].shape==(10,3)
 
 def test_reduce_PCA():
     reduced_data_3d = reducer(data, reduce='PCA', ndims=3)

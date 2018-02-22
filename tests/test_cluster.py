@@ -22,3 +22,8 @@ def test_cluster_hdbscan():
     # Given well separated clusters this should "just work"
     hdbscan_labels = cluster(data, cluster='HDBSCAN')
     assert len(set(hdbscan_labels)) == 2
+
+def text_cluster_geo():
+    geo = hyp.plot(data, show=False)
+    hdbscan_labels = cluster(geo, cluster='HDBSCAN')
+    assert len(set(hdbscan_labels)) == 2

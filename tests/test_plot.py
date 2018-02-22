@@ -130,6 +130,11 @@ def test_plot_ax_error():
     with pytest.raises(ValueError) as e_info:
         geo = plot.plot(data, ax=ax, show=False)
 
+def test_plot_geo():
+    geo = plot.plot(data, show=False)
+    geo = plot.plot(geo, show=False)
+    assert isinstance(geo, DataGeometry)
+    
 # ## ANIMATED ##
 def test_plot_1d_animate():
     d = reducer(data, ndims=1)

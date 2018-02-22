@@ -292,7 +292,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         if isinstance(cluster, six.string_types):
             model = cluster
             params = default_params(model)
-        elif isinstance(cluster, six.string_types):
+        elif isinstance(cluster, dict):
             model = cluster['model']
             params = default_params(model, cluster['params'])
         else:

@@ -6,6 +6,7 @@ from scipy.stats import multivariate_normal
 import numpy as np
 
 from hypertools.tools.normalize import normalize
+from hypertools.plot.plot import plot
 
 cluster1 = np.random.multivariate_normal(np.zeros(3), np.eye(3), size=100)
 cluster2 = np.random.multivariate_normal(np.zeros(3)+100, np.eye(3), size=100)
@@ -24,4 +25,9 @@ def test_normalize_within():
 
 def test_normalize_row():
     norm_data = normalize(data, normalize='row')
+    assert np.allclose(np.mean(np.vstack(norm_data), axis=1),0)
+
+def test_normalize_geo():
+    geo = plot(data, show=False)
+    norm_data = normalize(geo, normalize='row')
     assert np.allclose(np.mean(np.vstack(norm_data), axis=1),0)

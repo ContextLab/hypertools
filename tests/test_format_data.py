@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from hypertools.tools import format_data
+from hypertools.plot.plot import plot
 
 def test_np_array():
     data = np.random.rand(100,10)
@@ -34,6 +35,11 @@ def test_mixed_list():
     res = format_data([mat, df, text, string])
     assert isinstance(res, list)
     assert all(map(lambda x: isinstance(x, np.ndarray), res))
+
+def test_geo():
+    geo = plot(np.random.rand(100,10), show=False)
+    assert isinstance(format_data(geo), list)
+    assert isinstance(format_data(geo)[0], np.ndarray)
 
 def test_force_align():
     mat = np.random.rand(4,3)
