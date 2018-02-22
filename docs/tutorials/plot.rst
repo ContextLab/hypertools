@@ -31,7 +31,8 @@ samples of mushrooms with various text features.
 
 .. code:: ipython3
 
-    mushrooms, labels = hyp.load('mushrooms')
+    geo = hyp.load('mushrooms')
+    mushrooms = geo.get_data()
 
 We can peek at the first few rows of the dataframe using the pandas
 function ``head()``.
@@ -63,7 +64,6 @@ function ``head()``.
       <thead>
         <tr style="text-align: right;">
           <th></th>
-          <th>class</th>
           <th>cap-shape</th>
           <th>cap-surface</th>
           <th>cap-color</th>
@@ -73,6 +73,7 @@ function ``head()``.
           <th>gill-spacing</th>
           <th>gill-size</th>
           <th>gill-color</th>
+          <th>stalk-shape</th>
           <th>...</th>
           <th>stalk-surface-below-ring</th>
           <th>stalk-color-above-ring</th>
@@ -89,7 +90,6 @@ function ``head()``.
       <tbody>
         <tr>
           <th>0</th>
-          <td>p</td>
           <td>x</td>
           <td>s</td>
           <td>n</td>
@@ -99,6 +99,7 @@ function ``head()``.
           <td>c</td>
           <td>n</td>
           <td>k</td>
+          <td>e</td>
           <td>...</td>
           <td>s</td>
           <td>w</td>
@@ -113,7 +114,6 @@ function ``head()``.
         </tr>
         <tr>
           <th>1</th>
-          <td>e</td>
           <td>x</td>
           <td>s</td>
           <td>y</td>
@@ -123,6 +123,7 @@ function ``head()``.
           <td>c</td>
           <td>b</td>
           <td>k</td>
+          <td>e</td>
           <td>...</td>
           <td>s</td>
           <td>w</td>
@@ -137,7 +138,6 @@ function ``head()``.
         </tr>
         <tr>
           <th>2</th>
-          <td>e</td>
           <td>b</td>
           <td>s</td>
           <td>w</td>
@@ -147,6 +147,7 @@ function ``head()``.
           <td>c</td>
           <td>b</td>
           <td>n</td>
+          <td>e</td>
           <td>...</td>
           <td>s</td>
           <td>w</td>
@@ -161,7 +162,6 @@ function ``head()``.
         </tr>
         <tr>
           <th>3</th>
-          <td>p</td>
           <td>x</td>
           <td>y</td>
           <td>w</td>
@@ -171,6 +171,7 @@ function ``head()``.
           <td>c</td>
           <td>n</td>
           <td>n</td>
+          <td>e</td>
           <td>...</td>
           <td>s</td>
           <td>w</td>
@@ -185,7 +186,6 @@ function ``head()``.
         </tr>
         <tr>
           <th>4</th>
-          <td>e</td>
           <td>x</td>
           <td>s</td>
           <td>g</td>
@@ -195,6 +195,7 @@ function ``head()``.
           <td>w</td>
           <td>b</td>
           <td>k</td>
+          <td>t</td>
           <td>...</td>
           <td>s</td>
           <td>w</td>
@@ -209,7 +210,7 @@ function ``head()``.
         </tr>
       </tbody>
     </table>
-    <p>5 rows × 23 columns</p>
+    <p>5 rows × 22 columns</p>
     </div>
 
 
@@ -284,7 +285,7 @@ To explore a data reduction method aside from the default (PCA), use
 Other supported reduction models include: PCA, IncrementalPCA,
 SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA, FactorAnalysis,
 TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning, TSNE,
-Isomap, SpectralEmbedding, LocallyLinearEmbedding, MDS
+Isomap, SpectralEmbedding, LocallyLinearEmbedding, MDS, UMAP
 
 .. code:: ipython3
 
@@ -476,20 +477,15 @@ Below, is a simple example of a spiral.
 .. code:: ipython3
 
     # load example data
-    data, labels = hyp.load('spiral')
-    target = data.copy()
+    geo = hyp.load('spiral')
+    geo.plot(title='Before Alignment')
     
-    # a random rotation matrix
-    rot = scipy.linalg.orth(np.random.rand(3,3))
+    # use procrusted to align the data
+    source, target = geo.get_data()
+    aligned = [hyp.tools.procrustes(source, target), target]
     
-    # creating new spiral with some noise
-    source = np.dot(target, rot)
-    
-    # before hyperalignment
-    before = hyp.plot([target, source], ['-','--'], title='Before alignment')
-    
-    # after hyperalignment
-    after = hyp.plot([target, source], ['-','--'], align='hyper', title='After alignment')
+    # after alignment
+    geo_aligned = hyp.plot(aligned, ['-','--'], title='After alignment')
 
 
 
@@ -520,7 +516,7 @@ the Union Addresses from 1989-2017.
 
 .. code:: ipython3
 
-    docs, labels = hyp.load('sotus')
+    geo = hyp.load('sotus')
 
 By default, the text data will be transformed using a Latent Dirichlet
 Model trained on a sample of wikipedia pages. Simply pass the list of
@@ -529,11 +525,19 @@ transformed to a topic vector and then reduced for plotting.
 
 .. code:: ipython3
 
-    geo = hyp.plot(docs, 'o', hue=labels, labels=labels, size=[10, 8])
+    geo.plot(size=[10,8])
 
 
 
 .. image:: plot_files/plot_50_0.png
+
+
+
+
+.. parsed-literal::
+
+    <hypertools.datageometry.DataGeometry at 0x10ecd6438>
+
 
 
 You can also specify a ``corpus``, which will fit a semantic model to
@@ -542,7 +546,8 @@ dataset to fit the model:
 
 .. code:: ipython3
 
-    geo2 = geo.plot(corpus=docs, semantic='LatentDirichletAllocation')
+    docs = geo.get_data()
+    geo2 = geo.plot(corpus=docs, semantic='LatentDirichletAllocation', size=[10,8])
 
 
 
