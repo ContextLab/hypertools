@@ -4,20 +4,17 @@
 Animated trajectory plotted with multidimensional scaling
 =============================
 
-This is a trajectory of brain data, hyperaligned and then plotted in 3D
-with multidimensional scaling.
+This is a trajectory of brain data plotted in 3D with multidimensional scaling.
 """
 
 # Code source: Andrew Heusser
 # License: MIT
 
+# import hypertools
 import hypertools as hyp
-import numpy as np
 
-data, labels = hyp.load('weights')
-aligned_w = hyp.align(data)
+# load the geo
+geo = hyp.load('weights_avg')
 
-w1 = np.mean(aligned_w[:17],0)
-w2 = np.mean(aligned_w[18:],0)
-
-hyp.plot([w1, w2], animate=True, reduce='MDS')
+# plot
+geo.plot(animate=True, reduce='MDS')

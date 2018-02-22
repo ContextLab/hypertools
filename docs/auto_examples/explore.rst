@@ -26,10 +26,10 @@ along with the PCA coordinate.
     import hypertools as hyp
 
     # load example data
-    data, labels = hyp.load('weights_sample')
+    geo = hyp.load('weights_sample')
 
     # plot
-    hyp.plot(data, '.', explore=True)
+    geo.plot(fmt='.', explore=True)
 
 **Total running time of the script:** ( 0 minutes  0.000 seconds)
 

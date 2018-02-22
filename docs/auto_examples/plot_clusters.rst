@@ -30,15 +30,14 @@ yourself.
 
     # import
     import hypertools as hyp
-    import pandas as pd
 
     # load example data
-    data, labels = hyp.load('mushrooms')
+    geo = hyp.load('mushrooms')
 
     # plot
-    hyp.plot(data, '.', n_clusters=10)
+    geo.plot(n_clusters=10)
 
-**Total running time of the script:** ( 0 minutes  1.883 seconds)
+**Total running time of the script:** ( 0 minutes  0.521 seconds)
 
 
 

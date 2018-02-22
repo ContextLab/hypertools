@@ -20,7 +20,44 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
     :align: center
 
 
+.. rst-class:: sphx-glr-script-out
 
+ Out::
+
+    cap-shape cap-surface cap-color bruises odor gill-attachment gill-spacing  \
+    0         x           s         n       t    p               f            c   
+    1         x           s         y       t    a               f            c   
+    2         b           s         w       t    l               f            c   
+    3         x           y         w       t    p               f            c   
+    4         x           s         g       f    n               f            w   
+
+      gill-size gill-color stalk-shape   ...   stalk-surface-below-ring  \
+    0         n          k           e   ...                          s   
+    1         b          k           e   ...                          s   
+    2         b          n           e   ...                          s   
+    3         n          n           e   ...                          s   
+    4         b          k           t   ...                          s   
+
+      stalk-color-above-ring stalk-color-below-ring veil-type veil-color  \
+    0                      w                      w         p          w   
+    1                      w                      w         p          w   
+    2                      w                      w         p          w   
+    3                      w                      w         p          w   
+    4                      w                      w         p          w   
+
+      ring-number ring-type spore-print-color population habitat  
+    0           o         p                 k          s       u  
+    1           o         p                 n          n       g  
+    2           o         p                 n          n       m  
+    3           o         p                 k          s       u  
+    4           o         e                 n          a       g  
+
+    [5 rows x 22 columns]
+
+
+
+
+|
 
 
 .. code-block:: python
@@ -33,15 +70,14 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
     import hypertools as hyp
 
     # load example data
-    data, labels = hyp.load('mushrooms')
+    geo = hyp.load('mushrooms')
 
-    # pop off the class (poisonousness)
-    hue = data.pop('class')
+    print(geo.get_data().head())
 
     # plot
-    hyp.plot(data, '.', hue=hue)
+    geo.plot()
 
-**Total running time of the script:** ( 0 minutes  0.847 seconds)
+**Total running time of the script:** ( 0 minutes  0.335 seconds)
 
 
 

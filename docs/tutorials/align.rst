@@ -48,7 +48,7 @@ more info on the data and HTFA, respectively.
 
 .. code:: ipython3
 
-    data, labels = hyp.load('weights')
+    data = hyp.load('weights').get_data()
 
 Visualize unaligned data
 ------------------------

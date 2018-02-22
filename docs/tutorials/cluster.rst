@@ -30,7 +30,8 @@ samples of mushrooms with various text features.
 
 .. code:: ipython3
 
-    mushrooms, labels = hyp.load('mushrooms')
+    geo = hyp.load('mushrooms')
+    mushrooms = geo.get_data()
 
 We can peek at the first few rows of the dataframe using the pandas
 function ``head()``
@@ -62,7 +63,6 @@ function ``head()``
       <thead>
         <tr style="text-align: right;">
           <th></th>
-          <th>class</th>
           <th>cap-shape</th>
           <th>cap-surface</th>
           <th>cap-color</th>
@@ -72,6 +72,7 @@ function ``head()``
           <th>gill-spacing</th>
           <th>gill-size</th>
           <th>gill-color</th>
+          <th>stalk-shape</th>
           <th>...</th>
           <th>stalk-surface-below-ring</th>
           <th>stalk-color-above-ring</th>
@@ -88,7 +89,6 @@ function ``head()``
       <tbody>
         <tr>
           <th>0</th>
-          <td>p</td>
           <td>x</td>
           <td>s</td>
           <td>n</td>
@@ -98,6 +98,7 @@ function ``head()``
           <td>c</td>
           <td>n</td>
           <td>k</td>
+          <td>e</td>
           <td>...</td>
           <td>s</td>
           <td>w</td>
@@ -112,7 +113,6 @@ function ``head()``
         </tr>
         <tr>
           <th>1</th>
-          <td>e</td>
           <td>x</td>
           <td>s</td>
           <td>y</td>
@@ -122,6 +122,7 @@ function ``head()``
           <td>c</td>
           <td>b</td>
           <td>k</td>
+          <td>e</td>
           <td>...</td>
           <td>s</td>
           <td>w</td>
@@ -136,7 +137,6 @@ function ``head()``
         </tr>
         <tr>
           <th>2</th>
-          <td>e</td>
           <td>b</td>
           <td>s</td>
           <td>w</td>
@@ -146,6 +146,7 @@ function ``head()``
           <td>c</td>
           <td>b</td>
           <td>n</td>
+          <td>e</td>
           <td>...</td>
           <td>s</td>
           <td>w</td>
@@ -160,7 +161,6 @@ function ``head()``
         </tr>
         <tr>
           <th>3</th>
-          <td>p</td>
           <td>x</td>
           <td>y</td>
           <td>w</td>
@@ -170,6 +170,7 @@ function ``head()``
           <td>c</td>
           <td>n</td>
           <td>n</td>
+          <td>e</td>
           <td>...</td>
           <td>s</td>
           <td>w</td>
@@ -184,7 +185,6 @@ function ``head()``
         </tr>
         <tr>
           <th>4</th>
-          <td>e</td>
           <td>x</td>
           <td>s</td>
           <td>g</td>
@@ -194,6 +194,7 @@ function ``head()``
           <td>w</td>
           <td>b</td>
           <td>k</td>
+          <td>t</td>
           <td>...</td>
           <td>s</td>
           <td>w</td>
@@ -208,7 +209,7 @@ function ``head()``
         </tr>
       </tbody>
     </table>
-    <p>5 rows × 23 columns</p>
+    <p>5 rows × 22 columns</p>
     </div>
 
 
@@ -246,7 +247,7 @@ We can further examine the number of datapoints assigned each label.
 
 .. parsed-literal::
 
-    Counter({0: 1332, 1: 5024, 2: 1768})
+    Counter({0: 5067, 1: 1761, 2: 1296})
 
 
 
@@ -282,29 +283,23 @@ You may prefer to use a clustering model other than K-Means. To do so,
 simply pass a string to the cluster argument specifying the desired
 clustering algorithm.
 
-In this case, we specify both the clustering model (Birch) and the
+In this case, we specify both the clustering model (HDBSCAN) and the
 number of clusters (10).
 
 .. code:: ipython3
 
-    labels_birch = hyp.cluster(mushrooms, cluster = 'Birch', n_clusters=10)
+    labels_HDBSCAN = hyp.cluster(mushrooms, cluster='HDBSCAN')
 
 .. code:: ipython3
 
-    geo  = hyp.plot(mushrooms, '.', group=labels_10, title='K-means clustering')
-    geo  = hyp.plot(mushrooms, '.', group=labels_birch, title='Birch clustering')
+    geo = hyp.plot(mushrooms, '.', hue=labels_10, title='K-means clustering')
+    geo = hyp.plot(mushrooms, '.', hue=labels_HDBSCAN, title='HCBSCAN clustering')
 
 
-.. parsed-literal::
 
-    /Users/andyheusser/Documents/github/hypertools/hypertools/plot/plot.py:227: UserWarning: Group will be deprecated. Please use hue keyword argument. See docs for details: http://hypertools.readthedocs.io/en/latest/hypertools.plot.html#hypertools.plot
-      warnings.warn('Group will be deprecated. Please use '
+.. image:: cluster_files/cluster_20_0.png
 
 
 
 .. image:: cluster_files/cluster_20_1.png
-
-
-
-.. image:: cluster_files/cluster_20_2.png
 

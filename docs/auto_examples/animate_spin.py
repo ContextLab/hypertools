@@ -11,11 +11,11 @@ visualize static data in an animated rotating plot.
 # Code source: Andrew Heusser
 # License: MIT
 
-# import
+# import hypertools
 import hypertools as hyp
 
-# load example data
-data, labels = hyp.load('weights_sample')
+# load the geo
+geo = hyp.load('weights_sample')
 
 # plot
-hyp.plot(data, '.', animate='spin')
+geo.plot(fmt='.', animate='spin')

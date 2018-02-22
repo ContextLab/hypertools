@@ -38,7 +38,8 @@ more info on the data and HTFA, respectively.
 
 .. code:: ipython3
 
-    weights, labels = hyp.load('weights_avg')
+    geo = hyp.load('weights_avg')
+    weights = geo.get_data()
 
 Reduce one array
 ----------------
@@ -52,7 +53,7 @@ Let's look at one array from the dataset above.
 
 .. parsed-literal::
 
-    Array shape: (300, 100)
+    Array shape: (100, 100)
 
 
 To reduce this array, simply pass the array to ``hyp.reduce``, as below.
@@ -67,7 +68,7 @@ features (the default when desired number of features is not specified).
 
 .. parsed-literal::
 
-    Reduced array shape: (300, 100)
+    Reduced array shape: (100, 100)
 
 
 Reduce list of arrays
@@ -92,8 +93,8 @@ weights data) and re-examine the data.
 
 .. parsed-literal::
 
-    Shape of first reduced array:  (300, 100)
-    Shape of second reduced array:  (300, 100)
+    Shape of first reduced array:  (100, 100)
+    Shape of second reduced array:  (100, 100)
 
 
 We can see that each array has been reduced from 100 features to 3
@@ -117,8 +118,8 @@ not specified).
 
 .. parsed-literal::
 
-    Shape of first reduced array:  (300, 100)
-    Shape of second reduced array:  (300, 100)
+    Shape of first reduced array:  (100, 100)
+    Shape of second reduced array:  (100, 100)
 
 
 Reduce to specified number of dimensions
@@ -137,8 +138,8 @@ of desired features (as an int) to the ndims argument, as below.
 
 .. parsed-literal::
 
-    Shape of first reduced array:  (300, 4)
-    Shape of second reduced array:  (300, 4)
+    Shape of first reduced array:  (100, 4)
+    Shape of second reduced array:  (100, 4)
 
 
 Reduce list of arrays with specific parameters

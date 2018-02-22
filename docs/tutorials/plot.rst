@@ -536,7 +536,7 @@ transformed to a topic vector and then reduced for plotting.
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x10ecd6438>
+    <hypertools.datageometry.DataGeometry at 0x117181f98>
 
 
 

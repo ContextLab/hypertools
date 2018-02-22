@@ -21,10 +21,10 @@ that were applied to the geo.
 import hypertools as hyp
 
 # load some data
-data, labels = hyp.load('mushrooms')
+geo = hyp.load('mushrooms')
 
-# create a DataGeometry object
-geo = hyp.plot(data, '.')
+# plot
+geo.plot()
 
 # replot with new parameters
 geo.plot(color='green', normalize='across')

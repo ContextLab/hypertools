@@ -4,13 +4,11 @@
 
 
 =============================
-Hyperalign a list of arrays and create an animated plot
+Animated plots
 =============================
 
-The sample data is a list of 2D arrays, where each array is fMRI brain activity
-from one subject.  The rows are timepoints and the columns are neural
-'features'.  First, the matrices are hyperaligned using hyp.align.  Then, the data
-are split into 2 groups of 18. and averaged.  Finally the aligned data is plotted.
+Timeseries plots can be animated by simply passing `animate=True` to the geo (
+or when calling hyp.plot).
 
 
 
@@ -22,17 +20,12 @@ are split into 2 groups of 18. and averaged.  Finally the aligned data is plotte
 
     # import
     import hypertools as hyp
-    import numpy as np
 
     # load example data
-    data, labels = hyp.load('weights', align='hyper')
-
-    # average into two groups
-    w1 = np.mean(data[:17],0)
-    w2 = np.mean(data[18:],0)
+    geo = hyp.load('weights_avg')
 
     # plot
-    hyp.plot([w1, w2], animate=True)
+    geo.plot(animate=True)
 
 **Total running time of the script:** ( 0 minutes  0.000 seconds)
 

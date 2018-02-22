@@ -24,10 +24,10 @@ import hypertools as hyp
 geo = hyp.load('mushrooms')
 
 # plot
-geo.plot()
+t = geo.plot(normalize='within')
 
 # replot with new parameters
-geo.plot(color='green', normalize='across')
+geo.plot(color='green')
 
 # save the object
 # geo.save('test')

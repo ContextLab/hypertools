@@ -4,6 +4,7 @@ import sys
 import warnings
 import re
 import itertools
+import copy
 import seaborn as sns
 import pandas as pd
 from matplotlib.lines import Line2D
@@ -29,7 +30,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
          cluster=None, align=None, normalize=None, n_clusters=None,
          save_path=None, animate=False, duration=30, tail_duration=2,
          rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
-         frame_rate=50, explore=False, show=True, transform=True,
+         frame_rate=50, explore=False, show=True, transform=None,
          vectorizer='CountVectorizer', semantic='wiki', corpus=None, ax=None):
     """
     Plots dimensionality reduced data and parses plot arguments
@@ -175,8 +176,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         If set to False, the figure will not be displayed, but the figure,
         axis and data objects will still be returned (default: True).
 
-    transform : bool
-        If set to false, skip data transformations (default : True)
+    transform : list of numpy arrays or None
+        The transformed data, bypasses transformations if this is set
+        (default : None).
 
     vectorizer : str, dict, class or class instance
         The vectorizer to use. Can be CountVectorizer or TfidfVectorizer.  See
@@ -241,15 +243,15 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
     }
 
     # analyze the data
-    if transform:
+    if transform is None:
         raw = format_data(x, **text_args)
         xform = analyze(raw, ndims=ndims, normalize=normalize, reduce=reduce,
                     align=align, internal=True)
     else:
-        xform = x
+        xform = transform
 
     # Return data that has been normalized and possibly reduced and/or aligned
-    xform_data = xform
+    xform_data = copy.copy(xform)
 
     # catch all matplotlib kwargs here to pass on
     mpl_kwargs = {}

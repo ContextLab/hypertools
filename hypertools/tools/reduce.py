@@ -3,6 +3,7 @@
 # libraries
 import warnings
 import numpy as np
+import six
 from sklearn.decomposition import PCA, FastICA, IncrementalPCA, KernelPCA, FactorAnalysis, TruncatedSVD, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
 from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
 from umap import UMAP
@@ -133,7 +134,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
             }
         # if its a dict, use custom params
         elif type(reduce) is dict:
-            if type(reduce['model']) is str:
+            if isinstance((reduce['model']), six.string_types):
                 model = models[reduce['model']]
                 if reduce['params'] is None:
                     model_params = {
@@ -142,7 +143,9 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
                 else:
                     model_params = reduce['params']
         if ndims:
-            model_params['n_components'] = ndims
+            model_params = {
+                'n_components' : ndims
+            }
 
         # initialize model
         model = model(**model_params)

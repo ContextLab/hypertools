@@ -19,18 +19,22 @@ that were applied to the geo.
 
 
 
-.. rst-class:: sphx-glr-horizontal
+.. code-block:: pytb
 
-
-    *
-
-      .. image:: /auto_examples/images/sphx_glr_plot_geo_001.png
-            :scale: 47
-
-    *
-
-      .. image:: /auto_examples/images/sphx_glr_plot_geo_002.png
-            :scale: 47
+    Traceback (most recent call last):
+      File "/Users/andyheusser/Documents/github/hypertools/examples/plot_geo.py", line 30, in <module>
+        geo.plot(color='green', normalize='across')
+      File "/Users/andyheusser/Documents/github/hypertools/hypertools/datageometry.py", line 176, in plot
+        return plotter(d, transform=transform, **new_kwargs)
+      File "/Users/andyheusser/Documents/github/hypertools/hypertools/plot/plot.py", line 247, in plot
+        align=align, internal=True)
+      File "/Users/andyheusser/Documents/github/hypertools/hypertools/tools/analyze.py", line 54, in analyze
+        reduce=reduce, ndims=ndims, internal=internal), align=align)
+      File "/Users/andyheusser/Documents/github/hypertools/hypertools/_shared/helpers.py", line 165, in memoizer
+        cache[key] = obj(*args, **kwargs)
+      File "/Users/andyheusser/Documents/github/hypertools/hypertools/tools/reduce.py", line 145, in reduce
+        model_params['n_components'] = ndims
+    TypeError: 'NoneType' object does not support item assignment
 
 
 
@@ -46,10 +50,10 @@ that were applied to the geo.
     import hypertools as hyp
 
     # load some data
-    data, labels = hyp.load('mushrooms')
+    geo = hyp.load('mushrooms')
 
-    # create a DataGeometry object
-    geo = hyp.plot(data, '.')
+    # plot
+    geo.plot()
 
     # replot with new parameters
     geo.plot(color='green', normalize='across')
@@ -72,7 +76,7 @@ that were applied to the geo.
     # get the formatted data
     # geo.get_formatted_data()
 
-**Total running time of the script:** ( 0 minutes  0.975 seconds)
+**Total running time of the script:** ( 0 minutes  0.000 seconds)
 
 
 

@@ -158,15 +158,15 @@ class DataGeometry(object):
         from .plot.plot import plot as plotter
 
         if data is None:
-            d = self.xform_data
-            transform = False
+            d = copy.copy(self.data)
+            transform = copy.copy(self.xform_data)
             if any([k in kwargs for k in ['reduce', 'align', 'normalize',
                                           'semantic', 'vectorizer', 'corpus']]):
-                d = self.data
-                transform = True
+                d = copy.copy(self.data)
+                transform = None
         else:
             d = data
-            transform = True
+            transform = None
 
         # get kwargs and update with new kwargs
         new_kwargs = copy.copy(self.kwargs)

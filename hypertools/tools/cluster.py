@@ -2,6 +2,7 @@
 import warnings
 from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering
 import numpy as np
+import six
 from hdbscan import HDBSCAN
 from .._shared.helpers import *
 from .format_data import format_data as formatter
@@ -67,7 +68,7 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None, format_data=True):
         }
 
         # if reduce is a string, find the corresponding model
-        if type(cluster) is str:
+        if isinstance(cluster, six.string_types):
             model = models[cluster]
             if cluster != 'HDBSCAN':
                 model_params = {
@@ -77,7 +78,7 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None, format_data=True):
                 model_params = {}
         # if its a dict, use custom params
         elif type(cluster) is dict:
-            if type(cluster['model']) is str:
+            if isinstance(cluster['model'], six.string_types):
                 model = models[cluster['model']]
                 model_params = cluster['params']
 

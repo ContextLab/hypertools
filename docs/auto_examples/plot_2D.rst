@@ -12,8 +12,20 @@ A 2D plot can be created by setting ndims=2.
 
 
 
-.. image:: /auto_examples/images/sphx_glr_plot_2D_001.png
-    :align: center
+.. code-block:: pytb
+
+    Traceback (most recent call last):
+      File "/Users/andyheusser/Documents/github/hypertools/examples/plot_2D.py", line 20, in <module>
+        geo.plot(fmt='.', ndims=2)
+      File "/Users/andyheusser/Documents/github/hypertools/hypertools/datageometry.py", line 176, in plot
+        return plotter(d, transform=transform, **new_kwargs)
+      File "/Users/andyheusser/Documents/github/hypertools/hypertools/plot/plot.py", line 283, in plot
+        xform = reducer(xform, ndims=ndims, reduce=reduce, internal=True)
+      File "/Users/andyheusser/Documents/github/hypertools/hypertools/_shared/helpers.py", line 165, in memoizer
+        cache[key] = obj(*args, **kwargs)
+      File "/Users/andyheusser/Documents/github/hypertools/hypertools/tools/reduce.py", line 145, in reduce
+        model_params['n_components'] = ndims
+    TypeError: 'NoneType' object does not support item assignment
 
 
 
@@ -29,12 +41,12 @@ A 2D plot can be created by setting ndims=2.
     import hypertools as hyp
 
     # load data
-    data, labels = hyp.load('weights_sample')
+    geo = hyp.load('weights_sample')
 
     # plot
-    hyp.plot(data, '.', ndims=2)
+    geo.plot(fmt='.', ndims=2)
 
-**Total running time of the script:** ( 0 minutes  0.299 seconds)
+**Total running time of the script:** ( 0 minutes  0.000 seconds)
 
 
 
