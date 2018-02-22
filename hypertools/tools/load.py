@@ -152,7 +152,7 @@ def _load_stream(fileid):
         params = { 'id' : fileid, 'confirm' : token }
         response = session.get(BASE_URL, params = params, stream = True)
     pickle_options = {'encoding': 'latin1'} if sys.version_info[0] == 3 else {}
-    return pickle.loads(response.content.encode('utf-8'), **pickle_options)
+    return pickle.loads(response.content, **pickle_options)
 
 def _download(dataset, data):
     fullpath = os.path.join(homedir, 'hypertools_data', dataset)
