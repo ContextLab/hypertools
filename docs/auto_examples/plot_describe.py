@@ -20,6 +20,7 @@ import numpy as np
 
 # load example data
 geo = hyp.load('weights_sample')
+data = geo.get_data()
 
 # plot
 hyp.describe(data)

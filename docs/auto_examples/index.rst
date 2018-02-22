@@ -189,26 +189,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The downside to using dimensionality reduction to visualize your data is that some variance wil...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_describe_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_describe.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_describe
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="This is a trajectory of brain data plotted in 3D with multidimensional scaling. ">
 
 .. only:: html
@@ -266,6 +246,26 @@ Gallery of Examples
    :hidden:
 
    /auto_examples/precog
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The downside to using dimensionality reduction to visualize your data is that some variance wil...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_describe_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_describe.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_describe
 
 .. raw:: html
 

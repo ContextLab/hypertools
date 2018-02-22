@@ -16,12 +16,8 @@ plots their correlation.
 
 
 
-.. code-block:: pytb
-
-    Traceback (most recent call last):
-      File "/Users/andyheusser/Documents/github/hypertools/examples/plot_describe.py", line 25, in <module>
-        hyp.describe(data)
-    NameError: name 'data' is not defined
+.. image:: /auto_examples/images/sphx_glr_plot_describe_001.png
+    :align: center
 
 
 
@@ -39,11 +35,12 @@ plots their correlation.
 
     # load example data
     geo = hyp.load('weights_sample')
+    data = geo.get_data()
 
     # plot
     hyp.describe(data)
 
-**Total running time of the script:** ( 0 minutes  0.000 seconds)
+**Total running time of the script:** ( 0 minutes  6.779 seconds)
 
 
 

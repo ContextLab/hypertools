@@ -5,6 +5,7 @@ import warnings
 import re
 import itertools
 import copy
+import six
 import seaborn as sns
 import pandas as pd
 from matplotlib.lines import Line2D
@@ -288,10 +289,10 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
 
     # find cluster and reshape if n_clusters
     if cluster is not None:
-        if type(cluster) is str:
+        if isinstance(cluster, six.string_types):
             model = cluster
             params = default_params(model)
-        elif type(cluster) is dict:
+        elif isinstance(cluster, six.string_types):
             model = cluster['model']
             params = default_params(model, cluster['params'])
         else:
@@ -353,7 +354,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         mpl_kwargs['label'] = legend
 
     # interpolate if its a line plot
-    if fmt is None or type(fmt) is str:
+    if fmt is None or isinstance(fmt, six.string_types):
         if is_line(fmt):
             if xform[0].shape[0] > 1:
                 xform = interp_array_list(xform, interp_val=frame_rate*duration/(xform[0].shape[0] - 1))
