@@ -49,10 +49,10 @@ that were applied to the geo.
     geo = hyp.load('mushrooms')
 
     # plot
-    t = geo.plot(normalize='within')
+    t = geo.plot()
 
     # replot with new parameters
-    geo.plot(color='green')
+    geo.plot(normalize='within', color='green')
 
     # save the object
     # geo.save('test')
@@ -72,7 +72,7 @@ that were applied to the geo.
     # get the formatted data
     # geo.get_formatted_data()
 
-**Total running time of the script:** ( 0 minutes  0.713 seconds)
+**Total running time of the script:** ( 0 minutes  0.715 seconds)
 
 
 
