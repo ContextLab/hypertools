@@ -434,7 +434,6 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
         plt.ioff()
 
     if animate in [True, 'parallel', 'spin']:
-
         assert x[0].shape[1] is 3, "Animations are currently only supported for 3d plots."
 
         # animation params

@@ -22,7 +22,7 @@ datadict = {
     'mushrooms' : '1ZoItEheTTwXpKJlqKA2yxfy6gDAhsJWc',
     'wiki_model' : '1IOtLJf5ZnpmPvf2MRP7xAMcNwZruL23M',
     'wiki' : '17mZ8rs_r1KwT9vxPEym6wLCZejJVevlo',
-    'sotus' : '1JTUzf9_mFFZ38-Wu4D6xaYfG0zP-_p43',
+    'sotus' : '1wrSzofSqc9_iFXbZvOxGC-gPXzwEGEHv',
     'nips' : '1QSP5esFknjaxa_3_XCC0tX_yPh-Dmxcx'
 }
 
@@ -99,17 +99,33 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
         data = DataGeometry(**dd.io.load(dataset))
     elif dataset in datadict.keys():
         data = _load_data(dataset, datadict[dataset])
-
-    if data is not None:
-        if dataset in ('wiki_model', 'sotus', 'wiki'):
-            return data
-        else:
-            return (analyze(data[0], reduce=reduce, ndims=ndims, align=align, normalize=normalize), data[1])
     else:
         raise RuntimeError('No data loaded. Please specify a .geo file or '
-                           'one of the following sample files: weights, '
-                           'weights_avg, weights_sample, spiral, mushrooms or '
-                           'wiki.')
+                       'one of the following sample files: weights, '
+                       'weights_avg, weights_sample, spiral, mushrooms or '
+                       'wiki.')
+
+
+    if data is not None:
+        if dataset in ('wiki_model'):
+            return data
+    if isinstance(data, DataGeometry):
+        opts = {}
+        if reduce:
+            opts.update(dict(reduce=reduce))
+        if ndims:
+            opts.update(dict(ndims=ndims))
+        if align:
+            opts.update(dict(align=align))
+        if normalize:
+            opts.update(dict(normalize=normalize))
+        if opts:
+            return data.plot(data=data.get_data(), show=False, **opts)
+        else:
+            return data
+    else:
+        return analyze(data, reduce=reduce, ndims=ndims, align=align, normalize=normalize)
+
 
 def _load_data(dataset, fileid):
     fullpath = os.path.join(homedir, 'hypertools_data', dataset)

@@ -20,8 +20,11 @@ the same model.
 import hypertools as hyp
 
 # load the data
-papers, labels = hyp.load('nips')
+geo = hyp.load('nips')
 
 # plot it
-geo = hyp.plot([papers], '.', semantic='LatentDirichletAllocation', corpus=papers,
-               reduce='UMAP', cluster='HDBSCAN')
+geo.plot()
+
+# the syntax that generated this plot
+# geo = hyp.plot([papers], '.', semantic='LatentDirichletAllocation',
+# corpus=papers, reduce='UMAP', cluster='HDBSCAN')

@@ -158,13 +158,14 @@ class DataGeometry(object):
         from .plot.plot import plot as plotter
 
         if data is None:
-            data = self.xform_data
+            d = self.xform_data
             transform = False
             if any([k in kwargs for k in ['reduce', 'align', 'normalize',
                                           'semantic', 'vectorizer', 'corpus']]):
-                data = self.data
+                d = self.data
                 transform = True
         else:
+            d = data
             transform = True
 
         # get kwargs and update with new kwargs
@@ -172,7 +173,7 @@ class DataGeometry(object):
         for key in kwargs:
             new_kwargs.update({key : kwargs[key]})
 
-        return plotter(data, transform=transform, **new_kwargs)
+        return plotter(d, transform=transform, **new_kwargs)
 
     def save(self, fname, compression='blosc'):
         """

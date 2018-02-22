@@ -43,7 +43,7 @@ kwarg to color our points by cluster.
     # plot
     hyp.plot(data, '.', hue=cluster_labels)
 
-**Total running time of the script:** ( 0 minutes  0.108 seconds)
+**Total running time of the script:** ( 0 minutes  0.092 seconds)
 
 
 

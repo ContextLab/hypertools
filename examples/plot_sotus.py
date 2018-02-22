@@ -4,11 +4,10 @@
 Plotting State of the Union Addresses from 1989-2017
 =============================
 
-To plot text, simply pass the text data to the plot function.  Here, we will
-plot each SOTU address by first fitting the text data to a topic model, and then
-reducing the dimensionality of the topic vectors to visualize them. By default,
-hypertools transforms the text data using a model fit to a set of selected
-wikipedia pages.
+To plot text, simply pass the text data to the plot function.  Here, we are
+ploting each SOTU address fit to a topic model, and then reduced to visualize.
+By default, hypertools transforms the text data using a model fit to a selected
+set of wikipedia pages.
 
 """
 
@@ -19,8 +18,7 @@ wikipedia pages.
 import hypertools as hyp
 
 # load the data
-data, labels = hyp.load('sotus')
+geo = hyp.load('sotus')
 
 # plot it
-geo = hyp.plot(data, 'o', hue=labels, labels=labels, title='Transformed using wiki model')
-geo.plot(corpus=data, title='Transformed using sotus data')
+geo.plot()

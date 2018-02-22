@@ -15,10 +15,9 @@ yourself.
 
 # import
 import hypertools as hyp
-import pandas as pd
 
 # load example data
-data, labels = hyp.load('mushrooms')
+geo = hyp.load('mushrooms')
 
 # plot
-hyp.plot(data, '.', n_clusters=10)
+geo.plot(n_clusters=10)

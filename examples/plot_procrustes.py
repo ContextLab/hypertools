@@ -19,17 +19,12 @@ import numpy as np
 import scipy
 
 # load example data
-data, labels = hyp.tools.load('spiral')
-target = data
+geo = hyp.load('spiral')
+geo.plot(title='Before Alignment')
 
-# a random rotation matrix
-rot = scipy.linalg.orth(np.random.rand(3,3))
+# use procrusted to align the data
+source, target = geo.get_data()
+aligned = [hyp.tools.procrustes(source, target), target]
 
-# creating new spiral with some noise
-source = np.dot(target, rot)
-
-# before hyperalignment
-hyp.plot([target, source], title='Before alignment')
-
-# after hyperalignment
-hyp.plot([hyp.tools.procrustes(source, target), target], ['-','--'], title='After alignment')
+# after alignment
+hyp.plot(aligned, ['-','--'], title='After alignment')

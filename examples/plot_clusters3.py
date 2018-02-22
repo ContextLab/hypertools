@@ -19,9 +19,9 @@ import hypertools as hyp
 import pandas as pd
 
 # load example data
-data, labels = hyp.load('mushrooms')
+geo = hyp.load('mushrooms')
 
 # plot
-hyp.plot(data, '.', cluster={'model':'HDBSCAN',
+geo.plot(cluster={'model':'HDBSCAN',
                              'params': {'min_samples':5,
                                         'min_cluster_size':30}})

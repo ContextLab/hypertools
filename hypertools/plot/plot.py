@@ -240,15 +240,13 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         'corpus' : corpus
     }
 
-    # put into a common format
-    raw = format_data(x, **text_args)
-
     # analyze the data
-    if transform is True:
+    if transform:
+        raw = format_data(x, **text_args)
         xform = analyze(raw, ndims=ndims, normalize=normalize, reduce=reduce,
                     align=align, internal=True)
     else:
-        xform = raw
+        xform = x
 
     # Return data that has been normalized and possibly reduced and/or aligned
     xform_data = xform
@@ -319,7 +317,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
             warnings.warn('n_clusters overrides hue, ignoring hue.')
 
     # group data if there is a grouping var
-    if hue is not None:
+    elif hue is not None:
         if color is not None:
             warnings.warn("Using group, color keyword will be ignored.")
 
@@ -430,7 +428,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         plt.show()
     else:
         # safely closes the plot so it doesn't pop up in another call to this function
-        plt.close()
+        plt.close('all')
 
     # gather reduce params
     if isinstance(reduce, dict):

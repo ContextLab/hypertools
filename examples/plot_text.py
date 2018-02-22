@@ -27,4 +27,4 @@ data = [['i like cats alot', 'cats r pretty cool', 'cats are better than dogs'],
 hyp.plot(data, 'o')
 
 # convert text to matrix without plotting
-mtx = hyp.format_data(data, vectorizer='TfidfVectorizer', semantic='NMF')
+mtx = hyp.tools.format_data(data, vectorizer='TfidfVectorizer', semantic='NMF')

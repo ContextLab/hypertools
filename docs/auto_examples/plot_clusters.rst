@@ -38,7 +38,7 @@ yourself.
     # plot
     hyp.plot(data, '.', n_clusters=10)
 
-**Total running time of the script:** ( 0 minutes  0.879 seconds)
+**Total running time of the script:** ( 0 minutes  1.883 seconds)
 
 
 

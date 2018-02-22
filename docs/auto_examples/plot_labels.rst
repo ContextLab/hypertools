@@ -48,7 +48,7 @@ are simply labeling the first datapoint for each matrix in the list.
     # plot
     hyp.plot(data, '.', labels=labels)
 
-**Total running time of the script:** ( 0 minutes  0.388 seconds)
+**Total running time of the script:** ( 0 minutes  0.210 seconds)
 
 
 

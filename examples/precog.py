@@ -18,11 +18,7 @@ import hypertools as hyp
 import numpy as np
 
 # load example data
-data, labels = hyp.load('weights', align='hyper')
-
-# average into 2 groups
-w1 = np.mean(data[:17],0)
-w2 = np.mean(data[18:],0)
+geo = hyp.load('weights_avg')
 
 # plot
-hyp.plot([w1, w2], animate=True, precog=True)
+geo.plot(animate=True, precog=True)

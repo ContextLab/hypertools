@@ -21,13 +21,8 @@ import hypertools as hyp
 import numpy as np
 
 # load example data
-data, labels = hyp.load('weights_sample')
-
-# simulate groups
-hue = labels
-
-# plot
-hyp.plot(data, '.', hue=hue)
+geo = hyp.load('weights_sample')
+data = geo.get_data()
 
 # simulate random groups
 hue=[]
@@ -38,4 +33,4 @@ for idx,i in enumerate(data):
     hue.append(tmp)
 
 # plot
-hyp.plot(data, '.', hue=hue)
+geo.plot(fmt='.', hue=hue)

@@ -34,7 +34,7 @@ A 2D plot can be created by setting ndims=2.
     # plot
     hyp.plot(data, '.', ndims=2)
 
-**Total running time of the script:** ( 0 minutes  0.319 seconds)
+**Total running time of the script:** ( 0 minutes  0.299 seconds)
 
 
 
