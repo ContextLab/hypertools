@@ -22,7 +22,7 @@ datadict = {
     'mushrooms' : '1ZoItEheTTwXpKJlqKA2yxfy6gDAhsJWc',
     'wiki_model' : '1IOtLJf5ZnpmPvf2MRP7xAMcNwZruL23M',
     'wiki' : '17mZ8rs_r1KwT9vxPEym6wLCZejJVevlo',
-    'sotus' : '1wrSzofSqc9_iFXbZvOxGC-gPXzwEGEHv',
+    'sotus' : '1UBjWRLaVR3R_T8IBUf7BN4uAFPTlYv-J',
     'nips' : '1QSP5esFknjaxa_3_XCC0tX_yPh-Dmxcx'
 }
 
@@ -151,8 +151,8 @@ def _load_stream(fileid):
     if token:
         params = { 'id' : fileid, 'confirm' : token }
         response = session.get(BASE_URL, params = params, stream = True)
-    pickle_options = {'encoding': 'latin1'} if sys.version_info[0] == 3 else {}
-    return pickle.loads(response.content, **pickle_options)
+    # pickle_options = {'encoding': 'latin1'} if sys.version_info[0] == 3 else {}
+    return pickle.loads(response.content)
 
 def _download(dataset, data):
     fullpath = os.path.join(homedir, 'hypertools_data', dataset)
