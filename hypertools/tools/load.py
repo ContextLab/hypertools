@@ -1,29 +1,28 @@
 import requests
-import dill as pickle
 import pandas as pd
 import deepdish as dd
 import sys
 import os
 from warnings import warn
-from sklearn.externals import joblib
 from .analyze import analyze
 from .format_data import format_data
 from ..datageometry import DataGeometry
+import pickle
 
 BASE_URL = 'https://docs.google.com/uc?export=download'
 homedir = os.path.expanduser('~/')
 datadir = os.path.join(homedir, 'hypertools_data')
 
 datadict = {
-    'weights' : '1VktreKU1SgYMpjsE2yzg8EmfSr-5SbeL',
-    'weights_avg' : '1gPOoK6oEeFWY3zAql9MuDxP-oPosMsn0',
-    'weights_sample' : '1WDAKRmK4O-NSWP8CiBJ80M-6o_N8LjqQ',
-    'spiral' : '15Twh8AjncPN0YIymJ6wvP02quXnI8Pv9',
-    'mushrooms' : '1ZoItEheTTwXpKJlqKA2yxfy6gDAhsJWc',
-    'wiki_model' : '1IOtLJf5ZnpmPvf2MRP7xAMcNwZruL23M',
-    'wiki' : '17mZ8rs_r1KwT9vxPEym6wLCZejJVevlo',
-    'sotus' : '1UBjWRLaVR3R_T8IBUf7BN4uAFPTlYv-J',
-    'nips' : '1QSP5esFknjaxa_3_XCC0tX_yPh-Dmxcx'
+    'weights' : '13ncm93UyVkLUWo924mqOllgLN2OwF9wq',
+    'weights_avg' : '1gwFGv39COdTRkozApcJOk4S1_IuhIi7m',
+    'weights_sample' : '1ivNHL4FeYaz6vCcNT-qZT4K9QztrHjUa',
+    'spiral' : '1CC3wfvNBeiMlyN4NwNmoRPM6kX9gsYGw',
+    'mushrooms' : '18jkmbDT4Qs2ewgHybPOy38cpYtV-TqyY',
+    'wiki_model' : '1554BmtMY6Un2StpK_Iy0OWTmGiEZxVuM',
+    'wiki' : '1mAVRBN4R5B_GjCxO8yPvkn703QNjJYTD',
+    'sotus' : '19qG1mmQqhvoBAlheW8KPGSp0H7MK_glO',
+    'nips' : '1BBu_-bRDyB3E7PV6HiaTWI7lrKPjbF1P'
 }
 
 def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
@@ -132,8 +131,8 @@ def _load_data(dataset, fileid):
     if not os.path.exists(datadir):
         os.makedirs(datadir)
     if not os.path.exists(fullpath):
-        data = _load_stream(fileid)
-        _download(dataset, data)
+        _download(dataset, _load_stream(fileid))
+        data = _load_from_disk(dataset)
     else:
         data = _load_from_disk(dataset)
     return data
@@ -151,16 +150,20 @@ def _load_stream(fileid):
     if token:
         params = { 'id' : fileid, 'confirm' : token }
         response = session.get(BASE_URL, params = params, stream = True)
-    # pickle_options = {'encoding': 'latin1'} if sys.version_info[0] == 3 else {}
-    return pickle.loads(response.content)
+    return response
 
 def _download(dataset, data):
     fullpath = os.path.join(homedir, 'hypertools_data', dataset)
     with open(fullpath, 'wb') as f:
-        pickle.dump(data, f, protocol=2)
+        f.write(data.content)
 
 def _load_from_disk(dataset):
     fullpath = os.path.join(homedir, 'hypertools_data', dataset)
-    with open(fullpath, 'rb') as f:
-        pickle_options = {'encoding': 'latin1'} if sys.version_info[0] == 3 else {}
-        return pickle.load(f, **pickle_options)
+    if dataset in ('wiki_model',):
+        try:
+            with open(fullpath, 'rb') as f:
+                return pickle.load(f)
+        except ValueError as e:
+            print(e)
+    else:
+        return DataGeometry(**dd.io.load(fullpath))

@@ -83,7 +83,7 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
             return 'array'
         elif isinstance(data, pd.DataFrame):
             return 'df'
-        elif isinstance(data, str):
+        elif isinstance(data, (six.string_types, six.text_type, six.binary_type)):
             return 'str'
         elif isinstance(data, DataGeometry):
             return 'geo'
@@ -123,6 +123,7 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
 
     # check data type for each element in list
     dtypes = list(map(get_type, x))
+    print(dtypes)
 
     # handle text data:
     if any(map(lambda x: x in ['list_str', 'str'], dtypes)):
