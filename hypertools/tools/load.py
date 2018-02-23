@@ -1,5 +1,5 @@
 import requests
-import pickle
+import dill as pickle
 import pandas as pd
 import deepdish as dd
 import sys

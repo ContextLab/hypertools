@@ -47,7 +47,8 @@ setup(
    'future',
    'requests',
    'deepdish',
-   'six'
+   'six',
+   'dill'
    ],
     classifiers=[
              'Intended Audience :: Science/Research',
