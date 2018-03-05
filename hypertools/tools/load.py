@@ -19,7 +19,7 @@ datadict = {
     'weights_sample' : '1CiVSP-8sjdQN_cdn3uCrBH5lNOkvgJp1',
     'spiral' : '1JB4RIgNfzGaTFWRBCzi8CQ2syTE-BnWg',
     'mushrooms' : '1wRXObmwLjSHPAUWC8QvUl37iY2qRObg8',
-    'wiki_model' : '1554BmtMY6Un2StpK_Iy0OWTmGiEZxVuM',
+    'wiki_model' : '1OrN1F39GkMPjrB2bOTgNRT1pNBmsCQsN',
     'wiki' : '1e5lCi17bLbOXuRjiGO2eqkEWVpeCuRvM',
     'sotus' : '1D2dsrLAXkC3eUUaw2VV_mldzxX5ufmkm',
     'nips' : '1Vva4Xcc5kUX78R0BKkLtdCWQx9GI-FG2'
