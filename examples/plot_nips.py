@@ -23,7 +23,7 @@ import hypertools as hyp
 geo = hyp.load('nips')
 
 # plot it
-geo.plot()
+geo.plot(animate='spin', save_path='/Users/andyheusser/Desktop/nips.mp4')
 
 # the syntax that generated this plot
 # geo = hyp.plot([papers], '.', semantic='LatentDirichletAllocation',

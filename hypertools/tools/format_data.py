@@ -1,10 +1,11 @@
 import numpy as np
 import pandas as pd
 import warnings
+import six
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from .._externals.ppca import PPCA
 from .._shared.params import default_params
-import six
+from .._shared.helpers import get_type
 
 def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
                 ppca=True, text_align='hyper'):
@@ -70,28 +71,6 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
 
     from ..tools.text2mat import text2mat
 
-    def get_type(data):
-        """
-        Checks what the data type is and returns it as a string label
-        """
-        if isinstance(data, list):
-            if isinstance(data[0], (six.string_types, six.text_type, six.binary_type)):
-                return 'list_str'
-            elif isinstance(data[0], (int, float)):
-                return 'list_num'
-        elif isinstance(data, np.ndarray):
-            return 'array'
-        elif isinstance(data, pd.DataFrame):
-            return 'df'
-        elif isinstance(data, (six.string_types, six.text_type, six.binary_type)):
-            return 'str'
-        elif isinstance(data, DataGeometry):
-            return 'geo'
-        else:
-            raise TypeError('Unsupported data type passed. Supported types: '
-                            'Numpy Array, Pandas DataFrame, String, List of strings'
-                            ', List of numbers')
-
     def fill_missing(x):
 
         # ppca if missing data
@@ -123,7 +102,6 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
 
     # check data type for each element in list
     dtypes = list(map(get_type, x))
-    print(dtypes)
 
     # handle text data:
     if any(map(lambda x: x in ['list_str', 'str'], dtypes)):

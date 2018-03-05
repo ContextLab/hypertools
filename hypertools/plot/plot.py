@@ -289,7 +289,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
 
     # find cluster and reshape if n_clusters
     if cluster is not None:
-        if isinstance(cluster, six.string_types):
+        if hue:
+            warnings.warn('cluster overrides hue, ignoring hue.')
+        if isinstance(cluster, (six.string_types, six.binary_type)):
             model = cluster
             params = default_params(model)
         elif isinstance(cluster, dict):
@@ -309,8 +311,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         cluster_labels = clusterer(xform, cluster={'model': model,
                                                'params': params})
         xform = reshape_data(xform, cluster_labels)
-        if hue:
-            warnings.warn('cluster overrides hue, ignoring hue.')
+        hue = cluster_labels
 
     elif n_clusters is not None:
         # If cluster was None default to KMeans
@@ -376,6 +377,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
     xform = scale(xform)
 
     # handle palette with seaborn
+    if isinstance(palette, np.bytes_):
+        palette = palette.decode("utf-8")
     sns.set_palette(palette=palette, n_colors=len(xform))
     sns.set_style(style='whitegrid')
 
@@ -481,16 +484,12 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         'azim' : azim,
         'explore' : explore,
         'n_clusters' : n_clusters,
-        'cluster' : cluster,
-        'reduce' : reduce_dict,
-        'ndims' : ndims,
-        'align' : align_dict,
-        'normalize' : normalize,
-        'vectorizer' : vectorizer,
-        'semantic' : semantic,
-        'corpus' : corpus,
         'size' : size
     }
+    # turn lists into np arrays so that they don't turn into pickles when saved
+    for kwarg in kwargs:
+        if isinstance(kwargs[kwarg], list):
+            kwargs[kwarg]=np.array(kwargs[kwarg])
 
     return DataGeometry(fig=fig, ax=ax, data=x, xform_data=xform_data,
                         line_ani=line_ani, reduce=reduce_dict, align=align_dict,

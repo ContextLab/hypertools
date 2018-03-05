@@ -165,3 +165,34 @@ def memoize(obj):
             cache[key] = obj(*args, **kwargs)
         return cache[key]
     return memoizer
+
+def get_type(data):
+    """
+    Checks what the data type is and returns it as a string label
+    """
+    import six
+    from ..datageometry import DataGeometry
+
+    if isinstance(data, list):
+        if isinstance(data[0], (six.string_types, six.text_type, six.binary_type)):
+            return 'list_str'
+        elif isinstance(data[0], (int, float)):
+            return 'list_num'
+    elif isinstance(data, np.ndarray):
+        return 'array'
+    elif isinstance(data, pd.DataFrame):
+        return 'df'
+    elif isinstance(data, (six.string_types, six.text_type, six.binary_type)):
+        return 'str'
+    elif isinstance(data, DataGeometry):
+        return 'geo'
+    else:
+        raise TypeError('Unsupported data type passed. Supported types: '
+                        'Numpy Array, Pandas DataFrame, String, List of strings'
+                        ', List of numbers')
+
+def convert_text(data):
+    dtype = get_type(data)
+    if dtype in ['list_str', 'str']:
+        data = np.array(data).reshape(-1, 1)
+    return data

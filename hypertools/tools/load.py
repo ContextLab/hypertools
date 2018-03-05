@@ -14,15 +14,15 @@ homedir = os.path.expanduser('~/')
 datadir = os.path.join(homedir, 'hypertools_data')
 
 datadict = {
-    'weights' : '13ncm93UyVkLUWo924mqOllgLN2OwF9wq',
-    'weights_avg' : '1gwFGv39COdTRkozApcJOk4S1_IuhIi7m',
-    'weights_sample' : '1ivNHL4FeYaz6vCcNT-qZT4K9QztrHjUa',
-    'spiral' : '1CC3wfvNBeiMlyN4NwNmoRPM6kX9gsYGw',
-    'mushrooms' : '18jkmbDT4Qs2ewgHybPOy38cpYtV-TqyY',
+    'weights' : '1-zzaUMHuXHSzFcGT4vNlqcV8tMY4q7jS',
+    'weights_avg' : '1v_IrU6n72nTOHwD3AnT2LKgtKfHINyXt',
+    'weights_sample' : '1CiVSP-8sjdQN_cdn3uCrBH5lNOkvgJp1',
+    'spiral' : '1JB4RIgNfzGaTFWRBCzi8CQ2syTE-BnWg',
+    'mushrooms' : '1wRXObmwLjSHPAUWC8QvUl37iY2qRObg8',
     'wiki_model' : '1554BmtMY6Un2StpK_Iy0OWTmGiEZxVuM',
-    'wiki' : '1mAVRBN4R5B_GjCxO8yPvkn703QNjJYTD',
-    'sotus' : '19qG1mmQqhvoBAlheW8KPGSp0H7MK_glO',
-    'nips' : '1BBu_-bRDyB3E7PV6HiaTWI7lrKPjbF1P'
+    'wiki' : '1e5lCi17bLbOXuRjiGO2eqkEWVpeCuRvM',
+    'sotus' : '1D2dsrLAXkC3eUUaw2VV_mldzxX5ufmkm',
+    'nips' : '1Vva4Xcc5kUX78R0BKkLtdCWQx9GI-FG2'
 }
 
 def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
