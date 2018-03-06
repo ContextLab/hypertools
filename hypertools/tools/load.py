@@ -19,10 +19,12 @@ datadict = {
     'weights_sample' : '1CiVSP-8sjdQN_cdn3uCrBH5lNOkvgJp1',
     'spiral' : '1JB4RIgNfzGaTFWRBCzi8CQ2syTE-BnWg',
     'mushrooms' : '1wRXObmwLjSHPAUWC8QvUl37iY2qRObg8',
-    'wiki_model' : '1OrN1F39GkMPjrB2bOTgNRT1pNBmsCQsN',
     'wiki' : '1e5lCi17bLbOXuRjiGO2eqkEWVpeCuRvM',
     'sotus' : '1D2dsrLAXkC3eUUaw2VV_mldzxX5ufmkm',
-    'nips' : '1Vva4Xcc5kUX78R0BKkLtdCWQx9GI-FG2'
+    'nips' : '1Vva4Xcc5kUX78R0BKkLtdCWQx9GI-FG2',
+    'wiki_model' : '1OrN1F39GkMPjrB2bOTgNRT1pNBmsCQsN',
+    'nips_model' : '1orgxWJdWYzBlU3EF2u7EDsZrp3jTNNLG',
+    'sotus_model' : '1g2F18WLxfFosIqhiLs79G0MpiG72mWQr'
 }
 
 def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
@@ -159,7 +161,7 @@ def _download(dataset, data):
 
 def _load_from_disk(dataset):
     fullpath = os.path.join(homedir, 'hypertools_data', dataset)
-    if dataset in ('wiki_model',):
+    if dataset in ('wiki_model', 'nips_model', 'sotus_model',):
         try:
             with open(fullpath, 'rb') as f:
                 return pickle.load(f)
