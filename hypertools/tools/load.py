@@ -7,6 +7,7 @@ from warnings import warn
 from .analyze import analyze
 from .format_data import format_data
 from ..datageometry import DataGeometry
+from .._shared.helpers import check_geo
 import pickle
 
 BASE_URL = 'https://docs.google.com/uc?export=download'
@@ -97,7 +98,14 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
     """
 
     if dataset[-4:] == '.geo':
-        data = DataGeometry(**dd.io.load(dataset))
+        geo = dd.io.load(dataset)
+        if 'dtype' in geo:
+            if 'list' in geo['dtype']:
+                geo['data'] = list(geo['data'])
+            elif 'df' in geo['dtype']:
+                geo['data'] = pd.DataFrame(geo['data'])
+        geo['xform_data'] = list(geo['xform_data'])
+        data = DataGeometry(**geo)
     elif dataset in datadict.keys():
         data = _load_data(dataset, datadict[dataset])
     else:
@@ -108,9 +116,10 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
 
 
     if data is not None:
-        if dataset in ('wiki_model'):
+        if dataset in ('wiki_model', 'nips_model', 'sotus_model',):
             return data
     if isinstance(data, DataGeometry):
+        # data = check_geo(data)
         opts = {}
         if reduce:
             opts.update(dict(reduce=reduce))
@@ -168,4 +177,11 @@ def _load_from_disk(dataset):
         except ValueError as e:
             print(e)
     else:
-        return DataGeometry(**dd.io.load(fullpath))
+        geo = dd.io.load(fullpath)
+        if 'dtype' in geo:
+            if 'list' in geo['dtype']:
+                geo['data'] = list(geo['data'])
+            elif 'df' in geo['dtype']:
+                geo['data'] = pd.DataFrame(geo['data'])
+        geo['xform_data'] = list(geo['xform_data'])
+        return DataGeometry(**geo)

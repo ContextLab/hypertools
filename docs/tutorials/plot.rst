@@ -47,19 +47,6 @@ function ``head()``.
 .. raw:: html
 
     <div>
-    <style scoped>
-        .dataframe tbody tr th:only-of-type {
-            vertical-align: middle;
-        }
-    
-        .dataframe tbody tr th {
-            vertical-align: top;
-        }
-    
-        .dataframe thead th {
-            text-align: right;
-        }
-    </style>
     <table border="1" class="dataframe">
       <thead>
         <tr style="text-align: right;">
@@ -390,7 +377,7 @@ no data for PPCA to base its guess on, so the inference will fail.
 
 .. parsed-literal::
 
-    /Users/andyheusser/Documents/github/hypertools/hypertools/tools/format_data.py:170: UserWarning: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)
+    /Users/andyheusser/Documents/github/hypertools/hypertools/tools/format_data.py:154: UserWarning: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)
       warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
 
 
@@ -525,7 +512,7 @@ transformed to a topic vector and then reduced for plotting.
 
 .. code:: ipython3
 
-    geo.plot(size=[10,8])
+    geo.plot()
 
 
 
@@ -536,20 +523,6 @@ transformed to a topic vector and then reduced for plotting.
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x117181f98>
+    <hypertools.datageometry.DataGeometry at 0x116d82e48>
 
-
-
-You can also specify a ``corpus``, which will fit a semantic model to
-whatever text data you pass using this parameter. We'll use the SOTUs
-dataset to fit the model:
-
-.. code:: ipython3
-
-    docs = geo.get_data()
-    geo2 = geo.plot(corpus=docs, semantic='LatentDirichletAllocation', size=[10,8])
-
-
-
-.. image:: plot_files/plot_52_0.png
 

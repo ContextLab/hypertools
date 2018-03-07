@@ -10,6 +10,8 @@ from __future__ import print_function
 import sys
 import warnings
 import numpy as np
+import six
+import copy
 from scipy.interpolate import PchipInterpolator as pchip
 import seaborn as sns
 import itertools
@@ -150,7 +152,11 @@ def patch_lines(x):
     return x
 
 def is_line(format_str):
-    return (format_str is None) or (all([str(symbol) not in format_str for symbol in Line2D.markers.keys()]))
+    if isinstance(format_str, np.bytes_):
+        format_str = format_str.decode('utf-8')
+    markers = list(map(lambda x: str(x), Line2D.markers.keys()))
+
+    return (format_str is None) or (all([str(symbol) not in format_str for symbol in markers]))
 
 import collections
 import functools
@@ -178,8 +184,17 @@ def get_type(data):
             return 'list_str'
         elif isinstance(data[0], (int, float)):
             return 'list_num'
+        elif isinstance(data[0], np.ndarray):
+            return 'list_arr'
+        else:
+            raise TypeError('Unsupported data type passed. Supported types: '
+                            'Numpy Array, Pandas DataFrame, String, List of strings'
+                            ', List of numbers')
     elif isinstance(data, np.ndarray):
-        return 'array'
+        if isinstance(data[0][0], (six.string_types, six.text_type, six.binary_type)):
+            return 'arr_str'
+        else:
+            return 'arr_num'
     elif isinstance(data, pd.DataFrame):
         return 'df'
     elif isinstance(data, (six.string_types, six.text_type, six.binary_type)):
@@ -196,3 +211,44 @@ def convert_text(data):
     if dtype in ['list_str', 'str']:
         data = np.array(data).reshape(-1, 1)
     return data
+
+def check_geo(geo):
+    """ Checks a geo and makes sure the text fields are not binary """
+    geo = copy.copy(geo)
+    def fix_item(item):
+        if isinstance(item, six.binary_type):
+            return item.decode()
+        return item
+    def fix_list(lst):
+        return [fix_item(i) for i in lst]
+    if isinstance(geo.reduce, six.binary_type):
+        geo.reduce = geo.reduce.decode()
+    for key in geo.kwargs.keys():
+        if geo.kwargs[key] is not None:
+            if isinstance(geo.kwargs[key], (list, np.ndarray)):
+                geo.kwargs[key] = fix_list(geo.kwargs[key])
+            elif isinstance(geo.kwargs[key], six.binary_type):
+                geo.kwargs[key] = fix_item(geo.kwargs[key])
+    return geo
+
+def get_dtype(data):
+    """
+    Checks what the data type is and returns it as a string label
+    """
+    import six
+    from ..datageometry import DataGeometry
+
+    if isinstance(data, list):
+        return 'list'
+    elif isinstance(data, np.ndarray):
+        return 'arr'
+    elif isinstance(data, pd.DataFrame):
+        return 'df'
+    elif isinstance(data, (six.string_types, six.text_type, six.binary_type)):
+        return 'str'
+    elif isinstance(data, DataGeometry):
+        return 'geo'
+    else:
+        raise TypeError('Unsupported data type passed. Supported types: '
+                        'Numpy Array, Pandas DataFrame, String, List of strings'
+                        ', List of numbers')

@@ -56,3 +56,12 @@ def test_geo_text_data():
     assert geo.transform(data)[0].shape[1]==3
     assert geo.semantic is 'wiki'
     assert isinstance(geo.plot(show=False), DataGeometry)
+
+def test_geo_text_data_marker():
+    data = [['i like cats alot', 'cats r pretty cool', 'cats are better than dogs'],
+            ['dogs rule the haus', 'dogs are my jam', 'dogs are a mans best friend']]
+    geo = plot(data, '.', show=False)
+    assert isinstance(geo, DataGeometry)
+    assert geo.transform(data)[0].shape[1]==3
+    assert geo.semantic is 'wiki'
+    assert isinstance(geo.plot(show=False), DataGeometry)

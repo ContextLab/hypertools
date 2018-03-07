@@ -489,6 +489,26 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="By default, the text samples will be transformed into a vector of word counts and then modeled ...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_corpus_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_corpus.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_corpus
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="In this example, we load in some synthetic data, rotate it, and then use the procustes function...">
 
 .. only:: html
@@ -606,6 +626,26 @@ Gallery of Examples
    :hidden:
 
    /auto_examples/plot_geo
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="Hypertools includes 3 prefit topic models with different corpuses: wiki, nips and sotus. The pr...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_text_models_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_text_models.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_text_models
 
 .. raw:: html
 

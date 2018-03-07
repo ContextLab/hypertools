@@ -153,7 +153,7 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
         # if explore mode is activated, implement the on hover behavior
         if explore:
             X = np.vstack(x)
-            if labels:
+            if labels is not None:
                 if any(isinstance(el, list) for el in labels):
                     labels = list(itertools.chain(*labels))
                 fig.canvas.mpl_connect('motion_notify_event', lambda event: onMouseMotion(event, X, labels)) # on mouse motion
@@ -162,7 +162,7 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
                 fig.canvas.mpl_connect('motion_notify_event', lambda event: onMouseMotion(event, X)) # on mouse motion
                 # fig.canvas.mpl_connect('button_press_event', lambda event: onMouseClick(event, X, labels))  # on mouse click
 
-        elif labels:
+        elif labels is not None:
             X = np.vstack(x)
             if any(isinstance(el, list) for el in labels):
                 labels = list(itertools.chain(*labels))

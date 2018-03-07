@@ -1,3 +1,4 @@
+# from __future__ import unicode_literals
 from builtins import object
 import copy
 import deepdish as dd
@@ -6,7 +7,7 @@ from .tools.normalize import normalize as normalizer
 from .tools.reduce import reduce as reducer
 from .tools.align import align as aligner
 from .tools.format_data import format_data
-from ._shared.helpers import convert_text
+from ._shared.helpers import convert_text, get_dtype
 from .config import __version__
 
 class DataGeometry(object):
@@ -54,7 +55,8 @@ class DataGeometry(object):
 
     def __init__(self, fig=None, ax=None, line_ani=None, data=None, xform_data=None,
                  reduce=None, align=None, normalize=None, semantic=None,
-                 vectorizer=None, corpus=None, kwargs=None, version=__version__):
+                 vectorizer=None, corpus=None, kwargs=None, version=__version__,
+                 dtype=None):
 
         # matplotlib figure handle
         self.fig = fig
@@ -69,6 +71,7 @@ class DataGeometry(object):
         if isinstance(data, list):
             data = list(map(convert_text, data))
         self.data = data
+        self.dtype = get_dtype(data)
 
         # the transformed data
         self.xform_data = xform_data
@@ -85,11 +88,8 @@ class DataGeometry(object):
         # text params
         self.semantic = semantic
         self.vectorizer = vectorizer
-        # corpus = list(map(convert_text, corpus))
-        if corpus is not None:
-            self.corpus = np.array(corpus)
-        else:
-            self.corpus = corpus
+
+        self.corpus = corpus
 
         # dictionary of kwargs
         self.kwargs = kwargs
@@ -207,19 +207,26 @@ class DataGeometry(object):
             options: http://deepdish.readthedocs.io/en/latest/api_io.html#deepdish.io.save
 
         """
-
+        if hasattr(self, 'dtype'):
+            if 'list' in self.dtype:
+                data = np.array(self.data)
+            elif 'df' in self.dtype:
+                data = {k: np.array(v).astype('str') for k, v in self.data.to_dict('list').items()}
+            else:
+                data = self.data
 
         # put geo vars into a dict
         geo = {
-            'data' : self.data,
-            'xform_data' : self.xform_data,
+            'data' : data,
+            'xform_data' : np.array(self.xform_data),
             'reduce' : self.reduce,
             'align' : self.align,
             'normalize' : self.normalize,
             'semantic' : self.semantic,
-            'corpus' : self.corpus,
+            'corpus' : np.array(self.corpus) if self.corpus else None,
             'kwargs' : self.kwargs,
-            'version' : self.version
+            'version' : self.version,
+            'dtype' : self.dtype
         }
 
         # if extension wasn't included, add it

@@ -104,7 +104,7 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
     dtypes = list(map(get_type, x))
 
     # handle text data:
-    if any(map(lambda x: x in ['list_str', 'str'], dtypes)):
+    if any(map(lambda x: x in ['list_str', 'str', 'arr_str'], dtypes)):
 
         # default text args
         text_args = {
@@ -116,9 +116,8 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
         # filter text data
         text_data = []
         for i,j in zip(x, dtypes):
-            if j in ['list_str', 'str']:
+            if j in ['list_str', 'str', 'arr_str']:
                 text_data.append(np.array(i).reshape(-1, 1))
-
         # convert text to numerical matrices
         text_data = text2mat(text_data, **text_args)
 
@@ -126,7 +125,7 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
     processed_x = []
     textidx=0
     for i, dtype in enumerate(dtypes):
-        if dtype in ['list_str', 'str']:
+        if dtype in ['list_str', 'str', 'arr_str']:
             processed_x.append(text_data[textidx])
             textidx+=1
         elif dtype is 'df':
@@ -141,24 +140,24 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
     if any([i.ndim<=1 for i in processed_x]):
         processed_x = [np.reshape(i,(i.shape[0],1)) if i.ndim==1 else i for i in processed_x]
 
-    contains_text = any([dtype in ['list_str', 'str'] for dtype in dtypes])
-    contains_num = any([dtype in ['list_num', 'array', 'df'] for dtype in dtypes])
+    contains_text = any([dtype in ['list_str', 'str', 'arr_str'] for dtype in dtypes])
+    contains_num = any([dtype in ['list_num', 'array', 'df', 'arr_num'] for dtype in dtypes])
 
     # if there are any nans in any of the lists, use ppca
     if ppca is True:
         if contains_num:
             num_data = []
             for i,j in zip(processed_x, dtypes):
-                if j in ['list_num', 'array', 'df']:
+                if j in ['list_num', 'array', 'df', 'arr_num']:
                     num_data.append(i)
             if np.isnan(np.vstack(num_data)).any():
                 warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
                 num_data = fill_missing(num_data)
                 x_temp = []
                 for dtype in dtypes:
-                    if dtype in ['list_str', 'str']:
+                    if dtype in ['list_str', 'str', 'arr_str']:
                         x_temp.append(text_data.pop(0))
-                    elif dtype in ['list_num', 'array', 'df']:
+                    elif dtype in ['list_num', 'array', 'df', 'arr_num']:
                         x_temp.append(num_data.pop(0))
                 processed_x = x_temp
 

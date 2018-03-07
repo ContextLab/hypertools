@@ -41,6 +41,13 @@ def test_geo():
     assert isinstance(format_data(geo), list)
     assert isinstance(format_data(geo)[0], np.ndarray)
 
+def test_missing_data():
+    data = np.random.rand(100,10)
+    data[0][0]=np.nan
+    geo = plot(data, show=False)
+    assert isinstance(format_data(geo), list)
+    assert isinstance(format_data(geo)[0], np.ndarray)
+
 def test_force_align():
     mat = np.random.rand(4,3)
     df = pd.DataFrame(np.random.rand(4,3))
