@@ -381,16 +381,16 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
 
         # create lines
         if fmt is not None:
-            lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], fmt[idx],
+            lines = [ax.plot(dat[0:1, 0], dat[0:1, 1], dat[0:1, 2], fmt[idx],
                              linewidth=1, **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
             if is_line(fmt):
-                trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], fmt[idx],
+                trail = [ax.plot(dat[0:1, 0], dat[0:1, 1], dat[0:1, 2], fmt[idx],
                                  alpha=.3, linewidth=1, **kwargs_list[idx])[0] for idx, dat in enumerate(x)]
         else:
-            lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1],
+            lines = [ax.plot(dat[0:1, 0], dat[0:1, 1], dat[0:1, 2],
                              linewidth=1, **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
             if is_line(fmt):
-                trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1],
+                trail = [ax.plot(dat[0:1, 0], dat[0:1, 1], dat[0:1, 2],
                                  alpha=.3, linewidth=1, **kwargs_list[idx])[0] for idx, dat in enumerate(x)]
         if tail_duration==0:
             tail_duration=1

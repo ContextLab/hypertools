@@ -47,153 +47,166 @@ function ``head()``.
 .. raw:: html
 
     <div>
+    <style scoped>
+        .dataframe tbody tr th:only-of-type {
+            vertical-align: middle;
+        }
+    
+        .dataframe tbody tr th {
+            vertical-align: top;
+        }
+    
+        .dataframe thead th {
+            text-align: right;
+        }
+    </style>
     <table border="1" class="dataframe">
       <thead>
         <tr style="text-align: right;">
           <th></th>
+          <th>bruises</th>
+          <th>cap-color</th>
           <th>cap-shape</th>
           <th>cap-surface</th>
-          <th>cap-color</th>
-          <th>bruises</th>
-          <th>odor</th>
           <th>gill-attachment</th>
-          <th>gill-spacing</th>
-          <th>gill-size</th>
           <th>gill-color</th>
-          <th>stalk-shape</th>
+          <th>gill-size</th>
+          <th>gill-spacing</th>
+          <th>habitat</th>
+          <th>odor</th>
           <th>...</th>
-          <th>stalk-surface-below-ring</th>
-          <th>stalk-color-above-ring</th>
-          <th>stalk-color-below-ring</th>
-          <th>veil-type</th>
-          <th>veil-color</th>
-          <th>ring-number</th>
           <th>ring-type</th>
           <th>spore-print-color</th>
-          <th>population</th>
-          <th>habitat</th>
+          <th>stalk-color-above-ring</th>
+          <th>stalk-color-below-ring</th>
+          <th>stalk-root</th>
+          <th>stalk-shape</th>
+          <th>stalk-surface-above-ring</th>
+          <th>stalk-surface-below-ring</th>
+          <th>veil-color</th>
+          <th>veil-type</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <th>0</th>
+          <td>t</td>
+          <td>n</td>
           <td>x</td>
           <td>s</td>
-          <td>n</td>
-          <td>t</td>
-          <td>p</td>
           <td>f</td>
-          <td>c</td>
+          <td>k</td>
           <td>n</td>
-          <td>k</td>
-          <td>e</td>
-          <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
-          <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>k</td>
-          <td>s</td>
+          <td>c</td>
           <td>u</td>
+          <td>p</td>
+          <td>...</td>
+          <td>p</td>
+          <td>k</td>
+          <td>w</td>
+          <td>w</td>
+          <td>e</td>
+          <td>e</td>
+          <td>s</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
         </tr>
         <tr>
           <th>1</th>
+          <td>t</td>
+          <td>y</td>
           <td>x</td>
           <td>s</td>
-          <td>y</td>
-          <td>t</td>
-          <td>a</td>
           <td>f</td>
-          <td>c</td>
-          <td>b</td>
           <td>k</td>
-          <td>e</td>
+          <td>b</td>
+          <td>c</td>
+          <td>g</td>
+          <td>a</td>
           <td>...</td>
+          <td>p</td>
+          <td>n</td>
+          <td>w</td>
+          <td>w</td>
+          <td>c</td>
+          <td>e</td>
+          <td>s</td>
           <td>s</td>
           <td>w</td>
-          <td>w</td>
           <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>n</td>
-          <td>n</td>
-          <td>g</td>
         </tr>
         <tr>
           <th>2</th>
-          <td>b</td>
-          <td>s</td>
-          <td>w</td>
           <td>t</td>
-          <td>l</td>
-          <td>f</td>
-          <td>c</td>
+          <td>w</td>
           <td>b</td>
+          <td>s</td>
+          <td>f</td>
           <td>n</td>
-          <td>e</td>
+          <td>b</td>
+          <td>c</td>
+          <td>m</td>
+          <td>l</td>
           <td>...</td>
+          <td>p</td>
+          <td>n</td>
+          <td>w</td>
+          <td>w</td>
+          <td>c</td>
+          <td>e</td>
+          <td>s</td>
           <td>s</td>
           <td>w</td>
-          <td>w</td>
           <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>n</td>
-          <td>n</td>
-          <td>m</td>
         </tr>
         <tr>
           <th>3</th>
+          <td>t</td>
+          <td>w</td>
           <td>x</td>
           <td>y</td>
-          <td>w</td>
-          <td>t</td>
-          <td>p</td>
           <td>f</td>
+          <td>n</td>
+          <td>n</td>
           <td>c</td>
-          <td>n</td>
-          <td>n</td>
-          <td>e</td>
-          <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
+          <td>u</td>
           <td>p</td>
-          <td>w</td>
-          <td>o</td>
+          <td>...</td>
           <td>p</td>
           <td>k</td>
+          <td>w</td>
+          <td>w</td>
+          <td>e</td>
+          <td>e</td>
           <td>s</td>
-          <td>u</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
         </tr>
         <tr>
           <th>4</th>
+          <td>f</td>
+          <td>g</td>
           <td>x</td>
           <td>s</td>
-          <td>g</td>
           <td>f</td>
-          <td>n</td>
-          <td>f</td>
-          <td>w</td>
-          <td>b</td>
           <td>k</td>
-          <td>t</td>
+          <td>b</td>
+          <td>w</td>
+          <td>g</td>
+          <td>n</td>
           <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
-          <td>p</td>
-          <td>w</td>
-          <td>o</td>
           <td>e</td>
           <td>n</td>
-          <td>a</td>
-          <td>g</td>
+          <td>w</td>
+          <td>w</td>
+          <td>e</td>
+          <td>t</td>
+          <td>s</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
         </tr>
       </tbody>
     </table>
@@ -523,6 +536,6 @@ transformed to a topic vector and then reduced for plotting.
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x116d82e48>
+    <hypertools.datageometry.DataGeometry at 0x113504c50>
 
 

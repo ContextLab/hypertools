@@ -142,10 +142,21 @@ def _load_data(dataset, fileid):
     if not os.path.exists(datadir):
         os.makedirs(datadir)
     if not os.path.exists(fullpath):
-        _download(dataset, _load_stream(fileid))
-        data = _load_from_disk(dataset)
+        try:
+            _download(dataset, _load_stream(fileid))
+            data = _load_from_disk(dataset)
+        except:
+            raise ValueError('Download failed.')
     else:
-        data = _load_from_disk(dataset)
+        try:
+            data = _load_from_disk(dataset)
+        except:
+            try:
+                _download(dataset, _load_stream(fileid))
+                data = _load_from_disk(dataset)
+            except:
+                raise ValueError('Download failed. Try deleting cache data in'
+                                 ' /Users/homedir/hypertools_data.')
     return data
 
 def _load_stream(fileid):

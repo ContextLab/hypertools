@@ -289,7 +289,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
 
     # find cluster and reshape if n_clusters
     if cluster is not None:
-        if hue:
+        if hue is not None:
             warnings.warn('cluster overrides hue, ignoring hue.')
         if isinstance(cluster, (six.string_types, six.binary_type)):
             model = cluster
@@ -317,7 +317,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         # If cluster was None default to KMeans
         cluster_labels = clusterer(xform, cluster='KMeans', n_clusters=n_clusters)
         xform = reshape_data(xform, cluster_labels)
-        if hue:
+        if hue is not None:
             warnings.warn('n_clusters overrides hue, ignoring hue.')
 
     # group data if there is a grouping var
@@ -489,7 +489,14 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
     # turn lists into np arrays so that they don't turn into pickles when saved
     for kwarg in kwargs:
         if isinstance(kwargs[kwarg], list):
-            kwargs[kwarg]=np.array(kwargs[kwarg])
+            try:
+                kwargs[kwarg]=np.array(kwargs[kwarg])
+            except:
+                warnings.warn('Could not convert all list arguments to numpy '
+                              'arrays.  If list is longer than 256 items, it '
+                              'will automatically be pickled, which could '
+                              'cause Python 2/3 compatibility issues for the '
+                              'DataGeometry object.')
 
     return DataGeometry(fig=fig, ax=ax, data=x, xform_data=xform_data,
                         line_ani=line_ani, reduce=reduce_dict, align=align_dict,

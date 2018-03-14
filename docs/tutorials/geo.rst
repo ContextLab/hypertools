@@ -48,7 +48,7 @@ We can plot a ``geo`` by calling the plot method
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x10fe62b70>
+    <hypertools.datageometry.DataGeometry at 0x11bef32b0>
 
 
 
@@ -70,7 +70,7 @@ was generated with.
 
 .. parsed-literal::
 
-    '0.4.2'
+    '0.5.0'
 
 
 
@@ -106,149 +106,149 @@ The data field contains the raw data.
       <thead>
         <tr style="text-align: right;">
           <th></th>
+          <th>bruises</th>
+          <th>cap-color</th>
           <th>cap-shape</th>
           <th>cap-surface</th>
-          <th>cap-color</th>
-          <th>bruises</th>
-          <th>odor</th>
           <th>gill-attachment</th>
-          <th>gill-spacing</th>
-          <th>gill-size</th>
           <th>gill-color</th>
-          <th>stalk-shape</th>
+          <th>gill-size</th>
+          <th>gill-spacing</th>
+          <th>habitat</th>
+          <th>odor</th>
           <th>...</th>
-          <th>stalk-surface-below-ring</th>
-          <th>stalk-color-above-ring</th>
-          <th>stalk-color-below-ring</th>
-          <th>veil-type</th>
-          <th>veil-color</th>
-          <th>ring-number</th>
           <th>ring-type</th>
           <th>spore-print-color</th>
-          <th>population</th>
-          <th>habitat</th>
+          <th>stalk-color-above-ring</th>
+          <th>stalk-color-below-ring</th>
+          <th>stalk-root</th>
+          <th>stalk-shape</th>
+          <th>stalk-surface-above-ring</th>
+          <th>stalk-surface-below-ring</th>
+          <th>veil-color</th>
+          <th>veil-type</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <th>0</th>
+          <td>t</td>
+          <td>n</td>
           <td>x</td>
           <td>s</td>
-          <td>n</td>
-          <td>t</td>
-          <td>p</td>
           <td>f</td>
-          <td>c</td>
+          <td>k</td>
           <td>n</td>
-          <td>k</td>
-          <td>e</td>
-          <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
-          <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>k</td>
-          <td>s</td>
+          <td>c</td>
           <td>u</td>
+          <td>p</td>
+          <td>...</td>
+          <td>p</td>
+          <td>k</td>
+          <td>w</td>
+          <td>w</td>
+          <td>e</td>
+          <td>e</td>
+          <td>s</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
         </tr>
         <tr>
           <th>1</th>
+          <td>t</td>
+          <td>y</td>
           <td>x</td>
           <td>s</td>
-          <td>y</td>
-          <td>t</td>
-          <td>a</td>
           <td>f</td>
-          <td>c</td>
-          <td>b</td>
           <td>k</td>
-          <td>e</td>
+          <td>b</td>
+          <td>c</td>
+          <td>g</td>
+          <td>a</td>
           <td>...</td>
+          <td>p</td>
+          <td>n</td>
+          <td>w</td>
+          <td>w</td>
+          <td>c</td>
+          <td>e</td>
+          <td>s</td>
           <td>s</td>
           <td>w</td>
-          <td>w</td>
           <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>n</td>
-          <td>n</td>
-          <td>g</td>
         </tr>
         <tr>
           <th>2</th>
-          <td>b</td>
-          <td>s</td>
-          <td>w</td>
           <td>t</td>
-          <td>l</td>
-          <td>f</td>
-          <td>c</td>
+          <td>w</td>
           <td>b</td>
+          <td>s</td>
+          <td>f</td>
           <td>n</td>
-          <td>e</td>
+          <td>b</td>
+          <td>c</td>
+          <td>m</td>
+          <td>l</td>
           <td>...</td>
+          <td>p</td>
+          <td>n</td>
+          <td>w</td>
+          <td>w</td>
+          <td>c</td>
+          <td>e</td>
+          <td>s</td>
           <td>s</td>
           <td>w</td>
-          <td>w</td>
           <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>n</td>
-          <td>n</td>
-          <td>m</td>
         </tr>
         <tr>
           <th>3</th>
+          <td>t</td>
+          <td>w</td>
           <td>x</td>
           <td>y</td>
-          <td>w</td>
-          <td>t</td>
-          <td>p</td>
           <td>f</td>
+          <td>n</td>
+          <td>n</td>
           <td>c</td>
-          <td>n</td>
-          <td>n</td>
-          <td>e</td>
-          <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
+          <td>u</td>
           <td>p</td>
-          <td>w</td>
-          <td>o</td>
+          <td>...</td>
           <td>p</td>
           <td>k</td>
+          <td>w</td>
+          <td>w</td>
+          <td>e</td>
+          <td>e</td>
           <td>s</td>
-          <td>u</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
         </tr>
         <tr>
           <th>4</th>
+          <td>f</td>
+          <td>g</td>
           <td>x</td>
           <td>s</td>
-          <td>g</td>
           <td>f</td>
-          <td>n</td>
-          <td>f</td>
-          <td>w</td>
-          <td>b</td>
           <td>k</td>
-          <td>t</td>
+          <td>b</td>
+          <td>w</td>
+          <td>g</td>
+          <td>n</td>
           <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
-          <td>p</td>
-          <td>w</td>
-          <td>o</td>
           <td>e</td>
           <td>n</td>
-          <td>a</td>
-          <td>g</td>
+          <td>w</td>
+          <td>w</td>
+          <td>e</td>
+          <td>t</td>
+          <td>s</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
         </tr>
       </tbody>
     </table>
@@ -274,13 +274,13 @@ plotting when we called ``hyp.plot``).
 
 .. parsed-literal::
 
-    [array([[ 1.30051954,  0.29550253,  1.128519  ],
-            [ 1.36797007, -0.2888117 ,  1.8208044 ],
-            [ 1.59215354, -0.26831319,  1.66597598],
+    [array([[ 1.30060679,  0.29575138, -1.12870127],
+            [ 1.36815474, -0.28876648, -1.82066942],
+            [ 1.59220727, -0.26813075, -1.66586137],
             ...,
-            [ 0.40885079,  0.12732114,  0.41722945],
-            [-0.89380986,  1.72804909, -0.56610268],
-            [ 0.38867308,  0.10699673,  0.58651432]])]
+            [ 0.40863473,  0.12762486, -0.41712925],
+            [-0.89420121,  1.72874308,  0.56553812],
+            [ 0.38848708,  0.10733461, -0.58634345]])]
 
 
 
@@ -303,7 +303,7 @@ information and the normalize field contains a string.
 .. parsed-literal::
 
     None
-    {'model': 'IncrementalPCA', 'params': {'n_components': 3}}
+    {'params': {'n_components': 3}, 'model': 'IncrementalPCA'}
     {'model': None, 'params': {}}
 
 
@@ -322,15 +322,6 @@ respectively.
 .. code:: ipython3
 
     geo.ax
-
-
-
-
-.. parsed-literal::
-
-    <matplotlib.axes._subplots.Axes3DSubplot at 0x11aa08048>
-
-
 
 .. code:: ipython3
 
@@ -360,7 +351,7 @@ First, let's plot without making any changes.
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x11ae42400>
+    <hypertools.datageometry.DataGeometry at 0x11c1446d8>
 
 
 
@@ -383,7 +374,7 @@ specified by the reduce model set to 2.
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x11afa4668>
+    <hypertools.datageometry.DataGeometry at 0x11c3de898>
 
 
 
