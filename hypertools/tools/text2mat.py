@@ -75,9 +75,11 @@ def text2mat(data, vectorizer='CountVectorizer',
             corpus = np.array([corpus])
         model_is_fit = False
         if semantic in ('wiki', 'nips', 'sotus',):
-            warnings.warn('Both corpus and already-fit-model passed.  Setting'
+            warnings.warn('Both corpus and already-fit-model passed.  Setting '
                           'semantic to LatentDirichletAllocation.')
             semantic = 'LatentDirichletAllocation'
+        if vectorizer is None:
+            vectorizer = 'CountVectorizer'
     elif semantic in ('wiki', 'nips', 'sotus',):
         semantic = load(semantic + '_model')
         vectorizer = None
