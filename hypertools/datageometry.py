@@ -223,7 +223,7 @@ class DataGeometry(object):
             'align' : self.align,
             'normalize' : self.normalize,
             'semantic' : self.semantic,
-            'corpus' : np.array(self.corpus) if self.corpus else None,
+            'corpus' : np.array(self.corpus) if self.corpus is not None else None,
             'kwargs' : self.kwargs,
             'version' : self.version,
             'dtype' : self.dtype

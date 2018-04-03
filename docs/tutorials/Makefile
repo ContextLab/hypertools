@@ -7,3 +7,4 @@ notebooks:
 				tools/nb_to_doc.py align
 				tools/nb_to_doc.py cluster
 				tools/nb_to_doc.py geo
+				tools/nb_to_doc.py text

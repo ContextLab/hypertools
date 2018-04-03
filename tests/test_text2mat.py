@@ -42,8 +42,7 @@ def test_vectorizer_params():
         'model' : 'CountVectorizer',
         'params': {
         'max_features' : 2
-        }},
-        semantic=None)[0].shape[1]==2
+        }})[0].shape[1]==20
 
 def test_LDA_class():
     assert text2mat(data, semantic=LatentDirichletAllocation)[0].shape[1]==10

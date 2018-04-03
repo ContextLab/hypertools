@@ -390,7 +390,7 @@ no data for PPCA to base its guess on, so the inference will fail.
 
 .. parsed-literal::
 
-    /Users/andyheusser/Documents/github/hypertools/hypertools/tools/format_data.py:154: UserWarning: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)
+    /Users/andyheusser/Documents/github/hypertools/hypertools/tools/format_data.py:155: UserWarning: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)
       warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
 
 
@@ -536,6 +536,6 @@ transformed to a topic vector and then reduced for plotting.
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x113504c50>
+    <hypertools.datageometry.DataGeometry at 0x1166ac1d0>
 
 

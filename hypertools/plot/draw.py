@@ -19,7 +19,7 @@ from .._shared.helpers import *
 
 matplotlib.rcParams['pdf.fonttype'] = 42
 
-def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=False,
+def _draw(x, return_data=False, legend=None, title=None, save_path=False, labels=False,
          show=True, kwargs_list=None, fmt=None, group=False, animate=False,
          tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False,
          bullettime=False, frame_rate=50, elev=10, azim=-60, duration=30,

@@ -21,10 +21,10 @@ from ..tools.normalize import normalize as normalizer
 from ..tools.align import align as aligner
 from ..tools.text2mat import text2mat
 from ..tools.format_data import format_data
-from .draw import draw
+from .draw import _draw
 from ..datageometry import DataGeometry
 
-def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None,
+def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
          color=None, colors=None, palette='hls', group=None, hue=None,
          labels=None, legend=None, title=None, size=None, elev=10, azim=-60,
          ndims=3, model=None, model_params=None, reduce='IncrementalPCA',
@@ -32,7 +32,8 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
          save_path=None, animate=False, duration=30, tail_duration=2,
          rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
          frame_rate=50, explore=False, show=True, transform=None,
-         vectorizer='CountVectorizer', semantic='wiki', corpus=None, ax=None):
+         vectorizer='CountVectorizer', semantic='LatentDirichletAllocation',
+         corpus='wiki', ax=None):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -182,7 +183,9 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         (default : None).
 
     vectorizer : str, dict, class or class instance
-        The vectorizer to use. Can be CountVectorizer or TfidfVectorizer.  See
+        The vectorizer to use. Built-in options are 'CountVectorizer' or
+        'TfidfVectorizer'. To change default parameters, set to a dictionary
+        e.g. {'model' : 'CountVectorizer', 'params' : {'max_features' : 10}}. See
         http://scikit-learn.org/stable/modules/classes.html#module-sklearn.feature_extraction.text
         for details. You can also specify your own vectorizer model as a class,
         or class instance.  With either option, the class must have a
@@ -191,22 +194,22 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         a class instance, no parameters can be passed.
 
     semantic : str, dict, class or class instance
-        Text model to use to transform the data. Can be
-        LatentDirichletAllocation, NMF or None (default: LDA).
-        If None, the text will be vectorized but not modeled. See http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
+        Text model to use to transform text data. Built-in options are
+        'LatentDirichletAllocation' or 'NMF' (default: LDA). To change default
+        parameters, set to a dictionary e.g. {'model' : 'NMF', 'params' :
+        {'n_components' : 10}}. See
+        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
         for details on the two model options. You can also specify your own
         text model as a class, or class instance.  With either option, the class
         must have a fit_transform method (see here:
         http://scikit-learn.org/stable/data_transforms.html).
         If a class, pass any parameters as a dictionary to text_params. If
-        a class instance, no parameters can be passed. By default, this is set to
-        'wiki', which is a prefit model trained on sample of wikipedia articles.
+        a class instance, no parameters can be passed.
 
-    corpus : list (or list of lists) of text samples or 'wiki'
-        Text to use to fit the semantic model (optional). Note: if you pass this
-        parameter with an already-fit-model, corpus will be ignored. If 'wiki',
-        corpus will be set to a list of sampled wikipedia articles (same
-        articles used to fit the wiki model).
+    corpus : list (or list of lists) of text samples or 'wiki', 'nips', 'sotus'.
+        Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
+         or 'sotus' and the default semantic and vectorizer models are used, a
+         pretrained model will be loaded which can save a lot of time.
 
     ax : matplotlib.Axes
         Axis handle to plot the figure
@@ -242,6 +245,10 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         'semantic' : semantic,
         'corpus' : corpus
     }
+
+    # if its a geo, just extract out the data for processing with defaul args
+    if isinstance(x, DataGeometry):
+        x = x.get_data()
 
     # analyze the data
     if transform is None:
@@ -395,7 +402,7 @@ def plot(x, fmt=None, marker=None, markers=None, linestyle=None, linestyles=None
         draw_fmt = fmt
 
     # draw the plot
-    fig, ax, data, line_ani = draw(xform, fmt=draw_fmt,
+    fig, ax, data, line_ani = _draw(xform, fmt=draw_fmt,
                             kwargs_list=kwargs_list,
                             labels=labels,
                             legend=legend,

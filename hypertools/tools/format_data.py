@@ -7,8 +7,8 @@ from .._externals.ppca import PPCA
 from .._shared.params import default_params
 from .._shared.helpers import get_type
 
-def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
-                ppca=True, text_align='hyper'):
+def format_data(x, vectorizer='CountVectorizer',
+                semantic='LatentDirichletAllocation', corpus='wiki', ppca=True, text_align='hyper'):
     """
     Formats data into a list of numpy arrays
 
@@ -24,8 +24,9 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
         The data to convert
 
     vectorizer : str, dict, class or class instance
-        The vectorizer to use for text data. Can be CountVectorizer or
-        TfidfVectorizer.  See
+        The vectorizer to use. Built-in options are 'CountVectorizer' or
+        'TfidfVectorizer'. To change default parameters, set to a dictionary
+        e.g. {'model' : 'CountVectorizer', 'params' : {'max_features' : 10}}. See
         http://scikit-learn.org/stable/modules/classes.html#module-sklearn.feature_extraction.text
         for details. You can also specify your own vectorizer model as a class,
         or class instance.  With either option, the class must have a
@@ -34,22 +35,22 @@ def format_data(x, vectorizer='CountVectorizer', semantic='wiki', corpus=None,
         a class instance, no parameters can be passed.
 
     semantic : str, dict, class or class instance
-        Text model to use to transform text data. Can be
-        LatentDirichletAllocation, NMF or None (default: LDA).
-        If None, the text will be vectorized but not modeled. See http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
+        Text model to use to transform text data. Built-in options are
+        'LatentDirichletAllocation' or 'NMF' (default: LDA). To change default
+        parameters, set to a dictionary e.g. {'model' : 'NMF', 'params' :
+        {'n_components' : 10}}. See
+        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
         for details on the two model options. You can also specify your own
         text model as a class, or class instance.  With either option, the class
         must have a fit_transform method (see here:
         http://scikit-learn.org/stable/data_transforms.html).
         If a class, pass any parameters as a dictionary to text_params. If
-        a class instance, no parameters can be passed. By default, this is set to
-        'wiki', which is a prefit model trained on sample of wikipedia articles.
-
-    corpus : list (or list of lists) of text samples or 'wiki'
-        Text to use to fit the semantic model (optional). Note: if you pass this
-        parameter with an already-fit-model, corpus will be ignored. If 'wiki',
-        corpus will be set to a list of sampled wikipedia articles (same
-        articles used to fit the wiki model).
+        a class instance, no parameters can be passed.
+        
+    corpus : list (or list of lists) of text samples or 'wiki', 'nips', 'sotus'.
+        Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
+         or 'sotus' and the default semantic and vectorizer models are used, a
+         pretrained model will be loaded which can save a lot of time.
 
     ppca : bool
         Performs PPCA to fill in missing values (default: True)

@@ -54,7 +54,7 @@ def test_geo_text_data():
     geo = plot(data, show=False)
     assert isinstance(geo, DataGeometry)
     assert geo.transform(data)[0].shape[1]==3
-    assert geo.semantic is 'wiki'
+    assert geo.semantic is 'LatentDirichletAllocation'
     assert isinstance(geo.plot(show=False), DataGeometry)
 
 def test_geo_text_data_marker():
@@ -63,5 +63,5 @@ def test_geo_text_data_marker():
     geo = plot(data, '.', show=False)
     assert isinstance(geo, DataGeometry)
     assert geo.transform(data)[0].shape[1]==3
-    assert geo.semantic is 'wiki'
+    assert geo.semantic is 'LatentDirichletAllocation'
     assert isinstance(geo.plot(show=False), DataGeometry)

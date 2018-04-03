@@ -1,6 +1,7 @@
 import numpy as np
 import inspect
 import warnings
+import six
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.utils.validation import check_is_fitted
@@ -25,7 +26,7 @@ texts = {
 
 @memoize
 def text2mat(data, vectorizer='CountVectorizer',
-             semantic='LatentDirichletAllocation', corpus=None):
+             semantic='LatentDirichletAllocation', corpus='wiki'):
     """
     Turns a list of text samples into a matrix using a vectorizer and a text model
 
@@ -36,7 +37,9 @@ def text2mat(data, vectorizer='CountVectorizer',
         The text data to transform
 
     vectorizer : str, dict, class or class instance
-        The vectorizer to use. Can be CountVectorizer or TfidfVectorizer.  See
+        The vectorizer to use. Built-in options are 'CountVectorizer' or
+        'TfidfVectorizer'. To change default parameters, set to a dictionary
+        e.g. {'model' : 'CountVectorizer', 'params' : {'max_features' : 10}}. See
         http://scikit-learn.org/stable/modules/classes.html#module-sklearn.feature_extraction.text
         for details. You can also specify your own vectorizer model as a class,
         or class instance.  With either option, the class must have a
@@ -45,9 +48,11 @@ def text2mat(data, vectorizer='CountVectorizer',
         a class instance, no parameters can be passed.
 
     semantic : str, dict, class or class instance
-        Text model to use to transform the data. Can be
-        LatentDirichletAllocation, NMF or None (default: LDA).
-        If None, the text will be vectorized but not modeled. See http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
+        Text model to use to transform text data. Built-in options are
+        'LatentDirichletAllocation' or 'NMF' (default: LDA). To change default
+        parameters, set to a dictionary e.g. {'model' : 'NMF', 'params' :
+        {'n_components' : 10}}. See
+        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
         for details on the two model options. You can also specify your own
         text model as a class, or class instance.  With either option, the class
         must have a fit_transform method (see here:
@@ -55,11 +60,10 @@ def text2mat(data, vectorizer='CountVectorizer',
         If a class, pass any parameters as a dictionary to text_params. If
         a class instance, no parameters can be passed.
 
-    corpus : list (or list of lists) of text samples or 'wiki'
-        Text to use to fit the semantic model (optional). Note: if you pass this
-        parameter with an already-fit-model, corpus will be ignored. If 'wiki',
-        corpus will be set to a list of sampled wikipedia articles (same
-        articles used to fit the wiki model).
+    corpus : list (or list of lists) of text samples or 'wiki', 'nips', 'sotus'.
+        Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
+         or 'sotus' and the default semantic and vectorizer models are used, a
+         pretrained model will be loaded which can save a lot of time.
 
     Returns
     ----------
@@ -67,23 +71,21 @@ def text2mat(data, vectorizer='CountVectorizer',
     transformed data : list of numpy arrays
         The transformed text data
     """
+    if semantic is None:
+        semantic = 'LatentDirichletAllocation'
+    if vectorizer is None:
+        vectorizer = 'CountVectorizer'
     model_is_fit=False
     if corpus is not None:
         if corpus in ('wiki', 'nips', 'sotus',):
-            corpus = np.array(load(corpus).get_data())
+            if semantic=='LatentDirichletAllocation' and vectorizer=='CountVectorizer':
+                semantic = load(corpus + '_model')
+                vectorizer = None
+                model_is_fit = True
+            else:
+                corpus = np.array(load(corpus).get_data())
         else:
             corpus = np.array([corpus])
-        model_is_fit = False
-        if semantic in ('wiki', 'nips', 'sotus',):
-            warnings.warn('Both corpus and already-fit-model passed.  Setting '
-                          'semantic to LatentDirichletAllocation.')
-            semantic = 'LatentDirichletAllocation'
-        if vectorizer is None:
-            vectorizer = 'CountVectorizer'
-    elif semantic in ('wiki', 'nips', 'sotus',):
-        semantic = load(semantic + '_model')
-        vectorizer = None
-        model_is_fit = True
 
     vtype = _check_mtype(vectorizer)
     if vtype is 'str':
@@ -175,7 +177,7 @@ def _fit_models(vmodel, tmodel, x, model_is_fit):
                 tmodel.fit(vmodel.transform(np.vstack(x).ravel()))
 
 def _check_mtype(x):
-    if type(x) is str:
+    if isinstance(x, six.string_types):
         return 'str'
     elif type(x) is dict:
         return 'dict'
