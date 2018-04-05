@@ -34,7 +34,7 @@ An example of how to use the `legend` kwarg to generate a legend.
     # plot
     geo.plot(fmt='.', legend=['Group A', 'Group B', 'Group C'])
 
-**Total running time of the script:** ( 0 minutes  0.146 seconds)
+**Total running time of the script:** ( 0 minutes  0.099 seconds)
 
 
 

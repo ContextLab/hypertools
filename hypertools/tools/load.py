@@ -3,12 +3,13 @@ import pandas as pd
 import deepdish as dd
 import sys
 import os
+import pickle
 from warnings import warn
 from .analyze import analyze
 from .format_data import format_data
 from ..datageometry import DataGeometry
 from .._shared.helpers import check_geo
-import pickle
+
 
 BASE_URL = 'https://docs.google.com/uc?export=download'
 homedir = os.path.expanduser('~/')

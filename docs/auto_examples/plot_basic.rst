@@ -36,7 +36,7 @@ with the 'o'.  Hypertools can handle all format strings supported by matplotlib.
     # plot
     geo.plot(fmt='.')
 
-**Total running time of the script:** ( 0 minutes  0.099 seconds)
+**Total running time of the script:** ( 0 minutes  0.082 seconds)
 
 
 

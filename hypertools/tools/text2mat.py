@@ -61,7 +61,7 @@ def text2mat(data, vectorizer='CountVectorizer',
         a class instance, no parameters can be passed.
 
     corpus : list (or list of lists) of text samples or 'wiki', 'nips', 'sotus'.
-        Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
+         Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
          or 'sotus' and the default semantic and vectorizer models are used, a
          pretrained model will be loaded which can save a lot of time.
 

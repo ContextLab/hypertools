@@ -39,7 +39,7 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
 
     Parameters
     ----------
-    x : Numpy array, DataFrame or list of arrays/dfs
+    x : Numpy array, DataFrame, String, Geo or mixed list
         Data for the plot. The form should be samples (rows) by features (cols).
 
     fmt : str or list of strings
@@ -207,7 +207,7 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
         a class instance, no parameters can be passed.
 
     corpus : list (or list of lists) of text samples or 'wiki', 'nips', 'sotus'.
-        Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
+         Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
          or 'sotus' and the default semantic and vectorizer models are used, a
          pretrained model will be loaded which can save a lot of time.
 
@@ -245,10 +245,6 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
         'semantic' : semantic,
         'corpus' : corpus
     }
-
-    # if its a geo, just extract out the data for processing with defaul args
-    if isinstance(x, DataGeometry):
-        x = x.get_data()
 
     # analyze the data
     if transform is None:

@@ -1,4 +1,4 @@
-# from __future__ import unicode_literals
+from __future__ import unicode_literals
 from builtins import object
 import copy
 import deepdish as dd
@@ -223,7 +223,7 @@ class DataGeometry(object):
             'align' : self.align,
             'normalize' : self.normalize,
             'semantic' : self.semantic,
-            'corpus' : np.array(self.corpus) if self.corpus is not None else None,
+            'corpus' : np.array(self.corpus) if isinstance(self.corpus, list) else self.corpus,
             'kwargs' : self.kwargs,
             'version' : self.version,
             'dtype' : self.dtype

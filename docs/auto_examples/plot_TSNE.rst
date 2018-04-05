@@ -35,7 +35,7 @@ it using t-SNE.
 
     hyp.plot(data, '.', reduce='TSNE', hue=hue, ndims=2)
 
-**Total running time of the script:** ( 0 minutes  19.803 seconds)
+**Total running time of the script:** ( 0 minutes  18.557 seconds)
 
 
 

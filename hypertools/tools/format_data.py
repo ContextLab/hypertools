@@ -46,9 +46,9 @@ def format_data(x, vectorizer='CountVectorizer',
         http://scikit-learn.org/stable/data_transforms.html).
         If a class, pass any parameters as a dictionary to text_params. If
         a class instance, no parameters can be passed.
-        
+
     corpus : list (or list of lists) of text samples or 'wiki', 'nips', 'sotus'.
-        Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
+         Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
          or 'sotus' and the default semantic and vectorizer models are used, a
          pretrained model will be loaded which can save a lot of time.
 

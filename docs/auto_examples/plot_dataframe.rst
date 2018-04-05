@@ -24,33 +24,33 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
 
  Out::
 
-    cap-shape cap-surface cap-color bruises odor gill-attachment gill-spacing  \
-    0         x           s         n       t    p               f            c   
-    1         x           s         y       t    a               f            c   
-    2         b           s         w       t    l               f            c   
-    3         x           y         w       t    p               f            c   
-    4         x           s         g       f    n               f            w   
+    bruises cap-color cap-shape cap-surface gill-attachment gill-color  \
+    0       t         n         x           s               f          k   
+    1       t         y         x           s               f          k   
+    2       t         w         b           s               f          n   
+    3       t         w         x           y               f          n   
+    4       f         g         x           s               f          k   
 
-      gill-size gill-color stalk-shape   ...   stalk-surface-below-ring  \
-    0         n          k           e   ...                          s   
-    1         b          k           e   ...                          s   
-    2         b          n           e   ...                          s   
-    3         n          n           e   ...                          s   
-    4         b          k           t   ...                          s   
+      gill-size gill-spacing habitat odor    ...    ring-type spore-print-color  \
+    0         n            c       u    p    ...            p                 k   
+    1         b            c       g    a    ...            p                 n   
+    2         b            c       m    l    ...            p                 n   
+    3         n            c       u    p    ...            p                 k   
+    4         b            w       g    n    ...            e                 n   
 
-      stalk-color-above-ring stalk-color-below-ring veil-type veil-color  \
-    0                      w                      w         p          w   
-    1                      w                      w         p          w   
-    2                      w                      w         p          w   
-    3                      w                      w         p          w   
-    4                      w                      w         p          w   
+      stalk-color-above-ring stalk-color-below-ring stalk-root stalk-shape  \
+    0                      w                      w          e           e   
+    1                      w                      w          c           e   
+    2                      w                      w          c           e   
+    3                      w                      w          e           e   
+    4                      w                      w          e           t   
 
-      ring-number ring-type spore-print-color population habitat  
-    0           o         p                 k          s       u  
-    1           o         p                 n          n       g  
-    2           o         p                 n          n       m  
-    3           o         p                 k          s       u  
-    4           o         e                 n          a       g  
+      stalk-surface-above-ring stalk-surface-below-ring veil-color veil-type  
+    0                        s                        s          w         p  
+    1                        s                        s          w         p  
+    2                        s                        s          w         p  
+    3                        s                        s          w         p  
+    4                        s                        s          w         p  
 
     [5 rows x 22 columns]
 
@@ -77,7 +77,7 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
     # plot
     geo.plot()
 
-**Total running time of the script:** ( 0 minutes  0.335 seconds)
+**Total running time of the script:** ( 0 minutes  0.134 seconds)
 
 
 

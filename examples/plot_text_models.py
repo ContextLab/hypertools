@@ -24,7 +24,7 @@ data = [['i like cats alot', 'cats r pretty cool', 'cats are better than dogs'],
 hyp.plot(data, 'o', title='wiki model')
 
 # plot it with a model fit to nips papers
-hyp.plot(data, 'o', semantic='nips', title='nips model')
+hyp.plot(data, 'o', corpus='nips', title='nips model')
 
 # plot it with a model fit to State of the Union Addresses
-hyp.plot(data, 'o', semantic='sotus', title='sotus model')
+hyp.plot(data, 'o', corpus='sotus', title='sotus model')
