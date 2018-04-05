@@ -60,3 +60,11 @@ DataGeometry Objects
   :maxdepth: 2
 
   tutorials/geo.ipynb
+
+Plotting text
+----------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/text.ipynb
