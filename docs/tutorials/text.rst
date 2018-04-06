@@ -112,7 +112,7 @@ example dataset can be loaded using the code below.
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x111ede510>
+    <hypertools.datageometry.DataGeometry at 0x11c7bdcd0>
 
 
 
@@ -141,7 +141,7 @@ the left and republicans mostly on the right).
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x1159078d0>
+    <hypertools.datageometry.DataGeometry at 0x1200e3750>
 
 
 
@@ -166,7 +166,7 @@ the data.
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x1179511d0>
+    <hypertools.datageometry.DataGeometry at 0x116c23050>
 
 
 
@@ -191,7 +191,7 @@ list of text samples) to train the model.
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x113b91650>
+    <hypertools.datageometry.DataGeometry at 0x11e5976d0>
 
 
 

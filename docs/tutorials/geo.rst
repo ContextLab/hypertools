@@ -48,7 +48,7 @@ We can plot a ``geo`` by calling the plot method
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x1116b4e10>
+    <hypertools.datageometry.DataGeometry at 0x10d457048>
 
 
 
@@ -351,7 +351,7 @@ First, let's plot without making any changes.
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x1118fe2b0>
+    <hypertools.datageometry.DataGeometry at 0x10d5bd4a8>
 
 
 
@@ -374,7 +374,7 @@ specified by the reduce model set to 2.
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x111c05908>
+    <hypertools.datageometry.DataGeometry at 0x10d9c4e10>
 
 
 
