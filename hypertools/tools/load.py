@@ -4,6 +4,7 @@ import deepdish as dd
 import sys
 import os
 import pickle
+import warnings
 from warnings import warn
 from .analyze import analyze
 from .format_data import format_data
@@ -184,7 +185,9 @@ def _load_from_disk(dataset):
         except ValueError as e:
             print(e)
     else:
-        geo = dd.io.load(fullpath)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            geo = dd.io.load(fullpath)
         if 'dtype' in geo:
             if 'list' in geo['dtype']:
                 geo['data'] = list(geo['data'])
