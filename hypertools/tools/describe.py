@@ -5,7 +5,8 @@ from __future__ import division
 from builtins import range
 import warnings
 import numpy as np
-from scipy.spatial.distance import pdist
+from scipy.stats.stats import pearsonr
+from scipy.spatial.distance import cdist
 import scipy.spatial.distance as sd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -71,11 +72,11 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
             max_dims = x.shape[1]
 
         # correlation matrix for all dimensions
-        alldims = get_pdist(x)
+        alldims = get_cdist(x)
 
         corrs=[]
         for dims in range(2, max_dims):
-            reduced = get_pdist(reducer(x, ndims=dims, reduce=reduce))
+            reduced = get_cdist(reducer(x, ndims=dims, reduce=reduce))
             corrs.append(get_corr(alldims, reduced))
             del reduced
         return corrs
@@ -105,8 +106,8 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
 
 @memoize
 def get_corr(reduced, alldims):
-    return np.corrcoef(alldims, reduced)[0][1]
+    return pearsonr(alldims.ravel(), reduced.ravel())[0]
 
 @memoize
-def get_pdist(x):
-    return pdist(x, 'correlation')
+def get_cdist(x):
+    return cdist(x, x, 'correlation')

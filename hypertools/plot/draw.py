@@ -427,7 +427,10 @@ def _draw(x, return_data=False, legend=None, title=None, save_path=False, labels
 
         return fig, ax, x, line_ani
 
-    # draw the plot
+    # if a single point, but formatted as a line, replace with a point
+    for i, (xi, fi) in enumerate(zip(x, fmt)):
+        if xi.shape[0]==1 and fi in ('-', ':', '--'):
+            fmt[i]='.'
 
     if not show:
         # prevents the backend from rendering this plot

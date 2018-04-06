@@ -112,26 +112,21 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
     else:
         raise RuntimeError('No data loaded. Please specify a .geo file or '
                        'one of the following sample files: weights, '
-                       'weights_avg, weights_sample, spiral, mushrooms or '
-                       'wiki.')
+                       'weights_avg, weights_sample, spiral, mushrooms, '
+                       'wiki, nips or sotus.')
 
 
     if data is not None:
         if dataset in ('wiki_model', 'nips_model', 'sotus_model',):
             return data
     if isinstance(data, DataGeometry):
-        # data = check_geo(data)
-        opts = {}
-        if reduce:
-            opts.update(dict(reduce=reduce))
-        if ndims:
-            opts.update(dict(ndims=ndims))
-        if align:
-            opts.update(dict(align=align))
-        if normalize:
-            opts.update(dict(normalize=normalize))
-        if opts:
-            return data.plot(data=data.get_data(), show=False, **opts)
+        if any([reduce, ndims, align, normalize]):
+            from ..plot.plot import plot
+            if ndims:
+                if reduce is None:
+                    reduce='IncrementalPCA'
+            d = analyze(data.get_data(), reduce=reduce, ndims=ndims, align=align, normalize=normalize)
+            return plot(d, show=False)
         else:
             return data
     else:

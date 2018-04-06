@@ -18,6 +18,7 @@ import itertools
 import pandas as pd
 from matplotlib.lines import Line2D
 from .._externals.ppca import PPCA
+np.seterr(divide='ignore', invalid='ignore')
 
 ##HELPER FUNCTIONS##
 def center(x):
@@ -30,7 +31,7 @@ def scale(x):
     x_stacked = np.vstack(x)
     m1 = np.min(x_stacked)
     m2 = np.max(x_stacked - m1)
-    f = lambda x: 2*((x - m1) / m2) - 1
+    f = lambda x: 2*(np.divide(x - m1, m2)) - 1
     return [f(i) for i in x]
 
 def group_by_category(vals):

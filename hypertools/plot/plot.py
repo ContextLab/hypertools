@@ -397,6 +397,10 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
     else:
         draw_fmt = fmt
 
+    # convert all nans to zeros
+    for xi in xform:
+        np.nan_to_num(xi, copy=False)
+
     # draw the plot
     fig, ax, data, line_ani = _draw(xform, fmt=draw_fmt,
                             kwargs_list=kwargs_list,

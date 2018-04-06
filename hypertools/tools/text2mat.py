@@ -102,7 +102,6 @@ def text2mat(data, vectorizer='CountVectorizer',
                                'method following the scikit-learn API. See here '
                                'for more details: '
                                'http://scikit-learn.org/stable/data_transforms.html')
-
     ttype = _check_mtype(semantic)
     if ttype is 'str':
         text_params = default_params(semantic)
@@ -183,7 +182,7 @@ def _check_mtype(x):
         return 'dict'
     elif inspect.isclass(x):
         return 'class'
-    elif x is None:
+    elif isinstance(x, type(None)):
         return 'None'
     else:
         try:

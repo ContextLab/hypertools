@@ -70,28 +70,6 @@ def format_data(x, vectorizer='CountVectorizer',
         A list of formatted arrays
     """
 
-    from ..tools.text2mat import text2mat
-
-    def fill_missing(x):
-
-        # ppca if missing data
-        m = PPCA()
-        m.fit(data=np.vstack(x))
-        x_pca = m.transform()
-
-        # if the whole row is missing, return nans
-        all_missing = [idx for idx,a in enumerate(np.vstack(x)) if all([type(b)==np.nan for b in a])]
-        if len(all_missing)>0:
-            for i in all_missing:
-                x_pca[i,:]=np.nan
-
-        # get the original lists back
-        if len(x)>1:
-            x_split = np.cumsum([i.shape[0] for i in x][:-1])
-            return list(np.split(x_pca, x_split, axis=0))
-        else:
-            return [x_pca]
-
     # not sure why i needed to import here, but its the only way I could get it to work
     from .df2mat import df2mat
     from .text2mat import text2mat
@@ -99,6 +77,9 @@ def format_data(x, vectorizer='CountVectorizer',
 
     # if x is not a list, make it one
     if type(x) is not list:
+        x = [x]
+
+    if all([isinstance(xi, six.string_types) for xi in x]):
         x = [x]
 
     # check data type for each element in list
@@ -132,7 +113,12 @@ def format_data(x, vectorizer='CountVectorizer',
         elif dtype is 'df':
             processed_x.append(df2mat(x[i]))
         elif dtype is 'geo':
-            for j in format_data(x[i].get_data()):
+            text_args = {
+                'vectorizer' : vectorizer,
+                'semantic' : semantic,
+                'corpus' : corpus
+            }
+            for j in format_data(x[i].get_data(), **text_args):
                 processed_x.append(j)
         else:
             processed_x.append(x[i])
@@ -176,3 +162,23 @@ def format_data(x, vectorizer='CountVectorizer',
             processed_x = aligner(processed_x, align=text_align, format_data=False)
 
     return processed_x
+
+def fill_missing(x):
+
+    # ppca if missing data
+    m = PPCA()
+    m.fit(data=np.vstack(x))
+    x_pca = m.transform()
+
+    # if the whole row is missing, return nans
+    all_missing = [idx for idx,a in enumerate(np.vstack(x)) if all([type(b)==np.nan for b in a])]
+    if len(all_missing)>0:
+        for i in all_missing:
+            x_pca[i,:]=np.nan
+
+    # get the original lists back
+    if len(x)>1:
+        x_split = np.cumsum([i.shape[0] for i in x][:-1])
+        return list(np.split(x_pca, x_split, axis=0))
+    else:
+        return [x_pca]

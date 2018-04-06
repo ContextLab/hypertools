@@ -13,6 +13,26 @@ from .normalize import normalize as normalizer
 from .align import align as aligner
 from .format_data import format_data as formatter
 
+# dictionary of models
+models = {
+    'PCA' : PCA,
+    'IncrementalPCA' : IncrementalPCA,
+    'SparsePCA' : SparsePCA,
+    'MiniBatchSparsePCA' : MiniBatchSparsePCA,
+    'KernelPCA' : KernelPCA,
+    'FastICA' : FastICA,
+    'FactorAnalysis' : FactorAnalysis,
+    'TruncatedSVD' : TruncatedSVD,
+    'DictionaryLearning' : DictionaryLearning,
+    'MiniBatchDictionaryLearning' : MiniBatchDictionaryLearning,
+    'TSNE' : TSNE,
+    'Isomap' : Isomap,
+    'SpectralEmbedding' : SpectralEmbedding,
+    'LocallyLinearEmbedding' : LocallyLinearEmbedding,
+    'MDS' : MDS,
+    'UMAP' : UMAP
+}
+
 # main function
 @memoize
 def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
@@ -63,35 +83,6 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
 
     """
 
-    # sub functions
-    def reduce_list(x, model):
-        split = np.cumsum([len(xi) for xi in x])[:-1]
-        x_r = np.vsplit(model.fit_transform(np.vstack(x)), split)
-        if len(x)>1:
-            return [xi for xi in x_r]
-        else:
-            return [x_r[0]]
-
-    # dictionary of models
-    models = {
-        'PCA' : PCA,
-        'IncrementalPCA' : IncrementalPCA,
-        'SparsePCA' : SparsePCA,
-        'MiniBatchSparsePCA' : MiniBatchSparsePCA,
-        'KernelPCA' : KernelPCA,
-        'FastICA' : FastICA,
-        'FactorAnalysis' : FactorAnalysis,
-        'TruncatedSVD' : TruncatedSVD,
-        'DictionaryLearning' : DictionaryLearning,
-        'MiniBatchDictionaryLearning' : MiniBatchDictionaryLearning,
-        'TSNE' : TSNE,
-        'Isomap' : Isomap,
-        'SpectralEmbedding' : SpectralEmbedding,
-        'LocallyLinearEmbedding' : LocallyLinearEmbedding,
-        'MDS' : MDS,
-        'UMAP' : UMAP
-    }
-
     # deprecated warning
     if (model is not None) or (model_params is not None):
         warnings.warn('Model and model params will be deprecated.  Please use the \
@@ -108,6 +99,15 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
         # common format
         if format_data:
             x = formatter(x, ppca=True)
+
+        if np.vstack([i for i in x]).shape[0]==1:
+            warnings.warn('Cannot reduce the dimensionality of a single row of'
+                          ' data. Return zeros length of ndims')
+            return [np.zeros((1, ndims))]
+        if ndims:
+            if np.vstack([i for i in x]).shape[0]<ndims:
+                warnings.warn('The number of rows in your data is less than ndims.'
+                              ' The data will be reduced to the number of rows.')
 
         # deprecation warnings
         if normalize is not None:
@@ -158,3 +158,12 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
             return x_reduced
         else:
             return x_reduced[0]
+
+# sub functions
+def reduce_list(x, model):
+    split = np.cumsum([len(xi) for xi in x])[:-1]
+    x_r = np.vsplit(model.fit_transform(np.vstack(x)), split)
+    if len(x)>1:
+        return [xi for xi in x_r]
+    else:
+        return [x_r[0]]
