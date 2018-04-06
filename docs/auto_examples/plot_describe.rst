@@ -4,7 +4,7 @@
 
 
 =============================
-Using describe_pca to evaluate the integrity of your visualization
+Using describe to evaluate the integrity of your visualization
 =============================
 
 The downside to using dimensionality reduction to visualize your data is that
@@ -40,7 +40,7 @@ plots their correlation.
     # plot
     hyp.describe(data)
 
-**Total running time of the script:** ( 0 minutes  10.502 seconds)
+**Total running time of the script:** ( 0 minutes  10.568 seconds)
 
 
 
