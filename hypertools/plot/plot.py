@@ -398,8 +398,8 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
         draw_fmt = ['-']*len(x)
 
     # convert all nans to zeros
-    for xi in xform:
-        np.nan_to_num(xi, copy=False)
+    for i, xi in enumerate(xform):
+        xform[i] = np.nan_to_num(xi)
 
     # draw the plot
     fig, ax, data, line_ani = _draw(xform, fmt=draw_fmt,
