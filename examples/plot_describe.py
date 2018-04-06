@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 =============================
-Using describe_pca to evaluate the integrity of your visualization
+Using describe to evaluate the integrity of your visualization
 =============================
 
 The downside to using dimensionality reduction to visualize your data is that
