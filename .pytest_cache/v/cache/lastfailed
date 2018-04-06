@@ -1,7 +1,0 @@
-{
-  "tests/test_load.py::test_weights_ndim1": true, 
-  "tests/test_load.py::test_weights_ndim1_align": true, 
-  "tests/test_load.py::test_weights_ndim2": true, 
-  "tests/test_load.py::test_weights_ndim2_align": true, 
-  "tests/test_load.py::test_weights_ndim3_align": true
-}

@@ -38,7 +38,7 @@ it.
     # plot
     hyp.plot(data, '.', hue=hue)
 
-**Total running time of the script:** ( 0 minutes  0.180 seconds)
+**Total running time of the script:** ( 0 minutes  0.162 seconds)
 
 
 

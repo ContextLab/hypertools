@@ -59,7 +59,7 @@ with stars.
     hyp.plot([data1_r, data2_r, missing_data], ['-', '--', '*'],
              legend=['Full', 'Missing', 'Missing Points'])
 
-**Total running time of the script:** ( 0 minutes  0.192 seconds)
+**Total running time of the script:** ( 0 minutes  0.174 seconds)
 
 
 

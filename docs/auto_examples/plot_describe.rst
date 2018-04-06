@@ -40,7 +40,7 @@ plots their correlation.
     # plot
     hyp.describe(data)
 
-**Total running time of the script:** ( 0 minutes  6.882 seconds)
+**Total running time of the script:** ( 0 minutes  10.502 seconds)
 
 
 

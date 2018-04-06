@@ -395,7 +395,7 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
         else:
             draw_fmt = fmt
     else:
-        draw_fmt = fmt
+        draw_fmt = ['-']*len(x)
 
     # convert all nans to zeros
     for xi in xform:

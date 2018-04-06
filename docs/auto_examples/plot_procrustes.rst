@@ -54,7 +54,7 @@ space of a target matrix.
     # after alignment
     hyp.plot(aligned, ['-','--'], title='After alignment')
 
-**Total running time of the script:** ( 0 minutes  0.178 seconds)
+**Total running time of the script:** ( 0 minutes  0.200 seconds)
 
 
 
