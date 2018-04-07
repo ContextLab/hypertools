@@ -92,4 +92,4 @@ def test_parse_kwargs_list():
 def test_reshape_data():
     x = [[1,2],[3,4]]*2
     labels = ['a','b','a','b']
-    assert np.array_equal(helpers.reshape_data(x,labels),[np.array([[1,2],[1,2]]),np.array([[3,4],[3,4]])])
+    assert np.array_equal(helpers.reshape_data(x, labels, labels)[0],[np.array([[1,2],[1,2]]),np.array([[3,4],[3,4]])])

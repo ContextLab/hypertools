@@ -136,13 +136,17 @@ def parse_kwargs(x, kwargs):
         kwargs_list.append(tmp)
     return kwargs_list
 
-def reshape_data(x,labels):
-    categories = list(sorted(set(labels), key=list(labels).index))
+def reshape_data(x, hue, labels):
+    categories = list(sorted(set(hue), key=list(hue).index))
     x_stacked = np.vstack(x)
     x_reshaped = [[] for i in categories]
-    for idx,point in enumerate(labels):
+    labels_reshaped = [[] for i in categories]
+    if labels is None:
+        labels = [None]*len(hue)
+    for idx, (point, label) in enumerate(zip(hue, labels)):
         x_reshaped[categories.index(point)].append(x_stacked[idx])
-    return [np.vstack(i) for i in x_reshaped]
+        labels_reshaped[categories.index(point)].append(labels[idx])
+    return [np.vstack(i) for i in x_reshaped], labels_reshaped
 
 def patch_lines(x):
     """

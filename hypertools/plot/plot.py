@@ -313,13 +313,13 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
 
         cluster_labels = clusterer(xform, cluster={'model': model,
                                                'params': params})
-        xform = reshape_data(xform, cluster_labels)
+        xform, labels = reshape_data(xform, cluster_labels, labels)
         hue = cluster_labels
 
     elif n_clusters is not None:
         # If cluster was None default to KMeans
         cluster_labels = clusterer(xform, cluster='KMeans', n_clusters=n_clusters)
-        xform = reshape_data(xform, cluster_labels)
+        xform, labels = reshape_data(xform, cluster_labels, labels)
         if hue is not None:
             warnings.warn('n_clusters overrides hue, ignoring hue.')
 
@@ -340,8 +340,7 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
 
         # reshape the data according to group
         if n_clusters is None:
-            xform = reshape_data(xform, hue)
-
+            xform, labels = reshape_data(xform, hue, labels)
         # interpolate lines if they are grouped
         if is_line(fmt):
             xform = patch_lines(xform)
