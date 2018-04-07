@@ -18,7 +18,7 @@ Some key features of HyperTools are:
 - Static and animated plots
 - Simple API for customizing plot styles
 - A set of powerful data manipulation tools including hyperalignment, k-means clustering, normalizing and more.
-- Support for lists of Numpy arrays or Pandas dataframes
+- Support for lists of Numpy arrays, Pandas dataframes, String, Geos or mixed lists.
 """
 
 LICENSE = 'MIT'
