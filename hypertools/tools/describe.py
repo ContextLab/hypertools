@@ -67,9 +67,12 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
         if type(x) is list:
             x = np.vstack(x)
 
-        # if no max dims are specified, compute for all of them
+        # if max dims is not set, make it the length of the minimum number of columns
         if max_dims is None:
-            max_dims = x.shape[1]
+            if x.shape[1]>x.shape[0]:
+                max_dims = x.shape[0]
+            else:
+                max_dims = x.shape[1]
 
         # correlation matrix for all dimensions
         alldims = get_cdist(x)
@@ -85,19 +88,18 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     if format_data:
         x = formatter(x, ppca=True)
 
-    # if max dims is not set, make it the length of the minimum number of columns
-    if max_dims is None:
-        max_dims = np.min([xi.shape[1] for xi in x])
-
     # a dictionary to store results
     result = {}
     result['average'] = summary(x, max_dims)
     result['individual'] = [summary(x_i, max_dims) for x_i in x]
 
+    if max_dims is None:
+        max_dims = len(result['average'])
+
     # if show, plot it
     if show:
         fig, ax = plt.subplots()
-        ax = sns.tsplot(data=result['individual'], time=[i for i in range(2, max_dims)], err_style="unit_traces")
+        ax = sns.tsplot(data=result['individual'], time=[i for i in range(2, max_dims+2)], err_style="unit_traces")
         ax.set_title('Correlation with raw data by number of components')
         ax.set_ylabel('Correlation')
         ax.set_xlabel('Number of components')
@@ -110,4 +112,4 @@ def get_corr(reduced, alldims):
 
 @memoize
 def get_cdist(x):
-    return cdist(x, x, 'correlation')
+    return cdist(x, x)
