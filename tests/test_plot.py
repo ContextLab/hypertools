@@ -5,6 +5,7 @@ import pytest
 
 import numpy as np
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 from hypertools.plot import plot
 from hypertools.tools.reduce import reduce as reducer
@@ -13,7 +14,7 @@ from hypertools.datageometry import DataGeometry
 
 data = [np.random.multivariate_normal(np.zeros(4), np.eye(4), size=100) for i
         in range(2)]
-weights = load('weights_avg')
+weights = load('weights_avg').get_data()
 
 # To prevent warning about 20+ figs being open
 mpl.rcParams['figure.max_open_warning'] = 25
@@ -23,10 +24,6 @@ def test_plot_1d():
     data_reduced_1d = reducer(data, ndims=1)
     geo = plot.plot(data_reduced_1d, show=False)
     assert all([i.shape[1]==1 for i in geo.data])
-#
-def test_plot_1dim():
-    geo  = plot.plot(np.array([1,2,3,4]), show=False)
-    assert geo.data[0].ndim==2
 #
 def test_plot_2d():
     data_reduced_2d = reducer(data, ndims=2)
@@ -109,8 +106,36 @@ def test_plot_check_ax():
     geo  = plot.plot(data, show=False)
     assert isinstance(geo.ax, mpl.axes._axes.Axes)
 
-# ## ANIMATED ##
+def test_plot_text():
+    text_data = [['i like cats alot', 'cats r pretty cool', 'cats are better than dogs'],
+            ['dogs rule the haus', 'dogs are my jam', 'dogs are a mans best friend']]
+    geo = plot.plot(text_data, show=False)
+    assert isinstance(geo, DataGeometry)
 
+def test_plot_ax():
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    geo = plot.plot(data, ax=ax, show=False)
+    assert isinstance(geo, DataGeometry)
+
+def test_plot_ax_2d():
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    geo = plot.plot(data, ax=ax, show=False, ndims=2)
+    assert isinstance(geo, DataGeometry)
+
+def test_plot_ax_error():
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    with pytest.raises(ValueError) as e_info:
+        geo = plot.plot(data, ax=ax, show=False)
+
+def test_plot_geo():
+    geo = plot.plot(data, show=False)
+    geo = plot.plot(geo, show=False)
+    assert isinstance(geo, DataGeometry)
+
+# ## ANIMATED ##
 def test_plot_1d_animate():
     d = reducer(data, ndims=1)
     with pytest.raises(Exception) as e_info:

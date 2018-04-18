@@ -5,14 +5,17 @@ from __future__ import division
 from builtins import range
 import warnings
 import numpy as np
-from scipy.spatial.distance import pdist
+from scipy.stats.stats import pearsonr
+from scipy.spatial.distance import cdist
 import scipy.spatial.distance as sd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from .reduce import reduce as reducer
-from .._shared.helpers import format_data, memoize
+from .format_data import format_data as formatter
+from .._shared.helpers import memoize
 
-def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
+def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
+             format_data=True):
     """
     Create plot describing covariance with as a function of number of dimensions
 
@@ -42,6 +45,9 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
     show : bool
         Plot the result (default : true)
 
+    format_data : bool
+        Whether or not to first call the format_data function (default: True).
+
     Returns
     ----------
 
@@ -61,36 +67,39 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
         if type(x) is list:
             x = np.vstack(x)
 
-        # if no max dims are specified, compute for all of them
+        # if max dims is not set, make it the length of the minimum number of columns
         if max_dims is None:
-            max_dims = x.shape[1]
+            if x.shape[1]>x.shape[0]:
+                max_dims = x.shape[0]
+            else:
+                max_dims = x.shape[1]
 
         # correlation matrix for all dimensions
-        alldims = get_pdist(x)
+        alldims = get_cdist(x)
 
         corrs=[]
         for dims in range(2, max_dims):
-            reduced = get_pdist(reducer(x, ndims=dims, reduce=reduce))
+            reduced = get_cdist(reducer(x, ndims=dims, reduce=reduce))
             corrs.append(get_corr(alldims, reduced))
             del reduced
         return corrs
 
     # common format
-    x = format_data(x, ppca=True)
-
-    # if max dims is not set, make it the length of the minimum number of columns
-    if max_dims is None:
-        max_dims = np.min([xi.shape[1] for xi in x])
+    if format_data:
+        x = formatter(x, ppca=True)
 
     # a dictionary to store results
     result = {}
     result['average'] = summary(x, max_dims)
     result['individual'] = [summary(x_i, max_dims) for x_i in x]
 
+    if max_dims is None:
+        max_dims = len(result['average'])
+
     # if show, plot it
     if show:
         fig, ax = plt.subplots()
-        ax = sns.tsplot(data=result['individual'], time=[i for i in range(2, max_dims)], err_style="unit_traces")
+        ax = sns.tsplot(data=result['individual'], time=[i for i in range(2, max_dims+2)], err_style="unit_traces")
         ax.set_title('Correlation with raw data by number of components')
         ax.set_ylabel('Correlation')
         ax.set_xlabel('Number of components')
@@ -99,8 +108,8 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True):
 
 @memoize
 def get_corr(reduced, alldims):
-    return np.corrcoef(alldims, reduced)[0][1]
+    return pearsonr(alldims.ravel(), reduced.ravel())[0]
 
 @memoize
-def get_pdist(x):
-    return pdist(x, 'correlation')
+def get_cdist(x):
+    return cdist(x, x)

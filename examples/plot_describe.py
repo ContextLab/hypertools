@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 =============================
-Using describe_pca to evaluate the integrity of your visualization
+Using describe to evaluate the integrity of your visualization
 =============================
 
 The downside to using dimensionality reduction to visualize your data is that
@@ -19,7 +19,8 @@ import hypertools as hyp
 import numpy as np
 
 # load example data
-data = hyp.load('weights_sample')
+geo = hyp.load('weights_sample')
+data = geo.get_data()
 
 # plot
 hyp.describe(data)

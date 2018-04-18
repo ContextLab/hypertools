@@ -16,7 +16,7 @@ with the 'o'.  Hypertools can handle all format strings supported by matplotlib.
 import hypertools as hyp
 
 # load example data
-data = hyp.load('weights_sample')
+geo = hyp.load('weights_sample')
 
 # plot
-hyp.plot(data, '.')
+geo.plot(fmt='.')

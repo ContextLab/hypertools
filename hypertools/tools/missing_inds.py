@@ -2,9 +2,9 @@
 
 ##PACKAGES##
 import numpy as np
-from .._shared.helpers import format_data
+from .format_data import format_data as formatter
 
-def missing_inds(x):
+def missing_inds(x, format_data=True):
     """
     Returns indices of missing data
 
@@ -17,6 +17,9 @@ def missing_inds(x):
     ----------
     x : array or list of arrays
 
+    format_data : bool
+        Whether or not to first call the format_data function (default: True).
+
     Returns
     ----------
     inds : list, or list of lists
@@ -25,7 +28,8 @@ def missing_inds(x):
 
     """
 
-    x = format_data(x, ppca=False)
+    if format_data:
+        x = formatter(x, ppca=False)
 
     inds = []
     for arr in x:

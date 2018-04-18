@@ -18,14 +18,14 @@ Some key features of HyperTools are:
 - Static and animated plots
 - Simple API for customizing plot styles
 - A set of powerful data manipulation tools including hyperalignment, k-means clustering, normalizing and more.
-- Support for lists of Numpy arrays or Pandas dataframes
+- Support for lists of Numpy arrays, Pandas dataframes, String, Geos or mixed lists.
 """
 
 LICENSE = 'MIT'
 
 setup(
     name='hypertools',
-    version='0.4.2',
+    version='0.5.0',
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
     author='Contextual Dynamics Lab',
@@ -36,7 +36,7 @@ setup(
     packages=find_packages(exclude=('images', 'examples', 'tests')),
     install_requires=[
    'PPCA>=0.0.2',
-   'scikit-learn>=0.18.1',
+   'scikit-learn>=0.19.1',
    'pandas>=0.18.0',
    'seaborn>=0.8.1',
    'matplotlib>=1.5.1',
@@ -46,7 +46,8 @@ setup(
    'umap-learn>=0.1.5',
    'future',
    'requests',
-   'deepdish'
+   'deepdish',
+   'six'
    ],
     classifiers=[
              'Intended Audience :: Science/Research',

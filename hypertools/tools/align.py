@@ -5,12 +5,14 @@ from builtins import range
 from .._externals.srm import SRM
 from .procrustes import procrustes
 import numpy as np
-from .._shared.helpers import format_data, memoize
+from .format_data import format_data as formatter
+from .._shared.helpers import memoize
 from .normalize import normalize as normalizer
 import warnings
 
 @memoize
-def align(data, align='hyper', normalize=None, ndims=None, method=None):
+def align(data, align='hyper', normalize=None, ndims=None, method=None,
+          format_data=True):
     """
     Aligns a list of arrays
 
@@ -42,6 +44,9 @@ def align(data, align='hyper', normalize=None, ndims=None, method=None):
         model.  You can also pass a dictionary for finer control, where the 'model'
         key is a string that specifies the model and the params key is a dictionary
         of parameter values (default : 'hyper').
+
+    format_data : bool
+        Whether or not to first call the format_data function (default: True).
 
     normalize : None
         Deprecated argument.  Please use new analyze function to perform
@@ -75,7 +80,8 @@ def align(data, align='hyper', normalize=None, ndims=None, method=None):
             align = 'hyper'
 
         # common format
-        data = format_data(data, ppca=True)
+        if format_data:
+            data = formatter(data, ppca=True)
 
         if len(data) is 1:
             warnings.warn('Data in list of length 1 can not be aligned. '

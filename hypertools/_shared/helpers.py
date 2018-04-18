@@ -10,12 +10,15 @@ from __future__ import print_function
 import sys
 import warnings
 import numpy as np
+import six
+import copy
 from scipy.interpolate import PchipInterpolator as pchip
 import seaborn as sns
 import itertools
 import pandas as pd
 from matplotlib.lines import Line2D
 from .._externals.ppca import PPCA
+np.seterr(divide='ignore', invalid='ignore')
 
 ##HELPER FUNCTIONS##
 def center(x):
@@ -28,7 +31,7 @@ def scale(x):
     x_stacked = np.vstack(x)
     m1 = np.min(x_stacked)
     m2 = np.max(x_stacked - m1)
-    f = lambda x: 2*((x - m1) / m2) - 1
+    f = lambda x: 2*(np.divide(x - m1, m2)) - 1
     return [f(i) for i in x]
 
 def group_by_category(vals):
@@ -80,20 +83,25 @@ def interp_array_list(arr_list,interp_val=10):
         smoothed[idx] = interp_array(arr,interp_val)
     return smoothed
 
-def check_data(data):
-    if type(data) is list:
-        if all([isinstance(x, np.ndarray) for x in data]):
-            return 'list'
-        elif all([isinstance(x, pd.DataFrame) for x in data]):
-            return 'dflist'
-        else:
-            raise ValueError("Data must be numpy array, list of numpy array, pandas dataframe or list of pandas dataframes.")
-    elif isinstance(data, np.ndarray):
-        return 'array'
-    elif isinstance(data, pd.DataFrame):
-        return 'df'
-    else:
-        raise ValueError("Data must be numpy array, list of numpy array, pandas dataframe or list of pandas dataframes.")
+# def check_data(data):
+#     if type(data) is list:
+#         if all([isinstance(x, np.ndarray) for x in data]):
+#             return 'list'
+#         elif all([isinstance(x, pd.DataFrame) for x in data]):
+#             return 'dflist'
+#         elif all([isinstance(x, str) for x in data]):
+#                 return 'text'
+#         elif isinstance(data[0], collections.Iterable):
+#             if all([isinstance(x, str) for x in data[0]]):
+#                     return 'text'
+#         else:
+#             raise ValueError("Data must be numpy array, list of numpy array, pandas dataframe or list of pandas dataframes.")
+#     elif isinstance(data, np.ndarray):
+#         return 'array'
+#     elif isinstance(data, pd.DataFrame):
+#         return 'df'
+#     else:
+#         raise ValueError("Data must be numpy array, list of numpy array, pandas dataframe or list of pandas dataframes.")
 
 def parse_args(x,args):
     args_list = []
@@ -128,85 +136,17 @@ def parse_kwargs(x, kwargs):
         kwargs_list.append(tmp)
     return kwargs_list
 
-def reshape_data(x,labels):
-    categories = list(sorted(set(labels), key=list(labels).index))
+def reshape_data(x, hue, labels):
+    categories = list(sorted(set(hue), key=list(hue).index))
     x_stacked = np.vstack(x)
     x_reshaped = [[] for i in categories]
-    for idx,point in enumerate(labels):
+    labels_reshaped = [[] for i in categories]
+    if labels is None:
+        labels = [None]*len(hue)
+    for idx, (point, label) in enumerate(zip(hue, labels)):
         x_reshaped[categories.index(point)].append(x_stacked[idx])
-    return [np.vstack(i) for i in x_reshaped]
-
-def format_data(x, ppca=False):
-    """
-    Formats data into a list of numpy arrays
-
-    This function is useful to identify rows of your array that contain missing
-    data or nans.  The returned indices can be used to remove the rows with
-    missing data, or label the missing data points that are interpolated
-    using PPCA.
-
-    Parameters
-    ----------
-
-    x : numpy array, dataframe or (mixed) list
-        The data to convert
-
-    ppca : bool
-        Performs PPCA to fill in missing values (default: False)
-
-    Returns
-    ----------
-    data : list of numpy arrays
-        A list of formatted arrays
-    """
-
-    def fill_missing(x):
-
-        # ppca if missing data
-        m = PPCA()
-        m.fit(data=np.vstack(x))
-        x_pca = m.transform()
-
-        # if the whole row is missing, return nans
-        all_missing = [idx for idx,a in enumerate(np.vstack(x)) if all([type(b)==np.nan for b in a])]
-        if len(all_missing)>0:
-            for i in all_missing:
-                x_pca[i,:]=np.nan
-
-        # get the original lists back
-        if len(x)>1:
-            x_split = np.cumsum([i.shape[0] for i in x][:-1])
-            return list(np.split(x_pca,x_split,axis=0))
-        else:
-            return [x_pca]
-
-    # not sure why i needed to import here, but its the only way I could get it to work
-    from ..tools.df2mat import df2mat
-
-    if type(x) is not list:
-        x = [x]
-
-    formatted_data = []
-
-    for xi in x:
-
-        data_type = check_data(xi)
-
-        if data_type=='df':
-            xi = df2mat(xi)
-
-        formatted_data.append(xi)
-
-    if any([i.ndim==1 for i in formatted_data]):
-        formatted_data = [np.reshape(i,(i.shape[0],1)) if i.ndim==1 else i for i in formatted_data]
-
-    # if there are any nans in any of the lists, use ppca
-    if ppca is True:
-        if np.isnan(np.vstack(formatted_data)).any():
-            warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
-            formatted_data = fill_missing(formatted_data)
-
-    return formatted_data
+        labels_reshaped[categories.index(point)].append(labels[idx])
+    return [np.vstack(i) for i in x_reshaped], labels_reshaped
 
 def patch_lines(x):
     """
@@ -217,7 +157,11 @@ def patch_lines(x):
     return x
 
 def is_line(format_str):
-    return (format_str is None) or (all([str(symbol) not in format_str for symbol in Line2D.markers.keys()]))
+    if isinstance(format_str, np.bytes_):
+        format_str = format_str.decode('utf-8')
+    markers = list(map(lambda x: str(x), Line2D.markers.keys()))
+
+    return (format_str is None) or (all([str(symbol) not in format_str for symbol in markers]))
 
 import collections
 import functools
@@ -232,3 +176,84 @@ def memoize(obj):
             cache[key] = obj(*args, **kwargs)
         return cache[key]
     return memoizer
+
+def get_type(data):
+    """
+    Checks what the data type is and returns it as a string label
+    """
+    import six
+    from ..datageometry import DataGeometry
+
+    if isinstance(data, list):
+        if isinstance(data[0], (six.string_types, six.text_type, six.binary_type)):
+            return 'list_str'
+        elif isinstance(data[0], (int, float)):
+            return 'list_num'
+        elif isinstance(data[0], np.ndarray):
+            return 'list_arr'
+        else:
+            raise TypeError('Unsupported data type passed. Supported types: '
+                            'Numpy Array, Pandas DataFrame, String, List of strings'
+                            ', List of numbers')
+    elif isinstance(data, np.ndarray):
+        if isinstance(data[0][0], (six.string_types, six.text_type, six.binary_type)):
+            return 'arr_str'
+        else:
+            return 'arr_num'
+    elif isinstance(data, pd.DataFrame):
+        return 'df'
+    elif isinstance(data, (six.string_types, six.text_type, six.binary_type)):
+        return 'str'
+    elif isinstance(data, DataGeometry):
+        return 'geo'
+    else:
+        raise TypeError('Unsupported data type passed. Supported types: '
+                        'Numpy Array, Pandas DataFrame, String, List of strings'
+                        ', List of numbers')
+
+def convert_text(data):
+    dtype = get_type(data)
+    if dtype in ['list_str', 'str']:
+        data = np.array(data).reshape(-1, 1)
+    return data
+
+def check_geo(geo):
+    """ Checks a geo and makes sure the text fields are not binary """
+    geo = copy.copy(geo)
+    def fix_item(item):
+        if isinstance(item, six.binary_type):
+            return item.decode()
+        return item
+    def fix_list(lst):
+        return [fix_item(i) for i in lst]
+    if isinstance(geo.reduce, six.binary_type):
+        geo.reduce = geo.reduce.decode()
+    for key in geo.kwargs.keys():
+        if geo.kwargs[key] is not None:
+            if isinstance(geo.kwargs[key], (list, np.ndarray)):
+                geo.kwargs[key] = fix_list(geo.kwargs[key])
+            elif isinstance(geo.kwargs[key], six.binary_type):
+                geo.kwargs[key] = fix_item(geo.kwargs[key])
+    return geo
+
+def get_dtype(data):
+    """
+    Checks what the data type is and returns it as a string label
+    """
+    import six
+    from ..datageometry import DataGeometry
+
+    if isinstance(data, list):
+        return 'list'
+    elif isinstance(data, np.ndarray):
+        return 'arr'
+    elif isinstance(data, pd.DataFrame):
+        return 'df'
+    elif isinstance(data, (six.string_types, six.text_type, six.binary_type)):
+        return 'str'
+    elif isinstance(data, DataGeometry):
+        return 'geo'
+    else:
+        raise TypeError('Unsupported data type passed. Supported types: '
+                        'Numpy Array, Pandas DataFrame, String, List of strings'
+                        ', List of numbers')

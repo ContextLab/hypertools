@@ -19,27 +19,36 @@ from .._shared.helpers import *
 
 matplotlib.rcParams['pdf.fonttype'] = 42
 
-def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=False,
+def _draw(x, return_data=False, legend=None, title=None, save_path=False, labels=False,
          show=True, kwargs_list=None, fmt=None, group=False, animate=False,
          tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False,
          bullettime=False, frame_rate=50, elev=10, azim=-60, duration=30,
-         explore=False):
+         explore=False, size=None, ax=None):
     """
     Draws the plot
     """
     # handle static plots
-    def dispatch_static(x):
+    def dispatch_static(x, ax=None):
+        shape = x[0].shape[1]
+        if shape==3:
+            opts = dict(projection='3d')
+        else:
+            opts = dict()
+        if not ax:
+            fig = plt.figure()
+            ax = fig.add_subplot(111, **opts)
+        else:
+            fig = ax.figure
         if x[0].ndim==1 or x[0].shape[-1]==1:
-            return plot1D(x)
+            return plot1D(x, fig, ax)
         elif x[0].shape[-1]==2:
-            return plot2D(x)
+            return plot2D(x, fig, ax)
         elif x[0].shape[-1]==3:
-            return plot3D(x)
+            return plot3D(x, fig, ax)
 
     # plot data in 1D
-    def plot1D(data):
+    def plot1D(data, fig, ax):
         n=len(data)
-        fig, ax = plt.subplots()
         for i in range(n):
             ikwargs = kwargs_list[i]
             if fmt is None:
@@ -49,9 +58,8 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
         return fig, ax, data
 
     # plot data in 2D
-    def plot2D(data):
+    def plot2D(data, fig, ax):
         n=len(data)
-        fig, ax = plt.subplots()
         for i in range(n):
             ikwargs = kwargs_list[i]
             if fmt is None:
@@ -61,10 +69,8 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
         return fig, ax, data
 
     # plot data in 3D
-    def plot3D(data):
+    def plot3D(data, fig, ax):
         n=len(data)
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
         for i in range(n):
             ikwargs = kwargs_list[i]
             if fmt is None:
@@ -147,7 +153,7 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
         # if explore mode is activated, implement the on hover behavior
         if explore:
             X = np.vstack(x)
-            if labels:
+            if labels is not None:
                 if any(isinstance(el, list) for el in labels):
                     labels = list(itertools.chain(*labels))
                 fig.canvas.mpl_connect('motion_notify_event', lambda event: onMouseMotion(event, X, labels)) # on mouse motion
@@ -156,7 +162,7 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
                 fig.canvas.mpl_connect('motion_notify_event', lambda event: onMouseMotion(event, X)) # on mouse motion
                 # fig.canvas.mpl_connect('button_press_event', lambda event: onMouseClick(event, X, labels))  # on mouse click
 
-        elif labels:
+        elif labels is not None:
             X = np.vstack(x)
             if any(isinstance(el, list) for el in labels):
                 labels = list(itertools.chain(*labels))
@@ -368,22 +374,24 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
 
     def animate_plot3D(x, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
                        frame_rate=50, elev=10, style='parallel'):
-        
+
         # inialize plot
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
 
         # create lines
         if fmt is not None:
-            lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], fmt[idx],
+            lines = [ax.plot(dat[0:1, 0], dat[0:1, 1], dat[0:1, 2], fmt[idx],
                              linewidth=1, **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
-            trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1], fmt[idx],
-                             alpha=.3, linewidth=1, **kwargs_list[idx])[0] for idx, dat in enumerate(x)]
+            if is_line(fmt):
+                trail = [ax.plot(dat[0:1, 0], dat[0:1, 1], dat[0:1, 2], fmt[idx],
+                                 alpha=.3, linewidth=1, **kwargs_list[idx])[0] for idx, dat in enumerate(x)]
         else:
-            lines = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1],
+            lines = [ax.plot(dat[0:1, 0], dat[0:1, 1], dat[0:1, 2],
                              linewidth=1, **kwargs_list[idx])[0] for idx,dat in enumerate(x)]
-            trail = [ax.plot(dat[0, 0:1], dat[1, 0:1], dat[2, 0:1],
-                             alpha=.3, linewidth=1, **kwargs_list[idx])[0] for idx, dat in enumerate(x)]
+            if is_line(fmt):
+                trail = [ax.plot(dat[0:1, 0], dat[0:1, 1], dat[0:1, 2],
+                                 alpha=.3, linewidth=1, **kwargs_list[idx])[0] for idx, dat in enumerate(x)]
         if tail_duration==0:
             tail_duration=1
         else:
@@ -419,14 +427,16 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
 
         return fig, ax, x, line_ani
 
-    # draw the plot
+    # if a single point, but formatted as a line, replace with a point
+    for i, (xi, fi) in enumerate(zip(x, fmt)):
+        if xi.shape[0]==1 and fi in ('-', ':', '--'):
+            fmt[i]='.'
 
     if not show:
         # prevents the backend from rendering this plot
         plt.ioff()
 
     if animate in [True, 'parallel', 'spin']:
-
         assert x[0].shape[1] is 3, "Animations are currently only supported for 3d plots."
 
         # animation params
@@ -444,7 +454,7 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
     else:
 
         # dispatch static
-        fig, ax, data = dispatch_static(x)
+        fig, ax, data = dispatch_static(x, ax)
 
         # if 3d, plot the cube
         if x[0].shape[1] is 3:
@@ -487,7 +497,9 @@ def draw(x, return_data=False, legend=None, title=None, save_path=False, labels=
 
     # add legend
     if legend is not None:
-        proxies = [plt.Rectangle((0, 0), 1, 1, fc=sns.color_palette()[idx]) for idx,label in enumerate(legend)]
-        ax.legend(proxies,legend)
+        ax.legend()
+
+    if size is not None:
+        fig.set_size_inches(size)
 
     return fig, ax, data, line_ani

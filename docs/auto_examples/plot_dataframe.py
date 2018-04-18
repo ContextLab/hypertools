@@ -18,10 +18,9 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
 import hypertools as hyp
 
 # load example data
-data = hyp.load('mushrooms')
+geo = hyp.load('mushrooms')
 
-# pop off the class (poisonousness)
-group = data.pop('class')
+print(geo.get_data().head())
 
 # plot
-hyp.plot(data, '.', group=group)
+geo.plot()

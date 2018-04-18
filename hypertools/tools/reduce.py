@@ -3,22 +3,40 @@
 # libraries
 import warnings
 import numpy as np
-
-## reduction models
+import six
 from sklearn.decomposition import PCA, FastICA, IncrementalPCA, KernelPCA, FactorAnalysis, TruncatedSVD, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
 from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
 from umap import UMAP
-
-# internal libraries
 from ..tools.df2mat import df2mat
 from .._shared.helpers import *
 from .normalize import normalize as normalizer
 from .align import align as aligner
+from .format_data import format_data as formatter
+
+# dictionary of models
+models = {
+    'PCA' : PCA,
+    'IncrementalPCA' : IncrementalPCA,
+    'SparsePCA' : SparsePCA,
+    'MiniBatchSparsePCA' : MiniBatchSparsePCA,
+    'KernelPCA' : KernelPCA,
+    'FastICA' : FastICA,
+    'FactorAnalysis' : FactorAnalysis,
+    'TruncatedSVD' : TruncatedSVD,
+    'DictionaryLearning' : DictionaryLearning,
+    'MiniBatchDictionaryLearning' : MiniBatchDictionaryLearning,
+    'TSNE' : TSNE,
+    'Isomap' : Isomap,
+    'SpectralEmbedding' : SpectralEmbedding,
+    'LocallyLinearEmbedding' : LocallyLinearEmbedding,
+    'MDS' : MDS,
+    'UMAP' : UMAP
+}
 
 # main function
 @memoize
-def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
-           model=None, model_params=None, internal=False):
+def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
+           model=None, model_params=None, internal=False, format_data=True):
     """
     Reduces dimensionality of an array, or list of arrays
 
@@ -39,6 +57,9 @@ def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
 
     ndims : int
         Number of dimensions to reduce
+
+    format_data : bool
+        Whether or not to first call the format_data function (default: True).
 
     model : None
         Deprecated argument.  Please use reduce.
@@ -62,35 +83,6 @@ def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
 
     """
 
-    # sub functions
-    def reduce_list(x, model):
-        split = np.cumsum([len(xi) for xi in x])[:-1]
-        x_r = np.vsplit(model.fit_transform(np.vstack(x)), split)
-        if len(x)>1:
-            return [xi for xi in x_r]
-        else:
-            return [x_r[0]]
-
-    # dictionary of models
-    models = {
-        'PCA' : PCA,
-        'IncrementalPCA' : IncrementalPCA,
-        'SparsePCA' : SparsePCA,
-        'MiniBatchSparsePCA' : MiniBatchSparsePCA,
-        'KernelPCA' : KernelPCA,
-        'FastICA' : FastICA,
-        'FactorAnalysis' : FactorAnalysis,
-        'TruncatedSVD' : TruncatedSVD,
-        'DictionaryLearning' : DictionaryLearning,
-        'MiniBatchDictionaryLearning' : MiniBatchDictionaryLearning,
-        'TSNE' : TSNE,
-        'Isomap' : Isomap,
-        'SpectralEmbedding' : SpectralEmbedding,
-        'LocallyLinearEmbedding' : LocallyLinearEmbedding,
-        'MDS' : MDS,
-        'UMAP' : UMAP
-    }
-
     # deprecated warning
     if (model is not None) or (model_params is not None):
         warnings.warn('Model and model params will be deprecated.  Please use the \
@@ -105,7 +97,17 @@ def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
     else:
 
         # common format
-        x = format_data(x, ppca=True)
+        if format_data:
+            x = formatter(x, ppca=True)
+
+        if np.vstack([i for i in x]).shape[0]==1:
+            warnings.warn('Cannot reduce the dimensionality of a single row of'
+                          ' data. Return zeros length of ndims')
+            return [np.zeros((1, ndims))]
+        if ndims:
+            if np.vstack([i for i in x]).shape[0]<ndims:
+                warnings.warn('The number of rows in your data is less than ndims.'
+                              ' The data will be reduced to the number of rows.')
 
         # deprecation warnings
         if normalize is not None:
@@ -119,7 +121,9 @@ def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
             x = aligner(x, align=align)
 
         # if the shape of the data is already less than ndims, just return it
-        if all([i.shape[1]<=ndims for i in x]):
+        if ndims is None:
+            return x
+        elif all([i.shape[1]<=ndims for i in x]):
             return x
 
         # if reduce is a string, find the corresponding model
@@ -130,7 +134,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
             }
         # if its a dict, use custom params
         elif type(reduce) is dict:
-            if type(reduce['model']) is str:
+            if isinstance((reduce['model']), six.string_types):
                 model = models[reduce['model']]
                 if reduce['params'] is None:
                     model_params = {
@@ -138,8 +142,10 @@ def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
                     }
                 else:
                     model_params = reduce['params']
-        if 'n_components' not in model_params:
-            model_params['n_components'] = ndims
+        if ndims:
+            model_params = {
+                'n_components' : ndims
+            }
 
         # initialize model
         model = model(**model_params)
@@ -152,3 +158,12 @@ def reduce(x, reduce='IncrementalPCA', ndims=3, normalize=None, align=None,
             return x_reduced
         else:
             return x_reduced[0]
+
+# sub functions
+def reduce_list(x, model):
+    split = np.cumsum([len(xi) for xi in x])[:-1]
+    x_r = np.vsplit(model.fit_transform(np.vstack(x)), split)
+    if len(x)>1:
+        return [xi for xi in x_r]
+    else:
+        return [x_r[0]]

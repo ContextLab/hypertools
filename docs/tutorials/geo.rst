@@ -28,188 +28,28 @@ package.
 
 .. code:: ipython3
 
-    mushrooms = hyp.load('mushrooms')
+    geo = hyp.load('mushrooms')
 
-We can peek at the first few rows of the dataframe using the pandas
-function ``head``.
+Plot it
+-------
 
-.. code:: ipython3
-
-    mushrooms.head()
-
-
-
-
-.. raw:: html
-
-    <div>
-    <table border="1" class="dataframe">
-      <thead>
-        <tr style="text-align: right;">
-          <th></th>
-          <th>class</th>
-          <th>cap-shape</th>
-          <th>cap-surface</th>
-          <th>cap-color</th>
-          <th>bruises</th>
-          <th>odor</th>
-          <th>gill-attachment</th>
-          <th>gill-spacing</th>
-          <th>gill-size</th>
-          <th>gill-color</th>
-          <th>...</th>
-          <th>stalk-surface-below-ring</th>
-          <th>stalk-color-above-ring</th>
-          <th>stalk-color-below-ring</th>
-          <th>veil-type</th>
-          <th>veil-color</th>
-          <th>ring-number</th>
-          <th>ring-type</th>
-          <th>spore-print-color</th>
-          <th>population</th>
-          <th>habitat</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <th>0</th>
-          <td>p</td>
-          <td>x</td>
-          <td>s</td>
-          <td>n</td>
-          <td>t</td>
-          <td>p</td>
-          <td>f</td>
-          <td>c</td>
-          <td>n</td>
-          <td>k</td>
-          <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
-          <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>k</td>
-          <td>s</td>
-          <td>u</td>
-        </tr>
-        <tr>
-          <th>1</th>
-          <td>e</td>
-          <td>x</td>
-          <td>s</td>
-          <td>y</td>
-          <td>t</td>
-          <td>a</td>
-          <td>f</td>
-          <td>c</td>
-          <td>b</td>
-          <td>k</td>
-          <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
-          <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>n</td>
-          <td>n</td>
-          <td>g</td>
-        </tr>
-        <tr>
-          <th>2</th>
-          <td>e</td>
-          <td>b</td>
-          <td>s</td>
-          <td>w</td>
-          <td>t</td>
-          <td>l</td>
-          <td>f</td>
-          <td>c</td>
-          <td>b</td>
-          <td>n</td>
-          <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
-          <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>n</td>
-          <td>n</td>
-          <td>m</td>
-        </tr>
-        <tr>
-          <th>3</th>
-          <td>p</td>
-          <td>x</td>
-          <td>y</td>
-          <td>w</td>
-          <td>t</td>
-          <td>p</td>
-          <td>f</td>
-          <td>c</td>
-          <td>n</td>
-          <td>n</td>
-          <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
-          <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>k</td>
-          <td>s</td>
-          <td>u</td>
-        </tr>
-        <tr>
-          <th>4</th>
-          <td>e</td>
-          <td>x</td>
-          <td>s</td>
-          <td>g</td>
-          <td>f</td>
-          <td>n</td>
-          <td>f</td>
-          <td>w</td>
-          <td>b</td>
-          <td>k</td>
-          <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
-          <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>e</td>
-          <td>n</td>
-          <td>a</td>
-          <td>g</td>
-        </tr>
-      </tbody>
-    </table>
-    <p>5 rows × 23 columns</p>
-    </div>
-
-
-
-Plot data
----------
-
-First, we will plot the data, generating a geo.
+We can plot a ``geo`` by calling the plot method
 
 .. code:: ipython3
 
-    geo = hyp.plot(mushrooms, '.')
+    geo.plot()
 
 
 
-.. image:: geo_files/geo_11_0.png
+.. image:: geo_files/geo_9_0.png
+
+
+
+
+.. parsed-literal::
+
+    <hypertools.datageometry.DataGeometry at 0x10d457048>
+
 
 
 Exploring the geo
@@ -230,83 +70,190 @@ was generated with.
 
 .. parsed-literal::
 
-    '0.4.2'
+    '0.5.0'
 
 
 
 Data and plot
 ~~~~~~~~~~~~~
 
-The data field contains the preprocessed data. That is, all strings have
-been converted to indicator vectors and the data are stored as a numpy
-array.
+The data field contains the raw data.
 
 .. code:: ipython3
 
-    geo.data
+    geo.data.head()
 
 
 
 
-.. parsed-literal::
+.. raw:: html
 
-    [array([[0, 1, 0, ..., 0, 1, 0],
-            [1, 0, 0, ..., 0, 0, 0],
-            [1, 0, 1, ..., 0, 0, 0],
-            ..., 
-            [1, 0, 0, ..., 0, 0, 0],
-            [0, 1, 0, ..., 0, 0, 0],
-            [1, 0, 0, ..., 0, 0, 0]], dtype=uint8)]
-
-
-
-We can see by comparing the dimensions of the geo data with the original
-data that the data stored in the geo has been expanded.
-
-.. code:: ipython3
-
-    print("size of original data: ",mushrooms.shape)
-    print("size of geo data field: ",geo.data[0].shape)
-
-
-.. parsed-literal::
-
-    size of original data:  (8124, 23)
-    size of geo data field:  (8124, 119)
-
-
-Additionally, plotting the original data and the geo data yield the same
-plot.
-
-.. code:: ipython3
-
-    geo_plot1 = hyp.plot(mushrooms, '.')
-
-
-
-.. image:: geo_files/geo_22_0.png
-
-
-.. code:: ipython3
-
-    geo_plot2 = hyp.plot(geo.data, '.')
-
-
-
-.. image:: geo_files/geo_23_0.png
-
-
-The ``fig`` field contains the matplotlib figure handle for the plot
-that gave rise to the geo.
-
-.. code:: ipython3
-
-    geo.fig
-
-
-
-
-.. image:: geo_files/geo_25_0.png
+    <div>
+    <style scoped>
+        .dataframe tbody tr th:only-of-type {
+            vertical-align: middle;
+        }
+    
+        .dataframe tbody tr th {
+            vertical-align: top;
+        }
+    
+        .dataframe thead th {
+            text-align: right;
+        }
+    </style>
+    <table border="1" class="dataframe">
+      <thead>
+        <tr style="text-align: right;">
+          <th></th>
+          <th>bruises</th>
+          <th>cap-color</th>
+          <th>cap-shape</th>
+          <th>cap-surface</th>
+          <th>gill-attachment</th>
+          <th>gill-color</th>
+          <th>gill-size</th>
+          <th>gill-spacing</th>
+          <th>habitat</th>
+          <th>odor</th>
+          <th>...</th>
+          <th>ring-type</th>
+          <th>spore-print-color</th>
+          <th>stalk-color-above-ring</th>
+          <th>stalk-color-below-ring</th>
+          <th>stalk-root</th>
+          <th>stalk-shape</th>
+          <th>stalk-surface-above-ring</th>
+          <th>stalk-surface-below-ring</th>
+          <th>veil-color</th>
+          <th>veil-type</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>0</th>
+          <td>t</td>
+          <td>n</td>
+          <td>x</td>
+          <td>s</td>
+          <td>f</td>
+          <td>k</td>
+          <td>n</td>
+          <td>c</td>
+          <td>u</td>
+          <td>p</td>
+          <td>...</td>
+          <td>p</td>
+          <td>k</td>
+          <td>w</td>
+          <td>w</td>
+          <td>e</td>
+          <td>e</td>
+          <td>s</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
+        </tr>
+        <tr>
+          <th>1</th>
+          <td>t</td>
+          <td>y</td>
+          <td>x</td>
+          <td>s</td>
+          <td>f</td>
+          <td>k</td>
+          <td>b</td>
+          <td>c</td>
+          <td>g</td>
+          <td>a</td>
+          <td>...</td>
+          <td>p</td>
+          <td>n</td>
+          <td>w</td>
+          <td>w</td>
+          <td>c</td>
+          <td>e</td>
+          <td>s</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
+        </tr>
+        <tr>
+          <th>2</th>
+          <td>t</td>
+          <td>w</td>
+          <td>b</td>
+          <td>s</td>
+          <td>f</td>
+          <td>n</td>
+          <td>b</td>
+          <td>c</td>
+          <td>m</td>
+          <td>l</td>
+          <td>...</td>
+          <td>p</td>
+          <td>n</td>
+          <td>w</td>
+          <td>w</td>
+          <td>c</td>
+          <td>e</td>
+          <td>s</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
+        </tr>
+        <tr>
+          <th>3</th>
+          <td>t</td>
+          <td>w</td>
+          <td>x</td>
+          <td>y</td>
+          <td>f</td>
+          <td>n</td>
+          <td>n</td>
+          <td>c</td>
+          <td>u</td>
+          <td>p</td>
+          <td>...</td>
+          <td>p</td>
+          <td>k</td>
+          <td>w</td>
+          <td>w</td>
+          <td>e</td>
+          <td>e</td>
+          <td>s</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
+        </tr>
+        <tr>
+          <th>4</th>
+          <td>f</td>
+          <td>g</td>
+          <td>x</td>
+          <td>s</td>
+          <td>f</td>
+          <td>k</td>
+          <td>b</td>
+          <td>w</td>
+          <td>g</td>
+          <td>n</td>
+          <td>...</td>
+          <td>e</td>
+          <td>n</td>
+          <td>w</td>
+          <td>w</td>
+          <td>e</td>
+          <td>t</td>
+          <td>s</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>5 rows × 22 columns</p>
+    </div>
 
 
 
@@ -327,13 +274,13 @@ plotting when we called ``hyp.plot``).
 
 .. parsed-literal::
 
-    [array([[ 0.66282511, -0.50030606,  1.60971357],
-            [ 1.5395065 , -0.25964717,  1.89064114],
-            [ 1.69285148, -0.2652148 ,  1.89496073],
-            ..., 
-            [ 0.68330896, -0.29900591,  0.38257187],
-            [-1.47676276, -1.45182833, -0.16606786],
-            [ 0.66276601, -0.3111866 ,  0.60080039]])]
+    [array([[ 1.30060679,  0.29575138, -1.12870127],
+            [ 1.36815474, -0.28876648, -1.82066942],
+            [ 1.59220727, -0.26813075, -1.66586137],
+            ...,
+            [ 0.40863473,  0.12762486, -0.41712925],
+            [-0.89420121,  1.72874308,  0.56553812],
+            [ 0.38848708,  0.10733461, -0.58634345]])]
 
 
 
@@ -356,7 +303,7 @@ information and the normalize field contains a string.
 .. parsed-literal::
 
     None
-    {'model': 'IncrementalPCA', 'params': {'n_components': 3}}
+    {'params': {'n_components': 3}, 'model': 'IncrementalPCA'}
     {'model': None, 'params': {}}
 
 
@@ -375,15 +322,6 @@ respectively.
 .. code:: ipython3
 
     geo.ax
-
-
-
-
-.. parsed-literal::
-
-    <matplotlib.axes._subplots.Axes3DSubplot at 0x10b115710>
-
-
 
 .. code:: ipython3
 
@@ -406,14 +344,14 @@ First, let's plot without making any changes.
 
 
 
-.. image:: geo_files/geo_38_0.png
+.. image:: geo_files/geo_29_0.png
 
 
 
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x10b4d8048>
+    <hypertools.datageometry.DataGeometry at 0x10d5bd4a8>
 
 
 
@@ -429,14 +367,14 @@ specified by the reduce model set to 2.
 
 
 
-.. image:: geo_files/geo_40_0.png
+.. image:: geo_files/geo_31_0.png
 
 
 
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x10ba49d30>
+    <hypertools.datageometry.DataGeometry at 0x10d9c4e10>
 
 
 
@@ -456,7 +394,7 @@ geo data to the first element of weights.
 
 .. code:: ipython3
 
-    weights = hyp.load('weights_avg')
+    weights = hyp.load('weights_avg').get_data()
     transformed = geo.transform(weights)
 
 We can use heatmaps to visualized an element of the new data before and
@@ -468,7 +406,7 @@ after it has been transformed by the same means as the geo data.
 
 
 
-.. image:: geo_files/geo_45_0.png
+.. image:: geo_files/geo_36_0.png
 
 
 .. code:: ipython3
@@ -477,7 +415,7 @@ after it has been transformed by the same means as the geo data.
 
 
 
-.. image:: geo_files/geo_46_0.png
+.. image:: geo_files/geo_37_0.png
 
 
 Saving geos

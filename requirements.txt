@@ -10,3 +10,4 @@ hdbscan>=0.8.11
 future
 requests
 deepdish
+six

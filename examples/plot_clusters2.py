@@ -5,7 +5,7 @@ Using the cluster function to label clusters
 =============================
 
 Here is an example where we generate some synthetic data, and then use the
-cluster function to get cluster labels, which we can then pass to the `group`
+cluster function to get cluster labels, which we can then pass to the `hue`
 kwarg to color our points by cluster.
 """
 
@@ -26,4 +26,4 @@ data = np.vstack([cluster1, cluster2])
 cluster_labels = hyp.cluster(data, n_clusters=2)
 
 # plot
-hyp.plot(data, '.', group=cluster_labels)
+hyp.plot(data, '.', hue=cluster_labels)

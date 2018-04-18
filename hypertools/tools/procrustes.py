@@ -3,9 +3,10 @@ from __future__ import division
 from builtins import zip
 from builtins import range
 import numpy as np
+from .format_data import format_data as formatter
 
 def procrustes(source, target, scaling=True, reflection=True, reduction=False,
-               oblique=False, oblique_rcond=-1):
+               oblique=False, oblique_rcond=-1, format_data=True):
     """
     Function to project from one space to another using Procrustean
     transformation (shift + scaling + rotation + reflection).
@@ -186,6 +187,9 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
 
         return res
 
-    # Fit and transform
+    if format_data:
+        source, target = formatter([source, target])
+
+    # fit and transform
     proj = fit(source, target)
     return transform(source, proj)

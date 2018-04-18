@@ -18,7 +18,7 @@ import hypertools as hyp
 # load example data
 digits = datasets.load_digits(n_class=6)
 data = digits.data
-group = digits.target
+hue = digits.target
 
 # plot
-hyp.plot(data, '.', group=group)
+hyp.plot(data, '.', hue=hue)

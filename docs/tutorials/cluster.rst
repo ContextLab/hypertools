@@ -30,7 +30,8 @@ samples of mushrooms with various text features.
 
 .. code:: ipython3
 
-    mushrooms = hyp.load('mushrooms')
+    geo = hyp.load('mushrooms')
+    mushrooms = geo.get_data()
 
 We can peek at the first few rows of the dataframe using the pandas
 function ``head()``
@@ -45,157 +46,170 @@ function ``head()``
 .. raw:: html
 
     <div>
+    <style scoped>
+        .dataframe tbody tr th:only-of-type {
+            vertical-align: middle;
+        }
+    
+        .dataframe tbody tr th {
+            vertical-align: top;
+        }
+    
+        .dataframe thead th {
+            text-align: right;
+        }
+    </style>
     <table border="1" class="dataframe">
       <thead>
         <tr style="text-align: right;">
           <th></th>
-          <th>class</th>
+          <th>bruises</th>
+          <th>cap-color</th>
           <th>cap-shape</th>
           <th>cap-surface</th>
-          <th>cap-color</th>
-          <th>bruises</th>
-          <th>odor</th>
           <th>gill-attachment</th>
-          <th>gill-spacing</th>
-          <th>gill-size</th>
           <th>gill-color</th>
+          <th>gill-size</th>
+          <th>gill-spacing</th>
+          <th>habitat</th>
+          <th>odor</th>
           <th>...</th>
-          <th>stalk-surface-below-ring</th>
-          <th>stalk-color-above-ring</th>
-          <th>stalk-color-below-ring</th>
-          <th>veil-type</th>
-          <th>veil-color</th>
-          <th>ring-number</th>
           <th>ring-type</th>
           <th>spore-print-color</th>
-          <th>population</th>
-          <th>habitat</th>
+          <th>stalk-color-above-ring</th>
+          <th>stalk-color-below-ring</th>
+          <th>stalk-root</th>
+          <th>stalk-shape</th>
+          <th>stalk-surface-above-ring</th>
+          <th>stalk-surface-below-ring</th>
+          <th>veil-color</th>
+          <th>veil-type</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <th>0</th>
-          <td>p</td>
+          <td>t</td>
+          <td>n</td>
           <td>x</td>
           <td>s</td>
-          <td>n</td>
-          <td>t</td>
-          <td>p</td>
           <td>f</td>
-          <td>c</td>
+          <td>k</td>
           <td>n</td>
-          <td>k</td>
-          <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
-          <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>k</td>
-          <td>s</td>
+          <td>c</td>
           <td>u</td>
+          <td>p</td>
+          <td>...</td>
+          <td>p</td>
+          <td>k</td>
+          <td>w</td>
+          <td>w</td>
+          <td>e</td>
+          <td>e</td>
+          <td>s</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
         </tr>
         <tr>
           <th>1</th>
-          <td>e</td>
+          <td>t</td>
+          <td>y</td>
           <td>x</td>
           <td>s</td>
-          <td>y</td>
-          <td>t</td>
-          <td>a</td>
           <td>f</td>
-          <td>c</td>
-          <td>b</td>
           <td>k</td>
+          <td>b</td>
+          <td>c</td>
+          <td>g</td>
+          <td>a</td>
           <td>...</td>
+          <td>p</td>
+          <td>n</td>
+          <td>w</td>
+          <td>w</td>
+          <td>c</td>
+          <td>e</td>
+          <td>s</td>
           <td>s</td>
           <td>w</td>
-          <td>w</td>
           <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>n</td>
-          <td>n</td>
-          <td>g</td>
         </tr>
         <tr>
           <th>2</th>
-          <td>e</td>
-          <td>b</td>
-          <td>s</td>
-          <td>w</td>
           <td>t</td>
-          <td>l</td>
-          <td>f</td>
-          <td>c</td>
+          <td>w</td>
           <td>b</td>
+          <td>s</td>
+          <td>f</td>
           <td>n</td>
+          <td>b</td>
+          <td>c</td>
+          <td>m</td>
+          <td>l</td>
           <td>...</td>
+          <td>p</td>
+          <td>n</td>
+          <td>w</td>
+          <td>w</td>
+          <td>c</td>
+          <td>e</td>
+          <td>s</td>
           <td>s</td>
           <td>w</td>
-          <td>w</td>
           <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>n</td>
-          <td>n</td>
-          <td>m</td>
         </tr>
         <tr>
           <th>3</th>
-          <td>p</td>
+          <td>t</td>
+          <td>w</td>
           <td>x</td>
           <td>y</td>
-          <td>w</td>
-          <td>t</td>
-          <td>p</td>
           <td>f</td>
+          <td>n</td>
+          <td>n</td>
           <td>c</td>
-          <td>n</td>
-          <td>n</td>
-          <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
+          <td>u</td>
           <td>p</td>
-          <td>w</td>
-          <td>o</td>
+          <td>...</td>
           <td>p</td>
           <td>k</td>
+          <td>w</td>
+          <td>w</td>
+          <td>e</td>
+          <td>e</td>
           <td>s</td>
-          <td>u</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
         </tr>
         <tr>
           <th>4</th>
-          <td>e</td>
+          <td>f</td>
+          <td>g</td>
           <td>x</td>
           <td>s</td>
-          <td>g</td>
           <td>f</td>
-          <td>n</td>
-          <td>f</td>
-          <td>w</td>
-          <td>b</td>
           <td>k</td>
+          <td>b</td>
+          <td>w</td>
+          <td>g</td>
+          <td>n</td>
           <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
-          <td>p</td>
-          <td>w</td>
-          <td>o</td>
           <td>e</td>
           <td>n</td>
-          <td>a</td>
-          <td>g</td>
+          <td>w</td>
+          <td>w</td>
+          <td>e</td>
+          <td>t</td>
+          <td>s</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
         </tr>
       </tbody>
     </table>
-    <p>5 rows × 23 columns</p>
+    <p>5 rows × 22 columns</p>
     </div>
 
 
@@ -233,7 +247,7 @@ We can further examine the number of datapoints assigned each label.
 
 .. parsed-literal::
 
-    Counter({0: 1768, 1: 5024, 2: 1332})
+    Counter({0: 1761, 1: 5067, 2: 1296})
 
 
 
@@ -269,17 +283,17 @@ You may prefer to use a clustering model other than K-Means. To do so,
 simply pass a string to the cluster argument specifying the desired
 clustering algorithm.
 
-In this case, we specify both the clustering model (Birch) and the
+In this case, we specify both the clustering model (HDBSCAN) and the
 number of clusters (10).
 
 .. code:: ipython3
 
-    labels_birch = hyp.cluster(mushrooms, cluster = 'Birch', n_clusters=10)
+    labels_HDBSCAN = hyp.cluster(mushrooms, cluster='HDBSCAN')
 
 .. code:: ipython3
 
-    geo  = hyp.plot(mushrooms, '.', group=labels_10, title='K-means clustering')
-    geo  = hyp.plot(mushrooms, '.', group=labels_birch, title='Birch clustering')
+    geo = hyp.plot(mushrooms, '.', hue=labels_10, title='K-means clustering')
+    geo = hyp.plot(mushrooms, '.', hue=labels_HDBSCAN, title='HCBSCAN clustering')
 
 
 

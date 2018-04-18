@@ -11,3 +11,5 @@ dist/
 tox.ini
 .vscode/
 \.idea/
+docs/_build
+docs/auto_examples

@@ -31,7 +31,8 @@ samples of mushrooms with various text features.
 
 .. code:: ipython3
 
-    mushrooms = hyp.load('mushrooms')
+    geo = hyp.load('mushrooms')
+    mushrooms = geo.get_data()
 
 We can peek at the first few rows of the dataframe using the pandas
 function ``head()``.
@@ -46,157 +47,170 @@ function ``head()``.
 .. raw:: html
 
     <div>
+    <style scoped>
+        .dataframe tbody tr th:only-of-type {
+            vertical-align: middle;
+        }
+    
+        .dataframe tbody tr th {
+            vertical-align: top;
+        }
+    
+        .dataframe thead th {
+            text-align: right;
+        }
+    </style>
     <table border="1" class="dataframe">
       <thead>
         <tr style="text-align: right;">
           <th></th>
-          <th>class</th>
+          <th>bruises</th>
+          <th>cap-color</th>
           <th>cap-shape</th>
           <th>cap-surface</th>
-          <th>cap-color</th>
-          <th>bruises</th>
-          <th>odor</th>
           <th>gill-attachment</th>
-          <th>gill-spacing</th>
-          <th>gill-size</th>
           <th>gill-color</th>
+          <th>gill-size</th>
+          <th>gill-spacing</th>
+          <th>habitat</th>
+          <th>odor</th>
           <th>...</th>
-          <th>stalk-surface-below-ring</th>
-          <th>stalk-color-above-ring</th>
-          <th>stalk-color-below-ring</th>
-          <th>veil-type</th>
-          <th>veil-color</th>
-          <th>ring-number</th>
           <th>ring-type</th>
           <th>spore-print-color</th>
-          <th>population</th>
-          <th>habitat</th>
+          <th>stalk-color-above-ring</th>
+          <th>stalk-color-below-ring</th>
+          <th>stalk-root</th>
+          <th>stalk-shape</th>
+          <th>stalk-surface-above-ring</th>
+          <th>stalk-surface-below-ring</th>
+          <th>veil-color</th>
+          <th>veil-type</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <th>0</th>
-          <td>p</td>
+          <td>t</td>
+          <td>n</td>
           <td>x</td>
           <td>s</td>
-          <td>n</td>
-          <td>t</td>
-          <td>p</td>
           <td>f</td>
-          <td>c</td>
+          <td>k</td>
           <td>n</td>
-          <td>k</td>
-          <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
-          <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>k</td>
-          <td>s</td>
+          <td>c</td>
           <td>u</td>
+          <td>p</td>
+          <td>...</td>
+          <td>p</td>
+          <td>k</td>
+          <td>w</td>
+          <td>w</td>
+          <td>e</td>
+          <td>e</td>
+          <td>s</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
         </tr>
         <tr>
           <th>1</th>
-          <td>e</td>
+          <td>t</td>
+          <td>y</td>
           <td>x</td>
           <td>s</td>
-          <td>y</td>
-          <td>t</td>
-          <td>a</td>
           <td>f</td>
-          <td>c</td>
-          <td>b</td>
           <td>k</td>
+          <td>b</td>
+          <td>c</td>
+          <td>g</td>
+          <td>a</td>
           <td>...</td>
+          <td>p</td>
+          <td>n</td>
+          <td>w</td>
+          <td>w</td>
+          <td>c</td>
+          <td>e</td>
+          <td>s</td>
           <td>s</td>
           <td>w</td>
-          <td>w</td>
           <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>n</td>
-          <td>n</td>
-          <td>g</td>
         </tr>
         <tr>
           <th>2</th>
-          <td>e</td>
-          <td>b</td>
-          <td>s</td>
-          <td>w</td>
           <td>t</td>
-          <td>l</td>
-          <td>f</td>
-          <td>c</td>
+          <td>w</td>
           <td>b</td>
+          <td>s</td>
+          <td>f</td>
           <td>n</td>
+          <td>b</td>
+          <td>c</td>
+          <td>m</td>
+          <td>l</td>
           <td>...</td>
+          <td>p</td>
+          <td>n</td>
+          <td>w</td>
+          <td>w</td>
+          <td>c</td>
+          <td>e</td>
+          <td>s</td>
           <td>s</td>
           <td>w</td>
-          <td>w</td>
           <td>p</td>
-          <td>w</td>
-          <td>o</td>
-          <td>p</td>
-          <td>n</td>
-          <td>n</td>
-          <td>m</td>
         </tr>
         <tr>
           <th>3</th>
-          <td>p</td>
+          <td>t</td>
+          <td>w</td>
           <td>x</td>
           <td>y</td>
-          <td>w</td>
-          <td>t</td>
-          <td>p</td>
           <td>f</td>
+          <td>n</td>
+          <td>n</td>
           <td>c</td>
-          <td>n</td>
-          <td>n</td>
-          <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
+          <td>u</td>
           <td>p</td>
-          <td>w</td>
-          <td>o</td>
+          <td>...</td>
           <td>p</td>
           <td>k</td>
+          <td>w</td>
+          <td>w</td>
+          <td>e</td>
+          <td>e</td>
           <td>s</td>
-          <td>u</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
         </tr>
         <tr>
           <th>4</th>
-          <td>e</td>
+          <td>f</td>
+          <td>g</td>
           <td>x</td>
           <td>s</td>
-          <td>g</td>
           <td>f</td>
-          <td>n</td>
-          <td>f</td>
-          <td>w</td>
-          <td>b</td>
           <td>k</td>
+          <td>b</td>
+          <td>w</td>
+          <td>g</td>
+          <td>n</td>
           <td>...</td>
-          <td>s</td>
-          <td>w</td>
-          <td>w</td>
-          <td>p</td>
-          <td>w</td>
-          <td>o</td>
           <td>e</td>
           <td>n</td>
-          <td>a</td>
-          <td>g</td>
+          <td>w</td>
+          <td>w</td>
+          <td>e</td>
+          <td>t</td>
+          <td>s</td>
+          <td>s</td>
+          <td>w</td>
+          <td>p</td>
         </tr>
       </tbody>
     </table>
-    <p>5 rows × 23 columns</p>
+    <p>5 rows × 22 columns</p>
     </div>
 
 
@@ -271,7 +285,7 @@ To explore a data reduction method aside from the default (PCA), use
 Other supported reduction models include: PCA, IncrementalPCA,
 SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA, FactorAnalysis,
 TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning, TSNE,
-Isomap, SpectralEmbedding, LocallyLinearEmbedding, MDS
+Isomap, SpectralEmbedding, LocallyLinearEmbedding, MDS, UMAP
 
 .. code:: ipython3
 
@@ -298,22 +312,22 @@ specific reduction techniques).
 .. image:: plot_files/plot_22_0.png
 
 
-Coloring by group
------------------
+Coloring by hue
+---------------
 
-To color your datapoints by group labels, pass the ``group`` argument.
-It accepts strings, ints, and floats, or a list of these. You must pass
-group the same number of labels as you have rows in your data matrix.
+To color your datapoints by group labels, pass the ``hue`` argument. It
+accepts strings, ints, and floats, or a list of these. You must pass hue
+the same number of labels as you have rows in your data matrix.
 
 Here, we group the data in five different chunks of equal size (size
 #points / 5) for simplicity. Note that we pass ints, strings, floats,
-and None in the same list to the group argument.
+and None in the same list to the hue argument.
 
 .. code:: ipython3
 
     split = int(mushrooms.shape[0]/ 5)
-    groupings = [1]*split + ['two']*split + [3.0]*split + [None]*split + ['four']*split
-    geo_group = hyp.plot(mushrooms, '.', group=groupings)
+    hue = [1]*split + ['two']*split + [3.0]*split + [None]*split + ['four']*split
+    geo_group = hyp.plot(mushrooms, '.', hue=hue)
 
 
 
@@ -323,15 +337,14 @@ and None in the same list to the group argument.
 Adding a legend
 ~~~~~~~~~~~~~~~
 
-When coloring by group, you may want a legend to indicate group type.
-Passing ``legend=True`` will generate the legend based on your
-groupings.
+When coloring, you may want a legend to indicate group type. Passing
+``legend=True`` will generate the legend based on your groupings.
 
 .. code:: ipython3
 
     split = int(mushrooms.shape[0]/5)
-    groupings = [1]*split + ['two']*split + [3.0]*split + [None]*split + ['four']*split
-    geo_group = hyp.plot(mushrooms, '.', group=groupings, legend=True)
+    hue = [1]*split + ['two']*split + [3.0]*split + [None]*split + ['four']*split
+    geo_hue = hyp.plot(mushrooms, '.', hue=hue, legend=True)
 
 
 
@@ -377,7 +390,7 @@ no data for PPCA to base its guess on, so the inference will fail.
 
 .. parsed-literal::
 
-    /Users/andyheusser/Documents/github/hypertools/hypertools/_shared/helpers.py:206: UserWarning: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)
+    /Users/andyheusser/Documents/github/hypertools/hypertools/tools/format_data.py:141: UserWarning: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)
       warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
 
 
@@ -464,20 +477,15 @@ Below, is a simple example of a spiral.
 .. code:: ipython3
 
     # load example data
-    data = hyp.load('spiral')
-    target = data.copy()
+    geo = hyp.load('spiral')
+    geo.plot(title='Before Alignment')
     
-    # a random rotation matrix
-    rot = scipy.linalg.orth(np.random.rand(3,3))
+    # use procrusted to align the data
+    source, target = geo.get_data()
+    aligned = [hyp.tools.procrustes(source, target), target]
     
-    # creating new spiral with some noise
-    source = np.dot(target, rot)
-    
-    # before hyperalignment
-    before = hyp.plot([target, source], ['-','--'], title='Before alignment')
-    
-    # after hyperalignment
-    after = hyp.plot([target, source], ['-','--'], align='hyper', title='After alignment')
+    # after alignment
+    geo_aligned = hyp.plot(aligned, ['-','--'], title='After alignment')
 
 
 
@@ -497,3 +505,37 @@ argument.
 .. code:: ipython3
 
     # geo_cluster = hyp.plot(mushrooms, '.', save_path='cluster_plot.pdf')
+
+Plotting text using semantic models
+-----------------------------------
+
+In addition to numerical data, ``hypertools`` supports the plotting of
+text data by fitting the data to a semantic model. We'll load in an
+example text dataset to get started which is comprised of all State of
+the Union Addresses from 1989-2017.
+
+.. code:: ipython3
+
+    geo = hyp.load('sotus')
+
+By default, the text data will be transformed using a Latent Dirichlet
+Model trained on a sample of wikipedia pages. Simply pass the list of
+text data to the ``plot`` function, and under the hood it will be
+transformed to a topic vector and then reduced for plotting.
+
+.. code:: ipython3
+
+    geo.plot()
+
+
+
+.. image:: plot_files/plot_50_0.png
+
+
+
+
+.. parsed-literal::
+
+    <hypertools.datageometry.DataGeometry at 0x116a621d0>
+
+

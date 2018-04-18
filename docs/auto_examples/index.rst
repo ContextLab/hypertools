@@ -9,6 +9,46 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="Here, we will plot a collection of wikipedia pages, transformed using a topic model (the defaul...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_wiki_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_wiki.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_wiki
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="To plot text, simply pass the text data to the plot function.  Here, we are ploting each SOTU a...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_sotus_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_sotus.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_sotus
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="Here is a basic example where we load in some data (a list of arrays - samples by features), ta...">
 
 .. only:: html
@@ -49,6 +89,46 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="The `n_clusters` kwarg can be used to discover clusters in your dataset.  It relies on scikit-l...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_clusters_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_clusters.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_clusters
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="Timeseries plots can be animated by simply passing `animate=True` to the geo ( or when calling ...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_animate_thumb.png
+
+        :ref:`sphx_glr_auto_examples_animate.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/animate
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="Explore mode is an experimental feature that allows you to (not surprisingly) explore the point...">
 
 .. only:: html
@@ -66,6 +146,66 @@ Gallery of Examples
    :hidden:
 
    /auto_examples/explore
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="Hypertools supports single-index Pandas Dataframes as input. In this example, we plot the mushr...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_dataframe_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_dataframe.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_dataframe
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The past trajectory of an animated plot can be visualized with the chemtrails argument.  This d...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_chemtrails_thumb.png
+
+        :ref:`sphx_glr_auto_examples_chemtrails.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/chemtrails
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="This is a trajectory of brain data plotted in 3D with multidimensional scaling. ">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_animate_MDS_thumb.png
+
+        :ref:`sphx_glr_auto_examples_animate_MDS.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/animate_MDS
 
 .. raw:: html
 
@@ -89,6 +229,26 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="The future trajectory of an animated plot can be visualized with the precog argument.  This dis...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_precog_thumb.png
+
+        :ref:`sphx_glr_auto_examples_precog.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/precog
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="The downside to using dimensionality reduction to visualize your data is that some variance wil...">
 
 .. only:: html
@@ -106,26 +266,6 @@ Gallery of Examples
    :hidden:
 
    /auto_examples/plot_describe
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="The `n_clusters` kwarg can be used to discover clusters in your dataset.  It relies on scikit-l...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_clusters_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_clusters.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_clusters
 
 .. raw:: html
 
@@ -169,26 +309,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="Hypertools supports single-index Pandas Dataframes as input. In this example, we plot the mushr...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_dataframe_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_dataframe.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_dataframe
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="This example loads in some data from the scikit-learn digits dataset and plots it. ">
 
 .. only:: html
@@ -229,13 +349,13 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="This is a trajectory of brain data, hyperaligned and then plotted in 3D with multidimensional s...">
+    <div class="sphx-glr-thumbcontainer" tooltip="This example loads in some data from the scikit-learn digits dataset and plots it using UMAP. ">
 
 .. only:: html
 
-    .. figure:: /auto_examples/images/thumb/sphx_glr_animate_MDS_thumb.png
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_UMAP_thumb.png
 
-        :ref:`sphx_glr_auto_examples_animate_MDS.py`
+        :ref:`sphx_glr_auto_examples_plot_UMAP.py`
 
 .. raw:: html
 
@@ -245,7 +365,7 @@ Gallery of Examples
 .. toctree::
    :hidden:
 
-   /auto_examples/animate_MDS
+   /auto_examples/plot_UMAP
 
 .. raw:: html
 
@@ -269,26 +389,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The sample data is a list of 2D arrays, where each array is fMRI brain activity from one subjec...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_animate_thumb.png
-
-        :ref:`sphx_glr_auto_examples_animate.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/animate
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="This example demonstrates how to use the `analyze` function to process data prior to plotting. ...">
 
 .. only:: html
@@ -309,13 +409,13 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The future trajectory of an animated plot can be visualized with the precog argument.  This dis...">
+    <div class="sphx-glr-thumbcontainer" tooltip="Here, we will plot a collection of NIPS papers, transformed using a topic model that was fit on...">
 
 .. only:: html
 
-    .. figure:: /auto_examples/images/thumb/sphx_glr_precog_thumb.png
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_nips_thumb.png
 
-        :ref:`sphx_glr_auto_examples_precog.py`
+        :ref:`sphx_glr_auto_examples_plot_nips.py`
 
 .. raw:: html
 
@@ -325,7 +425,27 @@ Gallery of Examples
 .. toctree::
    :hidden:
 
-   /auto_examples/precog
+   /auto_examples/plot_nips
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="To make use of HDBSCAN as the clustering algorithm used to discover clusters, you must specify ...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_clusters3_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_clusters3.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_clusters3
 
 .. raw:: html
 
@@ -349,6 +469,86 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="The format_data function takes a (mixed) list of Numpy Arrays, Pandas DataFrames, strings, or l...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_format_data_thumb.png
+
+        :ref:`sphx_glr_auto_examples_format_data.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/format_data
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="By default, the text samples will be transformed into a vector of word counts and then modeled ...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_corpus_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_corpus.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_corpus
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="In this example, we load in some synthetic data, rotate it, and then use the procustes function...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_procrustes_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_procrustes.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_procrustes
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="When plotting, its useful to have a way to color points by some category or variable.  Hypertoo...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_hue_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_hue.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_hue
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="This is an example of how to use the `label(s)` kwarg, which must be a list the length of the n...">
 
 .. only:: html
@@ -366,6 +566,26 @@ Gallery of Examples
    :hidden:
 
    /auto_examples/plot_labels
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="To plot text, simply pass the text data to the plot function.  By default, the text samples wil...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_text_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_text.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_text
 
 .. raw:: html
 
@@ -409,13 +629,13 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="In this example, we load in some synthetic data, rotate it, and then use the procustes function...">
+    <div class="sphx-glr-thumbcontainer" tooltip="Hypertools includes 3 prefit topic models with different corpuses: wiki, nips and sotus. The pr...">
 
 .. only:: html
 
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_procrustes_thumb.png
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_text_models_thumb.png
 
-        :ref:`sphx_glr_auto_examples_plot_procrustes.py`
+        :ref:`sphx_glr_auto_examples_plot_text_models.py`
 
 .. raw:: html
 
@@ -425,27 +645,7 @@ Gallery of Examples
 .. toctree::
    :hidden:
 
-   /auto_examples/plot_procrustes
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="When plotting, its useful to have a way to color points by some category or variable.  Hypertoo...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_group_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_group.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_group
+   /auto_examples/plot_text_models
 
 .. raw:: html
 
@@ -512,7 +712,9 @@ Gallery of Examples
 
 
 
-.. container:: sphx-glr-footer
+.. only :: html
+
+ .. container:: sphx-glr-footer
 
 
   .. container:: sphx-glr-download
@@ -525,6 +727,9 @@ Gallery of Examples
 
     :download:`Download all examples in Jupyter notebooks: auto_examples_jupyter.zip <//Users/andyheusser/Documents/github/hypertools/docs/auto_examples/auto_examples_jupyter.zip>`
 
-.. rst-class:: sphx-glr-signature
 
-    `Generated by Sphinx-Gallery <http://sphinx-gallery.readthedocs.io>`_
+.. only:: html
+
+ .. rst-class:: sphx-glr-signature
+
+    `Gallery generated by Sphinx-Gallery <https://sphinx-gallery.readthedocs.io>`_

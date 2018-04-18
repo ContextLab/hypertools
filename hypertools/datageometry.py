@@ -1,9 +1,13 @@
+from __future__ import unicode_literals
+from builtins import object
 import copy
 import deepdish as dd
 import numpy as np
 from .tools.normalize import normalize as normalizer
 from .tools.reduce import reduce as reducer
 from .tools.align import align as aligner
+from .tools.format_data import format_data
+from ._shared.helpers import convert_text, get_dtype
 from .config import __version__
 
 class DataGeometry(object):
@@ -50,8 +54,9 @@ class DataGeometry(object):
     """
 
     def __init__(self, fig=None, ax=None, line_ani=None, data=None, xform_data=None,
-                 reduce=None, align=None, normalize=None, kwargs=None,
-                 version=__version__):
+                 reduce=None, align=None, normalize=None, semantic=None,
+                 vectorizer=None, corpus=None, kwargs=None, version=__version__,
+                 dtype=None):
 
         # matplotlib figure handle
         self.fig = fig
@@ -62,8 +67,11 @@ class DataGeometry(object):
         # matplotlib line_ani handle (if its an animation)
         self.line_ani = line_ani
 
-        # the raw data
+        # convert to numpy array if text
+        if isinstance(data, list):
+            data = list(map(convert_text, data))
         self.data = data
+        self.dtype = get_dtype(data)
 
         # the transformed data
         self.xform_data = xform_data
@@ -77,11 +85,25 @@ class DataGeometry(object):
         # 'within', 'across', 'row' or False
         self.normalize = normalize
 
+        # text params
+        self.semantic = semantic
+        self.vectorizer = vectorizer
+
+        self.corpus = corpus
+
         # dictionary of kwargs
         self.kwargs = kwargs
 
         # hypertools version
         self.version = version
+
+    def get_data(self):
+        """Return a copy of the data"""
+        return copy.copy(self.data)
+
+    def get_formatted_data(self):
+        """Return a formatted copy of the data"""
+        return format_data(self.data)
 
     # a function to transform new data
     def transform(self, data=None):
@@ -105,9 +127,18 @@ class DataGeometry(object):
         if data is None:
             return self.xform_data
         else:
-            reduce_model = {'model' : self.reduce['model'], 'params' : self.reduce['params']}
-            align_model = {'model' : self.align['model'], 'params' : self.align['params']}
-            return aligner(reducer(normalizer(data, normalize=self.normalize), reduce=reduce_model, ndims=self.reduce['params']['n_components']), align=align_model)
+            return aligner(
+                reducer(
+                normalizer(
+                format_data(data,
+                semantic=self.semantic,
+                vectorizer=self.vectorizer,
+                corpus=self.corpus,
+                ppca=True),
+                normalize=self.normalize),
+                reduce=self.reduce,
+                ndims=self.reduce['params']['n_components']),
+                align=self.align)
 
     # a function to plot the data
     def plot(self, data=None, **kwargs):
@@ -135,20 +166,26 @@ class DataGeometry(object):
         from .plot.plot import plot as plotter
 
         if data is None:
-            data = self.xform_data
-            transform = False
-            if any([k in kwargs for k in ['reduce', 'align', 'normalize']]):
-                data = self.data
-                transform = True
+            d = copy.copy(self.data)
+            transform = copy.copy(self.xform_data)
+            if any([k in kwargs for k in ['reduce', 'align', 'normalize',
+                                          'semantic', 'vectorizer', 'corpus']]):
+                d = copy.copy(self.data)
+                transform = None
         else:
-            transform = True
+            d = data
+            transform = None
 
         # get kwargs and update with new kwargs
         new_kwargs = copy.copy(self.kwargs)
+        update_kwargs = dict(transform=transform, reduce=self.reduce,
+                       align=self.align, normalize=self.normalize,
+                       semantic=self.semantic, vectorizer=self.vectorizer,
+                       corpus=self.corpus)
+        new_kwargs.update(update_kwargs)
         for key in kwargs:
             new_kwargs.update({key : kwargs[key]})
-
-        return plotter(data, transform=transform, **new_kwargs)
+        return plotter(d, **new_kwargs)
 
     def save(self, fname, compression='blosc'):
         """
@@ -170,17 +207,26 @@ class DataGeometry(object):
             options: http://deepdish.readthedocs.io/en/latest/api_io.html#deepdish.io.save
 
         """
-
+        if hasattr(self, 'dtype'):
+            if 'list' in self.dtype:
+                data = np.array(self.data)
+            elif 'df' in self.dtype:
+                data = {k: np.array(v).astype('str') for k, v in self.data.to_dict('list').items()}
+            else:
+                data = self.data
 
         # put geo vars into a dict
         geo = {
-            'data' : self.data,
-            'xform_data' : self.xform_data,
+            'data' : data,
+            'xform_data' : np.array(self.xform_data),
             'reduce' : self.reduce,
             'align' : self.align,
             'normalize' : self.normalize,
+            'semantic' : self.semantic,
+            'corpus' : np.array(self.corpus) if isinstance(self.corpus, list) else self.corpus,
             'kwargs' : self.kwargs,
-            'version' : self.version
+            'version' : self.version,
+            'dtype' : self.dtype
         }
 
         # if extension wasn't included, add it

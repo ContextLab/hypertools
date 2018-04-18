@@ -17,7 +17,8 @@ import hypertools as hyp
 import numpy as np
 
 # load example data
-data = hyp.load('weights_sample')
+geo = hyp.load('weights_sample')
+data = geo.get_data()
 
 # simulate labels
 labels=[]
@@ -31,4 +32,4 @@ for idx,i in enumerate(data):
     labels.append(tmp)
 
 # plot
-hyp.plot(data, '.', labels=labels)
+geo.plot(fmt='.', labels=labels)

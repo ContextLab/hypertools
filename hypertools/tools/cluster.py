@@ -2,12 +2,13 @@
 import warnings
 from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering
 import numpy as np
+import six
 from hdbscan import HDBSCAN
-
 from .._shared.helpers import *
+from .format_data import format_data as formatter
 
 @memoize
-def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
+def cluster(x, cluster='KMeans', n_clusters=3, ndims=None, format_data=True):
     """
     Performs clustering analysis and returns a list of cluster labels
 
@@ -30,6 +31,9 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
     n_clusters : int
         Number of clusters to discover. Not required for HDBSCAN.
 
+    format_data : bool
+        Whether or not to first call the format_data function (default: True).
+
     ndims : None
         Deprecated argument.  Please use new analyze function to perform
         combinations of transformations
@@ -49,7 +53,8 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
         if ndims is not None:
             warnings.warn('The ndims argument is now deprecated. Ignoring dimensionality reduction step.')
 
-        x = format_data(x, ppca=True)
+        if format_data:
+            x = formatter(x, ppca=True)
 
         # dictionary of models
         models = {
@@ -63,7 +68,7 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
         }
 
         # if reduce is a string, find the corresponding model
-        if type(cluster) is str:
+        if isinstance(cluster, six.string_types):
             model = models[cluster]
             if cluster != 'HDBSCAN':
                 model_params = {
@@ -73,7 +78,7 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None):
                 model_params = {}
         # if its a dict, use custom params
         elif type(cluster) is dict:
-            if type(cluster['model']) is str:
+            if isinstance(cluster['model'], six.string_types):
                 model = models[cluster['model']]
                 model_params = cluster['params']
 

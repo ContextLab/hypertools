@@ -37,15 +37,16 @@ more info on the data and HTFA, respectively.
 
 .. code:: ipython3
 
-    weights = hyp.load('weights_avg')
+    geo = hyp.load('weights_avg')
+    weights = geo.get_data()
     print(weights[0].shape) # 300 TRs and 100 components
     print(weights[1].shape)
 
 
 .. parsed-literal::
 
-    (300, 100)
-    (300, 100)
+    (100, 100)
+    (100, 100)
 
 
 We can see that the elements of weights each have the dimensions
