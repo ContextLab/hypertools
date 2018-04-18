@@ -93,26 +93,41 @@ example dataset can be loaded using the code below.
     nips.plot(size=[8, 6])
 
 
-.. parsed-literal::
 
-    /Users/andyheusser/Library/Enthought/Canopy_64bit/User/lib/python2.7/site-packages/tables/leaf.py:396: PerformanceWarning: The Leaf ``/data`` is exceeding the maximum recommended rowsize (104857600 bytes);
-    be ready to see PyTables asking for *lots* of memory and possibly slow
-    I/O.  You may want to reduce the rowsize by trimming the value of
-    dimensions that are orthogonal (and preferably close) to the *main*
-    dimension of this leave.  Alternatively, in case you have specified a
-    very small/large chunksize, you may want to increase/decrease it.
-      PerformanceWarning)
-
-
-
-.. image:: text_files/text_12_1.png
+.. image:: text_files/text_12_0.png
 
 
 
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x11c7bdcd0>
+    <hypertools.datageometry.DataGeometry at 0x10ebe1750>
+
+
+
+Visualizing Wikipedia pages
+---------------------------
+
+Here, we will plot a collection of wikipedia pages, transformed using a
+topic model (the default 'wiki' model) that was fit on the same
+articles. We will reduce the dimensionality of the data with TSNE, and
+then discover cluster with the 'HDBSCAN' algorithm.
+
+.. code:: ipython2
+
+    wiki = hyp.load('wiki')
+    wiki.plot(size=[8, 6])
+
+
+
+.. image:: text_files/text_14_0.png
+
+
+
+
+.. parsed-literal::
+
+    <hypertools.datageometry.DataGeometry at 0x11db6e790>
 
 
 
@@ -134,14 +149,14 @@ the left and republicans mostly on the right).
 
 
 
-.. image:: text_files/text_14_0.png
+.. image:: text_files/text_16_0.png
 
 
 
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x1200e3750>
+    <hypertools.datageometry.DataGeometry at 0x117e040d0>
 
 
 
@@ -159,14 +174,14 @@ the data.
 
 
 
-.. image:: text_files/text_16_0.png
+.. image:: text_files/text_18_0.png
 
 
 
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x116c23050>
+    <hypertools.datageometry.DataGeometry at 0x11bf57610>
 
 
 
@@ -184,14 +199,14 @@ list of text samples) to train the model.
 
 
 
-.. image:: text_files/text_18_0.png
+.. image:: text_files/text_20_0.png
 
 
 
 
 .. parsed-literal::
 
-    <hypertools.datageometry.DataGeometry at 0x11e5976d0>
+    <hypertools.datageometry.DataGeometry at 0x11c0cf210>
 
 
 
