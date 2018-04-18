@@ -77,7 +77,7 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
     # plot
     geo.plot()
 
-**Total running time of the script:** ( 0 minutes  0.129 seconds)
+**Total running time of the script:** ( 0 minutes  0.248 seconds)
 
 
 

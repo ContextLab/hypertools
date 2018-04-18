@@ -37,7 +37,7 @@ yourself.
     # plot
     geo.plot(n_clusters=10)
 
-**Total running time of the script:** ( 0 minutes  0.348 seconds)
+**Total running time of the script:** ( 0 minutes  0.336 seconds)
 
 
 

@@ -49,7 +49,7 @@ are simply labeling the first datapoint for each matrix in the list.
     # plot
     geo.plot(fmt='.', labels=labels)
 
-**Total running time of the script:** ( 0 minutes  0.138 seconds)
+**Total running time of the script:** ( 0 minutes  0.136 seconds)
 
 
 
