@@ -20,7 +20,7 @@ def format_data(x, vectorizer='CountVectorizer',
     Parameters
     ----------
 
-    x : numpy array, dataframe or (mixed) list
+    x : numpy array, dataframe, string or (mixed) list
         The data to convert
 
     vectorizer : str, dict, class or class instance
