@@ -9,6 +9,26 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="To plot text, simply pass the text data to the plot function.  Here, we are ploting each SOTU a...">
+
+.. only:: html
+
+    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_sotus_thumb.png
+
+        :ref:`sphx_glr_auto_examples_plot_sotus.py`
+
+.. raw:: html
+
+    </div>
+
+
+.. toctree::
+   :hidden:
+
+   /auto_examples/plot_sotus
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="Here is a basic example where we load in some data (a list of arrays - samples by features), ta...">
 
 .. only:: html
