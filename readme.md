@@ -50,6 +50,9 @@ Then, navigate to the folder and type:
 
 (These instructions assume that you have [pip](https://pip.pypa.io/en/stable/installing/) installed on your system)
 
+NOTE: If you have been using the development version of 0.5.0, please clear your
+data cache (/Users/yourusername/hypertools_data).
+
 <h2>Requirements</h2>
 
 + python 2.7, 3.4+
