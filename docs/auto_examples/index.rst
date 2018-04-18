@@ -9,46 +9,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="Here, we will plot a collection of wikipedia pages, transformed using a topic model (the defaul...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_wiki_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_wiki.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_wiki
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="To plot text, simply pass the text data to the plot function.  Here, we are ploting each SOTU a...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_sotus_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_sotus.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_sotus
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="Here is a basic example where we load in some data (a list of arrays - samples by features), ta...">
 
 .. only:: html
@@ -409,26 +369,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="Here, we will plot a collection of NIPS papers, transformed using a topic model that was fit on...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_nips_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_nips.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_nips
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="To make use of HDBSCAN as the clustering algorithm used to discover clusters, you must specify ...">
 
 .. only:: html
@@ -466,26 +406,6 @@ Gallery of Examples
    :hidden:
 
    /auto_examples/plot_align
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="The format_data function takes a (mixed) list of Numpy Arrays, Pandas DataFrames, strings, or l...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_format_data_thumb.png
-
-        :ref:`sphx_glr_auto_examples_format_data.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/format_data
 
 .. raw:: html
 
@@ -569,26 +489,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="To plot text, simply pass the text data to the plot function.  By default, the text samples wil...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_text_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_text.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_text
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="Here is an example where we generate some synthetic data, and then use the cluster function to ...">
 
 .. only:: html
@@ -626,26 +526,6 @@ Gallery of Examples
    :hidden:
 
    /auto_examples/plot_geo
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="Hypertools includes 3 prefit topic models with different corpuses: wiki, nips and sotus. The pr...">
-
-.. only:: html
-
-    .. figure:: /auto_examples/images/thumb/sphx_glr_plot_text_models_thumb.png
-
-        :ref:`sphx_glr_auto_examples_plot_text_models.py`
-
-.. raw:: html
-
-    </div>
-
-
-.. toctree::
-   :hidden:
-
-   /auto_examples/plot_text_models
 
 .. raw:: html
 
