@@ -23,6 +23,10 @@ install:
 - pip install -r requirements.txt
 - python setup.py install
 - cp tests/matplotlibrc .
+before_script:
+- if [ ${TRAVIS_PYTHON_VERSION} == '3.6' ]; then pip install flake8; flake8 . --count --select=E901,E999,F821,F822,F823 --show-source --statistics; fi
+- "export DISPLAY=:99.0"  # https://docs.travis-ci.com/user/gui-and-headless-browsers
+- sh -e /etc/init.d/xvfb start
 script: py.test
 notifications:
   slack:
