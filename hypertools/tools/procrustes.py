@@ -60,11 +60,8 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
     def fit(source, target):
 
         datas = (source, target)
-        shapes = (source.shape, target.shape)
-
-        # shortcuts for sizes
-        sn, sm = shapes[0]
-        tn, tm = shapes[1]
+        sn, sm = source.shape
+        tn, tm = target.shape
 
         # Check the sizes
         if sn != tn:
