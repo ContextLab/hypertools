@@ -33,10 +33,6 @@ def test_reduce_dims_1d():
     reduced_data_1d = reducer(data, ndims=1)
     assert reduced_data_1d[0].shape==(10,1)
 
-def test_reduce_assert_exception():
-    with pytest.raises(Exception) as e_info:
-        reduc(data,ndims=4)
-
 def test_reduce_geo():
     geo = plot(data, show=False)
     reduced_data_3d = reducer(geo, ndims=3)

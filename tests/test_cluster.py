@@ -4,7 +4,6 @@ import pytest
 
 from scipy.stats import multivariate_normal
 import numpy as np
-
 from hypertools.tools.cluster import cluster
 
 cluster1 = np.random.multivariate_normal(np.zeros(3), np.eye(3), size=100)
@@ -24,6 +23,5 @@ def test_cluster_hdbscan():
     assert len(set(hdbscan_labels)) == 2
 
 def text_cluster_geo():
-    geo = hyp.plot(data, show=False)
     hdbscan_labels = cluster(geo, cluster='HDBSCAN')
     assert len(set(hdbscan_labels)) == 2

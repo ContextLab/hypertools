@@ -56,7 +56,6 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
     """
 
     _scale = None
-    _demean = False
 
     def fit(source, target):
         # Since it is unsupervised, we don't care about labels
@@ -66,15 +65,8 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
 
         for i, ds in enumerate((source, target)):
             data = ds
-            if _demean:
-                if i == 0:
-                    mean = _offset_in
-                else:
-                    mean = data.mean(axis=0)
-                data = data - mean
-            else:
-                # no demeaning === zero means
-                mean = np.zeros(shape=data.shape[1:])
+            data = data - data.mean(axis=0)
+            mean = np.zeros(shape=data.shape[1:])
             means += (mean,)
             datas += (data,)
             shapes += (data.shape,)
@@ -162,28 +154,14 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
             proj = T
         return proj
 
-        if _demean:
-            _offset_out = means[1]
-
     def transform(data,proj):
         if proj is None:
             raise RuntimeError("Mapper needs to be train before used.")
 
-        # local binding
-        demean = _demean
-
         d = np.asmatrix(data)
-
-        # Remove input offset if present
-        if demean and _offset_in is not None:
-            d = d - _offset_in
 
         # Do projection
         res = (d * proj).A
-
-        # Add output offset if present
-        if demean and _offset_out is not None:
-            res += _offset_out
 
         return res
 
