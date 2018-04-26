@@ -23,5 +23,6 @@ def test_cluster_hdbscan():
     assert len(set(hdbscan_labels)) == 2
 
 def text_cluster_geo():
+    geo = plot(data, show=False)
     hdbscan_labels = cluster(geo, cluster='HDBSCAN')
     assert len(set(hdbscan_labels)) == 2

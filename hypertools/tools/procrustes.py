@@ -58,18 +58,9 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
     _scale = None
 
     def fit(source, target):
-        # Since it is unsupervised, we don't care about labels
-        datas = ()
-        means = ()
-        shapes = ()
 
-        for i, ds in enumerate((source, target)):
-            data = ds
-            data = data - data.mean(axis=0)
-            mean = np.zeros(shape=data.shape[1:])
-            means += (mean,)
-            datas += (data,)
-            shapes += (data.shape,)
+        datas = (source, target)
+        shapes = (source.shape, target.shape)
 
         # shortcuts for sizes
         sn, sm = shapes[0]
@@ -89,7 +80,7 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
         #     needs to be tuned up properly and not raise but handle
         for i in range(2):
             if np.all(ssqs[i] <= np.abs((np.finfo(datas[i].dtype).eps
-                                       * sn * means[i] )**2)):
+                                       * sn )**2)):
                 raise ValueError("For now do not handle invariant in time datasets")
 
         norms = [ np.sqrt(np.sum(ssq)) for ssq in ssqs ]
