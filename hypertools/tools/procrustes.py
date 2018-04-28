@@ -56,32 +56,12 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
     """
 
     _scale = None
-    _demean = False
 
     def fit(source, target):
-        # Since it is unsupervised, we don't care about labels
-        datas = ()
-        means = ()
-        shapes = ()
 
-        for i, ds in enumerate((source, target)):
-            data = ds
-            if _demean:
-                if i == 0:
-                    mean = _offset_in
-                else:
-                    mean = data.mean(axis=0)
-                data = data - mean
-            else:
-                # no demeaning === zero means
-                mean = np.zeros(shape=data.shape[1:])
-            means += (mean,)
-            datas += (data,)
-            shapes += (data.shape,)
-
-        # shortcuts for sizes
-        sn, sm = shapes[0]
-        tn, tm = shapes[1]
+        datas = (source, target)
+        sn, sm = source.shape
+        tn, tm = target.shape
 
         # Check the sizes
         if sn != tn:
@@ -97,7 +77,7 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
         #     needs to be tuned up properly and not raise but handle
         for i in range(2):
             if np.all(ssqs[i] <= np.abs((np.finfo(datas[i].dtype).eps
-                                       * sn * means[i] )**2)):
+                                       * sn )**2)):
                 raise ValueError("For now do not handle invariant in time datasets")
 
         norms = [ np.sqrt(np.sum(ssq)) for ssq in ssqs ]
@@ -162,28 +142,14 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
             proj = T
         return proj
 
-        if _demean:
-            _offset_out = means[1]
-
     def transform(data,proj):
         if proj is None:
             raise RuntimeError("Mapper needs to be train before used.")
 
-        # local binding
-        demean = _demean
-
         d = np.asmatrix(data)
-
-        # Remove input offset if present
-        if demean and _offset_in is not None:
-            d = d - _offset_in
 
         # Do projection
         res = (d * proj).A
-
-        # Add output offset if present
-        if demean and _offset_out is not None:
-            res += _offset_out
 
         return res
 
