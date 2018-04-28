@@ -23,6 +23,7 @@ Some key features of HyperTools are:
 2. Static and animated plots
 3. Simple API for customizing plot styles
 4. Set of powerful data manipulation tools including hyperalignment, k-means clustering, normalizing and more
-5. Support for lists of Numpy arrays or Pandas dataframes
+5. Support for lists of Numpy arrays, Pandas dataframes, text or (mixed) lists
+6. Applying topic models and other text vectorization methods to text data
 
 .. toctree::
