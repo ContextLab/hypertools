@@ -66,7 +66,6 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
 
         # Check the sizes
         if sn != tn:
-            pass
             raise ValueError("Data for both spaces should have the same " \
                   "number of samples. Got %d in template and %d in target space" \
                   % (sn, tn))
