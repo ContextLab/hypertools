@@ -18,7 +18,7 @@ familiar friends, including [matplotlib](https://matplotlib.org/),
 [scikit-learn](http://scikit-learn.org/) and
 [seaborn](https://seaborn.pydata.org/).  Our package was recently
 featured on
-[Kaggle's No Free Hunch blog](http://blog.kaggle.com/2017/04/10/exploring-the-structure-of-high-dimensional-data-with-hypertools-in-kaggle-kernels/).  For a general overview, you may find [this talk](https://www.youtube.com/watch?v=hb_ER9RGtOM) useful (given as part of the [MIND Summer School](summer-mind.github.io) at Dartmouth).
+[Kaggle's No Free Hunch blog](http://blog.kaggle.com/2017/04/10/exploring-the-structure-of-high-dimensional-data-with-hypertools-in-kaggle-kernels/).  For a general overview, you may find [this talk](https://www.youtube.com/watch?v=hb_ER9RGtOM) useful (given as part of the [MIND Summer School](https://summer-mind.github.io) at Dartmouth).
 
 <h2>Try it!</h2>
 
