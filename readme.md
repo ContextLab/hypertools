@@ -18,7 +18,7 @@ familiar friends, including [matplotlib](https://matplotlib.org/),
 [scikit-learn](http://scikit-learn.org/) and
 [seaborn](https://seaborn.pydata.org/).  Our package was recently
 featured on
-[Kaggle's No Free Hunch blog](http://blog.kaggle.com/2017/04/10/exploring-the-structure-of-high-dimensional-data-with-hypertools-in-kaggle-kernels/).
+[Kaggle's No Free Hunch blog](http://blog.kaggle.com/2017/04/10/exploring-the-structure-of-high-dimensional-data-with-hypertools-in-kaggle-kernels/).  For a general overview, you may find [this talk](https://www.youtube.com/watch?v=hb_ER9RGtOM) useful (given as part of the [MIND Summer School](summer-mind.github.io) at Dartmouth).
 
 <h2>Try it!</h2>
 
@@ -78,23 +78,20 @@ Check out our [readthedocs](http://hypertools.readthedocs.io/en/latest/) page fo
 
 <h2>Citing</h2>
 
-We wrote a paper about HyperTools, which you can read [here](https://arxiv.org/abs/1701.08290). We also have a repo with example notebooks from the paper [here](https://github.com/ContextLab/hypertools-paper-notebooks).
+We wrote a paper about HyperTools, which we provide as a preprint [here](https://arxiv.org/abs/1701.08290). We also have a repository with example notebooks from the paper [here](https://github.com/ContextLab/hypertools-paper-notebooks).
 
 Please cite as:
 
-`Heusser AC, Ziman K, Owen LLW, Manning JR (2017) HyperTools: A Python toolbox for visualizing and manipulating high-dimensional data.  arXiv: 1701.08290`
+`Heusser AC, Ziman K, Owen LLW, Manning JR (In press) HyperTools: A Python toolbox for gaining geometric insights into high-dimensional data.  Journal of Machine Learning Research.`
 
 Here is a bibtex formatted reference:
 
 ```
 @ARTICLE {,
     author  = "A C Heusser and K Ziman and L L W Owen and J R Manning",
-    title   = "HyperTools: A Python toolbox for visualizing and manipulating high-dimensional data",
-    journal = "arXiv",
-    year    = "2017",
-    volume  = "1701",
-    number  = "08290",
-    month   = "jan"
+    title   = "HyperTools: A Python toolbox for gaining geometric insights into high-dimensional data",
+    journal = "Journal of Machine Learning Research",
+    year    = "2018"
 }
 ```
 
