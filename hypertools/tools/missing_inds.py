@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
-##PACKAGES##
 import numpy as np
 from .format_data import format_data as formatter
+
 
 def missing_inds(x, format_data=True):
     """

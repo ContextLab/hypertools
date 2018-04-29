@@ -3,7 +3,7 @@
 from .reduce import reduce as reducer
 from .align import align as aligner
 from .normalize import normalize as normalizer
-from .format_data import format_data
+
 
 def analyze(data, normalize=None, reduce=None, ndims=None, align=None, internal=False):
     """
@@ -17,7 +17,7 @@ def analyze(data, normalize=None, reduce=None, ndims=None, align=None, internal=
     normalize : str or False or None
         If set to 'across', the columns of the input data will be z-scored
         across lists (default). That is, the z-scores will be computed with
-        with repect to column n across all arrays passed in the list. If set
+        with respect to column n across all arrays passed in the list. If set
         to 'within', the columns will be z-scored within each list that is
         passed. If set to 'row', each row of the input data will be z-scored.
         If set to False, the input data will be returned with no z-scoring.

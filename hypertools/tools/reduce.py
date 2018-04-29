@@ -1,13 +1,11 @@
 #!/usr/bin/env python
 
-# libraries
 import warnings
 import numpy as np
 import six
 from sklearn.decomposition import PCA, FastICA, IncrementalPCA, KernelPCA, FactorAnalysis, TruncatedSVD, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
 from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
 from umap import UMAP
-from ..tools.df2mat import df2mat
 from .._shared.helpers import *
 from .normalize import normalize as normalizer
 from .align import align as aligner
@@ -158,6 +156,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
             return x_reduced
         else:
             return x_reduced[0]
+
 
 # sub functions
 def reduce_list(x, model):

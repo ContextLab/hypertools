@@ -1,11 +1,11 @@
-import numpy as np
-import pandas as pd
 import warnings
+
+import numpy as np
 import six
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+
 from .._externals.ppca import PPCA
-from .._shared.params import default_params
 from .._shared.helpers import get_type
+
 
 def format_data(x, vectorizer='CountVectorizer',
                 semantic='LatentDirichletAllocation', corpus='wiki', ppca=True, text_align='hyper'):
@@ -110,9 +110,9 @@ def format_data(x, vectorizer='CountVectorizer',
         if dtype in ['list_str', 'str', 'arr_str']:
             processed_x.append(text_data[textidx])
             textidx+=1
-        elif dtype is 'df':
+        elif dtype == 'df':
             processed_x.append(df2mat(x[i]))
-        elif dtype is 'geo':
+        elif dtype == 'geo':
             text_args = {
                 'vectorizer' : vectorizer,
                 'semantic' : semantic,
@@ -152,7 +152,7 @@ def format_data(x, vectorizer='CountVectorizer',
     if contains_num and contains_text:
 
         # and if they have the same number of samples
-        if np.unique(np.array([i.shape[0] for i, j in zip(processed_x, dtypes)])).shape[0]==1:
+        if np.unique(np.array([i.shape[0] for i, j in zip(processed_x, dtypes)])).shape[0] == 1:
 
             from .align import align as aligner
 
@@ -163,6 +163,7 @@ def format_data(x, vectorizer='CountVectorizer',
 
     return processed_x
 
+
 def fill_missing(x):
 
     # ppca if missing data
@@ -171,10 +172,10 @@ def fill_missing(x):
     x_pca = m.transform()
 
     # if the whole row is missing, return nans
-    all_missing = [idx for idx,a in enumerate(np.vstack(x)) if all([type(b)==np.nan for b in a])]
+    all_missing = [idx for idx, a in enumerate(np.vstack(x)) if all([type(b)==np.nan for b in a])]
     if len(all_missing)>0:
         for i in all_missing:
-            x_pca[i,:]=np.nan
+            x_pca[i, :] = np.nan
 
     # get the original lists back
     if len(x)>1:

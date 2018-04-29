@@ -1,18 +1,17 @@
 #!/usr/bin/env python
 
-##PACKAGES##
 from __future__ import division
 from builtins import range
 import warnings
 import numpy as np
 from scipy.stats.stats import pearsonr
 from scipy.spatial.distance import cdist
-import scipy.spatial.distance as sd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from .reduce import reduce as reducer
 from .format_data import format_data as formatter
 from .._shared.helpers import memoize
+
 
 def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
              format_data=True):
@@ -106,9 +105,11 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
         plt.show()
     return result
 
+
 @memoize
 def get_corr(reduced, alldims):
     return pearsonr(alldims.ravel(), reduced.ravel())[0]
+
 
 @memoize
 def get_cdist(x):

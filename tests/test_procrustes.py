@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 
-import pytest
-
-import scipy.io as sio
 import numpy as np
 
 from hypertools.tools.procrustes import procrustes
 from hypertools.tools.load import load
+
 
 def test_procrustes_func():
     target = load('spiral').get_data()[0]

@@ -7,6 +7,7 @@ from hdbscan import HDBSCAN
 from .._shared.helpers import *
 from .format_data import format_data as formatter
 
+
 @memoize
 def cluster(x, cluster='KMeans', n_clusters=3, ndims=None, format_data=True):
     """

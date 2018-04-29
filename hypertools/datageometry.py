@@ -10,6 +10,7 @@ from .tools.format_data import format_data
 from ._shared.helpers import convert_text, get_dtype
 from .config import __version__
 
+
 class DataGeometry(object):
     """
     Hypertools data object class
@@ -127,18 +128,18 @@ class DataGeometry(object):
         if data is None:
             return self.xform_data
         else:
-            return aligner(
-                reducer(
-                normalizer(
-                format_data(data,
+            formatted = format_data(
+                data,
                 semantic=self.semantic,
                 vectorizer=self.vectorizer,
                 corpus=self.corpus,
-                ppca=True),
-                normalize=self.normalize),
+                ppca=True)
+            norm = normalizer(formatted, normalize=self.normalize)
+            reduction = reducer(
+                norm,
                 reduce=self.reduce,
-                ndims=self.reduce['params']['n_components']),
-                align=self.align)
+                ndims=self.reduce['params']['n_components'])
+            return aligner(reduction, align=self.align)
 
     # a function to plot the data
     def plot(self, data=None, **kwargs):

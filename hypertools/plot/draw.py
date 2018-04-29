@@ -19,8 +19,9 @@ from .._shared.helpers import *
 
 matplotlib.rcParams['pdf.fonttype'] = 42
 
-def _draw(x, return_data=False, legend=None, title=None, save_path=False, labels=False,
-         show=True, kwargs_list=None, fmt=None, group=False, animate=False,
+
+def _draw(x, legend=None, title=None, labels=False,
+         show=True, kwargs_list=None, fmt=None, animate=False,
          tail_duration=2, rotations=2, zoom=1, chemtrails=False, precog=False,
          bullettime=False, frame_rate=50, elev=10, azim=-60, duration=30,
          explore=False, size=None, ax=None):
@@ -402,7 +403,7 @@ def _draw(x, return_data=False, legend=None, title=None, save_path=False, labels
             line_ani = animation.FuncAnimation(fig, update_lines_parallel, x[0].shape[0],
                             fargs=(x, lines, trail, 1, tail_duration, rotations, zoom, chemtrails, elev),
                             interval=1000/frame_rate, blit=False, repeat=False)
-        # elif style is 'serial':
+        # elif style == 'serial':
         #     dataset_idx = []
         #     for idx, data in enumerate(x):
         #         for i in range(data.shape[0]):
@@ -420,7 +421,7 @@ def _draw(x, return_data=False, legend=None, title=None, save_path=False, labels
         #                     fargs=(x, lines, trail, 1, dataset_idx, plot_idx,
         #                     tail_duration, rotations, zoom, chemtrails, elev),
         #                     interval=1000/frame_rate, blit=False, repeat=False)
-        elif style is 'spin':
+        elif style == 'spin':
             line_ani = animation.FuncAnimation(fig, update_lines_spin, frame_rate*duration,
                             fargs=(x, lines, 1, rotations, zoom, elev),
                             interval=1000/frame_rate, blit=False, repeat=False)

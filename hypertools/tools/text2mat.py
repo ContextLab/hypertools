@@ -8,7 +8,6 @@ from sklearn.utils.validation import check_is_fitted
 from sklearn.exceptions import NotFittedError
 from sklearn.pipeline import Pipeline
 from .._shared.helpers import memoize
-from .format_data import format_data
 from .._shared.params import default_params
 from .load import load
 
@@ -23,6 +22,7 @@ texts = {
     'LatentDirichletAllocation' : LatentDirichletAllocation,
     'NMF' : NMF,
 }
+
 
 @memoize
 def text2mat(data, vectorizer='CountVectorizer',
@@ -78,7 +78,7 @@ def text2mat(data, vectorizer='CountVectorizer',
     model_is_fit=False
     if corpus is not None:
         if corpus in ('wiki', 'nips', 'sotus',):
-            if semantic=='LatentDirichletAllocation' and vectorizer=='CountVectorizer':
+            if semantic == 'LatentDirichletAllocation' and vectorizer == 'CountVectorizer':
                 semantic = load(corpus + '_model')
                 vectorizer = None
                 model_is_fit = True
@@ -88,9 +88,9 @@ def text2mat(data, vectorizer='CountVectorizer',
             corpus = np.array([corpus])
 
     vtype = _check_mtype(vectorizer)
-    if vtype is 'str':
+    if vtype == 'str':
         vectorizer_params = default_params(vectorizer)
-    elif vtype is 'dict':
+    elif vtype == 'dict':
         vectorizer_params = default_params(vectorizer['model'], vectorizer['params'])
         vectorizer = vectorizer['model']
     elif vtype in ('class', 'class_instance'):
@@ -103,9 +103,9 @@ def text2mat(data, vectorizer='CountVectorizer',
                                'for more details: '
                                'http://scikit-learn.org/stable/data_transforms.html')
     ttype = _check_mtype(semantic)
-    if ttype is 'str':
+    if ttype == 'str':
         text_params = default_params(semantic)
-    elif ttype is 'dict':
+    elif ttype == 'dict':
         text_params = default_params(semantic['model'], semantic['params'])
         semantic = semantic['model']
     elif ttype in ('class', 'class_instance'):
@@ -120,9 +120,9 @@ def text2mat(data, vectorizer='CountVectorizer',
     if vectorizer:
         if vtype in ('str', 'dict'):
             vmodel = vectorizer_models[vectorizer](**vectorizer_params)
-        elif vtype is 'class':
+        elif vtype == 'class':
             vmodel = vectorizer_models[vectorizer]()
-        elif vtype is 'class_instance':
+        elif vtype == 'class_instance':
             vmodel = vectorizer_models[vectorizer]
     else:
         vmodel = None
@@ -130,14 +130,14 @@ def text2mat(data, vectorizer='CountVectorizer',
     if semantic:
         if ttype in ('str', 'dict'):
             tmodel = texts[semantic](**text_params)
-        elif ttype is 'class':
+        elif ttype == 'class':
             tmodel = texts[semantic]()
-        elif ttype is 'class_instance':
+        elif ttype == 'class_instance':
             tmodel = texts[semantic]
     else:
         tmodel = None
 
-    if type(data) is not list:
+    if not isinstance(data, list):
         data = [data]
 
     if corpus is None:
@@ -146,6 +146,7 @@ def text2mat(data, vectorizer='CountVectorizer',
         _fit_models(vmodel, tmodel, corpus, model_is_fit)
 
     return _transform(vmodel, tmodel, data)
+
 
 def _transform(vmodel, tmodel, x):
     split = np.cumsum([len(xi) for xi in x])[:-1]
@@ -157,6 +158,7 @@ def _transform(vmodel, tmodel, x):
         else:
             x = np.vsplit(tmodel.transform(np.vstack(x)), split)
     return [xi for xi in x]
+
 
 def _fit_models(vmodel, tmodel, x, model_is_fit):
     if model_is_fit==True:
@@ -175,10 +177,11 @@ def _fit_models(vmodel, tmodel, x, model_is_fit):
             else:
                 tmodel.fit(vmodel.transform(np.vstack(x).ravel()))
 
+
 def _check_mtype(x):
     if isinstance(x, six.string_types):
         return 'str'
-    elif type(x) is dict:
+    elif isinstance(x, dict):
         return 'dict'
     elif inspect.isclass(x):
         return 'class'
