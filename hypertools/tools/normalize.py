@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 from __future__ import division
 from builtins import range
-from sklearn.preprocessing import FunctionTransformer
+
 import numpy as np
+
 from .format_data import format_data as formatter
 from .._shared.helpers import memoize
+
 
 @memoize
 def normalize(x, normalize='across', internal=False, format_data=True):
@@ -26,7 +28,7 @@ def normalize(x, normalize='across', internal=False, format_data=True):
     normalize : str or False or None
         If set to 'across', the columns of the input data will be z-scored
         across lists (default). That is, the z-scores will be computed with
-        with repect to column n across all arrays passed in the list. If set
+        with respect to column n across all arrays passed in the list. If set
         to 'within', the columns will be z-scored within each list that is
         passed. If set to 'row', each row of the input data will be z-scored.
         If set to False, the input data will be returned with no z-scoring.
@@ -52,20 +54,17 @@ def normalize(x, normalize='across', internal=False, format_data=True):
         if format_data:
             x = formatter(x, ppca=True)
 
-        zscore = lambda X,y: (y - np.mean(X)) / np.std(X) if len(set(y))>1 else np.zeros(y.shape)
+        zscore = lambda X, y: (y - np.mean(X)) / np.std(X) if len(set(y)) > 1 else np.zeros(y.shape)
 
-        if normalize=='across':
+        if normalize == 'across':
             x_stacked=np.vstack(x)
             normalized_x = [np.array([zscore(x_stacked[:,j], i[:,j]) for j in range(i.shape[1])]).T for i in x]
 
-        elif normalize=='within':
+        elif normalize == 'within':
             normalized_x = [np.array([zscore(i[:,j], i[:,j]) for j in range(i.shape[1])]).T for i in x]
 
-        elif normalize=='row':
+        elif normalize == 'row':
             normalized_x = [np.array([zscore(i[j,:], i[j,:]) for j in range(i.shape[0])]) for i in x]
-
-        elif normalize==False:
-            normalized_x = x
 
         if internal or len(normalized_x)>1:
             return normalized_x

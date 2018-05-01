@@ -1,15 +1,11 @@
 import requests
 import pandas as pd
 import deepdish as dd
-import sys
 import os
 import pickle
 import warnings
-from warnings import warn
 from .analyze import analyze
-from .format_data import format_data
 from ..datageometry import DataGeometry
-from .._shared.helpers import check_geo
 
 
 BASE_URL = 'https://docs.google.com/uc?export=download'
@@ -30,8 +26,8 @@ datadict = {
     'sotus_model' : '1g2F18WLxfFosIqhiLs79G0MpiG72mWQr'
 }
 
-def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
-         download=True):
+
+def load(dataset, reduce=None, ndims=None, align=None, normalize=None):
     """
     Load a .geo file or example data
 
@@ -67,7 +63,7 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
     normalize : str or False or None
         If set to 'across', the columns of the input data will be z-scored
         across lists (default). That is, the z-scores will be computed with
-        with repect to column n across all arrays passed in the list. If set
+        with respect to column n across all arrays passed in the list. If set
         to 'within', the columns will be z-scored within each list that is
         passed. If set to 'row', each row of the input data will be z-scored.
         If set to False, the input data will be returned with no z-scoring.
@@ -116,9 +112,8 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None,
                        'weights_avg, weights_sample, spiral, mushrooms, '
                        'wiki, nips or sotus.')
 
-
     if data is not None:
-        if dataset in ('wiki_model', 'nips_model', 'sotus_model',):
+        if dataset in ('wiki_model', 'nips_model', 'sotus_model'):
             return data
     if isinstance(data, DataGeometry):
         if any([reduce, ndims, align, normalize]):
@@ -156,6 +151,7 @@ def _load_data(dataset, fileid):
                                  ' /Users/homedir/hypertools_data.')
     return data
 
+
 def _load_stream(fileid):
     def _get_confirm_token(response):
         for key, value in response.cookies.items():
@@ -171,10 +167,12 @@ def _load_stream(fileid):
         response = session.get(BASE_URL, params = params, stream = True)
     return response
 
+
 def _download(dataset, data):
     fullpath = os.path.join(homedir, 'hypertools_data', dataset)
     with open(fullpath, 'wb') as f:
         f.write(data.content)
+
 
 def _load_from_disk(dataset):
     fullpath = os.path.join(homedir, 'hypertools_data', dataset)

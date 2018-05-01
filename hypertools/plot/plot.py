@@ -15,14 +15,11 @@ from .._shared.helpers import *
 from .._shared.params import default_params
 from ..tools.analyze import analyze
 from ..tools.cluster import cluster as clusterer
-from ..tools.df2mat import df2mat
 from ..tools.reduce import reduce as reducer
-from ..tools.normalize import normalize as normalizer
-from ..tools.align import align as aligner
-from ..tools.text2mat import text2mat
 from ..tools.format_data import format_data
 from .draw import _draw
 from ..datageometry import DataGeometry
+
 
 def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
          color=None, colors=None, palette='hls', group=None, hue=None,

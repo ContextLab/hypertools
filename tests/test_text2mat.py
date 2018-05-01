@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 
-import pytest
 import numpy as np
 from hypertools.tools import text2mat
 from sklearn.decomposition import LatentDirichletAllocation
-from sklearn.feature_extraction.text import CountVectorizer
 
 data = [['i like cats alot', 'cats r pretty cool', 'cats are better than dogs'],
         ['dogs rule the haus', 'dogs are my jam', 'dogs are a mans best friend']]

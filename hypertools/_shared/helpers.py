@@ -7,6 +7,7 @@ Helper functions
 ##PACKAGES##
 from __future__ import division
 from __future__ import print_function
+import functools
 import sys
 import warnings
 import numpy as np
@@ -17,14 +18,14 @@ import seaborn as sns
 import itertools
 import pandas as pd
 from matplotlib.lines import Line2D
-from .._externals.ppca import PPCA
 np.seterr(divide='ignore', invalid='ignore')
 
-##HELPER FUNCTIONS##
+
 def center(x):
     assert type(x) is list, "Input data to center must be list"
     x_stacked = np.vstack(x)
     return [i - np.mean(x_stacked, 0) for i in x]
+
 
 def scale(x):
     assert type(x) is list, "Input data to scale must be list"
@@ -34,11 +35,13 @@ def scale(x):
     f = lambda x: 2*(np.divide(x - m1, m2)) - 1
     return [f(i) for i in x]
 
+
 def group_by_category(vals):
     if any(isinstance(el, list) for el in vals):
         vals = list(itertools.chain(*vals))
     val_set = list(sorted(set(vals), key=list(vals).index))
     return [val_set.index(val) for val in vals]
+
 
 def vals2colors(vals,cmap='GnBu_d',res=100):
     """Maps values to colors
@@ -58,6 +61,7 @@ def vals2colors(vals,cmap='GnBu_d',res=100):
     ranks = np.digitize(vals, np.linspace(np.min(vals), np.max(vals)+1, res+1)) - 1
     return [tuple(i) for i in palette[ranks, :]]
 
+
 def vals2bins(vals,res=100):
     """Maps values to bins
     Args:
@@ -71,11 +75,13 @@ def vals2bins(vals,res=100):
         vals = list(itertools.chain(*vals))
     return list(np.digitize(vals, np.linspace(np.min(vals), np.max(vals)+1, res+1)) - 1)
 
+
 def interp_array(arr,interp_val=10):
     x=np.arange(0, len(arr), 1)
     xx=np.arange(0, len(arr)-1, 1/interp_val)
     q=pchip(x,arr)
     return q(xx)
+
 
 def interp_array_list(arr_list,interp_val=10):
     smoothed= [np.zeros(arr_list[0].shape) for item in arr_list]
@@ -103,12 +109,13 @@ def interp_array_list(arr_list,interp_val=10):
 #     else:
 #         raise ValueError("Data must be numpy array, list of numpy array, pandas dataframe or list of pandas dataframes.")
 
+
 def parse_args(x,args):
     args_list = []
     for i,item in enumerate(x):
         tmp = []
-        for ii,arg in enumerate(args):
-            if type(arg) is tuple or type(arg) is list:
+        for ii, arg in enumerate(args):
+            if isinstance(arg, (tuple, list)):
                 if len(arg) == len(x):
                     tmp.append(arg[i])
                 else:
@@ -119,34 +126,37 @@ def parse_args(x,args):
         args_list.append(tuple(tmp))
     return args_list
 
+
 def parse_kwargs(x, kwargs):
     kwargs_list = []
     for i,item in enumerate(x):
         tmp = {}
         for kwarg in kwargs:
-            if type(kwargs[kwarg]) is tuple or type(kwargs[kwarg]) is list:
+            if isinstance(kwargs[kwarg], (tuple, list)):
                 if len(kwargs[kwarg]) == len(x):
                     tmp[kwarg]=kwargs[kwarg][i]
                 else:
                     # print('Error: keyword arguments must be a list of the same length as x')
                     # sys.exit(1)
-                    tmp[kwarg]=None
+                    tmp[kwarg] = None
             else:
                 tmp[kwarg]=kwargs[kwarg]
         kwargs_list.append(tmp)
     return kwargs_list
 
+
 def reshape_data(x, hue, labels):
     categories = list(sorted(set(hue), key=list(hue).index))
     x_stacked = np.vstack(x)
-    x_reshaped = [[] for i in categories]
-    labels_reshaped = [[] for i in categories]
+    x_reshaped = [[] for _ in categories]
+    labels_reshaped = [[] for _ in categories]
     if labels is None:
         labels = [None]*len(hue)
     for idx, (point, label) in enumerate(zip(hue, labels)):
         x_reshaped[categories.index(point)].append(x_stacked[idx])
         labels_reshaped[categories.index(point)].append(labels[idx])
     return [np.vstack(i) for i in x_reshaped], labels_reshaped
+
 
 def patch_lines(x):
     """
@@ -156,6 +166,7 @@ def patch_lines(x):
         x[idx] = np.vstack([x[idx], x[idx+1][0,:]])
     return x
 
+
 def is_line(format_str):
     if isinstance(format_str, np.bytes_):
         format_str = format_str.decode('utf-8')
@@ -163,8 +174,6 @@ def is_line(format_str):
 
     return (format_str is None) or (all([str(symbol) not in format_str for symbol in markers]))
 
-import collections
-import functools
 
 def memoize(obj):
     cache = obj.cache = {}
@@ -176,6 +185,7 @@ def memoize(obj):
             cache[key] = obj(*args, **kwargs)
         return cache[key]
     return memoizer
+
 
 def get_type(data):
     """
@@ -211,19 +221,23 @@ def get_type(data):
                         'Numpy Array, Pandas DataFrame, String, List of strings'
                         ', List of numbers')
 
+
 def convert_text(data):
     dtype = get_type(data)
     if dtype in ['list_str', 'str']:
         data = np.array(data).reshape(-1, 1)
     return data
 
+
 def check_geo(geo):
     """ Checks a geo and makes sure the text fields are not binary """
     geo = copy.copy(geo)
+
     def fix_item(item):
         if isinstance(item, six.binary_type):
             return item.decode()
         return item
+
     def fix_list(lst):
         return [fix_item(i) for i in lst]
     if isinstance(geo.reduce, six.binary_type):
@@ -235,6 +249,7 @@ def check_geo(geo):
             elif isinstance(geo.kwargs[key], six.binary_type):
                 geo.kwargs[key] = fix_item(geo.kwargs[key])
     return geo
+
 
 def get_dtype(data):
     """

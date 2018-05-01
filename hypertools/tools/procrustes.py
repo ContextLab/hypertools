@@ -2,8 +2,11 @@
 from __future__ import division
 from builtins import zip
 from builtins import range
+
 import numpy as np
+
 from .format_data import format_data as formatter
+
 
 def procrustes(source, target, scaling=True, reflection=True, reduction=False,
                oblique=False, oblique_rcond=-1, format_data=True):
@@ -55,8 +58,6 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
 
     """
 
-    _scale = None
-
     def fit(source, target):
 
         datas = (source, target)
@@ -65,7 +66,6 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
 
         # Check the sizes
         if sn != tn:
-            pass
             raise ValueError("Data for both spaces should have the same " \
                   "number of samples. Got %d in template and %d in target space" \
                   % (sn, tn))
@@ -134,17 +134,17 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
         if sm != tm:
             T = T[:sm, :tm]
 
-        _scale = scale = ss * norms[1] / norms[0]
         # Assign projection
         if scaling:
+            scale = ss * norms[1] / norms[0]
             proj = scale * T
         else:
             proj = T
         return proj
 
-    def transform(data,proj):
+    def transform(data, proj):
         if proj is None:
-            raise RuntimeError("Mapper needs to be train before used.")
+            raise RuntimeError("Mapper needs to be trained before use.")
 
         d = np.asmatrix(data)
 

@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import pytest
-
 import numpy as np
 
 from hypertools.tools.missing_inds import missing_inds

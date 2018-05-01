@@ -2,17 +2,18 @@ parameters = {
     'KMeans': {'n_clusters': 5},
     'MiniBatchKMeans': {'n_clusters': 5},
     'SpectralClustering': {'n_clusters': 5,
-                           'affinity' : 'nearest_neighbors',
-                           'n_neighbors' : 10},
+                           'affinity': 'nearest_neighbors',
+                           'n_neighbors': 10},
     'AgglomerativeClustering': {'n_clusters': 5, 'linkage' : 'ward'},
     'FeatureAgglomeration': {'n_clusters': 5},
     'Birch': {'n_clusters': 5},
     'HDBSCAN': {'min_samples': 5, 'min_cluster_size': 15},
-    'CountVectorizer' : {},
-    'TfidfVectorizer' : {},
-    'LatentDirichletAllocation': {'n_components' : 20, 'learning_method' : 'batch'},
-    'NMF': {'n_components' : 20}
+    'CountVectorizer': {},
+    'TfidfVectorizer': {},
+    'LatentDirichletAllocation': {'n_components': 20, 'learning_method': 'batch'},
+    'NMF': {'n_components': 20}
 }
+
 
 def default_params(model, update_dict=None):
     """
