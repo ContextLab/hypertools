@@ -55,7 +55,7 @@ data cache (/Users/yourusername/hypertools_data).
 
 <h2>Requirements</h2>
 
-+ python 2.7, 3.4+
++ python 2.7, 3.5+
 + PPCA>=0.0.2
 + scikit-learn>=0.18.1
 + pandas>=0.18.0
