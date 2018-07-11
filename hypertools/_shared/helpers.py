@@ -9,7 +9,6 @@ from __future__ import division
 from __future__ import print_function
 import functools
 import sys
-import warnings
 import numpy as np
 import six
 import copy

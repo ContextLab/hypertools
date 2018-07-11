@@ -1,15 +1,7 @@
 # # -*- coding: utf-8 -*-
-#
 
 from hypertools.tools.load import load
 from hypertools.datageometry import DataGeometry
-# from sklearn.pipeline import Pipeline
-#
-# def test_load_wiki_model():
-#     geo = load('wiki_model')
-#     assert isinstance(geo, Pipeline)
-#
-
 
 def test_load_weights_avg():
     geo = load('weights_avg')
@@ -34,20 +26,6 @@ def test_load_mushrooms():
 def test_load_spiral():
     geo = load('spiral')
     assert isinstance(geo, DataGeometry)
-
-# def test_load_sotus():
-#     geo = load('sotus')
-#     assert isinstance(geo, DataGeometry)
-#
-# def test_load_wiki():
-#     geo = load('wiki')
-#     assert isinstance(geo, DataGeometry)
-#
-# def test_load_nips():
-#     geo = load('nips')
-#     assert isinstance(geo, DataGeometry)
-#
-
 
 def test_weights():
     geo = load('weights_sample')

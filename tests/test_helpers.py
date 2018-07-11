@@ -1,17 +1,6 @@
 # # -*- coding: utf-8 -*-
 
-from builtins import str
-
-## LIBRARIES ##
-
 import numpy as np
-
-## LOAD TEST DATA ##
-
-# import scipy.io.loadmat as load
-# test_dataset = load('examples/test_data.mat')
-# test_data = test_dataset['spiral']
-
 import hypertools._shared.helpers as helpers
 
 
