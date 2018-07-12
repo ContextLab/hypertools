@@ -12,7 +12,6 @@ from ..tools.format_data import format_data
 from .draw import _draw
 from ..datageometry import DataGeometry
 
-
 def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
          color=None, colors=None, palette='hls', group=None, hue=None,
          labels=None, legend=None, title=None, size=None, elev=10, azim=-60,

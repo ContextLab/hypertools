@@ -117,6 +117,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
             x = aligner(x, align=align)
 
         # if the shape of the data is already less than ndims, just return it
+        #TODO: should append 0s, not return it!!
         if ndims is None:
             return x
         elif all([i.shape[1]<=ndims for i in x]):

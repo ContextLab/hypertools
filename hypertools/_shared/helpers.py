@@ -42,7 +42,7 @@ def group_by_category(vals):
     return [val_set.index(val) for val in vals]
 
 
-def vals2colors(vals,cmap='GnBu_d',res=100):
+def vals2colors(vals, cmap='GnBu_d',res=100):
     """Maps values to colors
     Args:
     values (list or list of lists) - list of values to map to colors
