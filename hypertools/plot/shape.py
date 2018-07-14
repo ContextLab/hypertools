@@ -89,6 +89,4 @@ class Shape():
         #idea:
         #create a list of line segment objects (as needed) and marker objects (as needed)
         #depending on animation options, draw out the plot
-
-
-
+        #if line segments, first use PCHIP to smooth out the segments
