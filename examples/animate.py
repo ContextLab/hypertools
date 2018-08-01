@@ -18,4 +18,4 @@ import hypertools as hyp
 geo = hyp.load('weights_avg')
 
 # plot
-geo.plot(animate=True)
+geo.plot(animate=True, legend=['first', 'second'])
