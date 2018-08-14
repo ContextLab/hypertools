@@ -78,24 +78,20 @@ Check out our [readthedocs](http://hypertools.readthedocs.io/en/latest/) page fo
 
 <h2>Citing</h2>
 
-We wrote a short JMLR paper about HyperTools, which you can read [here](http://jmlr.org/papers/v18/17-434.html), or you can check out a (longer) preprint [here](https://arxiv.org/abs/1701.08290). We also have a repository with example notebooks from the paper [here](https://github.com/ContextLab/hypertools-paper-notebooks).
+We wrote a paper about HyperTools, which we provide as a preprint [here](https://arxiv.org/abs/1701.08290). We also have a repository with example notebooks from the paper [here](https://github.com/ContextLab/hypertools-paper-notebooks).
 
 Please cite as:
 
-`Heusser AC, Ziman K, Owen LLW, Manning JR (2018) HyperTools: A Python toolbox for gaining geometric insights into high-dimensional data.  Journal of Machine Learning Research, 18(152): 1--6.`
+`Heusser AC, Ziman K, Owen LLW, Manning JR (In press) HyperTools: A Python toolbox for gaining geometric insights into high-dimensional data.  Journal of Machine Learning Research.`
 
 Here is a bibtex formatted reference:
 
 ```
 @ARTICLE {,
-    author  = {Andrew C. Heusser and Kirsten Ziman and Lucy L. W. Owen and Jeremy R. Manning},
-    title   = {HyperTools: a Python Toolbox for Gaining Geometric Insights into High-Dimensional Data},
-    journal = {Journal of Machine Learning Research},
-    year    = {2018},
-    volume  = {18},
-    number  = {152},
-    pages   = {1-6},
-    url     = {http://jmlr.org/papers/v18/17-434.html}
+    author  = "A C Heusser and K Ziman and L L W Owen and J R Manning",
+    title   = "HyperTools: A Python toolbox for gaining geometric insights into high-dimensional data",
+    journal = "Journal of Machine Learning Research",
+    year    = "2018"
 }
 ```
 
