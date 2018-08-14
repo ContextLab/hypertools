@@ -99,13 +99,6 @@ def test_plot_cluster_n_clusters():
     geo = plot.plot(weights, n_clusters=3, show=False)
     assert isinstance(geo, DataGeometry)
 
-
-def test_plot_cluster_HDBSCAN():
-    # should return 10d data since ndims=10
-    geo = plot.plot(weights, cluster='HDBSCAN', show=False)
-    assert isinstance(geo, DataGeometry)
-
-
 def test_plot_nd():
     geo  = plot.plot(data, show=False)
     assert all([i.shape[1]==d.shape[1] for i, d in zip(geo.data, data)])

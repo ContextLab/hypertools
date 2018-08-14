@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
+import pytest
 from hypertools.tools.cluster import cluster
 from hypertools.plot.plot import plot
 
 cluster1 = np.random.multivariate_normal(np.zeros(3), np.eye(3), size=100)
 cluster2 = np.random.multivariate_normal(np.zeros(3)+100, np.eye(3), size=100)
-data = np.vstack([cluster1,cluster2])
-labels = cluster(data,n_clusters=2)
+data = np.vstack([cluster1, cluster2])
+labels = cluster(data, n_clusters=2)
 
 
 def test_cluster_n_clusters():
@@ -19,12 +20,15 @@ def test_cluster_returns_list():
 
 
 def test_cluster_hdbscan():
-    # Given well separated clusters this should "just work"
-    hdbscan_labels = cluster(data, cluster='HDBSCAN')
-    assert len(set(hdbscan_labels)) == 2
+    try:
+        from hdbscan import HDBSCAN
+        _has_hdbscan = True
+    except:
+        _has_hdbscan = False
 
-
-def text_cluster_geo():
-    geo = plot(data, show=False)
-    hdbscan_labels = cluster(geo, cluster='HDBSCAN')
-    assert len(set(hdbscan_labels)) == 2
+    if _has_hdbscan:
+        hdbscan_labels = cluster(data, cluster='HDBSCAN')
+        assert len(set(hdbscan_labels)) == 2
+    else:
+        with pytest.raises(ImportError):
+            hdbscan_labels = cluster(data, cluster='HDBSCAN')

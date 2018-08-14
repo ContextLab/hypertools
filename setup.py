@@ -25,7 +25,7 @@ LICENSE = 'MIT'
 
 setup(
     name='hypertools',
-    version='0.5.0',
+    version='0.5.1',
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
     author='Contextual Dynamics Lab',
@@ -42,7 +42,6 @@ setup(
    'matplotlib>=1.5.1',
    'scipy>=1.0.0',
    'numpy>=1.10.4',
-   'hdbscan>=0.8.11',
    'umap-learn>=0.1.5',
    'future',
    'requests',

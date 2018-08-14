@@ -6,7 +6,6 @@ matplotlib>=1.5.1
 scipy>=1.0.0
 numpy>=1.10.4
 umap-learn>=0.1.5
-hdbscan>=0.8.11
 future
 requests
 deepdish
