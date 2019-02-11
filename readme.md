@@ -6,7 +6,7 @@
 
 ![Hypertools example](images/hypertools.gif)
 
-<h2>Overview</h2>
+## Overview
 
 HyperTools is designed to facilitate
 [dimensionality reduction](https://en.wikipedia.org/wiki/Dimensionality_reduction)-based
@@ -20,7 +20,7 @@ familiar friends, including [matplotlib](https://matplotlib.org/),
 featured on
 [Kaggle's No Free Hunch blog](http://blog.kaggle.com/2017/04/10/exploring-the-structure-of-high-dimensional-data-with-hypertools-in-kaggle-kernels/).  For a general overview, you may find [this talk](https://www.youtube.com/watch?v=hb_ER9RGtOM) useful (given as part of the [MIND Summer School](https://summer-mind.github.io) at Dartmouth).
 
-<h2>Try it!</h2>
+## Try it!
 
 Click the badge to launch a binder instance with example uses:
 
@@ -30,7 +30,7 @@ or
 
 Check the [repo](https://github.com/ContextLab/hypertools-paper-notebooks) of Jupyter notebooks from the HyperTools [paper](https://arxiv.org/abs/1701.08290).
 
-<h2>Installation</h2>
+## Installation
 
 To install the latest stable version run:
 
@@ -53,7 +53,7 @@ Then, navigate to the folder and type:
 NOTE: If you have been using the development version of 0.5.0, please clear your
 data cache (/Users/yourusername/hypertools_data).
 
-<h2>Requirements</h2>
+## Requirements
 
 + python 2.7, 3.5+
 + PPCA>=0.0.2
@@ -72,11 +72,20 @@ data cache (/Users/yourusername/hypertools_data).
 If installing from github (instead of pip), you must also install the requirements:
 `pip install -r requirements.txt`
 
-<h2>Documentation</h2>
+### Troubleshooting
+
+If you encounter an error related to installing deepdish (hdf5) on a MacOS system, try installing hdf5 directly using [homebrew](https://brew.sh/):
+```
+$ brew tap homebrew/science
+$ brew install hdf5
+```
+and then re-start the installation.
+
+## Documentation
 
 Check out our [readthedocs](http://hypertools.readthedocs.io/en/latest/) page for further documentation, complete API details, and additional examples.
 
-<h2>Citing</h2>
+## Citing
 
 We wrote a short JMLR paper about HyperTools, which you can read [here](http://jmlr.org/papers/v18/17-434.html), or you can check out a (longer) preprint [here](https://arxiv.org/abs/1701.08290). We also have a repository with example notebooks from the paper [here](https://github.com/ContextLab/hypertools-paper-notebooks).
 
@@ -99,26 +108,25 @@ Here is a bibtex formatted reference:
 }
 ```
 
-<h2>Contributing</h2>
+## Contributing
 
 [![Join the chat at https://gitter.im/hypertools/Lobby](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/hypertools/Lobby)
 
 If you'd like to contribute, please first read our [Code of Conduct](https://www.mozilla.org/en-US/about/governance/policies/participation/).
 
 For specific information on how to contribute to the project, please see our [Contributing](https://github.com/ContextLab/hypertools/blob/master/CONTRIBUTING.md) page.
-
-<h2>Testing</h2>
+## Testing
 
 [![Build Status](https://travis-ci.org/ContextLab/hypertools.svg?branch=master)](https://travis-ci.org/ContextLab/hypertools)
 
 
 To test HyperTools, install pytest (`pip install pytest`) and run `pytest` in the HyperTools folder
 
-<h2>Examples</h2>
+## Examples
 
 See [here](http://hypertools.readthedocs.io/en/latest/auto_examples/index.html) for more examples.
 
-<h2>Plot</h2>
+## Plot
 
 ```
 import hypertools as hyp
@@ -127,23 +135,23 @@ hyp.plot(list_of_arrays, '.', group=list_of_labels)
 
 ![Plot example](images/plot.gif)
 
-<h2>Align</h2>
+## Align
 
 ```
 import hypertools as hyp
 hyp.plot(list_of_arrays, align='hyper')
 ```
 
-<h3><center>BEFORE</center></h3>
+### BEFORE
 
 ![Align before example](images/align_before.gif)
 
-<h3><center>AFTER</center></h3>
+### AFTER</center>
 
 ![Align after example](images/align_after.gif)
 
 
-<h2>Cluster</h2>
+## Cluster
 
 ```
 import hypertools as hyp
@@ -153,7 +161,7 @@ hyp.plot(array, '.', n_clusters=10)
 ![Cluster Example](images/cluster_example.png)
 
 
-<h2>Describe</h2>
+## Describe
 
 ```
 import hypertools as hyp
