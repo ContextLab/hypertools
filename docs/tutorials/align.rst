@@ -74,7 +74,7 @@ Aligning data with Hyperalignment
 ---------------------------------
 
 Next, we can align the two datasets (using
-`hyperalignment <http://papers.nips.cc/paper/5855-a-reduced-dimension-fmri-shared-response-model.pdf>`__)
+`hyperalignment <http://haxbylab.dartmouth.edu/publications/HGC+11.pdf>`__)
 and visualize the aligned data. Note that the two datasets are now much
 more similar to each other.
 
@@ -97,8 +97,9 @@ more similar to each other.
 Aligning data with the Shared Response Model
 --------------------------------------------
 
-You may use the Shared Response Model for alignment by setting ``align``
-to 'SRM'.
+You may use the `Shared Response Model 
+<https://papers.nips.cc/paper/5855-a-reduced-dimension-fmri-shared-response-model.pdf>`__
+for alignment by setting ``align`` to 'SRM'.
 
 .. code:: ipython3
 
