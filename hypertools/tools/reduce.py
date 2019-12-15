@@ -98,12 +98,15 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
         if format_data:
             x = formatter(x, ppca=True)
 
-        if np.vstack([i for i in x]).shape[0]==1:
+        stacked_x = np.vstack(x)
+
+        if stacked_x.shape[0] == 1:
             warnings.warn('Cannot reduce the dimensionality of a single row of'
                           ' data. Return zeros length of ndims')
             return [np.zeros((1, ndims))]
-        if ndims:
-            if np.vstack([i for i in x]).shape[0]<ndims:
+
+
+        elif stacked_x.shape[0] < ndims:
                 warnings.warn('The number of rows in your data is less than ndims.'
                               ' The data will be reduced to the number of rows.')
 
@@ -118,32 +121,41 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
                           analyze function to perform combinations of these transformations.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.analyze.html#hypertools.analyze')
             x = aligner(x, align=align)
 
-        # if the shape of the data is already less than ndims, just return it
-        if ndims is None:
-            return x
-        elif all([i.shape[1]<=ndims for i in x]):
-            return x
+        # format params to pass to model
+        if isinstance(reduce, dict):
+            try:
+                model_name = reduce['model']
+                model_params = reduce['params']
+            except KeyError:
+                raise ValueError('If passing a dictionary, pass the model as the value of the "model" key and a \
+                dictionary of custom params as the value of the "params" key.')
+        else:
+            model_name = reduce
 
-        # if reduce is a string, find the corresponding model
-        if type(reduce) in [str, np.string_]:
-            model = models[reduce]
-            model_params = {
-                'n_components' : ndims
-            }
-        # if its a dict, use custom params
-        elif type(reduce) is dict:
-            if isinstance((reduce['model']), six.string_types):
-                model = models[reduce['model']]
-                if reduce['params'] is None:
-                    model_params = {
-                        'n_components' : ndims
-                    }
-                else:
-                    model_params = reduce['params']
-        if ndims:
-            model_params = {
-                'n_components' : ndims
-            }
+        try:
+            # if a string is passed, make sure it's one of the supported options
+            if isinstance(model_name, (str, np.string_)):
+                model = models[model_name]
+                model_params = {
+                    'n_components': ndims
+                }
+            # check any custom objects for necessary methods
+            else:
+                model = model_name
+                getattr(model_name, 'fit_transform')
+                getattr(model_name, 'n_components')
+        except (KeyError, AttributeError):
+            raise ValueError('reduce must be one of the supported options or support n_components and fit_transform \
+             methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce \
+             for supported models')
+
+        # check for multiple values from n_components & ndims args
+        if ndims is not None and 'n_components' in model_params and ndims != model_params['n_components']:
+            warnings.warn('Unequal values passed to dims and n_components. Using custom n_components parameter.')
+
+        # if ndims is not passed or all data is < ndims-dimensional, just return it
+        if model_params['n_components'] is None or all([i.shape[1] <= model_params['n_components'] for i in x]):
+            return x
 
         # initialize model
         model = model(**model_params)
