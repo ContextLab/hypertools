@@ -13,22 +13,22 @@ from .format_data import format_data as formatter
 
 # dictionary of models
 models = {
-    'PCA' : PCA,
-    'IncrementalPCA' : IncrementalPCA,
-    'SparsePCA' : SparsePCA,
-    'MiniBatchSparsePCA' : MiniBatchSparsePCA,
-    'KernelPCA' : KernelPCA,
-    'FastICA' : FastICA,
-    'FactorAnalysis' : FactorAnalysis,
-    'TruncatedSVD' : TruncatedSVD,
-    'DictionaryLearning' : DictionaryLearning,
-    'MiniBatchDictionaryLearning' : MiniBatchDictionaryLearning,
-    'TSNE' : TSNE,
-    'Isomap' : Isomap,
-    'SpectralEmbedding' : SpectralEmbedding,
-    'LocallyLinearEmbedding' : LocallyLinearEmbedding,
-    'MDS' : MDS,
-    'UMAP' : UMAP
+    'PCA': PCA,
+    'IncrementalPCA': IncrementalPCA,
+    'SparsePCA': SparsePCA,
+    'MiniBatchSparsePCA': MiniBatchSparsePCA,
+    'KernelPCA': KernelPCA,
+    'FastICA': FastICA,
+    'FactorAnalysis': FactorAnalysis,
+    'TruncatedSVD': TruncatedSVD,
+    'DictionaryLearning': DictionaryLearning,
+    'MiniBatchDictionaryLearning': MiniBatchDictionaryLearning,
+    'TSNE': TSNE,
+    'Isomap': Isomap,
+    'SpectralEmbedding': SpectralEmbedding,
+    'LocallyLinearEmbedding': LocallyLinearEmbedding,
+    'MDS': MDS,
+    'UMAP': UMAP
 }
 
 # main function
@@ -81,100 +81,109 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
 
     """
 
-    # deprecated warning
+    # deprecation warning
     if (model is not None) or (model_params is not None):
         warnings.warn('Model and model params will be deprecated.  Please use the \
                       reduce keyword.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce')
-        reduce = {}
-        reduce['model'] = model
-        reduce['params'] = model_params
+        reduce = {
+            'model': model,
+            'params': model_params
+        }
 
     # if model is None, just return data
     if reduce is None:
         return x
-    else:
 
-        # common format
-        if format_data:
-            x = formatter(x, ppca=True)
+    elif isinstance(reduce, (str, np.string_)):
+        model_name = reduce
+        model_params = {
+            'n_components': ndims
+        }
 
-        stacked_x = np.vstack(x)
-
-        if stacked_x.shape[0] == 1:
-            warnings.warn('Cannot reduce the dimensionality of a single row of'
-                          ' data. Return zeros length of ndims')
-            return [np.zeros((1, ndims))]
-
-
-        elif stacked_x.shape[0] < ndims:
-                warnings.warn('The number of rows in your data is less than ndims.'
-                              ' The data will be reduced to the number of rows.')
-
-        # deprecation warnings
-        if normalize is not None:
-            warnings.warn('The normalize argument will be deprecated for this function.  Please use the \
-                          analyze function to perform combinations of these transformations.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.analyze.html#hypertools.analyze')
-            x = normalizer(x, normalize=normalize)
-
-        if align is not None:
-            warnings.warn('The align argument will be deprecated for this function.  Please use the \
-                          analyze function to perform combinations of these transformations.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.analyze.html#hypertools.analyze')
-            x = aligner(x, align=align)
-
-        # format params to pass to model
-        if isinstance(reduce, dict):
-            try:
-                model_name = reduce['model']
-                model_params = reduce['params']
-            except KeyError:
-                raise ValueError('If passing a dictionary, pass the model as the value of the "model" key and a \
-                dictionary of custom params as the value of the "params" key.')
-        else:
-            model_name = reduce
-
+    elif isinstance(reduce, dict):
         try:
-            # if a string is passed, make sure it's one of the supported options
-            if isinstance(model_name, (str, np.string_)):
-                model = models[model_name]
-                model_params = {
-                    'n_components': ndims
-                }
-            # check any custom objects for necessary methods
-            else:
-                model = model_name
-                getattr(model_name, 'fit_transform')
-                getattr(model_name, 'n_components')
-        except (KeyError, AttributeError):
-            raise ValueError('reduce must be one of the supported options or support n_components and fit_transform \
-             methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce \
-             for supported models')
+            model_name = reduce['model']
+            model_params = reduce['params']
+        except KeyError:
+            raise ValueError('If passing a dictionary, pass the model as the value of the "model" key and a \
+            dictionary of custom params as the value of the "params" key.')
 
-        # check for multiple values from n_components & ndims args
-        if ndims is not None and 'n_components' in model_params and ndims != model_params['n_components']:
-            warnings.warn('Unequal values passed to dims and n_components. Using custom n_components parameter.')
+    else:
+        # handle other possibilities below
+        model_name = reduce
 
-        # if ndims is not passed or all data is < ndims-dimensional, just return it
-        if model_params['n_components'] is None or all([i.shape[1] <= model_params['n_components'] for i in x]):
-            return x
-
-        # initialize model
-        model = model(**model_params)
-
-        # reduce data
-        x_reduced = reduce_list(x, model)
-
-        # return data
-        if internal or len(x_reduced)>1:
-            return x_reduced
+    try:
+        # if the model passed is a string, make sure it's one of the supported options
+        if isinstance(model_name, (str, np.string_)):
+            model = models[model_name]
+        # otherwise check any custom object for necessary methods
         else:
-            return x_reduced[0]
+            model = model_name
+            getattr(model, 'fit_transform')
+            getattr(model, 'n_components')
+    except (KeyError, AttributeError):
+        raise ValueError('reduce must be one of the supported options or support n_components and fit_transform \
+         methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce \
+         for supported models')
+
+    # check for multiple values from n_components & ndims args
+    if 'n_components' in model_params:
+        if (ndims is None) or (ndims == model_params['n_components']):
+            pass
+        else:
+            warnings.warn('Unequal values passed to dims and n_components. Using ndims parameter.')
+            model_params['n_components'] = ndims
+    else:
+        model_params['n_components'] = ndims
+
+    # convert to common format
+    if format_data:
+        x = formatter(x, ppca=True)
+
+    # if ndims/n_components is not passed or all data is < ndims-dimensional, just return it
+    if model_params['n_components'] is None or all([i.shape[1] <= model_params['n_components'] for i in x]):
+        return x
+
+    stacked_x = np.vstack(x)
+    if stacked_x.shape[0] == 1:
+        warnings.warn('Cannot reduce the dimensionality of a single row of'
+                      ' data. Return zeros length of ndims')
+        return [np.zeros((1, model_params['n_components']))]
+
+
+    elif stacked_x.shape[0] < model_params['n_components']:
+            warnings.warn('The number of rows in your data is less than ndims.'
+                          ' The data will be reduced to the number of rows.')
+
+    # deprecation warnings
+    if normalize is not None:
+        warnings.warn('The normalize argument will be deprecated for this function.  Please use the \
+                      analyze function to perform combinations of these transformations.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.analyze.html#hypertools.analyze')
+        x = normalizer(x, normalize=normalize)
+
+    if align is not None:
+        warnings.warn('The align argument will be deprecated for this function.  Please use the \
+                      analyze function to perform combinations of these transformations.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.analyze.html#hypertools.analyze')
+        x = aligner(x, align=align)
+
+    # initialize model
+    model = model(**model_params)
+
+    # reduce data
+    x_reduced = reduce_list(x, model)
+
+    # return data
+    if internal or len(x_reduced) > 1:
+        return x_reduced
+    else:
+        return x_reduced[0]
 
 
 # sub functions
 def reduce_list(x, model):
     split = np.cumsum([len(xi) for xi in x])[:-1]
     x_r = np.vsplit(model.fit_transform(np.vstack(x)), split)
-    if len(x)>1:
+    if len(x) > 1:
         return [xi for xi in x_r]
     else:
         return [x_r[0]]
