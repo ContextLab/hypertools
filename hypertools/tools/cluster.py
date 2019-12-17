@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 import warnings
+from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering
 import six
 import numpy as np
-from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering
 from .._shared.helpers import *
 from .format_data import format_data as formatter
 

@@ -1,6 +1,5 @@
 import numpy as np
 import inspect
-import warnings
 import six
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF

@@ -95,16 +95,16 @@ Please cite as:
 
 Here is a bibtex formatted reference:
 
-```
+```	```
 @ARTICLE {,
-    author  = {Andrew C. Heusser and Kirsten Ziman and Lucy L. W. Owen and Jeremy R. Manning},
-    title   = {HyperTools: a Python Toolbox for Gaining Geometric Insights into High-Dimensional Data},
+    author  = {Andrew C. Heusser and Kirsten Ziman and Lucy L. W. Owen and Jeremy R. Manning},    
+    title   = {HyperTools: a Python Toolbox for Gaining Geometric Insights into High-Dimensional Data},    
     journal = {Journal of Machine Learning Research},
     year    = {2018},
-    volume  = {18},
-    number  = {152},
-    pages   = {1-6},
-    url     = {http://jmlr.org/papers/v18/17-434.html}
+    volume  = {18},	
+    number  = {152},	
+    pages   = {1-6},	
+    url     = {http://jmlr.org/papers/v18/17-434.html}	
 }
 ```
 
