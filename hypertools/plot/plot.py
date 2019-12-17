@@ -1,14 +1,6 @@
 #!/usr/bin/env python
 from __future__ import division
-import sys
 import warnings
-import re
-import itertools
-import copy
-import six
-import seaborn as sns
-import pandas as pd
-from matplotlib.lines import Line2D
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 from .._shared.helpers import *
@@ -19,7 +11,6 @@ from ..tools.reduce import reduce as reducer
 from ..tools.format_data import format_data
 from .draw import _draw
 from ..datageometry import DataGeometry
-
 
 def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
          color=None, colors=None, palette='hls', group=None, hue=None,

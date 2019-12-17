@@ -9,7 +9,6 @@ from __future__ import division
 from __future__ import print_function
 import functools
 import sys
-import warnings
 import numpy as np
 import six
 import copy
@@ -43,7 +42,7 @@ def group_by_category(vals):
     return [val_set.index(val) for val in vals]
 
 
-def vals2colors(vals,cmap='GnBu_d',res=100):
+def vals2colors(vals, cmap='GnBu_d',res=100):
     """Maps values to colors
     Args:
     values (list or list of lists) - list of values to map to colors
@@ -89,26 +88,6 @@ def interp_array_list(arr_list,interp_val=10):
         smoothed[idx] = interp_array(arr,interp_val)
     return smoothed
 
-# def check_data(data):
-#     if type(data) is list:
-#         if all([isinstance(x, np.ndarray) for x in data]):
-#             return 'list'
-#         elif all([isinstance(x, pd.DataFrame) for x in data]):
-#             return 'dflist'
-#         elif all([isinstance(x, str) for x in data]):
-#                 return 'text'
-#         elif isinstance(data[0], collections.Iterable):
-#             if all([isinstance(x, str) for x in data[0]]):
-#                     return 'text'
-#         else:
-#             raise ValueError("Data must be numpy array, list of numpy array, pandas dataframe or list of pandas dataframes.")
-#     elif isinstance(data, np.ndarray):
-#         return 'array'
-#     elif isinstance(data, pd.DataFrame):
-#         return 'df'
-#     else:
-#         raise ValueError("Data must be numpy array, list of numpy array, pandas dataframe or list of pandas dataframes.")
-
 
 def parse_args(x,args):
     args_list = []
@@ -136,8 +115,6 @@ def parse_kwargs(x, kwargs):
                 if len(kwargs[kwarg]) == len(x):
                     tmp[kwarg]=kwargs[kwarg][i]
                 else:
-                    # print('Error: keyword arguments must be a list of the same length as x')
-                    # sys.exit(1)
                     tmp[kwarg] = None
             else:
                 tmp[kwarg]=kwargs[kwarg]
