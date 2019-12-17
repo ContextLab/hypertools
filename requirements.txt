@@ -8,5 +8,6 @@ numpy>=1.10.4
 git+https://github.com/lmcinnes/umap.git@5f9488a9540d1e0ac149e2dd42ebf03c39706110#egg=umap-learn
 future
 requests
+tables==3.5.2
 deepdish
 six
