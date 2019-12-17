@@ -6,6 +6,7 @@ hypertools.egg-info/
 .cache/
 tests/__pycache__/
 dist/
+build/
 .tox/
 *.bak
 tox.ini
