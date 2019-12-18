@@ -55,7 +55,7 @@ setup(
     url=URL,
     download_url = DOWNLOAD_URL,
     license=LICENSE,
-    python_requires=REQUIRES_PYTHON
+    python_requires=REQUIRES_PYTHON,
     packages=PACKAGES,
     install_requires=REQUIREMENTS,
     classifiers=CLASSIFIERS,
