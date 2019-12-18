@@ -1,36 +1,34 @@
 # -*- coding: utf-8 -*-
 import os
+import subprocess
+import sys
 from setuptools import setup, find_packages
+from setuptools.command.install import install
 
 os.environ["MPLCONFIGDIR"] = "."
 
 
-def parse_dependencies(requirements_path, vcs_id, egg_id):
-    requirements = []
-    with open(requirements_path, 'r') as f:
-        reqs = f.read().splitlines()
+class PostInstall(install):
+    github_pkg = 'https://api.github.com/repos/lmcinnes/umap/tarball/5f9488a9540d1e0ac149e2dd42ebf03c39706110#egg=umap_learn'
 
-    for req in reqs:
-        if req.startswith(vcs_id) and egg_id in req:
-            package_name = req[req.find(egg_id) + len(egg_id):]
-            requirements.append(package_name + ' @ ' + req.rstrip(egg_id + package_name))
-        else:
-            requirements.append(req)
-
-    return requirements
+    def run(self):
+        install.run(self)
+        output = subprocess.run([sys.executable, '-m', 'pip', 'install', self.github_pkg],
+                                stdout=subprocess.PIPE)
+        print(output.stdout.decode('utf-8'))
 
 
 NAME = 'hypertools'
-VERSION = '0.6.1'
+VERSION = '0.6.2'
 AUTHOR = 'Contextual Dynamics Lab'
 AUTHOR_EMAIL = 'contextualdynamics@gmail.com'
 URL = 'https://github.com/ContextLab/hypertools'
 DOWNLOAD_URL = URL
 LICENSE = 'MIT'
-REQUIRES_PYTHON = '>=3'
+REQUIRES_PYTHON = '>=3.5'
 PACKAGES = find_packages(exclude=('images', 'examples', 'tests'))
-REQUIREMENTS = parse_dependencies('requirements.txt', 'https://api.github.com', '#egg=')
-
+with open('requirements.txt', 'r') as f:
+    REQUIREMENTS = f.read().splitlines()
 
 DESCRIPTION = 'A python package for visualizing and manipulating high-dimensional data'
 LONG_DESCRIPTION = """\
@@ -57,7 +55,11 @@ CLASSIFIERS = [
     'Topic :: Multimedia :: Graphics',
     'Operating System :: POSIX',
     'Operating System :: Unix',
-    'Operating System :: MacOS']
+    'Operating System :: MacOS'
+]
+CMDCLASS = {
+    'install': PostInstall
+}
 
 
 setup(
@@ -74,4 +76,5 @@ setup(
     packages=PACKAGES,
     install_requires=REQUIREMENTS,
     classifiers=CLASSIFIERS,
+    cmdclass=CMDCLASS,
 )
