@@ -4,6 +4,24 @@ from setuptools import setup, find_packages
 
 os.environ["MPLCONFIGDIR"] = "."
 
+
+def parse_dependencies(requirements_path, vcs_id, egg_id):
+    requirements = []
+    dependency_links = []
+    with open(requirements_path, 'r') as f:
+        reqs = f.read().splitlines()
+
+    for req in reqs:
+        if req.startswith(vcs_id) and egg_id in req:
+            package_name = req[req.find(egg_id) + len(egg_id):]
+            requirements.append(package_name)
+            dependency_links.append(req)
+        else:
+            requirements.append(req)
+
+    return requirements, dependency_links
+
+
 NAME = 'hypertools'
 VERSION = '0.6.1'
 AUTHOR = 'Contextual Dynamics Lab'
@@ -13,8 +31,7 @@ DOWNLOAD_URL = URL
 LICENSE = 'MIT'
 REQUIRES_PYTHON = '>=3'
 PACKAGES = find_packages(exclude=('images', 'examples', 'tests'))
-with open('requirements.txt', 'r') as f:
-    REQUIREMENTS = f.read().splitlines()
+REQUIREMENTS, DEPENDENCY_LINKS = parse_dependencies('requirements.txt', 'git+', '#egg=')
 
 
 DESCRIPTION = 'A python package for visualizing and manipulating high-dimensional data'
@@ -58,5 +75,6 @@ setup(
     python_requires=REQUIRES_PYTHON,
     packages=PACKAGES,
     install_requires=REQUIREMENTS,
+    dependency_links=DEPENDENCY_LINKS
     classifiers=CLASSIFIERS,
 )
