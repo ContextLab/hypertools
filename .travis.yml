@@ -1,7 +1,6 @@
 language: python
 sudo: false
 python:
-- '3.5'
 - '3.6'
 - '3.7'
 services:
