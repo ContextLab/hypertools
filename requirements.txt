@@ -1,11 +1,11 @@
 PPCA>=0.0.2
-scikit-learn>=0.19.1
+scikit-learn>=0.19.1,<0.22
 pandas>=0.18.0
 seaborn>=0.8.1
 matplotlib>=1.5.1
 scipy>=1.0.0
 numpy>=1.10.4
-umap-learn>=0.1.5
+https://api.github.com/repos/lmcinnes/umap/tarball/5f9488a9540d1e0ac149e2dd42ebf03c39706110#egg=umap_learn
 future
 requests
 deepdish

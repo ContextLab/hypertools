@@ -1,13 +1,10 @@
 language: python
 sudo: false
 python:
-- '2.7'
-- '3.5'
 - '3.6'
-before_script:
-- "export DISPLAY=:99.0"
-- "sh -e /etc/init.d/xvfb start"
-- sleep 3
+- '3.7'
+services:
+  - xvfb
 install:
 - wget http://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh -O miniconda.sh
 - bash miniconda.sh -b -p $HOME/miniconda
@@ -24,8 +21,6 @@ install:
 - cp tests/matplotlibrc .
 before_script:
 - if [ ${TRAVIS_PYTHON_VERSION} == '3.6' ]; then pip install flake8; flake8 . --count --select=E901,E999,F821,F822,F823 --show-source --statistics; fi
-- "export DISPLAY=:99.0"  # https://docs.travis-ci.com/user/gui-and-headless-browsers
-- sh -e /etc/init.d/xvfb start
 script: py.test
 notifications:
   slack:
