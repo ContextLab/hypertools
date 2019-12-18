@@ -13,7 +13,7 @@ def parse_dependencies(requirements_path, vcs_id, egg_id):
     for req in reqs:
         if req.startswith(vcs_id) and egg_id in req:
             package_name = req[req.find(egg_id) + len(egg_id):]
-            requirements.append(package_name + ' @ ' + req)
+            requirements.append(package_name + ' @ ' + req.rstrip(egg_id+package_name))
         else:
             requirements.append(req)
 
