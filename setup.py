@@ -75,6 +75,6 @@ setup(
     python_requires=REQUIRES_PYTHON,
     packages=PACKAGES,
     install_requires=REQUIREMENTS,
-    dependency_links=DEPENDENCY_LINKS
+    dependency_links=DEPENDENCY_LINKS,
     classifiers=CLASSIFIERS,
 )
