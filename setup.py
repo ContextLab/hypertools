@@ -21,7 +21,7 @@ def parse_dependencies(requirements_path, vcs_id, egg_id):
 
 
 NAME = 'hypertools'
-VERSION = '0.6.1'
+VERSION = '0.6.0'
 AUTHOR = 'Contextual Dynamics Lab'
 AUTHOR_EMAIL = 'contextualdynamics@gmail.com'
 URL = 'https://github.com/ContextLab/hypertools'
