@@ -5,8 +5,8 @@ seaborn>=0.8.1
 matplotlib>=1.5.1
 scipy>=1.0.0
 numpy>=1.10.4
-https://api.github.com/repos/lmcinnes/umap/tarball/5f9488a9540d1e0ac149e2dd42ebf03c39706110#egg=umap_learn
 future
 requests
 deepdish
 six
+# also requires umap-learn. However, due to a recent bug fix that has not been released on PyPI yet, umap-learn is installed from GitHub in setup.py
