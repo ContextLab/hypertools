@@ -95,7 +95,7 @@ Please cite as:
 
 Here is a bibtex formatted reference:
 
-```	```
+```
 @ARTICLE {,
     author  = {Andrew C. Heusser and Kirsten Ziman and Lucy L. W. Owen and Jeremy R. Manning},    
     title   = {HyperTools: a Python Toolbox for Gaining Geometric Insights into High-Dimensional Data},    
