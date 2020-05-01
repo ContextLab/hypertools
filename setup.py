@@ -1,8 +1,34 @@
 # -*- coding: utf-8 -*-
 import os
+import subprocess
+import sys
+from setuptools import setup, find_packages
+from setuptools.command.install import install
+
 os.environ["MPLCONFIGDIR"] = "."
 
-from setuptools import setup, find_packages
+
+class PostInstall(install):
+    github_pkg = 'https://api.github.com/repos/lmcinnes/umap/tarball/5f9488a9540d1e0ac149e2dd42ebf03c39706110#egg=umap_learn'
+
+    def run(self):
+        install.run(self)
+        output = subprocess.run([sys.executable, '-m', 'pip', 'install', self.github_pkg],
+                                stdout=subprocess.PIPE)
+        print(output.stdout.decode('utf-8'))
+
+
+NAME = 'hypertools'
+VERSION = '0.6.2'
+AUTHOR = 'Contextual Dynamics Lab'
+AUTHOR_EMAIL = 'contextualdynamics@gmail.com'
+URL = 'https://github.com/ContextLab/hypertools'
+DOWNLOAD_URL = URL
+LICENSE = 'MIT'
+REQUIRES_PYTHON = '>=3.5'
+PACKAGES = find_packages(exclude=('images', 'examples', 'tests'))
+with open('requirements.txt', 'r') as f:
+    REQUIREMENTS = f.read().splitlines()
 
 DESCRIPTION = 'A python package for visualizing and manipulating high-dimensional data'
 LONG_DESCRIPTION = """\
@@ -20,42 +46,35 @@ Some key features of HyperTools are:
 - A set of powerful data manipulation tools including hyperalignment, k-means clustering, normalizing and more.
 - Support for lists of Numpy arrays, Pandas dataframes, String, Geos or mixed lists.
 """
+CLASSIFIERS = [
+    'Intended Audience :: Science/Research',
+    'Programming Language :: Python :: 3.5',
+    'Programming Language :: Python :: 3.6',
+    'Programming Language :: Python :: 3.7',
+    'Topic :: Scientific/Engineering :: Visualization',
+    'Topic :: Multimedia :: Graphics',
+    'Operating System :: POSIX',
+    'Operating System :: Unix',
+    'Operating System :: MacOS'
+]
+CMDCLASS = {
+    'install': PostInstall
+}
 
-LICENSE = 'MIT'
 
 setup(
-    name='hypertools',
-    version='0.5.1',
+    name=NAME,
+    version=VERSION,
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
-    author='Contextual Dynamics Lab',
-    author_email='contextualdynamics@gmail.com',
-    url='https://github.com/ContextLab/hypertools',
-    download_url = 'https://github.com/ContextLab/hypertools',
+    author=AUTHOR,
+    author_email=AUTHOR_EMAIL,
+    url=URL,
+    download_url = DOWNLOAD_URL,
     license=LICENSE,
-    packages=find_packages(exclude=('images', 'examples', 'tests')),
-    install_requires=[
-   'PPCA>=0.0.2',
-   'scikit-learn>=0.19.1',
-   'pandas>=0.18.0',
-   'seaborn>=0.8.1',
-   'matplotlib>=1.5.1',
-   'scipy>=1.0.0',
-   'numpy>=1.10.4',
-   'umap-learn>=0.1.5',
-   'future',
-   'requests',
-   'deepdish',
-   'six'
-   ],
-    classifiers=[
-             'Intended Audience :: Science/Research',
-             'Programming Language :: Python :: 2.7',
-             'Programming Language :: Python :: 3.5',
-             'Programming Language :: Python :: 3.6',
-             'Topic :: Scientific/Engineering :: Visualization',
-             'Topic :: Multimedia :: Graphics',
-             'Operating System :: POSIX',
-             'Operating System :: Unix',
-             'Operating System :: MacOS'],
+    python_requires=REQUIRES_PYTHON,
+    packages=PACKAGES,
+    install_requires=REQUIREMENTS,
+    classifiers=CLASSIFIERS,
+    cmdclass=CMDCLASS,
 )

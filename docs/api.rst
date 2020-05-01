@@ -91,11 +91,6 @@ Tools
 .. autosummary::
   :toctree:
 
-  hypertools.tools.describe_pca
-
-.. autosummary::
-  :toctree:
-
   hypertools.tools.procrustes
 
 .. autosummary::

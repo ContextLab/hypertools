@@ -121,3 +121,13 @@ def test_reduce_MDS():
 def test_reduce_UMAP():
     reduced_data_3d = reducer(data, reduce='UMAP', ndims=3)
     assert reduced_data_3d[0].shape==(10,3)
+
+
+def test_reduce_params_UMAP():
+    from umap import UMAP
+    data1 = np.random.rand(20, 10)
+    params = {'n_neighbors': 5, 'n_components': 2, 'metric': 'correlation', 'random_state': 1234}
+    # testing override of n_dims by n_components. Should raise UserWarning due to conflict
+    hyp_data = reducer(data1, reduce={'model': 'UMAP', 'params': params}, ndims=3)
+    umap_data = UMAP(**params).fit_transform(data1)
+    np.testing.assert_array_equal(hyp_data, umap_data)
