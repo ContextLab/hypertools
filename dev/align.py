@@ -7,6 +7,41 @@ from procrustes import procrustes
 import numpy as np
 import warnings
 
+def hyper(data):
+    '''
+    data: a list of numpy arrays
+    '''
+    
+    # STEP 0: STANDARDIZE SIZE AND SHAPE
+    #  - find smallest number of rows and max number of columns
+    #  - remove extra rows and zero-pad to equalize number of columns
+    r = min([x.shape[0] for x in data])
+    c = max([x.shape[1] for x in data])
+    
+    x = [np.zeros((r, c))] * len(data)
+    for i, d in enumerate(data):
+        x[i, :d.shape[1]] = d[0:r, :]
+    
+    # STEP 1: TEMPLATE
+    template = np.copy(x[0])
+    for i in range(1, len(x)):
+        template += procrustes(x[i], template / (i + 1))
+    template /= len(x)
+
+    # STEP 2: NEW COMMON TEMPLATE
+    #  - align each subj to template
+    template2 = np.zeros_like(template)
+    for i in range(0, len(x)):
+        template2 += procrustes(x[i], template)
+    template2 /= len(x)
+
+    #STEP 3: SECOND ROUND OF ALIGNMENTS
+    #  - align each subj to template2
+    aligned = [np.zeros_like(template2)] * len(m)
+    for i in range(0, len(x)):
+        aligned = procrustes(x[i], template2) #TODO: fit based on x[i] and then transform data[i] directly so that aligned data have the same number of rows as originals
+    return aligned
+
 @memoize
 def align(data, align='hyper', normalize=None, ndims=None, method=None,
           format_data=True):
