@@ -33,7 +33,7 @@ def trim_and_pad(data):
 
 
 def pad_and_align(data, template, c, x):
-    aligned = [np.zeros(d.shape[0], c) for d in data]
+    aligned = [np.zeros((d.shape[0], c), dtype=float) for d in data]
     for i in range(0, len(x)):
         proj = pro_fit_xform(x[i], template, return_proj=True)
         padded_data = aligned[i].copy
