@@ -6,6 +6,7 @@ from srm import SRM
 from procrustes import fit, transform
 import numpy as np
 import warnings
+from copy import copy
 
 
 def pro_fit_xform(source, target, return_proj=False):
@@ -25,8 +26,8 @@ def pad(x, c, max_rows=None):
     return y
 
 def trim_and_pad(data):    
-    r = min([x.shape[0] for x in data])
-    c = max([x.shape[1] for x in data])    
+    r = np.min([x.shape[0] for x in data])
+    c = np.max([x.shape[1] for x in data])
     x = [pad(d, c, max_rows=r) for d in data]
     
     return r, c, x
@@ -82,9 +83,9 @@ def srm(data):
 
 def procrustes(data, template=None):
     if not template:
-        template = data[0]
+        template = np.copy(data[0])
     
-    data.extend(template)
+    data.append(template)
     _, c, x = trim_and_pad(data)
     
     return pad_and_align(data[:-1], template, c, x[:-1])
