@@ -21,7 +21,7 @@ def pad(x, c, max_rows=None):
     if not max_rows:
         max_rows = x.shape[0]
     
-    y = np.zeros((max_rows, c))
+    y = np.zeros([max_rows, c])
     y[:, :x.shape[1]] = x[:max_rows, :]
     return y
 
@@ -32,12 +32,12 @@ def trim_and_pad(data):
     
     return r, c, x
 
-
 def pad_and_align(data, template, c, x):
-    aligned = [np.zeros((d.shape[0], c), dtype=float) for d in data]
+    aligned = [np.zeros([d.shape[0], c]) for d in data]
     for i in range(0, len(x)):
         proj = pro_fit_xform(x[i], template, return_proj=True)
-        padded_data = aligned[i].copy
+        padded_data = np.copy(aligned[i])
+        print(f'padded_data.shape: {padded_data.shape}')
         padded_data[:, :data[i].shape[1]] = data[i]
         aligned[i] = transform(padded_data, proj)
     return aligned
@@ -82,10 +82,10 @@ def srm(data):
 
 
 def procrustes(data, template=None):
-    data2 = data.copy()
+    data2 = np.copy(data)
     if not template:
         template = data[0]
-    data2.append(template.copy())
+    data2.append(np.copy(template.copy))
     
     _, c, x = trim_and_pad(data2)
     
