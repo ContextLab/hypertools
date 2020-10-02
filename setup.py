@@ -5,21 +5,11 @@ import sys
 from setuptools import setup, find_packages
 from setuptools.command.install import install
 
+
 os.environ["MPLCONFIGDIR"] = "."
 
-
-class PostInstall(install):
-    github_pkg = 'https://api.github.com/repos/lmcinnes/umap/tarball/5f9488a9540d1e0ac149e2dd42ebf03c39706110#egg=umap_learn'
-
-    def run(self):
-        install.run(self)
-        output = subprocess.run([sys.executable, '-m', 'pip', 'install', self.github_pkg],
-                                stdout=subprocess.PIPE)
-        print(output.stdout.decode('utf-8'))
-
-
 NAME = 'hypertools'
-VERSION = '0.6.2'
+VERSION = '0.6.3'
 AUTHOR = 'Contextual Dynamics Lab'
 AUTHOR_EMAIL = 'contextualdynamics@gmail.com'
 URL = 'https://github.com/ContextLab/hypertools'
@@ -51,16 +41,13 @@ CLASSIFIERS = [
     'Programming Language :: Python :: 3.5',
     'Programming Language :: Python :: 3.6',
     'Programming Language :: Python :: 3.7',
+    'Programming Language :: Python :: 3.8',
     'Topic :: Scientific/Engineering :: Visualization',
     'Topic :: Multimedia :: Graphics',
     'Operating System :: POSIX',
     'Operating System :: Unix',
     'Operating System :: MacOS'
 ]
-CMDCLASS = {
-    'install': PostInstall
-}
-
 
 setup(
     name=NAME,
@@ -75,6 +62,5 @@ setup(
     python_requires=REQUIRES_PYTHON,
     packages=PACKAGES,
     install_requires=REQUIREMENTS,
-    classifiers=CLASSIFIERS,
-    cmdclass=CMDCLASS,
+    classifiers=CLASSIFIERS
 )
