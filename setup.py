@@ -9,7 +9,7 @@ from setuptools.command.install import install
 os.environ["MPLCONFIGDIR"] = "."
 
 NAME = 'hypertools'
-VERSION = '0.6.2'
+VERSION = '0.6.3'
 AUTHOR = 'Contextual Dynamics Lab'
 AUTHOR_EMAIL = 'contextualdynamics@gmail.com'
 URL = 'https://github.com/ContextLab/hypertools'
