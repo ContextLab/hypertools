@@ -14,3 +14,4 @@ tox.ini
 \.idea/
 docs/_build
 .pytest_cache/
+/venv/
