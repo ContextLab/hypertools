@@ -1,6 +1,17 @@
+import holoviews as hv
+
+def backend(engine, **args, **kwargs):
+    hv.extension(engine, **args, **kwargs)
+
+def init_notebook_mode():
+    hv.notebook_extension()
+
+
+
 class Plot(object):
-    def __init__(self, plotter, **args, **kwargs):
-        self.plotter = plotter
+    def __init__(self, backend, **args, **kwargs):
+        assert (backend in engine.keys()), 'Unknown backend plot engine: ' + backend
+        self.backend = engine[backend]
         self.args = args
         self.kwargs = kwargs
 
