@@ -10,8 +10,11 @@ from ..tools.cluster import cluster as clusterer
 from ..tools.reduce import reduce as reducer
 from ..tools.format_data import format_data
 from .draw import _draw
+from .backend import manage_backend
 from ..datageometry import DataGeometry
 
+
+@manage_backend
 def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
          color=None, colors=None, palette='hls', group=None, hue=None,
          labels=None, legend=None, title=None, size=None, elev=10, azim=-60,
@@ -19,7 +22,7 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
          cluster=None, align=None, normalize=None, n_clusters=None,
          save_path=None, animate=False, duration=30, tail_duration=2,
          rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
-         frame_rate=50, explore=False, show=True, transform=None,
+         frame_rate=50, interactive=False, explore=False, show=True, transform=None,
          vectorizer='CountVectorizer', semantic='LatentDirichletAllocation',
          corpus='wiki', ax=None):
     """
@@ -154,6 +157,12 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
 
     frame_rate (animation only) : int or float
         Frame rate for animation (default: 50)
+
+    interactive : (non-animation only)
+        If True, display the plot using an interactive matplotlib backend.
+        Useful for inspecting and manipulating static plots. If
+        animate=True, the backend will always be interactive and this
+        argument has no effect (default: False).
 
     explore : bool
         Displays user defined labels will appear on hover. If no labels are
