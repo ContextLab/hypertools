@@ -1,12 +1,11 @@
 import inspect
 import sys
+import warnings
 from functools import wraps
 from os import getenv
-from warnings import warn
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-
 
 HYPERTOOLS_BACKEND = None
 IS_NOTEBOOK = False
@@ -48,12 +47,12 @@ def set_backend():
         if sys.platform == 'darwin':
             # prefer cocoa backend on Mac. Pretty much guaranteed to
             # work, and Mac does NOT like Tkinter
-            backends = ('macosx', *backends)
+            backends = ('MacOSX', *backends)
 
         # check environment variable
         env_backend = getenv("HYPERTOOLS_BACKEND")
         if env_backend is not None:
-            if env_backend in backends:
+            if env_backend.lower() in tuple(map(str.lower, backends)):
                 backends = (backends[:backends.index(HYPERTOOLS_BACKEND)],
                             *backends[backends.index(HYPERTOOLS_BACKEND) + 1:])
             backends = (env_backend, *backends)
@@ -72,13 +71,16 @@ def set_backend():
                               f"({', '.join(backends)}. Falling back to 'Agg'."
             working_backend = 'Agg'
 
-        if env_backend is not None and working_backend != env_backend:
+        if (
+                env_backend is not None and
+                working_backend.lower() != env_backend.lower()
+        ):
             # The only time a warning is issued immediately on import is if
             # $HYPERTOOLS_BACKEND env var specifies an incompatible backend,
             # since that will have been set manually.
-            warn("failed to set matplotlib backend to backend specified in "
-                 f"environment ('{env_backend}'). Falling back to "
-                 f"'{working_backend}'")
+            warnings.warn("failed to set matplotlib backend to backend "
+                          f"specified in environment ('{env_backend}'). "
+                          f"Falling back to '{working_backend}'")
 
     finally:
         # restore backend
@@ -89,12 +91,13 @@ def set_backend():
 def manage_backend(plot_func):
     @wraps(plot_func)
     def plot_wrapper(*args, **kwargs):
+        global IPYTHON_INSTANCE
         try:
             # get current rcParams to restore after plot
-            curr_rcParams = plt.rcParams.copy()
+            curr_rcParams = mpl.rcParams.copy()
             main_backend = mpl.get_backend()
 
-            if main_backend != HYPERTOOLS_BACKEND:
+            if main_backend.lower() != HYPERTOOLS_BACKEND.lower():
                 print('main_backend != HYPERTOOLS_BACKEND')
                 # some object inspection magic to get arg values passed
                 func_signature = inspect.signature(plot_func)
@@ -102,27 +105,33 @@ def manage_backend(plot_func):
                 bound_args.apply_defaults()
                 all_argvalues = bound_args.arguments
                 if all_argvalues.get('animate') or all_argvalues.get('interactive'):
-                    print('animage True or interactive True')
+                    print('animate is True or interactive is True')
                     if BACKEND_WARNING is not None:
-                        warn(BACKEND_WARNING)
+                        warnings.warn(BACKEND_WARNING)
                     if IS_NOTEBOOK:
-                        print('is notebook')
+                        print('IS_NOTEBOOK')
                         from ipykernel.pylab.backend_inline import flush_figures
                         # see (1) below re: unregistering flush_figures callback
                         while flush_figures in IPYTHON_INSTANCE.events.callbacks['post_execute']:
                             IPYTHON_INSTANCE.events.unregister('post_execute', flush_figures)
 
+                        print(IPYTHON_INSTANCE.events.callbacks['post_execute'])
+
+                    print(f'switching backend from {main_backend} to {HYPERTOOLS_BACKEND}')
                     plt.switch_backend(HYPERTOOLS_BACKEND)
 
             return plot_func(*args, **kwargs)
         finally:
-            if mpl.get_backend() != main_backend:
+            if mpl.get_backend().lower() != main_backend.lower():
+                print(f'switching backend from {HYPERTOOLS_BACKEND} to {main_backend}')
                 plt.switch_backend(main_backend)
-                if IS_NOTEBOOK:
+                if IS_NOTEBOOK and flush_figures not in IPYTHON_INSTANCE.events.callbacks['post_execute']:
                     IPYTHON_INSTANCE.events.register('post_execute', flush_figures)
 
-            print('got to finally')
-            plt.rcParams = curr_rcParams
+            print('setting rcParams back')
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', mpl.MatplotlibDeprecationWarning)
+                mpl.rcParams.update(**curr_rcParams)
 
     return plot_wrapper
 
