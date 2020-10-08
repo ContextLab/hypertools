@@ -22,7 +22,8 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
          cluster=None, align=None, normalize=None, n_clusters=None,
          save_path=None, animate=False, duration=30, tail_duration=2,
          rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
-         frame_rate=50, interactive=False, explore=False, show=True, transform=None,
+         frame_rate=50, interactive=False, explore=False,
+         mpl_backend='auto', show=True, transform=None,
          vectorizer='CountVectorizer', semantic='LatentDirichletAllocation',
          corpus='wiki', ax=None):
     """
@@ -158,10 +159,10 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
     frame_rate (animation only) : int or float
         Frame rate for animation (default: 50)
 
-    interactive : (non-animation only)
+    interactive : bool
         If True, display the plot using an interactive matplotlib backend.
         Useful for inspecting and manipulating static plots. If
-        animate=True, the backend will always be interactive and this
+        animate=True, an interactive backend is required and this
         argument has no effect (default: False).
 
     explore : bool
@@ -170,6 +171,22 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
         set explore=True. Note: Explore mode is currently only supported
         for 3D static plots, and is an experimental feature (i.e it may not yet
         work properly).
+
+    mpl_backend : str
+        Set the matplotlib backend used to create interactive and
+        animated plots.  May be 'auto' (default), 'disable', or a
+        backend key accepted by matplotlib. If 'auto', hypertools will
+        automatically determine the interactive backend to use
+        (`hypertools.plot.backend.HYPERTOOLS_BACKEND`). If 'disable',
+        disable experimental behavior and use the current global
+        matplotlib backend (`matplotlib.get_backend()`). NOTES: This
+        feature is experimental. For a list of interactive matplotlib
+        backend, see `matplotlib.rcsetup.interactive_bk`. For a list of
+        interactive backends available in IPython, run
+        `%matplotlib --list`. Set the `$HYPERTOOLS_BACKEND` environment
+        variable or use `hypertools.set_interactive_backend()` to
+        override the backend used by 'auto' in non-IPython environments.
+        If animate=False and interactive=False, this argument has no effect.
 
     show : bool
         If set to False, the figure will not be displayed, but the figure,
@@ -432,12 +449,12 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
         else:
             plt.savefig(save_path)
 
-    # show the plot
-    if show:
-        plt.show()
-    else:
-        # safely closes the plot so it doesn't pop up in another call to this function
-        plt.close('all')
+    # # show the plot
+    # if show:
+    #     plt.show()
+    # else:
+    #     # safely closes the plot so it doesn't pop up in another call to this function
+    #     plt.close('all')
 
     # gather reduce params
     if isinstance(reduce, dict):
