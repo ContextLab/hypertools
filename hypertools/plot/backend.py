@@ -34,7 +34,8 @@ def set_backend():
             working_backend = 'nbAgg'
         except ImportError:
             BACKEND_WARNING = "Failed to switch to interactive notebook " \
-                              "backend ('nbAgg'). Falling back to 'inline'."
+                              "backend ('nbAgg'). Falling back to inline " \
+                              "static plots."
             # how "%matplotlib inline" is translated matplotlib
             working_backend = 'module://ipykernel.pylab.backend_inline'
 
@@ -88,6 +89,17 @@ def set_backend():
         HYPERTOOLS_BACKEND = working_backend
 
 
+def _defer_backend_reset(backend, ipython_instance):
+    def _reset_backend_cb():
+        plt.switch_backend(_reset_backend_cb.backend)
+        _reset_backend_cb.ipython_instance.events.unregister('pre_execute',
+                                                             _reset_backend_cb)
+
+    _reset_backend_cb.backend = backend
+    _reset_backend_cb.ipython_instance = ipython_instance
+    ipython_instance.events.register('pre_execute', _reset_backend_cb)
+
+
 def manage_backend(plot_func):
     @wraps(plot_func)
     def plot_wrapper(*args, **kwargs):
@@ -98,38 +110,44 @@ def manage_backend(plot_func):
             main_backend = mpl.get_backend()
 
             if main_backend.lower() != HYPERTOOLS_BACKEND.lower():
-                print('main_backend != HYPERTOOLS_BACKEND')
                 # some object inspection magic to get arg values passed
                 func_signature = inspect.signature(plot_func)
                 bound_args = func_signature.bind(*args, **kwargs)
                 bound_args.apply_defaults()
                 all_argvalues = bound_args.arguments
                 if all_argvalues.get('animate') or all_argvalues.get('interactive'):
-                    print('animate is True or interactive is True')
                     if BACKEND_WARNING is not None:
                         warnings.warn(BACKEND_WARNING)
+
                     if IS_NOTEBOOK:
-                        print('IS_NOTEBOOK')
                         from ipykernel.pylab.backend_inline import flush_figures
-                        # see (1) below re: unregistering flush_figures callback
+                        # see (1) below re: unregistering `flush_figures` callback
                         while flush_figures in IPYTHON_INSTANCE.events.callbacks['post_execute']:
                             IPYTHON_INSTANCE.events.unregister('post_execute', flush_figures)
 
-                        print(IPYTHON_INSTANCE.events.callbacks['post_execute'])
-
-                    print(f'switching backend from {main_backend} to {HYPERTOOLS_BACKEND}')
                     plt.switch_backend(HYPERTOOLS_BACKEND)
 
             return plot_func(*args, **kwargs)
-        finally:
-            if mpl.get_backend().lower() != main_backend.lower():
-                print(f'switching backend from {HYPERTOOLS_BACKEND} to {main_backend}')
-                plt.switch_backend(main_backend)
-                if IS_NOTEBOOK and flush_figures not in IPYTHON_INSTANCE.events.callbacks['post_execute']:
-                    IPYTHON_INSTANCE.events.register('post_execute', flush_figures)
 
-            print('setting rcParams back')
+        finally:
+            # if the backend was switched
+            if mpl.get_backend().lower() != main_backend.lower():
+                if IS_NOTEBOOK:
+                    # see (2) below re: deferring resetting the backend in notebooks
+                    _defer_backend_reset(backend=main_backend,
+                                         ipython_instance=IPYTHON_INSTANCE)
+                    # we want the `flush_figures` callback for inline
+                    # displays, so re-register it
+                    if flush_figures not in IPYTHON_INSTANCE.events.callbacks['post_execute']:
+                        IPYTHON_INSTANCE.events.register('post_execute', flush_figures)
+                else:
+                    # TODO: maybe make this blocking instead of immediate?
+                    plt.switch_backend(main_backend)
+
             with warnings.catch_warnings():
+                # if the user's matplotlibrc file was cached from v3.3.2
+                # or earlier, there are a *ton* of (currently) harmless
+                # MatplotlibDeprecationWarnings about axes.Axes3D
                 warnings.simplefilter('ignore', mpl.MatplotlibDeprecationWarning)
                 mpl.rcParams.update(**curr_rcParams)
 
@@ -150,3 +168,13 @@ def manage_backend(plot_func):
 # or `%matplotlib notebook`) unregisters *one* `flush_figures` callback, but
 # leaves the other(s), so the interactive figure is closed as soon as it's
 # rendered and the event loop throws an error.
+
+
+# (2)
+# if we just created an interactive plot in a notebook and `main_backend`
+# isn't the current backend, then we're reverting to 'inline'. This will
+# kill any currently running animations, so we can't do it as part of the
+# function call OR part of the current cell, otherwise the figure will
+# close immediately. Instead, we can register an IPython callback
+# function that runs *before* execution of the next cell, resets the
+# backend, and unregisters itself all at once.
