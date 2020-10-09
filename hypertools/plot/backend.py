@@ -78,8 +78,8 @@ def set_backend():
                               "static plots."
             working_backend = 'inline'
 
-        switch_backend = _switch_backend_notebook
-        reset_backend = _defer_notebook_backend_reset
+        switch_backend = _switch_notebook_backend
+        reset_backend = _reset_notebook_backend
 
     except (NameError, AssertionError):
         # NameError: imported from script
@@ -126,8 +126,7 @@ def set_backend():
                           f"specified in environment ('{env_backend}'). "
                           f"Falling back to '{working_backend}'")
 
-        switch_backend = plt.switch_backend
-        reset_backend = plt.switch_backend
+        switch_backend = reset_backend = plt.switch_backend
 
     finally:
         # restore backend
@@ -135,7 +134,7 @@ def set_backend():
         HYPERTOOLS_BACKEND = working_backend
 
 
-def _switch_backend_notebook(backend):
+def _switch_notebook_backend(backend):
     # have to import this here since ipykernel is only guaranteed to
     # be installed if running in notebook
     from ipykernel.pylab.backend_inline import flush_figures
@@ -145,7 +144,7 @@ def _switch_backend_notebook(backend):
         IPYTHON_INSTANCE.events.unregister('post_execute', flush_figures)
 
 
-def _defer_notebook_backend_reset(backend):
+def _reset_notebook_backend(backend):
     # see (2) below re: deferring resetting the backend in notebooks
     def _callback():
         _callback.ipython_instance.run_line_magic('matplotlib', _callback.backend)
@@ -159,20 +158,11 @@ def _defer_notebook_backend_reset(backend):
     IPYTHON_INSTANCE.events.register('pre_run_cell', _callback)
 
 
-def requires_backend_change(curr_backend, plot_func, *func_args, **func_kwargs):
+def _get_plot_kwargs(plot_func, *func_args, **func_kwargs):
     func_signature = inspect.signature(plot_func)
     bound_args = func_signature.bind(*func_args, **func_kwargs)
     bound_args.apply_defaults()
-    all_kwargs = bound_args.arguments
-    if all_kwargs.get('animate') or all_kwargs.get('interactive'):
-        plot_backend = all_kwargs.get('mpl_backend')
-        if plot_backend == 'auto':
-            plot_backend = HYPERTOOLS_BACKEND
-
-        if plot_backend.lower() not in ('disable', curr_backend.lower()):
-            return True
-
-    return False
+    return bound_args.arguments
 
 
 def manage_backend(plot_func):
@@ -193,21 +183,26 @@ def manage_backend(plot_func):
     def plot_wrapper(*args, **kwargs):
         # record current rcParams
         curr_rcParams = mpl.rcParams.copy()
-        backend_changed = False
+        backend_switched = False
         try:
-            curr_backend = mpl.get_backend()
+            curr_backend = mpl.get_backend().lower()
+            plot_kwargs = _get_plot_kwargs(plot_func, *args, **kwargs)
+            if plot_kwargs.get('animate') or plot_kwargs.get('interactive'):
+                tmp_backend = plot_kwargs.get('mpl_backend')
+                if tmp_backend == 'auto':
+                    tmp_backend = HYPERTOOLS_BACKEND.lower()
 
-            if requires_backend_change(curr_backend, plot_func, *args, **kwargs):
-                if BACKEND_WARNING is not None:
-                    warnings.warn(BACKEND_WARNING)
+                if tmp_backend not in ('disable', curr_backend):
+                    if BACKEND_WARNING is not None:
+                        warnings.warn(BACKEND_WARNING)
 
-                switch_backend()
-                backend_changed = True
+                    switch_backend(tmp_backend)
+                    backend_switched = True
 
             return plot_func(*args, **kwargs)
 
         finally:
-            if backend_changed:
+            if backend_switched:
                 reset_backend(curr_backend)
 
             with warnings.catch_warnings():
