@@ -1,7 +1,7 @@
-import functools
 import inspect
 import sys
 import warnings
+from functools import wraps
 from os import getenv
 
 import matplotlib as mpl
@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 # TODO: if person sets backend later after import, maybe should unset BACKEND_WARNING?
 
 HYPERTOOLS_BACKEND = None
-IS_NOTEBOOK = False
 IPYTHON_INSTANCE = None
 BACKEND_WARNING = None
 
@@ -18,7 +17,7 @@ switch_backend = None
 reset_backend = None
 
 
-def set_backend():
+def init_backend():
     """
     Runs when hypertools is initially imported and sets the matplotlib
     backend used for animated/interactive plots.
@@ -34,9 +33,6 @@ def set_backend():
     HYPERTOOLS_BACKEND : str
         The matplotlib backend used for interactive or animated
         plots.
-    IS_NOTEBOOK : bool
-        True if hypertools was imported into a Jupyter notebook.
-        Otherwise, False.
     IPYTHON_INSTANCE : ipykernel.zmqshell.ZMQInteractiveShell or None
         The IPython InteractiveShell instance for the current
         IPython kernel, if any.  Otherwise, None.
@@ -50,22 +46,28 @@ def set_backend():
                available.  Tthis should never happen, but theoretically
                could if the ipython/jupyter/jupyter-core/notebook
                installation is faulty.
+    switch_backend : function
+        The function called to switch to the temporary backend prior to
+        plotting. `_switch_notebook_backend` if running in a Jupyter
+        notebook, otherwise, `matplotlib.pyplot.switch_backend`.
+    reset_backend : function
+        The function called to switch back to the original backend after
+        plotting. `_reset_notebook_backend` if running in a Jupyter
+        notebook, otherwise `matplotlib.pyplot.switch_backend`.
     """
     global HYPERTOOLS_BACKEND, \
-        IS_NOTEBOOK, \
         IPYTHON_INSTANCE, \
         BACKEND_WARNING, \
         switch_backend, \
         reset_backend
 
-
     curr_backend = mpl.get_backend()
 
     try:
-        # function exists in namespace if hypertools was imported from IPython shell or Jupyter notebook
+        # function exists in namespace if hypertools was imported from
+        # IPython shell or Jupyter notebook
         IPYTHON_INSTANCE = get_ipython()
         assert 'IPKernelApp' in IPYTHON_INSTANCE.config
-        IS_NOTEBOOK = True
         # if running in a notebook, should almost always use nbAgg. May
         # eventually let user override this with environment variable
         # (e.g., to use ipympl, widget, or WXAgg in JupyterLab), but
@@ -85,8 +87,7 @@ def set_backend():
     except (NameError, AssertionError):
         # NameError: imported from script
         # AssertionError: imported from IPython shell
-        IS_NOTEBOOK = False
-        # excluding WebAgg - no way to test in advance if it will work
+        # (excluding WebAgg - no way to test in advance if it will work)
         backends = ('TkAgg', 'Qt5Agg', 'Qt4Agg', 'WXAgg', 'GTK3Agg')
         if sys.platform == 'darwin':
             # prefer cocoa backend on Mac - pretty much guaranteed to
@@ -111,6 +112,7 @@ def set_backend():
                 break
 
             except ImportError:
+                # raised if backend's depencencies aren't installed
                 continue
 
         else:
@@ -190,7 +192,7 @@ def _reset_notebook_backend(backend):
     Parameters
     ----------
     backend : str
-        the matplotlib backend to switch back to
+        the matplotlib backend prior to running `hypertools.plot`
 
     Returns
     -------
@@ -221,6 +223,8 @@ def _reset_notebook_backend(backend):
     in `functools.partial`.
     """
     def _deferred_reset_cb():
+        # TODO: add stdout redirection for printed warning message from
+        #  ipykernel and fallback to plt.switch_backend
         IPYTHON_INSTANCE.run_line_magic('matplotlib', backend)
         IPYTHON_INSTANCE.events.unregister('pre_run_cell', _deferred_reset_cb)
 
@@ -230,8 +234,27 @@ def _reset_notebook_backend(backend):
     IPYTHON_INSTANCE.events.register('pre_run_cell', _deferred_reset_cb)
 
 
-def _get_plot_kwargs(plot_func, *func_args, **func_kwargs):
-    func_signature = inspect.signature(plot_func)
+def _get_runtime_args(func, *func_args, **func_kwargs):
+    """
+    Does some quick introspection to determine runtime values assigned
+    to all parameters of a function for a given call, whether passed as
+    args, kwargs, or defaults.
+
+    Parameters
+    ----------
+    func : function
+        The function to introspect
+    func_args : tuple
+        positional arguments passed to `func` at runtime
+    func_kwargs : dict
+        keyword arguments passed to `func` at runtime
+
+    Returns
+    -------
+    runtime_vals : dict
+        parameter : value mapping of runtime values
+    """
+    func_signature = inspect.signature(func)
     bound_args = func_signature.bind(*func_args, **func_kwargs)
     bound_args.apply_defaults()
     return bound_args.arguments
@@ -246,20 +269,23 @@ def manage_backend(plot_func):
 
     Parameters
     ----------
-    plot_func
+    plot_func : function
+        Function around which to do setup and teardown. In this case,
+        `hypertools.plot`.
 
     Returns
     -------
-
+    plot_wrapper : function
+        The decorated function.
     """
-    @functools.wraps(plot_func)
+    @wraps(plot_func)
     def plot_wrapper(*args, **kwargs):
         # record current rcParams
         curr_rcParams = mpl.rcParams.copy()
         backend_switched = False
         try:
             curr_backend = mpl.get_backend().lower()
-            plot_kwargs = _get_plot_kwargs(plot_func, *args, **kwargs)
+            plot_kwargs = _get_runtime_args(plot_func, *args, **kwargs)
             if plot_kwargs.get('animate') or plot_kwargs.get('interactive'):
                 tmp_backend = plot_kwargs.get('mpl_backend')
                 if tmp_backend == 'auto':
