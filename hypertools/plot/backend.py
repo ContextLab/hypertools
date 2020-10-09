@@ -1,22 +1,28 @@
 import inspect
 import sys
 import warnings
+from contextlib import redirect_stdout
 from functools import wraps
+from io import StringIO
 from os import getenv
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-# TODO: if person sets backend later after import, maybe should unset BACKEND_WARNING?
+from .._shared.exceptions import HypertoolsBackendError
 
+
+# this isn't threadsafe, but neither is matplotlib so that's probably okay
+# https://matplotlib.org/faq/howto_faq.html#working-with-threads
+BACKEND_WARNING = None
 HYPERTOOLS_BACKEND = None
 IPYTHON_INSTANCE = None
-BACKEND_WARNING = None
-
-switch_backend = None
+IS_NOTEBOOK = None
 reset_backend = None
+switch_backend = None
 
 
+# TODO look through source for IPython.core.pylabtools.configure_inline_support
 def init_backend():
     """
     Runs when hypertools is initially imported and sets the matplotlib
@@ -52,14 +58,15 @@ def init_backend():
         notebook, otherwise, `matplotlib.pyplot.switch_backend`.
     reset_backend : function
         The function called to switch back to the original backend after
-        plotting. `_reset_notebook_backend` if running in a Jupyter
+        plotting. `_reset_backend_notebook` if running in a Jupyter
         notebook, otherwise `matplotlib.pyplot.switch_backend`.
     """
-    global HYPERTOOLS_BACKEND, \
+    global BACKEND_WARNING, \
+        HYPERTOOLS_BACKEND, \
         IPYTHON_INSTANCE, \
-        BACKEND_WARNING, \
-        switch_backend, \
-        reset_backend
+        IS_NOTEBOOK, \
+        reset_backend, \
+        switch_backend
 
     curr_backend = mpl.get_backend()
 
@@ -68,6 +75,7 @@ def init_backend():
         # IPython shell or Jupyter notebook
         IPYTHON_INSTANCE = get_ipython()
         assert 'IPKernelApp' in IPYTHON_INSTANCE.config
+        IS_NOTEBOOK = True
         # if running in a notebook, should almost always use nbAgg. May
         # eventually let user override this with environment variable
         # (e.g., to use ipympl, widget, or WXAgg in JupyterLab), but
@@ -76,17 +84,18 @@ def init_backend():
             mpl.use('nbAgg')
             working_backend = 'nbAgg'
         except ImportError:
-            BACKEND_WARNING = "Failed to switch to interactive notebook " \
-                              "backend ('nbAgg'). Falling back to inline " \
-                              "static plots."
+            BACKEND_WARNING = ("Failed to switch to interactive notebook "
+                               "backend ('nbAgg'). Falling back to inline "
+                               "static plots.")
             working_backend = 'inline'
 
-        switch_backend = _switch_notebook_backend
-        reset_backend = _reset_notebook_backend
+        switch_backend = _switch_backend_notebook
+        reset_backend = _reset_backend_notebook
 
     except (NameError, AssertionError):
         # NameError: imported from script
         # AssertionError: imported from IPython shell
+        IS_NOTEBOOK = False
         # (excluding WebAgg - no way to test in advance if it will work)
         backends = ('TkAgg', 'Qt5Agg', 'Qt4Agg', 'WXAgg', 'GTK3Agg')
         if sys.platform == 'darwin':
@@ -116,8 +125,8 @@ def init_backend():
                 continue
 
         else:
-            BACKEND_WARNING = "Failed to switch to any interactive backend " \
-                              f"({', '.join(backends)}. Falling back to 'Agg'."
+            BACKEND_WARNING = ("Failed to switch to any interactive backend "
+                               f"({', '.join(backends)}. Falling back to 'Agg'.")
             working_backend = 'Agg'
 
         if env_backend is not None and working_backend.lower() != env_backend.lower():
@@ -129,7 +138,7 @@ def init_backend():
                           f"specified in environment ('{env_backend}'). "
                           f"Falling back to '{working_backend}'")
 
-        switch_backend = reset_backend = plt.switch_backend
+        switch_backend = reset_backend = _switch_backend_regular
 
     finally:
         # restore backend
@@ -137,7 +146,43 @@ def init_backend():
         HYPERTOOLS_BACKEND = working_backend
 
 
-def _switch_notebook_backend(backend):
+def set_interactive_backend(newbackend):
+    global HYPERTOOLS_BACKEND
+
+    if newbackend == 'module://ipykernel.pylab.backend_inline':
+        newbackend = 'inline'
+
+    if HYPERTOOLS_BACKEND != newbackend:
+        if IS_NOTEBOOK:
+            # running in Jupyter notebook
+            try:
+                _switch_backend_notebook(newbackend)
+                HYPERTOOLS_BACKEND = newbackend
+                BACKEND_WARNING = None
+            except KeyError as e:
+                raise ValueError(f"{newbackend} is not a valid matplotlib "
+                                 f"backend for IPython") from e
+
+
+def _switch_backend_regular(backend):
+    if backend == 'inline':
+        backend = 'module://ipykernel.pylab.backend_inline'
+
+    try:
+        plt.switch_backend(backend)
+    except Exception as e:
+        if isinstance(e, (ImportError, ModuleNotFoundError)):
+            err_msg = (f"Failed to switch the plotting backend to "
+                       f"{backend}. You may be missing required dependencies, "
+                       "or this backend may not be available for your system")
+        else:
+            err_msg = ("An unexpected error occurred while trying to switch "
+                       f"the plotting backend to {backend}")
+
+        raise HypertoolsBackendError(err_msg) from e
+
+
+def _switch_backend_notebook(backend):
     """
     Handles switching the matplotlib backend when running in a Jupyter
     notebook
@@ -153,41 +198,79 @@ def _switch_notebook_backend(backend):
 
     Notes
     -----
-    `flush_figures` is a post-cell execution callback that `plt.show()`s
-    & `plt.close()`s all figures created in a cell so that `plt.plot()`
-    calls in later cells create new figures. There's a weird circular
-    matplotlib/IPython interaction where:
-      - matplotlib.pyplot uses IPython.core.pylabtools to register
-        `flush_figures` when it's imported into an IPython environment
-      - The `%matplotlib inline` magic command also registers a
-        `flush_figures` call each it's run, whether or not one has
-        been registered already
-      - IPython runs `%matplotlib inline` if it detects matplotlib.pyplot
-        has been imported and no backend is set in the same cell.
-    Thus, depending on import order, whether imports happen across
-    multiple cells, and whether/when/how many times the backend has been
-    switched, there may be any number of `flush_figures` callbacks
-    registed, and switching to the interactive notebook backend
-    (`plt.switch_backend('nbAgg')`/`%matplotlib notebook`) unregisters
-    one `flush_figures` callback, but leaves the other(s). If you try to
-    plot an interactive figure with `flush_figures` registered, the
-    figure is closed as soon as the cell finishes executing and the
-    matplotlib event loop throws an error. So we need to ensure all
-    `flush_figures` instances are unregistered before plotting.
+    1. `flush_figures` is a post-cell execution callback that
+       `plt.show()`s & `plt.close()`s all figures created in a cell so
+       that later `plt.plot()` calls create new figures. There's a weird
+       circular matplotlib/IPython interaction where:
+         - `matplotlib.pyplot` (via `IPython.core.pylabtools`) registers
+            `flush_figures` when it's imported into an IPython
+            environment
+         - The `%matplotlib inline` magic command also registers a
+           `flush_figures` call each it's run, whether or not one has
+           been registered already
+         - IPython runs `%matplotlib inline` if it detects
+           `matplotlib.pyplot` has been imported and no backend is set
+           in the same cell.
+       So depending on import order, whether imports happen across
+       multiple cells, and whether/when/how many times the backend has
+       been switched, there may be any number of `flush_figures`
+       callbacks registered. Switching to the interactive notebook
+       backend unregisters one `flush_figures` callback but leaves the
+       other(s), and creating an interactive figure with `flush_figures`
+       registered closes the figure immediately after the cell executes
+       and causes the matplotlib event loop to throw an error. So we
+       need to ensure all `flush_figures` instances are unregistered
+       before plotting.
+    2. For some unfathomable reason, IPython prints some warning to the
+       screen rather than actually using the warnings module.  We need
+       to catch one of these as an exception, so we temporarily suppress
+       and capture stdout.
+
+
     """
     # ipykernel is only guaranteed to be installed if running in notebook
     from ipykernel.pylab.backend_inline import flush_figures
+    if backend == 'module://ipykernel.pylab.backend_inline':
+        backend = 'inline'
 
-    IPYTHON_INSTANCE.run_line_magic('matplotlib', backend)
-    while flush_figures in IPYTHON_INSTANCE.events.callbacks['post_execute']:
-        IPYTHON_INSTANCE.events.unregister('post_execute', flush_figures)
+    tmp_stdout = StringIO()
+    exc = None
+
+    with redirect_stdout(tmp_stdout):
+        try:
+            IPYTHON_INSTANCE.run_line_magic('matplotlib', backend)
+        except KeyError as e:
+            exc = e
+            IPYTHON_INSTANCE.run_line_magic('matplotlib', '-l')
+
+    output_msg = tmp_stdout.getvalue().strip()
+    if exc is not None:
+        # just in case something else was somehow sent to stdout while
+        # redirected, or if we managed to catch a different KeyError
+        backends_avail = output_msg.splitlines()[-1]
+        raise ValueError(f"{backend} is not a valid IPython plotting "
+                         f"backend.\n{backends_avail}") from exc
+
+    elif output_msg.startswith('Warning: Cannot change to a different GUI toolkit'):
+        try:
+            _switch_backend_regular(backend)
+        except HypertoolsBackendError as e:
+            err_msg = (f"Failed to switch plotting backend to {backend}.\n via "
+                       f"IPython with the following message:\n\t{output_msg}\n"
+                       f"Fell back to switching via matplotlib and failed with "
+                       f"the above error")
+            raise HypertoolsBackendError(err_msg) from e
+
+    if backend != 'inline':
+        while flush_figures in IPYTHON_INSTANCE.events.callbacks['post_execute']:
+            IPYTHON_INSTANCE.events.unregister('post_execute', flush_figures)
 
 
-def _reset_notebook_backend(backend):
+def _reset_backend_notebook(backend):
     """
     Handles resetting the matplotlib backend after displaying an
     animated/interactive plot in a Jupyter notebook by registering a
-    "one-shot" self-destructing pre-cell-run callback to the next cell
+    "one-shot" self-destructing pre_cell_run callback to the next cell
 
     Parameters
     ----------
@@ -204,8 +287,8 @@ def _reset_notebook_backend(backend):
     closes any open figures (meaning animation and interactivity stop),
     so we can't do it as part of the function call or register it as a
     post-execution hook for the current cell. We get around this by
-    register a callback function that runs *before* the *next* cell is
-    run, resets the backend, and unregisters itself. This way, the
+    registering a callback function that runs *before* the *next* cell
+    is run, resets the backend, and unregisters itself. This way, the
     animation runs and the plot is interactive until the user runs the
     next cell, but the backend is reset before any code is executed. And
     because the callback "self-destructs," we won't force later figures
@@ -225,11 +308,8 @@ def _reset_notebook_backend(backend):
     def _deferred_reset_cb():
         # TODO: add stdout redirection for printed warning message from
         #  ipykernel and fallback to plt.switch_backend
-        IPYTHON_INSTANCE.run_line_magic('matplotlib', backend)
+        _switch_backend_notebook(backend)
         IPYTHON_INSTANCE.events.unregister('pre_run_cell', _deferred_reset_cb)
-
-    if backend == 'module://ipykernel.pylab.backend_inline':
-        backend = 'inline'
 
     IPYTHON_INSTANCE.events.register('pre_run_cell', _deferred_reset_cb)
 
