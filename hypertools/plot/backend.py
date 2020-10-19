@@ -1,3 +1,25 @@
+"""
+Module that deals with managing the matplotlib backend for interactive
+and/or animated plots created via `hypertools.plot` and
+`hypertools.DataGeometry.plot`.  Main functionality is contained in
+`set_interactive_backend` (front-end function) and `manage_backend`
+(decorator/context manager for `hypertools.plot`).
+
+Note that the interactive plotting backend is currently managed via a
+module-scoped variable, and therefore this functionality isn't
+thread-safe. However, since matplotlib itself isn't thread-safe either
+(see https://matplotlib.org/faq/howto_faq.html#working-with-threads),
+this isn't really a limiting problem and therefore probably okay.
+"""
+
+# FUTURE: matplotlib project leader says `nbagg` backend will be
+#  retired "in the next year or two" in favor of the `ipympl` backend:
+#  https://github.com/ipython/ipython/issues/12190#issuecomment-599154335.
+#  For the Hypertools 2.0 revamp, we'll want to put the two options on
+#  equal footing in order to support the various possible combinations
+#  of new and older IPython/ipykernel/notebook versions going forward
+
+
 import inspect
 import sys
 import warnings
@@ -12,18 +34,18 @@ import matplotlib.pyplot as plt
 from .._shared.exceptions import HypertoolsBackendError
 
 
-# this isn't threadsafe, but neither is matplotlib so that's probably okay
-# https://matplotlib.org/faq/howto_faq.html#working-with-threads
+# ============================== GLOBALS ===============================
 BACKEND_WARNING = None
 HYPERTOOLS_BACKEND = None
 IPYTHON_INSTANCE = None
 IS_NOTEBOOK = None
 reset_backend = None
 switch_backend = None
+# ======================================================================
 
 
 # TODO look through source for IPython.core.pylabtools.configure_inline_support
-def init_backend():
+def _init_backend():
     """
     Runs when hypertools is initially imported and sets the matplotlib
     backend used for animated/interactive plots.
@@ -42,6 +64,8 @@ def init_backend():
     IPYTHON_INSTANCE : ipykernel.zmqshell.ZMQInteractiveShell or None
         The IPython InteractiveShell instance for the current
         IPython kernel, if any.  Otherwise, None.
+    IS_NOTEBOOK : bool
+        Whether or not hypertools is being run in a Jupyter notebook
     BACKEND_WARNING : str or None
         The warning to be issued upon trying to create an
         interactive or animated plot, if any.  Otherwise, None.  This is
@@ -120,8 +144,8 @@ def init_backend():
                 working_backend = b
                 break
 
-            except ImportError:
-                # raised if backend's depencencies aren't installed
+            except (ImportError, NameError):
+                # raised if backend's dependencies aren't installed
                 continue
 
         else:
@@ -144,24 +168,6 @@ def init_backend():
         # restore backend
         mpl.use(curr_backend)
         HYPERTOOLS_BACKEND = working_backend
-
-
-def set_interactive_backend(newbackend):
-    global HYPERTOOLS_BACKEND
-
-    if newbackend == 'module://ipykernel.pylab.backend_inline':
-        newbackend = 'inline'
-
-    if HYPERTOOLS_BACKEND != newbackend:
-        if IS_NOTEBOOK:
-            # running in Jupyter notebook
-            try:
-                _switch_backend_notebook(newbackend)
-                HYPERTOOLS_BACKEND = newbackend
-                BACKEND_WARNING = None
-            except KeyError as e:
-                raise ValueError(f"{newbackend} is not a valid matplotlib "
-                                 f"backend for IPython") from e
 
 
 def _switch_backend_regular(backend):
@@ -251,6 +257,10 @@ def _switch_backend_notebook(backend):
         raise ValueError(f"{backend} is not a valid IPython plotting "
                          f"backend.\n{backends_avail}") from exc
 
+    # for some reason, there are certain situations where the ipython
+    # magic command fails to switch the backend but the matplotlib
+    # command succeeds. This warning message gets **printed** (not
+    # issued via `warnings.warn`) in those cases.
     elif output_msg.startswith('Warning: Cannot change to a different GUI toolkit'):
         try:
             _switch_backend_regular(backend)
@@ -306,12 +316,14 @@ def _reset_backend_notebook(backend):
     in `functools.partial`.
     """
     def _deferred_reset_cb():
-        # TODO: add stdout redirection for printed warning message from
-        #  ipykernel and fallback to plt.switch_backend
         _switch_backend_notebook(backend)
         IPYTHON_INSTANCE.events.unregister('pre_run_cell', _deferred_reset_cb)
 
-    IPYTHON_INSTANCE.events.register('pre_run_cell', _deferred_reset_cb)
+    # need this check in case multiple interactive plots are created
+    # within the same context block (`with set_interactive_backend...`)
+    # or the same Jupyter notebook cell
+    if _deferred_reset_cb not in IPYTHON_INSTANCE.events.callbacks['pre_run_cell']:
+        IPYTHON_INSTANCE.events.register('pre_run_cell', _deferred_reset_cb)
 
 
 def _get_runtime_args(func, *func_args, **func_kwargs):
@@ -332,12 +344,42 @@ def _get_runtime_args(func, *func_args, **func_kwargs):
     Returns
     -------
     runtime_vals : dict
-        parameter : value mapping of runtime values
+        {parameter: value} mapping of runtime values
     """
     func_signature = inspect.signature(func)
     bound_args = func_signature.bind(*func_args, **func_kwargs)
     bound_args.apply_defaults()
     return bound_args.arguments
+
+
+class set_interactive_backend:
+    def __init__(self, backend):
+        global HYPERTOOLS_BACKEND, BACKEND_WARNING
+
+        self.old_backend = HYPERTOOLS_BACKEND
+        self.old_backend_warning = BACKEND_WARNING
+        self.new_backend = backend
+        self.new_is_different = self.new_backend.lower() != self.old_backend.lower()
+
+        if self.new_is_different:
+            HYPERTOOLS_BACKEND = self.new_backend
+            BACKEND_WARNING = None
+
+    def __enter__(self):
+        if self.new_is_different:
+            switch_backend(self.new_backend)
+
+    def __exit__(self, *args):
+        global HYPERTOOLS_BACKEND, BACKEND_WARNING
+
+        if self.new_is_different:
+            try:
+                reset_backend(self.old_backend)
+            except HypertoolsBackendError:
+                raise
+            else:
+                HYPERTOOLS_BACKEND = self.old_backend
+                BACKEND_WARNING = self.old_backend_warning
 
 
 def manage_backend(plot_func):
@@ -384,12 +426,12 @@ def manage_backend(plot_func):
             if backend_switched:
                 reset_backend(curr_backend)
 
+            # restore rcParams prior to plot
             with warnings.catch_warnings():
-                # if the matplotlibrc was cached from <=v3.3.0, there's a TON
-                # of harmless (as of v3.2.0) MatplotlibDeprecationWarnings
-                # about rcParams fields related to axes.Axes3D objects
+                # if the matplotlibrc was cached from <=v3.3.0, a TON of
+                # (harmless as of v3.2.0) MatplotlibDeprecationWarnings
+                # about `axes.Axes3D`-related rcParams fields are issued
                 warnings.simplefilter('ignore', mpl.MatplotlibDeprecationWarning)
-                # restore rcParams prior to plot
                 mpl.rcParams.update(**curr_rcParams)
 
     return plot_wrapper

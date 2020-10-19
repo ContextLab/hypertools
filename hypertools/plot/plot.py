@@ -179,10 +179,11 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
         automatically determine the interactive backend to use
         (`hypertools.plot.backend.HYPERTOOLS_BACKEND`). If 'disable',
         disable experimental behavior and use the current global
-        matplotlib backend (`matplotlib.get_backend()`). NOTES: This
-        feature is experimental. For a list of interactive matplotlib
-        backends, see `matplotlib.rcsetup.interactive_bk`. For a list of
-        backends available in IPython, run `%matplotlib --list`. Set the
+        matplotlib backend (`matplotlib.get_backend()`). Otherwise, try
+        to use the backend specified. NOTES: This feature is
+        experimental. For a list of interactive matplotlib backends,
+        see `matplotlib.rcsetup.interactive_bk`. For a list of backends
+        available in IPython, run `%matplotlib --list`. Set the
         `$HYPERTOOLS_BACKEND` environment variable or use
         `hypertools.set_interactive_backend()` to override the backend
         used by 'auto' in non-IPython environments. If animate=False

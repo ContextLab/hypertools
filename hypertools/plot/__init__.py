@@ -2,7 +2,7 @@
 import warnings
 import matplotlib as mpl
 
-from .backend import init_backend
+from .backend import _init_backend
 
 
-init_backend()
+_init_backend()
