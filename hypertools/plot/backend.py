@@ -22,6 +22,7 @@ this isn't really a limiting problem and therefore probably okay.
 
 import inspect
 import sys
+import traceback
 import warnings
 from contextlib import redirect_stdout
 from functools import wraps
@@ -116,9 +117,13 @@ def _init_backend():
         switch_backend = _switch_backend_notebook
         reset_backend = _reset_backend_notebook
 
+    # NameError: imported from script
+    # AssertionError: imported from IPython shell
     except (NameError, AssertionError):
-        # NameError: imported from script
-        # AssertionError: imported from IPython shell
+        # Edge case: NameError is raised in a Jupyter notebook because
+        # IPCompleter/Jedi greedy TAB-completion is enabled and used on
+        # hypertools module names before hypertools is imported.
+        block_greedy_completer_execution()
         IS_NOTEBOOK = False
         # (excluding WebAgg - no way to test in advance if it will work)
         backends = ('TkAgg', 'Qt5Agg', 'Qt4Agg', 'WXAgg', 'GTK3Agg')
@@ -168,6 +173,25 @@ def _init_backend():
         # restore backend
         mpl.use(curr_backend)
         HYPERTOOLS_BACKEND = working_backend
+
+
+def block_greedy_completer_execution():
+    import_stack_trace = traceback.extract_stack()[-4::-1]
+    for frame in import_stack_trace:
+        if frame.filename.endswith('IPython/core/completerlib.py'):
+            # remove from sys.modules so init_backend re-runs during
+            # actual import call
+            try:
+                sys.modules.pop('hypertools.plot')
+                sys.modules.pop('hypertools.plot.backend')
+                # also remove numpy to avoid various C/PyObject warnings
+                sys.modules.pop('numpy')
+            except KeyError:
+                pass
+            finally:
+                # raise a generic exception to make the completer to move on
+                # (https://github.com/ipython/ipython/blob/b9e1d67ae97a00e2d78b6628ce1faedf224c3e86/IPython/core/completerlib.py#L165)
+                raise Exception
 
 
 def _switch_backend_regular(backend):
