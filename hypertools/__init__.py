@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from .config import __version__
 from .plot.plot import plot
-from .plot.backend import set_backend
+from .plot.backend import set_interactive_backend
 from .tools.load import load
 from .tools.analyze import analyze
 from .tools.reduce import reduce
