@@ -28,6 +28,7 @@ from contextlib import redirect_stdout
 from functools import wraps
 from io import StringIO
 from os import getenv
+from typing import Iterable
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -42,10 +43,107 @@ IPYTHON_INSTANCE = None
 IS_NOTEBOOK = None
 reset_backend = None
 switch_backend = None
+BACKEND_KEYS = {
+    'TkAgg': 'tk',
+    'GTK3Agg': ['gtk3', 'gtk'],
+    'WXAgg': 'wx',
+    'Qt4Agg': 'qt4',
+    'Qt5Agg': ['qt5', 'qt'],
+    'MacOSX': 'osx',
+    'nbAgg': ['notebook', 'nbagg'],
+    'module://ipykernel.pylab.backend_inline': 'inline',
+    'module://ipympl.backend_nbagg': ['ipympl', 'widget']
+}
+BACKEND_MAPPING = None
 # ======================================================================
 
 
-# TODO look through source for IPython.core.pylabtools.configure_inline_support
+class OneWayMapping(dict):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def __contains__(self, key):
+        return HypertoolsBackend(key) in self.keys()
+
+    def __getitem__(self, key):
+        key = HypertoolsBackend(key)
+        return super().__getitem__(key)
+
+    def __missing__(self, key):
+        return HypertoolsBackend(key)
+
+    def __setitem__(self, key, value):
+        key, value = HypertoolsBackend(key), HypertoolsBackend(value)
+        return super().__setitem__(key, value)
+
+
+class BackendMapping:
+    def __init__(self, _dict):
+        # assumes format of _dict is {Python: IPython}
+        self.py_to_ipy = OneWayMapping()
+        self.ipy_to_py = OneWayMapping()
+        self.equivalents = OneWayMapping()
+
+        for py_key, ipy_key in _dict.items():
+            py_key_default = self._store_equivalents(py_key)
+            ipy_key_default = self._store_equivalents(ipy_key)
+            self.py_to_ipy[py_key_default] = ipy_key_default
+            self.ipy_to_py[ipy_key_default] = py_key_default
+
+    def _store_equivalents(self, keylist):
+        if not isinstance(keylist, str) and isinstance(keylist, Iterable):
+            default_key = keylist[0]
+            for key_equiv in keylist[1:]:
+                key_equiv = key_equiv
+                self.equivalents[key_equiv] = default_key
+        else:
+            default_key = keylist
+        return default_key
+
+
+class HypertoolsBackend(str):
+    def __new__(cls, x):
+        return super().__new__(cls, x)
+
+    def __getattribute__(self, name):
+        if hasattr(str, name):
+            def _subclass_method(self, *args, **kwargs):
+                value = getattr(super(), name)(*args, **kwargs)
+                if isinstance(value, str):
+                    return HypertoolsBackend(value)
+                elif isinstance(value, (list, tuple, set)):
+                    return type(value)(HypertoolsBackend(v) for v in value)
+                else:
+                    return value
+
+            return _subclass_method.__get__(self)
+        else:
+            return super().__getattribute__(name)
+
+    def __eq__(self, other):
+        try:
+            return str(self).casefold() == str(other).casefold()
+        except AttributeError:
+            return False
+
+    def __hash__(self):
+        return str.__hash__(str(self).casefold())
+
+    def as_python(self):
+        default_key = BACKEND_MAPPING.equivalents[self]
+        return HypertoolsBackend(BACKEND_MAPPING.ipy_to_py[default_key])
+
+    def as_ipython(self):
+        default_key = BACKEND_MAPPING.equivalents[self]
+        return HypertoolsBackend(BACKEND_MAPPING.py_to_ipy[default_key])
+
+    def normalize(self):
+        if IS_NOTEBOOK:
+            return self.as_ipython()
+        else:
+            return self.as_python()
+
+
 def _init_backend():
     """
     Runs when hypertools is initially imported and sets the matplotlib
@@ -86,7 +184,8 @@ def _init_backend():
         plotting. `_reset_backend_notebook` if running in a Jupyter
         notebook, otherwise `matplotlib.pyplot.switch_backend`.
     """
-    global BACKEND_WARNING, \
+    global BACKEND_MAPPING, \
+        BACKEND_WARNING, \
         HYPERTOOLS_BACKEND, \
         IPYTHON_INSTANCE, \
         IS_NOTEBOOK, \
@@ -172,7 +271,8 @@ def _init_backend():
     finally:
         # restore backend
         mpl.use(curr_backend)
-        HYPERTOOLS_BACKEND = working_backend
+        BACKEND_MAPPING = BackendMapping(BACKEND_KEYS)
+        HYPERTOOLS_BACKEND = HypertoolsBackend(working_backend)
 
 
 def block_greedy_completer_execution():
@@ -195,8 +295,7 @@ def block_greedy_completer_execution():
 
 
 def _switch_backend_regular(backend):
-    if backend == 'inline':
-        backend = 'module://ipykernel.pylab.backend_inline'
+    backend = backend.as_python()
 
     try:
         plt.switch_backend(backend)
@@ -260,8 +359,7 @@ def _switch_backend_notebook(backend):
     """
     # ipykernel is only guaranteed to be installed if running in notebook
     from ipykernel.pylab.backend_inline import flush_figures
-    if backend == 'module://ipykernel.pylab.backend_inline':
-        backend = 'inline'
+    backend = backend.as_ipython()
 
     tmp_stdout = StringIO()
     exc = None
@@ -289,8 +387,8 @@ def _switch_backend_notebook(backend):
         try:
             _switch_backend_regular(backend)
         except HypertoolsBackendError as e:
-            err_msg = (f"Failed to switch plotting backend to {backend}.\n via "
-                       f"IPython with the following message:\n\t{output_msg}\n"
+            err_msg = (f'Failed to switch plotting backend to "{backend}" via '
+                       f"IPython with the following message:\n\t{output_msg}\n\n"
                        f"Fell back to switching via matplotlib and failed with "
                        f"the above error")
             raise HypertoolsBackendError(err_msg) from e
@@ -343,6 +441,7 @@ def _reset_backend_notebook(backend):
         _switch_backend_notebook(backend)
         IPYTHON_INSTANCE.events.unregister('pre_run_cell', _deferred_reset_cb)
 
+    backend = backend.as_ipython()
     # need this check in case multiple interactive plots are created
     # within the same context block (`with set_interactive_backend...`)
     # or the same Jupyter notebook cell
@@ -380,13 +479,15 @@ class set_interactive_backend:
     def __init__(self, backend):
         global HYPERTOOLS_BACKEND, BACKEND_WARNING
 
-        self.old_backend = HYPERTOOLS_BACKEND
+        self.old_backend = HYPERTOOLS_BACKEND.normalize() #str(HYPERTOOLS_BACKEND).casefold()
         self.old_backend_warning = BACKEND_WARNING
-        self.new_backend = backend
-        self.new_is_different = self.new_backend.lower() != self.old_backend.lower()
+        self.new_backend = HypertoolsBackend(backend).normalize()
+        self.new_is_different = self.new_backend != self.old_backend
+        print(f'old is {self.old_backend}, new is {self.new_backend}, new_is_different is {self.new_is_different}')
 
         if self.new_is_different:
             HYPERTOOLS_BACKEND = self.new_backend
+            print(f'and now HYPERTOOLS_BACKEND is {HYPERTOOLS_BACKEND}')
             BACKEND_WARNING = None
 
     def __enter__(self):
@@ -395,7 +496,6 @@ class set_interactive_backend:
 
     def __exit__(self, *args):
         global HYPERTOOLS_BACKEND, BACKEND_WARNING
-
         if self.new_is_different:
             try:
                 reset_backend(self.old_backend)
@@ -430,20 +530,22 @@ def manage_backend(plot_func):
         curr_rcParams = mpl.rcParams.copy()
         backend_switched = False
         try:
-            curr_backend = mpl.get_backend().lower()
+            curr_backend = HypertoolsBackend(mpl.get_backend()).normalize()
             plot_kwargs = _get_runtime_args(plot_func, *args, **kwargs)
             if plot_kwargs.get('animate') or plot_kwargs.get('interactive'):
                 tmp_backend = plot_kwargs.get('mpl_backend')
                 if tmp_backend == 'auto':
-                    tmp_backend = HYPERTOOLS_BACKEND.lower()
+                    tmp_backend = HYPERTOOLS_BACKEND.normalize()
 
                 if tmp_backend not in ('disable', curr_backend):
+                    print(f'different -- tmp is {tmp_backend}, curr is {curr_backend}')
                     if BACKEND_WARNING is not None:
                         warnings.warn(BACKEND_WARNING)
 
                     switch_backend(tmp_backend)
                     backend_switched = True
 
+            print('immediately pre-run\n', IPYTHON_INSTANCE.events.callbacks, '\n\n')
             return plot_func(*args, **kwargs)
 
         finally:
