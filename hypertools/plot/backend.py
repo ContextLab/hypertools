@@ -575,8 +575,9 @@ def _reset_backend_notebook(backend):
 
     backend = backend.as_ipython()
     # need this check in case multiple interactive plots are created
-    # within the same context block (`with set_interactive_backend...`)
-    # or the same Jupyter notebook cell
+    # in the same cell without using the context manager
+    # FIXME: this is always True because the callback function is
+    #  re-defined as a different object each time
     if _deferred_reset_cb not in IPYTHON_INSTANCE.events.callbacks['pre_run_cell']:
         IPYTHON_INSTANCE.events.register('pre_run_cell', _deferred_reset_cb)
 
