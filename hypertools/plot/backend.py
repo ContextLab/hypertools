@@ -2,22 +2,72 @@
 Module that deals with managing the matplotlib backend for interactive
 and/or animated plots created via `hypertools.plot` and
 `hypertools.DataGeometry.plot`.  Main functionality is contained in
-`set_interactive_backend` (front-end function) and `manage_backend`
-(decorator/context manager for `hypertools.plot`).
+`set_interactive_backend` (sole front-end function) and `manage_backend`
+(decorator for `hypertools.plot`).
 
-Note that the interactive plotting backend is currently managed via a
-module-scoped variable, and therefore this functionality isn't
-thread-safe. However, since matplotlib itself isn't thread-safe either
-(see https://matplotlib.org/faq/howto_faq.html#working-with-threads),
-this isn't really a limiting problem and therefore probably okay.
+======================= MODULE-SCOPED VARIABLES ========================
+Various information about the current state of the plotting backend is
+managed by a set of semi-global (module-scoped) variables. While this
+probably isn't an ideal setup long-term, it solves a bunch of problems
+that would otherwise require either completely overhauling the plotting
+API, recomputing the same values for every call, or doing a bunch of
+hacky, computationally expensive object inspection. And while this
+approach isn't thread-safe, neither is `matplotlib` itself [1], so this
+isn't really a limiting problem and therefore probably okay.
+
+BACKEND_MAPPING : `hypertools.plot.backend.BackendMapping`
+    see `BackendMapping` docstring
+BACKEND_KEYS : dict
+    Maps between compatible `matplotlib` backend keys in a standard
+    Python environment and their corresponding keys in an IPython
+    environment (format: `{python_key: ipython_key(s)}`). In cases where
+    multiple IPython backend keys denote the same Python-equivalent,
+    the "preferred" key (the one `BACKEND_MAPPING` will funnel others
+    into) is the first in the list.
+BACKEND_WARNING : str or None
+    The warning to be issued upon trying to create an interactive or
+    animated plot, if any. This is set under two conditions:
+      1. No compatible interactive backends are available
+      2. Hypertools was imported into a notebook and the notebook-native
+         interactive backend (nbAgg) is not available. This should never
+         happen, but theoretically could if the
+         `ipython`/`jupyter`/`jupyter-core`/`notebook` installation is
+         faulty.
+HYPERTOOLS_BACKEND : str
+    The `matplotlib` backend used to create interactive and animated
+    plots.
+IN_SET_CONTEXT : bool
+    A switch read by the `manage_backed` decorator to determine whether
+    or not the wrapped call to `hypertools.plot` was made inside a
+    `set_interactive_backend` context block.
+IPYTHON_INSTANCE : `ipykernel.zmqshell.ZMQInteractiveShell` or None
+    The IPython InteractiveShell instance for the current
+    IPython kernel, if `hypertools` was imported into a Jupyter
+    notebook. Otherwise, None. Used to register/unregister IPython
+    callback functions and run magic commands.
+IS_NOTEBOOK : bool
+    Whether or not `hypertools` was imported into a Jupyter notebook.
+reset_backend : function
+    The function called to switch back to the original `matplotlib`
+    plotting backend after creating an interactive/animated plot.
+    `_reset_backend_notebook` if imported into a Jupyter notebook,
+    otherwise `matplotlib.pyplot.switch_backend`.
+switch_backend : function
+    The function called to switch to the temporary backend prior to
+    plotting. `_switch_notebook_backend` if running in a Jupyter
+    notebook, otherwise `matplotlib.pyplot.switch_backend`.
+
+========================================================================
+
+FUTURE: `matplotlib` project leader says `nbagg` backend will be retired
+"in the next year or two" in favor of the `ipympl` backend [2]. For the
+Hypertools 2.0 revamp, the two options should be given equal priority in
+order to support the various possible combinations of new and older
+`IPython`/`ipykernel`/`notebook` versions going forward
+
+[1] https://matplotlib.org/faq/howto_faq.html#working-with-threads
+[2] https://github.com/ipython/ipython/issues/12190#issuecomment-599154335.
 """
-
-# FUTURE: matplotlib project leader says `nbagg` backend will be
-#  retired "in the next year or two" in favor of the `ipympl` backend:
-#  https://github.com/ipython/ipython/issues/12190#issuecomment-599154335.
-#  For the Hypertools 2.0 revamp, we'll want to put the two options on
-#  equal footing in order to support the various possible combinations
-#  of new and older IPython/ipykernel/notebook versions going forward
 
 
 import inspect
@@ -36,14 +86,6 @@ import matplotlib.pyplot as plt
 from .._shared.exceptions import HypertoolsBackendError
 
 
-# ============================== GLOBALS ===============================
-BACKEND_WARNING = None
-HYPERTOOLS_BACKEND = None
-IN_SET_CONTEXT = False
-IPYTHON_INSTANCE = None
-IS_NOTEBOOK = None
-reset_backend = None
-switch_backend = None
 BACKEND_KEYS = {
     'TkAgg': 'tk',
     'GTK3Agg': ['gtk3', 'gtk'],
@@ -56,7 +98,13 @@ BACKEND_KEYS = {
     'module://ipympl.backend_nbagg': ['ipympl', 'widget']
 }
 BACKEND_MAPPING = None
-# ======================================================================
+BACKEND_WARNING = None
+HYPERTOOLS_BACKEND = None
+IN_SET_CONTEXT = False
+IPYTHON_INSTANCE = None
+IS_NOTEBOOK = None
+reset_backend = None
+switch_backend = None
 
 
 class ParrotDict(dict):
@@ -95,12 +143,12 @@ class BackendMapping:
     """
     A two-way, non-unique dict-like mapping between keys used to set
     the matplotlib plotting backend in Python and IPython environments.
-    Primarily used by `as_python` and `as_ipython` methods of
+    Primarily used by `as_python()` and `as_ipython()` methods of
     `HypertoolsBackend`.  Funnels multiple equivalent keys within the
     same interpreter (Python vs. IPython) to a "default", then maps
     between that and the analog from the other interpreter type. At
     either step, a key with no corresponding value returns the key (see
-    `OneWayMapping` for more info).
+    `ParrotDict` docstring for more info).
     """
     def __init__(self, _dict):
         # assumes format of _dict is {Python: IPython}
@@ -227,37 +275,6 @@ def _init_backend():
     """
     Runs when hypertools is initially imported and sets the matplotlib
     backend used for animated/interactive plots.
-
-    Notes
-    -----
-    Sets the following module-scoped variables:
-
-    HYPERTOOLS_BACKEND : str
-        The matplotlib backend used for interactive or animated
-        plots.
-    IPYTHON_INSTANCE : ipykernel.zmqshell.ZMQInteractiveShell or None
-        The IPython InteractiveShell instance for the current
-        IPython kernel, if any.  Otherwise, None.
-    IS_NOTEBOOK : bool
-        Whether or not hypertools is being run in a Jupyter notebook
-    BACKEND_WARNING : str or None
-        The warning to be issued upon trying to create an
-        interactive or animated plot, if any.  Otherwise, None.  This is
-        set under two conditions:
-            1. No compatible interactive backends are available
-            2. Hypertools was imported into a notebook and the
-               notebook-native interactive backend (nbAgg) is not
-               available.  Tthis should never happen, but theoretically
-               could if the ipython/jupyter/jupyter-core/notebook
-               installation is faulty.
-    switch_backend : function
-        The function called to switch to the temporary backend prior to
-        plotting. `_switch_notebook_backend` if running in a Jupyter
-        notebook, otherwise, `matplotlib.pyplot.switch_backend`.
-    reset_backend : function
-        The function called to switch back to the original backend after
-        plotting. `_reset_backend_notebook` if running in a Jupyter
-        notebook, otherwise `matplotlib.pyplot.switch_backend`.
     """
     global BACKEND_MAPPING, \
         BACKEND_WARNING, \
@@ -619,8 +636,8 @@ class set_interactive_backend:
     multiple (or all) interactive plots at once, and can be in two
     different ways:
 
-    1. directly, to change the backend for the for all subsequent
-       interactive plots
+    1. directly, to change the backend for all subsequent interactive
+       plots
           ```
           import hypertools as hyp
           geo = hyp.load('weights_avg')
@@ -659,7 +676,10 @@ class set_interactive_backend:
        shouldn't typically be used as one and is only designed this way
        to enable it to work as both a regular function and a context
        manager.
-    2. When used as a context manager, the backend passed to
+    2. Calling this directly does *not* immediately change the plotting
+       backend; it changes the backend `hypertools` will use to create
+       interactive plots going forward.
+    3. However, when used as a context manager, the backend passed to
        `hypertools.set_interactive_backend` will be used for *all* plots
        created inside the context block, regardless of whether:
          - they are interactive/animated or static
@@ -781,7 +801,7 @@ def manage_backend(plot_func):
     def plot_wrapper(*args, **kwargs):
         # record current rcParams
         old_rcParams = mpl.rcParams.copy()
-        # assume using the `mock-contextlib.nullcontext` context
+        # assume using the mock-`contextlib.nullcontext` context
         backend_context = _null_backend_context
         tmp_backend = None
 
