@@ -58,7 +58,20 @@ BACKEND_MAPPING = None
 # ======================================================================
 
 
-class OneWayMapping(dict):
+class ParrotDict(dict):
+    """
+    Dictionary subclass with a few changes in behavior:
+      1. all keys and values are stored and indexed as
+         `HypertoolsBackend` instances
+      2. indexing a `ParrotDict` with a key that doesn't exist returns
+         the key (it's "parroted" back to you). The key is converted to
+         a `HypertoolsBackend` instance if it is not already. Similar
+         to `collections.defaultdict`, but does *not* add missing keys
+         on indexing.
+
+    Useful for filtering/replacing some values while leaving others
+    when the to-be-replaced values are known in advance.
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -78,11 +91,21 @@ class OneWayMapping(dict):
 
 
 class BackendMapping:
+    """
+    A two-way, non-unique dict-like mapping between keys used to set
+    the matplotlib plotting backend in Python and IPython environments.
+    Primarily used by `as_python` and `as_ipython` methods of
+    `HypertoolsBackend`.  Funnels multiple equivalent keys within the
+    same interpreter (Python vs. IPython) to a "default", then maps
+    between that and the analog from the other interpreter type. At
+    either step, a key with no corresponding value returns the key (see
+    `OneWayMapping` for more info).
+    """
     def __init__(self, _dict):
         # assumes format of _dict is {Python: IPython}
-        self.py_to_ipy = OneWayMapping()
-        self.ipy_to_py = OneWayMapping()
-        self.equivalents = OneWayMapping()
+        self.py_to_ipy = ParrotDict()
+        self.ipy_to_py = ParrotDict()
+        self.equivalents = ParrotDict()
 
         for py_key, ipy_key in _dict.items():
             py_key_default = self._store_equivalents(py_key)
@@ -102,10 +125,55 @@ class BackendMapping:
 
 
 class HypertoolsBackend(str):
+    """
+    A subclass of the `str` built-in, intended for easy(ish...)
+    conversion between the different valid matplotlib backend keys in
+    Python vs IPython and equality/membership checks.
+
+    Notes
+    -----
+    Normally, a lot of this could be simplified and a lot of grief saved
+    by subclassing `collections.UserString` rather than `str` directly.
+    The issue is that we're passing these to a ton of different
+    low-level `matplotlib`/`ipython`/`ipykernel`/etc. functions in
+    which they basically need to masquerade as strings. It's way too
+    complex to try to trace through where they're passed as-is, plus
+    any of these functions may be changed at any time, and subclasses
+    of `UserString` fail type-checks for **actual** strings (i.e.,
+    `isinstance(UserStringSubclass('a'), str)` returns False) whereas
+    this approach doesn't. So this will (hopefully) be more stable
+    long-term.
+    """
     def __new__(cls, x):
         return super().__new__(cls, x)
 
+    def __eq__(self, other):
+        """
+        case-insensitive comparison with both `str`s and other
+        `HypertoolsBackend` instances
+        """
+        return str(self).casefold() == str(other).casefold()
+
     def __getattribute__(self, name):
+        """
+        Overrides `str.__getattribute__` in a way that causes all
+        inherited `str` methods to return a `HypertoolsBackend`
+        instance, rather than a `str`, which it would otherwise do.
+        See class docstring for more information.
+
+        Parameters
+        ----------
+        name : the attribute or method accessed
+
+        Returns
+        -------
+        val : instance (or collection of instances) of
+            `hypertools.plot.backend.HypertoolsBackend`. For inherited
+            `str` attributes and methods, the return type is the same,
+            but with all instances of `str` replaced with
+            `hypertools.plot.backend.HypertoolsBackend`.
+        """
+        # only deal with string attributes/methods here
         if hasattr(str, name):
             def _subclass_method(self, *args, **kwargs):
                 value = getattr(super(), name)(*args, **kwargs)
@@ -116,42 +184,48 @@ class HypertoolsBackend(str):
                 else:
                     return value
 
+            # bind inner function to instance
             return _subclass_method.__get__(self)
         else:
             return super().__getattribute__(name)
 
-    def __eq__(self, other):
-        try:
-            return str(self).casefold() == str(other).casefold()
-        except AttributeError:
-            return False
-
     def __hash__(self):
+        """
+        needed to work for membership checks/lookups in dict/set/etc.
+        """
         return str.__hash__(str(self).casefold())
 
-    def as_python(self):
-        default_key = BACKEND_MAPPING.equivalents[self]
-        return HypertoolsBackend(BACKEND_MAPPING.ipy_to_py[default_key])
-
     def as_ipython(self):
+        """
+        Return the IPython-compatible version of a matplotlib backend
+        key, given either the Python-compatible or IPython-compatible
+        version
+        """
         default_key = BACKEND_MAPPING.equivalents[self]
         return HypertoolsBackend(BACKEND_MAPPING.py_to_ipy[default_key])
 
+    def as_python(self):
+        """
+        Return the Python-compatible version of a matplotlib backend
+        key, given either the Python-compatible or IPython-compatible
+        version
+        """
+        default_key = BACKEND_MAPPING.equivalents[self]
+        return HypertoolsBackend(BACKEND_MAPPING.ipy_to_py[default_key])
+
     def normalize(self):
-        if IS_NOTEBOOK:
-            return self.as_ipython()
-        else:
-            return self.as_python()
+        """
+        Convert a given matplotlib backend key to its preferred
+        equivalent for the correct interpreter
+        """
+        return self.as_ipython() if IS_NOTEBOOK else self.as_python()
+
 
 
 def _init_backend():
     """
     Runs when hypertools is initially imported and sets the matplotlib
     backend used for animated/interactive plots.
-
-    Returns
-    -------
-    None
 
     Notes
     -----
@@ -268,33 +342,116 @@ def _init_backend():
 
         switch_backend = reset_backend = _switch_backend_regular
 
+    else:
+        IS_NOTEBOOK = True
+        # if running in a notebook, should almost always use nbAgg. May
+        # eventually let user override this with environment variable
+        # (e.g., to use ipympl, widget, or WXAgg in JupyterLab), but for
+        # now this can be changed manually with
+        # `hypertools.set_interactive_backend` or the `mpl_backend`
+        # kwarg to `hypertools.plot`
+        try:
+            mpl.use('nbAgg')
+            working_backend = 'nbAgg'
+        except ImportError:
+            BACKEND_WARNING = ("Failed to switch to interactive notebook "
+                               "backend ('nbAgg'). Falling back to inline "
+                               "static plots.")
+            working_backend = 'inline'
+
+        switch_backend = _switch_backend_notebook
+        reset_backend = _reset_backend_notebook
+
     finally:
         # restore backend
         mpl.use(curr_backend)
         BACKEND_MAPPING = BackendMapping(BACKEND_KEYS)
-        HYPERTOOLS_BACKEND = HypertoolsBackend(working_backend)
+        HYPERTOOLS_BACKEND = HypertoolsBackend(working_backend).normalize()
 
 
-def block_greedy_completer_execution():
-    import_stack_trace = traceback.extract_stack()[-4::-1]
-    for frame in import_stack_trace:
-        if frame.filename.endswith('IPython/core/completerlib.py'):
-            # remove from sys.modules so init_backend re-runs during
-            # actual import call
-            try:
-                sys.modules.pop('hypertools.plot')
-                sys.modules.pop('hypertools.plot.backend')
-                # also remove numpy to avoid various C/PyObject warnings
-                sys.modules.pop('numpy')
-            except KeyError:
-                pass
-            finally:
-                # raise a generic exception to make the completer to move on
-                # (https://github.com/ipython/ipython/blob/b9e1d67ae97a00e2d78b6628ce1faedf224c3e86/IPython/core/completerlib.py#L165)
-                raise Exception
+def _block_greedy_completer_execution():
+    """
+    Handles an annoying edge case in `init_backend()`:
+      - IPython uses "greedy" TAB-completion, meaning code is actually
+        executed in order to determine autocomplete suggestions
+          + there is a config setting to disable this, but it's enabled
+            by default
+      - if TAB-completion is used in an import statement, the module is
+        actually imported if it hasn't been previously [1], which means
+        that for `hypertools`, `init_backend()` will be run
+      - because the TAB-completion happens in a non-IPython subprocess,
+        the backend will be initialized for non-notebook use.
+
+    To correct this, the function:
+      - looks through the stack trace for a call made from IPython's
+        TAB-completion module (`IPython/core/completerlib.py`)
+          + this is probably the safest way to do the search, since A)
+            the module name is less likely to change than the function
+            name or line number, and B) searching for *any* IPython
+            module would break importing `hypertools` in an IPython shell
+          + this is also probably the fastest way to search, since A) it
+            short-circuits on the first call specific to this scenario,
+            and B) the call stack will usually be at most a few imports
+            deep in non-notebook environments
+          + at minimum, the last 3 calls will always be from `hypertools`
+            so they're skipped to save time
+      - if it finds one, removes both `hypertools.plot` and
+        `hypertools.plot.backend` (and also `numpy`) from `sys.modules`...
+          + the `import` statement (`importlib.__import__()`) checks
+            `sys.modules` for already-loaded modules before importing,
+            so removing these causes them to be reloaded when the
+            `import` command is actually run
+          + both `hypertools.plot` and `hypertools.plot.backend` need to
+            be removed to avoid using the cached call to `init_backend()`
+          + `numpy` is also unloaded, otherwise its C extensions get
+            confused when `hypertools` is re-imported and issue a whole
+            slew of warnings
+      - ...and raises a generic exception (handled in [1]), which skips
+        running the rest of `init_backend()` while still allowing the
+        TAB-completer to keep searching other `hypertools` modules
+          + Also, since both of the removed modules will already have
+            been seen by the completer at this point, they'll still be
+            shown as autocomplete options despite not being in
+            `sys.modules`.
+
+    [1] https://github.com/ipython/ipython/blob/2b4bc75ac735a2541125b3baf299504e5513994a/IPython/core/completerlib.py#L158
+    """
+    stack_trace = traceback.extract_stack()[-4::-1]
+    completer_module = 'IPython/core/completerlib.py'
+    try:
+        next(entry for entry in stack_trace if entry.filename.endswith(completer_module))
+    except StopIteration:
+        pass
+    else:
+        try:
+            sys.modules.pop('hypertools.plot')
+            sys.modules.pop('hypertools.plot.backend')
+            sys.modules.pop('numpy')
+        except KeyError:
+            pass
+        finally:
+            raise Exception
 
 
 def _switch_backend_regular(backend):
+    """
+    Switch the plotting backend via `matplotlib.pyplot.switch_backend()`.
+
+    Used to set/reset the backend in non-notebook environments, and as a
+    fallback method of doing so in notebook environments when the
+    IPython magic command fails.
+
+    Parameters
+    ----------
+    backend : str
+        the matplotlib backend to switch to
+
+    Raises
+    ------
+    HypertoolsBackendError
+        if switching the backend fails
+
+    """
     backend = backend.as_python()
 
     try:
@@ -314,16 +471,12 @@ def _switch_backend_regular(backend):
 def _switch_backend_notebook(backend):
     """
     Handles switching the matplotlib backend when running in a Jupyter
-    notebook
+    notebook.
 
     Parameters
     ----------
     backend : str
         the interactive matplotlib backend to switch to
-
-    Returns
-    -------
-    None
 
     Notes
     -----
@@ -350,12 +503,14 @@ def _switch_backend_notebook(backend):
        and causes the matplotlib event loop to throw an error. So we
        need to ensure all `flush_figures` instances are unregistered
        before plotting.
-    2. For some unfathomable reason, IPython prints some warning to the
-       screen rather than actually using the warnings module.  We need
-       to catch one of these as an exception, so we temporarily suppress
-       and capture stdout.
+    2. In certain situations, the IPython magic command fails to switch
+       the backend but the matplotlib command will succeed. And for some
+       unfathomable reason, when the magic command fails, IPython
+       **prints** a warning message rather than issuing it via
+       `warnings.warn()` [1]. So the only way to catch this warning is
+       to temporarily suppress and capture stdout.
 
-
+    [1] https://github.com/ipython/ipython/blob/e394d65a6b499b5d91df7ca0306c1cb88c543f43/IPython/core/interactiveshell.py#L3495
     """
     # ipykernel is only guaranteed to be installed if running in notebook
     from ipykernel.pylab.backend_inline import flush_figures
@@ -379,10 +534,6 @@ def _switch_backend_notebook(backend):
         raise ValueError(f"{backend} is not a valid IPython plotting "
                          f"backend.\n{backends_avail}") from exc
 
-    # for some reason, there are certain situations where the ipython
-    # magic command fails to switch the backend but the matplotlib
-    # command succeeds. This warning message gets **printed** (not
-    # issued via `warnings.warn`) in those cases.
     elif output_msg.startswith('Warning: Cannot change to a different GUI toolkit'):
         try:
             _switch_backend_regular(backend)
@@ -408,10 +559,6 @@ def _reset_backend_notebook(backend):
     ----------
     backend : str
         the matplotlib backend prior to running `hypertools.plot`
-
-    Returns
-    -------
-    None
 
     Notes
     -----

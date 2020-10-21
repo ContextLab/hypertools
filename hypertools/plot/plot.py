@@ -173,21 +173,23 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
         work properly).
 
     mpl_backend : str
-        Set the matplotlib backend used to create interactive and
-        animated plots.  May be 'auto' (default), 'disable', or a
-        backend key accepted by matplotlib. If 'auto', hypertools will
-        automatically determine the interactive backend to use
+        The matplotlib backend used to create interactive and animated
+        plots.  May be 'auto' (default), 'disable', or a backend key
+        accepted by matplotlib. If 'auto', hypertools will use a backend
+        determined automatically based on your environment
         (`hypertools.plot.backend.HYPERTOOLS_BACKEND`). If 'disable',
-        disable experimental behavior and use the current global
-        matplotlib backend (`matplotlib.get_backend()`). Otherwise, try
-        to use the backend specified. NOTES: This feature is
-        experimental. For a list of interactive matplotlib backends,
-        see `matplotlib.rcsetup.interactive_bk`. For a list of backends
-        available in IPython, run `%matplotlib --list`. Set the
+        experimental backend-switching is disabled and the current global
+        matplotlib backend (`matplotlib.get_backend()`) is used.
+        Otherwise, try to use the backend specified. NOTES: *This
+        feature is experimental*. For a list of interactive matplotlib
+        backends, see `matplotlib.rcsetup.interactive_bk`. For a list of
+        backends available in IPython, run `%matplotlib --list`. Set the
         `$HYPERTOOLS_BACKEND` environment variable or use
         `hypertools.set_interactive_backend()` to override the backend
-        used by 'auto' in non-IPython environments. If animate=False
-        and interactive=False, this argument has no effect.
+        used by 'auto' in non-IPython environments. If `animate=False`
+        and `interactive=False`, this argument has no effect. Within the
+        `hypertools.set_interactive_backend(backend)` context manager,
+        the value of `backend` is prioritized over this argument.
 
     show : bool
         If set to False, the figure will not be displayed, but the figure,
