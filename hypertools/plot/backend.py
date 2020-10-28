@@ -166,7 +166,6 @@ class BackendMapping:
         if not isinstance(keylist, str) and isinstance(keylist, Iterable):
             default_key = keylist[0]
             for key_equiv in keylist[1:]:
-                key_equiv = key_equiv
                 self.equivalents[key_equiv] = default_key
         else:
             default_key = keylist
@@ -423,16 +422,15 @@ def _block_greedy_completer_execution():
     try:
         next(entry for entry in stack_trace if entry.filename.endswith(completer_module))
     except StopIteration:
-        pass
+        return
     else:
-        try:
-            sys.modules.pop('hypertools.plot')
-            sys.modules.pop('hypertools.plot.backend')
-            sys.modules.pop('numpy')
-        except KeyError:
-            pass
-        finally:
-            raise Exception
+        for module in ('hypertools.plot', 'hypertools.plot.backend', 'numpy'):
+            try:
+                sys.modules.pop(module)
+            except KeyError:
+                pass
+
+        raise Exception
 
 
 def _switch_backend_regular(backend):
@@ -554,8 +552,9 @@ def _switch_backend_notebook(backend):
 def _reset_backend_notebook(backend):
     """
     Handles resetting the matplotlib backend after displaying an
-    animated/interactive plot in a Jupyter notebook by registering a
-    "one-shot" self-destructing pre_cell_run callback to the next cell
+    animated/interactive plot in a Jupyter notebook. This needs to be
+    done in a slightly roundabout way to handle various IPython/Jupyter
+    notebook behaviors (see Notes below for details).
 
     Parameters
     ----------
@@ -564,38 +563,63 @@ def _reset_backend_notebook(backend):
 
     Notes
     -----
-    Changing the matplotlib backend in a Jupyter notebook immediately
-    closes any open figures (meaning animation and interactivity stop),
-    so we can't do it as part of the function call or register it as a
-    post-execution hook for the current cell. We get around this by
-    registering a callback function that runs *before* the *next* cell
-    is run, resets the backend, and unregisters itself. This way, the
-    animation runs and the plot is interactive until the user runs the
-    next cell, but the backend is reset before any code is executed. And
-    because the callback "self-destructs," we won't force later figures
-    to close unnecessarily ("changing" the backend to the current backend
-    still does this) and doing this multiple times won't pollute the
-    callback list, which can slow down cell execution.
-
-    We also have to define and register the callback inside a wrapper
-    function, since we need to reference the backend we're switching to
-    using the same syntax as `matplotlib.pyplot.switch_backend`. IPython
-    callbacks have to have the same signature as the prototype for the
-    event they're registered to, and the pre_run_cell prototype takes no
-    arguments. And since the callback needs to reference the correct
-    function object in order to unregister itself, we can't just wrap it
-    in `functools.partial`.
+    1. Changing the matplotlib backend in a Jupyter notebook immediately
+       closes any open figures (killing any animation and/or
+       interactivity). So the reset can't happen as part of the main
+       `hypertools.plot` or even in the same cell, otherwise the plots
+       would be closed as soon as they're rendered. To get around this,
+       `_reset_backend_notebook` registers an IPython callback function
+       (`_deferred_reset_cb()`) that runs *before* the code in the
+       *next* cell is run and resets the backend. This way, the
+       animation runs and the plot is interactive until the user runs
+       the next cell, but the backend is still reset before any other
+       code is executed. (Note: this does not require cells to be run in
+       order or for the next cell to be pre-queued)
+    2. The command to switch the `matplotlib` backend closes open
+       figures when called, even if "switching" to the currently set
+       backend. Normally, registered callbacks run for all future cells,
+       which means the `_deferred_reset_cb()` callback would interfere
+       with future animated plots and plots created across multiple
+       cells. To prevent this, `_deferred_reset_cb()` unregisters itself
+       after resetting the backend so it only exists for the first cell
+       run after creating the plot. This also prevents polluting the
+       list of registered callbacks with duplicates, which can slow down
+       cell execution.
+    3. IPython callbacks are required to have the same function
+       signature as the prototype for the event that triggers them, and
+       the `pre_run_cell` prototype takes no arguments. This means the
+       callback to reset the backend has to be defined and registered
+       inside a wrapper function, because:
+         - The top-level function to reset the backend needs to have the
+           same signature as `matplotlib.pyplot.switch_backend` (which
+           takes the backend as an argument) so the two can be used
+           interchangeably depending on the current interpreter.
+         - The registered callback needs to reference the backend it's
+           switching to, but can't take it as a parameter
+         - The callback can't be wrapped with the backend it's switching
+           to via `functools.partial`, because it also needs to
+           reference its own function object in order to unregister
+           itself and a partial function would be a separate object.
+    4. The `_deferred_reset_cb()` callback is registered up to one time
+       per cell (i.e., creating multiple interactive/animated plots in
+       the same cell without the `set_interactive_backend` context
+       manager doesn't lead to duplicate callbacks). To do this, the
+       list of registered callbacks has to be checked by name rather
+       than by object, since the inner `_deferred_reset_cb` function is
+       re-defined as a different object each time.
     """
     def _deferred_reset_cb():
         _switch_backend_notebook(backend)
         IPYTHON_INSTANCE.events.unregister('pre_run_cell', _deferred_reset_cb)
 
+    def _reset_cb_registered():
+        for func in IPYTHON_INSTANCE.events.callbacks['pre_run_cell']:
+            if func.__name__ == '_deferred_reset_cb':
+                return True
+        return False
+
     backend = backend.as_ipython()
-    # need this check in case multiple interactive plots are created
-    # in the same cell without using the context manager
-    # FIXME: this is always True because the callback function is
-    #  re-defined as a different object each time
-    if _deferred_reset_cb not in IPYTHON_INSTANCE.events.callbacks['pre_run_cell']:
+    if not _reset_cb_registered():
         IPYTHON_INSTANCE.events.register('pre_run_cell', _deferred_reset_cb)
 
 
