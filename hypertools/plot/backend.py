@@ -182,15 +182,15 @@ class HypertoolsBackend(str):
     -----
     Normally, a lot of this could be simplified and a lot of grief saved
     by subclassing `collections.UserString` rather than `str` directly.
-    The issue is that we're passing these to a ton of different
-    low-level `matplotlib`/`ipython`/`ipykernel`/etc. functions in
-    which they basically need to masquerade as strings. It's way too
-    complex to try to trace through where they're passed as-is, plus
-    any of these functions may be changed at any time, and subclasses
-    of `UserString` fail type-checks for **actual** strings (i.e.,
-    `isinstance(UserStringSubclass('a'), str)` returns False) whereas
-    this approach doesn't. So this will (hopefully) be more stable
-    long-term.
+    The issue is that these objects get passed to a ton of different
+    low-level `matplotlib`/`ipython`/`ipykernel`/etc. functions that
+    expect to be receiving strings, and subclasses of `UserString` fail
+    type-checks for **actual** strings (i.e.,
+    `isinstance(UserStringSubclass('a'), str)` returns False) while
+    this approach doesn't. Since it's impossible to trace through every
+    possible function these could be forwarded to in every possible
+    scenario (and any of those functions could be changed at any time),
+    this will hopefully be more stable long-term.
     """
     def __new__(cls, x):
         return super().__new__(cls, x)
@@ -329,7 +329,7 @@ def _init_backend():
 
         else:
             BACKEND_WARNING = ("Failed to switch to any interactive backend "
-                               f"({', '.join(backends)}. Falling back to 'Agg'.")
+                               f"({', '.join(backends)}). Falling back to 'Agg'.")
             working_backend = 'Agg'
 
         if env_backend is not None and working_backend.lower() != env_backend.lower():
@@ -514,8 +514,8 @@ def _switch_backend_notebook(backend):
     """
     # ipykernel is only guaranteed to be installed if running in notebook
     from ipykernel.pylab.backend_inline import flush_figures
-    backend = backend.as_ipython()
 
+    backend = backend.as_ipython()
     tmp_stdout = StringIO()
     exc = None
 

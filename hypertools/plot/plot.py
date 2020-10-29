@@ -452,13 +452,6 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
         else:
             plt.savefig(save_path)
 
-    # # show the plot
-    # if show:
-    #     plt.show()
-    # else:
-    #     # safely closes the plot so it doesn't pop up in another call to this function
-    #     plt.close('all')
-
     # gather reduce params
     if isinstance(reduce, dict):
         reduce_dict = reduce
