@@ -10,8 +10,11 @@ from ..tools.cluster import cluster as clusterer
 from ..tools.reduce import reduce as reducer
 from ..tools.format_data import format_data
 from .draw import _draw
+from .backend import manage_backend
 from ..datageometry import DataGeometry
 
+
+@manage_backend
 def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
          color=None, colors=None, palette='hls', group=None, hue=None,
          labels=None, legend=None, title=None, size=None, elev=10, azim=-60,
@@ -19,7 +22,8 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
          cluster=None, align=None, normalize=None, n_clusters=None,
          save_path=None, animate=False, duration=30, tail_duration=2,
          rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
-         frame_rate=50, explore=False, show=True, transform=None,
+         frame_rate=50, interactive=False, explore=False,
+         mpl_backend='auto', show=True, transform=None,
          vectorizer='CountVectorizer', semantic='LatentDirichletAllocation',
          corpus='wiki', ax=None):
     """
@@ -155,12 +159,37 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
     frame_rate (animation only) : int or float
         Frame rate for animation (default: 50)
 
+    interactive : bool
+        If True, display the plot using an interactive matplotlib
+        backend. Useful for inspecting and manipulating static plots. If
+        animate=True, an interactive backend is required and this
+        argument has no effect (default: False).
+
     explore : bool
         Displays user defined labels will appear on hover. If no labels are
         passed, the point index and coordinate will be plotted. To use,
         set explore=True. Note: Explore mode is currently only supported
         for 3D static plots, and is an experimental feature (i.e it may not yet
         work properly).
+
+    mpl_backend : str
+        The matplotlib backend used to create interactive and animated
+        plots.  May be 'auto' (default), 'disable', or a backend key
+        accepted by matplotlib. If 'auto', hypertools will use a backend
+        determined automatically based on your environment
+        (`hypertools.plot.backend.HYPERTOOLS_BACKEND`). If 'disable',
+        experimental backend-switching is disabled and the current global
+        matplotlib backend (`matplotlib.get_backend()`) is used.
+        Otherwise, try to use the backend specified. NOTES: *This
+        feature is experimental*. For a list of interactive matplotlib
+        backends, see `matplotlib.rcsetup.interactive_bk`. For a list of
+        backends available in IPython, run `%matplotlib --list`. Set the
+        `$HYPERTOOLS_BACKEND` environment variable or use
+        `hypertools.set_interactive_backend()` to override the backend
+        used by 'auto' in non-IPython environments. If `animate=False`
+        and `interactive=False`, this argument has no effect. Within the
+        `hypertools.set_interactive_backend(backend)` context manager,
+        the value of `backend` is prioritized over this argument.
 
     show : bool
         If set to False, the figure will not be displayed, but the figure,
@@ -422,13 +451,6 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
 
         else:
             plt.savefig(save_path)
-
-    # show the plot
-    if show:
-        plt.show()
-    else:
-        # safely closes the plot so it doesn't pop up in another call to this function
-        plt.close('all')
 
     # gather reduce params
     if isinstance(reduce, dict):
