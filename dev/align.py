@@ -32,18 +32,24 @@ def trim_and_pad(data):
     
     return r, c, x
 
-def pad_and_align(data, template, c, x):
+def pad_and_align(data, template, c, x, return_model=False):
     aligned = [np.zeros([d.shape[0], c]) for d in data]
+    model = []
     for i in range(0, len(x)):
         proj = pro_fit_xform(x[i], template, return_proj=True)
+        model.append(proj)
         padded_data = np.copy(aligned[i])
         print(f'padded_data.shape: {padded_data.shape}')
         padded_data[:, :data[i].shape[1]] = data[i]
         aligned[i] = transform(padded_data, proj)
-    return aligned
+    
+    if return_model:
+        return model, aligned
+    else:
+        return aligned
 
 #TODO: debug the iterative part of this function
-def hyper(data, n_iter=10):
+def hyper(data, n_iter=10, return_model=False):
     '''
     data: a list of numpy arrays
     '''
@@ -71,17 +77,29 @@ def hyper(data, n_iter=10):
             x = pad_and_align(x, template2, c, x)
 
     #STEP 3: SECOND ROUND OF ALIGNMENTS
-    #  - align each subj to template2        
-    return pad_and_align(data, template2, c, x)
+    #  - align each subj to template2
+    transformed = pad_and_align(data, template2, c, x)
+    
+    #if return_model, re-align original data to transformed data
+    if return_model:
+        model = [pro_fit_xform(d, t, return_proj=True) for d, t in zip(data, transformed)]
+        return model, transformed
+    else:
+        return transformed
 
-def srm(data):
+def srm(data, return_model=False):
     data = [i.T for i in data]
     srm = SRM(features=np.min([i.shape[0] for i in data]))
     fit = srm.fit(data)
-    return [i.T for i in srm.transform(data)]
+    transformed = [i.T for i in srm.transform(data)]
+    
+    if return_model:
+        return srm, transformed
+    else:
+        return transformed
 
 
-def procrustes(data, template=None):
+def procrustes(data, template=None, return_model=False):
     data2 = np.copy(data)
     if not template:
         template = data[0]
@@ -89,7 +107,7 @@ def procrustes(data, template=None):
     
     _, c, x = trim_and_pad(data2)
     
-    return pad_and_align(data[:-1], template, c, x[:-1])
+    return pad_and_align(data[:-1], template, c, x[:-1], return_model=return_model)
     
         
 
