@@ -39,7 +39,6 @@ def pad_and_align(data, template, c, x, return_model=False):
         proj = pro_fit_xform(x[i], template, return_proj=True)
         model.append(proj)
         padded_data = np.copy(aligned[i])
-        print(f'padded_data.shape: {padded_data.shape}')
         padded_data[:, :data[i].shape[1]] = data[i]
         aligned[i] = transform(padded_data, proj)
     
