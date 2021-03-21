@@ -47,7 +47,6 @@ def pad_and_align(data, template, c, x, return_model=False):
     else:
         return aligned
 
-#TODO: debug the iterative part of this function
 def hyper(data, n_iter=10, return_model=False):
     '''
     data: a list of numpy arrays
@@ -97,16 +96,16 @@ def srm(data, return_model=False):
     else:
         return transformed
 
-
+#TODO: debug this...
 def procrustes(data, template=None, return_model=False):
-    data2 = np.copy(data)
+    data2 = [d.copy() for d in data]
     if not template:
-        template = data[0]
-    data2.append(np.copy(template.copy))
+        template = data2[0]
+    data2.append(template.copy())
     
     _, c, x = trim_and_pad(data2)
     
-    return pad_and_align(data[:-1], template, c, x[:-1], return_model=return_model)
+    return pad_and_align(data2[:-1], template, c, x[:-1], return_model=return_model)
     
         
 
