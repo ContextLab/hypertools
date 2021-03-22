@@ -47,40 +47,45 @@ def pad_and_align(data, template, c, x, return_model=False):
     else:
         return aligned
 
+#debug this...
 def hyper(data, n_iter=10, return_model=False):
     '''
     data: a list of numpy arrays
     '''
-    
+    assert n_iter >= 0, 'Number of iterations must be non-negative'
+        
     # STEP 0: STANDARDIZE SIZE AND SHAPE
     #  - find smallest number of rows and max number of columns
     #  - remove extra rows and zero-pad to equalize number of columns
     r, c, x = trim_and_pad(data)
     
-    for n in range(n_iter):
-        # STEP 1: TEMPLATE
-        template = np.copy(x[0])
-        for i in range(1, len(x)):
-            template += pro_fit_xform(x[i], template / (i + 1))
-        template /= len(x)
+    if n_iter == 0:
+        if return_model:
+            return [np.eye(c) for d in data], x
+        else:
+            return x
+    
+    # STEP 1: TEMPLATE
+    template = np.copy(x[0])
+    for i in range(1, len(x)):
+        template += pro_fit_xform(x[i], template / (i + 1))
+    template /= len(x)
 
-        # STEP 2: NEW COMMON TEMPLATE
-        #  - align each subj to template
-        template2 = np.zeros_like(template)
-        for i in range(0, len(x)):
-            template2 += pro_fit_xform(x[i], template)
-        template2 /= len(x)
-        
-        if n < n_iter:
-            x = pad_and_align(x, template2, c, x)
-
+    # STEP 2: NEW COMMON TEMPLATE
+    #  - align each subj to template
+    template2 = np.zeros_like(template)
+    for i in range(0, len(x)):
+        template2 += pro_fit_xform(x[i], template)
+    template2 /= len(x)
+    
     #STEP 3: SECOND ROUND OF ALIGNMENTS
     #  - align each subj to template2
     transformed = pad_and_align(data, template2, c, x)
     
+    #TODO: if n_iter == 1, return model + transformed; otherwise compute m0, x0 = hyper(transformed, n_iter=n_iter-1, return_model=return_model) and then return model * m0, x0
     #if return_model, re-align original data to transformed data
     if return_model:
-        model = [pro_fit_xform(d, t, return_proj=True) for d, t in zip(data, transformed)]
+        model = pro_fit_xform(d, t, return_proj=True)                
         return model, transformed
     else:
         return transformed
@@ -99,7 +104,7 @@ def srm(data, return_model=False):
 #TODO: debug this...
 def procrustes(data, template=None, return_model=False):
     data2 = [d.copy() for d in data]
-    if not template:
+    if template is None:
         template = data2[0]
     data2.append(template.copy())
     
