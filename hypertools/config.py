@@ -1,1 +1,4 @@
-__version__ = "0.6.3"
+from pkg_resources import get_distribution
+
+
+__version__ = get_distribution('hypertools')
