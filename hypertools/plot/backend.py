@@ -527,6 +527,7 @@ def _switch_backend_notebook(backend):
             IPYTHON_INSTANCE.run_line_magic('matplotlib', '-l')
 
     output_msg = tmp_stdout.getvalue().strip()
+    tmp_stdout.close()
     if exc is not None:
         # just in case something else was somehow sent to stdout while
         # redirected, or if we managed to catch a different KeyError
