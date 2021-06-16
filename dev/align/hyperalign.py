@@ -53,4 +53,3 @@ class Hyperalign:
     def fit_transform(self, data):
         self.fit(data)
         return self.transform()
-    
