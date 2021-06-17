@@ -21,7 +21,7 @@ def HyperData(pd.DataFrame):
         self.dtype = None
         self.df = None
 
-    def unstack(self):
+    def unstack(self, inplace=False):
         if not is_multiindex_dataframe(self.df):
             if is_dataframe(self.df):
                 return self.df
@@ -45,6 +45,17 @@ def HyperData(pd.DataFrame):
         self.df.index.rename(names, inplace=True)
         unstacked = [d[1].set_index(d[1].index.get_level_values(1)) for d in list(x.groupby(grouper))]
         if len(unstacked) == 1:
-            return unstacked[0]
+            data = unstacked[0]
         else:
-            return unstacked
+            data = unstacked
+
+        if inplace:
+            self.df = data
+        else:
+            return HyperData(data)
+
+    def stack(self, inplace=False):
+        pass
+
+    def trajectorize(self,  window_length=0.1, samplerate=None, inplace=False):
+        pass
