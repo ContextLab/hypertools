@@ -8,6 +8,7 @@ from formats.sound import is_sound, wrangle_sound
 from formats.nifti import is_nifti, wrangle_nifti
 from formats.text import is_text, wrangle_text
 from formats.null import is_null, wrangle_null
+from ..core.configurator import __version__ #FIXME: implement this...
 
 #the order matters: if earlier checks pass, later checks will not run.
 #the list specifies the priority of converting to the given datatypes.
@@ -15,6 +16,10 @@ format_checkers = ['pandas', 'numpy', 'image', 'sound', 'nifti', 'text', 'null']
 
 def HyperData(pd.DataFrame):
     def __init__(self, data, wrangler=None, dtype=None, **kwargs):
+        for k, v in kwargs.items():
+            assert k not in ['df', '__version__', 'stacked'], RuntimeError(f'Cannot set reserved property: {k}')
+            self.k = v
+
         self.df = None
         self.dtype = None
 
@@ -31,6 +36,10 @@ def HyperData(pd.DataFrame):
             self.stacked = True
         else:
             self.stacked = False
+
+        self.__version__ = __version__ #set in config.ini and load in
+
+
 
 
     def unstack(self, inplace=False):
@@ -136,4 +145,7 @@ def HyperData(pd.DataFrame):
 
     def plot(self, **kwargs):
         pass
-    
+
+    def save(self, fname, **kwargs):
+        pass
+
