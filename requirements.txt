@@ -5,8 +5,12 @@ seaborn>=0.8.1
 matplotlib>=1.5.1
 scipy>=1.0.0
 numpy>=1.10.4
-umap-learn>=0.4.6
-future
-requests
-deepdish
-six
+requests~=2.25.1
+six~=1.15.0
+sklearn~=0.0
+modin>=0.10.0
+holoviews~=1.13.3
+pytest~=5.4.1
+setuptools~=49.6.0
+umap~=0.1.1
+tensorflow>=2.5.0

@@ -2,7 +2,9 @@ def is_null(data):
     return data is None
 
 
-def wrangle_null(data, **kwargs):
+def wrangle_null(data, return_model=False, **kwargs):
+    if return_model:
+        return data, {'model': None, 'args': [], 'kwargs': kwargs}
     return data
 
 

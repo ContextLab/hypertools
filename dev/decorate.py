@@ -3,27 +3,167 @@ import six
 import numpy as np
 import pandas as pd
 from ppca import PPCA
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
-from sklearn.decomposition import LatentDirichletAllocation, NMF
-from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering, SpectralCoclustering, SpectralBiclustering, DBSCAN, AffinityPropagation, MeanShift
-from sklearn.mixture import GaussianMixture, BayesianGaussianMixture
-from sklearn.decomposition import PCA, FastICA, IncrementalPCA, KernelPCA, FactorAnalysis, TruncatedSVD, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
-from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
-from umap import UMAP
-import os
-import tensorflow as tf
-import tensorflow_hub as hub
-from configparser import ConfigParser
-import plotly.graph_objs as go
-from plotly.offline import download_plotlyjs, init_notebook_mode, plot, iplot
-import plotly.express as px
-import functools
-import matplotlib as mpl
-import seaborn as sns
-import re
-from scipy.spatial.distance import cdist
-from scipy.optimize import linear_sum_assignment
-import mediapy as media
+from .data.format import format_data
 
 
+def list_generalizer(f):
+    @functools.wraps(f)
+    def wrapped(data, **kwargs):
+        if type(data) == list:
+            return [f(d, **kwargs) for d in data]
+        else:
+            return f(data, **kwargs)
+    return wrapped
 
+
+@list_generalizer
+def funnel(f):
+    @functools.wraps(f)
+    def wrapped(data, **kwargs):
+        return f(format_data(data, **kwargs), **kwargs)
+    return wrapped
+
+
+@funnel
+def fill_missing(data, **kwargs):
+    if 'interp_kwargs' in kwargs.keys():
+        interp_kwargs = kwargs.pop('interp_kwargs', None)
+    else:
+        interp_kwargs = {}
+
+    if len(interp_kwargs) == 0:
+        return data
+
+    if ('apply_ppca' in interp_kwargs.keys()) and interp_kwargs['apply_ppca']:
+        covariance_model = PPCA()
+        covariance_model.fit(data.values)
+        data.values = covariance_model.transform()
+    interp_kwargs.pop('apply_ppca', None)
+
+    if len(interp_kwargs) == 0:
+        return data
+    else:
+        return data.interpolate(**interp_kwargs)
+
+
+def interpolate(f):
+    @functools.wraps(f)
+    def wrapped(data, **kwargs):
+        return f(fill_missing(data, **kwargs), **kwargs)
+    return wrapped
+
+
+def stack_handler(apply_stacked=False, return_override=False):
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapped(data, **kwargs):
+            def returner(x, rmodel=None, rreturn_model=False):
+                if rreturn_model:
+                    return rmodel, x
+                else:
+                    return x
+
+            if 'keys' not in kwargs.keys():
+                kwargs['keys'] = None
+
+            if 'stack' not in kwargs.keys():
+                kwargs['stack'] = False
+
+            return_model = (not return_override) and ('return_model' in kwargs.keys()) and kwargs['return_model']
+            if not return_model:
+                kwargs.pop('return_model', None)
+
+            keys = kwargs.pop('keys', None)
+            stack = kwargs.pop('stack', None)
+
+            vals, stacked_data = format_interp_stack_extract(data, keys=keys, **kwargs)
+            unstacked_data = pandas_unstack(stacked_data)
+
+            # ignore sklearn warnings...this should be written more responsibly :)
+            warnings.simplefilter('ignore')
+
+            if apply_stacked:
+                transformed = f(stacked_data, **kwargs)
+                if return_override:
+                    return transformed
+
+                if return_model:
+                    model, transformed = transformed
+                else:
+                    model = None
+
+                transformed = pd.DataFrame(data=transformed, index=stacked_data.index,
+                                           columns=np.arange(transformed.shape[1]))
+                if stack:
+                    return returner(transformed, rmodel=model, rreturn_model=return_model)
+                else:
+                    return returner(pandas_unstack(transformed), rmodel=model, rreturn_model=return_model)
+            else:
+                transformed = f([x.values for x in unstacked_data], **kwargs)
+                if return_override:
+                    return transformed
+
+                if return_model:
+                    model, transformed = transformed
+                else:
+                    model = None
+
+                if stack:
+                    return returner(pd.DataFrame(data=np.vstack(transformed), index=stacked_data.index), rmodel=model,
+                                    rreturn_model=return_model)
+                else:
+                    return returner(
+                        [pd.DataFrame(data=v, index=unstacked_data[i].index) for i, v in enumerate(transformed)],
+                        rmodel=model, rreturn_model=return_model)
+
+        return wrapped
+
+    return decorator
+
+
+def module_checker(modules=None, alg_list=None):
+    if modules is None:
+        modules = []
+    if alg_list is None:
+        alg_list = []
+
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapped(data, **kwargs):
+            if 'algorithm' not in kwargs.keys():
+                algorithm = defaults[f.__name__]['algorithm']
+            else:
+                algorithm = kwargs.pop('algorithm', None)
+
+            if is_text(algorithm):
+                # security check to prevent executing arbitrary code
+                verified = False
+                if len(alg_list) > 0:
+                    assert any([algorithm in eval(f'{a}_models') for a in alg_list]), f'Unknown {f.__name__} ' \
+                                                                                      f'algorithm: {algorithm}'
+                    verified = True
+                if not verified:
+                    assert algorithm in eval(f'{f.__name__}_models'),  f'Unknown {f.__name__} algorithm: {algorithm}'
+                algorithm = eval(algorithm)
+
+            # make sure a function from the appropriate module is being passed
+            if len(modules) > 0:
+                assert any([m in algorithm.__module__ for m in modules]),  f'Unknown {f.__name__} ' \
+                                                                           f'algorithm: {algorithm.__name__}'
+
+            kwargs['algorithm'] = algorithm
+            return f(data, **kwargs)
+        return wrapped
+    return decorator
+
+
+@stack_handler(apply_stacked=False)
+def unstack_apply(data, **kwargs):
+    assert 'algorithm' in kwargs.keys(), 'must specify algorithm'
+    return algorithm(data, **kwargs)
+
+
+@stack_handler(apply_stacked=True)
+def stack_apply(data, **kwargs):
+    assert 'algorithm' in kwargs.keys(), 'must specify algorithm'
+    return algorithm(data, **kwargs)

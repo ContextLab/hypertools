@@ -1,21 +1,62 @@
 import numpy as np
 import pandas as pd
-from format import is_multiindex_dataframe
-from formats.dataframe import is_dataframe, wrangle_dataframe
-from formats.array import is_array, wrangle_array
-from formats.image import is_image, wrangle_image
-from formats.sound import is_sound, wrangle_sound
-from formats.nifti import is_nifti, wrangle_nifti
-from formats.text import is_text, wrangle_text
-from formats.null import is_null, wrangle_null
-from ..core.configurator import __version__ #FIXME: implement this...
 
-#the order matters: if earlier checks pass, later checks will not run.
-#the list specifies the priority of converting to the given datatypes.
-format_checkers = ['pandas', 'numpy', 'image', 'sound', 'nifti', 'text', 'null']
+from ..core.configurator import __version__
+from ..decorate import interpolate, list_generalizer
 
-def HyperData(pd.DataFrame):
-    def __init__(self, data, wrangler=None, dtype=None, **kwargs):
+
+def pandas_unstack(x):
+    if not is_multiindex_dataframe(x):
+        if is_dataframe(x):
+            return x
+        else:
+            raise Exception(f'Unsupported datatype: {type(x)}')
+
+    names = list(x.index.names)
+    grouper = 'ID'
+    if not (grouper in names):
+        names[0] = grouper
+    elif not (names[0] == grouper):
+        for i in np.arange(
+                len(names)):  # trying n things other than 'ID'; at least one of them must be outside of the n-1 remaining names
+            next_grouper = f'{grouper}{i}'
+            if not (next_grouper in names):
+                names[0] = next_grouper
+                grouper = next_grouper
+                break
+    assert names[0] == grouper, 'Unstacking error'
+
+    x.index.rename(names, inplace=True)
+    unstacked = [d[1].set_index(d[1].index.get_level_values(1)) for d in list(x.groupby(grouper))]
+    if len(unstacked) == 1:
+        return unstacked[0]
+    else:
+        return unstacked
+
+
+def pandas_flatten(x):
+    while len(x.index.names) > 1:
+        x[x.index.names[0]] = x.index.get_level_values(0)
+
+        if len(x.index.names) > 2:
+            index = pd.MultiIndex.from_arrays([x.index.get_level_values(i) for i in range(1, len(x.index.levels))],
+                                              names=x.index.names[1:])
+        else:
+            index = pd.Index(data=x.index.get_level_values(1), name=x.index.names[1])
+
+        x.index = index
+
+    return x
+
+
+@interpolate
+def format_interp_stack_extract(data, keys=None, **kwargs):
+    stacked_data = pandas_stack(data, keys=keys)
+    vals = stacked_data.values
+    return vals, stacked_data
+
+class HyperData(pd.DataFrame):
+    def __init__(self, data, wrangler=None, dtype=None, index=None, columns=None, copy=False, **kwargs):
         for k, v in kwargs.items():
             assert k not in ['df', '__version__', 'stacked'], RuntimeError(f'Cannot set reserved property: {k}')
             self.k = v
@@ -37,7 +78,8 @@ def HyperData(pd.DataFrame):
         else:
             self.stacked = False
 
-        self.__version__ = __version__ #set in config.ini and load in
+        self.version = __version__
+
 
 
 

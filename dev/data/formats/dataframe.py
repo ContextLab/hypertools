@@ -13,7 +13,8 @@ def df_like(x):
                            'filter', 'drop', 'drop_duplicates', 'backfill', 'bfill', 'ffill', 'fillna', 'interpolate',
                            'pad', 'droplevel', 'pivot', 'pivot_table', 'squeeze', 'melt', 'join', 'merge']
     for r in required_attributes:
-        if hasattr(x, r):
+        if not hasattr(x, r):
+            print(f'missing method: {r}')
             return False
     return True
 
@@ -23,7 +24,7 @@ def array_like(x):
 
 
 def is_dataframe(x):
-    if type(x).__module__ in ['pandas.core.frame', 'modin.pandas.dataframe']
+    if type(x).__module__ in ['pandas.core.frame', 'modin.pandas.dataframe']:
         return True
     elif df_like(x):
         return True
@@ -35,5 +36,7 @@ def is_multiindex_dataframe(x):
     return is_dataframe(x) and ('indexes.multi' in type(x.index).__module__)
 
 
-def wrangle_dataframe(data, **kwargs):
+def wrangle_dataframe(data, return_model=False, **kwargs):
+    if return_model:
+        return pd.DataFrame(data, **kwargs), {'model': pd.DataFrame, 'args': [], 'kwargs': kwargs}
     return pd.DataFrame(data, **kwargs)

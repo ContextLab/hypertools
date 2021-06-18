@@ -9,13 +9,13 @@ from setuptools.command.install import install
 os.environ["MPLCONFIGDIR"] = "."
 
 NAME = 'hypertools'
-VERSION = '0.7.0'
+VERSION = '0.8.0'
 AUTHOR = 'Contextual Dynamics Lab'
 AUTHOR_EMAIL = 'contextualdynamics@gmail.com'
 URL = 'https://github.com/ContextLab/hypertools'
 DOWNLOAD_URL = URL
 LICENSE = 'MIT'
-REQUIRES_PYTHON = '>=3.5'
+REQUIRES_PYTHON = '>=3.6'
 PACKAGES = find_packages(exclude=('images', 'examples', 'tests'))
 with open('requirements.txt', 'r') as f:
     REQUIREMENTS = f.read().splitlines()
