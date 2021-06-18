@@ -120,6 +120,20 @@ def HyperData(pd.DataFrame):
             return stacked
 
     def trajectorize(self,  window_length=0.1, samplerate=None, inplace=False):
+        pass #convert to sliding windows
+
+    def align(self, template=None, inplace=False, **kwargs):
         pass
 
-    def
+    def manip(self, inplace=False, **kwargs):
+        pass
+
+    def reduce(self, inplace=False, **kwargs):
+        pass
+
+    def cluster(self, **kwargs):
+        pass
+
+    def plot(self, **kwargs):
+        pass
+    
