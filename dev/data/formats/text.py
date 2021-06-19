@@ -38,7 +38,12 @@ corpora = ['minipedia',  # curated wikipedia dataset
            'khan',       # TODO: add khan academy dataset from Tehut's thesis project
            'imdb']       # movie reviews corpus
                          # also see: https://github.com/huggingface/datasets/tree/master/datasets
-
+# TODO: it'd be nice to support hugging-face corpora: https://huggingface.co/datasets
+#   - this can be done via:
+#   from datasets import load_dataset
+#   dataset = load_dataset('arxiv_dataset') # and so on...
+#   - note that datasets.list_datasets() lists the currently available datasets
+#   - format info here: https://huggingface.co/docs/datasets/exploring.html
 
 def get_text_module(x):
     # noinspection PyShadowingNames
