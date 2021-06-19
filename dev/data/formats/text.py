@@ -6,6 +6,7 @@ from sklearn.feature_extraction import text
 from sklearn import decomposition
 from flair import embeddings
 from flair.data import Sentence
+import datasets
 
 from array import is_array, wrangle_array
 from dataframe import is_dataframe
@@ -16,11 +17,13 @@ from ...data.io import load
 defaults = get_default_options()
 # sklearn_text_vectorizers = ['CountVectorizer', 'TfidfVectorizer']
 # sklearn_text_embeddings = ['LatentDirichletAllocation', 'NMF'] #test whether these are in sklearn.decomposition
-# flair_text_embeddings = ['BPEmbSerializable', 'BertEmbeddings', 'BytePairEmbeddings', 'CamembertEmbeddings', #test whether these are in flair.embeddings
+# flair_text_embeddings = ['BPEmbSerializable', 'BertEmbeddings', 'BytePairEmbeddings',
+#                          'CamembertEmbeddings', #test whether these are in flair.embeddings
 #                          'CharLMEmbeddings', 'CharacterEmbeddings', 'ConvTransformNetworkImageEmbeddings',
 #                          'DocumentEmbeddings', 'DocumentLMEmbeddings', 'DocumentLSTMEmbeddings',
 #                          'DocumentMeanEmbeddings', 'DocumentPoolEmbeddings', 'DocumentRNNEmbeddings',
-#                          'DocumentTFIDFEmbeddings', 'ELMoEmbeddings', 'ELMoTransformerEmbeddings', 'FastTextEmbeddings',
+#                          'DocumentTFIDFEmbeddings', 'ELMoEmbeddings', 'ELMoTransformerEmbeddings',
+#                          'FastTextEmbeddings',
 #                          'FlairEmbeddings', 'HashEmbeddings', 'IdentityImageEmbeddings', 'ImageEmbeddings',
 #                          'MuseCrosslingualEmbeddings', 'NILCEmbeddings', 'NetworkImageEmbeddings', 'OneHotEmbeddings',
 #                          'OpenAIGPT2Embeddings', 'OpenAIGPTEmbeddings', 'PooledFlairEmbeddings',
@@ -31,19 +34,20 @@ defaults = get_default_options()
 
 # TODO: model should be *trained* on corpus text if corpus is specified
 # TODO: need to figure out how to do this for flair models...
-corpora = ['minipedia',  # curated wikipedia dataset
-           'wikipedia',  # full wikipedia dataset
-           'neurips',    # corpus of NeurIPS articles
-           'sotus',      # corpus of State of the Union presidential addresses
-           'khan',       # TODO: add khan academy dataset from Tehut's thesis project
-           'imdb']       # movie reviews corpus
-                         # also see: https://github.com/huggingface/datasets/tree/master/datasets
+corpora = ['minipedia',     # curated wikipedia dataset
+           'wikipedia',     # full wikipedia dataset
+           'neurips',       # corpus of NeurIPS articles
+           'sotus',         # corpus of State of the Union presidential addresses
+           'khan',          # TODO: add khan academy dataset from Tehut's thesis project
+           'imdb'           # movie reviews corpus
+           ]                # also see: https://github.com/huggingface/datasets/tree/master/datasets
 # TODO: it'd be nice to support hugging-face corpora: https://huggingface.co/datasets
 #   - this can be done via:
 #   from datasets import load_dataset
 #   dataset = load_dataset('arxiv_dataset') # and so on...
 #   - note that datasets.list_datasets() lists the currently available datasets
 #   - format info here: https://huggingface.co/docs/datasets/exploring.html
+#  loading datasets: https://huggingface.co/docs/datasets/package_reference/loading_methods.html#datasets.load_dataset
 
 def get_text_module(x):
     # noinspection PyShadowingNames
@@ -98,7 +102,8 @@ def apply_text_module(x, text, *args, return_model=False, **kwargs):
                 embeddings[i, :] = token.embedding
 
         if return_model:
-            return embeddings, {'model': model, 'args': [*embedding_args, *args], 'kwargs': {**embedding_kwargs, **kwargs}}
+            return embeddings, {'model': model, 'args': [*embedding_args, *args],
+                                'kwargs': {**embedding_kwargs, **kwargs}}
         else:
             return embeddings
 
@@ -166,7 +171,8 @@ def to_str_list(x, encoding='utf-8'):
 #     assert is_text(text), f'Must vectorize a string or list of strings (given: {type(text)})'
 #
 #     if type(vectorizer) in six.string_types:
-#         assert vectorizer in sklearn_text_vectorizers, f'Text vectorizer must be a function or a member of {sklearn_text_vectorizers}'
+#         assert vectorizer in sklearn_text_vectorizers,
+#         f'Text vectorizer must be a function or a member of {sklearn_text_vectorizers}'
 #         vectorizer = eval(vectorizer)
 #     assert callable(vectorizer), f'Text vectorizer must be a function or a member of {sklearn_text_vectorizers}'
 #
@@ -187,12 +193,14 @@ def to_str_list(x, encoding='utf-8'):
 #
 # def get_text_model(corpus, model, vectorizer, n_components=50):
 #     if type(model) in six.string_types:
-#         assert model in sklearn_text_embeddings, f'Text model must be a function or a member of {sklearn_text_embeddings}'
+#         assert model in sklearn_text_embeddings,
+#         f'Text model must be a function or a member of {sklearn_text_embeddings}'
 #         model = eval(model)
 #     assert callable(model), f'Text model must be a function or a member of {sklearn_text_embeddings}'
 #
 #     if type(vectorizer) in six.string_types:
-#         assert vectorizer in sklearn_text_vectorizers, f'Text vectorizer must be a function or a member of {sklearn_text_vectorizers}'
+#         assert vectorizer in sklearn_text_vectorizers,
+#         f'Text vectorizer must be a function or a member of {sklearn_text_vectorizers}'
 #         vectorizer = eval(vectorizer)
 #     assert callable(vectorizer), f'Text vectorizer must be a function or a member of {sklearn_text_vectorizers}'
 #
