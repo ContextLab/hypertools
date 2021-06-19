@@ -13,4 +13,4 @@ holoviews~=1.13.3
 pytest~=5.4.1
 setuptools~=49.6.0
 umap~=0.1.1
-tensorflow>=2.5.0
+flair~=0.8.0.post1
