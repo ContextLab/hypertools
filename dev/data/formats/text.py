@@ -49,6 +49,16 @@ corpora = ['minipedia',     # curated wikipedia dataset
 #   - format info here: https://huggingface.co/docs/datasets/exploring.html
 #  loading datasets: https://huggingface.co/docs/datasets/package_reference/loading_methods.html#datasets.load_dataset
 
+# TODO: if a corpus is specified, the given model should be *trained* on the given corpus.
+#   instructions 1: https://github.com/flairNLP/flair/blob/master/resources/docs/TUTORIAL_7_TRAINING_A_MODEL.md
+#   instructions 2: https://github.com/flairNLP/flair/blob/master/resources/docs/TUTORIAL_9_TRAINING_LM_EMBEDDINGS.md
+#   other instructions: https://huggingface.co/transformers/training.html
+#   suggested heuristic:
+#     - by default, only "update" the already trained model (much faster)
+#     - if from_scratch=True, train the full model from scratch (print a warning that it'll take a REALLY long time)
+
+# TODO: support text generation
+#   link: https://huggingface.co/transformers/model_doc/gpt_neo.html
 
 def get_text_module(x):
     # noinspection PyShadowingNames
