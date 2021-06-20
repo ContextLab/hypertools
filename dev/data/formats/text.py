@@ -6,7 +6,7 @@ from sklearn.feature_extraction import text
 from sklearn import decomposition
 from flair import embeddings
 from flair.data import Sentence
-import datasets
+from datasets import load_dataset, get_dataset_config_names, list_datasets
 
 from array import is_array, wrangle_array
 from dataframe import is_dataframe
@@ -65,6 +65,26 @@ def get_text_module(x):
     return None, None
 
 
+def get_corpus(dataset_name='wikipedia', config_name='20200501.en'):
+    def get_formatter(s):
+        return s[s.find('_'):(s.rfind('_') + 1)]
+
+    try:
+        data = load_dataset(dataset_name, config_name)
+    except FileNotFoundError:
+        raise RuntimeError(f'Corpus not found: {dataset_name}.  Available corpora: {", ".join(list_datasets())}')
+    except ValueError:
+        raise RuntimeError(f'Configuration for {dataset_name} corpus not found: {config_name}. '
+                           f'Available configurations: {", ".join(get_dataset_config_names(data_name))}')
+
+    corpus = []
+    for k in data.keys():
+        for document in data[k].data['text']:
+            corpus.append(' '.join([w if '_' not in w else w.replace(get_formatter(w), ' ')
+                                    for w in str(document).split()]))
+    return corpus
+
+
 # noinspection PyShadowingNames
 def apply_text_module(x, text, *args, return_model=False, **kwargs):
     if callable(x):
@@ -74,13 +94,13 @@ def apply_text_module(x, text, *args, return_model=False, **kwargs):
     if (module is None) or (parent is None):
         raise RuntimeError(f'unknown text processing module: {x}')
 
-    if 'sklearn' in parent.__name__:
+    if 'sklearn' in parent.__name__ or hasattr(parent, 'fit_transform'):
         model = module(*args, **kwargs)
         transformed_text = model.fit_transform(text)
         if return_model:
             return transformed_text, {'model': model, 'args': args, 'kwargs': kwargs}
         return transformed_text
-    elif 'flair' in parent.__name__:
+    elif 'flair' in parent.__name__ or hasattr(parent, 'embed'):
         if 'embedding_args' in kwargs.keys():
             embedding_args = kwargs.pop('embedding_args', None)
         else:
