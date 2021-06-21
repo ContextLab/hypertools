@@ -60,16 +60,17 @@ corpora = ['minipedia',     # curated wikipedia dataset
 # TODO: support text generation
 #   link: https://huggingface.co/transformers/model_doc/gpt_neo.html
 
-def get_text_module(x):
+
+def get_text_model(x):
     # noinspection PyShadowingNames
-    def module_detect(module, parent):
+    def model_lookup(model_name, parent):
         try:
-            return eval(f'{parent}.{module}')
+            return eval(f'{parent}.{model_name}')
         except AttributeError:
             return None
 
     for p in ['text', 'decomposition', 'embeddings']:
-        module = module_detect(x, p)
+        module = model_lookup(x, p)
         if module is not None:
             return module, eval(p)
     return None, None
@@ -96,21 +97,21 @@ def get_corpus(dataset_name='wikipedia', config_name='20200501.en'):
 
 
 # noinspection PyShadowingNames
-def apply_text_module(x, text, *args, return_model=False, **kwargs):
+def apply_text_model(x, text, *args, return_model=False, **kwargs):
     if callable(x):
         return x(text)
 
-    module, parent = get_text_module(x)
-    if (module is None) or (parent is None):
+    model, parent = get_text_model(x)
+    if (model is None) or (parent is None):
         raise RuntimeError(f'unknown text processing module: {x}')
 
-    if 'sklearn' in parent.__name__ or hasattr(parent, 'fit_transform'):
-        model = module(*args, **kwargs)
+    if hasattr(parent, 'fit_transform'):  # scikit-learn model
+        model = model(*args, **kwargs)
         transformed_text = model.fit_transform(text)
         if return_model:
             return transformed_text, {'model': model, 'args': args, 'kwargs': kwargs}
         return transformed_text
-    elif 'flair' in parent.__name__ or hasattr(parent, 'embed'):
+    elif hasattr(parent, 'embed'):        # flair model
         if 'embedding_args' in kwargs.keys():
             embedding_args = kwargs.pop('embedding_args', None)
         else:
@@ -121,7 +122,7 @@ def apply_text_module(x, text, *args, return_model=False, **kwargs):
         else:
             embedding_kwargs = {}
 
-        model = module(*embedding_args, **embedding_kwargs)
+        model = model(*embedding_args, **embedding_kwargs)
         wrapped_text = Sentence(text, **kwargs)
         model.embed(wrapped_text)
 
@@ -137,6 +138,8 @@ def apply_text_module(x, text, *args, return_model=False, **kwargs):
                                 'kwargs': {**embedding_kwargs, **kwargs}}
         else:
             return embeddings
+    else:                                 # unknown model
+        raise RuntimeError('Cannot apply text model: {model}')
 
 
 def is_text(x):
