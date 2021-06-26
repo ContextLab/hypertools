@@ -29,6 +29,11 @@ defaults = get_default_options()
 # TODO: support text generation
 #   link: https://huggingface.co/transformers/model_doc/gpt_neo.html
 
+# TODO: in core.configurator.py, add a function for loading in default arguments to a given function and then replacing
+#   any specified arguments that are passed in.  need one section in config.ini per function whose defaults are
+#   specified.  this could also be a decorator-- e.g. pass in default args based on the function name and then update
+#   with any given keyword args.  (if implemented as a decorator, it might fit better in decorate.py.)
+
 
 def get_text_model(x):
     # noinspection PyShadowingNames
@@ -51,27 +56,13 @@ def get_corpus(dataset_name='wikipedia', config_name='20200501.en'):
 
     # hypertools corpora
     hypertools_corpora = {
-        'minipedia': '1nHa9yT3vU9HcZO3w6_3i0ujn0rTCZJBC',
+        'minipedia': '1mRNAZlTbZzSvV3tAQfSjNm587xdYKVkX',
         'neurips': '1Qo61vh2P3Rpb9PM1lyXb5M2iw7uB03uY',
         'sotus': '1uKJtxs-C0KDM2my0K6W2p0jCF6howg1y',
         'khan': '1KPhKxQlQrZHSPlCgky7K2bsfHlvJK039'}
 
     if dataset_name in hypertools_corpora.keys():
-        corpus_dir = os.path.join(defaults['data']['datadir'], 'corpora')
-        if not os.exists(corpus_dir):
-            os.makedirs(corpus_dir)
-
-        fname = os.path.join(defaults['data']['datadir'], 'corpora', f'{dataset_name}.npz')
-        if os.exists(fname):
-            return np.load(fname)['corpus']
-
-        google_id = hypertools_corpora[dataset_name]
-        url = f'{google_id}'
-        data = io.BytesIO(requests.get(url, stream=True).raw.read())
-        # noinspection PyTypeChecker
-        corpus = np.load(data)['corpus']
-        np.savez(fname, corpus=corpus)
-        return corpus
+        return load(hypertools_corpora[dataset_name])['corpus']
 
     # Hugging-Face Corpus
     try:
@@ -167,167 +158,32 @@ def to_str_list(x, encoding='utf-8'):
     else:
         raise Exception('Unsupported data type: {type(x)}')
 
-#
-# def get_corpus(c):  # FIXME: needs debugging
-#     if c in corpora:
-#         fname = os.path.join(eval(defaults['data']['datadir']), 'corpora', f'{c}.npy')
-#         if not os.path.exists(fname):
-#             if not os.path.exists(os.path.abspath(os.path.join(fname, os.pardir))):
-#                 os.makedirs(os.path.abspath(os.path.join(fname, os.pardir)))
-#             corpus_words = to_str_list(load(c).data[0])
-#
-#             np.save(fname, corpus_words)
-#             return corpus_words
-#         else:
-#             corpus_words = np.load(fname, allow_pickle=True)
-#             return to_str_list(corpus_words)
-#     else:
-#         if (type(c) == str) and os.path.exists(c):
-#             # noinspection PyTypeChecker
-#             return to_str_list([x[0] for x in np.load(c, allow_pickle=True).tolist()])
-#         elif is_text(c):
-#             if type(c) == list:
-#                 return c
-#             else:
-#                 return [c]
-#         else:
-#             raise Exception(f'Unknown corpus: {c}')
-#
-#
-# # noinspection PyShadowingNames
-# def vectorize_text(text, vectorizer='CountVectorizer', vocabulary=None, return_model=False, **kwargs):
-#     if not (type(text) == list):
-#         text = [text]
-#     assert is_text(text), f'Must vectorize a string or list of strings (given: {type(text)})'
-#
-#     if type(vectorizer) in six.string_types:
-#         assert vectorizer in sklearn_text_vectorizers,
-#         f'Text vectorizer must be a function or a member of {sklearn_text_vectorizers}'
-#         vectorizer = eval(vectorizer)
-#     assert callable(vectorizer), f'Text vectorizer must be a function or a member of {sklearn_text_vectorizers}'
-#
-#     # noinspection PyCallingNonCallable
-#     text2vec = vectorizer(max_df=eval(defaults['text']['max_df']),
-#                           min_df=eval(defaults['text']['min_df']),
-#                           stop_words=defaults['text']['stop_words'],
-#                           strip_accents=defaults['text']['strip_accents'],
-#                           lowercase=eval(defaults['text']['lowercase']),
-#                           vocabulary=vocabulary)
-#     vectorized_text = text2vec.fit_transform(text)
-#
-#     if return_model:
-#         return vectorized_text, {'model': text2vec, 'args': [], 'kwargs': {**{'vocabulary': vocabulary}, **kwargs}}
-#     else:
-#         return vectorized_text
-#
-#
-# def get_text_model(corpus, model, vectorizer, n_components=50):
-#     if type(model) in six.string_types:
-#         assert model in sklearn_text_embeddings,
-#         f'Text model must be a function or a member of {sklearn_text_embeddings}'
-#         model = eval(model)
-#     assert callable(model), f'Text model must be a function or a member of {sklearn_text_embeddings}'
-#
-#     if type(vectorizer) in six.string_types:
-#         assert vectorizer in sklearn_text_vectorizers,
-#         f'Text vectorizer must be a function or a member of {sklearn_text_vectorizers}'
-#         vectorizer = eval(vectorizer)
-#     assert callable(vectorizer), f'Text vectorizer must be a function or a member of {sklearn_text_vectorizers}'
-#
-#     if corpus in corpora:
-#         saveable = True
-#     else:
-#         if not os.path.exists(corpus):
-#             assert is_text(corpus), f'Corpus must be a list of strings, or one of {corpora}'
-#         saveable = False
-#
-#     if saveable:
-#         fname = os.path.join(eval(defaults['data']['datadir']), 'text-models', model.__name__,
-#                              f'{corpus}-{vectorizer.__name__}-{n_components}.npz')
-#         if not os.path.exists(os.path.abspath(os.path.join(fname, os.pardir))):
-#             os.makedirs(os.path.abspath(os.path.join(fname, os.pardir)))
-#
-#     # noinspection PyUnboundLocalVariable
-#     if saveable and os.path.exists(fname):
-#         with np.load(fname, allow_pickle=True) as x:
-#             return {'vocab': x['vocab'].tolist(), 'model': x['model'].tolist()}
-#     else:
-#         corpus = get_corpus(corpus)
-#         # noinspection PyTypeChecker
-#         vectorized_corpus, vocab = vectorize_text(corpus, vectorizer=vectorizer, return_vocab=True)
-#
-#         if n_components is None:
-#             n_components = eval(defaults['text']['topics'])
-#         args = {'n_components': n_components,
-#                 'max_iter': eval(defaults['text']['max_iter'])}
-#
-#         if model.__name__ == 'NMF' and (args['n_components'] > len(corpus)):
-#             args['n_components'] = len(corpus)
-#
-#         if model.__name__ == 'LatentDirichletAllocation':
-#             args['learning_method'] = defaults['text']['learning_method']
-#             args['learning_offset'] = eval(defaults['text']['learning_offset'])
-#
-#         # return args, vectorized_corpus, vocab
-#
-#         embeddings = model(**args).fit(vectorized_corpus)
-#
-#         if saveable:
-#             np.savez(fname, vocab=vocab, model=embeddings)
-#
-#         return {'vocab': vocab, 'model': embeddings}
-#
-#
-# def text_vectorizer(text, model='UniversalSentenceEncoder', return_model=False, **kwargs):
-#     warnings.simplefilter('ignore')
-#
-#     # noinspection PyShadowingNames, PyPep8Naming, PyUnusedLocal
-#     def UniversalSentenceEncoder(text, **kwargs):
-#         if 'corpus' in kwargs.keys():
-#             corpus = kwargs.pop('corpus', None)
-#         else:
-#             corpus = defaults['corpora'][defaults['text']['universal_sentence_encoder_corpus']]
-#
-#         use_model = hub.load(corpus)
-#         if return_model:
-#             return np.array(use_model(text)), {'model': use_model, 'args': [], 'kwargs': {'corpus': corpus, **kwargs}}
-#         return np.array(use_model(text))
-#
-#     # noinspection PyShadowingNames
-#     def sklearn_vectorizer(text, model, **kwargs):
-#         if 'corpus' in kwargs.keys():
-#             corpus = kwargs['corpus']
-#         else:
-#             corpus = defaults['text']['corpus']
-#
-#         assert (corpus in corpora) or is_text(corpus) or os.path.exists(corpus), f'Cannot use corpus: {corpus}'
-#
-#         if 'vectorizer' in kwargs.keys():
-#             vectorizer = kwargs['vectorizer']
-#             kwargs.pop('vectorizer', None)
-#         else:
-#             vectorizer = defaults['text']['vectorizer']
-#
-#         # noinspection PyUnboundLocalVariable
-#         model = get_text_model(corpus, model, vectorizer)
-#
-#         return model['model'].transform(vectorize_text(text, vectorizer=vectorizer, vocabulary=model['vocab']))
-#
-#     assert (model in sklearn_text_embeddings) or (callable(model)), f'Unsupported model: {model}'
-#     if not (type(text) == list):
-#         text = [text]
-#
-#     if callable(model):
-#         # noinspection PyCallingNonCallable
-#         return model(text, **kwargs)
-#     elif model == 'USE':
-#         return USE(text, **kwargs)
-#     else:
-#         return sklearn_vectorizer(text, model, **kwargs)
 
+# noinspection PyShadowingNames
+def text_vectorizer(text, return_model=False, **kwargs):
+    if 'model' not in kwargs.keys():
+        if return_model:
+            return text, {'model': [], 'args': [], 'kwargs': kwargs}
+        else:
+            return text
+    else:
+        model = kwargs.pop('model', None)
+        if type(model) is str:
+            model_name = model
+        elif callable(model):
+            model_name = model.__name__
+        else:
+            model_name = str(model)
 
-def text_vectorizer(text, **kwargs):
-    pass
+        if model_name in defaults.keys():
+            model_kwargs = defaults[model_name]
+        else:
+            model_kwargs = {}
+
+        for k, v in kwargs.items():
+            model_kwargs[k] = v
+
+        return apply_text_model(x, text, *args, return_model=return_model, **model_kwargs)
 
 
 def wrangle_text(data, return_model=False, **kwargs):
@@ -347,7 +203,7 @@ def wrangle_text(data, return_model=False, **kwargs):
 
     if return_model:
         steps = ['vec', 'embedding', 'df']
-        model = {'model': [], 'args': [], 'kwargs': []}
+        model = {'model': [], 'args': [], 'kwargs': {}}
         for s in steps:
             model['model'].append(eval(f'{s}_model'))
             model['args'].append(eval(f'{s}_model["args"]'))
