@@ -7,6 +7,8 @@ from sklearn import decomposition
 from flair import embeddings
 from flair.data import Sentence
 from datasets import load_dataset, get_dataset_config_names, list_datasets
+import requests
+import io
 
 from array import is_array, wrangle_array
 from dataframe import is_dataframe
@@ -15,39 +17,6 @@ from ...core.configurator import get_default_options
 from ...data.io import load
 
 defaults = get_default_options()
-# sklearn_text_vectorizers = ['CountVectorizer', 'TfidfVectorizer']
-# sklearn_text_embeddings = ['LatentDirichletAllocation', 'NMF'] #test whether these are in sklearn.decomposition
-# flair_text_embeddings = ['BPEmbSerializable', 'BertEmbeddings', 'BytePairEmbeddings',
-#                          'CamembertEmbeddings', #test whether these are in flair.embeddings
-#                          'CharLMEmbeddings', 'CharacterEmbeddings', 'ConvTransformNetworkImageEmbeddings',
-#                          'DocumentEmbeddings', 'DocumentLMEmbeddings', 'DocumentLSTMEmbeddings',
-#                          'DocumentMeanEmbeddings', 'DocumentPoolEmbeddings', 'DocumentRNNEmbeddings',
-#                          'DocumentTFIDFEmbeddings', 'ELMoEmbeddings', 'ELMoTransformerEmbeddings',
-#                          'FastTextEmbeddings',
-#                          'FlairEmbeddings', 'HashEmbeddings', 'IdentityImageEmbeddings', 'ImageEmbeddings',
-#                          'MuseCrosslingualEmbeddings', 'NILCEmbeddings', 'NetworkImageEmbeddings', 'OneHotEmbeddings',
-#                          'OpenAIGPT2Embeddings', 'OpenAIGPTEmbeddings', 'PooledFlairEmbeddings',
-#                          'PrecomputedImageEmbeddings', 'RoBERTaEmbeddings', 'SentenceTransformerDocumentEmbeddings',
-#                          'StackedEmbeddings', 'TokenEmbeddings', 'TransformerDocumentEmbeddings',
-#                          'TransformerWordEmbeddings', 'TransformerXLEmbeddings', 'WordEmbeddings', 'XLMEmbeddings',
-#                          'XLMRobertaEmbeddings', 'XLNetEmbeddings']
-
-# TODO: model should be *trained* on corpus text if corpus is specified
-# TODO: need to figure out how to do this for flair models...
-corpora = ['minipedia',     # curated wikipedia dataset
-           'wikipedia',     # full wikipedia dataset
-           'neurips',       # corpus of NeurIPS articles
-           'sotus',         # corpus of State of the Union presidential addresses
-           'khan',          # TODO: add khan academy dataset from Tehut's thesis project
-           'imdb'           # movie reviews corpus
-           ]                # also see: https://github.com/huggingface/datasets/tree/master/datasets
-# TODO: it'd be nice to support hugging-face corpora: https://huggingface.co/datasets
-#   - this can be done via:
-#   from datasets import load_dataset
-#   dataset = load_dataset('arxiv_dataset') # and so on...
-#   - note that datasets.list_datasets() lists the currently available datasets
-#   - format info here: https://huggingface.co/docs/datasets/exploring.html
-#  loading datasets: https://huggingface.co/docs/datasets/package_reference/loading_methods.html#datasets.load_dataset
 
 # TODO: if a corpus is specified, the given model should be *trained* on the given corpus.
 #   instructions 1: https://github.com/flairNLP/flair/blob/master/resources/docs/TUTORIAL_7_TRAINING_A_MODEL.md
@@ -80,6 +49,31 @@ def get_corpus(dataset_name='wikipedia', config_name='20200501.en'):
     def get_formatter(s):
         return s[s.find('_'):(s.rfind('_') + 1)]
 
+    # hypertools corpora
+    hypertools_corpora = {
+        'minipedia': '1nHa9yT3vU9HcZO3w6_3i0ujn0rTCZJBC',
+        'neurips': '1Qo61vh2P3Rpb9PM1lyXb5M2iw7uB03uY',
+        'sotus': '1uKJtxs-C0KDM2my0K6W2p0jCF6howg1y',
+        'khan': '1KPhKxQlQrZHSPlCgky7K2bsfHlvJK039'}
+
+    if dataset_name in hypertools_corpora.keys():
+        corpus_dir = os.path.join(defaults['data']['datadir'], 'corpora')
+        if not os.exists(corpus_dir):
+            os.makedirs(corpus_dir)
+
+        fname = os.path.join(defaults['data']['datadir'], 'corpora', f'{dataset_name}.npz')
+        if os.exists(fname):
+            return np.load(fname)['corpus']
+
+        google_id = hypertools_corpora[dataset_name]
+        url = f'{google_id}'
+        data = io.BytesIO(requests.get(url, stream=True).raw.read())
+        # noinspection PyTypeChecker
+        corpus = np.load(data)['corpus']
+        np.savez(fname, corpus=corpus)
+        return corpus
+
+    # Hugging-Face Corpus
     try:
         data = load_dataset(dataset_name, config_name)
     except FileNotFoundError:
@@ -134,8 +128,10 @@ def apply_text_model(x, text, *args, return_model=False, **kwargs):
                 embeddings[i, :] = token.embedding
 
         if return_model:
-            return embeddings, {'model': model, 'args': [*embedding_args, *args],
-                                'kwargs': {**embedding_kwargs, **kwargs}}
+            return embeddings, {'model': model, 'args': args,
+                                'kwargs': {'embedding_args': embedding_args,
+                                           'embedding_kwargs': embedding_kwargs,
+                                           **kwargs}}
         else:
             return embeddings
     else:                                 # unknown model
@@ -328,6 +324,10 @@ def to_str_list(x, encoding='utf-8'):
 #         return USE(text, **kwargs)
 #     else:
 #         return sklearn_vectorizer(text, model, **kwargs)
+
+
+def text_vectorizer(text, **kwargs):
+    pass
 
 
 def wrangle_text(data, return_model=False, **kwargs):
