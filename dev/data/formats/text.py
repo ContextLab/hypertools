@@ -15,24 +15,22 @@ from dataframe import is_dataframe
 from null import is_empty
 from ...core.configurator import get_default_options
 from ...data.io import load
+from ...decorate import apply_defaults
 
 defaults = get_default_options()
 
 # TODO: if a corpus is specified, the given model should be *trained* on the given corpus.
-#   instructions 1: https://github.com/flairNLP/flair/blob/master/resources/docs/TUTORIAL_7_TRAINING_A_MODEL.md
-#   instructions 2: https://github.com/flairNLP/flair/blob/master/resources/docs/TUTORIAL_9_TRAINING_LM_EMBEDDINGS.md
+#   instructions: https://github.com/flairNLP/flair/blob/master/resources/docs/TUTORIAL_9_TRAINING_LM_EMBEDDINGS.md
 #   other instructions: https://huggingface.co/transformers/training.html
 #   suggested heuristic:
 #     - by default, only "update" the already trained model (much faster)
+#        - fine-tune: https://github.com/flairNLP/flair/blob/master/resources/docs/TUTORIAL_9_TRAINING_LM_EMBEDDINGS.md#fine-tuning-an-existing-lm
 #     - if from_scratch=True, train the full model from scratch (print a warning that it'll take a REALLY long time)
+#
+#  TODO: write a function to take a list of strings ("corpus") and turn it into a hugging-face formatted corpus
+#    - instructions: https://github.com/flairNLP/flair/blob/master/resources/docs/TUTORIAL_9_TRAINING_LM_EMBEDDINGS.md#preparing-a-text-corpus
 
-# TODO: support text generation
-#   link: https://huggingface.co/transformers/model_doc/gpt_neo.html
-
-# TODO: in core.configurator.py, add a function for loading in default arguments to a given function and then replacing
-#   any specified arguments that are passed in.  need one section in config.ini per function whose defaults are
-#   specified.  this could also be a decorator-- e.g. pass in default args based on the function name and then update
-#   with any given keyword args.  (if implemented as a decorator, it might fit better in decorate.py.)
+#  NOTE: may only want to support corpus training for sklearn models...this would be easier to implement
 
 
 def get_text_model(x):
@@ -44,9 +42,9 @@ def get_text_model(x):
             return None
 
     for p in ['text', 'decomposition', 'embeddings']:
-        module = model_lookup(x, p)
-        if module is not None:
-            return module, eval(p)
+        m = model_lookup(x, p)
+        if m is not None:
+            return m, eval(p)
     return None, None
 
 
@@ -91,7 +89,7 @@ def apply_text_model(x, text, *args, return_model=False, **kwargs):
         raise RuntimeError(f'unknown text processing module: {x}')
 
     if hasattr(parent, 'fit_transform'):  # scikit-learn model
-        model = model(*args, **kwargs)
+        model = apply_defaults(model(*args, **kwargs))
         transformed_text = model.fit_transform(text)
         if return_model:
             return transformed_text, {'model': model, 'args': args, 'kwargs': kwargs}
@@ -107,7 +105,7 @@ def apply_text_model(x, text, *args, return_model=False, **kwargs):
         else:
             embedding_kwargs = {}
 
-        model = model(*embedding_args, **embedding_kwargs)
+        model = apply_defaults(model(*embedding_args, **embedding_kwargs))
         wrapped_text = Sentence(text, **kwargs)
         model.embed(wrapped_text)
 
@@ -161,29 +159,15 @@ def to_str_list(x, encoding='utf-8'):
 
 # noinspection PyShadowingNames
 def text_vectorizer(text, return_model=False, **kwargs):
-    if 'model' not in kwargs.keys():
+    # noinspection PyUnboundLocalVariable
+    if ('model' not in kwargs.keys()) or (model is None):
         if return_model:
             return text, {'model': [], 'args': [], 'kwargs': kwargs}
         else:
             return text
     else:
         model = kwargs.pop('model', None)
-        if type(model) is str:
-            model_name = model
-        elif callable(model):
-            model_name = model.__name__
-        else:
-            model_name = str(model)
-
-        if model_name in defaults.keys():
-            model_kwargs = defaults[model_name]
-        else:
-            model_kwargs = {}
-
-        for k, v in kwargs.items():
-            model_kwargs[k] = v
-
-        return apply_text_model(x, text, *args, return_model=return_model, **model_kwargs)
+        return apply_text_model(model, text, *args, return_model=return_model, **kwargs)
 
 
 def wrangle_text(data, return_model=False, **kwargs):

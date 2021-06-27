@@ -4,6 +4,9 @@ import numpy as np
 import pandas as pd
 from ppca import PPCA
 from .data.format import format_data
+from .core.configurator import get_default_options
+
+defaults = get_default_options()
 
 
 def list_generalizer(f):
@@ -167,3 +170,18 @@ def unstack_apply(data, **kwargs):
 def stack_apply(data, **kwargs):
     assert 'algorithm' in kwargs.keys(), 'must specify algorithm'
     return algorithm(data, **kwargs)
+
+
+def apply_defaults(f):
+    if f.__name__ in defaults.keys():
+        default_args = defaults[f.__name__]
+    else:
+        default_args = {}
+
+    @functools.wraps(f)
+    def wrapped(*args, **kwargs):
+        for k, v in kwargs:
+            default_args[k] = v
+        return f(*args, **default_args)
+
+    return wrapped
