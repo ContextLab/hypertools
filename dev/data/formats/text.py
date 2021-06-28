@@ -19,19 +19,6 @@ from ...decorate import apply_defaults
 
 defaults = get_default_options()
 
-# TODO: if a corpus is specified, the given model should be *trained* on the given corpus.
-#   instructions: https://github.com/flairNLP/flair/blob/master/resources/docs/TUTORIAL_9_TRAINING_LM_EMBEDDINGS.md
-#   other instructions: https://huggingface.co/transformers/training.html
-#   suggested heuristic:
-#     - by default, only "update" the already trained model (much faster)
-#        - fine-tune: https://github.com/flairNLP/flair/blob/master/resources/docs/TUTORIAL_9_TRAINING_LM_EMBEDDINGS.md#fine-tuning-an-existing-lm
-#     - if from_scratch=True, train the full model from scratch (print a warning that it'll take a REALLY long time)
-#
-#  TODO: write a function to take a list of strings ("corpus") and turn it into a hugging-face formatted corpus
-#    - instructions: https://github.com/flairNLP/flair/blob/master/resources/docs/TUTORIAL_9_TRAINING_LM_EMBEDDINGS.md#preparing-a-text-corpus
-
-#  NOTE: may only want to support corpus training for sklearn models...this would be easier to implement
-
 
 def get_text_model(x):
     # noinspection PyShadowingNames
@@ -88,13 +75,13 @@ def apply_text_model(x, text, *args, return_model=False, **kwargs):
     if (model is None) or (parent is None):
         raise RuntimeError(f'unknown text processing module: {x}')
 
-    if hasattr(parent, 'fit_transform'):  # scikit-learn model
+    if hasattr(model, 'fit_transform'):  # scikit-learn model
         model = apply_defaults(model(*args, **kwargs))
         transformed_text = model.fit_transform(text)
         if return_model:
             return transformed_text, {'model': model, 'args': args, 'kwargs': kwargs}
         return transformed_text
-    elif hasattr(parent, 'embed'):        # flair model
+    elif hasattr(model, 'embed'):        # flair model
         if 'embedding_args' in kwargs.keys():
             embedding_args = kwargs.pop('embedding_args', None)
         else:
@@ -181,8 +168,38 @@ def wrangle_text(data, return_model=False, **kwargs):
     else:
         text_embedding_kwargs = {}
 
-    text_vecs, vec_model = text_vectorizer(data, return_model=True, **vectorize_kwargs)
-    text_embeddings, embedding_model = text_embedder(text_vecs, return_model=True, **text_embedding_kwargs)
+    if 'model' in text_embedding_kwargs.keys():
+        embedding_model = text_embedding_kwargs.pop('model', None)
+    else:
+        embedding_model = defaults['text']['model']
+
+    if 'corpus_name' in kwargs.keys():
+        corpus = kwargs.pop('corpus_name', None)
+    else:
+        corpus = None
+
+    if 'config_name' in kwargs.keys():
+        config_name = kwargs.pop('config_name', None)
+    else:
+        config_name = None
+
+    if corpus is not None:
+        corpus = get_corpus(dataset_name=corpus, config_name=config_name)
+        corpus_text_vecs, corpus_vec_model = text_vectorizer(corpus, return_model=True, **vectorize_kwargs)
+
+        assert hasattr(corpus_vec_model, 'transform'), NotImplementedError('model re-training is only supported for'
+                                                                           'scikit-learn models')
+
+        _, corpus_embedding_model = apply_text_model(corpus_text_vecs, embedding_model, return_model=True, **kwargs)
+
+        text_vecs = apply_text_model(corpus_vec_model.transform, data)
+        text_embeddings, embedding_model = apply_text_model(corpus_embedding_model, text_vecs, **kwargs)
+
+    else:
+        text_vecs, vec_model = text_vectorizer(data, return_model=True, **vectorize_kwargs)
+        text_embeddings, embedding_model = text_embedder(embedding_model, text_vecs, return_model=True,
+                                                         **text_embedding_kwargs)
+
     df, df_model = wrangle_array(text_embeddings, return_model=True, **kwargs)
 
     if return_model:
