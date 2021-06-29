@@ -5,6 +5,25 @@ import pandas as pd
 from ppca import PPCA
 from .data.format import format_data
 from .core.configurator import get_default_options
+from .align.align import
+
+# FIXME: pasted in from notebook...needs cleanup and fleshing out
+reduce_models = ['DictionaryLearning', 'FactorAnalysis', 'FastICA', 'IncrementalPCA', 'KernelPCA',
+                 'LatentDirichletAllocation', 'MiniBatchDictionaryLearning',
+                 'MiniBatchSparsePCA', 'NMF', 'PCA', 'SparseCoder', 'SparsePCA', 'TruncatedSVD', 'UMAP', 'TSNE', 'MDS',
+                 'SpectralEmbedding', 'LocallyLinearEmbedding', 'Isomap']
+cluster_models = ['AffinityPropagation', 'AgglomerativeClustering', 'Birch', 'DBSCAN', 'FeatureAgglomeration', 'KMeans',
+                  'MeanShift', 'MiniBatchKMeans', 'SpectralBiclustering', 'SpectralClustering', 'SpectralCoclustering',
+                  'DBSCAN', 'AffinityPropagation', 'MeanShift']
+mixture_models = ['GaussianMixture', 'BayesianGaussianMixture', 'LatentDirichletAllocation', 'NMF']
+decomposition_models = ['LatentDirichletAllocation', 'NMF']
+text_vectorizers = ['CountVectorizer', 'TfidfVectorizer']
+interpolation_models = ['linear', 'time', 'index', 'pad', 'nearest', 'zero', 'slinear', 'quadratic', 'cubic', 'spline',
+                        'barycentric', 'polynomial']
+text_models = ['USE', 'LatentDirichletAllocation', 'NMF']
+align_models = ['srm', 'hyper', 'procrustes']
+corpora = ['wiki', 'nips', 'sotus']
+use_corpora = [str(k) for k in defaults['corpora'].keys()]
 
 defaults = get_default_options()
 
@@ -16,6 +35,7 @@ def list_generalizer(f):
             return [f(d, **kwargs) for d in data]
         else:
             return f(data, **kwargs)
+
     return wrapped
 
 
@@ -24,6 +44,7 @@ def funnel(f):
     @functools.wraps(f)
     def wrapped(data, **kwargs):
         return f(format_data(data, **kwargs), **kwargs)
+
     return wrapped
 
 
@@ -53,6 +74,7 @@ def interpolate(f):
     @functools.wraps(f)
     def wrapped(data, **kwargs):
         return f(fill_missing(data, **kwargs), **kwargs)
+
     return wrapped
 
 
@@ -153,17 +175,19 @@ def module_checker(modules=None, alg_list=None):
                                                                                       f'algorithm: {algorithm}'
                     verified = True
                 if not verified:
-                    assert algorithm in eval(f'{f.__name__}_models'),  f'Unknown {f.__name__} algorithm: {algorithm}'
+                    assert algorithm in eval(f'{f.__name__}_models'), f'Unknown {f.__name__} algorithm: {algorithm}'
                 algorithm = eval(algorithm)
 
             # make sure a function from the appropriate module is being passed
             if len(modules) > 0:
-                assert any([m in algorithm.__module__ for m in modules]),  f'Unknown {f.__name__} ' \
-                                                                           f'algorithm: {algorithm.__name__}'
+                assert any([m in algorithm.__module__ for m in modules]), f'Unknown {f.__name__} ' \
+                                                                          f'algorithm: {algorithm.__name__}'
 
             kwargs['algorithm'] = algorithm
             return f(data, **kwargs)
+
         return wrapped
+
     return decorator
 
 

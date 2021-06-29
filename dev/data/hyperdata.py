@@ -86,16 +86,19 @@ class HyperData(pd.DataFrame):
         else:
             return smoothed_trajectories
 
-    def hyperalign(self, template=None, inplace=False, **kwargs):
-
-        aligned_trajectories = aligner()
-        pass
-
-    def manip(self, inplace=False, **kwargs):
-        pass
+    def hyperalign(self, inplace=False, **kwargs):
+        aligned_trajectories = align(self.data, **kwargs)
+        if inplace:
+            setattr(self, 'data', aligned_trajectories)
+        else:
+            return aligned_trajectories
 
     def reduce(self, inplace=False, **kwargs):
-        pass
+        reduced_trajectories = apply_defaults(reduce(self.data, **kwargs))
+        if inplace:
+            setattr(self, 'data', reduced_trajectories)
+        else:
+            return reduced_trajectories
 
     def cluster(self, **kwargs):
         pass
