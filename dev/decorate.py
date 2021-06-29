@@ -57,6 +57,13 @@ def interpolate(f):
 
 
 def stack_handler(apply_stacked=False, return_override=False):
+    # noinspection PyUnusedLocal
+    @interpolate
+    def format_interp_stack_extract(data, keys=None, **kwargs):
+        stacked_data = pandas_stack(data, keys=keys)
+        vals = stacked_data.values
+        return vals, stacked_data
+
     def decorator(f):
         @functools.wraps(f)
         def wrapped(data, **kwargs):

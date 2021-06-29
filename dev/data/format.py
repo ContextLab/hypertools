@@ -15,12 +15,10 @@ from formats.null import is_null, wrangle_null
 format_checkers = ['dataframe', 'array', 'image', 'sound', 'nifti', 'text', 'null']
 
 
-def format_data(x, **kwargs):
+def format_data(x, return_dtype=False, **kwargs):
     """
     INPUTS
     x: data in any format (text, numpy arrays, pandas dataframes, or a mixed list (or nested lists) of those types)
-    text_vectorizer: function that takes a string (or list of strings) and returns a numpy array or dataframe
-    text_kwargs: dictionary of keyword arguments to pass to text_vectorizer
 
     OUTPUTS
     a list of pandas dataframes
@@ -34,12 +32,22 @@ def format_data(x, **kwargs):
 
     # noinspection PyUnusedLocal
     def to_dataframe(y):
+        dtype = None
+        wrangled = pd.DataFrame()
         for fc in format_checkers:
             if eval(f'is_{fc}(y)'):
-                return eval(f'wrangle_{fc}(y, **deep_kwargs[{fc}])')
-        return pd.DataFrame()  # return empty DataFrame if no format matches are found
+                wrangled = eval(f'wrangle_{fc}(y, **deep_kwargs[{fc}])')
+                dtype = fc
+        return wrangled, dtype
 
     if type(x) == list:
-        return [to_dataframe(i) for i in x]
+        dfs = [to_dataframe(i) for i in x]
+        wrangled = [dfs[0] for d in dfs]
+        dtypes = [dfs[1] for d in dfs]
     else:
-        return to_dataframe(x)
+        wrangled, dtypes = to_dataframe(x)
+
+    if return_dtype:
+        return wrangled, dtypes
+    else:
+        return wrangled
