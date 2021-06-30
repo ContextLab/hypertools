@@ -1,33 +1,50 @@
 import warnings
 import six
+import sys
 import numpy as np
 import pandas as pd
 from ppca import PPCA
 from .data.format import format_data
 from .core.configurator import get_default_options
-from .align.align import
+from .align.align import srm, hyper, procrustes
 
-# FIXME: pasted in from notebook...needs cleanup and fleshing out
-reduce_models = ['DictionaryLearning', 'FactorAnalysis', 'FastICA', 'IncrementalPCA', 'KernelPCA',
-                 'LatentDirichletAllocation', 'MiniBatchDictionaryLearning',
-                 'MiniBatchSparsePCA', 'NMF', 'PCA', 'SparseCoder', 'SparsePCA', 'TruncatedSVD', 'UMAP', 'TSNE', 'MDS',
-                 'SpectralEmbedding', 'LocallyLinearEmbedding', 'Isomap']
-cluster_models = ['AffinityPropagation', 'AgglomerativeClustering', 'Birch', 'DBSCAN', 'FeatureAgglomeration', 'KMeans',
-                  'MeanShift', 'MiniBatchKMeans', 'SpectralBiclustering', 'SpectralClustering', 'SpectralCoclustering',
-                  'DBSCAN', 'AffinityPropagation', 'MeanShift']
-mixture_models = ['GaussianMixture', 'BayesianGaussianMixture', 'LatentDirichletAllocation', 'NMF']
-decomposition_models = ['LatentDirichletAllocation', 'NMF']
-text_vectorizers = ['CountVectorizer', 'TfidfVectorizer']
+from umap import UMAP
+import sklearn.decomposition as decomposition
+import sklearn.manifold as manifold
+import sklearn.feature_extraction.text as text
+import sklearn.cluster as cluster
+import sklearn.mixture as mixture
+
+
+# import all model-like classes within a sklearn-like module; return a list of model names
+def import_sklearn_models(module):
+    models = [d for d in dir(module) if hasattr(eval(f'module.{d}'), 'fit_transform')]
+    for m in models:
+        exec(f'from {module.__name__} import {m}', globals())
+    return models
+
+
+align_models = ['srm', 'hyper', 'procrustes']
+
+reduce_models = ['UMAP']
+reduce_models.extend(import_sklearn_models(decomposition))
+reduce_models.extend(import_sklearn_models(manifold))
+
+cluster_models = import_sklearn_models(cluster)
+
+mixture_models = import_sklearn_models(mixture)
+mixture_models.extend(['LatentDirichletAllocation', 'NMF'])
+
+text_vectorizers = import_sklearn_models(text)
+
+# source: https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.interpolate.html
 interpolation_models = ['linear', 'time', 'index', 'pad', 'nearest', 'zero', 'slinear', 'quadratic', 'cubic', 'spline',
                         'barycentric', 'polynomial']
-text_models = ['USE', 'LatentDirichletAllocation', 'NMF']
-align_models = ['srm', 'hyper', 'procrustes']
-corpora = ['wiki', 'nips', 'sotus']
-use_corpora = [str(k) for k in defaults['corpora'].keys()]
 
 defaults = get_default_options()
 
 
+# make a function work for either a single object or a list of objects by calling the function on each element
 def list_generalizer(f):
     @functools.wraps(f)
     def wrapped(data, **kwargs):
@@ -39,6 +56,7 @@ def list_generalizer(f):
     return wrapped
 
 
+# coerce the data passed into the function into a pandas dataframe or a list of dataframes
 @list_generalizer
 def funnel(f):
     @functools.wraps(f)
@@ -48,6 +66,7 @@ def funnel(f):
     return wrapped
 
 
+# helper function for filling in missing data (not a decorator)
 @funnel
 def fill_missing(data, **kwargs):
     if 'interp_kwargs' in kwargs.keys():
@@ -70,6 +89,7 @@ def fill_missing(data, **kwargs):
         return data.interpolate(**interp_kwargs)
 
 
+# fill in missing data by applying PPCA (to fill in isolated missing entries within a row) and then by interpolating
 def interpolate(f):
     @functools.wraps(f)
     def wrapped(data, **kwargs):
@@ -78,6 +98,8 @@ def interpolate(f):
     return wrapped
 
 
+# intercept data passed to a function by stacking (or unstacking) the dataframes, applying the given function,
+# and then inverting the stack/unstack operation (unless return_override is True)
 def stack_handler(apply_stacked=False, return_override=False):
     # noinspection PyUnusedLocal
     @interpolate
@@ -153,6 +175,7 @@ def stack_handler(apply_stacked=False, return_override=False):
     return decorator
 
 
+# ensure that the named algorithm is contained within the list of approved algorithms of the given type
 def module_checker(modules=None, alg_list=None):
     if modules is None:
         modules = []
@@ -191,18 +214,21 @@ def module_checker(modules=None, alg_list=None):
     return decorator
 
 
+# unstack the data, apply the given function, then re-stack if needed
 @stack_handler(apply_stacked=False)
 def unstack_apply(data, **kwargs):
     assert 'algorithm' in kwargs.keys(), 'must specify algorithm'
     return algorithm(data, **kwargs)
 
 
+# stack the data, apply the given function, then unstack if needed
 @stack_handler(apply_stacked=True)
 def stack_apply(data, **kwargs):
     assert 'algorithm' in kwargs.keys(), 'must specify algorithm'
     return algorithm(data, **kwargs)
 
 
+# add in default keyword arguments (and values) specified in config.ini based on the function name
 def apply_defaults(f):
     if f.__name__ in defaults.keys():
         default_args = defaults[f.__name__]
