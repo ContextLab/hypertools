@@ -1,10 +1,12 @@
 import numpy as np
+# noinspection PyPackageRequirements
+import datawrangler as dw
+import numpy as np
 
 from .srm import SRM
 from .procrustes import Procrustes
 from .hyperalign import Hyperalign
 from .null import NullAlign
-from ..decorate import apply_defaults, stack_handler, module_checker
 
 
 def pad(x, c, max_rows=None):
@@ -23,39 +25,38 @@ def trim_and_pad(data):
     return x
 
 
-@module_checker
-@stack_handler(apply_stacked=False)
+@dw.decorate.apply_unstacked
 def align(data, algorithm='hyper', **kwargs):
     """
     ARGUMENTS:
-    data: data to reduce (numpy array or compatible, or a pandas
+    :param data: data to reduce (numpy array or compatible, or a pandas
           dataframe or compatible).  Formatted as a 2d matrix whose
           rows are observations and whose columns are feature
           dimensions.  Can also input a list of Note: DataFrame indices are ignored; all DataFrames
           are aligned to the first r rows, where r is the number of rows
           in the shortest member of data.
 
-    algorithm: one of: 'hyper', 'srm', 'procrustes'  Can also
+    :param algorithm: one of: 'hyper', 'srm', 'procrustes'  Can also
           pass a function directly.
 
-    fillna: if True, use PPCA and interpolation to fill in nan-valued entries (default: False)
+    :param fillna: if True, use PPCA and interpolation to fill in nan-valued entries (default: False)
 
-    n_iter: number of times to re-run alignment (default: 1)
+    :param n_iter: number of times to re-run alignment (default: 1)
 
-    interpolation_kwargs: keyword arguments passed to the interpolation function, used
+    :param interpolation_kwargs: keyword arguments passed to the interpolation function, used
            when fillna is True.
 
-    stack: if True, create a single (stacked) MultiIndex DataFrame out of
+    :param stack: if True, create a single (stacked) MultiIndex DataFrame out of
            the inputted data list and return a version of the same dataframe,
            but with re-named columns.
 
-    keys: a name for each data matrix (default: None; name each set of observations
+    :param keys: a name for each data matrix (default: None; name each set of observations
           range(len(data))).  Only relevant when stack is True.
 
     all additional keyword arguments are passed to the alignment function
 
     RETURNS:
-    pandas dataframe (or list of dataframes) with number-of-observations rows and
+    :return: pandas dataframe (or list of dataframes) with number-of-observations rows and
     c columns, where c is the widest dataset in the list.
     """
 
@@ -64,32 +65,6 @@ def align(data, algorithm='hyper', **kwargs):
         return algorithm(data, **kwargs)
     else:
         return data
-
-
-# def pro_fit_xform(source, target, return_proj=False):
-#     proj = fit(source, target)
-#
-#     if return_proj:
-#         return proj
-#     else:
-#         return transform(source, proj)
-#
-#
-# def pad(x, c, max_rows=None):
-#     if not max_rows:
-#         max_rows = x.shape[0]
-#
-#     y = np.zeros([max_rows, c])
-#     y[:, :x.shape[1]] = x[:max_rows, :]
-#     return y
-#
-#
-# def trim_and_pad(data):
-#     r = np.min([x.shape[0] for x in data])
-#     c = np.max([x.shape[1] for x in data])
-#     x = [pad(d, c, max_rows=r) for d in data]
-#
-#     return r, c, x
 
 
 def pad_and_align(data, template, c, x, return_model=False):
