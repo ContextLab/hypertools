@@ -1,6 +1,7 @@
 import numpy as np
 from .procrustes import Procrustes
 
+
 class Hyperalign:
     def __init__(self, n_iter=10):
         assert n_iter >= 0, 'Number of iterations must be non-negative'
@@ -22,26 +23,26 @@ class Hyperalign:
 
         x = self.data.copy()
 
+        p = None
         for i in range(self.n_iter):
             # STEP 1: TEMPLATE
             template = np.copy(x[0])
-            for i in range(1, len(x)):
+            for j in range(1, len(x)):
                 p = Procrustes()
-                template += p.fit_transform(x[i], template / (i + 1))
+                template += p.fit_transform(x[j], template / (j + 1))
             template /= len(x)
 
             # STEP 2: NEW COMMON TEMPLATE
             #  - align each subj to template
             template2 = np.zeros_like(template)
-            for i in range(0, len(x)):
+            for j in range(0, len(x)):
                 p = Procrustes()
-                template2 += p.fit_transform(x[i], template)
+                template2 += p.fit_transform(x[j], template)
             template2 /= len(x)
 
-            #align each subj to template2
-            p = [Procustes() for i in x]
+            # align each subj to template2
+            p = [Procustes() for _ in x]
             x = [m.fit(i, template2) for i in x]
-
         self.proj = p
 
     def transform(self):

@@ -1,13 +1,14 @@
-import numpy as np
 # noinspection PyPackageRequirements
 import datawrangler as dw
 import numpy as np
 
-from .srm import SRM
+from .srm import SRM, DetSRM, RSRM
 from .procrustes import Procrustes
 from .hyperalign import Hyperalign
 from .null import NullAlign
 
+
+# TODO: update class definitions of all alignment models to automatically funnel/unstack, trim, and pad data
 
 def pad(x, c, max_rows=None):
     if not max_rows:
@@ -39,21 +40,8 @@ def align(data, algorithm='hyper', **kwargs):
     :param algorithm: one of: 'hyper', 'srm', 'procrustes'  Can also
           pass a function directly.
 
-    :param fillna: if True, use PPCA and interpolation to fill in nan-valued entries (default: False)
-
-    :param n_iter: number of times to re-run alignment (default: 1)
-
-    :param interpolation_kwargs: keyword arguments passed to the interpolation function, used
-           when fillna is True.
-
-    :param stack: if True, create a single (stacked) MultiIndex DataFrame out of
-           the inputted data list and return a version of the same dataframe,
-           but with re-named columns.
-
-    :param keys: a name for each data matrix (default: None; name each set of observations
-          range(len(data))).  Only relevant when stack is True.
-
-    all additional keyword arguments are passed to the alignment function
+    all additional keyword arguments are passed datawrangler.apply_unstacked and then any remaining keyword arguments
+          are passed to the alignment function
 
     RETURNS:
     :return: pandas dataframe (or list of dataframes) with number-of-observations rows and

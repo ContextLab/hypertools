@@ -1,15 +1,12 @@
 class NullAlign:
-    '''
-    Template for creating new HyperAlignment classes
-    '''
-
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
-            self.(k) = v
+            setattr(self, k, v)
 
     def fit(self, data):
         pass
 
+    # noinspection PyMethodMayBeStatic
     def transform(self, data):
         return data
 

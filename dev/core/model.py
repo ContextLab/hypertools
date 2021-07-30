@@ -6,6 +6,7 @@ import sklearn
 import flair
 import umap
 from sklearn.experimental import enable_hist_gradient_boosting, enable_iterative_imputer, enable_halving_search_cv
+from ..align import
 
 defaults = dw.core.get_default_options('config.ini')
 sklearn_modules = ['calibration', 'cluster', 'compose', 'covariance', 'cross_decompositoin', 'decomposition',
@@ -80,6 +81,7 @@ def get_sklearn_method(x, mode):
 
 def apply_model(data, model, *args, return_model=False, **kwargs):
     mode = kwargs.pop('mode', 'fit_transform')
+    custom = kwargs.pop('custom', False)
 
     if type(model) is list:
         fitted_models = []
@@ -97,7 +99,10 @@ def apply_model(data, model, *args, return_model=False, **kwargs):
 
         return apply_model(data, model['model'], return_model=return_model,
                            *[model['args'], *args], **dw.core.update_dict(model['kwargs'], kwargs))
-
+    elif custom and callable(model):
+        transformed_data = model(data, *args, **kwargs)
+        if return_model:
+            return tranformed_data, {'model': model, 'args': args, 'kwargs': kwargs}
     else:
         model = dw.core.apply_defaults(get_model(model))(*args, **kwargs)
         if dw.zoo.text.is_hugging_face_model(model):
@@ -111,6 +116,6 @@ def apply_model(data, model, *args, return_model=False, **kwargs):
             transformed_data = f(data)
 
         if return_model:
-            return transformed_data, model
+            return transformed_data, {'model': model, 'args': args, 'kwargs': kwargs}
         else:
             return transformed_data

@@ -5,6 +5,7 @@ from builtins import range
 
 import numpy as np
 
+
 class Procrustes:
     def __init__(self, scaling=True, reflection=True, reduction=False, oblique=False, oblique_rcond=-1):
         self.scaling = scaling
@@ -16,6 +17,7 @@ class Procrustes:
 
     # copied from pymvpa2 toolbox...could be cleaned up
     def fit(self, source, target):
+        # noinspection PyShadowingNames
         def align(source, target):
             datas = (source, target)
             sn, sm = source.shape
@@ -57,16 +59,16 @@ class Procrustes:
                 # Just do silly linear system of equations ;) or naive
                 # inverse problem
                 if sn == sm and tm == 1:
-                    T = np.linalg.solve(source, target)
+                    t = np.linalg.solve(source, target)
                 else:
-                    T = np.linalg.lstsq(source, target, rcond=self.oblique_rcond)[0]
+                    t = np.linalg.lstsq(source, target, rcond=self.oblique_rcond)[0]
                 ss = 1.0
             else:
                 # Orthogonal transformation
                 # figure out optimal rotation
-                U, s, Vh = np.linalg.svd(np.dot(target.T, source),
+                u, s, vh = np.linalg.svd(np.dot(target.T, source),
                                          full_matrices=False)
-                T = np.dot(Vh.T, U.T)
+                t = np.dot(vh.T, u.T)
 
                 if not self.reflection:
                     # then we need to assure that it is only rotation
@@ -76,8 +78,8 @@ class Procrustes:
                     # http://dx.doi.org/10.1007%2FBF02289451
                     nsv = len(s)
                     s[:-1] = 1
-                    s[-1] = np.linalg.det(T)
-                    T = np.dot(U[:, :nsv] * s, Vh)
+                    s[-1] = np.linalg.det(t)
+                    t = np.dot(u[:, :nsv] * s, vh)
 
                 # figure out scale and final translation
                 # XXX with reflection False -- not sure if here or there or anywhere...
@@ -88,14 +90,14 @@ class Procrustes:
 
             # select out only relevant dimensions
             if sm != tm:
-                T = T[:sm, :tm]
+                t = t[:sm, :tm]
 
             # Assign projection
             if self.scaling:
                 scale = ss * norms[1] / norms[0]
-                proj = scale * T
+                proj = scale * t
             else:
-                proj = T
+                proj = t
 
             return proj
 
@@ -105,6 +107,7 @@ class Procrustes:
             self.proj = align(source, target)
 
     def transform(self, data, index=0):
+        # noinspection PyShadowingNames
         def xform(data, proj):
             if proj is None:
                 raise RuntimeError("Mapper needs to be trained before use.")
@@ -116,8 +119,9 @@ class Procrustes:
 
         if type(self.proj) == list:
             if type(data) == list:
-                assert len(self.proj) == len(data), "Data must either be passed in as an individual matrix, or must be of the same length as the fitted list of projections"
-                return [xform(d, p) for zip(data, self.proj)]
+                assert len(self.proj) == len(data), "Data must either be passed in as an individual matrix, or must " \
+                                                    "be of the same length as the fitted list of projections "
+                return [xform(d, p) for d, p in zip(data, self.proj)]
             else:
                 return xform(data, self.proj[index])
         else:
