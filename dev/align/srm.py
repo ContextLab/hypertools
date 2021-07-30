@@ -1,62 +1,13 @@
-# copied from: https://github.com/brainiak/brainiak/blob/master/brainiak/funcalign/srm.py
-#              https://github.com/brainiak/brainiak/blob/master/brainiak/funcalign/rsrm.py
+# FIXME: this is a mess-- need to re-write SRM, DetSRM, and RSRM classes to conform to Aligner style
 
-# coding: latin-1
-
-#  Copyright 2016 Intel Corporation
-#
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
-#
-#       http://www.apache.org/licenses/LICENSE-2.0
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-"""Shared Response Model (SRM)
-
-The implementations are based on the following publications:
-
-.. [Chen2015] "A Reduced-Dimension fMRI Shared Response Model",
-   P.-H. Chen, J. Chen, Y. Yeshurun-Dishon, U. Hasson, J. Haxby, P. Ramadge
-   Advances in Neural Information Processing Systems (NIPS), 2015.
-   http://papers.nips.cc/paper/5855-a-reduced-dimension-fmri-shared-response-model
-
-.. [Anderson2016] "Enabling Factor Analysis on Thousand-Subject Neuroimaging
-   Datasets",
-   Michael J. Anderson, Mihai CapotÄ, Javier S. Turek, Xia Zhu, Theodore L.
-   Willke, Yida Wang, Po-Hsuan Chen, Jeremy R. Manning, Peter J. Ramadge,
-   Kenneth A. Norman, arXiv preprint, 2016.
-   https://arxiv.org/abs/1608.04647
-
-.. [Turek2017] "Capturing Shared and Individual Information in fMRI Data",
-   J. Turek, C. Ellis, L. Skalaban, N. Turk-Browne, T. Willke
-   under review, 2017.
-"""
-
-# Authors: Po-Hsuan Chen (Princeton Neuroscience Institute) and Javier Turek
-# (Intel Labs), 2015
-from __future__ import division
-
-import logging
+# adapted from: https://github.com/brainiak/brainiak/blob/master/brainiak/funcalign/srm.py
+#               https://github.com/brainiak/brainiak/blob/master/brainiak/funcalign/rsrm.py
 
 import numpy as np
 import scipy
-from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import assert_all_finite
-from sklearn.utils.validation import NotFittedError
-import uuid
-import hashlib
 
-
-__all__ = [
-    "SRM", "DetSRM", "RSRM"
-]
-
-logger = logging.getLogger(__name__)
+from .common import Aligner
 
 
 def _init_w_transforms(data, features):
@@ -105,7 +56,7 @@ def _init_w_transforms(data, features):
     return w, voxels
 
 
-class SRM(BaseEstimator, TransformerMixin):
+class SRM(Aligner):
     """Probabilistic Shared Response Model (SRM)
 
     Given multi-subject data, factorize it as a shared response S among all

@@ -1,15 +1,14 @@
-class NullAlign:
-    def __init__(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
+from .common import Aligner
 
-    def fit(self, data):
-        pass
 
-    # noinspection PyMethodMayBeStatic
-    def transform(self, data):
-        return data
+def fitter(data):
+    return {}
 
-    def fit_transform(self, data):
-        self.fit(data)
-        return self.transform(data)
+
+def transformer(data, **kwargs):
+    return data
+
+
+class NullAlign(Aligner):
+    def __init__(self):
+        super().__init__(nrequired=[], fitter=fitter, transformer=transformer, data=None)
