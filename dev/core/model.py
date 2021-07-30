@@ -2,9 +2,21 @@
 import datawrangler as dw
 import numpy as np
 import os
-import sklearn, flair, umap, hdbscan
+import sklearn, flair, umap
+from sklearn.experimental import enable_hist_gradient_boosting, enable_iterative_imputer, enable_halving_search_cv
+
 
 defaults = dw.core.get_default_options('config.ini')
+sklearn_modules = ['calibration', 'cluster', 'compose', 'covariance', 'cross_decompositoin', 'decomposition',
+                   'discriminant_analysis', 'ensemble', 'experimental', 'feature_extraction',
+                   'feature_extraction.image', 'feature_extraction.text', 'feature_selection',
+                   'gaussian_process', 'impute', 'inspection', 'isotonic', 'kernel_approximation',
+                   'kernel_ridge', 'linear_model', 'manifold', 'metrics', 'mixture', 'model_selection', 'multiclass',
+                   'multioutput', 'naive_bayes', 'neighbors', 'neural_network', 'pipeline', 'preprocessing',
+                   'random_projection', 'semi_supervised', 'svm', 'tree']
+sklearn_modules = [f'sklearn.{m}' for m in sklearn_modules]
+sklearn_modules.append('umap')
+flair_embeddings = [f'flair.embeddings.{f}' for f in dir(flair.embeddings) if 'embedding' in f.lower()]
 
 
 def apply_model(data, model, *args, mode='fit_transform', return_model=False, **kwargs):
