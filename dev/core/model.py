@@ -6,7 +6,8 @@ import sklearn
 import flair
 import umap
 from sklearn.experimental import enable_hist_gradient_boosting, enable_iterative_imputer, enable_halving_search_cv
-from ..align import
+
+from ..align import srm, procrustes, hyperalign, null
 
 defaults = dw.core.get_default_options('config.ini')
 sklearn_modules = ['calibration', 'cluster', 'compose', 'covariance', 'cross_decompositoin', 'decomposition',
@@ -14,11 +15,12 @@ sklearn_modules = ['calibration', 'cluster', 'compose', 'covariance', 'cross_dec
                    'feature_extraction.image', 'feature_extraction.text', 'feature_selection',
                    'gaussian_process', 'impute', 'inspection', 'isotonic', 'kernel_approximation',
                    'kernel_ridge', 'linear_model', 'manifold', 'metrics', 'mixture', 'model_selection', 'multiclass',
-                   'multioutput', 'naive_bayes', 'neighbors', 'neural_network', 'pipeline', 'preprocessing',
-                   'random_projection', 'semi_supervised', 'svm', 'tree']
+                   'multioutput', 'naive_bayes', 'neighbors', 'neural_network', 'pipeline', 'random_projection',
+                   'semi_supervised', 'svm', 'tree']
 sklearn_modules = [f'sklearn.{m}' for m in sklearn_modules]
 sklearn_modules.append('umap')
 flair_embeddings = [f'flair.embeddings.{f}' for f in dir(flair.embeddings) if 'embedding' in f.lower()]
+aligners = ['srm', 'procrustes', 'hyperalign', 'null']
 
 
 def has_all_attributes(x, attributes):
@@ -29,9 +31,12 @@ def has_any_attributes(x, attributes):
     return any([hasattr(x, a) for a in attributes])
 
 
-def get_model(x):
+def get_model(x, search=None):
+    if search is None:
+        search = [*sklearn_modules, *flair_embeddings, *aligners]
+
     if type(x) is str:
-        for m in [*sklearn_modules, *flair_embeddings]:
+        for m in search:
             try:
                 exec(f'import {m}.{x}', globals())
                 return eval(f'{m}.{x}')
@@ -79,7 +84,7 @@ def get_sklearn_method(x, mode):
     return helper(mode)
 
 
-def apply_model(data, model, *args, return_model=False, **kwargs):
+def apply_model(data, model, *args, return_model=False, search=None, **kwargs):
     mode = kwargs.pop('mode', 'fit_transform')
     custom = kwargs.pop('custom', False)
 
@@ -104,7 +109,7 @@ def apply_model(data, model, *args, return_model=False, **kwargs):
         if return_model:
             return tranformed_data, {'model': model, 'args': args, 'kwargs': kwargs}
     else:
-        model = dw.core.apply_defaults(get_model(model))(*args, **kwargs)
+        model = dw.core.apply_defaults(get_model(model, search=search))(*args, **kwargs)
         if dw.zoo.text.is_hugging_face_model(model):
             return dw.zoo.text.apply_text_model(model, data, *args, mode=mode, return_model=return_model, **kwargs)
         f = get_sklearn_method(model, mode)

@@ -5,4 +5,4 @@ __version__ = get_distribution('hypertools')
 
 
 def get_default_options(fname='config.ini'):
-    return dw.core.get_default_options(fname)
+    return dw.core.update_dict(dw.core.get_default_options(), dw.core.get_default_options(fname))
