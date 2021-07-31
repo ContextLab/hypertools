@@ -6,6 +6,7 @@ hypertools.egg-info/
 .cache/
 tests/__pycache__/
 dist/
+build/
 .tox/
 *.bak
 tox.ini
@@ -13,3 +14,4 @@ tox.ini
 \.idea/
 docs/_build
 .pytest_cache/
+/venv/
