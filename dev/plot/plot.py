@@ -1,5 +1,54 @@
+# noinspection PyPackageRequirements
+import datawrangler as dw
+import numpy as np
+import pandas as pd
+
+from matplotlib import pyplot as plt
+
+from ..core import get_default_options, apply_model, get
+from ..align import align
+from ..cluster import cluster
+from ..manip import manip
+from ..reduce import reduce
+
+defaults = get_default_options()
+
+
+@dw.decorate.funnel
+def plot(data, *fmt, **kwargs):
+    pipeline = kwargs.pop('pipeline', None)
+
+    manipulators = kwargs.pop('manip', None)
+    aligners = kwargs.pop('align', None)
+    reducers = kwargs.pop('reduce', defaults['reduce']['model'])
+    clusterers = kwargs.pop('cluster', None)
+
+    if pipeline is not None:
+        data = apply_model(data, model=pipeline)
+
+    if manipulators is not None:
+        data = manip(data, model=manipulators)
+
+    if aligners is not None:
+        data = align(data, model=aligners)
+
+    data = reduce(data, model=reducers)
+
+    if clusterers is not None:
+        clusters = cluster(data, model=clusterers)
+    else:
+        clusters = None
+
+    # TODO: need to map between potentially arbitrary colors and a given (arbitrary) colormap
+    cmap = kwargs.pop('cmap', defaults['plot']['cmap'])
+
+
+
+
+
+
 # TODO: copy relevant stuff from hypertools_revamp notebook.  key things to do:
-#  1.) funnel data
+#  1.) funnel data (DONE)
 #  2.) specify default reduce args if n_dims > 3 after applying other stuff
 #  3.) allow optional calls to reduce (overwrite), cluster, manipulate, and align.
 #      user specifies order via a list of models (similar to sklearn Pipeline)

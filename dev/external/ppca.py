@@ -1,3 +1,5 @@
+# source: https://github.com/allentran/pca-magic/blob/master/ppca/_ppca.py
+
 from __future__ import division
 from __future__ import print_function
 
@@ -8,10 +10,8 @@ import numpy as np
 from scipy.linalg import orth
 
 
-class PPCA(object):
-
+class PPCA:
     def __init__(self):
-
         self.raw = None
         self.data = None
         self.C = None
@@ -112,12 +112,15 @@ class PPCA(object):
         self._calc_var()
 
     def transform(self, data=None):
-
         if self.C is None:
             raise RuntimeError('Fit the data model first.')
         if data is None:
             return np.dot(self.data, self.C)
         return np.dot(data, self.C)
+
+    def fit_transform(self, data=None, **kwargs):
+        self.fit(data, **kwargs)
+        return self.transform(data)
 
     def _calc_var(self):
 
@@ -130,13 +133,3 @@ class PPCA(object):
         var = np.nanvar(data, axis=1)
         total_var = var.sum()
         self.var_exp = self.eig_vals.cumsum() / total_var
-
-    def save(self, fpath):
-
-        np.save(fpath, self.C)
-
-    def load(self, fpath):
-
-        assert os.path.isfile(fpath)
-
-        self.C = np.load(fpath)

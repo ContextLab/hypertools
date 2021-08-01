@@ -44,3 +44,7 @@ class Manipulator(BaseEstimator):
     def fit_transform(self, data):
         self.fit(data)
         return self.transform()
+
+
+def manip(data, model='ZScore', **kwargs):
+    return apply_model(data, model, search=['..manip'], **kwargs)

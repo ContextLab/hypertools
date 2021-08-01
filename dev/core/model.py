@@ -8,6 +8,7 @@ import umap
 from sklearn.experimental import enable_hist_gradient_boosting, enable_iterative_imputer, enable_halving_search_cv
 
 from ..align import srm, procrustes, hyperalign, null
+from ..external import ppca, brainiak
 
 defaults = dw.core.get_default_options('config.ini')
 sklearn_modules = ['calibration', 'cluster', 'compose', 'covariance', 'cross_decompositoin', 'decomposition',
@@ -21,6 +22,8 @@ sklearn_modules = [f'sklearn.{m}' for m in sklearn_modules]
 sklearn_modules.append('umap')
 flair_embeddings = [f'flair.embeddings.{f}' for f in dir(flair.embeddings) if 'embedding' in f.lower()]
 aligners = ['srm', 'procrustes', 'hyperalign', 'null']
+manipulators = ['..manip']
+externals = ['ppca', 'brainiak']
 
 
 def has_all_attributes(x, attributes):
@@ -33,7 +36,7 @@ def has_any_attributes(x, attributes):
 
 def get_model(x, search=None):
     if search is None:
-        search = [*sklearn_modules, *flair_embeddings, *aligners]
+        search = [*sklearn_modules, *flair_embeddings, *aligners, *manipulators, *externals]
 
     if type(x) is str:
         for m in search:

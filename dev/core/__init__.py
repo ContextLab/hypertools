@@ -1,2 +1,3 @@
-from model import apply_model
-from configurator import get_default_options
+from .model import apply_model
+from .configurator import get_default_options
+from .util import get
