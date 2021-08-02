@@ -44,6 +44,12 @@ def colorize_rgb(x, cmap, n_colors=250):
     return colorized
 
 
+# def get_color(fmt):
+#     colors = {'b': 'blue', 'g': 'green', 'r': 'red', 'c': 'cyan', 'm': 'magenta', 'y': 'yellow', 'k': 'black',
+#               'w': 'white'}
+#     for k in colors.keys():
+#         if
+
 @dw.decorate.funnel
 def plot(data, *fmt, **kwargs):
     pipeline = kwargs.pop('pipeline', None)
@@ -69,8 +75,9 @@ def plot(data, *fmt, **kwargs):
     else:
         clusters = None
 
-    # TODO: need to map between potentially arbitrary colors and a given (arbitrary) colormap
     cmap = kwargs.pop('cmap', defaults['plot']['cmap'])
+    colors = kwargs.pop('color', None)
+
 
 
 # TODO: copy relevant stuff from hypertools_revamp notebook.  key things to do:
