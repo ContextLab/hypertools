@@ -3,10 +3,11 @@ import datawrangler as dw
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import matplotlib as mpl
 
 from matplotlib import pyplot as plt
 
-from ..core import get_default_options, apply_model, get
+from ..core import get_default_options, apply_model, get, has_all_attributes
 from ..align import align
 from ..cluster import cluster
 from ..manip import manip
@@ -15,12 +16,18 @@ from ..reduce import reduce
 defaults = get_default_options()
 
 
-def colorize_rgb(x, cmap, n_colors=250):
+def get_cmap(cmap, **kwargs):
+    n_colors = kwargs.pop('n_colors', eval(defaults['plot']['n_colors']))
+
     if type(cmap) is str:
         cmap = sns.color_palette(cmap, n_colors=n_colors, as_cmap=False)
     if type(cmap) is sns.palettes._ColorPalette:
         cmap = np.array(cmap)
-        n_colors = cmap.shape[0]
+    return cmap
+
+
+def colorize_rgb(x, cmap, **kwargs):
+    cmap = get_cmap(cmap, **kwargs)
 
     def match_color(img, c):
         all_inds = np.squeeze(np.zeros_like(img)[:, :, 0])
@@ -44,11 +51,62 @@ def colorize_rgb(x, cmap, n_colors=250):
     return colorized
 
 
-# def get_color(fmt):
-#     colors = {'b': 'blue', 'g': 'green', 'r': 'red', 'c': 'cyan', 'm': 'magenta', 'y': 'yellow', 'k': 'black',
-#               'w': 'white'}
-#     for k in colors.keys():
-#         if
+def mat2colors(m, **kwargs):
+    if not dw.zoo.is_array(m):
+        if type(m) is str:
+            return np.atleast_2d(mpl.colors.to_rgb(m))
+        elif type(m) is list:
+            return np.concatenate([mat2colors(c) for c in m], axis=0)
+
+    cmap = get_cmap(kwargs.pop('cmap', eval(defaults['plot']['cmap'])))
+    # FIXME: STOPPED HERE...
+
+    m = np.array(m)
+    if m.ndim < 2:
+        pass
+
+    reducer = kwargs.pop('reduce', eval(defaults['reduce']['model']))
+    if type(reduce) is not dict:
+        reducer = {'model': reduce, 'args': [], 'kwargs': {'n_components': 3}}
+    else:
+        assert has_all_attributes(reduce, ['model', 'args', 'kwargs']), ValueError(f'invalid reduce model: {reducer}')
+        reducer['kwargs'] = dw.core.update_dict(reducer['kwargs'], {'n_components': 3})
+    m = reduce(m, model=reducer)
+    return colorize_rgb(m, cmap)
+
+
+def parse_style(fmt):
+    if type(fmt) is not str:
+        return {'color': None, 'linestyle': None, 'marker': None}
+
+    def pop_string(s, sub_s):
+        if sub_s in s:
+            return sub_s, s.replace(sub_s, '', 1)
+        else:
+            return None, s
+
+    markers = list('.,ov^>12348spP*hH+xXDd|_')
+    line_styles = ['-', '--', '-.', ':']
+
+    color = None
+    for m in markers:
+        marker, fmt = pop_string(fmt, m)
+        if marker:
+            break
+
+    for i in line_styles:
+        linestyle, fmt = pop_string(fmt, i)
+        if linestyle:
+            break
+
+    try:
+        color = mpl.colors.to_rgb(fmt)
+    except ValueError:
+        pass
+
+    # noinspection PyUnboundLocalVariable
+    return {'color': color, 'marker': marker, 'linestyle': linestyle}
+
 
 @dw.decorate.funnel
 def plot(data, *fmt, **kwargs):
@@ -56,8 +114,11 @@ def plot(data, *fmt, **kwargs):
 
     manipulators = kwargs.pop('manip', None)
     aligners = kwargs.pop('align', None)
-    reducers = kwargs.pop('reduce', defaults['reduce']['model'])
+    reducers = kwargs.pop('reduce', eval(defaults['reduce']['model']))
     clusterers = kwargs.pop('cluster', None)
+
+    if len(fmt) > 0:
+        kwargs = dw.core.update_dict(parse_style(fmt[0]), kwargs)
 
     if pipeline is not None:
         data = apply_model(data, model=pipeline)
@@ -75,7 +136,7 @@ def plot(data, *fmt, **kwargs):
     else:
         clusters = None
 
-    cmap = kwargs.pop('cmap', defaults['plot']['cmap'])
+    cmap = kwargs.pop('cmap', eval(defaults['plot']['cmap']))
     colors = kwargs.pop('color', None)
 
 
