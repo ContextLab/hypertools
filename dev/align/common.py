@@ -5,9 +5,18 @@ from sklearn.base import BaseEstimator
 from sklearn.utils.validation import NotFittedError
 
 
-def pad(x, c):
+def pad(x, c=None):
+    if type(x) is list:
+        if c is None:
+            c = np.max([d.shape[1] for d in x])
+        return [pad(d, c) for d in x]
+
+    if c is None:
+        return x
+
     y = np.zeros([x.shape[0], c])
-    y[:, :x.shape[1]] = x[:, :c]
+    n = np.min([c, x.shape[1]])
+    y[:, :n] = x[:, :n]
     return y
 
 

@@ -4,11 +4,12 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib as mpl
+from pyDOE import ff2n
 
 from matplotlib import pyplot as plt
 
 from ..core import get_default_options, apply_model, get, has_all_attributes
-from ..align import align
+from ..align import align, pad
 from ..cluster import cluster
 from ..manip import manip
 from ..reduce import reduce
@@ -28,6 +29,8 @@ def get_cmap(cmap, **kwargs):
 
 def colorize_rgb(x, cmap, **kwargs):
     cmap = get_cmap(cmap, **kwargs)
+    if cmap is None:
+        return x
 
     def match_color(img, c):
         all_inds = np.squeeze(np.zeros_like(img)[:, :, 0])
@@ -57,13 +60,21 @@ def mat2colors(m, **kwargs):
             return np.atleast_2d(mpl.colors.to_rgb(m))
         elif type(m) is list:
             return np.concatenate([mat2colors(c) for c in m], axis=0)
+        else:
+            return np.atleast_2d(mpl.colors.to_rgb(m))
 
     cmap = get_cmap(kwargs.pop('cmap', eval(defaults['plot']['cmap'])))
-    # FIXME: STOPPED HERE...
+    n_colors = cmap.shape[0]
 
     m = np.array(m)
     if m.ndim < 2:
-        pass
+        _, edges = np.histogram(m, bins=n_colors)
+        bins = np.digitize(m, edges)
+
+        colors = np.zeros([len(m), cmap.shape[1]])
+        for i in range(1, len(edges)):
+            colors[bins == i, :] = cmap[i, :]
+        return colors
 
     reducer = kwargs.pop('reduce', eval(defaults['reduce']['model']))
     if type(reduce) is not dict:
@@ -108,6 +119,17 @@ def parse_style(fmt):
     return {'color': color, 'marker': marker, 'linestyle': linestyle}
 
 
+def get_bounds(data):
+    return np.concatenate([np.nanmin(data, axis=0), np.nanmax(data, axis=0)], axis=0)
+
+
+def plot_bounding_box(bounds, color='k', linewidth=2, ax=ax):
+    for b in bounds.shape[1]:
+        ax.plot()
+    raise NotImplementedError('fix me...')
+    # look here: https://github.com/ContextLab/hypertools-paper-notebooks/blob/master/hypercube.ipynb
+
+
 @dw.decorate.funnel
 def plot(data, *fmt, **kwargs):
     pipeline = kwargs.pop('pipeline', None)
@@ -117,7 +139,8 @@ def plot(data, *fmt, **kwargs):
     reducers = kwargs.pop('reduce', eval(defaults['reduce']['model']))
     clusterers = kwargs.pop('cluster', None)
 
-    if len(fmt) > 0:
+    assert len(fmt) == 0 or len(fmt) == 1, ValueError(f'invalid format: {fmt}')
+    if len(fmt) == 1:
         kwargs = dw.core.update_dict(parse_style(fmt[0]), kwargs)
 
     if pipeline is not None:
@@ -132,12 +155,36 @@ def plot(data, *fmt, **kwargs):
     data = reduce(data, model=reducers)
 
     if clusterers is not None:
-        clusters = cluster(data, model=clusterers)
+        colors = cluster(data, model=clusterers)
     else:
-        clusters = None
+        colors = kwargs.pop('color', None)
 
     cmap = kwargs.pop('cmap', eval(defaults['plot']['cmap']))
-    colors = kwargs.pop('color', None)
+    if colors is not None:
+        color_kwargs = kwargs.pop('color_kwargs', kwargs)
+        colors = mat2colors(colors, cmap=cmap, **color_kwargs)
+
+    if type(data) is list:
+        c = np.max([*[d.shape[1] for d in data], 2])
+    else:
+        c = np.max([data.shape[1], 2])
+
+    if c == 2:
+        ax = kwargs.pop('ax', plt.gca())
+    elif c == 3:
+        ax = kwargs.pop('ax', plt.gca(projection='3d'))
+    else:
+        raise ValueError(f'data must be 2D or 3D; given: {c}D')
+
+    data = pad(data, c=c)
+    plot_bounding_box(get_bounds(data), color='k', linewidth=2, ax=ax)
+    if type(data) is list:
+        for i, d in enumerate(data):
+            opts = {'color': get(colors, i), 'ax': ax}
+            plot(d, **dw.core.update_dict(kwargs, opts))
+
+    ax.plot(*data.split(data.shape[1], axis=1), color=color, **kwargs)
+
 
 
 
