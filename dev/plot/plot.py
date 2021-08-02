@@ -2,6 +2,7 @@
 import datawrangler as dw
 import numpy as np
 import pandas as pd
+import seaborn as sns
 
 from matplotlib import pyplot as plt
 
@@ -12,6 +13,35 @@ from ..manip import manip
 from ..reduce import reduce
 
 defaults = get_default_options()
+
+
+def colorize_rgb(x, cmap, n_colors=250):
+    if type(cmap) is str:
+        cmap = sns.color_palette(cmap, n_colors=n_colors, as_cmap=False)
+    if type(cmap) is sns.palettes._ColorPalette:
+        cmap = np.array(cmap)
+        n_colors = cmap.shape[0]
+
+    def match_color(img, c):
+        all_inds = np.squeeze(np.zeros_like(img)[:, :, 0])
+        for i in range(c.shape[0]):
+            # noinspection PyShadowingNames
+            inds = np.zeros_like(img)
+            for j in range(c.shape[1]):
+                inds[:, :, j] = np.isclose(img[:, :, j], c[i, j])
+            all_inds = (all_inds + np.sum(inds, axis=2) == c.shape[1]) > 0
+        return np.where(all_inds)
+
+    colors = np.unique(x.reshape([x.shape[0] * x.shape[1], x.shape[2]]), axis=0)
+    colors = colors[np.lexsort(colors.T[::-1])]  # colors sorted by row
+
+    color_bins = np.digitize(np.arange(n_colors), np.linspace(0, n_colors, num=n_colors + 1))
+    colorized = np.zeros([x.shape[0], x.shape[1], cmap.shape[1]])
+
+    for b in range(1, n_colors):
+        inds = match_color(x, colors[color_bins == b, :])
+        colorized[inds[0], inds[1], :] = cmap[b, :]
+    return colorized
 
 
 @dw.decorate.funnel
@@ -41,10 +71,6 @@ def plot(data, *fmt, **kwargs):
 
     # TODO: need to map between potentially arbitrary colors and a given (arbitrary) colormap
     cmap = kwargs.pop('cmap', defaults['plot']['cmap'])
-
-
-
-
 
 
 # TODO: copy relevant stuff from hypertools_revamp notebook.  key things to do:
