@@ -37,7 +37,17 @@ class Animator:
                     index_vals = index_vals.union(set(d.index.values))
             indices = list(index_vals)
             indices.sort()
-            raise NotImplementedError('stopped here...need to compute sliding windows from indices')
+
+            duration = len(indices)
+            window_length = np.round(duration * self.opts['focused'] / self.opts['duration'])
+            self.window_starts = np.concatenate([np.zeros([window_length]), np.arange(len(indices) - window_length)])
+            self.window_ends = np.arange(len(self.window_starts))
+
+            tail_window_length = np.round(duration * self.opts['unfocused'] / self.opts['duration'])
+            self.tail_window_starts = np.concatenate([np.zeros([tail_window_length]),
+                                                      np.arange(len(indices) - tail_window_length)])
+            self.tail_window_ends = np.arange(len(self.tail_window_starts))
+            self.tail_window_precogs = self.window_ends + np.arange(len(self.tail_window_starts))
 
     def __call__(self, i):
         if self.proj == '3d':
@@ -57,22 +67,47 @@ class Animator:
         elif self.mode == 'shrink':
             return self.animate_shrink(i)
         elif self.mode == 'spin':
-            return self.animate_spin(i)
+            return self.ax
         else:
             raise ValueError(f'unknown animation mode: {self.mode}')
 
+    @staticmethod
+    @dw.decorate.list_generalizer
+    def get_window(x, w_start, w_end):
+        return x.loc[w_start:w_end]
+
+    @staticmethod
+    def tail_opts(opts):
+        alpha = opts.pop('unfocused_alpha', opts['alpha'])
+        x = opts.copy()
+        x['alpha'] = alpha
+        return x
 
     def animate_window(self, i):
-        pass
+        self.ax = static_plot(get_window(self.data, self.window_starts[i], self.window_ends[i]), **self.opts)
+        return self.ax
 
     def animate_chemtrails(self, i):
-        pass
+        self.ax = static_plot(get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i]),
+                              **tail_opts(self.opts))
+        return self.animate_window(i)
 
     def animate_precog(self, i):
-        pass
+        self.ax = static_plot(get_window(self.data, self.tail_window_ends[i], self.tail_window_precogs[i]),
+                              **tail_opts(self.opts))
+        return self.animate_window(i)
 
     def animate_bullettime(self, i):
-        pass
+        self.ax = static_plot(self.data, **tail_opts(self.opts))
+        return self.animate_window(i)
 
-    def animate_spin(self, i):
-        pass
+    def animate_grow(self, i):
+        self.ax = static_plot(get_window(self.data, np.zeros_like(self.window_ends[i]), self.window_ends[i]),
+                              **self.opts)
+        return self.ax
+
+    def animate_shrink(self, i):
+        self.ax = static_plot(get_window(self.data, self.window_ends[i],
+                                         (len(self.window_ends) - 1) * self.ones_like(self.window_ends[i])),
+                              **self.opts)
+        return self.ax
