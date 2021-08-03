@@ -17,9 +17,4 @@ def static_plot(data, **kwargs):
             opts = {'color': get(color, i), 'ax': ax}
             return static_plot(d, **dw.core.update_dict(kwargs, opts))
 
-    # if dw.zoo.is_multiindex_dataframe(data):
-    # plot each lowest-level datapoint
-    # then plot the second-level groups at 1.5x scale and (1/1.5)x opacity
-    # TODO: uncovered a bug in datawrangler: https://github.com/ContextLab/data-wrangler/issues/21
-    #   I'm going to fix that datawrangler bug before adding in hypertools support for multi-index dataframes
     return ax.plot(*data.split(data.shape[1], axis=1), color=color, **kwargs)
