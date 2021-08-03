@@ -141,6 +141,16 @@ def transformer(data, **kwargs):
 
 
 class Procrustes:
+    """
+    Base class for Procrustes objects.  Takes several keyword arguments that specify which transformations are allowed:
+
+    :param scaling: True or False (default: True)
+    :param reflection: True or False (default: True)
+    :param reduction: True or False (default: False)
+    :param oblique: Are oblique transformations allowed?  (default: False)
+    :param target: Optional argument for specifying a target dataset to align data to.  If not specified, data are
+      aligned to the first DataFrame in the given list.
+    """
     def __init__(self, scaling=True, reflection=True, reduction=False, oblique=False, oblique_rcond=-1, target=None):
         super().__init__(scaling=scaling, reflection=reflection, reduction=reduction, oblique=oblique,
                          oblique_rcond=oblique_rcond, required=['scaling', 'reflection', 'reduction', 'oblique',

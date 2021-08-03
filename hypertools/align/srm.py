@@ -41,15 +41,24 @@ def rsrm_fitter(data, **kwargs):
 
 
 class SharedResponseModel(Aligner):
+    """
+    Base class for SharedResponseModel objects (no parameters).
+    """
     def __init__(self, **kwargs):
         super().__init__(required=['model', 'features'], fitter=srm_fitter, transformer=transformer, **kwargs)
 
 
 class DeterministicSharedResponseModel(Aligner):
+    """
+    Base class for DeterministicSharedResponseModel objects (no parameters).
+    """
     def __init__(self, **kwargs):
         super().__init__(required=['model', 'features'], fitter=detsrm_fitter, transformer=transformer, **kwargs)
 
 
 class RobustSharedResponseModel(Aligner):
+    """
+    Base class for RobustSharedResponseModel objects (no parameters).
+    """
     def __init__(self, **kwargs):
         super().__init__(required=['model', 'features'], fitter=rsrm_fitter, transformer=transformer, **kwargs)

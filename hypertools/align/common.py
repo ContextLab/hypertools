@@ -6,6 +6,18 @@ from sklearn.utils.validation import NotFittedError
 
 
 def pad(x, c=None):
+    """
+    Horizontally pad one or more numpy arrays
+
+    Parameters
+    ----------
+    x: a DataFrame or list of DataFrames
+    c: (optional) specify the desired number of columns; default: None
+
+    Returns
+    -------
+    :return: a padded DataFrame or list of padded DataFrames
+    """
     if type(x) is list:
         if c is None:
             c = np.max([d.shape[1] for d in x])
@@ -16,11 +28,22 @@ def pad(x, c=None):
 
     y = np.zeros([x.shape[0], c])
     n = np.min([c, x.shape[1]])
-    y[:, :n] = x[:, :n]
-    return y
+    y[:, :n] = x.iloc[:, :n]
+    return pd.DataFrame(data=y, index=x.index.copy())
 
 
 def trim_and_pad(data):
+    """
+    Select out the common rows of a dataset and pad the columns as needed
+
+    Parameters
+    ----------
+    :data: an DataFrame or list of DataFrames
+
+    Returns
+    -------
+    :return: a DataFrame, or a list of DataFrames with compatible rows and columns
+    """
     if len(data) == 0:
         return data
 
@@ -38,6 +61,16 @@ def trim_and_pad(data):
 
 
 class Aligner(BaseEstimator):
+    """
+    Base class used to create Aligner objects.  Must supply the following keyword arguments to initialzed:
+      - :param data: a dataset
+      - :param fitter: a function for aligning the dataset (takes the dataset as its first argument, along with
+          zero or more keyword arguments).  Returns a dictionary of fitted parameters.
+      - :param transformer: a function for transforming the dataset (takes the data as an argument, and fitted
+          parameters passed as keyword arguments
+
+    :return: instances of the Aligner class are scikit-learn compatible model objects
+    """
     def __init__(self, **kwargs):
         self.data = kwargs.pop('data', None)
         self.fitter = kwargs.pop('fitter', None)
@@ -54,6 +87,7 @@ class Aligner(BaseEstimator):
             return
 
         data = trim_and_pad(dw.unstack(self.data))
+        # noinspection DuplicatedCode
         params = self.fitter(data, **self.kwargs)
         assert type(params) is dict, ValueError('fit function must return a dictionary')
         assert all([r in params.keys() for r in self.required]), ValueError('one or more required fields not'

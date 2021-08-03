@@ -48,6 +48,10 @@ def transformer(data, **kwargs):
 
 
 class HyperAlign(Aligner):
+    """
+    Base class for HyperAlign objects.  Takes a single keyword argument, n_iter, which specifies how many iterations
+    to run (default: 10).
+    """
     def __init__(self, n_iter=10):
         assert n_iter >= 0, 'Number of iterations must be non-negative'
         super().__init__(n_iter=n_iter, required=['proj'], fitter=fitter, transformer=transformer, data=None)
