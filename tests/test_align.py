@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from hypertools.tools.align import align
-from hypertools.tools.load import load
+from hypertools import align
+#from hypertools.tools.load import load
 
 # weights = load('weights')
 weights = [np.random.rand(10, 300) for i in range(3)]
