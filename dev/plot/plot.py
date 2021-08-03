@@ -5,6 +5,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib as mpl
 from pyDOE import ff2n
+from scipy.spatial.distance import pdist, squareform
 
 from matplotlib import pyplot as plt
 
@@ -124,10 +125,26 @@ def get_bounds(data):
 
 
 def plot_bounding_box(bounds, color='k', linewidth=2, ax=ax):
-    for b in bounds.shape[1]:
-        ax.plot()
-    raise NotImplementedError('fix me...')
-    # look here: https://github.com/ContextLab/hypertools-paper-notebooks/blob/master/hypercube.ipynb
+    ndims = bounds.shape[1]
+    lengths = np.abs(np.diff(bounds, axis=0))
+    vertices = (ff2n(ndims) + 1) / 2
+    vertices *= lengths
+    vertices += np.min(bounds, axis=0)
+
+    dists = squareform(pdist(vertices))
+    n_edges = np.sum(dists == lengths) / 2  # FIXME: account for different lengths...
+
+    x = np.zeros([n_edges * 2, ndims])
+    ind = 0
+    for i in range(vertices.shape[0]):
+        for j in range(i):
+            if dists[i, j] == length:  # FIXME: account for different lengths...
+                next_edges = np.zeros([2, ndims])
+                for d in range(ndims):
+                    next_edges[:, d] = [vertices[i, d], vertices[j, d]]
+                x[ind:(ind+2), :] = next_edges
+                ind += 2
+    return ax.plot(x, '-', color=color, linewidth=linewidth)
 
 
 @dw.decorate.funnel
@@ -184,8 +201,6 @@ def plot(data, *fmt, **kwargs):
             plot(d, **dw.core.update_dict(kwargs, opts))
 
     return ax.plot(*data.split(data.shape[1], axis=1), color=color, **kwargs)
-
-
 
 
 # TODO: copy relevant stuff from hypertools_revamp notebook.  key things to do:
