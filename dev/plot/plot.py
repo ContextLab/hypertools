@@ -4,12 +4,11 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib as mpl
-from pyDOE import ff2n
 from scipy.spatial.distance import pdist, squareform
 
 from matplotlib import pyplot as plt
 
-from ..core import get_default_options, apply_model, get, has_all_attributes
+from ..core import get_default_options, apply_model, get, has_all_attributes, fullfact
 from ..align import align, pad
 from ..cluster import cluster
 from ..manip import manip
@@ -124,27 +123,26 @@ def get_bounds(data):
     return np.concatenate([np.nanmin(data, axis=0), np.nanmax(data, axis=0)], axis=0)
 
 
-def plot_bounding_box(bounds, color='k', linewidth=2, ax=ax):
-    ndims = bounds.shape[1]
+def plot_bounding_box(bounds, color='k', linewidth=2, ax=None):
+    if ax is None:
+        ax = plt.gca(projection=f'{bounds.shape[1]}d')
+
+    n_dims = bounds.shape[1]
+    n_vertices = np.power(2, n_dims)
+
     lengths = np.abs(np.diff(bounds, axis=0))
-    vertices = (ff2n(ndims) + 1) / 2
-    vertices *= lengths
-    vertices += np.min(bounds, axis=0)
+    vertices = fullfact(n_dims * [2]) - 1
+    vertices = np.multiply(vertices, np.repeat(lengths, n_vertices, axis=0))
+    vertices += np.repeat(np.atleast_2d(np.min(bounds, axis=0)), n_vertices, axis=0)
 
-    dists = squareform(pdist(vertices))
-    n_edges = np.sum(dists == lengths) / 2  # FIXME: account for different lengths...
-
-    x = np.zeros([n_edges * 2, ndims])
-    ind = 0
-    for i in range(vertices.shape[0]):
+    for i in range(n_vertices):
         for j in range(i):
-            if dists[i, j] == length:  # FIXME: account for different lengths...
-                next_edges = np.zeros([2, ndims])
-                for d in range(ndims):
-                    next_edges[:, d] = [vertices[i, d], vertices[j, d]]
-                x[ind:(ind+2), :] = next_edges
-                ind += 2
-    return ax.plot(x, '-', color=color, linewidth=linewidth)
+            # check for adjacent vertex (match every coordinate except 1)
+            if np.sum([a == b for a, b in zip(vertices[i], vertices[j])]) == n_dims - 1:
+                next_edge = np.concatenate([vertices[i], vertices[j]], axis=0)
+                ax.plot(*[np.array(x).squeeze() for x in np.split(next_edge, n_dims, axis=1)], color=color,
+                        linewidth=linewidth)
+    return ax
 
 
 @dw.decorate.funnel
