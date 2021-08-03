@@ -183,7 +183,7 @@ def plot(data, *fmt, **kwargs):
             opts = {'color': get(colors, i), 'ax': ax}
             plot(d, **dw.core.update_dict(kwargs, opts))
 
-    ax.plot(*data.split(data.shape[1], axis=1), color=color, **kwargs)
+    return ax.plot(*data.split(data.shape[1], axis=1), color=color, **kwargs)
 
 
 
