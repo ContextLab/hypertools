@@ -4,15 +4,19 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib as mpl
-from scipy.spatial.distance import pdist, squareform
+import matplotlib.animation as animation
 
+from scipy.spatial.distance import pdist, squareform
 from matplotlib import pyplot as plt
 
-from ..core import get_default_options, apply_model, get, has_all_attributes, fullfact
+from ..core import get_default_options, apply_model, get, has_all_attributes, fullfact, eval_dict
 from ..align import align, pad
 from ..cluster import cluster
 from ..manip import manip
 from ..reduce import reduce
+
+from .static import static_plot
+from .animate import Animator
 
 defaults = get_default_options()
 
@@ -87,8 +91,10 @@ def mat2colors(m, **kwargs):
 
 
 def parse_style(fmt):
+    default_style = eval_dict(defaults['plot'])
+
     if type(fmt) is not str:
-        return {'color': None, 'linestyle': None, 'marker': None}
+        return dw.core.update_dict({'color': None, 'linestyle': None, 'marker': None}, default_style)
 
     def pop_string(s, sub_s):
         if sub_s in s:
@@ -116,7 +122,7 @@ def parse_style(fmt):
         pass
 
     # noinspection PyUnboundLocalVariable
-    return {'color': color, 'marker': marker, 'linestyle': linestyle}
+    return dw.core.update_dict(default_style, {'color': color, 'marker': marker, 'linestyle': linestyle})
 
 
 def get_bounds(data):
@@ -125,7 +131,11 @@ def get_bounds(data):
 
 def plot_bounding_box(bounds, color='k', linewidth=2, ax=None):
     if ax is None:
-        ax = plt.gca(projection=f'{bounds.shape[1]}d')
+        if bounds.shape[1] == 3:
+            ax = plt.gca(projection='3d')
+        else:
+            assert bounds.shape[1] == 2, ValueError('bounding box must be either 2d or 3d')
+            ax = plt.gca()
 
     n_dims = bounds.shape[1]
     n_vertices = np.power(2, n_dims)
@@ -178,6 +188,7 @@ def plot(data, *fmt, **kwargs):
     if colors is not None:
         color_kwargs = kwargs.pop('color_kwargs', kwargs)
         colors = mat2colors(colors, cmap=cmap, **color_kwargs)
+    kwargs['color'] = colors
 
     if type(data) is list:
         c = np.max([*[d.shape[1] for d in data], 2])
@@ -191,24 +202,33 @@ def plot(data, *fmt, **kwargs):
     else:
         raise ValueError(f'data must be 2D or 3D; given: {c}D')
 
+    bounding_box = kwargs.pop('bounding_box', True)
     data = pad(data, c=c)
-    plot_bounding_box(get_bounds(data), color='k', linewidth=2, ax=ax)
-    if type(data) is list:
-        for i, d in enumerate(data):
-            opts = {'color': get(colors, i), 'ax': ax}
-            plot(d, **dw.core.update_dict(kwargs, opts))
 
-    return ax.plot(*data.split(data.shape[1], axis=1), color=color, **kwargs)
+    if bounding_box:
+        plot_bounding_box(get_bounds(data), color='k', linewidth=2, ax=ax)
+
+    animate = kwargs.pop('animate', False)
+
+    if animate:
+        animation_opts = dw.core.update_dict(eval_dict(defaults['animate']), kwargs)
+        camera_angles = np.linspace(0, animation_opts['rotations'] * 360,
+                                    animation_opts['duration'] * animation_opts['framerate'] + 1)[:-1]
+        animator = Animator(ax, data, mode, angles, zooms, animation_opts)
+        return animation.FuncAnimation(plt.gcf(), animator, frames=len(camera_angles),
+                                       interval=1000 / animation_opts['framerate'], blit=True)
+
+    return static_plot(data, **kwargs)
 
 
 # TODO: copy relevant stuff from hypertools_revamp notebook.  key things to do:
 #  1.) funnel data (DONE)
-#  2.) specify default reduce args if n_dims > 3 after applying other stuff
+#  2.) specify default reduce args if n_dims > 3 after applying other stuff (DONE)
 #  3.) allow optional calls to reduce (overwrite), cluster, manipulate, and align.
-#      user specifies order via a list of models (similar to sklearn Pipeline)
-#  4.) parse plot-specific arguments (defaults specified in config.ini)
+#      user specifies order via a list of models (similar to sklearn Pipeline) (DONE)
+#  4.) parse plot-specific arguments (defaults specified in config.ini) (DONE)
 #  5.) handle multi-index dataframes
-#  6.) draw bounding box
+#  6.) draw bounding box (DONE)
 #  7.) move/position the camera as needed
 #  8.) given current plotting backend, generate the plot
 #    a.) to generate an animation, do steps 1--6 and then filter data and/or adjust camera for each animation frame

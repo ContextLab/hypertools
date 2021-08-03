@@ -25,3 +25,14 @@ def fullfact(dims):
         inds[row:(row + len(vals)), 1:] = np.tile(aftervals[i, :], (len(vals), 1))
         row += len(vals)
     return inds
+
+
+def eval_dict(d):
+    for k, v in d.items():
+        if type(v) is dict:
+            d[k] = eval_dict(v)
+        elif type(v) is str:
+            d[k] = eval(v)
+        else:
+            d[k] = v
+    return d
