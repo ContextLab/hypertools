@@ -27,14 +27,51 @@ externals = ['ppca', 'brainiak']
 
 
 def has_all_attributes(x, attributes):
+    """
+    Check if the given object has *all* of the given attributes
+
+    Parameters
+    ----------
+    :param x: object to check
+    :param attributes: a list of strings specifying the attributes to check
+
+    Returns
+    -------
+    :return: True if x contains *all* of the given attributes and False otherwise.
+    """
     return all([hasattr(x, a) for a in attributes])
 
 
 def has_any_attributes(x, attributes):
+    """
+    Check if the given object has *any* of the given attributes
+
+    Parameters
+    ----------
+    :param x: object to check
+    :param attributes: a list of strings specifying the attributes to check
+
+    Returns
+    -------
+    :return: True if x contains *any* of the given attributes and False otherwise.
+    """
     return any([hasattr(x, a) for a in attributes])
 
 
 def get_model(x, search=None):
+    """
+    Return a scikit-learn or hugging-face model
+
+    Parameters
+    ----------
+    :param x: either a valid model object or a string with a model's name
+    :param search: (optional) specify which Python modules to search over to find the model (default: None; directs
+      the function to search over all available modules)
+
+    Returns
+    -------
+    :return: an instance of the given model if found, and None otherwise
+    """
     if search is None:
         search = [*sklearn_modules, *flair_embeddings, *aligners, *manipulators, *externals]
 
@@ -87,7 +124,36 @@ def get_sklearn_method(x, mode):
     return helper(mode)
 
 
+# noinspection PyIncorrectDocstring
 def apply_model(data, model, *args, return_model=False, search=None, **kwargs):
+    """
+    Apply one or more models to a dataset.  Similar to scikit-learn Pipelines:
+    https://scikit-learn.org/stable/modules/classes.html#module-sklearn.pipeline
+
+    Parameters
+    ----------
+    :param data: any hypertools-compatible dataset
+    :param model: any scikit-learn compatible model, any hugging-face model, any string (naming a scikit-learn or
+      hugging-face model), or a list of models to be applied in sequence (each model fits and then transforms the output
+      of the previous step in the pipeline).  For additional customization, models may be specified as dictionaries
+      with the following fields:
+        - 'model': one or more models
+        - 'args': a list of unnamed arguments to be passed into the fit function (after the data argument)
+        - 'kwargs': a list of keyword arguments, to be passed to the model's initializer function
+    :param args: a list of unnamed arguments to be passed into *all* model's fit functions (appended to model['args'])
+    :param return_model: if True, return the fitted model (or list of fitted models) in addition to the transformed
+      dataset (default: False).
+    :param search: used to narrow the scope of the search for models, which can result in faster runtimes.  This is
+      passed to the get_model function.  (Default: None)
+    :param mode: one of: 'fit', 'predict', 'predict_proba', 'embed', 'fit_transform', 'fit_predict', or
+      'fit_predict_proba' (default: 'fit_transform').  Specifies whether to fit (only), transform/predict/embed (only),
+      or fit AND transform/predict.
+
+    Returns
+    -------
+    :return: either the transformed data (if return_model is False) or the transformed data and the fitted model(s) (if
+      return_model is True)
+    """
     mode = kwargs.pop('mode', 'fit_transform')
     custom = kwargs.pop('custom', False)
 
