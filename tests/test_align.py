@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import numpy as np
 import hypertools as hyp
 
@@ -9,23 +7,28 @@ spiral = hyp.load('spiral')
 
 def test_procrustes():
     rot = np.array([[-0.89433495, -0.44719485, -0.01348182],
-           [-0.43426149,  0.87492975, -0.21427761],
-           [-0.10761949,  0.18578133,  0.97667976]])
-    data2 = np.dot(data1, rot)
-    result = align([data1,data2])
-    assert np.allclose(result[0],result[1])
+                    [-0.43426149,  0.87492975, -0.21427761],
+                    [-0.10761949,  0.18578133,  0.97667976]])
+
+    aligned_spirals1 = np.dot(spiral[1], rot)
+    aligned_spirals2 = hyp.align(spiral, model='Procrustes')
+    aligned_spirals3, procrustes = hyp.align(spiral, model='Procrustes', return_model=True)
+
+    assert np.allclose(aligned_spirals1, aligned_spirals2[1])
+    assert all([np.allclose(a, b) for a, b in zip(aligned_spirals2, aligned_spirals3)])
+    assert np.allclose(procrustes['model']['proj'], rot)
 
 
-def test_hyper():
+def test_hyperalign():
     rot = np.array([[-0.89433495, -0.44719485, -0.01348182],
            [-0.43426149,  0.87492975, -0.21427761],
            [-0.10761949,  0.18578133,  0.97667976]])
     data2 = np.dot(data1, rot)
     result = align([data1,data2], align='hyper')
-    assert np.allclose(result[0],result[1], rtol=1) #note: this tolerance is probably too high, but fails at anything lower
+    assert np.allclose(result[0],result[1], rtol=1)
 
 
-def test_SRM():
+def test_shared_response_model():
     rot = np.array([[-0.89433495, -0.44719485, -0.01348182],
            [-0.43426149,  0.87492975, -0.21427761],
            [-0.10761949,  0.18578133,  0.97667976]])
@@ -34,12 +37,24 @@ def test_SRM():
     assert np.allclose(result[0],result[1], rtol=1)
 
 
-def test_align_shapes():
-    # Should return data with the same shape as input data
-    aligned = align(weights)
-    assert all(al.shape == wt.shape for al, wt in zip(aligned, weights))
+def test_robust_shared_response_model():
+    pass
 
 
-def test_align_geo():
-    aligned = align(geo)
-    assert np.allclose(aligned[0], aligned[1])
+def test_null_align():
+    pass
+
+
+def test_deterministic_shared_response_model():
+    pass
+
+
+def test_pad():
+    pass
+
+
+def test_trim_and_pad():
+    pass
+
+
+test_procrustes()
