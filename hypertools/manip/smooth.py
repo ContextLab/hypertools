@@ -5,7 +5,7 @@ import pandas as pd
 import scipy.interpolate as interpolate
 from scipy.signal import savgol_filter
 
-from .manip import Manipulator
+from .common import Manipulator
 
 
 def resample_and_smooth(traj, kernel_width, N=500, order=3, min_val=0):

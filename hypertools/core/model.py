@@ -1,13 +1,14 @@
 # noinspection PyPackageRequirements
 import datawrangler as dw
+# noinspection PyPackageRequirements
+import umap
+
 import numpy as np
 import os
 import sklearn
 import flair
-import umap
 from sklearn.experimental import enable_hist_gradient_boosting, enable_iterative_imputer, enable_halving_search_cv
 
-from ..align import srm, procrustes, hyperalign, null
 from ..external import ppca, brainiak
 
 defaults = dw.core.get_default_options('config.ini')
@@ -21,8 +22,6 @@ sklearn_modules = ['calibration', 'cluster', 'compose', 'covariance', 'cross_dec
 sklearn_modules = [f'sklearn.{m}' for m in sklearn_modules]
 sklearn_modules.append('umap')
 flair_embeddings = [f'flair.embeddings.{f}' for f in dir(flair.embeddings) if 'embedding' in f.lower()]
-aligners = ['srm', 'procrustes', 'hyperalign', 'null']
-manipulators = ['..manip']
 externals = ['ppca', 'brainiak']
 
 
@@ -78,7 +77,10 @@ def get_model(x, search=None):
     if type(x) is str:
         for m in search:
             try:
-                exec(f'import {m}.{x}', globals())
+                if type(m) is str:
+                    exec(f'import {m}.{x}', globals())
+                elif hasattr(m, x):
+                    exec(f'{x} = m.{x}', globals())
                 return eval(f'{m}.{x}')
             except ModuleNotFoundError:
                 continue

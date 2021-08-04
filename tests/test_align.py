@@ -1,14 +1,10 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
+import hypertools as hyp
 
-from hypertools import align
-#from hypertools.tools.load import load
-
-# weights = load('weights')
-weights = [np.random.rand(10, 300) for i in range(3)]
-geo = load('spiral')
-data1 = geo.get_data()[0]
+weights = hyp.load('weights')
+spiral = hyp.load('spiral')
 
 
 def test_procrustes():

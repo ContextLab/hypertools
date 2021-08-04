@@ -1,10 +1,15 @@
 # noinspection PyPackageRequirements
 import datawrangler as dw
+import os
+
+from pkg_resources import get_distribution
+
+
 
 __version__ = get_distribution('hypertools')
 
 
-def get_default_options(fname='config.ini'):
+def get_default_options(fname=None):
     """
     Parse a config.ini file
 
@@ -16,4 +21,7 @@ def get_default_options(fname='config.ini'):
     :return: A dictionary whose keys are function names and whose values are dictionaries of default arguments and
     keyword arguments
     """
+    if fname is None:
+        fname = os.path.join(os.path.dirname(__file__), 'config.ini')
+
     return dw.core.update_dict(dw.core.get_default_options(), dw.core.get_default_options(fname))

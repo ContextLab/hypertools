@@ -1,2 +1,2 @@
-from brainiak import SRM, DetSRM, RSRM
-from ppca import PPCA
+from .brainiak import SRM, DetSRM, RSRM
+from .ppca import PPCA

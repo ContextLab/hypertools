@@ -83,9 +83,6 @@ from typing import Iterable
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-from .._shared.exceptions import HypertoolsBackendError
-
-
 BACKEND_KEYS = {
     'TkAgg': 'tk',
     'GTK3Agg': ['gtk3', 'gtk'],
@@ -450,7 +447,7 @@ def _switch_backend_regular(backend):
 
     Raises
     ------
-    HypertoolsBackendError
+    RuntimeError
         if switching the backend fails
 
     """
@@ -467,7 +464,7 @@ def _switch_backend_regular(backend):
             err_msg = ("An unexpected error occurred while trying to switch "
                        f"the plotting backend to {backend}")
 
-        raise HypertoolsBackendError(err_msg) from e
+        raise RuntimeError(err_msg) from e
 
 
 def _switch_backend_notebook(backend):
@@ -542,12 +539,12 @@ def _switch_backend_notebook(backend):
     elif output_msg.startswith('Warning: Cannot change to a different GUI toolkit'):
         try:
             _switch_backend_regular(backend)
-        except HypertoolsBackendError as e:
+        except RuntimeError as e:
             err_msg = (f'Failed to switch plotting backend to "{backend}" via '
                        f"IPython with the following message:\n\t{output_msg}\n\n"
                        f"Fell back to switching via matplotlib and failed with "
                        f"the above error")
-            raise HypertoolsBackendError(err_msg) from e
+            raise RuntimeError(err_msg) from e
 
     if backend != 'inline':
         while flush_figures in IPYTHON_INSTANCE.events.callbacks['post_execute']:

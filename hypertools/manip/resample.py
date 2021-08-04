@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import scipy.interpolate as interpolate
 
-from .manip import Manipulator
+from .common import Manipulator
 
 
 @dw.decorate.apply_stacked

@@ -3,7 +3,7 @@ import datawrangler as dw
 import numpy as np
 import pandas as pd
 
-from .manip import Manipulator
+from .common import Manipulator
 
 
 # noinspection PyShadowingBuiltins
