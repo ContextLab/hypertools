@@ -1,7 +1,11 @@
+# noinspection PyPackageRequirements
+import datawrangler as dw
 import numpy as np
 
 from .procrustes import Procrustes
 from .common import Aligner
+
+from ..core import get_default_options
 
 
 def fitter(data, n_iter=10):
@@ -21,21 +25,24 @@ def fitter(data, n_iter=10):
         # STEP 1: TEMPLATE
         template = np.copy(x[0])
         for j in range(1, len(x)):
-            p = Procrustes()
-            template += p.fit_transform(x[j], template / (j + 1))
+            p = Procrustes(target=template / j)
+            template += p.fit_transform(x[j])
         template /= len(x)
 
         # STEP 2: NEW COMMON TEMPLATE
         #  - align each subj to template
         template2 = np.zeros_like(template)
         for j in range(0, len(x)):
-            p = Procrustes()
-            template2 += p.fit_transform(x[j], template)
+            p = Procrustes(target=template)
+            template2 += p.fit_transform(x[j])
         template2 /= len(x)
 
         # align each subj to template2
-        p = [Procustes() for _ in x]
-        x = [m.fit(i, template2) for i in x]
+        p = [Procustes(target=template2) for _ in x]
+        x = [m.fit(i) for m, i in zip(p, x)]
+
+    p = [Procustes(target=template2) for _ in data]
+    _ = [m.fit(d) for m, d in zip(p, data)]
     return {'proj': p}
 
 
@@ -52,6 +59,15 @@ class HyperAlign(Aligner):
     Base class for HyperAlign objects.  Takes a single keyword argument, n_iter, which specifies how many iterations
     to run (default: 10).
     """
-    def __init__(self, n_iter=10):
-        assert n_iter >= 0, 'Number of iterations must be non-negative'
-        super().__init__(n_iter=n_iter, required=['proj'], fitter=fitter, transformer=transformer, data=None)
+    def __init__(self, **kwargs):
+        opts = dw.core.update_dict(get_default_options()['HyperAlign'], kwargs)
+        assert opts['n_iter'] >= 0, 'Number of iterations must be non-negative'
+        required = ['proj', 'n_iter']
+        super().__init__(required=required, fitter=fitter, transformer=transformer, data=None, **opts)
+
+        for k, v in opts.items():
+            setattr(self, k, v)
+        self.required = required
+        self.fitter = fitter
+        self.transformer = transformer
+        self.data = None

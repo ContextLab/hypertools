@@ -9,7 +9,12 @@ from ..core import get_default_options
 
 
 def align(source, target, scaling=True, reflection=True, reduction=False, oblique=False, oblique_rcond=-1):
-    datas = (source.values, target.values)
+    if hasattr(source, 'values'):
+        source = getattr(source, 'values')
+    if hasattr(target, 'values'):
+        target = getattr(target, 'values')
+
+    datas = (source, target)
     sn, sm = source.shape
     tn, tm = target.shape
 
@@ -111,20 +116,17 @@ def fitter(data, **kwargs):
 
     if type(data) is list:
         if len(data) == 0:
-            return dw.core.update_dict({'proj': []}, kwargs)
-        elif len(data) == 1:
-            return dw.core.update_dict({'proj': np.eye(data[0].shape[1])}, kwargs)
-        if target is None:
-            target = data[0]
-    elif target is None:
-        return dw.core.update_dict({'proj': []}, kwargs)
-
-    if type(data) == list:
-        return dw.core.update_dict({'proj': [align(d, target, **kwargs) for d in data], 'index': index}, kwargs)
+            proj = []
+        else:
+            if target is None:
+                target = data[0]
+            proj = [align(d, target, **kwargs) for d in data]
     elif target is not None:
-        return dw.core.update_dict({'proj': align(data, target, **kwargs), 'index': index}, kwargs)
+        proj = align(data, target, **kwargs)
     else:
-        return dw.core.update_dict({'proj': [], 'index': index}, kwargs)
+        proj = align(data, data, **kwargs)
+
+    return dw.core.update_dict(kwargs, {'index': index, 'proj': proj})
 
 
 def transformer(data, **kwargs):
