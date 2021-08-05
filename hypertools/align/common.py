@@ -107,7 +107,7 @@ class Aligner(BaseEstimator):
 
         data = trim_and_pad(dw.unstack(self.data))
         required_params = {r: getattr(self, r) for r in self.required}
-        return [self.transformer(d, **dw.core.update_dict(required_params, self.kwargs)) for d in data]
+        return self.transformer(data, **dw.core.update_dict(required_params, self.kwargs))
 
     def fit_transform(self, data):
         self.fit(data)

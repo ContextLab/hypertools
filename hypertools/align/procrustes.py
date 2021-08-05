@@ -1,6 +1,7 @@
 # noinspection PyPackageRequirements
 import datawrangler as dw
 import numpy as np
+import pandas as pd
 
 from .common import Aligner
 
@@ -8,9 +9,12 @@ from ..core import get_default_options
 
 
 def align(source, target, scaling=True, reflection=True, reduction=False, oblique=False, oblique_rcond=-1):
-    datas = (source, target)
+    datas = (source.values, target.values)
     sn, sm = source.shape
     tn, tm = target.shape
+
+    if np.allclose(source.shape, target.shape) and np.allclose(source, target):
+        return np.eye(source.shape[1])
 
     # Check the sizes
     if sn != tn:
@@ -98,7 +102,7 @@ def xform(data, proj):
 
     # Do projection
     res = (d * proj).A
-    return res
+    return pd.DataFrame(data=res, index=data.index)
 
 
 def fitter(data, **kwargs):
@@ -109,10 +113,11 @@ def fitter(data, **kwargs):
         if len(data) == 0:
             return dw.core.update_dict({'proj': []}, kwargs)
         elif len(data) == 1:
-            return dw.core.update_dict({'proj': np.eye(data.shape[1])}, kwargs)
-    else:
+            return dw.core.update_dict({'proj': np.eye(data[0].shape[1])}, kwargs)
         if target is None:
             target = data[0]
+    elif target is None:
+        return dw.core.update_dict({'proj': []}, kwargs)
 
     if type(data) == list:
         return dw.core.update_dict({'proj': [align(d, target, **kwargs) for d in data], 'index': index}, kwargs)

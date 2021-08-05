@@ -6,17 +6,17 @@ spiral = hyp.load('spiral')
 
 
 def test_procrustes():
-    rot = np.array([[-0.89433495, -0.44719485, -0.01348182],
-                    [-0.43426149,  0.87492975, -0.21427761],
-                    [-0.10761949,  0.18578133,  0.97667976]])
+    rot = np.array([[-0.50524616, -0.48383773, -0.71458195],
+                    [-0.86275536,  0.26450786,  0.43091621],
+                    [-0.01948098,  0.83422817, -0.55107518]])
 
     aligned_spirals1 = np.dot(spiral[1], rot)
     aligned_spirals2 = hyp.align(spiral, model='Procrustes')
     aligned_spirals3, procrustes = hyp.align(spiral, model='Procrustes', return_model=True)
 
-    assert np.allclose(aligned_spirals1, aligned_spirals2[1])
+    assert np.allclose(aligned_spirals2[0], aligned_spirals2[1])
     assert all([np.allclose(a, b) for a, b in zip(aligned_spirals2, aligned_spirals3)])
-    assert np.allclose(procrustes['model']['proj'], rot)
+    assert np.allclose(procrustes['model'].proj, rot)
 
 
 def test_hyperalign():
