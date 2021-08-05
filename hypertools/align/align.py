@@ -11,7 +11,7 @@ from ..core.model import apply_model, has_all_attributes
 from ..core.shared import unpack_model
 
 
-@dw.decorate.apply_unstacked
+@dw.decorate.funnel
 def align(data, model='HyperAlign', **kwargs):
     """
     Align a datasets to itself or a supplied template, using the procrustean transformation, hyperalignment, or

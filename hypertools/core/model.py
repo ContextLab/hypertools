@@ -72,7 +72,7 @@ def get_model(x, search=None):
     :return: an instance of the given model if found, and None otherwise
     """
     if search is None:
-        search = [*sklearn_modules, *flair_embeddings, *aligners, *manipulators, *externals]
+        search = [*sklearn_modules, *flair_embeddings, *externals]
 
     if type(x) is str:
         for m in search:
@@ -86,10 +86,7 @@ def get_model(x, search=None):
                 continue
         return None
     elif callable(x):
-        if hasattr(x, 'fit') and has_any_attributes(x, ['transform', 'fit_transform', 'predict', 'fit_predict',
-                                                        'predict_proba']) or \
-                hasattr(x, 'embed'):
-            return x
+        return x
     raise ValueError(f'unknown model: {x}')
 
 

@@ -8,7 +8,7 @@ def unpack_model(m, valid=None, parent_class=None):
         valid = []
     
     if (type(m) is str) and m in [v.__name__ for v in valid]:
-        return eval(m)
+        return [v for v in valid if v.__name__ == m][0]
     elif parent_class is not None and issubclass(m, parent_class):
         return m
     elif type(m) is dict and has_all_attributes(m, ['model', 'args', 'kwargs']):

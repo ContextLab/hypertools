@@ -1,6 +1,8 @@
 # noinspection PyPackageRequirements
 import datawrangler as dw
 
+from .backend import manage_backend
+
 from ..core import get_default_options, eval_dict
 
 defaults = eval_dict(get_default_options()['plot'])
@@ -20,6 +22,7 @@ def group_mean(x):
     return means
 
 
+@manage_backend
 def static_plot(data, **kwargs):
     kwargs = dw.core.update_dict(defaults, kwargs)
 
