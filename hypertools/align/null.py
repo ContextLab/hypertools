@@ -15,4 +15,4 @@ class NullAlign(Aligner):
     trimming and padding it.
     """
     def __init__(self):
-        super().__init__(nrequired=[], fitter=fitter, transformer=transformer, data=None)
+        super.__init__(nrequired=[], fitter=fitter, transformer=transformer, data=None)

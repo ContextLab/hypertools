@@ -2,12 +2,13 @@
 import datawrangler as dw
 # noinspection PyPackageRequirements
 import umap
-
 import numpy as np
 import os
 import sklearn
 import flair
 from sklearn.experimental import enable_hist_gradient_boosting, enable_iterative_imputer, enable_halving_search_cv
+
+from .configurator import get_default_options
 
 from ..external import ppca, brainiak
 
@@ -100,25 +101,25 @@ def get_sklearn_method(x, mode):
             raise ValueError(f'mode not supported for {x}: {m}')
 
     if 'transform' in mode:  # transform or fit_transform
-        if hasattr(model, 'transform'):
+        if hasattr(x, 'transform'):
             return helper(mode)
-        elif hasattr(model, 'predict'):
+        elif hasattr(x, 'predict'):
             return helper(mode.replace('transform', 'predict'))
-        elif hasattr(model, 'predict_proba'):
+        elif hasattr(x, 'predict_proba'):
             return helper(mode.replace('transform', 'predict_proba'))
     elif 'predict_proba' in mode:  # predict_proba or fit_predict_proba
-        if hasattr(model, 'predict_proba'):
+        if hasattr(x, 'predict_proba'):
             return helper(mode)
-        elif hasattr(model, 'transform'):
+        elif hasattr(x, 'transform'):
             return helper(mode.replace('predict_proba', 'transform'))
-        elif hasattr(model, 'predict'):
+        elif hasattr(x, 'predict'):
             return helper(mode.replace('predict_proba', 'predict'))
     elif 'predict' in mode:  # predict or fit_predict
-        if hasattr(model, 'predict'):
+        if hasattr(x, 'predict'):
             return helper(mode)
-        elif hasattr(model, 'transform'):
+        elif hasattr(x, 'transform'):
             return helper(mode.replace('predict', 'transform'))
-        elif hasattr(model, 'predict_proba'):
+        elif hasattr(x, 'predict_proba'):
             return helper(mode.replace('transform', 'predict_proba'))
     return helper(mode)
 
@@ -177,7 +178,7 @@ def apply_model(data, model, *args, return_model=False, search=None, **kwargs):
         if return_model:
             return tranformed_data, {'model': model, 'args': args, 'kwargs': kwargs}
     else:
-        model = dw.core.apply_defaults(get_model(model, search=search))(*args, **kwargs)
+        model = dw.core.apply_defaults(get_model(model, search=search), get_default_options())(*args, **kwargs)
         if dw.zoo.text.is_hugging_face_model(model):
             return dw.zoo.text.apply_text_model(model, data, *args, mode=mode, return_model=return_model, **kwargs)
         f = get_sklearn_method(model, mode)

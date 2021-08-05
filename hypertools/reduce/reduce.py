@@ -13,10 +13,11 @@ defaults = get_default_options()
 @dw.decorate.apply_stacked
 def reduce(data, model='IncrementalPCA', **kwargs):
     n_components = kwargs.pop('n_components', eval(defaults['reduce']['n_components']))
+    kwargs['n_components'] = n_components
 
     if data.shape[1] > n_components:
         return apply_model(data, model, search=['decomposition', 'manifold', 'mixture', 'umap', 'ppca'],
-                           n_components=n_components, **kwargs)
+                           **dw.core.update_dict(get_default_options()['reduce'], kwargs))
     elif data.shape[1] == n_components:
         return data
     else:

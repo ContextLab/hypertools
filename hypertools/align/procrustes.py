@@ -4,6 +4,8 @@ import numpy as np
 
 from .common import Aligner
 
+from ..core import get_default_options
+
 
 def align(source, target, scaling=True, reflection=True, reduction=False, oblique=False, oblique_rcond=-1):
     datas = (source, target)
@@ -101,6 +103,7 @@ def xform(data, proj):
 
 def fitter(data, **kwargs):
     target = kwargs.pop('target', None)
+    index = kwargs.pop('index', 0)
 
     if type(data) is list:
         if len(data) == 0:
@@ -112,11 +115,11 @@ def fitter(data, **kwargs):
             target = data[0]
 
     if type(data) == list:
-        return dw.core.update_dict({'proj': [align(d, target, **kwargs) for d in data]}, kwargs)
+        return dw.core.update_dict({'proj': [align(d, target, **kwargs) for d in data], 'index': index}, kwargs)
     elif target is not None:
-        return dw.core.update_dict({'proj': align(data, target, **kwargs)}, kwargs)
+        return dw.core.update_dict({'proj': align(data, target, **kwargs), 'index': index}, kwargs)
     else:
-        return dw.core.update_dict({'proj': []}, kwargs)
+        return dw.core.update_dict({'proj': [], 'index': index}, kwargs)
 
 
 def transformer(data, **kwargs):
@@ -140,7 +143,7 @@ def transformer(data, **kwargs):
         return xform(data, proj)
 
 
-class Procrustes:
+class Procrustes(Aligner):
     """
     Base class for Procrustes objects.  Takes several keyword arguments that specify which transformations are allowed:
 
@@ -151,8 +154,16 @@ class Procrustes:
     :param target: Optional argument for specifying a target dataset to align data to.  If not specified, data are
       aligned to the first DataFrame in the given list.
     """
-    def __init__(self, scaling=True, reflection=True, reduction=False, oblique=False, oblique_rcond=-1, target=None):
-        super().__init__(scaling=scaling, reflection=reflection, reduction=reduction, oblique=oblique,
-                         oblique_rcond=oblique_rcond, required=['scaling', 'reflection', 'reduction', 'oblique',
-                                                                'oblique_rcond', 'proj', 'index'],
-                         fitter=fitter, transformer=transformer, data=None, target=target, index=0)
+    def __init__(self, **kwargs):
+        opts = dw.core.update_dict(get_default_options()['Procrustes'], kwargs)
+        required = ['scaling', 'reflection', 'reduction', 'oblique', 'oblique_rcond', 'proj', 'index']
+        super().__init__(required=required, **opts,
+                         fitter=fitter, transformer=transformer, data=None)
+
+        for k, v in opts.items():
+            setattr(self, k, v)
+        self.required = required
+        self.fitter = fitter
+        self.transformer = transformer
+        self.data = None
+

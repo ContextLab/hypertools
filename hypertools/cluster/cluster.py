@@ -1,7 +1,7 @@
 # noinspection PyPackageRequirements
 import datawrangler as dw
 
-from ..core.model import apply_model
+from ..core import apply_model, get_default_options
 
 
 @dw.decorate.apply_stacked
@@ -28,4 +28,5 @@ def cluster(data, model='KMeans', **kwargs):
     -------
     :return: a DataFrame (or list of DataFrames) containing the cluster labels or mixture proportions
     """
-    return apply_model(data, model, search=['cluster', 'mixture'], **kwargs)
+    return apply_model(data, model, search=['cluster', 'mixture'],
+                       **dw.core.update_dict(get_default_options()['cluster'], kwargs))

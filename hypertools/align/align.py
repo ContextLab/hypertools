@@ -7,8 +7,7 @@ from .procrustes import Procrustes
 from .srm import SharedResponseModel, DeterministicSharedResponseModel, RobustSharedResponseModel
 from .common import Aligner
 
-from ..core.model import apply_model, has_all_attributes
-from ..core.shared import unpack_model
+from ..core import apply_model, has_all_attributes, unpack_model, get_default_options
 
 
 @dw.decorate.funnel
@@ -33,4 +32,5 @@ def align(data, model='HyperAlign', **kwargs):
     """
     aligners = [HyperAlign, SharedResponseModel, RobustSharedResponseModel,
                 DeterministicSharedResponseModel, Procrustes]
-    return apply_model(data, unpack_model(model, valid=aligners, parent_class=Aligner), **kwargs)
+    return apply_model(data, unpack_model(model, valid=aligners, parent_class=Aligner),
+                       **dw.core.update_dict(get_default_options()['align'], kwargs))
