@@ -31,6 +31,6 @@ def align(data, model='HyperAlign', **kwargs):
     :returns: aligned data (as a DataFrame or a list of DataFrames)
     """
     aligners = [HyperAlign, SharedResponseModel, RobustSharedResponseModel,
-                DeterministicSharedResponseModel, Procrustes]
+                DeterministicSharedResponseModel, Procrustes, NullAlign]
     return apply_model(data, unpack_model(model, valid=aligners, parent_class=Aligner),
                        **dw.core.update_dict(get_default_options()['align'], kwargs))

@@ -766,7 +766,9 @@ class RSRM(BaseEstimator, TransformerMixin):
                 r[subject], s[subject] = self._transform_new_data(X[subject],
                                                                   subject)
 
-        return r, s
+        # modified from https://github.com/brainiak/brainiak/blob/ee093597c6c11597b0a59e95b48d2118e40394a5/brainiak/funcalign/rsrm.py#L191
+        # to only return the shared response, rather than BOTH the shared responses and the original data
+        return r
 
     def _transform_new_data(self, X, subject):
         """Transform new data for a subjects by projecting to the shared subspace and

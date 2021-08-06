@@ -5,7 +5,7 @@ import pandas as pd
 
 from .common import Aligner
 
-from ..core import get_default_options
+from ..core import get_default_options, eval_dict
 
 
 def align(source, target, scaling=True, reflection=True, reduction=False, oblique=False, oblique_rcond=-1):
@@ -162,7 +162,7 @@ class Procrustes(Aligner):
       aligned to the first DataFrame in the given list.
     """
     def __init__(self, **kwargs):
-        opts = dw.core.update_dict(get_default_options()['Procrustes'], kwargs)
+        opts = dw.core.update_dict(eval_dict(get_default_options()['Procrustes']), kwargs)
         required = ['scaling', 'reflection', 'reduction', 'oblique', 'oblique_rcond', 'proj', 'index']
         super().__init__(required=required, **opts,
                          fitter=fitter, transformer=transformer, data=None)
@@ -173,4 +173,3 @@ class Procrustes(Aligner):
         self.fitter = fitter
         self.transformer = transformer
         self.data = None
-
