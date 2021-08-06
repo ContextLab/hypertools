@@ -79,10 +79,10 @@ def get_model(x, search=None):
         for m in search:
             try:
                 if type(m) is str:
-                    exec(f'import {m}.{x}', globals())
+                    exec(f'from {m} import {x}', globals())
+                    return eval(x)
                 elif hasattr(m, x):
-                    exec(f'{x} = m.{x}', globals())
-                return eval(f'{m}.{x}')
+                    return getattr(m, x)
             except ModuleNotFoundError:
                 continue
         return None
@@ -97,6 +97,10 @@ def get_sklearn_method(x, mode):
             return getattr(x, m)
         elif ('fit' in mode) and has_all_attributes(x, ['fit', m.replace('fit_', '')]):
             return [getattr(x, 'fit'), getattr(x, m.replace('fit_', ''))]
+        elif ('transform' in mode) and hasattr(x, m.replace('transform', 'predict')):
+            return getattr(x, m.replace('transform', 'predict'))
+        elif ('transform' in mode) and hasattr(x, m.replace('transform', 'predict_proba')):
+            return getattr(x, m.replace('transform', 'predict_proba'))
         else:
             raise ValueError(f'mode not supported for {x}: {m}')
 
@@ -121,7 +125,15 @@ def get_sklearn_method(x, mode):
             return helper(mode.replace('predict', 'transform'))
         elif hasattr(x, 'predict_proba'):
             return helper(mode.replace('transform', 'predict_proba'))
-    return helper(mode)
+
+    if hasattr(x, 'fit_predict'):
+        return helper('fit_predict')
+    elif hasattr(x, 'fit_transform'):
+        return helper('fit_transform')
+    elif hasattr(x, 'fit_predict_proba'):
+        return helper('fit_predict_proba')
+    else:
+        return helper(mode)
 
 
 # noinspection PyIncorrectDocstring

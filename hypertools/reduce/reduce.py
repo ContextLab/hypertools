@@ -16,7 +16,8 @@ def reduce(data, model='IncrementalPCA', **kwargs):
     kwargs['n_components'] = n_components
 
     if data.shape[1] > n_components:
-        return apply_model(data, model, search=['decomposition', 'manifold', 'mixture', 'umap', 'ppca'],
+        return apply_model(data, model, search=['sklearn.decomposition', 'sklearn.manifold', 'sklearn.mixture',
+                                                'umap', 'ppca'],
                            **dw.core.update_dict(get_default_options()['reduce'], kwargs))
     elif data.shape[1] == n_components:
         return data
