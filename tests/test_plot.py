@@ -32,3 +32,7 @@ def test_animated_plot3d():
     # also test saving in various formats
     pass
 
+
+def test_backend_management():
+    # not implemented
+    pass

@@ -159,12 +159,3 @@ hyp.plot(array, '.', n_clusters=10)
 ```
 
 ![Cluster Example](images/cluster_example.png)
-
-
-## Describe
-
-```
-import hypertools as hyp
-hyp.tools.describe(list_of_arrays, reduce='PCA', max_dims=14)
-```
-![Describe Example](images/describe_example.png)
