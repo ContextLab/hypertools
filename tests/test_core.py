@@ -1,3 +1,5 @@
+# noinspection PyPackageRequirements
+import datawrangler as dw
 import numpy as np
 import pandas as pd
 
@@ -76,11 +78,32 @@ def test_get_model():
             assert hypertools_model is sklearn_model
 
 
-test_get_model()
-
-
 def test_apply_model():
-    pass
+    # single dataset
+    x = hyp.core.apply_model(np.random.randn(10, 20), 'Binarizer')
+    assert all([i in [0, 1] for i in np.unique(x)])
+
+    pca = {'model': 'PCA', 'args': [], 'kwargs': {'n_components': 5}}
+    x = hyp.core.apply_model(np.random.randn(100, 10), model=pca)
+    assert x.shape == (100, 5)
+
+    # list of arrays
+    x = hyp.core.apply_model([np.random.randn(10, 5) for _ in range(3)], 'MinMaxScaler')
+    assert type(x) is list
+    assert len(x) == 3
+    assert all([i.shape == (10, 5) for i in x])
+    assert all([dw.util.btwn(i, 0, 1) for i in x])
+
+    # multiple models, multiple datasets
+    incremental_pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 3}}
+    x = hyp.core.apply_model([np.random.randn(100, 10) for _ in range(5)], model=[pca, 'MinMaxScalar', 'Binarizer',
+                                                                                  incremental_pca])
+    assert type(x) is list
+    assert len(x) == 5
+    assert all([i.shape == (100, 3) for i in x])
+
+
+test_apply_model()
 
 
 def test_has_all_attributes():

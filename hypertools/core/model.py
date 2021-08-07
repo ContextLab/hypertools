@@ -3,6 +3,7 @@ import datawrangler as dw
 # noinspection PyPackageRequirements
 import umap
 import numpy as np
+import pandas as pd
 import os
 import importlib
 import sklearn
@@ -146,7 +147,8 @@ def apply_model(data, model, *args, return_model=False, search=None, **kwargs):
 
     Parameters
     ----------
-    :param data: any hypertools-compatible dataset
+    :param data: a pandas DataFrame, 2D numpy array, or a list of DataFrames or arrays (must have the same numbers of
+      columns).  Only numerical data is supported.
     :param model: any scikit-learn compatible model, any hugging-face model, any string (naming a scikit-learn or
       hugging-face model), or a list of models to be applied in sequence (each model fits and then transforms the output
       of the previous step in the pipeline).  For additional customization, models may be specified as dictionaries
@@ -168,44 +170,71 @@ def apply_model(data, model, *args, return_model=False, search=None, **kwargs):
     :return: either the transformed data (if return_model is False) or the transformed data and the fitted model(s) (if
       return_model is True)
     """
+    def unpack_result(x, template):
+        if type(template) is list:
+            if type(x) is list:
+                return x
+            elif dw.zoo.is_multiindex_dataframe(x):
+                return dw.unstack(x)
+            elif dw.zoo.is_array(x):
+                index = dw.stack(data).index
+                return dw.unstack(pd.DataFrame(x, index=index))
+        elif dw.zoo.is_dataframe(template):
+            if dw.zoo.is_dataframe(x):
+                return x
+            elif dw.zoo.is_array(x):
+                return pd.DataFrame(x, index=template.index)
+        else:
+            return x
+
     mode = kwargs.pop('mode', 'fit_transform')
     custom = kwargs.pop('custom', False)
+
+    if type(data) is list:
+        stacked_data = dw.stack(data)
+    elif dw.zoo.is_dataframe(data):
+        stacked_data = data
+    elif dw.zoo.is_array(data):
+        stacked_data = pd.DataFrame(data)
+    else:
+        raise ValueError(f'unsupported datatype: {type(data)}')
 
     if type(model) is list:
         fitted_models = []
         for m in model:
-            data, next_fitted = apply_model(data, m, return_model=True, **kwargs)
+            stacked_data, next_fitted = apply_model(stacked_data, m, return_model=True, **kwargs)
             fitted_models.append(next_fitted)
         if return_model:
-            return data, fitted_models
+            return unpack_result(stacked_data, data), fitted_models
         else:
-            return data
+            return unpack_result(stacked_data, data)
 
     elif type(model) is dict:
         assert all([k in model.keys() for k in ['model', 'args', 'kwargs']]), \
             ValueError('model must have keys "model", "args", and "kwargs"')
 
-        return apply_model(data, model['model'], return_model=return_model, mode=mode, custom=custom,
+        return apply_model(stacked_data, model['model'], return_model=return_model, mode=mode, custom=custom,
                            *[*model['args'], *args], **dw.core.update_dict(model['kwargs'], kwargs))
     elif custom and callable(model):
-        transformed_data = model(data, *args, **kwargs)
+        transformed_data = model(stacked_data, *args, **kwargs)
         if return_model:
-            return tranformed_data, {'model': model, 'args': args, 'kwargs': kwargs}
+            return unpack_result(tranformed_data, data), {'model': model, 'args': args, 'kwargs': kwargs}
         else:
-            return transformed_data
+            return unpack_result(transformed_data, data)
     else:
         model = dw.core.apply_defaults(get_model(model, search=search), get_default_options())(*args, **kwargs)
         if dw.zoo.text.is_hugging_face_model(model):
-            return dw.zoo.text.apply_text_model(model, data, *args, mode=mode, return_model=return_model, **kwargs)
+            return dw.zoo.text.apply_text_model(model, stacked_data, *args, mode=mode, return_model=return_model,
+                                                **kwargs)
         f = get_sklearn_method(model, mode)
         if type(f) is list:
             assert len(f) == 2, ValueError(f'bad mode: {mode}')
-            f[0](data)
-            transformed_data = f[1](data)
+            f[0](stacked_data)
+            transformed_data = f[1](stacked_data)
         else:
-            transformed_data = f(data)
+            transformed_data = f(stacked_data)
 
         if return_model:
-            return transformed_data, {'model': model, 'args': args, 'kwargs': kwargs}
+            return unpack_result(transformed_data, data), {'model': model, 'args': args, 'kwargs': kwargs}
         else:
-            return transformed_data
+            return unpack_result(transformed_data, data)
