@@ -4,6 +4,7 @@ import datawrangler as dw
 import umap
 import numpy as np
 import os
+import importlib
 import sklearn
 import flair
 from sklearn.experimental import enable_hist_gradient_boosting, enable_iterative_imputer, enable_halving_search_cv
@@ -79,8 +80,9 @@ def get_model(x, search=None):
         for m in search:
             try:
                 if type(m) is str:
-                    exec(f'from {m} import {x}', globals())
-                    return eval(x)
+                    if hasattr(importlib.import_module(m), x):
+                        exec(f'from {m} import {x}', globals())
+                        return eval(x)
                 elif hasattr(m, x):
                     return getattr(m, x)
             except ModuleNotFoundError:
@@ -180,15 +182,17 @@ def apply_model(data, model, *args, return_model=False, search=None, **kwargs):
             return data
 
     elif type(model) is dict:
-        assert all([hasattr(model, k) for k in ['model', 'args', 'kwargs']]), \
+        assert all([k in model.keys() for k in ['model', 'args', 'kwargs']]), \
             ValueError('model must have keys "model", "args", and "kwargs"')
 
-        return apply_model(data, model['model'], return_model=return_model,
-                           *[model['args'], *args], **dw.core.update_dict(model['kwargs'], kwargs))
+        return apply_model(data, model['model'], return_model=return_model, mode=mode, custom=custom,
+                           *[*model['args'], *args], **dw.core.update_dict(model['kwargs'], kwargs))
     elif custom and callable(model):
         transformed_data = model(data, *args, **kwargs)
         if return_model:
             return tranformed_data, {'model': model, 'args': args, 'kwargs': kwargs}
+        else:
+            return transformed_data
     else:
         model = dw.core.apply_defaults(get_model(model, search=search), get_default_options())(*args, **kwargs)
         if dw.zoo.text.is_hugging_face_model(model):

@@ -22,8 +22,8 @@ def test_discrete_clusters():
 
                 assert ((np.sum(zeros) / len(inds)) >= threshold) or ((np.sum(ones) / len(inds)) >= threshold)
 
-    models = ['AffinityPropagation', 'AgglomerativeClustering', 'Birch', 'DBSCAN', 'FeatureAgglomeration', 'KMeans',
-              'MiniBatchKMeans', 'MeanShift', 'SpectralClustering']
+    models = ['AffinityPropagation', 'AgglomerativeClustering', 'Birch', 'DBSCAN', 'OPTICS', 'FeatureAgglomeration',
+              'KMeans', 'MiniBatchKMeans', 'MeanShift', 'SpectralClustering']
 
     for m in models:
         labels = hyp.cluster(clusters, model=m)
@@ -35,8 +35,16 @@ def test_discrete_clusters():
 
 
 def test_cluster_mixture():
-    models = ['Birch', 'FeatureAgglomeration']
-    pass
+    n_components = 3
+    mode = 'fit_predict_proba'
+    models = ['GaussianMixture', 'BayesianGaussianMixture']
 
+    for m in models:
+        next_model = {'model': m, 'args': [], 'kwargs': {'n_components': n_components}}
+        mixture_proportions = hyp.cluster(clusters, model=next_model, mode=mode)
 
-test_discrete_clusters()
+        assert mixture_proportions.shape == (clusters.shape[0], 3)
+        assert np.all(np.sum(np.abs(mixture_proportions), axis=0) > 0)
+        assert np.all(mixture_proportions >= 0)
+        assert np.all(mixture_proportions <= 1)
+        assert np.allclose(np.sum(mixture_proportions, axis=1), 1)
