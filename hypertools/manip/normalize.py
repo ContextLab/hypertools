@@ -36,7 +36,7 @@ def transformer(data, **kwargs):
     assert 'axis' in kwargs.keys(), ValueError('Must specify axis')
 
     if transpose:
-        return transformer(data.T, **dw.core.update_dict(kwargs, {'axis': int(not kwargs['axis'])}))
+        return transformer(data.T, **dw.core.update_dict(kwargs, {'axis': int(not kwargs['axis'])})).T
 
     assert kwargs['axis'] == 0, ValueError('invalid transformation')
 

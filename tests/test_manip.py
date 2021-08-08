@@ -12,23 +12,27 @@ def test_normalize():
     x1 = hyp.manip(weights, model='Normalize')
     assert all([dw.util.btwn(w, -0.0001, 1.0001) for w in x1])
     assert len(x1) == len(weights)
+    assert all([x.shape == w.shape for x, w in zip(x1, weights)])
 
     x2 = hyp.manip(weights, model='Normalize', min=-1, max=36)
     assert all([not dw.util.btwn(w, -0.0001, 1.0001) for w in x2])
     assert all([dw.util.btwn(w, -1.0001, 36.0001) for w in x2])
     assert len(x2) == len(weights)
+    assert all([x.shape == w.shape for x, w in zip(x2, weights)])
 
 
 def test_zscore():
     x1 = hyp.manip(weights, model='ZScore')
-    assert all([np.allclose(w.mean(axis=0), 0, atol=1e-5) for w in x1])
-    assert all([np.allclose(w.std(axis=0), 1, atol=1e-5) for w in x1])
+    assert np.allclose(dw.stack(x1).mean(axis=0), 0, atol=1e-5)
+    assert np.allclose(dw.stack(x1).std(axis=0), 1, atol=1e-5)
     assert len(x1) == len(weights)
+    assert all([x.shape == w.shape for x, w in zip(x1, weights)])
 
     x2 = hyp.manip(weights, model='ZScore', axis=1)
     assert all([np.allclose(w.mean(axis=1), 0, atol=1e-5) for w in x2])
     assert all([np.allclose(w.std(axis=1), 1, atol=1e-5) for w in x2])
-    assert len(x1) == len(weights)
+    assert len(x2) == len(weights)
+    assert all([x.shape == w.shape for x, w in zip(x2, weights)])
 
 
 def test_resample():

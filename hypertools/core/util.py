@@ -30,7 +30,7 @@ def get(x, ind, axis=0):
                 ind = np.array([ind_backup])
         return x.take(ind % x.shape[axis], axis=axis)
 
-    if dw.util.array_like(x) and len(x) > 0:
+    if dw.util.array_like(x) and not np.isscalar(x):
         if not issubclass(type(x), np.ndarray):
             x = np.array(x)
         return np.take(x, ind % x.shape[axis], axis=axis)

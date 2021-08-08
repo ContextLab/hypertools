@@ -6,30 +6,66 @@ import scipy.interpolate as interpolate
 
 from .common import Manipulator
 
+from ..core import get
 
-@dw.decorate.apply_stacked
+
 def fitter(data, **kwargs):
+    def listify_dicts(dicts):
+        if len(dicts) == 0:
+            return {}
+        ld = {}
+        for d in dicts:
+            for k in d.keys():
+                if k not in ld.keys():
+                    ld[k] = [d[k]]
+                else:
+                    ld[k].append(d[k])
+        return ld
+
+    if dw.zoo.is_multiindex_dataframe(data):
+        return listify_dicts([fitter(d, **kwargs) for d in dw.unstack(data)])
+    elif type(data) is list:
+        return listify_dicts([fitter(d, **kwargs) for d in data])
+
     transpose = kwargs.pop('transpose', False)
     assert 'axis' in kwargs.keys(), ValueError('Must specify axis')
 
     if transpose:
-        return fitter(data.T, **dw.core.update_dict(kwargs, {'axis': int(not kwargs['axis'])}))
+        return fitter(data.T, **dw.core.update_dict(kwargs, {'axis': int(not kwargs['axis'])})).T
 
     assert kwargs['axis'] == 0, ValueError('invalid transformation')
 
-    x = data.index.values
+    if dw.zoo.is_multiindex_dataframe(data):
+        x = np.array(data.index.levels[-1])
+    else:
+        x = data.index.values
+
     resampled_x = np.linspace(np.min(x), np.max(x), num=kwargs['n_samples'])
     pchip = pd.Series(index=data.columns)
     for c in data.columns:
         pchip[c] = interpolate.pchip(x, data[c].values)
 
-    return {'x': x, 'resampled_x': resampled_x, 'pchip': pchip, 'transpose': transpose, 'axis': axis,
-            'n_samples': n_samples}
+    return {'x': x, 'resampled_x': resampled_x, 'pchip': pchip, 'transpose': transpose, 'axis': kwargs['axis'],
+            'n_samples': kwargs['n_samples']}
 
 
-# noinspection DuplicatedCode
-@dw.decorate.apply_stacked
 def transformer(data, **kwargs):
+    if dw.zoo.is_multiindex_dataframe(data):
+        stack_result = True
+        data = dw.unstack(data)
+    else:
+        stack_result = False
+
+    if type(data) is list:
+        transformed_data = []
+        for i, d in enumerate(data):
+            next_kwargs = {k: get(v, i) for k, v in kwargs.items()}
+            transformed_data.append(transformer(d, **next_kwargs))
+        if stack_result:
+            return dw.stack(transformed_data)
+        else:
+            return transformed_data
+
     transpose = kwargs.pop('transpose', False)
     assert 'axis' in kwargs.keys(), ValueError('Must specify axis')
 
