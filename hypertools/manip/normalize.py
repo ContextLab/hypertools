@@ -16,11 +16,11 @@ def fitter(data, axis=0, min=0, max=1):
     elif axis != 0:
         raise ValueError('axis must be either 0 or 1')
 
-    baseline = Series(index=data.columns)
-    peak = Series(index=data.columns)
+    baseline = pd.Series(index=data.columns)
+    peak = pd.Series(index=data.columns)
 
     z = data.copy()
-    for c in a.columns:
+    for c in z.columns:
         baseline[c] = z[c].min(axis=0)
         z[c] -= baseline[c]
 
@@ -29,6 +29,7 @@ def fitter(data, axis=0, min=0, max=1):
     return {'baseline': baseline, 'peak': peak, 'axis': axis, 'transpose': False, 'min': min, 'max': max}
 
 
+# noinspection DuplicatedCode
 @dw.decorate.apply_stacked
 def transformer(data, **kwargs):
     transpose = kwargs.pop('transpose', False)
@@ -40,12 +41,12 @@ def transformer(data, **kwargs):
     assert kwargs['axis'] == 0, ValueError('invalid transformation')
 
     z = data.copy()
-    for c in z.columns():
+    for c in z.columns:
         z[c] -= kwargs['baseline'][c]
         z[c] /= kwargs['peak'][c]
 
-    z *= kwargs['max'] - kwargs['min']
-    z -= kwargs['min']
+    z *= (kwargs['max'] - kwargs['min'])
+    z += kwargs['min']
     return z
 
 
@@ -61,5 +62,5 @@ class Normalize(Manipulator):
         self.axis = axis
         self.fitter = fitter
         self.transformer = transformer
-        self.data = data
+        self.data = None
         self.required = required

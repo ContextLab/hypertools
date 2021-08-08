@@ -14,8 +14,8 @@ def fitter(data, axis=0):
     elif axis != 0:
         raise ValueError('axis must be either 0 or 1')
 
-    mean = Series(index=data.columns)
-    std = Series(index=data.columns)
+    mean = pd.Series(index=data.columns)
+    std = pd.Series(index=data.columns)
 
     for c in data.columns:
         mean[c] = data[c].mean(axis=0)
@@ -36,7 +36,7 @@ def transformer(data, **kwargs):
     assert kwargs['axis'] == 0, ValueError('invalid transformation')
 
     z = data.copy()
-    for c in z.columns():
+    for c in z.columns:
         z[c] -= kwargs['mean'][c]
         z[c] /= kwargs['std'][c]
     return z

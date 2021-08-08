@@ -38,8 +38,7 @@ class Manipulator(BaseEstimator):
             return self.data
 
         required_params = {r: getattr(self, r) for r in self.required}
-        return dw.decorate.apply_stacked(self.transformer(self.data, **dw.core.update_dict(required_params,
-                                                                                           self.kwargs)))
+        return self.transformer(self.data, **dw.core.update_dict(required_params, self.kwargs))
 
     def fit_transform(self, data):
         self.fit(data)
