@@ -52,5 +52,14 @@ def transformer(data, **kwargs):
 class Normalize(Manipulator):
     # noinspection PyShadowingBuiltins
     def __init__(self, min=0, max=1, axis=0):
+        required = ['min', 'max', 'transpose', 'baseline', 'peak', 'axis']
         super().__init__(min=min, max=max, axis=axis, fitter=fitter, transformer=transformer, data=None,
-                         required=['min', 'max', 'transpose', 'baseline', 'peak', 'axis'])
+                         required=required)
+
+        self.min = min
+        self.max = max
+        self.axis = axis
+        self.fitter = fitter
+        self.transformer = transformer
+        self.data = data
+        self.required = required

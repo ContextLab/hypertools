@@ -45,5 +45,12 @@ def transformer(data, **kwargs):
 class ZScore(Manipulator):
     # noinspection PyShadowingBuiltins
     def __init__(self, axis=0):
+        required = ['transpose', 'mean', 'std', 'axis']
         super().__init__(axis=axis, fitter=fitter, transformer=transformer, data=None,
-                         required=['transpose', 'mean', 'std', 'axis'])
+                         required=required)
+
+        self.axis = axis
+        self.fitter = fitter
+        self.transformer = transformer
+        self.data = None
+        self.required = required

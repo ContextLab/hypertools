@@ -47,5 +47,13 @@ def transformer(data, **kwargs):
 class Resample(Manipulator):
     # noinspection PyShadowingBuiltins
     def __init__(self, axis=0, n_samples=100):
+        required = ['transpose', 'axis', 'n_samples', 'x', 'resampled_x', 'pchip']
         super().__init__(axis=axis, fitter=fitter, transformer=transformer, data=None, n_samples=n_samples,
-                         required=['transpose', 'axis', 'n_samples', 'x', 'resampled_x', 'pchip'])
+                         required=required)
+
+        self.axis = axis
+        self.fitter = fitter
+        self.transformer = transformer
+        self.data = None
+        self.n_samples = n_samples
+        self.required = required

@@ -8,25 +8,6 @@ from scipy.signal import savgol_filter
 from .common import Manipulator
 
 
-def resample_and_smooth(traj, kernel_width, N=500, order=3, min_val=0):
-    if traj is None or traj.shape[0] <= 3:
-        return None
-
-    try:
-        r = np.zeros([N, traj.shape[1]])
-        x = traj.index.values
-        xx = np.linspace(np.min(x), np.max(x), num=N)
-
-        for i in range(traj.shape[1]):
-            r[:, i] = signal.savgol_filter(sp.interpolate.pchip(x, traj.values[:, i])(xx),
-                                           kernel_width, order)
-            r[:, i][r[:, i] < min_val] = min_val
-
-        return pd.DataFrame(data=r, index=xx, columns=traj.columns)
-    except:
-        return None
-
-
 # noinspection DuplicatedCode
 @dw.decorate.apply_stacked
 def fitter(data, transpose=False, axis=0, kernel_width=10, order=3, maintain_bounds=True):
@@ -67,6 +48,16 @@ def transformer(data, **kwargs):
 class Smooth(Manipulator):
     # noinspection PyShadowingBuiltins
     def __init__(self, axis=0, kernel_width=10, order=3, maintain_bounds=True):
+        required = ['transpose', 'axis', 'min', 'max', 'kernel_width', 'order', 'maintain_bounds']
         super().__init__(axis=axis, fitter=fitter, transformer=transformer, data=None, kernel_width=kernel_width,
                          order=order, maintain_bounds=maintain_bounds,
-                         required=['transpose', 'axis', 'min', 'max', 'kernel_width', 'order', 'maintain_bounds'])
+                         required=required)
+
+        self.axis = axis
+        self.fitter = fitter
+        self.transformer = transformer
+        self.data = None
+        self.kernel_width = kernel_width
+        self.order = order
+        self.maintain_bounds = maintain_bounds
+        self.required = required
