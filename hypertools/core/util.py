@@ -11,15 +11,27 @@ def get(x, ind, axis=0):
     ----------
     :param x: the to-be-indexed object
     :param ind: one or more indices.  If x is not iterable, or if x is empty, this is ignored.  If any(len(x) < ind),
-      then the indices wrap around back to the beginning of x.
-    :param axis: axis to search over
+      then the indices wrap around back to the beginning of x, along the indicated axis.
+    :param axis: axis to search over (default: 0)
 
     Returns
     -------
     :return: the selected value(s)
     """
+
+    ind_backup = None
+    if not issubclass(type(ind), np.ndarray):
+        ind_backup = ind
+        ind = np.array(ind)
+
+    if dw.zoo.dataframe_like(x):
+        if ind_backup is not None:
+            if len(ind.shape) == 0:
+                ind = np.array([ind_backup])
+        return x.take(ind % x.shape[axis], axis=axis)
+
     if dw.util.array_like(x) and len(x) > 0:
-        if not dw.zoo.is_array(x):
+        if not issubclass(type(x), np.ndarray):
             x = np.array(x)
         return np.take(x, ind % x.shape[axis], axis=axis)
     else:

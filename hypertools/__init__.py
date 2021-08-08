@@ -4,7 +4,7 @@ from .align import align, pad, trim_and_pad, Aligner, HyperAlign, Procrustes, Sh
     RobustSharedResponseModel, DeterministicSharedResponseModel, NullAlign
 from .cluster import cluster
 from .manip import manip
-from .core import get_default_options, apply_model as analyze, RobustDict
+from .core import get_default_options, apply_model as analyze, RobustDict, get, fullfact
 from .core.configurator import __version__
 from .io import load, save
 
