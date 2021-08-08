@@ -233,7 +233,30 @@ def test_fullfact():
 
 
 def test_eval_dict():
-    pass
+    a = 1
+    b = [1, 2, 3, 4]
+
+    def c(x):
+        return x ** 2
+
+    x = {'first': 'a', 'second': 'b', 'third': 'c'}
+    d = hyp.core.eval_dict(x.copy(), context=locals())  # copy x so that the values aren't modified for future checks
+
+    assert d['first'] == a
+    assert d['second'] == [1, 2, 3, 4]
+    assert d['third'](3) == 9
+
+    try:
+        hyp.core.eval_dict({'should_not_work': 'e'})
+        raise AssertionError('this should not run ("e") is not defined')
+    except NameError:
+        pass
+
+    try:
+        hyp.core.eval_dict(x)
+        raise AssertionError('this should not run (no context given, so "a", "b", and "c" are not defined)')
+    except NameError:
+        pass
 
 
 def test_unpack_model():

@@ -66,12 +66,12 @@ def fullfact(dims):
     return inds
 
 
-def eval_dict(d):
+def eval_dict(d, context={}):
     for k, v in d.items():
         if type(v) is dict:
             d[k] = eval_dict(v)
         elif type(v) is str:
-            d[k] = eval(v)
+            d[k] = eval(v, globals(), context)
         else:
             d[k] = v
     return d
