@@ -236,8 +236,8 @@ def test_eval_dict():
     a = 1
     b = [1, 2, 3, 4]
 
-    def c(x):
-        return x ** 2
+    def c(p):
+        return p ** 2
 
     x = {'first': 'a', 'second': 'b', 'third': 'c'}
     d = hyp.core.eval_dict(x.copy(), context=locals())  # copy x so that the values aren't modified for future checks
@@ -259,9 +259,25 @@ def test_eval_dict():
         pass
 
 
-def test_unpack_model():
-    pass
-
-
 def test_robust_dict():
-    pass
+    x = hyp.RobustDict({'first': 1, 'second': 2, 'third': 3})
+
+    assert type(x) is hyp.RobustDict
+    assert x['first'] == 1
+    assert x['second'] == 2
+    assert x['third'] == 3
+    assert x['fourth'] is None
+
+    x.pop('first')
+    assert x['first'] is None
+
+    y = hyp.RobustDict({'first': 1, 'second': 2, 'third': 3}, __default_value__='hello')
+    assert type(y) is hyp.RobustDict
+    assert y['first'] == 1
+    assert y['second'] == 2
+    assert y['third'] == 3
+    assert y['fourth'] is 'hello'
+
+    y.pop('second')
+    assert y['second'] == 'hello'
+    assert y['first'] == 1

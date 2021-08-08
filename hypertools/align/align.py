@@ -7,7 +7,8 @@ from .procrustes import Procrustes
 from .srm import SharedResponseModel, DeterministicSharedResponseModel, RobustSharedResponseModel
 from .common import Aligner
 
-from ..core import apply_model, has_all_attributes, unpack_model, get_default_options
+from ..core import apply_model, has_all_attributes, get_default_options
+from ..core.shared import unpack_model
 
 
 @dw.decorate.funnel

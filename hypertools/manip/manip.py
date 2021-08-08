@@ -5,6 +5,7 @@ from .zscore import ZScore
 from .common import Manipulator
 
 from ..core import get_default_options
+from ..core.shared import unpack_model
 
 
 def manip(data, model='ZScore', **kwargs):
