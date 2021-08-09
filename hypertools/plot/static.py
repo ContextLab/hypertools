@@ -1,9 +1,13 @@
 # noinspection PyPackageRequirements
 import datawrangler as dw
+import pandas as pd
+import seaborn as sns
+
+from matplotlib import pyplot as plt
 
 from .backend import manage_backend
 
-from ..core import get_default_options, eval_dict
+from ..core import get_default_options, eval_dict, get
 
 defaults = eval_dict(get_default_options()['plot'])
 
@@ -51,4 +55,20 @@ def static_plot(data, **kwargs):
 
         static_plot(group_means, **group_kwargs)
 
-    return ax.plot(*data.split(data.shape[1], axis=1), color=color, **kwargs)
+    cmap = kwargs.pop('cmap', None)
+    if cmap is not None:
+        plt.set_cmap(cmap)
+
+    # remove defaults that shouldn't be passed to plot
+    remove_params = ['n_colors', 'scale', 'style']
+    for r in remove_params:
+        kwargs.pop(r, None)
+
+    if data.shape[1] == 2:
+        ax.plot(data.values[:, 0], data.values[:, 1], color=color, **kwargs)
+    elif data.shape[1] == 3:
+        ax.plot3D(data.values[:, 0], data.values[:, 1], data.values[:, 2], color=color, **kwargs)
+    else:
+        raise ValueError(f'data must be 2D or 3D (given: {data.shape[1]}D)')
+
+    return ax.get_lines()

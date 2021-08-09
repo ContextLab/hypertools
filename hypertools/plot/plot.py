@@ -126,7 +126,8 @@ def parse_style(fmt):
 
 
 def get_bounds(data):
-    return np.concatenate([np.nanmin(data, axis=0), np.nanmax(data, axis=0)], axis=0)
+    x = dw.stack(data)
+    return np.vstack([np.nanmin(x, axis=0), np.nanmax(x, axis=0)])
 
 
 def plot_bounding_box(bounds, color='k', linewidth=2, ax=None):
@@ -161,7 +162,7 @@ def plot(data, *fmt, **kwargs):
 
     manipulators = kwargs.pop('manip', None)
     aligners = kwargs.pop('align', None)
-    reducers = kwargs.pop('reduce', eval(defaults['reduce']['model']))
+    reducers = kwargs.pop('reduce', {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 3}})
     clusterers = kwargs.pop('cluster', None)
 
     assert len(fmt) == 0 or len(fmt) == 1, ValueError(f'invalid format: {fmt}')
@@ -177,7 +178,8 @@ def plot(data, *fmt, **kwargs):
     if aligners is not None:
         data = align(data, model=aligners)
 
-    data = reduce(data, model=reducers)
+    if reducers is not None:
+        data = reduce(data, model=reducers)
 
     if clusterers is not None:
         colors = cluster(data, model=clusterers)
@@ -188,6 +190,8 @@ def plot(data, *fmt, **kwargs):
     if colors is not None:
         color_kwargs = kwargs.pop('color_kwargs', kwargs)
         colors = mat2colors(colors, cmap=cmap, **color_kwargs)
+    else:
+        kwargs['cmap'] = cmap
     kwargs['color'] = colors
 
     if type(data) is list:
@@ -201,6 +205,7 @@ def plot(data, *fmt, **kwargs):
         ax = kwargs.pop('ax', plt.gca(projection='3d'))
     else:
         raise ValueError(f'data must be 2D or 3D; given: {c}D')
+    kwargs['ax'] = ax
 
     bounding_box = kwargs.pop('bounding_box', True)
     data = pad(data, c=c)

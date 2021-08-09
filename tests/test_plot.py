@@ -4,19 +4,18 @@ import pandas as pd
 import hypertools as hyp
 
 
-def test_static_plot1d():
-    # test lines, markers
-    # test different strategies for managing color
-    # test various manipulations (align, cluster, manip, reduce)
-    pass
-
-
-def test_animated_plot1d():
-    pass
+weights = hyp.load('weights')
 
 
 def test_static_plot2d():
+    # test lines, markers
+    # test different strategies for managing color
+    # test various manipulations (align, cluster, manip, reduce)
+    fig = hyp.plot(weights)
     pass
+
+
+test_static_plot2d()
 
 
 def test_animated_plot2d():
