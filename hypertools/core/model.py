@@ -170,20 +170,38 @@ def apply_model(data, model, *args, return_model=False, search=None, **kwargs):
     :return: either the transformed data (if return_model is False) or the transformed data and the fitted model(s) (if
       return_model is True)
     """
-    def unpack_result(x, template):
+
+    # noinspection PyShadowingNames
+    def unpack_result(x, template, return_model):
+        def safe_unstack(d, unpack):
+            if unpack:
+                return dw.unstack(d[0]), d[1]
+            else:
+                return dw.unstack(d)
+
+        def safe_df(d, idx, unpack):
+            if unpack:
+                return pd.DataFrame(d[0], index=idx), d[1]
+            else:
+                return pd.DataFrame(d, index=idx)
+
+        if return_model:
+            data = x[0]
+        else:
+            data = x
         if type(template) is list:
-            if type(x) is list:
+            if type(data) is list:
                 return x
             elif dw.zoo.is_multiindex_dataframe(x):
-                return dw.unstack(x)
-            elif dw.zoo.is_array(x):
-                index = dw.stack(data).index
-                return dw.unstack(pd.DataFrame(x, index=index))
+                return safe_unstack(x, return_model)
+            elif dw.zoo.is_array(data):
+                index = dw.stack(template).index
+                return safe_unstack(safe_df(x, index, return_model), return_model)
         elif dw.zoo.is_dataframe(template):
-            if dw.zoo.is_dataframe(x):
+            if dw.zoo.is_dataframe(data):
                 return x
-            elif dw.zoo.is_array(x):
-                return pd.DataFrame(x, index=template.index)
+            elif dw.zoo.is_array(data):
+                return safe_df(x, template.index, return_model)
         else:
             return x
 
@@ -205,27 +223,29 @@ def apply_model(data, model, *args, return_model=False, search=None, **kwargs):
             stacked_data, next_fitted = apply_model(stacked_data, m, return_model=True, **kwargs)
             fitted_models.append(next_fitted)
         if return_model:
-            return unpack_result(stacked_data, data), fitted_models
+            return unpack_result(stacked_data, data, return_model), fitted_models
         else:
-            return unpack_result(stacked_data, data)
+            return unpack_result(stacked_data, data, return_model)
 
     elif type(model) is dict:
         assert all([k in model.keys() for k in ['model', 'args', 'kwargs']]), \
             ValueError('model must have keys "model", "args", and "kwargs"')
 
-        return apply_model(stacked_data, model['model'], return_model=return_model, mode=mode, custom=custom,
-                           *[*model['args'], *args], **dw.core.update_dict(model['kwargs'], kwargs))
+        return unpack_result(apply_model(stacked_data, model['model'], return_model=return_model, mode=mode,
+                                         custom=custom, *[*model['args'], *args], **dw.core.update_dict(model['kwargs'],
+                                                                                                        kwargs)),
+                             data, return_model)
     elif custom and callable(model):
         transformed_data = model(stacked_data, *args, **kwargs)
         if return_model:
-            return unpack_result(tranformed_data, data), {'model': model, 'args': args, 'kwargs': kwargs}
+            return unpack_result(tranformed_data, data, return_model), {'model': model, 'args': args, 'kwargs': kwargs}
         else:
-            return unpack_result(transformed_data, data)
+            return unpack_result(transformed_data, data, return_model)
     else:
         model = dw.core.apply_defaults(get_model(model, search=search), get_default_options())(*args, **kwargs)
         if dw.zoo.text.is_hugging_face_model(model):
-            return dw.zoo.text.apply_text_model(model, stacked_data, *args, mode=mode, return_model=return_model,
-                                                **kwargs)
+            return unpack_result(dw.zoo.text.apply_text_model(model, stacked_data, *args, mode=mode,
+                                                              return_model=return_model, **kwargs), data, return_model)
         f = get_sklearn_method(model, mode)
         if type(f) is list:
             assert len(f) == 2, ValueError(f'bad mode: {mode}')
@@ -235,6 +255,6 @@ def apply_model(data, model, *args, return_model=False, search=None, **kwargs):
             transformed_data = f(stacked_data)
 
         if return_model:
-            return unpack_result(transformed_data, data), {'model': model, 'args': args, 'kwargs': kwargs}
+            return unpack_result(transformed_data, data, False), {'model': model, 'args': args, 'kwargs': kwargs}
         else:
-            return unpack_result(transformed_data, data)
+            return unpack_result(transformed_data, data, False)

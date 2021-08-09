@@ -62,6 +62,17 @@ def test_smooth():
     assert all([p.shape == w.shape for p, w in zip(x1, weights)])
     assert all([dw.util.btwn(p, np.min(w), np.max(w)) for p, w in zip(x1, weights)])
 
+    model1 = {'model': 'Smooth', 'args': [], 'kwargs': {'kernel_width': 10}}
+    x2 = hyp.manip(weights, model=model1, maintain_bounds=True)
+    assert all([np.allclose(a, b) for a, b in zip(x1, x2)])
+
+    model2 = {'model': 'Smooth', 'args': [], 'kwargs': {'kernel_width': 10.5}}
+    x3 = hyp.manip(weights, model=model2, maintain_bounds=True)
+    assert all([np.allclose(a, b) for a, b in zip(x2, x3)])
+
+    x4 = hyp.manip(weights, model='Smooth', maintain_bounds=True, axis=1)
+    assert all([x.shape == w.shape for x, w in zip(x4, weights)])
+
 
 def test_zscore_smooth_resample_smooth():
     x = hyp.manip(weights, model=['ZScore', 'Smooth', 'Resample', 'Smooth'])
@@ -76,11 +87,3 @@ def test_preprocessing():
 
     x2 = hyp.manip(weights, model=[*models, 'Smooth'])
     assert all([x.shape == w.shape for x, w in zip(x2, weights)])
-
-
-test_normalize()
-test_zscore()
-test_resample()
-test_smooth()
-test_zscore_smooth_resample_smooth()
-test_preprocessing()

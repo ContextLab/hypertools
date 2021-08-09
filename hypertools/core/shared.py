@@ -3,7 +3,7 @@ import datawrangler as dw
 
 
 @dw.decorate.list_generalizer
-def unpack_model(m, valid=None, parent_class=None, search=None):
+def unpack_model(m, valid=None, parent_class=None):
     if valid is None:
         valid = []
 
@@ -19,7 +19,7 @@ def unpack_model(m, valid=None, parent_class=None, search=None):
     if type(m) is dict and all([k in m.keys() for k in ['model', 'args', 'kwargs']]):
         return dw.core.update_dict(m, {'model': unpack_model(m['model'], valid=valid, parent_class=parent_class)})
     elif type(m) is str:
-        return get_model(m, search=search)
+        return m
     else:
         raise ValueError(f'unknown model: {m}')
 
