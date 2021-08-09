@@ -7,7 +7,6 @@ from .common import Manipulator
 
 
 # noinspection PyShadowingBuiltins
-@dw.decorate.apply_stacked
 def fitter(data, axis=0):
     if axis == 1:
         return dw.core.update_dict(fitter(data.T, axis=0), {'transpose': True})
@@ -25,7 +24,6 @@ def fitter(data, axis=0):
 
 
 # noinspection DuplicatedCode
-@dw.decorate.apply_stacked
 def transformer(data, **kwargs):
     transpose = kwargs.pop('transpose', False)
     assert 'axis' in kwargs.keys(), ValueError('Must specify axis')

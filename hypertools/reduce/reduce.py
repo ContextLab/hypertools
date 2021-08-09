@@ -24,12 +24,15 @@ def get_n_components(model, **kwargs):
             return defaults[model].copy().pop('n_components', None)
     elif hasattr(model, '__name__'):
         return get_n_components(getattr(model, '__name__'), **kwargs)
+    elif type(model) is dict and all([k in ['model', 'args', 'kwargs'] for k in model.keys()]):
+        return get_n_components(model['model'], **model['kwargs'])
     else:
         return None
 
 
 @dw.decorate.apply_stacked
 def reduce(data, model='IncrementalPCA', **kwargs):
+    # noinspection PyTypeChecker
     n_components = get_n_components(model, **kwargs)
 
     if (n_components is None) or (data.shape[1] > n_components):

@@ -5,9 +5,10 @@ import pandas as pd
 
 import hypertools as hyp
 
-models = ['IncrementalPCA', 'DictionaryLearning', 'FactorAnalysis', 'FastICA', 'KernelPCA', 'LatentDirichletAllocation',
-          'MiniBatchDictionaryLearning', 'MiniBatchSparsePCA', 'NMF', 'PCA', 'SparsePCA', 'SparseCoder', 'TruncatedSVD',
-          'Isomap', 'LocallyLinearEmbedding', 'MDS', 'SpectralEmbedding', 'TSNE', 'UMAP', 'PPCA']
+models = ['UMAP', 'IncrementalPCA', 'DictionaryLearning', 'FactorAnalysis', 'FastICA', 'KernelPCA',
+          'LatentDirichletAllocation', 'MiniBatchDictionaryLearning', 'MiniBatchSparsePCA', 'NMF', 'PCA', 'SparsePCA',
+          'TruncatedSVD', 'Isomap', 'LocallyLinearEmbedding', 'MDS', 'SpectralEmbedding', 'TSNE']
+# skip:  'SparseCoder'
 
 
 normalized_weights = hyp.manip(hyp.load('weights_sample'), 'Normalize')
@@ -17,7 +18,8 @@ def test_reduce():
     n_components = 10
     for m in models:
         if m == 'SparseCoder':
-            dictionary = dw.stack(hyp.reduce(normalized_weights, 'PCA', n_components=n_components)).values
+            dictionary = hyp.reduce(dw.stack(normalized_weights).T.values,
+                                    'IncrementalPCA', n_components=n_components).values.T
             next_model = {'model': m, 'args': [], 'kwargs': {'dictionary': dictionary}}
         else:
             next_model = {'model': m, 'args': [], 'kwargs': {'n_components': n_components}}
@@ -32,6 +34,3 @@ def test_reduce():
         assert type(x) is pd.DataFrame
         assert x.shape[0] == normalized_weights[0].shape[0]
         assert x.shape[1] == n_components
-
-
-test_reduce()
