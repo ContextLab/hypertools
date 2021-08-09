@@ -18,6 +18,9 @@ sklearn_models = {
     'covariance': ['EmpiricalCovariance', 'EllipticEnvelope', 'GraphicalLasso', 'GraphicalLassoCV', 'LedoitWolf',
                    'MinCovDet', 'OAS', 'ShrunkCovariance'],
     'cross_decomposition': ['CCA', 'PLSCanonical', 'PLSRegression', 'PLSSVD'],
+    'decomposition': ['DictionaryLearning', 'FactorAnalysis', 'FastICA', 'IncrementalPCA', 'KernelPCA',
+                      'LatentDirichletAllocation', 'MiniBatchDictionaryLearning', 'MiniBatchSparsePCA', 'NMF', 'PCA',
+                      'SparsePCA', 'SparseCoder', 'TruncatedSVD'],
     'discriminant_analysis': ['LinearDiscriminantAnalysis', 'QuadraticDiscriminantAnalysis'],
     'ensemble': ['AdaBoostClassifier', 'AdaBoostRegressor', 'BaggingClassifier', 'ExtraTreesClassifier',
                  'ExtraTreesRegressor', 'GradientBoostingClassifier', 'GradientBoostingRegressor',
@@ -121,16 +124,28 @@ def test_apply_model():
             'out', 'grid', 'nb', 'tree', 'metric', 'kernel', 'neighbor', 'project', 'feature', 'pipe', 'bins', 'label',
             'encode', 'svc', 'svr', 'regress', 'classif', 'centroid', 'calibration', 'biclustering', 'coclustering',
             'columntransformer', 'cov', 'ledoit', 'oas', 'cca', 'pls', 'discriminant', 'vectorizer', 'extract',
-            'select', 'transformer', 'rfe']
+            'select', 'transformer', 'rfe', 'coder']
 
     for module_name in sklearn_models.keys():
+        if module_name in ['decomposition', 'manifold']:
+            opts = {'n_components': 3}
+        else:
+            opts = {}
+
         for m in sklearn_models[module_name]:
+            if m in ['LatentDirichletAllocation', 'NMF']:
+                next_x1 = np.abs(x1)
+                next_x2 = [np.abs(x) for x in x2]
+            else:
+                next_x1 = x1
+                next_x2 = x2
+
             if any([i in m.lower() for i in skip]):
                 continue
 
             warnings.simplefilter('ignore')
-            x1_fit = hyp.core.apply_model(x1, model=m)
-            x2_fit = hyp.core.apply_model(x2, model=m)
+            x1_fit = hyp.core.apply_model(next_x1, model=m, **opts)
+            x2_fit = hyp.core.apply_model(next_x2, model=m, **opts)
 
             assert x1_fit.shape[0] == x1.shape[0]
             assert type(x2_fit) == list
