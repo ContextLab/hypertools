@@ -31,7 +31,7 @@ def cluster(data, model='KMeans', **kwargs):
     """
     labels = apply_model(data, model, search=['sklearn.cluster', 'sklearn.mixture'],
                          **dw.core.update_dict(eval_dict(get_default_options()['cluster']), kwargs))
-    labels = dw.unstack(pd.DataFrame(labels, index=data.index))
+    labels = pd.DataFrame(labels, index=data.index)
 
     if len(labels) == 1:
         return labels[0]

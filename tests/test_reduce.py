@@ -5,7 +5,7 @@ import pandas as pd
 
 import hypertools as hyp
 
-models = ['DictionaryLearning', 'FactorAnalysis', 'FastICA', 'IncrementalPCA', 'KernelPCA', 'LatentDirichletAllocation',
+models = ['IncrementalPCA', 'DictionaryLearning', 'FactorAnalysis', 'FastICA', 'KernelPCA', 'LatentDirichletAllocation',
           'MiniBatchDictionaryLearning', 'MiniBatchSparsePCA', 'NMF', 'PCA', 'SparsePCA', 'SparseCoder', 'TruncatedSVD',
           'Isomap', 'LocallyLinearEmbedding', 'MDS', 'SpectralEmbedding', 'TSNE', 'UMAP', 'PPCA']
 

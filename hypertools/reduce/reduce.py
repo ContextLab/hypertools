@@ -30,16 +30,19 @@ def get_n_components(model, **kwargs):
 
 @dw.decorate.apply_stacked
 def reduce(data, model='IncrementalPCA', **kwargs):
-    def returner(data, result, **kwargs):
-        stack_result = dw.zoo.is_multiindex_dataframe(data)
-
     n_components = get_n_components(model, **kwargs)
 
     if (n_components is None) or (data.shape[1] > n_components):
-        return dw.unstack(apply_model(data, model, search=['sklearn.decomposition', 'sklearn.manifold',
-                                                           'sklearn.mixture', 'umap', 'ppca'],
-                                      **dw.core.update_dict(get_default_options()['reduce'], kwargs)))
+        return apply_model(data, model, search=['sklearn.decomposition', 'sklearn.manifold', 'sklearn.mixture',
+                                                'umap', 'ppca'],
+                           **dw.core.update_dict(get_default_options()['reduce'], kwargs))
     elif data.shape[1] == n_components:
-        return dw.unstack(data)
+        transformed_data = data.copy()
     else:
-        return dw.unstack(pad(data, c=n_components))
+        transformed_data = pad(data, c=n_components)
+
+    return_model = kwargs.pop('return_model', False)
+    if return_model:
+        return transformed_data, {'model': model, 'args': [], 'kwargs': kwargs}
+    else:
+        return transformed_data
