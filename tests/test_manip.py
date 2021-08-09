@@ -40,11 +40,21 @@ def test_resample():
     x1 = hyp.manip(weights, model='Resample', n_samples=n_samples)
     assert all([w.shape[0] == n_samples for w in x1])
     assert all([p.shape[1] == q.shape[1] for p, q in zip(x1, weights)])
+    assert len(x1) == len(weights)
 
     m_samples = 10
     x2 = hyp.manip(weights, model='Resample', n_samples=m_samples, axis=1)
     assert all([w.shape[1] == m_samples for w in x2])
     assert all([p.shape[0] == q.shape[0] for p, q in zip(x2, weights)])
+    assert len(x2) == len(weights)
+
+    # test resampling back to original shape (along both axes, in succession)
+    resample_axis0 = {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': weights[0].shape[0], 'axis': 0}}
+    resample_axis1 = {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': weights[0].shape[1], 'axis': 1}}
+    x3 = hyp.manip(weights, model=[resample_axis0, resample_axis1])
+    assert all([x.shape == w.shape for x, w in zip(x3, weights)])
+    assert all([np.allclose(x, w) for x, w in zip(x3, weights)])
+    assert len(x3) == len(weights)
 
 
 def test_smooth():
