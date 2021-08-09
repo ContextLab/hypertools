@@ -66,6 +66,7 @@ def transformer(data, **kwargs):
         else:
             return transformed_data
 
+    # noinspection DuplicatedCode
     transpose = kwargs.pop('transpose', False)
     assert 'axis' in kwargs.keys(), ValueError('Must specify axis')
 
@@ -76,7 +77,10 @@ def transformer(data, **kwargs):
     resampled = pd.DataFrame(index=kwargs['resampled_x'], columns=data.columns)
 
     for c in data.columns:
-        resampled[c] = kwargs['pchip'][c](kwargs['resampled_x'])
+        try:
+            resampled[c] = kwargs['pchip'][c](kwargs['resampled_x'])
+        except IndexError:
+            resampled[c] = kwargs['pchip'][int(c)](kwargs['resampled_x'])
     return resampled
 
 
