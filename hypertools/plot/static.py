@@ -65,6 +65,12 @@ def static_plot(data, **kwargs):
     #    https://matplotlib.org/stable/gallery/shapes_and_collections/line_collection.html
     #  - check whether we're in scatter mode or line mode
     #  - check whether we're in 3D or 2D mode
+
+    # note on animations and styles: it'd be nice to be able to *separately* specify an animation style
+    # and plot style for each dataset (e.g. if data is passed as a list or stacked dataframe)
+
+    # also, could add support for using arbitrary text as markers
+
     if data.shape[1] == 2:
         ax.plot(data.values[:, 0], data.values[:, 1], color=color, **kwargs)
     elif data.shape[1] == 3:
