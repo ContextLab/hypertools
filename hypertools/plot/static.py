@@ -38,7 +38,7 @@ def static_plot(data, **kwargs):
             opts = {'color': get(color, i), 'ax': ax}
             return static_plot(d, **dw.core.update_dict(kwargs, opts))
 
-    color = get(color, data.shape[0], axis=0)
+    color = get(color, range(data.shape[0]), axis=0)
     if dw.zoo.is_multiindex_dataframe(data):
         color_df = pd.DataFrame(color, index=data.index)
         group_means = group_mean(data)
@@ -55,15 +55,16 @@ def static_plot(data, **kwargs):
 
         static_plot(group_means, **group_kwargs)
 
-    cmap = kwargs.pop('cmap', None)
-    if cmap is not None:
-        plt.set_cmap(cmap)
-
     # remove defaults that shouldn't be passed to plot
-    remove_params = ['n_colors', 'scale', 'style']
+    remove_params = ['n_colors', 'scale', 'cmap']
     for r in remove_params:
         kwargs.pop(r, None)
 
+    # TODO: write a helper function to manage 2d and 3d plotting:
+    #  - use line collections when multiple colors are specified for a multicolored line plot:
+    #    https://matplotlib.org/stable/gallery/shapes_and_collections/line_collection.html
+    #  - check whether we're in scatter mode or line mode
+    #  - check whether we're in 3D or 2D mode
     if data.shape[1] == 2:
         ax.plot(data.values[:, 0], data.values[:, 1], color=color, **kwargs)
     elif data.shape[1] == 3:

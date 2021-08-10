@@ -15,7 +15,7 @@ from ..cluster import cluster
 from ..manip import manip
 from ..reduce import reduce
 
-from .static import static_plot
+from .static import static_plot, group_mean
 from .animate import Animator
 
 defaults = get_default_options()
@@ -59,28 +59,30 @@ def colorize_rgb(x, cmap, **kwargs):
 
 
 def mat2colors(m, **kwargs):
-    if not dw.zoo.is_array(m):
+    if not (dw.zoo.is_array(m) or dw.zoo.is_dataframe(m)):
         if type(m) is str:
             return np.atleast_2d(mpl.colors.to_rgb(m))
         elif type(m) is list:
-            return np.concatenate([mat2colors(c) for c in m], axis=0)
+            stacked_m = dw.stack(m)
+            stacked_colors = pd.DataFrame(mat2colors(stacked_m), index=stacked_m.index)
+            return dw.unstack(stacked_colors)
         else:
             return np.atleast_2d(mpl.colors.to_rgb(m))
 
     cmap = get_cmap(kwargs.pop('cmap', eval(defaults['plot']['cmap'])))
     n_colors = cmap.shape[0]
 
-    m = np.array(m)
+    m = np.squeeze(np.array(m))
     if m.ndim < 2:
-        _, edges = np.histogram(m, bins=n_colors)
-        bins = np.digitize(m, edges)
+        _, edges = np.histogram(m, bins=n_colors-1)
+        bins = np.digitize(m, edges) - 1
 
         colors = np.zeros([len(m), cmap.shape[1]])
-        for i in range(1, len(edges)):
+        for i in range(len(edges)):
             colors[bins == i, :] = cmap[i, :]
         return colors
 
-    reducer = kwargs.pop('reduce', eval(defaults['reduce']['model']))
+    reducer = kwargs.pop('reduce', 'IncrementalPCA')
     if type(reduce) is not dict:
         reducer = {'model': reduce, 'args': [], 'kwargs': {'n_components': 3}}
     else:
@@ -88,6 +90,29 @@ def mat2colors(m, **kwargs):
         reducer['kwargs'] = dw.core.update_dict(reducer['kwargs'], {'n_components': 3})
     m = reduce(m, model=reducer)
     return colorize_rgb(m, cmap)
+
+
+def get_colors(data):
+    def safe_len(x):
+        if type(x) is list:
+            return len(x)
+        else:
+            return 1
+
+    def helper(x, idx=1):
+        if type(x) is list:
+            return [helper(d, idx=idx + i) for i, d in enumerate(x)]
+        elif dw.zoo.is_multiindex_dataframe(x):
+            return x.index.to_frame()
+        elif dw.zoo.is_dataframe(x):
+            return pd.DataFrame(idx * np.ones_like(x.values[:, 0]), index=x.index)
+        else:
+            raise ValueError(f'cannot get colors for datatype: {type(x)}')
+
+    if type(data) is list:
+        return [helper(d, i * safe_len(d) + 1) for i, d in enumerate(data)]
+    else:
+        return helper(data)
 
 
 def parse_style(fmt):
@@ -184,14 +209,11 @@ def plot(data, *fmt, **kwargs):
     if clusterers is not None:
         colors = cluster(data, model=clusterers)
     else:
-        colors = kwargs.pop('color', None)
+        colors = kwargs.pop('color', get_colors(data))
 
     cmap = kwargs.pop('cmap', eval(defaults['plot']['cmap']))
-    if colors is not None:
-        color_kwargs = kwargs.pop('color_kwargs', kwargs)
-        colors = mat2colors(colors, cmap=cmap, **color_kwargs)
-    else:
-        kwargs['cmap'] = cmap
+    color_kwargs = kwargs.pop('color_kwargs', kwargs)
+    colors = mat2colors(colors, cmap=cmap, **color_kwargs)
     kwargs['color'] = colors
 
     if type(data) is list:
