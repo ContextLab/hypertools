@@ -15,7 +15,7 @@ from ..cluster import cluster
 from ..manip import manip
 from ..reduce import reduce
 
-from .static import static_plot, group_mean
+from .static import static_plot, group_mean, match_color
 from .animate import Animator
 
 defaults = get_default_options()
@@ -35,16 +35,6 @@ def colorize_rgb(x, cmap, **kwargs):
     cmap = get_cmap(cmap, **kwargs)
     if cmap is None:
         return x
-
-    def match_color(img, c):
-        all_inds = np.squeeze(np.zeros_like(img)[:, :, 0])
-        for i in range(c.shape[0]):
-            # noinspection PyShadowingNames
-            inds = np.zeros_like(img)
-            for j in range(c.shape[1]):
-                inds[:, :, j] = np.isclose(img[:, :, j], c[i, j])
-            all_inds = (all_inds + np.sum(inds, axis=2) == c.shape[1]) > 0
-        return np.where(all_inds)
 
     colors = np.unique(x.reshape([x.shape[0] * x.shape[1], x.shape[2]]), axis=0)
     colors = colors[np.lexsort(colors.T[::-1])]  # colors sorted by row

@@ -1,5 +1,6 @@
 # noinspection PyPackageRequirements
 import datawrangler as dw
+import numpy as np
 import pandas as pd
 import seaborn as sns
 
@@ -10,6 +11,17 @@ from .backend import manage_backend
 from ..core import get_default_options, eval_dict, get
 
 defaults = eval_dict(get_default_options()['plot'])
+
+
+def match_color(img, c):
+    all_inds = np.squeeze(np.zeros_like(img)[:, :, 0])
+    for i in range(c.shape[0]):
+        # noinspection PyShadowingNames
+        inds = np.zeros_like(img)
+        for j in range(c.shape[1]):
+            inds[:, :, j] = np.isclose(img[:, :, j], c[i, j])
+        all_inds = (all_inds + np.sum(inds, axis=2) == c.shape[1]) > 0
+    return np.where(all_inds)
 
 
 def group_mean(x):
@@ -36,7 +48,8 @@ def static_plot(data, **kwargs):
     if type(data) is list:
         for i, d in enumerate(data):
             opts = {'color': get(color, i), 'ax': ax}
-            return static_plot(d, **dw.core.update_dict(kwargs, opts))
+            static_plot(d, **dw.core.update_dict(kwargs, opts))
+        return ax
 
     color = get(color, range(data.shape[0]), axis=0)
     if dw.zoo.is_multiindex_dataframe(data):
@@ -71,11 +84,18 @@ def static_plot(data, **kwargs):
 
     # also, could add support for using arbitrary text as markers
 
-    if data.shape[1] == 2:
-        ax.plot(data.values[:, 0], data.values[:, 1], color=color, **kwargs)
-    elif data.shape[1] == 3:
-        ax.plot3D(data.values[:, 0], data.values[:, 1], data.values[:, 2], color=color, **kwargs)
-    else:
-        raise ValueError(f'data must be 2D or 3D (given: {data.shape[1]}D)')
+    unique_colors = np.unique(color, axis=0)
 
-    return ax.get_lines()
+    for i in range(unique_colors.shape[0]):
+        c = unique_colors[i, :]
+        c_inds = match_color(color, c)
+
+        # TODO: handle disjoint inds...
+        if data.shape[1] == 2:
+            ax.plot(data.values[c_inds, 0], data.values[c_inds, 1], color=c, **kwargs)
+        elif data.shape[1] == 3:
+            ax.plot3D(data.values[c_inds, 0], data.values[c_inds, 1], data.values[c_inds, 2], color=c, **kwargs)
+        else:
+            raise ValueError(f'data must be 2D or 3D (given: {data.shape[1]}D)')
+
+    return ax
