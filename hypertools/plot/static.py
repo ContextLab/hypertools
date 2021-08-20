@@ -14,13 +14,22 @@ defaults = eval_dict(get_default_options()['plot'])
 
 
 def match_color(img, c):
-    all_inds = np.squeeze(np.zeros_like(img)[:, :, 0])
+    c = np.atleast_2d(c)
+
+    if np.ndim(img) == 3:
+        all_inds = np.squeeze(np.zeros_like(img)[:, :, 0])
+    else:
+        all_inds = np.squeeze(np.zeros_like(img[:, 0]))
     for i in range(c.shape[0]):
         # noinspection PyShadowingNames
         inds = np.zeros_like(img)
         for j in range(c.shape[1]):
-            inds[:, :, j] = np.isclose(img[:, :, j], c[i, j])
-        all_inds = (all_inds + np.sum(inds, axis=2) == c.shape[1]) > 0
+            if np.ndim(img) == 3:
+                inds[:, :, j] = np.isclose(img[:, :, j], c[i, j])
+            else:
+                inds[:, j] = np.isclose(img[:, j], c[i, j])
+
+        all_inds = (all_inds + (np.sum(inds, axis=np.ndim(img) - 1) == c.shape[1])) > 0
     return np.where(all_inds)
 
 
@@ -36,6 +45,17 @@ def group_mean(x):
             index = pd.MultiIndex.from_frame(means.index.to_frame().iloc[:, :-1])
             return pd.DataFrame(data=means.values, columns=means.columns, index=index)
     return means
+
+
+def get_continuous_inds(x):
+    x = np.sort(x.ravel())
+    diffs = np.diff(x)
+    breaks = np.where(diffs > 1)[0]
+    if len(breaks) == 0:
+        return [x]
+    else:
+        breaks = np.concatenate([[0], breaks + 1, [len(x)]])
+        return [x[breaks[i]:breaks[i+1]] for i in range(len(breaks) - 1)]
 
 
 @manage_backend
@@ -88,14 +108,20 @@ def static_plot(data, **kwargs):
 
     for i in range(unique_colors.shape[0]):
         c = unique_colors[i, :]
-        c_inds = match_color(color, c)
+        c_inds = match_color(color, c)[0]
 
-        # TODO: handle disjoint inds...
-        if data.shape[1] == 2:
-            ax.plot(data.values[c_inds, 0], data.values[c_inds, 1], color=c, **kwargs)
-        elif data.shape[1] == 3:
-            ax.plot3D(data.values[c_inds, 0], data.values[c_inds, 1], data.values[c_inds, 2], color=c, **kwargs)
-        else:
-            raise ValueError(f'data must be 2D or 3D (given: {data.shape[1]}D)')
+        for inds in get_continuous_inds(c_inds):
+            if len(inds) == 1:
+                if inds[0] < data.shape[0] - 1:
+                    inds = np.array([inds[0], inds[0] + 1])
+                else:
+                    inds = np.array([inds[0], inds[0]])
+
+            if data.shape[1] == 2:
+                ax.plot(data.values[inds, 0], data.values[inds, 1], color=c, **kwargs)
+            elif data.shape[1] == 3:
+                ax.plot3D(data.values[inds, 0], data.values[inds, 1], data.values[inds, 2], color=c, **kwargs)
+            else:
+                raise ValueError(f'data must be 2D or 3D (given: {data.shape[1]}D)')
 
     return ax
