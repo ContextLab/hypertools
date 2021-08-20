@@ -1,4 +1,4 @@
-pydata-wrangler
+pydata-wrangler>=0.1.7
 seaborn>=0.8.1
 requests>=2.25
 configparser>=5.0.2
@@ -13,3 +13,5 @@ pandas>=1.2.4
 scipy>=1.7.0
 umap-learn
 matplotlib>=3.3.4
+orca>=1.6
+plotly>=4.6.0

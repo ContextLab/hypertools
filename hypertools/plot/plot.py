@@ -4,10 +4,12 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib as mpl
-import matplotlib.animation as animation
+import plotly.graph_objects as go
+import plotly.io as pio
+
+import sys
 
 from scipy.spatial.distance import pdist, squareform
-from matplotlib import pyplot as plt
 
 from ..core import get_default_options, apply_model, get, has_all_attributes, fullfact, eval_dict
 from ..align import align, pad
@@ -19,6 +21,20 @@ from .static import static_plot, group_mean, match_color
 from .animate import Animator
 
 defaults = get_default_options()
+
+
+def get_env():
+    if 'ipykernel_launcher.py' in sys.argv[0]:
+        return 'jupyter'
+    else:
+        return 'python'
+
+
+def update_plotly_renderer(backend=None):
+    if (backend is None) and (get_env() == 'python'):
+        pio.renderers.default = 'browser'
+    elif backend is not None:
+        pio.renderers.default = backend
 
 
 def get_cmap(cmap, **kwargs):
@@ -80,6 +96,14 @@ def mat2colors(m, **kwargs):
         reducer['kwargs'] = dw.core.update_dict(reducer['kwargs'], {'n_components': 3})
     m = reduce(m, model=reducer)
     return colorize_rgb(m, cmap)
+
+
+def mpl2plotly_color(c):
+    if type(c) is list:
+        return [mpl2plotly_color(i) for i in c]
+    else:
+        color = mpl.colors.to_rgb(c)
+        return f'rgb({color[0]}, {color[1]}, {color[2]})'
 
 
 def get_colors(data):
@@ -145,13 +169,23 @@ def get_bounds(data):
     return np.vstack([np.nanmin(x, axis=0), np.nanmax(x, axis=0)])
 
 
-def plot_bounding_box(bounds, color='k', linewidth=2, ax=None):
-    if ax is None:
-        if bounds.shape[1] == 3:
-            ax = plt.gca(projection='3d')
-        else:
-            assert bounds.shape[1] == 2, ValueError('bounding box must be either 2d or 3d')
-            ax = plt.gca()
+def get_empty_canvas(fig=None):
+    if fig is None:
+        fig = go.Figure()
+    fig = fig.to_dict()
+
+    for axis in ['xaxis', 'yaxis', 'zaxis']:
+        fig['layout']['template']['layout']['scene'][axis]['showbackground'] = False
+        fig['layout']['template']['layout']['scene'][axis]['showgrid'] = False
+        fig['layout']['template']['layout']['scene'][axis]['showticklabels'] = False
+
+    return go.Figure(fig)
+
+
+def plot_bounding_box(bounds, color='k', width=2, fig=None):
+    fig = get_empty_canvas(fig=fig).to_dict()
+
+    color = mpl2plotly_color(color)
 
     n_dims = bounds.shape[1]
     n_vertices = np.power(2, n_dims)
@@ -161,14 +195,21 @@ def plot_bounding_box(bounds, color='k', linewidth=2, ax=None):
     vertices = np.multiply(vertices, np.repeat(lengths, n_vertices, axis=0))
     vertices += np.repeat(np.atleast_2d(np.min(bounds, axis=0)), n_vertices, axis=0)
 
+    edges = []
     for i in range(n_vertices):
         for j in range(i):
             # check for adjacent vertex (match every coordinate except 1)
             if np.sum([a == b for a, b in zip(vertices[i], vertices[j])]) == n_dims - 1:
-                next_edge = np.concatenate([vertices[i], vertices[j]], axis=0)
-                ax.plot(*[np.array(x).squeeze() for x in np.split(next_edge, n_dims, axis=1)], color=color,
-                        linewidth=linewidth)
-    return ax
+                edges.append(np.concatenate([vertices[i], vertices[j]], axis=0))
+
+    # FIXME -- go.Scatter3d(x=i[:, 0], y=i[:, 1], z=i[:, 2], line=dict(color=color, width=width))
+    if n_dims == 2:
+
+        return [go.scatter.Line(x=i[:, 0], y=i[:, 1], color=color, width=width) for i in edges]
+    elif n_dims == 3:
+        return [go.scatter3d.Line(dict(x=i[:, 0], y=i[:, 1], z=i[:, 2], color=color, width=width)) for i in edges]
+    else:
+        return edges
 
 
 @dw.decorate.funnel
@@ -211,19 +252,19 @@ def plot(data, *fmt, **kwargs):
     else:
         c = np.max([data.shape[1], 2])
 
-    if c == 2:
-        ax = kwargs.pop('ax', plt.gca())
-    elif c == 3:
-        ax = kwargs.pop('ax', plt.gca(projection='3d'))
-    else:
-        raise ValueError(f'data must be 2D or 3D; given: {c}D')
-    kwargs['ax'] = ax
+    renderer = kwargs.pop('renderer', None)
+    update_plotly_renderer(backend=renderer)
+
+    fig = kwargs.pop('fig', go.Figure())
+    kwargs['fig'] = fig
 
     bounding_box = kwargs.pop('bounding_box', True)
     data = pad(data, c=c)
 
     if bounding_box:
-        plot_bounding_box(get_bounds(data), color='k', linewidth=2, ax=ax)
+        shapes = plot_bounding_box(get_bounds(data), color='k', width=2)
+    else:
+        shapes = []
 
     animate = kwargs.pop('animate', False)
 

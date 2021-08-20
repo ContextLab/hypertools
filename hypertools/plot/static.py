@@ -3,10 +3,8 @@ import datawrangler as dw
 import numpy as np
 import pandas as pd
 import seaborn as sns
-
-from matplotlib import pyplot as plt
-
-from .backend import manage_backend
+import plotly.io as pio
+import plotly.graph_objects as go
 
 from ..core import get_default_options, eval_dict, get
 
@@ -58,7 +56,6 @@ def get_continuous_inds(x):
         return [x[breaks[i]:breaks[i+1]] for i in range(len(breaks) - 1)]
 
 
-@manage_backend
 def static_plot(data, **kwargs):
     kwargs = dw.core.update_dict(defaults, kwargs)
 
