@@ -183,11 +183,15 @@ def get_empty_canvas(fig=None):
 
 
 def plot_bounding_box(bounds, color='k', width=2, fig=None):
-    fig = get_empty_canvas(fig=fig).to_dict()
+    fig = get_empty_canvas(fig=fig)
 
     color = mpl2plotly_color(color)
 
     n_dims = bounds.shape[1]
+
+    # TODO: could also pass in a reduction model; if >3D, reduce to 3D prior to plotting
+    assert n_dims in [2, 3], ValueError(f'only 2D or 3D coordinates are supported; given: {n_dims}D')
+
     n_vertices = np.power(2, n_dims)
 
     lengths = np.abs(np.diff(bounds, axis=0))
@@ -200,16 +204,15 @@ def plot_bounding_box(bounds, color='k', width=2, fig=None):
         for j in range(i):
             # check for adjacent vertex (match every coordinate except 1)
             if np.sum([a == b for a, b in zip(vertices[i], vertices[j])]) == n_dims - 1:
-                edges.append(np.concatenate([vertices[i], vertices[j]], axis=0))
+                x = np.concatenate([vertices[i], vertices[j]], axis=0)
+                if n_dims == 2:
+                    fig.add_trace(go.Scatter(x=x[:, 0], y=x[:, 1], mode='lines', showlegend=False,
+                                             line=dict(width=width, color=color)))
+                elif n_dims == 3:
+                    fig.add_trace(go.Scatter3d(x=x[:, 0], y=x[:, 1], z=x[:, 2], mode='lines', showlegend=False,
+                                               line=dict(width=width, color=color)))
 
-    # FIXME -- go.Scatter3d(x=i[:, 0], y=i[:, 1], z=i[:, 2], line=dict(color=color, width=width))
-    if n_dims == 2:
-
-        return [go.scatter.Line(x=i[:, 0], y=i[:, 1], color=color, width=width) for i in edges]
-    elif n_dims == 3:
-        return [go.scatter3d.Line(dict(x=i[:, 0], y=i[:, 1], z=i[:, 2], color=color, width=width)) for i in edges]
-    else:
-        return edges
+    return fig
 
 
 @dw.decorate.funnel
@@ -262,7 +265,7 @@ def plot(data, *fmt, **kwargs):
     data = pad(data, c=c)
 
     if bounding_box:
-        shapes = plot_bounding_box(get_bounds(data), color='k', width=2)
+        shapes = plot_bounding_box(get_bounds(data), color='k', width=2, fig=fig)
     else:
         shapes = []
 
