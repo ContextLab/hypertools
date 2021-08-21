@@ -62,11 +62,19 @@ def get_empty_canvas(fig=None):
         fig = go.Figure()
     fig = fig.to_dict()
 
+    # set 3D properties
     for axis in ['xaxis', 'yaxis', 'zaxis']:
         fig['layout']['template']['layout']['scene'][axis]['showbackground'] = False
         fig['layout']['template']['layout']['scene'][axis]['showgrid'] = False
         fig['layout']['template']['layout']['scene'][axis]['showticklabels'] = False
         fig['layout']['template']['layout']['scene'][axis]['title'] = ''
+
+    # set 2D properties
+    for axis in ['xaxis', 'yaxis']:
+        fig['layout']['template']['layout'][axis]['showgrid'] = False
+        fig['layout']['template']['layout'][axis]['showticklabels'] = False
+        fig['layout']['template']['layout'][axis]['title'] = ''
+    fig['layout']['template']['layout']['plot_bgcolor'] = 'white'
 
     return go.Figure(fig)
 
@@ -79,7 +87,11 @@ def mpl2plotly_color(c):
         return f'rgb({color[0]}, {color[1]}, {color[2]})'
 
 
-def plot_bounding_box(bounds, color='k', width=10, opacity=0.75, fig=None):
+def plot_bounding_box(bounds, color='k', width=3, opacity=0.9, fig=None, buffer=0.025):
+    def expand_range(x, b):
+        length = np.max(x) - np.min(x)
+        return [np.min(x) - b * length, np.max(x) + b * length]
+
     fig = get_empty_canvas(fig=fig)
 
     color = mpl2plotly_color(color)
@@ -105,6 +117,10 @@ def plot_bounding_box(bounds, color='k', width=10, opacity=0.75, fig=None):
                                               showlegend=False, hoverinfo='skip', name='bounding box', opacity=opacity,
                                               linewidth=width, color=color))
     fig.add_traces(edges)
+    if n_dims == 2:
+        fig.update_xaxes(range=expand_range(bounds[:, 0], buffer))
+        fig.update_yaxes(range=expand_range(bounds[:, 1], buffer))
+
     return fig
 
 
@@ -164,10 +180,12 @@ def static_plot(data, **kwargs):
     color = kwargs.pop('color', None)
 
     if type(data) is list:
+        names = kwargs.pop('name', [str(d) for d in range(len(data))])
         for i, d in enumerate(data):
-            opts = {'color': get(color, i), 'fig': fig}
+            opts = {'color': get(color, i), 'fig': fig, 'name': get(names, i)}
             fig = static_plot(d, **dw.core.update_dict(kwargs, opts))
         return fig
+    kwargs = dw.core.update_dict({'name': ''}, kwargs)
 
     color = get(color, range(data.shape[0]), axis=0)
     if dw.zoo.is_multiindex_dataframe(data):

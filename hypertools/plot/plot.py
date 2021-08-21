@@ -219,7 +219,7 @@ def plot(original_data, *fmt, **kwargs):
     data = pad(data, c=c)
 
     if bounding_box:
-        fig = plot_bounding_box(get_bounds(data), color='k', width=2, fig=fig)
+        fig = plot_bounding_box(get_bounds(data), fig=fig)
 
     kwargs['fig'] = fig
     animate = kwargs.pop('animate', False)

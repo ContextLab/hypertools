@@ -11,7 +11,8 @@ def test_static_plot2d():
     # test lines, markers
     # test different strategies for managing color
     # test various manipulations (align, cluster, manip, reduce)
-    fig = hyp.plot(weights)
+    pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
+    fig = hyp.plot(weights, reduce=pca)
     pass
 
 
