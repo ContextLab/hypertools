@@ -178,11 +178,12 @@ def get_empty_canvas(fig=None):
         fig['layout']['template']['layout']['scene'][axis]['showbackground'] = False
         fig['layout']['template']['layout']['scene'][axis]['showgrid'] = False
         fig['layout']['template']['layout']['scene'][axis]['showticklabels'] = False
+        fig['layout']['template']['layout']['scene'][axis]['title'] = ''
 
     return go.Figure(fig)
 
 
-def plot_bounding_box(bounds, color='k', width=2, fig=None):
+def plot_bounding_box(bounds, color='k', width=4, opacity=0.75, fig=None):
     fig = get_empty_canvas(fig=fig)
 
     color = mpl2plotly_color(color)
@@ -206,12 +207,16 @@ def plot_bounding_box(bounds, color='k', width=2, fig=None):
             if np.sum([a == b for a, b in zip(vertices[i], vertices[j])]) == n_dims - 1:
                 x = np.concatenate([vertices[i], vertices[j]], axis=0)
                 if n_dims == 2:
-                    fig.add_trace(go.Scatter(x=x[:, 0], y=x[:, 1], mode='lines', showlegend=False,
-                                             line=dict(width=width, color=color)))
+                    edges.append(go.Scatter(x=x[:, 0].ravel().tolist()[0], y=x[:, 1].ravel().tolist()[0],
+                                            mode='lines', showlegend=False, hoverinfo='skip', name='bounding box',
+                                            opacity=opacity, line=dict(width=width, color=color)))
                 elif n_dims == 3:
-                    fig.add_trace(go.Scatter3d(x=x[:, 0], y=x[:, 1], z=x[:, 2], mode='lines', showlegend=False,
-                                               line=dict(width=width, color=color)))
+                    edges.append(go.Scatter3d(x=x[:, 0].ravel().tolist()[0], y=x[:, 1].ravel().tolist()[0],
+                                              z=x[:, 2].ravel().tolist()[0], mode='lines', showlegend=False,
+                                              hoverinfo='skip', name='bounding box', opacity=opacity,
+                                              line=dict(width=width, color=color)))
 
+    fig.add_traces(edges)
     return fig
 
 
@@ -259,16 +264,14 @@ def plot(data, *fmt, **kwargs):
     update_plotly_renderer(backend=renderer)
 
     fig = kwargs.pop('fig', go.Figure())
-    kwargs['fig'] = fig
 
     bounding_box = kwargs.pop('bounding_box', True)
     data = pad(data, c=c)
 
     if bounding_box:
-        shapes = plot_bounding_box(get_bounds(data), color='k', width=2, fig=fig)
-    else:
-        shapes = []
+        fig = plot_bounding_box(get_bounds(data), color='k', width=2, fig=fig)
 
+    kwargs['fig'] = fig
     animate = kwargs.pop('animate', False)
 
     if animate:
