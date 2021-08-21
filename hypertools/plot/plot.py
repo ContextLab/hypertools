@@ -11,13 +11,13 @@ import sys
 
 from scipy.spatial.distance import pdist, squareform
 
-from ..core import get_default_options, apply_model, get, has_all_attributes, fullfact, eval_dict
+from ..core import get_default_options, apply_model, get, has_all_attributes, eval_dict
 from ..align import align, pad
 from ..cluster import cluster
 from ..manip import manip
 from ..reduce import reduce
 
-from .static import static_plot, group_mean, match_color
+from .static import static_plot, group_mean, match_color, mpl2plotly_color, plot_bounding_box
 from .animate import Animator
 
 defaults = get_default_options()
@@ -98,14 +98,6 @@ def mat2colors(m, **kwargs):
     return colorize_rgb(m, cmap)
 
 
-def mpl2plotly_color(c):
-    if type(c) is list:
-        return [mpl2plotly_color(i) for i in c]
-    else:
-        color = mpl.colors.to_rgb(c)
-        return f'rgb({color[0]}, {color[1]}, {color[2]})'
-
-
 def get_colors(data):
     def safe_len(x):
         if type(x) is list:
@@ -169,59 +161,17 @@ def get_bounds(data):
     return np.vstack([np.nanmin(x, axis=0), np.nanmax(x, axis=0)])
 
 
-def get_empty_canvas(fig=None):
-    if fig is None:
-        fig = go.Figure()
-    fig = fig.to_dict()
+def plot(original_data, *fmt, **kwargs):
+    wrangle_ops = ['array', 'dataframe', 'text', 'impute', 'interp']
+    wrangle_kwargs = {f'{w}_kwargs': kwargs.pop(f'{w}_kwargs', {}) for w in wrangle_ops}
 
-    for axis in ['xaxis', 'yaxis', 'zaxis']:
-        fig['layout']['template']['layout']['scene'][axis]['showbackground'] = False
-        fig['layout']['template']['layout']['scene'][axis]['showgrid'] = False
-        fig['layout']['template']['layout']['scene'][axis]['showticklabels'] = False
-        fig['layout']['template']['layout']['scene'][axis]['title'] = ''
+    # noinspection PyUnusedLocal
+    @dw.decorate.interpolate
+    def wrangle(f, **opts):
+        return f
 
-    return go.Figure(fig)
+    data = wrangle(original_data, **wrangle_kwargs)
 
-
-def plot_bounding_box(bounds, color='k', width=4, opacity=0.75, fig=None):
-    fig = get_empty_canvas(fig=fig)
-
-    color = mpl2plotly_color(color)
-
-    n_dims = bounds.shape[1]
-
-    # TODO: could also pass in a reduction model; if >3D, reduce to 3D prior to plotting
-    assert n_dims in [2, 3], ValueError(f'only 2D or 3D coordinates are supported; given: {n_dims}D')
-
-    n_vertices = np.power(2, n_dims)
-
-    lengths = np.abs(np.diff(bounds, axis=0))
-    vertices = fullfact(n_dims * [2]) - 1
-    vertices = np.multiply(vertices, np.repeat(lengths, n_vertices, axis=0))
-    vertices += np.repeat(np.atleast_2d(np.min(bounds, axis=0)), n_vertices, axis=0)
-
-    edges = []
-    for i in range(n_vertices):
-        for j in range(i):
-            # check for adjacent vertex (match every coordinate except 1)
-            if np.sum([a == b for a, b in zip(vertices[i], vertices[j])]) == n_dims - 1:
-                x = np.concatenate([vertices[i], vertices[j]], axis=0)
-                if n_dims == 2:
-                    edges.append(go.Scatter(x=x[:, 0].ravel().tolist()[0], y=x[:, 1].ravel().tolist()[0],
-                                            mode='lines', showlegend=False, hoverinfo='skip', name='bounding box',
-                                            opacity=opacity, line=dict(width=width, color=color)))
-                elif n_dims == 3:
-                    edges.append(go.Scatter3d(x=x[:, 0].ravel().tolist()[0], y=x[:, 1].ravel().tolist()[0],
-                                              z=x[:, 2].ravel().tolist()[0], mode='lines', showlegend=False,
-                                              hoverinfo='skip', name='bounding box', opacity=opacity,
-                                              line=dict(width=width, color=color)))
-
-    fig.add_traces(edges)
-    return fig
-
-
-@dw.decorate.funnel
-def plot(data, *fmt, **kwargs):
     pipeline = kwargs.pop('pipeline', None)
 
     manipulators = kwargs.pop('manip', None)
@@ -278,8 +228,6 @@ def plot(data, *fmt, **kwargs):
         animation_opts = dw.core.update_dict(eval_dict(defaults['animate']), kwargs)
         camera_angles = np.linspace(0, animation_opts['rotations'] * 360,
                                     animation_opts['duration'] * animation_opts['framerate'] + 1)[:-1]
-        animator = Animator(ax, data, mode, angles, zooms, animation_opts)
-        return animation.FuncAnimation(plt.gcf(), animator, frames=len(camera_angles),
-                                       interval=1000 / animation_opts['framerate'], blit=True)
+        return Animator(fig=fig, data=data, mode=mode, angles=camera_angles, zooms=zooms, **animation_opts)
 
     return static_plot(data, **kwargs)
