@@ -62,19 +62,22 @@ def get_empty_canvas(fig=None):
         fig = go.Figure()
     fig = fig.to_dict()
 
+    colors = ['#E6E7E8', '#D1D3D4', '#BCBEC0']
+
     # set 3D properties
-    for axis in ['xaxis', 'yaxis', 'zaxis']:
-        fig['layout']['template']['layout']['scene'][axis]['showbackground'] = False
-        fig['layout']['template']['layout']['scene'][axis]['showgrid'] = False
+    for i, axis in enumerate(['xaxis', 'yaxis', 'zaxis']):
+        # fig['layout']['template']['layout']['scene'][axis]['showbackground'] = False
+        # fig['layout']['template']['layout']['scene'][axis]['showgrid'] = False
+        fig['layout']['template']['layout']['scene'][axis]['backgroundcolor'] = get(colors, i)
         fig['layout']['template']['layout']['scene'][axis]['showticklabels'] = False
         fig['layout']['template']['layout']['scene'][axis]['title'] = ''
 
     # set 2D properties
     for axis in ['xaxis', 'yaxis']:
-        fig['layout']['template']['layout'][axis]['showgrid'] = False
+        # fig['layout']['template']['layout'][axis]['showgrid'] = False
         fig['layout']['template']['layout'][axis]['showticklabels'] = False
         fig['layout']['template']['layout'][axis]['title'] = ''
-    fig['layout']['template']['layout']['plot_bgcolor'] = 'white'
+    fig['layout']['template']['layout']['plot_bgcolor'] = get(colors, 0)
 
     return go.Figure(fig)
 
@@ -208,12 +211,6 @@ def static_plot(data, **kwargs):
     remove_params = ['n_colors', 'scale', 'cmap']
     for r in remove_params:
         kwargs.pop(r, None)
-
-    # TODO: write a helper function to manage 2d and 3d plotting:
-    #  - use line collections when multiple colors are specified for a multicolored line plot:
-    #    https://matplotlib.org/stable/gallery/shapes_and_collections/line_collection.html
-    #  - check whether we're in scatter mode or line mode
-    #  - check whether we're in 3D or 2D mode
 
     # note on animations and styles: it'd be nice to be able to *separately* specify an animation style
     # and plot style for each dataset (e.g. if data is passed as a list or stacked dataframe)

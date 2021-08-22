@@ -17,7 +17,7 @@ from ..cluster import cluster
 from ..manip import manip
 from ..reduce import reduce
 
-from .static import static_plot, group_mean, match_color, mpl2plotly_color, plot_bounding_box
+from .static import static_plot, group_mean, match_color, mpl2plotly_color, plot_bounding_box, get_empty_canvas
 from .animate import Animator
 
 defaults = get_default_options()
@@ -93,6 +93,7 @@ def mat2colors(m, **kwargs):
         reducer = {'model': reduce, 'args': [], 'kwargs': {'n_components': 3}}
     else:
         assert has_all_attributes(reduce, ['model', 'args', 'kwargs']), ValueError(f'invalid reduce model: {reducer}')
+        # noinspection PyTypeChecker
         reducer['kwargs'] = dw.core.update_dict(reducer['kwargs'], {'n_components': 3})
     m = reduce(m, model=reducer)
     return colorize_rgb(m, cmap)
@@ -122,7 +123,7 @@ def get_colors(data):
 
 
 def parse_style(fmt):
-    default_style = eval_dict(defaults['plot'])
+    default_style = eval_dict(defaults['plot'].copy())
 
     if type(fmt) is not str:
         return dw.core.update_dict({'color': None, 'linestyle': None, 'marker': None}, default_style)
@@ -215,11 +216,13 @@ def plot(original_data, *fmt, **kwargs):
 
     fig = kwargs.pop('fig', go.Figure())
 
-    bounding_box = kwargs.pop('bounding_box', True)
+    bounding_box = kwargs.pop('bounding_box', False)
     data = pad(data, c=c)
 
     if bounding_box:
         fig = plot_bounding_box(get_bounds(data), fig=fig)
+    else:
+        fig = get_empty_canvas(fig=fig)
 
     kwargs['fig'] = fig
     animate = kwargs.pop('animate', False)

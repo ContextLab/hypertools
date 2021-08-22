@@ -12,7 +12,24 @@ def test_static_plot2d():
     # test different strategies for managing color
     # test various manipulations (align, cluster, manip, reduce)
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
-    fig = hyp.plot(weights, reduce=pca)
+
+    # lines
+    fig1a = hyp.plot(weights, reduce=pca)
+    fig1b = hyp.plot(weights, '-', reduce=pca)
+    fig2 = hyp.plot(weights, reduce=pca, color=weights)
+
+    # markers
+    fig3 = hyp.plot(weights, '.', reduce=pca)
+    fig4 = hyp.plot(weights, 'o', reduce=pca)
+    fig5 = hyp.plot(weights, 'o', reduce=pca, color=weights)
+
+    # lines + markers
+    fig6 = hyp.plot(weights, '-.', reduce=pca)
+    fig7 = hyp.plot(weights, '-.', reduce=pca, color=weights)
+
+    # zscore, align, cluster
+    kmeans = {'model': 'KMeans', 'args': [], 'kwargs': {'n_clusters': 5}}
+    fig8 = hyp.plot(weights, 'o', reduce=pca, cluster=kmeans, align='HyperAlign', manip='ZScore')
     pass
 
 
