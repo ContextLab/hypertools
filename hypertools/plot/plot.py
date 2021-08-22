@@ -52,28 +52,42 @@ def colorize_rgb(x, cmap, **kwargs):
     if cmap is None:
         return x
 
-    colors = np.unique(x.reshape([x.shape[0] * x.shape[1], x.shape[2]]), axis=0)
+    if dw.zoo.is_dataframe(x):
+        x = x.values
+
+    if np.ndim(x) == 3:
+        colors = np.unique(x.reshape([x.shape[0] * x.shape[1], x.shape[2]]), axis=0)
+    else:
+        colors = np.unique(x, axis=0)
     colors = colors[np.lexsort(colors.T[::-1])]  # colors sorted by row
 
-    color_bins = np.digitize(np.arange(n_colors), np.linspace(0, n_colors, num=n_colors + 1))
-    colorized = np.zeros([x.shape[0], x.shape[1], cmap.shape[1]])
+    n_colors = cmap.shape[0]
+    color_bins = np.digitize(np.arange(colors.shape[0]), np.linspace(0, colors.shape[0], num=n_colors + 1))
+
+    if np.ndim(x) == 3:
+        colorized = np.zeros([x.shape[0], x.shape[1], cmap.shape[1]])
+    else:
+        colorized = np.zeros([x.shape[0], cmap.shape[1]])
 
     for b in range(1, n_colors):
         inds = match_color(x, colors[color_bins == b, :])
-        colorized[inds[0], inds[1], :] = cmap[b, :]
+
+        if np.ndim(x) == 3:
+            colorized[inds[0], inds[1], :] = cmap[b, :]
+        else:
+            colorized[inds, :] = cmap[b, :]
     return colorized
 
 
 def mat2colors(m, **kwargs):
-    if not (dw.zoo.is_array(m) or dw.zoo.is_dataframe(m)):
-        if type(m) is str:
-            return np.atleast_2d(mpl.colors.to_rgb(m))
-        elif type(m) is list:
-            stacked_m = dw.stack(m)
-            stacked_colors = pd.DataFrame(mat2colors(stacked_m), index=stacked_m.index)
-            return dw.unstack(stacked_colors)
-        else:
-            return np.atleast_2d(mpl.colors.to_rgb(m))
+    if type(m) is str:
+        return np.atleast_2d(mpl.colors.to_rgb(m))
+    elif type(m) is list:
+        stacked_m = dw.stack(m)
+        stacked_colors = pd.DataFrame(data=mat2colors(stacked_m, **kwargs), index=stacked_m.index)
+        return dw.unstack(stacked_colors)
+    elif dw.zoo.is_dataframe(m):
+        return mat2colors(m.values, **kwargs)
 
     cmap = get_cmap(kwargs.pop('cmap', eval(defaults['plot']['cmap'])))
     n_colors = cmap.shape[0]
@@ -90,9 +104,9 @@ def mat2colors(m, **kwargs):
 
     reducer = kwargs.pop('reduce', 'IncrementalPCA')
     if type(reduce) is not dict:
-        reducer = {'model': reduce, 'args': [], 'kwargs': {'n_components': 3}}
+        reducer = {'model': reducer, 'args': [], 'kwargs': {'n_components': 3}}
     else:
-        assert has_all_attributes(reduce, ['model', 'args', 'kwargs']), ValueError(f'invalid reduce model: {reducer}')
+        assert has_all_attributes(reducer, ['model', 'args', 'kwargs']), ValueError(f'invalid reduce model: {reducer}')
         # noinspection PyTypeChecker
         reducer['kwargs'] = dw.core.update_dict(reducer['kwargs'], {'n_components': 3})
     m = reduce(m, model=reducer)
@@ -232,8 +246,8 @@ def parse_style(fmt):
         mode = 'lines'
 
     # noinspection PyUnboundLocalVariable
-    return dw.core.update_dict(eval_dict(defaults['plot'].copy()), {'color': color, 'marker': marker, 'linestyle': linestyle, 'mode': mode,
-                                               **marker_opts, **line_opts})
+    return dw.core.update_dict(eval_dict(defaults['plot'].copy()), {'color': color, 'marker': marker,  'mode': mode,
+                                                                    **marker_opts, **line_opts})
 
 
 def get_bounds(data):
