@@ -56,13 +56,13 @@ def colorize_rgb(x, cmap, **kwargs):
         x = x.values
 
     if np.ndim(x) == 3:
-        colors = np.unique(x.reshape([x.shape[0] * x.shape[1], x.shape[2]]), axis=0)
+        img_colors = np.unique(x.reshape([x.shape[0] * x.shape[1], x.shape[2]]), axis=0)
     else:
-        colors = np.unique(x, axis=0)
-    colors = colors[np.lexsort(colors.T[::-1])]  # colors sorted by row
+        img_colors = np.unique(x, axis=0)
+    img_colors = img_colors[np.lexsort(img_colors.T[::-1])]  # colors sorted by row
 
     n_colors = cmap.shape[0]
-    color_bins = np.digitize(np.arange(colors.shape[0]), np.linspace(0, colors.shape[0], num=n_colors + 1))
+    color_bins = np.digitize(np.arange(img_colors.shape[0]), np.linspace(0, img_colors.shape[0], num=n_colors))
 
     if np.ndim(x) == 3:
         colorized = np.zeros([x.shape[0], x.shape[1], cmap.shape[1]])
@@ -70,7 +70,7 @@ def colorize_rgb(x, cmap, **kwargs):
         colorized = np.zeros([x.shape[0], cmap.shape[1]])
 
     for b in range(1, n_colors):
-        inds = match_color(x, colors[color_bins == b, :])
+        inds = match_color(x, img_colors[color_bins == b, :])
 
         if np.ndim(x) == 3:
             colorized[inds[0], inds[1], :] = cmap[b, :]

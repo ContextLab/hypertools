@@ -185,7 +185,7 @@ def static_plot(data, **kwargs):
     if type(data) is list:
         names = kwargs.pop('name', [str(d) for d in range(len(data))])
         for i, d in enumerate(data):
-            opts = {'color': get(color, i), 'fig': fig, 'name': get(names, i)}
+            opts = {'color': get(color, i), 'fig': fig, 'name': get(names, i), 'legendgroup': get(names, i)}
             fig = static_plot(d, **dw.core.update_dict(kwargs, opts))
         return fig
     kwargs = dw.core.update_dict({'name': ''}, kwargs)
@@ -223,6 +223,11 @@ def static_plot(data, **kwargs):
         c = unique_colors[i, :]
         c_inds = match_color(color, c)[0]
 
+        if i > 0:
+            opts = {'showlegend': False}
+        else:
+            opts = {}
+
         for inds in get_continuous_inds(c_inds):
             if len(inds) == 1:
                 if inds[0] < data.shape[0] - 1:
@@ -230,6 +235,6 @@ def static_plot(data, **kwargs):
                 else:
                     inds = np.array([inds[0], inds[0]])
 
-            fig.add_trace(get_plotly_shape(data.values[inds, :], **kwargs, color=mpl2plotly_color(c)))
+            fig.add_trace(get_plotly_shape(data.values[inds, :], **kwargs, **opts, color=mpl2plotly_color(c)))
 
     return fig
