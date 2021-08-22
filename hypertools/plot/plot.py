@@ -80,7 +80,7 @@ def mat2colors(m, **kwargs):
 
     m = np.squeeze(np.array(m))
     if m.ndim < 2:
-        _, edges = np.histogram(m, bins=n_colors-1)
+        _, edges = np.histogram(m, bins=n_colors - 1)
         bins = np.digitize(m, edges) - 1
 
         colors = np.zeros([len(m), cmap.shape[1]])
@@ -125,13 +125,10 @@ def get_colors(data):
 def parse_style(fmt):
     def combo_merge(a, b):
         combos = []
+        # noinspection PyShadowingNames
         for i in a:
             for j in b:
-                if len(i) <= 2:
-                    if len(j) <= 2:
-                        combos.append(i + j)
-                elif len(j) > 1:
-                    combos.append(i + '+' + j)
+                combos.append(i + j)
         return combos
 
     marker_shapes = ['scatter', 'marker', 'markers', 'bigmarker', 'bigmarkers', 'circle', 'square', 'diamond', 'cross',
@@ -142,7 +139,6 @@ def parse_style(fmt):
                      'diamond-cross', 'diamond-x', 'cross-thin', 'x-thin', 'asterisk', 'hash', 'y-up', 'y-down',
                      'y-left', 'y-right', 'line-ew', 'line-ns', 'line-ne', 'line-nw', 'arrow-up', 'arrow-down',
                      'arrow-left', 'arrow-right', 'arrow-bar-up', 'arrow-bar-down', 'arrow-bar-left', 'arrow-bar-right']
-    marker_shapes.extend(list('.,ov^<>12348spP*hH+xXDd|_'))
     marker_shapes_dict = {'.': 'circle', ',': 'circle', 'o': 'circle', 'v': 'triangle-down', '^': 'triangle-up',
                           '<': 'triangle-left', '>': 'triangle-right', '1': 'star-triangle-down',
                           '2': 'star-triangle-up', '3': 'star-triangle-left', '4': 'star-triangle-right',
@@ -151,11 +147,13 @@ def parse_style(fmt):
                           'D': 'diamond-wide', '|': 'line-ns', '_': 'line-ew'}
     marker_styles = ['', '-open', '-dot', '-open-dot']
     markers = combo_merge(marker_shapes, marker_styles)
+    markers.extend(list('.,ov^<>12348spP*hH+xXDd|_'))
     line_styles = ['-', '--', ':', '-:', 'line', 'lines']
-    combo_styles = combo_merge(markers, line_styles) + combo_merge(line_styles, markers)
     big_markers = ['o', 'big']
+    small_markers = [',']
     dash_styles = {'--': 'dash', '-:': 'dashdot', ':': 'dot'}
 
+    # noinspection PyShadowingNames
     def substr_list(style, x):
         """
         style: a style string
@@ -163,18 +161,26 @@ def parse_style(fmt):
 
         return: true if any of the strings in x is a substring of s, and false otherwise
         """
+        if style is None:
+            return ''
+
         inds = np.array([s in style for s in x])
         if np.any(inds):
             return x[np.where(inds)[0][0]]
         else:
             return ''
 
-    is_line = lambda s: substr_list(s, line_styles + combo_styles)
-    is_marker = lambda s: substr_list(s, marker_styles + combo_styles)
-    is_combo = lambda s: substr_list(s, combo_styles)
+    def is_bigmarker(s):
+        return substr_list(s, big_markers)
 
-    is_dashed = lambda s: substr_list(s, list(dash_styles.keys()))
-    is_bigmarker = lambda s: substr_list(s, big_markers)
+    def is_smallmarker(s):
+        return substr_list(s, small_markers)
+
+    def is_matplotlib_marker(s):
+        return substr_list(s, list(marker_shapes_dict.keys()))
+
+    def is_dashed(s):
+        return substr_list(s, list(dash_styles.keys()))
 
     def pop_string(s, sub_s):
         if sub_s in s:
@@ -182,18 +188,23 @@ def parse_style(fmt):
         else:
             return None, s
 
-    markers = list('.,ov^>12348spP*hH+xXDd|_')
-    line_styles = ['-', '--', '-.', ':']
-
     color = None
+    marker = None
+    linestyle = None
+    dash = None
+
     for m in markers:
         marker, fmt = pop_string(fmt, m)
         if marker:
+            if is_matplotlib_marker(marker):
+                marker = marker_shapes_dict[marker]
             break
 
     for i in line_styles:
         linestyle, fmt = pop_string(fmt, i)
         if linestyle:
+            if is_dashed(linestyle):
+                dash = dash_styles[linestyle]
             break
 
     try:
@@ -201,8 +212,28 @@ def parse_style(fmt):
     except ValueError:
         pass
 
+    if is_bigmarker(marker):
+        marker_opts = {'markersize': defaults['plot']['bigmarkersize']}
+    elif is_smallmarker(marker):
+        marker_opts = {'markersize': defaults['plot']['smallmarkersize']}
+    else:
+        marker_opts = {}
+
+    if dash:
+        line_opts = {'dash': dash}
+    else:
+        line_opts = {}
+
+    if marker and linestyle:
+        mode = 'lines+markers'
+    elif marker:
+        mode = 'markers'
+    else:
+        mode = 'lines'
+
     # noinspection PyUnboundLocalVariable
-    return dw.core.update_dict(default_style, {'color': color, 'marker': marker, 'linestyle': linestyle})
+    return dw.core.update_dict(eval_dict(defaults['plot'].copy()), {'color': color, 'marker': marker, 'linestyle': linestyle, 'mode': mode,
+                                               **marker_opts, **line_opts})
 
 
 def get_bounds(data):
@@ -247,7 +278,10 @@ def plot(original_data, *fmt, **kwargs):
     if clusterers is not None:
         colors = cluster(data, model=clusterers)
     else:
-        colors = kwargs.pop('color', get_colors(data))
+        if 'color' not in kwargs.keys() or kwargs['color'] is None:
+            colors = get_colors(data)
+        else:
+            colors = kwargs.pop('color', ValueError('error parsing color argument'))
 
     cmap = kwargs.pop('cmap', eval(defaults['plot']['cmap']))
     color_kwargs = kwargs.pop('color_kwargs', kwargs)

@@ -208,7 +208,7 @@ def static_plot(data, **kwargs):
         static_plot(group_means, **group_kwargs)
 
     # remove defaults that shouldn't be passed to plot
-    remove_params = ['n_colors', 'scale', 'cmap']
+    remove_params = ['n_colors', 'scale', 'cmap', 'bigmarkersize', 'smallmarkersize']
     for r in remove_params:
         kwargs.pop(r, None)
 
