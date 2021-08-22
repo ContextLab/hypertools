@@ -123,10 +123,58 @@ def get_colors(data):
 
 
 def parse_style(fmt):
-    default_style = eval_dict(defaults['plot'].copy())
+    def combo_merge(a, b):
+        combos = []
+        for i in a:
+            for j in b:
+                if len(i) <= 2:
+                    if len(j) <= 2:
+                        combos.append(i + j)
+                elif len(j) > 1:
+                    combos.append(i + '+' + j)
+        return combos
 
-    if type(fmt) is not str:
-        return dw.core.update_dict({'color': None, 'linestyle': None, 'marker': None}, default_style)
+    marker_shapes = ['scatter', 'marker', 'markers', 'bigmarker', 'bigmarkers', 'circle', 'square', 'diamond', 'cross',
+                     'triangle-up', 'triangle-down', 'triangle-left', 'triangle-ne', 'triangle-se', 'triangle-sw',
+                     'triangle-nw', 'pentagon', 'hexagon', 'hexagon2', 'octagon', 'star', 'hexagram',
+                     'star-triangle-up', 'star-triangle-down', 'star-square', 'star-diamond', 'diamond-tall',
+                     'diamond-wide', 'hourglass', 'bowtie', 'circle-cross', 'circle-x', 'square-cross', 'square-x',
+                     'diamond-cross', 'diamond-x', 'cross-thin', 'x-thin', 'asterisk', 'hash', 'y-up', 'y-down',
+                     'y-left', 'y-right', 'line-ew', 'line-ns', 'line-ne', 'line-nw', 'arrow-up', 'arrow-down',
+                     'arrow-left', 'arrow-right', 'arrow-bar-up', 'arrow-bar-down', 'arrow-bar-left', 'arrow-bar-right']
+    marker_shapes.extend(list('.,ov^<>12348spP*hH+xXDd|_'))
+    marker_shapes_dict = {'.': 'circle', ',': 'circle', 'o': 'circle', 'v': 'triangle-down', '^': 'triangle-up',
+                          '<': 'triangle-left', '>': 'triangle-right', '1': 'star-triangle-down',
+                          '2': 'star-triangle-up', '3': 'star-triangle-left', '4': 'star-triangle-right',
+                          '8': 'octagon', 's': 'square', 'p': 'pentagon', 'P': 'cross', '*': 'star', 'h': 'hexagon',
+                          'H': 'hexagon2', '+': 'cross-thin', 'x': 'x', 'X': 'x-thin', 'd': 'diamond',
+                          'D': 'diamond-wide', '|': 'line-ns', '_': 'line-ew'}
+    marker_styles = ['', '-open', '-dot', '-open-dot']
+    markers = combo_merge(marker_shapes, marker_styles)
+    line_styles = ['-', '--', ':', '-:', 'line', 'lines']
+    combo_styles = combo_merge(markers, line_styles) + combo_merge(line_styles, markers)
+    big_markers = ['o', 'big']
+    dash_styles = {'--': 'dash', '-:': 'dashdot', ':': 'dot'}
+
+    def substr_list(style, x):
+        """
+        style: a style string
+        x: a list of substrings
+
+        return: true if any of the strings in x is a substring of s, and false otherwise
+        """
+        inds = np.array([s in style for s in x])
+        if np.any(inds):
+            return x[np.where(inds)[0][0]]
+        else:
+            return ''
+
+    is_line = lambda s: substr_list(s, line_styles + combo_styles)
+    is_marker = lambda s: substr_list(s, marker_styles + combo_styles)
+    is_combo = lambda s: substr_list(s, combo_styles)
+
+    is_dashed = lambda s: substr_list(s, list(dash_styles.keys()))
+    is_bigmarker = lambda s: substr_list(s, big_markers)
 
     def pop_string(s, sub_s):
         if sub_s in s:
