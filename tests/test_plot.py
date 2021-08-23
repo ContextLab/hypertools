@@ -85,7 +85,7 @@ def test_animated_plot2d():
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
 
     # test each animation type: window, chemtrails, precog, bullettime, grow, shrink, spin
-    # note: spin should throw error-- doesn't work in 2D
+    fig12 = hyp.plot(weights, reduce=pca, animate=True)
 
     # also test each combination of lines, markers, and lines + markers
     # use different line styles and marker shapes
@@ -93,6 +93,9 @@ def test_animated_plot2d():
     # test timing: total duration, window length, tail length (noting for 3d: also test number of rotations)
     # (for 3d: test zoom)
     pass
+
+
+test_animated_plot2d()
 
 
 def test_static_plot3d():

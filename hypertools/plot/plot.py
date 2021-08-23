@@ -336,13 +336,6 @@ def plot(original_data, *fmt, **kwargs):
     animate = kwargs.pop('animate', False)
 
     if animate:
-        # animation class should return a sequence of figures-- need to (a) extract shapes, (b) turn into frames, and
-        # (c) merge the full thing into a final figure
-        animation_opts = dw.core.update_dict(eval_dict(defaults['animate']), kwargs)
-
-        # camera angles are only relevant if projection is 3d
-        camera_angles = np.linspace(0, animation_opts['rotations'] * 360,
-                                    animation_opts['duration'] * animation_opts['framerate'] + 1)[:-1]
-        return Animator(fig=fig, data=data, mode=mode, angles=camera_angles, zooms=zooms, **animation_opts)
+        return Animator(data, **kwargs).build_animation()
 
     return static_plot(data, **kwargs)
