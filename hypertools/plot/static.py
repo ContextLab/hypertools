@@ -146,6 +146,7 @@ def get_plotly_shape(x, **kwargs):
 
     width = kwargs.pop('linewidth', defaults['linewidth'])
     size = kwargs.pop('markersize', defaults['markersize'])
+    symbol = kwargs.pop('marker', defaults['marker'])
     edgewidth = kwargs.pop('markeredgewidth', None)
 
     edgecolor = kwargs.pop('edgecolor', None)
@@ -156,11 +157,15 @@ def get_plotly_shape(x, **kwargs):
     if facecolor is None:
         facecolor = color
 
+    dash = kwargs.pop('dash', None)
+
     shape = {}
     if 'line' in mode:
         shape['line'] = {'width': width, 'color': color}
+        if dash is not None:
+            shape['line']['dash'] = dash
     if 'marker' in mode:
-        shape['marker'] = {'color': facecolor, 'size': size}
+        shape['marker'] = {'color': facecolor, 'size': size, 'symbol': symbol}
         if edgewidth is not None:
             shape['marker']['line'] = {'width': edgewidth, 'color': edgecolor}
 
@@ -223,12 +228,12 @@ def static_plot(data, **kwargs):
         c = unique_colors[i, :]
         c_inds = match_color(color, c)[0]
 
-        if i > 0:
-            opts = {'showlegend': False}
-        else:
-            opts = {}
+        for j, inds in enumerate(get_continuous_inds(c_inds)):
+            if i > 0 or j > 0:
+                opts = {'showlegend': False}
+            else:
+                opts = {}
 
-        for inds in get_continuous_inds(c_inds):
             if len(inds) == 1:
                 if inds[0] < data.shape[0] - 1:
                     inds = np.array([inds[0], inds[0] + 1])

@@ -145,6 +145,15 @@ def parse_style(fmt):
                 combos.append(i + j)
         return combos
 
+    def sort_by_anti_substring(xs):
+        sorted_strings = []
+        for a in xs:
+            if any([a in x for x in sorted_strings]):
+                sorted_strings.append(a)
+            else:
+                sorted_strings.insert(0, a)
+        return sorted_strings
+
     marker_shapes = ['scatter', 'marker', 'markers', 'bigmarker', 'bigmarkers', 'circle', 'square', 'diamond', 'cross',
                      'triangle-up', 'triangle-down', 'triangle-left', 'triangle-ne', 'triangle-se', 'triangle-sw',
                      'triangle-nw', 'pentagon', 'hexagon', 'hexagon2', 'octagon', 'star', 'hexagram',
@@ -162,7 +171,8 @@ def parse_style(fmt):
     marker_styles = ['', '-open', '-dot', '-open-dot']
     markers = combo_merge(marker_shapes, marker_styles)
     markers.extend(list('.,ov^<>12348spP*hH+xXDd|_'))
-    line_styles = ['-', '--', ':', '-:', 'line', 'lines']
+    markers = sort_by_anti_substring(markers)
+    line_styles = sort_by_anti_substring(['--', '-:', ':', '-', 'line', 'lines'])
     big_markers = ['o', 'big']
     small_markers = [',']
     dash_styles = {'--': 'dash', '-:': 'dashdot', ':': 'dot'}
@@ -191,7 +201,7 @@ def parse_style(fmt):
         return substr_list(s, small_markers)
 
     def is_matplotlib_marker(s):
-        return substr_list(s, list(marker_shapes_dict.keys()))
+        return s in marker_shapes_dict.keys()
 
     def is_dashed(s):
         return substr_list(s, list(dash_styles.keys()))
@@ -207,11 +217,20 @@ def parse_style(fmt):
     linestyle = None
     dash = None
 
+    # need to parse markers first so that hyphens in marker shape names are parsed correctly
+    marker_opts = {}
     for m in markers:
         marker, fmt = pop_string(fmt, m)
         if marker:
+            if is_bigmarker(marker):
+                marker_opts = {'markersize': eval(defaults['plot']['bigmarkersize'])}
+            elif is_smallmarker(marker):
+                marker_opts = {'markersize': eval(defaults['plot']['smallmarkersize'])}
+            else:
+                marker_opts = {'markersize': eval(defaults['plot']['markersize'])}
             if is_matplotlib_marker(marker):
                 marker = marker_shapes_dict[marker]
+            marker_opts['marker'] = marker
             break
 
     for i in line_styles:
@@ -226,13 +245,6 @@ def parse_style(fmt):
     except ValueError:
         pass
 
-    if is_bigmarker(marker):
-        marker_opts = {'markersize': defaults['plot']['bigmarkersize']}
-    elif is_smallmarker(marker):
-        marker_opts = {'markersize': defaults['plot']['smallmarkersize']}
-    else:
-        marker_opts = {}
-
     if dash:
         line_opts = {'dash': dash}
     else:
@@ -246,8 +258,8 @@ def parse_style(fmt):
         mode = 'lines'
 
     # noinspection PyUnboundLocalVariable
-    return dw.core.update_dict(eval_dict(defaults['plot'].copy()), {'color': color, 'marker': marker,  'mode': mode,
-                                                                    **marker_opts, **line_opts})
+    return dw.core.update_dict(eval_dict(defaults['plot'].copy()), {'color': color, 'mode': mode, **marker_opts,
+                                                                    **line_opts})
 
 
 def get_bounds(data):
