@@ -11,23 +11,26 @@ from .static import static_plot
 
 
 class Animator:
-    def __init__(self, ax, data, mode, angles, zooms, opts):
-        self.ax = ax
+    def __init__(self, fig, data, mode, angles, zooms, opts):
+        self.fig = fig
         self.mode = mode
         self.opts = opts
         self.angles = angles
         self.zooms = zooms
         self.data = data
 
-        if 'proj' in ax.properties().keys():
-            self.proj = '3d'
+        if type(data) is list:
+            c = np.max([d.shape[1] for d in data])
         else:
-            self.proj = '2d'
+            c = data.shape[1]
+        self.proj = f'{c}d'
 
+        # don't necessarily need to throw an error here-- "spinning" in 2d should just look like a static image that
+        # plays for the requested duration
         assert not (self.proj == '2d') and (self.mode == 'spin'),\
             RuntimeError('Spin animations are not supported for 2d plots')
         if self.mode == 'spin':
-            self.ax = static_plot(self.data, **self.opts)
+            self.fig = static_plot(self.data, **self.opts)
         else:
             if dw.zoo.is_dataframe(data):
                 index_vals = set(data.index.values)
@@ -84,30 +87,30 @@ class Animator:
         return x
 
     def animate_window(self, i):
-        self.ax = static_plot(get_window(self.data, self.window_starts[i], self.window_ends[i]), **self.opts)
-        return self.ax
+        self.fig = static_plot(get_window(self.data, self.window_starts[i], self.window_ends[i]), **self.opts)
+        return self.fig
 
     def animate_chemtrails(self, i):
-        self.ax = static_plot(get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i]),
-                              **tail_opts(self.opts))
+        self.fig = static_plot(get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i]),
+                               **tail_opts(self.opts))
         return self.animate_window(i)
 
     def animate_precog(self, i):
-        self.ax = static_plot(get_window(self.data, self.tail_window_ends[i], self.tail_window_precogs[i]),
-                              **tail_opts(self.opts))
+        self.fig = static_plot(get_window(self.data, self.tail_window_ends[i], self.tail_window_precogs[i]),
+                               **tail_opts(self.opts))
         return self.animate_window(i)
 
     def animate_bullettime(self, i):
-        self.ax = static_plot(self.data, **tail_opts(self.opts))
+        self.fig = static_plot(self.data, **tail_opts(self.opts))
         return self.animate_window(i)
 
     def animate_grow(self, i):
-        self.ax = static_plot(get_window(self.data, np.zeros_like(self.window_ends[i]), self.window_ends[i]),
-                              **self.opts)
-        return self.ax
+        self.fig = static_plot(get_window(self.data, np.zeros_like(self.window_ends[i]), self.window_ends[i]),
+                               **self.opts)
+        return self.fig
 
     def animate_shrink(self, i):
-        self.ax = static_plot(get_window(self.data, self.window_ends[i],
-                                         (len(self.window_ends) - 1) * self.ones_like(self.window_ends[i])),
-                              **self.opts)
-        return self.ax
+        self.fig = static_plot(get_window(self.data, self.window_ends[i],
+                                          (len(self.window_ends) - 1) * self.ones_like(self.window_ends[i])),
+                               **self.opts)
+        return self.fig
