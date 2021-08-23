@@ -1,10 +1,53 @@
+# noinspection PyPackageRequirements
+import datawrangler as dw
 import numpy as np
 import pandas as pd
+import dill
+import os
 
 import hypertools as hyp
 
 
 weights = hyp.load('weights')
+fig_dir = os.path.join(os.path.dirname(__file__), 'reference_figures')
+
+
+def compare_figs(f, name):
+    def compare_helper(ref, x):
+        if not type(ref) == type(x):
+            return False
+
+        if type(ref) is dict:
+            for k in ref.keys():
+                if k not in x.keys():
+                    return False
+                elif not compare_helper(ref[k], x[k]):
+                    return False
+        elif type(ref) is list:
+            if not all([compare_helper(a, b) for a, b in zip(ref, x)]):
+                return False
+        elif dw.zoo.is_array(ref) or dw.zoo.is_dataframe(ref):
+            if not np.allclose(ref, x):
+                return False
+        elif not (ref == x):
+            return False
+        return True
+
+    with open(os.path.join(fig_dir, f'{name}.fig'), 'rb') as fd:
+        reference = dill.load(fd)
+    return compare_helper(reference.to_dict(), f.to_dict()) and compare_helper(f.to_dict(), reference.to_dict())
+
+
+def plot_test(name, *args, **kwargs):
+    np.random.seed(1234)
+    fig = hyp.plot(*args, **kwargs)
+    # save_fig(name, fig)  # FIXME: REMOVE ONCE REFERENCE FIGS ARE GENERATED
+    assert compare_figs(fig, name), f'Figure failed to replicate: {name}'
+
+
+def save_fig(name, fig):
+    with open(os.path.join(fig_dir, f'{name}.fig'), 'wb') as f:
+        dill.dump(fig, f)
 
 
 def test_static_plot2d():
@@ -14,37 +57,41 @@ def test_static_plot2d():
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
 
     # lines
-    # fig1a = hyp.plot(weights, reduce=pca)
-    # fig1b = hyp.plot(weights, '-', reduce=pca)
-    # fig2 = hyp.plot(weights, reduce=pca, color=weights)
+    plot_test('fig1', weights, reduce=pca)
+    plot_test('fig2', weights, '-', reduce=pca)
+    plot_test('fig3', weights, reduce=pca, color=weights)
 
     # markers
-    # fig3 = hyp.plot(weights, ',', reduce=pca)
-    # fig4 = hyp.plot(weights, '.', reduce=pca)
-    # fig5 = hyp.plot(weights, 'o', reduce=pca, color=weights)
+    plot_test('fig4', weights, ',', reduce=pca)
+    plot_test('fig5', weights, '.', reduce=pca)
+    plot_test('fig6', weights, 'o', reduce=pca, color=weights)
 
     # lines + markers
-    # fig6 = hyp.plot(weights, '-.', reduce=pca)
-    # fig7 = hyp.plot(weights, ':o', reduce=pca, color=weights)
+    plot_test('fig7', weights, '-.', reduce=pca)
+    plot_test('fig8', weights, ':o', reduce=pca, color=weights)
 
     # zscore, align, cluster
     kmeans = {'model': 'KMeans', 'args': [], 'kwargs': {'n_clusters': 5}}
-    # fig8 = hyp.plot(weights, '*-', reduce=pca, cluster=kmeans, align='HyperAlign', manip='ZScore')
-    # fig9 = hyp.plot(weights, 'D--', reduce=pca, align='SharedResponseModel', manip=['ZScore', 'Resample', 'Smooth'])
+    plot_test('fig9', weights, '*-', reduce=pca, cluster=kmeans, align='HyperAlign', manip='ZScore')
+    plot_test('fig10', weights, 'D--', reduce=pca, align='SharedResponseModel', manip=['ZScore', 'Resample', 'Smooth'])
 
     # pipeline
     pca_10d = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 10}}
     pca_5d = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 5}}
-    fig10 = hyp.plot(weights, 'star-triangle-down-open-dot--', reduce=pca, pipeline=[pca_10d, pca_5d])
-
-    # TODO: need to create reference versions of all figures and compare with produced versions...
-    pass
-
-
-test_static_plot2d()
+    plot_test('fig11', weights, 'star-triangle-down-open-dot--', reduce=pca, pipeline=[pca_10d, pca_5d])
 
 
 def test_animated_plot2d():
+    pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
+
+    # test each animation type: window, chemtrails, precog, bullettime, grow, shrink, spin
+    # note: spin should throw error-- doesn't work in 2D
+
+    # also test each combination of lines, markers, and lines + markers
+    # use different line styles and marker shapes
+    # verify that resampling and smoothing change animations correctly
+    # test timing: total duration, window length, tail length (noting for 3d: also test number of rotations)
+    # (for 3d: test zoom)
     pass
 
 
