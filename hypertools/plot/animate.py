@@ -53,18 +53,18 @@ class Animator:
 
             duration = len(indices)
             window_length = int(np.round(duration * self.focused / self.duration))
-            self.window_starts = np.concatenate([np.zeros([window_length]), np.arange(len(indices) - window_length)])
-            self.window_ends = np.arange(len(self.window_starts))
+            self.window_starts = np.concatenate([np.zeros([window_length + 1]), np.arange(1, len(indices) - window_length)])
+            self.window_ends = np.arange(1, len(self.window_starts) + 1)
 
             tail_window_length = int(np.round(duration * self.unfocused / self.duration))
-            self.tail_window_starts = np.concatenate([np.zeros([tail_window_length]),
-                                                      np.arange(len(indices) - tail_window_length)])
-            self.tail_window_ends = np.arange(len(self.tail_window_starts))
+            self.tail_window_starts = np.concatenate([np.zeros([tail_window_length + 1]),
+                                                      np.arange(1, len(indices) - tail_window_length + 1)])
+            self.tail_window_ends = np.arange(1, len(self.tail_window_starts) + 1)
             self.tail_window_precogs = np.concatenate([tail_window_length +
-                                                       np.arange(len(indices) - tail_window_length),
+                                                       np.arange(1, len(indices) - tail_window_length + 1),
                                                        indices[-1] * np.ones([tail_window_length])])
 
-            self.angles = np.linspace(0, self.rotations * 360, len(self.window_starts))[:-1]
+            self.angles = np.linspace(0, self.rotations * 360, len(self.window_starts) + 1)[:-1]
 
     def build_animation(self):
         frame_duration = 1000 * self.duration / len(self.angles)
@@ -72,86 +72,72 @@ class Animator:
         # set up base figure
         fig = self.fig.to_dict().copy()
 
+        # add buttons and slider and define transitions
+        fig['layout']['updatemenus'] = [{'buttons': [{
+            'label': '▶',  # play button
+            'args': [None, {'frame': {'duration': frame_duration / 2, 'redraw': False},
+                            'fromcurrent': True,
+                            'transition': {'duration': frame_duration / 2,
+                                           'easing': 'quadratic-in-out'}}],
+            'method': 'animate'}, {
+            'label': '||',  # pause button
+            'args': [[None], {'frame': {'duration': 0, 'redraw': False},
+                              'mode': 'immediate',
+                              'transition': {'duration': 0}}],
+            'method': 'animate'}],
+            # slider
+            'direction': 'left',
+            'pad': {'r': 10, 't': 87},
+            'showactive': False,
+            'type': 'buttons',
+            'x': 0.1,
+            'xanchor': 'right',
+            'y': 0,
+            'yanchor': 'top'}]
+
         bounds = get_bounds(self.data)
-        layout = go.Layout(
-            xaxis={'range': [bounds[0, 0], bounds[1, 0]], 'autorange': False},
-            yaxis={'range': [bounds[0, 0], bounds[1, 0]], 'autorange': False},
-            updatemenus=[{
-                'type': 'buttons',
-                'buttons': [{'label': 'Play',
-                             'method': 'animate',
-                             'args': [None]}]
-            }]
-        )
+        fig['layout']['xaxis'] = {'range': [bounds[0, 0], bounds[1, 0]], 'autorange': False}
+        fig['layout']['yaxis'] = {'range': [bounds[0, 1], bounds[1, 1]], 'autorange': False}
+        if bounds.shape[1] == 3:
+            fig['layout']['zaxis'] = {'range': [bounds[0, 2], bounds[1, 2]], 'autorange': False}
 
+        # define slider behavior
+        slider = {
+            'active': 0,
+            'yanchor': 'top',
+            'xanchor': 'left',
+            'currentvalue': {
+                'font': {'size': 12},
+                'prefix': 'Frame ',
+                'visible': True,
+                'xanchor': 'right'
+            },
+            'transition': {'duration': frame_duration / 2, 'easing': 'cubic-in-out'},
+            'pad': {'b': 10, 't': 50},
+            'len': 0.9,
+            'x': 0.1,
+            'y': 0,
+            'steps': []
+        }
+
+        # add frames
         frames = []
-        for i in range(10):
+        for i in range(len(self.angles)):
             frames.append(self.get_frame(i))
-
-        fig['layout'] = layout
+            slider_step = {'args': [[i],
+                                    {'frame': {'duration': frame_duration, 'redraw': False},
+                                     'mode': 'immediate',
+                                     'transition': {'duration': 0}}],
+                           'label': str(i),
+                           'method': 'animate'}
+            slider['steps'].append(slider_step)
         fig['frames'] = frames
-        fig['data'] = frames[0].data
-        return go.Figure(fig)
 
-        # # add buttons and slider and define transitions
-        # fig['layout']['updatemenus'] = [{'buttons': [{
-        #     'label': '▶',  # play button
-        #     'args': [None, {'frame': {'duration': 250, 'redraw': True},
-        #                     'fromcurrent': False,
-        #                     'transition': {'duration': 0}}],
-        #     'method': 'animate'}, {
-        #     'label': '||',  # pause button
-        #     'args': [[None], {'frame': {'duration': 0, 'redraw': True},
-        #                       'mode': 'immediate',
-        #                       'transition': {'duration': 0}}],
-        #     'method': 'animate'}],
-        #     # slider
-        #     'direction': 'left',
-        #     'pad': {'r': 10, 't': 87},
-        #     'showactive': False,
-        #     'type': 'buttons',
-        #     'x': 0.1,
-        #     'xanchor': 'right',
-        #     'y': 0,
-        #     'yanchor': 'top'}]
-        #
-        # # define slider behavior
-        # slider = {
-        #     'active': 0,
-        #     'yanchor': 'top',
-        #     'xanchor': 'left',
-        #     'currentvalue': {
-        #         'font': {'size': 12},
-        #         'prefix': 'Frame ',
-        #         'visible': True,
-        #         'xanchor': 'right'
-        #     },
-        #     # 'transition': {'duration': frame_duration / 2, 'easing': 'cubic-in-out'},
-        #     'transition': {'duration': 0},
-        #     'pad': {'b': 10, 't': 50},
-        #     'len': 0.9,
-        #     'x': 0.1,
-        #     'y': 0,
-        #     'steps': []
-        # }
-        #
-        # # add frames
-        # frames = []
-        # for i in range(10):  # len(self.angles)):
-        #     frames.append(self.get_frame(i))
-        #     slider_step = {'args': [[i],
-        #                             {'frame': {'duration': 250, 'redraw': True},
-        #                              'mode': 'immediate',
-        #                              'transition': {'duration': 0}}],
-        #                    'label': str(i),
-        #                    'method': 'animate'}
-        #     slider['steps'].append(slider_step)
-        # fig['frames'] = frames
-        #
-        # # connect slider to frames
-        # fig['layout']['sliders'] = [slider]
-        #
-        # return go.Figure(fig)
+        # connect slider to frames
+        fig['layout']['sliders'] = [slider]
+        fig['data'] = frames[0].data
+
+        return go.Figure(fig)
 
     @staticmethod
     def fig2frame(fig, i=''):
