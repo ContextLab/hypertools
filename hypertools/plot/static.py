@@ -188,8 +188,6 @@ def get_plotly_shape(x, **kwargs):
 
 def static_plot(data, **kwargs):
     kwargs = dw.core.update_dict(defaults, kwargs)
-    return_shapes = kwargs.pop('return_shapes', False)
-    shapes = []
 
     fig = kwargs.pop('fig', go.Figure())
     color = kwargs.pop('color', None)
@@ -198,13 +196,8 @@ def static_plot(data, **kwargs):
         names = kwargs.pop('name', [str(d) for d in range(len(data))])
         for i, d in enumerate(data):
             opts = {'color': get(color, i), 'fig': fig, 'name': get(names, i), 'legendgroup': get(names, i)}
-            if return_shapes:
-                shapes.extend(static_plot(d, **dw.core.update_dict(kwargs, opts), return_shapes=True))
-            else:
-                fig = static_plot(d, **dw.core.update_dict(kwargs, opts))
+            fig = static_plot(d, **dw.core.update_dict(kwargs, opts))
 
-        if return_shapes:
-            return shapes
         return fig
     kwargs = dw.core.update_dict({'name': ''}, kwargs)
 
@@ -223,10 +216,7 @@ def static_plot(data, **kwargs):
                 group_kwargs[s] *= defaults['plot']['scale']
         group_kwargs['color'] = group_colors
 
-        if return_shapes:
-            shapes.extend(static_plot(group_means, **group_kwargs, return_shapes=True))
-        else:
-            fig = static_plot(group_means, **group_kwargs)
+        fig = static_plot(group_means, **group_kwargs)
 
     # remove defaults that shouldn't be passed to plot
     remove_params = ['n_colors', 'scale', 'cmap', 'bigmarkersize', 'smallmarkersize']
@@ -239,7 +229,6 @@ def static_plot(data, **kwargs):
     # also, could add support for using arbitrary text as markers
 
     unique_colors = np.unique(color, axis=0)
-    shapes = []
     for i in range(unique_colors.shape[0]):
         c = unique_colors[i, :]
         c_inds = match_color(color, c)[0]
@@ -256,12 +245,6 @@ def static_plot(data, **kwargs):
                 else:
                     inds = np.array([inds[0], inds[0]])
 
-            next_shape = get_plotly_shape(data.values[inds, :], **kwargs, **opts, color=mpl2plotly_color(c))
-            if return_shapes:
-                shapes.append(next_shape)
-            else:
-                fig.add_trace(next_shape)
+            fig.add_trace(get_plotly_shape(data.values[inds, :], **kwargs, **opts, color=mpl2plotly_color(c)))
 
-    if return_shapes:
-        return shapes
     return fig

@@ -90,7 +90,7 @@ class Animator:
 
         fig['layout'] = layout
         fig['frames'] = frames
-        fig['data'] = frames[-1].data
+        fig['data'] = frames[0].data
         return go.Figure(fig)
 
         # # add buttons and slider and define transitions
@@ -154,8 +154,8 @@ class Animator:
         # return go.Figure(fig)
 
     @staticmethod
-    def data2frame(data, i=''):
-        return go.Frame(data=data)  # , name=str(i))
+    def fig2frame(fig, i=''):
+        return go.Frame(data=fig.data, layout=fig.layout, name=str(i))
 
     def get_frame(self, i):
         if self.proj == '3d':
@@ -172,19 +172,19 @@ class Animator:
             self.fig.update_layout(scene_camera=camera)
 
         if self.style == 'window':
-            return self.data2frame(self.animate_window(i), i)
+            return self.fig2frame(self.animate_window(i), i)
         elif self.style == 'chemtrails':
-            return self.data2frame(self.animate_chemtrails(i), i)
+            return self.fig2frame(self.animate_chemtrails(i), i)
         elif self.style == 'precog':
-            return self.data2frame(self.animate_precog(i), i)
+            return self.fig2frame(self.animate_precog(i), i)
         elif self.style == 'bullettime':
-            return self.data2frame(self.animate_bullettime(i), i)
+            return self.fig2frame(self.animate_bullettime(i), i)
         elif self.style == 'grow':
-            return self.data2frame(self.animate_grow(i), i)
+            return self.fig2frame(self.animate_grow(i), i)
         elif self.style == 'shrink':
-            return self.data2frame(self.animate_shrink(i), i)
+            return self.fig2frame(self.animate_shrink(i), i)
         elif self.style == 'spin':
-            return self.data2frame(self.fig, i)
+            return self.fig2frame(self.fig, i)
         else:
             raise ValueError(f'unknown animation mode: {self.mode}')
 
@@ -203,25 +203,27 @@ class Animator:
         return dw.core.update_dict(self.get_opts(), {'opacity': self.unfocused_alpha})
 
     def animate_window(self, i):
-        return static_plot(self.get_window(self.data, self.window_starts[i], self.window_ends[i]), return_shapes=True,
-                           **self.get_opts())
+        return static_plot(self.get_window(self.data, self.window_starts[i], self.window_ends[i]), **self.get_opts())
 
     def animate_chemtrails(self, i):
-        return [*static_plot(self.get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i]),
-                             return_shapes=True, **self.tail_opts()), *self.animate_window(i)]
+        fig = self.animate_window(i)
+        return static_plot(self.get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i]),
+                           **self.tail_opts(), fig=fig)
 
     def animate_precog(self, i):
-        return [*static_plot(self.get_window(self.data, self.tail_window_ends[i], self.tail_window_precogs[i]),
-                             return_shapes=True, **self.tail_opts()), *self.animate_window(i)]
+        fig = self.animate_window(i)
+        return static_plot(self.get_window(self.data, self.tail_window_ends[i], self.tail_window_precogs[i]),
+                           **self.tail_opts(), fig=fig)
 
     def animate_bullettime(self, i):
-        return [*static_plot(self.data, return_shapes=True, **self.tail_opts()), *self.animate_window(i)]
+        fig = self.animate_window(i)
+        return static_plot(self.data, **self.tail_opts(), fig=fig)
 
     def animate_grow(self, i):
         return static_plot(get_window(self.data, np.zeros_like(self.window_ends[i]), self.window_ends[i]),
-                           return_shapes=True, **self.get_opts())
+                           **self.get_opts())
 
     def animate_shrink(self, i):
         return static_plot(get_window(self.data, self.window_ends[i],
                                       (len(self.window_ends) - 1) * self.ones_like(self.window_ends[i])),
-                           return_shapes=True, **self.get_opts())
+                           **self.get_opts())
