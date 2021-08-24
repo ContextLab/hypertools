@@ -8,7 +8,7 @@ from scipy.spatial.distance import cdist
 from ..manip import manip
 from ..core import get, get_default_options, eval_dict
 
-from .static import static_plot
+from .static import static_plot, get_bounds
 
 defaults = eval_dict(get_default_options()['animate'])
 
@@ -72,69 +72,90 @@ class Animator:
         # set up base figure
         fig = self.fig.to_dict().copy()
 
-        # add buttons and slider and define transitions
-        fig['layout']['updatemenus'] = [{'buttons': [{
-            'label': '▶',  # play button
-            'args': [None, {'frame': {'duration': 250, 'redraw': False},
-                            'fromcurrent': True,
-                            'transition': {'duration': 0}}],
-            'method': 'animate'}, {
-            'label': '||',  # pause button
-            'args': [[None], {'frame': {'duration': 0, 'redraw': False},
-                              'mode': 'immediate',
-                              'transition': {'duration': 0}}],
-            'method': 'animate'}],
-            # slider
-            'direction': 'left',
-            'pad': {'r': 10, 't': 87},
-            'showactive': False,
-            'type': 'buttons',
-            'x': 0.1,
-            'xanchor': 'right',
-            'y': 0,
-            'yanchor': 'top'}]
+        bounds = get_bounds(self.data)
+        layout = go.Layout(
+            xaxis={'range': [bounds[0, 0], bounds[1, 0]], 'autorange': False},
+            yaxis={'range': [bounds[0, 0], bounds[1, 0]], 'autorange': False},
+            updatemenus=[{
+                'type': 'buttons',
+                'buttons': [{'label': 'Play',
+                             'method': 'animate',
+                             'args': [None]}]
+            }]
+        )
 
-        # define slider behavior
-        slider = {
-            'active': 0,
-            'yanchor': 'top',
-            'xanchor': 'left',
-            'currentvalue': {
-                'font': {'size': 10},
-                'prefix': 'Frame ',
-                'visible': True,
-                'xanchor': 'right'
-            },
-            # 'transition': {'duration': frame_duration / 2, 'easing': 'cubic-in-out'},
-            'transition': {'duration': 0},
-            'pad': {'b': 10, 't': 50},
-            'len': 0.9,
-            'x': 0.1,
-            'y': 0,
-            'steps': []
-        }
-
-        # add frames
         frames = []
-        for i in range(10): # len(self.angles)):
+        for i in range(10):
             frames.append(self.get_frame(i))
-            slider_step = {'args': [[str(i)],
-                                    {'frame': {'duration': 250, 'redraw': False},
-                                     'mode': 'immediate',
-                                     'transition': {'duration': 0}}],
-                           'label': str(i),
-                           'method': 'animate'}
-            slider['steps'].append(slider_step)
+
+        fig['layout'] = layout
         fig['frames'] = frames
-
-        # connect slider to frames
-        fig['layout']['sliders'] = [slider]
-
+        fig['data'] = frames[-1].data
         return go.Figure(fig)
 
+        # # add buttons and slider and define transitions
+        # fig['layout']['updatemenus'] = [{'buttons': [{
+        #     'label': '▶',  # play button
+        #     'args': [None, {'frame': {'duration': 250, 'redraw': True},
+        #                     'fromcurrent': False,
+        #                     'transition': {'duration': 0}}],
+        #     'method': 'animate'}, {
+        #     'label': '||',  # pause button
+        #     'args': [[None], {'frame': {'duration': 0, 'redraw': True},
+        #                       'mode': 'immediate',
+        #                       'transition': {'duration': 0}}],
+        #     'method': 'animate'}],
+        #     # slider
+        #     'direction': 'left',
+        #     'pad': {'r': 10, 't': 87},
+        #     'showactive': False,
+        #     'type': 'buttons',
+        #     'x': 0.1,
+        #     'xanchor': 'right',
+        #     'y': 0,
+        #     'yanchor': 'top'}]
+        #
+        # # define slider behavior
+        # slider = {
+        #     'active': 0,
+        #     'yanchor': 'top',
+        #     'xanchor': 'left',
+        #     'currentvalue': {
+        #         'font': {'size': 12},
+        #         'prefix': 'Frame ',
+        #         'visible': True,
+        #         'xanchor': 'right'
+        #     },
+        #     # 'transition': {'duration': frame_duration / 2, 'easing': 'cubic-in-out'},
+        #     'transition': {'duration': 0},
+        #     'pad': {'b': 10, 't': 50},
+        #     'len': 0.9,
+        #     'x': 0.1,
+        #     'y': 0,
+        #     'steps': []
+        # }
+        #
+        # # add frames
+        # frames = []
+        # for i in range(10):  # len(self.angles)):
+        #     frames.append(self.get_frame(i))
+        #     slider_step = {'args': [[i],
+        #                             {'frame': {'duration': 250, 'redraw': True},
+        #                              'mode': 'immediate',
+        #                              'transition': {'duration': 0}}],
+        #                    'label': str(i),
+        #                    'method': 'animate'}
+        #     slider['steps'].append(slider_step)
+        # fig['frames'] = frames
+        #
+        # # connect slider to frames
+        # fig['layout']['sliders'] = [slider]
+        #
+        # return go.Figure(fig)
+
     @staticmethod
-    def fig2frame(fig, i=''):
-        return go.Frame(data=fig.data, layout=fig.layout, name=str(i))
+    def data2frame(data, i=''):
+        return go.Frame(data=data)  # , name=str(i))
 
     def get_frame(self, i):
         if self.proj == '3d':
@@ -151,19 +172,19 @@ class Animator:
             self.fig.update_layout(scene_camera=camera)
 
         if self.style == 'window':
-            return self.fig2frame(self.animate_window(i), i)
+            return self.data2frame(self.animate_window(i), i)
         elif self.style == 'chemtrails':
-            return self.fig2frame(self.animate_chemtrails(i), i)
+            return self.data2frame(self.animate_chemtrails(i), i)
         elif self.style == 'precog':
-            return self.fig2frame(self.animate_precog(i), i)
+            return self.data2frame(self.animate_precog(i), i)
         elif self.style == 'bullettime':
-            return self.fig2frame(self.animate_bullettime(i), i)
+            return self.data2frame(self.animate_bullettime(i), i)
         elif self.style == 'grow':
-            return self.fig2frame(self.animate_grow(i), i)
+            return self.data2frame(self.animate_grow(i), i)
         elif self.style == 'shrink':
-            return self.fig2frame(self.animate_shrink(i), i)
+            return self.data2frame(self.animate_shrink(i), i)
         elif self.style == 'spin':
-            return self.fig2frame(self.fig, i)
+            return self.data2frame(self.fig, i)
         else:
             raise ValueError(f'unknown animation mode: {self.mode}')
 
@@ -182,31 +203,25 @@ class Animator:
         return dw.core.update_dict(self.get_opts(), {'opacity': self.unfocused_alpha})
 
     def animate_window(self, i):
-        fig = go.Figure(self.fig.to_dict().copy())
-        return static_plot(self.get_window(self.data, self.window_starts[i], self.window_ends[i]), fig=fig,
+        return static_plot(self.get_window(self.data, self.window_starts[i], self.window_ends[i]), return_shapes=True,
                            **self.get_opts())
 
     def animate_chemtrails(self, i):
-        self.fig = static_plot(self.get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i]),
-                               **self.tail_opts())
-        return self.animate_window(i)
+        return [*static_plot(self.get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i]),
+                             return_shapes=True, **self.tail_opts()), *self.animate_window(i)]
 
     def animate_precog(self, i):
-        self.fig = static_plot(self.get_window(self.data, self.tail_window_ends[i], self.tail_window_precogs[i]),
-                               **self.tail_opts())
-        return self.animate_window(i)
+        return [*static_plot(self.get_window(self.data, self.tail_window_ends[i], self.tail_window_precogs[i]),
+                             return_shapes=True, **self.tail_opts()), *self.animate_window(i)]
 
     def animate_bullettime(self, i):
-        self.fig = static_plot(self.data, **self.tail_opts())
-        return self.animate_window(i)
+        return [*static_plot(self.data, return_shapes=True, **self.tail_opts()), *self.animate_window(i)]
 
     def animate_grow(self, i):
-        self.fig = static_plot(get_window(self.data, np.zeros_like(self.window_ends[i]), self.window_ends[i]),
-                               **self.get_opts())
-        return self.fig
+        return static_plot(get_window(self.data, np.zeros_like(self.window_ends[i]), self.window_ends[i]),
+                           return_shapes=True, **self.get_opts())
 
     def animate_shrink(self, i):
-        self.fig = static_plot(get_window(self.data, self.window_ends[i],
-                                          (len(self.window_ends) - 1) * self.ones_like(self.window_ends[i])),
-                               **self.get_opts())
-        return self.fig
+        return static_plot(get_window(self.data, self.window_ends[i],
+                                      (len(self.window_ends) - 1) * self.ones_like(self.window_ends[i])),
+                           return_shapes=True, **self.get_opts())

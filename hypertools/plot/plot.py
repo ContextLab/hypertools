@@ -17,7 +17,8 @@ from ..cluster import cluster
 from ..manip import manip
 from ..reduce import reduce
 
-from .static import static_plot, group_mean, match_color, mpl2plotly_color, plot_bounding_box, get_empty_canvas
+from .static import static_plot, group_mean, match_color, mpl2plotly_color, plot_bounding_box, get_bounds,\
+    get_empty_canvas
 from .animate import Animator
 
 defaults = get_default_options()
@@ -260,11 +261,6 @@ def parse_style(fmt):
     # noinspection PyUnboundLocalVariable
     return dw.core.update_dict(eval_dict(defaults['plot'].copy()), {'color': color, 'mode': mode, **marker_opts,
                                                                     **line_opts})
-
-
-def get_bounds(data):
-    x = dw.stack(data)
-    return np.vstack([np.nanmin(x, axis=0), np.nanmax(x, axis=0)])
 
 
 def plot(original_data, *fmt, **kwargs):
