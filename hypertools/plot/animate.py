@@ -53,7 +53,8 @@ class Animator:
 
             duration = len(indices)
             window_length = int(np.round(duration * self.focused / self.duration))
-            self.window_starts = np.concatenate([np.zeros([window_length + 1]), np.arange(1, len(indices) - window_length)])
+            self.window_starts = np.concatenate([np.zeros([window_length + 1]),
+                                                 np.arange(1, len(indices) - window_length)])
             self.window_ends = np.arange(1, len(self.window_starts) + 1)
 
             tail_window_length = int(np.round(duration * self.unfocused / self.duration))
@@ -67,24 +68,7 @@ class Animator:
             self.angles = np.linspace(0, self.rotations * 360, len(self.window_starts) + 1)[:-1]
 
     def build_animation(self):
-        frame_duration = 500  # 1000 * self.duration / len(self.angles)
-
-        # simpler example... still shows color flicker, even with just a single trace
-        frames = [go.Frame(data=[self.get_frame(i).data[19]], name=str(i)) for i in range(10)]
-
-        fig = go.Figure(
-            data=frames[-1].data,
-            layout=go.Layout(updatemenus=[dict(type="buttons",
-                                               buttons=[dict(label="Play",
-                                                             method="animate",
-                                                             args=[None])])]),
-            frames=frames
-        )
-        fig.show()
-
-
-
-
+        frame_duration = 1000 * self.duration / len(self.angles)
 
         # set up base figure
         fig = self.fig.to_dict().copy()
@@ -96,7 +80,7 @@ class Animator:
                             'fromcurrent': True,
                             'transition': {'duration': 0}}],
             'method': 'animate'}, {
-            'label': '||',  # pause button
+            'label': '■',  # stop/pause button
             'args': [[None], {'frame': {'duration': 0, 'redraw': False},
                               'mode': 'immediate',
                               'transition': {'duration': 0}}],
@@ -135,7 +119,7 @@ class Animator:
             'y': 0,
             'steps': []
         }
-        for i in range(10):  # range(len(self.angles)):
+        for i in range(len(self.angles)):
             slider_step = {'args': [[i],
                                     {'frame': {'duration': frame_duration, 'redraw': True},
                                      'mode': 'immediate',
@@ -148,8 +132,11 @@ class Animator:
         fig['layout']['sliders'] = [slider]
 
         # add frames
-        fig['frames'] = [go.Frame(data=[self.get_frame(i).data[19]], name=str(i)) for i in range(10)]
+        fig['frames'] = [go.Frame(data=self.get_frame(i).data, name=str(i)) for i in range(20)]
         fig['data'] = fig['frames'][0].data
+
+        f = go.Figure(fig)
+        f.show()  # debug...
 
         return go.Figure(fig)
 
