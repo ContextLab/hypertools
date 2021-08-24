@@ -67,7 +67,24 @@ class Animator:
             self.angles = np.linspace(0, self.rotations * 360, len(self.window_starts) + 1)[:-1]
 
     def build_animation(self):
-        frame_duration = 1000 * self.duration / len(self.angles)
+        frame_duration = 500  # 1000 * self.duration / len(self.angles)
+
+        # simpler example... still shows color flicker, even with just a single trace
+        frames = [go.Frame(data=[self.get_frame(i).data[19]], name=str(i)) for i in range(10)]
+
+        fig = go.Figure(
+            data=frames[-1].data,
+            layout=go.Layout(updatemenus=[dict(type="buttons",
+                                               buttons=[dict(label="Play",
+                                                             method="animate",
+                                                             args=[None])])]),
+            frames=frames
+        )
+        fig.show()
+
+
+
+
 
         # set up base figure
         fig = self.fig.to_dict().copy()
@@ -75,10 +92,9 @@ class Animator:
         # add buttons and slider and define transitions
         fig['layout']['updatemenus'] = [{'buttons': [{
             'label': '▶',  # play button
-            'args': [None, {'frame': {'duration': frame_duration / 2, 'redraw': False},
+            'args': [None, {'frame': {'duration': frame_duration, 'redraw': True},
                             'fromcurrent': True,
-                            'transition': {'duration': frame_duration / 2,
-                                           'easing': 'quadratic-in-out'}}],
+                            'transition': {'duration': 0}}],
             'method': 'animate'}, {
             'label': '||',  # pause button
             'args': [[None], {'frame': {'duration': 0, 'redraw': False},
@@ -112,36 +128,30 @@ class Animator:
                 'visible': True,
                 'xanchor': 'right'
             },
-            'transition': {'duration': frame_duration / 2, 'easing': 'cubic-in-out'},
+            'transition': {'duration': 0},
             'pad': {'b': 10, 't': 50},
             'len': 0.9,
             'x': 0.1,
             'y': 0,
             'steps': []
         }
-
-        # add frames
-        frames = []
-        for i in range(len(self.angles)):
-            frames.append(self.get_frame(i))
+        for i in range(10):  # range(len(self.angles)):
             slider_step = {'args': [[i],
-                                    {'frame': {'duration': frame_duration, 'redraw': False},
+                                    {'frame': {'duration': frame_duration, 'redraw': True},
                                      'mode': 'immediate',
                                      'transition': {'duration': 0}}],
                            'label': str(i),
                            'method': 'animate'}
             slider['steps'].append(slider_step)
-        fig['frames'] = frames
 
         # connect slider to frames
         fig['layout']['sliders'] = [slider]
-        fig['data'] = frames[0].data
+
+        # add frames
+        fig['frames'] = [go.Frame(data=[self.get_frame(i).data[19]], name=str(i)) for i in range(10)]
+        fig['data'] = fig['frames'][0].data
 
         return go.Figure(fig)
-
-    @staticmethod
-    def fig2frame(fig, i=''):
-        return go.Frame(data=fig.data, layout=fig.layout, name=str(i))
 
     def get_frame(self, i):
         if self.proj == '3d':
@@ -158,19 +168,19 @@ class Animator:
             self.fig.update_layout(scene_camera=camera)
 
         if self.style == 'window':
-            return self.fig2frame(self.animate_window(i), i)
+            return self.animate_window(i)
         elif self.style == 'chemtrails':
-            return self.fig2frame(self.animate_chemtrails(i), i)
+            return self.animate_chemtrails(i)
         elif self.style == 'precog':
-            return self.fig2frame(self.animate_precog(i), i)
+            return self.animate_precog(i)
         elif self.style == 'bullettime':
-            return self.fig2frame(self.animate_bullettime(i), i)
+            return self.animate_bullettime(i)
         elif self.style == 'grow':
-            return self.fig2frame(self.animate_grow(i), i)
+            return self.animate_grow(i)
         elif self.style == 'shrink':
-            return self.fig2frame(self.animate_shrink(i), i)
+            return self.animate_shrink(i)
         elif self.style == 'spin':
-            return self.fig2frame(self.fig, i)
+            return static_plot(self.data, **self.get_opts())
         else:
             raise ValueError(f'unknown animation mode: {self.mode}')
 
