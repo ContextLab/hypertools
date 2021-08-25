@@ -8,7 +8,7 @@ from scipy.spatial.distance import cdist
 from ..manip import manip
 from ..core import get, get_default_options, eval_dict
 
-from .static import static_plot, get_bounds
+from .static import static_plot, get_bounds, flatten
 
 defaults = eval_dict(get_default_options()['animate'])
 
@@ -78,11 +78,10 @@ class Animator:
             'label': '▶',  # play button
             'args': [None, {'frame': {'duration': frame_duration, 'redraw': True},
                             'fromcurrent': True,
-                            'transition': {'duration': frame_duration / 2,
-                                           'easing': 'quadratic-in-out'}}],
+                            'transition': {'duration': 0}}],
             'method': 'animate'}, {
-            'label': '■',  # stop/pause button
-            'args': [[None], {'frame': {'duration': 0, 'redraw': False},
+            'label': '||',  # stop/pause button
+            'args': [[None], {'frame': {'duration': 0, 'redraw': True},
                               'mode': 'immediate',
                               'transition': {'duration': 0}}],
             'method': 'animate'}],
@@ -113,7 +112,7 @@ class Animator:
                 'visible': True,
                 'xanchor': 'right'
             },
-            'transition': {'duration': frame_duration / 2, 'easing': 'cubic-in-out'},
+            'transition': {'duration': 0},
             'pad': {'b': 10, 't': 50},
             'len': 0.9,
             'x': 0.1,
@@ -124,7 +123,7 @@ class Animator:
             slider_step = {'args': [[i],
                                     {'frame': {'duration': frame_duration, 'redraw': True},
                                      'mode': 'immediate',
-                                     'transition': {'duration': frame_duration / 2}}],
+                                     'transition': {'duration': 0}}],
                            'label': str(i),
                            'method': 'animate'}
             slider['steps'].append(slider_step)
@@ -133,16 +132,12 @@ class Animator:
         fig['layout']['sliders'] = [slider]
 
         # add frames
-        frames = [go.Frame(data=self.get_frame(i).data, name=str(i)) for i in range(len(self.angles))]
-        fig['data'] = frames[0].data
-
-        # FIXME: need to update next line for 3D figures...
-        simplified_frames = [go.Frame(data=[go.Scatter(x=d.x, y=d.y) for d in frame.data], name=frame.name) for frame in frames]
-        fig['frames'] = simplified_frames
+        fig['data'] = self.get_frame(0).data
+        fig['frames'] = [self.get_frame(i, simplify=True) for i in range(len(self.angles))]
 
         return go.Figure(fig)
 
-    def get_frame(self, i):
+    def get_frame(self, i, simplify=False):
         if self.proj == '3d':
             center = dw.stack(data).mean(axis=0).values
             angle = np.deg2rad(get(self.angles, i))
@@ -157,18 +152,20 @@ class Animator:
             self.fig.update_layout(scene_camera=camera)
 
         if self.style == 'window':
-            return self.animate_window(i)
+            return self.animate_window(i, simplify=simplify)
         elif self.style == 'chemtrails':
-            return self.animate_chemtrails(i)
+            return self.animate_chemtrails(i, simplify=simplify)
         elif self.style == 'precog':
-            return self.animate_precog(i)
+            return self.animate_precog(i, simplify=simplify)
         elif self.style == 'bullettime':
-            return self.animate_bullettime(i)
+            return self.animate_bullettime(i, simplify=simplify)
         elif self.style == 'grow':
-            return self.animate_grow(i)
+            return self.animate_grow(i, simplify=simplify)
         elif self.style == 'shrink':
-            return self.animate_shrink(i)
+            return self.animate_shrink(i, simplify=simplify)
         elif self.style == 'spin':
+            if simplify:
+                return go.Frame(data=Animator.get_datadict(data))
             return static_plot(self.data, **self.get_opts())
         else:
             raise ValueError(f'unknown animation mode: {self.mode}')
@@ -177,6 +174,18 @@ class Animator:
     @dw.decorate.list_generalizer
     def get_window(x, w_start, w_end):
         return x.loc[w_start:w_end]
+
+    @classmethod
+    def get_datadict(cls, data):
+        if type(data) is list:
+            return [cls.get_datadict(d)[0] for d in data]
+        elif data.shape[1] == 2:
+            return [go.Scatter(x=flatten(data.values[:, 0]), y=flatten(data.values[:, 1]))]
+        elif data.shape[1] == 3:
+            return [go.Scatter3d(x=flatten(data.values[:, 0]), y=flatten(data.values[:, 1]),
+                                 z=flatten(data.values[:, 2]))]
+        else:
+            raise ValueError(f'data must be either 2D or 3D; given: {data.shape[1]}D')
 
     def get_opts(self):
         opts = self.opts.copy()
@@ -187,28 +196,35 @@ class Animator:
     def tail_opts(self):
         return dw.core.update_dict(self.get_opts(), {'opacity': self.unfocused_alpha})
 
-    def animate_window(self, i):
-        return static_plot(self.get_window(self.data, self.window_starts[i], self.window_ends[i]), **self.get_opts())
+    def animate_window(self, i, simplify=False):
+        window = self.get_window(self.data, self.window_starts[i], self.window_ends[i])
+        if simplify:
+            return go.Frame(data=Animator.get_datadict(window), name=str(i))
+        return static_plot(window, **self.get_opts())
 
-    def animate_chemtrails(self, i):
+    def animate_chemtrails(self, i, simplify=False):
         fig = self.animate_window(i)
         return static_plot(self.get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i]),
                            **self.tail_opts(), fig=fig)
 
-    def animate_precog(self, i):
+    def animate_precog(self, i, simplify=False):
         fig = self.animate_window(i)
         return static_plot(self.get_window(self.data, self.tail_window_ends[i], self.tail_window_precogs[i]),
                            **self.tail_opts(), fig=fig)
 
-    def animate_bullettime(self, i):
+    def animate_bullettime(self, i, simplify=False):
         fig = self.animate_window(i)
         return static_plot(self.data, **self.tail_opts(), fig=fig)
 
-    def animate_grow(self, i):
-        return static_plot(get_window(self.data, np.zeros_like(self.window_ends[i]), self.window_ends[i]),
-                           **self.get_opts())
+    def animate_grow(self, i, simplify=False):
+        window = self.get_window(self.data, np.zeros_like(self.window_ends[i]), self.window_ends[i])
+        if simplify:
+            return go.Frame(data=Animator.get_datadict(window), name=str(i))
+        return static_plot(window, **self.get_opts())
 
-    def animate_shrink(self, i):
-        return static_plot(get_window(self.data, self.window_ends[i],
-                                      (len(self.window_ends) - 1) * self.ones_like(self.window_ends[i])),
-                           **self.get_opts())
+    def animate_shrink(self, i, simplify=False):
+        window = self.get_window(self.data, self.window_ends[i],
+                                 (len(self.window_ends) - 1) * self.ones_like(self.window_ends[i]))
+        if simplify:
+            return go.Frame(data=Animator.get_datadict(window), name=str(i))
+        return static_plot(window, **self.get_opts())
