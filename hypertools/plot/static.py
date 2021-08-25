@@ -132,29 +132,32 @@ def plot_bounding_box(bounds, color='k', width=3, opacity=0.9, fig=None, buffer=
     return fig
 
 
-def flatten(y):
+# noinspection PyIncorrectDocstring
+def flatten(y, depth=0):
     """
     Turn an array, series, or dataframe into a flat list
 
     Parameters
     ----------
     :param y: the object to flatten
-
     Returns
     -------
     :return: the flattened object
     """
     if type(y) is list:
         if len(y) == 1:
-            return flatten(y[0])
+            return [flatten(y[0], depth=depth + 1)]
         else:
-            return [flatten(i) for i in y]
+            return [flatten(i, depth=depth + 1) for i in y]
     elif (not np.isscalar(y)) and dw.zoo.is_array(y):
-        return flatten(y.ravel().tolist())
+        return flatten(y.ravel().tolist(), depth=depth + 1)
     elif dw.zoo.is_dataframe(y):
-        return flatten(y.values)
+        return flatten(y.values, depth=depth + 1)
     else:
-        return y
+        if depth == 0:
+            return [y]
+        else:
+            return y
 
 
 def get_plotly_shape(x, **kwargs):
