@@ -78,7 +78,8 @@ class Animator:
             'label': '▶',  # play button
             'args': [None, {'frame': {'duration': frame_duration, 'redraw': True},
                             'fromcurrent': True,
-                            'transition': {'duration': 0}}],
+                            'transition': {'duration': frame_duration / 2,
+                                           'easing': 'quadratic-in-out'}}],
             'method': 'animate'}, {
             'label': '■',  # stop/pause button
             'args': [[None], {'frame': {'duration': 0, 'redraw': False},
@@ -112,7 +113,7 @@ class Animator:
                 'visible': True,
                 'xanchor': 'right'
             },
-            'transition': {'duration': 0},
+            'transition': {'duration': frame_duration / 2, 'easing': 'cubic-in-out'},
             'pad': {'b': 10, 't': 50},
             'len': 0.9,
             'x': 0.1,
@@ -123,7 +124,7 @@ class Animator:
             slider_step = {'args': [[i],
                                     {'frame': {'duration': frame_duration, 'redraw': True},
                                      'mode': 'immediate',
-                                     'transition': {'duration': 0}}],
+                                     'transition': {'duration': frame_duration / 2}}],
                            'label': str(i),
                            'method': 'animate'}
             slider['steps'].append(slider_step)
@@ -132,11 +133,12 @@ class Animator:
         fig['layout']['sliders'] = [slider]
 
         # add frames
-        fig['frames'] = [go.Frame(data=self.get_frame(i).data, name=str(i)) for i in range(20)]
-        fig['data'] = fig['frames'][0].data
+        frames = [go.Frame(data=self.get_frame(i).data, name=str(i)) for i in range(len(self.angles))]
+        fig['data'] = frames[0].data
 
-        f = go.Figure(fig)
-        f.show()  # debug...
+        # FIXME: need to update next line for 3D figures...
+        simplified_frames = [go.Frame(data=[go.Scatter(x=d.x, y=d.y) for d in frame.data], name=frame.name) for frame in frames]
+        fig['frames'] = simplified_frames
 
         return go.Figure(fig)
 
