@@ -37,6 +37,7 @@ class Animator:
         self.proj = f'{stacked_data.shape[1]}d'
 
         self.zooms = np.multiply(self.zooms, np.max(cdist(self.center, stacked_data.values)))
+        self.indices = None
 
         if self.style == 'spin':
             self.fig = static_plot(self.data, fig=self.fig, **self.opts)
@@ -50,19 +51,20 @@ class Animator:
                     index_vals = index_vals.union(set(d.index.values))
             indices = list(index_vals)
             indices.sort()
+            self.indices = indices
 
-            duration = len(indices)
-            window_length = int(np.round(duration * self.focused / self.duration))
-            self.window_starts = np.concatenate([np.zeros([window_length + 1]),
+            duration = len(self.indices)
+            window_length = int(np.floor(duration * self.focused / self.duration))
+            self.window_starts = np.concatenate([np.zeros([window_length]),
                                                  np.arange(1, len(indices) - window_length)])
-            self.window_ends = np.arange(1, len(self.window_starts) + 1)
+            self.window_ends = np.arange(1, self.window_starts[-1] + window_length + 1)
 
             tail_window_length = int(np.round(duration * self.unfocused / self.duration))
-            self.tail_window_starts = np.concatenate([np.zeros([tail_window_length + 1]),
-                                                      np.arange(1, len(indices) - tail_window_length + 1)])
-            self.tail_window_ends = np.arange(1, len(self.tail_window_starts) + 1)
+            self.tail_window_starts = np.concatenate([np.zeros([tail_window_length]),
+                                                      np.arange(1, len(indices) - tail_window_length)])
+            self.tail_window_ends = np.abs(np.multiply(self.window_starts - 1, self.window_starts >= 1))
             self.tail_window_precogs = np.concatenate([tail_window_length +
-                                                       np.arange(1, len(indices) - tail_window_length + 1),
+                                                       np.arange(1, len(indices) - tail_window_length),
                                                        indices[-1] * np.ones([tail_window_length])])
 
             self.angles = np.linspace(0, self.rotations * 360, len(self.window_starts) + 1)[:-1]
@@ -170,10 +172,10 @@ class Animator:
         else:
             raise ValueError(f'unknown animation mode: {self.mode}')
 
-    @staticmethod
-    @dw.decorate.list_generalizer
-    def get_window(x, w_start, w_end):
-        return x.loc[w_start:w_end]
+    def get_window(self, x, w_start, w_end):
+        if type(x) is list:
+            return [self.get_window(i, w_start, w_end) for i in x]
+        return x.loc[self.indices[int(w_start)]:self.indices[int(w_end)]]
 
     @classmethod
     def get_datadict(cls, data):

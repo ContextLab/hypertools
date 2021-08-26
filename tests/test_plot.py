@@ -85,13 +85,12 @@ def test_animated_plot2d():
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
 
     # test each animation type: window, chemtrails, precog, bullettime, grow, shrink, spin
-    fig12 = hyp.plot(weights, reduce=pca, animate=True)
+    #fig12 = hyp.plot(weights, reduce=pca, animate=True)
 
     # split for now (so that smoothing and plotting can be debugged separately if needed)
     smoothed_weights = hyp.manip(weights,
                                  model=['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 1000}},
                                         'Smooth'])
-    # this has a bunch of empty frames at the end...
     fig13 = hyp.plot(smoothed_weights, reduce=pca, animate=True)
 
 
