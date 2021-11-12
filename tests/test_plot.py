@@ -81,6 +81,40 @@ def test_static_plot2d():
     plot_test('fig11', weights, 'star-triangle-down-open-dot--', reduce=pca, pipeline=[pca_10d, pca_5d])
 
 
+def test_static_plot3d():
+    # test lines, markers
+    # test different strategies for managing color
+    # test various manipulations (align, cluster, manip, reduce)
+    pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 3}}
+
+    # lines
+    plot_test('fig1', weights, reduce=pca)
+    plot_test('fig2', weights, '-', reduce=pca)
+    plot_test('fig3', weights, reduce=pca, color=weights)
+
+    # markers
+    plot_test('fig4', weights, ',', reduce=pca)
+    plot_test('fig5', weights, '.', reduce=pca)
+    plot_test('fig6', weights, 'o', reduce=pca, color=weights)
+
+    # lines + markers
+    plot_test('fig7', weights, '-.', reduce=pca)
+    plot_test('fig8', weights, ':o', reduce=pca, color=weights)
+
+    # zscore, align, cluster
+    kmeans = {'model': 'KMeans', 'args': [], 'kwargs': {'n_clusters': 5}}
+    plot_test('fig9', weights, '*-', reduce=pca, cluster=kmeans, align='HyperAlign', manip='ZScore')
+    plot_test('fig10', weights, 'D--', reduce=pca, align='SharedResponseModel', manip=['ZScore', 'Resample', 'Smooth'])
+
+    # pipeline
+    pca_10d = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 10}}
+    pca_5d = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 5}}
+    plot_test('fig11', weights, 'star-triangle-down-open-dot--', reduce=pca, pipeline=[pca_10d, pca_5d])
+
+
+test_static_plot3d()
+
+
 def test_animated_plot2d():
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
 
@@ -103,10 +137,6 @@ def test_animated_plot2d():
 
 
 test_animated_plot2d()
-
-
-def test_static_plot3d():
-    pass
 
 
 def test_animated_plot3d():
