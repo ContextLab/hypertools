@@ -1,6 +1,7 @@
 # noinspection PyPackageRequirements
 import datawrangler as dw
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 
 from scipy.spatial.distance import cdist
@@ -49,23 +50,26 @@ class Animator:
                 index_vals = set()
                 for d in data:
                     index_vals = index_vals.union(set(d.index.values))
-            indices = list(index_vals)
-            indices.sort()
-            self.indices = indices
 
-            duration = len(self.indices)
-            window_length = int(np.floor(duration * self.focused / self.duration))
+            # union of unique indices
+            indices = list(index_vals)
+
+            # compress or stretch (repeat) indices to match the requested duration and framerate
+            self.indices = np.linspace(np.min(indices), np.max(indices), self.duration * self.framerate + 1)
+            n_frames = len(self.indices)
+
+            window_length = int(np.floor(n_frames * self.focused / self.duration))
             self.window_starts = np.concatenate([np.zeros([window_length]),
-                                                 np.arange(1, len(indices) - window_length)])
+                                                 np.arange(1, len(self.indices) - window_length)])
             self.window_ends = np.arange(1, self.window_starts[-1] + window_length + 1)
 
-            tail_window_length = int(np.round(duration * self.unfocused / self.duration))
+            tail_window_length = int(np.round(n_frames * self.unfocused / self.duration))
             self.tail_window_starts = np.concatenate([np.zeros([tail_window_length]),
-                                                      np.arange(1, len(indices) - tail_window_length)])
+                                                      np.arange(1, len(self.indices) - tail_window_length)])
             self.tail_window_ends = np.abs(np.multiply(self.window_starts - 1, self.window_starts >= 1))
             self.tail_window_precogs = np.concatenate([tail_window_length +
-                                                       np.arange(1, len(indices) - tail_window_length),
-                                                       indices[-1] * np.ones([tail_window_length])])
+                                                       np.arange(1, len(self.indices) - tail_window_length),
+                                                       self.indices[-1] * np.ones([tail_window_length])])
 
             self.angles = np.linspace(0, self.rotations * 360, len(self.window_starts) + 1)[:-1]
 
@@ -78,7 +82,7 @@ class Animator:
         # add buttons and slider and define transitions
         fig['layout']['updatemenus'] = [{'buttons': [{
             'label': '▶',  # play button
-            'args': [None, {'frame': {'duration': frame_duration, 'redraw': True},
+            'args': [None, {'frame': {'duration': frame_duration, 'redraw': False},
                             'fromcurrent': True,
                             'transition': {'duration': 0}}],
             'method': 'animate'}, {
@@ -123,7 +127,7 @@ class Animator:
         }
         for i in range(len(self.angles)):
             slider_step = {'args': [[i],
-                                    {'frame': {'duration': frame_duration, 'redraw': True},
+                                    {'frame': {'duration': frame_duration, 'redraw': False},
                                      'mode': 'immediate',
                                      'transition': {'duration': 0}}],
                            'label': str(i),
@@ -172,10 +176,32 @@ class Animator:
         else:
             raise ValueError(f'unknown animation mode: {self.mode}')
 
-    def get_window(self, x, w_start, w_end):
+    def get_window(self, x, w_start, w_end, fill=True):  # ffill=False, bfill=False):
         if type(x) is list:
-            return [self.get_window(i, w_start, w_end) for i in x]
-        return x.loc[self.indices[int(w_start)]:self.indices[int(w_end)]]
+            return [self.get_window(i, w_start, w_end, fill=fill) for i in x]
+
+        if fill:
+            # if ffill or bfill:
+            #     if int(w_start) > 0:
+            #         y = 0
+            #         pass
+
+            nans = np.empty(x.shape)
+            nans[:] = None
+
+            y = pd.DataFrame(index=x.index, columns=x.columns, data=nans)
+            y.loc[self.indices[int(w_start)]:self.indices[int(w_end)]] =\
+                x.loc[self.indices[int(w_start)]:self.indices[int(w_end)]]
+
+            return y
+            # if ffill and not bfill:
+            #     return y.loc[self.indices[int(w_start)]:]
+            # elif bfill and not ffill:
+            #     return y.loc[:self.indices[int(w_end)]]
+            # else:
+            #     return y
+        else:
+            return x.loc[self.indices[int(w_start)]:self.indices[int(w_end)]]
 
     @classmethod
     def get_datadict(cls, data):
@@ -199,7 +225,7 @@ class Animator:
         return dw.core.update_dict(self.get_opts(), {'opacity': self.unfocused_alpha})
 
     def animate_window(self, i, simplify=False):
-        window = self.get_window(self.data, self.window_starts[i], self.window_ends[i])
+        window = self.get_window(self.data, self.window_starts[i], self.window_ends[i], fill=False)
         if simplify:
             return go.Frame(data=Animator.get_datadict(window), name=str(i))
         return static_plot(window, **self.get_opts())
@@ -219,14 +245,14 @@ class Animator:
         return static_plot(self.data, **self.tail_opts(), fig=fig)
 
     def animate_grow(self, i, simplify=False):
-        window = self.get_window(self.data, np.zeros_like(self.window_ends[i]), self.window_ends[i])
+        window = self.get_window(self.data, np.zeros_like(self.window_ends[i]), self.window_ends[i], fill=True)
         if simplify:
             return go.Frame(data=Animator.get_datadict(window), name=str(i))
         return static_plot(window, **self.get_opts())
 
     def animate_shrink(self, i, simplify=False):
         window = self.get_window(self.data, self.window_ends[i],
-                                 (len(self.window_ends) - 1) * self.ones_like(self.window_ends[i]))
+                                 (len(self.window_ends) - 1) * self.ones_like(self.window_ends[i]), fill=True)
         if simplify:
             return go.Frame(data=Animator.get_datadict(window), name=str(i))
         return static_plot(window, **self.get_opts())

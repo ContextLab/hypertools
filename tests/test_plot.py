@@ -114,21 +114,17 @@ def test_static_plot3d():
     plot_test('fig22', weights, 'diamond-open:', reduce=pca, pipeline=[pca_10d, pca_5d])
 
 
-test_static_plot3d()
-
-
 def test_animated_plot2d():
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
 
     # test each animation type: window, chemtrails, precog, bullettime, grow, shrink, spin
-    #fig12 = hyp.plot(weights, reduce=pca, animate=True)
+    fig12 = hyp.plot(weights[:5], reduce=pca, animate=True)
 
     # split for now (so that smoothing and plotting can be debugged separately if needed)
     smoothed_weights = hyp.manip(weights,
                                  model=['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 1000}},
                                         'Smooth'])
     fig13 = hyp.plot(smoothed_weights, reduce=pca, animate=True)
-
 
     # also test each combination of lines, markers, and lines + markers
     # use different line styles and marker shapes
