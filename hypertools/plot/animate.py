@@ -176,32 +176,11 @@ class Animator:
         else:
             raise ValueError(f'unknown animation mode: {self.mode}')
 
-    def get_window(self, x, w_start, w_end, fill=True):  # ffill=False, bfill=False):
+    def get_window(self, x, w_start, w_end):
         if type(x) is list:
-            return [self.get_window(i, w_start, w_end, fill=fill) for i in x]
+            return [self.get_window(i, w_start, w_end) for i in x]
 
-        if fill:
-            # if ffill or bfill:
-            #     if int(w_start) > 0:
-            #         y = 0
-            #         pass
-
-            nans = np.empty(x.shape)
-            nans[:] = None
-
-            y = pd.DataFrame(index=x.index, columns=x.columns, data=nans)
-            y.loc[self.indices[int(w_start)]:self.indices[int(w_end)]] =\
-                x.loc[self.indices[int(w_start)]:self.indices[int(w_end)]]
-
-            return y
-            # if ffill and not bfill:
-            #     return y.loc[self.indices[int(w_start)]:]
-            # elif bfill and not ffill:
-            #     return y.loc[:self.indices[int(w_end)]]
-            # else:
-            #     return y
-        else:
-            return x.loc[self.indices[int(w_start)]:self.indices[int(w_end)]]
+        return x.loc[self.indices[int(w_start)]:self.indices[int(w_end)]]
 
     @classmethod
     def get_datadict(cls, data):
@@ -225,34 +204,48 @@ class Animator:
         return dw.core.update_dict(self.get_opts(), {'opacity': self.unfocused_alpha})
 
     def animate_window(self, i, simplify=False):
-        window = self.get_window(self.data, self.window_starts[i], self.window_ends[i], fill=False)
+        window = self.get_window(self.data, self.window_starts[i], self.window_ends[i])
         if simplify:
             return go.Frame(data=Animator.get_datadict(window), name=str(i))
         return static_plot(window, **self.get_opts())
 
     def animate_chemtrails(self, i, simplify=False):
         fig = self.animate_window(i)
-        return static_plot(self.get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i]),
-                           **self.tail_opts(), fig=fig)
+        static_plot(self.get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i]),
+                    **self.tail_opts(), fig=fig)
+        if simplify:
+            return fig.data
+        else:
+            return fig
 
     def animate_precog(self, i, simplify=False):
         fig = self.animate_window(i)
-        return static_plot(self.get_window(self.data, self.tail_window_ends[i], self.tail_window_precogs[i]),
-                           **self.tail_opts(), fig=fig)
+        static_plot(self.get_window(self.data, self.tail_window_ends[i], self.tail_window_precogs[i]),
+                    **self.tail_opts(), fig=fig)
+
+        if simplify:
+            return fig.data
+        else:
+            return fig
 
     def animate_bullettime(self, i, simplify=False):
         fig = self.animate_window(i)
-        return static_plot(self.data, **self.tail_opts(), fig=fig)
+        static_plot(self.data, **self.tail_opts(), fig=fig)
+
+        if simplify:
+            return fig.data
+        else:
+            return fig
 
     def animate_grow(self, i, simplify=False):
-        window = self.get_window(self.data, np.zeros_like(self.window_ends[i]), self.window_ends[i], fill=True)
+        window = self.get_window(self.data, np.zeros_like(self.window_ends[i]), self.window_ends[i])
         if simplify:
             return go.Frame(data=Animator.get_datadict(window), name=str(i))
         return static_plot(window, **self.get_opts())
 
     def animate_shrink(self, i, simplify=False):
         window = self.get_window(self.data, self.window_ends[i],
-                                 (len(self.window_ends) - 1) * self.ones_like(self.window_ends[i]), fill=True)
+                                 (len(self.window_ends) - 1) * self.ones_like(self.window_ends[i]))
         if simplify:
             return go.Frame(data=Animator.get_datadict(window), name=str(i))
         return static_plot(window, **self.get_opts())
