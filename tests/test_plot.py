@@ -41,7 +41,7 @@ def compare_figs(f, name):
 def plot_test(name, *args, **kwargs):
     np.random.seed(1234)
     fig = hyp.plot(*args, **kwargs)
-    # save_fig(name, fig)  # FIXME: REMOVE ONCE REFERENCE FIGS ARE GENERATED
+    save_fig(name, fig)  # FIXME: REMOVE ONCE REFERENCE FIGS ARE GENERATED
     assert compare_figs(fig, name), f'Figure failed to replicate: {name}'
 
 
@@ -117,14 +117,18 @@ def test_static_plot3d():
 def test_animated_plot2d():
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
 
-    # test each animation type: window, chemtrails, precog, bullettime, grow, shrink, spin
-    fig12 = hyp.plot(weights[:5], reduce=pca, animate=True)
+    # basic animations of each style
+    styles = ['window', 'chemtrails', 'precog', 'bullettime', 'grow', 'shrink', 'spin']
+    fig_num = 23
+    for s in styles:
+        plot_test(f'fig{fig_num}', weights, reduce=pca, animate=True, style=s)
+        fig_num += 1
 
-    # split for now (so that smoothing and plotting can be debugged separately if needed)
-    smoothed_weights = hyp.manip(weights,
-                                 model=['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 1000}},
-                                        'Smooth'])
-    fig13 = hyp.plot(smoothed_weights, reduce=pca, animate=True)
+    # zscore + resampling + smoothing, with each style
+    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 1000}}, 'Smooth']
+    for s in styles:
+        plot_test(f'fig{fig_num}', weights, reduce=pca, animate=True, style=s, manip=manip)
+        fig_num += 1
 
     # also test each combination of lines, markers, and lines + markers
     # use different line styles and marker shapes
