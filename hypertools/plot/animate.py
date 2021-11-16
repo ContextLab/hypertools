@@ -211,13 +211,14 @@ class Animator:
 
     # noinspection DuplicatedCode
     def animate_chemtrails(self, i, simplify=False):
-        fig = self.animate_window(i)
-        static_plot(self.get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i]),
-                    **self.tail_opts(), fig=fig)
+        tail = self.get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i])
 
         if simplify:
-            return go.Frame(data=fig.data, name=str(i))
+            window = self.get_window(self.data, self.window_starts[i], self.window_ends[i])
+            return go.Frame(data=[*Animator.get_datadict(window), *Animator.get_datadict(tail)], name=str(i))
         else:
+            fig = self.animate_window(i)
+            static_plot(tail, **self.tail_opts(), fig=fig)
             return fig
 
     # noinspection DuplicatedCode
