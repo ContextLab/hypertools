@@ -113,6 +113,10 @@ def test_static_plot3d():
     pca_5d = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 5}}
     plot_test('fig22', weights, 'diamond-open:', reduce=pca, pipeline=[pca_10d, pca_5d])
 
+    # test camera angles and elevation
+    elevation = 10
+    zoom = 1.05
+
 
 def test_animated_plot2d():
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}

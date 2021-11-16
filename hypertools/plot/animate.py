@@ -209,22 +209,25 @@ class Animator:
             return go.Frame(data=Animator.get_datadict(window), name=str(i))
         return static_plot(window, **self.get_opts())
 
+    # noinspection DuplicatedCode
     def animate_chemtrails(self, i, simplify=False):
         fig = self.animate_window(i)
         static_plot(self.get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i]),
                     **self.tail_opts(), fig=fig)
+
         if simplify:
-            return fig.data
+            return go.Frame(data=fig.data, name=str(i))
         else:
             return fig
 
+    # noinspection DuplicatedCode
     def animate_precog(self, i, simplify=False):
         fig = self.animate_window(i)
         static_plot(self.get_window(self.data, self.tail_window_ends[i], self.tail_window_precogs[i]),
                     **self.tail_opts(), fig=fig)
 
         if simplify:
-            return fig.data
+            return go.Frame(data=fig.data, name=str(i))
         else:
             return fig
 
@@ -233,7 +236,7 @@ class Animator:
         static_plot(self.data, **self.tail_opts(), fig=fig)
 
         if simplify:
-            return fig.data
+            return go.Frame(data=fig.data, name=str(i))
         else:
             return fig
 
