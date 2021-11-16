@@ -211,7 +211,7 @@ class Animator:
 
     # noinspection DuplicatedCode
     def animate_chemtrails(self, i, simplify=False):
-        tail = self.get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i])
+        tail = self.get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i]) # tails appear slightly separated from trace...
 
         if simplify:
             window = self.get_window(self.data, self.window_starts[i], self.window_ends[i])
