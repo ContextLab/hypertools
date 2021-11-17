@@ -41,7 +41,7 @@ def compare_figs(f, name):
 def plot_test(name, *args, **kwargs):
     np.random.seed(1234)
     fig = hyp.plot(*args, **kwargs)
-    save_fig(name, fig)  # FIXME: REMOVE ONCE REFERENCE FIGS ARE GENERATED
+    save_fig(name, fig)  # FIXME: COMMENT OUT ONCE REFERENCE FIGS ARE GENERATED
     assert compare_figs(fig, name), f'Figure failed to replicate: {name}'
 
 
@@ -122,15 +122,17 @@ def test_animated_plot2d():
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
 
     # basic animations of each style
-    # styles = ['window',
-    styles = ['chemtrails', 'precog', 'bullettime', 'grow', 'shrink', 'spin']
-    fig_num = 24  # 23
-    for s in styles:
-        plot_test(f'fig{fig_num}', weights, reduce=pca, animate=True, style=s)
-        fig_num += 1
+    styles = ['window', 'chemtrails', 'precog', 'bullettime', 'grow', 'shrink', 'spin']
+    fig_num = 30  # 23
+    # for s in styles:
+    #     plot_test(f'fig{fig_num}', weights, reduce=pca, animate=True, style=s)
+    #     fig_num += 1
 
     # zscore + resampling + smoothing, with each style
     manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 1000}}, 'Smooth']
+
+    # hyperalign
+    align = 'HyperAlign'  # FIXME: why does aligning fail (if I add an align flag to the next line)?
     for s in styles:
         plot_test(f'fig{fig_num}', weights, reduce=pca, animate=True, style=s, manip=manip)
         fig_num += 1

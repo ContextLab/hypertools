@@ -40,38 +40,34 @@ class Animator:
         self.zooms = np.multiply(self.zooms, np.max(cdist(self.center, stacked_data.values)))
         self.indices = None
 
-        if self.style == 'spin':
-            self.fig = static_plot(self.data, fig=self.fig, **self.opts)
-            self.angles = np.linspace(0, self.rotations * 360, self.duration * self.framerate + 1)[:-1]
-        else:
-            if dw.zoo.is_dataframe(data):
-                index_vals = set(data.index.values)
-            else:  # data is a list
-                index_vals = set()
-                for d in data:
-                    index_vals = index_vals.union(set(d.index.values))
+        if dw.zoo.is_dataframe(data):
+            index_vals = set(data.index.values)
+        else:  # data is a list
+            index_vals = set()
+            for d in data:
+                index_vals = index_vals.union(set(d.index.values))
 
-            # union of unique indices
-            indices = list(index_vals)
+        # union of unique indices
+        indices = list(index_vals)
 
-            # compress or stretch (repeat) indices to match the requested duration and framerate
-            self.indices = np.linspace(np.min(indices), np.max(indices), self.duration * self.framerate + 1)
-            n_frames = len(self.indices)
+        # compress or stretch (repeat) indices to match the requested duration and framerate
+        self.indices = np.linspace(np.min(indices), np.max(indices), self.duration * self.framerate + 1)
+        n_frames = len(self.indices)
 
-            window_length = int(np.floor(n_frames * self.focused / self.duration))
-            self.window_starts = np.concatenate([np.zeros([window_length]),
-                                                 np.arange(1, len(self.indices) - window_length)])
-            self.window_ends = np.arange(1, self.window_starts[-1] + window_length + 1)
+        window_length = int(np.floor(n_frames * self.focused / self.duration))
+        self.window_starts = np.concatenate([np.zeros([window_length]),
+                                             np.arange(1, len(self.indices) - window_length)])
+        self.window_ends = np.arange(1, self.window_starts[-1] + window_length + 1)
 
-            tail_window_length = int(np.round(n_frames * self.unfocused / self.duration))
-            self.tail_window_starts = np.concatenate([np.zeros([tail_window_length]),
-                                                      np.arange(1, len(self.indices) - tail_window_length)])
-            self.tail_window_ends = np.abs(np.multiply(self.window_starts - 1, self.window_starts >= 1))
-            self.tail_window_precogs = np.concatenate([tail_window_length +
-                                                       np.arange(1, len(self.indices) - tail_window_length),
-                                                       self.indices[-1] * np.ones([tail_window_length])])
+        tail_window_length = int(np.round(n_frames * self.unfocused / self.duration))
+        self.tail_window_starts = np.concatenate([np.zeros([tail_window_length]),
+                                                  np.arange(1, len(self.indices) - tail_window_length)])
+        self.tail_window_ends = self.window_ends
+        self.tail_window_precogs = np.concatenate([tail_window_length +
+                                                   np.arange(1, len(self.indices) - tail_window_length),
+                                                   self.indices[-1] * np.ones([tail_window_length])])
 
-            self.angles = np.linspace(0, self.rotations * 360, len(self.window_starts) + 1)[:-1]
+        self.angles = np.linspace(0, self.rotations * 360, len(self.window_starts) + 1)[:-1]
 
     def build_animation(self):
         frame_duration = 1000 * self.duration / len(self.angles)
@@ -81,12 +77,12 @@ class Animator:
 
         # add buttons and slider and define transitions
         fig['layout']['updatemenus'] = [{'buttons': [{
-            'label': '▶',  # play button
+            'label': ' ▶',  # play button
             'args': [None, {'frame': {'duration': frame_duration, 'redraw': False},
                             'fromcurrent': True,
                             'transition': {'duration': 0}}],
             'method': 'animate'}, {
-            'label': '||',  # stop/pause button
+            'label': ' ||',  # stop/pause button
             'args': [[None], {'frame': {'duration': 0, 'redraw': True},
                               'mode': 'immediate',
                               'transition': {'duration': 0}}],
@@ -170,9 +166,7 @@ class Animator:
         elif self.style == 'shrink':
             return self.animate_shrink(i, simplify=simplify)
         elif self.style == 'spin':
-            if simplify:
-                return go.Frame(data=Animator.get_datadict(data))
-            return static_plot(self.data, **self.get_opts())
+            return self.animate_spin(i, simplify=simplify)
         else:
             raise ValueError(f'unknown animation mode: {self.mode}')
 
@@ -217,14 +211,15 @@ class Animator:
 
         if simplify:
             if extra is not None:
+                # noinspection PyTypeChecker
                 return go.Frame(data=[*Animator.get_datadict(window), *Animator.get_datadict(extra)], name=str(i))
             else:
                 return go.Frame(data=Animator.get_datadict(window), name=str(i))
         else:
-            fig = static_plot(window, **self.get_opts())
+            static_plot(window, **self.get_opts(), fig=self.fig)
             if extra is not None:
-                static_plot(extra, **self.tail_opts(), fig=fig, showlegend=False)
-            return fig
+                static_plot(extra, **self.tail_opts(), fig=self.fig, showlegend=False)
+            return self.fig
 
     def animate_window(self, i, simplify=False):
         return self.animate_helper(i, self.window_starts, self.window_ends, simplify=simplify)
@@ -235,18 +230,22 @@ class Animator:
                                    simplify=simplify)
 
     def animate_precog(self, i, simplify=False):
-        return self.animate_helper(i, extra_starts=self.window_ends, extra_ends=self.tail_window_precogs,
+        return self.animate_helper(i, extra_starts=self.window_starts, extra_ends=self.tail_window_precogs,
                                    simplify=simplify)
 
     def animate_bullettime(self, i, simplify=False):
         return self.animate_helper(i, extra_starts=np.zeros_like(self.window_starts),
-                                   extra_ends=np.ones_like(self.window_ends),
+                                   extra_ends=-1 * np.ones_like(self.window_ends),
                                    simplify=simplify)
 
     def animate_grow(self, i, simplify=False):
         return self.animate_helper(i, starts=np.zeros_like(self.window_starts), simplify=simplify)
 
     def animate_shrink(self, i, simplify=False):
-        return self.animate_helper(i, starts=self.window_ends,
-                                   ends=(len(self.window_ends) - 1) * self.ones_like(self.window_ends[i]),
+        return self.animate_helper(i, starts=self.window_ends, ends=-1 * np.ones_like(self.window_ends),
+                                   simplify=simplify)
+
+    def animate_spin(self, i, simplify=False):
+        return self.animate_helper(i, starts=np.zeros_like(self.window_starts),
+                                   ends=-1 * np.ones_like(self.window_ends),
                                    simplify=simplify)
