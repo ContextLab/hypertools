@@ -122,8 +122,9 @@ def test_animated_plot2d():
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
 
     # basic animations of each style
-    styles = ['window', 'chemtrails', 'precog', 'bullettime', 'grow', 'shrink', 'spin']
-    fig_num = 23
+    # styles = ['window',
+    styles = ['chemtrails', 'precog', 'bullettime', 'grow', 'shrink', 'spin']
+    fig_num = 24  # 23
     for s in styles:
         plot_test(f'fig{fig_num}', weights, reduce=pca, animate=True, style=s)
         fig_num += 1

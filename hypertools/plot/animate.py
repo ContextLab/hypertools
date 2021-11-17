@@ -203,53 +203,50 @@ class Animator:
     def tail_opts(self):
         return dw.core.update_dict(self.get_opts(), {'opacity': self.unfocused_alpha})
 
+    def animate_helper(self, i, starts=None, ends=None, extra_starts=None, extra_ends=None, simplify=False):
+        if starts is None:
+            starts = self.window_starts
+        if ends is None:
+            ends = self.window_ends
+
+        window = self.get_window(self.data, starts[i], ends[i])
+        if extra_starts is not None:
+            extra = self.get_window(self.data, extra_starts[i], extra_ends[i])
+        else:
+            extra = None
+
+        if simplify:
+            if extra is not None:
+                return go.Frame(data=[*Animator.get_datadict(window), *Animator.get_datadict(extra)], name=str(i))
+            else:
+                return go.Frame(data=Animator.get_datadict(window), name=str(i))
+        else:
+            fig = static_plot(window, **self.get_opts())
+            if extra is not None:
+                static_plot(extra, **self.tail_opts(), fig=fig, showlegend=False)
+            return fig
+
     def animate_window(self, i, simplify=False):
-        window = self.get_window(self.data, self.window_starts[i], self.window_ends[i])
-        if simplify:
-            return go.Frame(data=Animator.get_datadict(window), name=str(i))
-        return static_plot(window, **self.get_opts())
+        return self.animate_helper(i, self.window_starts, self.window_ends, simplify=simplify)
 
-    # noinspection DuplicatedCode
     def animate_chemtrails(self, i, simplify=False):
-        tail = self.get_window(self.data, self.tail_window_starts[i], self.tail_window_ends[i]) # tails appear slightly separated from trace...
+        return self.animate_helper(i, extra_starts=self.tail_window_starts,
+                                   extra_ends=self.tail_window_ends,
+                                   simplify=simplify)
 
-        if simplify:
-            window = self.get_window(self.data, self.window_starts[i], self.window_ends[i])
-            return go.Frame(data=[*Animator.get_datadict(window), *Animator.get_datadict(tail)], name=str(i))
-        else:
-            fig = self.animate_window(i)
-            static_plot(tail, **self.tail_opts(), fig=fig)
-            return fig
-
-    # noinspection DuplicatedCode
     def animate_precog(self, i, simplify=False):
-        fig = self.animate_window(i)
-        static_plot(self.get_window(self.data, self.tail_window_ends[i], self.tail_window_precogs[i]),
-                    **self.tail_opts(), fig=fig)
-
-        if simplify:
-            return go.Frame(data=fig.data, name=str(i))
-        else:
-            return fig
+        return self.animate_helper(i, extra_starts=self.window_ends, extra_ends=self.tail_window_precogs,
+                                   simplify=simplify)
 
     def animate_bullettime(self, i, simplify=False):
-        fig = self.animate_window(i)
-        static_plot(self.data, **self.tail_opts(), fig=fig)
-
-        if simplify:
-            return go.Frame(data=fig.data, name=str(i))
-        else:
-            return fig
+        return self.animate_helper(i, extra_starts=np.zeros_like(self.window_starts),
+                                   extra_ends=np.ones_like(self.window_ends),
+                                   simplify=simplify)
 
     def animate_grow(self, i, simplify=False):
-        window = self.get_window(self.data, np.zeros_like(self.window_ends[i]), self.window_ends[i])
-        if simplify:
-            return go.Frame(data=Animator.get_datadict(window), name=str(i))
-        return static_plot(window, **self.get_opts())
+        return self.animate_helper(i, starts=np.zeros_like(self.window_starts), simplify=simplify)
 
     def animate_shrink(self, i, simplify=False):
-        window = self.get_window(self.data, self.window_ends[i],
-                                 (len(self.window_ends) - 1) * self.ones_like(self.window_ends[i]))
-        if simplify:
-            return go.Frame(data=Animator.get_datadict(window), name=str(i))
-        return static_plot(window, **self.get_opts())
+        return self.animate_helper(i, starts=self.window_ends,
+                                   ends=(len(self.window_ends) - 1) * self.ones_like(self.window_ends[i]),
+                                   simplify=simplify)
