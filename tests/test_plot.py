@@ -8,7 +8,7 @@ import os
 import hypertools as hyp
 
 
-weights = hyp.load('weights')
+data = hyp.load('weights')[:5]
 fig_dir = os.path.join(os.path.dirname(__file__), 'reference_figures')
 
 
@@ -58,28 +58,28 @@ def test_static_plot2d():
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
 
     # lines
-    plot_test('fig1', weights, reduce=pca)
-    plot_test('fig2', weights, '-', reduce=pca)
-    plot_test('fig3', weights, reduce=pca, color=weights)
+    plot_test('fig1', data, reduce=pca)
+    plot_test('fig2', data, '-', reduce=pca)
+    plot_test('fig3', data, reduce=pca, color=data)
 
     # markers
-    plot_test('fig4', weights, ',', reduce=pca)
-    plot_test('fig5', weights, '.', reduce=pca)
-    plot_test('fig6', weights, 'o', reduce=pca, color=weights)
+    plot_test('fig4', data, ',', reduce=pca)
+    plot_test('fig5', data, '.', reduce=pca)
+    plot_test('fig6', data, 'o', reduce=pca, color=data)
 
     # lines + markers
-    plot_test('fig7', weights, '-.', reduce=pca)
-    plot_test('fig8', weights, ':o', reduce=pca, color=weights)
+    plot_test('fig7', data, '-.', reduce=pca)
+    plot_test('fig8', data, ':o', reduce=pca, color=data)
 
     # zscore, align, cluster
     kmeans = {'model': 'KMeans', 'args': [], 'kwargs': {'n_clusters': 5}}
-    plot_test('fig9', weights, '*-', reduce=pca, cluster=kmeans, align='HyperAlign', manip='ZScore')
-    plot_test('fig10', weights, 'D--', reduce=pca, align='SharedResponseModel', manip=['ZScore', 'Resample', 'Smooth'])
+    plot_test('fig9', data, '*-', reduce=pca, cluster=kmeans, align='HyperAlign', manip='ZScore')
+    plot_test('fig10', data, 'D--', reduce=pca, align='SharedResponseModel', manip=['ZScore', 'Resample', 'Smooth'])
 
     # pipeline
     pca_10d = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 10}}
     pca_5d = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 5}}
-    plot_test('fig11', weights, 'star-triangle-down-open-dot--', reduce=pca, pipeline=[pca_10d, pca_5d])
+    plot_test('fig11', data, 'star-triangle-down-open-dot--', reduce=pca, pipeline=[pca_10d, pca_5d])
 
 
 # noinspection DuplicatedCode
@@ -90,59 +90,89 @@ def test_static_plot3d():
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 3}}
 
     # lines
-    plot_test('fig12', weights, reduce=pca)
-    plot_test('fig13', weights, '-', reduce=pca)
-    plot_test('fig14', weights, reduce=pca, color=weights)
+    plot_test('fig12', data, reduce=pca)
+    plot_test('fig13', data, '-', reduce=pca)
+    plot_test('fig14', data, reduce=pca, color=data)
 
     # markers
-    plot_test('fig15', weights, ',', reduce=pca)
-    plot_test('fig16', weights, '.', reduce=pca)
-    plot_test('fig17', weights, 'o', reduce=pca, color=weights)
+    plot_test('fig15', data, ',', reduce=pca)
+    plot_test('fig16', data, '.', reduce=pca)
+    plot_test('fig17', data, 'o', reduce=pca, color=data)
 
     # lines + markers
-    plot_test('fig18', weights, '-.', reduce=pca)
-    plot_test('fig19', weights, ':o', reduce=pca, color=weights)
+    plot_test('fig18', data, '-.', reduce=pca)
+    plot_test('fig19', data, ':o', reduce=pca, color=data)
 
     # zscore, align, cluster
     kmeans = {'model': 'KMeans', 'args': [], 'kwargs': {'n_clusters': 5}}
-    plot_test('fig20', weights, 'x-', reduce=pca, cluster=kmeans, align='HyperAlign', manip='ZScore')
-    plot_test('fig21', weights, 'd--', reduce=pca, align='SharedResponseModel', manip=['ZScore', 'Resample', 'Smooth'])
+    plot_test('fig20', data, 'x-', reduce=pca, cluster=kmeans, align='HyperAlign', manip='ZScore')
+    plot_test('fig21', data, 'd--', reduce=pca, align='SharedResponseModel', manip=['ZScore', 'Resample', 'Smooth'])
 
     # pipeline
     pca_10d = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 10}}
     pca_5d = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 5}}
-    plot_test('fig22', weights, 'diamond-open:', reduce=pca, pipeline=[pca_10d, pca_5d])
+    plot_test('fig22', data, 'diamond-open:', reduce=pca, pipeline=[pca_10d, pca_5d])
 
-    # test camera angles and elevation
-    elevation = 10
-    zoom = 1.05
+    # manipulate and align
+    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 1000}}, 'Smooth']
+    plot_test('fig23', data, manip=manip, align='HyperAlign')
 
+    # pipeline, manipulate, align
+    plot_test('fig24', data, manip=manip, align='SharedResponseModel', pipeline=[pca_10d, pca_5d])
+
+    # colormap
+    plot_test('fig25', data, cmap='flare')
+
+    # mixture model
+    gaussian_mixture = {'model': 'GaussianMixture', 'args': [], 'kwargs': {'n_components': 10}}
+    plot_test(f'fig26', data[0], cluster=gaussian_mixture, cmap='husl')
+
+test_static_plot3d()
 
 def test_animated_plot2d():
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
 
     # basic animations of each style
     styles = ['window', 'chemtrails', 'precog', 'bullettime', 'grow', 'shrink', 'spin']
-    fig_num = 30  # 23
-    # for s in styles:
-    #     plot_test(f'fig{fig_num}', weights, reduce=pca, animate=True, style=s)
-    #     fig_num += 1
-
-    # zscore + resampling + smoothing, with each style
-    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 1000}}, 'Smooth']
-
-    # hyperalign
-    align = 'HyperAlign'  # FIXME: why does aligning fail (if I add an align flag to the next line)?
+    fig_num = 27
     for s in styles:
-        plot_test(f'fig{fig_num}', weights, reduce=pca, animate=True, style=s, manip=manip)
+        plot_test(f'fig{fig_num}', data, reduce=pca, animate=True, style=s)
         fig_num += 1
+
+    # zscore + resampling + smoothing + hyperalign, with each style
+    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 500}}, 'Smooth']
+    hyperalign = {'model': 'HyperAlign', 'args': [], 'kwargs': {'n_iter': 3}}
+
+    # for s in styles:
+    #     plot_test(f'fig{fig_num}', data, reduce=pca, animate=True, style=s, manip=manip, align=hyperalign)
+    #     fig_num += 1
 
     # also test each combination of lines, markers, and lines + markers
     # use different line styles and marker shapes
-    # verify that resampling and smoothing change animations correctly
+    styles = ['.', ':o']
+    # for s in styles:
+    #     plot_test(f'fig{fig_num}', data, s, reduce=pca, animate=True, style='window')
+    #     fig_num += 1
+    #
+    # # verify that resampling and smoothing change animations correctly
+    # for s in styles:
+    #     plot_test(f'fig{fig_num}', data, s, reduce=pca, manip=manip, animate=True, style='chemtrails')
+    #     fig_num += 1
+
+    # # verify that coloring works with animations
+    # for s in styles:
+    #     plot_test(f'fig{fig_num}', data, s, reduce=pca, animate=True, style='grow', color=data)
+    #     fig_num += 1
+    #
+    # # verify that single-line animations work, also try mixture-based coloring and a custom colormap
+    # gaussian_mixture = {'model': 'GaussianMixture', 'args': [], 'kwargs': {'n_components': 10}}
+    # plot_test(f'fig{fig_num}', data[0], reduce=pca, animate=True, style='shrink', cluster=gaussian_mixture, cmap='husl')
+    # fig_num += 1
+
     # test timing: total duration, window length, tail length (noting for 3d: also test number of rotations)
     # (for 3d: test zoom)
-    pass
+    plot_test(f'fig{fig_num}', data, reduce=pca, animate=True, style='precog', cmap='light:seagreen', duration=20,
+              focused=1, unfocused=5)
 
 
 test_animated_plot2d()

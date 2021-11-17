@@ -141,7 +141,7 @@ class Animator:
 
     def get_frame(self, i, simplify=False):
         if self.proj == '3d':
-            center = dw.stack(data).mean(axis=0).values
+            center = dw.stack(self.data).mean(axis=0).values
             angle = np.deg2rad(get(self.angles, i))
             zoom = get(self.zooms, i)
             elevation = zoom * np.sin(np.deg2rad(self.elevation)) + self.center[0, 2]
@@ -188,14 +188,18 @@ class Animator:
         else:
             raise ValueError(f'data must be either 2D or 3D; given: {data.shape[1]}D')
 
-    def get_opts(self):
+    def get_opts(self, starts=None, ends=None):
         opts = self.opts.copy()
-        _ = opts.pop('opacity', None)
-        return {**opts,
-                'opacity': self.focused_alpha}
+        opts = dw.core.update_dict(opts, {'opacity': self.focused_alpha})
 
-    def tail_opts(self):
-        return dw.core.update_dict(self.get_opts(), {'opacity': self.unfocused_alpha})
+        color = opts.pop('color', None)
+        if all([x is not None for x in [color, starts, ends]]):
+            color = self.get_window(color, starts, ends)
+        opts['color'] = color
+        return opts
+
+    def tail_opts(self, starts=None, ends=None):
+        return dw.core.update_dict(self.get_opts(starts=starts, ends=ends), {'opacity': self.unfocused_alpha})
 
     def animate_helper(self, i, starts=None, ends=None, extra_starts=None, extra_ends=None, simplify=False):
         if starts is None:
@@ -216,9 +220,10 @@ class Animator:
             else:
                 return go.Frame(data=Animator.get_datadict(window), name=str(i))
         else:
-            static_plot(window, **self.get_opts(), fig=self.fig)
+            static_plot(window, **self.get_opts(starts=starts[i], ends=ends[i]), fig=self.fig)
             if extra is not None:
-                static_plot(extra, **self.tail_opts(), fig=self.fig, showlegend=False)
+                static_plot(extra, **self.tail_opts(starts=extra_starts[i], ends=extra_ends[i]), fig=self.fig,
+                            showlegend=False)
             return self.fig
 
     def animate_window(self, i, simplify=False):

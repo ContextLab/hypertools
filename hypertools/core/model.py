@@ -198,7 +198,9 @@ def apply_model(data, model, *args, return_model=False, search=None, **kwargs):
                 index = dw.stack(template).index
                 return safe_unstack(safe_df(x, index, return_model), return_model)
         elif dw.zoo.is_dataframe(template):
-            if dw.zoo.is_dataframe(data):
+            if type(data) is list:
+                return pd.DataFrame(index=template.index, columns=template.columns, data=dw.stack(data).values)
+            elif dw.zoo.is_dataframe(data):
                 return x
             elif dw.zoo.is_array(data):
                 return safe_df(x, template.index, return_model)
