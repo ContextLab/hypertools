@@ -233,9 +233,13 @@ def apply_model(data, model, *args, return_model=False, search=None, **kwargs):
         assert all([k in model.keys() for k in ['model', 'args', 'kwargs']]), \
             ValueError('model must have keys "model", "args", and "kwargs"')
 
-        return unpack_result(apply_model(stacked_data, model['model'], return_model=return_model, mode=mode,
-                                         custom=custom, *[*model['args'], *args], **dw.core.update_dict(model['kwargs'],
-                                                                                                        kwargs)),
+        default_kwargs = {'return_model': return_model,
+                          'mode': mode,
+                          'custom': custom}
+
+        return unpack_result(apply_model(stacked_data, model['model'], *[*model['args'], *args],
+                                         **dw.core.update_dict(dw.core.update_dict(default_kwargs, model['kwargs']),
+                                                               kwargs)),
                              data, return_model)
     elif custom and callable(model):
         transformed_data = model(stacked_data, *args, **kwargs)

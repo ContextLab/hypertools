@@ -299,6 +299,19 @@ def plot(original_data, *fmt, **kwargs):
 
     if clusterers is not None:
         colors = cluster(data, model=clusterers)
+        # FIXME: if colors are driven by clusters, the figure legend should refer to *clusters* rather than *traces*
+        #  If *mixtures* are used, then we should get one color per column, defined by cmap, and each observation
+        #  should be colored using a weighted blend of the columns' colors.  I think this will require several
+        #  changes:
+        #     - first, if we're in a special clustering-based color scenario, a flag should be passed to the plot
+        #       functions to disable individual traces from appearing in the legend.  rather, observations should be
+        #       grouped by cluster (if discrete clusters are used), or by max cluster weight (if mixtures are used).
+        #       this could potentially be accomplished using dummy traces, along with hiding the actual traces
+        #       from the legend:
+        #       https://community.plotly.com/t/plotly-express-how-to-separate-symbol-and-color-in-legend/38950/2.
+        #     - second, i think colors already work correctly if they're specified per observation.  but in this
+        #       scenario, each *trace* should be grouped into a single legendgroup (same as would happen if only a
+        #       single color per trace was specified, or only a cmap was specified).
     else:
         if 'color' not in kwargs.keys() or kwargs['color'] is None:
             colors = get_colors(data)
