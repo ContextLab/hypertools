@@ -207,8 +207,15 @@ def static_plot(data, **kwargs):
     fig = kwargs.pop('fig', go.Figure())
     color = kwargs.pop('color', None)
 
+    legend_override = kwargs.pop('legend_override', None)
+    if legend_override is not None:
+        pass
+    # FIXME: fill this in-- add "null" objects to the legend, and then force showlegend to be False for all other
+    #  shapes.  also need to change how trace "legendgroups" are inferred; if legend_override is specified (and not
+    #  None), shape legendgroups should correspond to cluster labels rather than traces
+
     if type(data) is list:
-        names = kwargs.pop('name', [str(d) for d in range(len(data))])
+        names = kwargs.pop('name', [str(d) for d in range(len(data))])  # FIXME: flagging for updating...
         for i, d in enumerate(data):
             opts = {'color': get(color, i), 'fig': fig, 'name': get(names, i), 'legendgroup': get(names, i)}
             fig = static_plot(d, **dw.core.update_dict(kwargs, opts))
@@ -260,6 +267,8 @@ def static_plot(data, **kwargs):
                 else:
                     inds = np.array([inds[0], inds[0]])
 
+            # FIXME: legendgroups are specified within opts -- overwrite to reflect groups if needed
+            #  note: may need to further break down data by cluster group
             fig.add_trace(get_plotly_shape(data.values[inds, :], **kwargs, **opts, color=mpl2plotly_color(c)))
 
     return fig

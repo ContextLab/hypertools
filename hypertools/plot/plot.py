@@ -114,6 +114,51 @@ def mat2colors(m, **kwargs):
     return colorize_rgb(m, cmap)
 
 
+def labels2colors(c, **kwargs):
+    # noinspection PyShadowingNames
+    def helper(x, cmap):
+        colors = np.zeros((x.shape[0], cmap.shape[1]))
+
+        if x.shape[1] == 1:
+            for i, c in enumerate(np.unique(x)):
+                colors[x == c] = colors[i, :]  # FIXME: check this...
+        else:
+            for i in range(x.shape[0]):
+                colors[i, :] = np.dot(x.iloc[i].values, cmap)
+
+        return colors
+
+    stacked_labels = dw.stack(c)
+    if stacked_labels.shape[0] == 1:  # discrete labels
+        groups = np.unique(stacked_labels)
+        max_labels = stacked_labels.copy()
+    else:  # mixture proportions
+        groups = list(stacked_labels.columns)
+        max_labels = pd.DataFrame(index=stacked_labels.index, data=np.argmax(stacked_labels.values, axis=1))
+    n_colors = len(groups)
+    cmap = get_cmap(kwargs.pop('cmap', eval(defaults['plot']['cmap'])), n_colors=n_colors)
+
+    style = {'mode': kwargs.pop('mode', eval(defaults['plot']['mode']))}
+
+    if 'line' in style['mode'] and 'dash' in kwargs.keys():
+        style['dash'] = kwargs['dash']
+    if 'marker' in style['mode']:
+        style['marker'] = kwargs.pop('marker', eval(defaults['plot']['marker']))
+        style['markersize'] = kwargs.pop('markersize', eval(defaults['plot']['markersize']))
+
+    cluster_names = kwargs.pop('cluster_names', [str(g) for g in groups])
+    legend_override = {'styles': {n: {'color': mpl2plotly_color(cmap[i, :]),
+                                      **style} for i, n in enumerate(cluster_names)},
+                       'names': cluster_names}
+
+    if type(c) is list:
+        legend_override['labels'] = dw.unstack(max_labels)
+    else:
+        legend_override['labels'] = dw.unstack(max_labels)[0]
+
+    return dw.unstack(pd.DataFrame(index=stacked_labels.index, data=helper(stacked_labels, cmap))), legend_override
+
+
 def get_colors(data):
     def safe_len(x):
         if type(x) is list:
@@ -297,30 +342,19 @@ def plot(original_data, *fmt, **kwargs):
     if reducers is not None:
         data = reduce(data, model=reducers)
 
+    cmap = kwargs.pop('cmap', eval(defaults['plot']['cmap']))
+    color_kwargs = kwargs.pop('color_kwargs', kwargs)
     if clusterers is not None:
-        colors = cluster(data, model=clusterers)
-        # FIXME: if colors are driven by clusters, the figure legend should refer to *clusters* rather than *traces*
-        #  If *mixtures* are used, then we should get one color per column, defined by cmap, and each observation
-        #  should be colored using a weighted blend of the columns' colors.  I think this will require several
-        #  changes:
-        #     - first, if we're in a special clustering-based color scenario, a flag should be passed to the plot
-        #       functions to disable individual traces from appearing in the legend.  rather, observations should be
-        #       grouped by cluster (if discrete clusters are used), or by max cluster weight (if mixtures are used).
-        #       this could potentially be accomplished using dummy traces, along with hiding the actual traces
-        #       from the legend:
-        #       https://community.plotly.com/t/plotly-express-how-to-separate-symbol-and-color-in-legend/38950/2.
-        #     - second, i think colors already work correctly if they're specified per observation.  but in this
-        #       scenario, each *trace* should be grouped into a single legendgroup (same as would happen if only a
-        #       single color per trace was specified, or only a cmap was specified).
+        cluster_labels = cluster(data, model=clusterers)
+        colors, kwargs['legend_override'] = labels2colors(cluster_labels, cmap=cmap,
+                                                          **dw.core.update_dict(kwargs, color_kwargs))
     else:
         if 'color' not in kwargs.keys() or kwargs['color'] is None:
             colors = get_colors(data)
         else:
             colors = kwargs.pop('color', ValueError('error parsing color argument'))
 
-    cmap = kwargs.pop('cmap', eval(defaults['plot']['cmap']))
-    color_kwargs = kwargs.pop('color_kwargs', kwargs)
-    colors = mat2colors(colors, cmap=cmap, **color_kwargs)
+        colors = mat2colors(colors, cmap=cmap, **color_kwargs)
     kwargs['color'] = colors
 
     if type(data) is list:
