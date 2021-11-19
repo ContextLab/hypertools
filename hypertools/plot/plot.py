@@ -156,7 +156,10 @@ def labels2colors(c, **kwargs):
     else:
         legend_override['labels'] = dw.unstack(max_labels)[0]
 
-    return dw.unstack(pd.DataFrame(index=stacked_labels.index, data=helper(stacked_labels, cmap))), legend_override
+    colors = dw.unstack(pd.DataFrame(index=stacked_labels.index, data=helper(stacked_labels, cmap)))
+    if dw.zoo.is_dataframe(c):
+        colors = colors[0]
+    return colors, legend_override
 
 
 def get_colors(data):

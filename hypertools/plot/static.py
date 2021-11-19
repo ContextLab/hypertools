@@ -209,7 +209,14 @@ def static_plot(data, **kwargs):
 
     legend_override = kwargs.pop('legend_override', None)
     if legend_override is not None:
-        pass
+        for n, s in legend_override['styles'].items():
+            if (hasattr(data, 'shape') and data.shape[1] == 3) or any([d.shape[1] == 3 for d in data]):
+                dummy_coords = np.atleast_2d([None, None, None])
+            else:
+                dummy_coords = np.atleast_2d([None, None])
+            fig.add_trace(get_plotly_shape(dummy_coords, **s, name=n))
+        kwargs['showlegend'] = False
+
     # FIXME: fill this in-- add "null" objects to the legend, and then force showlegend to be False for all other
     #  shapes.  also need to change how trace "legendgroups" are inferred; if legend_override is specified (and not
     #  None), shape legendgroups should correspond to cluster labels rather than traces
