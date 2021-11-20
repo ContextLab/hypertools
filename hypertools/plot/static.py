@@ -208,7 +208,7 @@ def static_plot(data, **kwargs):
     color = kwargs.pop('color', None)
 
     legend_override = kwargs.pop('legend_override', None)
-    if legend_override is not None:
+    if (legend_override is not None) and ('showlegend' not in kwargs.keys() or kwargs['showlegend']):
         for n, s in legend_override['styles'].items():
             if (hasattr(data, 'shape') and data.shape[1] == 3) or any([d.shape[1] == 3 for d in data]):
                 dummy_coords = np.atleast_2d([None, None, None])
@@ -225,6 +225,13 @@ def static_plot(data, **kwargs):
         names = kwargs.pop('name', [str(d) for d in range(len(data))])  # FIXME: flagging for updating...
         for i, d in enumerate(data):
             opts = {'color': get(color, i), 'fig': fig, 'name': get(names, i), 'legendgroup': get(names, i)}
+
+            if legend_override is not None:
+                lo = legend_override.copy()
+                lo['labels'] = lo['labels'][i]
+
+                opts['legend_override'] = lo
+
             fig = static_plot(d, **dw.core.update_dict(kwargs, opts))
 
         return fig
@@ -274,8 +281,18 @@ def static_plot(data, **kwargs):
                 else:
                     inds = np.array([inds[0], inds[0]])
 
-            # FIXME: legendgroups are specified within opts -- overwrite to reflect groups if needed
-            #  note: may need to further break down data by cluster group
-            fig.add_trace(get_plotly_shape(data.values[inds, :], **kwargs, **opts, color=mpl2plotly_color(c)))
+            if legend_override is not None:
+                next_labels = legend_override['labels'].iloc[inds].values
+                for k in np.unique(next_labels):
+                    group_inds = np.where(next_labels == k)[0]
+                    group_opts = opts.copy()
+                    group_opts['legendgroup'] = legend_override['names'][k]
+                    fig.add_trace(get_plotly_shape(data.values[inds[group_inds], :],
+                                                   **dw.core.update_dict(kwargs, group_opts),
+                                                   color=mpl2plotly_color(c)))
+            else:
+                fig.add_trace(get_plotly_shape(data.values[inds, :],
+                                               **dw.core.update_dict(kwargs, opts),
+                                               color=mpl2plotly_color(c)))
 
     return fig
