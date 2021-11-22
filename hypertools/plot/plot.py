@@ -121,7 +121,7 @@ def labels2colors(c, **kwargs):
 
         if x.shape[1] == 1:
             for i, c in enumerate(np.unique(x)):
-                colors[x == c] = colors[i, :]  # FIXME: check this...
+                colors[np.where(x.values == c)[0], :] = cmap[i, :]
         else:
             for i in range(x.shape[0]):
                 colors[i, :] = np.dot(x.iloc[i].values, cmap)
@@ -129,7 +129,7 @@ def labels2colors(c, **kwargs):
         return colors
 
     stacked_labels = dw.stack(c)
-    if stacked_labels.shape[0] == 1:  # discrete labels
+    if stacked_labels.shape[1] == 1:  # discrete labels
         groups = np.unique(stacked_labels)
         max_labels = stacked_labels.copy()
     else:  # mixture proportions

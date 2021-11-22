@@ -214,7 +214,7 @@ def static_plot(data, **kwargs):
                 dummy_coords = np.atleast_2d([None, None, None])
             else:
                 dummy_coords = np.atleast_2d([None, None])
-            fig.add_trace(get_plotly_shape(dummy_coords, **s, name=n))
+            fig.add_trace(get_plotly_shape(dummy_coords, **s, name=n, legendgroup=n))
         kwargs['showlegend'] = False
 
     # FIXME: fill this in-- add "null" objects to the legend, and then force showlegend to be False for all other
