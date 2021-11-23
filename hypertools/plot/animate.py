@@ -94,7 +94,7 @@ class Animator:
         # add buttons and slider and define transitions
         fig['layout']['updatemenus'] = [{'buttons': [{
             'label': ' ▶',  # play button
-            'args': [None, {'frame': {'duration': frame_duration, 'redraw': False},
+            'args': [None, {'frame': {'duration': frame_duration, 'redraw': self.proj == '3d'},
                             'fromcurrent': True,
                             'transition': {'duration': 0}}],
             'method': 'animate'}, {
@@ -114,10 +114,15 @@ class Animator:
             'yanchor': 'top'}]
 
         bounds = get_bounds(self.data)
-        fig['layout']['xaxis'] = {'range': [bounds[0, 0], bounds[1, 0]], 'autorange': False}
-        fig['layout']['yaxis'] = {'range': [bounds[0, 1], bounds[1, 1]], 'autorange': False}
+        scene = {'xaxis': {'range': [bounds[0, 0], bounds[1, 0]], 'autorange': False},
+                 'yaxis': {'range': [bounds[0, 1], bounds[1, 1]], 'autorange': False}}
         if bounds.shape[1] == 3:
-            fig['layout']['zaxis'] = {'range': [bounds[0, 2], bounds[1, 2]], 'autorange': False}
+            scene['zaxis'] = {'range': [bounds[0, 2], bounds[1, 2]], 'autorange': False}
+
+        # fig['layout']['xaxis'] = {'range': [bounds[0, 0], bounds[1, 0]], 'autorange': False}
+        # fig['layout']['yaxis'] = {'range': [bounds[0, 1], bounds[1, 1]], 'autorange': False}
+        # if bounds.shape[1] == 3:
+        #    fig['layout']['zaxis'] = {'range': [bounds[0, 2], bounds[1, 2]], 'autorange': False}
 
         # define slider behavior
         slider = {
@@ -139,7 +144,7 @@ class Animator:
         }
         for i in range(len(self.angles)):
             slider_step = {'args': [[i],
-                                    {'frame': {'duration': frame_duration, 'redraw': False},
+                                    {'frame': {'duration': frame_duration, 'redraw': self.proj == '3d'},
                                      'mode': 'immediate',
                                      'transition': {'duration': 0}}],
                            'label': str(i),
@@ -153,36 +158,49 @@ class Animator:
         fig['data'] = self.get_frame(0).data
         fig['frames'] = [self.get_frame(i, simplify=True) for i in range(len(self.angles))]
 
-        return go.Figure(fig)
+        # convert to figure object and make bounds consistent across frames
+        fig = go.Figure(fig)
+        fig.update_layout(scene=scene)
+        return fig
 
     def get_frame(self, i, simplify=False):
+        kwargs = {}
         if self.proj == '3d':
+            bounds = get_bounds(self.data)
+
+            scale = np.max(np.abs(bounds))
+
             center = dw.stack(self.data).mean(axis=0).values
             angle = np.deg2rad(get(self.angles, i))
             zoom = get(self.zooms, i)
-            elevation = zoom * np.sin(np.deg2rad(self.elevation)) + self.center[0, 2]
+            elevation = zoom / scale * np.sin(np.deg2rad(self.elevation)) + self.center[0, 2]
 
             camera = dict(
                 up=dict(x=0, y=0, z=1),
-                center=center,
-                eye=dict(x=center[0] + zoom * np.cos(angle), y=center[1] + zoom * np.sin(angle), z=elevation)
+                center=dict(x=center[0], y=center[1], z=center[2]),
+                eye=dict(x=center[0] + zoom / scale * np.cos(angle), y=center[1] + zoom / scale * np.sin(angle),
+                         z=elevation)
             )
-            self.fig.update_layout(scene_camera=camera)
+
+            if not simplify:
+                self.fig.update_layout(scene_camera=camera)
+            else:
+                kwargs = {'layout': {'scene': {'camera': camera}}}
 
         if self.style == 'window':
-            return self.animate_window(i, simplify=simplify)
+            return self.animate_window(i, simplify=simplify, **kwargs)
         elif self.style == 'chemtrails':
-            return self.animate_chemtrails(i, simplify=simplify)
+            return self.animate_chemtrails(i, simplify=simplify, **kwargs)
         elif self.style == 'precog':
-            return self.animate_precog(i, simplify=simplify)
+            return self.animate_precog(i, simplify=simplify, **kwargs)
         elif self.style == 'bullettime':
-            return self.animate_bullettime(i, simplify=simplify)
+            return self.animate_bullettime(i, simplify=simplify, **kwargs)
         elif self.style == 'grow':
-            return self.animate_grow(i, simplify=simplify)
+            return self.animate_grow(i, simplify=simplify, **kwargs)
         elif self.style == 'shrink':
-            return self.animate_shrink(i, simplify=simplify)
+            return self.animate_shrink(i, simplify=simplify, **kwargs)
         elif self.style == 'spin':
-            return self.animate_spin(i, simplify=simplify)
+            return self.animate_spin(i, simplify=simplify, **kwargs)
         else:
             raise ValueError(f'unknown animation mode: {self.mode}')
 
@@ -217,7 +235,7 @@ class Animator:
     def tail_opts(self, starts=None, ends=None):
         return dw.core.update_dict(self.get_opts(starts=starts, ends=ends), {'opacity': self.unfocused_alpha})
 
-    def animate_helper(self, i, starts=None, ends=None, extra_starts=None, extra_ends=None, simplify=False):
+    def animate_helper(self, i, starts=None, ends=None, extra_starts=None, extra_ends=None, simplify=False, **kwargs):
         if starts is None:
             starts = self.window_starts
         if ends is None:
@@ -232,9 +250,10 @@ class Animator:
         if simplify:
             if extra is not None:
                 # noinspection PyTypeChecker
-                return go.Frame(data=[*Animator.get_datadict(window), *Animator.get_datadict(extra)], name=str(i))
+                return go.Frame(data=[*Animator.get_datadict(window), *Animator.get_datadict(extra)], name=str(i),
+                                **kwargs)
             else:
-                return go.Frame(data=Animator.get_datadict(window), name=str(i))
+                return go.Frame(data=Animator.get_datadict(window), name=str(i), **kwargs)
         else:
             static_plot(window, **self.get_opts(starts=starts[i], ends=ends[i]), fig=self.fig)
             if extra is not None:
@@ -242,31 +261,31 @@ class Animator:
                             showlegend=False)
             return self.fig
 
-    def animate_window(self, i, simplify=False):
-        return self.animate_helper(i, self.window_starts, self.window_ends, simplify=simplify)
+    def animate_window(self, i, simplify=False, **kwargs):
+        return self.animate_helper(i, self.window_starts, self.window_ends, simplify=simplify, **kwargs)
 
-    def animate_chemtrails(self, i, simplify=False):
+    def animate_chemtrails(self, i, simplify=False, **kwargs):
         return self.animate_helper(i, extra_starts=self.tail_window_starts,
                                    extra_ends=self.tail_window_ends,
-                                   simplify=simplify)
+                                   simplify=simplify, **kwargs)
 
-    def animate_precog(self, i, simplify=False):
+    def animate_precog(self, i, simplify=False, **kwargs):
         return self.animate_helper(i, extra_starts=self.window_starts, extra_ends=self.tail_window_precogs,
-                                   simplify=simplify)
+                                   simplify=simplify, **kwargs)
 
-    def animate_bullettime(self, i, simplify=False):
+    def animate_bullettime(self, i, simplify=False, **kwargs):
         return self.animate_helper(i, extra_starts=np.zeros_like(self.window_starts),
                                    extra_ends=-1 * np.ones_like(self.window_ends),
-                                   simplify=simplify)
+                                   simplify=simplify, **kwargs)
 
-    def animate_grow(self, i, simplify=False):
-        return self.animate_helper(i, starts=np.zeros_like(self.window_starts), simplify=simplify)
+    def animate_grow(self, i, simplify=False, **kwargs):
+        return self.animate_helper(i, starts=np.zeros_like(self.window_starts), simplify=simplify, **kwargs)
 
-    def animate_shrink(self, i, simplify=False):
+    def animate_shrink(self, i, simplify=False, **kwargs):
         return self.animate_helper(i, starts=self.window_ends, ends=-1 * np.ones_like(self.window_ends),
-                                   simplify=simplify)
+                                   simplify=simplify, **kwargs)
 
-    def animate_spin(self, i, simplify=False):
+    def animate_spin(self, i, simplify=False, **kwargs):
         return self.animate_helper(i, starts=np.zeros_like(self.window_starts),
                                    ends=-1 * np.ones_like(self.window_ends),
-                                   simplify=simplify)
+                                   simplify=simplify, **kwargs)

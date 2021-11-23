@@ -379,9 +379,12 @@ def plot(original_data, *fmt, **kwargs):
         fig = get_empty_canvas(fig=fig)
 
     kwargs['fig'] = fig
-    animate = kwargs.pop('animate', False)
+    animate = kwargs.pop('animate', None)
 
-    if animate:
+    if animate is not None:
+        if type(animate) is str:
+            kwargs['style'] = animate
+
         return Animator(data, **kwargs).build_animation()
 
     return static_plot(data, **kwargs)
