@@ -135,22 +135,22 @@ def test_animated_plot2d():
 
     # basic animations of each style
     styles = ['window', 'chemtrails', 'precog', 'bullettime', 'grow', 'shrink', 'spin']
-    fig_num = 27
-    for s in styles:
-        plot_test(f'fig{fig_num}', data, reduce=pca, animate=True, style=s)
-        fig_num += 1
-
-    # zscore + resampling + smoothing + hyperalign, with each style
-    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 500}}, 'Smooth']
-    hyperalign = {'model': 'HyperAlign', 'args': [], 'kwargs': {'n_iter': 3}}
-
+    fig_num = 28
+    # for s in styles:
+    #     plot_test(f'fig{fig_num}', data, reduce=pca, animate=True, style=s)
+    #     fig_num += 1
+    #
+    # # zscore + resampling + smoothing + hyperalign, with each style
+    # manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 500}}, 'Smooth']
+    # hyperalign = {'model': 'HyperAlign', 'args': [], 'kwargs': {'n_iter': 3}}
+    #
     # for s in styles:
     #     plot_test(f'fig{fig_num}', data, reduce=pca, animate=True, style=s, manip=manip, align=hyperalign)
     #     fig_num += 1
-
-    # also test each combination of lines, markers, and lines + markers
-    # use different line styles and marker shapes
-    styles = ['.', ':o']
+    #
+    # # also test each combination of lines, markers, and lines + markers
+    # # use different line styles and marker shapes
+    # styles = ['.', ':o']
     # for s in styles:
     #     plot_test(f'fig{fig_num}', data, s, reduce=pca, animate=True, style='window')
     #     fig_num += 1
@@ -160,15 +160,10 @@ def test_animated_plot2d():
     #     plot_test(f'fig{fig_num}', data, s, reduce=pca, manip=manip, animate=True, style='chemtrails')
     #     fig_num += 1
 
-    # # verify that coloring works with animations
-    # for s in styles:
-    #     plot_test(f'fig{fig_num}', data, s, reduce=pca, animate=True, style='grow', color=data)
-    #     fig_num += 1
-    #
-    # # verify that single-line animations work, also try mixture-based coloring and a custom colormap
-    # gaussian_mixture = {'model': 'GaussianMixture', 'args': [], 'kwargs': {'n_components': 10}}
-    # plot_test(f'fig{fig_num}', data[0], reduce=pca, animate=True, style='shrink', cluster=gaussian_mixture, cmap='husl')
-    # fig_num += 1
+    # verify that single-line animations work, also try mixture-based coloring and a custom colormap
+    gaussian_mixture = {'model': 'GaussianMixture', 'args': [], 'kwargs': {'n_components': 10}}
+    plot_test(f'fig{fig_num}', data[0], reduce=pca, animate=True, style='shrink', cluster=gaussian_mixture, cmap='husl')
+    fig_num += 1
 
     # test timing: total duration, window length, tail length (noting for 3d: also test number of rotations)
     # (for 3d: test zoom)

@@ -14,6 +14,19 @@ from .static import static_plot, get_bounds, flatten
 defaults = eval_dict(get_default_options()['animate'])
 
 
+def template_wrangler(a, b):
+    if type(a) is list:
+        if type(b) is list:
+            return [template_wrangler(i, j) for i, j in zip(a, b)]
+        else:
+            return [template_wrangler(i, b) for i in a]
+
+    a = dw.wrangle(a)
+    b = dw.wrangle(b)
+
+    return pd.DataFrame(data=a.values, index=b.index, columns=a.columns)
+
+
 class Animator:
     def __init__(self, data, **kwargs):
         self.data = data
@@ -29,7 +42,7 @@ class Animator:
         self.duration = kwargs.pop('duration', defaults['duration'])
         self.elevation = kwargs.pop('elevation', defaults['elevation'])
         self.zooms = kwargs.pop('zoom', defaults['zoom'])
-        self.opts = kwargs
+        self.opts = kwargs.copy()
 
         assert data is not None, ValueError('No dataset provided.')
 
@@ -46,6 +59,9 @@ class Animator:
             index_vals = set()
             for d in data:
                 index_vals = index_vals.union(set(d.index.values))
+
+        if 'color' in self.opts.keys():
+            self.opts['color'] = template_wrangler(self.opts['color'], self.data)
 
         # union of unique indices
         indices = list(index_vals)
