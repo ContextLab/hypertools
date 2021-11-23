@@ -13,6 +13,7 @@ defaults = eval_dict(get_default_options()['plot'])
 
 
 def match_color(img, c):
+    img = np.atleast_2d(img)
     c = np.atleast_2d(c)
 
     if np.ndim(img) == 3:
@@ -54,7 +55,7 @@ def get_continuous_inds(x):
         return [x]
     else:
         breaks = np.concatenate([[0], breaks + 1, [len(x)]])
-        return [x[breaks[i]:breaks[i+1]] for i in range(len(breaks) - 1)]
+        return [x[breaks[i]:breaks[i + 1]] for i in range(len(breaks) - 1)]
 
 
 def get_empty_canvas(fig=None):
@@ -62,7 +63,7 @@ def get_empty_canvas(fig=None):
         fig = go.Figure()
     fig = fig.to_dict()
 
-    colors = ['#E6E7E8', '#D1D3D4', '#BCBEC0']
+    colors = ['#BCBEC0', '#D1D3D4', '#E6E7E8']
 
     # set 3D properties
     for i, axis in enumerate(['xaxis', 'yaxis', 'zaxis']):
@@ -210,7 +211,8 @@ def static_plot(data, **kwargs):
     legend_override = kwargs.pop('legend_override', None)
     if (legend_override is not None) and ('showlegend' not in kwargs.keys() or kwargs['showlegend']):
         for n, s in legend_override['styles'].items():
-            if (hasattr(data, 'shape') and data.shape[1] == 3) or any([d.shape[1] == 3 for d in data]):
+            if (hasattr(data, 'shape') and data.shape[1] == 3) or \
+                    any([(hasattr(d, 'shape') and d.shape[1] == 3) for d in data]):
                 dummy_coords = np.atleast_2d([None, None, None])
             else:
                 dummy_coords = np.atleast_2d([None, None])

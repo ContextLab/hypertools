@@ -42,7 +42,8 @@ def plot_test(name, *args, **kwargs):
     np.random.seed(1234)
     fig = hyp.plot(*args, **kwargs)
     save_fig(name, fig)  # FIXME: COMMENT OUT ONCE REFERENCE FIGS ARE GENERATED
-    assert compare_figs(fig, name), f'Figure failed to replicate: {name}'
+    # assert compare_figs(fig, name), f'Figure failed to replicate: {name}'  # FIXME: UNCOMMENT ONCE REFERENCE FIGS
+    #                                                                           ARE GENERATED
 
 
 def save_fig(name, fig):
@@ -136,33 +137,32 @@ def test_animated_plot2d():
     # basic animations of each style
     styles = ['window', 'chemtrails', 'precog', 'bullettime', 'grow', 'shrink', 'spin']
     fig_num = 28
-    # for s in styles:
-    #     plot_test(f'fig{fig_num}', data, reduce=pca, animate=True, style=s)
-    #     fig_num += 1
-    #
-    # # zscore + resampling + smoothing + hyperalign, with each style
-    # manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 500}}, 'Smooth']
-    # hyperalign = {'model': 'HyperAlign', 'args': [], 'kwargs': {'n_iter': 3}}
-    #
-    # for s in styles:
-    #     plot_test(f'fig{fig_num}', data, reduce=pca, animate=True, style=s, manip=manip, align=hyperalign)
-    #     fig_num += 1
-    #
-    # # also test each combination of lines, markers, and lines + markers
-    # # use different line styles and marker shapes
-    # styles = ['.', ':o']
-    # for s in styles:
-    #     plot_test(f'fig{fig_num}', data, s, reduce=pca, animate=True, style='window')
-    #     fig_num += 1
-    #
-    # # verify that resampling and smoothing change animations correctly
-    # for s in styles:
-    #     plot_test(f'fig{fig_num}', data, s, reduce=pca, manip=manip, animate=True, style='chemtrails')
-    #     fig_num += 1
+    for s in styles:
+        plot_test(f'fig{fig_num}', data, reduce=pca, animate=True, style=s)
+        fig_num += 1
 
-    # verify that single-line animations work, also try mixture-based coloring and a custom colormap
-    gaussian_mixture = {'model': 'GaussianMixture', 'args': [], 'kwargs': {'n_components': 10}}
-    plot_test(f'fig{fig_num}', data[0], reduce=pca, animate=True, style='shrink', cluster=gaussian_mixture, cmap='husl')
+    # zscore + resampling + smoothing + hyperalign, with each style
+    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 500}}, 'Smooth']
+    hyperalign = {'model': 'HyperAlign', 'args': [], 'kwargs': {'n_iter': 3}}
+
+    for s in styles:
+        plot_test(f'fig{fig_num}', data, reduce=pca, animate=True, style=s, manip=manip, align=hyperalign)
+        fig_num += 1
+
+    # also test each combination of lines, markers, and lines + markers
+    # use different line styles and marker shapes
+    styles = ['.', ':o']
+    for s in styles:
+        plot_test(f'fig{fig_num}', data, s, reduce=pca, animate=True, style='window')
+        fig_num += 1
+
+    # verify that resampling and smoothing change animations correctly
+    for s in styles:
+        plot_test(f'fig{fig_num}', data, s, reduce=pca, manip=manip, animate=True, style='chemtrails')
+        fig_num += 1
+
+    # verify that single-line animations work
+    plot_test(f'fig{fig_num}', data[0], reduce=pca, animate=True, style='shrink', cmap='husl')
     fig_num += 1
 
     # test timing: total duration, window length, tail length (noting for 3d: also test number of rotations)
@@ -171,14 +171,45 @@ def test_animated_plot2d():
               focused=1, unfocused=5)
 
 
-test_animated_plot2d()
-
-
 def test_animated_plot3d():
-    # test each type of animation
-    # also test saving in various formats
-    pass
+    # basic animations of each style
+    styles = ['window', 'chemtrails', 'precog', 'bullettime', 'grow', 'shrink', 'spin']
+    fig_num = 48
+    for s in styles:
+        plot_test(f'fig{fig_num}', data, animate=True, style=s)
+        fig_num += 1
 
+    # zscore + resampling + smoothing + hyperalign, with each style
+    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 500}}, 'Smooth']
+    hyperalign = {'model': 'HyperAlign', 'args': [], 'kwargs': {'n_iter': 3}}
+
+    for s in styles:
+        plot_test(f'fig{fig_num}', data, animate=True, style=s, manip=manip, align=hyperalign)
+        fig_num += 1
+
+    # also test each combination of lines, markers, and lines + markers
+    # use different line styles and marker shapes
+    styles = ['o', '-:.']
+    for s in styles:
+        plot_test(f'fig{fig_num}', data, s, animate=True, style='grow')
+        fig_num += 1
+
+    # verify that resampling and smoothing change animations correctly
+    for s in styles:
+        plot_test(f'fig{fig_num}', data, s, manip=manip, animate=True, style='bullettime')
+        fig_num += 1
+
+    # verify that single-line animations work
+    plot_test(f'fig{fig_num}', data[0], animate=True, style='spin', cmap='cubehelix')
+    fig_num += 1
+
+    # test timing: total duration, window length, tail length (noting for 3d: also test number of rotations)
+    # (for 3d: test zoom)
+    plot_test(f'fig{fig_num}', data, animate=True, style='chemtrails', cmap='dark:blue', duration=20,
+              focused=1, unfocused=5)
+
+
+test_animated_plot3d()
 
 def test_backend_management():
     # not implemented
