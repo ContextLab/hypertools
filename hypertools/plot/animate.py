@@ -155,12 +155,20 @@ class Animator:
         fig['layout']['sliders'] = [slider]
 
         # add frames
-        fig['data'] = self.get_frame(0).data
+        init = self.get_frame(0)
+        fig['data'] = init.data
         fig['frames'] = [self.get_frame(i, simplify=True) for i in range(len(self.angles))]
 
         # convert to figure object and make bounds consistent across frames
         fig = go.Figure(fig)
         fig.update_layout(scene=scene)
+
+        if self.proj == '3d':
+            lengths = np.abs(np.diff(get_bounds(self.data), axis=0)).ravel()
+            fig.update_layout(scene_aspectmode='manual',
+                              scene_aspectratio={'x': 1, 'y': lengths[1] / lengths[0], 'z': lengths[2] / lengths[0]},
+                              scene={'camera': init.layout.scene.camera})
+
         return fig
 
     def get_frame(self, i, simplify=False):
