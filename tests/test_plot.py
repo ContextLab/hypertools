@@ -240,7 +240,7 @@ def test_bounding_box():
     # 2d plots
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
     # static
-    # plot_test('fig74', data, bounding_box=True, reduce=pca)
+    plot_test('fig74', data, bounding_box=True, reduce=pca)
 
     # animated
     plot_test('fig75', data, bounding_box=True, reduce=pca, animate=True)
