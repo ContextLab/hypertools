@@ -209,6 +209,9 @@ def test_animated_plot3d():
               focused=1, unfocused=5)
 
 
+# TODO: test "edge case" color manipulations (with animations) using "spin" style
+# TODO: test bounding boxes (2d and 3d)
+
 test_animated_plot3d()
 
 def test_backend_management():
