@@ -364,20 +364,12 @@ def plot(original_data, *fmt, **kwargs):
         c = np.max([*[d.shape[1] for d in data], 2])
     else:
         c = np.max([data.shape[1], 2])
+    data = pad(data, c)
 
     renderer = kwargs.pop('renderer', None)
     update_plotly_renderer(backend=renderer)
 
-    fig = kwargs.pop('fig', go.Figure())
-
-    bounding_box = kwargs.pop('bounding_box', False)
-    data = pad(data, c=c)
-
-    if bounding_box:
-        fig = plot_bounding_box(get_bounds(data), fig=fig)
-    else:
-        fig = get_empty_canvas(fig=fig)
-
+    fig = kwargs.pop('fig', get_empty_canvas())
     kwargs['fig'] = fig
     animate = kwargs.pop('animate', None)
 
@@ -387,4 +379,7 @@ def plot(original_data, *fmt, **kwargs):
 
         return Animator(data, **kwargs).build_animation()
 
+    bounding_box = kwargs.pop('bounding_box', False)
+    if bounding_box:
+        kwargs['fig'] = plot_bounding_box(get_bounds(data), fig=kwargs['fig'])
     return static_plot(data, **kwargs)

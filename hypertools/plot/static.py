@@ -96,13 +96,12 @@ def get_bounds(data):
     return np.vstack([np.nanmin(x, axis=0), np.nanmax(x, axis=0)])
 
 
-def plot_bounding_box(bounds, color='k', width=3, opacity=0.9, fig=None, buffer=0.025):
-    def expand_range(x, b):
-        length = np.max(x) - np.min(x)
-        return [np.min(x) - b * length, np.max(x) + b * length]
+def expand_range(x, b=0.025):
+    length = np.max(x) - np.min(x)
+    return [np.min(x) - b * length, np.max(x) + b * length]
 
-    fig = get_empty_canvas(fig=fig)
 
+def plot_bounding_box(bounds, color='k', width=3, opacity=0.9, fig=None, buffer=0.025, simplify=False):
     color = mpl2plotly_color(color)
 
     n_dims = bounds.shape[1]
@@ -122,13 +121,18 @@ def plot_bounding_box(bounds, color='k', width=3, opacity=0.9, fig=None, buffer=
         for j in range(i):
             # check for adjacent vertex (match every coordinate except 1)
             if np.sum([a == b for a, b in zip(vertices[i], vertices[j])]) == n_dims - 1:
-                edges.append(get_plotly_shape(np.concatenate([vertices[i], vertices[j]], axis=0), mode='lines',
-                                              showlegend=False, hoverinfo='skip', name='bounding box', opacity=opacity,
-                                              linewidth=width, color=color))
+                edges.append(get_plotly_shape(np.array(np.concatenate([vertices[i], vertices[j]], axis=0)),
+                                              mode='lines', showlegend=False, hoverinfo='skip', name='bounding box',
+                                              opacity=opacity, linewidth=width, color=color))
+
+    if simplify:
+        return edges
+
+    fig = get_empty_canvas(fig=fig)
     fig.add_traces(edges)
     if n_dims == 2:
-        fig.update_xaxes(range=expand_range(bounds[:, 0], buffer))
-        fig.update_yaxes(range=expand_range(bounds[:, 1], buffer))
+        fig.update_xaxes(range=expand_range(bounds[:, 0], b=buffer))
+        fig.update_yaxes(range=expand_range(bounds[:, 1], b=buffer))
 
     return fig
 

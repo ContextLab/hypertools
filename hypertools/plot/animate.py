@@ -9,7 +9,7 @@ from scipy.spatial.distance import cdist
 from ..manip import manip
 from ..core import get, get_default_options, eval_dict
 
-from .static import static_plot, get_bounds, flatten
+from .static import static_plot, get_bounds, flatten, plot_bounding_box, get_empty_canvas, expand_range
 
 defaults = eval_dict(get_default_options()['animate'])
 
@@ -31,7 +31,7 @@ class Animator:
     def __init__(self, data, **kwargs):
         self.data = data
 
-        self.fig = kwargs.pop('fig', go.Figure())
+        self.fig = kwargs.pop('fig', get_empty_canvas())
         self.style = kwargs.pop('style', defaults['style'])
         self.focused = kwargs.pop('focused', defaults['focused'])
         self.focused_alpha = kwargs.pop('focused_alpha', defaults['focused_alpha'])
@@ -42,6 +42,7 @@ class Animator:
         self.duration = kwargs.pop('duration', defaults['duration'])
         self.elevation = kwargs.pop('elevation', defaults['elevation'])
         self.zooms = kwargs.pop('zoom', defaults['zoom'])
+        self.bounding_box = kwargs.pop('bounding_box', False)
         self.opts = kwargs.copy()
 
         assert data is not None, ValueError('No dataset provided.')
@@ -114,10 +115,10 @@ class Animator:
             'yanchor': 'top'}]
 
         bounds = get_bounds(self.data)
-        scene = {'xaxis': {'range': [bounds[0, 0], bounds[1, 0]], 'autorange': False},
-                 'yaxis': {'range': [bounds[0, 1], bounds[1, 1]], 'autorange': False}}
+        scene = {'xaxis': {'range': expand_range([bounds[0, 0], bounds[1, 0]]), 'autorange': False},
+                 'yaxis': {'range': expand_range([bounds[0, 1], bounds[1, 1]]), 'autorange': False}}
         if bounds.shape[1] == 3:
-            scene['zaxis'] = {'range': [bounds[0, 2], bounds[1, 2]], 'autorange': False}
+            scene['zaxis'] = {'range': expand_range([bounds[0, 2], bounds[1, 2]]), 'autorange': False}
 
         # fig['layout']['xaxis'] = {'range': [bounds[0, 0], bounds[1, 0]], 'autorange': False}
         # fig['layout']['yaxis'] = {'range': [bounds[0, 1], bounds[1, 1]], 'autorange': False}
@@ -168,6 +169,9 @@ class Animator:
             fig.update_layout(scene_aspectmode='manual',
                               scene_aspectratio={'x': 1, 'y': lengths[1] / lengths[0], 'z': lengths[2] / lengths[0]},
                               scene={'camera': init.layout.scene.camera})
+        elif self.proj == '2d':
+            fig.update_xaxes(range=scene['xaxis']['range'])
+            fig.update_yaxes(range=scene['yaxis']['range'])
 
         return fig
 
@@ -256,13 +260,21 @@ class Animator:
             extra = None
 
         if simplify:
+            if self.bounding_box:
+                bb = plot_bounding_box(get_bounds(self.data), simplify=True)
+            else:
+                bb = []
+
             if extra is not None:
                 # noinspection PyTypeChecker
-                return go.Frame(data=[*Animator.get_datadict(window), *Animator.get_datadict(extra)], name=str(i),
+                return go.Frame(data=[*bb, *Animator.get_datadict(window), *Animator.get_datadict(extra)], name=str(i),
                                 **kwargs)
             else:
-                return go.Frame(data=Animator.get_datadict(window), name=str(i), **kwargs)
+                return go.Frame(data=[*bb, *Animator.get_datadict(window)], name=str(i), **kwargs)
         else:
+            if self.bounding_box:
+                self.fig = plot_bounding_box(get_bounds(self.data), fig=self.fig)
+
             static_plot(window, **self.get_opts(starts=starts[i], ends=ends[i]), fig=self.fig)
             if extra is not None:
                 static_plot(extra, **self.tail_opts(starts=extra_starts[i], ends=extra_ends[i]), fig=self.fig,

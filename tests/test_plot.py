@@ -209,10 +209,49 @@ def test_animated_plot3d():
               focused=1, unfocused=5)
 
 
-# TODO: test "edge case" color manipulations (with animations) using "spin" style
-# TODO: test bounding boxes (2d and 3d)
+def test_advanced_plot_color_manipulations():
+    # 2d plots with "spin animation"
+    pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
+    kmeans = {'model': 'KMeans', 'args': [], 'kwargs': {'n_clusters': 4}}
+    gaussian_mixture = {'model': 'GaussianMixture', 'args': [],
+                        'kwargs': {'n_components': 4, 'mode': 'fit_predict_proba'}}
 
-test_animated_plot3d()
+    # color by weights
+    plot_test('fig68', data, 'bowtie-open-dashdot', animate='spin', reduce=pca, cmap='viridis', color=data)
+
+    # color by k-means cluster
+    plot_test('fig69', data, '8-dash', animate='spin', reduce=pca, cmap='rocket', cluster=kmeans)
+
+    # color by mixture component
+    plot_test('fig70', data, 'H-dot', animate='spin', reduce=pca, cmap='crest', cluster=gaussian_mixture)
+
+    # 3d plots with spin animations
+    # color by weights
+    plot_test('fig71', data, 'dashdot', animate='spin', cmap='dark:salmon_r', color=data)
+
+    # color by k-means cluster
+    plot_test('fig72', data, '.-dash', animate='spin', cmap='YlOrBr', cluster=kmeans)
+
+    # color by mixture component
+    plot_test('fig73', data, ',-dot', animate='spin', cmap='icefire', cluster=gaussian_mixture)
+
+
+def test_bounding_box():
+    # 2d plots
+    pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 2}}
+    # static
+    # plot_test('fig74', data, bounding_box=True, reduce=pca)
+
+    # animated
+    plot_test('fig75', data, bounding_box=True, reduce=pca, animate=True)
+
+    # 3d plots
+    # static
+    plot_test('fig76', data, bounding_box=True)
+
+    # animated
+    plot_test('fig77', data, bounding_box=True, animate='chemtrails')
+
 
 def test_backend_management():
     # not implemented
