@@ -18,8 +18,10 @@
 #
 # import os
 # import sys
-import sys, os
+import sys
+import os
 import sphinx_bootstrap_theme
+
 sys.path.insert(0, os.path.abspath('../'))
 
 # -- General configuration ------------------------------------------------
@@ -32,11 +34,11 @@ sys.path.insert(0, os.path.abspath('../'))
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = ['sphinx.ext.autodoc',
-    'numpydoc',
-    'sphinx.ext.autosummary',
-    'sphinx.ext.viewcode',
-    'sphinx_gallery.gen_gallery',
-    'nbsphinx']
+              'numpydoc',
+              'sphinx.ext.autosummary',
+              'sphinx.ext.viewcode',
+              'sphinx_gallery.gen_gallery',
+              'nbsphinx']
 
 # do not allow nbsphinx errors
 nbsphinx_allow_errors = False
@@ -58,8 +60,9 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'hypertools'
+# noinspection PyShadowingBuiltins
 copyright = u'2021, Contextual Dynamics Laboratory'
-author = u'Andrew C. Heusser, Kirsten Ziman, Lucy L. W. Owen, Jeremy R. Manning'
+author = u'Contextual Dynamics Laboratory'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -87,7 +90,6 @@ pygments_style = 'sphinx'
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = False
-
 
 # # -- Options for HTML output ----------------------------------------------
 #
@@ -126,9 +128,9 @@ html_theme_options = {
     'navbar_links': [("API", "api"),
                      ("Gallery", "auto_examples/index"),
                      ("Tutorials", "tutorials"),
-                     ("Download", "http://www.github.com/ContextLab/hypertools", True)],
+                     ("Download", "https://www.github.com/ContextLab/hypertools", True)],
 
-    }
+}
 
 # Add any paths that contain custom themes here, relative to this directory.
 html_theme_path = sphinx_bootstrap_theme.get_html_theme_path()
@@ -137,7 +139,6 @@ html_theme_path = sphinx_bootstrap_theme.get_html_theme_path()
 
 # Output file base name for HTML help builder.
 htmlhelp_basename = 'hypertoolsdoc'
-
 
 # -- Options for LaTeX output ---------------------------------------------
 
@@ -167,7 +168,6 @@ latex_documents = [
      u'Contextual Dynamics Laboratory', 'manual'),
 ]
 
-
 # -- Options for manual page output ---------------------------------------
 
 # One entry per manual page. List of tuples
@@ -176,7 +176,6 @@ man_pages = [
     (master_doc, 'hypertools', u'hypertools Documentation',
      [author], 1)
 ]
-
 
 # -- Options for Texinfo output -------------------------------------------
 
@@ -191,6 +190,6 @@ texinfo_documents = [
 
 sphinx_gallery_conf = {
     # path to your examples scripts
-    'examples_dirs' : '../examples',
+    'examples_dirs': '../examples',
     # path where to save gallery generated examples
-    'gallery_dirs'  : 'auto_examples'}
+    'gallery_dirs': 'auto_examples'}
