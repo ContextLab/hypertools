@@ -15,3 +15,5 @@ umap-learn
 matplotlib>=3.3.4
 orca>=1.6
 plotly>=4.6.0
+gif>=3.0.0
+kaleido>=0.1.0

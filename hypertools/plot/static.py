@@ -58,12 +58,13 @@ def get_continuous_inds(x):
         return [x[breaks[i]:breaks[i + 1]] for i in range(len(breaks) - 1)]
 
 
-def get_empty_canvas(fig=None):
+def get_empty_canvas(fig=None, width=800, height=800):
     if fig is None:
         fig = go.Figure()
+        fig.update_layout(width=width, height=height)
     fig = fig.to_dict()
 
-    colors = ['#BCBEC0', '#D1D3D4', '#E6E7E8']
+    colors = ['#F8F8F9', '#F3F4F4', '#EFEFF0']
 
     # set 3D properties
     for i, axis in enumerate(['xaxis', 'yaxis', 'zaxis']):

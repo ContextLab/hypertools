@@ -1,4 +1,4 @@
-from .plot import plot
+from .plot import plot, write
 from .reduce import reduce
 from .align import align, pad, trim_and_pad, Aligner, HyperAlign, Procrustes, SharedResponseModel,\
     RobustSharedResponseModel, DeterministicSharedResponseModel, NullAlign

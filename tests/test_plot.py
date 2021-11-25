@@ -41,9 +41,8 @@ def compare_figs(f, name):
 def plot_test(name, *args, **kwargs):
     np.random.seed(1234)
     fig = hyp.plot(*args, **kwargs)
-    save_fig(name, fig)  # FIXME: COMMENT OUT ONCE REFERENCE FIGS ARE GENERATED
-    # assert compare_figs(fig, name), f'Figure failed to replicate: {name}'  # FIXME: UNCOMMENT ONCE REFERENCE FIGS
-    #                                                                           ARE GENERATED
+    # save_fig(name, fig)
+    assert compare_figs(fig, name), f'Figure failed to replicate: {name}'
 
 
 def save_fig(name, fig):
@@ -217,7 +216,7 @@ def test_advanced_plot_color_manipulations():
                         'kwargs': {'n_components': 4, 'mode': 'fit_predict_proba'}}
 
     # color by weights
-    plot_test('fig68', data, 'bowtie-open-dashdot', animate='spin', reduce=pca, cmap='viridis', color=data)
+    plot_test('fig68', data, 'bowtie-open-dashdot', animate='spin', reduce=pca, cmap='mako', color=data)
 
     # color by k-means cluster
     plot_test('fig69', data, '8-dash', animate='spin', reduce=pca, cmap='rocket', cluster=kmeans)
