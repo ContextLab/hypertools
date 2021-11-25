@@ -21,8 +21,9 @@ with open('requirements.txt', 'r') as f:
     REQUIREMENTS = f.read().splitlines()
 
 DESCRIPTION = 'A python package for visualizing and manipulating high-dimensional data'
-LONG_DESCRIPTION = """\
-HyperTools is a library for visualizing and manipulating high-dimensional data in Python. It is built on top of matplotlib (for plotting), seaborn (for plot styling), and scikit-learn (for data manipulation).
+LONG_DESCRIPTION = """
+HyperTools is a library for visualizing and manipulating high-dimensional data in Python. It is built on top of
+matplotlib (for plotting), seaborn (for plot styling), and scikit-learn (for data manipulation).
 
 For sample Jupyter notebooks using the package: https://github.com/ContextLab/hypertools-paper-notebooks
 
@@ -38,10 +39,11 @@ Some key features of HyperTools are:
 """
 CLASSIFIERS = [
     'Intended Audience :: Science/Research',
-    'Programming Language :: Python :: 3.5',
     'Programming Language :: Python :: 3.6',
     'Programming Language :: Python :: 3.7',
     'Programming Language :: Python :: 3.8',
+    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
     'Topic :: Scientific/Engineering :: Visualization',
     'Topic :: Multimedia :: Graphics',
     'Operating System :: POSIX',
@@ -57,7 +59,7 @@ setup(
     author=AUTHOR,
     author_email=AUTHOR_EMAIL,
     url=URL,
-    download_url = DOWNLOAD_URL,
+    download_url=DOWNLOAD_URL,
     license=LICENSE,
     python_requires=REQUIRES_PYTHON,
     packages=PACKAGES,
