@@ -224,12 +224,8 @@ def static_plot(data, **kwargs):
             fig.add_trace(get_plotly_shape(dummy_coords, **s, name=n, legendgroup=n))
         kwargs['showlegend'] = False
 
-    # FIXME: fill this in-- add "null" objects to the legend, and then force showlegend to be False for all other
-    #  shapes.  also need to change how trace "legendgroups" are inferred; if legend_override is specified (and not
-    #  None), shape legendgroups should correspond to cluster labels rather than traces
-
     if type(data) is list:
-        names = kwargs.pop('name', [str(d) for d in range(len(data))])  # FIXME: flagging for updating...
+        names = kwargs.pop('name', [str(d) for d in range(len(data))])
         for i, d in enumerate(data):
             opts = {'color': get(color, i), 'fig': fig, 'name': get(names, i), 'legendgroup': get(names, i)}
 
@@ -291,13 +287,20 @@ def static_plot(data, **kwargs):
             if legend_override is not None:
                 next_labels = legend_override['labels'].iloc[inds].values
                 for k in np.unique(next_labels):
-                    group_inds = np.where(next_labels == k)[0]
+                    group_inds = inds[np.where(next_labels == k)[0]]
+
+                    if max(group_inds) < data.shape[0] - 1:
+                        group_inds = np.append(group_inds, [max(group_inds) + 1])
+
                     group_opts = opts.copy()
                     group_opts['legendgroup'] = legend_override['names'][k]
-                    fig.add_trace(get_plotly_shape(data.values[inds[group_inds], :],
+                    fig.add_trace(get_plotly_shape(data.values[group_inds, :],
                                                    **dw.core.update_dict(kwargs, group_opts),
                                                    color=mpl2plotly_color(c)))
             else:
+                if max(inds) < data.shape[0] - 1:
+                    inds = np.append(inds, [max(inds) + 1])
+
                 fig.add_trace(get_plotly_shape(data.values[inds, :],
                                                **dw.core.update_dict(kwargs, opts),
                                                color=mpl2plotly_color(c)))
