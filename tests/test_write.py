@@ -18,7 +18,7 @@ hyperalign = {'model': 'HyperAlign', 'args': [], 'kwargs': {'n_iter': 2}}
 
 duration = 30
 focused = 4
-zoom = 0.5
+zoom = 1.0
 
 
 # check that arbitrary processing pipelines are supported in animations and also that staggered timelines are animated
@@ -76,7 +76,7 @@ def test_write_animated_3d():
     write_test_helper(fig, os.path.join(fig_dir, 'write3d_animated.gif'))
 
 
-test_write_static_2d()
-test_write_animated_2d()
-test_write_static_3d()
+# test_write_static_2d()
+# test_write_animated_2d()
+# test_write_static_3d()
 test_write_animated_3d()

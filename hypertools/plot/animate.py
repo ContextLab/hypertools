@@ -51,7 +51,7 @@ class Animator:
         self.center = np.atleast_2d(stacked_data.mean(axis=0).values)
         self.proj = f'{stacked_data.shape[1]}d'
 
-        self.zooms = np.multiply(self.zooms, np.max(cdist(self.center, stacked_data.values)))
+        # self.zooms = np.multiply(self.zooms, np.max(cdist(self.center, stacked_data.values)))
         self.indices = None
 
         if dw.zoo.is_dataframe(data):
@@ -180,17 +180,17 @@ class Animator:
         if self.proj == '3d':
             bounds = get_bounds(self.data)
 
-            scale = np.max(np.abs(bounds))
+            scale = np.max(cdist(self.center, bounds))
 
             center = dw.stack(self.data).mean(axis=0).values
             angle = np.deg2rad(get(self.angles, i))
             zoom = get(self.zooms, i)
-            elevation = zoom / scale * np.sin(np.deg2rad(self.elevation)) + self.center[0, 2]
+            elevation = zoom * scale * np.sin(np.deg2rad(self.elevation)) + self.center[0, 2]
 
             camera = dict(
                 up=dict(x=0, y=0, z=1),
                 center=dict(x=center[0], y=center[1], z=center[2]),
-                eye=dict(x=center[0] + zoom / scale * np.cos(angle), y=center[1] + zoom / scale * np.sin(angle),
+                eye=dict(x=center[0] + zoom * scale * np.cos(angle), y=center[1] + zoom * scale * np.sin(angle),
                          z=elevation)
             )
 
