@@ -70,7 +70,7 @@ def test_write_static_3d():
 
 
 def test_write_animated_3d():
-    fig = hyp.plot(data, pipeline=umap3d, manip=manip, align=hyperalign, reduce=umap3d,
+    fig = hyp.plot(data, pipeline=umap3d, align=hyperalign, reduce=umap3d,
                    animate='window', duration=duration, zoom=zoom, focused=focused)
 
     write_test_helper(fig, os.path.join(fig_dir, 'write3d_animated.gif'))
