@@ -1,7 +1,6 @@
 pydata-wrangler>=0.1.7
 seaborn>=0.8.1
 requests>=2.25
-configparser>=5.0.2
 dill>=0.3.4
 six>=1.15.0
 numpy>=1.19.5
