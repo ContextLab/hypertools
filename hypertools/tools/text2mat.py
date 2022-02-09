@@ -1,6 +1,5 @@
 import numpy as np
 import inspect
-import six
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.utils.validation import check_is_fitted
@@ -178,7 +177,7 @@ def _fit_models(vmodel, tmodel, x, model_is_fit):
 
 
 def _check_mtype(x):
-    if isinstance(x, six.string_types):
+    if isinstance(x, str):
         return 'str'
     elif isinstance(x, dict):
         return 'dict'

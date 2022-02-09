@@ -1,7 +1,6 @@
 import warnings
 
 import numpy as np
-import six
 
 from .._externals.ppca import PPCA
 from .._shared.helpers import get_type
@@ -79,7 +78,7 @@ def format_data(x, vectorizer='CountVectorizer',
     if type(x) is not list:
         x = [x]
 
-    if all([isinstance(xi, six.string_types) for xi in x]):
+    if all([isinstance(xi, str) for xi in x]):
         x = [x]
 
     # check data type for each element in list

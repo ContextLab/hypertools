@@ -311,7 +311,7 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
     if cluster is not None:
         if hue is not None:
             warnings.warn('cluster overrides hue, ignoring hue.')
-        if isinstance(cluster, (six.string_types, six.binary_type)):
+        if isinstance(cluster, (str, bytes)):
             model = cluster
             params = default_params(model)
         elif isinstance(cluster, dict):
@@ -374,7 +374,7 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
         mpl_kwargs['label'] = legend
 
     # interpolate if its a line plot
-    if fmt is None or isinstance(fmt, six.string_types):
+    if fmt is None or isinstance(fmt, str):
         if is_line(fmt):
             if xform[0].shape[0] > 1:
                 xform = interp_array_list(xform, interp_val=frame_rate*duration/(xform[0].shape[0] - 1))

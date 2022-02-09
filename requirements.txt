@@ -9,4 +9,3 @@ umap-learn>=0.4.6
 future
 requests
 deepdish
-six
