@@ -300,7 +300,16 @@ def _init_backend():
 
         IS_NOTEBOOK = False
         # (excluding WebAgg - no way to test in advance if it will work)
-        backends = ('TkAgg', 'QtAgg', 'GTK4Agg', 'GTK3Agg', 'TkAgg', 'WXAgg')
+        backends = (
+            'TkAgg',
+            'QtAgg',
+            'Qt5Agg',
+            'Qt4Agg',
+            'GTK4Agg',
+            'GTK3Agg',
+            'TkAgg',
+            'WXAgg'
+        )
         if sys.platform == 'darwin':
             # prefer cocoa backend on Mac - pretty much guaranteed to
             # work, appears to be faster, and Mac does NOT like Tkinter
