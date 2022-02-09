@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-from __future__ import division
 import warnings
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt

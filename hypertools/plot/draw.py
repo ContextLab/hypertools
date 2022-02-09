@@ -1,8 +1,5 @@
 #!/usr/bin/env python
 
-from __future__ import division
-from builtins import str
-from builtins import range
 import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import proj3d

@@ -1,7 +1,4 @@
 #!/usr/bin/env python
-from __future__ import division
-from builtins import zip
-from builtins import range
 
 import numpy as np
 

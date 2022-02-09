@@ -1,5 +1,3 @@
-from __future__ import unicode_literals
-from builtins import object
 import copy
 import deepdish as dd
 import numpy as np

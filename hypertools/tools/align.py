@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-from __future__ import division
-from builtins import range
 from .._externals.srm import SRM
 from .procrustes import procrustes
 import numpy as np
