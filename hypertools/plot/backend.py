@@ -300,7 +300,16 @@ def _init_backend():
 
         IS_NOTEBOOK = False
         # (excluding WebAgg - no way to test in advance if it will work)
-        backends = ('TkAgg', 'Qt5Agg', 'Qt4Agg', 'WXAgg', 'GTK3Agg')
+        backends = (
+            'TkAgg',
+            'QtAgg',
+            'Qt5Agg',
+            'Qt4Agg',
+            'GTK4Agg',
+            'GTK3Agg',
+            'TkAgg',
+            'WXAgg'
+        )
         if sys.platform == 'darwin':
             # prefer cocoa backend on Mac - pretty much guaranteed to
             # work, appears to be faster, and Mac does NOT like Tkinter
@@ -323,8 +332,12 @@ def _init_backend():
                 working_backend = b
                 break
 
-            except (ImportError, NameError):
-                # raised if backend's dependencies aren't installed
+            except (ImportError, NameError, ValueError):
+                # ImportError/NameError:
+                #     raised if backend's dependencies aren't installed
+                # ValueError:
+                #     raised if named backed isn't supported by
+                #     installed matplotlib version
                 continue
 
         else:
