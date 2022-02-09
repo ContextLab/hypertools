@@ -385,8 +385,8 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
 
     # handle explore flag
     if explore:
-        assert xform[0].shape[1] is 3, "Explore mode is currently only supported for 3D plots."
-        mpl_kwargs['picker']=True
+        assert xform[0].shape[1] == 3, "Explore mode is currently only supported for 3D plots."
+        mpl_kwargs['picker'] = True
 
     # center
     xform = center(xform)

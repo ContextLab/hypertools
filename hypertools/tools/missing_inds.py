@@ -33,7 +33,7 @@ def missing_inds(x, format_data=True):
 
     inds = []
     for arr in x:
-        if np.argwhere(np.isnan(arr)).size is 0:
+        if np.argwhere(np.isnan(arr)).size == 0:
             inds.append(None)
         else:
             inds.append(np.argwhere(np.isnan(arr))[:,0])

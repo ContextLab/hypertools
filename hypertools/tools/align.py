@@ -80,7 +80,7 @@ def align(data, align='hyper', normalize=None, ndims=None, method=None,
         if format_data:
             data = formatter(data, ppca=True)
 
-        if len(data) is 1:
+        if len(data) == 1:
             warnings.warn('Data in list of length 1 can not be aligned. '
                  'Skipping the alignment.')
 
