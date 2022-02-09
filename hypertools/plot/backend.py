@@ -323,8 +323,12 @@ def _init_backend():
                 working_backend = b
                 break
 
-            except (ImportError, NameError):
-                # raised if backend's dependencies aren't installed
+            except (ImportError, NameError, ValueError):
+                # ImportError/NameError:
+                #     raised if backend's dependencies aren't installed
+                # ValueError:
+                #     raised if named backed isn't supported by
+                #     installed matplotlib version
                 continue
 
         else:
