@@ -206,13 +206,17 @@ class DataGeometry(object):
             options: http://deepdish.readthedocs.io/en/latest/api_io.html#deepdish.io.save
 
         """
-        if hasattr(self, 'dtype'):
-            if 'list' in self.dtype:
-                data = np.array(self.data)
-            elif 'df' in self.dtype:
-                data = {k: np.array(v).astype('str') for k, v in self.data.to_dict('list').items()}
-            else:
-                data = self.data
+        if compression is not None:
+            warnings.warn("Hypertools has switched from deepdish to pickle "
+                          "for saving DataGeomtry objects. 'compression' "
+                          "argument has no effect and will be removed in a "
+                          "future version",
+                          FutureWarning)
+
+        if self.dtype == 'df':
+            data = self.data.to_dict('list')
+        else:
+            data = self.data
 
         # put geo vars into a dict
         geo = {
