@@ -214,16 +214,16 @@ class DataGeometry(object):
 
         # put geo vars into a dict
         geo = {
-            'data' : data,
-            'xform_data' : np.array(self.xform_data),
-            'reduce' : self.reduce,
-            'align' : self.align,
-            'normalize' : self.normalize,
-            'semantic' : self.semantic,
-            'corpus' : np.array(self.corpus) if isinstance(self.corpus, list) else self.corpus,
-            'kwargs' : self.kwargs,
-            'version' : self.version,
-            'dtype' : self.dtype
+            'data': data,
+            'xform_data': self.xform_data,
+            'reduce': self.reduce,
+            'align': self.align,
+            'normalize': self.normalize,
+            'semantic': self.semantic,
+            'corpus': self.corpus,
+            'kwargs': self.kwargs,
+            'version': self.version,
+            'dtype': self.dtype
         }
 
         # if extension wasn't included, add it
