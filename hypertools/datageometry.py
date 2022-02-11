@@ -1,6 +1,7 @@
 import copy
-import deepdish as dd
-import numpy as np
+import pickle
+import warnings
+
 from .tools.normalize import normalize as normalizer
 from .tools.reduce import reduce as reducer
 from .tools.align import align as aligner
@@ -227,8 +228,9 @@ class DataGeometry(object):
         }
 
         # if extension wasn't included, add it
-        if fname[-4:]!='.geo':
-            fname+='.geo'
+        if not fname.endswith('.geo'):
+            fname += '.geo'
 
         # save
-        dd.io.save(fname, geo, compression=compression)
+        with open(fname, 'wb') as f:
+            pickle.dump(geo, f)
