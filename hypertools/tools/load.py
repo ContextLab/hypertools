@@ -144,23 +144,20 @@ def _download(dataset, data):
     with open(fullpath, 'wb') as f:
         f.write(data.content)
 
+def _load_legacy(dataset_path):
+    try:
+        import deepdish as dd
+    except ImportError as e:
+        raise HypertoolsIOError(
+            "To load legacy-format datasets, install the 'deepdish' module"
+        ) from e
+    data_dict = dd.io.load(dataset_path)
 
-def _load_from_disk(dataset):
-    fullpath = os.path.join(homedir, 'hypertools_data', dataset)
-    if dataset in ('wiki_model', 'nips_model', 'sotus_model',):
-        try:
-            with open(fullpath, 'rb') as f:
-                return pickle.load(f)
-        except ValueError as e:
-            print(e)
-    else:
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore")
-            geo = dd.io.load(fullpath)
-        if 'dtype' in geo:
-            if 'list' in geo['dtype']:
-                geo['data'] = list(geo['data'])
-            elif 'df' in geo['dtype']:
-                geo['data'] = pd.DataFrame(geo['data'])
-        geo['xform_data'] = list(geo['xform_data'])
-        return DataGeometry(**geo)
+    if isinstance(data_dict['data'], dict):
+        data_dict['data'] = pd.DataFrame(data_dict['data'])
+    elif isinstance(data_dict['data'], np.ndarray):
+        data_dict['data'] = list(data_dict['data'])
+    data_dict['xform_data'] = list(data_dict['xform_data'])
+    return DataGeometry(**data_dict)
+
+
