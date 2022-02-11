@@ -94,79 +94,50 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None):
         Example data
 
     """
-
-    if dataset[-4:] == '.geo':
-        geo = dd.io.load(dataset)
-        if 'dtype' in geo:
-            if 'list' in geo['dtype']:
-                geo['data'] = list(geo['data'])
-            elif 'df' in geo['dtype']:
-                geo['data'] = pd.DataFrame(geo['data'])
-        geo['xform_data'] = list(geo['xform_data'])
-        data = DataGeometry(**geo)
-    elif dataset in datadict.keys():
-        data = _load_data(dataset, datadict[dataset])
+    if dataset in EXAMPLE_DATA.keys():
+        geo_data = _load_example_data(dataset)
+        if dataset.endswith('_model'):
+            # geo_data is a sklearn.pipeline.Pipeline, not a DataGeometry
+            return geo_data
+        elif dataset == 'mushrooms':
+            # format mushrooms dataset as a pandas DataFrame
+            geo_data.data = pd.DataFrame(geo_data.data)
     else:
-        raise RuntimeError('No data loaded. Please specify a .geo file or '
-                       'one of the following sample files: weights, '
-                       'weights_avg, weights_sample, spiral, mushrooms, '
-                       'wiki, nips or sotus.')
-
-    if data is not None:
-        if dataset in ('wiki_model', 'nips_model', 'sotus_model'):
-            return data
-    if isinstance(data, DataGeometry):
-        if any([reduce, ndims, align, normalize]):
-            from ..plot.plot import plot
-            if ndims:
-                if reduce is None:
-                    reduce='IncrementalPCA'
-            d = analyze(data.get_data(), reduce=reduce, ndims=ndims, align=align, normalize=normalize)
-            return plot(d, show=False)
+        dataset_path = Path(expanduser(expandvars(dataset))).resolve()
+        if not dataset_path.is_file():
+            raise HypertoolsIOError(
+                f"[Errno 2] No such file or directory: {dataset_path}. "
+                "Please specify a .geo file or one of the following sample "
+                "files: 'weights', 'weights_avg', 'weights_sample', 'spiral', "
+                "'mushrooms', 'wiki', 'nips', 'sotus', 'wiki_model', "
+                "'nips_model', 'sotus_model'"
+            )
+        elif legacy:
+            geo_data = _load_legacy(dataset_path)
         else:
-            return data
-    else:
-        return analyze(data, reduce=reduce, ndims=ndims, align=align, normalize=normalize)
-
-
-def _load_data(dataset, fileid):
-    fullpath = os.path.join(homedir, 'hypertools_data', dataset)
-    if not os.path.exists(datadir):
-        os.makedirs(datadir)
-    if not os.path.exists(fullpath):
-        try:
-            _download(dataset, _load_stream(fileid))
-            data = _load_from_disk(dataset)
-        except:
-            raise ValueError('Download failed.')
-    else:
-        try:
-            data = _load_from_disk(dataset)
-        except:
             try:
-                _download(dataset, _load_stream(fileid))
-                data = _load_from_disk(dataset)
-            except:
-                raise ValueError('Download failed. Try deleting cache data in'
-                                 ' /Users/homedir/hypertools_data.')
-    return data
+                geo_data = pickle.loads(dataset_path.read_bytes())
+            except pickle.UnpicklingError as e:
+                raise HypertoolsIOError(
+                    "Failed to load DataGeometry object from "
+                    f"{dataset_path}. If {dataset_path.name} was created "
+                    "with hypertools<0.8.0, pass legacy=True to load it."
+                ) from e
+            if isinstance(geo_data.data, dict):
+                geo_data.data = pd.DataFrame(geo_data.data)
 
+    if isinstance(geo_data.data, dict):
+        geo_data.data = pd.DataFrame(geo_data.data)
 
-def _load_stream(fileid):
-    def _get_confirm_token(response):
-        for key, value in response.cookies.items():
-            if key.startswith('download_warning'):
-                return value
-        return None
-    url = BASE_URL + fileid
-    session = requests.Session()
-    response = session.get(BASE_URL, params = { 'id' : fileid }, stream = True)
-    token = _get_confirm_token(response)
-    if token:
-        params = { 'id' : fileid, 'confirm' : token }
-        response = session.get(BASE_URL, params = params, stream = True)
-    return response
-
+    if any({reduce, ndims, align, normalize}):
+        reduce = reduce or 'IncrementalPCA'
+        d = analyze(geo_data.get_data(),
+                    reduce=reduce,
+                    ndims=ndims,
+                    align=align,
+                    normalize=normalize)
+        return plot(d, show=False)
+    return geo_data
 
 def _download(dataset, data):
     fullpath = os.path.join(homedir, 'hypertools_data', dataset)
