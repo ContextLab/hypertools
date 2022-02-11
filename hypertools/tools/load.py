@@ -27,7 +27,15 @@ datadict = {
 }
 
 
-def load(dataset, reduce=None, ndims=None, align=None, normalize=None):
+def load(
+        dataset,
+        reduce=None,
+        ndims=None,
+        align=None,
+        normalize=None,
+        *,
+        legacy=False
+):
     """
     Load a .geo file or example data
 
@@ -87,6 +95,9 @@ def load(dataset, reduce=None, ndims=None, align=None, normalize=None):
         model.  You can also pass a dictionary for finer control, where the 'model'
         key is a string that specifies the model and the params key is a dictionary
         of parameter values (default : 'hyper').
+
+    legacy : bool
+        Pass legacy=True to load DataGeometry objects created with hypertools<0.8.0
 
     Returns
     ----------
