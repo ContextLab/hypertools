@@ -172,3 +172,22 @@ def _load_legacy(dataset_path):
     return DataGeometry(**data_dict)
 
 
+def _load_example_data(dataset):
+    dataset_path = DATA_DIR.joinpath(dataset)
+    if not dataset_path.is_file():
+        if not DATA_DIR.is_dir():
+            DATA_DIR.mkdir()
+        _download_example_data(dataset_path)
+
+    try:
+        geo_data = pickle.loads(dataset_path.read_bytes())
+    except Exception as e:
+        raise HypertoolsIOError(
+            f"Failed to load '{dataset}' data. Try deleting cached file at"
+            f"{dataset_path} and re-loading."
+        ) from e
+
+    if dataset == 'mushrooms':
+        # format mushrooms dataset as a pandas DataFrame
+        geo_data.data = pd.DataFrame(geo_data.data)
+    return geo_data
