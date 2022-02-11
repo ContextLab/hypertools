@@ -191,3 +191,29 @@ def _load_example_data(dataset):
         # format mushrooms dataset as a pandas DataFrame
         geo_data.data = pd.DataFrame(geo_data.data)
     return geo_data
+
+
+def _download_example_data(dataset_path):
+    file_id = EXAMPLE_DATA[dataset_path.name]
+    session = requests.Session()
+    params = {'id': file_id}
+    try:
+        response = session.get(BASE_URL, params=params, stream=True)
+        for key, value in response.cookies.items():
+            if key.startswith('download_warning'):
+                # Google Drive requires confirmation for large files
+                params['confirm'] = value
+                response = session.get(BASE_URL, params=params, stream=True)
+                break
+
+        with dataset_path.open('wb') as f:
+            # write stream in chunks to avoid loading whole file into memory
+            for chunk in response.iter_content(chunk_size=32768):
+                if chunk:
+                    f.write(chunk)
+    except Exception as e:
+        # clean up partial file in case of error while writing stream
+        dataset_path.unlink(missing_ok=True)
+        raise HypertoolsIOError(
+            f"Failed to download '{dataset_path.name}' dataset"
+        ) from e
