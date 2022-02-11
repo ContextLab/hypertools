@@ -2,6 +2,8 @@ import copy
 import pickle
 import warnings
 
+import pandas as pd
+
 from .tools.normalize import normalize as normalizer
 from .tools.reduce import reduce as reducer
 from .tools.align import align as aligner
@@ -208,29 +210,35 @@ class DataGeometry(object):
                           "future version",
                           FutureWarning)
 
-        if self.dtype == 'df':
-            data = self.data.to_dict('list')
-        else:
-            data = self.data
-
-        # put geo vars into a dict
-        geo = {
-            'data': data,
-            'xform_data': self.xform_data,
-            'reduce': self.reduce,
-            'align': self.align,
-            'normalize': self.normalize,
-            'semantic': self.semantic,
-            'corpus': self.corpus,
-            'kwargs': self.kwargs,
-            'version': self.version,
-            'dtype': self.dtype
-        }
-
-        # if extension wasn't included, add it
+        # automatically add extension if not present
         if not fname.endswith('.geo'):
             fname += '.geo'
 
-        # save
-        with open(fname, 'wb') as f:
-            pickle.dump(geo, f)
+        # can't save/restore matplotlib objects across sessions
+        curr_fig = self.fig
+        curr_ax = self.ax
+        curr_line_ani = self.line_ani
+
+        curr_data = self.data
+        # convert pandas DataFrames to dicts of
+        # {column_name: list(column_values)} to fix I/O compatibility
+        # issues across certain pandas versions. Expected self.data
+        # format is restored by hypertools.load
+        if isinstance(curr_data, pd.DataFrame):
+            data_out_fmt = curr_data.to_dict('list')
+        else:
+            data_out_fmt = curr_data
+
+        try:
+            self.fig = self.ax = self.line_ani = None
+            self.data = data_out_fmt
+            # save
+            with open(fname, 'wb') as f:
+                pickle.dump(self, f)
+        finally:
+            # make sure we don't mutate attribute values whether or not
+            # save was successful
+            self.fig = curr_fig
+            self.ax = curr_ax
+            self.line_ani = curr_line_ani
+            self.data = curr_data
