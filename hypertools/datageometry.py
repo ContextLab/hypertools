@@ -186,7 +186,7 @@ class DataGeometry(object):
             new_kwargs.update({key : kwargs[key]})
         return plotter(d, **new_kwargs)
 
-    def save(self, fname, compression='blosc'):
+    def save(self, fname, compression=None):
         """
         Save method for the data geometry object
 
@@ -196,15 +196,9 @@ class DataGeometry(object):
 
         Parameters
         ----------
-
         fname : str
             A name for the file.  If the file extension (.geo) is not specified,
             it will be appended.
-
-        compression : str
-            The kind of compression to use.  See the deepdish documentation for
-            options: http://deepdish.readthedocs.io/en/latest/api_io.html#deepdish.io.save
-
         """
         if compression is not None:
             warnings.warn("Hypertools has switched from deepdish to pickle "
