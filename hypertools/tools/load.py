@@ -117,11 +117,11 @@ def load(
         dataset_path = Path(expanduser(expandvars(dataset))).resolve()
         if not dataset_path.is_file():
             raise HypertoolsIOError(
-                f"[Errno 2] No such file or directory: {dataset_path}. "
-                "Please specify a .geo file or one of the following sample "
-                "files: 'weights', 'weights_avg', 'weights_sample', 'spiral', "
-                "'mushrooms', 'wiki', 'nips', 'sotus', 'wiki_model', "
-                "'nips_model', 'sotus_model'"
+                f"Dataset not found at {dataset_path}. Please specify a .geo "
+                "file or one of the following sample files: 'weights', "
+                "'weights_avg', 'weights_sample', 'spiral', 'mushrooms', "
+                "'wiki', 'nips', 'sotus', 'wiki_model', 'nips_model', "
+                "'sotus_model'"
             )
         elif legacy:
             geo_data = _load_legacy(dataset_path)
