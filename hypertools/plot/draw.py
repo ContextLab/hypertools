@@ -1,8 +1,5 @@
 #!/usr/bin/env python
 
-from __future__ import division
-from builtins import str
-from builtins import range
 import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import proj3d
@@ -330,7 +327,7 @@ def _draw(x, legend=None, title=None, labels=False,
         return lines
 
     def dispatch_animate(x, ani_params):
-        if x[0].shape[1] is 3:
+        if x[0].shape[1] == 3:
             return animate_plot3D(x, **ani_params)
 
     def animate_plot3D(x, tail_duration=2, rotations=2, zoom=1, chemtrails=False,
@@ -380,7 +377,7 @@ def _draw(x, legend=None, title=None, labels=False,
         plt.ioff()
 
     if animate in [True, 'parallel', 'spin']:
-        assert x[0].shape[1] is 3, "Animations are currently only supported for 3d plots."
+        assert x[0].shape[1] == 3, "Animations are currently only supported for 3d plots."
 
         # animation params
         ani_params = dict(tail_duration=tail_duration,
@@ -400,7 +397,7 @@ def _draw(x, legend=None, title=None, labels=False,
         fig, ax, data = dispatch_static(x, ax)
 
         # if 3d, plot the cube
-        if x[0].shape[1] is 3:
+        if x[0].shape[1] == 3:
 
             # set cube scale
             cube_scale = 1
@@ -416,7 +413,7 @@ def _draw(x, legend=None, title=None, labels=False,
             # initialize the view
             ax.view_init(elev=elev, azim=azim)
 
-        elif x[0].shape[1] is 2:
+        elif x[0].shape[1] == 2:
 
             # plot square
             plot_square(ax)

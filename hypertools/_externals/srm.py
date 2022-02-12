@@ -33,8 +33,6 @@ The implementations are based on the following publications:
 
 # Authors: Po-Hsuan Chen (Princeton Neuroscience Institute) and Javier Turek
 # (Intel Labs), 2015
-from __future__ import division
-
 import logging
 
 import numpy as np

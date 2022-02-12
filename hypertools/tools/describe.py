@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-from __future__ import division
-from builtins import range
 import warnings
 import numpy as np
 from scipy.stats.stats import pearsonr

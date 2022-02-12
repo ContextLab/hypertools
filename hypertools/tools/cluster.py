@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import warnings
 from sklearn.cluster import KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration, SpectralClustering
-import six
 import numpy as np
 from .._shared.helpers import *
 from .format_data import format_data as formatter
@@ -64,7 +63,7 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None, format_data=True):
 
     if cluster == None:
         return x
-    elif (isinstance(cluster, six.string_types) and cluster=='HDBSCAN') or \
+    elif (isinstance(cluster, str) and cluster=='HDBSCAN') or \
     (isinstance(cluster, dict) and cluster['model']=='HDBSCAN'):
         if not _has_hdbscan:
             raise ImportError('HDBSCAN is not installed. Please install hdbscan>=0.8.11')
@@ -76,7 +75,7 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None, format_data=True):
         x = formatter(x, ppca=True)
 
     # if reduce is a string, find the corresponding model
-    if isinstance(cluster, six.string_types):
+    if isinstance(cluster, str):
         model = models[cluster]
         if cluster != 'HDBSCAN':
             model_params = {
@@ -86,7 +85,7 @@ def cluster(x, cluster='KMeans', n_clusters=3, ndims=None, format_data=True):
             model_params = {}
     # if its a dict, use custom params
     elif type(cluster) is dict:
-        if isinstance(cluster['model'], six.string_types):
+        if isinstance(cluster['model'], str):
             model = models[cluster['model']]
             model_params = cluster['params']
 

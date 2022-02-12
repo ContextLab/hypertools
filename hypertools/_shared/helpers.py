@@ -5,12 +5,9 @@ Helper functions
 """
 
 ##PACKAGES##
-from __future__ import division
-from __future__ import print_function
 import functools
 import sys
 import numpy as np
-import six
 import copy
 from scipy.interpolate import PchipInterpolator as pchip
 import seaborn as sns
@@ -168,11 +165,10 @@ def get_type(data):
     """
     Checks what the data type is and returns it as a string label
     """
-    import six
     from ..datageometry import DataGeometry
 
     if isinstance(data, list):
-        if isinstance(data[0], (six.string_types, six.text_type, six.binary_type)):
+        if isinstance(data[0], (str, bytes)):
             return 'list_str'
         elif isinstance(data[0], (int, float)):
             return 'list_num'
@@ -183,13 +179,13 @@ def get_type(data):
                             'Numpy Array, Pandas DataFrame, String, List of strings'
                             ', List of numbers')
     elif isinstance(data, np.ndarray):
-        if isinstance(data[0][0], (six.string_types, six.text_type, six.binary_type)):
+        if isinstance(data[0][0], (str, bytes)):
             return 'arr_str'
         else:
             return 'arr_num'
     elif isinstance(data, pd.DataFrame):
         return 'df'
-    elif isinstance(data, (six.string_types, six.text_type, six.binary_type)):
+    elif isinstance(data, (str, bytes)):
         return 'str'
     elif isinstance(data, DataGeometry):
         return 'geo'
@@ -211,19 +207,19 @@ def check_geo(geo):
     geo = copy.copy(geo)
 
     def fix_item(item):
-        if isinstance(item, six.binary_type):
+        if isinstance(item, bytes):
             return item.decode()
         return item
 
     def fix_list(lst):
         return [fix_item(i) for i in lst]
-    if isinstance(geo.reduce, six.binary_type):
+    if isinstance(geo.reduce, bytes):
         geo.reduce = geo.reduce.decode()
     for key in geo.kwargs.keys():
         if geo.kwargs[key] is not None:
             if isinstance(geo.kwargs[key], (list, np.ndarray)):
                 geo.kwargs[key] = fix_list(geo.kwargs[key])
-            elif isinstance(geo.kwargs[key], six.binary_type):
+            elif isinstance(geo.kwargs[key], bytes):
                 geo.kwargs[key] = fix_item(geo.kwargs[key])
     return geo
 
@@ -232,7 +228,6 @@ def get_dtype(data):
     """
     Checks what the data type is and returns it as a string label
     """
-    import six
     from ..datageometry import DataGeometry
 
     if isinstance(data, list):
@@ -241,7 +236,7 @@ def get_dtype(data):
         return 'arr'
     elif isinstance(data, pd.DataFrame):
         return 'df'
-    elif isinstance(data, (six.string_types, six.text_type, six.binary_type)):
+    elif isinstance(data, (str, bytes)):
         return 'str'
     elif isinstance(data, DataGeometry):
         return 'geo'

@@ -1,8 +1,9 @@
-from __future__ import unicode_literals
-from builtins import object
 import copy
-import deepdish as dd
-import numpy as np
+import pickle
+import warnings
+
+import pandas as pd
+
 from .tools.normalize import normalize as normalizer
 from .tools.reduce import reduce as reducer
 from .tools.align import align as aligner
@@ -188,7 +189,7 @@ class DataGeometry(object):
             new_kwargs.update({key : kwargs[key]})
         return plotter(d, **new_kwargs)
 
-    def save(self, fname, compression='blosc'):
+    def save(self, fname, compression=None):
         """
         Save method for the data geometry object
 
@@ -198,41 +199,46 @@ class DataGeometry(object):
 
         Parameters
         ----------
-
         fname : str
             A name for the file.  If the file extension (.geo) is not specified,
             it will be appended.
-
-        compression : str
-            The kind of compression to use.  See the deepdish documentation for
-            options: http://deepdish.readthedocs.io/en/latest/api_io.html#deepdish.io.save
-
         """
-        if hasattr(self, 'dtype'):
-            if 'list' in self.dtype:
-                data = np.array(self.data)
-            elif 'df' in self.dtype:
-                data = {k: np.array(v).astype('str') for k, v in self.data.to_dict('list').items()}
-            else:
-                data = self.data
+        if compression is not None:
+            warnings.warn("Hypertools has switched from deepdish to pickle "
+                          "for saving DataGeomtry objects. 'compression' "
+                          "argument has no effect and will be removed in a "
+                          "future version",
+                          FutureWarning)
 
-        # put geo vars into a dict
-        geo = {
-            'data' : data,
-            'xform_data' : np.array(self.xform_data),
-            'reduce' : self.reduce,
-            'align' : self.align,
-            'normalize' : self.normalize,
-            'semantic' : self.semantic,
-            'corpus' : np.array(self.corpus) if isinstance(self.corpus, list) else self.corpus,
-            'kwargs' : self.kwargs,
-            'version' : self.version,
-            'dtype' : self.dtype
-        }
+        # automatically add extension if not present
+        if not fname.endswith('.geo'):
+            fname += '.geo'
 
-        # if extension wasn't included, add it
-        if fname[-4:]!='.geo':
-            fname+='.geo'
+        # can't save/restore matplotlib objects across sessions
+        curr_fig = self.fig
+        curr_ax = self.ax
+        curr_line_ani = self.line_ani
 
-        # save
-        dd.io.save(fname, geo, compression=compression)
+        curr_data = self.data
+        # convert pandas DataFrames to dicts of
+        # {column_name: list(column_values)} to fix I/O compatibility
+        # issues across certain pandas versions. Expected self.data
+        # format is restored by hypertools.load
+        if isinstance(curr_data, pd.DataFrame):
+            data_out_fmt = curr_data.to_dict('list')
+        else:
+            data_out_fmt = curr_data
+
+        try:
+            self.fig = self.ax = self.line_ani = None
+            self.data = data_out_fmt
+            # save
+            with open(fname, 'wb') as f:
+                pickle.dump(self, f)
+        finally:
+            # make sure we don't mutate attribute values whether or not
+            # save was successful
+            self.fig = curr_fig
+            self.ax = curr_ax
+            self.line_ani = curr_line_ani
+            self.data = curr_data
