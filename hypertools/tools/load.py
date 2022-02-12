@@ -13,17 +13,17 @@ homedir = os.path.expanduser('~/')
 datadir = os.path.join(homedir, 'hypertools_data')
 
 datadict = {
-    'weights' : '1-zzaUMHuXHSzFcGT4vNlqcV8tMY4q7jS',
-    'weights_avg' : '1v_IrU6n72nTOHwD3AnT2LKgtKfHINyXt',
-    'weights_sample' : '1CiVSP-8sjdQN_cdn3uCrBH5lNOkvgJp1',
-    'spiral' : '1JB4RIgNfzGaTFWRBCzi8CQ2syTE-BnWg',
-    'mushrooms' : '1wRXObmwLjSHPAUWC8QvUl37iY2qRObg8',
-    'wiki' : '1e5lCi17bLbOXuRjiGO2eqkEWVpeCuRvM',
-    'sotus' : '1D2dsrLAXkC3eUUaw2VV_mldzxX5ufmkm',
-    'nips' : '1Vva4Xcc5kUX78R0BKkLtdCWQx9GI-FG2',
-    'wiki_model' : '1OrN1F39GkMPjrB2bOTgNRT1pNBmsCQsN',
-    'nips_model' : '1orgxWJdWYzBlU3EF2u7EDsZrp3jTNNLG',
-    'sotus_model' : '1g2F18WLxfFosIqhiLs79G0MpiG72mWQr'
+    'weights': '1ZXLao5Rxkr45KUMkv08Y1eAedTkpivsd',
+    'weights_avg': '1gfI1WB7QqogdYgdclqznhUfxsrhobueO',
+    'weights_sample': '1ub-xlYW1D_ASzbLcALcPJuhHUxRwHdIs',
+    'spiral': '1nHAusn2VsQinJk35xvJSd7CtWPC1uOwK',
+    'mushrooms': '12hmCIZp1tyUoPRHwpiAsm1GDBxiJS8ji',
+    'wiki': '1NUqm3svfu2rrFH04xmLbOh0u5WyTe9mh',
+    'sotus': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm',
+    'nips': '1FV7xT2hVgZ1sXfMvAdP1jRsK_dWhp49I',
+    'wiki_model': '1T-UAU-6KVGUBcUWqz7yG59vXnThu9T0H',
+    'nips_model': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm',
+    'sotus_model': '16_n9r82pwxzZh-0qdS4a6l0z3v__Q91C'
 }
 
 
