@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
-import subprocess
-import sys
 from setuptools import setup, find_packages
-from setuptools.command.install import install
 
 
 os.environ["MPLCONFIGDIR"] = "."
@@ -15,7 +12,7 @@ AUTHOR_EMAIL = 'contextualdynamics@gmail.com'
 URL = 'https://github.com/ContextLab/hypertools'
 DOWNLOAD_URL = URL
 LICENSE = 'MIT'
-REQUIRES_PYTHON = '>=3.5'
+REQUIRES_PYTHON = '>=3.6'
 PACKAGES = find_packages(exclude=('images', 'examples', 'tests'))
 with open('requirements.txt', 'r') as f:
     REQUIREMENTS = f.read().splitlines()
@@ -38,10 +35,10 @@ Some key features of HyperTools are:
 """
 CLASSIFIERS = [
     'Intended Audience :: Science/Research',
-    'Programming Language :: Python :: 3.5',
     'Programming Language :: Python :: 3.6',
     'Programming Language :: Python :: 3.7',
     'Programming Language :: Python :: 3.8',
+    'Programming Language :: Python :: 3.9',
     'Topic :: Scientific/Engineering :: Visualization',
     'Topic :: Multimedia :: Graphics',
     'Operating System :: POSIX',
@@ -57,7 +54,7 @@ setup(
     author=AUTHOR,
     author_email=AUTHOR_EMAIL,
     url=URL,
-    download_url = DOWNLOAD_URL,
+    download_url=DOWNLOAD_URL,
     license=LICENSE,
     python_requires=REQUIRES_PYTHON,
     packages=PACKAGES,
