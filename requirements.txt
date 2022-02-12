@@ -7,4 +7,3 @@ scipy>=1.0.0
 numpy>=1.10.4
 umap-learn>=0.4.6
 requests
-deepdish
