@@ -1,18 +1,21 @@
-import requests
-import pandas as pd
-import deepdish as dd
-import os
 import pickle
-import warnings
-from .analyze import analyze
-from ..datageometry import DataGeometry
+from os.path import expanduser, expandvars
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import requests
+
+from hypertools.datageometry import DataGeometry
+from hypertools._shared.exceptions import HypertoolsIOError
+from hypertools.plot.plot import plot
+from hypertools.tools.analyze import analyze
 
 
 BASE_URL = 'https://docs.google.com/uc?export=download'
-homedir = os.path.expanduser('~/')
-datadir = os.path.join(homedir, 'hypertools_data')
+DATA_DIR = Path.home().joinpath('hypertools_data')
 
-datadict = {
+EXAMPLE_DATA = {
     'weights': '1ZXLao5Rxkr45KUMkv08Y1eAedTkpivsd',
     'weights_avg': '1gfI1WB7QqogdYgdclqznhUfxsrhobueO',
     'weights_sample': '1ub-xlYW1D_ASzbLcALcPJuhHUxRwHdIs',
@@ -110,9 +113,6 @@ def load(
         if dataset.endswith('_model'):
             # geo_data is a sklearn.pipeline.Pipeline, not a DataGeometry
             return geo_data
-        elif dataset == 'mushrooms':
-            # format mushrooms dataset as a pandas DataFrame
-            geo_data.data = pd.DataFrame(geo_data.data)
     else:
         dataset_path = Path(expanduser(expandvars(dataset))).resolve()
         if not dataset_path.is_file():
@@ -137,9 +137,6 @@ def load(
             if isinstance(geo_data.data, dict):
                 geo_data.data = pd.DataFrame(geo_data.data)
 
-    if isinstance(geo_data.data, dict):
-        geo_data.data = pd.DataFrame(geo_data.data)
-
     if any({reduce, ndims, align, normalize}):
         reduce = reduce or 'IncrementalPCA'
         d = analyze(geo_data.get_data(),
@@ -150,15 +147,12 @@ def load(
         return plot(d, show=False)
     return geo_data
 
-def _download(dataset, data):
-    fullpath = os.path.join(homedir, 'hypertools_data', dataset)
-    with open(fullpath, 'wb') as f:
-        f.write(data.content)
 
 def _load_legacy(dataset_path):
     try:
         import deepdish as dd
     except ImportError as e:
+        # catches ModuleNotFoundError since it's a subclass
         raise HypertoolsIOError(
             "To load legacy-format datasets, install the 'deepdish' module"
         ) from e
@@ -184,7 +178,7 @@ def _load_example_data(dataset):
     except Exception as e:
         raise HypertoolsIOError(
             f"Failed to load '{dataset}' data. Try deleting cached file at"
-            f"{dataset_path} and re-loading."
+            f"{dataset_path} and reloading."
         ) from e
 
     if dataset == 'mushrooms':
