@@ -1,5 +1,8 @@
 language: python
 sudo: false
+arch:
+  - amd64
+  - arm64
 python:
 - '3.6'
 - '3.7'
@@ -8,7 +11,7 @@ python:
 services:
   - xvfb
 install:
-- wget https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh -O mambaforge.sh
+- wget https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-$(uname -m).sh -O mambaforge.sh
 - bash mambaforge.sh -b -p $HOME/mambaforge
 - export PATH="$HOME/mambaforge/bin:$PATH"
 - hash -r
