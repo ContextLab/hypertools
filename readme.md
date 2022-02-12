@@ -55,31 +55,18 @@ data cache (/Users/yourusername/hypertools_data).
 
 ## Requirements
 
-+ python 2.7, 3.5+
++ python>=3.6
 + PPCA>=0.0.2
-+ scikit-learn>=0.18.1
++ scikit-learn>=0.24.0
 + pandas>=0.18.0
 + seaborn>=0.8.1
 + matplotlib>=1.5.1
-+ scipy>=0.17.1
++ scipy>=1.0.0
 + numpy>=1.10.4
-+ future
++ umap-learn>=0.4.6
 + requests
-+ deepdish
 + pytest (for development)
 + ffmpeg (for saving animations)
-
-If installing from github (instead of pip), you must also install the requirements:
-`pip install -r requirements.txt`
-
-### Troubleshooting
-
-If you encounter an error related to installing deepdish (hdf5) on a MacOS system, try installing hdf5 directly using [homebrew](https://brew.sh/):
-```
-$ brew tap homebrew/science
-$ brew install hdf5
-```
-and then re-start the installation.
 
 ## Documentation
 
@@ -95,7 +82,7 @@ Please cite as:
 
 Here is a bibtex formatted reference:
 
-```
+```bibtex
 @ARTICLE {,
     author  = {Andrew C. Heusser and Kirsten Ziman and Lucy L. W. Owen and Jeremy R. Manning},    
     title   = {HyperTools: a Python Toolbox for Gaining Geometric Insights into High-Dimensional Data},    
@@ -128,7 +115,7 @@ See [here](http://hypertools.readthedocs.io/en/latest/auto_examples/index.html) 
 
 ## Plot
 
-```
+```python
 import hypertools as hyp
 hyp.plot(list_of_arrays, '.', group=list_of_labels)
 ```
@@ -137,7 +124,7 @@ hyp.plot(list_of_arrays, '.', group=list_of_labels)
 
 ## Align
 
-```
+```python
 import hypertools as hyp
 hyp.plot(list_of_arrays, align='hyper')
 ```
@@ -153,7 +140,7 @@ hyp.plot(list_of_arrays, align='hyper')
 
 ## Cluster
 
-```
+```python
 import hypertools as hyp
 hyp.plot(array, '.', n_clusters=10)
 ```
@@ -163,7 +150,7 @@ hyp.plot(array, '.', n_clusters=10)
 
 ## Describe
 
-```
+```python
 import hypertools as hyp
 hyp.tools.describe(list_of_arrays, reduce='PCA', max_dims=14)
 ```
