@@ -6,10 +6,9 @@ import numpy as np
 import pandas as pd
 import requests
 
-from hypertools.datageometry import DataGeometry
-from hypertools._shared.exceptions import HypertoolsIOError
-from hypertools.plot.plot import plot
-from hypertools.tools.analyze import analyze
+from ..datageometry import DataGeometry
+from .._shared.exceptions import HypertoolsIOError
+from .analyze import analyze
 
 
 BASE_URL = 'https://docs.google.com/uc?export=download'
@@ -138,6 +137,7 @@ def load(
                 geo_data.data = pd.DataFrame(geo_data.data)
 
     if any({reduce, ndims, align, normalize}):
+        from ..plot.plot import plot
         reduce = reduce or 'IncrementalPCA'
         d = analyze(geo_data.get_data(),
                     reduce=reduce,
