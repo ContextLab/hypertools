@@ -4,7 +4,7 @@ Thank you for your interest in contributing to HyperTools :tada:!
 
 HyperTools is designed to facilitate dimensionality reduction-based visual explorations of high-dimensional data. The basic pipeline is to feed in a high-dimensional dataset (or a series of high-dimensional datasets) and, in a single function call, reduce the dimensionality of the dataset(s) and create a plot. The package is built atop many familiar friends, including matplotlib, scikit-learn and seaborn.
 
-This documents is a set of guidelines for contributing to HyperTools on GitHub. These are guidelines, not rules. This guide is meant to make it easy for you to get involved. Before contributing, it is important to read over this page because it will help you understand the problem that this toolbox tries to solve, our future vision for the project, and what we kinds of contributions (we think) would be most useful.
+This document provides a set of guidelines for contributing to HyperTools on GitHub. These are guidelines, not rules. This guide is meant to make it easy for you to get involved. Before contributing, it is important to read over this page because it will help you understand the problem that this toolbox tries to solve, our future vision for the project, and what kinds of contributions (we think) would be most useful.
 
 
 * [Participation guidelines](#participation-guidelines)
@@ -19,7 +19,7 @@ This project adheres to a [code of conduct](https://www.mozilla.org/en-US/about/
 
 ## What we're working on
 
-Take a look at the issues in our [ milestone](https://github.com/ContextLab/hypertools/milestone/5) for the mozsprint!
+Take a look at the issues in our [milestone](https://github.com/ContextLab/hypertools/milestone/5) for the Mozilla sprint!
 
 ## How to submit changes
 

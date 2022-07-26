@@ -1,0 +1,33 @@
+name: hypertools
+
+channels:
+  - pytorch
+
+dependencies:
+  - cudatoolkit=11.3
+  - pandas
+  - numpy
+  - matplotlib
+  - python
+  - scikit-learn
+  - scipy
+  - pip
+  - pip:
+    - pydata-wrangler
+    - six
+    - configparser
+    - dill
+    - Pillow
+    - pytest
+    - Sphinx
+    - pydata-sphinx-theme
+    - nbsphinx
+    - umap-learn
+    - orca
+    - plotly
+    - gif
+    - kaleido
+    - jupyter-dash
+    - jupyterlab
+    - ipywidgets
+    - notebook
