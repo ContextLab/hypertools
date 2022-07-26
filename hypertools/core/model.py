@@ -7,7 +7,7 @@ import pandas as pd
 import os
 import importlib
 import sklearn
-import flair
+# import flair
 from sklearn.experimental import enable_hist_gradient_boosting, enable_iterative_imputer, enable_halving_search_cv
 
 from .configurator import get_default_options
@@ -24,7 +24,7 @@ sklearn_modules = ['calibration', 'cluster', 'compose', 'covariance', 'cross_dec
                    'random_projection', 'semi_supervised', 'svm', 'tree']
 sklearn_modules = [f'sklearn.{m}' for m in sklearn_modules]
 sklearn_modules.append('umap')
-flair_embeddings = [f'flair.embeddings.{f}' for f in dir(flair.embeddings) if 'embedding' in f.lower()]
+flair_embeddings = []  # [f'flair.embeddings.{f}' for f in dir(flair.embeddings) if 'embedding' in f.lower()]
 externals = ['ppca', 'brainiak']
 
 
