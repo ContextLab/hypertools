@@ -3,10 +3,10 @@ import datawrangler as dw
 import os
 import hashlib
 
-from ...hypertools import load, write, plot
+import hypertools as hyp
 
 
-data = load('weights')
+data = hyp.load('weights')
 fig_dir = os.path.join(os.path.dirname(__file__), 'reference_figures')
 
 umap2d = {'model': 'UMAP', 'args': [], 'kwargs': {'n_components': 2}}
@@ -31,19 +31,19 @@ def compare_files(a, b):
 
 def write_test_helper(fig, fname):
     # comment out next line after debugging
-    write(fig, fname)
+    hyp.write(fig, fname)
 
     # FIXME: pdfs need to be manually checked for now...
     if not (fname[-3:].lower() == 'pdf'):
         tmp_file = fname.replace('write', 'tmp')
-        write(fig, tmp_file)
+        hyp.write(fig, tmp_file)
 
         compare_files(fname, tmp_file)
         os.remove(tmp_file)
 
 
 def test_write_static_2d():
-    fig = plot(data, reduce=umap2d, manip=manip, align=hyperalign)
+    fig = hyp.plot(data, reduce=umap2d, manip=manip, align=hyperalign)
 
     # pdf
     write_test_helper(fig, os.path.join(fig_dir, 'write2d_static.pdf'))
@@ -53,14 +53,14 @@ def test_write_static_2d():
 
 
 def test_write_animated_2d():
-    fig = plot(data, reduce=umap2d, manip=manip, align=hyperalign,
+    fig = hyp.plot(data, reduce=umap2d, manip=manip, align=hyperalign,
                animate='window', duration=duration, zoom=zoom, focused=focused)
 
     write_test_helper(fig, os.path.join(fig_dir, 'write2d_animated.gif'))
 
 
 def test_write_static_3d():
-    fig = plot(data, manip=manip, reduce=umap3d, align=hyperalign)
+    fig = hyp.plot(data, manip=manip, reduce=umap3d, align=hyperalign)
 
     # pdf
     write_test_helper(fig, os.path.join(fig_dir, 'write3d_static.pdf'))
@@ -70,7 +70,7 @@ def test_write_static_3d():
 
 
 def test_write_animated_3d():
-    fig = plot(data, pipeline=umap3d, align=hyperalign, reduce=umap3d,
+    fig = hyp.plot(data, pipeline=umap3d, align=hyperalign, reduce=umap3d,
                animate='window', duration=duration, zoom=zoom, focused=focused)
 
     write_test_helper(fig, os.path.join(fig_dir, 'write3d_animated.gif'))
