@@ -3,6 +3,7 @@ import datawrangler as dw
 import os
 import hashlib
 
+import pytest
 import hypertools as hyp
 
 

@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+import pytest
 import hypertools as hyp
 
 weights = hyp.load('weights')
@@ -71,7 +72,7 @@ def weights_alignment_checker(model):
         return dist_sum
 
     d1 = get_mean_dists(weights)
-    d2 = get_mean_dists(align(weights, model=model))
+    d2 = get_mean_dists(hyp.align(weights, model=model))
     assert d1 > d2
 
 

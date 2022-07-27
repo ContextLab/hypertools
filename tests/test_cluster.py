@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+import pytest
 import hypertools as hyp
 
 cluster1 = np.random.multivariate_normal(np.zeros(5), np.eye(5), size=100)

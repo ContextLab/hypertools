@@ -5,9 +5,9 @@ import pandas as pd
 import warnings
 
 import sklearn
-import flair
 import importlib
 
+import pytest
 import hypertools as hyp
 
 sklearn_models = {
@@ -278,7 +278,7 @@ def test_eval_dict():
 def test_robust_dict():
     x = hyp.RobustDict({'first': 1, 'second': 2, 'third': 3})
 
-    assert type(x) is RobustDict
+    assert type(x) is hyp.RobustDict
     assert x['first'] == 1
     assert x['second'] == 2
     assert x['third'] == 3
@@ -288,7 +288,7 @@ def test_robust_dict():
     assert x['first'] is None
 
     y = hyp.RobustDict({'first': 1, 'second': 2, 'third': 3}, __default_value__='hello')
-    assert type(y) is RobustDict
+    assert type(y) is hyp.RobustDict
     assert y['first'] == 1
     assert y['second'] == 2
     assert y['third'] == 3

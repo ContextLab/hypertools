@@ -5,6 +5,7 @@ import pandas as pd
 import dill
 import os
 
+import pytest
 import hypertools as hyp
 
 
@@ -44,7 +45,7 @@ def plot_test(name, *args, **kwargs):
     assert compare_figs(fig, name), f'Figure failed to replicate: {name}'
 
 
-def save_fig(name, fig):
+def save_fig(name, fig, fig_dir):
     with open(os.path.join(fig_dir, f'{name}.fig'), 'wb') as f:
         dill.dump(fig, f)
 

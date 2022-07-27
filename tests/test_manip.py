@@ -3,6 +3,7 @@ import datawrangler as dw
 import numpy as np
 import pandas as pd
 
+import pytest
 import hypertools as hyp
 
 weights = hyp.load('weights_sample')

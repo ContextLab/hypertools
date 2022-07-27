@@ -3,6 +3,7 @@ import datawrangler as dw
 import numpy as np
 import pandas as pd
 
+import pytest
 import hypertools as hyp
 
 models = ['UMAP', 'IncrementalPCA', 'DictionaryLearning', 'FactorAnalysis', 'FastICA', 'KernelPCA',
