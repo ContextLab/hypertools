@@ -1,14 +1,13 @@
 import numpy as np
 import pandas as pd
 
-from hypertools import load
-
+import hypertools as hyp
 
 def test_io():
     # note: the load function called BOTH load and save internally, so this test checks both load and save
     datasets = ['spiral', 'weights', 'weights_avg', 'weights_sample']
     for d in datasets:
-        x = load(d)
+        x = hyp.load(d)
         assert type(x) is list
         assert all([type(i) is np.ndarray for i in x])
 
@@ -17,5 +16,5 @@ def test_io():
             'https://raw.githubusercontent.com/ContextLab/data-wrangler/main/tests/resources/wrangler.jpg']
     types = [str, pd.DataFrame, np.ndarray]
     for i, u in enumerate(urls):
-        x = load(u)
+        x = hyp.load(u)
         assert type(x) is types[i]

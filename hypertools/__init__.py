@@ -9,3 +9,5 @@ from .core.configurator import __version__
 from .io import load, save
 
 __version__ = str(__version__).split()[1]
+__author__ = "Contextual Dynamics Lab"
+__email__ = 'contextualdynamics@gmail.com'

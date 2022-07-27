@@ -9,10 +9,9 @@ import hypertools as hyp
 
 
 data = hyp.load('weights')[:5]
-fig_dir = os.path.join(os.path.dirname(__file__), 'reference_figures')
 
 
-def compare_figs(f, name):
+def compare_figs(fig_dir, f, name):
     def compare_helper(ref, x):
         if not type(ref) == type(x):
             return False

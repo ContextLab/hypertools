@@ -8,7 +8,7 @@ import sklearn
 import flair
 import importlib
 
-from hypertools import core, get_default_options, RobustDict, get, fullfact
+import hypertools as hyp
 
 sklearn_models = {
     'calibration': ['CalibratedClassifierCV', 'calibration_curve'],
@@ -87,7 +87,7 @@ def test_get_model():
     for module_name in sklearn_models.keys():
         module = importlib.import_module(f'sklearn.{module_name}')
         for x in sklearn_models[module_name]:
-            hypertools_model = core.get_model(x)
+            hypertools_model = hyp.core.get_model(x)
             sklearn_model = getattr(module, x)
 
             assert hypertools_model is sklearn_model
@@ -95,15 +95,15 @@ def test_get_model():
 
 def test_apply_model():
     # single dataset
-    m = core.apply_model(np.random.randn(10, 20), 'Binarizer')
+    m = hyp.core.apply_model(np.random.randn(10, 20), 'Binarizer')
     assert all([i in [0, 1] for i in np.unique(m)])
 
     pca = {'model': 'PCA', 'args': [], 'kwargs': {'n_components': 5}}
-    m = core.apply_model(np.random.randn(100, 10), model=pca)
+    m = hyp.core.apply_model(np.random.randn(100, 10), model=pca)
     assert m.shape == (100, 5)
 
     # list of arrays
-    m = core.apply_model([np.random.randn(10, 5) for _ in range(3)], 'MinMaxScaler')
+    m = hyp.core.apply_model([np.random.randn(10, 5) for _ in range(3)], 'MinMaxScaler')
     assert type(m) is list
     assert len(m) == 3
     assert all([i.shape == (10, 5) for i in m])
@@ -111,7 +111,7 @@ def test_apply_model():
 
     # multiple models, multiple datasets
     incremental_pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 3}}
-    m = core.apply_model([np.random.randn(100, 10) for _ in range(5)], model=[pca, 'MinMaxScaler', 'Binarizer',
+    m = hyp.core.apply_model([np.random.randn(100, 10) for _ in range(5)], model=[pca, 'MinMaxScaler', 'Binarizer',
                                                                                   incremental_pca])
     assert type(m) is list
     assert len(m) == 5
@@ -145,8 +145,8 @@ def test_apply_model():
                 continue
 
             warnings.simplefilter('ignore')
-            x1_fit = core.apply_model(next_x1, model=m, **opts)
-            x2_fit = core.apply_model(next_x2, model=m, **opts)
+            x1_fit = hyp.core.apply_model(next_x1, model=m, **opts)
+            x2_fit = hyp.core.apply_model(next_x2, model=m, **opts)
 
             assert x1_fit.shape[0] == x1.shape[0]
             assert type(x2_fit) == list
@@ -156,24 +156,24 @@ def test_apply_model():
 
 def test_has_all_attributes():
     x = HyperTest(1, 2, 3, 4, 5, 6)
-    assert core.has_all_attributes(x, ['b', 'c', 'd'])
-    assert core.has_all_attributes(x, ['a', 'b', 'c', 'd', 'e', 'test'])
-    assert not core.has_all_attributes(x, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'])
+    assert hyp.core.has_all_attributes(x, ['b', 'c', 'd'])
+    assert hyp.core.has_all_attributes(x, ['a', 'b', 'c', 'd', 'e', 'test'])
+    assert not hyp.core.has_all_attributes(x, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'])
 
 
 def test_has_any_attributes():
     x = HyperTest(1, 2, 3, 4, 5, 6)
-    assert core.has_all_attributes(x, ['b', 'c', 'd'])
-    assert core.has_any_attributes(x, ['a', 'b', 'c', 'd', 'e'])
-    assert core.has_any_attributes(x, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'])
-    assert core.has_any_attributes(x, ['e', 'f', 'g', 'h'])
-    assert not core.has_any_attributes(x, ['f', 'g', 'h', 'i', 'j'])
-    assert core.has_any_attributes(x, ['f', 'g', 'h', 'test', 'i', 'j'])
+    assert hyp.core.has_all_attributes(x, ['b', 'c', 'd'])
+    assert hyp.core.has_any_attributes(x, ['a', 'b', 'c', 'd', 'e'])
+    assert hyp.core.has_any_attributes(x, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'])
+    assert hyp.core.has_any_attributes(x, ['e', 'f', 'g', 'h'])
+    assert not hyp.core.has_any_attributes(x, ['f', 'g', 'h', 'i', 'j'])
+    assert hyp.core.has_any_attributes(x, ['f', 'g', 'h', 'test', 'i', 'j'])
 
 
 def test_get_default_options():
-    defaults = get_default_options()
-    assert type(defaults) is core.shared.RobustDict
+    defaults = hyp.get_default_options()
+    assert type(defaults) is hyp.core.shared.RobustDict
     assert type(defaults['DoesNotExist']) is dict and len(defaults['DoesNotExist']) == 0
     assert defaults['HyperAlign']['n_iter'] == '10'
     assert defaults['CountVectorizer']['stop_words'] == "'english'"
@@ -182,51 +182,51 @@ def test_get_default_options():
 def test_get():
     x = [1, 2, 3, 4, 5]
     for i in range(5):
-        assert get(x, i) == i + 1
-        assert get(x, i + len(x)) == i + 1
+        assert hyp.get(x, i) == i + 1
+        assert hyp.get(x, i + len(x)) == i + 1
 
     x = np.cumsum(np.cumsum(np.ones([10, 5]), axis=0), axis=1)
     # axis == 0
     for i in range(10):
-        assert np.allclose(get(x, i, axis=0), x[i, :])
-        assert np.allclose(get(x, i + 2 * x.shape[0], axis=0), x[i, :])
+        assert np.allclose(hyp.get(x, i, axis=0), x[i, :])
+        assert np.allclose(hyp.get(x, i + 2 * x.shape[0], axis=0), x[i, :])
 
-    assert np.allclose(get(x, range(x.shape[0] * 2)), np.vstack([x, x]))
+    assert np.allclose(hyp.get(x, range(x.shape[0] * 2)), np.vstack([x, x]))
 
     # axis == 1
     for i in range(5):
-        assert np.allclose(get(x, i, axis=1), x[:, i])
-        assert np.allclose(get(x, i + 3 * x.shape[1], axis=1), x[:, i])
+        assert np.allclose(hyp.get(x, i, axis=1), x[:, i])
+        assert np.allclose(hyp.get(x, i + 3 * x.shape[1], axis=1), x[:, i])
 
-    assert np.allclose(get(x, range(x.shape[1] * 3), axis=1), np.hstack([x, x, x]))
+    assert np.allclose(hyp.get(x, range(x.shape[1] * 3), axis=1), np.hstack([x, x, x]))
 
     # dataframe
     y = pd.DataFrame(x, index=range(0, 20, 2))
 
     for i in range(x.shape[0]):
-        assert np.allclose(get(x, i), get(y, i))
-        assert np.allclose(get(x, i), get(y, i + 20 * x.shape[0]))
+        assert np.allclose(hyp.get(x, i), hyp.get(y, i))
+        assert np.allclose(hyp.get(x, i), hyp.get(y, i + 20 * x.shape[0]))
 
     for i in range(x.shape[1]):
-        assert np.allclose(get(x, i, axis=1), get(y, i, axis=1).values.ravel())
-        assert np.allclose(get(x, i, axis=1), get(y, i + 5 * x.shape[0], axis=1).values.ravel())
+        assert np.allclose(hyp.get(x, i, axis=1), hyp.get(y, i, axis=1).values.ravel())
+        assert np.allclose(hyp.get(x, i, axis=1), hyp.get(y, i + 5 * x.shape[0], axis=1).values.ravel())
 
     z = ['test1', 'test2', 'test3']
     for i in range(len(z) * 10):
-        assert get(z, i) == z[i % len(z)]
+        assert hyp.get(z, i) == z[i % len(z)]
 
 
 def test_fullfact():
     def check(ff, x):
         return np.allclose(np.array(ff), np.array(x))
 
-    assert check(fullfact([1, 1, 1, 1]), [1, 1, 1, 1])
+    assert check(hyp.fullfact([1, 1, 1, 1]), [1, 1, 1, 1])
 
     x1 = [[1, 1],
           [2, 1],
           [1, 2],
           [2, 2]]
-    assert check(fullfact([2, 2]), x1)
+    assert check(hyp.fullfact([2, 2]), x1)
 
     x2 = [[1, 1, 1],
           [1, 2, 1],
@@ -234,7 +234,7 @@ def test_fullfact():
           [1, 2, 2],
           [1, 1, 3],
           [1, 2, 3]]
-    assert check(fullfact([1, 2, 3]), x2)
+    assert check(hyp.fullfact([1, 2, 3]), x2)
 
     x3 = [[1, 1, 1],
           [2, 1, 1],
@@ -245,7 +245,7 @@ def test_fullfact():
           [1, 1, 3],
           [2, 1, 3],
           [3, 1, 3]]
-    assert check(fullfact([3, 1, 3]), x3)
+    assert check(hyp.fullfact([3, 1, 3]), x3)
 
 
 def test_eval_dict():
@@ -256,27 +256,27 @@ def test_eval_dict():
         return p ** 2
 
     x = {'first': 'a', 'second': 'b', 'third': 'c'}
-    d = core.eval_dict(x.copy(), context=locals())  # copy x so that the values aren't modified for future checks
+    d = hyp.core.eval_dict(x.copy(), context=locals())  # copy x so that the values aren't modified for future checks
 
     assert d['first'] == a
     assert d['second'] == [1, 2, 3, 4]
     assert d['third'](3) == 9
 
     try:
-        core.eval_dict({'should_not_work': 'e'})
+        hyp.core.eval_dict({'should_not_work': 'e'})
         raise AssertionError('this should not run ("e") is not defined')
     except NameError:
         pass
 
     try:
-        core.eval_dict(x)
+        hyp.core.eval_dict(x)
         raise AssertionError('this should not run (no context given, so "a", "b", and "c" are not defined)')
     except NameError:
         pass
 
 
 def test_robust_dict():
-    x = RobustDict({'first': 1, 'second': 2, 'third': 3})
+    x = hyp.RobustDict({'first': 1, 'second': 2, 'third': 3})
 
     assert type(x) is RobustDict
     assert x['first'] == 1
@@ -287,7 +287,7 @@ def test_robust_dict():
     x.pop('first')
     assert x['first'] is None
 
-    y = RobustDict({'first': 1, 'second': 2, 'third': 3}, __default_value__='hello')
+    y = hyp.RobustDict({'first': 1, 'second': 2, 'third': 3}, __default_value__='hello')
     assert type(y) is RobustDict
     assert y['first'] == 1
     assert y['second'] == 2
