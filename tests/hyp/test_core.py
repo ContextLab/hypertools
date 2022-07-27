@@ -57,7 +57,7 @@ sklearn_models = {
     'multiclass': ['OneVsRestClassifier', 'OneVsOneClassifier', 'OutputCodeClassifier'],
     'multioutput': ['ClassifierChain', 'MultiOutputRegressor', 'MultiOutputClassifier', 'RegressorChain'],
     'naive_bayes': ['BernoulliNB', 'CategoricalNB', 'ComplementNB', 'GaussianNB', 'MultinomialNB'],
-    'neighbors': ['BallTree', 'DistanceMetric', 'KDTree', 'KernelDensity', 'KNeighborsClassifier',
+    'neighbors': ['BallTree', 'KDTree', 'KernelDensity', 'KNeighborsClassifier',
                   'KNeighborsRegressor', 'KNeighborsTransformer', 'LocalOutlierFactor', 'RadiusNeighborsClassifier',
                   'RadiusNeighborsRegressor', 'RadiusNeighborsTransformer', 'NearestCentroid', 'NearestNeighbors',
                   'NeighborhoodComponentsAnalysis'],

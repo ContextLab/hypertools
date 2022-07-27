@@ -23,7 +23,7 @@ def test_discrete_clusters():
 
                 assert ((np.sum(zeros) / len(inds)) >= threshold) or ((np.sum(ones) / len(inds)) >= threshold)
 
-    models = ['AffinityPropagation', 'AgglomerativeClustering', 'Birch', 'DBSCAN', 'OPTICS', 'FeatureAgglomeration',
+    models = ['AffinityPropagation', 'AgglomerativeClustering', 'DBSCAN', 'OPTICS', 'FeatureAgglomeration',
               'KMeans', 'MiniBatchKMeans', 'MeanShift', 'SpectralClustering']
 
     for m in models:
