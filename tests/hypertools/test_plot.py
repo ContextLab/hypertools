@@ -5,13 +5,14 @@ import pandas as pd
 import dill
 import os
 
-from hypertools import load, plot
+import hypertools as hyp
 
 
-data = load('weights')[:5]
+data = hyp.load('weights')[:5]
+fig_dir = os.path.join(os.path.dirname(__file__), 'reference_figures')
 
 
-def compare_figs(fig_dir, f, name):
+def compare_figs(f, name):
     def compare_helper(ref, x):
         if not type(ref) == type(x):
             return False
@@ -39,7 +40,7 @@ def compare_figs(fig_dir, f, name):
 
 def plot_test(name, *args, **kwargs):
     np.random.seed(1234)
-    fig = plot(*args, **kwargs)
+    fig = hyp.plot(*args, **kwargs)
     # save_fig(name, fig)
     assert compare_figs(fig, name), f'Figure failed to replicate: {name}'
 

@@ -1,11 +1,10 @@
 import numpy as np
 import pandas as pd
+import hypertools as hyp
 
-from hypertools import load, align, pad, trim_and_pad
 
-
-weights = load('weights')
-spiral = load('spiral')
+weights = hyp.load('weights')
+spiral = hyp.load('spiral')
 
 
 def compare_alignments(a1, a2, tol=1e-5):
@@ -41,8 +40,8 @@ def spiral_alignment_checker(model, known_rot=True, relax=False, tol=1e-5):
                     [-0.01948098, 0.83422817, -0.55107518]])
 
     aligned_spirals1 = [spiral[0], np.dot(spiral[1], rot)]
-    aligned_spirals2 = align(spiral, model=model)
-    aligned_spirals3, fitted_model = align(spiral, model=model, return_model=True)
+    aligned_spirals2 = hyp.align(spiral, model=model)
+    aligned_spirals3, fitted_model = hyp.align(spiral, model=model, return_model=True)
 
     # noinspection DuplicatedCode
     assert test_all_close(spiral, aligned_spirals1)
@@ -72,7 +71,7 @@ def weights_alignment_checker(model):
         return dist_sum
 
     d1 = get_mean_dists(weights)
-    d2 = get_mean_dists(align(weights, model=model))
+    d2 = get_mean_dists(hyp.align(weights, model=model))
     assert d1 > d2
 
 
@@ -101,8 +100,8 @@ def test_deterministic_shared_response_model():
 
 
 def test_null_align():
-    spiral2 = align(spiral, model='NullAlign')
-    weights2 = align(weights, model='NullAlign')
+    spiral2 = hyp.align(spiral, model='NullAlign')
+    weights2 = hyp.align(weights, model='NullAlign')
 
     assert all([np.allclose(x, y) for x, y in zip(spiral, spiral2)])
     assert all([np.allclose(x, y) for x, y in zip(weights, weights2)])
@@ -112,10 +111,10 @@ def test_pad():
     a = pd.DataFrame(np.random.randn(10, 3))
     b = pd.DataFrame(np.random.randn(100, 5))
 
-    a_padded = pad(a, 20)
+    a_padded = hyp.pad(a, 20)
     assert a_padded.shape == (10, 20)
 
-    auto_padded = pad([a, b])
+    auto_padded = hyp.pad([a, b])
     assert auto_padded[0].shape[1] == auto_padded[1].shape[1]
     assert auto_padded[0].shape[1] == 5
     assert auto_padded[0].shape[0] == 10
@@ -130,7 +129,7 @@ def test_trim_and_pad():
     a = pd.DataFrame(np.random.randn(15, 20))
     b = pd.DataFrame(np.random.randn(5, 30), index=np.arange(5, 10))
 
-    padded = trim_and_pad([a, b])
+    padded = hyp.trim_and_pad([a, b])
 
     assert padded[0].shape == padded[1].shape
     assert np.allclose(padded[0].index.values, padded[0].index.values)

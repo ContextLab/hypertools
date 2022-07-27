@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from hypertools import cluster
+import hypertools as hyp
 
 cluster1 = np.random.multivariate_normal(np.zeros(5), np.eye(5), size=100)
 cluster2 = np.random.multivariate_normal(np.zeros(5)+100, np.eye(5), size=300)
@@ -26,10 +26,10 @@ def test_discrete_clusters():
               'KMeans', 'MiniBatchKMeans', 'MeanShift', 'SpectralClustering']
 
     for m in models:
-        labels = cluster(clusters, model=m)
+        labels = hyp.cluster(clusters, model=m)
         homogeneity_test(labels, true_labels)
 
-        labels2 = cluster([cluster1, cluster2], model=m)
+        labels2 = hyp.cluster([cluster1, cluster2], model=m)
         homogeneity_test(labels2[0], true_labels.iloc[:cluster1.shape[0]])
         homogeneity_test(labels2[1], true_labels.iloc[cluster1.shape[0]:])
 
@@ -41,7 +41,7 @@ def test_cluster_mixture():
 
     for m in models:
         next_model = {'model': m, 'args': [], 'kwargs': {'n_components': n_components}}
-        mixture_proportions = cluster(clusters, model=next_model, mode=mode)
+        mixture_proportions = hyp.cluster(clusters, model=next_model, mode=mode)
 
         assert mixture_proportions.shape == (clusters.shape[0], 3)
         assert np.all(np.sum(np.abs(mixture_proportions), axis=0) > 0)
