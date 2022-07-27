@@ -89,6 +89,30 @@ def test_static_plot3d(fig_dir):
     # test various manipulations (align, cluster, manip, reduce)
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 3}}
 
+    ##################
+    # debug alignment...
+    #manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 1000}}, 'Smooth']
+    #plot_test('fig23', fig_dir, data, manip=manip, align='HyperAlign')
+
+    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 1000}}, 'Smooth']
+    plot_test('fig23', fig_dir, data, manip=manip, align='HyperAlign')
+
+    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 500}}, 'Smooth']
+    plot_test('fig23', fig_dir, data, manip=manip, align='HyperAlign')
+
+    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 300}}, 'Smooth']
+    plot_test('fig23', fig_dir, data, manip=manip, align='HyperAlign')
+
+    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 2500}}, 'Smooth']
+    plot_test('fig23', fig_dir, data, manip=manip, align='HyperAlign')
+
+
+
+
+
+
+    ##################
+
     # lines
     plot_test('fig12', fig_dir, data, reduce=pca)
     plot_test('fig13', fig_dir, data, '-', reduce=pca)
