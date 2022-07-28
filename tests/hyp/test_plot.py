@@ -73,8 +73,8 @@ def test_static_plot2d(fig_dir):
 
     # zscore, align, cluster
     kmeans = {'model': 'KMeans', 'args': [], 'kwargs': {'n_clusters': 5}}
-    plot_test('fig9', fig_dir, data, '*-', reduce=pca, cluster=kmeans, align='HyperAlign', manip='ZScore')
-    plot_test('fig10', fig_dir, data, 'D--', reduce=pca, align='SharedResponseModel', manip=['ZScore', 'Resample', 'Smooth'])
+    plot_test('fig9', fig_dir, data, '*-', reduce=pca, cluster=kmeans, align='HyperAlign', pre='ZScore')
+    plot_test('fig10', fig_dir, data, 'D--', reduce=pca, align='SharedResponseModel', pre=['ZScore', 'Resample', 'Smooth'])
 
     # pipeline
     pca_10d = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 10}}
@@ -88,30 +88,6 @@ def test_static_plot3d(fig_dir):
     # test different strategies for managing color
     # test various manipulations (align, cluster, manip, reduce)
     pca = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 3}}
-
-    ##################
-    # debug alignment...
-    #manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 1000}}, 'Smooth']
-    #plot_test('fig23', fig_dir, data, manip=manip, align='HyperAlign')
-
-    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 1000}}, 'Smooth']
-    plot_test('fig23', fig_dir, data, manip=manip, align='HyperAlign')
-
-    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 500}}, 'Smooth']
-    plot_test('fig23', fig_dir, data, manip=manip, align='HyperAlign')
-
-    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 300}}, 'Smooth']
-    plot_test('fig23', fig_dir, data, manip=manip, align='HyperAlign')
-
-    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 2500}}, 'Smooth']
-    plot_test('fig23', fig_dir, data, manip=manip, align='HyperAlign')
-
-
-
-
-
-
-    ##################
 
     # lines
     plot_test('fig12', fig_dir, data, reduce=pca)
@@ -129,8 +105,8 @@ def test_static_plot3d(fig_dir):
 
     # zscore, align, cluster
     kmeans = {'model': 'KMeans', 'args': [], 'kwargs': {'n_clusters': 5}}
-    plot_test('fig20', fig_dir, data, 'x-', reduce=pca, cluster=kmeans, align='HyperAlign', manip='ZScore')
-    plot_test('fig21', fig_dir, data, 'd--', reduce=pca, align='SharedResponseModel', manip=['ZScore', 'Resample', 'Smooth'])
+    plot_test('fig20', fig_dir, data, 'x-', reduce=pca, cluster=kmeans, align='HyperAlign', pre='ZScore')
+    plot_test('fig21', fig_dir, data, 'd--', reduce=pca, align='SharedResponseModel', pre=['ZScore'], post=['Resample', 'Smooth'])
 
     # pipeline
     pca_10d = {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 10}}
@@ -138,11 +114,12 @@ def test_static_plot3d(fig_dir):
     plot_test('fig22', fig_dir, data, 'diamond-open:', reduce=pca, pipeline=[pca_10d, pca_5d])
 
     # manipulate and align
-    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 1000}}, 'Smooth']
-    plot_test('fig23', fig_dir, data, manip=manip, align='HyperAlign')
+    pre = 'ZScore'
+    post = [{'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 1000}}, 'Smooth']
+    plot_test('fig23', fig_dir, data, pre=pre, align='HyperAlign', post=post)
 
     # pipeline, manipulate, align
-    plot_test('fig24', fig_dir, data, manip=manip, align='SharedResponseModel', pipeline=[pca_10d, pca_5d])
+    plot_test('fig24', fig_dir, data, pre=pre, align='SharedResponseModel', pipeline=[pca_10d, pca_5d], post=post)
 
     # colormap
     plot_test('fig25', fig_dir, data, cmap='flare')
@@ -164,12 +141,13 @@ def test_animated_plot2d(fig_dir):
         plot_test(f'fig{fig_num}', fig_dir, data, reduce=pca, animate=s)
         fig_num += 1
 
-    # zscore + resampling + smoothing + hyperalign, with each style
-    manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 500}}, 'Smooth']
+    # zscore + hyperalign + resampling + smoothing, with each style
+    pre = 'ZScore'
+    post = [{'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 500}}, 'Smooth']
     hyperalign = {'model': 'HyperAlign', 'args': [], 'kwargs': {'n_iter': 3}}
 
     for s in styles:
-        plot_test(f'fig{fig_num}', fig_dir, data, reduce=pca, animate=s, manip=manip, align=hyperalign)
+        plot_test(f'fig{fig_num}', fig_dir, data, reduce=pca, animate=s, pre=pre, post=post, align=hyperalign) # FIXME: this should have 500 frames...
         fig_num += 1
 
     # also test each combination of lines, markers, and lines + markers
@@ -181,7 +159,7 @@ def test_animated_plot2d(fig_dir):
 
     # verify that resampling and smoothing change animations correctly
     for s in styles:
-        plot_test(f'fig{fig_num}', fig_dir, data, s, reduce=pca, manip=manip, animate='chemtrails')
+        plot_test(f'fig{fig_num}', fig_dir, data, s, reduce=pca, pre=pre, post=post, animate='chemtrails')
         fig_num += 1
 
     # verify that single-line animations work

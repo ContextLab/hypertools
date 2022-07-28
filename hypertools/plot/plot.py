@@ -1,4 +1,5 @@
 # noinspection PyPackageRequirements
+from os import pread
 import datawrangler as dw
 import numpy as np
 import pandas as pd
@@ -324,10 +325,11 @@ def plot(original_data, *fmt, **kwargs):
 
     pipeline = kwargs.pop('pipeline', None)
 
-    manipulators = kwargs.pop('manip', None)
+    pre = kwargs.pop('pre', None)
     aligners = kwargs.pop('align', None)
     reducers = kwargs.pop('reduce', {'model': 'IncrementalPCA', 'args': [], 'kwargs': {'n_components': 3}})
     clusterers = kwargs.pop('cluster', None)
+    post = kwargs.pop('post', None)
 
     assert len(fmt) == 0 or len(fmt) == 1, ValueError(f'invalid format: {fmt}')
     if len(fmt) == 1:
@@ -336,14 +338,17 @@ def plot(original_data, *fmt, **kwargs):
     if pipeline is not None:
         data = apply_model(data, model=pipeline)
 
-    if manipulators is not None:
-        data = manip(data, model=manipulators)
+    if pre is not None:
+        data = manip(data, model=pre)
 
     if aligners is not None:
         data = align(data, model=aligners)
 
     if reducers is not None:
         data = reduce(data, model=reducers)
+    
+    if post is not None:
+        data = manip(data, model=post)
 
     cmap = kwargs.pop('cmap', eval(defaults['plot']['cmap']))
     color_kwargs = kwargs.pop('color_kwargs', kwargs)
