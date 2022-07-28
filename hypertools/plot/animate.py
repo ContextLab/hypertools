@@ -180,7 +180,7 @@ class Animator:
         if self.proj == '3d':
             bounds = get_bounds(self.data)
 
-            scale = np.max(cdist(self.center, bounds))
+            scale = 1 # np.max(cdist(self.center, bounds))
 
             center = dw.stack(self.data).mean(axis=0).values
             angle = np.deg2rad(get(self.angles, i))
