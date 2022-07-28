@@ -1,9 +1,17 @@
-import gif
+import numpy as np
 import plotly.graph_objects as go
+import moviepy.editor as mpy
+import io
+from PIL import Image
 
 
-@gif.frame
 def frame2fig(fig, i):
+    i = int(np.round(i))
+    if i >= len(fig.frames):
+        i = len(fig.frames) - 1
+    elif i < 0:
+        i = 0
+
     template = list(fig.data).copy()
     frame_data = list(fig.frames[i].data).copy()
 
@@ -20,12 +28,20 @@ def frame2fig(fig, i):
     return go.Figure(fig)
 
 
-def save_gif(fig, fname, framerate=30):
-    frames = []
-    for i in range(len(fig.frames)):
-        frames.append(frame2fig(fig, i))
+def fig2array(fig):
+    fig_bytes = fig.to_image(format='png')
+    buffer = io.BytesIO(fig_bytes)
+    img = Image.open(buffer)
+    return np.asarray(img)
 
-    gif.save(frames, fname, duration=1000 / framerate)
+
+def save_gif(fig, fname, framerate=30, duration=10):
+    def get_frame(t):
+        frame = (t / duration) * len(fig.frames)
+        return fig2array(frame2fig(fig, frame))
+
+    animation = mpy.VideoClip(get_frame, duration=len(fig.frames))
+    animation.write_gif(fname, fps=framerate)
 
 
 def hypersave(fig, fname, **kwargs):

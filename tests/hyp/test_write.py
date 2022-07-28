@@ -7,18 +7,17 @@ import pytest
 import hypertools as hyp
 
 
-data = hyp.load('weights')
-fig_dir = os.path.join(os.path.dirname(__file__), 'reference_figures')
+data = hyp.load('weights')[:10]
 
 umap2d = {'model': 'UMAP', 'args': [], 'kwargs': {'n_components': 2}}
 umap3d = {'model': 'UMAP', 'args': [], 'kwargs': {'n_components': 3}}
-manip = [{'model': 'Smooth', 'args': [], 'kwargs': {'kernel_width': 25}},
-         {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 1000}},
-         'ZScore']
+post =   [{'model': 'Smooth', 'args': [], 'kwargs': {'kernel_width': 25}},
+          {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 100}},
+          'ZScore']
 hyperalign = {'model': 'HyperAlign', 'args': [], 'kwargs': {'n_iter': 2}}
 
-duration = 30
-focused = 4
+duration = 10
+focused = 2
 zoom = 1.0
 
 
@@ -38,13 +37,13 @@ def write_test_helper(fig, fname):
     if not (fname[-3:].lower() == 'pdf'):
         tmp_file = fname.replace('write', 'tmp')
         hyp.write(fig, tmp_file)
-
+        
         compare_files(fname, tmp_file)
         os.remove(tmp_file)
 
 
-def test_write_static_2d():
-    fig = hyp.plot(data, reduce=umap2d, manip=manip, align=hyperalign)
+def test_write_static_2d(fig_dir):
+    fig = hyp.plot(data, reduce=umap2d, post=post, align=hyperalign)
 
     # pdf
     write_test_helper(fig, os.path.join(fig_dir, 'write2d_static.pdf'))
@@ -53,15 +52,15 @@ def test_write_static_2d():
     write_test_helper(fig, os.path.join(fig_dir, 'write2d_static.png'))
 
 
-def test_write_animated_2d():
-    fig = hyp.plot(data, reduce=umap2d, manip=manip, align=hyperalign,
+def test_write_animated_2d(fig_dir):
+    fig = hyp.plot(data, reduce=umap2d, post=post, align=hyperalign,
                animate='window', duration=duration, zoom=zoom, focused=focused)
 
     write_test_helper(fig, os.path.join(fig_dir, 'write2d_animated.gif'))
 
 
-def test_write_static_3d():
-    fig = hyp.plot(data, manip=manip, reduce=umap3d, align=hyperalign)
+def test_write_static_3d(fig_dir):
+    fig = hyp.plot(data, post=post, reduce=umap3d, align=hyperalign)
 
     # pdf
     write_test_helper(fig, os.path.join(fig_dir, 'write3d_static.pdf'))
@@ -70,7 +69,7 @@ def test_write_static_3d():
     write_test_helper(fig, os.path.join(fig_dir, 'write3d_static.png'))
 
 
-def test_write_animated_3d():
+def test_write_animated_3d(fig_dir):
     fig = hyp.plot(data, pipeline=umap3d, align=hyperalign, reduce=umap3d,
                animate='window', duration=duration, zoom=zoom, focused=focused)
 

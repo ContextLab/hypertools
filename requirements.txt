@@ -11,4 +11,5 @@ scipy
 umap-learn
 matplotlib>=3.2.2
 plotly>=4.6.0
-gif
+moviepy
+kaleido
