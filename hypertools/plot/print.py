@@ -35,12 +35,12 @@ def fig2array(fig):
     return np.asarray(img)
 
 
-def save_gif(fig, fname, framerate=30, duration=10):
+def save_gif(fig, fname, framerate=10, duration=10):
     def get_frame(t):
-        frame = (t / duration) * len(fig.frames)
+        frame = int(np.round((t / duration) * len(fig.frames), decimals=0))
         return fig2array(frame2fig(fig, frame))
 
-    animation = mpy.VideoClip(get_frame, duration=len(fig.frames))
+    animation = mpy.VideoClip(get_frame, duration=duration)
     animation.write_gif(fname, fps=framerate)
 
 

@@ -70,7 +70,11 @@ def test_write_static_3d(fig_dir):
 
 
 def test_write_animated_3d(fig_dir):
-    fig = hyp.plot(data, pipeline=umap3d, align=hyperalign, reduce=umap3d,
-               animate='window', duration=duration, zoom=zoom, focused=focused)
+    # FIXME:
+    #   1.) in saved gif, camera angle does not rotate correctly
+    #   2.) when data are not 0-centered, the camera and zoom are miscalibrateds
+
+    fig = hyp.plot(data, align=hyperalign, reduce=umap3d, post=post,
+               animate='chemtrails', duration=duration, zoom=zoom, focused=focused)
 
     write_test_helper(fig, os.path.join(fig_dir, 'write3d_animated.gif'))
