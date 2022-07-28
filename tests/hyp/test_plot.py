@@ -177,14 +177,14 @@ def test_animated_plot3d(fig_dir):
     styles = ['window', 'chemtrails', 'precog', 'bullettime', 'grow', 'shrink', 'spin']
     fig_num = 48
     for s in styles:
-        plot_test(f'fig{fig_num}', fig_dir, data, animate=s)
+        plot_test(f'fig{fig_num}', fig_dir, data, animate=s)  # FIXME: the camera view is too zoomed out...
         fig_num += 1
 
     # zscore + resampling + smoothing + hyperalign, with each style
     manip = ['ZScore', {'model': 'Resample', 'args': [], 'kwargs': {'n_samples': 500}}, 'Smooth']
     hyperalign = {'model': 'HyperAlign', 'args': [], 'kwargs': {'n_iter': 3}}
 
-    for s in styles:
+    for s in styles: # FIXME: manip is now specified as pre and post processing
         plot_test(f'fig{fig_num}', fig_dir, data, animate=s, manip=manip, align=hyperalign)
         fig_num += 1
 
@@ -196,7 +196,7 @@ def test_animated_plot3d(fig_dir):
         fig_num += 1
 
     # verify that resampling and smoothing change animations correctly
-    for s in styles:
+    for s in styles:  # FIXME: manip is now specified as pre and post processing
         plot_test(f'fig{fig_num}', fig_dir, data, s, manip=manip, animate='bullettime')
         fig_num += 1
 

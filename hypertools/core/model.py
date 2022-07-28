@@ -8,7 +8,9 @@ import os
 import importlib
 import sklearn
 # import flair
-from sklearn.experimental import enable_hist_gradient_boosting, enable_iterative_imputer, enable_halving_search_cv
+
+if int(sklearn.__version__.split('.')[0]) < 1:
+    from sklearn.experimental import enable_hist_gradient_boosting, enable_iterative_imputer, enable_halving_search_cv
 
 from .configurator import get_default_options
 
