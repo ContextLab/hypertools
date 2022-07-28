@@ -147,7 +147,7 @@ def test_animated_plot2d(fig_dir):
     hyperalign = {'model': 'HyperAlign', 'args': [], 'kwargs': {'n_iter': 3}}
 
     for s in styles:
-        plot_test(f'fig{fig_num}', fig_dir, data, reduce=pca, animate=s, pre=pre, post=post, align=hyperalign) # FIXME: this should have 500 frames...
+        plot_test(f'fig{fig_num}', fig_dir, data, reduce=pca, animate=s, pre=pre, post=post, align=hyperalign)
         fig_num += 1
 
     # also test each combination of lines, markers, and lines + markers
@@ -163,7 +163,7 @@ def test_animated_plot2d(fig_dir):
         fig_num += 1
 
     # verify that single-line animations work
-    plot_test(f'fig{fig_num}', data[0], reduce=pca, animate='shrink', cmap='husl')
+    plot_test(f'fig{fig_num}', fig_dir, data[0], reduce=pca, animate='shrink', cmap='husl')
     fig_num += 1
 
     # test timing: total duration, window length, tail length (noting for 3d: also test number of rotations)

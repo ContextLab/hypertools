@@ -9,5 +9,6 @@ scikit-learn
 pandas
 scipy
 umap-learn
-matplotlib>=3.3.4
+matplotlib>=3.2.2
 plotly>=4.6.0
+gif
