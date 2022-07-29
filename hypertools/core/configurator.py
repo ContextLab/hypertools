@@ -24,15 +24,9 @@ def get_default_options(fname=None):
     """
     if fname is None:
         fname = os.path.join(os.path.dirname(__file__), 'config.ini')
-
-    config = ConfigParser()
-    config.read(fname)
-    config = dict(config)
-
-    for a, b in config.items():
-        config[a] = dict(b)
-        for c, d in config[a].items():
-            config[a][c] = d
+        
+    print(f'loading config from: {fname}')
+    config = dw.core.get_default_options(fname)
     
     return RobustDict(dw.core.update_dict(dw.core.get_default_options(), config),
                       __default_value__={})
