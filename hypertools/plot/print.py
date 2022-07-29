@@ -15,17 +15,30 @@ def frame2fig(fig, i):
     template = list(fig.data).copy()
     frame_data = list(fig.frames[i].data).copy()
 
-    for i in range(len(template)):
+    for t in range(len(template)):
         for coord in ['x', 'y', 'z']:
-            if hasattr(template[i], coord):
-                setattr(template[i], coord, getattr(frame_data[i], coord))
+            if hasattr(template[t], coord):
+                setattr(template[t], coord, getattr(frame_data[t], coord))
+    
+    # if self.proj == '3d':
+    #         lengths = np.abs(np.diff(get_bounds(self.data), axis=0)).ravel()
+    #         fig.update_layout(scene_aspectmode='manual',
+    #                           scene_aspectratio={'x': 1, 'y': lengths[1] / lengths[0], 'z': lengths[2] / lengths[0]},
+    #                           scene={'camera': init.layout.scene.camera})
 
-    fig = go.Figure(layout=fig.layout, data=template)
-    fig.update_layout(showlegend=False)
-    fig = fig.to_dict()
-    fig['layout'].pop('sliders')
-    fig['layout'].pop('updatemenus')
-    return go.Figure(fig)
+    x = go.Figure(layout=fig.layout, data=template)  # FIXME: if the figure is 3d, grab the camera properties here...
+    x.update_layout(showlegend=False)
+
+    try:
+        x.update_layout(scene_aspectmode=fig.layout.scene.aspectmode,
+                        scene_aspectratio=fig.layout.scene.aspectratio,
+                        scene={'camera': fig.frames[i].layout.scene.camera})
+    except:
+        pass
+    x = x.to_dict()
+    x['layout'].pop('sliders')
+    x['layout'].pop('updatemenus')
+    return go.Figure(x)
 
 
 def fig2array(fig):
@@ -35,7 +48,7 @@ def fig2array(fig):
     return np.asarray(img)
 
 
-def save_gif(fig, fname, framerate=10, duration=10):
+def save_gif(fig, fname, framerate=10, duration=20):
     def get_frame(t):
         frame = int(np.round((t / duration) * len(fig.frames), decimals=0))
         return fig2array(frame2fig(fig, frame))
