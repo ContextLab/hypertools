@@ -1,27 +1,8 @@
 # -*- coding: utf-8 -*-
 import os
-import subprocess
-import sys
 from setuptools import setup, find_packages
-from setuptools.command.install import install
-
 
 os.environ["MPLCONFIGDIR"] = "."
-
-NAME = 'hypertools'
-VERSION = '0.8.0'
-AUTHOR = 'Contextual Dynamics Lab'
-AUTHOR_EMAIL = 'contextualdynamics@gmail.com'
-URL = 'https://github.com/ContextLab/hypertools'
-DOWNLOAD_URL = URL
-LICENSE = 'MIT'
-REQUIRES_PYTHON = '>=3.6'
-PACKAGES = find_packages(include=['hypertools', 'hypertools.*'], exclude=('images', 'examples', 'tests'))
-with open('requirements.txt', 'r') as f:
-    REQUIREMENTS = f.read().splitlines()
-
-with open('requirements_dev.txt') as f:
-    REQUIREMENTS_DEV = f.read().splitlines()
 
 DESCRIPTION = 'A python package for visualizing and manipulating high-dimensional data'
 LONG_DESCRIPTION = """
@@ -40,35 +21,45 @@ Some key features of HyperTools are:
 - A set of powerful data manipulation tools including hyperalignment, k-means clustering, normalizing and more.
 - Support for lists of Numpy arrays, Pandas dataframes, String, Geos or mixed lists.
 """
-CLASSIFIERS = [
-    'Intended Audience :: Science/Research',
-    'Programming Language :: Python :: 3.6',
-    'Programming Language :: Python :: 3.7',
-    'Programming Language :: Python :: 3.8',
-    'Programming Language :: Python :: 3.9',
-    'Programming Language :: Python :: 3.10',
-    'Topic :: Scientific/Engineering :: Visualization',
-    'Topic :: Multimedia :: Graphics',
-    'Operating System :: POSIX',
-    'Operating System :: Unix',
-    'Operating System :: MacOS'
-]
+
+with open('requirements.txt') as requirements_file:
+    requirements = requirements_file.read()
+
+with open('requirements_dev.txt') as requirements_dev_file:
+    dev_requirements = requirements_dev_file.read()
+
+test_requirements = ['pytest>=3']
 
 setup(
-    name=NAME,
-    version=VERSION,
+    author="Contextual Dynamics Lab",
+    author_email='contextualdynamics@gmail.com',
+    python_requires='>=3.6',
+    classifiers=[
+        'Intended Audience :: Science/Research',
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Topic :: Scientific/Engineering :: Visualization',
+        'Topic :: Multimedia :: Graphics',
+        'Operating System :: POSIX',
+        'Operating System :: Unix',
+        'Operating System :: MacOS'],
     description=DESCRIPTION,
+    install_requires=requirements,
+    extras_require={'dev': dev_requirements},
+    license="MIT license",
     long_description=LONG_DESCRIPTION,
-    author=AUTHOR,
-    author_email=AUTHOR_EMAIL,
-    url=URL,
-    download_url=DOWNLOAD_URL,
-    license=LICENSE,
-    python_requires=REQUIRES_PYTHON,
-    extras_require={'dev': REQUIREMENTS_DEV}
-    packages=PACKAGES,
-    install_requires=REQUIREMENTS,
-    classifiers=CLASSIFIERS,
+    long_description_content_type='text/x-rst',
+    include_package_data=True,
+    keywords=['hypertools', 'python', 'visualization', 'graphics', 'plotly',
+    'matplotlib', 'wrangling', 'animation', 'plotting', 'natural language processing'],
+    name='hypertools',
+    packages=find_packages(include=['hypertools', 'hypertools.*']),
     test_suite='tests',
-    tests_require=REQUIREMENTS_DEV,
+    tests_require=dev_requirements,
+    url='https://github.com/ContextLab/hypertools',
+    version='0.8.0',
+    zip_safe=False,
 )

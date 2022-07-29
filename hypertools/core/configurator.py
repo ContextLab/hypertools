@@ -25,11 +25,6 @@ def get_default_options(fname=None):
     if fname is None:
         fname = os.path.join(os.path.dirname(__file__), 'config.ini')
         
-    print(f'loading config from: {fname}')
-    return RobustDict(dw.core.get_default_options(fname))
-
-    # # add in defaults from datawrangler
-    # updated = dw.core.update_dict(config, dw.core.get_default_options())
-    
-    # # overwrite datawrangler defaults with hypertools config
-    # return RobustDict(dw.core.update_dict(updated, config), __default_value__={})
+    return RobustDict(dw.core.update_dict(dw.core.get_default_options(),
+                      dw.core.get_default_options(fname)),
+                      __default_value__={})

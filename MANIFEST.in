@@ -4,9 +4,9 @@ include LICENSE
 include readme.md
 
 include hypertools/core/config.ini
-include tests/reference_figures/*.fig
+include tests/reference_figures *.fig *.png *.gif *.pdf
 
-recursive-include tests *
+recursive-include tests * tests/hyp/*
 recursive-exclude * __pycache__
 recursive-exclude * *.py[co]
 
