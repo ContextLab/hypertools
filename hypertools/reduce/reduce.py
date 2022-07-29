@@ -35,6 +35,9 @@ def reduce(data, model='IncrementalPCA', **kwargs):
     # noinspection PyTypeChecker
     n_components = get_n_components(model, **kwargs)
 
+    if type(n_components) is str:
+        n_components = int(eval(n_components))
+
     if (n_components is None) or (data.shape[1] > n_components):
         return apply_model(data, model, search=['sklearn.decomposition', 'sklearn.manifold', 'sklearn.mixture',
                                                 'umap', 'ppca'],
