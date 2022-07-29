@@ -182,7 +182,7 @@ class Animator:
 
             scale = 1 # np.max(cdist(self.center, bounds))
 
-            center = dw.stack(self.data).mean(axis=0).values
+            center = np.zeros_like(dw.stack(self.data).mean(axis=0).values)
             angle = np.deg2rad(get(self.angles, i))
             zoom = get(self.zooms, i)
             elevation = zoom * scale * np.sin(np.deg2rad(self.elevation)) + self.center[0, 2]
