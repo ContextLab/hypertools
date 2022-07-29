@@ -27,6 +27,9 @@ def get_default_options(fname=None):
         
     print(f'loading config from: {fname}')
     config = dw.core.get_default_options(fname)
+
+    # add in defaults from datawrangler
+    updated = dw.core.update_dict(config, dw.core.get_default_options())
     
-    return RobustDict(dw.core.update_dict(dw.core.get_default_options(), config),
-                      __default_value__={})
+    # overwrite datawrangler defaults with hypertools config
+    return RobustDict(dw.core.update_dict(updated, config), __default_value__={})
