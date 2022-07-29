@@ -31,7 +31,7 @@ def compare_files(a, b):
 
 def write_test_helper(fig, fname):
     # comment out next line after debugging
-    hyp.write(fig, fname)
+    # hyp.write(fig, fname)
 
     # FIXME: pdfs and gifs need to be manually checked for now...
     if not (fname[-3:].lower() in ['pdf', 'gif']):
