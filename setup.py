@@ -16,9 +16,12 @@ URL = 'https://github.com/ContextLab/hypertools'
 DOWNLOAD_URL = URL
 LICENSE = 'MIT'
 REQUIRES_PYTHON = '>=3.6'
-PACKAGES = find_packages(exclude=('images', 'examples', 'tests'))
+PACKAGES = find_packages(include=['hypertools', 'hypertools.*'], exclude=('images', 'examples', 'tests'))
 with open('requirements.txt', 'r') as f:
     REQUIREMENTS = f.read().splitlines()
+
+with open('requirements_dev.txt') as f:
+    REQUIREMENTS_DEV = f.read().splitlines()
 
 DESCRIPTION = 'A python package for visualizing and manipulating high-dimensional data'
 LONG_DESCRIPTION = """
@@ -62,7 +65,10 @@ setup(
     download_url=DOWNLOAD_URL,
     license=LICENSE,
     python_requires=REQUIRES_PYTHON,
+    extras_require={'dev': REQUIREMENTS_DEV}
     packages=PACKAGES,
     install_requires=REQUIREMENTS,
-    classifiers=CLASSIFIERS
+    classifiers=CLASSIFIERS,
+    test_suite='tests',
+    tests_require=REQUIREMENTS_DEV,
 )
