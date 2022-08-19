@@ -1,9 +1,8 @@
 import numpy as np
 import plotly.graph_objects as go
-import moviepy.editor as mpy
 import io
 from PIL import Image
-
+import sys
 
 def frame2fig(fig, i):
     i = int(np.round(i))
@@ -49,6 +48,12 @@ def fig2array(fig):
 
 
 def save_gif(fig, fname, framerate=10, duration=20):
+    if not any(m in sys.modules for m in ['moviepy', 'mpy']):
+        try:
+            exec('import moviepy.editor as mpy', globals())
+        except ImportError:
+            raise RuntimeError('To enable saving to GIFs, please install ffmpeg')
+
     def get_frame(t):
         frame = int(np.round((t / duration) * len(fig.frames), decimals=0))
         return fig2array(frame2fig(fig, frame))
