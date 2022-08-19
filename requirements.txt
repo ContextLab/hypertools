@@ -14,5 +14,6 @@ plotly>=4.6.0
 moviepy
 kaleido
 configparser
+imageio>=2.4.1
 ffmpeg-python
 imageio-ffmpeg
