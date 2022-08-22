@@ -300,6 +300,21 @@ def parse_style(fmt):
     else:
         line_opts = {}
 
+    """
+    TODO: 
+      - update parser to detect either a matplotlib or plotly style format string
+      - convert to a plotly style format string
+      - update mode according to format string
+      - also allow user to specify mode via format string
+      - FIXME: need to nail down API...I think there are some inconsistencies and broken parts
+      - 'k.' should map onto 'black' and 'small marker', etc. 
+
+    modes = []
+    
+    marker = marker or ('marker' in linestyle)
+    lines = linestyle
+    """
+
     if marker and linestyle:
         mode = 'lines+markers'
     elif marker:
@@ -307,6 +322,12 @@ def parse_style(fmt):
     else:
         mode = 'lines'
 
+    if 'text' in linestyle:
+        if len(mode) > 0:
+            mode += '+text'
+        else:
+            mode = 'text'
+        
     # noinspection PyUnboundLocalVariable
     return dw.core.update_dict(eval_dict(defaults['plot'].copy()), {'color': color, 'mode': mode, **marker_opts,
                                                                     **line_opts})
