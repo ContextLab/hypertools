@@ -227,6 +227,10 @@ def parse_style(fmt):
     small_markers = [',']
     dash_styles = {'--': 'dash', '-:': 'dashdot', ':': 'dot'}
 
+    colors = []
+    colors_dict = {'b': 'blue', 'g': 'green', 'r': 'red', 'c': 'cyan',
+                   'm': 'magenta', 'y': 'yellow', 'k': 'black', 'w': 'white'}
+
     # noinspection PyShadowingNames
     def substr_list(style, x):
         """
