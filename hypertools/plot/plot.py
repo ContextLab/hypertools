@@ -186,6 +186,74 @@ def get_colors(data):
         return helper(data)
 
 
+def parse_helper(x, codex):
+    for k in codex:
+        if k in x:
+            return codex[k], x.replace(k, '')
+    return '', x
+
+def parse_color(fmt):
+    colors_dict = {'b': 'blue', 'g': 'green', 'r': 'red', 'c': 'cyan',
+                   'm': 'magenta', 'y': 'yellow', 'k': 'black', 'w': 'white'}
+    
+    return parse_helper(fmt, colors_dict)
+
+def parse_marker(fmt):
+    marker_shapes_dict = {'.': 'circle', ',': 'circle', 'o': 'circle', 'v': 'triangle-down', '^': 'triangle-up',
+                          '<': 'triangle-left', '>': 'triangle-right', '1': 'star-triangle-down',
+                          '2': 'star-triangle-up', '3': 'star-triangle-left', '4': 'star-triangle-right',
+                          '8': 'octagon', 's': 'square', 'p': 'pentagon', 'P': 'cross', '*': 'star', 'h': 'hexagon',
+                          'H': 'hexagon2', '+': 'cross-thin', 'x': 'x', 'X': 'x-thin', 'd': 'diamond',
+                          'D': 'diamond-wide', '|': 'line-ns', '_': 'line-ew'}
+    
+    return parse_helper(fmt, marker_shapes_dict)
+
+def parse_linestyle(fmt):
+    dash_styles = {'--': 'dash', '-:': 'dashdot', ':': 'dot'}
+    dash, fmt = parse_helper(fmt, dash_styles)
+
+    if dash:
+        return dash, fmt
+    elif '-' in fmt:
+        return 'solid', fmt.replace('-', '')
+    else:
+        return '', fmt
+
+def parse_style(fmt, mode=None, color=None, markeropts=None, lineopts=None, textopts=None):
+    if mode is not None:
+        mode = mode.split('+')
+    else:
+        mode = []
+
+    # parse color
+    fmt, fmt_color = parse_color(fmt)
+    if fmt_color:
+        color = fmt_color
+
+    # parse marker
+    fmt, fmt_marker = parse_marker(fmt)
+    if markeropts is None:
+        markeropts = {}
+
+    if fmt_marker:
+        markeropts = dw.core.update_dict(markeropts, {'marker': fmt_marker})
+
+    if markeropts and 'markers' not in mode:
+        mode.append('markers')
+
+    if 'marker' in markeropts:
+        if 'markersize' not in markeropts:
+            if is_bigmarker(marker):
+                marker_opts['markersize'] = eval(defaults['plot']['bigmarkersize'])
+            elif is_smallmarker(marker):
+                marker_opts['markersize'] = eval(defaults['plot']['smallmarkersize'])
+            else:
+                marker_opts['markersize'] = eval(defaults['plot']['markersize'])
+
+    # parse line
+
+
+
 def parse_style(fmt):
     def combo_merge(a, b):
         combos = []
@@ -343,7 +411,7 @@ def plot(original_data, *fmt, **kwargs):
 
     # noinspection PyUnusedLocal
     @dw.decorate.interpolate
-    def wrangle(f, **opts):
+    def wrangle(f, **opts):  # FIXME: where do "opts" come from??
         return f
 
     data = wrangle(original_data, **wrangle_kwargs)
@@ -356,7 +424,7 @@ def plot(original_data, *fmt, **kwargs):
     clusterers = kwargs.pop('cluster', None)
     post = kwargs.pop('post', None)
 
-    assert len(fmt) == 0 or len(fmt) == 1, ValueError(f'invalid format: {fmt}')
+    assert len(fmt) == 0 or len(fmt) == 1 or len(fmt) == len(data), ValueError(f'invalid format: {fmt}')
     if len(fmt) == 1:
         kwargs = dw.core.update_dict(parse_style(fmt[0]), kwargs)
 
