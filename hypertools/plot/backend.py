@@ -623,7 +623,7 @@ def _reset_backend_notebook(backend):
        than by object, since the inner `_deferred_reset_cb` function is
        re-defined as a different object each time.
     """
-    def _deferred_reset_cb():
+    def _deferred_reset_cb(*args):
         _switch_backend_notebook(backend)
         IPYTHON_INSTANCE.events.unregister('pre_run_cell', _deferred_reset_cb)
 
