@@ -95,6 +95,7 @@ BACKEND_KEYS = {
     'MacOSX': 'osx',
     'nbAgg': ['notebook', 'nbagg'],
     'module://ipykernel.pylab.backend_inline': 'inline',
+    'module://matplotlib_inline.backend_inline': 'inline',
     'module://ipympl.backend_nbagg': ['ipympl', 'widget']
 }
 BACKEND_MAPPING = None
