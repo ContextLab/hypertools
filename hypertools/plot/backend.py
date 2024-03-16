@@ -71,13 +71,16 @@ order to support the various possible combinations of new and older
 
 
 import inspect
+import os
+import shlex
 import sys
 import traceback
 import warnings
 from contextlib import contextmanager, redirect_stdout
 from functools import wraps
 from io import StringIO
-from os import getenv
+from locale import getpreferredencoding
+from subprocess import CalledProcessError, check_output
 from typing import Iterable
 
 import matplotlib as mpl
@@ -270,6 +273,154 @@ class HypertoolsBackend(str):
         return self.as_ipython() if IS_NOTEBOOK else self.as_python()
 
 
+def _block_greedy_completer_execution():
+    """
+    Handles an annoying edge case in `init_backend()`:
+      - IPython uses "greedy" TAB-completion, meaning code is actually
+        executed in order to determine autocomplete suggestions
+          + there is a config setting to disable this, but it's enabled
+            by default
+      - if TAB-completion is used in an import statement, the module is
+        actually imported if it hasn't been previously [1], which means
+        that for `hypertools`, `init_backend()` will be run
+      - because the TAB-completion happens in a non-IPython subprocess,
+        the backend will be initialized for non-notebook use.
+
+    To correct this, the function:
+      - looks through the stack trace for a call made from IPython's
+        TAB-completion module (`IPython/core/completerlib.py`)
+          + this is probably the safest way to do the search, since A)
+            the module name is less likely to change than the function
+            name or line number, and B) searching for *any* IPython
+            module would break importing `hypertools` in an IPython shell
+          + this is also probably the fastest way to search, since A) it
+            short-circuits on the first call specific to this scenario,
+            and B) the call stack will usually be at most a few imports
+            deep in non-notebook environments
+          + at minimum, the last 3 calls will always be from `hypertools`
+            so they're skipped to save time
+      - if it finds one, removes both `hypertools.plot` and
+        `hypertools.plot.backend` (and also `numpy`) from `sys.modules`...
+          + the `import` statement (`importlib.__import__()`) checks
+            `sys.modules` for already-loaded modules before importing,
+            so removing these causes them to be reloaded when the
+            `import` command is actually run
+          + both `hypertools.plot` and `hypertools.plot.backend` need to
+            be removed to avoid using the cached call to `init_backend()`
+          + `numpy` is also unloaded, otherwise its C extensions get
+            confused when `hypertools` is re-imported and issue a whole
+            slew of warnings
+      - ...and raises a generic exception (handled in [1]), which skips
+        running the rest of `init_backend()` while still allowing the
+        TAB-completer to keep searching other `hypertools` modules
+          + Also, since both of the removed modules will already have
+            been seen by the completer at this point, they'll still be
+            shown as autocomplete options despite not being in
+            `sys.modules`.
+
+    [1] https://github.com/ipython/ipython/blob/2b4bc75ac735a2541125b3baf299504e5513994a/IPython/core/completerlib.py#L158
+    """
+    stack_trace = traceback.extract_stack()[-4::-1]
+    completer_module = 'IPython/core/completerlib.py'
+    try:
+        next(entry for entry in stack_trace if entry.filename.endswith(completer_module))
+    except StopIteration:
+        return
+    else:
+        for module in ('hypertools.plot', 'hypertools.plot.backend', 'numpy'):
+            try:
+                sys.modules.pop(module)
+            except KeyError:
+                pass
+
+        raise Exception
+
+
+def _get_jupyter_frontend():
+    """
+    Given that hypertools has been imported into a Jupyter notebook,
+    determine whether that notebook is being run through the "classic"
+    Jupyter notebook interface (i.e., notebook < 7.0) or the newer
+    JupyterLab interface (i.e., JupyterLab or notebook >= 7.0).
+
+    Returns
+    -------
+    {'classic', 'lab'}
+        The Jupyter frontend used by the importing notebook.
+
+    Notes
+    -----
+    Adapted from `davos.core.config._get_jupyter_interface()`
+    (https://github.com/ContextLab/davos/blob/0608a40/davos/core/config.py#L565)
+    """
+    # first try to inspect the command used to start the jupyter
+    # notebook/lab server from the parent process (i.e., `jupyter
+    # notebook ...` or `jupyter lab ...`)
+    cmd = f'ps -o command= -p {os.getppid()}'
+    try:
+        parent_proc_cmd = check_output(shlex.split(cmd),
+                                       encoding=getpreferredencoding())
+    except (FileNotFoundError, CalledProcessError):
+        # this could fail if the notebook is being run from something
+        # like an IDE that manages more complex processes or doesn't
+        # launch a typical jupyter server
+        server_type = None
+    else:
+        # when launched normally from the command line, the 2nd item in
+        # the list should be the notebook/lab executable, but safer to
+        # check more generally in case the user has something unusual
+        # like a custom script they called to launch the server
+        for item in parent_proc_cmd.split():
+            if item.endswith('lab'):
+                # if the server was launched with `jupyter lab`, we know
+                # we're using the JupyterLab frontend
+                return 'lab'
+            elif item.endswith('notebook'):
+                # if the server was launched with `jupyter notebook`, we
+                # need to check the version below to determine the
+                # frontend
+                server_type = 'notebook'
+                break
+        else:
+            # if we can't identify the server type (or `ps` command
+            # fails; see `except` block above), we'll need to use some
+            # additional logic below to determine the frontend
+            server_type = None
+
+    # Use the `jupyter --version` shell command to get versions for all
+    # Jupyter-related packages installed locally.
+    # Notes:
+    #   - Running the command via `IPython.utils.process.system()`
+    #     (instead of `subprocess.check_output()` or similar) ensures
+    #     it's executed in the notebook *server* environment rather than
+    #     the notebook *kernel* environment, if the two aren't the same.
+    #   - `IPython.utils.process.system()` prints output to stdout, so
+    #     temporarily capture it as a string to get the version info.
+    #   - `IPYTHON_INSTANCE.system()` does the same thing but doesn't
+    #     return a return code, which is easier to deal with than trying
+    #     to parse string output if the command fails.
+
+    # IPython is guaranteed to be installed at this point
+    import IPython
+
+    with redirect_stdout(StringIO()) as jupyter_version_stdout:
+        retcode = IPython.utils.process.system('jupyter --version')
+
+    if retcode != 0:
+        # command failed for some reason. Fall back to default
+        # assumption/old behavior (assume classic notebook)
+        return 'classic'
+
+    jupyter_version_stdout = jupyter_version_stdout.getvalue().strip()
+    jupyterlab_version_tup = None
+    notebook_version_tup = None
+    for line in jupyter_version_stdout.splitlines():
+        if line.startswith('jupyterlab'):
+            jupyterlab_version_tup = tuple(map(int, line.split(':')[1].split('.')))
+        elif line.startswith('notebook'):
+            notebook_version_tup = tuple(map(int, line.split(':')[1].split('.')))
+
+
 
 def _init_backend():
     """
@@ -318,7 +469,7 @@ def _init_backend():
 
         # TODO: document setting environment variable
         # check for configurable environment variable
-        env_backend = getenv("HYPERTOOLS_BACKEND")
+        env_backend = os.getenv("HYPERTOOLS_BACKEND")
         if env_backend is not None:
             # prefer user-specified backend, if set
             if env_backend.lower() in tuple(map(str.lower, backends)):
@@ -382,69 +533,6 @@ def _init_backend():
         mpl.use(curr_backend)
         BACKEND_MAPPING = BackendMapping(BACKEND_KEYS)
         HYPERTOOLS_BACKEND = HypertoolsBackend(working_backend).normalize()
-
-
-def _block_greedy_completer_execution():
-    """
-    Handles an annoying edge case in `init_backend()`:
-      - IPython uses "greedy" TAB-completion, meaning code is actually
-        executed in order to determine autocomplete suggestions
-          + there is a config setting to disable this, but it's enabled
-            by default
-      - if TAB-completion is used in an import statement, the module is
-        actually imported if it hasn't been previously [1], which means
-        that for `hypertools`, `init_backend()` will be run
-      - because the TAB-completion happens in a non-IPython subprocess,
-        the backend will be initialized for non-notebook use.
-
-    To correct this, the function:
-      - looks through the stack trace for a call made from IPython's
-        TAB-completion module (`IPython/core/completerlib.py`)
-          + this is probably the safest way to do the search, since A)
-            the module name is less likely to change than the function
-            name or line number, and B) searching for *any* IPython
-            module would break importing `hypertools` in an IPython shell
-          + this is also probably the fastest way to search, since A) it
-            short-circuits on the first call specific to this scenario,
-            and B) the call stack will usually be at most a few imports
-            deep in non-notebook environments
-          + at minimum, the last 3 calls will always be from `hypertools`
-            so they're skipped to save time
-      - if it finds one, removes both `hypertools.plot` and
-        `hypertools.plot.backend` (and also `numpy`) from `sys.modules`...
-          + the `import` statement (`importlib.__import__()`) checks
-            `sys.modules` for already-loaded modules before importing,
-            so removing these causes them to be reloaded when the
-            `import` command is actually run
-          + both `hypertools.plot` and `hypertools.plot.backend` need to
-            be removed to avoid using the cached call to `init_backend()`
-          + `numpy` is also unloaded, otherwise its C extensions get
-            confused when `hypertools` is re-imported and issue a whole
-            slew of warnings
-      - ...and raises a generic exception (handled in [1]), which skips
-        running the rest of `init_backend()` while still allowing the
-        TAB-completer to keep searching other `hypertools` modules
-          + Also, since both of the removed modules will already have
-            been seen by the completer at this point, they'll still be
-            shown as autocomplete options despite not being in
-            `sys.modules`.
-
-    [1] https://github.com/ipython/ipython/blob/2b4bc75ac735a2541125b3baf299504e5513994a/IPython/core/completerlib.py#L158
-    """
-    stack_trace = traceback.extract_stack()[-4::-1]
-    completer_module = 'IPython/core/completerlib.py'
-    try:
-        next(entry for entry in stack_trace if entry.filename.endswith(completer_module))
-    except StopIteration:
-        return
-    else:
-        for module in ('hypertools.plot', 'hypertools.plot.backend', 'numpy'):
-            try:
-                sys.modules.pop(module)
-            except KeyError:
-                pass
-
-        raise Exception
 
 
 def _switch_backend_regular(backend):
