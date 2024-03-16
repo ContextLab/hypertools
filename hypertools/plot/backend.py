@@ -615,7 +615,10 @@ def _switch_backend_notebook(backend):
     [1] https://github.com/ipython/ipython/blob/e394d65a6b499b5d91df7ca0306c1cb88c543f43/IPython/core/interactiveshell.py#L3495
     """
     # ipykernel is only guaranteed to be installed if running in notebook
-    from ipykernel.pylab.backend_inline import flush_figures
+    try:
+        from matplotlib_inline.backend_inline import flush_figures
+    except (ImportError, ModuleNotFoundError):
+       from ipykernel.pylab.backend_inline import flush_figures
 
     backend = backend.as_ipython()
     tmp_stdout = StringIO()
