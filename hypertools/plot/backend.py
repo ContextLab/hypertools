@@ -351,14 +351,16 @@ def _get_jupyter_frontend():
     Notes
     -----
     Adapted from `davos.core.config._get_jupyter_interface()`
-    (https://github.com/ContextLab/davos/blob/0608a40/davos/core/config.py#L565)
+    (https://github.com/ContextLab/davos/blob/0608a40/davos/core/config.py#L565).
+    Structured to prioritize short-circuiting as early as possible to
+    minimize runtime, since this function runs on import (in notebooks).
     """
-    # first try to inspect the command used to start the jupyter
+    # first try to inspect the shell command used to start the jupyter
     # notebook/lab server from the parent process (i.e., `jupyter
     # notebook ...` or `jupyter lab ...`)
-    cmd = f'ps -o command= -p {os.getppid()}'
+    shell_cmd = f'ps -o command= -p {os.getppid()}'
     try:
-        parent_proc_cmd = check_output(shlex.split(cmd),
+        parent_proc_cmd = check_output(shlex.split(shell_cmd),
                                        encoding=getpreferredencoding())
     except (FileNotFoundError, CalledProcessError):
         # this could fail if the notebook is being run from something
@@ -387,39 +389,69 @@ def _get_jupyter_frontend():
             # additional logic below to determine the frontend
             server_type = None
 
-    # Use the `jupyter --version` shell command to get versions for all
-    # Jupyter-related packages installed locally.
-    # Notes:
-    #   - Running the command via `IPython.utils.process.system()`
-    #     (instead of `subprocess.check_output()` or similar) ensures
-    #     it's executed in the notebook *server* environment rather than
-    #     the notebook *kernel* environment, if the two aren't the same.
-    #   - `IPython.utils.process.system()` prints output to stdout, so
-    #     temporarily capture it as a string to get the version info.
-    #   - `IPYTHON_INSTANCE.system()` does the same thing but doesn't
-    #     return a return code, which is easier to deal with than trying
-    #     to parse string output if the command fails.
+    # server was not launched with `jupyter lab`, so check installed
+    # jupyter notebook version to determine the frontend.
+    #
+    # Run shell commands via `IPython.utils.process.system()` instead of
+    # `subprocess.run()`, `os.system()`, etc. to ensure they're executed
+    # in the notebook *server* environment, which could be different
+    # from the notebook *kernel* environment.
+    #
+    # `IPython.utils.process.system()` prints output to stdout, so
+    # temporarily capture it in a text buffer to get the version info.
+    import IPython    # guaranteed to be installed at this point
 
-    # IPython is guaranteed to be installed at this point
-    import IPython
+    with redirect_stdout(StringIO()) as notebook_version_stdout:
+        retcode = IPython.utils.process.system('jupyter notebook --version')
+    if retcode == 0:
+        # base notebook app is installed in the server environment
+        notebook_version_stdout = notebook_version_stdout.getvalue().strip()
+        notebook_version_tup = tuple(map(int, notebook_version_stdout.split('.')))
+        if notebook_version_tup >= (7, 0):
+            # notebook >= 7.0 uses the JupyterLab frontend, so no matter
+            # how the notebook and/or jupyter server were launched, or
+            # whether or not JupyterLab itself is installed, we can
+            # assume that's the frontend being used
+            return 'lab'
+        elif server_type == 'notebook':
+            # notebook < 7.0 uses the classic notebook frontend, so if
+            # the server was launched by invoking `jupyter notebook`
+            # directly, we know that's what we're using
+            return 'classic'
+    else:
+        # base notebook app is not installed in the server environment.
+        notebook_version_tup = None
 
-    with redirect_stdout(StringIO()) as jupyter_version_stdout:
-        retcode = IPython.utils.process.system('jupyter --version')
-
-    if retcode != 0:
-        # command failed for some reason. Fall back to default
-        # assumption/old behavior (assume classic notebook)
+    # two remaining possibilities:
+    #   1. the base notebook app is not installed.
+    #   2. the base notebook app *is* installed, and the installed
+    #      version is an older one that uses the classic frontend, but
+    #      the notebook app wasn't directly called to launch the jupyter
+    #      server.
+    # Since we already know JupyterLab wasn't invoked directly either,
+    # this means the notebook is probably being run through some IDE (or
+    # maybe an odd Wasm notebook frontend) that either doesn't use a
+    # jupyter server, or internally uses a newer version of JupyterLab
+    # that doesn't depend on the base notebook app. In either case,
+    # the frontend being used is ambiguous, but our "best guess"
+    # depends on whether or not JupyterLab is installed.
+    with redirect_stdout(StringIO()) as lab_version_stdout:
+        retcode = IPython.utils.process.system('jupyter lab --version')
+    if retcode == 0:
+        # JupyterLab is installed in the server environment, possibly
+        # alongside an older version of the base notebook app. Notebook
+        # could be running in an IDE or atypical web app. Either way,
+        # JupyterLab frontend is more likely being used.
+        return 'lab'
+    elif notebook_version_tup is not None:
+        # JupyterLab is not installed, but an older version of the base
+        # notebook app is, so assume the classic notebook frontend
         return 'classic'
-
-    jupyter_version_stdout = jupyter_version_stdout.getvalue().strip()
-    jupyterlab_version_tup = None
-    notebook_version_tup = None
-    for line in jupyter_version_stdout.splitlines():
-        if line.startswith('jupyterlab'):
-            jupyterlab_version_tup = tuple(map(int, line.split(':')[1].split('.')))
-        elif line.startswith('notebook'):
-            notebook_version_tup = tuple(map(int, line.split(':')[1].split('.')))
-
+    # neither JupyterLab nor the base notebook app are installed. The
+    # notebook is most likely being run through some app that doesn't
+    # require a jupyter server. Fall back default assumption/old
+    # behavior of assuming (probably mocked) classic notebook frontend.
+    return 'classic'
 
 
 def _init_backend():
