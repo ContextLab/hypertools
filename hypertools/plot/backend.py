@@ -26,13 +26,24 @@ BACKEND_KEYS : dict
     into) is the first in the list.
 BACKEND_WARNING : str or None
     The warning to be issued upon trying to create an interactive or
-    animated plot, if any. This is set under two conditions:
+    animated plot, if any. This is set under three conditions:
       1. No compatible interactive backends are available
-      2. Hypertools was imported into a notebook and the notebook-native
-         interactive backend (nbAgg) is not available. This should never
+      2. Hypertools was imported into a notebook that uses the "classic"
+         notebook JS frontend, and the notebook-native interactive
+         plotting backend (nbAgg) is not available. This should never
          happen, but theoretically could if the
          `ipython`/`jupyter`/`jupyter-core`/`notebook` installation is
          faulty.
+      3. Hypertools was imported into a notebook that uses the
+         JupyterLab JS frontend, the notebook server was launched from a
+         different Python environment than is used by the IPython
+         kernel, and the "ipympl" (a.k.a. "widget") interactive plotting
+         backend is likely to not work properly because the `ipympl`
+         package is not installed in the server environment. `ipympl` is
+         a dependency of Hypertools, but when the notebook kernel and
+         server environments are different, (a compatible version of) it
+         must also be installed in the server environment to provide the
+         various JS components needed to display interactive plots.
 HYPERTOOLS_BACKEND : str
     The `matplotlib` backend used to create interactive and animated
     plots.
@@ -73,6 +84,7 @@ order to support the various possible combinations of new and older
 import inspect
 import os
 import shlex
+import shutil
 import sys
 import traceback
 import warnings
@@ -542,20 +554,91 @@ def _init_backend():
 
     else:
         IS_NOTEBOOK = True
-        # if running in a notebook, should almost always use nbAgg. May
-        # eventually let user override this with environment variable
-        # (e.g., to use ipympl, widget, or WXAgg in JupyterLab), but for
-        # now this can be changed manually with
-        # `hypertools.set_interactive_backend` or the `mpl_backend`
-        # kwarg to `hypertools.plot`
+        # if running in a notebook, the backend to use depends on the
+        # user's Jupyter version and frontend. In "classic" Jupyter
+        # notebooks (i.e., notebook < 7.0), use `nbAgg` since it's the
+        # most stable, best supported, available out-of-the-box, etc.
+        # However, that backend no longer works with the new JupyterLab
+        # JS frontend (which is also used by notebook >= 7.0), so in
+        # those cases, use the "ipympl"/"widget" plotting backend
+        # instead.
+        #
+        # The user can technically override this by setting the
+        # HYPERTOOLS_BACKEND environment variable, but for now this is
+        # undocumented and the two officially supported methods of
+        # changing the backend hypertools uses for interactive plots are
+        # to (1) manually set the desired backend after importing
+        # hypertools with `hypertools.set_interactive_backend`, or (2)
+        # pass the desired backend identifier to the `mpl_backend` kwarg
+        # of `hypertools.plot`
+        #
+        # Note: the "ipympl"/"widget" backend requires the `ipympl`
+        # library be installed in both the notebook kernel environment
+        # AND the notebook server environment, if the two aren't the
+        # same. The former is guaranteed by hypertools's dependencies,
+        # but the latter is not, so we must check for it manually.
+        notebook_frontend = _get_jupyter_frontend()
+        if notebook_frontend == 'lab':
+            notebook_backend = 'module://ipympl.backend_nbagg'
+        else:
+            notebook_backend = 'nbAgg'
+
         try:
-            mpl.use('nbAgg')
-            working_backend = 'nbAgg'
-        except ImportError:
-            BACKEND_WARNING = ("Failed to switch to interactive notebook "
-                               "backend ('nbAgg'). Falling back to inline "
-                               "static plots.")
+            mpl.use(notebook_backend)
+        except (ImportError, ModuleNotFoundError):
+            BACKEND_WARNING = (
+                "Failed to switch to interactive notebook backend "
+                f"('{notebook_backend}'). Falling back to inline static plots."
+            )
             working_backend = 'inline'
+        else:
+            working_backend = notebook_backend
+            if notebook_frontend == 'lab':
+                # if the notebook uses the JupyterLab JS frontend and
+                # the ipympl plotting backend was successfully found in
+                # the notebook kernel environment (`try` block above),
+                # determine whether the notebook server environment is
+                # the same or different
+                kernel_python = sys.executable
+                server_python = shutil.which('python')
+                if server_python != kernel_python:
+                    # if they're different, check whether `ipympl` is
+                    # installed in the server environment
+                    import IPython    # guaranteed to be installed at this point
+
+                    with open(os.devnull, 'w') as devnull, redirect_stdout(devnull):
+                        retcode = IPython.utils.process.system('pip show ipympl')
+                    if retcode != 0:
+                        # NOTE: this is not currently checked, but the
+                        #  `ipympl` versions installed in the server and
+                        #  kernel environments must also be compatible
+                        #  with each other. See
+                        #  https://matplotlib.org/ipympl/installing.html#compatibility-table
+                        # NOTE: this check is imperfect and will result
+                        #  in a false positive if the user has installed
+                        #  just the carved-off JS components from
+                        #  `ipympl` via the `jupyter-matplotlib`
+                        #  extension instead of installing the full
+                        #  package. We *could* account for this by
+                        #  additionally checking the output of
+                        #  `jupyter labextension check jupyter-matplotlib`,
+                        #  but then we'd get into differentiating
+                        #  the extension not being installed at all vs.
+                        #  being installed but not enabled, etc.
+                        #  Ultimately this is a pretty minor edge case
+                        #  and the cost of a false positive is pretty
+                        #  low (a harmless warning message IF the user
+                        #  creates an interactive plot), so IMO it's
+                        #  not worth the extra overhead of running more
+                        #  shell commands every time hypertools is
+                        #  imported.
+                        BACKEND_WARNING = (
+                            "The `ipympl` package is not installed in the "
+                            "Jupyter server's environment. Interactive and "
+                            "animated plots may not appear. To fix this, "
+                            "pip-install `ipympl` and restart the Jupyer "
+                            "server."
+                        )
 
         switch_backend = _switch_backend_notebook
         reset_backend = _reset_backend_notebook
