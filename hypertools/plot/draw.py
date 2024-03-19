@@ -310,10 +310,10 @@ def _draw(
                 closestIndex_prev = closestIndex
 
     def plot_cube(scale, **cube_kwargs):
-        color = cube_kwargs.get("color", "black")
-        linewidth = cube_kwargs.get("linewidth", 1)
-        rstride = cube_kwargs.get("rstride", 1)
-        cstride = cube_kwargs.get("cstride", 1)
+        cube_kwargs.setdefault("color", "black")
+        cube_kwargs.setdefault("linewidth", 1)
+        cube_kwargs.setdefault("rstride", 1)
+        cube_kwargs.setdefault("cstride", 1)
 
         cube = {
             "top": ([[-1, 1], [-1, 1]], [[-1, -1], [1, 1]], [[1, 1], [1, 1]]),
@@ -331,28 +331,20 @@ def _draw(
                 np.asarray(cube[side][1]) * scale,
                 np.asarray(cube[side][2]) * scale,
             )
-            plane_list.append(
-                ax.plot_wireframe(
-                    Xs,
-                    Ys,
-                    Zs,
-                    rstride=rstride,
-                    cstride=cstride,
-                    color=color,
-                    linewidth=linewidth,
-                )
-            )
+            plane_list.append(ax.plot_wireframe(Xs, Ys, Zs, **cube_kwargs))
         return plane_list
 
-    def plot_square(ax, scale=1):
+    def plot_square(ax, scale=1, **square_kwargs):
+        square_kwargs.setdefault("fill", False)
+        square_kwargs.setdefault("edgecolor", "black")
+        square_kwargs.setdefault("linewidth", 1)
+
         ax.add_patch(
             patches.Rectangle(
                 scale * [-1, -1],
                 scale * 2,
                 scale * 2,
-                fill=False,
-                edgecolor="black",
-                linewidth=1,
+                **square_kwargs
             )
         )
 
@@ -581,7 +573,7 @@ def _draw(
         elif x[0].shape[1] == 2:
 
             # plot square
-            plot_square(ax)
+            plot_square(ax, **frame_kwargs)
 
             # set axes
             ax.set_xlim(-1.1, 1.1)
