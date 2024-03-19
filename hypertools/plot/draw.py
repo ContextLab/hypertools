@@ -534,6 +534,9 @@ def _draw(
         # prevents the backend from rendering this plot
         plt.ioff()
 
+    if cube_kwargs is None:
+        cube_kwargs = {}
+
     if animate in [True, "parallel", "spin"]:
         assert (
             x[0].shape[1] == 3
