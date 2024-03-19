@@ -59,7 +59,7 @@ def plot(
     semantic="LatentDirichletAllocation",
     corpus="wiki",
     ax=None,
-    cube_kwargs=None,
+    frame_kwargs=None,
 ):
     """
     Plots dimensionality reduced data and parses plot arguments
@@ -259,14 +259,19 @@ def plot(
         a class instance, no parameters can be passed.
 
     corpus : list (or list of lists) of text samples or 'wiki', 'nips', 'sotus'.
-         Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
-         or 'sotus' and the default semantic and vectorizer models are used, a
-         pretrained model will be loaded which can save a lot of time.
+        Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
+        or 'sotus' and the default semantic and vectorizer models are used, a
+        pretrained model will be loaded which can save a lot of time.
 
     ax : matplotlib.Axes
         Axis handle to plot the figure
 
-    cube_kwargs : dict of key word arguments passed to plot_wireframe (e.g., {'color':'white', 'linewidth': 2})
+    frame_kwargs : dict
+        Keyword arguments for styling the frame drawn around the plot.
+        For 3D plots, the frame is a cube and `frame_kwargs` are
+        forwarded to `mpl_toolkits.mplot3d.axes3d.Axes3D.plot_wireframe`.
+        For 2D plots, the frame is a square and `frame_kwargs` are
+        forwarded to `matplotlib.patches.Rectangle`.
 
     Returns
     ----------
@@ -499,7 +504,7 @@ def plot(
         show=show,
         size=size,
         ax=ax,
-        cube_kwargs=cube_kwargs,
+        frame_kwargs=frame_kwargs,
     )
 
     # tighten layout

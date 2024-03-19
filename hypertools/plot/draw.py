@@ -32,7 +32,7 @@ def _draw(
     explore=False,
     size=None,
     ax=None,
-    cube_kwargs=None,
+    frame_kwargs=None,
 ):
     """
     Draws the plot
@@ -373,7 +373,7 @@ def _draw(
             for plane in update_lines_parallel.planes:
                 plane.remove()
 
-        update_lines_parallel.planes = plot_cube(cube_scale, **cube_kwargs)
+        update_lines_parallel.planes = plot_cube(cube_scale, **frame_kwargs)
         ax.view_init(elev=10, azim=rotations * (360 * (num / data_lines[0].shape[0])))
         ax.dist = 9 - zoom
 
@@ -406,7 +406,7 @@ def _draw(
             for plane in update_lines_spin.planes:
                 plane.remove()
 
-        update_lines_spin.planes = plot_cube(cube_scale, **cube_kwargs)
+        update_lines_spin.planes = plot_cube(cube_scale, **frame_kwargs)
         ax.view_init(
             elev=elev, azim=rotations * (360 * (num / (frame_rate * duration)))
         )
@@ -534,8 +534,8 @@ def _draw(
         # prevents the backend from rendering this plot
         plt.ioff()
 
-    if cube_kwargs is None:
-        cube_kwargs = {}
+    if frame_kwargs is None:
+        frame_kwargs = {}
 
     if animate in [True, "parallel", "spin"]:
         assert (
@@ -568,7 +568,7 @@ def _draw(
             cube_scale = 1
 
             # plot cube
-            plot_cube(cube_scale, **cube_kwargs)
+            plot_cube(cube_scale, **frame_kwargs)
 
             # set the axes properties
             ax.set_xlim3d([-cube_scale, cube_scale])
