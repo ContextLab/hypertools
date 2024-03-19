@@ -14,17 +14,53 @@ from ..datageometry import DataGeometry
 
 
 @manage_backend
-def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
-         color=None, colors=None, palette='hls', group=None, hue=None,
-         labels=None, legend=None, title=None, size=None, elev=10, azim=-60,
-         ndims=3, model=None, model_params=None, reduce='IncrementalPCA',
-         cluster=None, align=None, normalize=None, n_clusters=None,
-         save_path=None, animate=False, duration=30, tail_duration=2,
-         rotations=2, zoom=1, chemtrails=False, precog=False, bullettime=False,
-         frame_rate=50, interactive=False, explore=False,
-         mpl_backend='auto', show=True, transform=None,
-         vectorizer='CountVectorizer', semantic='LatentDirichletAllocation',
-         corpus='wiki', ax=None):
+def plot(
+    x,
+    fmt="-",
+    marker=None,
+    markers=None,
+    linestyle=None,
+    linestyles=None,
+    color=None,
+    colors=None,
+    palette="hls",
+    group=None,
+    hue=None,
+    labels=None,
+    legend=None,
+    title=None,
+    size=None,
+    elev=10,
+    azim=-60,
+    ndims=3,
+    model=None,
+    model_params=None,
+    reduce="IncrementalPCA",
+    cluster=None,
+    align=None,
+    normalize=None,
+    n_clusters=None,
+    save_path=None,
+    animate=False,
+    duration=30,
+    tail_duration=2,
+    rotations=2,
+    zoom=1,
+    chemtrails=False,
+    precog=False,
+    bullettime=False,
+    frame_rate=50,
+    interactive=False,
+    explore=False,
+    mpl_backend="auto",
+    show=True,
+    transform=None,
+    vectorizer="CountVectorizer",
+    semantic="LatentDirichletAllocation",
+    corpus="wiki",
+    ax=None,
+    frame_kwargs=None,
+):
     """
     Plots dimensionality reduced data and parses plot arguments
 
@@ -223,12 +259,19 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
         a class instance, no parameters can be passed.
 
     corpus : list (or list of lists) of text samples or 'wiki', 'nips', 'sotus'.
-         Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
-         or 'sotus' and the default semantic and vectorizer models are used, a
-         pretrained model will be loaded which can save a lot of time.
+        Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
+        or 'sotus' and the default semantic and vectorizer models are used, a
+        pretrained model will be loaded which can save a lot of time.
 
     ax : matplotlib.Axes
         Axis handle to plot the figure
+
+    frame_kwargs : dict
+        Keyword arguments for styling the frame drawn around the plot.
+        For 3D plots, the frame is a cube and `frame_kwargs` are
+        forwarded to `mpl_toolkits.mplot3d.axes3d.Axes3D.plot_wireframe`.
+        For 2D plots, the frame is a square and `frame_kwargs` are
+        forwarded to `matplotlib.patches.Rectangle`.
 
     Returns
     ----------
@@ -239,34 +282,42 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
 
     # warnings for deprecated API args
     if (model is not None) or (model_params is not None):
-        warnings.warn('Model and model_params arguments will be deprecated. Please use \
-                      reduce keyword argument. See docs for details: http://hypertools.readthedocs.io/en/latest/hypertools.plot.html#hypertools.plot')
+        warnings.warn(
+            "Model and model_params arguments will be deprecated. Please use \
+                      reduce keyword argument. See docs for details: http://hypertools.readthedocs.io/en/latest/hypertools.plot.html#hypertools.plot"
+        )
         reduce = {}
-        reduce['model'] = model
-        reduce['params'] = model_params
+        reduce["model"] = model
+        reduce["params"] = model_params
 
     if group is not None:
-        warnings.warn('Group will be deprecated. Please use '
-                      'hue keyword argument. See docs for details: ' 'http://hypertools.readthedocs.io/en/latest/hypertools.plot.html#hypertools.plot')
+        warnings.warn(
+            "Group will be deprecated. Please use "
+            "hue keyword argument. See docs for details: "
+            "http://hypertools.readthedocs.io/en/latest/hypertools.plot.html#hypertools.plot"
+        )
         hue = group
 
     if ax is not None:
-        if ndims>2:
-            if ax.name!='3d':
-                raise ValueError('If passing ax and the plot is 3D, ax must '
-                                 'also be 3d')
+        if ndims > 2:
+            if ax.name != "3d":
+                raise ValueError(
+                    "If passing ax and the plot is 3D, ax must " "also be 3d"
+                )
 
-    text_args = {
-        'vectorizer' : vectorizer,
-        'semantic' : semantic,
-        'corpus' : corpus
-    }
+    text_args = {"vectorizer": vectorizer, "semantic": semantic, "corpus": corpus}
 
     # analyze the data
     if transform is None:
         raw = format_data(x, **text_args)
-        xform = analyze(raw, ndims=ndims, normalize=normalize, reduce=reduce,
-                    align=align, internal=True)
+        xform = analyze(
+            raw,
+            ndims=ndims,
+            normalize=normalize,
+            reduce=reduce,
+            align=align,
+            internal=True,
+        )
     else:
         xform = transform
 
@@ -278,30 +329,36 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
 
     # handle color (to be passed onto matplotlib)
     if color is not None:
-        mpl_kwargs['color'] = color
+        mpl_kwargs["color"] = color
         if colors is not None:
-            mpl_kwargs['color'] = colors
-            warnings.warn('Both color and colors defined: color will be ignored \
-                          in favor of colors.')
+            mpl_kwargs["color"] = colors
+            warnings.warn(
+                "Both color and colors defined: color will be ignored \
+                          in favor of colors."
+            )
 
     # handle linestyle (to be passed onto matplotlib)
     if linestyle is not None:
-        mpl_kwargs['linestyle'] = linestyle
+        mpl_kwargs["linestyle"] = linestyle
         if linestyles is not None:
-            mpl_kwargs['linestyle'] = linestyles
-            warnings.warn('Both linestyle and linestyles defined: linestyle  \
-                          will be ignored in favor of linestyles.')
+            mpl_kwargs["linestyle"] = linestyles
+            warnings.warn(
+                "Both linestyle and linestyles defined: linestyle  \
+                          will be ignored in favor of linestyles."
+            )
 
     # handle marker (to be passed onto matplotlib)
     if marker is not None:
-        mpl_kwargs['marker'] = marker
+        mpl_kwargs["marker"] = marker
         if markers is not None:
-            mpl_kwargs['marker'] = markers
-            warnings.warn('Both marker and markers defined: marker will be \
-                          ignored in favor of markers.')
+            mpl_kwargs["marker"] = markers
+            warnings.warn(
+                "Both marker and markers defined: marker will be \
+                          ignored in favor of markers."
+            )
 
     # reduce data to 3 dims for plotting, if ndims is None, return this
-    if (ndims and ndims < 3):
+    if ndims and ndims < 3:
         xform = reducer(xform, ndims=ndims, reduce=reduce, internal=True)
     else:
         xform = reducer(xform, ndims=3, reduce=reduce, internal=True)
@@ -309,35 +366,37 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
     # find cluster and reshape if n_clusters
     if cluster is not None:
         if hue is not None:
-            warnings.warn('cluster overrides hue, ignoring hue.')
+            warnings.warn("cluster overrides hue, ignoring hue.")
         if isinstance(cluster, (str, bytes)):
             model = cluster
             params = default_params(model)
         elif isinstance(cluster, dict):
-            model = cluster['model']
-            params = default_params(model, cluster['params'])
+            model = cluster["model"]
+            params = default_params(model, cluster["params"])
         else:
-            raise ValueError('Invalid cluster model specified; should be'
-                             ' string or dictionary!')
+            raise ValueError(
+                "Invalid cluster model specified; should be" " string or dictionary!"
+            )
 
         if n_clusters is not None:
-            if cluster in ('HDBSCAN',):
-                warnings.warn('n_clusters is not a valid parameter for '
-                              'HDBSCAN clustering and will be ignored.')
+            if cluster in ("HDBSCAN",):
+                warnings.warn(
+                    "n_clusters is not a valid parameter for "
+                    "HDBSCAN clustering and will be ignored."
+                )
             else:
-                params['n_clusters'] = n_clusters
+                params["n_clusters"] = n_clusters
 
-        cluster_labels = clusterer(xform, cluster={'model': model,
-                                               'params': params})
+        cluster_labels = clusterer(xform, cluster={"model": model, "params": params})
         xform, labels = reshape_data(xform, cluster_labels, labels)
         hue = cluster_labels
 
     elif n_clusters is not None:
         # If cluster was None default to KMeans
-        cluster_labels = clusterer(xform, cluster='KMeans', n_clusters=n_clusters)
+        cluster_labels = clusterer(xform, cluster="KMeans", n_clusters=n_clusters)
         xform, labels = reshape_data(xform, cluster_labels, labels)
         if hue is not None:
-            warnings.warn('n_clusters overrides hue, ignoring hue.')
+            warnings.warn("n_clusters overrides hue, ignoring hue.")
 
     # group data if there is a grouping var
     elif hue is not None:
@@ -370,23 +429,29 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
         elif legend is True and hue is None:
             legend = [i + 1 for i in range(len(xform))]
 
-        mpl_kwargs['label'] = legend
+        mpl_kwargs["label"] = legend
 
     # interpolate if its a line plot
     if fmt is None or isinstance(fmt, str):
         if is_line(fmt):
             if xform[0].shape[0] > 1:
-                xform = interp_array_list(xform, interp_val=frame_rate*duration/(xform[0].shape[0] - 1))
+                xform = interp_array_list(
+                    xform, interp_val=frame_rate * duration / (xform[0].shape[0] - 1)
+                )
     elif type(fmt) is list:
         for idx, xi in enumerate(xform):
             if is_line(fmt[idx]):
                 if xi.shape[0] > 1:
-                    xform[idx] = interp_array_list(xi, interp_val=frame_rate*duration/(xi.shape[0] - 1))
+                    xform[idx] = interp_array_list(
+                        xi, interp_val=frame_rate * duration / (xi.shape[0] - 1)
+                    )
 
     # handle explore flag
     if explore:
-        assert xform[0].shape[1] == 3, "Explore mode is currently only supported for 3D plots."
-        mpl_kwargs['picker'] = True
+        assert (
+            xform[0].shape[1] == 3
+        ), "Explore mode is currently only supported for 3D plots."
+        mpl_kwargs["picker"] = True
 
     # center
     xform = center(xform)
@@ -398,7 +463,7 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
     if isinstance(palette, np.bytes_):
         palette = palette.decode("utf-8")
     sns.set_palette(palette=palette, n_colors=len(xform))
-    sns.set_style(style='whitegrid')
+    sns.set_style(style="whitegrid")
 
     # turn kwargs into a list
     kwargs_list = parse_kwargs(xform, mpl_kwargs)
@@ -410,33 +475,37 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
         else:
             draw_fmt = fmt
     else:
-        draw_fmt = ['-']*len(x)
+        draw_fmt = ["-"] * len(x)
 
     # convert all nans to zeros
     for i, xi in enumerate(xform):
         xform[i] = np.nan_to_num(xi)
 
     # draw the plot
-    fig, ax, data, line_ani = _draw(xform, fmt=draw_fmt,
-                            kwargs_list=kwargs_list,
-                            labels=labels,
-                            legend=legend,
-                            title=title,
-                            animate=animate,
-                            duration=duration,
-                            tail_duration=tail_duration,
-                            rotations=rotations,
-                            zoom=zoom,
-                            chemtrails=chemtrails,
-                            precog=precog,
-                            bullettime=bullettime,
-                            frame_rate=frame_rate,
-                            elev=elev,
-                            azim=azim,
-                            explore=explore,
-                            show=show,
-                            size=size,
-                            ax=ax)
+    fig, ax, data, line_ani = _draw(
+        xform,
+        fmt=draw_fmt,
+        kwargs_list=kwargs_list,
+        labels=labels,
+        legend=legend,
+        title=title,
+        animate=animate,
+        duration=duration,
+        tail_duration=tail_duration,
+        rotations=rotations,
+        zoom=zoom,
+        chemtrails=chemtrails,
+        precog=precog,
+        bullettime=bullettime,
+        frame_rate=frame_rate,
+        elev=elev,
+        azim=azim,
+        explore=explore,
+        show=show,
+        size=size,
+        ax=ax,
+        frame_kwargs=frame_kwargs,
+    )
 
     # tighten layout
     plt.tight_layout()
@@ -444,7 +513,7 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
     # save
     if save_path is not None:
         if animate:
-            Writer = animation.writers['ffmpeg']
+            Writer = animation.writers["ffmpeg"]
             writer = Writer(fps=frame_rate, bitrate=1800)
             line_ani.save(save_path, writer=writer)
 
@@ -456,64 +525,74 @@ def plot(x, fmt='-', marker=None, markers=None, linestyle=None, linestyles=None,
         reduce_dict = reduce
     else:
         reduce_dict = {
-            'model' : reduce,
-            'params' : {
-                'n_components' : ndims
-            },
+            "model": reduce,
+            "params": {"n_components": ndims},
         }
 
     # gather align params
     if isinstance(align, dict):
         align_dict = align
     else:
-        align_dict = {
-            'model' : align,
-            'params' : {}
-        }
+        align_dict = {"model": align, "params": {}}
 
     # gather all other kwargs
     kwargs = {
-        'fmt' : fmt,
-        'marker': marker,
-        'markers' : markers,
-        'linestyle' : linestyle,
-        'linestyles' : linestyles,
-        'color' : color,
-        'colors' : colors,
-        'palette' : palette,
-        'hue' : hue,
-        'ndims' : ndims,
-        'labels' : labels,
-        'legend' : legend,
-        'title' : title,
-        'animate' : animate,
-        'duration' : duration,
-        'tail_duration' : tail_duration,
-        'rotations' : rotations,
-        'zoom' : zoom,
-        'chemtrails' : chemtrails,
-        'precog' : precog,
-        'bullettime' : bullettime,
-        'frame_rate' : frame_rate,
-        'elev' : elev,
-        'azim' : azim,
-        'explore' : explore,
-        'n_clusters' : n_clusters,
-        'size' : size
+        "fmt": fmt,
+        "marker": marker,
+        "markers": markers,
+        "linestyle": linestyle,
+        "linestyles": linestyles,
+        "color": color,
+        "colors": colors,
+        "palette": palette,
+        "hue": hue,
+        "ndims": ndims,
+        "labels": labels,
+        "legend": legend,
+        "title": title,
+        "animate": animate,
+        "duration": duration,
+        "tail_duration": tail_duration,
+        "rotations": rotations,
+        "zoom": zoom,
+        "chemtrails": chemtrails,
+        "precog": precog,
+        "bullettime": bullettime,
+        "frame_rate": frame_rate,
+        "elev": elev,
+        "azim": azim,
+        "explore": explore,
+        "n_clusters": n_clusters,
+        "size": size,
+        "interactive": interactive,
+        "mpl_backend": mpl_backend,
+        "frame_kwargs": frame_kwargs
     }
     # turn lists into np arrays so that they don't turn into pickles when saved
     for kwarg in kwargs:
         if isinstance(kwargs[kwarg], list):
             try:
-                kwargs[kwarg]=np.array(kwargs[kwarg])
+                kwargs[kwarg] = np.array(kwargs[kwarg])
             except:
-                warnings.warn('Could not convert all list arguments to numpy '
-                              'arrays.  If list is longer than 256 items, it '
-                              'will automatically be pickled, which could '
-                              'cause Python 2/3 compatibility issues for the '
-                              'DataGeometry object.')
+                warnings.warn(
+                    "Could not convert all list arguments to numpy "
+                    "arrays.  If list is longer than 256 items, it "
+                    "will automatically be pickled, which could "
+                    "cause Python 2/3 compatibility issues for the "
+                    "DataGeometry object."
+                )
 
-    return DataGeometry(fig=fig, ax=ax, data=x, xform_data=xform_data,
-                        line_ani=line_ani, reduce=reduce_dict, align=align_dict,
-                        normalize=normalize, semantic=semantic,
-                        vectorizer=vectorizer, corpus=corpus, kwargs=kwargs)
+    return DataGeometry(
+        fig=fig,
+        ax=ax,
+        data=x,
+        xform_data=xform_data,
+        line_ani=line_ani,
+        reduce=reduce_dict,
+        align=align_dict,
+        normalize=normalize,
+        semantic=semantic,
+        vectorizer=vectorizer,
+        corpus=corpus,
+        kwargs=kwargs,
+    )
