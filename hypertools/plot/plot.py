@@ -564,6 +564,9 @@ def plot(
         "explore": explore,
         "n_clusters": n_clusters,
         "size": size,
+        "interactive": interactive,
+        "mpl_backend": mpl_backend,
+        "frame_kwargs": frame_kwargs
     }
     # turn lists into np arrays so that they don't turn into pickles when saved
     for kwarg in kwargs:
