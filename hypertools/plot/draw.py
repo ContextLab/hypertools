@@ -310,8 +310,10 @@ def _draw(
                 closestIndex_prev = closestIndex
 
     def plot_cube(scale, **cube_kwargs):
-        cube_kwargs.setdefault("color", "black")
-        cube_kwargs.setdefault("linewidth", 1)
+        if cube_kwargs.get('colors') is None:
+            cube_kwargs.setdefault("color", "black")
+        if cube_kwargs.get('linewidths') is None:
+            cube_kwargs.setdefault("linewidth", 1)
         cube_kwargs.setdefault("rstride", 1)
         cube_kwargs.setdefault("cstride", 1)
 
@@ -335,9 +337,19 @@ def _draw(
         return plane_list
 
     def plot_square(ax, scale=1, **square_kwargs):
-        square_kwargs.setdefault("fill", False)
-        square_kwargs.setdefault("edgecolor", "black")
-        square_kwargs.setdefault("linewidth", 1)
+        # follow default matplotlib behaviors of giving abbreviated
+        # arguments priority of full arguments, and `color` priority
+        # over `facecolor` and `edgecolor`
+        if square_kwargs.get('color') is None:
+            if square_kwargs.get('ec') is None:
+                square_kwargs.setdefault("edgecolor", "black")
+            if (
+                    square_kwargs.get('fc') is None and
+                    square_kwargs.get('facecolor') is None
+            ):
+                square_kwargs.setdefault("fill", False)
+        if square_kwargs.get("lw") is None:
+            square_kwargs.setdefault("linewidth", 1)
 
         ax.add_patch(
             patches.Rectangle(
