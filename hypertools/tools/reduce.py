@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import warnings
+import numpy as np
 from sklearn.decomposition import PCA, FastICA, IncrementalPCA, KernelPCA, FactorAnalysis, TruncatedSVD, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
 from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
 from umap import UMAP
@@ -92,7 +93,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
     if reduce is None:
         return x
 
-    elif isinstance(reduce, (str, np.string_)):
+    elif isinstance(reduce, str):  # Remove np.string_ check as it's deprecated in NumPy 2.0
         model_name = reduce
         model_params = {
             'n_components': ndims
@@ -112,7 +113,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
 
     try:
         # if the model passed is a string, make sure it's one of the supported options
-        if isinstance(model_name, (str, np.string_)):
+        if isinstance(model_name, str):  # Remove np.string_ check as it's deprecated in NumPy 2.0
             model = models[model_name]
         # otherwise check any custom object for necessary methods
         else:
@@ -142,16 +143,18 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
     if model_params['n_components'] is None or all([i.shape[1] <= model_params['n_components'] for i in x]):
         return x
 
-    stacked_x = np.vstack(x)
+    # Handle empty arrays and type conversion
+    stacked_x = np.vstack([np.asarray(arr, dtype=np.float64) for arr in x])
+    
     if stacked_x.shape[0] == 1:
         warnings.warn('Cannot reduce the dimensionality of a single row of'
                       ' data. Return zeros length of ndims')
-        return [np.zeros((1, model_params['n_components']))]
-
+        return [np.zeros((1, model_params['n_components']), dtype=np.float64)]
 
     elif stacked_x.shape[0] < model_params['n_components']:
             warnings.warn('The number of rows in your data is less than ndims.'
                           ' The data will be reduced to the number of rows.')
+            model_params['n_components'] = stacked_x.shape[0]
 
     # deprecation warnings
     if normalize is not None:
@@ -179,8 +182,17 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
 
 # sub functions
 def reduce_list(x, model):
+    """Helper function to reduce a list of arrays"""
+    # Ensure all arrays are float64 for consistent handling
+    x = [np.asarray(arr, dtype=np.float64) for arr in x]
     split = np.cumsum([len(xi) for xi in x])[:-1]
-    x_r = np.vsplit(model.fit_transform(np.vstack(x)), split)
+    stacked = np.vstack(x)
+    
+    # Handle potential NaN values
+    if np.any(np.isnan(stacked)):
+        warnings.warn('NaN values detected in input data. These may affect the reduction results.')
+    
+    x_r = np.vsplit(model.fit_transform(stacked), split)
     if len(x) > 1:
         return [xi for xi in x_r]
     else:
