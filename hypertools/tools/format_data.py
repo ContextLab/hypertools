@@ -75,7 +75,7 @@ def format_data(x, vectorizer='CountVectorizer',
     from ..datageometry import DataGeometry
 
     # if x is not a list, make it one
-    if type(x) is not list:
+    if not isinstance(x, list):
         x = [x]
 
     if all([isinstance(xi, str) for xi in x]):
@@ -98,7 +98,7 @@ def format_data(x, vectorizer='CountVectorizer',
         text_data = []
         for i,j in zip(x, dtypes):
             if j in ['list_str', 'str', 'arr_str']:
-                text_data.append(np.array(i).reshape(-1, 1))
+                text_data.append(np.asarray(i, dtype=object).reshape(-1, 1))
         # convert text to numerical matrices
         text_data = text2mat(text_data, **text_args)
 
@@ -164,14 +164,15 @@ def format_data(x, vectorizer='CountVectorizer',
 
 
 def fill_missing(x):
-
+    """Fill missing values using PPCA"""
     # ppca if missing data
     m = PPCA()
-    m.fit(data=np.vstack(x))
+    x_stacked = np.vstack(x)
+    m.fit(data=x_stacked)
     x_pca = m.transform()
 
     # if the whole row is missing, return nans
-    all_missing = [idx for idx, a in enumerate(np.vstack(x)) if all([type(b)==np.nan for b in a])]
+    all_missing = [idx for idx, a in enumerate(x_stacked) if np.all(np.isnan(a))]
     if len(all_missing)>0:
         for i in all_missing:
             x_pca[i, :] = np.nan

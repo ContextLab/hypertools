@@ -48,14 +48,23 @@ def normalize(x, normalize='across', internal=False, format_data=True):
     if normalize in [False, None]:
         return x
     else:
-
         if format_data:
             x = formatter(x, ppca=True)
 
-        zscore = lambda X, y: (y - np.mean(X)) / np.std(X) if len(set(y)) > 1 else np.zeros(y.shape)
+        def zscore(X, y):
+            # Handle empty arrays and single-value arrays
+            if len(y) == 0 or len(set(y.ravel())) <= 1:
+                return np.zeros_like(y, dtype=np.float64)
+            
+            mean = np.mean(X)
+            std = np.std(X)
+            # Avoid division by zero
+            if std == 0:
+                return np.zeros_like(y, dtype=np.float64)
+            return (y - mean) / std
 
         if normalize == 'across':
-            x_stacked=np.vstack(x)
+            x_stacked = np.vstack(x)
             normalized_x = [np.array([zscore(x_stacked[:,j], i[:,j]) for j in range(i.shape[1])]).T for i in x]
 
         elif normalize == 'within':
