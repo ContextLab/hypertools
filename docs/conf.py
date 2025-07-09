@@ -41,6 +41,14 @@ extensions = ['sphinx.ext.autodoc',
 # allow nbsphinx errors for missing optional dependencies
 nbsphinx_allow_errors = True
 
+# Don't execute notebooks during documentation build (for Read the Docs)
+# Check if we're on Read the Docs environment
+import os
+if os.environ.get('READTHEDOCS', None) == 'True':
+    nbsphinx_execute = 'never'
+else:
+    nbsphinx_execute = 'auto'
+
 # Generate the API documentation when building
 autosummary_generate = True
 
