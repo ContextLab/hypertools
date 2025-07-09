@@ -2,7 +2,7 @@
 
 import warnings
 import numpy as np
-from scipy.stats.stats import pearsonr
+from scipy.stats import pearsonr
 from scipy.spatial.distance import cdist
 import matplotlib.pyplot as plt
 import seaborn as sns
