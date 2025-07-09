@@ -1,4 +1,8 @@
-from pkg_resources import get_distribution
+try:
+    from importlib.metadata import version
+except ImportError:
+    # Fallback for Python < 3.8
+    from importlib_metadata import version
 
 
-__version__ = get_distribution('hypertools').version
+__version__ = version('hypertools')

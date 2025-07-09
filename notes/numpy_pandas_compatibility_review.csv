@@ -1,0 +1,14 @@
+File,Issue Type,Description,Current Status,Priority,Notes
+hypertools/tools/reduce.py,NumPy Deprecated,np.string_ removed in NumPy 2.0,Fixed,High,Already fixed in line 116 comment
+hypertools/config.py,Package,pkg_resources deprecated,Fixed,High,Replaced with importlib.metadata with fallback
+hypertools/tools/describe.py,SciPy Deprecated,scipy.stats.stats.pearsonr deprecated,Fixed,High,Changed import to scipy.stats.pearsonr
+hypertools/_shared/helpers.py,NumPy Deprecated,Potential deprecated features,OK,High,No issues found - uses compatible numpy patterns
+hypertools/tools/format_data.py,NumPy Array,Array creation and dtype handling,OK,High,Uses np.float64 - compatible with numpy 2.0+
+hypertools/tools/align.py,NumPy Array,Matrix operations and dtypes,OK,High,Compatible numpy array operations
+hypertools/tools/normalize.py,NumPy Array,Array operations,OK,Medium,Compatible numpy array operations
+hypertools/tools/df2mat.py,Pandas,DataFrame to matrix conversion,OK,High,Compatible with pandas 2.0+ patterns
+hypertools/datageometry.py,Pandas,DataFrame handling,OK,High,Uses to_dict('list') - compatible with pandas 2.0+
+hypertools/tools/text2mat.py,Pandas,Text processing with pandas,OK,Medium,Compatible pandas operations
+hypertools/tools/load.py,NumPy/Pandas,Data loading operations,OK,Medium,Compatible with numpy 2.0+ and pandas 2.0+
+hypertools/_externals/srm.py,NumPy Random,Uses np.random.seed and np.random.random,OK,Low,These are still supported in numpy 2.0
+tests/,NumPy/Pandas,Test compatibility,OK,High,All 129 tests pass with numpy 2.0+ and pandas 2.0+
