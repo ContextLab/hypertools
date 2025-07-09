@@ -1,0 +1,50 @@
+{
+ "geo": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools.datageometry",
+   "module_short": "hypertools",
+   "name": "DataGeometry"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools",
+   "module_short": "hypertools",
+   "name": "DataGeometry"
+  }
+ ],
+ "geo.plot": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools.datageometry",
+   "module_short": "hypertools",
+   "name": "DataGeometry.plot"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools",
+   "module_short": "hypertools",
+   "name": "DataGeometry.plot"
+  }
+ ],
+ "hyp.load": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools",
+   "module_short": "hypertools",
+   "name": "load"
+  }
+ ]
+}

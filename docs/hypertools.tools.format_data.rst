@@ -1,5 +1,5 @@
-hypertools.tools.format_data
-============================
+﻿hypertools.tools.format\_data
+=============================
 
 .. currentmodule:: hypertools.tools
 

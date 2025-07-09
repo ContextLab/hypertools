@@ -1,0 +1,29 @@
+{
+ "hyp.plot": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools",
+   "module_short": "hypertools",
+   "name": "plot"
+  }
+ ],
+ "hyp.tools.load": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools.tools",
+   "module_short": "hypertools",
+   "name": "load"
+  }
+ ],
+ "np.mean": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "mean"
+  }
+ ]
+}

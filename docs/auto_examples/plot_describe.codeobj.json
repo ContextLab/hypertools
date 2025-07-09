@@ -1,0 +1,75 @@
+{
+ "data": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "list"
+  }
+ ],
+ "geo": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools.datageometry",
+   "module_short": "hypertools",
+   "name": "DataGeometry"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools",
+   "module_short": "hypertools",
+   "name": "DataGeometry"
+  }
+ ],
+ "geo.get_data": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools.datageometry",
+   "module_short": "hypertools",
+   "name": "DataGeometry.get_data"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools",
+   "module_short": "hypertools",
+   "name": "DataGeometry.get_data"
+  }
+ ],
+ "hyp.describe": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools",
+   "module_short": "hypertools",
+   "name": "describe"
+  }
+ ],
+ "hyp.load": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools",
+   "module_short": "hypertools",
+   "name": "load"
+  }
+ ]
+}

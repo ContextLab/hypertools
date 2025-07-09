@@ -1,5 +1,5 @@
-hypertools.tools.missing_inds
-=============================
+﻿hypertools.tools.missing\_inds
+==============================
 
 .. currentmodule:: hypertools.tools
 

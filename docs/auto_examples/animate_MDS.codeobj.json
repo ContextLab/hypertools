@@ -1,0 +1,11 @@
+{
+ "hyp.load": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools",
+   "module_short": "hypertools",
+   "name": "load"
+  }
+ ]
+}
