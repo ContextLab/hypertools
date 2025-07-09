@@ -92,7 +92,7 @@ def test_reduce_MiniBatchDictionaryLearning():
 
 
 def test_reduce_TSNE():
-    reduced_data_3d = reducer(data, reduce='TSNE', ndims=3)
+    reduced_data_3d = reducer(data, reduce={'model': 'TSNE', 'params': {'perplexity': 5}}, ndims=3)
     assert reduced_data_3d[0].shape==(10,3)
 
 
