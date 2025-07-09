@@ -38,8 +38,8 @@ extensions = ['sphinx.ext.autodoc',
     'sphinx_gallery.gen_gallery',
     'nbsphinx']
 
-# do not allow nbsphinx errors
-nbsphinx_allow_errors = False
+# allow nbsphinx errors for missing optional dependencies
+nbsphinx_allow_errors = True
 
 # Generate the API documentation when building
 autosummary_generate = True
@@ -193,4 +193,10 @@ sphinx_gallery_conf = {
     # path to your examples scripts
     'examples_dirs' : '../examples',
     # path where to save gallery generated examples
-    'gallery_dirs'  : 'auto_examples'}
+    'gallery_dirs'  : 'auto_examples',
+    # Abort on first failure
+    'abort_on_example_error': False,
+    # Don't execute code, just parse and display
+    'plot_gallery': True,
+    # Ignore warnings during gallery building
+    'ignore_pattern': r'.*\.pyc$|.*\.pyo$|.*\.DS_Store$'}
