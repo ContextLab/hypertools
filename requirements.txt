@@ -8,3 +8,4 @@ numpy>=2.0.0
 umap-learn>=0.5.5
 requests>=2.31.0
 ipympl>=0.9.3
+importlib_metadata>=1.0.0; python_version < "3.8"
