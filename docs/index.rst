@@ -27,3 +27,16 @@ Some key features of HyperTools are:
 6. Applying topic models and other text vectorization methods to text data
 
 .. toctree::
+   :maxdepth: 2
+   :caption: Contents:
+
+   api
+   tutorials
+   auto_examples/index
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`

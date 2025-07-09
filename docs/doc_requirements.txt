@@ -18,3 +18,6 @@ numpy>=2.0.0
 umap-learn>=0.5.5
 requests>=2.31.0
 ipympl>=0.9.3
+# Optional dependencies for examples
+hdbscan>=0.8.11
+memory_profiler

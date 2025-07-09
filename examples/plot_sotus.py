@@ -20,5 +20,9 @@ import hypertools as hyp
 # load the data
 geo = hyp.load('sotus')
 
-# plot it
-geo.plot()
+# plot it - handle both DataGeometry and Pipeline objects
+if hasattr(geo, 'plot'):
+    geo.plot()
+else:
+    # If it's a Pipeline or other object, use hyp.plot directly
+    hyp.plot(geo)

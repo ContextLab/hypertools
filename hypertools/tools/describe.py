@@ -96,7 +96,18 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     # if show, plot it
     if show:
         fig, ax = plt.subplots()
-        ax = sns.tsplot(data=result['individual'], time=[i for i in range(2, max_dims+2)], err_style="unit_traces")
+        # Convert to DataFrame for seaborn lineplot
+        import pandas as pd
+        df_data = []
+        for i, trace in enumerate(result['individual']):
+            for j, value in enumerate(trace):
+                df_data.append({
+                    'components': j + 2,
+                    'correlation': value,
+                    'trace': i
+                })
+        df = pd.DataFrame(df_data)
+        ax = sns.lineplot(data=df, x='components', y='correlation', units='trace', estimator=None, alpha=0.7)
         ax.set_title('Correlation with raw data by number of components')
         ax.set_ylabel('Correlation')
         ax.set_xlabel('Number of components')
