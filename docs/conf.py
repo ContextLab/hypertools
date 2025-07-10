@@ -252,3 +252,4 @@ sphinx_gallery_conf = {
         '../examples/precog.py': 'images/thumb/sphx_glr_precog_thumb.gif',
         '../examples/save_movie.py': 'images/thumb/sphx_glr_save_movie_thumb.gif',
     }
+}
