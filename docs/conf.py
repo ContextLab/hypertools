@@ -41,7 +41,7 @@ extensions = ['sphinx.ext.autodoc',
 # allow nbsphinx errors for missing optional dependencies
 nbsphinx_allow_errors = True
 
-# Don't execute notebooks during documentation build (for Read the Docs)
+# Control notebook execution based on environment
 # Check if we're on Read the Docs environment
 import os
 if os.environ.get('READTHEDOCS', None) == 'True':
@@ -113,9 +113,18 @@ todo_include_todos = False
 # # html_theme_options = {}
 #
 # # Add any paths that contain custom static files (such as style sheets) here,
-# # relative to this directory. They are copied after the builtin static files,
-# # so a file named "default.css" will overwrite the builtin "default.css".
-# html_static_path = ['_static']
+# relative to this directory. They are copied after the builtin static files,
+# so a file named "default.css" will overwrite the builtin "default.css".
+html_static_path = ['_static']
+
+# Add custom CSS and JS
+html_css_files = [
+    'custom.css',
+]
+
+html_js_files = [
+    'gallery-fixes.js',
+]
 
 # -- Options for HTML output ---------------------------------------------------
 
@@ -207,12 +216,27 @@ sphinx_gallery_conf = {
     # Abort on first failure
     'abort_on_example_error': False,
     # Execute code to generate plots
-    'plot_gallery': 'True',
+    'plot_gallery': True,
     # Download all examples as zip files
     'download_all_examples': True,
-    # Show memory usage
-    'show_memory': True,
     # Ignore warnings during gallery building
     'ignore_pattern': r'.*\.pyc$|.*\.pyo$|.*\.DS_Store$',
     # Expected failing examples - should be empty now with fixes
-    'expected_failing_examples': []}
+    'expected_failing_examples': [],
+    # Performance optimizations
+    'capture_repr': ('_repr_html_',),
+    'image_scrapers': ('matplotlib',),
+    # Limit memory usage display
+    'show_memory': False,
+    # Ensure proper thumbnail linking
+    'first_notebook_cell': '%matplotlib inline',
+    'thumbnail_size': (200, 200),
+    # Enable references to work - for local docs, use relative path
+    'reference_url': {
+        'hypertools': None,  # Use relative links for local docs
+        'matplotlib': 'https://matplotlib.org/stable/',
+        'numpy': 'https://numpy.org/doc/stable/',
+        'scipy': 'https://docs.scipy.org/doc/scipy/reference/',
+        'pandas': 'https://pandas.pydata.org/pandas-docs/stable/',
+        'scikit-learn': 'https://scikit-learn.org/stable/',
+    }}

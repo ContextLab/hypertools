@@ -15,7 +15,10 @@ depends on having ffmpeg installed on your computer.
 import hypertools as hyp
 import numpy as np
 
-data, labels = hyp.tools.load('weights', align=True)
+geo = hyp.load('weights', align='hyper')
+
+# Extract data from the geo object
+data = geo.data
 
 group1 = np.mean(data[:17], 0)
 group2 = np.mean(data[18:], 0)

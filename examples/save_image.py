@@ -16,7 +16,7 @@ import hypertools as hyp
 import numpy as np
 
 # load example data
-data, labels = hyp.tools.load('weights_sample')
+geo = hyp.load('weights_sample')
 
 # plot
-hyp.plot(data, 'o', save_path='test-image.pdf')
+geo.plot(fmt='o', save_path='test-image.pdf')
