@@ -11,6 +11,10 @@ build:
   tools:
     python: "3.9"
     # You can also specify other tools here or in a separate tools block
+  jobs:
+    post_build:
+      # Fix animated GIF thumbnails after documentation build
+      - python docs/post_build.py
 
 # Build documentation in the docs/ directory with Sphinx
 sphinx:
