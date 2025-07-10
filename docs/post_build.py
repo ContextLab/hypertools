@@ -13,8 +13,40 @@ import re
 # Base paths
 DOCS_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_THUMBS_DIR = os.path.join(DOCS_DIR, "_static", "thumbnails")
-BUILD_IMAGES_DIR = os.path.join(DOCS_DIR, "_build", "html", "_images")
-GALLERY_HTML = os.path.join(DOCS_DIR, "_build", "html", "auto_examples", "index.html")
+
+# Auto-detect build directory (Read the Docs vs local)
+def find_build_dirs():
+    """Find the actual build directory paths"""
+    possible_build_dirs = [
+        # Local build
+        os.path.join(DOCS_DIR, "_build", "html"),
+        # Read the Docs build (from docs dir)
+        os.path.join(DOCS_DIR, "..", "_readthedocs", "html"),
+        # Read the Docs alternative paths
+        os.path.join(DOCS_DIR, "..", "..", "_readthedocs", "html"),
+        # Additional Read the Docs patterns based on error message
+        "/tmp/_readthedocs_build/html",
+        os.path.join(os.getcwd(), "..", "_readthedocs", "html"),
+        os.path.join(os.getcwd(), "_readthedocs", "html"),
+        # Check if we're already in the output directory
+        os.path.join(os.getcwd(), "_images", ".."),
+    ]
+    
+    # Also check environment variables that Read the Docs might set
+    rtd_output = os.environ.get('READTHEDOCS_OUTPUT', '')
+    if rtd_output:
+        possible_build_dirs.insert(0, rtd_output)
+    
+    for build_dir in possible_build_dirs:
+        if build_dir and os.path.exists(build_dir):
+            images_dir = os.path.join(build_dir, "_images")
+            gallery_html = os.path.join(build_dir, "auto_examples", "index.html")
+            if os.path.exists(images_dir) and os.path.exists(gallery_html):
+                return images_dir, gallery_html
+    
+    return None, None
+
+BUILD_IMAGES_DIR, GALLERY_HTML = find_build_dirs()
 
 # Mapping of PNG to GIF thumbnails that should be replaced
 GIF_REPLACEMENTS = {
@@ -30,8 +62,23 @@ def copy_gif_thumbnails():
     """Copy GIF thumbnails from _static/thumbnails to _build/html/_images"""
     print("Copying GIF thumbnails...")
     
-    if not os.path.exists(BUILD_IMAGES_DIR):
-        print(f"Error: Build images directory not found: {BUILD_IMAGES_DIR}")
+    # Re-detect directories if needed
+    global BUILD_IMAGES_DIR, GALLERY_HTML
+    if not BUILD_IMAGES_DIR:
+        BUILD_IMAGES_DIR, GALLERY_HTML = find_build_dirs()
+    
+    if not BUILD_IMAGES_DIR or not os.path.exists(BUILD_IMAGES_DIR):
+        print(f"Error: Build images directory not found.")
+        print(f"Searched paths:")
+        possible_dirs = [
+            os.path.join(DOCS_DIR, "_build", "html", "_images"),
+            os.path.join(DOCS_DIR, "..", "_readthedocs", "html", "_images"),
+            os.path.join(DOCS_DIR, "..", "..", "_readthedocs", "html", "_images"),
+        ]
+        for d in possible_dirs:
+            print(f"  {d} - {'EXISTS' if os.path.exists(d) else 'NOT FOUND'}")
+        print(f"Current working directory: {os.getcwd()}")
+        print(f"DOCS_DIR: {DOCS_DIR}")
         return False
         
     if not os.path.exists(STATIC_THUMBS_DIR):
@@ -55,8 +102,13 @@ def update_html_references():
     """Update HTML gallery to reference GIF files instead of PNG"""
     print("Updating HTML references...")
     
-    if not os.path.exists(GALLERY_HTML):
-        print(f"Error: Gallery HTML not found: {GALLERY_HTML}")
+    # Re-detect directories if needed
+    global BUILD_IMAGES_DIR, GALLERY_HTML
+    if not GALLERY_HTML:
+        BUILD_IMAGES_DIR, GALLERY_HTML = find_build_dirs()
+    
+    if not GALLERY_HTML or not os.path.exists(GALLERY_HTML):
+        print(f"Error: Gallery HTML not found: {GALLERY_HTML if GALLERY_HTML else 'None'}")
         return False
     
     # Read the HTML file
