@@ -10,6 +10,8 @@ current points being plotted.  This can be used in conjunction with the
 chemtrails argument to plot a low-opacity trace of the entire timeseries.
 """
 
+# sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_precog_thumb.gif'
+
 # Code source: Andrew Heusser
 # License: MIT
 

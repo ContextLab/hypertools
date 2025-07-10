@@ -9,6 +9,8 @@ where you want to save the movie, including the extension.  NOTE: this
 depends on having ffmpeg installed on your computer.
 """
 
+# sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_save_movie_thumb.gif'
+
 # Code source: Andrew Heusser
 # License: MIT
 
