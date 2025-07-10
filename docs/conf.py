@@ -239,17 +239,5 @@ sphinx_gallery_conf = {
         'scipy': 'https://docs.scipy.org/doc/scipy/reference/',
         'pandas': 'https://pandas.pydata.org/pandas-docs/stable/',
         'scikit-learn': 'https://scikit-learn.org/stable/',
-    },
-    # Use custom thumbnails for animated examples
-    'thumbnail_number': -1,  # Use last generated image as thumbnail
-    'image_scrapers': ('matplotlib',),
-    # Override thumbnails with custom GIFs for animated examples
-    'thumbnails': {
-        '../examples/chemtrails.py': 'images/thumb/sphx_glr_chemtrails_thumb.gif',
-        '../examples/animate_MDS.py': 'images/thumb/sphx_glr_animate_MDS_thumb.gif',
-        '../examples/animate_spin.py': 'images/thumb/sphx_glr_animate_spin_thumb.gif',
-        '../examples/animate.py': 'images/thumb/sphx_glr_animate_thumb.gif',
-        '../examples/precog.py': 'images/thumb/sphx_glr_precog_thumb.gif',
-        '../examples/save_movie.py': 'images/thumb/sphx_glr_save_movie_thumb.gif',
     }
 }
