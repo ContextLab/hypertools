@@ -46,6 +46,8 @@ notebooks:
 
 html:
 	$(SPHINXBUILD) -b html -E $(ALLSPHINXOPTS) $(BUILDDIR)/html
+	@echo "Running post-build script to fix animated thumbnails..."
+	python post_build.py
 	@echo
 	@echo "Build finished. The HTML pages are in $(BUILDDIR)/html."
 
