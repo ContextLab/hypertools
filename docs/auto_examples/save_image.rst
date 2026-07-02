@@ -25,10 +25,12 @@ Saving a plot
 To save a plot, simply use the `save_path` kwarg, and specify where you want
 the image to be saved, including the file extension (e.g. pdf)
 
-.. GENERATED FROM PYTHON SOURCE LINES 10-23
+.. GENERATED FROM PYTHON SOURCE LINES 10-25
 
 .. code-block:: Python
 
+
+    # sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_save_image_thumb.png'
 
     # Code source: Andrew Heusser
     # License: MIT
@@ -38,12 +40,10 @@ the image to be saved, including the file extension (e.g. pdf)
     import numpy as np
 
     # load example data
-    data, labels = hyp.tools.load('weights_sample')
+    geo = hyp.load('weights_sample')
 
     # plot
-    hyp.plot(data, 'o', save_path='test-image.pdf')
-
-**Estimated memory usage:**  0 MB
+    geo.plot(fmt='o', save_path='test-image.pdf')
 
 
 .. _sphx_glr_download_auto_examples_save_image.py:

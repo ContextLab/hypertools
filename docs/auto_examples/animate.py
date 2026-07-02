@@ -8,6 +8,8 @@ Timeseries plots can be animated by simply passing `animate=True` to the geo (
 or when calling hyp.plot).
 """
 
+# sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_animate_thumb.gif'
+
 # Code source: Andrew Heusser
 # License: MIT
 

@@ -25,10 +25,12 @@ Animated plots
 Timeseries plots can be animated by simply passing `animate=True` to the geo (
 or when calling hyp.plot).
 
-.. GENERATED FROM PYTHON SOURCE LINES 10-22
+.. GENERATED FROM PYTHON SOURCE LINES 10-24
 
 .. code-block:: Python
 
+
+    # sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_animate_thumb.gif'
 
     # Code source: Andrew Heusser
     # License: MIT
@@ -41,8 +43,6 @@ or when calling hyp.plot).
 
     # plot
     geo.plot(animate=True, legend=['first', 'second'])
-
-**Estimated memory usage:**  0 MB
 
 
 .. _sphx_glr_download_auto_examples_animate.py:

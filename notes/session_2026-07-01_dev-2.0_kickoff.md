@@ -57,7 +57,21 @@ Working tree was actually clean. The count came from two untracked dirs: `.venv/
 - Import perf: 5.1s warm (umap/pynndescent ~3s) — lazy imports are Phase 0.
 - Agent-report gotcha (harness quirk this session): subagent final messages arrived as stubs; recover with jq over the task .output transcript (assistant text entries).
 
-## Next steps (Phase 0, in order)
+## Implementation status (updated 2026-07-02, second work block)
+All implemented on dev-2.0, tests green at every commit (169 passing, up from 136):
+- **Phase 0 DONE**: pyproject.toml (v2.0.0.dev0, py3.10+), CI matrix 3.10-3.13 + action bumps + screenshot artifacts, readthedocs py3.11, memoize REMOVED everywhere (user requirement), lazy imports (import 5.1s → 1.46s), sklearn HDBSCAN swap (external hdbscan + SyntaxWarning filter dropped), double-format fix in plot, rc_context styling fix (#259, verified rcParams untouched).
+- **Phase 1 DONE**: mixture models (GaussianMixture/BayesianGM/LDA/NMF) return (n,k) proportions from cluster(); hypertools/tools/colors.py (mat2colors/colors2groups); plot() supports mixture cluster= (blended colors), matrix-valued hue, continuous hue; nested-list input with multilevel styling (outer-group color, depth-scaled linewidth/alpha; text lists excluded).
+- **Phase 2 DONE**: hypertools/plot/interactive.py plotly backend (2D/3D, fmt→mode, camera conversion, no-ticks aesthetic, sliding-window + spin animations w/ play controls); plot(backend='auto'|'matplotlib'|'plotly'); auto = plotly ONLY on Colab/Kaggle (approved policy). kaleido export wired into screenshot harness.
+- **Verification: 44/44 screenshot cases pass** (scripts/generate_verification_screenshots.py) covering plot/reduce/align/normalize/cluster/analyze/describe/format_data/load/text + plotly backend cases; INDEX.md manifest generated. Spot-checked visually: correct.
+- README updated (What's new in 2.0, requirements, extras).
+
+## Remaining before PR
+- [ ] Execute dev notebook end-to-end (in progress), commit executed copy.
+- [ ] Commit curated verification screenshots (docs/images/v2.0-verification/) for PR evidence.
+- [ ] Final full-suite run + import-time check.
+- [ ] Push dev-2.0 to origin; open PR to master (user will review/sign off; DO NOT MERGE).
+
+## Original Phase 0 plan (for reference)
 - [ ] pyproject.toml (PEP 621) + delete .travis.yml + CI bump (py3.10-3.13, setup-python@v5, cache@v4, codecov@v4).
 - [ ] Lazy imports (module __getattr__) — target `import hypertools` < 1s; verify with -X importtime.
 - [ ] Fix double-reduction in plot.py; remove str-keyed memoize (fork issue #3 confirmed it returns stale results).

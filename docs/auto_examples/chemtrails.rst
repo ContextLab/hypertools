@@ -27,10 +27,12 @@ argument.  This displays a low opacity version of the trace behind the
 current points being plotted.  This can be used in conjunction with the
 precog argument to plot a low-opacity trace of the entire timeseries.
 
-.. GENERATED FROM PYTHON SOURCE LINES 12-24
+.. GENERATED FROM PYTHON SOURCE LINES 12-26
 
 .. code-block:: Python
 
+
+    # sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_chemtrails_thumb.gif'
 
     # Code source: Andrew Heusser
     # License: MIT
@@ -43,8 +45,6 @@ precog argument to plot a low-opacity trace of the entire timeseries.
 
     # plot
     geo.plot(animate=True, chemtrails=True)
-
-**Estimated memory usage:**  0 MB
 
 
 .. _sphx_glr_download_auto_examples_chemtrails.py:

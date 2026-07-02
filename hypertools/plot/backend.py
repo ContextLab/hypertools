@@ -617,7 +617,10 @@ def _init_backend():
 
         try:
             mpl.use(notebook_backend)
-        except (ImportError, ModuleNotFoundError):
+        except (ImportError, ModuleNotFoundError, ValueError):
+            # ValueError: matplotlib >= 3.9 raises this (rather than
+            # ImportError) when a "module://..." backend such as ipympl is
+            # missing or incompatible -- common on Colab/Kaggle kernels
             BACKEND_WARNING = (
                 "Failed to switch to interactive notebook backend "
                 f"('{notebook_backend}'). Falling back to inline static plots."

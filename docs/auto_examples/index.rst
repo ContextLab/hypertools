@@ -6,6 +6,10 @@ Gallery of Examples
 ===================
 
 
+.. raw:: html
+
+  <div id='sg-tag-list' class='sphx-glr-tag-list'></div>
+
 
 .. raw:: html
 
@@ -22,7 +26,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_basic_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_basic.py`
+  :doc:`/auto_examples/plot_basic`
 
 .. raw:: html
 
@@ -39,7 +43,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_2D_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_2D.py`
+  :doc:`/auto_examples/plot_2D`
 
 .. raw:: html
 
@@ -56,28 +60,11 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_clusters_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_clusters.py`
+  :doc:`/auto_examples/plot_clusters`
 
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Discovering clusters</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="Explore mode is an experimental feature that allows you to (not surprisingly) explore the points in your dataset.  When you hover over the points, a label will pop up that will help you identify the datapoint.  You can customize the labels by passing a list of labels to the label(s) kwarg. Alternatively, if you don&#x27;t pass a list of labels, the labels will be the index of the datapoint, along with the PCA coordinate.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_explore_thumb.png
-    :alt:
-
-  :ref:`sphx_glr_auto_examples_explore.py`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Explore mode!</div>
     </div>
 
 
@@ -90,96 +77,11 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_dataframe_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_dataframe.py`
+  :doc:`/auto_examples/plot_dataframe`
 
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Plotting a Pandas Dataframe</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="The past trajectory of an animated plot can be visualized with the chemtrails argument.  This displays a low opacity version of the trace behind the current points being plotted.  This can be used in conjunction with the precog argument to plot a low-opacity trace of the entire timeseries.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_chemtrails_thumb.png
-    :alt:
-
-  :ref:`sphx_glr_auto_examples_chemtrails.py`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Chemtrails</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="This is a trajectory of brain data plotted in 3D with multidimensional scaling.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_animate_MDS_thumb.png
-    :alt:
-
-  :ref:`sphx_glr_auto_examples_animate_MDS.py`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Animated trajectory plotted with multidimensional scaling</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="In addition to plotting dynamic timeseries data, the spin feature can be used to visualize static data in an animated rotating plot.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_animate_spin_thumb.png
-    :alt:
-
-  :ref:`sphx_glr_auto_examples_animate_spin.py`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Create a rotating static plot</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="Timeseries plots can be animated by simply passing animate=True to the geo ( or when calling hyp.plot).">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_animate_thumb.png
-    :alt:
-
-  :ref:`sphx_glr_auto_examples_animate.py`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Animated plots</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="The future trajectory of an animated plot can be visualized with the precog argument.  This displays a low opacity version of the trace ahead of the current points being plotted.  This can be used in conjunction with the chemtrails argument to plot a low-opacity trace of the entire timeseries.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_precog_thumb.png
-    :alt:
-
-  :ref:`sphx_glr_auto_examples_precog.py`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Precognition</div>
     </div>
 
 
@@ -192,7 +94,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_legend_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_legend.py`
+  :doc:`/auto_examples/plot_legend`
 
 .. raw:: html
 
@@ -209,28 +111,11 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_describe_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_describe.py`
+  :doc:`/auto_examples/plot_describe`
 
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Using describe to evaluate the integrity of your visualization</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="To save a plot, simply use the save_path kwarg, and specify where you want the image to be saved, including the file extension (e.g. pdf)">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_save_image_thumb.png
-    :alt:
-
-  :ref:`sphx_glr_auto_examples_save_image.py`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Saving a plot</div>
     </div>
 
 
@@ -243,7 +128,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_digits_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_digits.py`
+  :doc:`/auto_examples/plot_digits`
 
 .. raw:: html
 
@@ -260,11 +145,45 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_TSNE_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_TSNE.py`
+  :doc:`/auto_examples/plot_TSNE`
 
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Visualizing the digits dataset using t-SNE</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="Explore mode is an experimental feature that allows you to (not surprisingly) explore the points in your dataset.  When you hover over the points, a label will pop up that will help you identify the datapoint.  You can customize the labels by passing a list of labels to the label(s) kwarg. Alternatively, if you don&#x27;t pass a list of labels, the labels will be the index of the datapoint, along with the PCA coordinate.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_explore_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/explore`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Explore mode!</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The past trajectory of an animated plot can be visualized with the chemtrails argument.  This displays a low opacity version of the trace behind the current points being plotted.  This can be used in conjunction with the precog argument to plot a low-opacity trace of the entire timeseries.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_chemtrails_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/chemtrails`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Chemtrails</div>
     </div>
 
 
@@ -277,7 +196,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_UMAP_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_UMAP.py`
+  :doc:`/auto_examples/plot_UMAP`
 
 .. raw:: html
 
@@ -287,35 +206,86 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="To save an animation, simply add the save_path kwarg and specify the path where you want to save the movie, including the extension.  NOTE: this depends on having ffmpeg installed on your computer.">
+    <div class="sphx-glr-thumbcontainer" tooltip="This is a trajectory of brain data plotted in 3D with multidimensional scaling.">
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_save_movie_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_animate_MDS_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_save_movie.py`
+  :doc:`/auto_examples/animate_MDS`
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Saving an animation</div>
+      <div class="sphx-glr-thumbnail-title">Animated trajectory plotted with multidimensional scaling</div>
     </div>
 
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="This example demonstrates how to use the analyze function to process data prior to plotting. The data is a list of numpy arrays representing multi-voxel activity patterns (columns) over time (rows).  First, analyze function normalizes the columns of each matrix (within each matrix). Then the data is reduced using PCA (10 dims) and finally it is aligned with hyperalignment. We can then plot the data with hyp.plot, which further reduces it so that it can be visualized.">
+    <div class="sphx-glr-thumbcontainer" tooltip="In addition to plotting dynamic timeseries data, the spin feature can be used to visualize static data in an animated rotating plot.">
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_analyze_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_animate_spin_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_analyze.py`
+  :doc:`/auto_examples/animate_spin`
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Analyze data and then plot</div>
+      <div class="sphx-glr-thumbnail-title">Create a rotating static plot</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="Timeseries plots can be animated by simply passing animate=True to the geo ( or when calling hyp.plot).">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_animate_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/animate`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Animated plots</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The future trajectory of an animated plot can be visualized with the precog argument.  This displays a low opacity version of the trace ahead of the current points being plotted.  This can be used in conjunction with the chemtrails argument to plot a low-opacity trace of the entire timeseries.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_precog_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/precog`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Precognition</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="To save a plot, simply use the save_path kwarg, and specify where you want the image to be saved, including the file extension (e.g. pdf)">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_save_image_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/save_image`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Saving a plot</div>
     </div>
 
 
@@ -328,7 +298,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_clusters3_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_clusters3.py`
+  :doc:`/auto_examples/plot_clusters3`
 
 .. raw:: html
 
@@ -345,7 +315,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_align_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_align.py`
+  :doc:`/auto_examples/plot_align`
 
 .. raw:: html
 
@@ -362,11 +332,28 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_corpus_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_corpus.py`
+  :doc:`/auto_examples/plot_corpus`
 
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Defining a custom corpus for plotting text</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="This example demonstrates how to use the analyze function to process data prior to plotting. The data is a list of numpy arrays representing multi-voxel activity patterns (columns) over time (rows).  First, analyze function normalizes the columns of each matrix (within each matrix). Then the data is reduced using PCA (10 dims) and finally it is aligned with hyperalignment. We can then plot the data with hyp.plot, which further reduces it so that it can be visualized.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_analyze_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/analyze`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Analyze data and then plot</div>
     </div>
 
 
@@ -379,7 +366,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_procrustes_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_procrustes.py`
+  :doc:`/auto_examples/plot_procrustes`
 
 .. raw:: html
 
@@ -396,11 +383,28 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_hue_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_hue.py`
+  :doc:`/auto_examples/plot_hue`
 
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Grouping data by category</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="To save an animation, simply add the save_path kwarg and specify the path where you want to save the movie, including the extension.  NOTE: this depends on having ffmpeg installed on your computer.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_save_movie_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/save_movie`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Saving an animation</div>
     </div>
 
 
@@ -413,7 +417,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_labels_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_labels.py`
+  :doc:`/auto_examples/plot_labels`
 
 .. raw:: html
 
@@ -430,7 +434,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_text_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_text.py`
+  :doc:`/auto_examples/plot_text`
 
 .. raw:: html
 
@@ -447,7 +451,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_clusters2_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_clusters2.py`
+  :doc:`/auto_examples/plot_clusters2`
 
 .. raw:: html
 
@@ -464,7 +468,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_geo_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_geo.py`
+  :doc:`/auto_examples/plot_geo`
 
 .. raw:: html
 
@@ -481,7 +485,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_PPCA_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_PPCA.py`
+  :doc:`/auto_examples/plot_PPCA`
 
 .. raw:: html
 
@@ -498,7 +502,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_normalize_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_normalize.py`
+  :doc:`/auto_examples/plot_normalize`
 
 .. raw:: html
 
@@ -515,7 +519,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_missing_data_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_missing_data.py`
+  :doc:`/auto_examples/plot_missing_data`
 
 .. raw:: html
 
@@ -532,7 +536,7 @@ Gallery of Examples
   .. image:: /auto_examples/images/thumb/sphx_glr_plot_sotus_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_sotus.py`
+  :doc:`/auto_examples/plot_sotus`
 
 .. raw:: html
 
@@ -553,26 +557,26 @@ Gallery of Examples
    /auto_examples/plot_basic
    /auto_examples/plot_2D
    /auto_examples/plot_clusters
-   /auto_examples/explore
    /auto_examples/plot_dataframe
+   /auto_examples/plot_legend
+   /auto_examples/plot_describe
+   /auto_examples/plot_digits
+   /auto_examples/plot_TSNE
+   /auto_examples/explore
    /auto_examples/chemtrails
+   /auto_examples/plot_UMAP
    /auto_examples/animate_MDS
    /auto_examples/animate_spin
    /auto_examples/animate
    /auto_examples/precog
-   /auto_examples/plot_legend
-   /auto_examples/plot_describe
    /auto_examples/save_image
-   /auto_examples/plot_digits
-   /auto_examples/plot_TSNE
-   /auto_examples/plot_UMAP
-   /auto_examples/save_movie
-   /auto_examples/analyze
    /auto_examples/plot_clusters3
    /auto_examples/plot_align
    /auto_examples/plot_corpus
+   /auto_examples/analyze
    /auto_examples/plot_procrustes
    /auto_examples/plot_hue
+   /auto_examples/save_movie
    /auto_examples/plot_labels
    /auto_examples/plot_text
    /auto_examples/plot_clusters2

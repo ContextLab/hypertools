@@ -30,10 +30,12 @@ reduced using PCA (10 dims) and finally it is aligned with hyperalignment. We ca
 then plot the data with hyp.plot, which further reduces it so that it can be
 visualized.
 
-.. GENERATED FROM PYTHON SOURCE LINES 15-32
+.. GENERATED FROM PYTHON SOURCE LINES 15-34
 
 .. code-block:: Python
 
+
+    # sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_analyze_thumb.png'
 
     # Code source: Andrew Heusser
     # License: MIT
@@ -51,8 +53,6 @@ visualized.
 
     # plot it
     hyp.plot(data)
-
-**Estimated memory usage:**  0 MB
 
 
 .. _sphx_glr_download_auto_examples_analyze.py:

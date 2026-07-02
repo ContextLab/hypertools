@@ -8,6 +8,8 @@ To save a plot, simply use the `save_path` kwarg, and specify where you want
 the image to be saved, including the file extension (e.g. pdf)
 """
 
+# sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_save_image_thumb.png'
+
 # Code source: Andrew Heusser
 # License: MIT
 
@@ -16,7 +18,7 @@ import hypertools as hyp
 import numpy as np
 
 # load example data
-data, labels = hyp.tools.load('weights_sample')
+geo = hyp.load('weights_sample')
 
 # plot
-hyp.plot(data, 'o', save_path='test-image.pdf')
+geo.plot(fmt='o', save_path='test-image.pdf')

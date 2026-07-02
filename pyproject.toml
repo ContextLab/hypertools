@@ -46,6 +46,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "nbformat>=5.9.0",
     "nbclient>=0.9.0",
+    "ipykernel>=6.29.0",
     "plotly>=5.20.0",
     "kaleido>=0.2.1",
 ]

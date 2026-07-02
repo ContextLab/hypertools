@@ -24,10 +24,12 @@ Animated trajectory plotted with multidimensional scaling
 
 This is a trajectory of brain data plotted in 3D with multidimensional scaling.
 
-.. GENERATED FROM PYTHON SOURCE LINES 9-21
+.. GENERATED FROM PYTHON SOURCE LINES 9-23
 
 .. code-block:: Python
 
+
+    # sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_animate_MDS_thumb.gif'
 
     # Code source: Andrew Heusser
     # License: MIT
@@ -40,8 +42,6 @@ This is a trajectory of brain data plotted in 3D with multidimensional scaling.
 
     # plot
     geo.plot(animate=True, reduce='MDS')
-
-**Estimated memory usage:**  0 MB
 
 
 .. _sphx_glr_download_auto_examples_animate_MDS.py:

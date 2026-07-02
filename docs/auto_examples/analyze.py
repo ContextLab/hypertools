@@ -13,6 +13,8 @@ then plot the data with hyp.plot, which further reduces it so that it can be
 visualized.
 """
 
+# sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_analyze_thumb.png'
+
 # Code source: Andrew Heusser
 # License: MIT
 

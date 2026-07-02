@@ -29,10 +29,12 @@ labels by passing a list of labels to the `label(s)` kwarg. Alternatively, if
 you don't pass a list of labels, the labels will be the index of the datapoint,
 along with the PCA coordinate.
 
-.. GENERATED FROM PYTHON SOURCE LINES 14-26
+.. GENERATED FROM PYTHON SOURCE LINES 14-28
 
 .. code-block:: Python
 
+
+    # sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_explore_thumb.png'
 
     # Code source: Andrew Heusser
     # License: MIT
@@ -45,8 +47,6 @@ along with the PCA coordinate.
 
     # plot
     geo.plot(fmt='.', explore=True)
-
-**Estimated memory usage:**  0 MB
 
 
 .. _sphx_glr_download_auto_examples_explore.py:

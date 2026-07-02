@@ -12,6 +12,8 @@ you don't pass a list of labels, the labels will be the index of the datapoint,
 along with the PCA coordinate.
 """
 
+# sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_explore_thumb.png'
+
 # Code source: Andrew Heusser
 # License: MIT
 

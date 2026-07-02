@@ -20,6 +20,33 @@ familiar friends, including [matplotlib](https://matplotlib.org/),
 featured on
 [Kaggle's No Free Hunch blog](http://blog.kaggle.com/2017/04/10/exploring-the-structure-of-high-dimensional-data-with-hypertools-in-kaggle-kernels/).  For a general overview, you may find [this talk](https://www.youtube.com/watch?v=hb_ER9RGtOM) useful (given as part of the [MIND Summer School](https://summer-mind.github.io) at Dartmouth).
 
+## What's new in 2.0
+
+HyperTools 2.0 modernizes the toolbox while keeping the familiar API:
+
++ **Interactive plotting (optional):** `hyp.plot(..., backend='plotly')`
+  renders interactive figures. With the default `backend='auto'`, HyperTools
+  automatically uses plotly on Google Colab and Kaggle (where interactive
+  figures work best and plotly is preinstalled) and matplotlib everywhere
+  else — existing workflows are unchanged.
++ **Mixture-model ("soft") clustering:** `cluster` and `plot` support
+  `GaussianMixture`, `BayesianGaussianMixture`, `LatentDirichletAllocation`,
+  and `NMF`. `hyp.cluster` returns per-observation membership proportions,
+  and `hyp.plot` colors each observation by blending component colors
+  according to its mixture weights.
++ **Richer coloring:** the `hue` argument now accepts categorical labels,
+  continuous values, or entire matrices (e.g. mixture proportions or model
+  weights), which are mapped to colors via the new
+  `hypertools.tools.colors.mat2colors`.
++ **Nested-list input:** `hyp.plot([[a, b], [c]])` colors datasets by their
+  outermost grouping and renders more deeply nested datasets with thinner,
+  fainter lines.
++ **Faster and cleaner:** `import hypertools` is ~3.5x faster (heavy
+  dependencies load lazily); plotting no longer mutates global matplotlib
+  settings; the unreliable result cache was removed; HDBSCAN now comes from
+  scikit-learn (no extra dependency); packaging follows current standards
+  (pyproject.toml, Python 3.10–3.13).
+
 ## Try it!
 
 Click the badge to launch a binder instance with example uses:
@@ -55,18 +82,21 @@ data cache (/Users/yourusername/hypertools_data).
 
 ## Requirements
 
-+ python>=3.6
-+ PPCA>=0.0.2
-+ scikit-learn>=0.24.0
-+ pandas>=0.18.0
-+ seaborn>=0.8.1
-+ matplotlib>=1.5.1
-+ scipy>=1.0.0
-+ numpy>=1.10.4
-+ umap-learn>=0.4.6
-+ requests
-+ pytest (for development)
++ python>=3.10
++ scikit-learn>=1.4.0
++ pandas>=2.2.0
++ seaborn>=0.13.0
++ matplotlib>=3.8.0
++ scipy>=1.13.0
++ numpy>=2.0.0
++ umap-learn>=0.5.5
++ requests, ipympl
++ plotly + kaleido (optional, for the interactive backend: `pip install "hypertools[interactive]"`)
++ pytest (for development: `pip install -e ".[dev]"`)
 + ffmpeg (for saving animations)
+
+All Python dependencies are declared in `pyproject.toml` and installed
+automatically by pip.
 
 ## Documentation
 
