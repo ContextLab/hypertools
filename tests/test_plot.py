@@ -65,7 +65,7 @@ def test_plot_reduce1d():
 
 def test_plot_reduce_align5d():
     # should return 5d data since ndims=5
-    geo = plot.plot(weights, ndims=5, align=True, show=False)
+    geo = plot.plot(weights, ndims=5, align='hyper', show=False)
     assert all([i.shape[1] == 5 for i in geo.xform_data])
 
 

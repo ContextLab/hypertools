@@ -5,8 +5,6 @@ import numpy as np
 from sklearn.decomposition import PCA, FastICA, IncrementalPCA, KernelPCA, FactorAnalysis, TruncatedSVD, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
 from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
 from .._shared.helpers import *
-from .normalize import normalize as normalizer
-from .align import align as aligner
 from .format_data import format_data as formatter
 
 # dictionary of models
@@ -65,20 +63,6 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False,
     format_data : bool
         Whether or not to first call the format_data function (default: True).
 
-    model : None
-        Deprecated argument.  Please use reduce.
-
-    model_params : None
-        Deprecated argument.  Please use reduce.
-
-    align : None
-        Deprecated argument.  Please use new analyze function to perform
-        combinations of transformations
-
-    normalize : None
-        Deprecated argument.  Please use new analyze function to perform
-        combinations of transformations
-
     Returns
     ----------
     x_reduced : Numpy array or list of arrays
@@ -86,15 +70,6 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False,
         is a list, a list is returned.
 
     """
-
-    # deprecation warning
-    if (model is not None) or (model_params is not None):
-        warnings.warn('Model and model params will be deprecated.  Please use the \
-                      reduce keyword.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce')
-        reduce = {
-            'model': model,
-            'params': model_params
-        }
 
     # if model is None, just return data
     if reduce is None:
@@ -162,17 +137,6 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False,
             warnings.warn('The number of rows in your data is less than ndims.'
                           ' The data will be reduced to the number of rows.')
             model_params['n_components'] = stacked_x.shape[0]
-
-    # deprecation warnings
-    if normalize is not None:
-        warnings.warn('The normalize argument will be deprecated for this function.  Please use the \
-                      analyze function to perform combinations of these transformations.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.analyze.html#hypertools.analyze')
-        x = normalizer(x, normalize=normalize)
-
-    if align is not None:
-        warnings.warn('The align argument will be deprecated for this function.  Please use the \
-                      analyze function to perform combinations of these transformations.  See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.analyze.html#hypertools.analyze')
-        x = aligner(x, align=align)
 
     # initialize model
     model = model(**model_params)

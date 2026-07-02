@@ -26,7 +26,6 @@ def plot(
     color=None,
     colors=None,
     palette="hls",
-    group=None,
     hue=None,
     labels=None,
     legend=None,
@@ -35,8 +34,6 @@ def plot(
     elev=10,
     azim=-60,
     ndims=3,
-    model=None,
-    model_params=None,
     reduce="IncrementalPCA",
     cluster=None,
     align=None,
@@ -87,12 +84,15 @@ def plot(
     palette : str
         A matplotlib or seaborn color palette
 
-    group : str/int/float or list
-        A list of group labels. Length must match the number of rows in your
-        dataset. If the data type is numerical, the values will be mapped to
-        rgb values in the specified palette. If the data type is strings,
-        the points will be labeled categorically. To label a subset of points,
-        use None (i.e. ['a', None, 'b','a']).
+    hue : list or numpy array
+        Values used to color the plot. Accepts categorical labels (one per
+        observation; grouped and colored by category), continuous numeric
+        values (mapped through the palette; combined with a line format
+        this produces multicolored lines whose color varies continuously
+        along each trajectory), or a 2D matrix with one row per observation
+        (e.g. mixture proportions or model weights; colors are blended per
+        observation). To label a subset of points categorically, use None
+        entries (i.e. ['a', None, 'b', 'a']).
 
     labels : list
         A list of labels for each point. Must be dimensionality of data (x).
@@ -291,24 +291,6 @@ def plot(
         A new data geometry object
 
     """
-
-    # warnings for deprecated API args
-    if (model is not None) or (model_params is not None):
-        warnings.warn(
-            "Model and model_params arguments will be deprecated. Please use \
-                      reduce keyword argument. See docs for details: http://hypertools.readthedocs.io/en/latest/hypertools.plot.html#hypertools.plot"
-        )
-        reduce = {}
-        reduce["model"] = model
-        reduce["params"] = model_params
-
-    if group is not None:
-        warnings.warn(
-            "Group will be deprecated. Please use "
-            "hue keyword argument. See docs for details: "
-            "http://hypertools.readthedocs.io/en/latest/hypertools.plot.html#hypertools.plot"
-        )
-        hue = group
 
     if ax is not None:
         if ndims > 2:

@@ -53,17 +53,17 @@ def test_weights_ndim1():
 
 def test_weights_ndim3_align():
     # Should return aligned 3 dimensional data
-    geo = load('weights_avg', reduce='PCA', ndims=3, align=True)
+    geo = load('weights_avg', reduce='PCA', ndims=3, align='hyper')
     assert all(wt.shape == (100, 3) for wt in geo.transform())
 
 
 def test_weights_ndim2_align():
     # Should return aligned 2 dimensional data
-    geo = load('weights_avg', reduce='PCA', ndims=2, align=True)
+    geo = load('weights_avg', reduce='PCA', ndims=2, align='hyper')
     assert all(wt.shape == (100, 2) for wt in geo.transform())
 
 
 def test_weights_ndim1_align():
     # Should return aligned 1 dimensional data
-    geo = load('weights_avg', reduce='PCA', ndims=1, align=True)
+    geo = load('weights_avg', reduce='PCA', ndims=1, align='hyper')
     assert all(wt.shape == (100, 1) for wt in geo.transform())

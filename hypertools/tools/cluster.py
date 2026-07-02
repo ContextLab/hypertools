@@ -38,7 +38,7 @@ mixture_models = {
 }
 
 
-def cluster(x, cluster="KMeans", n_clusters=3, ndims=None, format_data=True):
+def cluster(x, cluster="KMeans", n_clusters=3, format_data=True):
     """
     Performs clustering analysis and returns a list of cluster labels
 
@@ -68,10 +68,6 @@ def cluster(x, cluster="KMeans", n_clusters=3, ndims=None, format_data=True):
     format_data : bool
         Whether or not to first call the format_data function (default: True).
 
-    ndims : None
-        Deprecated argument.  Please use new analyze function to perform
-        combinations of transformations
-
     Returns
     ----------
     cluster_labels : list or numpy.ndarray
@@ -83,11 +79,6 @@ def cluster(x, cluster="KMeans", n_clusters=3, ndims=None, format_data=True):
 
     if cluster == None:
         return x
-
-    if ndims != None:
-        warnings.warn(
-            "The ndims argument is now deprecated. Ignoring dimensionality reduction step."
-        )
 
     if format_data:
         x = formatter(x, ppca=True)

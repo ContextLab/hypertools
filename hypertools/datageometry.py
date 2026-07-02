@@ -187,6 +187,22 @@ class DataGeometry(object):
         new_kwargs.update(update_kwargs)
         for key in kwargs:
             new_kwargs.update({key : kwargs[key]})
+
+        # geos saved by hypertools < 2.0 may carry arguments that were
+        # retired in 2.0; translate/drop them so old files still replay
+        retired = {'group': 'hue', 'model': None, 'model_params': None}
+        for old_key, new_key in retired.items():
+            if old_key in new_kwargs:
+                value = new_kwargs.pop(old_key)
+                if new_key is not None and value is not None \
+                        and new_kwargs.get(new_key) is None:
+                    new_kwargs[new_key] = value
+                import warnings
+                warnings.warn(f"'{old_key}' was retired in hypertools 2.0; "
+                              "it has been "
+                              + (f"mapped to '{new_key}'" if new_key
+                                 else "ignored")
+                              + " while replaying this saved geo.")
         return plotter(d, **new_kwargs)
 
     def save(self, fname, compression=None):

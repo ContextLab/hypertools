@@ -9,3 +9,4 @@ from .procrustes import procrustes
 from .load import load
 from .format_data import format_data
 from .text2mat import text2mat
+from .apply_model import apply_model

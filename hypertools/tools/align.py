@@ -6,8 +6,7 @@ import numpy as np
 from .format_data import format_data as formatter
 import warnings
 
-def align(data, align='hyper', normalize=None, ndims=None, method=None,
-          format_data=True):
+def align(data, align='hyper', format_data=True):
     """
     Aligns a list of arrays
 
@@ -43,14 +42,6 @@ def align(data, align='hyper', normalize=None, ndims=None, method=None,
     format_data : bool
         Whether or not to first call the format_data function (default: True).
 
-    normalize : None
-        Deprecated argument.  Please use new analyze function to perform
-        combinations of transformations
-
-    ndims : None
-        Deprecated argument.  Please use new analyze function to perform
-        combinations of transformations
-
     Returns
     ----------
     aligned : list
@@ -65,14 +56,12 @@ def align(data, align='hyper', normalize=None, ndims=None, method=None,
         if align['model'] is None:
             return data
     else:
-        if method is not None:
-            warnings.warn('The method argument will be deprecated.  Please use align. See the API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.tools.align.html#hypertools.tools.align')
-            align = method
-
         if align is True:
-            warnings.warn("Setting align=True will be deprecated.  Please specify the \
-                          type of alignment, i.e. align='hyper'. See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.tools.align.html#hypertools.tools.align")
-            align = 'hyper'
+            # retired in 2.0 (previously deprecated): boolean form was
+            # ambiguous -- require an explicit algorithm name
+            raise ValueError("align=True was removed in hypertools 2.0; "
+                             "specify the algorithm instead, e.g. "
+                             "align='hyper' or align='SRM'.")
 
         # common format
         if format_data:
@@ -87,7 +76,7 @@ def align(data, align='hyper', normalize=None, ndims=None, method=None,
                  to overfitting.  We recommend reducing the dimensionality to be \
                  less than the number of samples prior to hyperalignment.')
 
-        if (align == 'hyper') or (method == 'hyper'):
+        if align == 'hyper':
 
             ##STEP 0: STANDARDIZE SIZE AND SHAPE##
             sizes_0 = [x.shape[0] for x in data]
