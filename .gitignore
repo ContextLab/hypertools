@@ -14,3 +14,7 @@ tox.ini
 \.idea/
 docs/_build
 .pytest_cache/
+.venv/
+venv/
+.omc/
+__pycache__/
