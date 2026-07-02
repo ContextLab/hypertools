@@ -159,3 +159,16 @@ Other round-4.5 fixes: repeated-hyperalign scale collapse (procrustes optimal sc
 - 30fps standard everywhere; conversation serial rebuild (3-sentence windows WITHIN utterances; repeating speaker colors; rotations=1); wikipedia 10s/1 rotation/markersize=2; lorenz+hf 30s.
 - plotly evidence gifs kept prior render (kaleido 450-frame exports impractically slow — noted in PR comment).
 - 206 tests. Awaiting CI on 2317cd5, then round-4.5 comment (drafted in scratchpad/pr_round45_comment.md).
+
+## Round 5 (2026-07-02, streaming + theme)
+- STREAMING DATA (issue #101 from 2017): streams are a first-class data type, NO flag (per Jeremy's issue comments + review message). hypertools/tools/streaming.py:
+  - is_stream(): Python Iterators/generators + HF datasets.IterableDataset (duck-typed via __mro__; `datasets` only a [dev] extra).
+  - row_to_vector(): dict rows -> numeric fields concatenated in insertion order (strings/None ignored); vectors pass through. Users control fields with .select_columns().
+  - Semantics (Jeremy-confirmed): stream_init=10000 default = samples for ESTIMATING normalize/reduce params, then APPLIED to all future data; stream_chunk=100 = fetch batch = one redraw/animation frame per chunk; stream_max=None default = continual (infinite) streaming, explicit cutoff stops; stream_window (new, optional) = comet-style trailing display window (retention unaffected).
+  - Infinite streams: continual rendering; KeyboardInterrupt caught -> PillowWriter finalized + geo returned (saving requires cutting off the stream).
+  - Reduce model must support .transform (IncrementalPCA default, PCA, UMAP; TSNE raises). align/cluster on streams raise ValueError (cluster: future).
+  - geo.stream_info = {n_samples, reduce_model, truncated}; geo.data raw, geo.xform_data projected.
+  - tests/test_streaming.py: 14 REAL tests (generators, infinite gen, interrupt+gif finalize, window, head-only-fit assertion via IncrementalPCA.n_samples_seen_, real HF iris stream).
+- SPHINX THEME: pydata-sphinx-theme -> furo (Jeremy confirmed), ContextLab brand ported from ContextLab/scheduler: Nunito Sans (300/400/600/700), lowercase headings w/ 0.6px letter-spacing + weight 300, green #007030 light / #4CAF50 dark; brand block appended to docs/_static/custom.css; conf.py light/dark_css_variables + footer GitHub icon; doc_requirements.txt furo>=2024.1. Build + Chrome screenshots verified (index, api, streaming tutorial).
+- Tutorial docs/tutorials/streaming_data.ipynb (nbclient-executed, 0 errors; streaming_lorenz.gif + streaming_window.gif) + tutorials.rst entry.
+- pyproject [dev] += datasets>=2.20.0.

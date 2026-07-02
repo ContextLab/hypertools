@@ -50,6 +50,8 @@ dev = [
     "ipykernel>=6.29.0",
     "plotly>=5.20.0",
     "kaleido>=0.2.1",
+    # real Hugging Face streaming tests (tests/test_streaming.py)
+    "datasets>=2.20.0",
 ]
 
 [project.urls]

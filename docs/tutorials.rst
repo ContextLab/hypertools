@@ -100,3 +100,11 @@ Visualizing the shape of a conversation
   :maxdepth: 2
 
   tutorials/conversation_trajectories.ipynb
+
+Plotting streaming data
+----------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/streaming_data.ipynb

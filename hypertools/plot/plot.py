@@ -62,6 +62,10 @@ def plot(
     corpus="wiki",
     ax=None,
     frame_kwargs=None,
+    stream_init=10000,
+    stream_chunk=100,
+    stream_max=None,
+    stream_window=None,
 ):
     """
     Plots dimensionality reduced data and parses plot arguments
@@ -299,12 +303,58 @@ def plot(
         For 2D plots, the frame is a square and `frame_kwargs` are
         forwarded to `matplotlib.patches.Rectangle`.
 
+    stream_init : int
+        Streaming data only (iterators/generators and Hugging Face
+        ``datasets.IterableDataset`` are detected automatically): number of
+        initial samples used to estimate the normalization and reduction
+        parameters (default: 10000). Those fitted models are then *applied*
+        to all future samples, which are added to the plot dynamically.
+
+    stream_chunk : int
+        Streaming data only: number of new samples fetched from the stream
+        per update (default: 100). Each fetched chunk is projected through
+        the fitted models and rendered as one animation frame / live
+        redraw, so this sets both the download batch size and the temporal
+        resolution of the resulting animation.
+
+    stream_max : int or None
+        Streaming data only: stop streaming after this many samples.
+        Default None streams continually until the stream is exhausted or
+        the user interrupts (Ctrl-C); infinite streams render incoming
+        data indefinitely, and any animation being saved via `save_path`
+        is finalized whenever streaming stops (including on interrupt).
+
+    stream_window : int or None
+        Streaming data only: if set, only the most recent `stream_window`
+        samples are displayed (comet style) while older samples scroll off;
+        all consumed samples are still retained on the returned geometry.
+        Default None displays the full accumulated trajectory.
+
     Returns
     ----------
     geo : hypertools.DataGeometry
         A new data geometry object
 
     """
+
+    # streaming inputs (issue #101): iterators/generators and Hugging Face
+    # IterableDatasets are detected from the structure of the input -- no
+    # flag needed. Models are fitted on the first `stream_init` samples and
+    # every subsequent sample is projected through the fitted models and
+    # added to the plot dynamically (fetched in chunks of `stream_chunk`),
+    # continuing until the stream ends, `stream_max` samples have been
+    # consumed, or the user interrupts.
+    from ..tools.streaming import is_stream, plot_stream
+    if is_stream(x):
+        return plot_stream(
+            x, fmt, stream_init=stream_init, stream_chunk=stream_chunk,
+            stream_max=stream_max, stream_window=stream_window,
+            ndims=ndims, reduce=reduce,
+            normalize=normalize, align=align, cluster=cluster,
+            n_clusters=n_clusters, save_path=save_path, show=show,
+            frame_rate=frame_rate, markersize=markersize,
+            linewidth=linewidth, color=color, palette=palette, title=title,
+            size=size, elev=elev, azim=azim, ax=ax)
 
     if ax is not None:
         if ndims > 2:

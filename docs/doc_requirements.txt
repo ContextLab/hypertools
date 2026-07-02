@@ -1,5 +1,5 @@
 sphinx>=4.0.0
-pydata-sphinx-theme>=0.15.0
+furo>=2024.1
 sphinx-gallery>=0.10.0
 numpydoc>=1.1.0
 deepdish
