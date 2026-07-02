@@ -52,10 +52,12 @@ def main():
              reduce={'model': 'UMAP',
                      'params': {'n_neighbors': 36, 'min_dist': 0.1,
                                 'random_state': 42}},
-             # spin (not window) so the complete looping bundle stays on
-             # screen and orbits in 3D -- the classic readthedocs gif style;
-             # a rolling window would only ever show a tangled fragment
-             animate='spin', duration=30, frame_rate=30,
+             # sliding-window animation in a FIXED space: the data are
+             # scaled once from the full dataset (helpers.scale), so the
+             # axis limits never depend on which window is visible -- the
+             # comet travels along the loop while the cube's contents stay
+             # put (verified: limits identical across frames)
+             animate=True, duration=30, frame_rate=30, tail_duration=4,
              rotations=1, linewidth=3, zoom=2, size=[8, 6],
              save_path=mp4, show=False)
     # the dense spinning bundle (36 fat trajectories every frame) is large;
