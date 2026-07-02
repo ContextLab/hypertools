@@ -115,3 +115,10 @@ Jeremy's feedback: mixtures not showing multi-class membership; title/aspect/siz
 - **Gallery**: plotly_sg_scraper in docs/conf.py (renderer sphinx_gallery_png); animate_plotly example; animated thumbnail sphx_glr_animate_plotly_thumb.gif generated + registered in post_build.py. Verified: plotly PNG in built gallery html.
 - **Notebook**: animations display inline via to_jshtml + plotly frames; gif export cell; re-executed 0 errors (resources path dev/).
 - Suite: 192 passing (185 + 7 animation-export). 22/22 parity, 75/75 verification regenerated. Awaiting CI + posting round-2 evidence comment.
+
+## Round 2 final status (2026-07-02 ~11:15 EDT)
+- CI fully green on 0264b3a: 24/24 checks. Round-2 evidence comment posted:
+  https://github.com/ContextLab/hypertools/pull/270#issuecomment-4867433316
+- Extra hardening shipped during CI stabilization: dataset downloads validate content + retry w/ backoff (fe3bb8f, 0264b3a); CI shares one cross-OS cache of ~/hypertools_data so 24 jobs stop hammering Google Drive (root cause of intermittent text-test failures).
+- Totals: 193 tests, 75/75 verification, 22/22 parity, 4 animation GIF exports committed, plotly in sphinx gallery w/ animated thumbnail.
+- Awaiting Jeremy's review. DO NOT MERGE.
