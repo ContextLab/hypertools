@@ -31,6 +31,34 @@ sentence-transformers), modin, holoviews abstraction layer, Google-Docs corpus d
 fork notes/visualization_backend_research_2025-06-14.md), D3+Three.js custom backend
 (14-week plan, never started — maintenance trap).
 
+## Data shapes & color system — first-class 2.0 features (per Jeremy, 2026-07-02)
+
+These revamp ideas are CRITICAL carries, not nice-to-haves:
+
+1. **Multilevel-index support** (fork #14, #16): nested lists coerce to MultiIndex
+   DataFrames; color determined by the OUTERMOST index level; line thickness and opacity
+   decrease per deeper level (summary → detail rendering). This is the general mechanism
+   that subsumes today's list-of-arrays handling.
+2. **Stack/unstack as the universal implementation strategy** (fork #15; dev/decorate.py
+   `stack_handler`): every model-applying function stacks the list of DataFrames into one
+   MultiIndex frame, applies the model ONCE (correct shared embedding/clustering across
+   datasets), then inverts the stack to restore the input structure. `stack=True/False`
+   exposed to users; `return_model` threads the fitted model out. Modern datawrangler
+   provides `dw.stack`/`dw.unstack`/`dw.decorate.apply_unstacked` equivalents.
+3. **Robust coloring** (revamp notebook `mat2colors`/`vals2colors`; fork #11, #24, #32):
+   one colorization pathway accepting group labels (categorical), continuous 1D values
+   (binned through a palette), mixture proportions / arbitrary matrices (2D → reduce to
+   1D; ≥3D → reduce to 3D, treat as RGB or map through palette), or user-specified
+   colors. Includes multicolored lines (2D segment-based, 3D streamtube-style), colored
+   connections between cluster blocks (#32), and must be TESTED against lists of
+   DataFrames from day 1 (fmt-string crash, #24). Notebook draft impls are buggy
+   (np.hist/np.reduce typos, dead code) — treat as specs, not code.
+4. **Mixture models as first-class alternative to discrete clustering** (fork #10, #23):
+   `cluster()` returns hard labels for cluster models but SOFT mixture proportions for
+   `GaussianMixture`, `BayesianGaussianMixture`, `LatentDirichletAllocation`, `NMF`
+   (via predict_proba/transform). Plot colors blend by membership weights through
+   mat2colors. Line-mode rendering with soft assignments must be tested (#23 regression).
+
 ## Plotting architecture (the central design decision)
 
 - **matplotlib stays the default backend** — publication-quality, universal.
@@ -115,9 +143,9 @@ fork notes/visualization_backend_research_2025-06-14.md), D3+Three.js custom bac
   local files, images/text/audio, sklearn/seaborn datasets) with round-trippable save.
   Good 2.0 blueprint; implement incrementally.
 
-## Open decision for Jeremy
+## Decisions confirmed by Jeremy (2026-07-02)
 
-- `backend='auto'` policy: recommend matplotlib default everywhere EXCEPT Colab/Kaggle
-  (→ plotly). Alternative: interactive whenever in any Jupyter frontend. Affects what
-  millions of existing notebook users see after upgrading. Recommendation: conservative
-  (Colab/Kaggle only) for 2.0, revisit later.
+- `backend='auto'` policy **APPROVED**: matplotlib default everywhere EXCEPT Colab/Kaggle
+  (→ plotly). Conservative for 2.0; revisit broader Jupyter auto-switching later.
+- Multilevel indices, stack/unstack strategy, robust coloring, and mixture-model soft
+  clustering are REQUIRED carries (see "Data shapes & color system" section above).
