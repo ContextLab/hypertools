@@ -135,3 +135,9 @@ Jeremy's feedback: mixtures not showing multi-class membership; title/aspect/siz
 9. No re-download leak: verified + regression test (cache byte-stable across repeated loads).
 10. Modern demos: gallery plot_shapes_zoo + plot_datasaurus; executed notebooks docs/tutorials/hugging_face_embeddings.ipynb (sentence-transformers + fancyzhx/ag_news, GMM soft clusters, UMAP, spin gif) + modern_sklearn_dynamics.ipynb (HDBSCAN, GMM, Lorenz multicolored line + gif); registered in tutorials.rst.
 - Suite: 202 passing. Parity 22/22 regenerated. Awaiting CI on 1499e32, then round-3 comment.
+
+## Round 3 final (2026-07-02 ~13:30 EDT)
+- CI 24/24 green on 1499e32. Round-3 evidence comment posted:
+  https://github.com/ContextLab/hypertools/pull/270#issuecomment-4868835592
+- All 10 round-3 items shipped + 2 bonus root-cause fixes (Axes3D.dist zoom, nbsphinx re-execution hang). 202 tests.
+- Awaiting Jeremy's review. DO NOT MERGE.
