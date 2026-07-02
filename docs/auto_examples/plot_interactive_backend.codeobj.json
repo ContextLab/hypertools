@@ -8,45 +8,6 @@
    "name": "ndarray"
   }
  ],
- "geo": [
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools.datageometry",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
-  },
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
-  }
- ],
- "geo.fig": [
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "plotly.graph_objs._figure",
-   "module_short": "plotly.graph_objs",
-   "name": "Figure"
-  },
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "plotly.graph_objs",
-   "module_short": "plotly.graph_objs",
-   "name": "Figure"
-  },
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "plotly",
-   "module_short": "plotly",
-   "name": "Figure"
-  }
- ],
  "hyp.plot": [
   {
    "is_class": false,

@@ -33,6 +33,14 @@ def make_walk(n=200, d=10, seed=SEED):
     return np.cumsum(rng.standard_normal((n, d)), axis=0)
 
 
+def make_overlapping_clusters(n_per=100, d=5, k=3, sep=1.5, seed=SEED):
+    """Blobs sep standard deviations apart: overlap regions have genuinely
+    mixed memberships, so mixture-model color blending is visible."""
+    rng = np.random.default_rng(seed)
+    return np.vstack([rng.standard_normal((n_per, d)) + sep * i
+                      for i in range(k)])
+
+
 def make_clusters(n_per=60, d=5, k=3, seed=SEED):
     rng = np.random.default_rng(seed)
     return np.vstack([rng.standard_normal((n_per, d)) + 6 * i for i in range(k)])
@@ -48,6 +56,7 @@ def main():
     walk2 = make_walk(seed=1)
     walk3 = make_walk(seed=2)
     clusters = make_clusters()
+    oclusters = make_overlapping_clusters()
     df = pd.DataFrame(walk, columns=[f'f{i}' for i in range(walk.shape[1])])
     labels = [f'group{i}' for i in range(3) for _ in range(60)]
     walk_missing = walk.copy()
@@ -73,8 +82,8 @@ def main():
          lambda: hyp.plot(walk, 'o', hue=np.arange(len(walk), dtype=float),
                           show=False)),
         (P, 'hue_matrix_blended',
-         lambda: hyp.plot(clusters, 'o',
-                          hue=hyp.cluster(clusters,
+         lambda: hyp.plot(oclusters, 'o',
+                          hue=hyp.cluster(oclusters,
                                           cluster='GaussianMixture',
                                           n_clusters=3),
                           show=False)),
@@ -84,7 +93,7 @@ def main():
         (P, 'cluster_hdbscan',
          lambda: hyp.plot(clusters, 'o', cluster='HDBSCAN', show=False)),
         (P, 'cluster_gaussian_mixture_blend',
-         lambda: hyp.plot(clusters, 'o', cluster='GaussianMixture',
+         lambda: hyp.plot(oclusters, 'o', cluster='GaussianMixture',
                           n_clusters=3, show=False)),
         (P, 'nested_list_multilevel',
          lambda: hyp.plot([[walk, walk2], [walk3]], show=False)),
@@ -135,7 +144,7 @@ def main():
         (P, 'dotted_lines', lambda: hyp.plot(walk, ':', show=False)),
         (P, 'dashdot_lines', lambda: hyp.plot(walk, '-.', show=False)),
         (P, 'mixture_bayesian_gm',
-         lambda: hyp.plot(clusters, 'o', cluster='BayesianGaussianMixture',
+         lambda: hyp.plot(oclusters, 'o', cluster='BayesianGaussianMixture',
                           n_clusters=3, show=False)),
         (P, 'cluster_spectral',
          lambda: hyp.plot(clusters, 'o', cluster='SpectralClustering',
@@ -166,13 +175,13 @@ def main():
         (B, 'hue_continuous',
          ply(walk, 'o', hue=np.arange(len(walk), dtype=float))),
         (B, 'hue_matrix_blended',
-         ply(clusters, 'o',
-             hue=hyp.cluster(clusters, cluster='GaussianMixture',
+         ply(oclusters, 'o',
+             hue=hyp.cluster(oclusters, cluster='GaussianMixture',
                              n_clusters=3))),
         (B, 'cluster_kmeans', ply(clusters, 'o', cluster='KMeans',
                                   n_clusters=3)),
         (B, 'cluster_hdbscan', ply(clusters, 'o', cluster='HDBSCAN')),
-        (B, 'mixture_blend', ply(clusters, 'o', cluster='GaussianMixture',
+        (B, 'mixture_blend', ply(oclusters, 'o', cluster='GaussianMixture',
                                  n_clusters=3)),
         (B, 'nested_list_multilevel', ply([[walk, walk2], [walk3]])),
         (B, 'nested_mixed_depth', ply([[walk, [walk2]], walk3])),
@@ -237,8 +246,8 @@ def main():
                                hyp.cluster(clusters, n_clusters=3)],
                           title='cluster: KMeans labels', show=False)),
         ('cluster', 'mixture_proportions',
-         lambda: hyp.plot(clusters, 'o',
-                          hue=hyp.cluster(clusters,
+         lambda: hyp.plot(oclusters, 'o',
+                          hue=hyp.cluster(oclusters,
                                           cluster='GaussianMixture',
                                           n_clusters=3),
                           title='cluster: GaussianMixture proportions',

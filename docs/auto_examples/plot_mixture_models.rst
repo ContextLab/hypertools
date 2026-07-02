@@ -30,7 +30,7 @@ discrete labels, and `hyp.plot` colors each observation by blending the
 component colors according to its mixture weights -- observations between
 clusters render with intermediate colors.
 
-.. GENERATED FROM PYTHON SOURCE LINES 15-35
+.. GENERATED FROM PYTHON SOURCE LINES 15-36
 
 
 
@@ -56,8 +56,12 @@ clusters render with intermediate colors.
 
  .. code-block:: none
 
-    (300, 3) [[0. 1. 0.]
-     [0. 1. 0.]]
+    (300, 3) [[0.    0.997 0.003]
+     [0.    0.997 0.003]]
+    /Users/jmanning/hypertools/hypertools/plot/plot.py:744: UserWarning: Could not convert all list arguments to numpy arrays.  If list is longer than 256 items, it will automatically be pickled, which could cause Python 2/3 compatibility issues for the DataGeometry object.
+      warnings.warn(
+    /Users/jmanning/hypertools/hypertools/plot/plot.py:744: UserWarning: Could not convert all list arguments to numpy arrays.  If list is longer than 256 items, it will automatically be pickled, which could cause Python 2/3 compatibility issues for the DataGeometry object.
+      warnings.warn(
 
 
 
@@ -75,9 +79,10 @@ clusters render with intermediate colors.
     import numpy as np
     import hypertools as hyp
 
-    # three overlapping gaussian blobs
+    # three OVERLAPPING gaussian blobs (1.5 sd apart) -- points in the overlap
+    # regions have genuinely mixed memberships, so their colors visibly blend
     rng = np.random.default_rng(42)
-    data = np.vstack([rng.standard_normal((100, 5)) + 2.5 * i for i in range(3)])
+    data = np.vstack([rng.standard_normal((100, 5)) + 1.5 * i for i in range(3)])
 
     # soft cluster assignments: rows sum to 1
     proportions = hyp.cluster(data, cluster='GaussianMixture', n_clusters=3)
@@ -92,7 +97,7 @@ clusters render with intermediate colors.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.079 seconds)
+   **Total running time of the script:** (0 minutes 0.086 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_mixture_models.py:

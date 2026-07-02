@@ -38,6 +38,14 @@ def make_walk(n=200, d=10, seed=SEED):
     return np.cumsum(rng.standard_normal((n, d)), axis=0)
 
 
+def make_overlapping_clusters(n_per=100, d=5, k=3, sep=1.5, seed=SEED):
+    """Blobs sep standard deviations apart: overlap regions have genuinely
+    mixed memberships, so mixture-model color blending is visible."""
+    rng = np.random.default_rng(seed)
+    return np.vstack([rng.standard_normal((n_per, d)) + sep * i
+                      for i in range(k)])
+
+
 def make_clusters(n_per=60, d=5, k=3, seed=SEED):
     rng = np.random.default_rng(seed)
     return np.vstack([rng.standard_normal((n_per, d)) + 6 * i for i in range(k)])
@@ -86,6 +94,7 @@ def main():
     walk2 = make_walk(seed=1)
     walk3 = make_walk(seed=2)
     clusters = make_clusters()
+    oclusters = make_overlapping_clusters()
     labels = [f'group{i}' for i in range(3) for _ in range(60)]
 
     cases = [
@@ -120,12 +129,12 @@ def main():
                   {'hue': [str(l) for l in
                            hyp.cluster(clusters, cluster='HDBSCAN')]})),
         ('mixture_gaussian',
-         lambda: ((clusters, 'o'),
-                  {'hue': hyp.cluster(clusters, cluster='GaussianMixture',
+         lambda: ((oclusters, 'o'),
+                  {'hue': hyp.cluster(oclusters, cluster='GaussianMixture',
                                       n_clusters=3)})),
         ('matrix_hue_blend',
-         lambda: ((clusters, 'o'),
-                  {'hue': hyp.cluster(clusters,
+         lambda: ((oclusters, 'o'),
+                  {'hue': hyp.cluster(oclusters,
                                       cluster='BayesianGaussianMixture',
                                       n_clusters=3)})),
         ('nested_multilevel', lambda: (([[walk, walk2], [walk3]],), {})),

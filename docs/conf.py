@@ -20,6 +20,17 @@
 # import sys
 import sys, os
 import sphinx_bootstrap_theme
+
+# plotly scraper for sphinx-gallery: renders plotly figures produced by
+# gallery examples (requires kaleido). Falls back gracefully if plotly is
+# unavailable so the docs still build.
+try:
+    import plotly.io as pio
+    pio.renderers.default = 'sphinx_gallery_png'
+    from plotly.io._sg_scraper import plotly_sg_scraper
+except Exception:  # pragma: no cover
+    def plotly_sg_scraper(*args, **kwargs):
+        return ''
 sys.path.insert(0, os.path.abspath('../'))
 
 # -- General configuration ------------------------------------------------
@@ -225,7 +236,9 @@ sphinx_gallery_conf = {
     'expected_failing_examples': [],
     # Performance optimizations
     'capture_repr': ('_repr_html_',),
-    'image_scrapers': ('matplotlib',),
+    # scrape BOTH matplotlib figures and plotly figures (the plotly scraper
+    # renders interactive figures into the gallery via kaleido)
+    'image_scrapers': ('matplotlib', plotly_sg_scraper),
     # Limit memory usage display
     'show_memory': False,
     # Ensure proper thumbnail linking

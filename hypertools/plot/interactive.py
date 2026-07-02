@@ -30,6 +30,7 @@ VALID_BACKENDS = ('auto', 'matplotlib', 'plotly')
 
 # matplotlib sizes are in points; plotly sizes are in pixels (1pt = 4/3 px)
 PT_TO_PX = 4.0 / 3.0
+DEFAULT_FIGSIZE = (6.4, 4.8)  # matplotlib rcParams['figure.figsize'] inches
 DEFAULT_LINEWIDTH_PT = 1.5   # matplotlib rcParams['lines.linewidth']
 DEFAULT_MARKERSIZE_PT = 6.0  # matplotlib rcParams['lines.markersize']
 CUBE_LINEWIDTH_PT = 1.5      # hypertools' wireframe cube linewidth (1pt in
@@ -182,31 +183,41 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
     fig = go.Figure(data=traces)
 
+    # match matplotlib: centered black title (12pt = 16px), default canvas
+    # 6.4 x 4.8 inches at 100 dpi, legend inside the top-right corner
     layout = dict(
-        title=title,
         paper_bgcolor='white',
         plot_bgcolor='white',
         showlegend=legend is not None,
         margin=dict(l=10, r=10, t=40 if title else 10, b=10),
-        legend=dict(bgcolor='rgba(255,255,255,0.8)'),
+        legend=dict(bgcolor='rgba(255,255,255,0.8)',
+                    x=0.99, y=0.99, xanchor='right', yanchor='top'),
     )
-    if size is not None:
-        layout['width'] = int(size[0] * 100)
-        layout['height'] = int(size[1] * 100)
+    if title is not None:
+        layout['title'] = dict(text=title, x=0.5, xanchor='center',
+                               y=0.97, yanchor='top',
+                               font=dict(color='black', size=16))
+    size = size if size is not None else DEFAULT_FIGSIZE
+    layout['width'] = int(size[0] * 100)
+    layout['height'] = int(size[1] * 100)
 
-    hidden_axis = dict(visible=False, range=[-1.1, 1.1])
     if ndims >= 3:
         layout['scene'] = dict(
             xaxis=dict(visible=False, range=[-1, 1]),
             yaxis=dict(visible=False, range=[-1, 1]),
             zaxis=dict(visible=False, range=[-1, 1]),
             camera=dict(eye=_camera_eye(elev, azim)),
-            aspectmode='cube',
+            # matplotlib's Axes3D uses a 4:4:3 box aspect by default; match
+            # it so the cube renders wider than tall, exactly like the
+            # matplotlib backend
+            aspectmode='manual',
+            aspectratio=dict(x=1.0, y=1.0, z=0.75),
         )
     elif ndims == 2:
-        layout['xaxis'] = hidden_axis
-        layout['yaxis'] = dict(visible=False, range=[-1.1, 1.1],
-                               scaleanchor='x', scaleratio=1)
+        # matplotlib stretches the 2D frame to fill the axes region (no
+        # equal-aspect constraint), so the plotly frame does the same
+        layout['xaxis'] = dict(visible=False, range=[-1.1, 1.1])
+        layout['yaxis'] = dict(visible=False, range=[-1.1, 1.1])
         layout['shapes'] = [_square_shape()]
     else:
         layout['xaxis'] = dict(visible=False)
@@ -219,8 +230,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        rotations, elev, azim, n_data_traces)
 
     if save_path is not None:
-        if save_path.endswith('.html'):
+        ext = save_path.lower().rsplit('.', 1)[-1]
+        if ext == 'html':
             fig.write_html(save_path)
+        elif animate and ext in ('gif', 'png', 'apng', 'mp4', 'mov', 'avi'):
+            _export_animation_file(fig, save_path, frame_rate, duration,
+                                   size)
         else:
             fig.write_image(save_path)
 
@@ -228,6 +243,65 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         fig.show()
 
     return fig
+
+
+def _export_animation_file(fig, save_path, frame_rate, duration, size):
+    """Export a plotly animation to .gif, .png/.apng, or .mp4/.mov/.avi.
+
+    Each frame is rendered to a PNG via kaleido and the sequence is
+    assembled with Pillow (gif / animated png) or ffmpeg (video formats).
+    """
+    import io
+    import os
+    import subprocess
+    import tempfile
+
+    import plotly.graph_objects as go
+    from PIL import Image
+
+    size = size if size is not None else DEFAULT_FIGSIZE
+    width, height = int(size[0] * 100), int(size[1] * 100)
+    ext = save_path.lower().rsplit('.', 1)[-1]
+
+    images = []
+    for frame in fig.frames:
+        snapshot = go.Figure(fig)
+        snapshot.frames = ()
+        # hide the interactive play/pause controls in exported frames
+        # (update_layout(updatemenus=[]) is a no-op; assign directly)
+        snapshot.layout.updatemenus = ()
+        if frame.layout:
+            snapshot.update_layout(frame.layout)
+        if frame.data:
+            indices = frame.traces if frame.traces is not None \
+                else range(len(frame.data))
+            for idx, trace in zip(indices, frame.data):
+                snapshot.data[idx].update(trace)
+        png = snapshot.to_image(format='png', width=width, height=height)
+        images.append(Image.open(io.BytesIO(png)).convert('RGB'))
+
+    n_frames = max(1, len(images))
+    frame_ms = max(20, int(1000.0 * duration / n_frames))
+
+    if ext == 'gif':
+        images[0].save(save_path, save_all=True, append_images=images[1:],
+                       duration=frame_ms, loop=0)
+    elif ext in ('png', 'apng'):
+        target = save_path if ext == 'png' else save_path[:-5] + '.png'
+        images[0].save(target, format='PNG', save_all=True,
+                       append_images=images[1:], duration=frame_ms, loop=0)
+        if target != save_path:
+            os.replace(target, save_path)
+    else:
+        fps = max(1, int(round(1000.0 / frame_ms)))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for i, img in enumerate(images):
+                img.save(os.path.join(tmpdir, f'frame_{i:04d}.png'))
+            subprocess.run(
+                ['ffmpeg', '-y', '-framerate', str(fps), '-i',
+                 os.path.join(tmpdir, 'frame_%04d.png'),
+                 '-pix_fmt', 'yuv420p', save_path],
+                check=True, capture_output=True)
 
 
 def _cube_trace(go, scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT):
@@ -344,7 +418,7 @@ def _trace_name(legend, tkwargs, i):
     return None
 
 
-def _camera_eye(elev, azim, r=2.5):
+def _camera_eye(elev, azim, r=1.95):
     """Convert matplotlib elev/azim (degrees) to a plotly camera eye."""
     elev_r, azim_r = np.deg2rad(elev), np.deg2rad(azim)
     return dict(
@@ -361,7 +435,10 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     only touch the data traces, so the cube/frame stays put."""
     import plotly.graph_objects as go
 
-    n_frames = 90
+    # ~15 effective frames per second of animation, capped: short animations
+    # get proportionally fewer frames (matters for gif/mp4 export, where
+    # every frame is rendered through kaleido)
+    n_frames = int(np.clip(round(duration * 15), 10, 90))
     frames = []
     trace_indices = list(range(n_data_traces))
 

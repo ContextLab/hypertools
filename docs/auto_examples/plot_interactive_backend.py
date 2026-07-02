@@ -25,8 +25,6 @@ data = np.cumsum(np.random.default_rng(42).standard_normal((200, 10)),
 # classic matplotlib render (the default outside Colab/Kaggle)
 hyp.plot(data, backend='matplotlib')
 
-# identical call, interactive plotly render. (show=False here only so the
-# static documentation build doesn't try to open a browser -- in a notebook
-# or script, just call hyp.plot(data, backend='plotly'))
-geo = hyp.plot(data, backend='plotly', show=False)
-geo.fig  # in a notebook, this displays the interactive figure
+# identical call, interactive plotly render (in the docs gallery this is
+# captured as an image; in a notebook it is fully interactive)
+hyp.plot(data, backend='plotly')

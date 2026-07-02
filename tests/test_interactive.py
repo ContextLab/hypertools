@@ -81,7 +81,9 @@ def test_plotly_draw_3d():
     # hypertools aesthetic: axes fully hidden, unit cube range
     assert fig.layout.scene.xaxis.visible is False
     assert tuple(fig.layout.scene.xaxis.range) == (-1, 1)
-    assert fig.layout.scene.aspectmode == 'cube'
+    # matches matplotlib's default 4:4:3 Axes3D box aspect
+    assert fig.layout.scene.aspectmode == 'manual'
+    assert fig.layout.scene.aspectratio.z == 0.75
 
 
 def test_plotly_draw_2d():

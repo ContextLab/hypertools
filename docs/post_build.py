@@ -55,7 +55,8 @@ GIF_REPLACEMENTS = {
     "sphx_glr_animate_spin_thumb.png": "sphx_glr_animate_spin_thumb.gif",
     "sphx_glr_animate_thumb.png": "sphx_glr_animate_thumb.gif",
     "sphx_glr_precog_thumb.png": "sphx_glr_precog_thumb.gif",
-    "sphx_glr_save_movie_thumb.png": "sphx_glr_save_movie_thumb.gif"
+    "sphx_glr_save_movie_thumb.png": "sphx_glr_save_movie_thumb.gif",
+    "sphx_glr_animate_plotly_thumb.png": "sphx_glr_animate_plotly_thumb.gif"
 }
 
 def copy_gif_thumbnails():

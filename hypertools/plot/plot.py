@@ -681,9 +681,7 @@ def plot(
             # save
             if save_path is not None:
                 if animate:
-                    Writer = animation.writers["ffmpeg"]
-                    writer = Writer(fps=frame_rate, bitrate=1800)
-                    line_ani.save(save_path, writer=writer)
+                    _save_animation(line_ani, save_path, frame_rate)
 
                 else:
                     plt.savefig(save_path)
@@ -897,3 +895,31 @@ def _expand_labels(labels, old_lengths, new_lengths):
             expanded[j] = lab
         out.extend(expanded)
     return out
+
+
+def _save_animation(line_ani, save_path, frame_rate):
+    """Save a matplotlib animation, choosing the writer by file extension.
+
+    .gif and .png/.apng use PillowWriter (no ffmpeg required; Pillow writes
+    animated PNGs when the extension is .png/.apng); .mp4/.mov/.avi and
+    anything else use the ffmpeg writer, matching hypertools' historical
+    behavior.
+    """
+    ext = save_path.lower().rsplit('.', 1)[-1]
+    if ext == 'gif':
+        line_ani.save(save_path, writer=animation.PillowWriter(fps=frame_rate))
+    elif ext in ('png', 'apng'):
+        # Pillow emits an animated PNG (APNG) for multi-frame PNG saves,
+        # but only recognizes the .png extension -- write to .png and
+        # rename if the caller asked for .apng
+        import os
+        target = save_path
+        if ext == 'apng':
+            target = save_path[:-5] + '.png'
+        line_ani.save(target, writer=animation.PillowWriter(fps=frame_rate))
+        if target != save_path:
+            os.replace(target, save_path)
+    else:
+        Writer = animation.writers["ffmpeg"]
+        writer = Writer(fps=frame_rate, bitrate=1800)
+        line_ani.save(save_path, writer=writer)

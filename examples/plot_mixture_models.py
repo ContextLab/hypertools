@@ -19,9 +19,10 @@ clusters render with intermediate colors.
 import numpy as np
 import hypertools as hyp
 
-# three overlapping gaussian blobs
+# three OVERLAPPING gaussian blobs (1.5 sd apart) -- points in the overlap
+# regions have genuinely mixed memberships, so their colors visibly blend
 rng = np.random.default_rng(42)
-data = np.vstack([rng.standard_normal((100, 5)) + 2.5 * i for i in range(3)])
+data = np.vstack([rng.standard_normal((100, 5)) + 1.5 * i for i in range(3)])
 
 # soft cluster assignments: rows sum to 1
 proportions = hyp.cluster(data, cluster='GaussianMixture', n_clusters=3)
