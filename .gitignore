@@ -18,3 +18,4 @@ docs/_build
 venv/
 .omc/
 __pycache__/
+tests/screenshots/

@@ -89,6 +89,32 @@ fork notes/visualization_backend_research_2025-06-14.md), D3+Three.js custom bac
 - **Phase 4 — docs**: rebuild Sphinx site, regenerate gallery (incl. interactive plotly
   examples), update README/tutorials for 2.0 API, migration guide.
 
+## Design decisions mined from the fork's issue tracker (jeremymanning/hypertools #1-34, incl. comments)
+
+- **Backend lesson (the big one):** the refactor adopted plotly as PRIMARY backend (#1, #2)
+  and its hardest, never-fixed bugs were plotly rendering issues: 3D camera mis-centering
+  (#25, reopened after a claimed fix), GIF exports losing background (#33) and freezing
+  camera position (#34). This validates 2.0's reversal: matplotlib default, plotly optional.
+- **Caching removed deliberately** (#3, #4): stringified cache keys ignored kwargs/nested
+  dicts → stale results with same data + different args. 2.0: no memoize (matches audit).
+- **API hygiene decisions to keep** (#4, #5): single canonical form per argument (no
+  `color`/`colors` aliases; `align='hyper'` not `align=True`); DataFrame-centric I/O
+  (arrays coerced to DataFrames; list-of-DataFrames as the universal internal form).
+- **DataGeometry tension:** fork decided to REMOVE DataGeometry; but ContextLab users ask
+  for geo-like access (#227, #236, #224). Resolution: `HyperToolsFigure` result object
+  carries data + fitted models + transform chain — the useful parts of geo without the
+  legacy class.
+- **Normalization semantics are load-bearing** (#27): the old pipeline normalized by
+  default; the refactor didn't, and the "story trajectories" demo became irreproducible.
+  2.0 must document defaults precisely and add a reproducibility test for that pipeline.
+- **Known-broken patterns to test from day 1:** fmt-string/color handling on lists of
+  DataFrames crashed (#24); cluster+line mode rendering (#23); smooth/resample+UMAP
+  trajectory "jumps" (#26); multilevel-index styling (color by outer level, thickness/
+  opacity by depth, #14) was designed but never finished.
+- **load/save design** (#12, #13): extensible per-filetype loader (named datasets, URLs,
+  local files, images/text/audio, sklearn/seaborn datasets) with round-trippable save.
+  Good 2.0 blueprint; implement incrementally.
+
 ## Open decision for Jeremy
 
 - `backend='auto'` policy: recommend matplotlib default everywhere EXCEPT Colab/Kaggle

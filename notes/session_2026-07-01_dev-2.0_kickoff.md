@@ -39,10 +39,24 @@ Working tree was actually clean. The count came from two untracked dirs: `.venv/
 - #227 sklearn-pipeline-style DataGeometry; #217 return procrustes projection matrix
 - #212 pip install dependency pain; #193 geo iterable/indexable; #191 interactive backend request (ipyvolume)
 
-## Pending / next steps
-- [ ] Collect 3 subagent reports: jeremy/dev design analysis, backend-branch lessons, master audit (deps/CI/tests/bottlenecks).
-- [ ] Write ROADMAP + architecture doc on dev-2.0.
-- [ ] Scaffold modernized package (keep matplotlib default backend + optional plotly interactive backend; lazy imports; modern deps; pyproject.toml).
-- [ ] Dev/testing notebook + screenshot-based verification harness for EVERY function.
-- [ ] Update docs.
-- [ ] PR to master only after user sign-off.
+## Completed this session
+- [x] All 4 subagent reports collected (jeremy/dev design, backend branches, master audit, fork issue tracker #1-34 incl. comments). Full synthesis in **notes/hypertools_2.0_roadmap.md** — read that first when resuming.
+- [x] Roadmap/architecture doc committed on dev-2.0.
+- [x] Screenshot harness (scripts/screenshot_harness.py) + baseline generator (scripts/generate_baseline_screenshots.py): 13/13 cases pass on v0.8.2, PNGs in tests/screenshots/baseline_v0.8.2/ (gitignored), 2 spot-checked visually — correct.
+- [x] Dev notebook: dev/hypertools_2.0_dev.ipynb (valid nbformat, 20 cells, one section per public function + use-case matrix).
+
+## Key facts to remember when resuming
+- Branch: **dev-2.0** (all work here; NEVER touch master — PR only after Jeremy signs off).
+- Fork remote added as `jeremy`; refactor code = `jeremy/dev` branch `dev/` folder; backend lessons in `jeremy/matplotlib-backend-revert` notes/.
+- Fork issues verdict: plotly-as-primary caused the worst unfixed bugs (GIF camera #34, GIF background #33, 3D camera centering #25) → matplotlib default + plotly optional is the confirmed 2.0 architecture.
+- `describe(show=False)` skips figure creation entirely (API inconsistency, 2.0 cleanup item).
+- Import perf: 5.1s warm (umap/pynndescent ~3s) — lazy imports are Phase 0.
+- Agent-report gotcha (harness quirk this session): subagent final messages arrived as stubs; recover with jq over the task .output transcript (assistant text entries).
+
+## Next steps (Phase 0, in order)
+- [ ] pyproject.toml (PEP 621) + delete .travis.yml + CI bump (py3.10-3.13, setup-python@v5, cache@v4, codecov@v4).
+- [ ] Lazy imports (module __getattr__) — target `import hypertools` < 1s; verify with -X importtime.
+- [ ] Fix double-reduction in plot.py; remove str-keyed memoize (fork issue #3 confirmed it returns stale results).
+- [ ] Swap hdbscan→sklearn.cluster.HDBSCAN; vendor dev/ppca.py to replace pca-magic.
+- [ ] Run FULL test suite (129 tests) before/after each change; keep green.
+- Then Phase 1 (core: apply_model registry, decorator chain, transform-chain result object), Phase 2 (plotting: style layer, HyperToolsFigure, plotly backend, backend='auto'), Phase 3 (issue burn-down), Phase 4 (docs). Details in roadmap.
