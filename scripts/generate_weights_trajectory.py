@@ -44,20 +44,27 @@ def main():
     mp4 = os.path.join(OUT_DIR, '_weights_tmp.mp4')
     gif = os.path.join(OUT_DIR, 'weights_hyperaligned.gif')
     hyp.plot(data,
-             # large UMAP neighborhoods merge same-timepoint rows across
-             # subjects into shared neighborhoods, roping the aligned
-             # trajectories together (the modern default of 15 keeps
-             # neighborhoods within-subject and disperses the bundle)
+             # moderate UMAP neighborhoods (36) rope same-timepoint rows
+             # across subjects together while preserving the trajectory's
+             # dramatic bend/loop; the modern default (15) disperses the
+             # bundle into a hairball, and large values (150+) over-globalize
+             # the embedding and flatten the loop into a near-straight line
              reduce={'model': 'UMAP',
-                     'params': {'n_neighbors': 150, 'random_state': 42}},
-             animate=True, duration=30, frame_rate=30,
-             tail_duration=4,
-             rotations=1, linewidth=3, zoom=3.5, size=[8, 6],
+                     'params': {'n_neighbors': 36, 'min_dist': 0.1,
+                                'random_state': 42}},
+             # spin (not window) so the complete looping bundle stays on
+             # screen and orbits in 3D -- the classic readthedocs gif style;
+             # a rolling window would only ever show a tangled fragment
+             animate='spin', duration=30, frame_rate=30,
+             rotations=1, linewidth=3, zoom=2, size=[8, 6],
              save_path=mp4, show=False)
+    # the dense spinning bundle (36 fat trajectories every frame) is large;
+    # scale=340 + a 48-colour palette keeps it near the other animation gifs
+    # (~7 MB) without visible loss, still 30 fps with no frame downsampling
     subprocess.run(
         ['ffmpeg', '-y', '-i', mp4, '-vf',
-         'fps=30,scale=420:-1:flags=lanczos,split[s0][s1];'
-         '[s0]palettegen=max_colors=64:stats_mode=diff[p];'
+         'fps=30,scale=340:-1:flags=lanczos,split[s0][s1];'
+         '[s0]palettegen=max_colors=48:stats_mode=diff[p];'
          '[s1][p]paletteuse=dither=none', gif],
         check=True, capture_output=True)
     os.remove(mp4)
