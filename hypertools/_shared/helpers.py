@@ -144,11 +144,29 @@ def patch_lines(x):
 
 
 def is_line(format_str):
+    """True if the format string draws pure lines (no markers).
+
+    Notes: linestyle tokens are stripped BEFORE checking for marker
+    characters so that '-.' (dash-dot) is recognized as a line rather than
+    a '.' marker, mirroring matplotlib's own fmt grammar. The "no marker"
+    sentinel keys ('', ' ', 'None', 'none') are excluded from the marker
+    set -- '' is a substring of every string, which previously made this
+    function return False for ALL format strings (silently disabling line
+    interpolation on matplotlib versions whose Line2D.markers includes '').
+    """
     if isinstance(format_str, np.bytes_):
         format_str = format_str.decode('utf-8')
-    markers = list(map(lambda x: str(x), Line2D.markers.keys()))
+    if format_str is None:
+        return True
+    if isinstance(format_str, (list, tuple, np.ndarray)):
+        return all(is_line(f) for f in format_str)
+    remainder = format_str
+    for linestyle in ('-.', '--', '-', ':'):  # two-char styles first
+        remainder = remainder.replace(linestyle, '')
+    markers = [str(symbol) for symbol in Line2D.markers.keys()
+               if str(symbol) not in ('', ' ', 'None', 'none')]
 
-    return (format_str is None) or (all([str(symbol) not in format_str for symbol in markers]))
+    return all(symbol not in remainder for symbol in markers)
 
 
 def get_type(data):

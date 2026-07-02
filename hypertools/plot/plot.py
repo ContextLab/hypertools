@@ -389,6 +389,12 @@ def plot(
         xform = reducer(xform, ndims=3, reduce=reduce, internal=True,
                         format_data=False)
 
+    # per-point colors for multicolored lines (set by the hue branch below;
+    # computed after interpolation). Dataset lengths are captured now so hue
+    # values can be re-interpolated to match the interpolated trajectories.
+    multicolor_hue = None
+    pre_interp_lengths = [len(xi) for xi in xform]
+
     # find cluster and reshape if n_clusters
     if cluster is not None:
         if hue is not None:
@@ -452,20 +458,39 @@ def plot(
         if color is not None:
             warnings.warn("Using group, color keyword will be ignored.")
 
-        # 2D hue (e.g. mixture proportions, weights, or any per-observation
-        # feature matrix): blend colors per observation, then group
-        # observations with (near-)identical colors into traces. Requires one
-        # row per observation -- nested lists whose flattened length matches
-        # the data instead fall through to the legacy grouping path below.
+        # classify the hue argument: per-observation numeric matrix
+        # (mixture proportions, model weights, ...), continuous 1D values,
+        # or discrete grouping labels
         n_obs = sum(len(xi) for xi in xform)
         try:
-            hue_matrix = np.asarray(hue)
+            hue_array = np.asarray(hue)
         except Exception:
-            hue_matrix = None
-        if hue_matrix is not None and hue_matrix.ndim == 2 \
-                and np.issubdtype(hue_matrix.dtype, np.number) \
-                and hue_matrix.shape[0] == n_obs:
-            blended = mat2colors(hue_matrix, palette=palette)
+            hue_array = None
+        hue_is_matrix = (hue_array is not None and hue_array.ndim == 2
+                         and np.issubdtype(hue_array.dtype, np.number)
+                         and hue_array.shape[0] == n_obs)
+        hue_is_continuous = (hue_array is not None and hue_array.ndim == 1
+                             and np.issubdtype(hue_array.dtype, np.number)
+                             and hue_array.shape[0] == n_obs)
+
+        if (hue_is_matrix or hue_is_continuous) and is_line(fmt) \
+                and not animate:
+            # MULTICOLORED LINES: color varies continuously along each
+            # trajectory. Datasets stay intact (no group reshape, which
+            # would fragment the lines); per-point colors are computed
+            # after interpolation, below.
+            multicolor_hue = np.asarray(hue_array, dtype=np.float64)
+            if legend is True:
+                warnings.warn("legend is not supported for continuous or "
+                              "matrix-valued hue; ignoring legend.")
+                legend = None
+            hue = None
+
+        elif hue_is_matrix:
+            # markers (or animated) path: blend colors per observation,
+            # then group observations with (near-)identical colors into
+            # traces
+            blended = mat2colors(hue_array, palette=palette)
             group_ids, group_colors = colors2groups(blended)
             mpl_kwargs["color"] = [
                 group_colors[gid]
@@ -477,24 +502,26 @@ def plot(
                 legend = None
             hue = group_ids
 
-        # if list of lists, unpack
-        elif any(isinstance(el, list) for el in hue):
-            hue = list(itertools.chain(*hue))
+        else:
+            # if list of lists, unpack
+            if any(isinstance(el, list) for el in hue):
+                hue = list(itertools.chain(*hue))
 
-        # if all of the elements are numbers, map them to colors
-        if not isinstance(hue[0], tuple):
-            if all(isinstance(el, (int, float)) and not isinstance(el, bool)
-                   for el in hue):
-                hue = vals2bins(hue)
-            elif all(isinstance(el, str) for el in hue):
-                hue = group_by_category(hue)
+            # if all of the elements are numbers, map them to colors
+            if not isinstance(hue[0], tuple):
+                if all(isinstance(el, (int, float, np.integer, np.floating))
+                       and not isinstance(el, bool) for el in hue):
+                    hue = vals2bins(hue)
+                elif all(isinstance(el, str) for el in hue):
+                    hue = group_by_category(hue)
 
         # reshape the data according to group
-        if n_clusters is None:
-            xform, labels = reshape_data(xform, hue, labels)
-        # interpolate lines if they are grouped
-        if is_line(fmt):
-            xform = patch_lines(xform)
+        if hue is not None:
+            if n_clusters is None:
+                xform, labels = reshape_data(xform, hue, labels)
+            # interpolate lines if they are grouped
+            if is_line(fmt):
+                xform = patch_lines(xform)
 
     # multilevel styling for nested-list input: every leaf under the same
     # outermost group shares that group's color, and each additional nesting
@@ -525,6 +552,7 @@ def plot(
         mpl_kwargs["label"] = legend
 
     # interpolate if its a line plot
+    pre_interp_point_counts = [xi.shape[0] for xi in xform]
     if fmt is None or isinstance(fmt, str):
         if is_line(fmt):
             if xform[0].shape[0] > 1:
@@ -538,6 +566,21 @@ def plot(
                     xform[idx] = interp_array_list(
                         xi, interp_val=frame_rate * duration / (xi.shape[0] - 1)
                     )
+
+    # interpolation adds points, so per-point labels must be re-mapped onto
+    # the interpolated trajectories (each label lands at its original
+    # point's new index; in-between points get None)
+    post_interp_point_counts = [xi.shape[0] for xi in xform]
+    if labels is not None and post_interp_point_counts != pre_interp_point_counts:
+        labels = _expand_labels(labels, pre_interp_point_counts,
+                                post_interp_point_counts)
+
+    # compute per-point colors for multicolored lines now that trajectories
+    # have been interpolated (hue values are re-interpolated to match)
+    line_colors = None
+    if multicolor_hue is not None:
+        line_colors = _multicolor_line_colors(
+            multicolor_hue, pre_interp_lengths, xform, palette)
 
     # handle explore flag
     if explore:
@@ -601,6 +644,7 @@ def plot(
             rotations=rotations,
             elev=elev,
             azim=azim,
+            point_colors=line_colors,
         )
         ax = None
         data = xform
@@ -641,6 +685,13 @@ def plot(
                 ax=ax,
                 frame_kwargs=frame_kwargs,
             )
+
+            # multicolored lines: swap the single-color line artists for
+            # collections with per-segment colors (the cube/square frame
+            # and axes produced by _draw are kept)
+            if line_colors is not None:
+                _apply_multicolor_lines(ax, xform, line_colors,
+                                        kwargs_list)
 
             # tighten layout
             plt.tight_layout()
@@ -764,3 +815,103 @@ def _contains_string(el):
     if isinstance(el, list):
         return any(_contains_string(sub) for sub in el)
     return False
+
+
+def _multicolor_line_colors(hue_src, orig_lengths, xform, palette):
+    """Per-point RGB colors for multicolored lines.
+
+    hue_src holds one value (or one row) per ORIGINAL observation; the
+    trajectories in xform have since been interpolated to a higher temporal
+    resolution, so each dataset's hue values are linearly re-interpolated to
+    its new length before color mapping. Colors are mapped over the
+    CONCATENATED hue values so the scale is shared across datasets.
+
+    Returns a list of (n_i, 3) arrays, one per dataset in xform.
+    """
+    hue_src = np.asarray(hue_src, dtype=np.float64)
+    if hue_src.ndim == 1:
+        hue_src = hue_src[:, None]
+
+    splits = np.cumsum(orig_lengths)[:-1]
+    pieces = np.vsplit(hue_src, splits)
+
+    interped = []
+    for piece, xi in zip(pieces, xform):
+        n_new = xi.shape[0]
+        if n_new == piece.shape[0]:
+            interped.append(piece)
+            continue
+        old_t = np.linspace(0.0, 1.0, piece.shape[0])
+        new_t = np.linspace(0.0, 1.0, n_new)
+        interped.append(np.column_stack(
+            [np.interp(new_t, old_t, piece[:, c])
+             for c in range(piece.shape[1])]))
+
+    stacked = np.vstack(interped)
+    colors = mat2colors(
+        stacked.ravel() if stacked.shape[1] == 1 else stacked,
+        palette=palette)
+
+    out, start = [], 0
+    for xi in xform:
+        out.append(np.asarray(colors[start:start + xi.shape[0]]))
+        start += xi.shape[0]
+    return out
+
+
+def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list):
+    """Replace single-color line artists with per-segment-colored
+    collections (matplotlib backend)."""
+    from matplotlib.collections import LineCollection
+    from mpl_toolkits.mplot3d.art3d import Line3DCollection
+
+    for line in list(ax.lines):
+        line.remove()
+
+    is_3d = xform[0].shape[1] >= 3
+    for i, (xi, ci) in enumerate(zip(xform, line_colors)):
+        tkwargs = kwargs_list[i] if i < len(kwargs_list) else {}
+        lw = tkwargs.get('linewidth') or plt.rcParams['lines.linewidth']
+        if xi.shape[1] == 1:
+            pts = np.column_stack([np.arange(xi.shape[0]), xi[:, 0]])
+        else:
+            pts = xi[:, :3] if is_3d else xi[:, :2]
+        segments = np.stack([pts[:-1], pts[1:]], axis=1)
+        seg_colors = (ci[:-1] + ci[1:]) / 2.0
+        if is_3d:
+            coll = Line3DCollection(segments, colors=seg_colors,
+                                    linewidths=lw)
+            ax.add_collection3d(coll)
+        else:
+            coll = LineCollection(segments, colors=seg_colors,
+                                  linewidths=lw)
+            ax.add_collection(coll)
+
+
+def _expand_labels(labels, old_lengths, new_lengths):
+    """Re-map per-point labels onto interpolated trajectories.
+
+    Each original point's label is placed at that point's index in the
+    interpolated (longer) trajectory; the interpolated in-between points get
+    None (no annotation). Accepts flat label lists or lists nested per
+    dataset; returns a flat list matching sum(new_lengths).
+    """
+    if any(isinstance(el, list) for el in labels):
+        flat = list(itertools.chain(*labels))
+    else:
+        flat = list(labels)
+
+    out = []
+    start = 0
+    for old_n, new_n in zip(old_lengths, new_lengths):
+        piece = flat[start:start + old_n]
+        start += old_n
+        expanded = [None] * new_n
+        for i, lab in enumerate(piece):
+            if old_n == 1:
+                j = 0
+            else:
+                j = min(new_n - 1, int(round(i * (new_n - 1) / (old_n - 1))))
+            expanded[j] = lab
+        out.extend(expanded)
+    return out

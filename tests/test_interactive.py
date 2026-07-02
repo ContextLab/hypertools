@@ -10,7 +10,7 @@ from hypertools.plot.interactive import (
     detect_environment,
     resolve_backend,
     plotly_draw,
-    _fmt_to_mode,
+    _parse_fmt,
     _camera_eye,
 )
 from hypertools.plot.plot import plot
@@ -52,12 +52,18 @@ def test_resolve_backend_auto_on_kaggle(monkeypatch):
     assert resolve_backend('auto') == 'plotly'
 
 
-def test_fmt_to_mode():
-    assert _fmt_to_mode('-') == 'lines'
-    assert _fmt_to_mode('o') == 'markers'
-    assert _fmt_to_mode('.-') == 'lines+markers'
-    assert _fmt_to_mode('--') == 'lines'
-    assert _fmt_to_mode(None) == 'lines'
+def test_parse_fmt():
+    assert _parse_fmt('-', {}) == ('lines', 'circle', 'solid')
+    assert _parse_fmt('o', {}) == ('markers', 'circle', 'solid')
+    assert _parse_fmt('.-', {}) == ('lines+markers', 'circle', 'solid')
+    assert _parse_fmt('--', {}) == ('lines', 'circle', 'dash')
+    assert _parse_fmt(':', {}) == ('lines', 'circle', 'dot')
+    assert _parse_fmt('-.', {}) == ('lines', 'circle', 'dashdot')
+    assert _parse_fmt('s', {}) == ('markers', 'square', 'solid')
+    assert _parse_fmt(None, {}) == ('lines', 'circle', 'solid')
+    # explicit kwargs win over the format string
+    assert _parse_fmt('-', {'marker': 'D'})[1] == 'diamond'
+    assert _parse_fmt('-', {'linestyle': '--'})[2] == 'dash'
 
 
 def test_camera_eye_matches_matplotlib_convention():
@@ -67,10 +73,15 @@ def test_camera_eye_matches_matplotlib_convention():
 
 def test_plotly_draw_3d():
     fig = plotly_draw([walk[:, :3], walk[:, :3] + 2], show=False)
-    assert len(fig.data) == 2
+    # 2 data traces + 1 wireframe-cube trace (matches matplotlib's frame)
+    assert len(fig.data) == 3
     assert fig.data[0].type == 'scatter3d'
-    # hypertools aesthetic: no tick labels
-    assert fig.layout.scene.xaxis.showticklabels is False
+    assert fig.data[-1].mode == 'lines'
+    assert fig.data[-1].line.color == 'black'
+    # hypertools aesthetic: axes fully hidden, unit cube range
+    assert fig.layout.scene.xaxis.visible is False
+    assert tuple(fig.layout.scene.xaxis.range) == (-1, 1)
+    assert fig.layout.scene.aspectmode == 'cube'
 
 
 def test_plotly_draw_2d():

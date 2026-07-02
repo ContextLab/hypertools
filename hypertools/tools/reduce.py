@@ -39,8 +39,8 @@ def _resolve_model(model_name):
     return models[model_name]
 
 # main function
-def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
-           model=None, model_params=None, internal=False, format_data=True):
+def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False,
+           format_data=True):
     """
     Reduces dimensionality of an array, or list of arrays
 
