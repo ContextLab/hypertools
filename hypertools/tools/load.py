@@ -197,7 +197,26 @@ def _load_example_data(dataset):
     return geo_data
 
 
-def _download_example_data(dataset_path):
+def _download_example_data(dataset_path, max_attempts=4):
+    """Download an example dataset, retrying with backoff when the host
+    rate-limits (Google Drive answers rate-limited requests with an HTML
+    error page and a 200 status)."""
+    import time
+
+    last_error = None
+    for attempt in range(max_attempts):
+        if attempt > 0:
+            # 2s, 6s, 18s -- long enough for transient Drive rate limits
+            time.sleep(2 * 3 ** (attempt - 1))
+        try:
+            _download_example_data_once(dataset_path)
+            return
+        except HypertoolsIOError as e:
+            last_error = e
+    raise last_error
+
+
+def _download_example_data_once(dataset_path):
     file_id = EXAMPLE_DATA[dataset_path.name]
     session = requests.Session()
     params = {'id': file_id}

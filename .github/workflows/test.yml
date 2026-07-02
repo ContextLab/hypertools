@@ -32,6 +32,15 @@ jobs:
           ${{ runner.os }}-pip-${{ matrix.python-version }}-
           ${{ runner.os }}-pip-
 
+    - name: Cache hypertools example datasets
+      uses: actions/cache@v4
+      with:
+        path: ~/hypertools_data
+        key: hypertools-example-data-v1
+        # datasets are immutable; every runner shares one cache entry so CI
+        # doesn't hammer the download host with 24 concurrent requests
+        enableCrossOsArchive: true
+
     - name: Install system dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
       run: |
