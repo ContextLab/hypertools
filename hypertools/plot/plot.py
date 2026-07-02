@@ -11,6 +11,7 @@ from ..tools.reduce import reduce as reducer
 from ..tools.format_data import format_data
 from .draw import _draw
 from .backend import manage_backend
+from .interactive import resolve_backend
 from ..datageometry import DataGeometry
 
 
@@ -53,6 +54,7 @@ def plot(
     frame_rate=50,
     interactive=False,
     explore=False,
+    backend="auto",
     mpl_backend="auto",
     show=True,
     transform=None,
@@ -169,6 +171,15 @@ def plot(
         If True or 'parallel', plots the data as an animated trajectory, with
         each dataset plotted simultaneously. If 'spin', all the data is plotted
         at once but the camera spins around the plot (default: False).
+
+    backend : str
+        Rendering backend: 'matplotlib' (the classic renderer),
+        'plotly' (interactive; requires plotly -- install with
+        `pip install hypertools[interactive]`), or 'auto' (default), which
+        uses plotly on Google Colab / Kaggle notebooks where interactivity
+        matters most and matplotlib everywhere else. With the plotly backend,
+        the returned DataGeometry's `fig` attribute is a plotly Figure and
+        `ax`/`line_ani` are None.
 
     duration (animation only) : float
         Length of the animation in seconds (default: 30 seconds)
@@ -562,17 +573,19 @@ def plot(
     for i, xi in enumerate(xform):
         xform[i] = np.nan_to_num(xi)
 
-    # Apply the hypertools palette/style only for the duration of this plot
-    # call. Previously sns.set_palette/sns.set_style mutated global matplotlib
-    # rcParams as a side effect of plotting (GH issue #259); rc_context
-    # restores the user's settings on exit. The figure's axes and artists are
-    # created inside the context, so they keep the hypertools styling.
-    with plt.rc_context():
-        sns.set_palette(palette=palette, n_colors=len(xform))
-        sns.set_style(style="whitegrid")
+    # interactive (plotly) backend: render with plotly and skip the
+    # matplotlib pipeline entirely. backend='auto' resolves to plotly only
+    # on Colab/Kaggle (see hypertools.plot.interactive for the policy).
+    if resolve_backend(backend) == "plotly":
+        from .interactive import plotly_draw
 
-        # draw the plot
-        fig, ax, data, line_ani = _draw(
+        if "color" not in mpl_kwargs:
+            import seaborn as sns_local
+            mpl_kwargs = dict(mpl_kwargs)
+            mpl_kwargs["color"] = sns_local.color_palette(
+                palette, len(xform))
+            kwargs_list = parse_kwargs(xform, mpl_kwargs)
+        fig = plotly_draw(
             xform,
             fmt=draw_fmt,
             kwargs_list=kwargs_list,
@@ -580,35 +593,67 @@ def plot(
             legend=legend,
             title=title,
             animate=animate,
-            duration=duration,
-            tail_duration=tail_duration,
-            rotations=rotations,
-            zoom=zoom,
-            chemtrails=chemtrails,
-            precog=precog,
-            bullettime=bullettime,
+            size=size,
+            show=show,
+            save_path=save_path,
             frame_rate=frame_rate,
+            duration=duration,
+            rotations=rotations,
             elev=elev,
             azim=azim,
-            explore=explore,
-            show=show,
-            size=size,
-            ax=ax,
-            frame_kwargs=frame_kwargs,
         )
+        ax = None
+        data = xform
+        line_ani = None
+    else:
+        # Apply the hypertools palette/style only for the duration of this
+        # plot call. Previously sns.set_palette/sns.set_style mutated global
+        # matplotlib rcParams as a side effect of plotting (GH issue #259);
+        # rc_context restores the user's settings on exit. The figure's axes
+        # and artists are created inside the context, so they keep the
+        # hypertools styling.
+        with plt.rc_context():
+            sns.set_palette(palette=palette, n_colors=len(xform))
+            sns.set_style(style="whitegrid")
 
-        # tighten layout
-        plt.tight_layout()
+            # draw the plot
+            fig, ax, data, line_ani = _draw(
+                xform,
+                fmt=draw_fmt,
+                kwargs_list=kwargs_list,
+                labels=labels,
+                legend=legend,
+                title=title,
+                animate=animate,
+                duration=duration,
+                tail_duration=tail_duration,
+                rotations=rotations,
+                zoom=zoom,
+                chemtrails=chemtrails,
+                precog=precog,
+                bullettime=bullettime,
+                frame_rate=frame_rate,
+                elev=elev,
+                azim=azim,
+                explore=explore,
+                show=show,
+                size=size,
+                ax=ax,
+                frame_kwargs=frame_kwargs,
+            )
 
-        # save
-        if save_path is not None:
-            if animate:
-                Writer = animation.writers["ffmpeg"]
-                writer = Writer(fps=frame_rate, bitrate=1800)
-                line_ani.save(save_path, writer=writer)
+            # tighten layout
+            plt.tight_layout()
 
-            else:
-                plt.savefig(save_path)
+            # save
+            if save_path is not None:
+                if animate:
+                    Writer = animation.writers["ffmpeg"]
+                    writer = Writer(fps=frame_rate, bitrate=1800)
+                    line_ani.save(save_path, writer=writer)
+
+                else:
+                    plt.savefig(save_path)
 
     # gather reduce params
     if isinstance(reduce, dict):
@@ -655,6 +700,7 @@ def plot(
         "n_clusters": n_clusters,
         "size": size,
         "interactive": interactive,
+        "backend": backend,
         "mpl_backend": mpl_backend,
         "frame_kwargs": frame_kwargs
     }

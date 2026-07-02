@@ -59,6 +59,13 @@ def capture(tag, function, case, plot_fn, dpi=100):
               'path': path, 'ok': False, 'error': None}
     try:
         result = plot_fn()
+        # plotly figures (returned directly or as geo.fig) export via kaleido
+        plotly_fig = _extract_plotly_fig(result)
+        if plotly_fig is not None:
+            plotly_fig.write_image(path, width=700, height=500)
+            record['ok'] = True
+            record['result'] = result
+            return record
         fignums = plt.get_fignums()
         if not fignums:
             raise RuntimeError('plot_fn produced no matplotlib figures')
@@ -76,6 +83,13 @@ def capture(tag, function, case, plot_fn, dpi=100):
     finally:
         plt.close('all')
     return record
+
+
+def _extract_plotly_fig(result):
+    fig = getattr(result, 'fig', result)
+    if type(fig).__module__.startswith('plotly'):
+        return fig
+    return None
 
 
 def summarize(records):
