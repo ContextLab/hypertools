@@ -20,15 +20,6 @@ def test_cluster_returns_list():
 
 
 def test_cluster_hdbscan():
-    try:
-        from hdbscan import HDBSCAN
-        _has_hdbscan = True
-    except:
-        _has_hdbscan = False
-
-    if _has_hdbscan:
-        hdbscan_labels = cluster(data, cluster='HDBSCAN')
-        assert len(set(hdbscan_labels)) == 2
-    else:
-        with pytest.raises(ImportError):
-            hdbscan_labels = cluster(data, cluster='HDBSCAN')
+    # HDBSCAN ships with scikit-learn (>=1.3), so it is always available
+    hdbscan_labels = cluster(data, cluster='HDBSCAN')
+    assert len(set(hdbscan_labels)) == 2

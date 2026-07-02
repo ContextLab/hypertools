@@ -7,6 +7,7 @@ from sklearn.cluster import (
     Birch,
     FeatureAgglomeration,
     SpectralClustering,
+    HDBSCAN,
 )
 import numpy as np
 from .._shared.helpers import *
@@ -20,15 +21,10 @@ models = {
     "FeatureAgglomeration": FeatureAgglomeration,
     "Birch": Birch,
     "SpectralClustering": SpectralClustering,
+    # sklearn's built-in HDBSCAN (>=1.3) replaces the unmaintained external
+    # hdbscan package, which required a SyntaxWarning filter to import cleanly
+    "HDBSCAN": HDBSCAN,
 }
-
-try:
-    from hdbscan import HDBSCAN
-
-    _has_hdbscan = True
-    models.update({"HDBSCAN": HDBSCAN})
-except ImportError:
-    _has_hdbscan = False
 
 
 def cluster(x, cluster="KMeans", n_clusters=3, ndims=None, format_data=True):
@@ -70,13 +66,6 @@ def cluster(x, cluster="KMeans", n_clusters=3, ndims=None, format_data=True):
 
     if cluster == None:
         return x
-    elif (isinstance(cluster, str) and cluster == "HDBSCAN") or (
-        isinstance(cluster, dict) and cluster["model"] == "HDBSCAN"
-    ):
-        if not _has_hdbscan:
-            raise ImportError(
-                "HDBSCAN is not installed. Please install hdbscan>=0.8.11"
-            )
 
     if ndims != None:
         warnings.warn(

@@ -357,11 +357,16 @@ def plot(
                           ignored in favor of markers."
             )
 
-    # reduce data to 3 dims for plotting, if ndims is None, return this
+    # reduce data to 3 dims for plotting, if ndims is None, return this.
+    # xform was already formatted (and possibly reduced to ndims) by analyze()
+    # above, so skip re-running format_data/PPCA here; reduce() returns the
+    # data unchanged when it is already at the target dimensionality.
     if ndims and ndims < 3:
-        xform = reducer(xform, ndims=ndims, reduce=reduce, internal=True)
+        xform = reducer(xform, ndims=ndims, reduce=reduce, internal=True,
+                        format_data=False)
     else:
-        xform = reducer(xform, ndims=3, reduce=reduce, internal=True)
+        xform = reducer(xform, ndims=3, reduce=reduce, internal=True,
+                        format_data=False)
 
     # find cluster and reshape if n_clusters
     if cluster is not None:
@@ -463,8 +468,6 @@ def plot(
     import seaborn as sns
     if isinstance(palette, np.bytes_):
         palette = palette.decode("utf-8")
-    sns.set_palette(palette=palette, n_colors=len(xform))
-    sns.set_style(style="whitegrid")
 
     # turn kwargs into a list
     kwargs_list = parse_kwargs(xform, mpl_kwargs)
@@ -482,44 +485,53 @@ def plot(
     for i, xi in enumerate(xform):
         xform[i] = np.nan_to_num(xi)
 
-    # draw the plot
-    fig, ax, data, line_ani = _draw(
-        xform,
-        fmt=draw_fmt,
-        kwargs_list=kwargs_list,
-        labels=labels,
-        legend=legend,
-        title=title,
-        animate=animate,
-        duration=duration,
-        tail_duration=tail_duration,
-        rotations=rotations,
-        zoom=zoom,
-        chemtrails=chemtrails,
-        precog=precog,
-        bullettime=bullettime,
-        frame_rate=frame_rate,
-        elev=elev,
-        azim=azim,
-        explore=explore,
-        show=show,
-        size=size,
-        ax=ax,
-        frame_kwargs=frame_kwargs,
-    )
+    # Apply the hypertools palette/style only for the duration of this plot
+    # call. Previously sns.set_palette/sns.set_style mutated global matplotlib
+    # rcParams as a side effect of plotting (GH issue #259); rc_context
+    # restores the user's settings on exit. The figure's axes and artists are
+    # created inside the context, so they keep the hypertools styling.
+    with plt.rc_context():
+        sns.set_palette(palette=palette, n_colors=len(xform))
+        sns.set_style(style="whitegrid")
 
-    # tighten layout
-    plt.tight_layout()
+        # draw the plot
+        fig, ax, data, line_ani = _draw(
+            xform,
+            fmt=draw_fmt,
+            kwargs_list=kwargs_list,
+            labels=labels,
+            legend=legend,
+            title=title,
+            animate=animate,
+            duration=duration,
+            tail_duration=tail_duration,
+            rotations=rotations,
+            zoom=zoom,
+            chemtrails=chemtrails,
+            precog=precog,
+            bullettime=bullettime,
+            frame_rate=frame_rate,
+            elev=elev,
+            azim=azim,
+            explore=explore,
+            show=show,
+            size=size,
+            ax=ax,
+            frame_kwargs=frame_kwargs,
+        )
 
-    # save
-    if save_path is not None:
-        if animate:
-            Writer = animation.writers["ffmpeg"]
-            writer = Writer(fps=frame_rate, bitrate=1800)
-            line_ani.save(save_path, writer=writer)
+        # tighten layout
+        plt.tight_layout()
 
-        else:
-            plt.savefig(save_path)
+        # save
+        if save_path is not None:
+            if animate:
+                Writer = animation.writers["ffmpeg"]
+                writer = Writer(fps=frame_rate, bitrate=1800)
+                line_ani.save(save_path, writer=writer)
+
+            else:
+                plt.savefig(save_path)
 
     # gather reduce params
     if isinstance(reduce, dict):
