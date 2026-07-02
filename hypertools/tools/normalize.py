@@ -3,10 +3,8 @@
 import numpy as np
 
 from .format_data import format_data as formatter
-from .._shared.helpers import memoize
 
 
-@memoize
 def normalize(x, normalize='across', internal=False, format_data=True):
     """
     Z-transform the columns or rows of an array, or list of arrays

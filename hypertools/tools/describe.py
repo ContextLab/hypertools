@@ -5,10 +5,8 @@ import numpy as np
 from scipy.stats import pearsonr
 from scipy.spatial.distance import cdist
 import matplotlib.pyplot as plt
-import seaborn as sns
 from .reduce import reduce as reducer
 from .format_data import format_data as formatter
-from .._shared.helpers import memoize
 
 
 def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
@@ -107,6 +105,7 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
                     'trace': i
                 })
         df = pd.DataFrame(df_data)
+        import seaborn as sns
         ax = sns.lineplot(data=df, x='components', y='correlation', units='trace', estimator=None, alpha=0.7)
         ax.set_title('Correlation with raw data by number of components')
         ax.set_ylabel('Correlation')
@@ -115,11 +114,9 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     return result
 
 
-@memoize
 def get_corr(reduced, alldims):
     return pearsonr(alldims.ravel(), reduced.ravel())[0]
 
 
-@memoize
 def get_cdist(x):
     return cdist(x, x)

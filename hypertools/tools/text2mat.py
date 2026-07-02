@@ -5,7 +5,6 @@ from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.utils.validation import check_is_fitted
 from sklearn.exceptions import NotFittedError
 from sklearn.pipeline import Pipeline
-from .._shared.helpers import memoize
 from .._shared.params import default_params
 from .load import load
 
@@ -22,7 +21,6 @@ texts = {
 }
 
 
-@memoize
 def text2mat(data, vectorizer='CountVectorizer',
              semantic='LatentDirichletAllocation', corpus='wiki'):
     """

@@ -31,7 +31,6 @@ except ImportError:
     _has_hdbscan = False
 
 
-@memoize
 def cluster(x, cluster="KMeans", n_clusters=3, ndims=None, format_data=True):
     """
     Performs clustering analysis and returns a list of cluster labels

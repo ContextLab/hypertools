@@ -4,10 +4,8 @@ from .._externals.srm import SRM
 from .procrustes import procrustes
 import numpy as np
 from .format_data import format_data as formatter
-from .._shared.helpers import memoize
 import warnings
 
-@memoize
 def align(data, align='hyper', normalize=None, ndims=None, method=None,
           format_data=True):
     """

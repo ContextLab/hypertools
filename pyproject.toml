@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hypertools"
+version = "2.0.0.dev0"
+description = "A python package for visualizing and manipulating high-dimensional data"
+readme = "readme.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Contextual Dynamics Lab", email = "contextualdynamics@gmail.com" },
+]
+requires-python = ">=3.10"
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Multimedia :: Graphics",
+    "Operating System :: POSIX",
+    "Operating System :: Unix",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+]
+dependencies = [
+    "scikit-learn>=1.4.0",
+    "pandas>=2.2.0",
+    "seaborn>=0.13.0",
+    "matplotlib>=3.8.0",
+    "scipy>=1.13.0",
+    "numpy>=2.0.0",
+    "umap-learn>=0.5.5",
+    "requests>=2.31.0",
+    "ipympl>=0.9.3",
+]
+
+[project.optional-dependencies]
+# Interactive plotly backend (auto-enabled on Colab/Kaggle, where plotly ships
+# preinstalled; local users opt in with `pip install hypertools[interactive]`).
+interactive = ["plotly>=5.20.0", "kaleido>=0.2.1"]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "nbformat>=5.9.0",
+    "nbclient>=0.9.0",
+    "plotly>=5.20.0",
+    "kaleido>=0.2.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/ContextLab/hypertools"
+Documentation = "https://hypertools.readthedocs.io"
+Repository = "https://github.com/ContextLab/hypertools"
+
+[tool.setuptools.packages.find]
+include = ["hypertools*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

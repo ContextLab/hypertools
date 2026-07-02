@@ -32,7 +32,7 @@ build:
   jobs:
     post_create_environment:
       # Install dependencies
-      - pip install -r requirements.txt
+      - pip install -e .
     post_build:
       # Fix animated thumbnails after build
       - python docs/post_build.py

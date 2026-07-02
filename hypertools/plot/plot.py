@@ -460,6 +460,7 @@ def plot(
     xform = scale(xform)
 
     # handle palette with seaborn
+    import seaborn as sns
     if isinstance(palette, np.bytes_):
         palette = palette.decode("utf-8")
     sns.set_palette(palette=palette, n_colors=len(xform))

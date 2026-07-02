@@ -14,8 +14,7 @@ HyperTools is a Python library for visualizing and manipulating high-dimensional
 - `pytest tests/test_<module>.py::test_<function>` - Run a specific test function
 
 ### Development Setup
-- `pip install -e .` - Install in development mode
-- `pip install -r requirements.txt` - Install dependencies
+- `pip install -e ".[dev]"` - Install in development mode with test dependencies (all deps declared in pyproject.toml)
 - `pip install -r docs/doc_requirements.txt` - Install documentation dependencies
 
 ### Documentation

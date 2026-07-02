@@ -4,7 +4,6 @@ import warnings
 import numpy as np
 from sklearn.decomposition import PCA, FastICA, IncrementalPCA, KernelPCA, FactorAnalysis, TruncatedSVD, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
 from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
-from umap import UMAP
 from .._shared.helpers import *
 from .normalize import normalize as normalizer
 from .align import align as aligner
@@ -27,11 +26,19 @@ models = {
     'SpectralEmbedding': SpectralEmbedding,
     'LocallyLinearEmbedding': LocallyLinearEmbedding,
     'MDS': MDS,
-    'UMAP': UMAP
 }
 
+
+def _resolve_model(model_name):
+    """Look up a reduction model by name. UMAP is resolved lazily because
+    importing umap triggers numba JIT compilation that adds seconds to
+    `import hypertools` even when UMAP is never used."""
+    if model_name == 'UMAP':
+        from umap import UMAP
+        return UMAP
+    return models[model_name]
+
 # main function
-@memoize
 def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
            model=None, model_params=None, internal=False, format_data=True):
     """
@@ -114,7 +121,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, normalize=None, align=None,
     try:
         # if the model passed is a string, make sure it's one of the supported options
         if isinstance(model_name, str):  # Remove np.string_ check as it's deprecated in NumPy 2.0
-            model = models[model_name]
+            model = _resolve_model(model_name)
         # otherwise check any custom object for necessary methods
         else:
             model = model_name

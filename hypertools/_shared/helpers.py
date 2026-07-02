@@ -5,15 +5,15 @@ Helper functions
 """
 
 ##PACKAGES##
-import functools
 import sys
 import numpy as np
 import copy
-from scipy.interpolate import PchipInterpolator as pchip
-import seaborn as sns
 import itertools
 import pandas as pd
 from matplotlib.lines import Line2D
+
+# NOTE: seaborn and scipy.interpolate are imported lazily inside the functions
+# that use them -- together they added ~1s to `import hypertools`.
 np.seterr(divide='ignore', invalid='ignore')
 
 
@@ -53,6 +53,7 @@ def vals2colors(vals, cmap='GnBu',res=100):
         vals = list(itertools.chain(*vals))
 
     # get palette from seaborn
+    import seaborn as sns
     palette = np.array(sns.color_palette(cmap, res))
     ranks = np.digitize(vals, np.linspace(np.min(vals), np.max(vals)+1, res+1)) - 1
     return [tuple(i) for i in palette[ranks, :]]
@@ -73,6 +74,7 @@ def vals2bins(vals,res=100):
 
 
 def interp_array(arr,interp_val=10):
+    from scipy.interpolate import PchipInterpolator as pchip
     x=np.arange(0, len(arr), 1)
     xx=np.arange(0, len(arr)-1, 1/interp_val)
     q=pchip(x,arr)
@@ -147,18 +149,6 @@ def is_line(format_str):
     markers = list(map(lambda x: str(x), Line2D.markers.keys()))
 
     return (format_str is None) or (all([str(symbol) not in format_str for symbol in markers]))
-
-
-def memoize(obj):
-    cache = obj.cache = {}
-
-    @functools.wraps(obj)
-    def memoizer(*args, **kwargs):
-        key = str(args) + str(kwargs)
-        if key not in cache:
-            cache[key] = obj(*args, **kwargs)
-        return cache[key]
-    return memoizer
 
 
 def get_type(data):
