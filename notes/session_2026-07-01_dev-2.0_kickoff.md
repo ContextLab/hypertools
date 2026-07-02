@@ -122,3 +122,16 @@ Jeremy's feedback: mixtures not showing multi-class membership; title/aspect/siz
 - Extra hardening shipped during CI stabilization: dataset downloads validate content + retry w/ backoff (fe3bb8f, 0264b3a); CI shares one cross-OS cache of ~/hypertools_data so 24 jobs stop hammering Google Drive (root cause of intermittent text-test failures).
 - Totals: 193 tests, 75/75 verification, 22/22 parity, 4 animation GIF exports committed, plotly in sphinx gallery w/ animated thumbnail.
 - Awaiting Jeremy's review. DO NOT MERGE.
+
+## Round 3 (2026-07-02 afternoon): 10 review items, all shipped (commits 46c171b, 1499e32)
+1. SVG export static+ANIMATED (SMIL) both backends — hypertools/_shared/animated_svg.py combiner; mpl frames via AbstractMovieWriter subclass; plotly via kaleido svg frames. Browser-verified: setCurrentTime scrub in headless Chrome renders different frames. (Playwright MCP servers were wedged; headless Chrome CLI + local http.server worked. Chrome --virtual-time-budget does NOT advance SMIL — use setCurrentTime.)
+2. plotly window animation rotates camera per frame now (layout scene_camera in each frame).
+3. plotly titles: xref='paper', centered, black 16px, DejaVu font stack.
+4. Multi-panel via ax= verified (tests + screenshot). Embedding respects user's color cycle (axes created before rc_context) — intended.
+5. hyperalign n_iter=10 default (iterative template re-estimation); fixed dict-form returning None + method NameError.
+6. weights_hyperaligned.gif reconstruction: needed zoom=2.5 + high frame count (interp factor = duration*frame_rate/n_rows — low values DOWNSAMPLE), no chemtrails (they accumulate a hairball), ffmpeg palettegen for clean white bg. FOUND+FIXED: Axes3D.dist removed in mpl>=3.8 → zoom was a silent no-op; now set_box_aspect(zoom=10/(9-zoom)).
+7. pydata-sphinx-theme (screenshots in docs/images/v2.0-theme/). FOUND+FIXED: nbsphinx_execute='auto' re-executed every gallery ipynb (double execution; hang on plotly export in nbsphinx kernel) → 'never' (tutorials ship executed).
+8. shapes zoo: bunny/cube/dragon/sphere/teapot/vase/biplane + datasaurus via Dropbox URLs (EXAMPLE_DATA now accepts full URLs); tolerant unpickler (pickle → pd.read_pickle → dill); dill added as dep. egyption_mask EXCLUDED — source file is empty (0,3) both locally and at the link (flag for Jeremy to re-export).
+9. No re-download leak: verified + regression test (cache byte-stable across repeated loads).
+10. Modern demos: gallery plot_shapes_zoo + plot_datasaurus; executed notebooks docs/tutorials/hugging_face_embeddings.ipynb (sentence-transformers + fancyzhx/ag_news, GMM soft clusters, UMAP, spin gif) + modern_sklearn_dynamics.ipynb (HDBSCAN, GMM, Lorenz multicolored line + gif); registered in tutorials.rst.
+- Suite: 202 passing. Parity 22/22 regenerated. Awaiting CI on 1499e32, then round-3 comment.
