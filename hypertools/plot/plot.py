@@ -308,6 +308,15 @@ def plot(
 
     text_args = {"vectorizer": vectorizer, "semantic": semantic, "corpus": corpus}
 
+    # nested lists (e.g. [[a, b], [c]]) are flattened into a flat list of
+    # datasets while recording each leaf's outermost-group index and nesting
+    # depth; these drive multilevel styling below (color by outer group,
+    # thinner/fainter lines per deeper level)
+    nested_groups = nested_depths = None
+    if isinstance(x, list) and any(isinstance(el, list) for el in x) \
+            and not all(isinstance(el, str) for el in x):
+        x, nested_groups, nested_depths = _flatten_nested(x)
+
     # analyze the data
     if transform is None:
         raw = format_data(x, **text_args)
@@ -475,6 +484,23 @@ def plot(
         # interpolate lines if they are grouped
         if is_line(fmt):
             xform = patch_lines(xform)
+
+    # multilevel styling for nested-list input: every leaf under the same
+    # outermost group shares that group's color, and each additional nesting
+    # level renders thinner and fainter (summary -> detail)
+    elif nested_groups is not None and color is None and colors is None:
+        import seaborn as sns
+        n_outer = len(set(nested_groups))
+        base_colors = sns.color_palette(palette, n_outer)
+        mpl_kwargs["color"] = [base_colors[g] for g in nested_groups]
+        min_depth = min(nested_depths)
+        if any(d != min_depth for d in nested_depths):
+            mpl_kwargs["linewidth"] = [
+                max(0.5, 2.0 * (0.7 ** (d - min_depth))) for d in nested_depths
+            ]
+            mpl_kwargs["alpha"] = [
+                max(0.3, 0.9 ** (d - min_depth)) for d in nested_depths
+            ]
 
     # handle legend
     if legend is not None:
@@ -660,3 +686,35 @@ def plot(
         corpus=corpus,
         kwargs=kwargs,
     )
+
+
+def _flatten_nested(x, _depth=1):
+    """Flatten arbitrarily nested lists of datasets (arrays/DataFrames) into
+    a flat list, recording each leaf's outermost-group index and nesting
+    depth. Lists containing strings (text data) are returned un-flattened,
+    since nested string lists denote text corpora, not grouped datasets."""
+    if _contains_string(x):
+        return x, None, None
+    leaves, groups, depths = [], [], []
+    for outer_idx, el in enumerate(x):
+        for leaf, depth in _iter_leaves(el, _depth):
+            leaves.append(leaf)
+            groups.append(outer_idx)
+            depths.append(depth)
+    return leaves, groups, depths
+
+
+def _iter_leaves(el, depth):
+    if isinstance(el, list):
+        for sub in el:
+            yield from _iter_leaves(sub, depth + 1)
+    else:
+        yield el, depth
+
+
+def _contains_string(el):
+    if isinstance(el, str):
+        return True
+    if isinstance(el, list):
+        return any(_contains_string(sub) for sub in el)
+    return False
