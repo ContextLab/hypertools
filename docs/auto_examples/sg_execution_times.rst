@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**00:03.339** total execution time for 31 files **from auto_examples**:
+**00:01.403** total execution time for 36 files **from auto_examples**:
 
 .. container::
 
@@ -32,9 +32,21 @@ Computation times
    * - Example
      - Time
      - Mem (MB)
-   * - :ref:`sphx_glr_auto_examples_plot_sotus.py` (``plot_sotus.py``)
-     - 00:03.339
-     - 402.9
+   * - :ref:`sphx_glr_auto_examples_plot_apply_model.py` (``plot_apply_model.py``)
+     - 00:00.850
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_nested_lists.py` (``plot_nested_lists.py``)
+     - 00:00.224
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_multicolored_lines.py` (``plot_multicolored_lines.py``)
+     - 00:00.156
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_interactive_backend.py` (``plot_interactive_backend.py``)
+     - 00:00.094
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_mixture_models.py` (``plot_mixture_models.py``)
+     - 00:00.079
+     - 0.0
    * - :ref:`sphx_glr_auto_examples_analyze.py` (``analyze.py``)
      - 00:00.000
      - 0.0
@@ -111,6 +123,9 @@ Computation times
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_procrustes.py` (``plot_procrustes.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_sotus.py` (``plot_sotus.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_text.py` (``plot_text.py``)

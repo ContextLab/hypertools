@@ -1,6 +1,6 @@
 # hypertools 2.0 visual verification matrix
 
-44/44 cases passed.
+75/75 cases passed.
 
 | function | case | status | file |
 |-|-|-|-|
@@ -28,11 +28,42 @@
 | plot | animate_frame_capture | pass | plot/animate_frame_capture.png |
 | plot | animate_spin_frame_capture | pass | plot/animate_spin_frame_capture.png |
 | plot | ndims_gt3_plots_3d | pass | plot/ndims_gt3_plots_3d.png |
+| plot | multicolored_line_continuous | pass | plot/multicolored_line_continuous.png |
+| plot | multicolored_line_matrix_hue | pass | plot/multicolored_line_matrix_hue.png |
+| plot | multicolored_lines_two_datasets | pass | plot/multicolored_lines_two_datasets.png |
+| plot | multicolored_line_2d | pass | plot/multicolored_line_2d.png |
+| plot | marker_square | pass | plot/marker_square.png |
+| plot | marker_triangle | pass | plot/marker_triangle.png |
+| plot | lines_plus_markers | pass | plot/lines_plus_markers.png |
+| plot | dotted_lines | pass | plot/dotted_lines.png |
+| plot | dashdot_lines | pass | plot/dashdot_lines.png |
+| plot | mixture_bayesian_gm | pass | plot/mixture_bayesian_gm.png |
+| plot | cluster_spectral | pass | plot/cluster_spectral.png |
 | plot_backend_plotly | line_3d | pass | plot_backend_plotly/line_3d.png |
+| plot_backend_plotly | line_3d_list | pass | plot_backend_plotly/line_3d_list.png |
 | plot_backend_plotly | scatter_3d_groups | pass | plot_backend_plotly/scatter_3d_groups.png |
 | plot_backend_plotly | line_2d | pass | plot_backend_plotly/line_2d.png |
+| plot_backend_plotly | scatter_2d | pass | plot_backend_plotly/scatter_2d.png |
+| plot_backend_plotly | dashed_lines | pass | plot_backend_plotly/dashed_lines.png |
+| plot_backend_plotly | dotted_lines | pass | plot_backend_plotly/dotted_lines.png |
+| plot_backend_plotly | dashdot_lines | pass | plot_backend_plotly/dashdot_lines.png |
+| plot_backend_plotly | lines_plus_markers | pass | plot_backend_plotly/lines_plus_markers.png |
+| plot_backend_plotly | marker_square | pass | plot_backend_plotly/marker_square.png |
+| plot_backend_plotly | hue_categorical | pass | plot_backend_plotly/hue_categorical.png |
+| plot_backend_plotly | hue_continuous | pass | plot_backend_plotly/hue_continuous.png |
+| plot_backend_plotly | hue_matrix_blended | pass | plot_backend_plotly/hue_matrix_blended.png |
+| plot_backend_plotly | cluster_kmeans | pass | plot_backend_plotly/cluster_kmeans.png |
+| plot_backend_plotly | cluster_hdbscan | pass | plot_backend_plotly/cluster_hdbscan.png |
 | plot_backend_plotly | mixture_blend | pass | plot_backend_plotly/mixture_blend.png |
+| plot_backend_plotly | nested_list_multilevel | pass | plot_backend_plotly/nested_list_multilevel.png |
+| plot_backend_plotly | nested_mixed_depth | pass | plot_backend_plotly/nested_mixed_depth.png |
+| plot_backend_plotly | multicolored_line | pass | plot_backend_plotly/multicolored_line.png |
+| plot_backend_plotly | multicolored_line_2d | pass | plot_backend_plotly/multicolored_line_2d.png |
+| plot_backend_plotly | legend_title | pass | plot_backend_plotly/legend_title.png |
 | plot_backend_plotly | animate_window_firstframe | pass | plot_backend_plotly/animate_window_firstframe.png |
+| plot_backend_plotly | animate_spin_firstframe | pass | plot_backend_plotly/animate_spin_firstframe.png |
+| apply_model | shared_embedding | pass | apply_model/shared_embedding.png |
+| apply_model | pipeline | pass | apply_model/pipeline.png |
 | reduce | pca_default | pass | reduce/pca_default.png |
 | reduce | tsne | pass | reduce/tsne.png |
 | reduce | umap | pass | reduce/umap.png |

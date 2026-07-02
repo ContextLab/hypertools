@@ -87,3 +87,15 @@ Saved at scratchpad pr_body.md (session-local); recreate from this file's summar
 - PR #270 full matrix GREEN: 24/24 checks pass (3 OS x py3.10-3.13, both push + pull_request runs).
 - One transient failure fixed en route: GitHub's windows/py3.13 runner ships broken Tcl/Tk (TkAgg imports but window creation raises _tkinter.TclError). Fixed in 6e6330e: manage_backend retries the plot once on the original backend after an interactive-backend TclError.
 - Session complete. Awaiting Jeremy's PR review/sign-off. NEXT SESSION: address review comments; then remaining roadmap items (stack/unstack apply_model, DataGeometry transform chain #227/#236, gallery regen, #264/#265).
+
+## Third work block (2026-07-02, after Jeremy's PR feedback)
+Feedback: (a) backends must match visually (styles/sizing/colors), (b) many features unscreenshotted, (c) formerly-deferred items all IN scope. All addressed:
+- **Backend parity**: plotly renderer rewritten to mirror matplotlib exactly — black wireframe cube (3D)/square (2D) via traces/shapes, axes hidden, unit range, camera from elev/azim (r=2.5), pt→px conversion (1.5pt lines, 6pt markers), full fmt support (markers+dashes, 3D symbol fallback since plotly Scatter3d only supports 8 symbols). Parity montage generator: scripts/generate_parity_screenshots.py (22 side-by-side cases; cluster fits precomputed once — refit permutes component colors, not backend skew).
+- **is_line() bug found+fixed**: '' in Line2D.markers made it False for ALL fmt strings → line interpolation silently disabled on modern matplotlib; also parse linestyles before marker chars ('-.'). Restoring interpolation exposed label-index bug → labels now re-mapped onto interpolated trajectories (_expand_labels).
+- **Multicolored lines**: continuous/matrix hue + line fmt = per-segment continuous coloring. mpl: Line3DCollection/LineCollection replacing line artists; plotly: per-point line colors (3D) / segment traces (2D). Excluded for animate (warns).
+- **Deprecated kwargs RETIRED**: plot(group/model/model_params), reduce(model/model_params/normalize/align), align(method/normalize/ndims/align=True→ValueError), cluster(ndims). Old saved geos replay via translation (group→hue) with warning in DataGeometry.plot.
+- **apply_model core**: hypertools/tools/apply_model.py — stack→fit once→unstack; specs: name/dict/instance/pipeline-list; modes auto/fit_transform/fit_predict/predict_proba; return_model; stack=False per-dataset; whitelist registry (NO eval). Public as hyp.apply_model. 12 tests.
+- **Verification matrix expanded 44→75 cases** (all features BOTH backends incl. multicolor/nested/mixtures/animations) — 75/75 pass. Parity 22/22.
+- **Regression tests**: #264 (loop staleness — memoize was root cause), #265 (numpy2 animate, exact repro from issue), #259 (rcParams). 
+- **Gallery**: 5 new examples (interactive_backend, mixture_models, multicolored_lines, nested_lists, apply_model) all execute clean; apply_model added to docs/api.rst.
+- Notebook re-executed 0 errors. README updated. Tests: 185+ green.

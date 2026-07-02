@@ -110,21 +110,95 @@ def main():
          lambda: hyp.plot(walk, ndims=6, show=False)),
     ]
 
-    # -------------------------------------------------- plotly backend
-    B = 'plot_backend_plotly'
+    # ------------------------------ multicolored lines + marker/line styles
     cases += [
-        (B, 'line_3d', lambda: hyp.plot(walk, backend='plotly', show=False)),
-        (B, 'scatter_3d_groups',
-         lambda: hyp.plot([w[:, :3] for w in (walk, walk2, walk3)], 'o',
-                          backend='plotly', legend=['a', 'b', 'c'],
+        (P, 'multicolored_line_continuous',
+         lambda: hyp.plot(walk, hue=np.arange(len(walk), dtype=float),
                           show=False)),
-        (B, 'line_2d',
-         lambda: hyp.plot(walk, ndims=2, backend='plotly', show=False)),
-        (B, 'mixture_blend',
-         lambda: hyp.plot(clusters, 'o', cluster='GaussianMixture',
-                          n_clusters=3, backend='plotly', show=False)),
-        (B, 'animate_window_firstframe',
-         lambda: hyp.plot(walk, animate=True, backend='plotly', show=False)),
+        (P, 'multicolored_line_matrix_hue',
+         lambda: hyp.plot(walk,
+                          hue=np.column_stack([
+                              np.linspace(0, 1, len(walk)),
+                              np.linspace(1, 0, len(walk))]),
+                          show=False)),
+        (P, 'multicolored_lines_two_datasets',
+         lambda: hyp.plot([walk, walk2],
+                          hue=np.arange(2 * len(walk), dtype=float),
+                          show=False)),
+        (P, 'multicolored_line_2d',
+         lambda: hyp.plot(walk, ndims=2,
+                          hue=np.arange(len(walk), dtype=float),
+                          show=False)),
+        (P, 'marker_square', lambda: hyp.plot(clusters, 's', show=False)),
+        (P, 'marker_triangle', lambda: hyp.plot(clusters, '^', show=False)),
+        (P, 'lines_plus_markers', lambda: hyp.plot(walk, '.-', show=False)),
+        (P, 'dotted_lines', lambda: hyp.plot(walk, ':', show=False)),
+        (P, 'dashdot_lines', lambda: hyp.plot(walk, '-.', show=False)),
+        (P, 'mixture_bayesian_gm',
+         lambda: hyp.plot(clusters, 'o', cluster='BayesianGaussianMixture',
+                          n_clusters=3, show=False)),
+        (P, 'cluster_spectral',
+         lambda: hyp.plot(clusters, 'o', cluster='SpectralClustering',
+                          n_clusters=3, show=False)),
+    ]
+
+    # -------------------------------------------------- plotly backend
+    # every feature above, rendered through the interactive backend
+    B = 'plot_backend_plotly'
+
+    def ply(*args, **kw):
+        return lambda: hyp.plot(*args, backend='plotly', show=False, **kw)
+
+    cases += [
+        (B, 'line_3d', ply(walk)),
+        (B, 'line_3d_list', ply([walk, walk2, walk3])),
+        (B, 'scatter_3d_groups',
+         ply([w[:, :3] for w in (walk, walk2, walk3)], 'o',
+             legend=['a', 'b', 'c'])),
+        (B, 'line_2d', ply(walk, ndims=2)),
+        (B, 'scatter_2d', ply(clusters, 'o', ndims=2)),
+        (B, 'dashed_lines', ply(walk, '--')),
+        (B, 'dotted_lines', ply(walk, ':')),
+        (B, 'dashdot_lines', ply(walk, '-.')),
+        (B, 'lines_plus_markers', ply(walk, '.-')),
+        (B, 'marker_square', ply(clusters, 's')),
+        (B, 'hue_categorical', ply(clusters, 'o', hue=labels)),
+        (B, 'hue_continuous',
+         ply(walk, 'o', hue=np.arange(len(walk), dtype=float))),
+        (B, 'hue_matrix_blended',
+         ply(clusters, 'o',
+             hue=hyp.cluster(clusters, cluster='GaussianMixture',
+                             n_clusters=3))),
+        (B, 'cluster_kmeans', ply(clusters, 'o', cluster='KMeans',
+                                  n_clusters=3)),
+        (B, 'cluster_hdbscan', ply(clusters, 'o', cluster='HDBSCAN')),
+        (B, 'mixture_blend', ply(clusters, 'o', cluster='GaussianMixture',
+                                 n_clusters=3)),
+        (B, 'nested_list_multilevel', ply([[walk, walk2], [walk3]])),
+        (B, 'nested_mixed_depth', ply([[walk, [walk2]], walk3])),
+        (B, 'multicolored_line',
+         ply(walk, hue=np.arange(len(walk), dtype=float))),
+        (B, 'multicolored_line_2d',
+         ply(walk, ndims=2, hue=np.arange(len(walk), dtype=float))),
+        (B, 'legend_title',
+         ply([walk, walk2], legend=['A', 'B'], title='plotly legend/title')),
+        (B, 'animate_window_firstframe', ply(walk, animate=True)),
+        (B, 'animate_spin_firstframe', ply(walk, animate='spin')),
+    ]
+
+    # -------------------------------------------------- apply_model
+    cases += [
+        ('apply_model', 'shared_embedding',
+         lambda: scatter_result(
+             hyp.apply_model([clusters[:90], clusters[90:]], 'PCA', ndims=3),
+             'apply_model: one PCA fit across stacked datasets')),
+        ('apply_model', 'pipeline',
+         lambda: scatter_result(
+             hyp.apply_model(clusters,
+                             [{'model': 'PCA', 'params': {'n_components': 4}},
+                              {'model': 'TSNE',
+                               'params': {'n_components': 2}}]),
+             'apply_model: PCA -> TSNE pipeline')),
     ]
 
     # ------------------------------------------------------------ tools

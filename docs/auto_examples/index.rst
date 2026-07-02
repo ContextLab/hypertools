@@ -410,6 +410,23 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="hypertools 2.0 accepts arbitrarily nested lists of datasets. Every dataset under the same outermost group shares that group&#x27;s color, and each additional nesting level renders with thinner, fainter lines -- a summary-to-detail visual hierarchy. For example, [[a, b], [c]] colors a and b alike (group 1) and c differently (group 2).">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_nested_lists_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_nested_lists`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Nested lists and multilevel styling</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="This is an example of how to use the label(s) kwarg, which must be a list the length of the number of datapoints (rows) you have in the matrix.  Here, we are simply labeling the first datapoint for each matrix in the list.">
 
 .. only:: html
@@ -461,6 +478,23 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="Passing continuous values (or a matrix with one row per observation) as hue together with a line format string colors each trajectory continuously along its length -- for example, coloring a trajectory by time, by a behavioral variable, or by mixture proportions. Works on both the matplotlib and plotly backends.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_multicolored_lines_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_multicolored_lines`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Multicolored lines</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="When the plot function is called, it returns a DataGeometry object, or geo. A geo contains all the pieces needed to regenerate the plot. You can use the geo plot method to evaluate the same plot with new arguments, like changing the color of the points, or trying a different normalization method.  To save the plot, simply call geo.save(fname), where fname is a file name/path.  Then, this file can be reloaded using hyp.load to be plotted again at another time.  Finally, the transform method can be used to transform new data using the same transformations that were applied to the geo.">
 
 .. only:: html
@@ -473,6 +507,40 @@ Gallery of Examples
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">A DataGeometry object or "geo"</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="In addition to hard clustering (KMeans, HDBSCAN, ...), hypertools 2.0 supports mixture models: GaussianMixture, BayesianGaussianMixture, LatentDirichletAllocation, and NMF. hyp.cluster returns an (n_samples, n_components) matrix of membership proportions instead of discrete labels, and hyp.plot colors each observation by blending the component colors according to its mixture weights -- observations between clusters render with intermediate colors.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_mixture_models_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_mixture_models`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Soft clustering with mixture models</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="HyperTools 2.0 can render any plot with plotly instead of matplotlib by passing backend=&#x27;plotly&#x27; -- handy for rotating and zooming 3D plots interactively. With the default backend=&#x27;auto&#x27;, hypertools automatically uses plotly on Google Colab and Kaggle notebooks (where plotly is preinstalled and interactivity works best) and matplotlib everywhere else, so existing workflows are unchanged. Both backends produce the same styling: colors, line/marker sizes, format strings, and the signature cube frame.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_interactive_backend_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_interactive_backend`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Interactive plotting with the plotly backend</div>
     </div>
 
 
@@ -507,6 +575,23 @@ Gallery of Examples
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Normalizing your features</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="hyp.apply_model is hypertools 2.0&#x27;s unified model-application core: datasets are stacked, the model is fit ONCE across all of them, and the result is unstacked back to the input&#x27;s structure -- which is what makes embeddings and cluster assignments comparable across datasets. Models can be specified by name, as a dict with parameters, as a scikit-learn style instance, or as a list (pipeline). return_model=True hands back the fitted model for reuse on held-out data.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_apply_model_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_apply_model`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Applying models with apply_model</div>
     </div>
 
 
@@ -577,12 +662,17 @@ Gallery of Examples
    /auto_examples/plot_procrustes
    /auto_examples/plot_hue
    /auto_examples/save_movie
+   /auto_examples/plot_nested_lists
    /auto_examples/plot_labels
    /auto_examples/plot_text
    /auto_examples/plot_clusters2
+   /auto_examples/plot_multicolored_lines
    /auto_examples/plot_geo
+   /auto_examples/plot_mixture_models
+   /auto_examples/plot_interactive_backend
    /auto_examples/plot_PPCA
    /auto_examples/plot_normalize
+   /auto_examples/plot_apply_model
    /auto_examples/plot_missing_data
    /auto_examples/plot_sotus
 

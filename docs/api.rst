@@ -73,6 +73,14 @@ Cluster
 
   hypertools.cluster
 
+Apply model
+------------------
+
+.. autosummary::
+  :toctree:
+
+  hypertools.apply_model
+
 Describe
 ------------------
 

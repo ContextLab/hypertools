@@ -28,7 +28,15 @@ HyperTools 2.0 modernizes the toolbox while keeping the familiar API:
   renders interactive figures. With the default `backend='auto'`, HyperTools
   automatically uses plotly on Google Colab and Kaggle (where interactive
   figures work best and plotly is preinstalled) and matplotlib everywhere
-  else — existing workflows are unchanged.
+  else — existing workflows are unchanged. The two backends produce visually
+  matched output: identical colors, line/marker styles and sizes, format
+  strings, and the signature cube/square framing.
++ **Multicolored lines:** passing continuous values (or a per-observation
+  matrix) as `hue` together with a line format colors each trajectory
+  continuously along its length, on both backends.
++ **`hyp.apply_model`:** a unified stack → fit-once → unstack core for
+  applying any scikit-learn style model (or pipeline of models) across one
+  or more datasets, with `return_model=True` for reuse on held-out data.
 + **Mixture-model ("soft") clustering:** `cluster` and `plot` support
   `GaussianMixture`, `BayesianGaussianMixture`, `LatentDirichletAllocation`,
   and `NMF`. `hyp.cluster` returns per-observation membership proportions,
@@ -46,6 +54,11 @@ HyperTools 2.0 modernizes the toolbox while keeping the familiar API:
   settings; the unreliable result cache was removed; HDBSCAN now comes from
   scikit-learn (no extra dependency); packaging follows current standards
   (pyproject.toml, Python 3.10–3.13).
++ **Retired legacy arguments:** the long-deprecated `group` (use `hue`),
+  `model`/`model_params` (use `reduce`), `align(method=...)`/`align=True`
+  (use `align='hyper'`), and `cluster(ndims=...)` arguments were removed.
+  Saved geo files from hypertools 0.x still load — retired arguments are
+  translated or skipped with a warning on replay.
 
 ## Try it!
 
