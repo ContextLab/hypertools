@@ -66,3 +66,30 @@ def test_issue_259_rcparams_untouched():
     plt.close('all')
     changed = {k for k in before if str(plt.rcParams[k]) != before[k]}
     assert not changed, f'plot() mutated rcParams: {changed}'
+
+
+def test_corrupt_dataset_cache_recovers():
+    """CI failure 2026-07-02 (macos/py3.11): Google Drive rate-limiting
+    returned an HTML page that was cached as the dataset, poisoning every
+    subsequent text-data test with UnpicklingError. load() must detect the
+    corrupt cache, delete it, and re-download.
+    """
+    from hypertools.tools.load import DATA_DIR
+    from hypertools._shared.exceptions import HypertoolsIOError
+
+    target = DATA_DIR / 'spiral'
+    DATA_DIR.mkdir(exist_ok=True)
+    # what Google Drive actually returns when rate-limited
+    target.write_bytes(b'<!DOCTYPE html><html>quota exceeded</html>')
+
+    try:
+        geo = hyp.load('spiral')
+    except HypertoolsIOError:
+        # the re-download itself was rate-limited: the essential guarantee
+        # is that the poisoned cache was removed so a later attempt can
+        # succeed instead of failing forever
+        assert (not target.is_file()
+                or target.read_bytes()[:1] != b'<')
+    else:
+        assert geo is not None
+        assert target.read_bytes()[:1] != b'<'  # cache healed

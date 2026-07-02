@@ -175,11 +175,21 @@ def _load_example_data(dataset):
 
     try:
         geo_data = pickle.loads(dataset_path.read_bytes())
-    except Exception as e:
-        raise HypertoolsIOError(
-            f"Failed to load '{dataset}' data. Try deleting cached file at"
-            f"{dataset_path} and reloading."
-        ) from e
+    except Exception:
+        # a corrupt cache (e.g. an HTML error page saved by an interrupted
+        # or rate-limited download) poisons every subsequent load -- delete
+        # it and retry the download once before giving up
+        dataset_path.unlink(missing_ok=True)
+        _download_example_data(dataset_path)
+        try:
+            geo_data = pickle.loads(dataset_path.read_bytes())
+        except Exception as e:
+            dataset_path.unlink(missing_ok=True)
+            raise HypertoolsIOError(
+                f"Failed to load '{dataset}' data after re-downloading. "
+                "The download source may be temporarily unavailable or "
+                "rate-limited; please try again later."
+            ) from e
 
     if dataset == 'mushrooms':
         # format mushrooms dataset as a pandas DataFrame
@@ -200,11 +210,27 @@ def _download_example_data(dataset_path):
                 response = session.get(BASE_URL, params=params, stream=True)
                 break
 
+        response.raise_for_status()
         with dataset_path.open('wb') as f:
             # write stream in chunks to avoid loading whole file into memory
             for chunk in response.iter_content(chunk_size=32768):
                 if chunk:
                     f.write(chunk)
+
+        # Google Drive answers rate-limited/oversized requests with an HTML
+        # page and a 200 status; caching it would poison every later load.
+        # All hypertools example datasets are pickles, which never start
+        # with '<'.
+        with dataset_path.open('rb') as f:
+            if f.read(1) == b'<':
+                dataset_path.unlink(missing_ok=True)
+                raise HypertoolsIOError(
+                    f"Download of '{dataset_path.name}' returned an error "
+                    "page instead of the dataset (the host may be "
+                    "rate-limiting requests). Please try again later."
+                )
+    except HypertoolsIOError:
+        raise
     except Exception as e:
         # clean up partial file in case of error while writing stream
         dataset_path.unlink(missing_ok=True)
