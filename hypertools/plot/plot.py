@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 from .._shared.helpers import *
 from .._shared.params import default_params
 from ..tools.analyze import analyze
-from ..tools.cluster import cluster as clusterer
+from ..tools.cluster import cluster as clusterer, mixture_models
+from ..tools.colors import mat2colors, colors2groups
 from ..tools.reduce import reduce as reducer
 from ..tools.format_data import format_data
 from .draw import _draw
@@ -374,10 +375,10 @@ def plot(
             warnings.warn("cluster overrides hue, ignoring hue.")
         if isinstance(cluster, (str, bytes)):
             model = cluster
-            params = default_params(model)
+            params = default_params(model) or {}
         elif isinstance(cluster, dict):
             model = cluster["model"]
-            params = default_params(model, cluster["params"])
+            params = default_params(model, cluster["params"]) or {}
         else:
             raise ValueError(
                 "Invalid cluster model specified; should be" " string or dictionary!"
@@ -389,12 +390,35 @@ def plot(
                     "n_clusters is not a valid parameter for "
                     "HDBSCAN clustering and will be ignored."
                 )
+            elif model in mixture_models:
+                params["n_components"] = n_clusters
             else:
                 params["n_clusters"] = n_clusters
 
         cluster_labels = clusterer(xform, cluster={"model": model, "params": params})
-        xform, labels = reshape_data(xform, cluster_labels, labels)
-        hue = cluster_labels
+
+        if model in mixture_models:
+            # soft assignments: color each observation by the proportion-
+            # weighted blend of its components' colors, then group
+            # observations with (near-)identical colors into traces
+            blended = mat2colors(cluster_labels, palette=palette)
+            group_ids, group_colors = colors2groups(blended)
+            xform, labels = reshape_data(xform, group_ids, labels)
+            mpl_kwargs["color"] = [
+                group_colors[gid]
+                for gid in sorted(set(group_ids), key=group_ids.index)
+            ]
+            if legend is True:
+                warnings.warn(
+                    "legend is not supported for mixture-model clustering "
+                    "(observations have blended colors, not discrete "
+                    "groups); ignoring legend."
+                )
+                legend = None
+            hue = group_ids
+        else:
+            xform, labels = reshape_data(xform, cluster_labels, labels)
+            hue = cluster_labels
 
     elif n_clusters is not None:
         # If cluster was None default to KMeans
@@ -408,15 +432,42 @@ def plot(
         if color is not None:
             warnings.warn("Using group, color keyword will be ignored.")
 
+        # 2D hue (e.g. mixture proportions, weights, or any per-observation
+        # feature matrix): blend colors per observation, then group
+        # observations with (near-)identical colors into traces. Requires one
+        # row per observation -- nested lists whose flattened length matches
+        # the data instead fall through to the legacy grouping path below.
+        n_obs = sum(len(xi) for xi in xform)
+        try:
+            hue_matrix = np.asarray(hue)
+        except Exception:
+            hue_matrix = None
+        if hue_matrix is not None and hue_matrix.ndim == 2 \
+                and np.issubdtype(hue_matrix.dtype, np.number) \
+                and hue_matrix.shape[0] == n_obs:
+            blended = mat2colors(hue_matrix, palette=palette)
+            group_ids, group_colors = colors2groups(blended)
+            mpl_kwargs["color"] = [
+                group_colors[gid]
+                for gid in sorted(set(group_ids), key=group_ids.index)
+            ]
+            if legend is True:
+                warnings.warn("legend is not supported for matrix-valued "
+                              "hue; ignoring legend.")
+                legend = None
+            hue = group_ids
+
         # if list of lists, unpack
-        if any(isinstance(el, list) for el in hue):
+        elif any(isinstance(el, list) for el in hue):
             hue = list(itertools.chain(*hue))
 
         # if all of the elements are numbers, map them to colors
-        if all(isinstance(el, int) or isinstance(el, float) for el in hue):
-            hue = vals2bins(hue)
-        elif all(isinstance(el, str) for el in hue):
-            hue = group_by_category(hue)
+        if not isinstance(hue[0], tuple):
+            if all(isinstance(el, (int, float)) and not isinstance(el, bool)
+                   for el in hue):
+                hue = vals2bins(hue)
+            elif all(isinstance(el, str) for el in hue):
+                hue = group_by_category(hue)
 
         # reshape the data according to group
         if n_clusters is None:

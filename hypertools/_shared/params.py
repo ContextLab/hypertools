@@ -8,6 +8,8 @@ parameters = {
     'FeatureAgglomeration': {'n_clusters': 5},
     'Birch': {'n_clusters': 5},
     'HDBSCAN': {'min_samples': 5, 'min_cluster_size': 15},
+    'GaussianMixture': {'n_components': 5},
+    'BayesianGaussianMixture': {'n_components': 5},
     'CountVectorizer': {},
     'TfidfVectorizer': {},
     'LatentDirichletAllocation': {'n_components': 20, 'learning_method': 'batch'},
