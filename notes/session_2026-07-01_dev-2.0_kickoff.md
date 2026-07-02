@@ -45,6 +45,10 @@ Working tree was actually clean. The count came from two untracked dirs: `.venv/
 - [x] Screenshot harness (scripts/screenshot_harness.py) + baseline generator (scripts/generate_baseline_screenshots.py): 13/13 cases pass on v0.8.2, PNGs in tests/screenshots/baseline_v0.8.2/ (gitignored), 2 spot-checked visually — correct.
 - [x] Dev notebook: dev/hypertools_2.0_dev.ipynb (valid nbformat, 20 cells, one section per public function + use-case matrix).
 
+## Jeremy's confirmations (2026-07-02)
+- backend='auto' policy approved (plotly only on Colab/Kaggle; matplotlib elsewhere).
+- REQUIRED carries from revamp: multilevel-index support, stack/unstack implementation strategy, robust coloring (mat2colors/vals2colors), mixture models as soft-clustering alternative. Detailed specs added to roadmap ("Data shapes & color system" section) + dev notebook section 4.
+
 ## Key facts to remember when resuming
 - Branch: **dev-2.0** (all work here; NEVER touch master — PR only after Jeremy signs off).
 - Fork remote added as `jeremy`; refactor code = `jeremy/dev` branch `dev/` folder; backend lessons in `jeremy/matplotlib-backend-revert` notes/.
