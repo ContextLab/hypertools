@@ -106,3 +106,12 @@ Feedback: (a) backends must match visually (styles/sizing/colors), (b) many feat
   https://github.com/ContextLab/hypertools/pull/270#issuecomment-4865614702
 - Everything Jeremy flagged is done: backend parity (22/22 montages, docs/images/v2.0-parity), full feature screenshot coverage (75/75, docs/images/v2.0-verification), apply_model core, gallery+sphinx, animation bugs #264/#265 regression-tested, deprecated kwargs retired.
 - Awaiting Jeremy's review/sign-off. DO NOT MERGE.
+
+## Fourth work block (2026-07-02, review round 2)
+Jeremy's feedback: mixtures not showing multi-class membership; title/aspect/sizing mismatch across backends; animation "doesn't appear to work" + need gif/apng/mp4 export; gallery thumbnails old + verify plotly animations. All addressed (commit b77945f):
+- **Animation export**: _save_animation (plot.py) picks writer by extension (.gif Pillow / .png+.apng animated PNG / .mp4 ffmpeg); plotly _export_animation_file renders frames via kaleido + assembles (PIL/ffmpeg), controls excluded from exports (must set layout.updatemenus = (), NOT update_layout([])); plotly n_frames now scales with duration (15/s, clamped 10-90) — export tests 14min → <5min. 7 tests w/ real files. Samples in docs/images/v2.0-animations/ + INDEX.
+- **Overlapping mixtures**: all mixture demos use 1.5-sd-separated blobs (make_overlapping_clusters in both scripts, examples, notebook); test asserts >15% genuinely soft assignments. Verified visually: blended boundary colors on both backends.
+- **Parity round 2**: title centered/black/16px matching mpl; default 640x480; 2D frame fills canvas (dropped scaleanchor); 3D aspectmode manual 4:4:3 (mpl default box aspect) — test updated accordingly; camera r=1.95 for size match.
+- **Gallery**: plotly_sg_scraper in docs/conf.py (renderer sphinx_gallery_png); animate_plotly example; animated thumbnail sphx_glr_animate_plotly_thumb.gif generated + registered in post_build.py. Verified: plotly PNG in built gallery html.
+- **Notebook**: animations display inline via to_jshtml + plotly frames; gif export cell; re-executed 0 errors (resources path dev/).
+- Suite: 192 passing (185 + 7 animation-export). 22/22 parity, 75/75 verification regenerated. Awaiting CI + posting round-2 evidence comment.
