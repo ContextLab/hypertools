@@ -19,3 +19,6 @@ venv/
 .omc/
 __pycache__/
 tests/screenshots/
+docs/auto_examples/animation.mp4
+docs/auto_examples/searchindex.db
+docs/auto_examples/test-image.pdf
