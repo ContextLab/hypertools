@@ -82,3 +82,8 @@ Saved at scratchpad pr_body.md (session-local); recreate from this file's summar
 - [ ] Swap hdbscan→sklearn.cluster.HDBSCAN; vendor dev/ppca.py to replace pca-magic.
 - [ ] Run FULL test suite (129 tests) before/after each change; keep green.
 - Then Phase 1 (core: apply_model registry, decorator chain, transform-chain result object), Phase 2 (plotting: style layer, HyperToolsFigure, plotly backend, backend='auto'), Phase 3 (issue burn-down), Phase 4 (docs). Details in roadmap.
+
+## Final CI status (2026-07-02 ~01:10 EDT)
+- PR #270 full matrix GREEN: 24/24 checks pass (3 OS x py3.10-3.13, both push + pull_request runs).
+- One transient failure fixed en route: GitHub's windows/py3.13 runner ships broken Tcl/Tk (TkAgg imports but window creation raises _tkinter.TclError). Fixed in 6e6330e: manage_backend retries the plot once on the original backend after an interactive-backend TclError.
+- Session complete. Awaiting Jeremy's PR review/sign-off. NEXT SESSION: address review comments; then remaining roadmap items (stack/unstack apply_model, DataGeometry transform chain #227/#236, gallery regen, #264/#265).
