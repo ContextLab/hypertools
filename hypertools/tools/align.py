@@ -107,32 +107,14 @@ def align(data, align='hyper', n_iter=10, format_data=True):
                 y = np.append(y, add, axis=1)
                 m[idx]=y
 
-            ##STEP 1: INITIAL TEMPLATE##
-            for x in range(0, len(m)):
-                if x==0:
-                    template = np.copy(m[x])
-                else:
-                    next = procrustes(m[x], template / (x + 1))
-                    template += next
-            template /= len(m)
-
-            ##STEP 2: ITERATIVELY RE-ESTIMATE THE COMMON TEMPLATE##
-            # repeated application of hyperalignment: align every dataset to
-            # the current template, average the aligned datasets into a new
-            # template, and repeat (n_iter times; historically this ran a
-            # single iteration)
+            # REPEATED APPLICATION OF HYPERALIGNMENT (n_iter passes): each
+            # pass runs the full classic procedure -- build a sequential
+            # template, refine it, align every dataset to it -- and the
+            # ALIGNED datasets become the input to the next pass, so
+            # convergence toward the common space compounds across passes.
+            aligned = m
             for _ in range(max(1, int(n_iter))):
-                new_template = np.zeros(template.shape)
-                for x in range(0, len(m)):
-                    next = procrustes(m[x], template)
-                    new_template += next
-                template = new_template / len(m)
-
-            #STEP 3: ALIGN TO THE FINAL TEMPLATE
-            aligned = [np.zeros(template.shape)] * len(m)
-            for x in range(0, len(m)):
-                next = procrustes(m[x], template)
-                aligned[x] = next
+                aligned = _hyperalign_pass(aligned)
             return aligned
 
         elif align == 'SRM':
@@ -140,3 +122,24 @@ def align(data, align='hyper', n_iter=10, format_data=True):
             srm = SRM(features=np.min([i.shape[0] for i in data]))
             fit = srm.fit(data)
             return [i.T for i in srm.transform(data)]
+
+def _hyperalign_pass(m):
+    """One full pass of classic hyperalignment (Haxby et al., 2011):
+    sequentially build a template, refine it by aligning every dataset to
+    it, then align all datasets to the refined template."""
+    ##STEP 1: INITIAL TEMPLATE##
+    for x in range(0, len(m)):
+        if x == 0:
+            template = np.copy(m[x])
+        else:
+            template += procrustes(m[x], template / (x + 1))
+    template /= len(m)
+
+    ##STEP 2: REFINED TEMPLATE##
+    template2 = np.zeros(template.shape)
+    for x in range(0, len(m)):
+        template2 += procrustes(m[x], template)
+    template2 /= len(m)
+
+    ##STEP 3: ALIGN TO REFINED TEMPLATE##
+    return [procrustes(m[x], template2) for x in range(0, len(m))]

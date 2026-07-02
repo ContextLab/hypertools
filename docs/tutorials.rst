@@ -84,3 +84,19 @@ Modern scikit-learn models and dynamics
   :maxdepth: 2
 
   tutorials/modern_sklearn_dynamics.ipynb
+
+Mapping Wikipedia with modern text embeddings
+----------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/wikipedia_embeddings.ipynb
+
+Visualizing the shape of a conversation
+----------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/conversation_trajectories.ipynb

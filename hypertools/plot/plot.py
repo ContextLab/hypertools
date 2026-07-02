@@ -21,6 +21,8 @@ def plot(
     fmt="-",
     marker=None,
     markers=None,
+    markersize=None,
+    linewidth=None,
     linestyle=None,
     linestyles=None,
     color=None,
@@ -77,6 +79,14 @@ def plot(
 
     marker(s) : str or list of str
         A list of marker types
+
+    markersize : int or float
+        Size of the markers in points (default: matplotlib's 6.0). Applies
+        to both backends.
+
+    linewidth : int or float
+        Width of plotted lines in points (default: matplotlib's 1.5 for
+        static plots, 1 for animations). Applies to both backends.
 
     color(s) : str or list of str
         A list of marker types
@@ -167,10 +177,14 @@ def plot(
         /usr/bin/ruby -e "$(curl -fsSL
         https://raw.githubusercontent.com/Homebrew/install/master/install)".
 
-    animate : bool, 'parallel' or 'spin'
+    animate : bool, 'parallel', 'spin' or 'serial'
         If True or 'parallel', plots the data as an animated trajectory, with
         each dataset plotted simultaneously. If 'spin', all the data is plotted
-        at once but the camera spins around the plot (default: False).
+        at once but the camera spins around the plot. If 'serial', datasets
+        appear ONE AT A TIME in list order: each grows point-by-point into
+        place while all previous datasets stay fully drawn, and datasets are
+        never connected to each other -- useful for e.g. conversation turns
+        accumulating in a shared embedding space (default: False).
 
     backend : str
         Rendering backend: 'matplotlib' (the classic renderer),
@@ -360,6 +374,14 @@ def plot(
                           ignored in favor of markers."
             )
 
+    # handle marker size (to be passed onto matplotlib/plotly)
+    if markersize is not None:
+        mpl_kwargs["markersize"] = markersize
+
+    # handle line width (to be passed onto matplotlib/plotly)
+    if linewidth is not None:
+        mpl_kwargs["linewidth"] = linewidth
+
     # reduce data to 3 dims for plotting, if ndims is None, return this.
     # xform was already formatted (and possibly reduced to ndims) by analyze()
     # above, so skip re-running format_data/PPCA here; reduce() returns the
@@ -407,15 +429,7 @@ def plot(
 
         if model in mixture_models:
             # soft assignments: color each observation by the proportion-
-            # weighted blend of its components' colors, then group
-            # observations with (near-)identical colors into traces
-            blended = mat2colors(cluster_labels, palette=palette)
-            group_ids, group_colors = colors2groups(blended)
-            xform, labels = reshape_data(xform, group_ids, labels)
-            mpl_kwargs["color"] = [
-                group_colors[gid]
-                for gid in sorted(set(group_ids), key=group_ids.index)
-            ]
+            # weighted blend of its components' colors
             if legend is True:
                 warnings.warn(
                     "legend is not supported for mixture-model clustering "
@@ -423,7 +437,22 @@ def plot(
                     "groups); ignoring legend."
                 )
                 legend = None
-            hue = group_ids
+            if not animate:
+                # exact per-point colors (rendered via collections/scatter)
+                multicolor_hue = np.asarray(cluster_labels,
+                                            dtype=np.float64)
+                hue = None
+            else:
+                # animations render one trace per group: quantize the
+                # blended colors into (near-)identical-color groups
+                blended = mat2colors(cluster_labels, palette=palette)
+                group_ids, group_colors = colors2groups(blended)
+                xform, labels = reshape_data(xform, group_ids, labels)
+                mpl_kwargs["color"] = [
+                    group_colors[gid]
+                    for gid in sorted(set(group_ids), key=group_ids.index)
+                ]
+                hue = group_ids
         else:
             xform, labels = reshape_data(xform, cluster_labels, labels)
             hue = cluster_labels
@@ -455,12 +484,12 @@ def plot(
                              and np.issubdtype(hue_array.dtype, np.number)
                              and hue_array.shape[0] == n_obs)
 
-        if (hue_is_matrix or hue_is_continuous) and is_line(fmt) \
-                and not animate:
-            # MULTICOLORED LINES: color varies continuously along each
-            # trajectory. Datasets stay intact (no group reshape, which
-            # would fragment the lines); per-point colors are computed
-            # after interpolation, below.
+        if (hue_is_matrix or hue_is_continuous) and not animate:
+            # EXACT PER-POINT COLORS: color varies continuously across
+            # observations. Datasets stay intact (no group reshape, which
+            # would fragment lines and quantize marker colors); per-point
+            # colors are computed after interpolation, below, and rendered
+            # via collections (lines) or scatter (markers).
             multicolor_hue = np.asarray(hue_array, dtype=np.float64)
             if legend is True:
                 warnings.warn("legend is not supported for continuous or "
@@ -668,15 +697,22 @@ def plot(
                 frame_kwargs=frame_kwargs,
             )
 
-            # multicolored lines: swap the single-color line artists for
-            # collections with per-segment colors (the cube/square frame
-            # and axes produced by _draw are kept)
+            # exact per-point colors: swap the single-color artists for
+            # per-segment-colored line collections or per-point-colored
+            # scatter (the cube/square frame and axes from _draw are kept)
             if line_colors is not None:
-                _apply_multicolor_lines(ax, xform, line_colors,
-                                        kwargs_list)
+                if is_line(fmt):
+                    _apply_multicolor_lines(ax, xform, line_colors,
+                                            kwargs_list)
+                else:
+                    _apply_multicolor_markers(ax, xform, line_colors,
+                                              kwargs_list)
 
-            # tighten layout
-            plt.tight_layout()
+            # tighten layout (static plots only: animated axes are given
+            # the full canvas so rotating zoomed cubes don't clip, and
+            # tight_layout would shrink them back into subplot margins)
+            if not animate:
+                plt.tight_layout()
 
             # save
             if save_path is not None:
@@ -974,3 +1010,25 @@ def _save_animated_svg(line_ani, save_path, frame_rate):
         getattr(line_ani, 'save_count', None) or 100
     collector.set_stride(total)
     line_ani.save(save_path, writer=collector)
+
+
+def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list):
+    """Replace single-color marker artists with per-point-colored scatter
+    (matplotlib backend). Gives exact per-observation colors -- e.g. mixture
+    proportions render as true blends instead of quantized groups."""
+    for line in list(ax.lines):
+        line.remove()
+
+    is_3d = xform[0].shape[1] >= 3
+    for i, (xi, ci) in enumerate(zip(xform, point_colors)):
+        tkwargs = kwargs_list[i] if i < len(kwargs_list) else {}
+        ms = float(tkwargs.get('markersize')
+                   or plt.rcParams['lines.markersize'])
+        s = ms ** 2  # scatter sizes are areas in points^2
+        if xi.shape[1] == 1:
+            ax.scatter(np.arange(xi.shape[0]), xi[:, 0], c=ci, s=s)
+        elif is_3d:
+            ax.scatter(xi[:, 0], xi[:, 1], xi[:, 2], c=ci, s=s,
+                       depthshade=False)
+        else:
+            ax.scatter(xi[:, 0], xi[:, 1], c=ci, s=s)

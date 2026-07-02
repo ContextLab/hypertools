@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import itertools
+
 import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import proj3d
@@ -384,17 +386,21 @@ def _draw(
         # Old semantics: image scale ~ 10/dist with dist = 9 - zoom.
         ax.set_box_aspect(None, zoom=10.0 / max(0.5, 9.0 - zoom))
 
-        for line, data, trail in zip(lines, data_lines, trail_lines):
+        # zip_longest: marker-only animations have no trail artists (trail
+        # is None for those datasets), but head artists still animate
+        for line, data, trail in itertools.zip_longest(
+                lines, data_lines, trail_lines):
 
-            if (precog and chemtrails) or bullettime:
-                trail.set_data(data[:, 0:2].T)
-                trail.set_3d_properties(data[:, 2])
-            elif chemtrails:
-                trail.set_data(data[0 : num - tail_duration + 1, 0:2].T)
-                trail.set_3d_properties(data[0 : num - tail_duration + 1, 2])
-            elif precog:
-                trail.set_data(data[num + 1 :, 0:2].T)
-                trail.set_3d_properties(data[num + 1 :, 2])
+            if trail is not None:
+                if (precog and chemtrails) or bullettime:
+                    trail.set_data(data[:, 0:2].T)
+                    trail.set_3d_properties(data[:, 2])
+                elif chemtrails:
+                    trail.set_data(data[0 : num - tail_duration + 1, 0:2].T)
+                    trail.set_3d_properties(data[0 : num - tail_duration + 1, 2])
+                elif precog:
+                    trail.set_data(data[num + 1 :, 0:2].T)
+                    trail.set_3d_properties(data[num + 1 :, 2])
 
             if num <= tail_duration:
                 line.set_data(data[0 : num + 1, 0:2].T)
@@ -428,6 +434,36 @@ def _draw(
 
         return lines
 
+    def update_lines_serial(
+        num, data_lines, lines, cube_scale, rotations=2, zoom=1, elev=10
+    ):
+        """Serial animation: datasets appear ONE AT A TIME, each growing
+        point-by-point into place while all previous datasets stay fully
+        drawn (e.g. conversation turns adding to a shared embedding space).
+        Datasets are never connected to each other."""
+        if hasattr(update_lines_serial, "planes"):
+            for plane in update_lines_serial.planes:
+                plane.remove()
+        update_lines_serial.planes = plot_cube(cube_scale, **frame_kwargs)
+
+        total_frames = frame_rate * duration
+        ax.view_init(elev=elev,
+                     azim=azim + rotations * 360.0 * num / total_frames)
+        ax.set_box_aspect(None, zoom=10.0 / max(0.5, 9.0 - zoom))
+
+        lengths = [d.shape[0] for d in data_lines]
+        total_points = sum(lengths)
+        revealed = total_points * num / max(1, total_frames - 1)
+
+        start = 0
+        for line, data in zip(lines, data_lines):
+            shown = int(np.clip(revealed - start, 0, data.shape[0]))
+            line.set_data(data[:shown, 0:2].T)
+            line.set_3d_properties(data[:shown, 2])
+            start += data.shape[0]
+
+        return lines
+
     def dispatch_animate(x, ani_params):
         if x[0].shape[1] == 3:
             return animate_plot3D(x, **ani_params)
@@ -446,8 +482,17 @@ def _draw(
         # initialize plot
         fig = plt.figure()
         ax = fig.add_subplot(111, projection="3d")
+        # give the (axis-off) 3D axes the full canvas: with the default
+        # subplot margins, the zoomed cube overflows the axes viewport at
+        # some rotation angles, clipping cube corners and data
+        ax.set_position([0.0, 0.0, 1.0, 1.0])
 
-        # create lines
+        # create lines. Trail artists are created whenever ANY dataset draws
+        # lines (previously is_line(fmt) required ALL datasets to be lines,
+        # which left `trail` undefined -- and the FuncAnimation call below
+        # crashed -- when fmts were mixed, e.g. after a single-point dataset's
+        # line fmt is converted to '.', or for marker-only animations).
+        trail = []
         if fmt is not None:
             lines = [
                 ax.plot(
@@ -455,12 +500,12 @@ def _draw(
                     dat[0:1, 1],
                     dat[0:1, 2],
                     fmt[idx],
-                    linewidth=1,
+                    linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
                     **kwargs_list[idx]
                 )[0]
                 for idx, dat in enumerate(x)
             ]
-            if is_line(fmt):
+            if any(is_line(f) for f in fmt):
                 trail = [
                     ax.plot(
                         dat[0:1, 0],
@@ -468,7 +513,7 @@ def _draw(
                         dat[0:1, 2],
                         fmt[idx],
                         alpha=0.3,
-                        linewidth=1,
+                        linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
                         **kwargs_list[idx]
                     )[0]
                     for idx, dat in enumerate(x)
@@ -479,7 +524,7 @@ def _draw(
                     dat[0:1, 0],
                     dat[0:1, 1],
                     dat[0:1, 2],
-                    linewidth=1,
+                    linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
                     **kwargs_list[idx]
                 )[0]
                 for idx, dat in enumerate(x)
@@ -491,7 +536,7 @@ def _draw(
                         dat[0:1, 1],
                         dat[0:1, 2],
                         alpha=0.3,
-                        linewidth=1,
+                        linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
                         **kwargs_list[idx]
                     )[0]
                     for idx, dat in enumerate(x)
@@ -522,6 +567,16 @@ def _draw(
                 blit=False,
                 repeat=False,
             )
+        elif style == "serial":
+            line_ani = animation.FuncAnimation(
+                fig,
+                update_lines_serial,
+                frame_rate * duration,
+                fargs=(x, lines, 1, rotations, zoom, elev),
+                interval=1000 / frame_rate,
+                blit=False,
+                repeat=False,
+            )
         elif style == "spin":
             line_ani = animation.FuncAnimation(
                 fig,
@@ -547,7 +602,7 @@ def _draw(
     if frame_kwargs is None:
         frame_kwargs = {}
 
-    if animate in [True, "parallel", "spin"]:
+    if animate in [True, "parallel", "spin", "serial"]:
         assert (
             x[0].shape[1] == 3
         ), "Animations are currently only supported for 3d plots."

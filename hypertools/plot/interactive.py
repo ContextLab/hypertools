@@ -470,6 +470,34 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             frames.append(go.Frame(
                 name=str(k),
                 layout=dict(scene_camera=dict(eye=_camera_eye(elev, angle)))))
+    elif animate == 'serial':
+        # datasets appear one at a time, each growing into place while
+        # earlier ones stay fully drawn (never connected to each other)
+        lengths = [np.atleast_2d(a).shape[0] for a in data]
+        total_points = sum(lengths)
+        starts = np.concatenate([[0], np.cumsum(lengths)[:-1]])
+        for k in range(n_frames):
+            revealed = total_points * k / max(1, n_frames - 1)
+            frame_traces = []
+            for arr, start in zip(data, starts):
+                arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
+                shown = int(np.clip(revealed - start, 0, arr.shape[0]))
+                seg = arr[:shown]
+                if ndims >= 3:
+                    frame_traces.append(go.Scatter3d(
+                        x=seg[:, 0], y=seg[:, 1], z=seg[:, 2]))
+                elif ndims == 2:
+                    frame_traces.append(go.Scatter(x=seg[:, 0], y=seg[:, 1]))
+                else:
+                    frame_traces.append(go.Scatter(
+                        x=np.arange(seg.shape[0]), y=seg[:, 0]))
+            frame_kwargs = dict(name=str(k), data=frame_traces,
+                                traces=trace_indices)
+            if ndims >= 3:
+                angle = azim + 360.0 * rotations * k / n_frames
+                frame_kwargs['layout'] = dict(
+                    scene_camera=dict(eye=_camera_eye(elev, angle)))
+            frames.append(go.Frame(**frame_kwargs))
     else:
         max_len = max(arr.shape[0] for arr in data)
         window = max(2, max_len // 10)
