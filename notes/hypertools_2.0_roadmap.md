@@ -1,5 +1,11 @@
 # HyperTools 2.0 Roadmap (branch: dev-2.0)
 
+> **STATUS (2026-07-02):** Phases 0-2 implemented and verified (169 tests,
+> 44/44 screenshot matrix, notebook executed clean); PR opened to master for
+> Jeremy's review. Remaining: stack/unstack apply_model core, DataGeometry
+> transform chain (#227/#236), gallery regeneration, animation bug burn-down
+> (#264/#265), deprecated-kwarg retirement.
+
 Synthesized 2026-07-01 from: (a) the `jeremy/dev` refactor (97 commits), (b) the backend
 experiment branches (`threejs-backend`, `d3-threejs-backend`, `matplotlib-backend-revert`),
 (c) a dependency/CI/test audit of master v0.8.2, and (d) the open GitHub issue list.
