@@ -99,3 +99,10 @@ Feedback: (a) backends must match visually (styles/sizing/colors), (b) many feat
 - **Regression tests**: #264 (loop staleness — memoize was root cause), #265 (numpy2 animate, exact repro from issue), #259 (rcParams). 
 - **Gallery**: 5 new examples (interactive_backend, mixture_models, multicolored_lines, nested_lists, apply_model) all execute clean; apply_model added to docs/api.rst.
 - Notebook re-executed 0 errors. README updated. Tests: 185+ green.
+
+## Final status after third work block (2026-07-02 ~09:00 EDT)
+- Evidence push bf2899c: CI fully green again (24/24 checks, 3 OS x py3.10-3.13).
+- PR #270 body rewritten with full scope; evidence comment posted:
+  https://github.com/ContextLab/hypertools/pull/270#issuecomment-4865614702
+- Everything Jeremy flagged is done: backend parity (22/22 montages, docs/images/v2.0-parity), full feature screenshot coverage (75/75, docs/images/v2.0-verification), apply_model core, gallery+sphinx, animation bugs #264/#265 regression-tested, deprecated kwargs retired.
+- Awaiting Jeremy's review/sign-off. DO NOT MERGE.
