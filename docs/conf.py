@@ -19,7 +19,6 @@
 # import os
 # import sys
 import sys, os
-import sphinx_bootstrap_theme
 
 # plotly scraper for sphinx-gallery: renders plotly figures produced by
 # gallery examples (requires kaleido). Falls back gracefully if plotly is
@@ -141,7 +140,7 @@ html_js_files = [
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-html_theme = 'bootstrap'
+html_theme = 'pydata_sphinx_theme'
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -149,19 +148,15 @@ html_theme = 'bootstrap'
 extlinks = {'github': 'https://github.com/ContextLab/hypertools'}
 
 html_theme_options = {
-    'source_link_position': "footer",
-    'bootswatch_theme': "yeti",
-    'navbar_sidebarrel': False,
-    'bootstrap_version': "3",
-    'navbar_links': [("API", "api"),
-                     ("Gallery", "auto_examples/index"),
-                     ("Tutorials", "tutorials"),
-                     ("Download", "http://www.github.com/ContextLab/hypertools", True)],
-
-    }
-
-# Add any paths that contain custom themes here, relative to this directory.
-html_theme_path = sphinx_bootstrap_theme.get_html_theme_path()
+    'github_url': 'https://github.com/ContextLab/hypertools',
+    'header_links_before_dropdown': 6,
+    'navbar_align': 'left',
+    'show_prev_next': False,
+    'logo': {'text': 'hypertools'},
+    'external_links': [
+        {'name': 'Paper', 'url': 'http://jmlr.org/papers/v18/17-434.html'},
+    ],
+}
 
 # -- Options for HTMLHelp output ------------------------------------------
 

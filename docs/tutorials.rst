@@ -68,3 +68,19 @@ Plotting text
   :maxdepth: 2
 
   tutorials/text.ipynb
+
+Visualizing Hugging Face embeddings
+----------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/hugging_face_embeddings.ipynb
+
+Modern scikit-learn models and dynamics
+----------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/modern_sklearn_dynamics.ipynb

@@ -25,7 +25,20 @@ EXAMPLE_DATA = {
     'nips': '1FV7xT2hVgZ1sXfMvAdP1jRsK_dWhp49I',
     'wiki_model': '1T-UAU-6KVGUBcUWqz7yG59vXnThu9T0H',
     'nips_model': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm',
-    'sotus_model': '16_n9r82pwxzZh-0qdS4a6l0z3v__Q91C'
+    'sotus_model': '16_n9r82pwxzZh-0qdS4a6l0z3v__Q91C',
+    # "shapes zoo" 3D point clouds + the datasaurus dozen (hosted on
+    # Dropbox; full-URL entries are fetched directly). NOTE: the
+    # 'egyption_mask' source file is an empty (0, 3) array upstream, so it
+    # is intentionally not registered.
+    'bunny': 'https://www.dropbox.com/s/7d9vo9idqk1hn31/bunny.pkl?dl=1',
+    'cube': 'https://www.dropbox.com/s/tkrwe2m4maxl83j/cube.pkl?dl=1',
+    'dragon': 'https://www.dropbox.com/s/6w84icbvzh5oilr/dragon.pkl?dl=1',
+    'sphere': 'https://www.dropbox.com/s/wp8suye6oh4ze3u/sphere.pkl?dl=1',
+    'teapot': 'https://www.dropbox.com/s/f3jj18h3ge2gns6/teapot.pkl?dl=1',
+    'vase': 'https://www.dropbox.com/s/prquc7ov18zguuu/vase.pkl?dl=1',
+    'biplane': 'https://www.dropbox.com/s/4b9y9ouvjpjbj6x/biplane.pkl?dl=1',
+    'datasaurus':
+        'https://www.dropbox.com/s/6wxjyw8p052a5t9/datasaurus.pkl?dl=1',
 }
 
 
@@ -69,6 +82,14 @@ def load(
         `wiki-model` is a sklearn Pipeline (CountVectorizer->LatentDirichletAllocation)
         trained on a sample of wikipedia articles. It can be used to transform
         text to topic vectors.
+
+        The "shapes zoo" datasets -- `bunny`, `cube`, `dragon`, `sphere`,
+        `teapot`, `vase`, and `biplane` -- are 3D point clouds of the
+        corresponding objects (numpy arrays / DataFrames of x, y, z
+        coordinates), useful for demonstrating alignment and plotting.
+
+        `datasaurus` is the "Datasaurus Dozen": a list of 2D datasets with
+        near-identical summary statistics but wildly different shapes.
 
     normalize : str or False or None
         If set to 'across', the columns of the input data will be z-scored
@@ -115,12 +136,10 @@ def load(
     else:
         dataset_path = Path(expanduser(expandvars(dataset))).resolve()
         if not dataset_path.is_file():
+            sample_names = ', '.join(f"'{name}'" for name in EXAMPLE_DATA)
             raise HypertoolsIOError(
                 f"Dataset not found at {dataset_path}. Please specify a .geo "
-                "file or one of the following sample files: 'weights', "
-                "'weights_avg', 'weights_sample', 'spiral', 'mushrooms', "
-                "'wiki', 'nips', 'sotus', 'wiki_model', 'nips_model', "
-                "'sotus_model'"
+                f"file or one of the following sample files: {sample_names}"
             )
         elif legacy:
             geo_data = _load_legacy(dataset_path)
@@ -139,7 +158,11 @@ def load(
     if any({reduce, ndims, align, normalize}):
         from ..plot.plot import plot
         reduce = reduce or 'IncrementalPCA'
-        d = analyze(geo_data.get_data(),
+        # shapes-zoo/datasaurus entries are plain arrays/DataFrames/lists
+        # rather than DataGeometry objects
+        raw = geo_data.get_data() if hasattr(geo_data, 'get_data') \
+            else geo_data
+        d = analyze(raw,
                     reduce=reduce,
                     ndims=ndims,
                     align=align,
@@ -174,7 +197,7 @@ def _load_example_data(dataset):
         _download_example_data(dataset_path)
 
     try:
-        geo_data = pickle.loads(dataset_path.read_bytes())
+        geo_data = _unpickle_example(dataset_path)
     except Exception:
         # a corrupt cache (e.g. an HTML error page saved by an interrupted
         # or rate-limited download) poisons every subsequent load -- delete
@@ -182,7 +205,7 @@ def _load_example_data(dataset):
         dataset_path.unlink(missing_ok=True)
         _download_example_data(dataset_path)
         try:
-            geo_data = pickle.loads(dataset_path.read_bytes())
+            geo_data = _unpickle_example(dataset_path)
         except Exception as e:
             dataset_path.unlink(missing_ok=True)
             raise HypertoolsIOError(
@@ -217,17 +240,23 @@ def _download_example_data(dataset_path, max_attempts=4):
 
 
 def _download_example_data_once(dataset_path):
-    file_id = EXAMPLE_DATA[dataset_path.name]
+    source = EXAMPLE_DATA[dataset_path.name]
     session = requests.Session()
-    params = {'id': file_id}
     try:
-        response = session.get(BASE_URL, params=params, stream=True)
-        for key, value in response.cookies.items():
-            if key.startswith('download_warning'):
-                # Google Drive requires confirmation for large files
-                params['confirm'] = value
-                response = session.get(BASE_URL, params=params, stream=True)
-                break
+        if source.startswith('http'):
+            # full-URL entries (e.g. Dropbox ?dl=1 direct downloads)
+            response = session.get(source, stream=True)
+        else:
+            # legacy entries are Google Drive file ids
+            params = {'id': source}
+            response = session.get(BASE_URL, params=params, stream=True)
+            for key, value in response.cookies.items():
+                if key.startswith('download_warning'):
+                    # Google Drive requires confirmation for large files
+                    params['confirm'] = value
+                    response = session.get(BASE_URL, params=params,
+                                           stream=True)
+                    break
 
         response.raise_for_status()
         with dataset_path.open('wb') as f:
@@ -256,3 +285,21 @@ def _download_example_data_once(dataset_path):
         raise HypertoolsIOError(
             f"Failed to download '{dataset_path.name}' dataset"
         ) from e
+
+
+def _unpickle_example(dataset_path):
+    """Load a cached example dataset, tolerating the formats used across
+    hypertools' history: standard pickles (DataGeometry objects), pickles
+    created with old pandas versions (pd.read_pickle applies compatibility
+    shims), and dill-serialized arrays (the shapes-zoo datasets)."""
+    raw = dataset_path.read_bytes()
+    try:
+        return pickle.loads(raw)
+    except Exception:
+        pass
+    try:
+        return pd.read_pickle(dataset_path)
+    except Exception:
+        pass
+    import dill
+    return dill.loads(raw)

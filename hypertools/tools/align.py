@@ -6,7 +6,7 @@ import numpy as np
 from .format_data import format_data as formatter
 import warnings
 
-def align(data, align='hyper', format_data=True):
+def align(data, align='hyper', n_iter=10, format_data=True):
     """
     Aligns a list of arrays
 
@@ -39,6 +39,14 @@ def align(data, align='hyper', format_data=True):
         key is a string that specifies the model and the params key is a dictionary
         of parameter values (default : 'hyper').
 
+    n_iter : int
+        Number of hyperalignment iterations: the common template is
+        re-estimated from the aligned data and all datasets are re-aligned
+        to it, repeatedly. More iterations give a more stable common space
+        (default: 10). Only used when align='hyper'; may also be passed via
+        the dict form, e.g. align={'model': 'hyper',
+        'params': {'n_iter': 10}}.
+
     format_data : bool
         Whether or not to first call the format_data function (default: True).
 
@@ -52,10 +60,14 @@ def align(data, align='hyper', format_data=True):
     # if model is None, just return data
     if align is None:
         return data
-    elif isinstance(align, dict):
-        if align['model'] is None:
-            return data
     else:
+        if isinstance(align, dict):
+            params = dict(align.get('params', {}))
+            align = align['model']
+            if align is None:
+                return data
+            n_iter = params.get('n_iter', n_iter)
+
         if align is True:
             # retired in 2.0 (previously deprecated): boolean form was
             # ambiguous -- require an explicit algorithm name
@@ -95,7 +107,7 @@ def align(data, align='hyper', format_data=True):
                 y = np.append(y, add, axis=1)
                 m[idx]=y
 
-            ##STEP 1: TEMPLATE##
+            ##STEP 1: INITIAL TEMPLATE##
             for x in range(0, len(m)):
                 if x==0:
                     template = np.copy(m[x])
@@ -104,22 +116,26 @@ def align(data, align='hyper', format_data=True):
                     template += next
             template /= len(m)
 
-            ##STEP 2: NEW COMMON TEMPLATE##
-            #align each subj to the template from STEP 1
-            template2 = np.zeros(template.shape)
+            ##STEP 2: ITERATIVELY RE-ESTIMATE THE COMMON TEMPLATE##
+            # repeated application of hyperalignment: align every dataset to
+            # the current template, average the aligned datasets into a new
+            # template, and repeat (n_iter times; historically this ran a
+            # single iteration)
+            for _ in range(max(1, int(n_iter))):
+                new_template = np.zeros(template.shape)
+                for x in range(0, len(m)):
+                    next = procrustes(m[x], template)
+                    new_template += next
+                template = new_template / len(m)
+
+            #STEP 3: ALIGN TO THE FINAL TEMPLATE
+            aligned = [np.zeros(template.shape)] * len(m)
             for x in range(0, len(m)):
                 next = procrustes(m[x], template)
-                template2 += next
-            template2 /= len(m)
-
-            #STEP 3 (below): ALIGN TO NEW TEMPLATE
-            aligned = [np.zeros(template2.shape)] * len(m)
-            for x in range(0, len(m)):
-                next = procrustes(m[x], template2)
                 aligned[x] = next
             return aligned
 
-        elif (align == 'SRM') or (method == 'SRM'):
+        elif align == 'SRM':
             data = [i.T for i in data]
             srm = SRM(features=np.min([i.shape[0] for i in data]))
             fit = srm.fit(data)

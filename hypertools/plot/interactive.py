@@ -194,9 +194,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                     x=0.99, y=0.99, xanchor='right', yanchor='top'),
     )
     if title is not None:
+        # centered over the plotting area (xref='paper'), like matplotlib
+        # centers its title over the axes; same 12pt sans-serif appearance
         layout['title'] = dict(text=title, x=0.5, xanchor='center',
+                               xref='paper',
                                y=0.97, yanchor='top',
-                               font=dict(color='black', size=16))
+                               font=dict(color='black', size=16,
+                                         family='DejaVu Sans, Arial, '
+                                                'sans-serif'))
     size = size if size is not None else DEFAULT_FIGSIZE
     layout['width'] = int(size[0] * 100)
     layout['height'] = int(size[1] * 100)
@@ -233,7 +238,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         ext = save_path.lower().rsplit('.', 1)[-1]
         if ext == 'html':
             fig.write_html(save_path)
-        elif animate and ext in ('gif', 'png', 'apng', 'mp4', 'mov', 'avi'):
+        elif animate and ext in ('gif', 'png', 'apng', 'mp4', 'mov', 'avi',
+                                 'svg'):
             _export_animation_file(fig, save_path, frame_rate, duration,
                                    size)
         else:
@@ -263,20 +269,36 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
     width, height = int(size[0] * 100), int(size[1] * 100)
     ext = save_path.lower().rsplit('.', 1)[-1]
 
+    def frame_snapshots():
+        for frame in fig.frames:
+            snapshot = go.Figure(fig)
+            snapshot.frames = ()
+            # hide the interactive play/pause controls in exported frames
+            # (update_layout(updatemenus=[]) is a no-op; assign directly)
+            snapshot.layout.updatemenus = ()
+            if frame.layout:
+                snapshot.update_layout(frame.layout)
+            if frame.data:
+                indices = frame.traces if frame.traces is not None \
+                    else range(len(frame.data))
+                for idx, trace in zip(indices, frame.data):
+                    snapshot.data[idx].update(trace)
+            yield snapshot
+
+    if ext == 'svg':
+        # vector export: render each frame as SVG and stitch them into one
+        # SMIL-animated SVG
+        from .._shared.animated_svg import combine_frames_svg
+        frame_svgs = [
+            snapshot.to_image(format='svg', width=width,
+                              height=height).decode('utf-8')
+            for snapshot in frame_snapshots()]
+        with open(save_path, 'w') as f:
+            f.write(combine_frames_svg(frame_svgs, max(1.0, duration)))
+        return
+
     images = []
-    for frame in fig.frames:
-        snapshot = go.Figure(fig)
-        snapshot.frames = ()
-        # hide the interactive play/pause controls in exported frames
-        # (update_layout(updatemenus=[]) is a no-op; assign directly)
-        snapshot.layout.updatemenus = ()
-        if frame.layout:
-            snapshot.update_layout(frame.layout)
-        if frame.data:
-            indices = frame.traces if frame.traces is not None \
-                else range(len(frame.data))
-            for idx, trace in zip(indices, frame.data):
-                snapshot.data[idx].update(trace)
+    for snapshot in frame_snapshots():
         png = snapshot.to_image(format='png', width=width, height=height)
         images.append(Image.open(io.BytesIO(png)).convert('RGB'))
 
@@ -467,8 +489,16 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     frame_traces.append(go.Scatter(
                         x=np.arange(start, start + seg.shape[0]),
                         y=seg[:, 0]))
-            frames.append(go.Frame(name=str(k), data=frame_traces,
-                                   traces=trace_indices))
+            frame_kwargs = dict(name=str(k), data=frame_traces,
+                                traces=trace_indices)
+            if ndims >= 3:
+                # matplotlib's sliding-window animation rotates the camera
+                # while the window advances (draw.py update_lines_parallel);
+                # mirror that here
+                angle = azim + 360.0 * rotations * k / n_frames
+                frame_kwargs['layout'] = dict(
+                    scene_camera=dict(eye=_camera_eye(elev, angle)))
+            frames.append(go.Frame(**frame_kwargs))
 
     fig.frames = frames
     frame_ms = max(10, int(1000.0 * duration / n_frames))
