@@ -1110,11 +1110,29 @@ def manage_backend(plot_func):
                     backend_context = set_interactive_backend
 
         try:
-            with backend_context(tmp_backend):
-                if BACKEND_WARNING is not None:
-                    warnings.warn(BACKEND_WARNING)
+            try:
+                with backend_context(tmp_backend):
+                    if BACKEND_WARNING is not None:
+                        warnings.warn(BACKEND_WARNING)
 
-                return plot_func(*args, **kwargs)
+                    return plot_func(*args, **kwargs)
+
+            except Exception as e:
+                # A GUI toolkit that imports cleanly can still fail at
+                # window-creation time (e.g., broken Tcl/Tk installs raise
+                # _tkinter.TclError -- seen on GitHub's windows/py3.13
+                # runners). The `with` block has already restored the
+                # original backend, so retry the plot once on it instead of
+                # crashing.
+                if (backend_context is set_interactive_backend
+                        and type(e).__name__ == "TclError"):
+                    warnings.warn(
+                        f"Failed to render plot using interactive backend "
+                        f"'{tmp_backend}' ({e}). Falling back to "
+                        f"'{mpl.get_backend()}'."
+                    )
+                    return plot_func(*args, **kwargs)
+                raise
 
         finally:
             # restore rcParams prior to plot
