@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**00:03.454** total execution time for 37 files **from auto_examples**:
+**00:00.467** total execution time for 39 files **from auto_examples**:
 
 .. container::
 
@@ -32,11 +32,11 @@ Computation times
    * - Example
      - Time
      - Mem (MB)
-   * - :ref:`sphx_glr_auto_examples_plot_interactive_backend.py` (``plot_interactive_backend.py``)
-     - 00:03.368
+   * - :ref:`sphx_glr_auto_examples_plot_shapes_zoo.py` (``plot_shapes_zoo.py``)
+     - 00:00.254
      - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_mixture_models.py` (``plot_mixture_models.py``)
-     - 00:00.086
+   * - :ref:`sphx_glr_auto_examples_plot_datasaurus.py` (``plot_datasaurus.py``)
+     - 00:00.212
      - 0.0
    * - :ref:`sphx_glr_auto_examples_analyze.py` (``analyze.py``)
      - 00:00.000
@@ -107,6 +107,9 @@ Computation times
    * - :ref:`sphx_glr_auto_examples_plot_hue.py` (``plot_hue.py``)
      - 00:00.000
      - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_interactive_backend.py` (``plot_interactive_backend.py``)
+     - 00:00.000
+     - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_labels.py` (``plot_labels.py``)
      - 00:00.000
      - 0.0
@@ -114,6 +117,9 @@ Computation times
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_missing_data.py` (``plot_missing_data.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_mixture_models.py` (``plot_mixture_models.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_multicolored_lines.py` (``plot_multicolored_lines.py``)

@@ -51,13 +51,11 @@ extensions = ['sphinx.ext.autodoc',
 # allow nbsphinx errors for missing optional dependencies
 nbsphinx_allow_errors = True
 
-# Control notebook execution based on environment
-# Check if we're on Read the Docs environment
-import os
-if os.environ.get('READTHEDOCS', None) == 'True':
-    nbsphinx_execute = 'never'
-else:
-    nbsphinx_execute = 'auto'
+# Never execute notebooks during the docs build: tutorial notebooks are
+# committed pre-executed (with outputs), and 'auto' also re-executed every
+# sphinx-gallery-generated .ipynb -- doubling build time and hanging on
+# plotly/kaleido exports inside the nbsphinx kernel.
+nbsphinx_execute = 'never'
 
 # Generate the API documentation when building
 autosummary_generate = True

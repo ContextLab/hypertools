@@ -427,6 +427,23 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="HyperTools ships with several classic 3D &quot;shapes zoo&quot; point clouds (they download once and are then cached in /hypertools_data).  This example loads four of them and displays each in its own panel of a 2x2 figure by passing pre-created 3D axes to hyp.plot via the ax keyword.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_shapes_zoo_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_shapes_zoo`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">A zoo of 3D shapes</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="This is an example of how to use the label(s) kwarg, which must be a list the length of the number of datapoints (rows) you have in the matrix.  Here, we are simply labeling the first datapoint for each matrix in the list.">
 
 .. only:: html
@@ -541,6 +558,23 @@ Gallery of Examples
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">A DataGeometry object or "geo"</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The &quot;Datasaurus Dozen&quot; (Matejka &amp; Fitzmaurice, 2017) is a set of 13 datasets that share nearly identical summary statistics (means, standard deviations, and correlations) but look wildly different when plotted.  hyp.load(&#x27;datasaurus&#x27;) returns the datasets as a list of pandas DataFrames; here we plot a few of them side by side as 2D scatter plots to show why it always pays to visualize your data.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_datasaurus_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_datasaurus`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">The Datasaurus Dozen</div>
     </div>
 
 
@@ -680,6 +714,7 @@ Gallery of Examples
    /auto_examples/plot_hue
    /auto_examples/save_movie
    /auto_examples/plot_nested_lists
+   /auto_examples/plot_shapes_zoo
    /auto_examples/plot_labels
    /auto_examples/plot_text
    /auto_examples/plot_interactive_backend
@@ -687,6 +722,7 @@ Gallery of Examples
    /auto_examples/animate_plotly
    /auto_examples/plot_multicolored_lines
    /auto_examples/plot_geo
+   /auto_examples/plot_datasaurus
    /auto_examples/plot_PPCA
    /auto_examples/plot_normalize
    /auto_examples/plot_mixture_models

@@ -379,7 +379,10 @@ def _draw(
 
         update_lines_parallel.planes = plot_cube(cube_scale, **frame_kwargs)
         ax.view_init(elev=10, azim=rotations * (360 * (num / data_lines[0].shape[0])))
-        ax.dist = 9 - zoom
+        # Axes3D.dist was removed in matplotlib >= 3.8, silently disabling
+        # zoom; set_box_aspect(zoom=...) is the supported equivalent.
+        # Old semantics: image scale ~ 10/dist with dist = 9 - zoom.
+        ax.set_box_aspect(None, zoom=10.0 / max(0.5, 9.0 - zoom))
 
         for line, data, trail in zip(lines, data_lines, trail_lines):
 
@@ -414,7 +417,10 @@ def _draw(
         ax.view_init(
             elev=elev, azim=rotations * (360 * (num / (frame_rate * duration)))
         )
-        ax.dist = 9 - zoom
+        # Axes3D.dist was removed in matplotlib >= 3.8, silently disabling
+        # zoom; set_box_aspect(zoom=...) is the supported equivalent.
+        # Old semantics: image scale ~ 10/dist with dist = 9 - zoom.
+        ax.set_box_aspect(None, zoom=10.0 / max(0.5, 9.0 - zoom))
 
         for line, data in zip(lines, data_lines):
             line.set_data(data[:, 0:2].T)

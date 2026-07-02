@@ -1,10 +1,12 @@
 # Animation export evidence (hypertools 2.0)
 
-Sample animations exported via `hyp.plot(..., save_path=...)`; the extension picks the format (.gif / .png [APNG] / .mp4).
+Sample animations exported via `hyp.plot(..., save_path=...)`; the extension
+picks the format (.gif / .png [APNG] / .mp4 / .svg [SMIL-animated vector]).
 
-| case | file | frames |
+| case | file | notes |
 |-|-|-|
-| matplotlib_window | matplotlib_window.gif (337KB) | 48 |
-| matplotlib_spin | matplotlib_spin.gif (424KB) | 48 |
-| plotly_window | plotly_window.gif (37KB) | 60 |
-| plotly_spin | plotly_spin.gif (465KB) | 60 |
+| matplotlib window | matplotlib_window.gif | sliding window + camera rotation |
+| matplotlib spin | matplotlib_spin.gif | camera spin |
+| plotly window | plotly_window.gif | rotates while window advances (parity) |
+| plotly spin | plotly_spin.gif | camera spin |
+| hyperaligned weights | weights_hyperaligned.gif | reconstruction of the classic readthedocs hypertools.gif: hyp.plot(weights, align='hyper', animate=True, zoom=2.5) |
