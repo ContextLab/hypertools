@@ -457,10 +457,10 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     only touch the data traces, so the cube/frame stays put."""
     import plotly.graph_objects as go
 
-    # ~15 effective frames per second of animation, capped: short animations
-    # get proportionally fewer frames (matters for gif/mp4 export, where
-    # every frame is rendered through kaleido)
-    n_frames = int(np.clip(round(duration * 15), 10, 90))
+    # ~30 effective frames per second of animation for smooth playback and
+    # export; short animations get proportionally fewer frames (matters for
+    # gif/mp4 export, where every frame is rendered through kaleido)
+    n_frames = int(np.clip(round(duration * 30), 10, 600))
     frames = []
     trace_indices = list(range(n_data_traces))
 

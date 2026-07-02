@@ -112,34 +112,63 @@ def align(data, align='hyper', n_iter=10, format_data=True):
             # template, refine it, align every dataset to it -- and the
             # ALIGNED datasets become the input to the next pass, so
             # convergence toward the common space compounds across passes.
+            # procrustes' optimal scaling factor is < 1 whenever alignment
+            # is imperfect, so repeated passes geometrically shrink the
+            # data; rescale after each pass to preserve the original scale
+            # (relative scales within a pass are preserved)
             aligned = m
+            orig_norm = np.mean([np.linalg.norm(x) for x in m])
             for _ in range(max(1, int(n_iter))):
                 aligned = _hyperalign_pass(aligned)
+                cur_norm = np.mean([np.linalg.norm(np.asarray(a))
+                                    for a in aligned])
+                if cur_norm > 0:
+                    aligned = [np.asarray(a) * (orig_norm / cur_norm)
+                               for a in aligned]
             return aligned
 
         elif align == 'SRM':
-            data = [i.T for i in data]
-            srm = SRM(features=np.min([i.shape[0] for i in data]))
-            fit = srm.fit(data)
-            return [i.T for i in srm.transform(data)]
+            # n_iter repeated applications, mirroring the classic
+            # smooth-and-align recipe (each pass re-fits SRM on the
+            # previous pass's aligned output)
+            aligned = data
+            for _ in range(max(1, int(n_iter))):
+                transposed = [np.asarray(i).T for i in aligned]
+                srm = SRM(features=np.min([i.shape[0]
+                                           for i in transposed]))
+                srm.fit(transposed)
+                aligned = [i.T for i in srm.transform(transposed)]
+            return aligned
 
 def _hyperalign_pass(m):
     """One full pass of classic hyperalignment (Haxby et al., 2011):
     sequentially build a template, refine it by aligning every dataset to
-    it, then align all datasets to the refined template."""
+    it, then align all datasets to the refined template.
+
+    The template is rescaled to the datasets' mean Frobenius norm at each
+    step: procrustes maps datasets onto the template's scale, and averaging
+    shrinks the template, so without rescaling repeated passes collapse all
+    datasets geometrically toward zero (eventually tripping procrustes'
+    invariant-data check)."""
+    mean_norm = np.mean([np.linalg.norm(x) for x in m])
+
+    def rescale(t):
+        norm = np.linalg.norm(t)
+        return t * (mean_norm / norm) if norm > 0 else t
+
     ##STEP 1: INITIAL TEMPLATE##
     for x in range(0, len(m)):
         if x == 0:
             template = np.copy(m[x])
         else:
             template += procrustes(m[x], template / (x + 1))
-    template /= len(m)
+    template = rescale(template / len(m))
 
     ##STEP 2: REFINED TEMPLATE##
     template2 = np.zeros(template.shape)
     for x in range(0, len(m)):
         template2 += procrustes(m[x], template)
-    template2 /= len(m)
+    template2 = rescale(template2 / len(m))
 
     ##STEP 3: ALIGN TO REFINED TEMPLATE##
     return [procrustes(m[x], template2) for x in range(0, len(m))]

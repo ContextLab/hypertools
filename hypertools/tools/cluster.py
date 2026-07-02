@@ -83,24 +83,37 @@ def cluster(x, cluster="KMeans", n_clusters=3, format_data=True):
     if format_data:
         x = formatter(x, ppca=True)
 
-    # resolve the model name and any custom params
+    # resolve the model spec (name string or sklearn-style class) and params
     if isinstance(cluster, str):
         model_name = cluster
         model_params = None
     elif type(cluster) is dict:
         model_name = cluster["model"]
-        model_params = cluster["params"]
+        model_params = dict(cluster.get("params", {})) or None
+        if "n_clusters" in cluster:
+            # top-level convenience: cluster={'model': ..., 'n_clusters': k}
+            n_clusters = cluster["n_clusters"]
+            model_params = model_params or {}
     else:
-        raise ValueError("cluster must be a string or a dict with 'model' "
-                         "and 'params' keys")
+        raise ValueError("cluster must be a string or a dict with a 'model' "
+                         "key (plus optional 'params' / 'n_clusters')")
+
+    # model classes are accepted anywhere a name string is: resolve to the
+    # registry name when known, otherwise use the class directly
+    custom_cls = None
+    if not isinstance(model_name, str):
+        custom_cls = model_name
+        model_name = getattr(model_name, "__name__", str(model_name))
 
     stacked = np.vstack(x)
 
     # mixture models: fit, then return soft membership proportions
     if model_name in mixture_models:
         if model_params is None:
-            model_params = {"n_components": n_clusters}
-        model = mixture_models[model_name](**model_params)
+            model_params = {}
+        model_params.setdefault("n_components", n_clusters)
+        model_cls = custom_cls or mixture_models[model_name]
+        model = model_cls(**model_params)
         if model_name in ("GaussianMixture", "BayesianGaussianMixture"):
             model.fit(stacked)
             proportions = model.predict_proba(stacked)
@@ -113,12 +126,11 @@ def cluster(x, cluster="KMeans", n_clusters=3, format_data=True):
         return proportions
 
     # hard-clustering models: return a list of labels
-    model = models[model_name]
+    model = custom_cls or models[model_name]
     if model_params is None:
-        if model_name != "HDBSCAN":
-            model_params = {"n_clusters": n_clusters}
-        else:
-            model_params = {}
+        model_params = {}
+    if model_name != "HDBSCAN":
+        model_params.setdefault("n_clusters", n_clusters)
 
     model = model(**model_params)
     model.fit(stacked)

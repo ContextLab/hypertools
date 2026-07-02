@@ -408,7 +408,14 @@ def plot(
             params = default_params(model) or {}
         elif isinstance(cluster, dict):
             model = cluster["model"]
-            params = default_params(model, cluster["params"]) or {}
+            model_key = model if isinstance(model, str) \
+                else getattr(model, "__name__", str(model))
+            params = default_params(model_key,
+                                    cluster.get("params", {})) or {}
+            if "n_clusters" in cluster and n_clusters is None:
+                # top-level convenience:
+                # cluster={'model': ..., 'n_clusters': k}
+                n_clusters = cluster["n_clusters"]
         else:
             raise ValueError(
                 "Invalid cluster model specified; should be" " string or dictionary!"
@@ -420,14 +427,14 @@ def plot(
                     "n_clusters is not a valid parameter for "
                     "HDBSCAN clustering and will be ignored."
                 )
-            elif model in mixture_models:
+            elif _mixture_name(model) in mixture_models:
                 params["n_components"] = n_clusters
             else:
                 params["n_clusters"] = n_clusters
 
         cluster_labels = clusterer(xform, cluster={"model": model, "params": params})
 
-        if model in mixture_models:
+        if _mixture_name(model) in mixture_models:
             # soft assignments: color each observation by the proportion-
             # weighted blend of its components' colors
             if legend is True:
@@ -1032,3 +1039,9 @@ def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list):
                        depthshade=False)
         else:
             ax.scatter(xi[:, 0], xi[:, 1], c=ci, s=s)
+
+def _mixture_name(model):
+    """Registry name for a cluster-model spec (string or class)."""
+    return model if isinstance(model, str) \
+        else getattr(model, "__name__", str(model))
+

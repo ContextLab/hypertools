@@ -36,15 +36,16 @@ def main():
     walk2 = np.cumsum(np.random.default_rng(1).standard_normal((150, 8)),
                       axis=0)
 
+    # 30fps renders with full-fps gifs: smooth, unhurried playback
     cases = [
         ('matplotlib_window.gif',
-         dict(animate=True, duration=4, frame_rate=12)),
+         dict(animate=True, duration=15, frame_rate=30)),
         ('matplotlib_spin.gif',
-         dict(animate='spin', duration=4, frame_rate=12)),
+         dict(animate='spin', duration=15, frame_rate=30, rotations=1)),
         ('plotly_window.gif',
-         dict(animate=True, duration=4, backend='plotly')),
+         dict(animate=True, duration=15, rotations=1, backend='plotly')),
         ('plotly_spin.gif',
-         dict(animate='spin', duration=4, backend='plotly')),
+         dict(animate='spin', duration=15, rotations=1, backend='plotly')),
     ]
     results = []
     for name, kwargs in cases:

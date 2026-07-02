@@ -71,3 +71,32 @@ def test_animate_serial_plotly():
     last = geo.fig.frames[-1]
     lengths = [len(t.x) if t.x is not None else 0 for t in last.data]
     assert all(n > 0 for n in lengths)
+
+
+def test_cluster_dict_single_call_syntax():
+    """Round-4.5: one-call mixture coloring with top-level n_clusters and
+    class specs: hyp.plot(x, '.', cluster={'model': GaussianMixture,
+    'n_clusters': k}) colors by proportions automatically."""
+    from sklearn.mixture import GaussianMixture
+    rng = np.random.default_rng(42)
+    overlap = np.vstack([rng.standard_normal((80, 5)) + 1.5 * i
+                         for i in range(3)])
+
+    # string form with top-level n_clusters
+    props = hyp.cluster(overlap, cluster={'model': 'GaussianMixture',
+                                          'n_clusters': 3})
+    assert props.shape == (240, 3)
+
+    # class form
+    props = hyp.cluster(overlap, cluster={'model': GaussianMixture,
+                                          'n_clusters': 3})
+    assert props.shape == (240, 3)
+
+    # single plot call: exact per-point blended marker colors
+    geo = hyp.plot(overlap, '.', markersize=2,
+                   cluster={'model': GaussianMixture, 'n_clusters': 3},
+                   show=False)
+    scatters = [c for c in geo.ax.collections
+                if type(c).__name__.startswith('Path')]
+    assert scatters and len(scatters[0].get_facecolors()) > 100
+    plt.close('all')

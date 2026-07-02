@@ -40,3 +40,12 @@
   - `hyp.plot(utterance_arrays, '-', color=<speaker color per array>, animate='serial', duration=30, rotations=3, frame_rate=20, zoom=2.5, linewidth=2, save_path='conversation_serial.mp4')`, then ffmpeg palettegen (fps=12, scale=480) -> `docs/tutorials/conversation_serial.gif`; mp4 deleted in-notebook
 - **wikipedia_embeddings.ipynb**: `markersize=2` added to both hyp.plot calls; prose notes exact per-point mixture blends (library upgrade); spin gif regenerated
 - **Second draw.py bug fix**: the new serial branch existed in `animate_plot3D` but the gate at draw.py:605 (`animate in [True, "parallel", "spin"]`) didn't include "serial", so `animate='serial'` fell through to the static path and crashed on `line_ani=None` in `_save_animation`. Added "serial" to the gate. tests/test_plot.py 30 passed after fix.
+
+## Revision round 4.5 (Jeremy): smooth/slow gifs, new cluster-dict syntax, sentence windows
+- All 4 tutorial gifs re-rendered at frame_rate=30, converted with ffmpeg fps=30 (no downsampling), palettegen max_colors=64, scale=420, bayer dither; all < 15 MB, none clipped (border-pixel test from tests/test_round4.py, 40 sampled frames per gif).
+- wikipedia_embeddings.ipynb: single-call syntax `cluster={'model': 'GaussianMixture', 'n_clusters': 10}` (separate hyp.cluster()+hue step removed; exact per-point mixture blending is automatic); spin duration=10, rotations=1 -> 300-frame gif (6.1 MB).
+- conversation_trajectories.ipynb: windows are now 3-SENTENCE windows WITHIN each utterance (regex sentence split; <3 sentences -> one whole-utterance window; single-window arrays duplicate their row). Utterances never share points. Colors: palette[speaker] repeats per speaker. animate='serial', duration=30, rotations=1, frame_rate=30, zoom=1.5.
+  - GOTCHA: original seed-25 pick (r/Minecraft) had 24/26 single-window utterances -> duplicated-row strokes are degenerate/invisible. Added selection filter: 10-40 usable utterances, >=2 speakers, >=60% of utterances with >=2 windows ("substantial" conversations; 244 qualify). New seed-25 pick: 9gu4i1 r/photography (10 utts, 5 speakers, 96 windows).
+- modern_sklearn_dynamics.ipynb: lorenz animation now duration=30, frame_rate=30 -> lorenz_trajectory.gif 900 frames, 10.0 MB (was 5s/12fps, choppy).
+- hugging_face_embeddings.ipynb: spin now duration=30, rotations=1, frame_rate=30 -> hf_embeddings_spin.gif 900 frames, 10.9 MB.
+- All animations now render mp4 via save_path then convert to gif in-notebook (ffmpeg), deleting the mp4.

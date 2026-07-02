@@ -141,3 +141,9 @@ Jeremy's feedback: mixtures not showing multi-class membership; title/aspect/siz
   https://github.com/ContextLab/hypertools/pull/270#issuecomment-4868835592
 - All 10 round-3 items shipped + 2 bonus root-cause fixes (Axes3D.dist zoom, nbsphinx re-execution hang). 202 tests.
 - Awaiting Jeremy's review. DO NOT MERGE.
+
+## Round 4.5 — the weights mystery SOLVED (2026-07-02 evening)
+Jeremy provided ~/Desktop/pieman_trajectory_demo.ipynb (2020, hypertools 0.6.2 + timecorr). The classic story-trajectories look requires a pipeline plain plot(align=...) never ran:
+  smooth (gaussian temporal, timecorr var=300) -> hyp.align REPEATED n_iter=20 (re-align the aligned output; SRM) -> smooth again -> reduce='UMAP' -> plot/animate
+Missing pieces in all prior reconstructions: (a) temporal smoothing before AND after alignment (the smooth flowing look), (b) UMAP not PCA for the 3D reduction, (c) SRM. Implemented: align('SRM', n_iter=...) repeated application; scripts/generate_weights_trajectory.py reproduces the full recipe (uses scipy gaussian_filter1d sigma=sqrt(var), matching timecorr's kernel).
+Other round-4.5 fixes: repeated-hyperalign scale collapse (procrustes optimal scaling <1 -> geometric shrink; per-pass output rescaling, stable at n_iter=50, corr 0.362->0.373 on weights); single-call cluster syntax cluster={'model': cls_or_name, 'n_clusters': k} in cluster()+plot(); 30fps animation standard everywhere (plotly density 30/s cap 600; all gifs regenerated fps=30 no downsampling); serial-mode conversation rebuilt (per-sentence windows within utterances -> true disconnection; repeating speaker colors; rotations=1); wikipedia single-call syntax, duration=10, rotations=1.
