@@ -66,10 +66,14 @@ All implemented on dev-2.0, tests green at every commit (169 passing, up from 13
 - README updated (What's new in 2.0, requirements, extras).
 
 ## Remaining before PR
-- [ ] Execute dev notebook end-to-end (in progress), commit executed copy.
-- [ ] Commit curated verification screenshots (docs/images/v2.0-verification/) for PR evidence.
-- [ ] Final full-suite run + import-time check.
-- [ ] Push dev-2.0 to origin; open PR to master (user will review/sign off; DO NOT MERGE).
+- [x] Execute dev notebook end-to-end (8/8 code cells, 0 errors) — dev/hypertools_2.0_dev_executed.ipynb committed. Executing it caught a REAL bug: backend.py's mpl.use fallback only caught ImportError, but matplotlib>=3.9 raises ValueError for missing ipympl (likely the Colab #235 root cause) — fixed.
+- [x] Committed verification screenshots to docs/images/v2.0-verification/ (1.2MB, 44 PNGs + INDEX.md).
+- [x] Final checks: 169/169 tests, 13/13 baselines, import 1.5s, README updated.
+- [ ] Sphinx docs build (in progress — must use .venv sphinx-build; system sphinx lacks sphinx_bootstrap_theme; gallery execution takes minutes).
+- [ ] Push dev-2.0 to origin; open PR to master (user reviews/signs off; DO NOT MERGE).
+
+## PR body
+Saved at scratchpad pr_body.md (session-local); recreate from this file's summary + roadmap if lost.
 
 ## Original Phase 0 plan (for reference)
 - [ ] pyproject.toml (PEP 621) + delete .travis.yml + CI bump (py3.10-3.13, setup-python@v5, cache@v4, codecov@v4).
