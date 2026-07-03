@@ -12,3 +12,4 @@ from .tools.describe import describe
 from .tools.cluster import cluster
 from .tools.apply_model import apply_model
 from .datageometry import DataGeometry
+from .manip.manip import manip
