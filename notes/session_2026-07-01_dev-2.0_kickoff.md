@@ -189,3 +189,10 @@ Other round-4.5 fixes: repeated-hyperalign scale collapse (procrustes optimal sc
 - GALLERY THUMBNAILS: (a) clicks were dead -- sphinx-gallery >=0.17 markup no longer wraps thumb <img> in an anchor and old gallery-fixes.js targeted extinct .xref spans; post_build.wrap_thumbnail_links() now wraps each thumb img in a Colab-notebook link (title text still opens the example page); gallery-fixes.js reduced to a comment. (b) animated thumbs were squashed 200x200 from 4:3 sources; scripts/generate_gallery_thumbs.py regenerates all 7 as 200x150 letterboxed on 200x200 white (source: build mp4s, note _001/_002 numbering).
 - API DOCS: DataGeometry.plot/transform docstrings document string/list-of-string loading via hyp.load.
 - Animation example md5s deleted to force re-execution at new defaults; docs rebuilt.
+
+## Round 6.5 addendum: the plotly-speed bug was THREE stacked causes
+1. Library defaults (fixed: 30fps/30s/1rot both backends; plotly n_frames=frame_rate*duration, no cap; parity test).
+2. **Pickled example geos replayed old pacing**: .geo files store kwargs incl. their era's defaults (frame_rate=50, rotations=2); DataGeometry.plot merged saved kwargs OVER current defaults, so every gallery example calling geo.plot() rendered 1500-frame/50fps animations even after the defaults change. Fix: DataGeometry.plot pops frame_rate/rotations/duration from saved kwargs (explicit caller args still win).
+3. **plotly sphinx-gallery renderer**: fig.show() under the sphinx_gallery_png renderer wrote full-frame html + kaleido png serializing ALL frames (900-frame fig = ~57min + huge pages). Fix: interactive.py _show_sphinx_gallery() writes frame-stripped png + html with embedded frames capped at 150, frame duration scaled by the skip so TOTAL duration/rotation speed unchanged (~0.1MB pages, seconds not hours).
+- Debug gotcha x2: sphinx-gallery reuses cached example outputs via .py.md5 (library-code changes don't invalidate!); mp4 pacing verified via ffprobe (900 frames @ 30/1 fps) — ALWAYS probe artifacts, don't trust build logs.
+- Shipped fd2747e; 237 tests.
