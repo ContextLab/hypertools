@@ -25,7 +25,20 @@ Create a rotating static plot
 In addition to plotting dynamic timeseries data, the spin feature can be used to
 visualize static data in an animated rotating plot.
 
-.. GENERATED FROM PYTHON SOURCE LINES 10-24
+.. GENERATED FROM PYTHON SOURCE LINES 10-25
+
+
+
+.. video:: /auto_examples/images/sphx_glr_animate_spin_001.mp4
+   :class: sphx-glr-single-img
+   :height: 480
+   :width: 640
+   :autoplay:
+
+
+
+
+
 
 .. code-block:: Python
 
@@ -42,7 +55,13 @@ visualize static data in an animated rotating plot.
     geo = hyp.load('weights_sample')
 
     # plot
-    geo.plot(fmt='.', animate='spin')
+    ani_geo = geo.plot(fmt='.', animate='spin')
+    ani = ani_geo.line_ani  # the underlying matplotlib FuncAnimation
+
+
+.. rst-class:: sphx-glr-timing
+
+   **Total running time of the script:** (0 minutes 13.202 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate_spin.py:

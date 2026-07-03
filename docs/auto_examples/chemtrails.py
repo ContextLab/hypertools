@@ -22,4 +22,5 @@ import hypertools as hyp
 geo = hyp.load('weights_avg')
 
 # plot
-geo.plot(animate=True, chemtrails=True)
+ani_geo = geo.plot(animate=True, chemtrails=True)
+ani = ani_geo.line_ani  # the underlying matplotlib FuncAnimation

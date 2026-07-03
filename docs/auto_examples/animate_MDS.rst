@@ -24,7 +24,33 @@ Animated trajectory plotted with multidimensional scaling
 
 This is a trajectory of brain data plotted in 3D with multidimensional scaling.
 
-.. GENERATED FROM PYTHON SOURCE LINES 9-23
+.. GENERATED FROM PYTHON SOURCE LINES 9-24
+
+
+
+.. video:: /auto_examples/images/sphx_glr_animate_MDS_001.mp4
+   :class: sphx-glr-single-img
+   :height: 480
+   :width: 640
+   :autoplay:
+
+
+
+.. rst-class:: sphx-glr-script-out
+
+ .. code-block:: none
+
+    /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/sklearn/manifold/_mds.py:744: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9. To suppress this warning, provide some value of `n_init`.
+      warnings.warn(
+    /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/sklearn/manifold/_mds.py:754: FutureWarning: The default value of `init` will change from 'random' to 'classical_mds' in 1.10. To suppress this warning, provide some value of `init`.
+      warnings.warn(
+
+
+
+
+
+
+|
 
 .. code-block:: Python
 
@@ -41,7 +67,13 @@ This is a trajectory of brain data plotted in 3D with multidimensional scaling.
     geo = hyp.load('weights_avg')
 
     # plot
-    geo.plot(animate=True, reduce='MDS')
+    ani_geo = geo.plot(animate=True, reduce='MDS')
+    ani = ani_geo.line_ani  # the underlying matplotlib FuncAnimation
+
+
+.. rst-class:: sphx-glr-timing
+
+   **Total running time of the script:** (0 minutes 13.057 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate_MDS.py:

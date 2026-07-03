@@ -26,7 +26,32 @@ To save an animation, simply add the `save_path` kwarg and specify the path
 where you want to save the movie, including the extension.  NOTE: this
 depends on having ffmpeg installed on your computer.
 
-.. GENERATED FROM PYTHON SOURCE LINES 11-29
+.. GENERATED FROM PYTHON SOURCE LINES 11-32
+
+
+
+.. rst-class:: sphx-glr-horizontal
+
+
+    *
+
+      .. image-sg:: /auto_examples/images/sphx_glr_save_movie_001.png
+         :alt: save movie
+         :srcset: /auto_examples/images/sphx_glr_save_movie_001.png
+         :class: sphx-glr-multi-img
+
+    *
+
+      .. video:: /auto_examples/images/sphx_glr_save_movie_002.mp4
+         :class: sphx-glr-multi-img
+         :height: 480
+         :width: 640
+         :autoplay:
+
+
+
+
+
 
 .. code-block:: Python
 
@@ -47,7 +72,15 @@ depends on having ffmpeg installed on your computer.
     group1 = np.mean(data[:17], 0)
     group2 = np.mean(data[18:], 0)
 
-    hyp.plot([group1, group2], animate=True, save_path='animation.mp4')
+    import os, tempfile
+    save_path = os.path.join(tempfile.mkdtemp(), 'animation.mp4')
+    ani_geo = hyp.plot([group1, group2], animate=True, save_path=save_path)
+    ani = ani_geo.line_ani  # the underlying matplotlib FuncAnimation
+
+
+.. rst-class:: sphx-glr-timing
+
+   **Total running time of the script:** (0 minutes 20.927 seconds)
 
 
 .. _sphx_glr_download_auto_examples_save_movie.py:

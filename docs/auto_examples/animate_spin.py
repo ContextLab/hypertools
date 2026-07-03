@@ -20,4 +20,5 @@ import hypertools as hyp
 geo = hyp.load('weights_sample')
 
 # plot
-geo.plot(fmt='.', animate='spin')
+ani_geo = geo.plot(fmt='.', animate='spin')
+ani = ani_geo.line_ani  # the underlying matplotlib FuncAnimation

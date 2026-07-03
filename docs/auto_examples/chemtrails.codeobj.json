@@ -1,5 +1,92 @@
 {
+ "ani": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.animation",
+   "module_short": "matplotlib.animation",
+   "name": "FuncAnimation"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "FuncAnimation"
+  }
+ ],
+ "ani_geo": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools.datageometry",
+   "module_short": "hypertools",
+   "name": "DataGeometry"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools",
+   "module_short": "hypertools",
+   "name": "DataGeometry"
+  }
+ ],
+ "ani_geo.line_ani": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.animation",
+   "module_short": "matplotlib.animation",
+   "name": "FuncAnimation"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "FuncAnimation"
+  }
+ ],
+ "geo": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools.datageometry",
+   "module_short": "hypertools",
+   "name": "DataGeometry"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools",
+   "module_short": "hypertools",
+   "name": "DataGeometry"
+  }
+ ],
+ "geo.plot": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools.datageometry",
+   "module_short": "hypertools",
+   "name": "DataGeometry.plot"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools",
+   "module_short": "hypertools",
+   "name": "DataGeometry.plot"
+  }
+ ],
  "hyp.load": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
   {
    "is_class": false,
    "is_explicit": false,

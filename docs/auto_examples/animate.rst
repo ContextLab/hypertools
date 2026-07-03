@@ -25,7 +25,20 @@ Animated plots
 Timeseries plots can be animated by simply passing `animate=True` to the geo (
 or when calling hyp.plot).
 
-.. GENERATED FROM PYTHON SOURCE LINES 10-24
+.. GENERATED FROM PYTHON SOURCE LINES 10-25
+
+
+
+.. video:: /auto_examples/images/sphx_glr_animate_001.mp4
+   :class: sphx-glr-single-img
+   :height: 480
+   :width: 640
+   :autoplay:
+
+
+
+
+
 
 .. code-block:: Python
 
@@ -42,7 +55,13 @@ or when calling hyp.plot).
     geo = hyp.load('weights_avg')
 
     # plot
-    geo.plot(animate=True, legend=['first', 'second'])
+    ani_geo = geo.plot(animate=True, legend=['first', 'second'])
+    ani = ani_geo.line_ani  # the underlying matplotlib FuncAnimation
+
+
+.. rst-class:: sphx-glr-timing
+
+   **Total running time of the script:** (0 minutes 20.126 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate.py:

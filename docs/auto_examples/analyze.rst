@@ -32,6 +32,17 @@ visualized.
 
 .. GENERATED FROM PYTHON SOURCE LINES 15-34
 
+
+
+.. image-sg:: /auto_examples/images/sphx_glr_analyze_001.png
+   :alt: analyze
+   :srcset: /auto_examples/images/sphx_glr_analyze_001.png
+   :class: sphx-glr-single-img
+
+
+
+
+
 .. code-block:: Python
 
 
@@ -53,6 +64,11 @@ visualized.
 
     # plot it
     hyp.plot(data)
+
+
+.. rst-class:: sphx-glr-timing
+
+   **Total running time of the script:** (0 minutes 0.389 seconds)
 
 
 .. _sphx_glr_download_auto_examples_analyze.py:

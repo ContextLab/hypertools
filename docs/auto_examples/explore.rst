@@ -31,6 +31,17 @@ along with the PCA coordinate.
 
 .. GENERATED FROM PYTHON SOURCE LINES 14-28
 
+
+
+.. image-sg:: /auto_examples/images/sphx_glr_explore_001.png
+   :alt: explore
+   :srcset: /auto_examples/images/sphx_glr_explore_001.png
+   :class: sphx-glr-single-img
+
+
+
+
+
 .. code-block:: Python
 
 
@@ -47,6 +58,11 @@ along with the PCA coordinate.
 
     # plot
     geo.plot(fmt='.', explore=True)
+
+
+.. rst-class:: sphx-glr-timing
+
+   **Total running time of the script:** (0 minutes 0.104 seconds)
 
 
 .. _sphx_glr_download_auto_examples_explore.py:

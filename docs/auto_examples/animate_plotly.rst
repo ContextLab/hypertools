@@ -30,6 +30,12 @@ extension picks the format.
 
 .. GENERATED FROM PYTHON SOURCE LINES 13-29
 
+
+
+
+
+
+
 .. code-block:: Python
 
 
@@ -48,6 +54,11 @@ extension picks the format.
     # export an animation: extension picks the format (.gif / .png / .mp4)
     hyp.plot(data, animate='spin', duration=5, backend='plotly',
              save_path='spin.gif', show=False)
+
+
+.. rst-class:: sphx-glr-timing
+
+   **Total running time of the script:** (8 minutes 3.507 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate_plotly.py:

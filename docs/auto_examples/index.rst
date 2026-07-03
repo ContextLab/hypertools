@@ -172,23 +172,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The past trajectory of an animated plot can be visualized with the chemtrails argument.  This displays a low opacity version of the trace behind the current points being plotted.  This can be used in conjunction with the precog argument to plot a low-opacity trace of the entire timeseries.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_chemtrails_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/chemtrails`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Chemtrails</div>
-    </div>
-
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="This example loads in some data from the scikit-learn digits dataset and plots it using UMAP.">
 
 .. only:: html
@@ -201,6 +184,57 @@ Gallery of Examples
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Visualizing the digits dataset using UMAP</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="To make use of HDBSCAN as the clustering algorithm used to discover clusters, you must specify it as the cluster argument. If you wish to specify HDBSCAN parameters you will need the dictionary form which includes both the model and the params. Since HDBSCAN does not require the number of clusters, n_clusters does not need to be set.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_clusters3_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_clusters3`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Discovering clusters using HDBSCAN</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="In this example, we plot the trajectory of multivariate brain activity for two groups of subjects that have been hyperaligned (Haxby et al, 2011).  First, we use the align tool to project all subjects in the list to a common space. Then we average the data into two groups, and plot.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_align_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_align`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Aligning matrices to a common space</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The past trajectory of an animated plot can be visualized with the chemtrails argument.  This displays a low opacity version of the trace behind the current points being plotted.  This can be used in conjunction with the precog argument to plot a low-opacity trace of the entire timeseries.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_chemtrails_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/chemtrails`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Chemtrails</div>
     </div>
 
 
@@ -274,57 +308,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="To save a plot, simply use the save_path kwarg, and specify where you want the image to be saved, including the file extension (e.g. pdf)">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_save_image_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/save_image`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Saving a plot</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="To make use of HDBSCAN as the clustering algorithm used to discover clusters, you must specify it as the cluster argument. If you wish to specify HDBSCAN parameters you will need the dictionary form which includes both the model and the params. Since HDBSCAN does not require the number of clusters, n_clusters does not need to be set.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_clusters3_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/plot_clusters3`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Discovering clusters using HDBSCAN</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="In this example, we plot the trajectory of multivariate brain activity for two groups of subjects that have been hyperaligned (Haxby et al, 2011).  First, we use the align tool to project all subjects in the list to a common space. Then we average the data into two groups, and plot.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_align_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/plot_align`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Aligning matrices to a common space</div>
-    </div>
-
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="By default, the text samples will be transformed into a vector of word counts and then modeled using Latent Dirichlet Allocation (# of topics = 100) using a model fit to a large sample of wikipedia pages.  However, you can optionally pass your own text to fit the semantic model. To do this define corpus as a list of documents (strings). A topic model will be fit on the fly and the text will be plotted.">
 
 .. only:: html
@@ -337,6 +320,23 @@ Gallery of Examples
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Defining a custom corpus for plotting text</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="To save a plot, simply use the save_path kwarg, and specify where you want the image to be saved, including the file extension (e.g. pdf)">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_save_image_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/save_image`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Saving a plot</div>
     </div>
 
 
@@ -388,23 +388,6 @@ Gallery of Examples
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Grouping data by category</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="To save an animation, simply add the save_path kwarg and specify the path where you want to save the movie, including the extension.  NOTE: this depends on having ffmpeg installed on your computer.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_save_movie_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/save_movie`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Saving an animation</div>
     </div>
 
 
@@ -563,6 +546,23 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="To save an animation, simply add the save_path kwarg and specify the path where you want to save the movie, including the extension.  NOTE: this depends on having ffmpeg installed on your computer.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_save_movie_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/save_movie`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Saving an animation</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="The &quot;Datasaurus Dozen&quot; (Matejka &amp; Fitzmaurice, 2017) is a set of 13 datasets that share nearly identical summary statistics (means, standard deviations, and correlations) but look wildly different when plotted.  hyp.load(&#x27;datasaurus&#x27;) returns the datasets as a list of pandas DataFrames; here we plot a few of them side by side as 2D scatter plots to show why it always pays to visualize your data.">
 
 .. only:: html
@@ -699,20 +699,19 @@ Gallery of Examples
    /auto_examples/plot_digits
    /auto_examples/plot_TSNE
    /auto_examples/explore
-   /auto_examples/chemtrails
    /auto_examples/plot_UMAP
+   /auto_examples/plot_clusters3
+   /auto_examples/plot_align
+   /auto_examples/chemtrails
    /auto_examples/animate_MDS
    /auto_examples/animate_spin
    /auto_examples/animate
    /auto_examples/precog
-   /auto_examples/save_image
-   /auto_examples/plot_clusters3
-   /auto_examples/plot_align
    /auto_examples/plot_corpus
+   /auto_examples/save_image
    /auto_examples/analyze
    /auto_examples/plot_procrustes
    /auto_examples/plot_hue
-   /auto_examples/save_movie
    /auto_examples/plot_nested_lists
    /auto_examples/plot_shapes_zoo
    /auto_examples/plot_labels
@@ -722,6 +721,7 @@ Gallery of Examples
    /auto_examples/animate_plotly
    /auto_examples/plot_multicolored_lines
    /auto_examples/plot_geo
+   /auto_examples/save_movie
    /auto_examples/plot_datasaurus
    /auto_examples/plot_PPCA
    /auto_examples/plot_normalize

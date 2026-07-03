@@ -21,4 +21,6 @@ import numpy as np
 geo = hyp.load('weights_sample')
 
 # plot
-geo.plot(fmt='o', save_path='test-image.pdf')
+import os, tempfile
+save_path = os.path.join(tempfile.mkdtemp(), 'test-image.pdf')
+geo.plot(fmt='o', save_path=save_path)
