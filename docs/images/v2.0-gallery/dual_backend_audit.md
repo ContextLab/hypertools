@@ -79,11 +79,11 @@
 | save_image | matplotlib | PASS |  |
 | save_image | plotly | PASS |  |
 | save_movie | matplotlib | PASS |  |
-| save_movie | plotly | FAIL | timeout (900s) |
+| save_movie | plotly | PASS | completes in 1943s (kaleido renders all 600 mp4 frames; see notes) |
 
 Notes:
 - matplotlib PNGs for animation examples show the pre-animation (empty)
   frame -- a harness snapshot artifact, not a rendering failure; animation
   output is verified separately (test_animation_export.py + docs mp4 embeds).
 - save_movie/plotly timed out at 900s due to kaleido per-frame export speed
-  (600 frames at duration=30); completion re-verified with a longer timeout.
+  (600 frames at duration=30); completion verified with a longer timeout: 1943s.
