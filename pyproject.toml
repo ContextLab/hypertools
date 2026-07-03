@@ -52,6 +52,8 @@ dev = [
     "kaleido>=0.2.1",
     # real Hugging Face streaming tests (tests/test_streaming.py)
     "datasets>=2.20.0",
+    # kill hung tests (kaleido subprocesses have wedged for 6h on Windows CI)
+    "pytest-timeout>=2.3.0",
 ]
 
 [project.urls]
@@ -64,3 +66,8 @@ include = ["hypertools*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# safety net for hung external processes (kaleido/ffmpeg/network): no test
+# legitimately takes over 20 minutes; without this a wedged kaleido burned a
+# 6-hour Windows CI job. thread method: kaleido hangs are in native calls.
+timeout = 1200
+timeout_method = "thread"
