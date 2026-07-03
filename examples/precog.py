@@ -23,4 +23,5 @@ import numpy as np
 geo = hyp.load('weights_avg')
 
 # plot
-geo.plot(animate=True, precog=True)
+ani_geo = geo.plot(animate=True, precog=True)
+ani = ani_geo.line_ani  # the underlying matplotlib FuncAnimation

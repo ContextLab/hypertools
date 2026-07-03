@@ -131,6 +131,62 @@ def update_html_references():
     print(f"Made {replacements_made} HTML replacements")
     return True
 
+def inject_notebook_badges():
+    """Add a prominent 'Open in Colab / download notebook' bar to the top of
+    every gallery example page, so clicking through a gallery example leads
+    straight to a runnable notebook with the relevant code."""
+    if GALLERY_HTML is None:
+        print("  Skipping notebook badges (no build dir)")
+        return 0
+    import subprocess
+    branch = os.environ.get('READTHEDOCS_GIT_IDENTIFIER', '')
+    if not branch:
+        try:
+            branch = subprocess.run(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                capture_output=True, text=True, cwd=DOCS_DIR,
+                timeout=10).stdout.strip()
+        except Exception:
+            branch = ''
+    branch = branch or 'master'
+
+    gallery_dir = os.path.dirname(GALLERY_HTML)
+    n = 0
+    for fname in os.listdir(gallery_dir):
+        if not fname.endswith('.html') or fname == 'index.html':
+            continue
+        stem = fname[:-5]
+        path = os.path.join(gallery_dir, fname)
+        with open(path) as f:
+            html = f.read()
+        if 'hypertools-colab-badge' in html:
+            continue  # already injected (idempotent re-runs)
+        colab = ('https://colab.research.google.com/github/ContextLab/'
+                 f'hypertools/blob/{branch}/docs/auto_examples/{stem}.ipynb')
+        badge = (
+            '<p class="hypertools-colab-badge" style="margin:0.5em 0 1em 0">'
+            f'<a href="{colab}" target="_blank" rel="noopener">'
+            '<img src="https://colab.research.google.com/assets/'
+            'colab-badge.svg" alt="Open in Colab" '
+            'style="vertical-align:middle"></a>'
+            '&nbsp; <em>run this example as a notebook &mdash; or grab the '
+            '<a class="reference download" '
+            f'href="{stem}.ipynb" download>.ipynb</a> from the links at the '
+            'bottom of the page</em></p>')
+        # place right after the page's first <h1>
+        marker = '</h1>'
+        idx = html.find(marker)
+        if idx < 0:
+            continue
+        html = html[:idx + len(marker)] + badge + html[idx + len(marker):]
+        with open(path, 'w') as f:
+            f.write(html)
+        n += 1
+    print(f"  Injected notebook badges into {n} example pages "
+          f"(branch: {branch})")
+    return n
+
+
 def main():
     """Main function to run post-build processing"""
     print("Running post-build script to fix animated thumbnails...")
@@ -138,7 +194,9 @@ def main():
     success = copy_gif_thumbnails()
     if success:
         success = update_html_references()
-    
+
+    inject_notebook_badges()
+
     if success:
         print("✅ Post-build processing completed successfully!")
         print("Animated GIF thumbnails should now be working in the gallery.")

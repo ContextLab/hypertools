@@ -97,10 +97,18 @@ def _has_plotly():
         return False
 
 
+def _zoom_r(zoom):
+    """Camera distance for a given matplotlib-style zoom: mpl image scale is
+    ~10/(9 - zoom) (see draw.py's set_box_aspect conversion), so relative to
+    zoom=1 the plotly camera moves in by (9 - zoom)/8."""
+    return max(0.2, 1.95 * (9.0 - float(zoom)) / 8.0)
+
+
 def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 title=None, animate=False, size=None, show=True,
                 save_path=None, frame_rate=50, duration=30, rotations=2,
-                elev=10, azim=-60, point_colors=None):
+                elev=10, azim=-60, point_colors=None, tail_duration=2,
+                chemtrails=False, precog=False, bullettime=False, zoom=1):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -178,6 +186,32 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             traces.append(go.Scatter(x=xs, y=arr[:, 0], **common))
 
     n_data_traces = len(traces)
+
+    # low-opacity trail traces for chemtrails (past) / precog (future) /
+    # bullettime (both) on window animations, mirroring the matplotlib
+    # renderer's alpha-0.3 trail artists. One per dataset, updated per
+    # frame; they sit between the data traces and the cube so frame trace
+    # indices stay contiguous.
+    n_trail_traces = 0
+    if animate in (True, 'parallel') and (chemtrails or precog or
+                                          bullettime):
+        for i, arr in enumerate(data):
+            tkwargs = kwargs_list[i] or {}
+            mode, symbol, dash = _parse_fmt(fmt[i], tkwargs)
+            color = _to_plotly_color(tkwargs.get('color'), 0.3)
+            width = float(tkwargs.get('linewidth')
+                          or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
+            msize = float(tkwargs.get('markersize')
+                          or DEFAULT_MARKERSIZE_PT) * PT_TO_PX
+            trail = dict(mode=mode, showlegend=False, hoverinfo='skip',
+                         line=dict(color=color, width=width, dash=dash),
+                         marker=dict(color=color, size=msize))
+            if ndims >= 3:
+                traces.append(go.Scatter3d(x=[], y=[], z=[], **trail))
+            else:
+                traces.append(go.Scatter(x=[], y=[], **trail))
+        n_trail_traces = len(data)
+
     if ndims >= 3:
         traces.append(_cube_trace(go))
 
@@ -211,7 +245,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             xaxis=dict(visible=False, range=[-1, 1]),
             yaxis=dict(visible=False, range=[-1, 1]),
             zaxis=dict(visible=False, range=[-1, 1]),
-            camera=dict(eye=_camera_eye(elev, azim)),
+            camera=dict(eye=_camera_eye(elev, azim, r=_zoom_r(zoom))),
             # matplotlib's Axes3D uses a 4:4:3 box aspect by default; match
             # it so the cube renders wider than tall, exactly like the
             # matplotlib backend
@@ -232,7 +266,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
     if animate:
         _add_animation(fig, data, ndims, animate, frame_rate, duration,
-                       rotations, elev, azim, n_data_traces)
+                       rotations, elev, azim, n_data_traces,
+                       tail_duration=tail_duration, chemtrails=chemtrails,
+                       precog=precog, bullettime=bullettime, zoom=zoom,
+                       n_trail_traces=n_trail_traces)
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
@@ -451,7 +488,9 @@ def _camera_eye(elev, azim, r=1.95):
 
 
 def _add_animation(fig, data, ndims, animate, frame_rate, duration,
-                   rotations, elev, azim, n_data_traces):
+                   rotations, elev, azim, n_data_traces, tail_duration=2,
+                   chemtrails=False, precog=False, bullettime=False,
+                   zoom=1, n_trail_traces=0):
     """Attach frames + play controls: 'spin' rotates the camera; True /
     'parallel' reveals trajectories through a sliding time window. Frames
     only touch the data traces, so the cube/frame stays put."""
@@ -469,7 +508,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             angle = azim + 360.0 * rotations * k / n_frames
             frames.append(go.Frame(
                 name=str(k),
-                layout=dict(scene_camera=dict(eye=_camera_eye(elev, angle)))))
+                layout=dict(scene_camera=dict(eye=_camera_eye(elev, angle, r=_zoom_r(zoom))))))
     elif animate == 'serial':
         # datasets appear one at a time, each growing into place while
         # earlier ones stay fully drawn (never connected to each other)
@@ -496,15 +535,23 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             if ndims >= 3:
                 angle = azim + 360.0 * rotations * k / n_frames
                 frame_kwargs['layout'] = dict(
-                    scene_camera=dict(eye=_camera_eye(elev, angle)))
+                    scene_camera=dict(eye=_camera_eye(elev, angle, r=_zoom_r(zoom))))
             frames.append(go.Frame(**frame_kwargs))
     else:
         max_len = max(arr.shape[0] for arr in data)
-        window = max(2, max_len // 10)
+        # the visible window covers tail_duration seconds of the
+        # duration-second animation, matching the matplotlib renderer's
+        # tail_duration * frame_rate frame window
+        window = max(2, int(round(max_len * float(tail_duration)
+                                  / max(float(duration), 1e-6))))
+        has_trails = n_trail_traces > 0
+        if has_trails:
+            trace_indices = list(range(n_data_traces + n_trail_traces))
         for k in range(n_frames):
             end = max(2, int(np.ceil((k + 1) * max_len / n_frames)))
             start = max(0, end - window)
             frame_traces = []
+            trail_traces = []
             for arr in data:
                 arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
                 seg = arr[start:min(end, arr.shape[0])]
@@ -517,6 +564,28 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     frame_traces.append(go.Scatter(
                         x=np.arange(start, start + seg.shape[0]),
                         y=seg[:, 0]))
+                if has_trails:
+                    # chemtrails: past; precog: future; bullettime: both
+                    if bullettime:
+                        trail = arr
+                        t0 = 0
+                    elif chemtrails:
+                        trail = arr[:start + 1]
+                        t0 = 0
+                    else:
+                        trail = arr[min(end, arr.shape[0]) - 1:]
+                        t0 = min(end, arr.shape[0]) - 1
+                    if ndims >= 3:
+                        trail_traces.append(go.Scatter3d(
+                            x=trail[:, 0], y=trail[:, 1], z=trail[:, 2]))
+                    elif ndims == 2:
+                        trail_traces.append(go.Scatter(
+                            x=trail[:, 0], y=trail[:, 1]))
+                    else:
+                        trail_traces.append(go.Scatter(
+                            x=np.arange(t0, t0 + trail.shape[0]),
+                            y=trail[:, 0]))
+            frame_traces.extend(trail_traces)
             frame_kwargs = dict(name=str(k), data=frame_traces,
                                 traces=trace_indices)
             if ndims >= 3:
@@ -525,7 +594,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 # mirror that here
                 angle = azim + 360.0 * rotations * k / n_frames
                 frame_kwargs['layout'] = dict(
-                    scene_camera=dict(eye=_camera_eye(elev, angle)))
+                    scene_camera=dict(eye=_camera_eye(elev, angle, r=_zoom_r(zoom))))
             frames.append(go.Frame(**frame_kwargs))
 
     fig.frames = frames

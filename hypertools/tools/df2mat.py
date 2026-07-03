@@ -33,7 +33,11 @@ def df2mat(data, return_labels=False):
     df_num = data.select_dtypes(exclude=['object'])
 
     for colname in df_str.columns:
-        df_num = df_num.join(pd.get_dummies(data[colname], prefix=colname))
+        # dtype=float: pandas >= 2.0 defaults get_dummies to bool, and
+        # joining bool dummies with float columns makes .values an
+        # object-dtype array that np.isnan / reducers cannot handle
+        df_num = df_num.join(pd.get_dummies(data[colname], prefix=colname,
+                                            dtype=float))
 
     plot_data = df_num.values
 

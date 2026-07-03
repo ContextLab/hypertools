@@ -631,7 +631,12 @@ def plot(
         for idx, xi in enumerate(xform):
             if is_line(fmt[idx]):
                 if xi.shape[0] > 1:
-                    xform[idx] = interp_array_list(
+                    # interp_array (singular): xi is one dataset. The
+                    # historical interp_array_list call here treated the
+                    # 2D array as a LIST of rows, silently replacing the
+                    # dataset with a list of per-row interpolations (latent
+                    # for years because a bug made is_line() always False)
+                    xform[idx] = interp_array(
                         xi, interp_val=frame_rate * duration / (xi.shape[0] - 1)
                     )
 
@@ -713,6 +718,11 @@ def plot(
             elev=elev,
             azim=azim,
             point_colors=line_colors,
+            tail_duration=tail_duration,
+            chemtrails=chemtrails,
+            precog=precog,
+            bullettime=bullettime,
+            zoom=zoom,
         )
         ax = None
         data = xform

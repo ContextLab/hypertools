@@ -1,6 +1,7 @@
 sphinx>=4.0.0
 furo>=2024.1
 sphinx-gallery>=0.10.0
+sphinxcontrib-video
 numpydoc>=1.1.0
 deepdish
 nbsphinx>=0.8.0

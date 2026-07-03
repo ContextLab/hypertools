@@ -49,14 +49,36 @@ def load(
         align=None,
         normalize=None,
         *,
-        legacy=False
+        legacy=False,
+        split=None,
+        streaming=False
 ):
     """
-    Load a .geo file or example data
+    Load data from a built-in example dataset, a local file, a Hugging Face
+    dataset, Google Drive, Dropbox, or any URL
+
+    A string is interpreted by trying, in order:
+
+    1. a built-in example dataset name (listed below)
+    2. a path to a local file (.geo/pickle, .npy/.npz, .csv/.tsv/.txt,
+       .json, .parquet, .mat)
+    3. a Hugging Face dataset id such as ``'scikit-learn/iris'``
+       (pass ``streaming=True`` for a streaming dataset, which can be
+       passed straight to :func:`hypertools.plot`)
+    4. a Google Drive URL or bare file id
+    5. a Dropbox URL or shared-link path
+    6. any other URL, with or without an ``https://`` scheme
+
+    A **list of strings** resolves element-wise and returns a list of
+    datasets that can be passed to any hypertools function.
+
+    .. warning::
+        Pickled payloads (``.pkl``/``.geo``) can execute arbitrary code
+        when loaded -- only load pickled data from sources you trust.
 
     Parameters
     ----------
-    dataset : string
+    dataset : string or list of strings
         The name of the example dataset.  Can be a `.geo` file, or one of a
         number of example datasets listed below.
 
@@ -122,12 +144,30 @@ def load(
     legacy : bool
         Pass legacy=True to load DataGeometry objects created with hypertools<0.8.0
 
+    split : string or None
+        Hugging Face datasets only: which split to load (default: the
+        'train' split if present, otherwise the first available split).
+
+    streaming : bool
+        Hugging Face datasets only: if True, return a streaming
+        ``IterableDataset`` instead of materializing the data (see
+        https://huggingface.co/docs/datasets/en/stream). The result can be
+        passed directly to :func:`hypertools.plot`.
+
     Returns
     ----------
-    data : Numpy Array
-        Example data
+    data : DataGeometry, numpy array, DataFrame, list, or IterableDataset
+        The loaded data (a list of datasets when a list of strings was
+        passed).
 
     """
+    # lists of strings resolve element-wise to a list of datasets
+    if isinstance(dataset, (list, tuple)):
+        return [load(d, reduce=reduce, ndims=ndims, align=align,
+                     normalize=normalize, legacy=legacy, split=split,
+                     streaming=streaming)
+                for d in dataset]
+
     if dataset in EXAMPLE_DATA.keys():
         geo_data = _load_example_data(dataset)
         if dataset.endswith('_model'):
@@ -135,25 +175,27 @@ def load(
             return geo_data
     else:
         dataset_path = Path(expanduser(expandvars(dataset))).resolve()
-        if not dataset_path.is_file():
-            sample_names = ', '.join(f"'{name}'" for name in EXAMPLE_DATA)
-            raise HypertoolsIOError(
-                f"Dataset not found at {dataset_path}. Please specify a .geo "
-                f"file or one of the following sample files: {sample_names}"
-            )
-        elif legacy:
-            geo_data = _load_legacy(dataset_path)
+        if dataset_path.is_file():
+            if legacy:
+                geo_data = _load_legacy(dataset_path)
+            else:
+                geo_data = _load_local(dataset_path)
         else:
-            try:
-                geo_data = pickle.loads(dataset_path.read_bytes())
-            except pickle.UnpicklingError as e:
-                raise HypertoolsIOError(
-                    "Failed to load DataGeometry object from "
-                    f"{dataset_path}. If {dataset_path.name} was created "
-                    "with hypertools<0.8.0, pass legacy=True to load it."
-                ) from e
-            if isinstance(geo_data.data, dict):
-                geo_data.data = pd.DataFrame(geo_data.data)
+            # resolution chain: Hugging Face -> Google Drive -> Dropbox ->
+            # generic URL (see tools.sources)
+            from .sources import load_source
+            geo_data = load_source(dataset, split=split,
+                                   streaming=streaming)
+
+    from .streaming import is_stream
+    if is_stream(geo_data):
+        if any({reduce, ndims, align, normalize}):
+            raise ValueError(
+                'reduce/ndims/align/normalize cannot be applied to a '
+                'streaming dataset at load time; pass the stream to '
+                'hypertools.plot(), which fits models on the first '
+                'stream_init samples')
+        return geo_data
 
     if any({reduce, ndims, align, normalize}):
         from ..plot.plot import plot
@@ -169,6 +211,31 @@ def load(
                     normalize=normalize)
         return plot(d, show=False)
     return geo_data
+
+
+def _load_local(dataset_path):
+    """Load a local file: pickled DataGeometry objects keep their historical
+    behavior (including the legacy=True hint); everything else goes through
+    the extension/sniff-based parser (npy/npz/csv/tsv/txt/json/parquet/mat).
+    """
+    raw = dataset_path.read_bytes()
+    looks_pickled = dataset_path.suffix.lower() in (
+        '.geo', '.pkl', '.pickle', '.p') or raw[:1] == b'\x80'
+    if looks_pickled:
+        try:
+            geo_data = pickle.loads(raw)
+        except pickle.UnpicklingError as e:
+            raise HypertoolsIOError(
+                "Failed to load DataGeometry object from "
+                f"{dataset_path}. If {dataset_path.name} was created "
+                "with hypertools<0.8.0, pass legacy=True to load it."
+            ) from e
+        if isinstance(geo_data, DataGeometry) and \
+                isinstance(geo_data.data, dict):
+            geo_data.data = pd.DataFrame(geo_data.data)
+        return geo_data
+    from .sources import load_local_file
+    return load_local_file(dataset_path)
 
 
 def _load_legacy(dataset_path):

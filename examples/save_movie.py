@@ -25,4 +25,7 @@ data = geo.data
 group1 = np.mean(data[:17], 0)
 group2 = np.mean(data[18:], 0)
 
-hyp.plot([group1, group2], animate=True, save_path='animation.mp4')
+import os, tempfile
+save_path = os.path.join(tempfile.mkdtemp(), 'animation.mp4')
+ani_geo = hyp.plot([group1, group2], animate=True, save_path=save_path)
+ani = ani_geo.line_ani  # the underlying matplotlib FuncAnimation

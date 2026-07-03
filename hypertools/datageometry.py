@@ -12,6 +12,25 @@ from ._shared.helpers import convert_text, get_dtype
 from .config import __version__
 
 
+def _maybe_load_strings(data):
+    """Route strings that plausibly name data sources (built-in dataset
+    names, file paths, Hugging Face ids, Drive/Dropbox links, URLs) through
+    hyp.load. Strings that don't look like sources -- and lists containing
+    any such string -- pass through untouched, so raw text still flows to
+    the text-embedding pipeline."""
+    from .tools.sources import is_loadable_string
+
+    if isinstance(data, str) and is_loadable_string(data):
+        from .tools.load import load
+        return load(data)
+    if isinstance(data, (list, tuple)) and len(data) and \
+            all(isinstance(d, str) for d in data) and \
+            all(is_loadable_string(d) for d in data):
+        from .tools.load import load
+        return load(list(data))
+    return data
+
+
 class DataGeometry(object):
     """
     Hypertools data object class
@@ -129,6 +148,7 @@ class DataGeometry(object):
         if data is None:
             return self.xform_data
         else:
+            data = _maybe_load_strings(data)
             formatted = format_data(
                 data,
                 semantic=self.semantic,
@@ -175,7 +195,7 @@ class DataGeometry(object):
                 d = copy.copy(self.data)
                 transform = None
         else:
-            d = data
+            d = _maybe_load_strings(data)
             transform = None
 
         # get kwargs and update with new kwargs

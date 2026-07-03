@@ -93,3 +93,24 @@ def test_corrupt_dataset_cache_recovers():
     else:
         assert geo is not None
         assert target.read_bytes()[:1] != b'<'  # cache healed
+
+
+def test_fmt_list_line_interpolation_keeps_arrays():
+    """Regression: per-dataset fmt lists (e.g. ['-', '--']) routed each
+    dataset through interp_array_list (plural), which iterated the 2D array
+    as a LIST of rows and replaced the dataset with a list of per-row
+    interpolations -- crashing anything downstream expecting arrays. Latent
+    for years because is_line() always returned False before its own fix."""
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import hypertools as hyp
+
+    a = np.cumsum(np.random.default_rng(0).standard_normal((40, 3)), axis=0)
+    b = np.cumsum(np.random.default_rng(1).standard_normal((40, 3)), axis=0)
+    geo = hyp.plot([a, b], ['-', '--'], show=False)
+    assert all(hasattr(x, 'shape') and x.ndim == 2 for x in geo.xform_data)
+    # both trajectories drawn, smoothed to more points than the input
+    drawn = [ln for ln in geo.ax.lines if len(ln.get_data()[0]) > 1]
+    assert len(drawn) == 2
+    assert all(len(ln.get_data()[0]) > 40 for ln in drawn)
+    plt.close('all')

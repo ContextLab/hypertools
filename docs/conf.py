@@ -249,6 +249,13 @@ sphinx_gallery_conf = {
     'abort_on_example_error': False,
     # Execute code to generate plots
     'plot_gallery': True,
+    # execute EVERY example (the sphinx-gallery default only executes
+    # files named plot_*, which left animate*/chemtrails/precog/explore/
+    # save_*/analyze pages with code but no rendered output)
+    'filename_pattern': r'.*\.py',
+    # render matplotlib FuncAnimations (exposed as variables in the
+    # examples) as embedded HTML5 video via ffmpeg
+    'matplotlib_animations': (True, 'mp4'),
     # Download all examples as zip files
     'download_all_examples': True,
     # Ignore warnings during gallery building
