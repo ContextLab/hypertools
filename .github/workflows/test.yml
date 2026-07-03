@@ -2,7 +2,7 @@ name: Tests
 
 on:
   push:
-    branches: [ master, dev, dev-2.0 ]
+    branches: [ master, dev, dev-2.0, dev-2.0-refactor ]
   pull_request:
     branches: [ master, dev ]
 
@@ -13,6 +13,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        # dw 0.4.0 classifiers stop at py3.12; the 3.13 row exercises dw-on-3.13. If a 3.13
+        # job fails on dw install/import, file a data-wrangler issue and temporarily drop 3.13
+        # here (comment referencing the issue) rather than working around it.
         python-version: ['3.10', '3.11', '3.12', '3.13']
 
     steps:
