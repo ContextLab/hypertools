@@ -65,3 +65,15 @@ def unpack_model(m, valid=None, parent_class=None):
         return m
 
     raise ValueError(f"unknown model: {m!r}")
+
+
+def get(value, i):
+    """Return value[i] for a list/tuple (if in range), else value itself.
+
+    Lets a manipulator accept either one shared parameter or a per-dataset list.
+    """
+    if isinstance(value, (list, tuple)):
+        if 0 <= i < len(value):
+            return value[i]
+        return value
+    return value

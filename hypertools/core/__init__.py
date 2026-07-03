@@ -5,6 +5,6 @@ from .exceptions import (
     HypertoolsBackendError,
     HypertoolsIOError,
 )
-from .shared import RobustDict, unpack_model
+from .shared import RobustDict, unpack_model, get
 from .configurator import get_default_options, apply_defaults
 from .model import apply_model, supported_models
