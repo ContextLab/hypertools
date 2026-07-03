@@ -131,6 +131,56 @@ def update_html_references():
     print(f"Made {replacements_made} HTML replacements")
     return True
 
+def wrap_thumbnail_links():
+    """Make gallery thumbnails clickable: sphinx-gallery >= 0.17 markup no
+    longer wraps the thumbnail <img> in an anchor (only the small title
+    text links), so clicking a thumbnail did nothing. Per review, clicking
+    a gallery example should open a runnable notebook: the image links to
+    the example's notebook on Colab (title text still opens the example
+    page, which embeds the rendered output)."""
+    if GALLERY_HTML is None:
+        print("  Skipping thumbnail links (no build dir)")
+        return 0
+    import re as _re
+    import subprocess
+    branch = os.environ.get('READTHEDOCS_GIT_IDENTIFIER', '')
+    if not branch:
+        try:
+            branch = subprocess.run(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                capture_output=True, text=True, cwd=DOCS_DIR,
+                timeout=10).stdout.strip()
+        except Exception:
+            branch = ''
+    branch = branch or 'master'
+    base = ('https://colab.research.google.com/github/ContextLab/'
+            f'hypertools/blob/{branch}/docs/auto_examples/')
+
+    def _wrap(match):
+        img = match.group(0)
+        m = _re.search(r'sphx_glr_(.+?)_thumb', img)
+        if m is None:
+            return img
+        url = f'{base}{m.group(1)}.ipynb'
+        return (f'<a class="hypertools-thumb-link" href="{url}" '
+                f'target="_blank" rel="noopener" '
+                f'title="open this example as a notebook in Colab">'
+                f'{img}</a>')
+
+    with open(GALLERY_HTML) as f:
+        html = f.read()
+    if 'hypertools-thumb-link' in html:
+        print("  Thumbnail links already present")
+        return 0
+    html, n = _re.subn(
+        r'<img[^>]*sphx_glr_[^>]*_thumb[^>]*/?>', _wrap, html)
+    with open(GALLERY_HTML, 'w') as f:
+        f.write(html)
+    print(f"  Wrapped {n} gallery thumbnails with notebook links "
+          f"(branch: {branch})")
+    return n
+
+
 def inject_notebook_badges():
     """Add a prominent 'Open in Colab / download notebook' bar to the top of
     every gallery example page, so clicking through a gallery example leads
@@ -196,6 +246,7 @@ def main():
         success = update_html_references()
 
     inject_notebook_badges()
+    wrap_thumbnail_links()
 
     if success:
         print("✅ Post-build processing completed successfully!")

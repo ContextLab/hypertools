@@ -22,12 +22,12 @@ def _draw(
     fmt=None,
     animate=False,
     tail_duration=2,
-    rotations=2,
+    rotations=1,
     zoom=1,
     chemtrails=False,
     precog=False,
     bullettime=False,
-    frame_rate=50,
+    frame_rate=30,
     elev=10,
     azim=-60,
     duration=30,
@@ -369,7 +369,7 @@ def _draw(
         trail_lines,
         cube_scale,
         tail_duration=2,
-        rotations=2,
+        rotations=1,
         zoom=1,
         chemtrails=False,
         elev=10,
@@ -412,7 +412,7 @@ def _draw(
         return lines, trail_lines
 
     def update_lines_spin(
-        num, data_lines, lines, cube_scale, rotations=2, zoom=1, elev=10
+        num, data_lines, lines, cube_scale, rotations=1, zoom=1, elev=10
     ):
 
         if hasattr(update_lines_spin, "planes"):
@@ -435,7 +435,7 @@ def _draw(
         return lines
 
     def update_lines_serial(
-        num, data_lines, lines, cube_scale, rotations=2, zoom=1, elev=10
+        num, data_lines, lines, cube_scale, rotations=1, zoom=1, elev=10
     ):
         """Serial animation: datasets appear ONE AT A TIME, each growing
         point-by-point into place while all previous datasets stay fully
@@ -471,10 +471,10 @@ def _draw(
     def animate_plot3D(
         x,
         tail_duration=2,
-        rotations=2,
+        rotations=1,
         zoom=1,
         chemtrails=False,
-        frame_rate=50,
+        frame_rate=30,
         elev=10,
         style="parallel",
     ):
@@ -665,9 +665,11 @@ def _draw(
     if title is not None:
         ax.set_title(title)
 
-    # add legend
+    # add legend: to the RIGHT of the plot, vertically centered on the
+    # box (never overlapping the data)
     if legend is not None:
-        ax.legend()
+        ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5),
+                  borderaxespad=0.0, frameon=False)
 
     if size is not None:
         fig.set_size_inches(size)

@@ -134,9 +134,13 @@ class DataGeometry(object):
 
         Parameters
         ----------
-        data : numpy array, pandas dataframe or list of arrays/dfs
+        data : numpy array, pandas dataframe, string or list
             The data to transform.  If no data is passed, the xform_data from
-            the DataGeometry object will be returned.
+            the DataGeometry object will be returned.  Strings (and lists of
+            strings) naming data sources are loaded automatically via
+            :func:`hypertools.load`: built-in dataset names, local file
+            paths, Hugging Face dataset ids, Google Drive / Dropbox links,
+            and other URLs all work; raw text is embedded as usual.
 
         Returns
         ----------
@@ -169,9 +173,13 @@ class DataGeometry(object):
 
         Parameters
         ----------
-        data : numpy array, pandas dataframe or list of arrays/dfs
+        data : numpy array, pandas dataframe, string or list
             The data to plot.  If no data is passed, the xform_data from
-            the DataGeometry object will be returned.
+            the DataGeometry object will be returned.  Strings (and lists
+            of strings) naming data sources are loaded automatically via
+            :func:`hypertools.load` (built-in dataset names, local file
+            paths, Hugging Face dataset ids, Google Drive / Dropbox links,
+            and other URLs); raw text is embedded as usual.
 
         kwargs : keyword arguments
             Any keyword arguments supported by `hypertools.plot` are also supported
@@ -200,6 +208,16 @@ class DataGeometry(object):
 
         # get kwargs and update with new kwargs
         new_kwargs = copy.copy(self.kwargs)
+
+        # animation pacing follows the CURRENT library standard (30 fps,
+        # 30 s duration, 1 rotation per 30 s) rather than values baked into
+        # saved geos -- old .geo files carry their era's defaults (e.g.
+        # frame_rate=50, rotations=2) as explicit kwargs, which would
+        # silently replay outdated pacing. Callers can still override by
+        # passing these to plot() directly.
+        for pacing_key in ('frame_rate', 'rotations', 'duration'):
+            new_kwargs.pop(pacing_key, None)
+
         update_kwargs = dict(transform=transform, reduce=self.reduce,
                        align=self.align, normalize=self.normalize,
                        semantic=self.semantic, vectorizer=self.vectorizer,

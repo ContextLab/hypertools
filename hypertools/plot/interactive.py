@@ -106,7 +106,7 @@ def _zoom_r(zoom):
 
 def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 title=None, animate=False, size=None, show=True,
-                save_path=None, frame_rate=50, duration=30, rotations=2,
+                save_path=None, frame_rate=30, duration=30, rotations=1,
                 elev=10, azim=-60, point_colors=None, tail_duration=2,
                 chemtrails=False, precog=False, bullettime=False, zoom=1):
     """Render grouped datasets with plotly, mirroring _draw's contract and
@@ -218,14 +218,17 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     fig = go.Figure(data=traces)
 
     # match matplotlib: centered black title (12pt = 16px), default canvas
-    # 6.4 x 4.8 inches at 100 dpi, legend inside the top-right corner
+    # 6.4 x 4.8 inches at 100 dpi, legend to the RIGHT of the plot and
+    # vertically centered on the box (same as the matplotlib renderer)
     layout = dict(
         paper_bgcolor='white',
         plot_bgcolor='white',
         showlegend=legend is not None,
-        margin=dict(l=10, r=10, t=40 if title else 10, b=10),
+        # reserve right margin for the outside legend when one is shown
+        margin=dict(l=10, r=120 if legend is not None else 10,
+                    t=40 if title else 10, b=10),
         legend=dict(bgcolor='rgba(255,255,255,0.8)',
-                    x=0.99, y=0.99, xanchor='right', yanchor='top'),
+                    x=1.02, y=0.5, xanchor='left', yanchor='middle'),
     )
     if title is not None:
         # centered over the plotting area (xref='paper'), like matplotlib
@@ -283,9 +286,58 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             fig.write_image(save_path)
 
     if show:
-        fig.show()
+        import plotly.io as pio
+        if 'sphinx_gallery' in str(pio.renderers.default or ''):
+            # docs builds: plotly's sphinx-gallery renderer writes a static
+            # png AND an interactive html from the full figure, and kaleido
+            # serializes EVERY animation frame to render the one png -- a
+            # 900-frame figure took ~an hour and produced tens-of-MB pages.
+            # Write the pair ourselves: png from a frame-stripped snapshot,
+            # html with the embedded frames capped (total duration and
+            # rotations preserved, so pacing stays identical).
+            _show_sphinx_gallery(fig)
+        else:
+            fig.show()
 
     return fig
+
+
+_SG_MAX_EMBEDDED_FRAMES = 150
+
+
+def _show_sphinx_gallery(fig):
+    import itertools
+    import math
+    import os
+
+    import plotly.graph_objects as go
+
+    for i in itertools.count():
+        base = os.path.join(os.getcwd(), f'hypertools_fig_{i:03d}')
+        if not (os.path.exists(base + '.html')
+                or os.path.exists(base + '.png')):
+            break
+
+    snapshot = go.Figure(fig)
+    snapshot.frames = ()
+    snapshot.layout.updatemenus = ()
+    snapshot.write_image(base + '.png')
+
+    light = fig
+    if fig.frames and len(fig.frames) > _SG_MAX_EMBEDDED_FRAMES:
+        step = math.ceil(len(fig.frames) / _SG_MAX_EMBEDDED_FRAMES)
+        light = go.Figure(fig)
+        light.frames = fig.frames[::step]
+        # keep total playback duration identical: fewer embedded frames,
+        # each shown proportionally longer
+        for menu in light.layout.updatemenus or ():
+            for button in menu.buttons or ():
+                try:
+                    button.args[1]['frame']['duration'] *= step
+                except (IndexError, KeyError, TypeError):
+                    pass
+    light.write_html(base + '.html', include_plotlyjs='cdn',
+                     auto_play=False)
 
 
 def _export_animation_file(fig, save_path, frame_rate, duration, size):
@@ -496,10 +548,10 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     only touch the data traces, so the cube/frame stays put."""
     import plotly.graph_objects as go
 
-    # ~30 effective frames per second of animation for smooth playback and
-    # export; short animations get proportionally fewer frames (matters for
-    # gif/mp4 export, where every frame is rendered through kaleido)
-    n_frames = int(np.clip(round(duration * 30), 10, 600))
+    # EXACTLY match the matplotlib renderer's pacing: frame_rate frames
+    # per second of animation for the full duration (no frame cap), so the
+    # two backends play at identical speed, duration, and framerate
+    n_frames = max(2, int(round(frame_rate * duration)))
     frames = []
     trace_indices = list(range(n_data_traces))
 

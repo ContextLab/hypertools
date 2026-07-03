@@ -80,7 +80,7 @@ depends on having ffmpeg installed on your computer.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 20.927 seconds)
+   **Total running time of the script:** (0 minutes 12.173 seconds)
 
 
 .. _sphx_glr_download_auto_examples_save_movie.py:

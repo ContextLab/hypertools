@@ -45,12 +45,12 @@ def plot(
     animate=False,
     duration=30,
     tail_duration=2,
-    rotations=2,
+    rotations=1,
     zoom=1,
     chemtrails=False,
     precog=False,
     bullettime=False,
-    frame_rate=50,
+    frame_rate=30,
     interactive=False,
     explore=False,
     backend="auto",
@@ -206,7 +206,10 @@ def plot(
         Sets the length of the tail of the data (default: 2 seconds)
 
     rotations (animation only) : float
-        Number of rotations around the box (default: 2)
+        Number of rotations around the box over the course of the
+        animation (default: 1 -- with the default 30-second duration,
+        one revolution every 30 seconds). Identical pacing on both
+        backends.
 
     zoom (animation only) : float
         How far to zoom into the plot, positive numbers will zoom in (default: 0)
@@ -222,7 +225,10 @@ def plot(
         (default: False).
 
     frame_rate (animation only) : int or float
-        Frame rate for animation (default: 50)
+        Frame rate for animation in frames per second (default: 30).
+        Both backends generate exactly frame_rate * duration frames, so
+        matplotlib and plotly animations play at identical speed,
+        duration, and framerate.
 
     interactive : bool
         If True, display the plot using an interactive matplotlib

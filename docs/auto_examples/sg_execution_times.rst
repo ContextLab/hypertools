@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**09:39.094** total execution time for 39 files **from auto_examples**:
+**48:26.665** total execution time for 39 files **from auto_examples**:
 
 .. container::
 
@@ -33,34 +33,34 @@ Computation times
      - Time
      - Mem (MB)
    * - :ref:`sphx_glr_auto_examples_animate_plotly.py` (``animate_plotly.py``)
-     - 08:03.507
+     - 47:29.943
      - 0.0
    * - :ref:`sphx_glr_auto_examples_save_movie.py` (``save_movie.py``)
-     - 00:20.927
+     - 00:12.173
      - 0.0
    * - :ref:`sphx_glr_auto_examples_animate.py` (``animate.py``)
-     - 00:20.126
+     - 00:10.973
      - 0.0
    * - :ref:`sphx_glr_auto_examples_chemtrails.py` (``chemtrails.py``)
-     - 00:14.122
+     - 00:07.915
      - 0.0
    * - :ref:`sphx_glr_auto_examples_precog.py` (``precog.py``)
-     - 00:13.565
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_animate_spin.py` (``animate_spin.py``)
-     - 00:13.202
+     - 00:07.746
      - 0.0
    * - :ref:`sphx_glr_auto_examples_animate_MDS.py` (``animate_MDS.py``)
-     - 00:13.057
+     - 00:07.567
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_animate_spin.py` (``animate_spin.py``)
+     - 00:07.368
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_interactive_backend.py` (``plot_interactive_backend.py``)
+     - 00:02.980
      - 0.0
    * - :ref:`sphx_glr_auto_examples_analyze.py` (``analyze.py``)
-     - 00:00.389
+     - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_explore.py` (``explore.py``)
-     - 00:00.104
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_save_image.py` (``save_image.py``)
-     - 00:00.096
+     - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_2D.py` (``plot_2D.py``)
      - 00:00.000
@@ -113,9 +113,6 @@ Computation times
    * - :ref:`sphx_glr_auto_examples_plot_hue.py` (``plot_hue.py``)
      - 00:00.000
      - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_interactive_backend.py` (``plot_interactive_backend.py``)
-     - 00:00.000
-     - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_labels.py` (``plot_labels.py``)
      - 00:00.000
      - 0.0
@@ -147,5 +144,8 @@ Computation times
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_text.py` (``plot_text.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_save_image.py` (``save_image.py``)
      - 00:00.000
      - 0.0

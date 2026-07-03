@@ -21,8 +21,8 @@ data = np.cumsum(np.random.default_rng(42).standard_normal((200, 8)),
                  axis=0)
 
 # interactive animation (play/pause controls in notebooks)
-hyp.plot(data, animate=True, duration=5, backend='plotly')
+hyp.plot(data, animate=True, duration=30, backend='plotly')
 
 # export an animation: extension picks the format (.gif / .png / .mp4)
-hyp.plot(data, animate='spin', duration=5, backend='plotly',
+hyp.plot(data, animate='spin', duration=30, backend='plotly',
          save_path='spin.gif', show=False)

@@ -39,6 +39,9 @@ colors, line/marker sizes, format strings, and the signature cube frame.
    :srcset: /auto_examples/images/sphx_glr_plot_interactive_backend_001.png
    :class: sphx-glr-single-img
 
+.. raw:: html
+    :file: images/sphx_glr_plot_interactive_backend_002.html
+
 
 
 
@@ -65,7 +68,7 @@ colors, line/marker sizes, format strings, and the signature cube frame.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 3.368 seconds)
+   **Total running time of the script:** (0 minutes 2.980 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_interactive_backend.py:

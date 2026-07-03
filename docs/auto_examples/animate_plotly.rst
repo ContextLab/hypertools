@@ -32,9 +32,25 @@ extension picks the format.
 
 
 
+.. raw:: html
+    :file: images/sphx_glr_animate_plotly_001.html
+
+
+.. rst-class:: sphx-glr-script-out
+
+ .. code-block:: none
+
+    Resorting to unclean kill browser.
+    Resorting to unclean kill browser.
+    Resorting to unclean kill browser.
+    Resorting to unclean kill browser.
 
 
 
+
+
+
+|
 
 .. code-block:: Python
 
@@ -49,16 +65,16 @@ extension picks the format.
                      axis=0)
 
     # interactive animation (play/pause controls in notebooks)
-    hyp.plot(data, animate=True, duration=5, backend='plotly')
+    hyp.plot(data, animate=True, duration=30, backend='plotly')
 
     # export an animation: extension picks the format (.gif / .png / .mp4)
-    hyp.plot(data, animate='spin', duration=5, backend='plotly',
+    hyp.plot(data, animate='spin', duration=30, backend='plotly',
              save_path='spin.gif', show=False)
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (8 minutes 3.507 seconds)
+   **Total running time of the script:** (47 minutes 29.943 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate_plotly.py:

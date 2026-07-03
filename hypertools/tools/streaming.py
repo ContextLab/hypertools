@@ -23,7 +23,6 @@ import itertools
 import numpy as np
 import pandas as pd
 
-from .._shared.helpers import center, scale
 
 
 def is_stream(x):
@@ -207,6 +206,21 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
                    show=False, **plot_kwargs)
     artist = next(ln for ln in geo.ax.lines if len(ln.get_data()[0]))
 
+    # the axis limits and the data->box transform are FROZEN from the head:
+    # hyp.plot centered the head (column means) and scaled it into the
+    # [-1, 1] cube (global min/max); the exact same affine transform is
+    # applied to every future sample so the view NEVER changes as data
+    # streams in. Samples that land outside the box are clamped to the
+    # closest point on its surface.
+    head_mu = head_red.mean(axis=0, keepdims=True)
+    head_centered = head_red - head_mu
+    box_m1 = head_centered.min()
+    box_m2 = (head_centered - box_m1).max() or 1.0
+
+    def to_box(pts):
+        t = 2.0 * ((pts - head_mu) - box_m1) / box_m2 - 1.0
+        return np.clip(t, -1.0, 1.0)
+
     is3d = head_red.shape[1] > 2
     raw = [head]
     accum = [head_red]
@@ -221,12 +235,12 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
         writer.grab_frame()
 
     def _redraw():
-        # keep the cube fixed at +/-1 and re-fit the (windowed) data inside
-        # it (a stream cannot know its future extent up front)
+        # fixed head-fitted transform + clamp: the space inside the cube is
+        # stable for the whole stream (no per-chunk re-scaling "twitch")
         shown = np.vstack(accum)
         if stream_window is not None:
             shown = shown[-int(stream_window):]
-        full = scale(center([shown]))[0]
+        full = to_box(shown)
         if is3d:
             artist.set_data_3d(full[:, 0], full[:, 1], full[:, 2])
         else:

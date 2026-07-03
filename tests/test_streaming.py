@@ -188,3 +188,56 @@ def test_huggingface_iterable_dataset_stream():
     assert geo.xform_data[0].shape == (150, 3)
     assert geo.data[0].shape == (150, 4)
     plt.close('all')
+
+
+def test_stream_view_is_frozen_after_head():
+    """Round-6.5: once the head sets the space, drawn positions of already-
+    plotted points NEVER move as new chunks arrive (no per-chunk rescale
+    'twitch'), and the axis limits stay fixed."""
+    import hypertools.tools.streaming as st
+
+    # drifting walk: later samples leave the head's extent
+    def drifting(n=300):
+        rng = np.random.default_rng(5)
+        p = np.zeros(4)
+        for i in range(n):
+            p = p + 0.05 * rng.standard_normal(4) + 0.05  # steady drift
+            yield p
+
+    geo = hyp.plot(drifting(), show=False, stream_init=100, stream_chunk=50,
+                   stream_max=None)
+    # reconstruct what the head looked like on the first draw: its first
+    # 100 projected rows, pushed through the frozen transform, must equal
+    # the first 100 drawn points of the final artist exactly
+    xs, ys, zs = geo.ax.lines[0].get_data_3d()
+    drawn = np.column_stack([xs, ys, zs])
+    model = geo.stream_info['reduce_model']
+    head_red = model.transform(geo.data[0][:100])
+    mu = head_red.mean(axis=0, keepdims=True)
+    c = head_red - mu
+    m1, m2 = c.min(), (c - c.min()).max()
+    expected_head = 2.0 * ((head_red - mu) - m1) / m2 - 1.0
+    np.testing.assert_allclose(drawn[:100], expected_head, atol=1e-12)
+    # limits are the standard fixed cube
+    assert geo.ax.get_xlim3d()[0] <= -1 and geo.ax.get_xlim3d()[1] >= 1
+    plt.close('all')
+
+
+def test_stream_out_of_range_samples_clamped_to_box():
+    def exploding(n=200):
+        rng = np.random.default_rng(6)
+        p = np.zeros(4)
+        for i in range(n):
+            step = 10.0 if i > 100 else 0.1  # explode after the head
+            p = p + step * rng.standard_normal(4)
+            yield p
+
+    geo = hyp.plot(exploding(), show=False, stream_init=100, stream_chunk=50,
+                   stream_max=None)
+    xs, ys, zs = geo.ax.lines[0].get_data_3d()
+    drawn = np.column_stack([xs, ys, zs])
+    # every drawn point is inside (or exactly on) the box surface
+    assert np.abs(drawn).max() <= 1.0 + 1e-12
+    # and the post-explosion points actually hit the surface (clamped)
+    assert np.isclose(np.abs(drawn[150:]).max(), 1.0)
+    plt.close('all')

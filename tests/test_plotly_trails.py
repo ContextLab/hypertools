@@ -77,3 +77,24 @@ def test_plotly_zoom_moves_camera_closer():
 def test_plotly_static_has_no_trails():
     geo = hyp.plot(_walks(), backend='plotly', show=False)
     assert len(geo.fig.data) == 3  # 2 data + cube, no trail traces
+
+
+def test_backends_have_identical_animation_pacing():
+    """Round-6.5 standard: 30 fps, duration 30 s, 1 rotation per 30 s --
+    and the two backends generate exactly the same number of frames at the
+    same per-frame duration."""
+    w = np.cumsum(np.random.default_rng(3).standard_normal((60, 5)), axis=0)
+
+    gp = hyp.plot(w, animate='spin', backend='plotly', show=False)
+    n_plotly = len(gp.fig.frames)
+    ms_plotly = gp.fig.layout.updatemenus[0].buttons[0].args[1][
+        'frame']['duration']
+
+    gm = hyp.plot(w, animate='spin', show=False)
+    n_mpl = gm.line_ani._save_count
+    ms_mpl = gm.line_ani._interval
+
+    assert n_plotly == n_mpl == 900          # 30 fps * 30 s
+    assert abs(ms_plotly - ms_mpl) <= 1.0    # ~33 ms per frame
+    import matplotlib.pyplot as plt
+    plt.close('all')
