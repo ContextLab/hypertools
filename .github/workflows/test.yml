@@ -13,9 +13,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        # dw 0.4.0 classifiers stop at py3.12; the 3.13 row exercises dw-on-3.13. If a 3.13
-        # job fails on dw install/import, file a data-wrangler issue and temporarily drop 3.13
-        # here (comment referencing the issue) rather than working around it.
+        # datawrangler 0.5.0+ supports pandas 3.0 (dw#30/#31) and py3.10-3.13. The pandas<3
+        # ceiling is lifted, so the resolver naturally picks pandas 3.x on py3.11-3.13 and
+        # pandas 2.x on py3.10 (pandas 3.0 requires py>=3.11) -- the matrix exercises both.
+        # A dedicated pinned-pandas-3 gate runs below on ubuntu/py3.12.
         python-version: ['3.10', '3.11', '3.12', '3.13']
 
     steps:
@@ -71,6 +72,16 @@ jobs:
         MPLBACKEND: Agg
       run: |
         pytest -v --tb=short
+
+    - name: Acceptance gate — pandas 3.0 (Ubuntu Python 3.12 only)
+      # Guarantees a pandas-3 run regardless of resolver choices (dw#30/#31 fix).
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+      env:
+        MPLBACKEND: Agg
+      run: |
+        pip install "pandas>=3.0"
+        python -c "import pandas as pd; assert pd.__version__.split('.')[0] == '3', pd.__version__; print('pandas', pd.__version__)"
+        pytest -q
 
     - name: Run pytest with coverage (Ubuntu Python 3.12 only)
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
