@@ -23,6 +23,17 @@ def fitter(data, **kwargs):
 
 
 @dw.decorate.apply_stacked
+def _transform_stacked(data, **kwargs):
+    smoothed = data.copy()
+    for c in data.columns:
+        smoothed[c] = savgol_filter(data[c].values, kwargs['kernel_width'], kwargs['order'])
+
+        if kwargs['maintain_bounds']:
+            smoothed[c] = np.clip(smoothed[c].to_numpy(), kwargs['min'][c], kwargs['max'][c])
+
+    return smoothed
+
+
 def transformer(data, **kwargs):
     assert 'axis' in kwargs.keys(), ValueError('Must specify axis')
     axis = kwargs.pop('axis', None)
@@ -43,18 +54,21 @@ def transformer(data, **kwargs):
     assert kwargs['kernel_width'] > 0, ValueError('smoothing kernel width must be a positive odd integer')
 
     if transpose:
+        # NOTE: recurse into the (undecorated) *transformer* itself, not into
+        # _transform_stacked. _transform_stacked is decorated with
+        # dw.decorate.apply_stacked, which vertically re-stacks whatever data it is
+        # given (adding a synthetic 'ID' level to the row index) before doing any
+        # work. If we transposed data that had already been through that decorator,
+        # the synthetic ID level would leak into the columns, and the fitted
+        # min/max (keyed by the ORIGINAL, pre-stacking row labels) could no longer
+        # be looked up -- raising "key of type tuple not found and not a
+        # MultiIndex". Transposing before the data ever reaches the decorated
+        # function keeps the stacking machinery isolated to the (always axis==0)
+        # base case, where it is harmless.
         return transformer(data.T, **dw.core.update_dict(kwargs, {'axis': axis})).T
 
     assert axis == 0, ValueError('invalid transformation')
-
-    smoothed = data.copy()
-    for c in data.columns:
-        smoothed[c] = savgol_filter(data[c].values, kwargs['kernel_width'], kwargs['order'])
-
-        if kwargs['maintain_bounds']:
-            smoothed[c] = np.clip(smoothed[c].to_numpy(), kwargs['min'][c], kwargs['max'][c])
-
-    return smoothed
+    return _transform_stacked(data, **kwargs, axis=axis)
 
 
 class Smooth(Manipulator):
