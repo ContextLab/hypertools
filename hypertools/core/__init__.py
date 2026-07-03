@@ -5,3 +5,4 @@ from .exceptions import (
     HypertoolsBackendError,
     HypertoolsIOError,
 )
+from .shared import RobustDict, unpack_model
