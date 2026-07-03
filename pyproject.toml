@@ -27,7 +27,9 @@ classifiers = [
 ]
 dependencies = [
     "scikit-learn>=1.4.0",
-    "pandas>=2.2.0",
+    # pandas pinned below 3.0 TEMPORARILY: datawrangler 0.4.0 type detection breaks on
+    # pandas 3.0 (data-wrangler#30). Lift the <3 ceiling once that lands.
+    "pandas>=2.2.0,<3",
     "seaborn>=0.13.0",
     "matplotlib>=3.8.0",
     "scipy>=1.13.0",
@@ -36,12 +38,18 @@ dependencies = [
     "requests>=2.31.0",
     "dill>=0.3.8",
     "ipympl>=0.9.3",
+    # HyperTools 2.0: data-wrangling core (funnel/stack/unstack/format detection, model
+    # dispatch, text+HF embeddings). https://github.com/ContextLab/data-wrangler
+    "pydata-wrangler>=0.4.0",
 ]
 
 [project.optional-dependencies]
 # Interactive plotly backend (auto-enabled on Colab/Kaggle, where plotly ships
 # preinstalled; local users opt in with `pip install hypertools[interactive]`).
 interactive = ["plotly>=5.20.0", "kaleido>=0.2.1"]
+# Transformer / sentence-transformers text embeddings via datawrangler's hf extra
+# (torch/transformers/sentence-transformers/tokenizers/datasets). Opt-in; never in base install.
+text = ["pydata-wrangler[hf]>=0.4.0"]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
