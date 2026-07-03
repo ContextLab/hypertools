@@ -7,3 +7,4 @@ from .exceptions import (
 )
 from .shared import RobustDict, unpack_model
 from .configurator import get_default_options, apply_defaults
+from .model import apply_model, supported_models
