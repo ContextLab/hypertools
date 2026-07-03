@@ -32,6 +32,37 @@ except Exception:  # pragma: no cover
         return ''
 sys.path.insert(0, os.path.abspath('../'))
 
+
+def _install_notebook_cell():
+    """First cell for every gallery notebook: install hypertools so the
+    notebook runs standalone in Colab. Branch-aware -- installs the current
+    branch from GitHub for previews (e.g. dev-2.0), or the released package
+    on master. Kept in sync with scripts/add_colab_install_cell.py, which
+    injects the same line into the hand-authored tutorial notebooks."""
+    import subprocess
+    branch = os.environ.get('READTHEDOCS_GIT_IDENTIFIER', '')
+    if not branch:
+        try:
+            branch = subprocess.run(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                capture_output=True, text=True,
+                cwd=os.path.dirname(os.path.abspath(__file__)),
+                timeout=10).stdout.strip()
+        except Exception:
+            branch = ''
+    branch = branch or 'master'
+    if branch == 'master':
+        pip = '%pip install -q "hypertools[interactive]"'
+        note = '# Install hypertools (run this first on Colab)'
+    else:
+        url = 'git+https://github.com/ContextLab/hypertools.git@' + branch
+        pip = f'%pip install -q "hypertools[interactive] @ {url}"'
+        note = (f'# Install hypertools ({branch} preview) -- run this first '
+                'on Colab.\n# On release this becomes: '
+                '%pip install hypertools')
+    return f'{note}\n{pip}\n\n%matplotlib inline'
+
+
 # -- General configuration ------------------------------------------------
 
 # If your documentation needs a minimal Sphinx version, state it here.
@@ -279,7 +310,7 @@ sphinx_gallery_conf = {
     # Limit memory usage display
     'show_memory': False,
     # Ensure proper thumbnail linking
-    'first_notebook_cell': '%matplotlib inline',
+    'first_notebook_cell': _install_notebook_cell(),
     'thumbnail_size': (200, 200),
     # Enable references to work - for local docs, use relative path
     'reference_url': {

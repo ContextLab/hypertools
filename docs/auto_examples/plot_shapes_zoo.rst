@@ -22,18 +22,18 @@
 A zoo of 3D shapes
 =============================
 
-HyperTools ships with several classic 3D "shapes zoo" point clouds
-(they download once and are then cached in `~/hypertools_data`).  This
-example loads four of them and displays each in its own panel of a 2x2
-figure by passing pre-created 3D axes to `hyp.plot` via the `ax`
-keyword.
+HyperTools ships with a "shapes zoo" of classic 3D point clouds (they
+download once and are then cached in `~/hypertools_data`).  This example
+loads *every* shape in the zoo and displays each in its own panel,
+plotted as small black dots (the ``,`` pixel marker) by passing
+pre-created 3D axes to `hyp.plot` via the `ax` keyword.
 
-.. GENERATED FROM PYTHON SOURCE LINES 13-32
+.. GENERATED FROM PYTHON SOURCE LINES 13-44
 
 
 
 .. image-sg:: /auto_examples/images/sphx_glr_plot_shapes_zoo_001.png
-   :alt: Teapot, Cube, Dragon, Bunny
+   :alt: Bunny, Cube, Dragon, Sphere, Teapot, Vase, Biplane
    :srcset: /auto_examples/images/sphx_glr_plot_shapes_zoo_001.png
    :class: sphx-glr-single-img
 
@@ -47,18 +47,30 @@ keyword.
     # Code source: Contextual Dynamics Laboratory
     # License: MIT
 
+    import math
+
     import matplotlib.pyplot as plt
 
     import hypertools as hyp
 
-    shapes = ['teapot', 'cube', 'dragon', 'bunny']
+    # every point cloud in the shapes zoo
+    shapes = ['bunny', 'cube', 'dragon', 'sphere', 'teapot', 'vase', 'biplane']
 
-    fig, axes = plt.subplots(2, 2, figsize=(8, 8),
+    ncols = 4
+    nrows = math.ceil(len(shapes) / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(3 * ncols, 3 * nrows),
                              subplot_kw={'projection': '3d'})
+    axes = axes.ravel()
 
-    for shape, ax in zip(shapes, axes.ravel()):
-        data = hyp.load(shape)
-        hyp.plot(data, 'o', ax=ax, title=shape.capitalize())
+    for shape, ax in zip(shapes, axes):
+        # small black dots: ',' is matplotlib's single-pixel marker, ideal for
+        # dense point clouds
+        hyp.plot(hyp.load(shape), ',', color='k', ax=ax,
+                 title=shape.capitalize())
+
+    # hide any unused panels
+    for ax in axes[len(shapes):]:
+        ax.set_visible(False)
 
     plt.tight_layout()
     plt.show()
@@ -66,7 +78,7 @@ keyword.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.254 seconds)
+   **Total running time of the script:** (0 minutes 0.224 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_shapes_zoo.py:

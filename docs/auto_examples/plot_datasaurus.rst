@@ -26,15 +26,16 @@ The "Datasaurus Dozen" (Matejka & Fitzmaurice, 2017) is a set of 13
 datasets that share nearly identical summary statistics (means,
 standard deviations, and correlations) but look wildly different when
 plotted.  `hyp.load('datasaurus')` returns the datasets as a list of
-pandas DataFrames; here we plot a few of them side by side as 2D
-scatter plots to show why it always pays to visualize your data.
+pandas DataFrames; here we plot *all thirteen* side by side as 2D
+scatter plots of small black dots (the ``.`` point marker) to show why
+it always pays to visualize your data.
 
-.. GENERATED FROM PYTHON SOURCE LINES 14-36
+.. GENERATED FROM PYTHON SOURCE LINES 15-45
 
 
 
 .. image-sg:: /auto_examples/images/sphx_glr_plot_datasaurus_001.png
-   :alt: Dataset 1, Dataset 2, Dataset 3, Dataset 4, Dataset 5, Dataset 6
+   :alt: Dataset 1, Dataset 2, Dataset 3, Dataset 4, Dataset 5, Dataset 6, Dataset 7, Dataset 8, Dataset 9, Dataset 10, Dataset 11, Dataset 12, Dataset 13
    :srcset: /auto_examples/images/sphx_glr_plot_datasaurus_001.png
    :class: sphx-glr-single-img
 
@@ -49,6 +50,13 @@ scatter plots to show why it always pays to visualize your data.
     Dataset 4: mean=(54.26, 47.83), sd=(16.77, 26.94), r=-0.06
     Dataset 5: mean=(54.26, 47.84), sd=(16.77, 26.93), r=-0.06
     Dataset 6: mean=(54.26, 47.83), sd=(16.77, 26.94), r=-0.06
+    Dataset 7: mean=(54.27, 47.84), sd=(16.77, 26.94), r=-0.07
+    Dataset 8: mean=(54.27, 47.84), sd=(16.77, 26.94), r=-0.07
+    Dataset 9: mean=(54.27, 47.83), sd=(16.77, 26.94), r=-0.07
+    Dataset 10: mean=(54.27, 47.84), sd=(16.77, 26.93), r=-0.06
+    Dataset 11: mean=(54.27, 47.84), sd=(16.77, 26.94), r=-0.07
+    Dataset 12: mean=(54.27, 47.83), sd=(16.77, 26.94), r=-0.07
+    Dataset 13: mean=(54.26, 47.84), sd=(16.77, 26.93), r=-0.07
 
 
 
@@ -63,21 +71,29 @@ scatter plots to show why it always pays to visualize your data.
     # Code source: Contextual Dynamics Laboratory
     # License: MIT
 
+    import math
+
     import matplotlib.pyplot as plt
 
     import hypertools as hyp
 
     datasets = hyp.load('datasaurus')
 
-    # plot the first six frames of the dozen in a 2x3 grid
-    fig, axes = plt.subplots(2, 3, figsize=(9, 6))
+    ncols = 4
+    nrows = math.ceil(len(datasets) / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(3 * ncols, 3 * nrows))
+    axes = axes.ravel()
 
-    for i, ax in enumerate(axes.ravel()):
-        df = datasets[i]
-        hyp.plot(df, 'o', ndims=2, ax=ax, title=f'Dataset {i + 1}')
+    for i, (df, ax) in enumerate(zip(datasets, axes)):
+        # small black dots via the '.' point marker
+        hyp.plot(df, '.', color='k', ndims=2, ax=ax, title=f'Dataset {i + 1}')
         print(f'Dataset {i + 1}: mean=({df.x.mean():.2f}, {df.y.mean():.2f}), '
               f'sd=({df.x.std():.2f}, {df.y.std():.2f}), '
               f'r={df.x.corr(df.y):.2f}')
+
+    # hide any unused panels
+    for ax in axes[len(datasets):]:
+        ax.set_visible(False)
 
     plt.tight_layout()
     plt.show()
@@ -85,7 +101,7 @@ scatter plots to show why it always pays to visualize your data.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.212 seconds)
+   **Total running time of the script:** (0 minutes 0.835 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_datasaurus.py:
