@@ -74,6 +74,34 @@ def test_plotly_zoom_moves_camera_closer():
     assert r(near) < r(far)
 
 
+def test_plotly_animation_zooms_out_vs_static():
+    """Animated plots pull the camera slightly farther back than the static
+    view so the wireframe box keeps a margin at every rotation angle (never
+    clipped); static plots are visually unchanged."""
+    from hypertools.plot.plotly_backend import _zoom_r, _anim_zoom_r
+
+    # animation radius is strictly larger (camera farther => box smaller)
+    for z in (0.5, 1, 2, 3):
+        assert _anim_zoom_r(z) > _zoom_r(z)
+
+    def r(eye):
+        return float(np.sqrt(eye.x ** 2 + eye.y ** 2 + eye.z ** 2))
+
+    # static plot keeps the un-zoomed-out radius
+    stat = hyp.plot(_walks(), backend='plotly', show=False)
+    assert r(stat.layout.scene.camera.eye) == pytest.approx(_zoom_r(1))
+
+    # spin animation: initial camera AND every frame use the zoomed-out
+    # radius (initial == frame 0 so playback does not jump)
+    spin = hyp.plot(_walks(), animate='spin', duration=2, backend='plotly',
+                    show=False)
+    assert r(spin.layout.scene.camera.eye) == pytest.approx(_anim_zoom_r(1))
+    mid = spin.frames[len(spin.frames) // 2]
+    # frames store the camera as scene.camera (the scene_camera= setter in
+    # _add_animation expands to scene.camera)
+    assert r(mid.layout.scene.camera.eye) == pytest.approx(_anim_zoom_r(1))
+
+
 def test_plotly_static_has_no_trails():
     fig = hyp.plot(_walks(), backend='plotly', show=False)
     assert len(fig.data) == 3  # 2 data + cube, no trail traces

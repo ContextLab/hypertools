@@ -112,6 +112,18 @@ def _zoom_r(zoom):
     return max(0.2, 1.95 * (9.0 - float(zoom)) / 8.0)
 
 
+# ANIMATED plots pull the camera slightly farther back than static plots so
+# the wireframe box keeps a comfortable margin at every rotation angle and is
+# never clipped (Jeremy's animated-plot zoom-out request). Static plots are
+# visually unchanged -- they keep using _zoom_r directly.
+_ANIM_ZOOM_OUT = 1.1
+
+
+def _anim_zoom_r(zoom):
+    """Camera distance for ANIMATED plots: _zoom_r zoomed out by _ANIM_ZOOM_OUT."""
+    return _zoom_r(zoom) * _ANIM_ZOOM_OUT
+
+
 def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 title=None, animate=False, size=None, show=True,
                 save_path=None, frame_rate=30, duration=30, rotations=1,
@@ -256,7 +268,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             xaxis=dict(visible=False, range=[-1, 1]),
             yaxis=dict(visible=False, range=[-1, 1]),
             zaxis=dict(visible=False, range=[-1, 1]),
-            camera=dict(eye=_camera_eye(elev, azim, r=_zoom_r(zoom))),
+            camera=dict(eye=_camera_eye(
+                elev, azim,
+                r=_anim_zoom_r(zoom) if animate else _zoom_r(zoom))),
             # matplotlib's Axes3D uses a 4:4:3 box aspect by default; match
             # it so the cube renders wider than tall, exactly like the
             # matplotlib backend
@@ -578,7 +592,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             angle = azim + 360.0 * rotations * k / n_frames
             frames.append(go.Frame(
                 name=str(k),
-                layout=dict(scene_camera=dict(eye=_camera_eye(elev, angle, r=_zoom_r(zoom))))))
+                layout=dict(scene_camera=dict(eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))))
     elif animate == 'serial':
         # datasets appear one at a time, each growing into place while
         # earlier ones stay fully drawn (never connected to each other)
@@ -605,7 +619,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             if ndims >= 3:
                 angle = azim + 360.0 * rotations * k / n_frames
                 frame_kwargs['layout'] = dict(
-                    scene_camera=dict(eye=_camera_eye(elev, angle, r=_zoom_r(zoom))))
+                    scene_camera=dict(eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
             frames.append(go.Frame(**frame_kwargs))
     else:
         max_len = max(arr.shape[0] for arr in data)
@@ -664,7 +678,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 # mirror that here
                 angle = azim + 360.0 * rotations * k / n_frames
                 frame_kwargs['layout'] = dict(
-                    scene_camera=dict(eye=_camera_eye(elev, angle, r=_zoom_r(zoom))))
+                    scene_camera=dict(eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
             frames.append(go.Frame(**frame_kwargs))
 
     fig.frames = frames

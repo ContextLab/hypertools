@@ -12,6 +12,18 @@ from .._shared.helpers import *
 matplotlib.rcParams["pdf.fonttype"] = 42
 
 
+def _anim_box_zoom(zoom):
+    """``set_box_aspect`` zoom factor for ANIMATED 3D plots.
+
+    Slightly zoomed OUT from the historical ``10 / (9 - zoom)`` mapping so
+    the wireframe bounding box keeps a comfortable margin at every rotation
+    angle and is never clipped (Jeremy's animated-plot zoom-out request).
+    At the default ``zoom=1`` this is ``9 / 8 = 1.125`` (previously 1.25).
+    Static plots are unaffected: they use the default box aspect (zoom=1).
+    """
+    return 9.0 / max(0.5, 9.0 - zoom)
+
+
 def _draw(
     x,
     legend=None,
@@ -382,9 +394,9 @@ def _draw(
         update_lines_parallel.planes = plot_cube(cube_scale, **frame_kwargs)
         ax.view_init(elev=elev, azim=rotations * (360 * (num / data_lines[0].shape[0])))
         # Axes3D.dist was removed in matplotlib >= 3.8, silently disabling
-        # zoom; set_box_aspect(zoom=...) is the supported equivalent.
-        # Old semantics: image scale ~ 10/dist with dist = 9 - zoom.
-        ax.set_box_aspect(None, zoom=10.0 / max(0.5, 9.0 - zoom))
+        # zoom; set_box_aspect(zoom=...) is the supported equivalent. See
+        # _anim_box_zoom for the (slightly zoomed-out) animation mapping.
+        ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
 
         # zip_longest: marker-only animations have no trail artists (trail
         # is None for those datasets), but head artists still animate
@@ -424,9 +436,9 @@ def _draw(
             elev=elev, azim=rotations * (360 * (num / (frame_rate * duration)))
         )
         # Axes3D.dist was removed in matplotlib >= 3.8, silently disabling
-        # zoom; set_box_aspect(zoom=...) is the supported equivalent.
-        # Old semantics: image scale ~ 10/dist with dist = 9 - zoom.
-        ax.set_box_aspect(None, zoom=10.0 / max(0.5, 9.0 - zoom))
+        # zoom; set_box_aspect(zoom=...) is the supported equivalent. See
+        # _anim_box_zoom for the (slightly zoomed-out) animation mapping.
+        ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
 
         for line, data in zip(lines, data_lines):
             line.set_data(data[:, 0:2].T)
@@ -449,7 +461,7 @@ def _draw(
         total_frames = frame_rate * duration
         ax.view_init(elev=elev,
                      azim=azim + rotations * 360.0 * num / total_frames)
-        ax.set_box_aspect(None, zoom=10.0 / max(0.5, 9.0 - zoom))
+        ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
 
         lengths = [d.shape[0] for d in data_lines]
         total_points = sum(lengths)

@@ -244,6 +244,37 @@ def test_plot_animate_parallel_honors_elev():
     assert ax.elev == 45
 
 
+def test_anim_box_zoom_is_zoomed_out():
+    # the animated set_box_aspect zoom is slightly LOWER than the historical
+    # 1.25 (10/8) so the wireframe box keeps a margin at every rotation angle
+    from hypertools.plot.matplotlib_backend import _anim_box_zoom
+    assert _anim_box_zoom(1) == pytest.approx(1.125)   # 9/8, was 10/8=1.25
+    assert _anim_box_zoom(1) < 1.25
+
+
+def test_spin_box_never_clipped():
+    # Regression: a full-rotation spin must keep the wireframe box (and data)
+    # fully inside the figure -- no edge is clipped at any azimuth. Drives the
+    # real update_lines_spin closure and checks the inked bounding box has a
+    # margin to every edge across a full 360 deg rotation.
+    d = reducer(data, ndims=3)
+    fig, ani = plot.plot(d, animate='spin', show=False)
+    total = ani._save_count            # frame_rate * duration (default 900)
+    for num in np.linspace(0, total - 1, 12, dtype=int):
+        ani._func(int(num), *ani._args)
+        fig.canvas.draw()
+        rgb = np.asarray(fig.canvas.buffer_rgba())[..., :3]
+        inked = np.any(rgb < 250, axis=-1)
+        ys, xs = np.where(inked)
+        h, w = inked.shape
+        left, right = int(xs.min()), w - 1 - int(xs.max())
+        top, bottom = int(ys.min()), h - 1 - int(ys.max())
+        assert min(left, right, top, bottom) > 10, (
+            f'box clipped at azim frame {int(num)}: '
+            f'L={left} R={right} T={top} B={bottom}')
+    plt.close('all')
+
+
 ## LEGEND PLACEMENT ##
 
 
