@@ -19,6 +19,12 @@ def _save_animation(line_ani, save_path, frame_rate):
     anything else use the ffmpeg writer, matching hypertools' historical
     behavior.
     """
+    # gif / apng / video writers save EVERY animation frame (no subsampling)
+    # at fps=frame_rate, so an exported file plays in real time: its
+    # save_count (== frame_rate * duration) frames at 1000/frame_rate ms each
+    # total ~= duration seconds. Only the vector (SVG) writer subsamples, to
+    # bound file size. Do not subsample the raster/video paths or playback
+    # would run too fast.
     ext = save_path.lower().rsplit('.', 1)[-1]
     if ext == 'svg':
         _save_animated_svg(line_ani, save_path, frame_rate)

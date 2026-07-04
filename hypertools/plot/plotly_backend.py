@@ -394,13 +394,23 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
             f.write(combine_frames_svg(frame_svgs, max(1.0, duration)))
         return
 
+    # exported files contain EVERY animation frame (frame_snapshots iterates
+    # the full fig.frames -- no subsampling). Frame subsampling is reserved
+    # for the interactive-HTML embedding path (_show_sphinx_gallery), where
+    # it caps embedded-file size; an exported gif/png/mp4 must never be
+    # subsampled or it would play back too fast.
     images = []
     for snapshot in frame_snapshots():
         png = snapshot.to_image(format='png', width=width, height=height)
         images.append(Image.open(io.BytesIO(png)).convert('RGB'))
 
-    n_frames = max(1, len(images))
-    frame_ms = max(20, int(1000.0 * duration / n_frames))
+    # per-frame delay is the TRUE inter-frame interval (1000 / frame_rate),
+    # tied to the requested framerate -- NOT 1000*duration/n_frames. With the
+    # full frame set (n_frames == frame_rate*duration) the two agree, but
+    # deriving the delay from frame_rate keeps real-time playback correct and
+    # decoupled from the frame count (a regression guard against any future
+    # subsample-and-compensate creeping into the export path).
+    frame_ms = max(1, int(round(1000.0 / max(float(frame_rate), 1e-6))))
 
     if ext == 'gif':
         images[0].save(save_path, save_all=True, append_images=images[1:],
@@ -412,7 +422,7 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
         if target != save_path:
             os.replace(target, save_path)
     else:
-        fps = max(1, int(round(1000.0 / frame_ms)))
+        fps = max(1, int(round(float(frame_rate))))
         with tempfile.TemporaryDirectory() as tmpdir:
             for i, img in enumerate(images):
                 img.save(os.path.join(tmpdir, f'frame_{i:04d}.png'))

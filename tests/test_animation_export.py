@@ -26,6 +26,18 @@ def _animated_frames(path):
         return getattr(im, 'n_frames', 1)
 
 
+def _gif_playback(path):
+    """(n_frames, total_playback_seconds) read from an exported gif's
+    per-frame delays -- the real-time duration a viewer experiences."""
+    with Image.open(path) as im:
+        n = getattr(im, 'n_frames', 1)
+        total_ms = 0
+        for i in range(n):
+            im.seek(i)
+            total_ms += im.info.get('duration', 0)
+    return n, total_ms / 1000.0
+
+
 def test_matplotlib_gif_export(tmp_path):
     out = str(tmp_path / 'anim.gif')
     hyp.plot(walk, animate=True, duration=2, frame_rate=10,
@@ -72,6 +84,34 @@ def test_plotly_mp4_export(tmp_path):
     hyp.plot(walk, animate=True, duration=2, backend='plotly',
              save_path=out, show=False)
     assert os.path.getsize(out) > 1000
+
+
+# --- exported gifs must preserve real-time playback duration ---------------
+# Regression guard for the "exported gifs play ~6x too fast" bug: an exported
+# gif must contain the FULL frame set (frame_rate * duration frames) at the
+# true per-frame delay (1000 / frame_rate ms), so total playback ~= duration
+# seconds. frame_rate=10 -> 100 ms/frame, which the gif format's 10 ms
+# (centisecond) delay granularity stores exactly, keeping the assertion tight.
+
+def test_matplotlib_spin_gif_preserves_realtime_duration(tmp_path):
+    duration, frame_rate = 2, 10
+    out = str(tmp_path / 'spin.gif')
+    hyp.plot(walk, animate='spin', duration=duration, frame_rate=frame_rate,
+             save_path=out, show=False)
+    plt.close('all')
+    n, total = _gif_playback(out)
+    assert n == duration * frame_rate       # full frame set, not subsampled
+    assert abs(total - duration) <= 0.25 * duration   # ~real-time, not 6x fast
+
+
+def test_plotly_spin_gif_preserves_realtime_duration(tmp_path):
+    duration, frame_rate = 2, 10
+    out = str(tmp_path / 'spin.gif')
+    hyp.plot(walk, animate='spin', duration=duration, frame_rate=frame_rate,
+             backend='plotly', save_path=out, show=False)
+    n, total = _gif_playback(out)
+    assert n == duration * frame_rate       # full frame set, not subsampled
+    assert abs(total - duration) <= 0.25 * duration   # ~real-time, not 6x fast
 
 
 def test_mixture_soft_membership_on_overlapping_clusters():
