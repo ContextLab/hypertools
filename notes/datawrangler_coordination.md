@@ -25,3 +25,6 @@ an error under a future pandas. Our tests still pass; not blocking.
 ## API notes / deltas from the fork's dw usage
 - Text embedding entry: `dw.wrangle(docs, model='CountVectorizer')` (also accepts
   `text_kwargs={'model': ...}`); fits on the bundled minipedia corpus by default.
+
+## 2026-07-04 (round 8, CI): dw Windows import crash
+- **data-wrangler#32**: config.ini `homedir = os.getenv('HOME')` -> `os.path.join(None,...)` TypeError on Windows (HOME unset). Blocked ALL Windows CI (collection errors). Fix: use `os.path.expanduser('~')`. hypertools workaround: `os.environ.setdefault('HOME', os.path.expanduser('~'))` before importing dw in core/configurator.py. Lift workaround once dw#32 lands.
