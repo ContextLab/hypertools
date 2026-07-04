@@ -6,6 +6,14 @@ lookup for an unconfigured function/section yields {} instead of KeyError.
 """
 import os
 
+# datawrangler (>=0.5) evaluates ``os.getenv('HOME')`` at import time to build
+# its data directory. ``HOME`` is unset on Windows (which uses ``USERPROFILE``),
+# so ``os.path.join(None, ...)`` raises ``TypeError`` and importing dw -- and
+# therefore hypertools -- crashes on Windows. Point ``HOME`` at the real home
+# directory (``expanduser`` resolves it cross-platform) before importing dw.
+# Filed upstream: dw should use ``os.path.expanduser`` instead of getenv.
+os.environ.setdefault("HOME", os.path.expanduser("~"))
+
 import datawrangler as dw
 
 from .shared import RobustDict

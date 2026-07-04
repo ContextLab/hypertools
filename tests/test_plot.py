@@ -257,13 +257,17 @@ def test_spin_box_never_clipped():
     # fully inside the figure -- no edge is clipped at any azimuth. Drives the
     # real update_lines_spin closure and checks the inked bounding box has a
     # margin to every edge across a full 360 deg rotation.
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
     d = reducer(data, ndims=3)
     fig, ani = plot.plot(d, animate='spin', show=False)
+    # plot(show=False) closes the figure; matplotlib >= 3.11 then resets its
+    # canvas (dropping buffer_rgba), so rasterize through a fresh Agg canvas.
+    canvas = FigureCanvasAgg(fig)
     total = ani._save_count            # frame_rate * duration (default 900)
     for num in np.linspace(0, total - 1, 12, dtype=int):
         ani._func(int(num), *ani._args)
-        fig.canvas.draw()
-        rgb = np.asarray(fig.canvas.buffer_rgba())[..., :3]
+        canvas.draw()
+        rgb = np.asarray(canvas.buffer_rgba())[..., :3]
         inked = np.any(rgb < 250, axis=-1)
         ys, xs = np.where(inked)
         h, w = inked.shape

@@ -872,38 +872,67 @@ def plot(
     return fig
 
 
-def _fit_right_legend(fig, ax, pad=0.02, max_iter=5):
-    """Shrink the axes so a right-side (outside) legend stays within the
-    figure.
+def _fit_right_legend(fig, ax, pad_in=0.15, max_iter=6):
+    """Ensure a right-side (outside) legend stays fully within the figure.
 
-    hypertools draws its legend to the RIGHT of the plot via
+    hypertools anchors its legend to the RIGHT of the plot via
     ``ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5))``.
-    matplotlib's ``tight_layout`` reserves horizontal room for such a legend
-    on 2D axes, but not on 3D (Axes3D) axes -- so a legend wider than the
-    default right margin overflows and clips off the figure's right edge.
-    Measure the rendered legend and pull the subplot's right edge leftward
-    (via ``subplots_adjust``) until the legend's right edge sits inside the
-    canvas, so it renders fully to the right of the plot on both 2D and 3D.
+    ``tight_layout`` reserves horizontal room for such a legend on 2D axes but
+    NOT on 3D (Axes3D) axes, and a wide legend (long labels or many entries)
+    overflows the figure's right edge on either -- the earlier "shrink the
+    axes" approach hit a floor and gave up, clipping the legend. Instead widen
+    the figure, adding room only on the right while keeping the plot's absolute
+    size and position, until the legend's right edge sits inside the canvas.
+    Fixing the figure itself (rather than a save kwarg) means every downstream
+    save path AND interactive/notebook display shows the full legend.
     """
+    import matplotlib
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
     legend = ax.get_legend()
     if legend is None:
         return
-    for _ in range(max_iter):
-        fig.canvas.draw()
-        try:
-            lb = legend.get_window_extent().transformed(
-                fig.transFigure.inverted())
-        except Exception:
-            return
-        overflow = lb.x1 - (1.0 - pad)
-        if overflow <= 1e-3:
-            return
-        pos = ax.get_position()
-        new_right = pos.x1 - overflow - 0.005
-        # never collapse the plot to nothing; stop if we hit the floor
-        if new_right <= 0.15 or new_right >= pos.x1:
-            return
-        fig.subplots_adjust(right=new_right)
+    # tight_layout may install a persistent layout engine that re-runs on every
+    # draw/save and would override the manual set_position below (undoing the
+    # widening). Freeze it so our figure resizing sticks through savefig.
+    try:
+        fig.set_layout_engine('none')
+    except Exception:
+        pass
+    target_px = max(6.0, pad_in * fig.dpi)   # desired right-edge margin, pixels
+    # hypertools draws inside a seaborn rc_context, but the figure is actually
+    # rendered downstream (the sphinx-gallery scraper, or a bare savefig after
+    # plot() returns) under the RESTORED default rcParams, whose font is WIDER
+    # than seaborn's. Measuring under the seaborn font makes a legend look like
+    # it fits when it clips in the real output, so measure under the default
+    # rcParams to match what actually gets saved.
+    with plt.rc_context(matplotlib.rcParamsDefault):
+        for _ in range(max_iter):
+            # Measure the ACTUAL rasterized pixels via a fresh Agg canvas --
+            # the only reliable extent (get_tightbbox / get_window_extent both
+            # under-report the legend's rendered text and stop too early).
+            canvas = FigureCanvasAgg(fig)
+            canvas.draw()
+            buf = np.asarray(canvas.buffer_rgba())[..., :3]
+            inked_cols = np.where((buf < 245).any(axis=(0, 2)))[0]
+            if not len(inked_cols):
+                return
+            w_px = buf.shape[1]
+            margin_px = w_px - 1 - int(inked_cols.max())
+            if margin_px >= target_px:
+                return  # legend already has a right-edge margin
+            deficit_in = (target_px - margin_px) / fig.dpi
+            w, h = fig.get_size_inches()
+            pos = ax.get_position()
+            left_in, plot_w_in = pos.x0 * w, pos.width * w
+            # widen (add room only on the right) while keeping the plot's
+            # absolute size and position, so the legend gains room without
+            # shrinking the plot; cap total growth at 3x as a runaway guard.
+            new_w = min(w + deficit_in, 3.0 * w)
+            if new_w <= w + 1e-3:
+                return
+            fig.set_size_inches(new_w, h)
+            ax.set_position([left_in / new_w, pos.y0,
+                             plot_w_in / new_w, pos.height])
 
 
 def _flatten_nested(x, _depth=1):

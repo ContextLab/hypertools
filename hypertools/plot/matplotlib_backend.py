@@ -166,6 +166,16 @@ def _draw(
         is_3d = hasattr(ax, "get_proj")
         if is_3d:
             proj = ax.get_proj()
+        # repositioning the annotations needs a renderer; after plt.close()
+        # (matplotlib >= 3.11 resets the canvas) or on a headless base canvas
+        # there may be none -- update the coordinates but skip the
+        # renderer-dependent reposition rather than crash on a missing attr.
+        renderer = getattr(fig.canvas, "renderer", None)
+        if renderer is None and hasattr(fig.canvas, "get_renderer"):
+            try:
+                renderer = fig.canvas.get_renderer()
+            except Exception:
+                renderer = None
         for entry in labels_and_points:
             if is_3d:
                 label, x, y, z = entry
@@ -173,7 +183,8 @@ def _draw(
             else:
                 label, x2, y2 = entry
             label.xy = x2, y2
-            label.update_positions(fig.canvas.renderer)
+            if renderer is not None:
+                label.update_positions(renderer)
             label._visible = True
         fig.canvas.draw()
 
