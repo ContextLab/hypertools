@@ -72,7 +72,7 @@ This is a trajectory of brain data plotted in 3D with multidimensional scaling.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 7.543 seconds)
+   **Total running time of the script:** (0 minutes 7.813 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate_MDS.py:
