@@ -9,9 +9,9 @@ from ..tools.cluster import cluster as clusterer, mixture_models
 from .colors import mat2colors, colors2groups
 from ..tools.reduce import reduce as reducer
 from ..tools.format_data import format_data
-from .draw import _draw
+from .matplotlib_backend import _draw
 from .backend import manage_backend
-from .interactive import resolve_backend
+from .plotly_backend import resolve_backend
 from ..datageometry import DataGeometry
 
 
@@ -697,9 +697,9 @@ def plot(
 
     # interactive (plotly) backend: render with plotly and skip the
     # matplotlib pipeline entirely. backend='auto' resolves to plotly only
-    # on Colab/Kaggle (see hypertools.plot.interactive for the policy).
+    # on Colab/Kaggle (see hypertools.plot.plotly_backend for the policy).
     if resolve_backend(backend) == "plotly":
-        from .interactive import plotly_draw
+        from .plotly_backend import plotly_draw
 
         if "color" not in mpl_kwargs:
             import seaborn as sns_local
