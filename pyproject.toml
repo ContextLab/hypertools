@@ -41,7 +41,7 @@ dependencies = [
     # HyperTools 2.0: data-wrangling core (funnel/stack/unstack/format detection, model
     # dispatch, text+HF embeddings). 0.5.0+ adds pandas 3.0 support (dw#30/#31).
     # https://github.com/ContextLab/data-wrangler
-    "pydata-wrangler>=0.5.0",
+    "pydata-wrangler>=0.5.1",
 ]
 
 [project.optional-dependencies]
@@ -50,7 +50,7 @@ dependencies = [
 interactive = ["plotly>=5.20.0", "kaleido>=0.2.1"]
 # Transformer / sentence-transformers text embeddings via datawrangler's hf extra
 # (torch/transformers/sentence-transformers/tokenizers/datasets). Opt-in; never in base install.
-text = ["pydata-wrangler[hf]>=0.5.0"]
+text = ["pydata-wrangler[hf]>=0.5.1"]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",

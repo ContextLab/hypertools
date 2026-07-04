@@ -6,12 +6,12 @@ lookup for an unconfigured function/section yields {} instead of KeyError.
 """
 import os
 
-# datawrangler (>=0.5) evaluates ``os.getenv('HOME')`` at import time to build
-# its data directory. ``HOME`` is unset on Windows (which uses ``USERPROFILE``),
-# so ``os.path.join(None, ...)`` raises ``TypeError`` and importing dw -- and
-# therefore hypertools -- crashes on Windows. Point ``HOME`` at the real home
-# directory (``expanduser`` resolves it cross-platform) before importing dw.
-# Filed upstream: dw should use ``os.path.expanduser`` instead of getenv.
+# datawrangler 0.5.0 evaluated ``os.getenv('HOME')`` at import time to build
+# its data directory; ``HOME`` is unset on Windows (which uses ``USERPROFILE``),
+# so ``os.path.join(None, ...)`` raised ``TypeError`` and importing dw -- and
+# therefore hypertools -- crashed on Windows. Fixed upstream in dw 0.5.1
+# (ContextLab/data-wrangler#32, now uses ``os.path.expanduser``); we require
+# >=0.5.1, but keep this zero-risk guard for environments stuck on 0.5.0.
 os.environ.setdefault("HOME", os.path.expanduser("~"))
 
 import datawrangler as dw
