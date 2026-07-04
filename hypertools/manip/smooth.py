@@ -3,6 +3,7 @@ import datawrangler as dw
 import numpy as np
 import pandas as pd
 from scipy.signal import savgol_filter
+from scipy.ndimage import gaussian_filter1d
 
 import warnings
 
@@ -18,7 +19,8 @@ def fitter(data, **kwargs):
     data_max = data.max(axis=kwargs['axis'])
     data_min = data.min(axis=kwargs['axis'])
 
-    return {'axis': kwargs['axis'], 'kernel_width': kwargs['kernel_width'], 'order': kwargs['order'], 'max': data_max,
+    return {'axis': kwargs['axis'], 'kernel_width': kwargs['kernel_width'], 'order': kwargs['order'],
+            'mode': kwargs['mode'], 'var': kwargs['var'], 'max': data_max,
             'min': data_min, 'maintain_bounds': kwargs['maintain_bounds']}
 
 
@@ -26,7 +28,10 @@ def fitter(data, **kwargs):
 def _transform_stacked(data, **kwargs):
     smoothed = data.copy()
     for c in data.columns:
-        smoothed[c] = savgol_filter(data[c].values, kwargs['kernel_width'], kwargs['order'])
+        if kwargs['mode'] == 'gaussian':
+            smoothed[c] = gaussian_filter1d(np.asarray(data[c], dtype=float), sigma=np.sqrt(kwargs['var']))
+        else:
+            smoothed[c] = savgol_filter(data[c].values, kwargs['kernel_width'], kwargs['order'])
 
         if kwargs['maintain_bounds']:
             smoothed[c] = np.clip(smoothed[c].to_numpy(), kwargs['min'][c], kwargs['max'][c])
@@ -73,17 +78,19 @@ def transformer(data, **kwargs):
 
 class Smooth(Manipulator):
     # noinspection PyShadowingBuiltins
-    def __init__(self, axis=0, kernel_width=11, order=3, maintain_bounds=True):
-        required = ['axis', 'min', 'max', 'kernel_width', 'order', 'maintain_bounds']
-        super().__init__(axis=axis, fitter=fitter, transformer=transformer, data=None, kernel_width=kernel_width,
-                         order=order, maintain_bounds=maintain_bounds,
+    def __init__(self, axis=0, mode='savgol', kernel_width=11, order=3, var=300, maintain_bounds=True):
+        required = ['axis', 'min', 'max', 'mode', 'kernel_width', 'order', 'var', 'maintain_bounds']
+        super().__init__(axis=axis, fitter=fitter, transformer=transformer, data=None, mode=mode,
+                         kernel_width=kernel_width, order=order, var=var, maintain_bounds=maintain_bounds,
                          required=required)
 
         self.axis = axis
         self.fitter = fitter
         self.transformer = transformer
         self.data = None
+        self.mode = mode
         self.kernel_width = kernel_width
         self.order = order
+        self.var = var
         self.maintain_bounds = maintain_bounds
         self.required = required

@@ -13,9 +13,6 @@ Output: docs/images/v2.0-animations/weights_hyperaligned.gif
 import os
 import subprocess
 
-import numpy as np
-from scipy.ndimage import gaussian_filter1d
-
 import matplotlib
 matplotlib.use('Agg')
 import hypertools as hyp
@@ -28,9 +25,10 @@ OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 
 def smooth(datasets, var=KERNEL_VAR):
-    """Gaussian temporal smoothing (timecorr-style, variance in timepoints)."""
-    return [gaussian_filter1d(np.asarray(d, dtype=np.float64),
-                              sigma=np.sqrt(var), axis=0)
+    """Gaussian temporal smoothing (timecorr-style, variance in timepoints),
+    via hyp.manip's Smooth(mode='gaussian') -- see hypertools/manip/smooth.py.
+    """
+    return [hyp.manip(d, model='Smooth', mode='gaussian', var=var, axis=0)
             for d in datasets]
 
 
