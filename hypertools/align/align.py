@@ -10,13 +10,13 @@ import datawrangler as dw
 from .common import Aligner
 from .hyperalign import HyperAlign
 from .procrustes import Procrustes
-from .srm import SharedResponseModel, DeterministicSharedResponseModel
+from .srm import SharedResponseModel, DeterministicSharedResponseModel, RobustSharedResponseModel
 from .null import NullAlign
 from ..core.shared import unpack_model
 
 
 ALIGNERS = [HyperAlign, SharedResponseModel, DeterministicSharedResponseModel,
-            Procrustes, NullAlign]
+            RobustSharedResponseModel, Procrustes, NullAlign]
 
 
 @dw.decorate.funnel

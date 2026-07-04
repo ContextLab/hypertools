@@ -1,8 +1,6 @@
 """Shared Response Model aligners (Chen et al., 2015) as :class:`Aligner` children.
 
-Adapters over the vendored ``hypertools.external.brainiak.{SRM, DetSRM}``.
-Note: ``external.brainiak`` does not provide ``RSRM`` (Robust SRM), so no
-``RobustSharedResponseModel`` is exported here.
+Adapters over the vendored ``hypertools.external.brainiak.{SRM, DetSRM, RSRM}``.
 """
 import numpy as np
 import pandas as pd
@@ -10,7 +8,7 @@ from sklearn.exceptions import NotFittedError
 
 from .common import Aligner
 
-from ..external.brainiak import SRM, DetSRM
+from ..external.brainiak import SRM, DetSRM, RSRM
 
 
 def fitter(data, align_type, **kwargs):
@@ -43,6 +41,10 @@ def detsrm_fitter(data, **kwargs):
     return fitter(data, DetSRM, **kwargs)
 
 
+def rsrm_fitter(data, **kwargs):
+    return fitter(data, RSRM, **kwargs)
+
+
 class SharedResponseModel(Aligner):
     """Shared Response Model (Chen et al., 2015).
 
@@ -64,4 +66,16 @@ class DeterministicSharedResponseModel(Aligner):
     def __init__(self, features=None, **kwargs):
         super().__init__(required=['model', 'features', 'indices'],
                          fitter=detsrm_fitter, transformer=transformer,
+                         data=None, features=features, **kwargs)
+
+
+class RobustSharedResponseModel(Aligner):
+    """Robust Shared Response Model (Turek et al., 2017).
+
+    :param features: number of shared features (default: minimum number of
+        columns across datasets).
+    """
+    def __init__(self, features=None, **kwargs):
+        super().__init__(required=['model', 'features', 'indices'],
+                         fitter=rsrm_fitter, transformer=transformer,
                          data=None, features=features, **kwargs)

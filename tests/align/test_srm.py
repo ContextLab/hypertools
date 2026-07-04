@@ -23,11 +23,13 @@ def test_detsrm_runs_and_shapes():
     assert len(out) == 2 and np.asarray(out[0]).shape[1] == 3
 
 
-def test_rsrm_not_exported():
-    # external.brainiak vendors SRM + DetSRM only, so no RobustSharedResponseModel.
+def test_rsrm_now_exported():
+    # external.brainiak now vendors SRM + DetSRM + RSRM (see tests/align/test_rsrm.py
+    # for full RobustSharedResponseModel coverage); this guard test previously
+    # asserted the pre-vendoring state and has been flipped to match.
     # NB: use `from hypertools.align import srm` (not `import hypertools.align.srm
     # as srm`) — the classic `hyp.align` callable owns the `hypertools.align`
     # attribute, so the chained-attribute import form is shadowed by design. The
     # submodule still resolves via the import machinery / sys.modules.
     from hypertools.align import srm
-    assert not hasattr(srm, 'RobustSharedResponseModel')
+    assert hasattr(srm, 'RobustSharedResponseModel')

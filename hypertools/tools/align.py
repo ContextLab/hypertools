@@ -20,6 +20,8 @@ _ALIAS = {'hyper': 'HyperAlign', 'HyperAlign': 'HyperAlign',
           'SharedResponseModel': 'SharedResponseModel',
           'DetSRM': 'DeterministicSharedResponseModel',
           'DeterministicSharedResponseModel': 'DeterministicSharedResponseModel',
+          'RSRM': 'RobustSharedResponseModel',
+          'RobustSharedResponseModel': 'RobustSharedResponseModel',
           'Procrustes': 'Procrustes', 'NullAlign': 'NullAlign'}
 
 
