@@ -201,3 +201,50 @@ def test_plot_animate_check_ax():
 def test_plot_animate_check_line_ani():
     fig, ani = plot.plot(data, animate=True, show=False)
     assert isinstance(ani, mpl.animation.FuncAnimation)
+
+
+## LEGEND PLACEMENT ##
+
+
+def _legend_and_axes_fraction(fig):
+    """(legend_bbox, axes_bbox) in figure-fraction coordinates."""
+    ax = fig.axes[0]
+    lg = ax.get_legend()
+    assert lg is not None, "no legend was drawn"
+    fig.canvas.draw()
+    inv = fig.transFigure.inverted()
+    return (lg.get_window_extent().transformed(inv),
+            ax.get_window_extent().transformed(inv))
+
+
+@pytest.mark.parametrize("ndims", [2, 3])
+def test_legend_is_right_of_plot_and_within_figure(ndims):
+    # the legend must sit to the RIGHT of the axes AND stay fully inside the
+    # figure (not clipped off the right edge). tight_layout reserves room for
+    # an outside legend on 2D axes but not on 3D axes, so wide 3D legends used
+    # to overflow the canvas.
+    d = [np.random.default_rng(0).random((15, ndims)) for _ in range(3)]
+    fig = plot.plot(d, legend=['first label', 'second label', 'third label'],
+                    show=False)
+    lb, ab = _legend_and_axes_fraction(fig)
+    # to the right of the axes
+    assert lb.x0 >= ab.x1 - 0.05, "legend is not to the right of the axes"
+    # not clipped off the figure's right edge
+    assert lb.x1 <= 1.001, f"legend clipped off right edge (x1={lb.x1:.3f})"
+    plt.close('all')
+
+
+def test_legend_right_with_long_labels_3d_not_clipped():
+    # a 3D plot with long legend labels is the case that used to clip: the
+    # legend must remain fully within the figure.
+    d = [np.random.default_rng(0).random((15, 3)) for _ in range(3)]
+    fig = plot.plot(
+        d,
+        legend=['very long label number one',
+                'another quite long label two',
+                'third extremely long legend label'],
+        show=False)
+    lb, ab = _legend_and_axes_fraction(fig)
+    assert lb.x0 >= ab.x1 - 0.05
+    assert lb.x1 <= 1.001, f"legend clipped off right edge (x1={lb.x1:.3f})"
+    plt.close('all')

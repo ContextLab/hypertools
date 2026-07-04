@@ -801,6 +801,13 @@ def plot(
             # tight_layout would shrink them back into subplot margins)
             if not animate:
                 plt.tight_layout()
+                # tight_layout reserves room for an outside (right-side)
+                # legend on 2D axes but NOT on 3D axes, so a wide legend on a
+                # 3D plot overflows and clips off the figure's right edge.
+                # Pull the axes leftward until the legend fits within the
+                # canvas, keeping it fully visible to the right of the plot.
+                if legend is not None and ax is not None:
+                    _fit_right_legend(fig, ax)
 
             # save
             if save_path is not None:
@@ -845,6 +852,40 @@ def plot(
         return fig, line_ani
 
     return fig
+
+
+def _fit_right_legend(fig, ax, pad=0.02, max_iter=5):
+    """Shrink the axes so a right-side (outside) legend stays within the
+    figure.
+
+    hypertools draws its legend to the RIGHT of the plot via
+    ``ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5))``.
+    matplotlib's ``tight_layout`` reserves horizontal room for such a legend
+    on 2D axes, but not on 3D (Axes3D) axes -- so a legend wider than the
+    default right margin overflows and clips off the figure's right edge.
+    Measure the rendered legend and pull the subplot's right edge leftward
+    (via ``subplots_adjust``) until the legend's right edge sits inside the
+    canvas, so it renders fully to the right of the plot on both 2D and 3D.
+    """
+    legend = ax.get_legend()
+    if legend is None:
+        return
+    for _ in range(max_iter):
+        fig.canvas.draw()
+        try:
+            lb = legend.get_window_extent().transformed(
+                fig.transFigure.inverted())
+        except Exception:
+            return
+        overflow = lb.x1 - (1.0 - pad)
+        if overflow <= 1e-3:
+            return
+        pos = ax.get_position()
+        new_right = pos.x1 - overflow - 0.005
+        # never collapse the plot to nothing; stop if we hit the floor
+        if new_right <= 0.15 or new_right >= pos.x1:
+            return
+        fig.subplots_adjust(right=new_right)
 
 
 def _flatten_nested(x, _depth=1):

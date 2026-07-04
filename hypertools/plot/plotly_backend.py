@@ -37,13 +37,19 @@ CUBE_LINEWIDTH_PT = 1.5      # hypertools' wireframe cube linewidth (1pt in
                              # matplotlib; slightly heavier here because
                              # plotly's 3D line antialiasing renders lighter)
 
-# matplotlib format-string characters -> plotly marker symbols
+# matplotlib format-string characters -> plotly marker symbols. This MUST
+# cover every marker character matplotlib's fmt grammar accepts (the printable
+# keys of matplotlib.lines.Line2D.markers): a missing entry makes _parse_fmt
+# treat that marker as "no marker" and silently fall through to a lines-only
+# trace (this is how ',' rendered as solid lines instead of pixels).
 _MARKER_SYMBOLS = {
-    '.': 'circle', 'o': 'circle', 's': 'square', '^': 'triangle-up',
-    'v': 'triangle-down', '<': 'triangle-left', '>': 'triangle-right',
-    '*': 'star', '+': 'cross-thin', 'x': 'x-thin', 'D': 'diamond',
-    'd': 'diamond-tall', 'p': 'pentagon', 'h': 'hexagon', 'H': 'hexagon2',
-    '8': 'octagon',
+    '.': 'circle', ',': 'circle', 'o': 'circle', 's': 'square',
+    '^': 'triangle-up', 'v': 'triangle-down', '<': 'triangle-left',
+    '>': 'triangle-right', '1': 'y-down', '2': 'y-up', '3': 'y-left',
+    '4': 'y-right', '8': 'octagon', 'p': 'pentagon', 'P': 'cross',
+    '*': 'star', 'h': 'hexagon', 'H': 'hexagon2', '+': 'cross-thin',
+    'x': 'x-thin', 'X': 'x', 'D': 'diamond', 'd': 'diamond-tall',
+    '|': 'line-ns', '_': 'line-ew',
 }
 # plotly's Scatter3d supports only a small symbol set; map unsupported 2D
 # symbols to their closest 3D-legal equivalent
@@ -55,6 +61,8 @@ _SYMBOL_3D_FALLBACK = {
     'star': 'diamond-open', 'cross-thin': 'cross', 'x-thin': 'x',
     'diamond-tall': 'diamond', 'pentagon': 'circle', 'hexagon': 'circle',
     'hexagon2': 'circle', 'octagon': 'circle',
+    'y-up': 'cross', 'y-down': 'cross', 'y-left': 'cross',
+    'y-right': 'cross', 'line-ns': 'cross', 'line-ew': 'cross',
 }
 
 # matplotlib linestyles -> plotly dash styles ('-.' must be checked first)
