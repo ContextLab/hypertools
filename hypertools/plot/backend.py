@@ -1093,6 +1093,14 @@ def manage_backend(plot_func):
     def plot_wrapper(*args, **kwargs):
         # record current rcParams
         old_rcParams = mpl.rcParams.copy()
+        # Editable text in vector (PDF/PS) exports is a useful default for a
+        # scientific-figure library, but it must NOT leak into the user's
+        # global matplotlib config as an import-time side effect (issue #259).
+        # Set it here, inside the managed scope: any save that happens during
+        # the wrapped ``plot()`` call uses TrueType fonts, and the ``finally``
+        # block below restores the user's original rcParams afterward.
+        mpl.rcParams["pdf.fonttype"] = 42
+        mpl.rcParams["ps.fonttype"] = 42
         # assume using the mock-`contextlib.nullcontext` context
         backend_context = _null_backend_context
         tmp_backend = None

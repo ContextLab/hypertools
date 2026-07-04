@@ -9,8 +9,6 @@ import matplotlib.animation as animation
 import matplotlib.patches as patches
 from .._shared.helpers import *
 
-matplotlib.rcParams["pdf.fonttype"] = 42
-
 
 def _anim_box_zoom(zoom):
     """``set_box_aspect`` zoom factor for ANIMATED 3D plots.
@@ -153,16 +151,27 @@ def _draw(
         fig.canvas.draw()
 
     def update_position(e):
-        """Update label positions in 3d chart
+        """Update label positions in chart (2D or 3D)
         Args:
             e (mouse event) - event handle to update on
         Returns:
             None
         """
 
-        proj = ax.get_proj()
-        for label, x, y, z in labels_and_points:
-            x2, y2, _ = proj3d.proj_transform(x, y, z, proj)
+        # `ax.get_proj()` / `proj3d.proj_transform` only exist on 3D
+        # (Axes3D) axes -- a 2D `Axes` lacks `get_proj`. `annotate_plot`
+        # stores 4-tuples (label, x, y, z) for 3D vs. 3-tuples
+        # (label, x, y) for 2D (mirroring its own
+        # `data[0].shape[-1] > 2` branch), so branch the same way here.
+        is_3d = hasattr(ax, "get_proj")
+        if is_3d:
+            proj = ax.get_proj()
+        for entry in labels_and_points:
+            if is_3d:
+                label, x, y, z = entry
+                x2, y2, _ = proj3d.proj_transform(x, y, z, proj)
+            else:
+                label, x2, y2 = entry
             label.xy = x2, y2
             label.update_positions(fig.canvas.renderer)
             label._visible = True

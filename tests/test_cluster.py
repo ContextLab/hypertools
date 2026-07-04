@@ -25,6 +25,17 @@ def test_cluster_hdbscan():
     assert len(set(hdbscan_labels)) == 2
 
 
+def test_cluster_density_models_by_name():
+    # regression test for GH #146 / #190: density/bandwidth clusterers
+    # (no n_clusters param) must resolve by string name and must not have
+    # n_clusters force-injected into their constructor
+    for name in ('MeanShift', 'DBSCAN'):
+        result = cluster(data, cluster=name)
+        assert isinstance(result, list)
+        assert len(result) == len(data)
+        assert all(isinstance(v, (int, np.integer)) for v in result)
+
+
 def test_cluster_gaussian_mixture_returns_proportions():
     props = cluster(data, cluster='GaussianMixture', n_clusters=2)
     assert props.shape == (200, 2)

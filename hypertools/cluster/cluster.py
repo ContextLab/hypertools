@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import inspect
 import warnings
 from sklearn.cluster import (
     KMeans,
@@ -8,6 +9,10 @@ from sklearn.cluster import (
     FeatureAgglomeration,
     SpectralClustering,
     HDBSCAN,
+    MeanShift,
+    DBSCAN,
+    OPTICS,
+    AffinityPropagation,
 )
 from sklearn.mixture import GaussianMixture, BayesianGaussianMixture
 from sklearn.decomposition import LatentDirichletAllocation, NMF
@@ -26,6 +31,13 @@ models = {
     # sklearn's built-in HDBSCAN (>=1.3) replaces the unmaintained external
     # hdbscan package, which required a SyntaxWarning filter to import cleanly
     "HDBSCAN": HDBSCAN,
+    # density/bandwidth-based clusterers: these discover the number of
+    # clusters themselves and have no n_clusters parameter (see the
+    # signature-based exemption below)
+    "MeanShift": MeanShift,
+    "DBSCAN": DBSCAN,
+    "OPTICS": OPTICS,
+    "AffinityPropagation": AffinityPropagation,
 }
 
 # mixture / soft-clustering models: instead of a hard label per observation,
@@ -52,18 +64,22 @@ def cluster(x, cluster="KMeans", n_clusters=3, format_data=True):
     cluster : str or dict
         Model to use to discover clusters.  Supported algorithms are: KMeans,
         MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
-        SpectralClustering and HDBSCAN (default: KMeans), plus the mixture
+        SpectralClustering, HDBSCAN, MeanShift, DBSCAN, OPTICS and
+        AffinityPropagation (default: KMeans), plus the mixture
         (soft-clustering) models GaussianMixture, BayesianGaussianMixture,
         LatentDirichletAllocation and NMF. Can be passed as a
         string, but for finer control of the model parameters, pass as a
         dictionary, e.g. reduce={'model' : 'KMeans', 'params' : {'max_iter' : 100}}.
-        See scikit-learn specific model docs for details on parameters supported for
-        each model. Note: LatentDirichletAllocation and NMF require
-        non-negative data.
+        A model class (e.g. sklearn.cluster.MeanShift) may also be passed
+        directly as the 'model' value. See scikit-learn specific model docs
+        for details on parameters supported for each model. Note:
+        LatentDirichletAllocation and NMF require non-negative data.
 
     n_clusters : int
-        Number of clusters to discover. Not required for HDBSCAN. For mixture
-        models this sets the number of components.
+        Number of clusters to discover. Not used for models that discover
+        the number of clusters automatically (HDBSCAN, MeanShift, DBSCAN,
+        OPTICS, AffinityPropagation). For mixture models this sets the
+        number of components.
 
     format_data : bool
         Whether or not to first call the format_data function (default: True).
@@ -129,7 +145,11 @@ def cluster(x, cluster="KMeans", n_clusters=3, format_data=True):
     model = custom_cls or models[model_name]
     if model_params is None:
         model_params = {}
-    if model_name != "HDBSCAN":
+    # only inject n_clusters if the resolved model actually accepts it --
+    # density/bandwidth clusterers (HDBSCAN, DBSCAN, MeanShift, OPTICS,
+    # AffinityPropagation) discover the number of clusters themselves and
+    # have no such __init__ parameter
+    if "n_clusters" in inspect.signature(model).parameters:
         model_params.setdefault("n_clusters", n_clusters)
 
     model = model(**model_params)

@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import inspect
 import warnings
 import numpy as np
 from sklearn.decomposition import PCA, FastICA, IncrementalPCA, KernelPCA, FactorAnalysis, TruncatedSVD, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
@@ -90,8 +91,12 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False,
             dictionary of custom params as the value of the "params" key.')
 
     else:
-        # handle other possibilities below
+        # handle other possibilities below: a bare (uninstantiated) custom
+        # model class, or an already-constructed custom model instance
         model_name = reduce
+        model_params = {
+            'n_components': ndims
+        }
 
     try:
         # if the model passed is a string, make sure it's one of the supported options
@@ -101,14 +106,26 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False,
         else:
             model = model_name
             getattr(model, 'fit_transform')
-            getattr(model, 'n_components')
+            # a bare class won't have n_components until it's constructed;
+            # only already-constructed instances are expected to have it
+            if not inspect.isclass(model):
+                getattr(model, 'n_components')
     except (KeyError, AttributeError):
         raise ValueError('reduce must be one of the supported options or support n_components and fit_transform \
          methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce \
          for supported models')
 
+    # an already-constructed instance is used as-is: it's already configured,
+    # so we must not re-construct it or clobber its params below
+    model_is_instance = not inspect.isclass(model)
+
     # check for multiple values from n_components & ndims args
-    if 'n_components' in model_params:
+    if model_is_instance:
+        instance_n_components = getattr(model, 'n_components', None)
+        if (ndims is not None) and (instance_n_components is not None) and (ndims != instance_n_components):
+            warnings.warn('Unequal values passed to dims and n_components. Using the already-configured model instance.')
+        model_params['n_components'] = instance_n_components if instance_n_components is not None else ndims
+    elif 'n_components' in model_params:
         if (ndims is None) or (ndims == model_params['n_components']):
             pass
         else:
@@ -137,9 +154,13 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False,
             warnings.warn('The number of rows in your data is less than ndims.'
                           ' The data will be reduced to the number of rows.')
             model_params['n_components'] = stacked_x.shape[0]
+            if model_is_instance:
+                model.n_components = stacked_x.shape[0]
 
-    # initialize model
-    model = model(**model_params)
+    # initialize model: bare classes are constructed with model_params;
+    # already-configured instances are used as-is
+    if not model_is_instance:
+        model = model(**model_params)
 
     # reduce data
     x_reduced = reduce_list(x, model)

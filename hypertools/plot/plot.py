@@ -381,6 +381,10 @@ def plot(
             linewidth=linewidth, color=color, palette=palette, title=title,
             size=size, elev=elev, azim=azim, ax=ax)
 
+    # remember whether the USER supplied an axis before `_draw` reassigns the
+    # local `ax` to the axis it created (used by the GH #148 close below).
+    _user_supplied_ax = ax is not None
+
     if ax is not None:
         if ndims > 2:
             if ax.name != "3d":
@@ -829,6 +833,15 @@ def plot(
     #   - animated plotly: frames are embedded in the Figure, so return fig
     #   - return_model=True: return a dict bundle exposing the analyzed
     #     xform_data plus the reduce/align/cluster model specs
+    # GH #148: show=False must also remove the figure from pyplot's global
+    # manager. `plt.ioff()` alone leaves it registered, so Jupyter's post-cell
+    # flush_figures() still displays it (and a later plt.show() re-draws it).
+    # Closing deregisters it; the returned Figure/animation stay valid and
+    # savable. Skip when the user supplied their own `ax` (their figure to
+    # manage) and skip plotly figures (not pyplot-managed).
+    if not show and not _user_supplied_ax and isinstance(fig, plt.Figure):
+        plt.close(fig)
+
     if return_model:
         # gather reduce params (spec, not a fitted instance)
         if isinstance(reduce, dict):

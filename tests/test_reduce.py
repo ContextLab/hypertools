@@ -128,3 +128,20 @@ def test_reduce_params_UMAP():
     hyp_data = reducer(data1, reduce={'model': 'UMAP', 'params': params}, ndims=3)
     umap_data = UMAP(**params).fit_transform(data1)
     np.testing.assert_array_equal(hyp_data, umap_data)
+
+
+def test_reduce_custom_model_instance():
+    # regression test for GH #162: passing an already-constructed
+    # scikit-learn model instance must not crash (UnboundLocalError) and
+    # must use the instance as-is (not re-constructed/clobbered)
+    from sklearn.decomposition import PCA
+    reduced_data_3d = reducer(data, reduce=PCA(n_components=3))
+    assert reduced_data_3d[0].shape == (10, 3)
+
+
+def test_reduce_custom_model_class():
+    # regression test for GH #162: passing a bare (uninstantiated)
+    # scikit-learn model class must be constructed with ndims
+    from sklearn.decomposition import PCA
+    reduced_data_3d = reducer(data, reduce=PCA, ndims=3)
+    assert reduced_data_3d[0].shape == (10, 3)
