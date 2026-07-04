@@ -553,6 +553,14 @@ def _draw(
                     )[0]
                     for idx, dat in enumerate(x)
                 ]
+        # trails are faint context, not legend-worthy: only the in-focus
+        # `lines` should carry legend entries. Otherwise every label appears
+        # twice -- once for the moving window, once for its tail. The legend is
+        # built once from `lines` (all datasets, created upfront), so it shows
+        # the static union of in-focus items and never changes across frames.
+        for _trail_line in trail:
+            _trail_line.set_label('_nolegend_')
+
         if tail_duration == 0:
             tail_duration = 1
         else:

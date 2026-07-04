@@ -114,6 +114,44 @@ def test_plotly_spin_gif_preserves_realtime_duration(tmp_path):
     assert abs(total - duration) <= 0.25 * duration   # ~real-time, not 6x fast
 
 
+# --- animated legends must not duplicate in-focus entries with their trails ---
+# Regression guard for "each label appears twice": animated line plots draw a
+# faint alpha=0.3 trail artist per dataset in addition to the in-focus window.
+# Both used to carry the dataset's label, so `ax.legend()` collected each label
+# twice (once for the window, once for the tail). Only the in-focus lines should
+# appear in the legend.
+
+def _animated_legend_labels(fig):
+    lg = fig.axes[0].get_legend()
+    assert lg is not None, 'no legend was drawn'
+    return [t.get_text() for t in lg.get_texts()]
+
+
+@pytest.mark.parametrize('extra', [{}, {'chemtrails': True}])
+def test_animation_legend_has_no_duplicate_trail_entries(extra):
+    a = np.cumsum(np.random.default_rng(1).standard_normal((40, 3)), axis=0)
+    b = np.cumsum(np.random.default_rng(2).standard_normal((40, 3)), axis=0)
+    fig, _ani = hyp.plot([a, b], animate=True, legend=['first', 'second'],
+                         show=False, **extra)
+    labels = _animated_legend_labels(fig)
+    plt.close('all')
+    assert labels == ['first', 'second']  # exactly one entry per dataset
+
+
+def test_serial_animation_legend_is_static_union():
+    """Serial animation brings datasets into focus one at a time, but the
+    legend is built once from the upfront line artists, so it shows the
+    union of all in-focus datasets and never changes across frames."""
+    a = np.cumsum(np.random.default_rng(1).standard_normal((30, 3)), axis=0)
+    b = np.cumsum(np.random.default_rng(2).standard_normal((30, 3)), axis=0)
+    c = np.cumsum(np.random.default_rng(3).standard_normal((30, 3)), axis=0)
+    fig, _ani = hyp.plot([a, b, c], animate='serial', duration=2,
+                         legend=['x', 'y', 'z'], show=False)
+    labels = _animated_legend_labels(fig)
+    plt.close('all')
+    assert labels == ['x', 'y', 'z']
+
+
 def test_mixture_soft_membership_on_overlapping_clusters():
     """Overlapping blobs must yield genuinely MIXED memberships -- the
     mixture demo requirement: a substantial fraction of points belong
