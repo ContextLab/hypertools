@@ -324,3 +324,27 @@ def test_legend_right_with_long_labels_3d_not_clipped():
     assert lb.x0 >= ab.x1 - 0.05
     assert lb.x1 <= 1.001, f"legend clipped off right edge (x1={lb.x1:.3f})"
     plt.close('all')
+
+
+@pytest.mark.parametrize("ndims,labels", [
+    (3, ['very long label number one', 'another quite long label two',
+         'third extremely long legend label']),
+    (2, [f'condition number {i}' for i in range(6)]),
+])
+def test_legend_not_clipped_in_saved_pixels(ndims, labels, tmp_path):
+    # Regression: wide legends (long labels / many entries) clipped off the
+    # right edge of the SAVED image. The earlier fit measured the legend under
+    # seaborn's (narrower) font while the figure is actually saved under the
+    # default (wider) font, so it looked like it fit yet clipped. Measure the
+    # real saved pixels -- this fails on the pre-fix code and passes now.
+    from PIL import Image
+    d = [np.random.default_rng(0).random((15, ndims)) for _ in range(len(labels))]
+    fig = plot.plot(d, '.', legend=labels, show=False)
+    out = str(tmp_path / 'legend.png')
+    fig.savefig(out)
+    im = np.asarray(Image.open(out).convert('L'))
+    ink_cols = np.where((im < 245).any(axis=0))[0]
+    right_margin = im.shape[1] - 1 - int(ink_cols.max())
+    plt.close('all')
+    assert right_margin > 4, \
+        f"legend clipped in saved image: right margin {right_margin}px"
