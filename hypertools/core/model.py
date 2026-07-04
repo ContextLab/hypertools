@@ -57,8 +57,8 @@ def apply_model(data, model, mode='auto', return_model=False,
 
     mode : str
         How to apply the model: 'fit_transform', 'fit_predict',
-        'predict_proba', or 'auto' (default), which prefers fit_transform,
-        then predict_proba (fitting first), then fit_predict.
+        'predict_proba', or 'auto' (default), which prefers predict_proba
+        (fitting first), then fit_transform/transform, then fit_predict.
 
     return_model : bool
         If True, also return the fitted model (or list of fitted models for

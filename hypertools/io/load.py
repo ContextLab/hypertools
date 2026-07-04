@@ -190,7 +190,8 @@ def load(
 
     from .streaming import is_stream
     if is_stream(geo_data):
-        if any({reduce, ndims, align, normalize}):
+        if any(v is not None and v is not False
+              for v in (reduce, ndims, align, normalize)):
             raise ValueError(
                 'reduce/ndims/align/normalize cannot be applied to a '
                 'streaming dataset at load time; pass the stream to '
@@ -198,7 +199,8 @@ def load(
                 'stream_init samples')
         return geo_data
 
-    if any({reduce, ndims, align, normalize}):
+    if any(v is not None and v is not False
+          for v in (reduce, ndims, align, normalize)):
         reduce = reduce or 'IncrementalPCA'
         # shapes-zoo/datasaurus entries are plain arrays/DataFrames/lists
         # rather than DataGeometry objects

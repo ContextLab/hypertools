@@ -98,6 +98,18 @@ def test_plot_cluster_n_clusters():
     assert isinstance(fig, mpl.figure.Figure)
 
 
+def test_plot_cluster_hdbscan_dict_with_n_clusters():
+    # Regression: cluster={'model': 'HDBSCAN'} + n_clusters used to crash
+    # with "HDBSCAN.__init__() got an unexpected keyword argument
+    # 'n_clusters'" because the guard checked the raw `cluster` arg (a dict
+    # in this branch) instead of the resolved model name, so n_clusters
+    # leaked into params instead of being dropped with a warning.
+    with pytest.warns(UserWarning, match="n_clusters is not a valid parameter"):
+        fig = plot.plot(weights, cluster={'model': 'HDBSCAN'}, n_clusters=2,
+                        show=False)
+    assert isinstance(fig, mpl.figure.Figure)
+
+
 def test_plot_nd():
     fig = plot.plot(data, show=False)
     assert isinstance(fig, mpl.figure.Figure)
@@ -201,6 +213,35 @@ def test_plot_animate_check_ax():
 def test_plot_animate_check_line_ani():
     fig, ani = plot.plot(data, animate=True, show=False)
     assert isinstance(ani, mpl.animation.FuncAnimation)
+
+
+def test_plot_animate_return_model_includes_animation():
+    # Regression: return_model=True combined with animate=True used to
+    # return the {'fig','xform_data','models'} bundle *before* the
+    # (fig, line_ani) return path, silently dropping the only reference to
+    # the FuncAnimation (so it could be garbage-collected before it ever
+    # played). The bundle must carry the animation handle too.
+    result = plot.plot(data, animate=True, return_model=True, show=False)
+    assert isinstance(result, dict)
+    assert isinstance(result['animation'], mpl.animation.Animation)
+
+
+def test_plot_animate_static_return_model_animation_is_none():
+    # Non-animated return_model bundles should carry animation=None rather
+    # than omitting the key.
+    result = plot.plot(data, animate=False, return_model=True, show=False)
+    assert result['animation'] is None
+
+
+def test_plot_animate_parallel_honors_elev():
+    # Regression: update_lines_parallel (the animate=True/'parallel' style)
+    # hardcoded ax.view_init(elev=10, ...) instead of using the `elev`
+    # fargs parameter, so a non-default elev was silently ignored.
+    fig, ani = plot.plot(data, animate=True, elev=45, show=False)
+    ax = fig.axes[0]
+    # drive one animation frame directly to exercise update_lines_parallel
+    ani._func(2, *ani._args)
+    assert ax.elev == 45
 
 
 ## LEGEND PLACEMENT ##

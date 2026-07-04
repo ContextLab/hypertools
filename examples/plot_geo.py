@@ -12,9 +12,11 @@ embedding it in a larger layout, etc.) just works.
 If you also want access to the analyzed data and the fitted
 reduce/align/cluster models, pass ``return_model=True``. Instead of the
 bare figure, `hyp.plot` then returns a dict bundle:
-``{'fig': ..., 'xform_data': ..., 'models': ...}``, where ``xform_data``
-is the normalized/reduced/aligned data that was actually plotted and
-``models`` records the reduce/align/cluster specs used to produce it.
+``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...}``, where
+``xform_data`` is the normalized/reduced/aligned data that was actually
+plotted, ``animation`` is the ``matplotlib.animation.Animation`` handle when
+``animate=True`` (``None`` otherwise, and for plotly figures), and ``models``
+records the reduce/align/cluster specs used to produce it.
 
 Note that `hyp.load` returns raw data directly (e.g. a list of arrays) --
 there is nothing further to unpack.

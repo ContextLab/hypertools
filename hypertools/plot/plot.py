@@ -341,10 +341,12 @@ def plot(
 
     return_model : bool
         If True, return a dict bundle
-        ``{'fig': ..., 'xform_data': ..., 'models': ...}`` instead of the
-        bare figure, where ``xform_data`` is the normalized/reduced/aligned
-        data and ``models`` holds the reduce/align/cluster specs. Default
-        False.
+        ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...}``
+        instead of the bare figure, where ``xform_data`` is the
+        normalized/reduced/aligned data, ``animation`` is the
+        ``matplotlib.animation.Animation`` handle (``None`` unless
+        ``animate=True`` with the matplotlib backend), and ``models`` holds
+        the reduce/align/cluster specs. Default False.
 
     Returns
     ----------
@@ -353,8 +355,10 @@ def plot(
         ``(fig, animation)`` tuple is returned instead, so the caller can
         retain a reference to the ``matplotlib.animation.FuncAnimation``
         (required to keep the animation alive). When ``return_model=True``,
-        a dict ``{'fig': ..., 'xform_data': ..., 'models': ...}`` is
-        returned.
+        a dict
+        ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...}``
+        is returned (``animation`` included so the handle isn't dropped for
+        animated plots).
 
     """
 
@@ -493,7 +497,7 @@ def plot(
             )
 
         if n_clusters is not None:
-            if cluster in ("HDBSCAN",):
+            if _mixture_name(model) == "HDBSCAN":
                 warnings.warn(
                     "n_clusters is not a valid parameter for "
                     "HDBSCAN clustering and will be ignored."
@@ -839,6 +843,7 @@ def plot(
         return {
             "fig": fig,
             "xform_data": xform_data,
+            "animation": line_ani,
             "models": {
                 "reduce": reduce_dict,
                 "align": align_dict,

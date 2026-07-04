@@ -380,7 +380,7 @@ def _draw(
                 plane.remove()
 
         update_lines_parallel.planes = plot_cube(cube_scale, **frame_kwargs)
-        ax.view_init(elev=10, azim=rotations * (360 * (num / data_lines[0].shape[0])))
+        ax.view_init(elev=elev, azim=rotations * (360 * (num / data_lines[0].shape[0])))
         # Axes3D.dist was removed in matplotlib >= 3.8, silently disabling
         # zoom; set_box_aspect(zoom=...) is the supported equivalent.
         # Old semantics: image scale ~ 10/dist with dist = 9 - zoom.
