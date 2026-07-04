@@ -6,7 +6,7 @@ from .._shared.helpers import *
 from .._shared.params import default_params
 from ..tools.analyze import analyze
 from ..tools.cluster import cluster as clusterer, mixture_models
-from ..tools.colors import mat2colors, colors2groups
+from .colors import mat2colors, colors2groups
 from ..tools.reduce import reduce as reducer
 from ..tools.format_data import format_data
 from .draw import _draw
