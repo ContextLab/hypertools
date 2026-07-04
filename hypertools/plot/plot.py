@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 from .._shared.helpers import *
 from .._shared.params import default_params
 from ..tools.analyze import analyze
-from ..tools.cluster import cluster as clusterer, mixture_models
+from ..cluster.cluster import cluster as clusterer, mixture_models
 from .colors import mat2colors, colors2groups
-from ..tools.reduce import reduce as reducer
+from ..reduce.reduce import reduce as reducer
 from ..tools.format_data import format_data
 from .matplotlib_backend import _draw
 from .backend import manage_backend
@@ -351,7 +351,7 @@ def plot(
     # added to the plot dynamically (fetched in chunks of `stream_chunk`),
     # continuing until the stream ends, `stream_max` samples have been
     # consumed, or the user interrupts.
-    from ..tools.streaming import is_stream, plot_stream
+    from ..io.streaming import is_stream, plot_stream
     if is_stream(x):
         return plot_stream(
             x, fmt, stream_init=stream_init, stream_chunk=stream_chunk,

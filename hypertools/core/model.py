@@ -21,8 +21,8 @@ import numpy as np
 
 
 def _build_registry():
-    from ..tools.reduce import models as reduce_models
-    from ..tools.cluster import models as cluster_models, mixture_models
+    from ..reduce.reduce import models as reduce_models
+    from ..cluster.cluster import models as cluster_models, mixture_models
     registry = {}
     registry.update(reduce_models)
     registry.update(cluster_models)

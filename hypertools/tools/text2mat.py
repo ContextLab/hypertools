@@ -6,7 +6,7 @@ from sklearn.utils.validation import check_is_fitted
 from sklearn.exceptions import NotFittedError
 from sklearn.pipeline import Pipeline
 from .._shared.params import default_params
-from .load import load
+from ..io.load import load
 
 # vector models
 vectorizer_models = {
