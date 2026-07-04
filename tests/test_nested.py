@@ -34,8 +34,8 @@ def test_flatten_nested_skips_text():
 
 
 def test_plot_nested_colors_by_outer_group():
-    geo = plot([[a, b], [c]], show=False)
-    ax = geo.ax
+    fig = plot([[a, b], [c]], show=False)
+    ax = fig.axes[0]
     lines = ax.get_lines()
     assert len(lines) == 3
     # leaves under the same outer group share a color; other group differs
@@ -45,8 +45,8 @@ def test_plot_nested_colors_by_outer_group():
 
 
 def test_plot_nested_depth_styling():
-    geo = plot([[a, [b]], c], show=False)
-    lines = geo.ax.get_lines()
+    fig = plot([[a, [b]], c], show=False)
+    lines = fig.axes[0].get_lines()
     widths = [line.get_linewidth() for line in lines]
     # deeper leaves render thinner
     assert widths[1] < widths[0] < widths[2] or widths[1] < widths[2]
@@ -54,8 +54,8 @@ def test_plot_nested_depth_styling():
 
 
 def test_plot_flat_list_unchanged():
-    geo = plot([a, b], show=False)
-    lines = geo.ax.get_lines()
+    fig = plot([a, b], show=False)
+    lines = fig.axes[0].get_lines()
     assert len(lines) == 2
     assert lines[0].get_color() != lines[1].get_color()
     plt.close('all')

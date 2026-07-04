@@ -93,22 +93,22 @@ def test_plotly_draw_2d():
 
 
 def test_plot_backend_plotly_end_to_end():
-    geo = plot(walk, backend='plotly', show=False)
-    assert type(geo.fig).__module__.startswith('plotly')
-    assert geo.ax is None and geo.line_ani is None
-    # transformed data is still attached for downstream analysis
-    assert geo.xform_data is not None
+    fig = plot(walk, backend='plotly', show=False)
+    assert type(fig).__module__.startswith('plotly')
+    # transformed data is still available via return_model
+    result = plot(walk, backend='plotly', show=False, return_model=True)
+    assert result['xform_data'] is not None
 
 
 def test_plot_backend_plotly_animate_frames():
-    geo = plot(walk, backend='plotly', animate=True, show=False)
-    assert len(geo.fig.frames) > 0
-    geo = plot(walk, backend='plotly', animate='spin', show=False)
-    assert len(geo.fig.frames) > 0
+    fig = plot(walk, backend='plotly', animate=True, show=False)
+    assert len(fig.frames) > 0
+    fig = plot(walk, backend='plotly', animate='spin', show=False)
+    assert len(fig.frames) > 0
 
 
 def test_plot_backend_matplotlib_unchanged():
-    geo = plot(walk, backend='matplotlib', show=False)
-    assert type(geo.fig).__module__.startswith('matplotlib')
+    fig = plot(walk, backend='matplotlib', show=False)
+    assert type(fig).__module__.startswith('matplotlib')
     import matplotlib.pyplot as plt
     plt.close('all')

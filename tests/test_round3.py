@@ -91,8 +91,8 @@ def test_hyperalign_n_iter_flag():
 def test_load_shapes_zoo_teapot():
     teapot = hyp.load('teapot')  # smallest zoo member (~42KB download)
     assert teapot.shape[1] == 3 and teapot.shape[0] > 1000
-    geo = hyp.plot(teapot, 'o', show=False)
-    assert geo is not None
+    fig = hyp.plot(teapot, 'o', show=False)
+    assert fig is not None
     plt.close('all')
 
 

@@ -38,8 +38,8 @@ def test_animate_serial_sequential_reveal(tmp_path):
     sets = [np.cumsum(rng.standard_normal((30, 3)), axis=0) + 8 * i
             for i in range(3)]
     out = str(tmp_path / 'serial.gif')
-    geo = hyp.plot(sets, animate='serial', duration=3, frame_rate=10,
-                   save_path=out, show=False)
+    fig, ani = hyp.plot(sets, animate='serial', duration=3, frame_rate=10,
+                        save_path=out, show=False)
     plt.close('all')
 
     with Image.open(out) as im:
@@ -52,7 +52,7 @@ def test_animate_serial_sequential_reveal(tmp_path):
     # separate artists per dataset (plus one unused trail artist each):
     # datasets render disconnected, and after the final frame all three
     # data artists are fully revealed
-    populated = [ln for ln in geo.ax.lines if len(ln.get_data()[0]) > 1]
+    populated = [ln for ln in fig.axes[0].lines if len(ln.get_data()[0]) > 1]
     assert len(populated) == 3
 
 
@@ -60,15 +60,15 @@ def test_animate_serial_plotly():
     rng = np.random.default_rng(0)
     sets = [np.cumsum(rng.standard_normal((30, 3)), axis=0) + 8 * i
             for i in range(3)]
-    geo = hyp.plot(sets, animate='serial', duration=3, backend='plotly',
+    fig = hyp.plot(sets, animate='serial', duration=3, backend='plotly',
                    show=False)
-    assert len(geo.fig.frames) > 0
+    assert len(fig.frames) > 0
     # first frame: only the first dataset has begun to appear
-    first = geo.fig.frames[1]
+    first = fig.frames[1]
     lengths = [len(t.x) if t.x is not None else 0 for t in first.data]
     assert lengths[1] == 0 and lengths[2] == 0
     # final frame: all datasets fully revealed
-    last = geo.fig.frames[-1]
+    last = fig.frames[-1]
     lengths = [len(t.x) if t.x is not None else 0 for t in last.data]
     assert all(n > 0 for n in lengths)
 
@@ -93,10 +93,10 @@ def test_cluster_dict_single_call_syntax():
     assert props.shape == (240, 3)
 
     # single plot call: exact per-point blended marker colors
-    geo = hyp.plot(overlap, '.', markersize=2,
+    fig = hyp.plot(overlap, '.', markersize=2,
                    cluster={'model': GaussianMixture, 'n_clusters': 3},
                    show=False)
-    scatters = [c for c in geo.ax.collections
+    scatters = [c for c in fig.axes[0].collections
                 if type(c).__name__.startswith('Path')]
     assert scatters and len(scatters[0].get_facecolors()) > 100
     plt.close('all')

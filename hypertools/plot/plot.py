@@ -13,7 +13,6 @@ from .matplotlib_backend import _draw
 from .backend import manage_backend
 from .plotly_backend import resolve_backend
 from .animate import _save_animation, _SVGFrameCollector, _save_animated_svg
-from ..datageometry import DataGeometry
 
 
 @manage_backend
@@ -67,6 +66,7 @@ def plot(
     stream_chunk=100,
     stream_max=None,
     stream_window=None,
+    return_model=False,
 ):
     """
     Plots dimensionality reduced data and parses plot arguments
@@ -197,8 +197,9 @@ def plot(
         `pip install hypertools[interactive]`), or 'auto' (default), which
         uses plotly on Google Colab / Kaggle notebooks where interactivity
         matters most and matplotlib everywhere else. With the plotly backend,
-        the returned DataGeometry's `fig` attribute is a plotly Figure and
-        `ax`/`line_ani` are None.
+        the return value is a plotly Figure (any animation frames are
+        embedded directly in it, so no separate animation object is
+        returned).
 
     duration (animation only) : float
         Length of the animation in seconds (default: 30 seconds)
@@ -337,10 +338,22 @@ def plot(
         all consumed samples are still retained on the returned geometry.
         Default None displays the full accumulated trajectory.
 
+    return_model : bool
+        If True, return a dict bundle
+        ``{'fig': ..., 'xform_data': ..., 'models': ...}`` instead of the
+        bare figure, where ``xform_data`` is the normalized/reduced/aligned
+        data and ``models`` holds the reduce/align/cluster specs. Default
+        False.
+
     Returns
     ----------
-    geo : hypertools.DataGeometry
-        A new data geometry object
+    fig : matplotlib.figure.Figure or plotly Figure
+        The rendered figure. For animated matplotlib plots a
+        ``(fig, animation)`` tuple is returned instead, so the caller can
+        retain a reference to the ``matplotlib.animation.FuncAnimation``
+        (required to keep the animation alive). When ``return_model=True``,
+        a dict ``{'fig': ..., 'xform_data': ..., 'models': ...}`` is
+        returned.
 
     """
 
@@ -796,83 +809,41 @@ def plot(
                 else:
                     plt.savefig(save_path)
 
-    # gather reduce params
-    if isinstance(reduce, dict):
-        reduce_dict = reduce
-    else:
-        reduce_dict = {
-            "model": reduce,
-            "params": {"n_components": ndims},
+    # Return shape (Jeremy decision #2):
+    #   - static (matplotlib or plotly): return the Figure alone
+    #   - animated matplotlib: return (fig, line_ani) so the caller can keep
+    #     a reference to the FuncAnimation (needed to keep it alive); ax is
+    #     recoverable as fig.axes[0], so it needs no separate return slot
+    #   - animated plotly: frames are embedded in the Figure, so return fig
+    #   - return_model=True: return a dict bundle exposing the analyzed
+    #     xform_data plus the reduce/align/cluster model specs
+    if return_model:
+        # gather reduce params (spec, not a fitted instance)
+        if isinstance(reduce, dict):
+            reduce_dict = reduce
+        else:
+            reduce_dict = {"model": reduce, "params": {"n_components": ndims}}
+        # gather align params
+        if isinstance(align, dict):
+            align_dict = align
+        else:
+            align_dict = {"model": align, "params": {}}
+        return {
+            "fig": fig,
+            "xform_data": xform_data,
+            "models": {
+                "reduce": reduce_dict,
+                "align": align_dict,
+                "cluster": cluster,
+            },
         }
 
-    # gather align params
-    if isinstance(align, dict):
-        align_dict = align
-    else:
-        align_dict = {"model": align, "params": {}}
+    # only animated matplotlib plots set line_ani; plotly and static plots
+    # leave it None
+    if line_ani is not None:
+        return fig, line_ani
 
-    # gather all other kwargs
-    kwargs = {
-        "fmt": fmt,
-        "marker": marker,
-        "markers": markers,
-        "linestyle": linestyle,
-        "linestyles": linestyles,
-        "color": color,
-        "colors": colors,
-        "palette": palette,
-        "hue": hue,
-        "ndims": ndims,
-        "labels": labels,
-        "legend": legend,
-        "title": title,
-        "animate": animate,
-        "duration": duration,
-        "tail_duration": tail_duration,
-        "rotations": rotations,
-        "zoom": zoom,
-        "chemtrails": chemtrails,
-        "precog": precog,
-        "bullettime": bullettime,
-        "frame_rate": frame_rate,
-        "elev": elev,
-        "azim": azim,
-        "explore": explore,
-        "n_clusters": n_clusters,
-        "size": size,
-        "interactive": interactive,
-        "backend": backend,
-        "mpl_backend": mpl_backend,
-        "frame_kwargs": frame_kwargs
-    }
-    # turn lists into np arrays so that they don't turn into pickles when saved
-    for kwarg in kwargs:
-        if isinstance(kwargs[kwarg], list):
-            try:
-                kwargs[kwarg] = np.array(kwargs[kwarg])
-            except:
-                warnings.warn(
-                    "Could not convert all list arguments to numpy "
-                    "arrays.  If list is longer than 256 items, it "
-                    "will automatically be pickled, which could "
-                    "cause Python 2/3 compatibility issues for the "
-                    "DataGeometry object."
-                )
-
-    return DataGeometry(
-        fig=fig,
-        ax=ax,
-        data=x,
-        xform_data=xform_data,
-        line_ani=line_ani,
-        reduce=reduce_dict,
-        align=align_dict,
-        normalize=normalize,
-        semantic=semantic,
-        vectorizer=vectorizer,
-        corpus=corpus,
-        kwargs=kwargs,
-    )
+    return fig
 
 
 def _flatten_nested(x, _depth=1):
