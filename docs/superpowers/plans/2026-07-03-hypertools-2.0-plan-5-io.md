@@ -184,14 +184,13 @@ def test_hyp_save_and_io_exposed(tmp_path):
 
 Run: `MPLBACKEND=Agg .venv/bin/python -m pytest tests/io/test_save.py -q -p no:cacheprovider`
 
-- [ ] **Step 3: Create `hypertools/io/save.py`** — a plain data-serialization saver. Prefer `dw.io.save` when available (the fork delegated to it), falling back to pickle. NO `.geo` / DataGeometry special-casing (geo is being deleted — Plan 7). Figure export is explicitly deferred to Plan 6.
+- [ ] **Step 3: Create `hypertools/io/save.py`** — a plain pickle serializer. (Do NOT wrap `dw.io.save`: its signature is `save(filename, obj)` — reversed args — and it writes a dw-specific, non-pickle format, so it would break the pickle round-trip. Plain pickle is correct and simple.) NO `.geo`/DataGeometry special-casing (geo is being deleted — Plan 7). Figure export is deferred to Plan 6.
 
 ```python
 """Data/object serialization for HyperTools 2.0.
 
-`save(obj, fname)` writes a hypertools result (array / DataFrame / list /
-fitted model) to disk and exposes a standalone `hyp.save`. Prefers
-datawrangler's serializer when available, else pickle. No geo special-casing
+`save(obj, fname)` pickles a hypertools result (array / DataFrame / list /
+fitted model) to disk and backs the standalone `hyp.save`. No geo special-casing
 (DataGeometry is removed in 2.0).
 
 NOTE: figure/animation export (png/pdf/svg/html/gif/mp4) is NOT handled here —
@@ -202,17 +201,10 @@ import pickle
 
 
 def save(obj, fname, **kwargs):
-    """Serialize `obj` to `fname` (datawrangler serializer if available, else pickle)."""
-    try:
-        import datawrangler as dw
-        if hasattr(dw, "io") and hasattr(dw.io, "save"):
-            return dw.io.save(obj, fname, **kwargs)
-    except Exception:
-        pass
+    """Pickle `obj` to `fname`."""
     with open(fname, "wb") as f:
         pickle.dump(obj, f)
 ```
-(If `dw.io.save` exists but its signature/behavior differs from `(obj, fname)`, prefer the plain pickle path so the test's pickle round-trip holds; validate empirically and document in the report. Do NOT weaken the round-trip test.)
 
 - [ ] **Step 4: Update `hypertools/io/__init__.py`:**
 
