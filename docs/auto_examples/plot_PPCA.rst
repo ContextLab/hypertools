@@ -44,7 +44,7 @@ both the original and data with missing values together to see how it performed.
 
     /Users/jmanning/hypertools/hypertools/tools/format_data.py:131: UserWarning: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)
       warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
-    /Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py:92: UserWarning: linestyle is redundantly defined by the 'linestyle' keyword argument and the fmt string "-" (-> linestyle='-'). The keyword argument will take precedence.
+    /Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py:102: UserWarning: linestyle is redundantly defined by the 'linestyle' keyword argument and the fmt string "-" (-> linestyle='-'). The keyword argument will take precedence.
       ax.plot(data[i][:, 0], data[i][:, 1], data[i][:, 2], fmt[i], **ikwargs)
 
 
@@ -84,7 +84,7 @@ both the original and data with missing values together to see how it performed.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.037 seconds)
+   **Total running time of the script:** (0 minutes 0.043 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_PPCA.py:

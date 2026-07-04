@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**00:13.959** total execution time for 40 files **from auto_examples**:
+**00:00.225** total execution time for 40 files **from auto_examples**:
 
 .. container::
 
@@ -32,11 +32,14 @@ Computation times
    * - Example
      - Time
      - Mem (MB)
-   * - :ref:`sphx_glr_auto_examples_plot_shape_morph.py` (``plot_shape_morph.py``)
-     - 00:13.834
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_geo.py` (``plot_geo.py``)
+   * - :ref:`sphx_glr_auto_examples_plot_legend.py` (``plot_legend.py``)
      - 00:00.125
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_missing_data.py` (``plot_missing_data.py``)
+     - 00:00.057
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_PPCA.py` (``plot_PPCA.py``)
+     - 00:00.043
      - 0.0
    * - :ref:`sphx_glr_auto_examples_analyze.py` (``analyze.py``)
      - 00:00.000
@@ -60,9 +63,6 @@ Computation times
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_2D.py` (``plot_2D.py``)
-     - 00:00.000
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_PPCA.py` (``plot_PPCA.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_TSNE.py` (``plot_TSNE.py``)
@@ -104,6 +104,9 @@ Computation times
    * - :ref:`sphx_glr_auto_examples_plot_digits.py` (``plot_digits.py``)
      - 00:00.000
      - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_geo.py` (``plot_geo.py``)
+     - 00:00.000
+     - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_hue.py` (``plot_hue.py``)
      - 00:00.000
      - 0.0
@@ -111,12 +114,6 @@ Computation times
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_labels.py` (``plot_labels.py``)
-     - 00:00.000
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_legend.py` (``plot_legend.py``)
-     - 00:00.000
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_missing_data.py` (``plot_missing_data.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_mixture_models.py` (``plot_mixture_models.py``)
@@ -132,6 +129,9 @@ Computation times
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_procrustes.py` (``plot_procrustes.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_shape_morph.py` (``plot_shape_morph.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_shapes_zoo.py` (``plot_shapes_zoo.py``)

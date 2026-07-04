@@ -55,7 +55,7 @@ An example of how to use the `legend` kwarg to generate a legend.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.038 seconds)
+   **Total running time of the script:** (0 minutes 0.125 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_legend.py:
