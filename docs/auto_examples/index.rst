@@ -87,23 +87,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="An example of how to use the legend kwarg to generate a legend.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_legend_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/plot_legend`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Generating a legend</div>
-    </div>
-
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="The downside to using dimensionality reduction to visualize your data is that some variance will likely be removed. To help get a sense for the integrity of your low dimensional visualizations, we built the describe function, which computes the covariance (samples by samples) of both the raw and reduced datasets, and plots their correlation.">
 
 .. only:: html
@@ -116,6 +99,23 @@ Gallery of Examples
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Using describe to evaluate the integrity of your visualization</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="An example of how to use the legend kwarg to generate a legend.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_legend_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_legend`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Generating a legend</div>
     </div>
 
 
@@ -189,40 +189,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="To make use of HDBSCAN as the clustering algorithm used to discover clusters, you must specify it as the cluster argument. If you wish to specify HDBSCAN parameters you will need the dictionary form which includes both the model and the params. Since HDBSCAN does not require the number of clusters, n_clusters does not need to be set.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_clusters3_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/plot_clusters3`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Discovering clusters using HDBSCAN</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="In this example, we plot the trajectory of multivariate brain activity for two groups of subjects that have been hyperaligned (Haxby et al, 2011).  First, we use the align tool to project all subjects in the list to a common space. Then we average the data into two groups, and plot.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_align_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/plot_align`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Aligning matrices to a common space</div>
-    </div>
-
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="The past trajectory of an animated plot can be visualized with the chemtrails argument.  This displays a low opacity version of the trace behind the current points being plotted.  This can be used in conjunction with the precog argument to plot a low-opacity trace of the entire timeseries.">
 
 .. only:: html
@@ -274,7 +240,7 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="Timeseries plots can be animated by simply passing animate=True to the geo ( or when calling hyp.plot).">
+    <div class="sphx-glr-thumbcontainer" tooltip="Timeseries plots can be animated by simply passing animate=True when calling hyp.plot.">
 
 .. only:: html
 
@@ -303,6 +269,57 @@ Gallery of Examples
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Precognition</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="In this example, we plot the trajectory of multivariate brain activity for two groups of subjects that have been hyperaligned (Haxby et al, 2011).  First, we use the align tool to project all subjects in the list to a common space. Then we average the data into two groups, and plot.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_align_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_align`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Aligning matrices to a common space</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="To make use of HDBSCAN as the clustering algorithm used to discover clusters, you must specify it as the cluster argument. If you wish to specify HDBSCAN parameters you will need the dictionary form which includes both the model and the params. Since HDBSCAN does not require the number of clusters, n_clusters does not need to be set.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_clusters3_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_clusters3`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Discovering clusters using HDBSCAN</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="This example demonstrates how to use the analyze function to process data prior to plotting. The data is a list of numpy arrays representing multi-voxel activity patterns (columns) over time (rows).  First, analyze function normalizes the columns of each matrix (within each matrix). Then the data is reduced using PCA (10 dims) and finally it is aligned with hyperalignment. We can then plot the data with hyp.plot, which further reduces it so that it can be visualized.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_analyze_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/analyze`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Analyze data and then plot</div>
     </div>
 
 
@@ -342,40 +359,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="This example demonstrates how to use the analyze function to process data prior to plotting. The data is a list of numpy arrays representing multi-voxel activity patterns (columns) over time (rows).  First, analyze function normalizes the columns of each matrix (within each matrix). Then the data is reduced using PCA (10 dims) and finally it is aligned with hyperalignment. We can then plot the data with hyp.plot, which further reduces it so that it can be visualized.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_analyze_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/analyze`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Analyze data and then plot</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="In this example, we load in some synthetic data, rotate it, and then use the procustes function to get the datasets back in alignment.  The procrustes function uses linear transformations to project a source matrix into the space of a target matrix.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_procrustes_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/plot_procrustes`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Aligning two matrices with the procrustes function</div>
-    </div>
-
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="When plotting, its useful to have a way to color points by some category or variable.  Hypertools does this using the hue kwarg, which takes a list of string category labels or numerical values.  If text labels are passed, the data is restructured according to those labels and plotted in different colors according to your color palette.  If numerical values are passed, the values are binned (default resolution: 100) and plotted according to your color palette.">
 
 .. only:: html
@@ -410,6 +393,23 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="In this example, we load in some synthetic data, rotate it, and then use the procustes function to get the datasets back in alignment.  The procrustes function uses linear transformations to project a source matrix into the space of a target matrix.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_procrustes_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_procrustes`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Aligning two matrices with the procrustes function</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="This is an example of how to use the label(s) kwarg, which must be a list the length of the number of datapoints (rows) you have in the matrix.  Here, we are simply labeling the first datapoint for each matrix in the list.">
 
 .. only:: html
@@ -422,6 +422,23 @@ Gallery of Examples
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Labeling your datapoints</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="To save an animation, simply add the save_path kwarg and specify the path where you want to save the movie, including the extension.  NOTE: this depends on having ffmpeg installed on your computer.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_save_movie_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/save_movie`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Saving an animation</div>
     </div>
 
 
@@ -512,40 +529,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="When the plot function is called, it returns a DataGeometry object, or geo. A geo contains all the pieces needed to regenerate the plot. You can use the geo plot method to evaluate the same plot with new arguments, like changing the color of the points, or trying a different normalization method.  To save the plot, simply call geo.save(fname), where fname is a file name/path.  Then, this file can be reloaded using hyp.load to be plotted again at another time.  Finally, the transform method can be used to transform new data using the same transformations that were applied to the geo.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_geo_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/plot_geo`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">A DataGeometry object or "geo"</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="To save an animation, simply add the save_path kwarg and specify the path where you want to save the movie, including the extension.  NOTE: this depends on having ffmpeg installed on your computer.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_save_movie_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/save_movie`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Saving an animation</div>
-    </div>
-
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="When you pass a matrix with with missing data, hypertools will attempt to fill in the values using probabalistic principal components analysis (PPCA). Here is an example where we generate some synthetic data, remove some of the values, and then use PPCA to interpolate those missing values. Then, we plot both the original and data with missing values together to see how it performed.">
 
 .. only:: html
@@ -631,6 +614,23 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="hyp.plot returns a plain matplotlib (or plotly) Figure -- there is no special container object to learn. Anything you can do with a Figure (``fig.savefig(...)``, grabbing fig.axes[0] to tweak the plot, embedding it in a larger layout, etc.) just works.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_geo_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_geo`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Working with plot outputs (figures & fitted models)</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="hyp.apply_model is hypertools 2.0&#x27;s unified model-application core: datasets are stacked, the model is fit ONCE across all of them, and the result is unstacked back to the input&#x27;s structure -- which is what makes embeddings and cluster assignments comparable across datasets. Models can be specified by name, as a dict with parameters, as a scikit-learn style instance, or as a list (pipeline). return_model=True hands back the fitted model for reuse on held-out data.">
 
 .. only:: html
@@ -680,6 +680,23 @@ Gallery of Examples
     </div>
 
 
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="HyperTools&#x27; &quot;shapes zoo&quot; (bunny, cube, dragon, sphere, teapot, vase, biplane -- see the A zoo of 3D shapes example) can be morphed smoothly from one point cloud to the next. An equal-sized sample of points is drawn from each shape, consecutive shapes are matched point-for-point with the Hungarian algorithm (`scipy.optimize.linear_sum_assignment`) so that each point travels the shortest total distance to its partner in the next shape, and the coordinates are eased between shapes frame by frame while the camera slowly spins around the scene.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_shape_morph_thumb.gif
+    :alt:
+
+  :doc:`/auto_examples/plot_shape_morph`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Morphing through the shapes zoo</div>
+    </div>
+
+
 .. thumbnail-parent-div-close
 
 .. raw:: html
@@ -694,41 +711,42 @@ Gallery of Examples
    /auto_examples/plot_2D
    /auto_examples/plot_clusters
    /auto_examples/plot_dataframe
-   /auto_examples/plot_legend
    /auto_examples/plot_describe
+   /auto_examples/plot_legend
    /auto_examples/plot_digits
    /auto_examples/plot_TSNE
    /auto_examples/explore
    /auto_examples/plot_UMAP
-   /auto_examples/plot_clusters3
-   /auto_examples/plot_align
    /auto_examples/chemtrails
    /auto_examples/animate_MDS
    /auto_examples/animate_spin
    /auto_examples/animate
    /auto_examples/precog
+   /auto_examples/plot_align
+   /auto_examples/plot_clusters3
+   /auto_examples/analyze
    /auto_examples/plot_corpus
    /auto_examples/save_image
-   /auto_examples/analyze
-   /auto_examples/plot_procrustes
    /auto_examples/plot_hue
    /auto_examples/plot_nested_lists
+   /auto_examples/plot_procrustes
    /auto_examples/plot_labels
+   /auto_examples/save_movie
    /auto_examples/plot_text
    /auto_examples/plot_interactive_backend
    /auto_examples/plot_clusters2
    /auto_examples/animate_plotly
    /auto_examples/plot_multicolored_lines
-   /auto_examples/plot_geo
-   /auto_examples/save_movie
    /auto_examples/plot_PPCA
    /auto_examples/plot_normalize
    /auto_examples/plot_mixture_models
    /auto_examples/plot_datasaurus
    /auto_examples/plot_shapes_zoo
+   /auto_examples/plot_geo
    /auto_examples/plot_apply_model
    /auto_examples/plot_missing_data
    /auto_examples/plot_sotus
+   /auto_examples/plot_shape_morph
 
 
 .. only:: html

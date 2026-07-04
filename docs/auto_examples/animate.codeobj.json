@@ -15,68 +15,29 @@
    "name": "FuncAnimation"
   }
  ],
- "ani_geo": [
+ "data": [
   {
    "is_class": false,
    "is_explicit": false,
-   "module": "hypertools.datageometry",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
-  },
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "list"
   }
  ],
- "ani_geo.line_ani": [
+ "fig": [
   {
    "is_class": false,
    "is_explicit": false,
-   "module": "matplotlib.animation",
-   "module_short": "matplotlib.animation",
-   "name": "FuncAnimation"
+   "module": "matplotlib.figure",
+   "module_short": "matplotlib.figure",
+   "name": "Figure"
   },
   {
    "is_class": false,
    "is_explicit": false,
    "module": "matplotlib",
    "module_short": "matplotlib",
-   "name": "FuncAnimation"
-  }
- ],
- "geo": [
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools.datageometry",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
-  },
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
-  }
- ],
- "geo.plot": [
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools.datageometry",
-   "module_short": "hypertools",
-   "name": "DataGeometry.plot"
-  },
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools",
-   "module_short": "hypertools",
-   "name": "DataGeometry.plot"
+   "name": "Figure"
   }
  ],
  "hyp.load": [
@@ -93,6 +54,22 @@
    "module": "hypertools",
    "module_short": "hypertools",
    "name": "load"
+  }
+ ],
+ "hyp.plot": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools",
+   "module_short": "hypertools",
+   "name": "plot"
   }
  ]
 }

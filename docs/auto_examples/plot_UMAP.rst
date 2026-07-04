@@ -35,20 +35,8 @@ it using UMAP.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-    /Users/jmanning/hypertools/hypertools/plot/plot.py:577: UserWarning: Could not convert all list arguments to numpy arrays.  If list is longer than 256 items, it will automatically be pickled, which could cause Python 2/3 compatibility issues for the DataGeometry object.
-      warnings.warn(
-
-    <hypertools.datageometry.DataGeometry object at 0x133370170>
 
 
-
-
-
-|
 
 .. code-block:: Python
 
@@ -68,7 +56,7 @@ it using UMAP.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 3.472 seconds)
+   **Total running time of the script:** (0 minutes 7.720 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_UMAP.py:

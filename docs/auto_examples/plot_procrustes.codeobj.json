@@ -8,52 +8,13 @@
    "name": "list"
   }
  ],
- "geo": [
+ "data": [
   {
    "is_class": false,
    "is_explicit": false,
-   "module": "hypertools.datageometry",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
-  },
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
-  }
- ],
- "geo.get_data": [
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools.datageometry",
-   "module_short": "hypertools",
-   "name": "DataGeometry.get_data"
-  },
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools",
-   "module_short": "hypertools",
-   "name": "DataGeometry.get_data"
-  }
- ],
- "geo.plot": [
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools.datageometry",
-   "module_short": "hypertools",
-   "name": "DataGeometry.plot"
-  },
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools",
-   "module_short": "hypertools",
-   "name": "DataGeometry.plot"
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "list"
   }
  ],
  "hyp.load": [
@@ -88,7 +49,7 @@
    "name": "plot"
   }
  ],
- "hyp.tools.procrustes": [
+ "procrustes": [
   {
    "is_class": false,
    "is_explicit": false,
@@ -99,8 +60,8 @@
   {
    "is_class": false,
    "is_explicit": false,
-   "module": "hypertools.tools",
-   "module_short": "hypertools.tools",
+   "module": "hypertools.align.procrustes",
+   "module_short": "hypertools.align",
    "name": "procrustes"
   }
  ],

@@ -34,20 +34,8 @@ A 2D plot can be created by setting ndims=2.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-    /Users/jmanning/hypertools/hypertools/tools/reduce.py:133: UserWarning: Unequal values passed to dims and n_components. Using ndims parameter.
-      warnings.warn('Unequal values passed to dims and n_components. Using ndims parameter.')
-
-    <hypertools.datageometry.DataGeometry object at 0x1320830b0>
 
 
-
-
-
-|
 
 .. code-block:: Python
 
@@ -59,15 +47,15 @@ A 2D plot can be created by setting ndims=2.
     import hypertools as hyp
 
     # load data
-    geo = hyp.load('weights_sample')
+    data = hyp.load('weights_sample')
 
     # plot
-    geo.plot(fmt='.', ndims=2)
+    hyp.plot(data, fmt='.', ndims=2)
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.043 seconds)
+   **Total running time of the script:** (0 minutes 0.017 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_2D.py:

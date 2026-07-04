@@ -61,18 +61,8 @@ the normalize function found in tools (see the third example).
          :class: sphx-glr-multi-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
 
 
-    <hypertools.datageometry.DataGeometry object at 0x146659130>
-
-
-
-
-
-|
 
 .. code-block:: Python
 
@@ -105,7 +95,7 @@ the normalize function found in tools (see the third example).
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.079 seconds)
+   **Total running time of the script:** (0 minutes 0.061 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_normalize.py:

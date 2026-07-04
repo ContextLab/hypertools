@@ -39,18 +39,8 @@ will be plotted.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
 
 
-    <hypertools.datageometry.DataGeometry object at 0x132346f60>
-
-
-
-
-
-|
 
 .. code-block:: Python
 

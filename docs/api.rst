@@ -7,16 +7,6 @@
 API reference
 =============
 
-.. _plot_api:
-
-DataGeometry class
-------------------
-
-.. autosummary::
-  :toctree:
-
-  hypertools.DataGeometry
-
 Load
 ------------------
 
@@ -99,7 +89,7 @@ Tools
 .. autosummary::
   :toctree:
 
-  hypertools.tools.procrustes
+  hypertools.align.procrustes
 
 .. autosummary::
   :toctree:

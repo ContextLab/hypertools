@@ -1,34 +1,11 @@
 {
- "geo": [
+ "data": [
   {
    "is_class": false,
    "is_explicit": false,
-   "module": "hypertools.datageometry",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
-  },
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
-  }
- ],
- "geo.plot": [
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools.datageometry",
-   "module_short": "hypertools",
-   "name": "DataGeometry.plot"
-  },
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools",
-   "module_short": "hypertools",
-   "name": "DataGeometry.plot"
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "list"
   }
  ],
  "hyp.load": [
@@ -45,6 +22,22 @@
    "module": "hypertools",
    "module_short": "hypertools",
    "name": "load"
+  }
+ ],
+ "hyp.plot": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools",
+   "module_short": "hypertools",
+   "name": "plot"
   }
  ],
  "os.path.join": [

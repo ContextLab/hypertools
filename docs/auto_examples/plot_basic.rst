@@ -35,19 +35,12 @@ with the 'o'.  Hypertools can handle all format strings supported by matplotlib.
    :srcset: /auto_examples/images/sphx_glr_plot_basic_001.png
    :class: sphx-glr-single-img
 
-
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-
-    <hypertools.datageometry.DataGeometry object at 0x143befd10>
+.. raw:: html
+    :file: images/sphx_glr_plot_basic_002.html
 
 
 
 
-
-|
 
 .. code-block:: Python
 
@@ -59,15 +52,15 @@ with the 'o'.  Hypertools can handle all format strings supported by matplotlib.
     import hypertools as hyp
 
     # load example data
-    geo = hyp.load('weights_sample')
+    data = hyp.load('weights_sample')
 
     # plot
-    geo.plot(fmt='.')
+    hyp.plot(data, fmt='.')
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.028 seconds)
+   **Total running time of the script:** (0 minutes 0.107 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_basic.py:

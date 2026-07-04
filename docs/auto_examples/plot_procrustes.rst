@@ -27,7 +27,7 @@ procustes function to get the datasets back in alignment.  The procrustes
 function uses linear transformations to project a source matrix into the
 space of a target matrix.
 
-.. GENERATED FROM PYTHON SOURCE LINES 12-31
+.. GENERATED FROM PYTHON SOURCE LINES 12-32
 
 
 
@@ -49,18 +49,8 @@ space of a target matrix.
          :class: sphx-glr-multi-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
 
 
-    <hypertools.datageometry.DataGeometry object at 0x1452e3050>
-
-
-
-
-
-|
 
 .. code-block:: Python
 
@@ -72,14 +62,15 @@ space of a target matrix.
     import hypertools as hyp
     import numpy as np
     import scipy
+    from hypertools.align.procrustes import procrustes
 
     # load example data
-    geo = hyp.load('spiral')
-    geo.plot(title='Before Alignment')
+    data = hyp.load('spiral')
+    hyp.plot(data, title='Before Alignment')
 
     # use procrusted to align the data
-    source, target = geo.get_data()
-    aligned = [hyp.tools.procrustes(source, target), target]
+    source, target = data
+    aligned = [procrustes(source, target), target]
 
     # after alignment
     hyp.plot(aligned, ['-','--'], title='After alignment')
@@ -87,7 +78,7 @@ space of a target matrix.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.047 seconds)
+   **Total running time of the script:** (0 minutes 0.043 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_procrustes.py:

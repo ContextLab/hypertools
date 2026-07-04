@@ -17,7 +17,7 @@ yourself.
 import hypertools as hyp
 
 # load example data
-geo = hyp.load('mushrooms')
+data = hyp.load('mushrooms')
 
 # plot
-geo.plot(n_clusters=10)
+hyp.plot(data, n_clusters=10)

@@ -8,38 +8,6 @@
    "name": "list"
   }
  ],
- "geo": [
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools.datageometry",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
-  },
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
-  }
- ],
- "geo.get_data": [
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools.datageometry",
-   "module_short": "hypertools",
-   "name": "DataGeometry.get_data"
-  },
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools",
-   "module_short": "hypertools",
-   "name": "DataGeometry.get_data"
-  }
- ],
  "hyp.analyze": [
   {
    "is_class": false,

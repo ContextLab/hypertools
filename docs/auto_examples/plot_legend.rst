@@ -34,18 +34,8 @@ An example of how to use the `legend` kwarg to generate a legend.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
 
 
-    <hypertools.datageometry.DataGeometry object at 0x1322d81d0>
-
-
-
-
-
-|
 
 .. code-block:: Python
 
@@ -57,15 +47,15 @@ An example of how to use the `legend` kwarg to generate a legend.
     import hypertools as hyp
 
     # load example data
-    geo = hyp.load('weights_sample')
+    data = hyp.load('weights_sample')
 
     # plot
-    geo.plot(fmt='.', legend=['Group A', 'Group B', 'Group C'])
+    hyp.plot(data, fmt='.', legend=['Group A', 'Group B', 'Group C'])
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.032 seconds)
+   **Total running time of the script:** (0 minutes 0.038 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_legend.py:

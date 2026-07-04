@@ -15,38 +15,6 @@
    "name": "FuncAnimation"
   }
  ],
- "ani_geo": [
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools.datageometry",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
-  },
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "hypertools",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
-  }
- ],
- "ani_geo.line_ani": [
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "matplotlib.animation",
-   "module_short": "matplotlib.animation",
-   "name": "FuncAnimation"
-  },
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "matplotlib",
-   "module_short": "matplotlib",
-   "name": "FuncAnimation"
-  }
- ],
  "data": [
   {
    "is_class": false,
@@ -56,29 +24,20 @@
    "name": "list"
   }
  ],
- "geo": [
+ "fig": [
   {
    "is_class": false,
    "is_explicit": false,
-   "module": "hypertools.datageometry",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
+   "module": "matplotlib.figure",
+   "module_short": "matplotlib.figure",
+   "name": "Figure"
   },
   {
    "is_class": false,
    "is_explicit": false,
-   "module": "hypertools",
-   "module_short": "hypertools",
-   "name": "DataGeometry"
-  }
- ],
- "geo.data": [
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "builtins",
-   "module_short": "builtins",
-   "name": "list"
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Figure"
   }
  ],
  "group1": [

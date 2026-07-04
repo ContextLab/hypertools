@@ -21,7 +21,7 @@ along with the PCA coordinate.
 import hypertools as hyp
 
 # load example data
-geo = hyp.load('weights_sample')
+data = hyp.load('weights_sample')
 
 # plot
-geo.plot(fmt='.', explore=True)
+hyp.plot(data, fmt='.', explore=True)

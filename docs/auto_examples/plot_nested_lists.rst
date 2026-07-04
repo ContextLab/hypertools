@@ -77,7 +77,7 @@ summary-to-detail visual hierarchy. For example, `[[a, b], [c]]` colors
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.224 seconds)
+   **Total running time of the script:** (0 minutes 0.038 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_nested_lists.py:

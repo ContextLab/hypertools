@@ -50,10 +50,7 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
     4       f         g         x  ...                        s          w         p
 
     [5 rows x 22 columns]
-    /Users/jmanning/hypertools/hypertools/plot/plot.py:577: UserWarning: Could not convert all list arguments to numpy arrays.  If list is longer than 256 items, it will automatically be pickled, which could cause Python 2/3 compatibility issues for the DataGeometry object.
-      warnings.warn(
 
-    <hypertools.datageometry.DataGeometry object at 0x1328e47d0>
 
 
 
@@ -71,17 +68,17 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
     import hypertools as hyp
 
     # load example data
-    geo = hyp.load('mushrooms')
+    data = hyp.load('mushrooms')
 
-    print(geo.get_data().head())
+    print(data.head())
 
     # plot
-    geo.plot()
+    hyp.plot(data)
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.042 seconds)
+   **Total running time of the script:** (0 minutes 0.116 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_dataframe.py:

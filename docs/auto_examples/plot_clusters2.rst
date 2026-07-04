@@ -36,18 +36,8 @@ kwarg to color our points by cluster.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
 
 
-    <hypertools.datageometry.DataGeometry object at 0x132426e40>
-
-
-
-
-
-|
 
 .. code-block:: Python
 
@@ -74,7 +64,7 @@ kwarg to color our points by cluster.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.025 seconds)
+   **Total running time of the script:** (0 minutes 0.020 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_clusters2.py:

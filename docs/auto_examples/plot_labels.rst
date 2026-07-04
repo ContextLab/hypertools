@@ -26,7 +26,7 @@ This is an example of how to use the `label(s)` kwarg, which must be a list the
 length of the number of datapoints (rows) you have in the matrix.  Here, we
 are simply labeling the first datapoint for each matrix in the list.
 
-.. GENERATED FROM PYTHON SOURCE LINES 11-36
+.. GENERATED FROM PYTHON SOURCE LINES 11-35
 
 
 
@@ -36,18 +36,8 @@ are simply labeling the first datapoint for each matrix in the list.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
 
 
-    <hypertools.datageometry.DataGeometry object at 0x13262b050>
-
-
-
-
-
-|
 
 .. code-block:: Python
 
@@ -60,8 +50,7 @@ are simply labeling the first datapoint for each matrix in the list.
     import numpy as np
 
     # load example data
-    geo = hyp.load('weights_sample')
-    data = geo.get_data()
+    data = hyp.load('weights_sample')
 
     # simulate labels
     labels=[]
@@ -75,12 +64,12 @@ are simply labeling the first datapoint for each matrix in the list.
         labels.append(tmp)
 
     # plot
-    geo.plot(fmt='.', labels=labels)
+    hyp.plot(data, fmt='.', labels=labels)
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.044 seconds)
+   **Total running time of the script:** (0 minutes 0.046 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_labels.py:

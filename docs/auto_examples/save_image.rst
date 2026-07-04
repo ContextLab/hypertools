@@ -51,17 +51,17 @@ the image to be saved, including the file extension (e.g. pdf)
     import numpy as np
 
     # load example data
-    geo = hyp.load('weights_sample')
+    data = hyp.load('weights_sample')
 
     # plot
     import os, tempfile
     save_path = os.path.join(tempfile.mkdtemp(), 'test-image.pdf')
-    geo.plot(fmt='o', save_path=save_path)
+    hyp.plot(data, fmt='o', save_path=save_path)
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.096 seconds)
+   **Total running time of the script:** (0 minutes 0.112 seconds)
 
 
 .. _sphx_glr_download_auto_examples_save_image.py:

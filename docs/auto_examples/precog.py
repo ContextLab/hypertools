@@ -20,8 +20,7 @@ import hypertools as hyp
 import numpy as np
 
 # load example data
-geo = hyp.load('weights_avg')
+data = hyp.load('weights_avg')
 
 # plot
-ani_geo = geo.plot(animate=True, precog=True)
-ani = ani_geo.line_ani  # the underlying matplotlib FuncAnimation
+fig, ani = hyp.plot(data, animate=True, precog=True)

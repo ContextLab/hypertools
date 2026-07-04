@@ -22,10 +22,10 @@
 Animated plots
 =============================
 
-Timeseries plots can be animated by simply passing `animate=True` to the geo (
-or when calling hyp.plot).
+Timeseries plots can be animated by simply passing `animate=True` when
+calling hyp.plot.
 
-.. GENERATED FROM PYTHON SOURCE LINES 10-25
+.. GENERATED FROM PYTHON SOURCE LINES 10-24
 
 
 
@@ -52,16 +52,15 @@ or when calling hyp.plot).
     import hypertools as hyp
 
     # load example data
-    geo = hyp.load('weights_avg')
+    data = hyp.load('weights_avg')
 
     # plot
-    ani_geo = geo.plot(animate=True, legend=['first', 'second'])
-    ani = ani_geo.line_ani  # the underlying matplotlib FuncAnimation
+    fig, ani = hyp.plot(data, animate=True, legend=['first', 'second'])
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 10.973 seconds)
+   **Total running time of the script:** (0 minutes 10.786 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate.py:

@@ -27,7 +27,7 @@ argument.  This displays a low opacity version of the trace behind the
 current points being plotted.  This can be used in conjunction with the
 precog argument to plot a low-opacity trace of the entire timeseries.
 
-.. GENERATED FROM PYTHON SOURCE LINES 12-27
+.. GENERATED FROM PYTHON SOURCE LINES 12-26
 
 
 
@@ -54,16 +54,15 @@ precog argument to plot a low-opacity trace of the entire timeseries.
     import hypertools as hyp
 
     # load example data
-    geo = hyp.load('weights_avg')
+    data = hyp.load('weights_avg')
 
     # plot
-    ani_geo = geo.plot(animate=True, chemtrails=True)
-    ani = ani_geo.line_ani  # the underlying matplotlib FuncAnimation
+    fig, ani = hyp.plot(data, animate=True, chemtrails=True)
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 7.915 seconds)
+   **Total running time of the script:** (0 minutes 7.746 seconds)
 
 
 .. _sphx_glr_download_auto_examples_chemtrails.py:

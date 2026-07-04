@@ -43,17 +43,16 @@ matrices), we also expose the format_data function.
 
  .. code-block:: none
 
-    /Users/jmanning/miniconda3/lib/python3.12/site-packages/sklearn/base.py:376: InconsistentVersionWarning: Trying to unpickle estimator CountVectorizer from version 1.0.2 when using version 1.5.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+    /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/sklearn/base.py:463: InconsistentVersionWarning: Trying to unpickle estimator CountVectorizer from version 1.0.2 when using version 1.8.0. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
     https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
       warnings.warn(
-    /Users/jmanning/miniconda3/lib/python3.12/site-packages/sklearn/base.py:376: InconsistentVersionWarning: Trying to unpickle estimator LatentDirichletAllocation from version 1.0.2 when using version 1.5.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+    /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/sklearn/base.py:463: InconsistentVersionWarning: Trying to unpickle estimator LatentDirichletAllocation from version 1.0.2 when using version 1.8.0. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
     https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
       warnings.warn(
-    /Users/jmanning/miniconda3/lib/python3.12/site-packages/sklearn/base.py:376: InconsistentVersionWarning: Trying to unpickle estimator Pipeline from version 1.0.2 when using version 1.5.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+    /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/sklearn/base.py:463: InconsistentVersionWarning: Trying to unpickle estimator Pipeline from version 1.0.2 when using version 1.8.0. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
     https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
       warnings.warn(
 
-    <hypertools.datageometry.DataGeometry object at 0x143cd26f0>
 
 
 
@@ -84,7 +83,7 @@ matrices), we also expose the format_data function.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.053 seconds)
+   **Total running time of the script:** (0 minutes 0.049 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_text.py:

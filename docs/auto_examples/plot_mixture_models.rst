@@ -56,12 +56,8 @@ clusters render with intermediate colors.
 
  .. code-block:: none
 
-    (300, 3) [[0.    0.997 0.003]
-     [0.    0.997 0.003]]
-    /Users/jmanning/hypertools/hypertools/plot/plot.py:744: UserWarning: Could not convert all list arguments to numpy arrays.  If list is longer than 256 items, it will automatically be pickled, which could cause Python 2/3 compatibility issues for the DataGeometry object.
-      warnings.warn(
-    /Users/jmanning/hypertools/hypertools/plot/plot.py:744: UserWarning: Could not convert all list arguments to numpy arrays.  If list is longer than 256 items, it will automatically be pickled, which could cause Python 2/3 compatibility issues for the DataGeometry object.
-      warnings.warn(
+    (300, 3) [[0.997 0.    0.003]
+     [0.998 0.    0.002]]
 
 
 
@@ -97,7 +93,7 @@ clusters render with intermediate colors.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.086 seconds)
+   **Total running time of the script:** (0 minutes 0.047 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_mixture_models.py:

@@ -37,18 +37,8 @@ Then we average the data into two groups, and plot.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
 
 
-    <hypertools.datageometry.DataGeometry object at 0x132628740>
-
-
-
-
-
-|
 
 .. code-block:: Python
 
@@ -61,7 +51,7 @@ Then we average the data into two groups, and plot.
     import numpy as np
 
     # load example data
-    data = hyp.load('weights').get_data()
+    data = hyp.load('weights')
     data = hyp.align(data, align='hyper')
 
     # average into two groups
@@ -74,7 +64,7 @@ Then we average the data into two groups, and plot.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.152 seconds)
+   **Total running time of the script:** (0 minutes 1.325 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_align.py:

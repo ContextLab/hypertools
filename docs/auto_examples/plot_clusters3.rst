@@ -42,12 +42,9 @@ n_clusters does not need to be set.
 
  .. code-block:: none
 
-    /Users/jmanning/hypertools/hypertools/plot/plot.py:369: UserWarning: cluster overrides hue, ignoring hue.
-      warnings.warn("cluster overrides hue, ignoring hue.")
-    /Users/jmanning/hypertools/hypertools/plot/plot.py:577: UserWarning: Could not convert all list arguments to numpy arrays.  If list is longer than 256 items, it will automatically be pickled, which could cause Python 2/3 compatibility issues for the DataGeometry object.
-      warnings.warn(
+    /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/sklearn/cluster/_hdbscan/hdbscan.py:722: FutureWarning: The default value of `copy` will change from False to True in 1.10. Explicitly set a value for `copy` to silence this warning.
+      warn(
 
-    <hypertools.datageometry.DataGeometry object at 0x128f52c30>
 
 
 
@@ -66,19 +63,17 @@ n_clusters does not need to be set.
     import pandas as pd
 
     # load example data
-    geo = hyp.load('mushrooms')
+    data = hyp.load('mushrooms')
 
     # plot
-    geo.plot(cluster={'model':'HDBSCAN',
+    hyp.plot(data, cluster={'model':'HDBSCAN',
                                  'params': {'min_samples':5,
                                             'min_cluster_size':30}})
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 3.566 seconds)
-
-**Estimated memory usage:**  378 MB
+   **Total running time of the script:** (0 minutes 0.329 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_clusters3.py:

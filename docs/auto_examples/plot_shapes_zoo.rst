@@ -78,7 +78,7 @@ pre-created 3D axes to `hyp.plot` via the `ax` keyword.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.224 seconds)
+   **Total running time of the script:** (0 minutes 0.226 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_shapes_zoo.py:

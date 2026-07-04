@@ -43,10 +43,9 @@ with stars.
 
  .. code-block:: none
 
-    /Users/jmanning/hypertools/hypertools/tools/format_data.py:140: UserWarning: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)
+    /Users/jmanning/hypertools/hypertools/tools/format_data.py:131: UserWarning: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)
       warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
 
-    <hypertools.datageometry.DataGeometry object at 0x13339d070>
 
 
 
@@ -92,7 +91,7 @@ with stars.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.054 seconds)
+   **Total running time of the script:** (0 minutes 0.041 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_missing_data.py:

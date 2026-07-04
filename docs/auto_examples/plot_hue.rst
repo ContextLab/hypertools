@@ -30,7 +30,7 @@ according to your color palette.  If numerical values are passed, the values
 are binned (default resolution: 100) and plotted according to your color
 palette.
 
-.. GENERATED FROM PYTHON SOURCE LINES 15-37
+.. GENERATED FROM PYTHON SOURCE LINES 15-36
 
 
 
@@ -44,12 +44,9 @@ palette.
 
  .. code-block:: none
 
-    /Users/jmanning/hypertools/examples/plot_hue.py:32: DeprecationWarning: Conversion of an array with ndim > 0 to a scalar is deprecated, and will error in future. Ensure you extract a single element from your array before performing this operation. (Deprecated NumPy 1.25.)
+    /Users/jmanning/hypertools/examples/plot_hue.py:31: DeprecationWarning: Conversion of an array with ndim > 0 to a scalar is deprecated, and will error in future. Ensure you extract a single element from your array before performing this operation. (Deprecated NumPy 1.25.)
       tmp.append(int(np.random.randint(1000, size=1)))
-    /Users/jmanning/hypertools/hypertools/plot/plot.py:577: UserWarning: Could not convert all list arguments to numpy arrays.  If list is longer than 256 items, it will automatically be pickled, which could cause Python 2/3 compatibility issues for the DataGeometry object.
-      warnings.warn(
 
-    <hypertools.datageometry.DataGeometry object at 0x143c97d10>
 
 
 
@@ -68,8 +65,7 @@ palette.
     import numpy as np
 
     # load example data
-    geo = hyp.load('weights_sample')
-    data = geo.get_data()
+    data = hyp.load('weights_sample')
 
     # simulate random groups
     hue=[]
@@ -80,12 +76,12 @@ palette.
         hue.append(tmp)
 
     # plot
-    geo.plot(fmt='.', hue=hue)
+    hyp.plot(data, fmt='.', hue=hue)
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.069 seconds)
+   **Total running time of the script:** (0 minutes 0.081 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_hue.py:

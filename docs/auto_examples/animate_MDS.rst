@@ -24,7 +24,7 @@ Animated trajectory plotted with multidimensional scaling
 
 This is a trajectory of brain data plotted in 3D with multidimensional scaling.
 
-.. GENERATED FROM PYTHON SOURCE LINES 9-24
+.. GENERATED FROM PYTHON SOURCE LINES 9-23
 
 
 
@@ -63,17 +63,16 @@ This is a trajectory of brain data plotted in 3D with multidimensional scaling.
     # import hypertools
     import hypertools as hyp
 
-    # load the geo
-    geo = hyp.load('weights_avg')
+    # load the data
+    data = hyp.load('weights_avg')
 
     # plot
-    ani_geo = geo.plot(animate=True, reduce='MDS')
-    ani = ani_geo.line_ani  # the underlying matplotlib FuncAnimation
+    fig, ani = hyp.plot(data, animate=True, reduce='MDS')
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 7.567 seconds)
+   **Total running time of the script:** (0 minutes 7.543 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate_MDS.py:

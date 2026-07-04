@@ -30,7 +30,7 @@ reduced using PCA (10 dims) and finally it is aligned with hyperalignment. We ca
 then plot the data with hyp.plot, which further reduces it so that it can be
 visualized.
 
-.. GENERATED FROM PYTHON SOURCE LINES 15-34
+.. GENERATED FROM PYTHON SOURCE LINES 15-33
 
 
 
@@ -55,8 +55,7 @@ visualized.
     import hypertools as hyp
 
     # load the data
-    geo = hyp.load('weights')
-    data = geo.get_data()
+    data = hyp.load('weights')
 
     # process the data
     data = hyp.analyze(data, normalize='within', reduce='PCA', ndims=10,
@@ -68,7 +67,7 @@ visualized.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.389 seconds)
+   **Total running time of the script:** (0 minutes 0.374 seconds)
 
 
 .. _sphx_glr_download_auto_examples_analyze.py:
