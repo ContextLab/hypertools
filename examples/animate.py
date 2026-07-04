@@ -4,8 +4,8 @@
 Animated plots
 =============================
 
-Timeseries plots can be animated by simply passing `animate=True` to the geo (
-or when calling hyp.plot).
+Timeseries plots can be animated by simply passing `animate=True` when
+calling hyp.plot.
 """
 
 # sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_animate_thumb.gif'
@@ -17,8 +17,7 @@ or when calling hyp.plot).
 import hypertools as hyp
 
 # load example data
-geo = hyp.load('weights_avg')
+data = hyp.load('weights_avg')
 
 # plot
-ani_geo = geo.plot(animate=True, legend=['first', 'second'])
-ani = ani_geo.line_ani  # the underlying matplotlib FuncAnimation
+fig, ani = hyp.plot(data, animate=True, legend=['first', 'second'])

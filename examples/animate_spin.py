@@ -16,9 +16,8 @@ visualize static data in an animated rotating plot.
 # import hypertools
 import hypertools as hyp
 
-# load the geo
-geo = hyp.load('weights_sample')
+# load the data
+data = hyp.load('weights_sample')
 
 # plot
-ani_geo = geo.plot(fmt='.', animate='spin')
-ani = ani_geo.line_ani  # the underlying matplotlib FuncAnimation
+fig, ani = hyp.plot(data, fmt='.', animate='spin')

@@ -18,9 +18,9 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
 import hypertools as hyp
 
 # load example data
-geo = hyp.load('mushrooms')
+data = hyp.load('mushrooms')
 
-print(geo.get_data().head())
+print(data.head())
 
 # plot
-geo.plot()
+hyp.plot(data)

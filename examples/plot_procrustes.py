@@ -17,14 +17,15 @@ space of a target matrix.
 import hypertools as hyp
 import numpy as np
 import scipy
+from hypertools.align.procrustes import procrustes
 
 # load example data
-geo = hyp.load('spiral')
-geo.plot(title='Before Alignment')
+data = hyp.load('spiral')
+hyp.plot(data, title='Before Alignment')
 
 # use procrusted to align the data
-source, target = geo.get_data()
-aligned = [hyp.tools.procrustes(source, target), target]
+source, target = data
+aligned = [procrustes(source, target), target]
 
 # after alignment
 hyp.plot(aligned, ['-','--'], title='After alignment')

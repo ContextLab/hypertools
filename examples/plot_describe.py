@@ -19,8 +19,7 @@ import hypertools as hyp
 import numpy as np
 
 # load example data
-geo = hyp.load('weights_sample')
-data = geo.get_data()
+data = hyp.load('weights_sample')
 
 # plot
 hyp.describe(data)
