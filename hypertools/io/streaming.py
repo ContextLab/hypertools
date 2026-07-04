@@ -175,11 +175,14 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     streams render continually, and any animation being saved is finalized
     whenever streaming stops, including on interrupt. ``stream_window``
     optionally limits the *display* to the most recent samples (comet
-    style); all consumed data is still retained on the returned geometry.
+    style); all consumed data is still retained on the returned figure's
+    ``stream_info``.
 
-    Returns a DataGeometry; data holds the raw consumed samples and
-    xform_data the projected trajectory, and .stream_info records the
-    fitted model and how much of the stream was consumed.
+    Returns a matplotlib Figure; ``fig.stream_info`` is a dict holding
+    ``'data'`` (the raw consumed samples), ``'xform_data'`` (the projected
+    trajectory), ``'n_samples'``, ``'reduce_model'`` (the fitted reduction
+    model, or None), and ``'truncated'`` (whether the stream was cut off
+    before exhaustion).
     """
     import matplotlib
     import matplotlib.pyplot as plt
@@ -202,9 +205,9 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
         head, reduce, ndims, normalize)
 
     # initial plot on the head (already normalized/reduced -> disable both)
-    geo = hyp_plot(head_red, fmt, reduce=None, normalize=None, ndims=ndims,
+    fig = hyp_plot(head_red, fmt, reduce=None, normalize=None, ndims=ndims,
                    show=False, **plot_kwargs)
-    artist = next(ln for ln in geo.ax.lines if len(ln.get_data()[0]))
+    artist = next(ln for ln in fig.axes[0].lines if len(ln.get_data()[0]))
 
     # the axis limits and the data->box transform are FROZEN from the head:
     # hyp.plot centered the head (column means) and scaled it into the
@@ -231,7 +234,7 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     writer = None
     if save_path is not None:
         writer = animation.PillowWriter(fps=frame_rate)
-        writer.setup(geo.fig, save_path, dpi=geo.fig.dpi)
+        writer.setup(fig, save_path, dpi=fig.dpi)
         writer.grab_frame()
 
     def _redraw():
@@ -248,7 +251,7 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
         if writer is not None:
             writer.grab_frame()
         if interactive:
-            geo.fig.canvas.draw_idle()
+            fig.canvas.draw_idle()
             plt.pause(0.001)
 
     # consume until the stream is exhausted, stream_max is reached, or the
@@ -277,10 +280,13 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     if writer is not None:
         writer.finish()
 
-    geo.data = [np.vstack(raw)]
-    geo.xform_data = [np.vstack(accum)]
-    geo.stream_info = {'n_samples': n_seen, 'reduce_model': model,
-                       'truncated': truncated}
+    fig.stream_info = {
+        'data': [np.vstack(raw)],
+        'xform_data': [np.vstack(accum)],
+        'n_samples': n_seen,
+        'reduce_model': model,
+        'truncated': truncated,
+    }
     if show:
         plt.show()
-    return geo
+    return fig

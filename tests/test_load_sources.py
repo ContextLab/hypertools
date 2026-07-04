@@ -67,8 +67,8 @@ def test_load_huggingface_streaming_flows_to_plot():
     assert is_stream(ds)
     ds = ds.select_columns(['SepalLengthCm', 'SepalWidthCm',
                             'PetalLengthCm', 'PetalWidthCm'])
-    geo = hyp.plot(ds, '.', show=False, stream_init=50, stream_chunk=50)
-    assert geo.stream_info['n_samples'] == 150
+    fig = hyp.plot(ds, '.', show=False, stream_init=50, stream_chunk=50)
+    assert fig.stream_info['n_samples'] == 150
     plt.close('all')
 
 
