@@ -66,13 +66,18 @@ def capture(tag, function, case, plot_fn, dpi=100):
             record['ok'] = True
             record['result'] = result
             return record
-        fignums = plt.get_fignums()
-        if not fignums:
+        # Prefer the RETURNED figure(s): plot(show=False) closes/deregisters
+        # its figure from pyplot (GH #148), so the registry may be empty even
+        # though plot_fn produced a perfectly good Figure. Fall back to the
+        # pyplot registry for plot_fns that don't return one.
+        figs = _extract_mpl_figs(result)
+        if not figs:
+            figs = [plt.figure(num) for num in plt.get_fignums()]
+        if not figs:
             raise RuntimeError('plot_fn produced no matplotlib figures')
         # Save the most recently created figure; extra figures get suffixes.
-        for i, num in enumerate(fignums):
-            fig = plt.figure(num)
-            fig_path = path if i == len(fignums) - 1 else \
+        for i, fig in enumerate(figs):
+            fig_path = path if i == len(figs) - 1 else \
                 path.replace('.png', f'_fig{i}.png')
             fig.savefig(fig_path, dpi=dpi, bbox_inches='tight')
         record['ok'] = True
@@ -90,6 +95,21 @@ def _extract_plotly_fig(result):
     if type(fig).__module__.startswith('plotly'):
         return fig
     return None
+
+
+def _extract_mpl_figs(result):
+    """Pull matplotlib Figure(s) out of a plot_fn's return value: a bare
+    Figure, an animated ``(fig, ani)`` tuple, or a ``return_model=True`` dict
+    with a ``'fig'`` key. Returns [] if none found."""
+    from matplotlib.figure import Figure
+    candidates = []
+    if isinstance(result, dict):
+        candidates.append(result.get('fig'))
+    elif isinstance(result, tuple):
+        candidates.extend(result)
+    else:
+        candidates.append(result)
+    return [c for c in candidates if isinstance(c, Figure)]
 
 
 def summarize(records):

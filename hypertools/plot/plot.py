@@ -836,10 +836,16 @@ def plot(
     # GH #148: show=False must also remove the figure from pyplot's global
     # manager. `plt.ioff()` alone leaves it registered, so Jupyter's post-cell
     # flush_figures() still displays it (and a later plt.show() re-draws it).
-    # Closing deregisters it; the returned Figure/animation stay valid and
-    # savable. Skip when the user supplied their own `ax` (their figure to
-    # manage) and skip plotly figures (not pyplot-managed).
-    if not show and not _user_supplied_ax and isinstance(fig, plt.Figure):
+    # Closing deregisters it; the returned Figure stays valid and savable.
+    # Skip when the user supplied their own `ax` (their figure to manage),
+    # skip plotly figures (not pyplot-managed), and skip ANIMATED figures:
+    # the FuncAnimation's timer belongs to the live canvas, and closing
+    # destroys it on GUI backends (e.g. TkAgg on Windows, where the backend
+    # switch actually succeeds) -- the animation's pending first-draw hook
+    # then crashes any later draw of the returned figure with
+    # "'NoneType' object has no attribute 'start'".
+    if (not show and not _user_supplied_ax and line_ani is None
+            and isinstance(fig, plt.Figure)):
         plt.close(fig)
 
     if return_model:
