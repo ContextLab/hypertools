@@ -28,3 +28,13 @@ First CI run on the pushed branch: Windows all-fail (collection), macOS/Ubuntu 3
 ## Follow-ups
 - Lift the HOME workaround once data-wrangler#32 is released.
 - animate_plotly gallery example keeps its cached artifact (900-frame kaleido gif too slow locally; plotly auto-fits so it never clips).
+
+## Round 2 (same session): remaining CI reds after first fix wave
+
+First fix wave result: macOS 3.10-3.13 ALL green, Ubuntu green except 3.12, Windows runs full suite (HOME fix worked) but fails 1 test.
+
+4. **Windows `test_spin_box_never_clipped`** (`'NoneType' object has no attribute 'start'/'add_callback'`): on Windows the animate backend switch to TkAgg SUCCEEDS (headless Linux/mac fall back to Agg), so the #148 `plt.close()` destroyed the FuncAnimation's real Tk timer; the animation's pending first-draw hook then crashes any later draw of the returned figure. **Fix (fb1cb031):** animated figures (`line_ani is not None`) are EXEMPT from the show=False close — #148's complaint was about static figures; animations need their timer alive.
+5. **Ubuntu 3.12 screenshot step** (12/13 "plot_fn produced no matplotlib figures"): `scripts/screenshot_harness.py` discovered figures via `plt.get_fignums()`, emptied by the #148 close. **Fix:** `capture()` prefers the RETURNED figure(s) (`_extract_mpl_figs`: Figure / `(fig, ani)` / return_model dict), falling back to the registry. Verified 13/13 locally.
+6. **dw 0.5.1 released** (Jeremy): fixes dw#32 via `os.path.expanduser('~')`; verified import-with-HOME-unset OK. Pins bumped to `pydata-wrangler>=0.5.1` (base + [text]) in 80470fd0; HOME guard kept for 0.5.0 environments. dw#32 closed with verification comment.
+
+Local suite after round 2: **343 passed, 6 deselected** (new legend-pixel regression tests added the +2).
