@@ -74,7 +74,7 @@ def test_corrupt_dataset_cache_recovers():
     subsequent text-data test with UnpicklingError. load() must detect the
     corrupt cache, delete it, and re-download.
     """
-    from hypertools.tools.load import DATA_DIR
+    from hypertools.io.load import DATA_DIR
     from hypertools._shared.exceptions import HypertoolsIOError
 
     target = DATA_DIR / 'spiral'

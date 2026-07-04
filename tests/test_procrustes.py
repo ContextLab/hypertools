@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from hypertools.tools.procrustes import procrustes
-from hypertools.tools.load import load
+from hypertools.align.procrustes import procrustes
+from hypertools.io.load import load
 
 
 def test_procrustes_func():

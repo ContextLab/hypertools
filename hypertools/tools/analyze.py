@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from .reduce import reduce as reducer
+from ..reduce.reduce import reduce as reducer
 from .align import align as aligner
 from .normalize import normalize as normalizer
 

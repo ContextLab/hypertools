@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from PIL import Image, ImageSequence
 
 import hypertools as hyp
-from hypertools.tools.streaming import is_stream, row_to_vector
+from hypertools.io.streaming import is_stream, row_to_vector
 
 
 def walk_gen(n=300, dim=6, seed=0):
@@ -194,7 +194,7 @@ def test_stream_view_is_frozen_after_head():
     """Round-6.5: once the head sets the space, drawn positions of already-
     plotted points NEVER move as new chunks arrive (no per-chunk rescale
     'twitch'), and the axis limits stay fixed."""
-    import hypertools.tools.streaming as st
+    import hypertools.io.streaming as st
 
     # drifting walk: later samples leave the head's extent
     def drifting(n=300):

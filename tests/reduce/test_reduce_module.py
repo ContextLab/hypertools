@@ -9,15 +9,9 @@ def test_reduce_new_path_importable_and_reduces():
     assert isinstance(out, list) and out[0].shape == (10, 3)
 
 
-def test_reduce_shim_is_same_function():
-    from hypertools.reduce.reduce import reduce as new_reduce
-    from hypertools.tools.reduce import reduce as old_reduce
-    assert new_reduce is old_reduce
-
-
-def test_reduce_registry_models_still_exposed_via_tools():
-    # core.model._build_registry imports `from ..tools.reduce import models`
-    from hypertools.tools.reduce import models
+def test_reduce_registry_models_exposed():
+    # core.model._build_registry imports `from ..reduce.reduce import models`
+    from hypertools.reduce.reduce import models
     assert 'PCA' in models and 'IncrementalPCA' in models
 
 

@@ -11,7 +11,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import hypertools as hyp
-from hypertools.tools.load import DATA_DIR
+from hypertools.io.load import DATA_DIR
 
 
 walk = np.cumsum(np.random.default_rng(0).standard_normal((50, 5)), axis=0)

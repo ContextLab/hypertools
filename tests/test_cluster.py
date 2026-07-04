@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from hypertools.tools.cluster import cluster
+from hypertools.cluster.cluster import cluster
 from hypertools.plot.plot import plot
 
 cluster1 = np.random.multivariate_normal(np.zeros(3), np.eye(3), size=100)

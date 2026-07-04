@@ -5,7 +5,7 @@ import warnings
 import pandas as pd
 
 from .tools.normalize import normalize as normalizer
-from .tools.reduce import reduce as reducer
+from .reduce.reduce import reduce as reducer
 from .tools.align import align as aligner
 from .tools.format_data import format_data
 from ._shared.helpers import convert_text, get_dtype
@@ -18,15 +18,15 @@ def _maybe_load_strings(data):
     hyp.load. Strings that don't look like sources -- and lists containing
     any such string -- pass through untouched, so raw text still flows to
     the text-embedding pipeline."""
-    from .tools.sources import is_loadable_string
+    from .io.sources import is_loadable_string
 
     if isinstance(data, str) and is_loadable_string(data):
-        from .tools.load import load
+        from .io.load import load
         return load(data)
     if isinstance(data, (list, tuple)) and len(data) and \
             all(isinstance(d, str) for d in data) and \
             all(is_loadable_string(d) for d in data):
-        from .tools.load import load
+        from .io.load import load
         return load(list(data))
     return data
 

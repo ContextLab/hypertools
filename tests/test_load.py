@@ -1,6 +1,6 @@
 # # -*- coding: utf-8 -*-
 
-from hypertools.tools.load import load
+from hypertools.io.load import load
 from hypertools.datageometry import DataGeometry
 
 def test_load_weights_avg():

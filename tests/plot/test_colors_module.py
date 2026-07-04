@@ -10,9 +10,3 @@ def test_plot_colors_mat2colors():
 def test_plot_colors_reexports_legacy():
     from hypertools.plot.colors import vals2colors, vals2bins, colors2groups
     assert callable(vals2colors) and callable(vals2bins) and callable(colors2groups)
-
-
-def test_tools_colors_shim_same_objects():
-    from hypertools.plot.colors import mat2colors as new_m
-    from hypertools.tools.colors import mat2colors as old_m
-    assert new_m is old_m

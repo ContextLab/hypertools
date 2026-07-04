@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from hypertools.tools.colors import mat2colors, colors2groups
+from hypertools.plot.colors import mat2colors, colors2groups
 
 
 def test_mat2colors_categorical():

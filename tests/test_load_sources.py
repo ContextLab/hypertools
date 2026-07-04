@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 
 import hypertools as hyp
 from hypertools._shared.exceptions import HypertoolsIOError
-from hypertools.tools.sources import is_loadable_string
+from hypertools.io.sources import is_loadable_string
 
 IRIS_CSV = 'raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv'
 # legacy hypertools 'spiral' pickle, still hosted on Google Drive
@@ -63,7 +63,7 @@ def test_load_huggingface_dataset():
 def test_load_huggingface_streaming_flows_to_plot():
     pytest.importorskip('datasets')
     ds = hyp.load('scikit-learn/iris', streaming=True)
-    from hypertools.tools.streaming import is_stream
+    from hypertools.io.streaming import is_stream
     assert is_stream(ds)
     ds = ds.select_columns(['SepalLengthCm', 'SepalWidthCm',
                             'PetalLengthCm', 'PetalWidthCm'])

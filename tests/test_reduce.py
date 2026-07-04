@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from hypertools.tools.reduce import reduce as reducer
+from hypertools.reduce.reduce import reduce as reducer
 from hypertools.plot.plot import plot
 
 data = [np.random.multivariate_normal(np.zeros(4), np.eye(4), size=10) for i in range(2)]

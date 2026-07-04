@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import hypertools as hyp
-from hypertools.tools.apply_model import apply_model, supported_models
+from hypertools.core.model import apply_model, supported_models
 
 
 rng = np.random.default_rng(0)

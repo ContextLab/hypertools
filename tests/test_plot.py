@@ -7,8 +7,8 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 from hypertools.plot import plot
-from hypertools.tools.reduce import reduce as reducer
-from hypertools.tools.load import load
+from hypertools.reduce.reduce import reduce as reducer
+from hypertools.io.load import load
 from hypertools.datageometry import DataGeometry
 
 data = [np.random.multivariate_normal(np.zeros(4), np.eye(4), size=100) for i
