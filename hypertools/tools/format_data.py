@@ -72,7 +72,6 @@ def format_data(x, vectorizer='CountVectorizer',
     # not sure why i needed to import here, but its the only way I could get it to work
     from .df2mat import df2mat
     from .text2mat import text2mat
-    from ..datageometry import DataGeometry
 
     # if x is not a list, make it one
     if not isinstance(x, list):
@@ -111,14 +110,6 @@ def format_data(x, vectorizer='CountVectorizer',
             textidx+=1
         elif dtype == 'df':
             processed_x.append(df2mat(x[i]))
-        elif dtype == 'geo':
-            text_args = {
-                'vectorizer' : vectorizer,
-                'semantic' : semantic,
-                'corpus' : corpus
-            }
-            for j in format_data(x[i].get_data(), **text_args):
-                processed_x.append(j)
         else:
             processed_x.append(x[i])
 

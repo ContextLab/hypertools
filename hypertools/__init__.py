@@ -11,7 +11,6 @@ from .tools.normalize import normalize
 from .reduce.describe import describe
 from .cluster.cluster import cluster
 from .core.model import apply_model
-from .datageometry import DataGeometry
 from .manip.manip import manip
 from .io.save import save
 from . import io

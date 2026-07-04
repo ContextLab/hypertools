@@ -3,7 +3,6 @@
 import numpy as np
 
 from hypertools.reduce.reduce import reduce as reducer
-from hypertools.plot.plot import plot
 
 data = [np.random.multivariate_normal(np.zeros(4), np.eye(4), size=10) for i in range(2)]
 reduced_data_2d = reducer(data,ndims=2)
@@ -36,8 +35,8 @@ def test_reduce_dims_1d():
 
 
 def test_reduce_geo():
-    geo = plot(data, show=False)
-    reduced_data_3d = reducer(geo, ndims=3)
+    # reduce() operates on raw data directly (no geo round-trip in 2.0)
+    reduced_data_3d = reducer(data, ndims=3)
     assert reduced_data_3d[0].shape==(10,3)
 
 

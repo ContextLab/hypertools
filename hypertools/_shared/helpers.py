@@ -7,7 +7,6 @@ Helper functions
 ##PACKAGES##
 import sys
 import numpy as np
-import copy
 import itertools
 import pandas as pd
 from matplotlib.lines import Line2D
@@ -208,28 +207,6 @@ def convert_text(data):
     if dtype in ['list_str', 'str']:
         data = np.array(data).reshape(-1, 1)
     return data
-
-
-def check_geo(geo):
-    """ Checks a geo and makes sure the text fields are not binary """
-    geo = copy.copy(geo)
-
-    def fix_item(item):
-        if isinstance(item, bytes):
-            return item.decode()
-        return item
-
-    def fix_list(lst):
-        return [fix_item(i) for i in lst]
-    if isinstance(geo.reduce, bytes):
-        geo.reduce = geo.reduce.decode()
-    for key in geo.kwargs.keys():
-        if geo.kwargs[key] is not None:
-            if isinstance(geo.kwargs[key], (list, np.ndarray)):
-                geo.kwargs[key] = fix_list(geo.kwargs[key])
-            elif isinstance(geo.kwargs[key], bytes):
-                geo.kwargs[key] = fix_item(geo.kwargs[key])
-    return geo
 
 
 def get_dtype(data):

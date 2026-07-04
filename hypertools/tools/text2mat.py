@@ -79,7 +79,7 @@ def text2mat(data, vectorizer='CountVectorizer',
                 vectorizer = None
                 model_is_fit = True
             else:
-                corpus = np.array(load(corpus).get_data())
+                corpus = np.array(load(corpus))
         else:
             corpus = np.array([corpus])
 

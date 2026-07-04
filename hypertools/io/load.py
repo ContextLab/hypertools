@@ -156,9 +156,10 @@ def load(
 
     Returns
     ----------
-    data : DataGeometry, numpy array, DataFrame, list, or IterableDataset
-        The loaded data (a list of datasets when a list of strings was
-        passed).
+    data : numpy array, DataFrame, list, or IterableDataset
+        The loaded raw data (a list of datasets when a list of strings was
+        passed). If reduce/ndims/align/normalize are supplied, the analyzed
+        data is returned directly.
 
     """
     # lists of strings resolve element-wise to a list of datasets
@@ -198,19 +199,22 @@ def load(
         return geo_data
 
     if any({reduce, ndims, align, normalize}):
-        from ..plot.plot import plot
         reduce = reduce or 'IncrementalPCA'
         # shapes-zoo/datasaurus entries are plain arrays/DataFrames/lists
         # rather than DataGeometry objects
         raw = geo_data.get_data() if hasattr(geo_data, 'get_data') \
             else geo_data
-        d = analyze(raw,
-                    reduce=reduce,
-                    ndims=ndims,
-                    align=align,
-                    normalize=normalize)
-        return plot(d, show=False)
-    return geo_data
+        return analyze(raw,
+                       reduce=reduce,
+                       ndims=ndims,
+                       align=align,
+                       normalize=normalize)
+
+    # hypertools 2.0 users never receive a geo: extract the raw data (list
+    # of arrays / DataFrame) from any DataGeometry unpickled from a hosted
+    # or legacy file. Non-geo sources (arrays, DataFrames, lists) pass
+    # through unchanged.
+    return geo_data.get_data() if hasattr(geo_data, 'get_data') else geo_data
 
 
 def _load_local(dataset_path):

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Universal loader: hyp.load / DataGeometry resolve strings through
+"""Universal loader: hyp.load resolves strings through
 builtin -> local file -> Hugging Face -> Google Drive -> Dropbox -> URL,
 and lists of strings resolve to lists of datasets. All tests use real
 files and real network calls (no mocks)."""
@@ -79,12 +79,14 @@ def test_load_streaming_rejects_load_time_transforms():
 
 
 def test_load_google_drive_id_and_url():
-    geo = hyp.load(DRIVE_SPIRAL_ID)
-    assert type(geo).__name__ == 'DataGeometry'
+    # the hosted 'spiral' pickle unpickles internally; load() returns its
+    # raw data (a list of arrays), never a DataGeometry
+    data = hyp.load(DRIVE_SPIRAL_ID)
+    assert isinstance(data, list)
     url = ('https://drive.google.com/uc?export=download&id='
            + DRIVE_SPIRAL_ID)
-    geo2 = hyp.load(url)
-    assert type(geo2).__name__ == 'DataGeometry'
+    data2 = hyp.load(url)
+    assert isinstance(data2, list)
 
 
 def test_load_dropbox_url_forms():
@@ -106,14 +108,16 @@ def test_load_list_of_strings(tmp_path):
     np.save(tmp_path / 'x.npy', arr)
     out = hyp.load(['spiral', str(tmp_path / 'x.npy')])
     assert isinstance(out, list) and len(out) == 2
-    assert type(out[0]).__name__ == 'DataGeometry'
+    # 'spiral' resolves to its raw data (a list of arrays), not a geo
+    assert isinstance(out[0], list)
     np.testing.assert_allclose(out[1], arr)
 
 
-def test_datageometry_plot_accepts_source_strings():
-    geo = hyp.load('spiral')
-    g2 = geo.plot(data=IRIS_CSV, show=False)
-    assert type(g2).__name__ == 'DataGeometry'
+def test_plot_accepts_source_strings():
+    # plot() auto-loads a source-string as its data (the old geo.plot()
+    # replay method is gone in 2.0; plot() returns a Figure)
+    fig = hyp.plot(IRIS_CSV, show=False)
+    assert type(fig).__module__.startswith('matplotlib')
     plt.close('all')
 
 

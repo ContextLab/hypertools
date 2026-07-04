@@ -3,7 +3,6 @@
 import numpy as np
 
 from hypertools.reduce.describe import describe
-from hypertools.plot.plot import plot
 
 data = np.random.multivariate_normal(np.zeros(10), np.eye(10), size=100)
 
@@ -14,6 +13,6 @@ def test_describe_data_is_dict():
 
 
 def test_describe_geo():
-    geo = plot(data, show=False)
-    result = describe(geo, reduce='PCA', show=False)
+    # describe() operates on raw data directly (no geo round-trip in 2.0)
+    result = describe(data, reduce='PCA', show=False)
     assert type(result) is dict

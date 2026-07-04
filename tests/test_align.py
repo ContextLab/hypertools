@@ -7,8 +7,8 @@ from hypertools.io.load import load
 
 # weights = load('weights')
 weights = [np.random.rand(10, 300) for i in range(3)]
-geo = load('spiral')
-data1 = geo.get_data()[0]
+spiral = load('spiral')
+data1 = spiral[0]
 
 
 def test_procrustes():
@@ -45,5 +45,6 @@ def test_align_shapes():
 
 
 def test_align_geo():
-    aligned = align(geo)
+    # align() operates on the raw data list directly (no geo in 2.0)
+    aligned = align(spiral)
     assert np.allclose(aligned[0], aligned[1])

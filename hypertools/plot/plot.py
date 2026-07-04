@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import copy
 import warnings
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt

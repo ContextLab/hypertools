@@ -12,7 +12,7 @@ from hypertools.io.load import load
 
 data = [np.random.multivariate_normal(np.zeros(4), np.eye(4), size=100) for i
         in range(2)]
-weights = load('weights_avg').get_data()
+weights = load('weights_avg')
 
 # To prevent warning about 20+ figs being open
 mpl.rcParams['figure.max_open_warning'] = 25

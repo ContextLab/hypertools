@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 
 from hypertools.tools import format_data
-from hypertools.plot.plot import plot
 
 
 def test_np_array():
@@ -41,18 +40,12 @@ def test_mixed_list():
     assert all(map(lambda x: isinstance(x, np.ndarray), res))
 
 
-def test_geo():
-    geo = plot(np.random.rand(100,10), show=False)
-    assert isinstance(format_data(geo), list)
-    assert isinstance(format_data(geo)[0], np.ndarray)
-
-
 def test_missing_data():
+    # format_data fills missing values via PPCA (no geo round-trip in 2.0)
     data = np.random.rand(100,10)
     data[0][0]=np.nan
-    geo = plot(data, show=False)
-    assert isinstance(format_data(geo), list)
-    assert isinstance(format_data(geo)[0], np.ndarray)
+    assert isinstance(format_data(data), list)
+    assert isinstance(format_data(data)[0], np.ndarray)
 
 
 def test_force_align():
