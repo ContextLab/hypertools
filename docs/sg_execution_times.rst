@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**00:04.833** total execution time for 42 files **from all galleries**:
+**00:00.217** total execution time for 42 files **from all galleries**:
 
 .. container::
 
@@ -32,23 +32,8 @@ Computation times
    * - Example
      - Time
      - Mem (MB)
-   * - :ref:`sphx_glr_auto_examples_plot_interactive_backend.py` (``../examples/plot_interactive_backend.py``)
-     - 00:03.062
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_impute.py` (``../examples/plot_impute.py``)
-     - 00:00.839
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_apply_model.py` (``../examples/plot_apply_model.py``)
-     - 00:00.611
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_nested_lists.py` (``../examples/plot_nested_lists.py``)
-     - 00:00.123
-     - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_predict.py` (``../examples/plot_predict.py``)
-     - 00:00.111
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_mixture_models.py` (``../examples/plot_mixture_models.py``)
-     - 00:00.088
+     - 00:00.217
      - 0.0
    * - :ref:`sphx_glr_auto_examples_analyze.py` (``../examples/analyze.py``)
      - 00:00.000
@@ -86,6 +71,9 @@ Computation times
    * - :ref:`sphx_glr_auto_examples_plot_align.py` (``../examples/plot_align.py``)
      - 00:00.000
      - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_apply_model.py` (``../examples/plot_apply_model.py``)
+     - 00:00.000
+     - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_basic.py` (``../examples/plot_basic.py``)
      - 00:00.000
      - 0.0
@@ -119,6 +107,12 @@ Computation times
    * - :ref:`sphx_glr_auto_examples_plot_hue.py` (``../examples/plot_hue.py``)
      - 00:00.000
      - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_impute.py` (``../examples/plot_impute.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_interactive_backend.py` (``../examples/plot_interactive_backend.py``)
+     - 00:00.000
+     - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_labels.py` (``../examples/plot_labels.py``)
      - 00:00.000
      - 0.0
@@ -128,7 +122,13 @@ Computation times
    * - :ref:`sphx_glr_auto_examples_plot_missing_data.py` (``../examples/plot_missing_data.py``)
      - 00:00.000
      - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_mixture_models.py` (``../examples/plot_mixture_models.py``)
+     - 00:00.000
+     - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_multicolored_lines.py` (``../examples/plot_multicolored_lines.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_nested_lists.py` (``../examples/plot_nested_lists.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_normalize.py` (``../examples/plot_normalize.py``)
