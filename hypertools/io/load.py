@@ -51,7 +51,8 @@ def load(
         *,
         legacy=False,
         split=None,
-        streaming=False
+        streaming=False,
+        trust=False
 ):
     """
     Load data from a built-in example dataset, a local file, a Hugging Face
@@ -61,13 +62,17 @@ def load(
 
     1. a built-in example dataset name (listed below)
     2. a path to a local file (.geo/pickle, .npy/.npz, .csv/.tsv/.txt,
-       .json, .parquet, .mat)
+       .json, .parquet, .mat, .xlsx/.xls)
     3. a Hugging Face dataset id such as ``'scikit-learn/iris'``
        (pass ``streaming=True`` for a streaming dataset, which can be
        passed straight to :func:`hypertools.plot`)
-    4. a Google Drive URL or bare file id
-    5. a Dropbox URL or shared-link path
-    6. any other URL, with or without an ``https://`` scheme
+    4. a Google Sheets URL (``docs.google.com/spreadsheets/d/<id>``),
+       loaded via its CSV export
+    5. a Google Drive URL or bare file id (large files behind Drive's
+       "can't scan this file for viruses" interstitial are followed
+       automatically)
+    6. a Dropbox URL or shared-link path
+    7. any other URL, with or without an ``https://`` scheme
 
     A **list of strings** resolves element-wise and returns a list of
     datasets that can be passed to any hypertools function.
@@ -154,6 +159,18 @@ def load(
         https://huggingface.co/docs/datasets/en/stream). The result can be
         passed directly to :func:`hypertools.plot`.
 
+    trust : bool
+        Remote (non-built-in) sources only. Unpickling a payload fetched
+        from a URL/Drive/Dropbox/Sheets can execute arbitrary code, so by
+        default a ``UserWarning`` is raised before unpickling it, and
+        remote ``.npy``/``.npz`` payloads are loaded with
+        ``allow_pickle=False`` (raising ``ValueError`` if the array
+        actually needs pickle support, e.g. an object array). Pass
+        ``trust=True`` once you've verified the source to silence the
+        warning and allow pickle-backed remote arrays. Built-in example
+        datasets (listed below) are always trusted regardless of this
+        flag. Local files are never subject to this policy.
+
     Returns
     ----------
     data : numpy array, DataFrame, list, or IterableDataset
@@ -166,7 +183,7 @@ def load(
     if isinstance(dataset, (list, tuple)):
         return [load(d, reduce=reduce, ndims=ndims, align=align,
                      normalize=normalize, legacy=legacy, split=split,
-                     streaming=streaming)
+                     streaming=streaming, trust=trust)
                 for d in dataset]
 
     if dataset in EXAMPLE_DATA.keys():
@@ -186,7 +203,7 @@ def load(
             # generic URL (see tools.sources)
             from .sources import load_source
             geo_data = load_source(dataset, split=split,
-                                   streaming=streaming)
+                                   streaming=streaming, trust=trust)
 
     from .streaming import is_stream
     if is_stream(geo_data):
@@ -323,13 +340,18 @@ def _download_example_data_once(dataset_path):
             # legacy entries are Google Drive file ids
             params = {'id': source}
             response = session.get(BASE_URL, params=params, stream=True)
-            for key, value in response.cookies.items():
-                if key.startswith('download_warning'):
-                    # Google Drive requires confirmation for large files
-                    params['confirm'] = value
-                    response = session.get(BASE_URL, params=params,
+            # Google Drive serves a "can't scan this file for viruses"
+            # HTML interstitial (not a cookie) for large files; peek at
+            # the Content-Type header (available before the streamed body
+            # is read) and follow its confirm form when present.
+            if 'html' in response.headers.get('Content-Type', ''):
+                from .sources import parse_drive_interstitial
+                html = response.content.decode('utf-8', errors='replace')
+                parsed = parse_drive_interstitial(html)
+                if parsed is not None:
+                    action_url, form_params = parsed
+                    response = session.get(action_url, params=form_params,
                                            stream=True)
-                    break
 
         response.raise_for_status()
         with dataset_path.open('wb') as f:

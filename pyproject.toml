@@ -58,6 +58,10 @@ predict = ["pykalman>=0.11", "statsmodels>=0.14", "skaters>=0.11"]
 # Hugging Face timeseries forecasting (hyp.predict model='Chronos'): pulls
 # torch. Opt-in; never in base install.
 predict-hf = ["chronos-forecasting>=2.0"]
+# hyp.load Excel support (.xlsx via openpyxl). .xls (legacy OLE format)
+# needs xlrd, which is NOT bundled here -- a friendly ImportError points
+# users at `pip install xlrd` if they hit a .xls file without it.
+io = ["openpyxl>=3.1.0"]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
@@ -75,6 +79,8 @@ dev = [
     "pykalman>=0.11",
     "statsmodels>=0.14",
     "skaters>=0.11",
+    # exercise hyp.load .xlsx support (tests/test_load_sources.py)
+    "openpyxl>=3.1.0",
 ]
 
 [project.urls]
@@ -92,3 +98,10 @@ testpaths = ["tests"]
 # 6-hour Windows CI job. thread method: kaleido hangs are in native calls.
 timeout = 1200
 timeout_method = "thread"
+# 'bigdata' tests download hundreds of MB over a real network connection
+# (e.g. the Google Drive large-file interstitial test); excluded from the
+# default/CI run, opt in with `pytest -m bigdata`.
+markers = [
+    "bigdata: real multi-hundred-MB network download (deselected by default)",
+]
+addopts = "-m 'not bigdata'"

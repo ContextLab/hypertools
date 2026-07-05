@@ -23,6 +23,7 @@ Lists of strings resolve element-wise to a list of datasets.
 import io
 import re
 import tempfile
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -35,6 +36,25 @@ _DRIVE_ID_RE = re.compile(r'^[A-Za-z0-9_-]{25,}$')
 _DOMAIN_RE = re.compile(r'^[\w-]+(\.[\w-]+)+(/\S*)?$')
 _HF_ID_RE = re.compile(r'^[\w.-]+/[\w.-]+$')
 _UA = {'User-Agent': 'hypertools'}
+
+# Google Sheets URL -> CSV export (must be checked before generic Drive id
+# extraction, since a Sheets URL also matches the '/d/<id>' Drive pattern).
+_SHEETS_ID_RE = re.compile(
+    r'docs\.google\.com/spreadsheets/d/([A-Za-z0-9_-]+)')
+
+# Google Drive's large-file "can't scan for viruses" interstitial: an HTML
+# page (200 status) with a confirm form instead of the file. The real
+# download lives at the form's action URL with its hidden inputs as params.
+_DRIVE_INTERSTITIAL_FORM_RE = re.compile(
+    r'<form[^>]*action="(https://drive\.usercontent\.google\.com/download)"'
+    r'[^>]*>(.*?)</form>', re.DOTALL)
+_HIDDEN_INPUT_RE = re.compile(
+    r'<input\s+type="hidden"\s+name="([^"]+)"\s+value="([^"]*)"')
+
+_PICKLE_TRUST_WARNING = (
+    'unpickling data from a remote source can execute arbitrary code; '
+    'pass trust=True to hypertools.load() once you have verified the '
+    'source, to silence this warning')
 
 
 def is_loadable_string(s):
@@ -66,12 +86,16 @@ def is_loadable_string(s):
     return False
 
 
-def load_source(source, split=None, streaming=False):
+def load_source(source, split=None, streaming=False, trust=False):
     """Resolve one non-builtin string source (steps 2-6 of the chain).
 
     Returns the loaded dataset (DataFrame, array, list, dict, or a
     Hugging Face [Iterable]Dataset). Raises HypertoolsIOError listing
     every attempted interpretation when nothing works.
+
+    ``trust`` is threaded from :func:`hypertools.load`: it silences the
+    remote-pickle security warning and re-enables ``allow_pickle`` for
+    remote .npy/.npz payloads (see ``_parse_payload``).
     """
     attempts = []
 
@@ -99,27 +123,46 @@ def load_source(source, split=None, streaming=False):
             attempts.append(f'Hugging Face dataset: {type(e).__name__}: '
                             f'{str(e).splitlines()[0][:120]}')
 
-    # 4. Google Drive URL or bare ID
+    # 4. Google Sheets URL -> CSV export (checked before generic Drive id
+    # extraction, since a Sheets URL also matches the '/d/<id>' pattern)
+    sheet_url = _normalize_google_sheet(source)
+    if sheet_url is not None:
+        try:
+            raw, name_hint = _fetch_bytes(sheet_url)
+            return _parse_payload(raw, name_hint or 'sheet.csv',
+                                  trust=trust, remote=True)
+        except ValueError:
+            raise
+        except Exception as e:
+            attempts.append(f'Google Sheets: {type(e).__name__}: {e}')
+
+    # 5. Google Drive URL or bare ID
     drive_id = _extract_drive_id(source)
     if drive_id is not None:
         url = f'https://drive.google.com/uc?export=download&id={drive_id}'
         try:
             raw, name_hint = _fetch_bytes(url)
-            return _parse_payload(raw, name_hint or source)
+            return _parse_payload(raw, name_hint or source,
+                                  trust=trust, remote=True)
+        except ValueError:
+            raise
         except Exception as e:
             attempts.append(f'Google Drive ({drive_id}): '
                             f'{type(e).__name__}: {e}')
 
-    # 5. Dropbox URL or shared-link path
+    # 6. Dropbox URL or shared-link path
     dropbox_url = _normalize_dropbox(source)
     if dropbox_url is not None:
         try:
             raw, name_hint = _fetch_bytes(dropbox_url)
-            return _parse_payload(raw, name_hint or source)
+            return _parse_payload(raw, name_hint or source,
+                                  trust=trust, remote=True)
+        except ValueError:
+            raise
         except Exception as e:
             attempts.append(f'Dropbox: {type(e).__name__}: {e}')
 
-    # 6. any URL, with or without a scheme
+    # 7. any URL, with or without a scheme
     url = None
     if source.startswith(('http://', 'https://')):
         url = source
@@ -128,7 +171,10 @@ def load_source(source, split=None, streaming=False):
     if url is not None:
         try:
             raw, name_hint = _fetch_bytes(url)
-            return _parse_payload(raw, name_hint or source)
+            return _parse_payload(raw, name_hint or source,
+                                  trust=trust, remote=True)
+        except ValueError:
+            raise
         except Exception as e:
             attempts.append(f'URL ({url}): {type(e).__name__}: {e}')
 
@@ -141,7 +187,7 @@ def load_source(source, split=None, streaming=False):
 def load_local_file(path):
     """Load a local data file by extension (with content sniffing as the
     fallback). Supports pickle/.geo, .npy/.npz, .csv/.tsv/.txt, .json,
-    .parquet, and .mat."""
+    .parquet, .mat, and .xlsx/.xls."""
     path = Path(path)
     return _parse_payload(path.read_bytes(), path.name)
 
@@ -177,6 +223,16 @@ def _extract_drive_id(s):
     return None
 
 
+def _normalize_google_sheet(s):
+    """Rewrite a Google Sheets URL to its CSV export URL, or None if ``s``
+    isn't a Sheets URL."""
+    m = _SHEETS_ID_RE.search(s)
+    if m is None:
+        return None
+    return (f'https://docs.google.com/spreadsheets/d/{m.group(1)}'
+            '/export?format=csv')
+
+
 def _normalize_dropbox(s):
     """Direct-download URL from a Dropbox URL or shared-link path
     (e.g. 's/abc/file.pkl' or 'scl/fi/<id>/file.csv?rlkey=...')."""
@@ -191,41 +247,83 @@ def _normalize_dropbox(s):
     return None
 
 
+def _looks_like_html(raw, ctype):
+    return raw[:1] == b'<' and ('html' in ctype or b'<html' in raw[:512].lower())
+
+
+def _name_hint(resp, url):
+    dispo = resp.headers.get('Content-Disposition', '')
+    m = re.search(r'filename="?([^";]+)"?', dispo)
+    if m:
+        return m.group(1)
+    tail = url.split('?')[0].rstrip('/').rsplit('/', 1)[-1]
+    return tail if '.' in tail else None
+
+
+def parse_drive_interstitial(html):
+    """Parse a Google Drive "can't scan this file for viruses" large-file
+    interstitial page, returning (action_url, params) for the real
+    download, or None if ``html`` isn't one of these pages."""
+    m = _DRIVE_INTERSTITIAL_FORM_RE.search(html)
+    if m is None:
+        return None
+    action_url = m.group(1)
+    params = dict(_HIDDEN_INPUT_RE.findall(m.group(2)))
+    return action_url, params
+
+
 def _fetch_bytes(url, timeout=60):
-    """Download url -> (bytes, filename_hint). Raises on HTTP errors and on
-    HTML interstitials (e.g. Google Drive rate-limit pages)."""
+    """Download url -> (bytes, filename_hint). Automatically follows the
+    Google Drive large-file virus-scan interstitial (a confirm form served
+    in place of the file); raises on HTTP errors and on any other HTML
+    interstitial (e.g. rate-limit/permission pages)."""
     resp = requests.get(url, headers=_UA, timeout=timeout,
                         allow_redirects=True)
     resp.raise_for_status()
     raw = resp.content
     if not raw:
         raise HypertoolsIOError(f'empty response from {url}')
-    ctype = resp.headers.get('Content-Type', '')
-    if raw[:1] == b'<' and ('html' in ctype or b'<html' in raw[:512].lower()):
-        raise HypertoolsIOError(
-            f'{url} returned an HTML page instead of data (rate limit, '
-            'permission page, or a link that needs a direct-download form)')
-    name_hint = None
-    dispo = resp.headers.get('Content-Disposition', '')
-    m = re.search(r'filename="?([^";]+)"?', dispo)
-    if m:
-        name_hint = m.group(1)
-    else:
-        tail = url.split('?')[0].rstrip('/').rsplit('/', 1)[-1]
-        if '.' in tail:
-            name_hint = tail
-    return raw, name_hint
+
+    if _looks_like_html(raw, resp.headers.get('Content-Type', '')):
+        parsed = parse_drive_interstitial(raw.decode('utf-8', errors='replace'))
+        if parsed is None:
+            raise HypertoolsIOError(
+                f'{url} returned an HTML page instead of data (rate '
+                'limit, permission page, or a link that needs a '
+                'direct-download form)')
+        action_url, params = parsed
+        resp = requests.get(action_url, params=params, headers=_UA,
+                            timeout=timeout, allow_redirects=True)
+        resp.raise_for_status()
+        raw = resp.content
+        if not raw:
+            raise HypertoolsIOError(f'empty response from {action_url}')
+        if _looks_like_html(raw, resp.headers.get('Content-Type', '')):
+            raise HypertoolsIOError(
+                f'{url} returned an HTML page instead of data (rate '
+                'limit, permission page, or a link that needs a '
+                'direct-download form)')
+        return raw, _name_hint(resp, action_url)
+
+    return raw, _name_hint(resp, url)
 
 
-def _parse_payload(raw, name_hint=''):
+def _parse_payload(raw, name_hint='', trust=False, remote=False):
     """Parse downloaded/read bytes into a dataset, by filename extension
-    first and content sniffing second."""
+    first and content sniffing second.
+
+    ``remote`` marks payloads fetched over the network (as opposed to a
+    local file): unpickling a remote payload without ``trust=True`` emits
+    a ``UserWarning``, and remote .npy/.npz use ``allow_pickle=False``
+    unless ``trust=True``. Local files are never subject to this policy.
+    """
     ext = Path(str(name_hint)).suffix.lower()
+    allow_pickle = trust or not remote
 
     if ext == '.npy':
-        return np.load(io.BytesIO(raw), allow_pickle=True)
+        return np.load(io.BytesIO(raw), allow_pickle=allow_pickle)
     if ext == '.npz':
-        return _unpack_npz(raw)
+        return _unpack_npz(raw, trust=trust, remote=remote)
     if ext in ('.csv', '.tsv', '.txt'):
         sep = '\t' if ext == '.tsv' else None
         return pd.read_csv(io.BytesIO(raw), sep=sep, engine='python')
@@ -235,29 +333,34 @@ def _parse_payload(raw, name_hint=''):
         return pd.read_parquet(io.BytesIO(raw))
     if ext == '.mat':
         return _unpack_mat(raw)
+    if ext == '.xlsx':
+        return pd.read_excel(io.BytesIO(raw))
+    if ext == '.xls':
+        return _read_xls(raw)
     if ext in ('.pkl', '.pickle', '.geo', '.p'):
-        return _unpickle_bytes(raw)
+        return _unpickle_bytes(raw, trust=trust, remote=remote)
 
     # no (useful) extension: sniff the content
     if raw[:6] == b'\x93NUMPY':
-        return np.load(io.BytesIO(raw), allow_pickle=True)
+        return np.load(io.BytesIO(raw), allow_pickle=allow_pickle)
     if raw[:1] == b'\x80':
-        return _unpickle_bytes(raw)
+        return _unpickle_bytes(raw, trust=trust, remote=remote)
     if raw[:2] == b'PK':
         try:
-            return _unpack_npz(raw)
+            return _unpack_npz(raw, trust=trust, remote=remote)
         except Exception:
             return pd.read_parquet(io.BytesIO(raw))
     try:
         text = raw.decode('utf-8')
     except UnicodeDecodeError:
         # last resort: pickle protocols < 2 have no magic prefix
-        return _unpickle_bytes(raw)
+        return _unpickle_bytes(raw, trust=trust, remote=remote)
     return pd.read_csv(io.StringIO(text), sep=None, engine='python')
 
 
-def _unpack_npz(raw):
-    z = np.load(io.BytesIO(raw), allow_pickle=True)
+def _unpack_npz(raw, trust=False, remote=False):
+    allow_pickle = trust or not remote
+    z = np.load(io.BytesIO(raw), allow_pickle=allow_pickle)
     arrays = [z[k] for k in z.files]
     return arrays[0] if len(arrays) == 1 else arrays
 
@@ -271,9 +374,26 @@ def _unpack_mat(raw):
     return data
 
 
-def _unpickle_bytes(raw):
+def _read_xls(raw):
+    """Legacy .xls (OLE binary format) via pandas' xlrd engine, with a
+    friendlier ImportError than pandas' own when xlrd isn't installed."""
+    try:
+        return pd.read_excel(io.BytesIO(raw), engine='xlrd')
+    except ImportError as e:
+        raise ImportError(
+            'xlrd is required to load legacy .xls files; install it with '
+            'pip install xlrd'
+        ) from e
+
+
+def _unpickle_bytes(raw, trust=False, remote=False):
     """pickle -> pandas unpickler -> dill, mirroring the tolerant chain
-    used for the built-in example datasets."""
+    used for the built-in example datasets.
+
+    Remote payloads (``remote=True``) emit a ``UserWarning`` unless
+    ``trust=True``: unpickling can execute arbitrary code."""
+    if remote and not trust:
+        warnings.warn(_PICKLE_TRUST_WARNING, UserWarning, stacklevel=3)
     import pickle
     try:
         return pickle.loads(raw)

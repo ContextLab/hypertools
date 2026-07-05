@@ -1,8 +1,14 @@
 # -*- coding: utf-8 -*-
 """Universal loader: hyp.load resolves strings through
-builtin -> local file -> Hugging Face -> Google Drive -> Dropbox -> URL,
-and lists of strings resolve to lists of datasets. All tests use real
-files and real network calls (no mocks)."""
+builtin -> local file -> Hugging Face -> Google Sheets -> Google Drive ->
+Dropbox -> URL, and lists of strings resolve to lists of datasets. All
+tests use real files and real network calls (no mocks)."""
+
+import functools
+import http.server
+import threading
+import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -20,6 +26,30 @@ IRIS_CSV = 'raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv'
 # legacy hypertools 'spiral' pickle, still hosted on Google Drive
 DRIVE_SPIRAL_ID = '1nHAusn2VsQinJk35xvJSd7CtWPC1uOwK'
 DROPBOX_BUNNY = 'https://www.dropbox.com/s/7d9vo9idqk1hn31/bunny.pkl?dl=0'
+# public 476MB file that trips Google Drive's "can't scan this file for
+# viruses" large-file interstitial instead of serving the file directly
+DRIVE_BIG_FILE_ID = '1l_5RK28JRL19wpT22B-DY9We3TVXnnQQ'
+# Google's own Sheets-API-quickstart public sample sheet ("Class Data")
+GOOGLE_SHEETS_SAMPLE_URL = (
+    'https://docs.google.com/spreadsheets/d/'
+    '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit#gid=0')
+
+
+@pytest.fixture
+def http_dir_server(tmp_path):
+    """Serve tmp_path over a real HTTP socket on a random localhost port
+    (no mocks: requests made against this fixture hit a real socket)."""
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler,
+                                directory=str(tmp_path))
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield tmp_path, f'http://127.0.0.1:{server.server_address[1]}'
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 def test_is_loadable_string_discrimination():
@@ -136,3 +166,163 @@ def test_plot_mixed_dtype_dataframe():
 def test_load_unresolvable_string_lists_attempts():
     with pytest.raises(HypertoolsIOError, match='Tried, in order'):
         hyp.load('no_such_dataset_or_file_xyz123')
+
+
+# ---- Google Drive large-file interstitial ----
+
+def test_parse_drive_interstitial_from_real_capture():
+    """Parses the real interstitial HTML captured live from
+    DRIVE_BIG_FILE_ID at implementation time (before confirm params were
+    supplied); saved verbatim as a fixture since it's small (2.4KB)."""
+    from hypertools.io.sources import parse_drive_interstitial
+    html = (Path(__file__).parent / 'data' /
+            'drive_large_file_interstitial.html').read_text()
+    parsed = parse_drive_interstitial(html)
+    assert parsed is not None
+    action_url, params = parsed
+    assert action_url == 'https://drive.usercontent.google.com/download'
+    assert params == {
+        'id': DRIVE_BIG_FILE_ID,
+        'export': 'download',
+        'confirm': 't',
+        'uuid': 'ea85f6bc-9da9-43b1-8109-20a4e7459918',
+    }
+
+
+def test_parse_drive_interstitial_returns_none_for_other_html():
+    from hypertools.io.sources import parse_drive_interstitial
+    assert parse_drive_interstitial('<html><body>hi</body></html>') is None
+    assert parse_drive_interstitial('not html at all') is None
+
+
+@pytest.mark.bigdata
+def test_load_drive_large_file_interstitial_live():
+    """Live end-to-end: hyp.load() on a 476MB Drive file
+    ('fcn8s_from_caffe.npz', a Caffe FCN-8s model) that Google Drive
+    answers with a "can't scan this file for viruses" HTML interstitial
+    instead of the file. Proves _fetch_bytes parses the interstitial's
+    confirm form (id/export/confirm/uuid hidden inputs) and re-fetches
+    from drive.usercontent.google.com/download rather than raising on the
+    HTML. 42 named arrays (conv/fc/score/upscore weights+biases).
+    Manually verified (see task-2-report.md) to download exactly
+    498,881,336 bytes -- matching Drive's own Content-Length -- in ~24s;
+    shipped here as a full download since that proved fast enough to run
+    routinely under the bigdata marker."""
+    arrays = hyp.load(DRIVE_BIG_FILE_ID)
+    assert isinstance(arrays, list) and len(arrays) == 42
+    assert all(isinstance(a, np.ndarray) and a.dtype == np.float32
+              for a in arrays)
+    # ~124M total float32 params -> the file is genuinely ~476MB, not a
+    # truncated/HTML stand-in
+    assert sum(a.size for a in arrays) > 1e8
+
+
+# ---- Google Sheets ----
+
+def test_normalize_google_sheet_url_rewrite():
+    from hypertools.io.sources import _normalize_google_sheet
+    rewritten = _normalize_google_sheet(GOOGLE_SHEETS_SAMPLE_URL)
+    assert rewritten == (
+        'https://docs.google.com/spreadsheets/d/'
+        '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/export?format=csv')
+    assert _normalize_google_sheet('https://example.com/not-a-sheet') is None
+    assert _normalize_google_sheet(
+        'https://drive.google.com/file/d/abcdefghijklmnopqrstuvwxyzabcde/'
+        'view') is None
+
+
+def test_load_google_sheet_live():
+    df = hyp.load(GOOGLE_SHEETS_SAMPLE_URL)
+    assert isinstance(df, pd.DataFrame)
+    assert df.shape[0] == 30
+
+
+# ---- Excel (.xlsx / .xls) ----
+
+def test_load_xlsx_roundtrip(tmp_path):
+    arr = np.random.default_rng(2).standard_normal((8, 3))
+    df = pd.DataFrame(arr, columns=['a', 'b', 'c'])
+    path = tmp_path / 'data.xlsx'
+    df.to_excel(path, index=False)
+    out = hyp.load(str(path))
+    pd.testing.assert_frame_equal(out, df)
+
+
+def test_load_xls_without_xlrd_raises_friendly_error(tmp_path):
+    """xlrd is intentionally NOT installed (it's only needed for the
+    legacy binary .xls format, which pandas can't even start parsing
+    without it -- read_excel raises ImportError before touching the
+    bytes). So a genuinely-valid .xls file isn't needed to exercise the
+    friendly-error path: any real file named '.xls' hits the same
+    missing-dependency check. We use arbitrary bytes (rather than a
+    parseable file) precisely to prove the ImportError fires before any
+    content parsing is attempted."""
+    import importlib.util
+    if importlib.util.find_spec('xlrd') is not None:
+        pytest.skip('xlrd is installed in this environment; the '
+                    'missing-dependency path is not exercised here')
+    path = tmp_path / 'legacy.xls'
+    path.write_bytes(b'not a real xls file -- exercises the '
+                     b'missing-xlrd error path')
+    with pytest.raises(ImportError, match='pip install xlrd'):
+        hyp.load(str(path))
+
+
+# ---- Remote pickle / npy trust policy ----
+
+def test_remote_pickle_warns_without_trust(http_dir_server):
+    tmp_path, base_url = http_dir_server
+    pd.to_pickle(pd.DataFrame({'a': [1, 2, 3]}), tmp_path / 'd.pkl')
+    with pytest.warns(UserWarning, match='trust=True'):
+        df = hyp.load(base_url + '/d.pkl')
+    assert df.shape == (3, 1)
+
+
+def test_remote_pickle_trust_true_silences_warning(http_dir_server):
+    tmp_path, base_url = http_dir_server
+    pd.to_pickle(pd.DataFrame({'a': [1, 2, 3]}), tmp_path / 'd.pkl')
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        df = hyp.load(base_url + '/d.pkl', trust=True)
+    assert df.shape == (3, 1)
+
+
+def test_remote_npy_object_array_blocked_without_trust(http_dir_server):
+    tmp_path, base_url = http_dir_server
+    np.save(tmp_path / 'obj.npy', np.array([{'a': 1}], dtype=object))
+    with pytest.raises(ValueError, match='allow_pickle'):
+        hyp.load(base_url + '/obj.npy')
+
+
+def test_remote_npy_object_array_allowed_with_trust(http_dir_server):
+    tmp_path, base_url = http_dir_server
+    np.save(tmp_path / 'obj.npy', np.array([{'a': 1}], dtype=object))
+    out = hyp.load(base_url + '/obj.npy', trust=True)
+    assert out[0] == {'a': 1}
+
+
+def test_remote_npy_numeric_no_warning_no_trust_needed(http_dir_server):
+    tmp_path, base_url = http_dir_server
+    arr = np.random.default_rng(3).standard_normal((5, 3))
+    np.save(tmp_path / 'num.npy', arr)
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        out = hyp.load(base_url + '/num.npy')
+    np.testing.assert_allclose(out, arr)
+
+
+def test_local_pickle_never_warns_or_restricts(tmp_path):
+    pd.to_pickle(pd.DataFrame({'a': [1, 2, 3]}), tmp_path / 'd.pkl')
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        df = hyp.load(str(tmp_path / 'd.pkl'))
+    assert df.shape == (3, 1)
+
+
+def test_builtin_example_data_exempt_from_trust_policy():
+    # 'spiral' is remote (hosted on Google Drive) but a built-in example
+    # name -- it never goes through sources.py's trust-gated parsing.
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        data = hyp.load('spiral')
+    assert isinstance(data, list)
