@@ -24,12 +24,25 @@ re-estimating) on new data.
 import numpy as np
 import hypertools as hyp
 
-# simulate three ~70-row random walks
+# simulate two noisy 5D helical trajectories (phase-shifted): structured
+# dynamics like these make the forecast visible -- the dashed tail continues
+# each spiral's sweep. (Aperiodic data such as random walks are forecastable
+# too, but their best forecast is nearly constant, which is less fun to look
+# at.)
 np.random.seed(1234)
-n_samples = 70
-n_dims = 3
-data = [np.cumsum(np.random.randn(n_samples, n_dims), axis=0) for _ in range(3)]
+ts = np.linspace(0, 4 * np.pi, 90)
 
-# plot, forecasting 30 steps ahead with a Kalman filter
-hyp.plot(data, predict='Kalman', t=30,
-         legend=['walk 1', 'walk 2', 'walk 3'])
+
+def helix(phase):
+    clean = np.column_stack([
+        np.cos(ts + phase), np.sin(ts + phase), ts / 4,
+        0.5 * np.cos(2 * ts + phase), 0.5 * np.sin(2 * ts + phase)])
+    return clean + np.random.randn(*clean.shape) * 0.03
+
+
+data = [helix(0.0), helix(2.0)]
+
+# plot, forecasting 30 steps ahead with a Gaussian process; the dashed,
+# same-color tails are the forecasts
+hyp.plot(data, predict='GaussianProcess', t=30,
+         legend=['helix 1', 'helix 2'], linewidth=2)
