@@ -12,5 +12,6 @@ from .reduce.describe import describe
 from .cluster.cluster import cluster
 from .core.model import apply_model
 from .manip.manip import manip
+from .predict.predict import predict
 from .io.save import save
 from . import io

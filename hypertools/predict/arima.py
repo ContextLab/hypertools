@@ -67,6 +67,27 @@ def forecaster(data, n_steps, future_index, **kwargs):
     return pd.DataFrame(columns, index=future_index, columns=data.columns)
 
 
+def applier(fitted_params, new_data, t):
+    """`predict_new` path: apply each column's already-fit ARIMA parameters
+    to the new series via `MLEResults.apply` (statsmodels' documented
+    no-re-estimation path -- it reuses the fitted parameters against new
+    data rather than re-optimizing them), then forecast forward."""
+    from .common import resolve_t
+
+    results = fitted_params['results']
+    n_steps, future_index = resolve_t(new_data, t)
+    if n_steps < 0:
+        return new_data.loc[future_index]
+
+    columns = {}
+    for col, fit_result in zip(new_data.columns, results):
+        new_series = new_data[col].to_numpy(dtype=float)
+        applied = fit_result.apply(new_series)
+        columns[col] = np.asarray(applied.forecast(steps=n_steps))
+
+    return pd.DataFrame(columns, index=future_index, columns=new_data.columns)
+
+
 class ARIMA(Forecaster):
     """Per-column ARIMA forecaster (statsmodels).
 
@@ -80,11 +101,12 @@ class ARIMA(Forecaster):
 
     def __init__(self, order=(1, 1, 1), **kwargs):
         required = ['results']
-        super().__init__(order=order, fitter=fitter, forecaster=forecaster, data=None,
-                          required=required, **kwargs)
+        super().__init__(order=order, fitter=fitter, forecaster=forecaster, applier=applier,
+                          data=None, required=required, **kwargs)
 
         self.order = order
         self.fitter = fitter
         self.forecaster = forecaster
+        self.applier = applier
         self.data = None
         self.required = required

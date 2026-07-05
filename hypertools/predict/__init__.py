@@ -4,3 +4,5 @@ from .gp import GaussianProcess
 from .autoreg import AutoRegressor
 from .arima import ARIMA
 from .laplace import Laplace
+from .chronos import Chronos
+from .predict import predict, FORECASTERS

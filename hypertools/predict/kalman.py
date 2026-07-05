@@ -53,6 +53,29 @@ def forecaster(data, n_steps, future_index, **kwargs):
     return pd.DataFrame(rows, index=future_index, columns=data.columns)
 
 
+def applier(fitted_params, new_data, t):
+    """`predict_new` path: filter the NEW series with the LEARNED
+    transition/observation matrices (no EM -- `kf` is reused unchanged),
+    then iterate `filter_update` forward to forecast beyond it."""
+    from .common import resolve_t
+
+    kf = fitted_params['kf']
+    n_steps, future_index = resolve_t(new_data, t)
+    if n_steps < 0:
+        return new_data.loc[future_index]
+
+    x = np.ma.masked_invalid(new_data.to_numpy(dtype=float))
+    means, covs = kf.filter(x)
+    mean, cov = means[-1], covs[-1]
+
+    rows = []
+    for _ in range(n_steps):
+        mean, cov = kf.filter_update(mean, cov)
+        rows.append(np.asarray(mean))
+
+    return pd.DataFrame(rows, index=future_index, columns=new_data.columns)
+
+
 class Kalman(Forecaster):
     """Kalman-filter forecaster: EM-fit a linear-Gaussian state-space model,
     then iterate `filter_update` (no observations) to forecast forward.
@@ -66,11 +89,12 @@ class Kalman(Forecaster):
 
     def __init__(self, n_iter=5, **kwargs):
         required = ['kf', 'mean', 'cov']
-        super().__init__(n_iter=n_iter, fitter=fitter, forecaster=forecaster, data=None,
-                          required=required, **kwargs)
+        super().__init__(n_iter=n_iter, fitter=fitter, forecaster=forecaster, applier=applier,
+                          data=None, required=required, **kwargs)
 
         self.n_iter = n_iter
         self.fitter = fitter
         self.forecaster = forecaster
+        self.applier = applier
         self.data = None
         self.required = required

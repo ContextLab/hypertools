@@ -91,6 +91,14 @@ class Laplace(Forecaster):
     Feeds each column's full series through `skaters.api.laplace(k=t)`'s
     online state loop, then takes the mean of each returned forecast
     distribution.
+
+    Reuse (`predict_new` / `return_model=True`) is conditioning-by-nature:
+    `laplace` is a stateless-online estimator with no learned parameters to
+    replay, so there is no custom `applier` here (it stays `None`). Passing
+    a fitted `Laplace` back as `model=` on new data simply re-feeds the NEW
+    series through a fresh `laplace(k=t)` closure -- "reuse" means
+    conditioning on the new series, not replaying anything learned from the
+    original fit.
     """
 
     def __init__(self, **kwargs):

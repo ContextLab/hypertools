@@ -71,7 +71,11 @@ def test_list_in_list_out():
 
 
 def test_friendly_import_error_when_pykalman_missing(monkeypatch):
-    import hypertools.predict.kalman as kalman_mod
+    # `hypertools.predict` (the attribute) is shadowed by `hyp.predict` the
+    # dispatcher function (see hypertools/__init__.py); `import a.b.c as x`
+    # walks attributes from the top, so it would resolve the shadowed
+    # attribute. `from a.b import c as x` resolves via sys.modules instead.
+    from hypertools.predict import kalman as kalman_mod
     import builtins
 
     real_import = builtins.__import__

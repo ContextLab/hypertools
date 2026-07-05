@@ -41,6 +41,28 @@ def forecaster(data, n_steps, future_index, **kwargs):
     return pd.DataFrame(y_pred, index=future_index, columns=data.columns)
 
 
+def applier(fitted_params, new_data, t):
+    """`predict_new` path: GP conditions on the ORIGINAL fit (the already-fit
+    `gp` is reused unchanged, over the time index it was actually trained
+    on -- it is not re-fit against `new_data`'s values). Forecasting
+    continues from where the original fit's time index left off; only the
+    returned index/columns come from `new_data` (via `resolve_t`)."""
+    from .common import resolve_t
+
+    gp = fitted_params['gp']
+    n = fitted_params['n']
+    n_steps, future_index = resolve_t(new_data, t)
+    if n_steps < 0:
+        return new_data.loc[future_index]
+
+    x_future = np.arange(n, n + n_steps).reshape(-1, 1)
+    y_pred = gp.predict(x_future)
+    if y_pred.ndim == 1:
+        y_pred = y_pred.reshape(-1, 1)
+
+    return pd.DataFrame(y_pred, index=future_index, columns=new_data.columns)
+
+
 class GaussianProcess(Forecaster):
     """Gaussian-process forecaster over the time index.
 
@@ -58,12 +80,14 @@ class GaussianProcess(Forecaster):
     def __init__(self, kernel=None, alpha=1e-10, normalize_y=True, **kwargs):
         required = ['gp', 'n']
         super().__init__(kernel=kernel, alpha=alpha, normalize_y=normalize_y, fitter=fitter,
-                          forecaster=forecaster, data=None, required=required, **kwargs)
+                          forecaster=forecaster, applier=applier, data=None,
+                          required=required, **kwargs)
 
         self.kernel = kernel
         self.alpha = alpha
         self.normalize_y = normalize_y
         self.fitter = fitter
         self.forecaster = forecaster
+        self.applier = applier
         self.data = None
         self.required = required

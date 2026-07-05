@@ -70,7 +70,10 @@ def test_large_horizon_single_factory_call_handles_it():
 
 
 def test_friendly_import_error_when_skaters_missing(monkeypatch):
-    import hypertools.predict.laplace as laplace_mod
+    # see the comment in test_kalman.py's analogous test: `from a.b import c`
+    # resolves via sys.modules (safe), `import a.b.c as x` walks attributes
+    # from the top (unsafe -- `hypertools.predict` is shadowed by `hyp.predict`).
+    from hypertools.predict import laplace as laplace_mod
     import builtins
 
     real_import = builtins.__import__

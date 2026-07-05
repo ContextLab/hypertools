@@ -100,6 +100,34 @@ def forecaster(data, n_steps, future_index, **kwargs):
     return pd.DataFrame(rows, index=future_index, columns=data.columns)
 
 
+def applier(fitted_params, new_data, t):
+    """`predict_new` path: reuse the already-fit `estimator` unchanged (no
+    refitting); the recursion is reseeded from the trailing `lags`
+    observations of `new_data` instead of the original fit's history."""
+    from .common import resolve_t
+
+    estimator = fitted_params['estimator']
+    lags = fitted_params['lags']
+    d = fitted_params['n_features']
+
+    n_steps, future_index = resolve_t(new_data, t)
+    if n_steps < 0:
+        return new_data.loc[future_index]
+
+    x_new = new_data.to_numpy(dtype=float)
+    assert len(x_new) >= lags, ValueError(
+        f'predict_new needs at least lags={lags} observations of new data; got {len(x_new)}')
+    history = x_new[-lags:].copy()
+
+    rows = []
+    for _ in range(n_steps):
+        pred = np.asarray(estimator.predict(history.reshape(1, -1))).reshape(-1)[:d]
+        rows.append(pred)
+        history = np.vstack([history[1:], pred])
+
+    return pd.DataFrame(rows, index=future_index, columns=new_data.columns)
+
+
 class AutoRegressor(Forecaster):
     """Recursive multi-step forecaster: any scikit-learn regressor over
     lagged features.
@@ -120,12 +148,13 @@ class AutoRegressor(Forecaster):
     def __init__(self, model='Ridge', lags=10, **model_kwargs):
         required = ['estimator', 'lags', 'history', 'n_features']
         super().__init__(model=model, lags=lags, model_kwargs=model_kwargs, fitter=fitter,
-                          forecaster=forecaster, data=None, required=required)
+                          forecaster=forecaster, applier=applier, data=None, required=required)
 
         self.model = model
         self.lags = lags
         self.model_kwargs = model_kwargs
         self.fitter = fitter
         self.forecaster = forecaster
+        self.applier = applier
         self.data = None
         self.required = required

@@ -59,7 +59,10 @@ def test_list_in_list_out():
 
 
 def test_friendly_import_error_when_statsmodels_missing(monkeypatch):
-    import hypertools.predict.arima as arima_mod
+    # see the comment in test_kalman.py's analogous test: `from a.b import c`
+    # resolves via sys.modules (safe), `import a.b.c as x` walks attributes
+    # from the top (unsafe -- `hypertools.predict` is shadowed by `hyp.predict`).
+    from hypertools.predict import arima as arima_mod
     import builtins
 
     real_import = builtins.__import__
