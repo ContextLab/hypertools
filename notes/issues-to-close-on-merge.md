@@ -52,6 +52,7 @@ Confirmed STILL_BUG at triage time; fixed during this pass. Safe to close on mer
 | 146 & 190 | n_clusters force-injected into DBSCAN/MeanShift/OPTICS (not in registry) | Replaced the hardcoded `model_name != "HDBSCAN"` exemption in `cluster/cluster.py` with a signature-based check (`inspect.signature(model)` for an `n_clusters` param) before defaulting `n_clusters` in, and registered `MeanShift`, `DBSCAN`, `OPTICS`, and `AffinityPropagation` so their string names resolve |
 | 148 | show=False leaves figure registered in pyplot | Added `plt.close(fig)` in `plot/plot.py` when `show=False` and the user did not supply their own `ax` (and the figure is a matplotlib Figure), after the save — deregisters it from `Gcf` so it won't reappear via a later `plt.show()`/notebook `flush_figures`. The returned Figure/animation stay valid and savable |
 | 214 | wiki-model docstring vs wiki_model key | Fixed `io/load.py` docstring (lines 102, 104) to read `wiki_model` (underscore), matching the actual `EXAMPLE_DATA` dict key |
+| 169 | Kalman filter for missing/future data + hyp.predict | IMPLEMENTED (2026-07-05): new `hyp.predict` module (Kalman/ARIMA/GaussianProcess/AutoRegressor/Laplace/Chronos forecasters, GH#169 `t` semantics incl. DateTime, `return_model` reuse on new data, `plot(predict=..., t=...)` overlay) + new `hyp.impute` module whose KalmanImputer fills fully-NaN rows (the PPCA gap this issue describes); tutorials: stock_forecasting.ipynb + projectile_kalman.ipynb |
 | (non-issue regression) | reduce.py custom class/instance path raised UnboundLocalError | Initialized `model_params` in the `else` branch of `reduce/reduce.py` (previously undefined for non-str/dict `reduce=` args) — unblocks the "pass a custom sklearn-style class/instance" escape hatch that #162 (autoencoders) would need |
 
 ## 3. Leave open (not addressed by 2.0)
@@ -81,7 +82,6 @@ NOT_ADDRESSED issues, still-open STILL_BUG issues, and ADDRESSED-but-partial iss
 | 187 | text download function (twitter/wikipedia scraper) | No `textlookup`/twitter function; `io/sources.py` only fetches known data sources by name/URL |
 | 186 | 3D stream graphs (d3-style) | No streamgraph code; `io/streaming.py`'s "streaming" means live data consumption, a different concept |
 | 185 | data formatting via pliers | No `pliers` import anywhere; `format_data.py` still only handles text/DataFrame/array via its own helpers |
-| 169 | Kalman filter for missing/future data | No kalman code or `hyp.predict` function; missing data still handled only via PPCA (can't fill fully-missing rows or forecast) |
 | 162 | autoencoders as a reduce algorithm | `reduce.py`'s model registry is sklearn-only; no torch/keras/autoencoder integration (the custom-class escape hatch is now at least functional post-fix, see section 2) |
 | 127 | per-matrix chemtrails/precog/bullettime | These remain single scalar bools in `plot.py`/`matplotlib_backend.py`, not per-dataset lists; a list value is silently truthy-broadcast to all datasets |
 | 123 | 2D animations | `matplotlib_backend.py` has a hard `assert x[0].shape[1] == 3` requiring 3D data for animation |
