@@ -3,11 +3,99 @@
 import itertools
 
 import matplotlib
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import proj3d
 import matplotlib.animation as animation
 import matplotlib.patches as patches
 from .._shared.helpers import *
+from .meshutil import backface_cull, blinn_phong_colors
+from .surface import build_mesh_3d, build_outline_2d, mpl_lighting_kwargs, view_vector
+
+
+def _resolve_surface_color(spec, fallback_rgb):
+    """Base RGB for one dataset's surface: `spec['color']` if given,
+    otherwise the dataset's own drawn color (`fallback_rgb`)."""
+    return mcolors.to_rgb(spec["color"]) if spec["color"] is not None else fallback_rgb
+
+
+def _shade_and_cull_3d(ax, mesh_list, surface, surface_colors, elev, azim,
+                       prior_colls=None):
+    """(Re)build a ``Poly3DCollection`` per dataset from PRECOMPUTED
+    ``(verts, faces)`` meshes, shading/culling for the CURRENT `elev`/`azim`,
+    removing `prior_colls` first (animation frame swap). Returns the new
+    per-dataset collection list (``None`` where that dataset has no surface)
+    so the caller can pass it back in as `prior_colls` next frame."""
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+    if prior_colls:
+        for c in prior_colls:
+            if c is not None:
+                c.remove()
+
+    v = view_vector(elev, azim)
+    new_colls = []
+    for i, (mesh, spec) in enumerate(zip(mesh_list, surface)):
+        if spec is None or mesh is None:
+            new_colls.append(None)
+            continue
+        verts, faces = mesh
+        base_rgb = _resolve_surface_color(spec, surface_colors[i])
+        light_kw = mpl_lighting_kwargs(spec)
+        rgba = blinn_phong_colors(verts, faces, base_rgb, v, **light_kw)
+        cull = backface_cull(verts, faces, v)
+        alpha = spec["alpha"]
+        rgba = rgba.copy()
+        rgba[:, 3] = alpha
+        coll = Poly3DCollection(
+            verts[faces[cull]], facecolors=rgba[cull], edgecolors="none",
+            linewidths=0, shade=False, antialiaseds=(alpha < 1.0),
+        )
+        coll.set_label("_nolegend_")
+        ax.add_collection3d(coll)
+        new_colls.append(coll)
+    return new_colls
+
+
+def _mesh_and_draw_3d(ax, points_list, surface, surface_colors, elev, azim,
+                      prior_colls=None, quiet=False):
+    """Build fresh meshes from the CURRENT per-dataset point windows
+    (`points_list`) and delegate to `_shade_and_cull_3d`. Used whenever the
+    visible point window changes (static plots; 'parallel'/'serial'
+    animation frames)."""
+    mesh_list = [
+        build_mesh_3d(np.asarray(pts), spec, dataset_label=f" {i}", quiet=quiet)
+        if spec is not None else None
+        for i, (pts, spec) in enumerate(zip(points_list, surface))
+    ]
+    return _shade_and_cull_3d(ax, mesh_list, surface, surface_colors, elev,
+                              azim, prior_colls=prior_colls)
+
+
+def _fill_and_draw_2d(ax, points_list, surface, surface_colors):
+    """Draw one smooth filled ``ax.fill`` outline per dataset (static 2-D
+    only), below the data lines (``zorder=0``)."""
+    for i, (pts, spec) in enumerate(zip(points_list, surface)):
+        if spec is None:
+            continue
+        outline = build_outline_2d(np.asarray(pts), spec, dataset_label=f" {i}")
+        if outline is None:
+            continue
+        color = _resolve_surface_color(spec, surface_colors[i])
+        patches_ = ax.fill(outline[:, 0], outline[:, 1], color=color,
+                           alpha=spec["alpha"], zorder=0)
+        for p in patches_:
+            p.set_label("_nolegend_")
+
+
+def _hide_no_keep_points(artists, surface):
+    """Hide (rather than remove) the primary line/marker artist for any
+    dataset whose surface spec has ``keep_points=False`` -- the artist stays
+    in `ax.lines`/`legend` bookkeeping, just invisible."""
+    for i, spec in enumerate(surface):
+        if spec is not None and not spec.get("keep_points", True):
+            if i < len(artists) and artists[i] is not None:
+                artists[i].set_visible(False)
 
 
 def _anim_box_zoom(zoom):
@@ -45,6 +133,8 @@ def _draw(
     size=None,
     ax=None,
     frame_kwargs=None,
+    surface=None,
+    surface_colors=None,
 ):
     """
     Draws the plot
@@ -412,7 +502,8 @@ def _draw(
                 plane.remove()
 
         update_lines_parallel.planes = plot_cube(cube_scale, **frame_kwargs)
-        ax.view_init(elev=elev, azim=rotations * (360 * (num / data_lines[0].shape[0])))
+        azim_now = rotations * (360 * (num / data_lines[0].shape[0]))
+        ax.view_init(elev=elev, azim=azim_now)
         # Axes3D.dist was removed in matplotlib >= 3.8, silently disabling
         # zoom; set_box_aspect(zoom=...) is the supported equivalent. See
         # _anim_box_zoom for the (slightly zoomed-out) animation mapping.
@@ -420,6 +511,7 @@ def _draw(
 
         # zip_longest: marker-only animations have no trail artists (trail
         # is None for those datasets), but head artists still animate
+        windows = []
         for line, data, trail in itertools.zip_longest(
                 lines, data_lines, trail_lines):
 
@@ -435,11 +527,21 @@ def _draw(
                     trail.set_3d_properties(data[num + 1 :, 2])
 
             if num <= tail_duration:
-                line.set_data(data[0 : num + 1, 0:2].T)
-                line.set_3d_properties(data[0 : num + 1, 2])
+                window = data[0 : num + 1]
             else:
-                line.set_data(data[num - tail_duration : num + 1, 0:2].T)
-                line.set_3d_properties(data[num - tail_duration : num + 1, 2])
+                window = data[num - tail_duration : num + 1]
+            line.set_data(window[:, 0:2].T)
+            line.set_3d_properties(window[:, 2])
+            windows.append(window)
+
+        # surface= (GH #109): recompute each dataset's hull from its CURRENT
+        # visible window (same window as the head line above) and the
+        # current camera view (backface culling depends on it)
+        if surface is not None:
+            prior = getattr(update_lines_parallel, "surface_colls", None)
+            update_lines_parallel.surface_colls = _mesh_and_draw_3d(
+                ax, windows, surface, surface_colors, elev, azim_now,
+                prior_colls=prior, quiet=True)
 
         return lines, trail_lines
 
@@ -452,9 +554,8 @@ def _draw(
                 plane.remove()
 
         update_lines_spin.planes = plot_cube(cube_scale, **frame_kwargs)
-        ax.view_init(
-            elev=elev, azim=rotations * (360 * (num / (frame_rate * duration)))
-        )
+        azim_now = rotations * (360 * (num / (frame_rate * duration)))
+        ax.view_init(elev=elev, azim=azim_now)
         # Axes3D.dist was removed in matplotlib >= 3.8, silently disabling
         # zoom; set_box_aspect(zoom=...) is the supported equivalent. See
         # _anim_box_zoom for the (slightly zoomed-out) animation mapping.
@@ -463,6 +564,16 @@ def _draw(
         for line, data in zip(lines, data_lines):
             line.set_data(data[:, 0:2].T)
             line.set_3d_properties(data[:, 2])
+
+        # surface= (GH #109): the FULL dataset is static in 'spin' mode
+        # (only the camera rotates), so the mesh itself is precomputed once
+        # (`update_lines_spin.meshes`, set in animate_plot3D before this
+        # runs) -- only shading/backface-culling are recomputed per frame.
+        if surface is not None:
+            prior = getattr(update_lines_spin, "surface_colls", None)
+            update_lines_spin.surface_colls = _shade_and_cull_3d(
+                ax, update_lines_spin.meshes, surface, surface_colors, elev,
+                azim_now, prior_colls=prior)
 
         return lines
 
@@ -488,11 +599,23 @@ def _draw(
         revealed = total_points * num / max(1, total_frames - 1)
 
         start = 0
+        windows = []
         for line, data in zip(lines, data_lines):
             shown = int(np.clip(revealed - start, 0, data.shape[0]))
-            line.set_data(data[:shown, 0:2].T)
-            line.set_3d_properties(data[:shown, 2])
+            window = data[:shown]
+            line.set_data(window[:, 0:2].T)
+            line.set_3d_properties(window[:, 2])
+            windows.append(window)
             start += data.shape[0]
+
+        # surface= (GH #109): each dataset's hull follows its own currently-
+        # revealed portion (same window as its line above)
+        if surface is not None:
+            azim_now = azim + rotations * 360.0 * num / total_frames
+            prior = getattr(update_lines_serial, "surface_colls", None)
+            update_lines_serial.surface_colls = _mesh_and_draw_3d(
+                ax, windows, surface, surface_colors, elev, azim_now,
+                prior_colls=prior, quiet=True)
 
         return lines
 
@@ -580,6 +703,23 @@ def _draw(
         # the static union of in-focus items and never changes across frames.
         for _trail_line in trail:
             _trail_line.set_label('_nolegend_')
+
+        # surface= (GH #109)
+        if surface is not None:
+            # keep_points=False: hide (not remove) that dataset's line/trail
+            # for the whole animation -- visibility is set once here and
+            # persists across every frame update.
+            _hide_no_keep_points(lines, surface)
+            _hide_no_keep_points(trail, surface)
+            if style == "spin":
+                # 'spin' keeps the FULL dataset static (only the camera
+                # rotates) -- precompute each dataset's mesh once here so
+                # update_lines_spin only has to re-shade/re-cull per frame.
+                update_lines_spin.meshes = [
+                    build_mesh_3d(np.asarray(pts), spec, dataset_label=f" {i}",
+                                 quiet=True) if spec is not None else None
+                    for i, (pts, spec) in enumerate(zip(x, surface))
+                ]
 
         if tail_duration == 0:
             tail_duration = 1
@@ -683,6 +823,11 @@ def _draw(
             # initialize the view
             ax.view_init(elev=elev, azim=azim)
 
+            # surface= (GH #109): smooth lit hull surfaces, one per dataset
+            if surface is not None:
+                _mesh_and_draw_3d(ax, data, surface, surface_colors, elev, azim)
+                _hide_no_keep_points(ax.lines, surface)
+
         elif x[0].shape[1] == 2:
 
             # plot square
@@ -691,6 +836,11 @@ def _draw(
             # set axes
             ax.set_xlim(-1.1, 1.1)
             ax.set_ylim(-1.1, 1.1)
+
+            # surface= (GH #109): smooth filled hull outlines, below the data
+            if surface is not None:
+                _fill_and_draw_2d(ax, data, surface, surface_colors)
+                _hide_no_keep_points(ax.lines, surface)
 
         # set line_ani to empty
         line_ani = None

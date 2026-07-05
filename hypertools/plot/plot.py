@@ -14,6 +14,7 @@ from .matplotlib_backend import _draw
 from .backend import manage_backend
 from .plotly_backend import resolve_backend
 from .animate import _save_animation, _SVGFrameCollector, _save_animated_svg
+from .surface import broadcast_surface, normalize_surface_arg
 
 
 @manage_backend
@@ -72,6 +73,7 @@ def plot(
     stream_max=None,
     stream_window=None,
     return_model=False,
+    surface=None,
 ):
     """
     Plots dimensionality reduced data and parses plot arguments
@@ -383,6 +385,70 @@ def plot(
         all consumed samples are still retained on the returned geometry.
         Default None displays the full accumulated trajectory.
 
+    surface : bool, dict, or list of bool/dict, or None
+        If set, overlays a smooth, lit surface over each dataset's convex
+        hull (GH #109): a filled smooth outline for 2D data, or a shaded
+        3D "blob" (inflated, subdivided, and Taubin-smoothed hull -- see
+        `hypertools.plot.meshutil.smooth_hull_3d`) for 3D data. Pass
+        ``True`` for the defaults below, a dict to override specific keys
+        (unset keys use their default), or a list of bool/dict (one per
+        *drawn* dataset, matching the final -- post `cluster`/`hue`
+        regrouping -- dataset count) for per-dataset control; a bare
+        ``False``/``None`` entry in the list disables that dataset's
+        surface. Raises ``ValueError`` for 1D data (no hull concept), for
+        an unrecognized dict key, or if a list's length does not match the
+        number of drawn datasets. A dataset with too few points to form a
+        hull (< 3 for 2D, < 4 for 3D) or whose points are exactly
+        collinear/coplanar has its surface silently skipped with a
+        ``UserWarning`` (never a crash). Default None (no surfaces).
+
+        Accepted dict keys, with defaults:
+
+        - ``alpha`` (float, default 0.6): surface opacity. Note that a
+          translucent (< 1.0) 3D matplotlib surface REQUIRES the built-in
+          backface culling (always applied) to avoid interior-face
+          "cracks" showing through; plotly's translucent ``Mesh3d`` keeps
+          the full mesh and may show mild WebGL self-overlap artifacts at
+          silhouette edges (a known plotly limitation, not a hypertools
+          bug) -- prefer ``alpha`` close to 1.0 if this is objectionable.
+        - ``color`` (color spec or None, default None): surface base
+          color. ``None`` inherits the dataset's own drawn line/marker
+          color (resolved from `color`/`colors` if given, else the
+          `palette` color cycle).
+        - ``lighting`` (dict, default ``{}``): overrides the lighting
+          model. matplotlib (a two-light Blinn-Phong model; see
+          `hypertools.plot.meshutil.blinn_phong_colors`) reads ``ambient``
+          (default 0.45), ``diffuse`` (0.55), ``fill`` (0.25, the weak
+          opposite-side fill light), ``specular`` (0.30), and
+          ``shininess`` (48, the specular exponent). plotly (a
+          ``go.Mesh3d(lighting=...)`` spec) reads ``ambient`` (0.45),
+          ``diffuse`` (0.6), ``specular`` (0.25), ``roughness`` (0.35),
+          and ``fresnel`` (0.15); its light position is fixed at
+          ``(2.5, -1.5, 3.0)`` in scene coordinates. Any of these 8 keys
+          may be set together; each backend uses only the subset it
+          understands. Ignored for 2D surfaces (flat fills have no
+          lighting).
+        - ``smoothing`` (int, default 3): number of interleaved
+          [subdivide, Taubin-smooth] rounds for a 3D hull (face count
+          scales as ``4 ** smoothing``); ignored for 2D.
+        - ``pre_inflate`` (float, default 1.15): scale factor applied to
+          the 3D hull about its centroid before smoothing, compensating
+          for smoothing's shrinkage so the surface still contains most of
+          the original points; ignored for 2D.
+        - ``keep_points`` (bool, default True): if False, hides that
+          dataset's own line/marker (only the surface is shown).
+
+        Animated plots (matplotlib and plotly, 3D only -- animation is not
+        supported for 2D data at all, with or without surfaces) recompute
+        each dataset's hull every frame from its CURRENTLY VISIBLE window:
+        the revealed portion for ``animate='serial'``, the sliding
+        head/tail window for ``animate=True``/``'parallel'`` (matching the
+        window drawn by `chemtrails`/`tail_duration`), or the full,
+        precomputed-once dataset for ``animate='spin'`` (only the camera
+        orbits, so only per-frame shading/backface-culling -- not the mesh
+        itself -- needs recomputing). Surfaces never gain a legend entry
+        (``label='_nolegend_'`` / ``showlegend=False``) in either backend.
+
     return_model : bool
         If True, return a dict bundle
         ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...,
@@ -447,6 +513,13 @@ def plot(
             )
     else:
         colorbar = None
+
+    # surface= kwarg validation (GH #109): fail fast (unknown dict keys)
+    # before the expensive analyze/reduce pipeline runs. `_surface_norm` is
+    # either None (disabled), a single validated dict (broadcast to every
+    # dataset once the final dataset count is known), or a list of
+    # dict-or-None (length-checked against that same final count below).
+    _surface_norm = normalize_surface_arg(surface)
 
     # streaming inputs (issue #101): iterators/generators and Hugging Face
     # IterableDatasets are detected from the structure of the input -- no
@@ -574,6 +647,14 @@ def plot(
     else:
         xform = reducer(xform, ndims=3, reduce=reduce, internal=True,
                         format_data=False)
+
+    # surface= (GH #109): no hull concept in 1D -- fail fast rather than
+    # silently ignoring the kwarg.
+    if _surface_norm is not None and xform[0].shape[1] == 1:
+        raise ValueError(
+            "surface= is not supported for 1D data (no hull concept in a "
+            "single dimension)."
+        )
 
     # predict=: forecast `t` new rows per input dataset, in the plotted
     # (post normalize->reduce->align) space (GH #169). Computed here -- one
@@ -771,6 +852,13 @@ def plot(
                 max(0.3, 0.9 ** (d - min_depth)) for d in nested_depths
             ]
 
+    # surface= (GH #109): broadcast to the FINAL (post cluster/hue-reshape)
+    # dataset count -- reshaping above can change how many traces are
+    # actually drawn, so this must run after it, not against the original
+    # `x`.
+    surface_list = (broadcast_surface(_surface_norm, len(xform))
+                    if _surface_norm is not None else None)
+
     # handle legend
     if legend is not None:
         if legend is False:
@@ -880,6 +968,27 @@ def plot(
     # turn kwargs into a list
     kwargs_list = parse_kwargs(xform, mpl_kwargs)
 
+    # surface= (GH #109): resolve each dataset's OWN drawn color now (used
+    # when a dataset's surface spec has color=None, i.e. "inherit"). Mirrors
+    # whatever color that dataset will actually be drawn in on EITHER
+    # backend: an explicit color/colors kwarg (already in `kwargs_list`),
+    # or -- if none was given -- the same per-dataset palette-cycle color
+    # both backends fall back to (matplotlib via `sns.set_palette` below;
+    # plotly via the `sns_local` fallback a few lines down).
+    surface_colors = None
+    if surface_list is not None:
+        import matplotlib.colors as _mcolors
+        if "color" in mpl_kwargs:
+            _base_colors = [kwargs_list[i].get("color")
+                            for i in range(len(xform))]
+        else:
+            _base_colors = list(sns.color_palette(palette, len(xform)))
+        surface_colors = [
+            _mcolors.to_rgb(c) if c is not None
+            else _mcolors.to_rgb(f"C{i % 10}")
+            for i, c in enumerate(_base_colors)
+        ]
+
     # handle format strings
     if fmt is not None:
         if type(fmt) is not list:
@@ -931,6 +1040,8 @@ def plot(
             zoom=zoom,
             forecasts=raw_forecasts,
             colorbar_info=colorbar_info,
+            surface=surface_list,
+            surface_colors=surface_colors,
         )
         ax = None
         data = xform
@@ -970,6 +1081,8 @@ def plot(
                 size=size,
                 ax=ax,
                 frame_kwargs=frame_kwargs,
+                surface=surface_list,
+                surface_colors=surface_colors,
             )
 
             # predict=: overlay one dashed, low-opacity (alpha 0.6) forecast

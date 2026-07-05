@@ -25,6 +25,13 @@ import warnings
 
 import numpy as np
 
+from .surface import (
+    PLOTLY_LIGHTPOSITION,
+    build_mesh_3d,
+    build_outline_2d,
+    plotly_lighting_kwargs,
+)
+
 
 VALID_BACKENDS = ('auto', 'matplotlib', 'plotly')
 
@@ -129,7 +136,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 save_path=None, frame_rate=30, duration=30, rotations=1,
                 elev=10, azim=-60, point_colors=None, tail_duration=2,
                 chemtrails=False, precog=False, bullettime=False, zoom=1,
-                forecasts=None, colorbar_info=None):
+                forecasts=None, colorbar_info=None, surface=None,
+                surface_colors=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -164,7 +172,21 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     kwargs_list = kwargs_list if kwargs_list is not None else [{}] * len(data)
 
     ndims = data[0].shape[1] if data[0].ndim > 1 else 1
-    traces = []
+
+    # surface= (GH #109), 2-D static case: smooth filled hull outlines must
+    # render BELOW the data traces. Plotly's 2D layering follows trace order
+    # in `fig.data` (no zorder), so these are seeded at the FRONT of
+    # `traces` (drawn first = bottom) rather than appended. (2-D + animate
+    # is not supported for surfaces -- see the 3-D branch below and the
+    # surface= docstring -- so this only runs for static plots.)
+    n_surface_traces_2d = 0
+    if surface is not None and ndims == 2 and not animate:
+        surface_traces_2d = _build_surface_traces_2d(go, data, surface,
+                                                      surface_colors)
+        n_surface_traces_2d = len(surface_traces_2d)
+    else:
+        surface_traces_2d = []
+    traces = list(surface_traces_2d)
     for i, arr in enumerate(data):
         arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
         tkwargs = kwargs_list[i] or {}
@@ -186,10 +208,18 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             trace_point_colors = [
                 _rgb_string(c) for c in np.asarray(point_colors[i])]
 
+        # surface= (GH #109) keep_points=False: hide this dataset's own
+        # line/marker trace so only its surface shows.
+        hide_points = (surface is not None and i < len(surface)
+                      and surface[i] is not None
+                      and not surface[i].get('keep_points', True))
+
         common = dict(
             mode=mode,
             name=name,
-            showlegend=legend is not None and name is not None,
+            showlegend=(legend is not None and name is not None
+                       and not hide_points),
+            visible=not hide_points,
             line=dict(color=color, width=width, dash=dash),
             marker=dict(color=color, size=msize, symbol=symbol),
         )
@@ -222,7 +252,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 continue
             traces.append(go.Scatter(x=xs, y=arr[:, 0], **common))
 
-    n_data_traces = len(traces)
+    n_data_traces = len(traces) - n_surface_traces_2d
 
     # predict=: one dashed, low-opacity forecast trace per dataset, in the
     # same color as its source trace (GH #169; matplotlib parity).
@@ -273,6 +303,20 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             else:
                 traces.append(go.Scatter(x=[], y=[], **trail))
         n_trail_traces = len(data)
+
+    # surface= (GH #109), 3-D case: order doesn't matter here (plotly's 3-D
+    # scene is depth-buffered, unlike 2-D's painter's-algorithm trace order),
+    # so these are simply appended. `surface_dataset_indices[k]` records
+    # which ORIGINAL dataset produced `surface_traces_3d[k]` (datasets whose
+    # spec is None, or whose points are too few/degenerate, produce no
+    # trace at all) -- `_add_animation` needs that mapping to recompute the
+    # right dataset's window each frame.
+    surface_trace_start_3d = len(traces)
+    surface_dataset_indices = []
+    if surface is not None and ndims >= 3:
+        surface_traces_3d, surface_dataset_indices = _build_surface_traces_3d(
+            go, data, surface, surface_colors, elev, azim)
+        traces.extend(surface_traces_3d)
 
     if ndims >= 3:
         traces.append(_cube_trace(go))
@@ -352,7 +396,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        rotations, elev, azim, n_data_traces,
                        tail_duration=tail_duration, chemtrails=chemtrails,
                        precog=precog, bullettime=bullettime, zoom=zoom,
-                       n_trail_traces=n_trail_traces)
+                       n_trail_traces=n_trail_traces,
+                       surface=surface, surface_colors=surface_colors,
+                       surface_trace_start=surface_trace_start_3d,
+                       surface_dataset_indices=surface_dataset_indices)
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
@@ -541,6 +588,88 @@ def _square_shape(scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT):
                 fillcolor='rgba(0,0,0,0)', layer='below')
 
 
+def _surface_base_rgb(spec, fallback_rgb):
+    """Base RGB for one dataset's surface (GH #109): `spec['color']` if
+    given, otherwise the dataset's own drawn color (`fallback_rgb`)."""
+    if spec['color'] is not None:
+        import matplotlib.colors as mcolors
+        return mcolors.to_rgb(spec['color'])
+    return fallback_rgb
+
+
+def _mesh3d_trace(go, verts, faces, color_rgb, opacity, lighting_kw):
+    """A single ``go.Mesh3d`` surface trace (GH #109), lit per the tuned
+    plotly Blinn-Phong-ish lighting model, with hypertools' verified
+    parameters (`flatshading=False` for Gouraud-style smooth shading)."""
+    return go.Mesh3d(
+        x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
+        i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
+        color=_rgb_string(color_rgb), opacity=opacity, flatshading=False,
+        lighting=lighting_kw, lightposition=PLOTLY_LIGHTPOSITION,
+        hoverinfo='skip', showlegend=False, showscale=False)
+
+
+def _build_surface_traces_3d(go, data, surface, surface_colors, elev, azim):
+    """Build one ``go.Mesh3d`` trace per dataset with a (non-None,
+    non-degenerate) surface spec. Returns ``(traces, dataset_indices)``
+    where ``dataset_indices[k]`` is the ORIGINAL dataset index that produced
+    ``traces[k]`` (datasets with no spec, or too few/degenerate points,
+    contribute no trace, so the two lists can be shorter than `data`)."""
+    traces, dataset_indices = [], []
+    for i, (arr, spec) in enumerate(zip(data, surface)):
+        if spec is None:
+            continue
+        pts = np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :3]
+        mesh = build_mesh_3d(pts, spec, dataset_label=f' {i}')
+        if mesh is None:
+            continue
+        verts, faces = mesh
+        base_rgb = _surface_base_rgb(spec, surface_colors[i])
+        traces.append(_mesh3d_trace(go, verts, faces, base_rgb,
+                                    spec['alpha'], plotly_lighting_kwargs(spec)))
+        dataset_indices.append(i)
+    return traces, dataset_indices
+
+
+def _build_surface_traces_2d(go, data, surface, surface_colors):
+    """Build one ``go.Scatter(fill='toself')`` smooth outline per dataset
+    with a (non-None, non-degenerate) surface spec (GH #109, static 2-D)."""
+    traces = []
+    for i, (arr, spec) in enumerate(zip(data, surface)):
+        if spec is None:
+            continue
+        pts = np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :2]
+        outline = build_outline_2d(pts, spec, dataset_label=f' {i}')
+        if outline is None:
+            continue
+        base_rgb = _surface_base_rgb(spec, surface_colors[i])
+        r, g, b = (int(round(255 * c)) for c in base_rgb)
+        alpha = spec['alpha']
+        # explicitly close the loop (smooth_hull_2d's curve does not repeat
+        # its first point) so the underlying path is verifiably closed,
+        # even though plotly's fill='toself' would close it visually anyway
+        xs = np.append(outline[:, 0], outline[0, 0])
+        ys = np.append(outline[:, 1], outline[0, 1])
+        traces.append(go.Scatter(
+            x=xs, y=ys, mode='lines', fill='toself',
+            fillcolor=f'rgba({r},{g},{b},{alpha})',
+            line=dict(color=f'rgba({r},{g},{b},{min(1.0, alpha + 0.15)})',
+                      width=1),
+            showlegend=False, hoverinfo='skip'))
+    return traces
+
+
+def _degenerate_mesh3d_update(go, point):
+    """A zero-area placeholder ``go.Mesh3d`` geometry update (GH #109):
+    used for an animation frame whose current window is too small/degenerate
+    to form a real hull, so the trace stays valid (and invisible) rather
+    than being dropped (plotly frames cannot vary trace count)."""
+    v = np.tile(np.asarray(point, dtype=np.float64), (4, 1))
+    f = np.array([[0, 1, 2]])
+    return go.Mesh3d(x=v[:, 0], y=v[:, 1], z=v[:, 2],
+                     i=f[:, 0], j=f[:, 1], k=f[:, 2])
+
+
 def _parse_fmt(fmt_str, tkwargs):
     """Convert a matplotlib format string + kwargs into plotly
     (mode, marker symbol, line dash)."""
@@ -713,10 +842,21 @@ def _camera_eye(elev, azim, r=1.95):
 def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    rotations, elev, azim, n_data_traces, tail_duration=2,
                    chemtrails=False, precog=False, bullettime=False,
-                   zoom=1, n_trail_traces=0):
+                   zoom=1, n_trail_traces=0, surface=None,
+                   surface_colors=None, surface_trace_start=None,
+                   surface_dataset_indices=None):
     """Attach frames + play controls: 'spin' rotates the camera; True /
     'parallel' reveals trajectories through a sliding time window. Frames
-    only touch the data traces, so the cube/frame stays put."""
+    only touch the data traces, so the cube/frame stays put.
+
+    `surface`/`surface_colors`/`surface_trace_start`/`surface_dataset_indices`
+    (GH #109, 3-D only): if surfaces are in play, each frame ALSO carries a
+    full ``go.Mesh3d`` geometry update (x/y/z/i/j/k) per surfaced dataset,
+    recomputed from that dataset's CURRENT visible window ('parallel'/
+    'serial') or its precomputed full-data mesh ('spin', where only the
+    camera moves) -- `surface_trace_start` + an index into
+    `surface_dataset_indices` gives that trace's position in `fig.data`.
+    """
     import plotly.graph_objects as go
 
     # EXACTLY match the matplotlib renderer's pacing: frame_rate frames
@@ -726,12 +866,63 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     frames = []
     trace_indices = list(range(n_data_traces))
 
+    surface_dataset_indices = surface_dataset_indices or []
+    surface_trace_indices = (
+        list(range(surface_trace_start,
+                   surface_trace_start + len(surface_dataset_indices)))
+        if surface is not None and ndims >= 3 and surface_dataset_indices
+        else []
+    )
+
+    def _surface_frame_data(windows_by_index):
+        """One Mesh3d geometry update per surfaced dataset, built from
+        `windows_by_index[dataset_idx]` (that dataset's current window)."""
+        out = []
+        for i in surface_dataset_indices:
+            window = windows_by_index[i]
+            pts = np.atleast_2d(np.asarray(window, dtype=np.float64))[:, :3]
+            mesh = build_mesh_3d(pts, surface[i], dataset_label=f' {i}',
+                                 quiet=True) if len(pts) >= 4 else None
+            if mesh is None:
+                pt = pts[-1] if len(pts) else np.zeros(3)
+                out.append(_degenerate_mesh3d_update(go, pt))
+            else:
+                v, f = mesh
+                out.append(go.Mesh3d(x=v[:, 0], y=v[:, 1], z=v[:, 2],
+                                     i=f[:, 0], j=f[:, 1], k=f[:, 2]))
+        return out
+
     if animate == 'spin' and ndims >= 3:
+        # the FULL dataset is static in 'spin' mode (only the camera
+        # rotates) -- precompute each surfaced dataset's mesh once
+        spin_meshes = None
+        if surface_trace_indices:
+            spin_meshes = [
+                build_mesh_3d(
+                    np.atleast_2d(np.asarray(data[i], dtype=np.float64))[:, :3],
+                    surface[i], dataset_label=f' {i}', quiet=True)
+                for i in surface_dataset_indices
+            ]
         for k in range(n_frames):
             angle = azim + 360.0 * rotations * k / n_frames
-            frames.append(go.Frame(
+            frame_kwargs = dict(
                 name=str(k),
-                layout=dict(scene_camera=dict(eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))))
+                layout=dict(scene_camera=dict(
+                    eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom)))))
+            if surface_trace_indices:
+                surf_data = []
+                for mesh in spin_meshes:
+                    if mesh is None:
+                        surf_data.append(_degenerate_mesh3d_update(
+                            go, np.zeros(3)))
+                    else:
+                        v, f = mesh
+                        surf_data.append(go.Mesh3d(
+                            x=v[:, 0], y=v[:, 1], z=v[:, 2],
+                            i=f[:, 0], j=f[:, 1], k=f[:, 2]))
+                frame_kwargs['data'] = surf_data
+                frame_kwargs['traces'] = surface_trace_indices
+            frames.append(go.Frame(**frame_kwargs))
     elif animate == 'serial':
         # datasets appear one at a time, each growing into place while
         # earlier ones stay fully drawn (never connected to each other)
@@ -741,10 +932,12 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
         for k in range(n_frames):
             revealed = total_points * k / max(1, n_frames - 1)
             frame_traces = []
-            for arr, start in zip(data, starts):
+            windows_by_index = {}
+            for idx, (arr, start) in enumerate(zip(data, starts)):
                 arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
                 shown = int(np.clip(revealed - start, 0, arr.shape[0]))
                 seg = arr[:shown]
+                windows_by_index[idx] = seg
                 if ndims >= 3:
                     frame_traces.append(go.Scatter3d(
                         x=seg[:, 0], y=seg[:, 1], z=seg[:, 2]))
@@ -754,11 +947,16 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     frame_traces.append(go.Scatter(
                         x=np.arange(seg.shape[0]), y=seg[:, 0]))
             frame_kwargs = dict(name=str(k), data=frame_traces,
-                                traces=trace_indices)
+                                traces=list(trace_indices))
             if ndims >= 3:
                 angle = azim + 360.0 * rotations * k / n_frames
                 frame_kwargs['layout'] = dict(
                     scene_camera=dict(eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
+            if surface_trace_indices:
+                frame_kwargs['data'] = (list(frame_kwargs['data'])
+                                        + _surface_frame_data(windows_by_index))
+                frame_kwargs['traces'] = (list(frame_kwargs['traces'])
+                                          + surface_trace_indices)
             frames.append(go.Frame(**frame_kwargs))
     else:
         max_len = max(arr.shape[0] for arr in data)
@@ -775,9 +973,11 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             start = max(0, end - window)
             frame_traces = []
             trail_traces = []
-            for arr in data:
+            windows_by_index = {}
+            for idx, arr in enumerate(data):
                 arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
                 seg = arr[start:min(end, arr.shape[0])]
+                windows_by_index[idx] = seg
                 if ndims >= 3:
                     frame_traces.append(go.Scatter3d(
                         x=seg[:, 0], y=seg[:, 1], z=seg[:, 2]))
@@ -810,7 +1010,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                             y=trail[:, 0]))
             frame_traces.extend(trail_traces)
             frame_kwargs = dict(name=str(k), data=frame_traces,
-                                traces=trace_indices)
+                                traces=list(trace_indices))
             if ndims >= 3:
                 # matplotlib's sliding-window animation rotates the camera
                 # while the window advances (draw.py update_lines_parallel);
@@ -818,6 +1018,11 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 angle = azim + 360.0 * rotations * k / n_frames
                 frame_kwargs['layout'] = dict(
                     scene_camera=dict(eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
+            if surface_trace_indices:
+                frame_kwargs['data'] = (list(frame_kwargs['data'])
+                                        + _surface_frame_data(windows_by_index))
+                frame_kwargs['traces'] = (list(frame_kwargs['traces'])
+                                          + surface_trace_indices)
             frames.append(go.Frame(**frame_kwargs))
 
     fig.frames = frames
