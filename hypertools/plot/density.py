@@ -30,6 +30,7 @@ __all__ = [
     "normalize_density_arg",
     "broadcast_density",
     "resolve_grid",
+    "resolve_iso_fracs_alphas",
     "fit_kde",
     "kde_grid_2d",
     "kde_grid_3d",
@@ -72,7 +73,43 @@ def _validate_density_dict(d):
         )
     merged = dict(DENSITY_DEFAULTS)
     merged.update(d)
+    _validate_density_values(merged)
     return merged
+
+
+def _validate_density_values(spec):
+    """Validate the (already-defaulted) values in a merged density spec
+    dict, raising a clear ``ValueError`` for anything out of range. Runs on
+    every call (including the all-defaults case) so a bad default would be
+    caught too, though the shipped defaults are always valid."""
+    alpha = spec["alpha"]
+    if isinstance(alpha, bool) or not isinstance(alpha, (int, float)) \
+            or not (0 < alpha <= 1):
+        raise ValueError(
+            f"density['alpha'] must be a real number in (0, 1]; got {alpha!r}"
+        )
+
+    grid = spec["grid"]
+    if grid is not None:
+        if isinstance(grid, bool) or not isinstance(grid, (int, np.integer)) \
+                or grid < 8:
+            raise ValueError(
+                f"density['grid'] must be an int >= 8 (or None for "
+                f"auto-resolution); got {grid!r}"
+            )
+
+    levels = spec["levels"]
+    if isinstance(levels, bool) or not isinstance(levels, (int, np.integer)) \
+            or not (1 <= levels <= 10):
+        raise ValueError(
+            f"density['levels'] must be an int in [1, 10]; got {levels!r}"
+        )
+
+    per_group = spec["per_group"]
+    if not isinstance(per_group, (bool, np.bool_)):
+        raise ValueError(
+            f"density['per_group'] must be a bool; got {per_group!r}"
+        )
 
 
 def normalize_density_arg(density):
@@ -198,6 +235,25 @@ def alpha_colormap(color, max_alpha, name="hypertools_density"):
     return LinearSegmentedColormap.from_list(
         name, [(r, g, b, 0.0), (r, g, b, max_alpha)]
     )
+
+
+def resolve_iso_fracs_alphas(levels):
+    """Resolve the `levels` knob (matplotlib 3-D only) to a matched pair of
+    iso-surface density-fraction thresholds and base alphas, both length
+    `levels`.
+
+    ``levels=3`` (the default) reproduces the original hand-tuned constants
+    EXACTLY -- ``fracs=(0.10, 0.35, 0.65)``, ``alphas=(0.03, 0.05, 0.07)`` --
+    since ``np.linspace(0.10, 0.65, 3)`` gives ``(0.10, 0.375, 0.65)``, not
+    the tuned middle shell at 0.35. Any other `levels` value spaces `levels`
+    fracs evenly across the same ``[0.10, 0.65]`` density-fraction range via
+    `np.linspace`, with alphas ramping linearly from 0.03 to 0.07 to match.
+    """
+    if levels == 3:
+        return (0.10, 0.35, 0.65), (0.03, 0.05, 0.07)
+    fracs = tuple(np.linspace(0.10, 0.65, levels))
+    alphas = tuple(np.linspace(0.03, 0.07, levels))
+    return fracs, alphas
 
 
 def iso_surfaces_3d(D, lo, spacing, fracs=(0.10, 0.35, 0.65)):

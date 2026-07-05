@@ -31,7 +31,14 @@ from .surface import (
     build_outline_2d,
     plotly_lighting_kwargs,
 )
-from .density import POOLED_COLOR, fit_kde, kde_grid_2d, kde_grid_3d, resolve_grid
+from .density import (
+    DENSITY_DEFAULTS,
+    POOLED_COLOR,
+    fit_kde,
+    kde_grid_2d,
+    kde_grid_3d,
+    resolve_grid,
+)
 
 
 VALID_BACKENDS = ('auto', 'matplotlib', 'plotly')
@@ -750,9 +757,10 @@ def _one_density_volume_trace(go, pts, spec, color_rgb, label=""):
     clearly-visible-but-still-subtle glow, confirmed against real evidence
     renders (docs/images/v1.0-seven-features/density_3d_plotly.png):
     `isomin=0.05` (vs. the higher 0.1) exposes more of the outer shells,
-    `surface_count=15` gives finer gradation, and the opacity/opacityscale
-    curve reaches meaningfully-visible mid-tones well before the peak
-    rather than only right at it.
+    `surface_count=5*levels` (15 at the `levels=3` default) gives finer
+    gradation, and the opacity/opacityscale curve reaches
+    meaningfully-visible mid-tones well before the peak rather than only
+    right at it.
     """
     kde = fit_kde(pts, dataset_label=label)
     if kde is None:
@@ -763,9 +771,10 @@ def _one_density_volume_trace(go, pts, spec, color_rgb, label=""):
     if dmax <= 0:
         return None
     color = _rgb_string(color_rgb)
+    levels = spec.get('levels', DENSITY_DEFAULTS['levels'])
     return go.Volume(
         x=X.ravel(), y=Y.ravel(), z=Z.ravel(), value=(D / dmax).ravel(),
-        isomin=0.05, isomax=1.0, surface_count=15,
+        isomin=0.05, isomax=1.0, surface_count=5 * levels,
         opacity=min(3.0 * spec['alpha'], 0.6),
         opacityscale=[[0, 0], [0.3, 0.4], [1, 0.8]],
         colorscale=[[0, color], [1, color]],

@@ -476,9 +476,18 @@ def plot(
           iso-surface/fog alphas and both plotly layers' opacities scale
           proportionally with it (see the backend-specific notes below).
         - ``levels`` (int, default 3): number of nested 3-D iso-surface
-          shells (matplotlib only, at fixed 10%/35%/65% density
-          thresholds); ignored for 2-D and for the plotly ``go.Volume``
-          layer (which uses its own fixed ``surface_count=10``).
+          shells. Wired into BOTH 3-D backends: matplotlib draws one
+          `Poly3DCollection` per level, at density-fraction thresholds
+          spaced evenly across ``[0.10, 0.65]`` via `numpy.linspace`
+          (`levels=3`, the default, reproduces the original hand-tuned
+          thresholds -- 10%/35%/65% of peak density, alphas 0.03/0.05/0.07
+          -- EXACTLY, since evenly-spaced ``linspace(0.10, 0.65, 3)`` would
+          instead give a 37.5%-not-35% middle shell); plotly's
+          ``go.Volume`` layer uses ``surface_count=5*levels`` (15 at the
+          default). **2-D density has no ``levels`` concept at all** --
+          the 2-D layer is a single continuous alpha/heatmap ramp with no
+          discrete shells, so ``levels`` is silently ignored for 2-D data
+          (no error; the key is still valid, it's just a no-op there).
         - ``grid`` (int, default None): KDE evaluation grid resolution per
           axis. ``None`` auto-resolves to 200 for 2-D data or 50 for 3-D
           data (a 3-D grid is `grid**3` KDE evaluations, so much coarser by
@@ -494,20 +503,35 @@ def plot(
         data) -- not `contourf`, whose hard per-level boundaries read as
         banding rather than a smooth glow. matplotlib's 3-D layer is nested
         translucent iso-surfaces via `skimage.measure.marching_cubes`
-        (levels 10%/35%/65% of peak density, alphas 0.03/0.05/0.07 scaled
-        by `alpha / 0.2`) when scikit-image is installed
+        (`levels` shells spanning 10%-65% of peak density, alphas ramping
+        0.03-0.07, both scaled by `alpha / 0.2`; see the `levels` entry
+        above for the exact spacing) when scikit-image is installed
         (``pip install hypertools[density3d]``); otherwise it falls back to
         a translucent scatter "fog" (4000 points resampled from the KDE,
         `alpha` 0.03 scaled the same way) and emits a `UserWarning`
         suggesting the extra or ``backend='plotly'`` (which always renders
         a full volumetric `go.Volume`, no extra required). plotly's 2-D
         layer is a `go.Contour` heatmap (`coloring='heatmap'`, no
-        contour lines, an alpha-ramped colorscale to `1.5 * alpha`); its
+        contour lines, an alpha-ramped colorscale to `1.5 * alpha` --
+        note this peak alpha is deliberately 1.5x the mpl 2-D layer's
+        `alpha`, a documented cross-backend visibility difference, not a
+        bug: plotly's heatmap reads fainter than mpl's `imshow` at the same
+        alpha value, so the ramp is boosted to compensate); its
         3-D layer is a `go.Volume` (`isomin=0.05`, `isomax=1.0`,
-        `surface_count=15`, `opacity=min(3.0 * alpha, 0.6)`, a fixed
+        `surface_count=5*levels`, `opacity=min(3.0 * alpha, 0.6)`, a fixed
         `opacityscale` ramp tuned so the volume stays visible at plotly's
         3-D scene scale, a solid per-dataset colorscale). Density layers
         never gain a legend entry in either backend.
+
+        3-D static-export caveat (both backends): when `per_group=True`
+        (the default) draws more than one dataset's translucent 3-D density
+        layer, the overlapping surfaces/volumes can composite unevenly in
+        STATIC exports (PNG/SVG via matplotlib's Agg renderer or plotly's
+        `kaleido`-based ``write_image``/``to_image``) -- a WebGL/rasterizer
+        alpha-blending-order limitation, not a data or fitting bug. The
+        interactive view (a live matplotlib window or plotly's browser/
+        notebook widget) renders correctly; only static snapshots of
+        multi-dataset 3-D density can look off.
 
         Animated plots (both backends, any `animate` style): the density
         is computed ONCE from the FULL dataset and drawn as a static
@@ -1056,44 +1080,38 @@ def plot(
     # turn kwargs into a list
     kwargs_list = parse_kwargs(xform, mpl_kwargs)
 
-    # surface= (GH #109): resolve each dataset's OWN drawn color now (used
-    # when a dataset's surface spec has color=None, i.e. "inherit"). Mirrors
-    # whatever color that dataset will actually be drawn in on EITHER
-    # backend: an explicit color/colors kwarg (already in `kwargs_list`),
-    # or -- if none was given -- the same per-dataset palette-cycle color
-    # both backends fall back to (matplotlib via `sns.set_palette` below;
-    # plotly via the `sns_local` fallback a few lines down).
-    surface_colors = None
-    if surface_list is not None:
+    def _resolve_dataset_colors():
+        """Resolve each dataset's OWN drawn color: an explicit color/colors
+        kwarg if given (already in `kwargs_list`), or -- if none was given --
+        the same per-dataset palette-cycle color both backends fall back to
+        (matplotlib via `sns.set_palette` below; plotly via the `sns_local`
+        fallback a few lines down). Shared by `surface_colors` (GH #109) and
+        `density_colors` (GH #108/#191): both need the exact color each
+        dataset will actually be drawn in on EITHER backend, resolved
+        identically."""
         import matplotlib.colors as _mcolors
         if "color" in mpl_kwargs:
             _base_colors = [kwargs_list[i].get("color")
                             for i in range(len(xform))]
         else:
             _base_colors = list(sns.color_palette(palette, len(xform)))
-        surface_colors = [
+        return [
             _mcolors.to_rgb(c) if c is not None
             else _mcolors.to_rgb(f"C{i % 10}")
             for i, c in enumerate(_base_colors)
         ]
 
+    # surface= (GH #109): resolve each dataset's OWN drawn color now (used
+    # when a dataset's surface spec has color=None, i.e. "inherit").
+    surface_colors = (_resolve_dataset_colors()
+                      if surface_list is not None else None)
+
     # density= (GH #108/#191): resolve each dataset's OWN drawn color the
     # SAME way as surface_colors above (density has no color-override key,
     # so this is always what gets drawn, per_group=True case only -- the
     # per_group=False pooled layer uses a fixed neutral gray instead).
-    density_colors = None
-    if density_list is not None:
-        import matplotlib.colors as _mcolors
-        if "color" in mpl_kwargs:
-            _base_colors = [kwargs_list[i].get("color")
-                            for i in range(len(xform))]
-        else:
-            _base_colors = list(sns.color_palette(palette, len(xform)))
-        density_colors = [
-            _mcolors.to_rgb(c) if c is not None
-            else _mcolors.to_rgb(f"C{i % 10}")
-            for i, c in enumerate(_base_colors)
-        ]
+    density_colors = (_resolve_dataset_colors()
+                      if density_list is not None else None)
 
     # handle format strings
     if fmt is not None:

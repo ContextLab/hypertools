@@ -128,6 +128,36 @@ class TestStaticMatplotlib3D:
         colls = [c for c in ax.collections if isinstance(c, Poly3DCollection)]
         assert len(colls) == 6
 
+    @pytest.mark.skipif(not HAS_SKIMAGE, reason="requires scikit-image")
+    def test_levels_one_gives_one_collection(self):
+        fig = hyp.plot([_blob_3d(n=200, seed=0, center=(0, 0, 0))], '.',
+                       density={'levels': 1}, show=False)
+        ax = fig.axes[0]
+        colls = [c for c in ax.collections if isinstance(c, Poly3DCollection)]
+        assert len(colls) == 1
+
+    @pytest.mark.skipif(not HAS_SKIMAGE, reason="requires scikit-image")
+    def test_levels_five_gives_five_monotonic_alphas(self):
+        fig = hyp.plot([_blob_3d(n=200, seed=0, center=(0, 0, 0))], '.',
+                       density={'levels': 5}, show=False)
+        ax = fig.axes[0]
+        colls = [c for c in ax.collections if isinstance(c, Poly3DCollection)]
+        assert len(colls) == 5
+        alphas = sorted(float(c.get_facecolor()[0][3]) for c in colls)
+        assert alphas == pytest.approx(list(np.linspace(0.03, 0.07, 5)),
+                                       abs=1e-9)
+        assert all(a2 > a1 for a1, a2 in zip(alphas, alphas[1:]))
+
+    @pytest.mark.skipif(not HAS_SKIMAGE, reason="requires scikit-image")
+    def test_levels_three_explicit_matches_legacy_exactly(self):
+        fig = hyp.plot([_blob_3d(n=200, seed=0, center=(0, 0, 0))], '.',
+                       density={'levels': 3}, show=False)
+        ax = fig.axes[0]
+        colls = [c for c in ax.collections if isinstance(c, Poly3DCollection)]
+        assert len(colls) == 3
+        alphas = sorted(float(c.get_facecolor()[0][3]) for c in colls)
+        assert alphas == pytest.approx([0.03, 0.05, 0.07], abs=1e-9)
+
     def test_default_off_no_density_collections(self):
         fig = hyp.plot(_two_datasets_3d(), '.', show=False)
         ax = fig.axes[0]
@@ -243,6 +273,21 @@ class TestStaticPlotly3D:
         colors = [v.colorscale[0][1] for v in volumes]
         assert colors[0] != colors[1]
 
+    def test_surface_count_scales_with_levels(self):
+        fig = hyp.plot(_two_datasets_3d(), '.', density={'levels': 5},
+                       backend='plotly', show=False)
+        volumes = [t for t in fig.data if t.type == 'volume']
+        assert len(volumes) == 2
+        for v in volumes:
+            assert v.surface.count == 25  # 5 * levels
+
+    def test_surface_count_default_levels_unchanged(self):
+        fig = hyp.plot(_two_datasets_3d(), '.', density=True,
+                       backend='plotly', show=False)
+        volumes = [t for t in fig.data if t.type == 'volume']
+        for v in volumes:
+            assert v.surface.count == 15  # 5 * default levels (3)
+
     def test_default_off_no_volume_traces(self):
         fig = hyp.plot(_two_datasets_3d(), '.', backend='plotly', show=False)
         assert not [t for t in fig.data if t.type == 'volume']
@@ -346,6 +391,31 @@ class TestValidation:
         data_1d = [np.random.default_rng(0).normal(size=(20, 1))]
         with pytest.raises(ValueError):
             hyp.plot(data_1d, density=True, ndims=1, show=False)
+
+    def test_alpha_zero_raises_valueerror(self):
+        with pytest.raises(ValueError):
+            hyp.plot(_two_datasets_3d(), density={'alpha': 0}, show=False)
+
+    def test_alpha_above_one_raises_valueerror(self):
+        with pytest.raises(ValueError):
+            hyp.plot(_two_datasets_3d(), density={'alpha': 1.5}, show=False)
+
+    def test_grid_too_small_raises_valueerror(self):
+        with pytest.raises(ValueError):
+            hyp.plot(_two_datasets_3d(), density={'grid': 2}, show=False)
+
+    def test_levels_zero_raises_valueerror(self):
+        with pytest.raises(ValueError):
+            hyp.plot(_two_datasets_3d(), density={'levels': 0}, show=False)
+
+    def test_levels_above_ten_raises_valueerror(self):
+        with pytest.raises(ValueError):
+            hyp.plot(_two_datasets_3d(), density={'levels': 11}, show=False)
+
+    def test_per_group_non_bool_raises_valueerror(self):
+        with pytest.raises(ValueError):
+            hyp.plot(_two_datasets_3d(), density={'per_group': 'yes'},
+                     show=False)
 
 
 class TestDegenerateInputs:

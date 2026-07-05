@@ -22,6 +22,7 @@ from .density import (
     kde_grid_2d,
     kde_grid_3d,
     resolve_grid,
+    resolve_iso_fracs_alphas,
 )
 
 
@@ -73,9 +74,10 @@ def _draw_one_density_3d(ax, pts, spec, color, label=""):
         _, _, _, D, lo, spacing = kde_grid_3d(pts, kde, gridsize=gridsize)
         from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-        base_alphas = (0.03, 0.05, 0.07)
+        levels = spec.get("levels", DENSITY_DEFAULTS["levels"])
+        fracs, base_alphas = resolve_iso_fracs_alphas(levels)
         for (verts, faces), base_alpha in zip(
-                iso_surfaces_3d(D, lo, spacing), base_alphas):
+                iso_surfaces_3d(D, lo, spacing, fracs=fracs), base_alphas):
             coll = Poly3DCollection(
                 verts[faces], alpha=base_alpha * alpha_scale, facecolor=color,
                 edgecolor="none", linewidths=0, shade=False,
