@@ -128,7 +128,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 title=None, animate=False, size=None, show=True,
                 save_path=None, frame_rate=30, duration=30, rotations=1,
                 elev=10, azim=-60, point_colors=None, tail_duration=2,
-                chemtrails=False, precog=False, bullettime=False, zoom=1):
+                chemtrails=False, precog=False, bullettime=False, zoom=1,
+                forecasts=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -138,6 +139,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     format strings (one per trace); `kwargs_list` carries per-trace
     matplotlib kwargs ('color', 'linewidth', 'linestyle', 'marker',
     'alpha', 'label').
+
+    `forecasts` (predict=, GH #169): an optional list of (t+1, d) arrays,
+    one per dataset in `data` (same length, same coordinate space -- already
+    center/scale-matched to `data` by the caller), each starting with the
+    dataset's final observed row so the trace connects. Rendered as one
+    dashed (`dash='dash'`), 0.6-opacity, `showlegend=False` trace per
+    dataset, in the SAME color as its source trace.
 
     Returns the plotly Figure.
     """
@@ -206,6 +214,31 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             traces.append(go.Scatter(x=xs, y=arr[:, 0], **common))
 
     n_data_traces = len(traces)
+
+    # predict=: one dashed, low-opacity forecast trace per dataset, in the
+    # same color as its source trace (GH #169; matplotlib parity).
+    if forecasts is not None:
+        for i, arr in enumerate(data):
+            tkwargs = kwargs_list[i] or {}
+            fc = np.atleast_2d(np.asarray(forecasts[i], dtype=np.float64))
+            color = _to_plotly_color(tkwargs.get('color'), 0.6)
+            width = float(tkwargs.get('linewidth')
+                          or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
+            fc_common = dict(mode='lines', showlegend=False,
+                             hoverinfo='skip',
+                             line=dict(color=color, width=width, dash='dash'))
+            if ndims >= 3:
+                traces.append(go.Scatter3d(
+                    x=fc[:, 0], y=fc[:, 1], z=fc[:, 2], **fc_common))
+            elif ndims == 2:
+                traces.append(go.Scatter(
+                    x=fc[:, 0], y=fc[:, 1], **fc_common))
+            else:
+                arr2 = np.atleast_2d(np.asarray(arr, dtype=np.float64))
+                start = arr2.shape[0] - 1
+                traces.append(go.Scatter(
+                    x=np.arange(start, start + fc.shape[0]), y=fc[:, 0],
+                    **fc_common))
 
     # low-opacity trail traces for chemtrails (past) / precog (future) /
     # bullettime (both) on window animations, mirroring the matplotlib

@@ -5,7 +5,7 @@ import numpy as np
 from .format_data import format_data as formatter
 
 
-def normalize(x, normalize='across', internal=False, format_data=True):
+def normalize(x, normalize='across', internal=False, format_data=True, impute=None):
     """
     Z-transform the columns or rows of an array, or list of arrays
 
@@ -32,6 +32,11 @@ def normalize(x, normalize='across', internal=False, format_data=True):
     format_data : bool
         Whether or not to first call the format_data function (default: True).
 
+    impute : str, dict, class, class instance or None
+        Overrides the default PPCA missing-data fill applied during the
+        `format_data` stage with a different `hypertools.impute` model
+        (default: None, i.e. PPCA). Only used when `format_data` is True.
+
     Returns
     ----------
     normalized_x : Numpy array or list of arrays
@@ -47,7 +52,7 @@ def normalize(x, normalize='across', internal=False, format_data=True):
         return x
     else:
         if format_data:
-            x = formatter(x, ppca=True)
+            x = formatter(x, ppca=True, impute=impute)
 
         def zscore(X, y):
             # Handle empty arrays and single-value arrays

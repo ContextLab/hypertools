@@ -41,7 +41,10 @@ def plot(
     cluster=None,
     align=None,
     normalize=None,
+    impute=None,
     n_clusters=None,
+    predict=None,
+    t=10,
     save_path=None,
     animate=False,
     duration=30,
@@ -172,6 +175,27 @@ def plot(
         If n_clusters is passed, HyperTools will perform k-means clustering
         with the k parameter set to n_clusters. The resulting clusters will
         be plotted in different colors according to the color palette.
+
+    impute : str or dict or class or class instance or None
+        Overrides the default PPCA fill for missing (NaN) values with a
+        different `hypertools.impute` model, e.g. 'Kalman', 'KNNImputer'
+        (default: None, i.e. PPCA -- byte-compatible with pre-1.0 behavior).
+        See `hypertools.impute.impute` for accepted forms.
+
+    predict : str or dict or class or class instance or None
+        If set, forecasts `t` new rows per input dataset (in the plotted,
+        post normalize/reduce/align space) using the specified
+        `hypertools.predict` model, e.g. 'Kalman', 'ARIMA', 'GaussianProcess'
+        (see `hypertools.predict.predict` for accepted forms), and overlays
+        one dashed, low-opacity (alpha 0.6) forecast trace per dataset in the
+        SAME color as its source line (no separate legend entry). Only
+        supported for STATIC plots (default: None; raises
+        ``NotImplementedError`` if combined with ``animate``).
+
+    t : int or datetime-like
+        Forecast horizon passed to `predict` (see
+        `hypertools.predict.common.resolve_t`); ignored unless `predict` is
+        set (default: 10).
 
     save_path : str
         Path to save the image/movie. Must include the file extension in the
@@ -341,12 +365,16 @@ def plot(
 
     return_model : bool
         If True, return a dict bundle
-        ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...}``
-        instead of the bare figure, where ``xform_data`` is the
-        normalized/reduced/aligned data, ``animation`` is the
+        ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...,
+        'predict': ...}`` instead of the bare figure, where ``xform_data`` is
+        the normalized/reduced/aligned data, ``animation`` is the
         ``matplotlib.animation.Animation`` handle (``None`` unless
-        ``animate=True`` with the matplotlib backend), and ``models`` holds
-        the reduce/align/cluster specs. Default False.
+        ``animate=True`` with the matplotlib backend), ``models`` holds the
+        reduce/align/cluster/impute specs, and ``predict`` is ``None`` unless
+        `predict` was set, in which case it is
+        ``{'model': ..., 'params': {'t': t}, 'forecasts': [...]}`` (one
+        forecast array per input dataset, in the analyzed/plotted --
+        pre-center/scale -- space). Default False.
 
     Returns
     ----------
@@ -356,11 +384,20 @@ def plot(
         retain a reference to the ``matplotlib.animation.FuncAnimation``
         (required to keep the animation alive). When ``return_model=True``,
         a dict
-        ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...}``
-        is returned (``animation`` included so the handle isn't dropped for
-        animated plots).
+        ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...,
+        'predict': ...}`` is returned (``animation`` included so the handle
+        isn't dropped for animated plots).
 
     """
+
+    # predict= + animate: forecast overlays are static-plot only in v1
+    # (animating a growing/appended forecast trace is follow-up work).
+    if predict is not None and animate:
+        raise NotImplementedError(
+            "predict= is not yet supported with animate: forecast traces "
+            "are static-plot only in this release. Pass animate=False (the "
+            "default) to use predict=, or omit predict= for an animated plot."
+        )
 
     # streaming inputs (issue #101): iterators/generators and Hugging Face
     # IterableDatasets are detected from the structure of the input -- no
@@ -405,7 +442,7 @@ def plot(
 
     # analyze the data
     if transform is None:
-        raw = format_data(x, **text_args)
+        raw = format_data(x, impute=impute, **text_args)
         xform = analyze(
             raw,
             ndims=ndims,
@@ -413,6 +450,7 @@ def plot(
             reduce=reduce,
             align=align,
             internal=True,
+            impute=impute,
         )
     else:
         xform = transform
@@ -471,6 +509,29 @@ def plot(
     else:
         xform = reducer(xform, ndims=3, reduce=reduce, internal=True,
                         format_data=False)
+
+    # predict=: forecast `t` new rows per input dataset, in the plotted
+    # (post normalize->reduce->align) space (GH #169). Computed here -- one
+    # forecast per ORIGINAL input dataset, before any cluster/hue reshaping
+    # -- so the forecasts correspond 1:1 with the datasets about to be
+    # drawn. The final observed row of each dataset is prepended so the
+    # dashed trace connects to the plotted trajectory (forecast length is
+    # therefore t + 1). `bundle_forecasts` keeps this analyze-space copy
+    # (for the return_model bundle); `raw_forecasts` is a working copy that
+    # gets the SAME center/scale transform as `xform` below, so the drawn
+    # dashed trace lines up with the drawn (centered/scaled) data.
+    raw_forecasts = None
+    bundle_forecasts = None
+    if predict is not None:
+        from ..predict.predict import predict as _predictor
+        _fc = _predictor(xform, model=predict, t=t)
+        if not isinstance(_fc, list):
+            _fc = [_fc]
+        raw_forecasts = [
+            np.vstack([np.asarray(xi[-1:]), np.asarray(fc)])
+            for xi, fc in zip(xform, _fc)
+        ]
+        bundle_forecasts = [np.array(fc) for fc in raw_forecasts]
 
     # per-point colors for multicolored lines (set by the hue branch below;
     # computed after interpolation). Dataset lengths are captured now so hue
@@ -691,10 +752,28 @@ def plot(
         ), "Explore mode is currently only supported for 3D plots."
         mpl_kwargs["picker"] = True
 
-    # center
+    # predict= forecasts were computed per ORIGINAL input dataset; if
+    # cluster/hue reshaping regrouped `xform` into a different number of
+    # traces (by category rather than by dataset), the 1:1 correspondence
+    # no longer holds -- skip drawing forecasts rather than mismatch traces.
+    if raw_forecasts is not None and len(raw_forecasts) != len(xform):
+        raw_forecasts = None
+
+    # center (mirror the same mean-subtraction onto the forecasts, computed
+    # from the SAME pre-center xform, so the dashed trace lands in the same
+    # drawn coordinates as its source line)
+    if raw_forecasts is not None:
+        _center_mean = np.mean(np.vstack(xform), 0)
+        raw_forecasts = [fc - _center_mean for fc in raw_forecasts]
     xform = center(xform)
 
-    # scale
+    # scale (mirror the same min/max rescale onto the forecasts, computed
+    # from the now-centered xform)
+    if raw_forecasts is not None:
+        _scale_stack = np.vstack(xform)
+        _m1 = np.min(_scale_stack)
+        _m2 = np.max(_scale_stack - _m1)
+        raw_forecasts = [2 * (np.divide(fc - _m1, _m2)) - 1 for fc in raw_forecasts]
     xform = scale(xform)
 
     # handle palette with seaborn
@@ -717,6 +796,8 @@ def plot(
     # convert all nans to zeros
     for i, xi in enumerate(xform):
         xform[i] = np.nan_to_num(xi)
+    if raw_forecasts is not None:
+        raw_forecasts = [np.nan_to_num(fc) for fc in raw_forecasts]
 
     # interactive (plotly) backend: render with plotly and skip the
     # matplotlib pipeline entirely. backend='auto' resolves to plotly only
@@ -752,6 +833,7 @@ def plot(
             precog=precog,
             bullettime=bullettime,
             zoom=zoom,
+            forecasts=raw_forecasts,
         )
         ax = None
         data = xform
@@ -792,6 +874,30 @@ def plot(
                 ax=ax,
                 frame_kwargs=frame_kwargs,
             )
+
+            # predict=: overlay one dashed, low-opacity (alpha 0.6) forecast
+            # trace per input dataset (GH #169), in the SAME color as its
+            # source line. Added AFTER `_draw` has already built the legend
+            # (from the original data lines only, via ax.legend() inside
+            # `_draw`), so these traces never gain a legend entry;
+            # label='_nolegend_' mirrors the trail-artist precedent
+            # (matplotlib_backend's animated trails) as a second guard.
+            if raw_forecasts is not None:
+                _src_lines = list(ax.lines)
+                for _i, _fc in enumerate(raw_forecasts):
+                    _fc_color = (_src_lines[_i].get_color()
+                                if _i < len(_src_lines) else None)
+                    _d = _fc.shape[1] if _fc.ndim > 1 else 1
+                    if _d >= 3:
+                        ax.plot(_fc[:, 0], _fc[:, 1], _fc[:, 2],
+                               linestyle='--', color=_fc_color, alpha=0.6,
+                               label='_nolegend_')
+                    elif _d == 2:
+                        ax.plot(_fc[:, 0], _fc[:, 1], linestyle='--',
+                               color=_fc_color, alpha=0.6, label='_nolegend_')
+                    else:
+                        ax.plot(_fc[:, 0], linestyle='--', color=_fc_color,
+                               alpha=0.6, label='_nolegend_')
 
             # exact per-point colors: swap the single-color artists for
             # per-segment-colored line collections or per-point-colored
@@ -867,6 +973,12 @@ def plot(
                 "reduce": reduce_dict,
                 "align": align_dict,
                 "cluster": cluster,
+                "impute": impute,
+            },
+            "predict": None if predict is None else {
+                "model": predict,
+                "params": {"t": t},
+                "forecasts": bundle_forecasts,
             },
         }
 

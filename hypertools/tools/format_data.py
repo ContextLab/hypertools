@@ -6,7 +6,8 @@ from .._shared.helpers import get_type
 
 
 def format_data(x, vectorizer='CountVectorizer',
-                semantic='LatentDirichletAllocation', corpus='wiki', ppca=True, text_align='hyper'):
+                semantic='LatentDirichletAllocation', corpus='wiki', ppca=True,
+                text_align='hyper', impute=None):
     """
     Formats data into a list of numpy arrays
 
@@ -52,6 +53,13 @@ def format_data(x, vectorizer='CountVectorizer',
 
     ppca : bool
         Performs PPCA to fill in missing values (default: True)
+
+    impute : str, dict, class, class instance or None
+        If missing (NaN) values are present and `ppca` is True, this
+        overrides the default PPCA fill with a different `hypertools.impute`
+        model (e.g. 'Kalman', 'KNNImputer'; see `hypertools.impute.impute`
+        for accepted forms). If None (default), missing values are filled
+        with PPCA, matching the pre-1.0 behavior byte-for-byte.
 
     text_align : str
         Alignment algorithm to use when both text and numerical data are passed.
@@ -127,8 +135,11 @@ def format_data(x, vectorizer='CountVectorizer',
                 if j in ['list_num', 'array', 'df', 'arr_num']:
                     num_data.append(i)
             if np.isnan(np.vstack(num_data)).any():
-                warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
-                num_data = fill_missing(num_data)
+                if impute is not None:
+                    num_data = fill_missing(num_data, model=impute)
+                else:
+                    warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
+                    num_data = fill_missing(num_data)
                 x_temp = []
                 for dtype in dtypes:
                     if dtype in ['list_str', 'str', 'arr_str']:
@@ -153,17 +164,18 @@ def format_data(x, vectorizer='CountVectorizer',
     return processed_x
 
 
-def fill_missing(x):
-    """Fill missing values using PPCA
+def fill_missing(x, model='PPCA'):
+    """Fill missing values using `hypertools.impute` (default model='PPCA').
 
-    Routed through `hypertools.impute` (default model='PPCA'), which wraps
-    this exact same fit/transform sequence (stack -> PPCA fit -> transform
-    -> NaN-out any entirely-missing rows -> split back into a list). Kept
-    byte-compatible with the pre-1.0 behavior.
+    Wraps a fit/transform sequence (stack -> fit -> transform -> split back
+    into a list) via the `hypertools.impute` dispatcher. With the default
+    `model='PPCA'`, this is kept byte-compatible with the pre-1.0 behavior;
+    passing a different `model` (str/dict/class/instance) routes through
+    that imputer instead (see `format_data`'s `impute` argument).
     """
-    from ..impute.impute import impute
+    from ..impute.impute import impute as imputer
 
-    filled = impute(x, model='PPCA')
+    filled = imputer(x, model=model)
     if not isinstance(filled, list):
         filled = [filled]
     return [np.asarray(f) for f in filled]

@@ -5,7 +5,7 @@ from .align import align as aligner
 from .normalize import normalize as normalizer
 
 
-def analyze(data, normalize=None, reduce=None, ndims=None, align=None, internal=False):
+def analyze(data, normalize=None, reduce=None, ndims=None, align=None, internal=False, impute=None):
     """
     Wrapper function for normalize -> reduce -> align transformations.
 
@@ -42,6 +42,12 @@ def analyze(data, normalize=None, reduce=None, ndims=None, align=None, internal=
         key is a string that specifies the model and the params key is a dictionary
         of parameter values (default : 'hyper').
 
+    impute : str, dict, class, class instance or None
+        Overrides the default PPCA missing-data fill (applied at the
+        `format_data` stage, when normalization triggers it) with a
+        different `hypertools.impute` model, e.g. 'Kalman', 'KNNImputer'
+        (default: None, i.e. PPCA -- byte-compatible with pre-1.0 behavior).
+
     Returns
     ----------
     analyzed_data : list of numpy arrays
@@ -50,5 +56,6 @@ def analyze(data, normalize=None, reduce=None, ndims=None, align=None, internal=
     """
 
     # return processed data
-    return aligner(reducer(normalizer(data, normalize=normalize, internal=internal),
+    return aligner(reducer(normalizer(data, normalize=normalize, internal=internal,
+                                      impute=impute),
                    reduce=reduce, ndims=ndims, internal=internal), align=align)
