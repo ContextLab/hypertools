@@ -38,3 +38,12 @@ First fix wave result: macOS 3.10-3.13 ALL green, Ubuntu green except 3.12, Wind
 6. **dw 0.5.1 released** (Jeremy): fixes dw#32 via `os.path.expanduser('~')`; verified import-with-HOME-unset OK. Pins bumped to `pydata-wrangler>=0.5.1` (base + [text]) in 80470fd0; HOME guard kept for 0.5.0 environments. dw#32 closed with verification comment.
 
 Local suite after round 2: **343 passed, 6 deselected** (new legend-pixel regression tests added the +2).
+
+## Round 3 (same session): version renumber 2.0 -> 1.0 (Jeremy's call)
+
+Jeremy: "I jumped too far ahead with the version numbering — this should actually be version 1.0." Full rename (branches included, Jeremy-approved):
+- pyproject `1.0.0.dev0`; surgical phrase sweep over 113 tracked text files (Apache-2.0 / numpy 2.0 / numeric literals untouched; verified via diff audit). `hypertools < 2.0` -> `< 1.0` stays correct (pre-rewrite releases are 0.x).
+- Renames: `docs/images/v2.0-*` -> `v1.0-*`, `tests/screenshots/*_v2.0` -> `*_v1.0` (untracked, plain mv), `dev/hypertools_2.0_dev*.ipynb` -> `hypertools_1.0_dev*.ipynb`.
+- Branches renamed on GitHub via API: `dev-2.0` -> `dev-1.0`, `dev-2.0-refactor` -> `dev-1.0-refactor`; CI workflow triggers updated; Colab install cells in 65 notebooks now point at `dev-1.0-refactor`.
+- **GOTCHA:** renaming a PR's HEAD branch on GitHub CLOSES the PR irrecoverably ("head branch has been deleted"; reopen 422s). Base renames retarget fine. **PR #271 died; superseded by PR #272** (same commits/evidence, cross-referenced).
+- Suite after rename: 343 passed. TODO for Jeremy: re-activate `dev-1.0`/`dev-1.0-refactor` in the ReadTheDocs dashboard (renamed branches deactivate); any existing `pip install git+...@dev-2.0-refactor` refs in the wild break (git refs don't redirect).
