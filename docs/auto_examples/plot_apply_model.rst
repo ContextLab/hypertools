@@ -96,7 +96,7 @@ fitted model for reuse on held-out data.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.550 seconds)
+   **Total running time of the script:** (0 minutes 0.611 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_apply_model.py:

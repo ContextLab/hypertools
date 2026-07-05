@@ -56,8 +56,8 @@ clusters render with intermediate colors.
 
  .. code-block:: none
 
-    (300, 3) [[0.997 0.    0.003]
-     [0.998 0.    0.002]]
+    (300, 3) [[0.997 0.003 0.   ]
+     [0.997 0.003 0.   ]]
 
 
 
@@ -93,7 +93,7 @@ clusters render with intermediate colors.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.047 seconds)
+   **Total running time of the script:** (0 minutes 0.088 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_mixture_models.py:

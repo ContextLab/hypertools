@@ -665,6 +665,40 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="The predict kwarg overlays a forecast on top of your plotted data: a dashed, same-color tail extending t steps past the end of each dataset. Under the hood this calls hypertools.predict, which supports several forecasting models -- &#x27;Kalman&#x27; (a linear-Gaussian state-space filter, used here), &#x27;GaussianProcess&#x27;, &#x27;AutoRegressor&#x27; (any sklearn regressor run recursively), &#x27;ARIMA&#x27;, &#x27;Laplace&#x27;, and &#x27;Chronos&#x27; (a HuggingFace time-series foundation model) -- selected via model= when calling hypertools.predict directly. Calling hyp.predict(data, model=..., t=..., return_model=True) also returns the fitted forecaster alongside the forecast, so the same fitted model can be reused (without re-estimating) on new data.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_predict_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_predict`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Forecasting timeseries with predict</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="Hypertools fills missing (NaN) values via hypertools.impute before reducing/plotting. This compares two imputers on the weights_avg dataset after randomly knocking out 10% of its entries -- plus three CONSECUTIVE rows where every feature is missing. That fully-missing-row case is the motivating example for GH #169: PPCA reconstructs a row from its own observed features, so a row with NO observed features at all cannot be recovered, so PPCA warns and leaves those rows NaN (they are dropped below purely so the PPCA panel has something plottable). The Kalman imputer instead smooths across time, so it can fill a fully-missing row from the neighboring (observed) timepoints, at the cost of assuming the data are a reasonably smooth timeseries -- its panel keeps every row.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_impute_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_impute`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Imputing missing data: PPCA vs Kalman smoothing</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="This example demonstrates how to plot text data using hypertools. We create sample State of the Union address excerpts covering different political themes and visualize them in a reduced dimensional space. By default, hypertools  transforms the text data using a topic model to capture semantic relationships  between different speech segments.">
 
 .. only:: html
@@ -745,6 +779,8 @@ Gallery of Examples
    /auto_examples/plot_geo
    /auto_examples/plot_apply_model
    /auto_examples/plot_missing_data
+   /auto_examples/plot_predict
+   /auto_examples/plot_impute
    /auto_examples/plot_sotus
    /auto_examples/plot_shape_morph
 
