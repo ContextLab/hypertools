@@ -98,7 +98,7 @@ def plot(
         static plots, 1 for animations). Applies to both backends.
 
     color(s) : str or list of str
-        A list of marker types
+        A list of colors
 
     palette : str
         A matplotlib or seaborn color palette
@@ -477,25 +477,35 @@ def plot(
                               in favor of colors."
                 )
 
-    # handle linestyle (to be passed onto matplotlib)
-    if linestyle is not None:
+    # handle linestyle (to be passed onto matplotlib). `linestyles` is
+    # treated as an alias of `linestyle` and takes priority when both are
+    # given -- but it must ALSO work on its own: previously this block was
+    # nested inside `if linestyle is not None`, so `linestyles=` alone was
+    # silently ignored (GH #142 follow-up).
+    if linestyle is not None or linestyles is not None:
         mpl_kwargs["linestyle"] = linestyle
         if linestyles is not None:
             mpl_kwargs["linestyle"] = linestyles
-            warnings.warn(
-                "Both linestyle and linestyles defined: linestyle  \
-                          will be ignored in favor of linestyles."
-            )
+            if linestyle is not None:
+                warnings.warn(
+                    "Both linestyle and linestyles defined: linestyle  \
+                              will be ignored in favor of linestyles."
+                )
 
-    # handle marker (to be passed onto matplotlib)
-    if marker is not None:
+    # handle marker (to be passed onto matplotlib). `markers` is treated as
+    # an alias of `marker` and takes priority when both are given -- but it
+    # must ALSO work on its own: previously this block was nested inside
+    # `if marker is not None`, so `markers=` alone was silently ignored
+    # (GH #142 follow-up).
+    if marker is not None or markers is not None:
         mpl_kwargs["marker"] = marker
         if markers is not None:
             mpl_kwargs["marker"] = markers
-            warnings.warn(
-                "Both marker and markers defined: marker will be \
-                          ignored in favor of markers."
-            )
+            if marker is not None:
+                warnings.warn(
+                    "Both marker and markers defined: marker will be \
+                              ignored in favor of markers."
+                )
 
     # handle marker size (to be passed onto matplotlib/plotly)
     if markersize is not None:
