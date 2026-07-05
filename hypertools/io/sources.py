@@ -57,6 +57,21 @@ _PICKLE_TRUST_WARNING = (
     'source, to silence this warning')
 
 
+class HypertoolsTrustError(ValueError):
+    """Raised when a remote payload can only be loaded by relaxing a
+    security policy (currently: ``allow_pickle`` for remote .npy/.npz
+    object arrays) and ``trust=True`` was not passed.
+
+    Subclasses ``ValueError`` so any existing code that catches
+    ``ValueError`` still catches this. ``load_source()``'s per-branch
+    guards key on this specific type (not bare ``ValueError``) so that
+    unrelated ``ValueError`` subclasses -- e.g. pandas' ``ParserError``,
+    ``EmptyDataError``, or ``json.JSONDecodeError`` from a genuinely
+    malformed payload -- fall through to the "Tried, in order" digest
+    instead of escaping raw.
+    """
+
+
 def is_loadable_string(s):
     """Cheap (no-network) check: could this string plausibly name a data
     source? Used to decide whether to route strings through load() rather
@@ -131,7 +146,7 @@ def load_source(source, split=None, streaming=False, trust=False):
             raw, name_hint = _fetch_bytes(sheet_url)
             return _parse_payload(raw, name_hint or 'sheet.csv',
                                   trust=trust, remote=True)
-        except ValueError:
+        except HypertoolsTrustError:
             raise
         except Exception as e:
             attempts.append(f'Google Sheets: {type(e).__name__}: {e}')
@@ -144,7 +159,7 @@ def load_source(source, split=None, streaming=False, trust=False):
             raw, name_hint = _fetch_bytes(url)
             return _parse_payload(raw, name_hint or source,
                                   trust=trust, remote=True)
-        except ValueError:
+        except HypertoolsTrustError:
             raise
         except Exception as e:
             attempts.append(f'Google Drive ({drive_id}): '
@@ -157,7 +172,7 @@ def load_source(source, split=None, streaming=False, trust=False):
             raw, name_hint = _fetch_bytes(dropbox_url)
             return _parse_payload(raw, name_hint or source,
                                   trust=trust, remote=True)
-        except ValueError:
+        except HypertoolsTrustError:
             raise
         except Exception as e:
             attempts.append(f'Dropbox: {type(e).__name__}: {e}')
@@ -173,7 +188,7 @@ def load_source(source, split=None, streaming=False, trust=False):
             raw, name_hint = _fetch_bytes(url)
             return _parse_payload(raw, name_hint or source,
                                   trust=trust, remote=True)
-        except ValueError:
+        except HypertoolsTrustError:
             raise
         except Exception as e:
             attempts.append(f'URL ({url}): {type(e).__name__}: {e}')
@@ -321,7 +336,7 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
     allow_pickle = trust or not remote
 
     if ext == '.npy':
-        return np.load(io.BytesIO(raw), allow_pickle=allow_pickle)
+        return _npy_load(raw, allow_pickle)
     if ext == '.npz':
         return _unpack_npz(raw, trust=trust, remote=remote)
     if ext in ('.csv', '.tsv', '.txt'):
@@ -342,7 +357,7 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
 
     # no (useful) extension: sniff the content
     if raw[:6] == b'\x93NUMPY':
-        return np.load(io.BytesIO(raw), allow_pickle=allow_pickle)
+        return _npy_load(raw, allow_pickle)
     if raw[:1] == b'\x80':
         return _unpickle_bytes(raw, trust=trust, remote=remote)
     if raw[:2] == b'PK':
@@ -358,10 +373,36 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
     return pd.read_csv(io.StringIO(text), sep=None, engine='python')
 
 
+def _npy_load(raw, allow_pickle):
+    """np.load wrapper that turns the "Object arrays cannot be loaded
+    when allow_pickle=False" ValueError into a HypertoolsTrustError when
+    ``allow_pickle`` was forced False by the remote-trust policy (never
+    true for local files or trust=True), so that load_source()'s branch
+    guards can distinguish it from an unrelated parse-failure
+    ValueError."""
+    try:
+        return np.load(io.BytesIO(raw), allow_pickle=allow_pickle)
+    except ValueError as e:
+        if not allow_pickle:
+            raise HypertoolsTrustError(
+                f'{e}; pass trust=True to hypertools.load() once you '
+                'have verified the source, to load pickled/object-array '
+                'data from a remote source') from e
+        raise
+
+
 def _unpack_npz(raw, trust=False, remote=False):
     allow_pickle = trust or not remote
-    z = np.load(io.BytesIO(raw), allow_pickle=allow_pickle)
-    arrays = [z[k] for k in z.files]
+    try:
+        z = np.load(io.BytesIO(raw), allow_pickle=allow_pickle)
+        arrays = [z[k] for k in z.files]
+    except ValueError as e:
+        if not allow_pickle:
+            raise HypertoolsTrustError(
+                f'{e}; pass trust=True to hypertools.load() once you '
+                'have verified the source, to load pickled/object-array '
+                'data from a remote source') from e
+        raise
     return arrays[0] if len(arrays) == 1 else arrays
 
 

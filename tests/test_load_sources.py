@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 
 import hypertools as hyp
 from hypertools._shared.exceptions import HypertoolsIOError
-from hypertools.io.sources import is_loadable_string
+from hypertools.io.sources import is_loadable_string, HypertoolsTrustError
 
 IRIS_CSV = 'raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv'
 # legacy hypertools 'spiral' pickle, still hosted on Google Drive
@@ -234,7 +234,7 @@ def test_normalize_google_sheet_url_rewrite():
 def test_load_google_sheet_live():
     df = hyp.load(GOOGLE_SHEETS_SAMPLE_URL)
     assert isinstance(df, pd.DataFrame)
-    assert df.shape[0] == 30
+    assert df.shape == (30, 6)
 
 
 # ---- Excel (.xlsx / .xls) ----
@@ -290,7 +290,7 @@ def test_remote_pickle_trust_true_silences_warning(http_dir_server):
 def test_remote_npy_object_array_blocked_without_trust(http_dir_server):
     tmp_path, base_url = http_dir_server
     np.save(tmp_path / 'obj.npy', np.array([{'a': 1}], dtype=object))
-    with pytest.raises(ValueError, match='allow_pickle'):
+    with pytest.raises(HypertoolsTrustError, match='allow_pickle'):
         hyp.load(base_url + '/obj.npy')
 
 
@@ -309,6 +309,20 @@ def test_remote_npy_numeric_no_warning_no_trust_needed(http_dir_server):
         warnings.simplefilter('error')
         out = hyp.load(base_url + '/num.npy')
     np.testing.assert_allclose(out, arr)
+
+
+def test_remote_malformed_csv_raises_digest_not_raw_parser_error(
+        http_dir_server):
+    """A remote parse failure (pandas ParserError, which subclasses
+    ValueError like the trust-policy error does) must NOT be mistaken
+    for the trust-policy error and escape raw -- it should join the
+    HypertoolsIOError "Tried, in order" digest instead."""
+    tmp_path, base_url = http_dir_server
+    # unterminated quoted field: the python csv engine raises a real
+    # pandas.errors.ParserError ("unexpected end of data") for this.
+    (tmp_path / 'bad.csv').write_bytes(b'a,b\n"unterminated,1\n')
+    with pytest.raises(HypertoolsIOError, match='Tried, in order'):
+        hyp.load(base_url + '/bad.csv')
 
 
 def test_local_pickle_never_warns_or_restricts(tmp_path):
