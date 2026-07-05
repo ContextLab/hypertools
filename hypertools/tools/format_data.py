@@ -2,7 +2,6 @@ import warnings
 
 import numpy as np
 
-from .._externals.ppca import PPCA
 from .._shared.helpers import get_type
 
 
@@ -155,22 +154,16 @@ def format_data(x, vectorizer='CountVectorizer',
 
 
 def fill_missing(x):
-    """Fill missing values using PPCA"""
-    # ppca if missing data
-    m = PPCA()
-    x_stacked = np.vstack(x)
-    m.fit(data=x_stacked)
-    x_pca = m.transform()
+    """Fill missing values using PPCA
 
-    # if the whole row is missing, return nans
-    all_missing = [idx for idx, a in enumerate(x_stacked) if np.all(np.isnan(a))]
-    if len(all_missing)>0:
-        for i in all_missing:
-            x_pca[i, :] = np.nan
+    Routed through `hypertools.impute` (default model='PPCA'), which wraps
+    this exact same fit/transform sequence (stack -> PPCA fit -> transform
+    -> NaN-out any entirely-missing rows -> split back into a list). Kept
+    byte-compatible with the pre-1.0 behavior.
+    """
+    from ..impute.impute import impute
 
-    # get the original lists back
-    if len(x)>1:
-        x_split = np.cumsum([i.shape[0] for i in x][:-1])
-        return list(np.split(x_pca, x_split, axis=0))
-    else:
-        return [x_pca]
+    filled = impute(x, model='PPCA')
+    if not isinstance(filled, list):
+        filled = [filled]
+    return [np.asarray(f) for f in filled]
