@@ -759,22 +759,29 @@ def plot(
     if raw_forecasts is not None and len(raw_forecasts) != len(xform):
         raw_forecasts = None
 
-    # center (mirror the same mean-subtraction onto the forecasts, computed
-    # from the SAME pre-center xform, so the dashed trace lands in the same
-    # drawn coordinates as its source line)
+    # center + scale. When forecasts are drawn, the frame must contain
+    # EVERYTHING drawn: compute the center/scale statistics from the FULL
+    # stacked data (observed + forecasts, mirroring the animation principle
+    # that limits/frame come from the full stacked data) and pass both
+    # through the SAME transform. Otherwise forecasts that extend beyond
+    # the observed data's range map outside [-1, 1] and render past the
+    # square/cube frame (axes are off, so nothing clips them).
     if raw_forecasts is not None:
-        _center_mean = np.mean(np.vstack(xform), 0)
-        raw_forecasts = [fc - _center_mean for fc in raw_forecasts]
-    xform = center(xform)
+        _joint = np.vstack([np.vstack(xform), np.vstack(raw_forecasts)])
+        _mean = np.mean(_joint, 0)
+        xform = [xi - _mean for xi in xform]
+        raw_forecasts = [fc - _mean for fc in raw_forecasts]
 
-    # scale (mirror the same min/max rescale onto the forecasts, computed
-    # from the now-centered xform)
-    if raw_forecasts is not None:
-        _scale_stack = np.vstack(xform)
-        _m1 = np.min(_scale_stack)
-        _m2 = np.max(_scale_stack - _m1)
-        raw_forecasts = [2 * (np.divide(fc - _m1, _m2)) - 1 for fc in raw_forecasts]
-    xform = scale(xform)
+        _joint = np.vstack([np.vstack(xform), np.vstack(raw_forecasts)])
+        _m1 = np.min(_joint)
+        _m2 = np.max(_joint - _m1)
+        _rescale = lambda a: 2 * (np.divide(a - _m1, _m2)) - 1
+        xform = [_rescale(xi) for xi in xform]
+        raw_forecasts = [_rescale(fc) for fc in raw_forecasts]
+    else:
+        # no forecasts: identical to the historical center()/scale() path
+        xform = center(xform)
+        xform = scale(xform)
 
     # handle palette with seaborn
     import seaborn as sns

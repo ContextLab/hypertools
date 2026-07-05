@@ -85,6 +85,52 @@ def test_predict_with_gaussian_process_no_extra_dependency():
     assert len(ax.lines) == 4
 
 
+# --- forecasts must stay inside the drawn frame (square/cube) --------------
+# Regression guard: forecasts used to be scaled AFTER helpers.scale mapped
+# the observed data into [-1, 1], so a forecast extending beyond the observed
+# range rendered OUTSIDE the black square/cube frame (axes are off, nothing
+# clips). The frame must contain everything drawn: center/scale statistics
+# are now computed from the FULL stacked data (observed + forecasts).
+
+def _spiral(phase):
+    s = np.linspace(0, 4 * np.pi, 90)
+    return np.column_stack([np.cos(s + phase), np.sin(s + phase), s / 4,
+                            0.5 * np.cos(2 * s + phase),
+                            0.5 * np.sin(2 * s + phase)])
+
+
+def _line_pts(line, ndims):
+    if ndims == 3:
+        xs, ys, zs = line.get_data_3d()
+        return np.column_stack([xs, ys, zs])
+    return np.column_stack([line.get_xdata(), line.get_ydata()])
+
+
+@pytest.mark.parametrize('ndims,model', [(2, 'ARIMA'), (3, 'GaussianProcess')])
+def test_forecast_vertices_stay_inside_frame(ndims, model):
+    if model == 'ARIMA':
+        pytest.importorskip('statsmodels')
+    data = [_spiral(0.0), _spiral(2.0)]
+
+    fig = hyp.plot(data, ndims=ndims, predict=model, t=30,
+                   legend=['x', 'y'], show=False)
+    ax = fig.axes[0]
+    plt.close(fig)
+
+    fc_lines = [l for l in ax.lines if l.get_label() == '_nolegend_']
+    assert len(fc_lines) == len(data)
+    # square/cube frame spans [-1, 1]: every forecast vertex must be inside
+    for line in fc_lines:
+        pts = _line_pts(line, ndims)
+        assert pts.min() >= -1.0 - 1e-9
+        assert pts.max() <= 1.0 + 1e-9
+    # observed data stays inside the frame too (joint center/scale)
+    for line in [l for l in ax.lines if l.get_label() != '_nolegend_']:
+        pts = _line_pts(line, ndims)
+        assert pts.min() >= -1.0 - 1e-9
+        assert pts.max() <= 1.0 + 1e-9
+
+
 # --- animate + predict: clear NotImplementedError (v1 static-plot only) ----
 
 def test_animate_and_predict_raises_not_implemented():
