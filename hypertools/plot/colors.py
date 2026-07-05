@@ -117,6 +117,29 @@ def _flatten_if_nested(vals):
     return list(vals)
 
 
+def get_palette_colors(palette, n_colors):
+    """Resolve `n_colors` RGB colors from a palette (name or list).
+
+    Public wrapper around `_get_palette` so callers outside this module
+    (e.g. colorbar construction in plot.py/plotly_backend.py) can build a
+    color mapping that is GUARANTEED to match what `mat2colors` /
+    `sns.set_palette` would produce for the same `palette`/`n_colors` --
+    the single source of truth for "what color is group i / value v".
+    """
+    import seaborn as sns
+    return np.asarray(_get_palette(palette, n_colors, sns))[:, :3]
+
+
+def continuous_colormap(palette, n_bins=100):
+    """Build a matplotlib ListedColormap matching `mat2colors`'s continuous
+    path (same palette, same default `n_bins`), so a colorbar built from
+    this colormap shows EXACTLY the colors used for continuously-hued
+    lines/markers."""
+    from matplotlib.colors import ListedColormap
+
+    return ListedColormap(get_palette_colors(palette, n_bins))
+
+
 def _get_palette(palette, n_colors, sns):
     if isinstance(palette, str):
         return sns.color_palette(palette, n_colors)

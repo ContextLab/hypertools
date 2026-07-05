@@ -7,7 +7,7 @@ from .._shared.helpers import *
 from .._shared.params import default_params
 from ..tools.analyze import analyze
 from ..cluster.cluster import cluster as clusterer, mixture_models
-from .colors import mat2colors, colors2groups
+from .colors import mat2colors, colors2groups, get_palette_colors, continuous_colormap
 from ..reduce.reduce import reduce as reducer
 from ..tools.format_data import format_data
 from .matplotlib_backend import _draw
@@ -32,6 +32,7 @@ def plot(
     hue=None,
     labels=None,
     legend=None,
+    colorbar=None,
     title=None,
     size=None,
     elev=10,
@@ -120,6 +121,25 @@ def plot(
     legend : list or bool
         If set to True, legend is implicitly computed from data. Passing a
         list will add string labels to the legend (one for each list item).
+
+    colorbar : bool or dict
+        If True, draws a colorbar reflecting the color mapping in use
+        (GH #100). For a continuous 1D `hue` (or continuous `hue` combined
+        with a line format, which produces multicolored lines), the
+        colorbar is a continuous `ScalarMappable` spanning the ACTUAL
+        `hue` value range, using the SAME palette as the lines/markers.
+        For discrete groups (categorical `hue`, `cluster`/`n_clusters`, or
+        a plain list of datasets with no `hue`/`cluster`), the colorbar is
+        segmented (one BoundaryNorm-style block per group), with tick
+        labels taken from the legend labels/group names (``1..n`` if no
+        names are available). Pass a dict for finer control:
+        ``{'label': str, 'ticks': [...], 'location': 'right'|'left'|'top'|
+        'bottom'}`` (all keys optional; ``location`` defaults to
+        ``'right'``, the same side as the legend -- when both a legend and
+        a right-side colorbar are shown, the figure is widened so neither
+        is clipped or overlaps the other). Raises ``ValueError`` if
+        requested with no color mapping available at all (e.g. a single
+        dataset with no `hue`/`cluster`). Default None (no colorbar).
 
     title : str
         A title for the plot
@@ -399,6 +419,35 @@ def plot(
             "default) to use predict=, or omit predict= for an animated plot."
         )
 
+    # colorbar= kwarg validation (GH #100): fail fast with a clear message
+    # before any of the (expensive) analyze/reduce/align pipeline runs.
+    _VALID_COLORBAR_LOCATIONS = ('right', 'left', 'top', 'bottom')
+    _VALID_COLORBAR_KEYS = {'label', 'ticks', 'location'}
+    if colorbar is not None and colorbar is not False:
+        if colorbar is True:
+            colorbar = {}
+        elif isinstance(colorbar, dict):
+            unknown = set(colorbar) - _VALID_COLORBAR_KEYS
+            if unknown:
+                raise ValueError(
+                    f"colorbar dict got unknown key(s) {sorted(unknown)}; "
+                    f"valid keys are {sorted(_VALID_COLORBAR_KEYS)}."
+                )
+            loc = colorbar.get('location', 'right')
+            if loc not in _VALID_COLORBAR_LOCATIONS:
+                raise ValueError(
+                    f"colorbar['location'] must be one of "
+                    f"{_VALID_COLORBAR_LOCATIONS}; got {loc!r}."
+                )
+        else:
+            raise ValueError(
+                "colorbar must be True, False, None, or a dict with keys "
+                f"a subset of {sorted(_VALID_COLORBAR_KEYS)}; got "
+                f"{colorbar!r}."
+            )
+    else:
+        colorbar = None
+
     # streaming inputs (issue #101): iterators/generators and Hugging Face
     # IterableDatasets are detected from the structure of the input -- no
     # flag needed. Models are fitted on the first `stream_init` samples and
@@ -555,6 +604,12 @@ def plot(
     multicolor_hue = None
     pre_interp_lengths = [len(xi) for xi in xform]
 
+    # original category NAMES for a categorical hue (set below, if
+    # applicable), used by `legend=True` so the legend/colorbar show the
+    # actual category strings rather than the integer group ids `hue` gets
+    # reassigned to just below (group_by_category returns ints).
+    hue_category_names = None
+
     # find cluster and reshape if n_clusters
     if cluster is not None:
         if hue is not None:
@@ -687,6 +742,8 @@ def plot(
                        and not isinstance(el, bool) for el in hue):
                     hue = vals2bins(hue)
                 elif all(isinstance(el, str) for el in hue):
+                    hue_category_names = list(
+                        sorted(set(hue), key=list(hue).index))
                     hue = group_by_category(hue)
 
         # reshape the data according to group
@@ -719,11 +776,27 @@ def plot(
         if legend is False:
             legend = None
         elif legend is True and hue is not None:
-            legend = [item for item in sorted(set(hue), key=list(hue).index)]
+            if hue_category_names is not None:
+                # categorical string hue: show the ORIGINAL category names,
+                # not the integer group ids `hue` was reassigned to above.
+                legend = hue_category_names
+            else:
+                legend = [item for item in
+                         sorted(set(hue), key=list(hue).index)]
         elif legend is True and hue is None:
             legend = [i + 1 for i in range(len(xform))]
 
         mpl_kwargs["label"] = legend
+
+    # colorbar (GH #100): resolve the color-mapping info (continuous hue
+    # value range + palette, or discrete group colors + labels) now, while
+    # `hue`/`multicolor_hue`/`xform`/`legend` reflect the FINAL grouping
+    # decision (post cluster/hue reshape, post legend-label resolution) but
+    # BEFORE interpolation (which doesn't change the mapping, only the
+    # point density) -- shared by both the matplotlib and plotly backends.
+    colorbar_info = _build_colorbar_info(
+        colorbar, hue, multicolor_hue, cluster, n_clusters, xform,
+        mpl_kwargs, legend, palette)
 
     # interpolate if its a line plot
     pre_interp_point_counts = [xi.shape[0] for xi in xform]
@@ -857,6 +930,7 @@ def plot(
             bullettime=bullettime,
             zoom=zoom,
             forecasts=raw_forecasts,
+            colorbar_info=colorbar_info,
         )
         ax = None
         data = xform
@@ -946,6 +1020,16 @@ def plot(
                 if legend is not None and ax is not None:
                     _fit_right_legend(fig, ax)
 
+            # colorbar (GH #100): added AFTER the legend has been fitted (for
+            # static plots) so a right-side colorbar reserves its own strip
+            # beyond the legend rather than overlapping it. For animated
+            # plots this is the only figure-layout step that runs -- the
+            # colorbar is built once, here, from the (frame-independent)
+            # color mapping and is never touched by the per-frame update
+            # callbacks, so it stays static across every frame.
+            if colorbar_info is not None and ax is not None:
+                _add_colorbar(fig, ax, colorbar_info)
+
             # save
             if save_path is not None:
                 if animate:
@@ -1011,6 +1095,228 @@ def plot(
         return fig, line_ani
 
     return fig
+
+
+def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
+                         xform, mpl_kwargs, legend, palette):
+    """Resolve `colorbar=` into a backend-agnostic color-mapping dict, or
+    None if no colorbar was requested (GH #100).
+
+    Returns a dict with key ``'kind'`` of:
+    - ``'continuous'``: ``vmin``/``vmax`` (the ACTUAL hue value range) and
+      ``palette`` -- the caller builds a `ScalarMappable` from
+      `continuous_colormap(palette)` + `Normalize(vmin, vmax)`, which is
+      guaranteed to match `_multicolor_line_colors`'s per-point colors
+      (same palette, same `mat2colors` default `n_bins`).
+    - ``'discrete'``: ``colors`` ((n, 3) array, ORDER matching the drawn
+      groups) and ``labels`` (tick labels, from `legend` if it is a list,
+      else ``1..n``).
+    Both kinds also carry the user-facing ``label``/``ticks``/``location``
+    overrides (from the `colorbar` dict; see `plot`'s docstring).
+
+    Raises ``ValueError`` if `colorbar` was requested but there is no
+    color mapping to show (a single, ungrouped dataset), or the mapping is
+    a per-observation blend with no discrete grouping (an unbounded color
+    space -- nothing finite to put on a colorbar).
+    """
+    if colorbar is None:
+        return None
+
+    label = colorbar.get('label')
+    ticks = colorbar.get('ticks')
+    location = colorbar.get('location', 'right')
+
+    if multicolor_hue is not None and multicolor_hue.ndim == 1 and hue is None:
+        vals = np.asarray(multicolor_hue, dtype=np.float64)
+        return {
+            'kind': 'continuous',
+            'vmin': float(np.min(vals)),
+            'vmax': float(np.max(vals)),
+            'palette': palette,
+            'label': label,
+            'ticks': ticks,
+            'location': location,
+        }
+
+    if multicolor_hue is not None:
+        raise ValueError(
+            "colorbar is not supported for per-observation matrix/mixture"
+            "-blended hue without discrete grouping (colors vary "
+            "continuously over an unbounded blend space, so there is no "
+            "finite set of colors to show). Use a 1D continuous hue, or "
+            "combine with cluster= (with animate=True, which quantizes "
+            "the blend into discrete groups) instead."
+        )
+
+    n_groups = len(xform)
+    if n_groups <= 1 and hue is None and cluster is None and n_clusters is None:
+        raise ValueError(
+            "colorbar=True requires a color mapping (hue=, cluster=, or "
+            "n_clusters=): a single, ungrouped dataset renders in one "
+            "color, so there is nothing to map on a colorbar."
+        )
+
+    explicit_colors = mpl_kwargs.get('color')
+    if (isinstance(explicit_colors, (list, tuple))
+            and len(explicit_colors) == n_groups):
+        # the mixture-blend paths (cluster=<mixture model> or matrix hue,
+        # animated) set an EXPLICIT per-group color list -- reuse it
+        # verbatim so the colorbar swatches exactly match the drawn lines.
+        colors = np.asarray(explicit_colors)[:, :3]
+    else:
+        # everything else (categorical hue, non-mixture cluster/n_clusters,
+        # or a plain list of datasets) is colored from the ambient palette
+        # in dataset/group order -- exactly what sns.set_palette (mpl) /
+        # the per-trace sns.color_palette (plotly) assign when drawing.
+        colors = get_palette_colors(palette, n_groups)
+
+    labels = (list(legend) if isinstance(legend, list)
+              else [i + 1 for i in range(n_groups)])
+
+    return {
+        'kind': 'discrete',
+        'colors': colors,
+        'labels': labels,
+        'label': label,
+        'ticks': ticks,
+        'location': location,
+    }
+
+
+def _add_colorbar(fig, ax, colorbar_info):
+    """Attach a matplotlib colorbar built from `_build_colorbar_info`'s
+    output to `fig`/`ax` (GH #100): a continuous `ScalarMappable` for
+    continuous hue, or a `BoundaryNorm`-segmented one (one block per
+    group, tick labels = group names) for discrete groups."""
+    from matplotlib.cm import ScalarMappable
+    from matplotlib.colors import BoundaryNorm, ListedColormap, Normalize
+
+    default_tick_labels = None
+    if colorbar_info['kind'] == 'continuous':
+        cmap = continuous_colormap(colorbar_info['palette'])
+        norm = Normalize(vmin=colorbar_info['vmin'],
+                         vmax=colorbar_info['vmax'])
+        ticks = colorbar_info['ticks']
+    else:
+        n = len(colorbar_info['colors'])
+        cmap = ListedColormap(colorbar_info['colors'])
+        norm = BoundaryNorm(np.arange(n + 1) - 0.5, n)
+        ticks = (colorbar_info['ticks'] if colorbar_info['ticks'] is not None
+                 else list(range(n)))
+        default_tick_labels = colorbar_info['labels']
+
+    mappable = ScalarMappable(norm=norm, cmap=cmap)
+    mappable.set_array([])
+    tick_kwargs = {} if ticks is None else {'ticks': ticks}
+    # the FINAL tick label strings/title -- these can be much wider than the
+    # numeric default tick labels matplotlib would otherwise draw (e.g. group
+    # names), so they must be applied BEFORE any pixel-measurement-based
+    # width fitting runs (see `_add_right_colorbar`), not after.
+    ticklabels = (None if default_tick_labels is None or colorbar_info['ticks']
+                 is not None else [str(l) for l in default_tick_labels])
+    label = colorbar_info['label']
+
+    if colorbar_info['location'] == 'right':
+        cbar = _add_right_colorbar(fig, ax, mappable, ticklabels=ticklabels,
+                                   label=label, **tick_kwargs)
+    else:
+        cbar = fig.colorbar(mappable, ax=ax,
+                            location=colorbar_info['location'],
+                            **tick_kwargs)
+        if ticklabels is not None:
+            cbar.set_ticklabels(ticklabels)
+        if label:
+            cbar.set_label(label)
+    return cbar
+
+
+def _add_right_colorbar(fig, ax, mappable, pad_in=0.2, width_in=0.35,
+                        max_iter=6, ticklabels=None, label=None,
+                        **colorbar_kwargs):
+    """Add `mappable`'s colorbar in a NEW strip to the right of the figure
+    -- to the right of an existing right-side legend, if any -- widening
+    the figure (mirroring `_fit_right_legend`'s technique: measure the
+    ACTUAL rasterized rightmost inked pixel, then widen the figure and
+    reposition `ax` by its unchanged absolute inches so neither the plot
+    nor an already-fitted legend need to shrink or move).
+
+    `ticklabels`/`label` (the FINAL tick label strings and axis label, if
+    any -- e.g. group names, which can be far wider than the default
+    numeric tick labels matplotlib would otherwise draw) are applied
+    IMMEDIATELY after the colorbar is created and BEFORE the width-fitting
+    pass below runs -- fitting against the (short) default labels and only
+    swapping in the real ones afterward would fit the wrong content and
+    leave the real labels clipped.
+
+    That fitting pass is a second rasterized-measurement loop (identical in
+    spirit to `_fit_right_legend`'s) that keeps widening the figure,
+    repositioning BOTH `ax` and the new colorbar axes by their unchanged
+    absolute inches, until nothing is clipped off the right edge."""
+    import matplotlib
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+    try:
+        fig.set_layout_engine('none')
+    except Exception:
+        pass
+
+    def _rasterize():
+        with plt.rc_context(matplotlib.rcParamsDefault):
+            canvas = FigureCanvasAgg(fig)
+            canvas.draw()
+            buf = np.asarray(canvas.buffer_rgba())[..., :3]
+        return buf, np.where((buf < 245).any(axis=(0, 2)))[0]
+
+    _, inked_cols = _rasterize()
+    w, h = fig.get_size_inches()
+    right_edge_in = ((int(inked_cols.max()) + 1) / fig.dpi
+                     if len(inked_cols) else 0.0)
+
+    cbar_x0_in = right_edge_in + pad_in
+    new_w = cbar_x0_in + width_in + pad_in
+    if new_w > w:
+        pos = ax.get_position()
+        left_in, bottom_in = pos.x0 * w, pos.y0 * h
+        w_in_ax, h_in_ax = pos.width * w, pos.height * h
+        fig.set_size_inches(new_w, h)
+        ax.set_position([left_in / new_w, bottom_in / h,
+                         w_in_ax / new_w, h_in_ax / h])
+        w = new_w
+
+    pos = ax.get_position()
+    cbar_ax = fig.add_axes([cbar_x0_in / w, pos.y0 + pos.height * 0.2,
+                            width_in / w, pos.height * 0.6])
+    cbar = fig.colorbar(mappable, cax=cbar_ax, **colorbar_kwargs)
+    if ticklabels is not None:
+        cbar.set_ticklabels(ticklabels)
+    if label:
+        cbar.set_label(label)
+
+    # second pass: the colorbar's tick labels/title were just drawn and may
+    # extend past the reserved `width_in` strip -- widen further as needed.
+    target_px = max(6.0, pad_in * fig.dpi)
+    for _ in range(max_iter):
+        buf, inked_cols = _rasterize()
+        if not len(inked_cols):
+            break
+        w_px = buf.shape[1]
+        margin_px = w_px - 1 - int(inked_cols.max())
+        if margin_px >= target_px:
+            break
+        deficit_in = (target_px - margin_px) / fig.dpi
+        w_cur, h_cur = fig.get_size_inches()
+        new_w = w_cur + deficit_in
+        if new_w <= w_cur + 1e-3:
+            break
+        ax_pos, cbar_pos = ax.get_position(), cbar_ax.get_position()
+        ax_left_in, ax_w_in = ax_pos.x0 * w_cur, ax_pos.width * w_cur
+        cbar_left_in, cbar_w_in = cbar_pos.x0 * w_cur, cbar_pos.width * w_cur
+        fig.set_size_inches(new_w, h_cur)
+        ax.set_position([ax_left_in / new_w, ax_pos.y0,
+                         ax_w_in / new_w, ax_pos.height])
+        cbar_ax.set_position([cbar_left_in / new_w, cbar_pos.y0,
+                              cbar_w_in / new_w, cbar_pos.height])
+    return cbar
 
 
 def _fit_right_legend(fig, ax, pad_in=0.15, max_iter=6):

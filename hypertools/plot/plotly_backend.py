@@ -129,7 +129,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 save_path=None, frame_rate=30, duration=30, rotations=1,
                 elev=10, azim=-60, point_colors=None, tail_duration=2,
                 chemtrails=False, precog=False, bullettime=False, zoom=1,
-                forecasts=None):
+                forecasts=None, colorbar_info=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -146,6 +146,15 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     dataset's final observed row so the trace connects. Rendered as one
     dashed (`dash='dash'`), 0.6-opacity, `showlegend=False` trace per
     dataset, in the SAME color as its source trace.
+
+    `colorbar_info` (GH #100): optional dict from
+    `hypertools.plot.plot._build_colorbar_info` (``kind='continuous'`` with
+    ``vmin``/``vmax``/``palette``, or ``kind='discrete'`` with
+    ``colors``/``labels``; both carry ``label``/``ticks``/``location``
+    overrides). Rendered as a colorbar attached to a hidden ("phantom")
+    marker trace -- plotly colorbars are a `marker`/`line` property of a
+    trace, not a figure-level artist, so a real (invisible) trace carries
+    it without adding a visible point.
 
     Returns the plotly Figure.
     """
@@ -268,18 +277,34 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     if ndims >= 3:
         traces.append(_cube_trace(go))
 
+    # colorbar (GH #100): appended LAST (after the cube trace) so it never
+    # falls within `trace_indices = range(n_data_traces [+ n_trail_traces])`
+    # -- the animation frame-update code below only ever touches those
+    # indices, so this trace (and its colorbar) is never touched by a frame
+    # update and stays static across the whole animation.
+    has_colorbar = colorbar_info is not None
+    if has_colorbar:
+        traces.append(_colorbar_trace(go, colorbar_info, ndims,
+                                      legend_present=legend is not None))
+
     fig = go.Figure(data=traces)
 
     # match matplotlib: centered black title (12pt = 16px), default canvas
     # 6.4 x 4.8 inches at 100 dpi, legend to the RIGHT of the plot and
-    # vertically centered on the box (same as the matplotlib renderer)
+    # vertically centered on the box (same as the matplotlib renderer).
+    # When a colorbar is ALSO shown on the (default) right side, it is
+    # pushed further right than the legend (see `_colorbar_trace`) and the
+    # right margin is widened further so neither is clipped.
+    margin_r = 10
+    if legend is not None:
+        margin_r += 110
+    if has_colorbar:
+        margin_r += 110
     layout = dict(
         paper_bgcolor='white',
         plot_bgcolor='white',
         showlegend=legend is not None,
-        # reserve right margin for the outside legend when one is shown
-        margin=dict(l=10, r=120 if legend is not None else 10,
-                    t=40 if title else 10, b=10),
+        margin=dict(l=10, r=margin_r, t=40 if title else 10, b=10),
         legend=dict(bgcolor='rgba(255,255,255,0.8)',
                     x=1.02, y=0.5, xanchor='left', yanchor='middle'),
     )
@@ -555,6 +580,87 @@ def _parse_fmt(fmt_str, tkwargs):
     else:
         mode = 'lines'
     return mode, symbol, dash
+
+
+def _colorbar_trace(go, colorbar_info, ndims, legend_present):
+    """A hidden ("phantom") marker trace whose sole purpose is to carry a
+    plotly colorbar (GH #100) -- plotly attaches colorbars to a trace's
+    `marker`/`line`, not to the figure directly, so a real (invisible: a
+    single ``None``-positioned point, `opacity=0`) trace is the standard
+    way to show one without any visible marker of its own. `location`
+    controls which side of the plot the colorbar sits on; the default
+    ('right') is pushed further right than an existing legend so the two
+    never overlap (mirrors the matplotlib backend's `_add_right_colorbar`)."""
+    from .colors import get_palette_colors
+
+    location = colorbar_info.get('location', 'right')
+    # x: horizontal anchor for a vertical colorbar (location in
+    # ('left', 'right')); orientation='h' + y for a horizontal one (top/bottom)
+    if location == 'right':
+        x, xanchor, orientation, y, yanchor = (
+            1.25 if legend_present else 1.02, 'left', 'v', 0.5, 'middle')
+    elif location == 'left':
+        x, xanchor, orientation, y, yanchor = -0.15, 'right', 'v', 0.5, 'middle'
+    elif location == 'top':
+        x, xanchor, orientation, y, yanchor = 0.5, 'center', 'h', 1.15, 'bottom'
+    else:  # 'bottom'
+        x, xanchor, orientation, y, yanchor = 0.5, 'center', 'h', -0.15, 'top'
+
+    cb = dict(x=x, xanchor=xanchor, y=y, yanchor=yanchor,
+             orientation=orientation, len=0.75,
+             thickness=15 if orientation == 'v' else 15)
+    if colorbar_info.get('label'):
+        cb['title'] = dict(text=colorbar_info['label'])
+
+    if colorbar_info['kind'] == 'continuous':
+        colors = get_palette_colors(colorbar_info['palette'], 100)
+        colorscale = _colors_to_plotly_colorscale(colors)
+        cmin, cmax = colorbar_info['vmin'], colorbar_info['vmax']
+        if colorbar_info.get('ticks') is not None:
+            cb['tickvals'] = list(colorbar_info['ticks'])
+    else:
+        colors = colorbar_info['colors']
+        n = len(colors)
+        colorscale = _discrete_plotly_colorscale(colors)
+        cmin, cmax = -0.5, n - 0.5
+        if colorbar_info.get('ticks') is not None:
+            cb['tickvals'] = list(colorbar_info['ticks'])
+        else:
+            cb['tickvals'] = list(range(n))
+            cb['ticktext'] = [str(l) for l in colorbar_info['labels']]
+
+    marker = dict(color=[cmin], colorscale=colorscale, cmin=cmin, cmax=cmax,
+                 showscale=True, colorbar=cb, size=0.001, opacity=0)
+    common = dict(mode='markers', marker=marker, hoverinfo='skip',
+                 showlegend=False)
+    if ndims >= 3:
+        return go.Scatter3d(x=[None], y=[None], z=[None], **common)
+    return go.Scatter(x=[None], y=[None], **common)
+
+
+def _colors_to_plotly_colorscale(colors):
+    """(n, 3) RGB array (evenly spaced over [0, 1]) -> a plotly continuous
+    colorscale (list of [fraction, 'rgb(...)'] pairs)."""
+    colors = np.asarray(colors)
+    n = len(colors)
+    if n == 1:
+        c = _rgb_string(colors[0])
+        return [[0.0, c], [1.0, c]]
+    return [[i / (n - 1), _rgb_string(c)] for i, c in enumerate(colors)]
+
+
+def _discrete_plotly_colorscale(colors):
+    """(n, 3) RGB array -> a HARD-edged (BoundaryNorm-style) plotly
+    colorscale: `n` equal-width segments, each a single flat color, so the
+    colorbar shows `n` distinct blocks rather than a gradient."""
+    colors = np.asarray(colors)
+    n = len(colors)
+    scale = []
+    for i, c in enumerate(colors):
+        s = _rgb_string(c)
+        scale.append([i / n, s])
+        scale.append([(i + 1) / n, s])
+    return scale
 
 
 def _rgb_string(c):
