@@ -22,3 +22,7 @@ ipympl>=0.9.3
 # Optional dependencies for examples
 hdbscan>=0.8.11
 memory_profiler
+# hyp.predict/[predict] models used by gallery examples (plot_predict, plot_impute)
+pykalman>=0.11
+statsmodels>=0.14
+skaters>=0.11

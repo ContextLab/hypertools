@@ -51,6 +51,13 @@ interactive = ["plotly>=5.20.0", "kaleido>=0.2.1"]
 # Transformer / sentence-transformers text embeddings via datawrangler's hf extra
 # (torch/transformers/sentence-transformers/tokenizers/datasets). Opt-in; never in base install.
 text = ["pydata-wrangler[hf]>=0.5.1"]
+# Timeseries forecasting (hyp.predict) / Kalman imputation (hyp.impute): Kalman
+# filtering, ARIMA, and the skaters laplace ensemble. GaussianProcess, sklearn
+# autoregression, and the sklearn imputers need only the base install.
+predict = ["pykalman>=0.11", "statsmodels>=0.14", "skaters>=0.11"]
+# Hugging Face timeseries forecasting (hyp.predict model='Chronos'): pulls
+# torch. Opt-in; never in base install.
+predict-hf = ["chronos-forecasting>=2.0"]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
@@ -63,6 +70,11 @@ dev = [
     "datasets>=2.20.0",
     # kill hung tests (kaleido subprocesses have wedged for 6h on Windows CI)
     "pytest-timeout>=2.3.0",
+    # exercise the [predict] forecasters/imputers in CI (Kalman/ARIMA/Laplace);
+    # [predict-hf] stays out of CI (model download) -- its tests importorskip
+    "pykalman>=0.11",
+    "statsmodels>=0.14",
+    "skaters>=0.11",
 ]
 
 [project.urls]
