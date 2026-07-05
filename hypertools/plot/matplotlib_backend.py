@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import itertools
+import warnings
 
 import matplotlib
 import matplotlib.colors as mcolors
@@ -11,12 +12,108 @@ import matplotlib.patches as patches
 from .._shared.helpers import *
 from .meshutil import backface_cull, blinn_phong_colors
 from .surface import build_mesh_3d, build_outline_2d, mpl_lighting_kwargs, view_vector
+from .density import (
+    DENSITY_DEFAULTS,
+    HAS_SKIMAGE,
+    POOLED_COLOR,
+    alpha_colormap,
+    fit_kde,
+    iso_surfaces_3d,
+    kde_grid_2d,
+    kde_grid_3d,
+    resolve_grid,
+)
 
 
 def _resolve_surface_color(spec, fallback_rgb):
     """Base RGB for one dataset's surface: `spec['color']` if given,
     otherwise the dataset's own drawn color (`fallback_rgb`)."""
     return mcolors.to_rgb(spec["color"]) if spec["color"] is not None else fallback_rgb
+
+
+def _draw_one_density_2d(ax, pts, spec, color, label=""):
+    """Draw a single subtle alpha-ramped ``imshow`` KDE layer for one
+    dataset (or the pooled cloud), below the data (``zorder=-1``)."""
+    kde = fit_kde(pts, dataset_label=label)
+    if kde is None:
+        return
+    gridsize = resolve_grid(spec, 2)
+    _, _, Z, extent = kde_grid_2d(pts, kde, gridsize=gridsize)
+    cmap = alpha_colormap(color, spec["alpha"])
+    im = ax.imshow(Z, origin="lower", extent=extent, aspect="auto",
+                   cmap=cmap, interpolation="bilinear", zorder=-1)
+    im.set_label("_nolegend_")
+
+
+def _draw_density_2d(ax, points_list, density, density_colors):
+    """Draw each dataset's (or, with ``per_group=False``, one pooled) 2-D
+    KDE density layer (GH #108/#191)."""
+    if density[0] is not None and not density[0].get("per_group", True):
+        all_pts = np.vstack([np.asarray(p)[:, :2] for p in points_list])
+        _draw_one_density_2d(ax, all_pts, density[0], POOLED_COLOR,
+                             label=" (pooled)")
+        return
+    for i, (pts, spec) in enumerate(zip(points_list, density)):
+        if spec is None:
+            continue
+        _draw_one_density_2d(ax, np.asarray(pts)[:, :2], spec,
+                             density_colors[i], label=f" {i}")
+
+
+def _draw_one_density_3d(ax, pts, spec, color, label=""):
+    """Draw a single dataset's (or the pooled cloud's) 3-D density layer:
+    nested translucent iso-surfaces via marching cubes if scikit-image is
+    available, else a translucent scatter "fog" fallback (GH #108/#191)."""
+    kde = fit_kde(pts, dataset_label=label)
+    if kde is None:
+        return
+    alpha_scale = spec["alpha"] / DENSITY_DEFAULTS["alpha"]
+    if HAS_SKIMAGE:
+        gridsize = resolve_grid(spec, 3)
+        _, _, _, D, lo, spacing = kde_grid_3d(pts, kde, gridsize=gridsize)
+        from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+        base_alphas = (0.03, 0.05, 0.07)
+        for (verts, faces), base_alpha in zip(
+                iso_surfaces_3d(D, lo, spacing), base_alphas):
+            coll = Poly3DCollection(
+                verts[faces], alpha=base_alpha * alpha_scale, facecolor=color,
+                edgecolor="none", linewidths=0, shade=False,
+            )
+            coll.set_label("_nolegend_")
+            ax.add_collection3d(coll)
+    else:
+        warnings.warn(
+            f"density: scikit-image is not installed -- dataset{label}'s "
+            "3-D density falls back to a translucent scatter 'fog' instead "
+            "of smooth iso-surfaces. Install it with `pip install "
+            "hypertools[density3d]`, or use backend='plotly' for full "
+            "volumetric rendering.",
+            UserWarning,
+        )
+        rng = np.random.default_rng()
+        fog = kde.resample(4000, seed=rng).T
+        ax.scatter(fog[:, 0], fog[:, 1], fog[:, 2], s=6, c=[color],
+                  alpha=0.03 * alpha_scale, edgecolors="none",
+                  depthshade=False, label="_nolegend_")
+
+
+def _draw_density_3d(ax, points_list, density, density_colors):
+    """Draw each dataset's (or, with ``per_group=False``, one pooled) 3-D
+    KDE density layer (GH #108/#191). Computed ONCE from the full point set
+    passed in -- callers are responsible for passing the FULL data (not a
+    per-frame animation window): a KDE evaluation is far too slow (~536ms
+    @ 50**3) to redo every animation frame."""
+    if density[0] is not None and not density[0].get("per_group", True):
+        all_pts = np.vstack([np.asarray(p)[:, :3] for p in points_list])
+        _draw_one_density_3d(ax, all_pts, density[0], POOLED_COLOR,
+                             label=" (pooled)")
+        return
+    for i, (pts, spec) in enumerate(zip(points_list, density)):
+        if spec is None:
+            continue
+        _draw_one_density_3d(ax, np.asarray(pts)[:, :3], spec,
+                             density_colors[i], label=f" {i}")
 
 
 def _shade_and_cull_3d(ax, mesh_list, surface, surface_colors, elev, azim,
@@ -135,6 +232,8 @@ def _draw(
     frame_kwargs=None,
     surface=None,
     surface_colors=None,
+    density=None,
+    density_colors=None,
 ):
     """
     Draws the plot
@@ -721,6 +820,18 @@ def _draw(
                     for i, (pts, spec) in enumerate(zip(x, surface))
                 ]
 
+        # density= (GH #108/#191): computed ONCE from the FULL dataset `x`
+        # (never per-frame -- a KDE evaluation is ~536ms @ 50**3, far over a
+        # 33ms frame budget) and drawn as a static background BEFORE the
+        # FuncAnimation below is created. It is intentionally never touched
+        # by any `update_lines_*` frame-update function, so it renders
+        # identically (no shading/view dependence -- `shade=False`) across
+        # every rotation angle and animation style.
+        if density is not None:
+            # animate_plot3D is only ever dispatched for 3-D data (see
+            # dispatch_animate above; matplotlib animation has no 2-D path).
+            _draw_density_3d(ax, x, density, density_colors)
+
         if tail_duration == 0:
             tail_duration = 1
         else:
@@ -828,6 +939,11 @@ def _draw(
                 _mesh_and_draw_3d(ax, data, surface, surface_colors, elev, azim)
                 _hide_no_keep_points(ax.lines, surface)
 
+            # density= (GH #108/#191): subtle KDE density shading, one
+            # layer per dataset (or one pooled layer), below the data
+            if density is not None:
+                _draw_density_3d(ax, data, density, density_colors)
+
         elif x[0].shape[1] == 2:
 
             # plot square
@@ -841,6 +957,11 @@ def _draw(
             if surface is not None:
                 _fill_and_draw_2d(ax, data, surface, surface_colors)
                 _hide_no_keep_points(ax.lines, surface)
+
+            # density= (GH #108/#191): subtle KDE density shading, one
+            # layer per dataset (or one pooled layer), below the data
+            if density is not None:
+                _draw_density_2d(ax, data, density, density_colors)
 
         # set line_ani to empty
         line_ani = None

@@ -26,3 +26,7 @@ memory_profiler
 pykalman>=0.11
 statsmodels>=0.14
 skaters>=0.11
+# plot(..., density=True) 3-D iso-surfaces ([density3d] extra); gallery
+# examples build with it installed so the docs show the iso-surface path
+# rather than the scatter-fog fallback
+scikit-image>=0.22.0

@@ -15,6 +15,7 @@ from .backend import manage_backend
 from .plotly_backend import resolve_backend
 from .animate import _save_animation, _SVGFrameCollector, _save_animated_svg
 from .surface import broadcast_surface, normalize_surface_arg
+from .density import broadcast_density, normalize_density_arg
 
 
 @manage_backend
@@ -74,6 +75,7 @@ def plot(
     stream_window=None,
     return_model=False,
     surface=None,
+    density=None,
 ):
     """
     Plots dimensionality reduced data and parses plot arguments
@@ -449,6 +451,71 @@ def plot(
         itself -- needs recomputing). Surfaces never gain a legend entry
         (``label='_nolegend_'`` / ``showlegend=False``) in either backend.
 
+    density : bool, dict, or None
+        If set, overlays a subtle KDE (kernel density estimate) "glow"
+        behind the data (GH #108, #191): a 2-D alpha-ramped heatmap, or a
+        3-D volumetric cloud, showing where each dataset's points are
+        concentrated. Pass ``True`` for the defaults below, or a dict to
+        override specific keys (unset keys use their default). Unlike
+        `surface`, `density` has no per-dataset list form and no `color`
+        override -- every density layer always inherits its dataset's own
+        drawn color (or, with ``per_group=False``, a single neutral-gray
+        layer is drawn for the pooled data). Raises ``ValueError`` for 1D
+        data (no 2-D/3-D density concept) or an unrecognized dict key. A
+        dataset with too few points (< 3) or degenerate (singular
+        covariance -- e.g. exactly duplicated/collinear/coplanar points)
+        has its density silently skipped with a ``UserWarning`` (never a
+        crash). Default None (no density shading).
+
+        Accepted dict keys, with defaults:
+
+        - ``alpha`` (float, default 0.2): base opacity, kept subtle by
+          design so the density layer never dominates the actual data.
+          matplotlib's 2-D layer ramps linearly from fully transparent up
+          to exactly this alpha at the KDE's peak; matplotlib's 3-D
+          iso-surface/fog alphas and both plotly layers' opacities scale
+          proportionally with it (see the backend-specific notes below).
+        - ``levels`` (int, default 3): number of nested 3-D iso-surface
+          shells (matplotlib only, at fixed 10%/35%/65% density
+          thresholds); ignored for 2-D and for the plotly ``go.Volume``
+          layer (which uses its own fixed ``surface_count=10``).
+        - ``grid`` (int, default None): KDE evaluation grid resolution per
+          axis. ``None`` auto-resolves to 200 for 2-D data or 50 for 3-D
+          data (a 3-D grid is `grid**3` KDE evaluations, so much coarser by
+          default).
+        - ``per_group`` (bool, default True): fit and draw one density
+          layer per drawn dataset. ``False`` pools every dataset's points
+          into a single combined KDE, drawn as one neutral-gray layer
+          instead.
+
+        Backend rendering: matplotlib's 2-D layer is an alpha-ramped
+        ``imshow`` (a `LinearSegmentedColormap` from transparent to the
+        dataset's color at `alpha`, bilinear-interpolated, drawn below the
+        data) -- not `contourf`, whose hard per-level boundaries read as
+        banding rather than a smooth glow. matplotlib's 3-D layer is nested
+        translucent iso-surfaces via `skimage.measure.marching_cubes`
+        (levels 10%/35%/65% of peak density, alphas 0.03/0.05/0.07 scaled
+        by `alpha / 0.2`) when scikit-image is installed
+        (``pip install hypertools[density3d]``); otherwise it falls back to
+        a translucent scatter "fog" (4000 points resampled from the KDE,
+        `alpha` 0.03 scaled the same way) and emits a `UserWarning`
+        suggesting the extra or ``backend='plotly'`` (which always renders
+        a full volumetric `go.Volume`, no extra required). plotly's 2-D
+        layer is a `go.Contour` heatmap (`coloring='heatmap'`, no
+        contour lines, an alpha-ramped colorscale to `1.5 * alpha`); its
+        3-D layer is a `go.Volume` (`isomin=0.05`, `isomax=1.0`,
+        `surface_count=15`, `opacity=min(3.0 * alpha, 0.6)`, a fixed
+        `opacityscale` ramp tuned so the volume stays visible at plotly's
+        3-D scene scale, a solid per-dataset colorscale). Density layers
+        never gain a legend entry in either backend.
+
+        Animated plots (both backends, any `animate` style): the density
+        is computed ONCE from the FULL dataset and drawn as a static
+        background -- a single KDE evaluation is far too slow
+        (~500ms at a 50^3 grid) to redo every animation frame, so, unlike
+        `surface`, the density layer does not track the currently-visible
+        window and is never touched by per-frame updates.
+
     return_model : bool
         If True, return a dict bundle
         ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...,
@@ -520,6 +587,14 @@ def plot(
     # dataset once the final dataset count is known), or a list of
     # dict-or-None (length-checked against that same final count below).
     _surface_norm = normalize_surface_arg(surface)
+
+    # density= kwarg validation (GH #108/#191): fail fast (unknown dict
+    # keys) before the expensive analyze/reduce pipeline runs, mirroring
+    # `surface=`'s validation above. `_density_norm` is either None
+    # (disabled) or a single validated dict, broadcast to every dataset (or
+    # pooled into one layer, per its `per_group` key) once the final
+    # dataset count is known.
+    _density_norm = normalize_density_arg(density)
 
     # streaming inputs (issue #101): iterators/generators and Hugging Face
     # IterableDatasets are detected from the structure of the input -- no
@@ -654,6 +729,14 @@ def plot(
         raise ValueError(
             "surface= is not supported for 1D data (no hull concept in a "
             "single dimension)."
+        )
+
+    # density= (GH #108/#191): no 2D/3D density-grid concept in 1D -- fail
+    # fast rather than silently ignoring the kwarg (mirrors surface= above).
+    if _density_norm is not None and xform[0].shape[1] == 1:
+        raise ValueError(
+            "density= is not supported for 1D data (no 2D/3D density grid "
+            "concept in a single dimension)."
         )
 
     # predict=: forecast `t` new rows per input dataset, in the plotted
@@ -859,6 +942,11 @@ def plot(
     surface_list = (broadcast_surface(_surface_norm, len(xform))
                     if _surface_norm is not None else None)
 
+    # density= (GH #108/#191): broadcast to the FINAL (post cluster/hue-
+    # reshape) dataset count, same as surface= above.
+    density_list = (broadcast_density(_density_norm, len(xform))
+                    if _density_norm is not None else None)
+
     # handle legend
     if legend is not None:
         if legend is False:
@@ -989,6 +1077,24 @@ def plot(
             for i, c in enumerate(_base_colors)
         ]
 
+    # density= (GH #108/#191): resolve each dataset's OWN drawn color the
+    # SAME way as surface_colors above (density has no color-override key,
+    # so this is always what gets drawn, per_group=True case only -- the
+    # per_group=False pooled layer uses a fixed neutral gray instead).
+    density_colors = None
+    if density_list is not None:
+        import matplotlib.colors as _mcolors
+        if "color" in mpl_kwargs:
+            _base_colors = [kwargs_list[i].get("color")
+                            for i in range(len(xform))]
+        else:
+            _base_colors = list(sns.color_palette(palette, len(xform)))
+        density_colors = [
+            _mcolors.to_rgb(c) if c is not None
+            else _mcolors.to_rgb(f"C{i % 10}")
+            for i, c in enumerate(_base_colors)
+        ]
+
     # handle format strings
     if fmt is not None:
         if type(fmt) is not list:
@@ -1042,6 +1148,8 @@ def plot(
             colorbar_info=colorbar_info,
             surface=surface_list,
             surface_colors=surface_colors,
+            density=density_list,
+            density_colors=density_colors,
         )
         ax = None
         data = xform
@@ -1083,6 +1191,8 @@ def plot(
                 frame_kwargs=frame_kwargs,
                 surface=surface_list,
                 surface_colors=surface_colors,
+                density=density_list,
+                density_colors=density_colors,
             )
 
             # predict=: overlay one dashed, low-opacity (alpha 0.6) forecast

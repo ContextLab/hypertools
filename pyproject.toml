@@ -62,6 +62,12 @@ predict-hf = ["chronos-forecasting>=2.0"]
 # needs xlrd, which is NOT bundled here -- a friendly ImportError points
 # users at `pip install xlrd` if they hit a .xls file without it.
 io = ["openpyxl>=3.1.0"]
+# 3-D `density=` smooth iso-surfaces (marching cubes) via scikit-image.
+# Opt-in; without it, plot(..., density=True) on 3-D matplotlib plots falls
+# back to a translucent scatter "fog" and emits a UserWarning suggesting
+# this extra (or backend='plotly', which always renders a full go.Volume
+# without needing scikit-image at all).
+density3d = ["scikit-image>=0.22.0"]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
@@ -81,6 +87,10 @@ dev = [
     "skaters>=0.11",
     # exercise hyp.load .xlsx support (tests/test_load_sources.py)
     "openpyxl>=3.1.0",
+    # exercise the 3-D density= iso-surface path (tests/test_density.py);
+    # the scikit-image-absent fallback is exercised separately, in a
+    # subprocess with a real import-system blocker (see that test module)
+    "scikit-image>=0.22.0",
 ]
 
 [project.urls]

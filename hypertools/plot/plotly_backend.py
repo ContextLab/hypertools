@@ -31,6 +31,7 @@ from .surface import (
     build_outline_2d,
     plotly_lighting_kwargs,
 )
+from .density import POOLED_COLOR, fit_kde, kde_grid_2d, kde_grid_3d, resolve_grid
 
 
 VALID_BACKENDS = ('auto', 'matplotlib', 'plotly')
@@ -137,7 +138,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 elev=10, azim=-60, point_colors=None, tail_duration=2,
                 chemtrails=False, precog=False, bullettime=False, zoom=1,
                 forecasts=None, colorbar_info=None, surface=None,
-                surface_colors=None):
+                surface_colors=None, density=None, density_colors=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -173,12 +174,27 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
     ndims = data[0].shape[1] if data[0].ndim > 1 else 1
 
+    # density= (GH #108/#191), 2-D case: subtle KDE density layers must
+    # render BELOW everything else (including surface= fills). Plotly's 2D
+    # layering follows trace order in `fig.data` (no zorder), so these are
+    # seeded at the very FRONT of `traces`. Unlike surface=, density is
+    # supported WITH animate (it's computed once from the full data and
+    # never touched by a frame update -- see `data_trace_start` below).
+    n_density_traces_2d = 0
+    if density is not None and ndims == 2:
+        density_traces_2d = _build_density_traces_2d(go, data, density,
+                                                      density_colors)
+        n_density_traces_2d = len(density_traces_2d)
+    else:
+        density_traces_2d = []
+
     # surface= (GH #109), 2-D static case: smooth filled hull outlines must
-    # render BELOW the data traces. Plotly's 2D layering follows trace order
-    # in `fig.data` (no zorder), so these are seeded at the FRONT of
-    # `traces` (drawn first = bottom) rather than appended. (2-D + animate
-    # is not supported for surfaces -- see the 3-D branch below and the
-    # surface= docstring -- so this only runs for static plots.)
+    # render BELOW the data traces (but above any density layer). Plotly's
+    # 2D layering follows trace order in `fig.data` (no zorder), so these
+    # are seeded at the FRONT of `traces` (drawn first = bottom), after the
+    # density layer. (2-D + animate is not supported for surfaces -- see the
+    # 3-D branch below and the surface= docstring -- so this only runs for
+    # static plots.)
     n_surface_traces_2d = 0
     if surface is not None and ndims == 2 and not animate:
         surface_traces_2d = _build_surface_traces_2d(go, data, surface,
@@ -186,7 +202,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         n_surface_traces_2d = len(surface_traces_2d)
     else:
         surface_traces_2d = []
-    traces = list(surface_traces_2d)
+    traces = list(density_traces_2d) + list(surface_traces_2d)
+    # absolute `fig.data` index where the DATA (non-background) traces
+    # start: 0 unless 2-D density/surface layers were seeded at the front.
+    data_trace_start = n_density_traces_2d + n_surface_traces_2d
     for i, arr in enumerate(data):
         arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
         tkwargs = kwargs_list[i] or {}
@@ -252,7 +271,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 continue
             traces.append(go.Scatter(x=xs, y=arr[:, 0], **common))
 
-    n_data_traces = len(traces) - n_surface_traces_2d
+    n_data_traces = len(traces) - n_surface_traces_2d - n_density_traces_2d
 
     # predict=: one dashed, low-opacity forecast trace per dataset, in the
     # same color as its source trace (GH #169; matplotlib parity).
@@ -321,6 +340,17 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         surface_traces_3d, surface_dataset_indices = _build_surface_traces_3d(
             go, data, surface, surface_colors, elev, azim)
         traces.extend(surface_traces_3d)
+
+    # density= (GH #108/#191), 3-D case: one go.Volume trace per dataset (or
+    # one pooled trace), computed ONCE from the full data. Appended here,
+    # BEFORE the cube trace -- like the 3-D surface traces above, order
+    # doesn't matter (depth-buffered scene) and, crucially, these traces are
+    # NEVER added to `trace_indices`/`surface_trace_indices` in
+    # `_add_animation`, so they are untouched by (and thus static across)
+    # every animation frame.
+    if density is not None and ndims >= 3:
+        traces.extend(_build_density_traces_3d(go, data, density,
+                                               density_colors))
 
     if ndims >= 3:
         traces.append(_cube_trace(go))
@@ -404,7 +434,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        trail_trace_start=trail_trace_start,
                        surface=surface, surface_colors=surface_colors,
                        surface_trace_start=surface_trace_start_3d,
-                       surface_dataset_indices=surface_dataset_indices)
+                       surface_dataset_indices=surface_dataset_indices,
+                       data_trace_start=data_trace_start)
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
@@ -664,6 +695,105 @@ def _build_surface_traces_2d(go, data, surface, surface_colors):
     return traces
 
 
+def _one_density_contour_trace(go, pts, spec, color_rgb, label=""):
+    """One ``go.Contour`` heatmap-colored KDE layer (GH #108/#191, 2-D),
+    or ``None`` if `pts` is too small/degenerate to fit a KDE."""
+    kde = fit_kde(pts, dataset_label=label)
+    if kde is None:
+        return None
+    gridsize = resolve_grid(spec, 2)
+    xs, ys, Z, _ = kde_grid_2d(pts, kde, gridsize=gridsize)
+    r, g, b = (int(round(255 * c)) for c in color_rgb)
+    alpha = min(1.5 * spec['alpha'], 1.0)
+    return go.Contour(
+        x=xs, y=ys, z=Z,
+        contours=dict(coloring='heatmap', showlines=False),
+        colorscale=[[0, f'rgba({r},{g},{b},0)'],
+                    [1, f'rgba({r},{g},{b},{alpha})']],
+        line_width=0, showscale=False, hoverinfo='skip')
+
+
+def _build_density_traces_2d(go, data, density, density_colors):
+    """Build each dataset's (or, with ``per_group=False``, one pooled)
+    ``go.Contour`` KDE density layer (GH #108/#191, 2-D)."""
+    if density[0] is not None and not density[0].get('per_group', True):
+        all_pts = np.vstack([
+            np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :2]
+            for arr in data])
+        trace = _one_density_contour_trace(go, all_pts, density[0],
+                                           POOLED_COLOR, label=' (pooled)')
+        return [trace] if trace is not None else []
+    traces = []
+    for i, (arr, spec) in enumerate(zip(data, density)):
+        if spec is None:
+            continue
+        pts = np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :2]
+        trace = _one_density_contour_trace(go, pts, spec, density_colors[i],
+                                           label=f' {i}')
+        if trace is not None:
+            traces.append(trace)
+    return traces
+
+
+def _one_density_volume_trace(go, pts, spec, color_rgb, label=""):
+    """One ``go.Volume`` KDE iso-surface layer (GH #108/#191, 3-D), or
+    ``None`` if `pts` is too small/degenerate to fit a KDE.
+
+    hypertools' 3-D plotly scene fits ALL datasets into a shared [-1, 1]
+    cube, so any single dataset's own KDE grid (bounded to just its own
+    points) occupies only a modest fraction of that cube. `go.Volume`'s
+    WebGL ray-marching renders a low, linearly-scaled opacity as nearly
+    invisible at that scale (verified empirically: the naive
+    `opacity=min(1.5*alpha, 0.5)` / `opacityscale=[[0,0],[0.3,0.3],[1,1]]`
+    combination read as completely blank in real 2-dataset renders). These
+    constants are instead tuned so the DEFAULT `alpha=0.2` renders a
+    clearly-visible-but-still-subtle glow, confirmed against real evidence
+    renders (docs/images/v1.0-seven-features/density_3d_plotly.png):
+    `isomin=0.05` (vs. the higher 0.1) exposes more of the outer shells,
+    `surface_count=15` gives finer gradation, and the opacity/opacityscale
+    curve reaches meaningfully-visible mid-tones well before the peak
+    rather than only right at it.
+    """
+    kde = fit_kde(pts, dataset_label=label)
+    if kde is None:
+        return None
+    gridsize = resolve_grid(spec, 3)
+    X, Y, Z, D, _, _ = kde_grid_3d(pts, kde, gridsize=gridsize)
+    dmax = D.max()
+    if dmax <= 0:
+        return None
+    color = _rgb_string(color_rgb)
+    return go.Volume(
+        x=X.ravel(), y=Y.ravel(), z=Z.ravel(), value=(D / dmax).ravel(),
+        isomin=0.05, isomax=1.0, surface_count=15,
+        opacity=min(3.0 * spec['alpha'], 0.6),
+        opacityscale=[[0, 0], [0.3, 0.4], [1, 0.8]],
+        colorscale=[[0, color], [1, color]],
+        showscale=False, hoverinfo='skip')
+
+
+def _build_density_traces_3d(go, data, density, density_colors):
+    """Build each dataset's (or, with ``per_group=False``, one pooled)
+    ``go.Volume`` KDE density layer (GH #108/#191, 3-D)."""
+    if density[0] is not None and not density[0].get('per_group', True):
+        all_pts = np.vstack([
+            np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :3]
+            for arr in data])
+        trace = _one_density_volume_trace(go, all_pts, density[0],
+                                          POOLED_COLOR, label=' (pooled)')
+        return [trace] if trace is not None else []
+    traces = []
+    for i, (arr, spec) in enumerate(zip(data, density)):
+        if spec is None:
+            continue
+        pts = np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :3]
+        trace = _one_density_volume_trace(go, pts, spec, density_colors[i],
+                                          label=f' {i}')
+        if trace is not None:
+            traces.append(trace)
+    return traces
+
+
 def _degenerate_mesh3d_update(go, point):
     """A zero-area placeholder ``go.Mesh3d`` geometry update (GH #109):
     used for an animation frame whose current window is too small/degenerate
@@ -850,7 +980,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    zoom=1, n_trail_traces=0, trail_trace_start=None,
                    surface=None, surface_colors=None,
                    surface_trace_start=None,
-                   surface_dataset_indices=None):
+                   surface_dataset_indices=None, data_trace_start=0):
     """Attach frames + play controls: 'spin' rotates the camera; True /
     'parallel' reveals trajectories through a sliding time window. Frames
     only touch the data traces, so the cube/frame stays put.
@@ -871,6 +1001,14 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     would target the forecast traces instead of the trail traces. Trail
     frame updates always address `range(trail_trace_start,
     trail_trace_start + n_trail_traces)` instead.
+
+    `data_trace_start` (GH #108/#191): the actual `fig.data` index where the
+    DATA traces begin -- 0, UNLESS a 2-D `density=`/`surface=` layer was
+    seeded at the FRONT of `fig.data` (density= is the only one of the two
+    that can coexist with `animate`, since surface= 2-D is static-only).
+    Density traces themselves are deliberately never referenced by
+    `trace_indices` below (nor `surface_trace_indices`): they are computed
+    once from the full data and must stay untouched by every frame update.
     """
     import plotly.graph_objects as go
 
@@ -879,7 +1017,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     # two backends play at identical speed, duration, and framerate
     n_frames = max(2, int(round(frame_rate * duration)))
     frames = []
-    trace_indices = list(range(n_data_traces))
+    trace_indices = list(range(data_trace_start, data_trace_start + n_data_traces))
 
     surface_dataset_indices = surface_dataset_indices or []
     surface_trace_indices = (
