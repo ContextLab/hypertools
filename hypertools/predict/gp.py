@@ -1,15 +1,19 @@
 """Gaussian-process forecaster (scikit-learn).
 
 Fits a `GaussianProcessRegressor` against the time index (0..n-1) and
-predicts `t` steps beyond it. Default kernel is `RBF(10.0) + WhiteKernel()`;
-`normalize_y=True` by default. `kernel`/`alpha`/`normalize_y` pass through to
-`GaussianProcessRegressor` -- no optional dependency (scikit-learn is a base
-requirement).
+predicts `t` steps beyond it. Default kernel is
+`DotProduct() + RBF(10.0) + WhiteKernel()`: the DotProduct (linear) component
+lets forecasts EXTRAPOLATE trends -- with a stationary-only kernel (e.g. plain
+RBF), predictions beyond the training range revert to the training mean, so a
+drifting trajectory's forecast bends back toward the data cloud instead of
+continuing its sweep. `normalize_y=True` by default. `kernel`/`alpha`/
+`normalize_y` pass through to `GaussianProcessRegressor` -- no optional
+dependency (scikit-learn is a base requirement).
 """
 import numpy as np
 import pandas as pd
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, WhiteKernel
+from sklearn.gaussian_process.kernels import RBF, WhiteKernel, DotProduct
 
 from .common import Forecaster
 
@@ -17,7 +21,7 @@ from .common import Forecaster
 def fitter(data, **kwargs):
     kernel = kwargs.get('kernel', None)
     if kernel is None:
-        kernel = RBF(10.0) + WhiteKernel()
+        kernel = DotProduct() + RBF(10.0) + WhiteKernel()
     alpha = kwargs.get('alpha', 1e-10)
     normalize_y = kwargs.get('normalize_y', True)
 
@@ -69,7 +73,9 @@ class GaussianProcess(Forecaster):
     Parameters
     ----------
     kernel : sklearn.gaussian_process.kernels.Kernel or None
-        Covariance kernel (default: `RBF(10.0) + WhiteKernel()`).
+        Covariance kernel (default: `DotProduct() + RBF(10.0) + WhiteKernel()`;
+        the linear DotProduct term lets forecasts extrapolate trends rather
+        than reverting to the training mean beyond the data).
     alpha : float
         Value added to the diagonal of the kernel matrix during fitting
         (default: 1e-10).

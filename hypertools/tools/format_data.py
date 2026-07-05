@@ -90,6 +90,48 @@ def format_data(x, vectorizer='CountVectorizer',
     # check data type for each element in list
     dtypes = list(map(get_type, x))
 
+    # GH #132: DataFrames are consumed positionally downstream, so datasets
+    # with the SAME named columns in a DIFFERENT order would silently
+    # misalign features (dataset 2's column 'b' lands in dataset 1's 'a'
+    # slot). When multiple DataFrames with named (non-default, non-duplicate)
+    # columns are passed: reorder later ones to match the first's column
+    # order when the column sets agree, and raise a clear error when they
+    # don't. DataFrames with default integer columns (e.g. wrapped arrays)
+    # keep their positional behavior.
+    import pandas as pd
+    named_df_idx = [
+        i for i, d in enumerate(dtypes)
+        if d == 'df'
+        and not isinstance(x[i].columns, pd.RangeIndex)
+        and not x[i].columns.duplicated().any()
+    ]
+    if len(named_df_idx) > 1:
+        x = list(x)  # don't rearrange the caller's list in place
+        canonical = list(x[named_df_idx[0]].columns)
+        for i in named_df_idx[1:]:
+            cols = list(x[i].columns)
+            if cols == canonical:
+                continue
+            if set(cols) == set(canonical):
+                warnings.warn(
+                    f'dataset {i} has the same columns as dataset '
+                    f'{named_df_idx[0]} but in a different order; reordering '
+                    f'{cols} to match {canonical} so features align by name '
+                    '(GH #132).'
+                )
+                x[i] = x[i][canonical]
+            else:
+                missing = set(canonical) - set(cols)
+                extra = set(cols) - set(canonical)
+                raise ValueError(
+                    f'DataFrame columns do not match across datasets: dataset '
+                    f'{i} is missing {sorted(map(str, missing))} and has '
+                    f'unexpected {sorted(map(str, extra))} relative to dataset '
+                    f'{named_df_idx[0]} (columns {canonical}). Features are '
+                    'matched by column name; rename or subset the columns so '
+                    'all datasets share the same set (GH #132).'
+                )
+
     # handle text data:
     if any(map(lambda x: x in ['list_str', 'str', 'arr_str'], dtypes)):
 

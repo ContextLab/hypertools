@@ -64,3 +64,25 @@ def test_kernel_and_alpha_kwargs_pass_through():
     fitted_gp = model.models_[0]['gp']
     assert fitted_gp.alpha == 1e-6
     assert fitted_gp.normalize_y is False
+
+
+def test_default_kernel_extrapolates_trends():
+    # Regression (PR feedback: "helix predictions are going in the wrong
+    # axis"): the old RBF-only default kernel is stationary, so forecasts
+    # beyond the training range reverted to the training MEAN -- a rising
+    # trajectory's forecast bent back downward. The DotProduct (linear)
+    # component in the default kernel must extrapolate the trend instead.
+    import pandas as pd
+
+    n = 90
+    df = pd.DataFrame({
+        'rise': np.linspace(0.0, 10.0, n),
+        'wave': np.sin(np.linspace(0.0, 6.0 * np.pi, n)),
+    })
+    fc = GaussianProcess().fit_predict(df, t=30)
+
+    # the trend column must keep RISING past its last observed value (the
+    # mean-reverting kernel forecast dropped from 10.0 to ~5.6 here)
+    assert fc['rise'].iloc[-1] > 10.0
+    # and the forecast's overall direction is upward, not mean-reverting
+    assert fc['rise'].iloc[-1] > fc['rise'].iloc[0]
