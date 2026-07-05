@@ -3,6 +3,7 @@ import copy
 import warnings
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
+import pandas as pd
 from .._shared.helpers import *
 from .._shared.params import default_params
 from ..tools.analyze import analyze
@@ -17,6 +18,7 @@ from .animate import _save_animation, _SVGFrameCollector, _save_animated_svg
 from .surface import broadcast_surface, normalize_surface_arg
 from .density import broadcast_density, normalize_density_arg
 from .trails import broadcast_trail_flag
+from .multiindex import expand_multiindex, build_multiindex_styles
 
 
 @manage_backend
@@ -85,6 +87,67 @@ def plot(
     ----------
     x : Numpy array, DataFrame, String, Geo or mixed list
         Data for the plot. The form should be samples (rows) by features (cols).
+
+        A DataFrame with a row **MultiIndex** (``x.index.nlevels >= 2``) is
+        handled specially (GH #95): it is expanded, BEFORE the format_data/
+        analyze/reduce pipeline runs, into one "leaf" dataset per unique full
+        index combination (level order as given), so leaves flow through
+        normalize/reduce/align exactly like any other list of datasets. AFTER
+        that pipeline transforms them, one MEAN trajectory is computed (in
+        the transformed/reduced space) for every unique value-combination of
+        each non-leaf level -- from the deepest such level up to the top
+        (outermost) level -- and appended as additional traces. For levels
+        numbered 0 (top) through L-1 (leaf), where L = ``x.index.nlevels``,
+        a trace whose deepest represented level is ``level_idx`` (``L - 1``
+        for a leaf; ``k`` for a mean over the prefix ``levels[0:k+1]``)
+        gets:
+
+        - ``linewidth = 1 + (L - 1 - level_idx)`` -- i.e. 1 plus the number
+          of levels averaged over: leaves are always 1, and each level
+          higher up is one point thicker, so the TOP-level means are the
+          thickest (``L``).
+        - ``alpha = min(1.0, 1 / (level_idx + 1) + 0.2)`` -- leaves are the
+          most transparent, the top-level mean is fully opaque (1.0), with
+          intermediate levels smoothly in between.
+        - ``color`` assigned purely by the trace's TOP-level index value
+          (from `palette`, in order of that value's first appearance) --
+          every leaf and every mean sharing the same top-level value shares
+          one color.
+
+        Example (2 levels, e.g. ``(condition, subject)``): leaves get
+        lw=1, alpha=0.7; the condition-means (the only non-leaf level, which
+        is also the top level here) get lw=2, alpha=1.0, and are the only
+        traces with a legend label. Example (3 levels, e.g.
+        ``(group, condition, subject)``): leaves lw=1, alpha=1/3+0.2≈0.533;
+        (group, condition)-means lw=2, alpha=0.7; group-means (top level)
+        lw=3, alpha=1.0.
+
+        `legend` is automatically populated with one entry per unique
+        top-level index value: only each top-level mean trace carries that
+        label; every other trace (all leaves, and any intermediate-level
+        means) is drawn with ``label='_nolegend_'`` (excluded from the
+        legend, matching the convention `predict=`'s forecast overlay
+        already uses). If `linestyle`/`linestyles` is given as a list, its
+        length MUST equal the number of unique top-level index values (one
+        style per top-level group, applied to every trace in that group);
+        a mismatched length raises ``ValueError``. Any `color`/`colors`/
+        `linewidth` kwarg is ignored (with a ``UserWarning``) since
+        MultiIndex grouping owns those. `hue=` is superseded with a
+        ``UserWarning`` (MultiIndex grouping takes precedence); `cluster=`/
+        `n_clusters=` raise ``ValueError`` (both would fight the MultiIndex
+        color assignment) -- reset the index first
+        (``df.reset_index(drop=True)``) to cluster instead. Row averaging
+        assumes member leaves align by row POSITION at each timepoint;
+        leaves of unequal length are averaged over their overlapping prefix
+        (the shortest member's length), with a ``UserWarning`` naming the
+        group. Works with both static and animated plots and both
+        rendering backends, since the expansion happens upstream of
+        drawing. A MultiIndex on the COLUMNS (as opposed to the row index)
+        is unrelated to this and is unaffected -- it is handled by the
+        existing column-formatting pipeline in `hypertools.tools.format_data`
+        /`hypertools.tools.df2mat`. A single-level (or default `RangeIndex`)
+        DataFrame, or a plain array/list input, is completely unaffected by
+        any of the above.
 
     fmt : str or list of strings
         A list of format strings.  All matplotlib format strings are supported.
@@ -679,6 +742,39 @@ def plot(
             and not all(isinstance(el, str) for el in x):
         x, nested_groups, nested_depths = _flatten_nested(x)
 
+    # MultiIndex DataFrames (GH #95): a DataFrame with a row MultiIndex
+    # (nlevels >= 2) is expanded HERE, before format_data/analyze/reduce, into
+    # one "leaf" dataset per unique full index combination -- so the leaves
+    # flow through the normal pipeline (normalize/reduce/align, streaming,
+    # interpolation, animation) exactly like any other list of datasets.
+    # After that pipeline transforms them (see the `_multiindex_meta is not
+    # None` branch below, alongside cluster/hue), per-level MEAN trajectories
+    # are computed in the TRANSFORMED space and appended, with per-dataset
+    # color/linewidth/alpha/linestyle/label overrides (see
+    # `hypertools.plot.multiindex` for the exact formulas). `cluster`/
+    # `n_clusters` fight the MultiIndex color assignment (both try to own
+    # the grouping-to-color mapping) and raise; `hue` is superseded with a
+    # warning (MultiIndex grouping takes precedence).
+    _multiindex_meta = None
+    if isinstance(x, pd.DataFrame) and x.index.nlevels >= 2:
+        if cluster is not None or n_clusters is not None:
+            raise ValueError(
+                "cluster=/n_clusters= is not compatible with a row-"
+                "MultiIndex DataFrame (GH #95): MultiIndex grouping already "
+                "assigns colors by the top-level index and would conflict "
+                "with cluster-based grouping. Reset the index "
+                "(df.reset_index(drop=True)) before clustering, or drop "
+                "cluster=/n_clusters= to use the MultiIndex grouping."
+            )
+        if hue is not None:
+            warnings.warn(
+                "x has a row MultiIndex (GH #95): MultiIndex grouping "
+                "(leaf traces + per-level averages) takes precedence over "
+                "hue=; ignoring hue."
+            )
+            hue = None
+        x, _multiindex_meta = expand_multiindex(x)
+
     # analyze the data
     if transform is None:
         raw = format_data(x, impute=impute, **text_args)
@@ -816,8 +912,39 @@ def plot(
     # reassigned to just below (group_by_category returns ints).
     hue_category_names = None
 
+    # MultiIndex DataFrames (GH #95): xform currently holds the TRANSFORMED
+    # leaf trajectories (post normalize/reduce/align), in the same order as
+    # `_multiindex_meta['leaf_keys']` -- exactly what `build_multiindex_styles`
+    # needs to compute per-level mean trajectories IN THE REDUCED SPACE and
+    # append them. cluster=/n_clusters= were already rejected and hue=
+    # already squelched (with a warning) above, so this always wins the
+    # cluster/hue/nested_groups chain below.
+    if _multiindex_meta is not None:
+        if color is not None or colors is not None:
+            warnings.warn(
+                "x has a row MultiIndex (GH #95): MultiIndex grouping "
+                "assigns color by the top-level index; ignoring "
+                "color/colors."
+            )
+        if linewidth is not None:
+            warnings.warn(
+                "x has a row MultiIndex (GH #95): MultiIndex grouping "
+                "assigns linewidth by level (leaves=1, thicker per level "
+                "averaged over); ignoring linewidth."
+            )
+        xform, _mi_style = build_multiindex_styles(
+            xform, _multiindex_meta, palette=palette,
+            linestyle=linestyle, linestyles=linestyles)
+        mpl_kwargs["color"] = _mi_style["colors"]
+        mpl_kwargs["linewidth"] = _mi_style["linewidths"]
+        mpl_kwargs["alpha"] = _mi_style["alphas"]
+        if _mi_style["linestyles"] is not None:
+            mpl_kwargs["linestyle"] = _mi_style["linestyles"]
+        mpl_kwargs["label"] = _mi_style["labels"]
+        legend = _mi_style["labels"]
+
     # find cluster and reshape if n_clusters
-    if cluster is not None:
+    elif cluster is not None:
         if hue is not None:
             warnings.warn("cluster overrides hue, ignoring hue.")
         if isinstance(cluster, (str, bytes)):

@@ -255,6 +255,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             mode=mode,
             name=name,
             showlegend=(legend is not None and name is not None
+                       and not str(name).startswith('_')
                        and not hide_points),
             visible=not hide_points,
             line=dict(color=color, width=width, dash=dash),
