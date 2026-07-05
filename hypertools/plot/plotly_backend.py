@@ -282,9 +282,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # low-opacity trail traces for chemtrails (past) / precog (future) /
     # bullettime (both) on window animations, mirroring the matplotlib
     # renderer's alpha-0.3 trail artists. One per dataset, updated per
-    # frame; they sit between the data traces and the cube so frame trace
-    # indices stay contiguous.
+    # frame. NOTE: these do NOT necessarily sit right after the data
+    # traces -- forecast traces (predict=, above) are appended in between
+    # when both are present -- so `trail_trace_start` records their real
+    # position and `_add_animation` uses that instead of assuming
+    # `n_data_traces` is immediately followed by the trail traces.
     n_trail_traces = 0
+    trail_trace_start = len(traces)
     if animate in (True, 'parallel') and (chemtrails or precog or
                                           bullettime):
         for i, arr in enumerate(data):
@@ -397,6 +401,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        tail_duration=tail_duration, chemtrails=chemtrails,
                        precog=precog, bullettime=bullettime, zoom=zoom,
                        n_trail_traces=n_trail_traces,
+                       trail_trace_start=trail_trace_start,
                        surface=surface, surface_colors=surface_colors,
                        surface_trace_start=surface_trace_start_3d,
                        surface_dataset_indices=surface_dataset_indices)
@@ -842,8 +847,9 @@ def _camera_eye(elev, azim, r=1.95):
 def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    rotations, elev, azim, n_data_traces, tail_duration=2,
                    chemtrails=False, precog=False, bullettime=False,
-                   zoom=1, n_trail_traces=0, surface=None,
-                   surface_colors=None, surface_trace_start=None,
+                   zoom=1, n_trail_traces=0, trail_trace_start=None,
+                   surface=None, surface_colors=None,
+                   surface_trace_start=None,
                    surface_dataset_indices=None):
     """Attach frames + play controls: 'spin' rotates the camera; True /
     'parallel' reveals trajectories through a sliding time window. Frames
@@ -856,6 +862,15 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     'serial') or its precomputed full-data mesh ('spin', where only the
     camera moves) -- `surface_trace_start` + an index into
     `surface_dataset_indices` gives that trace's position in `fig.data`.
+
+    `trail_trace_start`: the actual `fig.data` index where the trail traces
+    (chemtrails/precog/bullettime) begin, as recorded by `plotly_draw`. This
+    is NOT always `n_data_traces` -- when `predict=` forecast traces are
+    also present they are appended between the data traces and the trail
+    traces, so assuming contiguity (`range(n_data_traces + n_trail_traces)`)
+    would target the forecast traces instead of the trail traces. Trail
+    frame updates always address `range(trail_trace_start,
+    trail_trace_start + n_trail_traces)` instead.
     """
     import plotly.graph_objects as go
 
@@ -967,7 +982,12 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                                   / max(float(duration), 1e-6))))
         has_trails = n_trail_traces > 0
         if has_trails:
-            trace_indices = list(range(n_data_traces + n_trail_traces))
+            # trail traces are NOT guaranteed to sit right after the data
+            # traces (predict= forecast traces may be appended in between)
+            # -- address them by their recorded start index, not by
+            # assuming contiguity with n_data_traces.
+            trace_indices = list(trace_indices) + list(range(
+                trail_trace_start, trail_trace_start + n_trail_traces))
         for k in range(n_frames):
             end = max(2, int(np.ceil((k + 1) * max_len / n_frames)))
             start = max(0, end - window)
