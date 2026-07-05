@@ -116,3 +116,11 @@ Forecasting stock prices with hyp.predict
   :maxdepth: 2
 
   tutorials/stock_forecasting.ipynb
+
+Imputing and forecasting a real projectile arc with hyp.impute and hyp.predict
+----------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/projectile_kalman.ipynb
