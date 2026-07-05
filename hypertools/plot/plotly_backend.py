@@ -39,6 +39,7 @@ from .density import (
     kde_grid_3d,
     resolve_grid,
 )
+from .trails import broadcast_trail_flag
 
 
 VALID_BACKENDS = ('auto', 'matplotlib', 'plotly')
@@ -179,6 +180,16 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     fmt = fmt if fmt is not None else ['-'] * len(data)
     kwargs_list = kwargs_list if kwargs_list is not None else [{}] * len(data)
 
+    # chemtrails/precog/bullettime (GH #127): normalize to one bool per
+    # dataset. `plot.py` already broadcasts/validates against the FINAL
+    # (post cluster/hue-reshape) dataset count before calling `plotly_draw`,
+    # but this call is defensive (mirrors `matplotlib_backend._draw`'s same
+    # normalization) so `plotly_draw` also works when called directly (as
+    # several tests do) with a bare bool.
+    chemtrails = broadcast_trail_flag(chemtrails, len(data), "chemtrails")
+    precog = broadcast_trail_flag(precog, len(data), "precog")
+    bullettime = broadcast_trail_flag(bullettime, len(data), "bullettime")
+
     ndims = data[0].shape[1] if data[0].ndim > 1 else 1
 
     # density= (GH #108/#191), 2-D case: subtle KDE density layers must
@@ -307,32 +318,37 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
     # low-opacity trail traces for chemtrails (past) / precog (future) /
     # bullettime (both) on window animations, mirroring the matplotlib
-    # renderer's alpha-0.3 trail artists. One per dataset, updated per
-    # frame. NOTE: these do NOT necessarily sit right after the data
-    # traces -- forecast traces (predict=, above) are appended in between
-    # when both are present -- so `trail_trace_start` records their real
-    # position and `_add_animation` uses that instead of assuming
-    # `n_data_traces` is immediately followed by the trail traces.
+    # renderer's alpha-0.3 trail artists. One per dataset THAT HAS ANY of
+    # the three flags set (GH #127: previously all-or-nothing -- ANY flag
+    # set anywhere created a trail trace for EVERY dataset). These do NOT
+    # necessarily sit right after the data traces -- forecast traces
+    # (predict=, above) are appended in between when both are present -- so
+    # `trail_trace_start` records their real position, and
+    # `trail_dataset_indices[k]` is the ORIGINAL dataset index that produced
+    # `traces[trail_trace_start + k]`, so `_add_animation` can look up the
+    # right dataset's data per frame.
     n_trail_traces = 0
     trail_trace_start = len(traces)
-    if animate in (True, 'parallel') and (chemtrails or precog or
-                                          bullettime):
-        for i, arr in enumerate(data):
-            tkwargs = kwargs_list[i] or {}
-            mode, symbol, dash = _parse_fmt(fmt[i], tkwargs)
-            color = _to_plotly_color(tkwargs.get('color'), 0.3)
-            width = float(tkwargs.get('linewidth')
-                          or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
-            msize = float(tkwargs.get('markersize')
-                          or DEFAULT_MARKERSIZE_PT) * PT_TO_PX
-            trail = dict(mode=mode, showlegend=False, hoverinfo='skip',
-                         line=dict(color=color, width=width, dash=dash),
-                         marker=dict(color=color, size=msize))
-            if ndims >= 3:
-                traces.append(go.Scatter3d(x=[], y=[], z=[], **trail))
-            else:
-                traces.append(go.Scatter(x=[], y=[], **trail))
-        n_trail_traces = len(data)
+    trail_dataset_indices = [
+        i for i in range(len(data))
+        if chemtrails[i] or precog[i] or bullettime[i]
+    ] if animate in (True, 'parallel') else []
+    for i in trail_dataset_indices:
+        tkwargs = kwargs_list[i] or {}
+        mode, symbol, dash = _parse_fmt(fmt[i], tkwargs)
+        color = _to_plotly_color(tkwargs.get('color'), 0.3)
+        width = float(tkwargs.get('linewidth')
+                      or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
+        msize = float(tkwargs.get('markersize')
+                      or DEFAULT_MARKERSIZE_PT) * PT_TO_PX
+        trail = dict(mode=mode, showlegend=False, hoverinfo='skip',
+                     line=dict(color=color, width=width, dash=dash),
+                     marker=dict(color=color, size=msize))
+        if ndims >= 3:
+            traces.append(go.Scatter3d(x=[], y=[], z=[], **trail))
+        else:
+            traces.append(go.Scatter(x=[], y=[], **trail))
+    n_trail_traces = len(trail_dataset_indices)
 
     # surface= (GH #109), 3-D case: order doesn't matter here (plotly's 3-D
     # scene is depth-buffered, unlike 2-D's painter's-algorithm trace order),
@@ -439,6 +455,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        precog=precog, bullettime=bullettime, zoom=zoom,
                        n_trail_traces=n_trail_traces,
                        trail_trace_start=trail_trace_start,
+                       trail_dataset_indices=trail_dataset_indices,
                        surface=surface, surface_colors=surface_colors,
                        surface_trace_start=surface_trace_start_3d,
                        surface_dataset_indices=surface_dataset_indices,
@@ -985,8 +1002,9 @@ def _camera_eye(elev, azim, r=1.95):
 
 def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    rotations, elev, azim, n_data_traces, tail_duration=2,
-                   chemtrails=False, precog=False, bullettime=False,
+                   chemtrails=None, precog=None, bullettime=None,
                    zoom=1, n_trail_traces=0, trail_trace_start=None,
+                   trail_dataset_indices=None,
                    surface=None, surface_colors=None,
                    surface_trace_start=None,
                    surface_dataset_indices=None, data_trace_start=0):
@@ -1011,6 +1029,15 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     frame updates always address `range(trail_trace_start,
     trail_trace_start + n_trail_traces)` instead.
 
+    `chemtrails`/`precog`/`bullettime` (GH #127): per-dataset bool lists
+    (length `len(data)`, broadcast/validated by `plotly_draw`). Only
+    datasets with at least one of the three flags set get a trail trace at
+    all -- `trail_dataset_indices[k]` is the ORIGINAL dataset index that
+    produced the trail trace at `fig.data[trail_trace_start + k]`, so each
+    frame's trail geometry is built from `chemtrails[i]`/`precog[i]`/
+    `bullettime[i]` for that SAME original dataset index `i`, not from the
+    trail trace's own position `k`.
+
     `data_trace_start` (GH #108/#191): the actual `fig.data` index where the
     DATA traces begin -- 0, UNLESS a 2-D `density=`/`surface=` layer was
     seeded at the FRONT of `fig.data` (density= is the only one of the two
@@ -1027,6 +1054,10 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     n_frames = max(2, int(round(frame_rate * duration)))
     frames = []
     trace_indices = list(range(data_trace_start, data_trace_start + n_data_traces))
+    trail_dataset_indices = trail_dataset_indices or []
+    chemtrails = chemtrails if chemtrails is not None else [False] * len(data)
+    precog = precog if precog is not None else [False] * len(data)
+    bullettime = bullettime if bullettime is not None else [False] * len(data)
 
     surface_dataset_indices = surface_dataset_indices or []
     surface_trace_indices = (
@@ -1139,7 +1170,6 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             end = max(2, int(np.ceil((k + 1) * max_len / n_frames)))
             start = max(0, end - window)
             frame_traces = []
-            trail_traces = []
             windows_by_index = {}
             for idx, arr in enumerate(data):
                 arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
@@ -1154,12 +1184,24 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     frame_traces.append(go.Scatter(
                         x=np.arange(start, start + seg.shape[0]),
                         y=seg[:, 0]))
-                if has_trails:
-                    # chemtrails: past; precog: future; bullettime: both
-                    if bullettime:
+
+            # GH #127: trail traces exist (and are updated here) only for
+            # datasets in `trail_dataset_indices`, in that SAME ascending
+            # order (matching how `plotly_draw` created them, so this stays
+            # aligned with the contiguous `trail_trace_start`-based trace
+            # range below). Semantics per dataset `idx` mirror the
+            # matplotlib renderer exactly: chemtrails AND precog together
+            # (or bullettime alone) show the FULL trail; chemtrails alone
+            # shows the past window; precog alone shows the future window.
+            trail_traces = []
+            if has_trails:
+                for idx in trail_dataset_indices:
+                    arr = np.atleast_2d(np.asarray(data[idx], dtype=np.float64))
+                    ct, pc, bt = chemtrails[idx], precog[idx], bullettime[idx]
+                    if (ct and pc) or bt:
                         trail = arr
                         t0 = 0
-                    elif chemtrails:
+                    elif ct:
                         trail = arr[:start + 1]
                         t0 = 0
                     else:

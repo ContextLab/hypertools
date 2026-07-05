@@ -12,6 +12,7 @@ import matplotlib.patches as patches
 from .._shared.helpers import *
 from .meshutil import backface_cull, blinn_phong_colors
 from .surface import build_mesh_3d, build_outline_2d, mpl_lighting_kwargs, view_vector
+from .trails import broadcast_trail_flag
 from .density import (
     DENSITY_DEFAULTS,
     HAS_SKIMAGE,
@@ -240,6 +241,19 @@ def _draw(
     """
     Draws the plot
     """
+
+    # chemtrails/precog/bullettime (GH #127): normalize to one bool per
+    # dataset now, at the top of `_draw`, BEFORE any nested closure below is
+    # defined -- `update_lines_parallel`/`animate_plot3D` close over these
+    # names, so reassigning them here (rather than deeper inside) is what
+    # every closure sees at call time. `plot.py` already broadcasts/
+    # validates against the FINAL (post cluster/hue-reshape) dataset count
+    # before calling `_draw`, but this call is defensive (mirrors
+    # `broadcast_surface`'s pattern) so `_draw` also works when called
+    # directly (as some tests do) with a bare bool.
+    chemtrails = broadcast_trail_flag(chemtrails, len(x), "chemtrails")
+    precog = broadcast_trail_flag(precog, len(x), "precog")
+    bullettime = broadcast_trail_flag(bullettime, len(x), "bullettime")
 
     # handle static plots
     def dispatch_static(x, ax=None):
@@ -594,7 +608,9 @@ def _draw(
         tail_duration=2,
         rotations=1,
         zoom=1,
-        chemtrails=False,
+        chemtrails=None,
+        precog=None,
+        bullettime=None,
         elev=10,
     ):
 
@@ -610,20 +626,28 @@ def _draw(
         # _anim_box_zoom for the (slightly zoomed-out) animation mapping.
         ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
 
-        # zip_longest: marker-only animations have no trail artists (trail
-        # is None for those datasets), but head artists still animate
+        # zip_longest: marker-only animations (or datasets with no trail
+        # flag set at all -- GH #127) have no trail artist (trail is None
+        # for those datasets), but head artists still animate. chemtrails/
+        # precog/bullettime are per-dataset lists (broadcast/validated in
+        # `_draw` above), indexed by `i` -- the SAME semantics as before
+        # (bullettime, or chemtrails+precog together, show the full trail;
+        # chemtrails alone shows the past window; precog alone shows the
+        # future window), just resolved per dataset now instead of once
+        # globally.
         windows = []
-        for line, data, trail in itertools.zip_longest(
-                lines, data_lines, trail_lines):
+        for i, (line, data, trail) in enumerate(itertools.zip_longest(
+                lines, data_lines, trail_lines)):
 
             if trail is not None:
-                if (precog and chemtrails) or bullettime:
+                ct, pc, bt = chemtrails[i], precog[i], bullettime[i]
+                if (pc and ct) or bt:
                     trail.set_data(data[:, 0:2].T)
                     trail.set_3d_properties(data[:, 2])
-                elif chemtrails:
+                elif ct:
                     trail.set_data(data[0 : num - tail_duration + 1, 0:2].T)
                     trail.set_3d_properties(data[0 : num - tail_duration + 1, 2])
-                elif precog:
+                elif pc:
                     trail.set_data(data[num + 1 :, 0:2].T)
                     trail.set_3d_properties(data[num + 1 :, 2])
 
@@ -729,7 +753,9 @@ def _draw(
         tail_duration=2,
         rotations=1,
         zoom=1,
-        chemtrails=False,
+        chemtrails=None,
+        precog=None,
+        bullettime=None,
         frame_rate=30,
         elev=10,
         style="parallel",
@@ -748,6 +774,18 @@ def _draw(
         # which left `trail` undefined -- and the FuncAnimation call below
         # crashed -- when fmts were mixed, e.g. after a single-point dataset's
         # line fmt is converted to '.', or for marker-only animations).
+        #
+        # GH #127: chemtrails/precog/bullettime are now per-dataset lists
+        # (broadcast/validated in `_draw` above), so a dataset only gets its
+        # OWN trail artist -- `trail[idx]` is `None` for any dataset with
+        # none of the three flags set (rather than an inert stub artist
+        # created for every dataset whenever ANY flag was set anywhere).
+        # `trail_lines` in `update_lines_parallel` tolerates `None` entries
+        # via `itertools.zip_longest` already (marker-only animations relied
+        # on this same mechanism before this change).
+        def _wants_trail(idx):
+            return chemtrails[idx] or precog[idx] or bullettime[idx]
+
         trail = []
         if fmt is not None:
             lines = [
@@ -771,7 +809,7 @@ def _draw(
                         alpha=0.3,
                         linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
                         **kwargs_list[idx]
-                    )[0]
+                    )[0] if _wants_trail(idx) else None
                     for idx, dat in enumerate(x)
                 ]
         else:
@@ -794,7 +832,7 @@ def _draw(
                         alpha=0.3,
                         linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
                         **kwargs_list[idx]
-                    )[0]
+                    )[0] if _wants_trail(idx) else None
                     for idx, dat in enumerate(x)
                 ]
         # trails are faint context, not legend-worthy: only the in-focus
@@ -803,7 +841,8 @@ def _draw(
         # built once from `lines` (all datasets, created upfront), so it shows
         # the static union of in-focus items and never changes across frames.
         for _trail_line in trail:
-            _trail_line.set_label('_nolegend_')
+            if _trail_line is not None:
+                _trail_line.set_label('_nolegend_')
 
         # surface= (GH #109)
         if surface is not None:
@@ -854,6 +893,8 @@ def _draw(
                     rotations,
                     zoom,
                     chemtrails,
+                    precog,
+                    bullettime,
                     elev,
                 ),
                 interval=1000 / frame_rate,
@@ -906,6 +947,8 @@ def _draw(
             rotations=rotations,
             zoom=zoom,
             chemtrails=chemtrails,
+            precog=precog,
+            bullettime=bullettime,
             frame_rate=frame_rate,
             elev=elev,
             style=animate,

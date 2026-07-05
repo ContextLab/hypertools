@@ -16,6 +16,7 @@ from .plotly_backend import resolve_backend
 from .animate import _save_animation, _SVGFrameCollector, _save_animated_svg
 from .surface import broadcast_surface, normalize_surface_arg
 from .density import broadcast_density, normalize_density_arg
+from .trails import broadcast_trail_flag
 
 
 @manage_backend
@@ -238,7 +239,10 @@ def plot(
         appear ONE AT A TIME in list order: each grows point-by-point into
         place while all previous datasets stay fully drawn, and datasets are
         never connected to each other -- useful for e.g. conversation turns
-        accumulating in a shared embedding space (default: False).
+        accumulating in a shared embedding space (default: False). This MODE
+        is always GLOBAL -- there is exactly one camera and one frame loop
+        driving every dataset in the animation, so it cannot vary per
+        dataset (unlike `chemtrails`/`precog`/`bullettime` below, which CAN).
 
     backend : str
         Rendering backend: 'matplotlib' (the classic renderer),
@@ -265,15 +269,29 @@ def plot(
     zoom (animation only) : float
         How far to zoom into the plot, positive numbers will zoom in (default: 0)
 
-    chemtrails (animation only) : bool
+    chemtrails (animation only) : bool or list of bool
         A low-opacity trail is left behind the trajectory (default: False).
+        Pass a list of bool (one entry per drawn dataset -- i.e. the FINAL
+        count after any `cluster`/`hue`/`n_clusters` regrouping) for
+        per-dataset control (GH #127): e.g. `chemtrails=[True, False]` turns
+        chemtrails on for dataset 0 only. A bare bool is broadcast to every
+        dataset. Raises `ValueError` if a list's length does not match the
+        number of drawn datasets (naming both counts).
 
-    precog (animation only) : bool
-        A low-opacity trail is plotted ahead of the trajectory (default: False).
+    precog (animation only) : bool or list of bool
+        A low-opacity trail is plotted ahead of the trajectory (default:
+        False). Accepts a per-dataset list exactly like `chemtrails` above,
+        and the two may be mixed per dataset (e.g. dataset 0 chemtrails,
+        dataset 1 precog, dataset 2 bullettime).
 
-    bullettime (animation only) : bool
+    bullettime (animation only) : bool or list of bool
         A low-opacity trail is plotted ahead and behind the trajectory
-        (default: False).
+        (default: False). Accepts a per-dataset list exactly like
+        `chemtrails` above. For any single dataset, `bullettime=True` (or
+        `chemtrails=True` AND `precog=True` together) shows the FULL trail;
+        `chemtrails` alone shows only the past window; `precog` alone shows
+        only the future window; none of the three shows just the moving
+        window (no separate trail artist/trace at all for that dataset).
 
     frame_rate (animation only) : int or float
         Frame rate for animation in frames per second (default: 30).
@@ -970,6 +988,17 @@ def plot(
     # reshape) dataset count, same as surface= above.
     density_list = (broadcast_density(_density_norm, len(xform))
                     if _density_norm is not None else None)
+
+    # chemtrails/precog/bullettime (GH #127): broadcast bool-or-list to the
+    # FINAL (post cluster/hue-reshape) dataset count, same as surface=/
+    # density= above -- each accepts a single bool (applied to every
+    # dataset) or a list/tuple of bool (one entry per drawn dataset, mixed
+    # per-dataset combinations allowed). `animate` itself (True/'parallel'/
+    # 'spin'/'serial') stays a single GLOBAL mode -- there is only ever one
+    # camera and one frame loop -- only these trail FLAGS become per-dataset.
+    chemtrails = broadcast_trail_flag(chemtrails, len(xform), "chemtrails")
+    precog = broadcast_trail_flag(precog, len(xform), "precog")
+    bullettime = broadcast_trail_flag(bullettime, len(xform), "bullettime")
 
     # handle legend
     if legend is not None:
