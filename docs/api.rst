@@ -63,6 +63,22 @@ Cluster
 
   hypertools.cluster
 
+Predict
+------------------
+
+.. autosummary::
+  :toctree:
+
+  hypertools.predict
+
+Impute
+------------------
+
+.. autosummary::
+  :toctree:
+
+  hypertools.impute
+
 Apply model
 ------------------
 
