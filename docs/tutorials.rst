@@ -108,3 +108,11 @@ Plotting streaming data
   :maxdepth: 2
 
   tutorials/streaming_data.ipynb
+
+Forecasting stock prices with hyp.predict
+----------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/stock_forecasting.ipynb
