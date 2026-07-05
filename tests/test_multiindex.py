@@ -420,3 +420,72 @@ def test_single_level_range_index_df_not_treated_as_multiindex():
     # normal hue grouping still works (2 groups), unaffected by MultiIndex path
     assert len(ax.get_lines()) == 2
     plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# follow-up fix: list-input bypass warning, predict= + MultiIndex ValueError,
+# deduped unequal-length warning (review of 85f263de, GH #95)
+# ---------------------------------------------------------------------------
+
+def test_list_with_multiindex_df_warns_and_flattens():
+    """A LIST containing a MultiIndex DataFrame (whether alone or mixed with
+    plain arrays) does NOT get the MultiIndex expansion -- only a BARE single
+    DataFrame does. This must raise a UserWarning naming the offending
+    element, and the MultiIndex must be treated as a flat index (i.e. one
+    plain line per list element, not one line per leaf + per-level means)."""
+    df = _make_2level_df()  # 8 unique (cond, subj) leaves
+    rng = np.random.default_rng(0)
+    arr = rng.standard_normal((20, 3))
+
+    with pytest.warns(UserWarning, match="MultiIndex grouping is only applied"):
+        fig = hyp.plot([df, arr], show=False)
+    ax = fig.axes[0]
+    # flat treatment: exactly one line per list element (2), NOT 8 leaves + means
+    assert len(ax.get_lines()) == 2
+    plt.close(fig)
+
+    # also fires for a list containing ONLY a MultiIndex df (still a list, not
+    # a bare DataFrame)
+    with pytest.warns(UserWarning, match="MultiIndex grouping is only applied"):
+        fig2 = hyp.plot([df], show=False)
+    ax2 = fig2.axes[0]
+    assert len(ax2.get_lines()) == 1
+    plt.close(fig2)
+
+
+def test_predict_plus_multiindex_raises():
+    df = _make_2level_df()
+    with pytest.raises(ValueError, match="predict="):
+        hyp.plot(df, predict='Kalman', show=False)
+
+
+def test_build_styles_3level_unequal_lengths_warns_exactly_once():
+    """A 3-level tree where one leaf is short: the leaf is a member of BOTH
+    its (grp, cond) prefix group AND its grp prefix group, so a naive
+    per-group warning would fire twice for one underlying issue. Assert
+    exactly one matching UserWarning record is emitted."""
+    rng = np.random.default_rng(0)
+    tuples, rows = [], []
+    for gi, grp in enumerate(['grpX', 'grpY']):
+        for ci, cond in enumerate(['condA', 'condB']):
+            for si in range(3):
+                subj = f'S{si}'
+                t = 5 if (grp == 'grpX' and cond == 'condA' and subj == 'S0') else 8
+                base = (rng.standard_normal((t, 3)).cumsum(axis=0)
+                        + gi * 8.0 + ci * 2.0)
+                rows.append(base)
+                tuples.extend([(grp, cond, subj)] * t)
+    data = np.vstack(rows)
+    index = pd.MultiIndex.from_tuples(tuples, names=['grp', 'cond', 'subj'])
+    df = pd.DataFrame(data, index=index, columns=['x', 'y', 'z'])
+
+    leaf_dfs, meta = expand_multiindex(df)
+    leaf_arrays = [d.values for d in leaf_dfs]
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        arrays, style = build_multiindex_styles(leaf_arrays, meta)
+    unequal_warnings = [
+        w for w in caught
+        if issubclass(w.category, UserWarning) and "unequal" in str(w.message)
+    ]
+    assert len(unequal_warnings) == 1

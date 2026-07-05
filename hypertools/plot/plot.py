@@ -136,18 +136,30 @@ def plot(
         ``UserWarning`` (MultiIndex grouping takes precedence); `cluster=`/
         `n_clusters=` raise ``ValueError`` (both would fight the MultiIndex
         color assignment) -- reset the index first
-        (``df.reset_index(drop=True)``) to cluster instead. Row averaging
-        assumes member leaves align by row POSITION at each timepoint;
-        leaves of unequal length are averaged over their overlapping prefix
-        (the shortest member's length), with a ``UserWarning`` naming the
-        group. Works with both static and animated plots and both
-        rendering backends, since the expansion happens upstream of
-        drawing. A MultiIndex on the COLUMNS (as opposed to the row index)
-        is unrelated to this and is unaffected -- it is handled by the
-        existing column-formatting pipeline in `hypertools.tools.format_data`
-        /`hypertools.tools.df2mat`. A single-level (or default `RangeIndex`)
-        DataFrame, or a plain array/list input, is completely unaffected by
-        any of the above.
+        (``df.reset_index(drop=True)``) to cluster instead. `predict=` also
+        raises ``ValueError`` when combined with MultiIndex expansion:
+        forecasts are computed one-per-leaf BEFORE the per-level mean
+        traces are appended, so the leaf count no longer matches the final
+        trace count -- reset the index first to use `predict=`. Row
+        averaging assumes member leaves align by row POSITION at each
+        timepoint; leaves of unequal length are averaged over their
+        overlapping prefix (the shortest member's length), with a single
+        ``UserWarning`` per affected group (deduplicated even when a
+        3+-level tree causes multiple groupings to share members). Works
+        with both static and animated plots and both rendering backends,
+        since the expansion happens upstream of drawing. A MultiIndex on
+        the COLUMNS (as opposed to the row index) is unrelated to this and
+        is unaffected -- it is handled by the existing column-formatting
+        pipeline in `hypertools.tools.format_data`/`hypertools.tools.df2mat`.
+        A single-level (or default `RangeIndex`) DataFrame, or a plain
+        array/list input, is completely unaffected by any of the above.
+
+        Expansion is ONLY applied when a single bare DataFrame is passed as
+        `x`. If `x` is a LIST containing one or more MultiIndex DataFrames
+        (whether alone or mixed with arrays/other DataFrames), the
+        MultiIndex is silently treated as a flat index on each such element
+        by the normal list-of-datasets pipeline -- a ``UserWarning`` is
+        raised naming each offending element's position in the list.
 
     fmt : str or list of strings
         A list of format strings.  All matplotlib format strings are supported.
@@ -755,6 +767,22 @@ def plot(
     # `n_clusters` fight the MultiIndex color assignment (both try to own
     # the grouping-to-color mapping) and raise; `hue` is superseded with a
     # warning (MultiIndex grouping takes precedence).
+    #
+    # This expansion ONLY happens for a BARE single MultiIndex DataFrame.
+    # A list containing MultiIndex DataFrame(s) (whether alone or mixed with
+    # arrays/other DataFrames) does NOT trigger expansion -- each such
+    # DataFrame is instead treated as a flat/plain dataset by the normal
+    # list-of-datasets pipeline, silently dropping the MultiIndex grouping
+    # unless we warn here.
+    if isinstance(x, list):
+        for _i, _el in enumerate(x):
+            if isinstance(_el, pd.DataFrame) and _el.index.nlevels >= 2:
+                warnings.warn(
+                    "MultiIndex grouping is only applied when a single "
+                    "DataFrame is passed; the MultiIndex on dataset "
+                    f"{_i} is being treated as a flat index."
+                )
+
     _multiindex_meta = None
     if isinstance(x, pd.DataFrame) and x.index.nlevels >= 2:
         if cluster is not None or n_clusters is not None:
@@ -765,6 +793,15 @@ def plot(
                 "with cluster-based grouping. Reset the index "
                 "(df.reset_index(drop=True)) before clustering, or drop "
                 "cluster=/n_clusters= to use the MultiIndex grouping."
+            )
+        if predict is not None:
+            raise ValueError(
+                "predict= is not supported with MultiIndex expansion in "
+                "this release: forecasts are computed one-per-leaf before "
+                "the per-level mean traces are appended, so the leaf count "
+                "no longer matches the final trace count. Reset the index "
+                "(df.reset_index(drop=True)) before using predict=, or "
+                "drop predict= to use the MultiIndex grouping."
             )
         if hue is not None:
             warnings.warn(

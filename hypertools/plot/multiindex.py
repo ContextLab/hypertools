@@ -110,6 +110,16 @@ def build_multiindex_styles(leaf_arrays, meta, palette='hls', linestyle=None,
         Raises ``ValueError`` on a length mismatch. A scalar (or None) is
         left untouched -- the caller's existing scalar-broadcast handles it.
 
+    Notes
+    -----
+    Member leaves of a prefix group are averaged over their overlapping
+    (shortest) length when they are of unequal length. In a 3+-level tree
+    the same underlying short leaf is a member of the prefix group at every
+    level above it (e.g. its ``(grp, cond)`` group AND its ``grp`` group),
+    so rather than warn once per level for what is really one underlying
+    issue, all unequal-length groups discovered across every level are
+    collected and reported in a single aggregated ``UserWarning`` per call.
+
     Returns
     -------
     arrays : list of numpy.ndarray
@@ -177,6 +187,14 @@ def build_multiindex_styles(leaf_arrays, meta, palette='hls', linestyle=None,
     # level-k means, k = n_levels - 2 down to 0 (deepest non-leaf level up
     # to the top level) -- appended in that order so top-level means (the
     # thickest, most opaque, only legend-labeled traces) come last.
+    #
+    # A single unequal-length subtree (e.g. one short subject) is a member
+    # of the prefix at EVERY level above it (its (grp, cond) group AND its
+    # grp group, in a 3-level tree), so warning immediately inside this loop
+    # would fire once per level for what is really one underlying issue.
+    # Instead, unequal-length groups are collected here and reported in ONE
+    # aggregated warning after the loop finishes.
+    _unequal_length_groups = []
     for k in range(n_levels - 2, -1, -1):
         prefix_members = {}
         prefix_order = []
@@ -194,16 +212,22 @@ def build_multiindex_styles(leaf_arrays, meta, palette='hls', linestyle=None,
             min_len = min(lengths)
             if len(set(lengths)) > 1:
                 group_name = prefix[0] if len(prefix) == 1 else prefix
-                warnings.warn(
-                    f"MultiIndex group {group_name!r} has members of "
-                    f"unequal length ({lengths}); averaging over the "
-                    f"overlapping prefix of {min_len} row(s)."
-                )
+                _unequal_length_groups.append((group_name, lengths, min_len))
             stacked = np.stack([a[:min_len] for a in member_arrays], axis=0)
             arrays.append(np.mean(stacked, axis=0))
 
             label = str(prefix[0]) if k == 0 else '_nolegend_'
             _append_style(k, prefix[0], label)
+
+    if _unequal_length_groups:
+        details = "; ".join(
+            f"{group_name!r} has members of unequal length ({lengths}), "
+            f"averaged over the overlapping prefix of {min_len} row(s)"
+            for group_name, lengths, min_len in _unequal_length_groups
+        )
+        warnings.warn(
+            f"MultiIndex group(s) with unequal-length members: {details}."
+        )
 
     style = {
         'colors': colors,
