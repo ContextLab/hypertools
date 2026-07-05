@@ -461,15 +461,21 @@ def plot(
     # catch all matplotlib kwargs here to pass on
     mpl_kwargs = {}
 
-    # handle color (to be passed onto matplotlib)
-    if color is not None:
+    # handle color (to be passed onto matplotlib). `colors` is treated as
+    # an alias of `color` (like linestyle(s)/marker(s) below) and takes
+    # priority when both are given -- but it must ALSO work on its own:
+    # previously this block was nested inside `if color is not None`, so
+    # `colors=` alone was silently ignored and fell back to the default
+    # palette (GH #142 follow-up).
+    if color is not None or colors is not None:
         mpl_kwargs["color"] = color
         if colors is not None:
             mpl_kwargs["color"] = colors
-            warnings.warn(
-                "Both color and colors defined: color will be ignored \
-                          in favor of colors."
-            )
+            if color is not None:
+                warnings.warn(
+                    "Both color and colors defined: color will be ignored \
+                              in favor of colors."
+                )
 
     # handle linestyle (to be passed onto matplotlib)
     if linestyle is not None:
