@@ -37,7 +37,7 @@ def capture(tag, function, case, plot_fn, dpi=100):
     Parameters
     ----------
     tag : str
-        Grouping label, e.g. 'baseline_v0.8.2' or 'dev-2.0_matplotlib'.
+        Grouping label, e.g. 'baseline_v0.8.2' or 'dev-1.0_matplotlib'.
     function : str
         Public API function being exercised, e.g. 'plot', 'describe'.
     case : str

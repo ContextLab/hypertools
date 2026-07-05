@@ -1,6 +1,6 @@
 # datawrangler coordination log
 
-The 2.0 refactor adopts datawrangler (`pydata-wrangler`) for the wrangling core. A parallel
+The 1.0 refactor adopts datawrangler (`pydata-wrangler`) for the wrangling core. A parallel
 Claude Code instance maintains `/Users/jmanning/data-wrangler` (repo `ContextLab/data-wrangler`,
 default branch `main`). When we hit a dw bug or missing API, we file an issue there rather than
 working around it.

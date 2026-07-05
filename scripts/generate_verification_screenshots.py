@@ -1,14 +1,14 @@
-"""Comprehensive visual verification matrix for hypertools 2.0.
+"""Comprehensive visual verification matrix for hypertools 1.0.
 
 Exercises EVERY public API function across representative use cases and
 captures a PNG for each, so correctness can be verified by eye and diffed
 against the v0.8.2 baselines. Writes an INDEX.md manifest alongside the
-images (used as evidence in the 2.0 PR).
+images (used as evidence in the 1.0 PR).
 
 Run from the repo root:
     .venv/bin/python scripts/generate_verification_screenshots.py
 
-Outputs: tests/screenshots/verification_v2.0/<function>/<case>.png
+Outputs: tests/screenshots/verification_v1.0/<function>/<case>.png
 """
 
 import os
@@ -24,7 +24,7 @@ from screenshot_harness import capture, summarize, SCREENSHOT_ROOT
 import matplotlib.pyplot as plt
 import hypertools as hyp
 
-TAG = 'verification_v2.0'
+TAG = 'verification_v1.0'
 SEED = 42
 
 
@@ -289,7 +289,7 @@ def main():
 def _write_index(records):
     index_path = os.path.join(SCREENSHOT_ROOT, TAG, 'INDEX.md')
     lines = [
-        '# hypertools 2.0 visual verification matrix',
+        '# hypertools 1.0 visual verification matrix',
         '',
         f'{sum(r["ok"] for r in records)}/{len(records)} cases passed.',
         '',

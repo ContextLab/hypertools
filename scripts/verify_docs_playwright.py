@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Visual verification of the BUILT HTML docs using a real headless browser.
 
-This is Plan 8 / Task 5 of the HyperTools 2.0 docs migration. It does NOT
+This is Plan 8 / Task 5 of the HyperTools 1.0 docs migration. It does NOT
 rebuild the docs and does NOT stub anything out: it serves the already-built
 ``docs/_build/html`` tree over a real local HTTP server, drives a real
 headless Chromium instance (via Playwright) against it, and makes hard
@@ -15,7 +15,7 @@ Usage
 
 Exits non-zero (and prints the failing assertions) if ANY page fails
 verification. Screenshots (full-page + cropped element captures used for the
-non-blank pixel-variance check) are written to ``docs/images/v2.0-docs/``.
+non-blank pixel-variance check) are written to ``docs/images/v1.0-docs/``.
 """
 
 from __future__ import annotations
@@ -36,8 +36,8 @@ from playwright.sync_api import sync_playwright
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS_HTML = REPO_ROOT / "docs" / "_build" / "html"
-SCREENSHOT_DIR = REPO_ROOT / "docs" / "images" / "v2.0-docs"
-BRANCH = "dev-2.0-refactor"
+SCREENSHOT_DIR = REPO_ROOT / "docs" / "images" / "v1.0-docs"
+BRANCH = "dev-1.0-refactor"
 
 # Minimum standard deviation of pixel intensities (0-255 scale) for an
 # element screenshot to be considered "non-blank". A truly blank/white or

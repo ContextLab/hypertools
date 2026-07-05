@@ -29,6 +29,6 @@ def test_normalize_row():
 
 
 def test_normalize_geo():
-    # normalize() operates on raw data directly (no geo round-trip in 2.0)
+    # normalize() operates on raw data directly (no geo round-trip in 1.0)
     norm_data = normalize(data, normalize='row')
     assert np.allclose(np.mean(np.vstack(norm_data), axis=1),0)

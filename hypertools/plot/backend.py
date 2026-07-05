@@ -72,7 +72,7 @@ switch_backend : function
 
 FUTURE: `matplotlib` project leader says `nbagg` backend will be retired
 "in the next year or two" in favor of the `ipympl` backend [2]. For the
-Hypertools 2.0 revamp, the two options should be given equal priority in
+Hypertools 1.0 revamp, the two options should be given equal priority in
 order to support the various possible combinations of new and older
 `IPython`/`ipykernel`/`notebook` versions going forward
 
@@ -996,7 +996,7 @@ class set_interactive_backend:
        the value of a global variable (`IN_SET_CONTEXT`), which is
        switched to `True` when the the runtime context is entered and
        `False` when it's exited. This definitely isn't an ideal setup
-       and could probably be refactored out in the v2.0 overhaul, but
+       and could probably be refactored out in the v1.0 overhaul, but
        for now the alternatives are A) using something like
        `inspect.getframeinfo` or `traceback.extract_stack` to look for
        the context manager every time `hypertools.plot` is called, or B)

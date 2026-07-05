@@ -1,8 +1,8 @@
-"""Data/object serialization for HyperTools 2.0.
+"""Data/object serialization for HyperTools 1.0.
 
 `save(obj, fname)` pickles a hypertools result (array / DataFrame / list /
 fitted model) to disk and backs the standalone `hyp.save`. No geo special-casing
-(DataGeometry is removed in 2.0).
+(DataGeometry is removed in 1.0).
 
 NOTE: figure/animation export (png/pdf/svg/html/gif/mp4) is NOT handled here —
 it depends on the plot backends and lands in Plan 6 (plot). A figure passed here

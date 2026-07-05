@@ -35,7 +35,7 @@ def test_reduce_dims_1d():
 
 
 def test_reduce_geo():
-    # reduce() operates on raw data directly (no geo round-trip in 2.0)
+    # reduce() operates on raw data directly (no geo round-trip in 1.0)
     reduced_data_3d = reducer(data, ndims=3)
     assert reduced_data_3d[0].shape==(10,3)
 

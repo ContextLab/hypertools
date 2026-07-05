@@ -7,7 +7,7 @@ must match across backends (per Jeremy's requirement on PR #270).
 Run from the repo root:
     .venv/bin/python scripts/generate_parity_screenshots.py
 
-Outputs: tests/screenshots/parity_v2.0/<case>.png  (matplotlib | plotly)
+Outputs: tests/screenshots/parity_v1.0/<case>.png  (matplotlib | plotly)
 plus an INDEX.md manifest.
 """
 
@@ -27,7 +27,7 @@ from PIL import Image
 from screenshot_harness import SCREENSHOT_ROOT
 import hypertools as hyp
 
-TAG = 'parity_v2.0'
+TAG = 'parity_v1.0'
 OUT_DIR = os.path.join(SCREENSHOT_ROOT, TAG)
 SEED = 42
 SIZE = [7, 5]  # inches; plotly renders at size*100 px, mpl saved at dpi=100

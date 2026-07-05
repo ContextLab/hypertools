@@ -13,6 +13,6 @@ def test_describe_data_is_dict():
 
 
 def test_describe_geo():
-    # describe() operates on raw data directly (no geo round-trip in 2.0)
+    # describe() operates on raw data directly (no geo round-trip in 1.0)
     result = describe(data, reduce='PCA', show=False)
     assert type(result) is dict

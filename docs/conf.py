@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.abspath('../'))
 def _install_notebook_cell():
     """First cell for every gallery notebook: install hypertools so the
     notebook runs standalone in Colab. Branch-aware -- installs the current
-    branch from GitHub for previews (e.g. dev-2.0), or the released package
+    branch from GitHub for previews (e.g. dev-1.0), or the released package
     on master. Kept in sync with scripts/add_colab_install_cell.py, which
     injects the same line into the hand-authored tutorial notebooks."""
     import subprocess

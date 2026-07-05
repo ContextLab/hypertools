@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Unified stack/unstack model application -- the hypertools 2.0 core.
+"""Unified stack/unstack model application -- the hypertools 1.0 core.
 
 Every model-applying operation in hypertools follows the same recipe:
 
@@ -132,7 +132,7 @@ def _resolve_model(model, ndims):
     """Turn a model specification into a ready-to-fit instance."""
     params = {}
     if isinstance(model, dict):
-        # dev-2.0 form: {'model', 'params'}; fork form: {'model', 'args', 'kwargs'}
+        # dev-1.0 form: {'model', 'params'}; fork form: {'model', 'args', 'kwargs'}
         params = dict(model.get('params', model.get('kwargs', {})))
         model = model['model']
 

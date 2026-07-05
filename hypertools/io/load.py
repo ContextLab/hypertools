@@ -212,7 +212,7 @@ def load(
                        align=align,
                        normalize=normalize)
 
-    # hypertools 2.0 users never receive a geo: extract the raw data (list
+    # hypertools 1.0 users never receive a geo: extract the raw data (list
     # of arrays / DataFrame) from any DataGeometry unpickled from a hosted
     # or legacy file. Non-geo sources (arrays, DataFrames, lists) pass
     # through unchanged.

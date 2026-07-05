@@ -4,7 +4,7 @@ Colab.
 
 The install line is branch-aware: on `master` it installs the released
 package (``%pip install hypertools[interactive]``); on any other branch it
-installs THAT branch from GitHub, so the dev-2.0 preview notebooks install
+installs THAT branch from GitHub, so the dev-1.0 preview notebooks install
 the matching dev build rather than the older PyPI release.
 
 Idempotent: notebooks that already have the install line are left alone.

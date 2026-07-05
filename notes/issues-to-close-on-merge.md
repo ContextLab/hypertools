@@ -1,10 +1,10 @@
-# Issues to Close on dev-2.0-refactor -> master Merge
+# Issues to Close on dev-1.0-refactor -> master Merge
 
-This note catalogs all 67 currently-open GitHub issues on `ContextLab/hypertools`, triaged against the `dev-2.0-refactor` branch on 2026-07-04 (6-batch triage pass, `/tmp/savemovie/triage_batch1.md` through `triage_batch6.md`). Each issue was checked against live code/repros on `dev-2.0-refactor` and classified as ADDRESSED (the ask is satisfied), OBSOLETE (the ask targets API surface removed by design, e.g. public `DataGeometry`), STILL_BUG (the reported bug still reproduces), or NOT_ADDRESSED (the feature/design ask was never implemented). This file exists to guide a single triage sweep of GitHub issues once dev-2.0-refactor merges into master: section 2 and 3 below are safe to close at that point; section 4 should stay open.
+This note catalogs all 67 currently-open GitHub issues on `ContextLab/hypertools`, triaged against the `dev-1.0-refactor` branch on 2026-07-04 (6-batch triage pass, `/tmp/savemovie/triage_batch1.md` through `triage_batch6.md`). Each issue was checked against live code/repros on `dev-1.0-refactor` and classified as ADDRESSED (the ask is satisfied), OBSOLETE (the ask targets API surface removed by design, e.g. public `DataGeometry`), STILL_BUG (the reported bug still reproduces), or NOT_ADDRESSED (the feature/design ask was never implemented). This file exists to guide a single triage sweep of GitHub issues once dev-1.0-refactor merges into master: section 2 and 3 below are safe to close at that point; section 4 should stay open.
 
-## 1. Close when dev-2.0 merges to master
+## 1. Close when dev-1.0 merges to master
 
-Every ADDRESSED or OBSOLETE issue from the triage. Safe to close on merge — the ask is either satisfied by the 2.0 rewrite or moot because the API surface it targeted no longer exists.
+Every ADDRESSED or OBSOLETE issue from the triage. Safe to close on merge — the ask is either satisfied by the 1.0 rewrite or moot because the API surface it targeted no longer exists.
 
 | # | title | ADDRESSED/OBSOLETE | justification + code evidence |
 |-|-|-|-|
@@ -36,12 +36,12 @@ Every ADDRESSED or OBSOLETE issue from the triage. Safe to close on merge — th
 | 94 | resample trajectory / hyp.tools.resample | ADDRESSED | `manip/resample.py` `Resample(Manipulator)` uses scipy pchip; `hyp.manip(data, model='Resample', n_samples=50)` upsamples 20->50 rows |
 | 227 | DataGeometry-as-pipeline (reusable fitted vectorizer/models) | OBSOLETE | public `DataGeometry` removed by design (`datageometry.py:6-11`); the requested vehicle no longer exists |
 | 204 | 1000 stars | OBSOLETE | celebratory GitHub-stars milestone note, not a bug or feature request |
-| 193 | Make geo objects iterable/indexable | OBSOLETE | public `DataGeometry` removed in 2.0; no user-facing geo object left to make iterable |
+| 193 | Make geo objects iterable/indexable | OBSOLETE | public `DataGeometry` removed in 1.0; no user-facing geo object left to make iterable |
 | 164 | DataGeometry enhancements + arg-parsing helpers | OBSOLETE | predicated on a method-rich `DataGeometry` (`geo.plot/.reduce/.normalize/.align`); class removed by design, superseded by the `return_model=True` dict pattern |
 | 161 | extend DataGeometry with transform/inverse | OBSOLETE | `DataGeometry` removed; `apply_model(return_model=True)` returns fitted sklearn objects with `.transform`/`.inverse_transform` directly |
-| 159 | readthedocs API changes (describe_pca, tools.procrustes, DataGeometry wording) | OBSOLETE | targets pre-2.0 API surface (`describe_pca`, dotted `hypertools.tools.procrustes` path) that no longer exists |
+| 159 | readthedocs API changes (describe_pca, tools.procrustes, DataGeometry wording) | OBSOLETE | targets pre-1.0 API surface (`describe_pca`, dotted `hypertools.tools.procrustes` path) that no longer exists |
 
-## 2. Bugs fixed on this branch (dev-2.0-refactor)
+## 2. Bugs fixed on this branch (dev-1.0-refactor)
 
 Confirmed STILL_BUG at triage time; fixed during this pass. Safe to close on merge, referencing the fix below.
 

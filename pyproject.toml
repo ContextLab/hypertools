@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hypertools"
-version = "2.0.0.dev0"
+version = "1.0.0.dev0"
 description = "A python package for visualizing and manipulating high-dimensional data"
 readme = "readme.md"
 license = { text = "MIT" }
@@ -38,7 +38,7 @@ dependencies = [
     "requests>=2.31.0",
     "dill>=0.3.8",
     "ipympl>=0.9.3",
-    # HyperTools 2.0: data-wrangling core (funnel/stack/unstack/format detection, model
+    # HyperTools 1.0: data-wrangling core (funnel/stack/unstack/format detection, model
     # dispatch, text+HF embeddings). 0.5.0+ adds pandas 3.0 support (dw#30/#31).
     # https://github.com/ContextLab/data-wrangler
     "pydata-wrangler>=0.5.1",

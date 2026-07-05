@@ -20,9 +20,9 @@ familiar friends, including [matplotlib](https://matplotlib.org/),
 featured on
 [Kaggle's No Free Hunch blog](http://blog.kaggle.com/2017/04/10/exploring-the-structure-of-high-dimensional-data-with-hypertools-in-kaggle-kernels/).  For a general overview, you may find [this talk](https://www.youtube.com/watch?v=hb_ER9RGtOM) useful (given as part of the [MIND Summer School](https://summer-mind.github.io) at Dartmouth).
 
-## What's new in 2.0
+## What's new in 1.0
 
-HyperTools 2.0 modernizes the toolbox while keeping the familiar API:
+HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
 
 + **Interactive plotting (optional):** `hyp.plot(..., backend='plotly')`
   renders interactive figures. With the default `backend='auto'`, HyperTools

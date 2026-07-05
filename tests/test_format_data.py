@@ -41,7 +41,7 @@ def test_mixed_list():
 
 
 def test_missing_data():
-    # format_data fills missing values via PPCA (no geo round-trip in 2.0)
+    # format_data fills missing values via PPCA (no geo round-trip in 1.0)
     data = np.random.rand(100,10)
     data[0][0]=np.nan
     assert isinstance(format_data(data), list)

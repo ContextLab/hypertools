@@ -1,6 +1,6 @@
 """datawrangler API-surface probe.
 
-Verification-first gate for HyperTools 2.0 (spec step 0). Asserts the installed
+Verification-first gate for HyperTools 1.0 (spec step 0). Asserts the installed
 datawrangler exposes every symbol and behavior the class-based refactor builds
 on. A failure means dw drifted from what we verified at 0.4.0: file a
 ContextLab/data-wrangler issue, then mark the specific check xfail with the

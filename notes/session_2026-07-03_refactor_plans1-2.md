@@ -1,6 +1,6 @@
-# Session 2026-07-03 — HyperTools 2.0 class-based refactor: Plans 1–2 complete
+# Session 2026-07-03 — HyperTools 1.0 class-based refactor: Plans 1–2 complete
 
-Branch `dev-2.0-refactor` (off dev-2.0). PR target dev-2.0. Never push master.
+Branch `dev-1.0-refactor` (off dev-1.0). PR target dev-1.0. Never push master.
 Goal: complete the refactor + open PR, 100% tests passing, 100% of spec tasks done.
 
 ## Status: Plans 1 & 2 COMPLETE and green (276 passed)
@@ -22,14 +22,14 @@ Goal: complete the refactor + open PR, 100% tests passing, 100% of spec tasks do
 
 `manip/` needs REAL design decisions (fork code is dw/DataFrame-based and partly broken — validate, don't trust):
 
-1. **arrays vs DataFrames.** The fork's `Manipulator` children (`Normalize`/`ZScore`/`Smooth`/`Resample`) all operate on pandas DataFrames via `@dw.decorate.apply_stacked` / `dw.unstack`/`dw.stack`. dev-2.0's `hyp.normalize` is array-based with `'across'`/`'within'`/`'row'`/`'column'`/`'zscore'` modes. Per the Plan 2 architecture decision, manip should migrate to DataFrame-flow behind the dw funnel — but the classic `hyp.normalize(x, normalize='across')` API must keep working (classic + alias). Decide: does the new `Normalize` subsume dev-2.0's modes, or does `hyp.normalize` stay a separate compat function mapping onto manip? Recommended: keep `hyp.normalize` as a thin compat wrapper preserving the mode API; add `hyp.manip` + the Manipulator classes as the new surface.
+1. **arrays vs DataFrames.** The fork's `Manipulator` children (`Normalize`/`ZScore`/`Smooth`/`Resample`) all operate on pandas DataFrames via `@dw.decorate.apply_stacked` / `dw.unstack`/`dw.stack`. dev-1.0's `hyp.normalize` is array-based with `'across'`/`'within'`/`'row'`/`'column'`/`'zscore'` modes. Per the Plan 2 architecture decision, manip should migrate to DataFrame-flow behind the dw funnel — but the classic `hyp.normalize(x, normalize='across')` API must keep working (classic + alias). Decide: does the new `Normalize` subsume dev-1.0's modes, or does `hyp.normalize` stay a separate compat function mapping onto manip? Recommended: keep `hyp.normalize` as a thin compat wrapper preserving the mode API; add `hyp.manip` + the Manipulator classes as the new surface.
 2. **Smooth = savgol, NOT gaussian.** Fork `Smooth` uses `scipy.signal.savgol_filter(kernel_width, order)`. The classic weights-trajectory gif needs **gaussian smoothing (var=300)** (see memory + scripts/generate_weights_trajectory.py). So fork `Smooth` does NOT reproduce historical behavior. Plan 3 must either add a gaussian mode to `Smooth` or provide a gaussian smoother; validate against the weights recipe.
 3. **`Resample` needs `core.get`.** Fork resample imports `from ..core import get` — a helper returning `v[i]` if v is a list else `v` (elementwise kwarg indexing). Add `get` to `core/shared.py` (or `core/util.py`) as a Plan 3 prerequisite task.
 4. **Fork bugs to fix/validate:** `Smooth.transformer` `maintain_bounds` uses `smoothed[c].loc[mask]=...` (pandas chained-assignment risk); unused `scipy.interpolate` import; `Normalize.fitter` builds `pd.Series(index=data.columns)` without dtype (may warn on pandas 2.3). Write REAL tests (single array, list, DataFrame, polars) and fix as needed.
 5. **Manipulator base** (`jeremy/master:hypertools/manip/common.py`) + dispatcher (`manip.py`) already read — port with `core.unpack_model`/`apply_defaults`/`apply_model`. `search=['sklearn.preprocessing']` in dispatcher.
 
 Fork files to port/validate: `jeremy/master:hypertools/manip/{common,manip,normalize,smooth,resample,zscore}.py`.
-dev-2.0 to preserve: `hypertools/tools/normalize.py` (the `'across'`/`'within'`/`'zscore'` mode semantics + `hyp.normalize` API).
+dev-1.0 to preserve: `hypertools/tools/normalize.py` (the `'across'`/`'within'`/`'zscore'` mode semantics + `hyp.normalize` API).
 
 ### Plan 3 Task 5 (Smooth + Resample + manip dispatcher) — done, with two owed follow-ups
 
@@ -81,4 +81,4 @@ Plan 7's top-level API.
 - Plan 6: plot + colors (dual backend, robust coloring, multilevel-index styling).
 - Plan 7: top-level API + aliases + DELETE DataGeometry + retire tools/ shims.
 - Plan 8: docs/gallery/notebooks migration + Playwright visual verify + PR evidence.
-- Then: whole-branch review (opus) + open PR into dev-2.0, lift pandas pin when dw#30 lands.
+- Then: whole-branch review (opus) + open PR into dev-1.0, lift pandas pin when dw#30 lands.

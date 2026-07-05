@@ -376,7 +376,7 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="hypertools 2.0 accepts arbitrarily nested lists of datasets. Every dataset under the same outermost group shares that group&#x27;s color, and each additional nesting level renders with thinner, fainter lines -- a summary-to-detail visual hierarchy. For example, [[a, b], [c]] colors a and b alike (group 1) and c differently (group 2).">
+    <div class="sphx-glr-thumbcontainer" tooltip="hypertools 1.0 accepts arbitrarily nested lists of datasets. Every dataset under the same outermost group shares that group&#x27;s color, and each additional nesting level renders with thinner, fainter lines -- a summary-to-detail visual hierarchy. For example, [[a, b], [c]] colors a and b alike (group 1) and c differently (group 2).">
 
 .. only:: html
 
@@ -461,7 +461,7 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="HyperTools 2.0 can render any plot with plotly instead of matplotlib by passing backend=&#x27;plotly&#x27; -- handy for rotating and zooming 3D plots interactively. With the default backend=&#x27;auto&#x27;, hypertools automatically uses plotly on Google Colab and Kaggle notebooks (where plotly is preinstalled and interactivity works best) and matplotlib everywhere else, so existing workflows are unchanged. Both backends produce the same styling: colors, line/marker sizes, format strings, and the signature cube frame.">
+    <div class="sphx-glr-thumbcontainer" tooltip="HyperTools 1.0 can render any plot with plotly instead of matplotlib by passing backend=&#x27;plotly&#x27; -- handy for rotating and zooming 3D plots interactively. With the default backend=&#x27;auto&#x27;, hypertools automatically uses plotly on Google Colab and Kaggle notebooks (where plotly is preinstalled and interactivity works best) and matplotlib everywhere else, so existing workflows are unchanged. Both backends produce the same styling: colors, line/marker sizes, format strings, and the signature cube frame.">
 
 .. only:: html
 
@@ -563,7 +563,7 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="In addition to hard clustering (KMeans, HDBSCAN, ...), hypertools 2.0 supports mixture models: GaussianMixture, BayesianGaussianMixture, LatentDirichletAllocation, and NMF. hyp.cluster returns an (n_samples, n_components) matrix of membership proportions instead of discrete labels, and hyp.plot colors each observation by blending the component colors according to its mixture weights -- observations between clusters render with intermediate colors.">
+    <div class="sphx-glr-thumbcontainer" tooltip="In addition to hard clustering (KMeans, HDBSCAN, ...), hypertools 1.0 supports mixture models: GaussianMixture, BayesianGaussianMixture, LatentDirichletAllocation, and NMF. hyp.cluster returns an (n_samples, n_components) matrix of membership proportions instead of discrete labels, and hyp.plot colors each observation by blending the component colors according to its mixture weights -- observations between clusters render with intermediate colors.">
 
 .. only:: html
 
@@ -631,7 +631,7 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="hyp.apply_model is hypertools 2.0&#x27;s unified model-application core: datasets are stacked, the model is fit ONCE across all of them, and the result is unstacked back to the input&#x27;s structure -- which is what makes embeddings and cluster assignments comparable across datasets. Models can be specified by name, as a dict with parameters, as a scikit-learn style instance, or as a list (pipeline). return_model=True hands back the fitted model for reuse on held-out data.">
+    <div class="sphx-glr-thumbcontainer" tooltip="hyp.apply_model is hypertools 1.0&#x27;s unified model-application core: datasets are stacked, the model is fit ONCE across all of them, and the result is unstacked back to the input&#x27;s structure -- which is what makes embeddings and cluster assignments comparable across datasets. Models can be specified by name, as a dict with parameters, as a scikit-learn style instance, or as a list (pipeline). return_model=True hands back the fitted model for reuse on held-out data.">
 
 .. only:: html
 

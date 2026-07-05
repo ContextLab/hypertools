@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Classic array/mode ``align`` API (HyperTools <2.0).
+"""Classic array/mode ``align`` API (HyperTools <1.0).
 
 Thin compatibility wrapper over the new class-based dispatcher in
 :mod:`hypertools.align.align`. The classic string/dict ``align`` argument is
@@ -7,7 +7,7 @@ translated to a dispatcher ``model`` name, ``n_iter`` is threaded into
 hyperalignment, and (when ``format_data=True``) the input -- a DataGeometry,
 text, arrays, or a mix -- is first funneled through
 :func:`hypertools.tools.format_data.format_data` into a list of numpy arrays,
-mirroring dev-2.0's ``format_data=True`` behavior. Output is a list of numpy
+mirroring dev-1.0's ``format_data=True`` behavior. Output is a list of numpy
 arrays, as the classic API promised.
 """
 import numpy as np
@@ -79,9 +79,9 @@ def align(data, align='hyper', n_iter=10, format_data=True):
     if align is None:
         return data
     if align is True:
-        # retired in 2.0 (previously deprecated): boolean form was ambiguous --
+        # retired in 1.0 (previously deprecated): boolean form was ambiguous --
         # require an explicit algorithm name
-        raise ValueError("align=True was removed in hypertools 2.0; specify the "
+        raise ValueError("align=True was removed in hypertools 1.0; specify the "
                          "algorithm instead, e.g. align='hyper' or align='SRM'.")
 
     if isinstance(align, dict):

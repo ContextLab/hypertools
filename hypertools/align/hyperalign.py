@@ -1,6 +1,6 @@
 """Hyperalignment (Haxby et al., 2011) as an :class:`Aligner` child.
 
-This ports dev-2.0's *rescaled* hyperalignment (``hypertools/tools/align.py``:
+This ports dev-1.0's *rescaled* hyperalignment (``hypertools/tools/align.py``:
 ``_hyperalign_pass`` + the ``n_iter`` rescale loop) rather than the fork's
 version, which omits the per-pass rescale and lets procrustes' optimal scaling
 factor (< 1 whenever alignment is imperfect) geometrically collapse the data
@@ -16,7 +16,7 @@ The fitter reuses the :func:`hypertools.align.procrustes.align` SVD primitive an
 accumulates, per dataset, the *composed* projection across all passes (including
 the per-pass rescale scalars). The stored ``proj`` therefore satisfies
 ``original @ proj == converged_aligned_data`` exactly, so ``transform`` reproduces
-dev-2.0's ``align()`` output (which returns aligned data directly) while still
+dev-1.0's ``align()`` output (which returns aligned data directly) while still
 exposing a genuine per-dataset projector.
 """
 import numpy as np
@@ -69,7 +69,7 @@ def _one_pass(m):
 
 
 def fitter(data, n_iter=10, **kwargs):
-    """Run dev-2.0's rescaled hyperalignment passes and return the composed
+    """Run dev-1.0's rescaled hyperalignment passes and return the composed
     per-dataset projections under key ``'proj'``."""
     assert type(data) is list, 'data must be a list'
     n = len(data)
@@ -104,7 +104,7 @@ def transformer(data, **kwargs):
 
 
 class HyperAlign(Aligner):
-    """Hyperalignment (Haxby et al., 2011) with dev-2.0's per-pass rescaling.
+    """Hyperalignment (Haxby et al., 2011) with dev-1.0's per-pass rescaling.
 
     :param n_iter: number of hyperalignment passes; the common template is
         re-estimated from the aligned data and all datasets re-aligned to it,

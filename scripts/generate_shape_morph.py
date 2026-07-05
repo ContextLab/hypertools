@@ -11,7 +11,7 @@ the camera completes 2 * n_shapes - 1 total rotations (one per segment).
 Run from the repo root:
     .venv/bin/python scripts/generate_shape_morph.py
 
-Output: docs/images/v2.0-animations/shapes_morph.gif
+Output: docs/images/v1.0-animations/shapes_morph.gif
 """
 
 import os
@@ -33,7 +33,7 @@ N_STEPS = 270         # frames per hold segment and per morph segment
 FRAME_RATE = 30
 SEED = 42
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                   'docs', 'images', 'v2.0-animations', 'shapes_morph.mp4')
+                   'docs', 'images', 'v1.0-animations', 'shapes_morph.mp4')
 
 
 def normalize_shape(points):

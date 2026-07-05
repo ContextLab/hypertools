@@ -22,7 +22,7 @@
 Nested lists and multilevel styling
 =============================
 
-hypertools 2.0 accepts arbitrarily nested lists of datasets. Every dataset
+hypertools 1.0 accepts arbitrarily nested lists of datasets. Every dataset
 under the same outermost group shares that group's color, and each
 additional nesting level renders with thinner, fainter lines -- a
 summary-to-detail visual hierarchy. For example, `[[a, b], [c]]` colors

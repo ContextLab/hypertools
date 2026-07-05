@@ -1,4 +1,4 @@
-# Animation export evidence (hypertools 2.0)
+# Animation export evidence (hypertools 1.0)
 
 Sample animations exported via `hyp.plot(..., save_path=...)`; the extension picks the format (.gif / .png [APNG] / .mp4).
 

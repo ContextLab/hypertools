@@ -1,4 +1,4 @@
-# hypertools 2.0 visual verification matrix
+# hypertools 1.0 visual verification matrix
 
 75/75 cases passed.
 

@@ -1,4 +1,4 @@
-"""HyperTools 2.0 core: model dispatch, configuration, and shared utilities."""
+"""HyperTools 1.0 core: model dispatch, configuration, and shared utilities."""
 
 from .exceptions import (
     HypertoolsError,

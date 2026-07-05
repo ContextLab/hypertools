@@ -22,7 +22,7 @@
 Soft clustering with mixture models
 =============================
 
-In addition to hard clustering (KMeans, HDBSCAN, ...), hypertools 2.0
+In addition to hard clustering (KMeans, HDBSCAN, ...), hypertools 1.0
 supports mixture models: GaussianMixture, BayesianGaussianMixture,
 LatentDirichletAllocation, and NMF. `hyp.cluster` returns an
 (n_samples, n_components) matrix of membership proportions instead of

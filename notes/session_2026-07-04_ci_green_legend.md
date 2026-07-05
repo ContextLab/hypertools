@@ -1,6 +1,6 @@
 # Session 2026-07-04 (round 8): CI-green + legend-clipping + bug hunt
 
-Branch `dev-2.0-refactor`; PR **#271** into `dev-2.0` (NOT master; do not merge).
+Branch `dev-1.0-refactor`; PR **#271** into `dev-1.0` (NOT master; do not merge).
 
 ## What shipped this session
 

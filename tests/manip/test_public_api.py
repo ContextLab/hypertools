@@ -8,6 +8,6 @@ def test_hyp_manip_exposed():
 
 
 def test_hyp_normalize_compat_still_present():
-    # dev-2.0 array/mode API must be unchanged
+    # dev-1.0 array/mode API must be unchanged
     out = hyp.normalize(np.random.RandomState(0).rand(10, 4), normalize="across")
     assert np.asarray(out).shape == (10, 4)

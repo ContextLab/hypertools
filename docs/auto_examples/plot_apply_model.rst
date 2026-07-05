@@ -22,7 +22,7 @@
 Applying models with apply_model
 =============================
 
-`hyp.apply_model` is hypertools 2.0's unified model-application core:
+`hyp.apply_model` is hypertools 1.0's unified model-application core:
 datasets are stacked, the model is fit ONCE across all of them, and the
 result is unstacked back to the input's structure -- which is what makes
 embeddings and cluster assignments comparable across datasets. Models can

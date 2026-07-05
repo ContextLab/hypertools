@@ -1,11 +1,11 @@
-# PR Evidence — HyperTools 2.0 Refactor (`dev-2.0-refactor`)
+# PR Evidence — HyperTools 1.0 Refactor (`dev-1.0-refactor`)
 
 Factual summary of the class-based refactor (Plans 1-7) and docs migration (Plan 8),
-assembled for the PR into `dev-2.0`. `dev-2.0..HEAD` = 55 commits.
+assembled for the PR into `dev-1.0`. `dev-1.0..HEAD` = 55 commits.
 
 ## Test counts
 
-- Baseline (pre-refactor, `dev-2.0`, pandas 2.3.3): **242 passed**.
+- Baseline (pre-refactor, `dev-1.0`, pandas 2.3.3): **242 passed**.
 - After Plans 1-7 (class-based refactor complete, dw 0.5.0 / pandas 3.0.3): **318 passed**,
   0 failed (independent controller gate run `b7tw3iusu`, 12m30s).
 - After Plan 8 (docs migration + Jeremy's 4 review fixes, incl. the gif full-frame-pacing
@@ -92,15 +92,15 @@ Run: `.venv/bin/python scripts/verify_docs_playwright.py` — **8/8 pages passed
 | `auto_examples/animate_plotly.html` | animated (plotly) | `.plotly-graph-div` renders real SVG/canvas children; page contains `Plotly.addFrames(`/`Plotly.animate(`; rendered plot non-blank (std 21.0); Colab badge branch-aware |
 | `auto_examples/plot_shape_morph.html` | animated (mp4) | `<video>` decodes to 638x476, seeked frame non-blank (std 38.8); Colab badge branch-aware |
 | `auto_examples/plot_clusters.html` | static example | `sphx_glr` image decodes to 640x480, non-blank (std 40.1); Colab badge branch-aware |
-| `tutorials/plot.html` | tutorial (nbsphinx) | rendered figure non-blank (std 53.1); branch-aware `pip install ... @dev-2.0-refactor` cell present |
-| `tutorials/align.html` | tutorial (nbsphinx) | rendered figure non-blank (std 34.2); branch-aware `pip install ... @dev-2.0-refactor` cell present |
+| `tutorials/plot.html` | tutorial (nbsphinx) | rendered figure non-blank (std 53.1); branch-aware `pip install ... @dev-1.0-refactor` cell present |
+| `tutorials/align.html` | tutorial (nbsphinx) | rendered figure non-blank (std 34.2); branch-aware `pip install ... @dev-1.0-refactor` cell present |
 
 Notes on the Colab check: gallery/example pages carry a literal "Open in Colab" badge
-image whose link href was verified to contain `dev-2.0-refactor`
-(e.g. `https://colab.research.google.com/github/ContextLab/hypertools/blob/dev-2.0-refactor/docs/auto_examples/plot_basic.ipynb`).
+image whose link href was verified to contain `dev-1.0-refactor`
+(e.g. `https://colab.research.google.com/github/ContextLab/hypertools/blob/dev-1.0-refactor/docs/auto_examples/plot_basic.ipynb`).
 Tutorial pages (rendered from notebooks via nbsphinx) do not carry that image badge; instead
 their first cell is a branch-aware install line
-(`%pip install -q "hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@dev-2.0-refactor"`),
+(`%pip install -q "hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@dev-1.0-refactor"`),
 which was verified present on both tutorial pages checked.
 
 "Non-blank" is a real pixel-content check, not a size/existence check: each verified
@@ -109,7 +109,7 @@ is computed (via PIL + numpy); a blank/solid-color render would have std ~= 0, a
 threshold is 2.0. All 8 pages' checked elements measured std between 15.3 and 53.1.
 
 Screenshots (full-page + cropped element captures used for the non-blank checks) are saved
-in this directory (`docs/images/v2.0-docs/`), files `01_*.png` through `08_*.png` plus
+in this directory (`docs/images/v1.0-docs/`), files `01_*.png` through `08_*.png` plus
 `_crop`/`_frame`/`_plot`/`_thumb_N` element-level captures. Visually spot-checked
 (`02_plot_basic.png`, `03_animate_spin_frame.png`, `04_animate_plotly_plot.png`): real
 rendered 3D scatter/trajectory plots and a real Plotly animated line plot with

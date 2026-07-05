@@ -45,6 +45,6 @@ def test_align_shapes():
 
 
 def test_align_geo():
-    # align() operates on the raw data list directly (no geo in 2.0)
+    # align() operates on the raw data list directly (no geo in 1.0)
     aligned = align(spiral)
     assert np.allclose(aligned[0], aligned[1])
