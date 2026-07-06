@@ -739,6 +739,9 @@ class TestAlphaCompositingEquivalence:
         morph_state = ani._args[0]
         morph_state['artist'].set_alpha(0.5)
         ani._func(0, *ani._args)  # frame 0: hold on dataset 0, dups hidden
+        if not hasattr(fig.canvas, 'buffer_rgba'):  # CI backend fallback
+            from matplotlib.backends.backend_agg import FigureCanvasAgg
+            FigureCanvasAgg(fig)
         fig.canvas.draw()
         anim_rgba = np.asarray(fig.canvas.buffer_rgba()).copy()
 
@@ -763,6 +766,11 @@ class TestAlphaCompositingEquivalence:
         ax2.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
         fig2.set_size_inches(fig.get_size_inches())
         fig2.set_dpi(fig.dpi)
+        # static show=False figures get closed (GH #148); on matplotlib 3.11
+        # (CI) close resets the canvas to FigureCanvasBase, which cannot
+        # rasterize -- attach a real Agg canvas explicitly before drawing
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        FigureCanvasAgg(fig2)
         fig2.canvas.draw()
         plain_rgba = np.asarray(fig2.canvas.buffer_rgba()).copy()
 

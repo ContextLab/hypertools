@@ -246,17 +246,19 @@ class TestSaveDpiGeometry:
                 pass
 
         ani.save('unused.gif', writer=_Spy(fps=5))
-        plt.close(fig)
 
         assert seen['manager_during_save'] is None, (
             "fig.canvas.manager must be nulled while .save() runs, or a "
             "real interactive backend's forward=True resize can corrupt "
             "the figure's exact size"
         )
+        # check restoration BEFORE plt.close(): matplotlib 3.11 (CI) resets
+        # the canvas/manager on close, which is unrelated to the save guard
         assert fig.canvas.manager is original_manager, (
             "the original canvas manager must be restored after .save() "
             "returns"
         )
+        plt.close(fig)
 
     @pytest.mark.parametrize('style', [True, 'morph'])
     def test_adjust_frame_size_forward_resize_does_not_corrupt_figure(
