@@ -62,10 +62,7 @@ class TestStaticMatplotlib3D:
         center = stacked.mean(axis=0)
         half_range = np.ptp(stacked, axis=0).max() / 2.0 * 1.3
         for c in colls:
-            # Poly3DCollection stores its (homogeneous) vertex coordinates
-            # in the private `_vec` array (shape (4, n) -- x/y/z/w columns)
-            # across the matplotlib versions hypertools supports.
-            verts = np.asarray(c._vec[:3]).T
+            verts = _poly3d_verts(c)
             assert np.all(np.abs(verts - center) <= half_range + 1e-6)
 
     def test_per_dataset_dict_list_honored_different_alphas(self):
@@ -312,12 +309,26 @@ class TestAnimatedPlotly:
 def _poly3d_verts(coll):
     """Extract a Poly3DCollection's raw (pre-projection) vertex
     coordinates as an (n, 3) array (GH #109 round 2 containment tests).
-    ``_vec`` is matplotlib's internal homogeneous-coordinate cache
-    populated whenever the collection's 3-D verts are set; used here
-    (rather than the newly differently-signatured, deprecated
-    ``get_vector()``) since it is stable across the matplotlib versions
-    this project supports."""
-    return np.asarray(coll._vec[:3]).T
+    matplotlib has moved this internal state around across the versions
+    hypertools supports (`_vec`: homogeneous (4, n) cache on newer
+    releases; `_segments3d`: per-polygon (n, 3) arrays on others), so try
+    each known location rather than pinning one private attribute."""
+    vec = getattr(coll, '_vec', None)
+    if vec is not None:
+        return np.asarray(vec)[:3].T
+    faces = getattr(coll, '_faces', None)  # matplotlib >= 3.11
+    if faces is not None:
+        verts = np.asarray(faces, dtype=float).reshape(-1, 3)
+        invalid = getattr(coll, '_invalid_vertices', False)
+        if invalid is not False and np.ndim(invalid):
+            verts = verts[~np.asarray(invalid).reshape(-1)]
+        return verts
+    segs = getattr(coll, '_segments3d', None)
+    if segs is not None:
+        return np.vstack([np.asarray(s, dtype=float)[:, :3] for s in segs])
+    raise AttributeError(
+        'cannot locate 3-D vertices on this matplotlib version: '
+        f'{type(coll).__name__} has none of _vec/_faces/_segments3d')
 
 
 class TestMeshContainmentInAxesCube:
