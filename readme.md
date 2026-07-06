@@ -53,6 +53,13 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
   smooth, lit surface over each dataset's convex hull — a filled outline in
   2D, or a shaded, Taubin-smoothed "blob" in 3D — with a dict form for
   per-dataset alpha/color/lighting/smoothing control.
++ **Morph animation:** `hyp.plot(datasets, animate='morph')` treats each
+  dataset as a point cloud and morphs smoothly between them (Hungarian-
+  matched, smoothstep-eased), holding on each one along the way; `rotations`
+  accepts a per-segment list for independent camera control over each hold
+  and transition, and `surface=True` composes with it to morph a lit hull
+  instead of raw points. See `examples/plot_shape_morph.py` and
+  `examples/animate_surface_morph.py`.
 + **Density shading (optional):** `hyp.plot(..., density=True)` overlays a
   subtle KDE "glow" behind the data (a 2D heatmap or 3D volumetric cloud)
   showing where each dataset's points concentrate; off by default.
