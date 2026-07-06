@@ -1200,13 +1200,9 @@ def _draw(
         elif style == "morph":
             n_morph_datasets = len(morph_state["indices"])
             total_frames = frame_rate * duration
-            frame_counts = _morph.segment_frame_counts(
-                n_morph_datasets, total_frames)
+            frame_counts, _, azimuths = _morph.morph_schedule(
+                n_morph_datasets, total_frames, rotations, azim)
             morph_state["frame_counts"] = frame_counts
-            rotations_resolved = _morph.resolve_morph_rotations(
-                rotations, n_morph_datasets)
-            azimuths = _morph.segment_azimuths(
-                frame_counts, rotations_resolved, azim)
             line_ani = animation.FuncAnimation(
                 fig,
                 update_morph,

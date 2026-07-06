@@ -1550,10 +1550,8 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             else (0.2, 0.4, 0.8)
             for i in morph_indices
         ]
-        frame_counts = _morph.segment_frame_counts(n_morph_datasets, n_frames)
-        rotations_resolved = _morph.resolve_morph_rotations(
-            rotations, n_morph_datasets)
-        azimuths = _morph.segment_azimuths(frame_counts, rotations_resolved, azim)
+        frame_counts, _, azimuths = _morph.morph_schedule(
+            n_morph_datasets, n_frames, rotations, azim)
         n_frames = sum(frame_counts)
 
         morph_trace_indices = [morph_trace_start]

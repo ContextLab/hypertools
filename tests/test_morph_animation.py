@@ -244,6 +244,108 @@ class TestResolveMorphRotationsAndAzimuths:
         np.testing.assert_allclose(azims[:4], [0, 90, 180, 270])
 
 
+class TestConstantRotationSpeed:
+    """Maintainer request (2026-07-06): "the rotation speed should always
+    be constant -- so more rotations means more time spent on that part
+    of the animation." A LIST `rotations` must allocate each segment's
+    frame count PROPORTIONAL to its own rotation count, so degrees/frame
+    is identical everywhere, rather than splitting frames evenly (which
+    made higher-rotation segments spin faster)."""
+
+    def _deg_per_frame(self, frame_counts, rotations, azim0=0):
+        azims = morph.segment_azimuths(frame_counts, rotations, azim0)
+        return np.diff(azims)
+
+    def test_proportional_split_exact_ratios(self):
+        # 2 datasets -> 3 segments; rotations=[2, 1, 1] -> frame shares
+        # 2/4, 1/4, 1/4 of the total, exactly (evenly divisible case).
+        counts = morph.segment_frame_counts(2, 80, [2.0, 1.0, 1.0])
+        assert counts == [40, 20, 20]
+        assert sum(counts) == 80
+
+    def test_proportional_split_largest_remainder(self):
+        # Not evenly divisible: shares must still sum EXACTLY to the
+        # total, largest-fractional-remainder segments getting the extra
+        # frame(s).
+        counts = morph.segment_frame_counts(2, 81, [2.0, 1.0, 1.0])
+        assert sum(counts) == 81
+        # 81 * 2/4 = 40.5, 81 * 1/4 = 20.25 (x2) -> floors [40, 20, 20],
+        # remainder 1 goes to the largest fractional share (segment 0).
+        assert counts == [41, 20, 20]
+
+    def test_degrees_per_frame_constant_across_all_frames(self):
+        rotations = [2.0, 1.0, 1.0]
+        counts = morph.segment_frame_counts(2, 80, rotations)
+        deltas = self._deg_per_frame(counts, rotations)
+        expected = 360.0 * sum(rotations) / sum(counts)
+        np.testing.assert_allclose(deltas, expected, atol=1e-6)
+
+    def test_degrees_per_frame_constant_five_segment_case(self):
+        # The maintainer's own example: 3 datasets -> 5 segments. 180
+        # frames divides evenly by every weight here (sum=4.5), so the
+        # largest-remainder split needs no rounding at all.
+        rotations = [1, 0.25, 2, 0.25, 1]
+        counts = morph.segment_frame_counts(3, 180, rotations)
+        assert counts == [40, 10, 80, 10, 40]
+        deltas = self._deg_per_frame(counts, rotations)
+        expected = 360.0 * sum(rotations) / sum(counts)
+        np.testing.assert_allclose(deltas, expected, atol=1e-6)
+
+    def test_zero_rotation_segment_gets_floor_share_and_stays_still(self):
+        # 22 frames divides evenly given weights [1, 0.1, 1] (sum 2.1) once
+        # the middle segment is bumped to its 2-frame minimum, so segments
+        # 0 and 2 come out exactly equal (no rounding tie to break).
+        rotations = [1, 0, 1]
+        counts = morph.segment_frame_counts(2, 22, rotations)
+        assert counts == [10, 2, 10]
+        assert counts[1] >= 2  # min-2-frames floor
+        # segments 0 and 2 (equal, nonzero rotation) get equal frame
+        # counts and thus equal (constant) angular speed...
+        assert counts[0] == counts[2]
+        azims = morph.segment_azimuths(counts, rotations, -60)
+        seg0_delta = np.diff(azims[:counts[0]])
+        seg2_start = counts[0] + counts[1]
+        seg2_delta = np.diff(azims[seg2_start:seg2_start + counts[2]])
+        np.testing.assert_allclose(seg0_delta, seg2_delta, atol=1e-6)
+        # ...while the zero-rotation middle segment's azimuth never moves.
+        seg1_delta = np.diff(azims[counts[0]:counts[0] + counts[1]])
+        np.testing.assert_allclose(seg1_delta, 0.0, atol=1e-9)
+
+    def test_every_segment_at_least_two_frames(self):
+        counts = morph.segment_frame_counts(3, 21, [5, 0, 0, 0, 5])
+        assert all(c >= 2 for c in counts)
+        assert sum(counts) == 21
+
+    def test_scalar_rotations_frame_counts_unchanged(self):
+        """Regression: scalar `rotations` must still split frames EVENLY
+        -- scalar behavior is constant speed by construction (equal
+        segment durations) and must not change with this fix."""
+        assert morph.segment_frame_counts(3, 100, 2.0) == [20, 20, 20, 20, 20]
+        assert morph.segment_frame_counts(3, 100, None) == [20, 20, 20, 20, 20]
+        assert (morph.segment_frame_counts(3, 100, 2.0)
+               == morph.segment_frame_counts(3, 100))
+
+    def test_scalar_rotations_azimuth_step_constant(self):
+        counts = morph.segment_frame_counts(3, 100, 2.0)
+        azims = morph.segment_azimuths(counts, 2.0, -60)
+        deltas = np.diff(azims)
+        expected = 360.0 * 2.0 / sum(counts)
+        np.testing.assert_allclose(deltas, expected, atol=1e-6)
+
+    def test_morph_schedule_single_call_matches_pieces(self):
+        frame_counts, rotations_resolved, azimuths = morph.morph_schedule(
+            3, 200, [1, 0.25, 2, 0.25, 1], -60)
+        expected_rotations = morph.resolve_morph_rotations(
+            [1, 0.25, 2, 0.25, 1], 3)
+        expected_counts = morph.segment_frame_counts(
+            3, 200, expected_rotations)
+        expected_azimuths = morph.segment_azimuths(
+            expected_counts, expected_rotations, -60)
+        assert rotations_resolved == expected_rotations
+        assert frame_counts == expected_counts
+        np.testing.assert_allclose(azimuths, expected_azimuths)
+
+
 # ---------------------------------------------------------------------------
 # plot.py validation
 # ---------------------------------------------------------------------------
@@ -357,6 +459,29 @@ class TestMplMorphAnimation:
             ani._func(boundary, *ani._args)
             expected_azim = -60 + 360.0 * cum
             assert ax.azim == pytest.approx(expected_azim, abs=1e-6)
+
+    def test_rotations_list_constant_rotation_speed(self):
+        """Maintainer request (2026-07-06): constant rotation speed --
+        segment duration proportional to rotation count. Sampling `ax.azim`
+        at every frame across the whole mpl animation, the per-frame delta
+        must be identical everywhere (within a tiny rounding tolerance at
+        segment boundaries from the largest-remainder integer split). Uses
+        180 frames (duration=18 * frame_rate=10), which divides the
+        [1, 0.25, 2, 0.25, 1] weights (sum 4.5) with no rounding at all."""
+        rotations = [1, 0.25, 2, 0.25, 1]
+        fig, ani = self._build(rotations=rotations, duration=18, frame_rate=10)
+        morph_state = ani._args[0]
+        frame_counts = morph_state['frame_counts']
+        total_frames = sum(frame_counts)
+        ax = fig.axes[0]
+
+        azims = []
+        for k in range(total_frames):
+            ani._func(k, *ani._args)
+            azims.append(ax.azim)
+        deltas = np.diff(azims)
+        expected = 360.0 * sum(rotations) / total_frames
+        np.testing.assert_allclose(deltas, expected, atol=0.5)
 
     def test_static_untagged_dataset_present_every_frame(self):
         """M4 visual-review fix: with mixed tagging, the untagged (static
@@ -624,8 +749,8 @@ class TestPlotlyMorphAnimation:
         from hypertools.plot.plotly_backend import _camera_eye, _anim_zoom_r
 
         fig = self._build(rotations=[1, 0.25, 2, 0.25, 1])
-        counts = morph.segment_frame_counts(3, 20)
-        azims = morph.segment_azimuths(counts, [1, 0.25, 2, 0.25, 1], -60)
+        counts, _, azims = morph.morph_schedule(
+            3, 20, [1, 0.25, 2, 0.25, 1], -60)
 
         for k in [0, counts[0], sum(counts[:2]), 19]:
             expected_eye = _camera_eye(10, azims[k], r=_anim_zoom_r(1))
@@ -633,6 +758,22 @@ class TestPlotlyMorphAnimation:
             assert actual_eye.x == pytest.approx(expected_eye['x'], abs=1e-6)
             assert actual_eye.y == pytest.approx(expected_eye['y'], abs=1e-6)
             assert actual_eye.z == pytest.approx(expected_eye['z'], abs=1e-6)
+
+    def test_camera_eye_angular_deltas_equal_across_frames(self):
+        """Maintainer request (2026-07-06): constant rotation speed. The
+        camera eye's angular position (recovered via atan2 of its x/y,
+        which tracks azimuth on the unit circle at a fixed elevation/zoom)
+        must advance by the SAME angle every single frame across the whole
+        plotly animation, not just at the sampled boundary frames. Uses
+        180 frames (duration=18 * frame_rate=10), which divides the
+        [1, 0.25, 2, 0.25, 1] weights (sum 4.5) with no rounding at all."""
+        rotations = [1, 0.25, 2, 0.25, 1]
+        fig = self._build(rotations=rotations, duration=18, frame_rate=10)
+        eyes = [f.layout.scene.camera.eye for f in fig.frames]
+        angles = np.unwrap([np.arctan2(e.y, e.x) for e in eyes])
+        deltas = np.degrees(np.diff(angles))
+        expected = 360.0 * sum(rotations) / len(fig.frames)
+        np.testing.assert_allclose(deltas, expected, atol=0.5)
 
     def test_static_untagged_dataset_trace_untouched_by_frames(self):
         fig = self._build(k=4, animate=['morph', 'morph', 'morph', None])

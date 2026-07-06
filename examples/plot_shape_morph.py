@@ -20,7 +20,11 @@ built into the library behind a single `hyp.plot` call. `rotations` also
 accepts a per-segment list for finer camera control: below, holds spin a
 slow, easy-to-watch full rotation while each transition only spins a
 brisk quarter-turn, so the camera visibly "steps" forward every time one
-shape morphs into the next.
+shape morphs into the next. Camera speed (degrees/frame) is always
+CONSTANT across the whole animation -- a segment's `rotations` entry sets
+how much SCREEN TIME it gets, not how fast it spins, so the full-rotation
+holds below play roughly 4x longer than the quarter-turn transitions
+(1 / 0.25), never faster.
 """
 
 # Code source: Contextual Dynamics Laboratory
@@ -43,12 +47,16 @@ def normalize_shape(points):
 
 clouds = [normalize_shape(hyp.load(shape)) for shape in shapes]
 
-# frame schedule: hold, morph, hold, morph, ..., hold -- 2 * n_shapes - 1
-# segments in all. `rotations` gives each segment its OWN camera-spin
+# frame schedule: hold, morph, hold, morph, ..., hold -- 2 * n_shapes - 1 =
+# 13 segments in all. `rotations` gives each segment its OWN camera-spin
 # count: holds get a slow, easy-to-watch full rotation (1) while
 # transitions get a brisk quarter-turn (0.25), so the camera visibly steps
-# forward every time a shape morphs into the next one. 13 segments * 30
-# frames/segment (1 sec/segment @ 30 fps) = 390 frames total, gallery-tractable.
+# forward every time a shape morphs into the next one. Camera speed stays
+# CONSTANT (degrees/frame) across the whole animation, so each segment's
+# SCREEN TIME is now proportional to its own rotation count -- the 7
+# full-rotation holds get ~46 frames each and the 6 quarter-turn
+# transitions get ~11-12 frames each (390 frames total @ 30 fps, ~13 sec,
+# same total length as an equal-time split would have given).
 rotations = [1, 0.25] * (len(shapes) - 1) + [1]
 
 fig, ani = hyp.plot(clouds, fmt='.', color='k', markersize=1.5,

@@ -441,9 +441,16 @@ def plot(
         hold_N]``) -- e.g. `rotations=[1, 0.25, 2, 0.25, 1]` for 3 morphing
         datasets spins 1 full rotation during the first hold, a quarter
         rotation during the first morph, 2 rotations during the second
-        hold, etc. Each segment's own rotation count is spread uniformly
-        over that segment's own frames, and the camera azimuth accumulates
-        CONTINUOUSLY across segment boundaries (no jump). `N` is the number
+        hold, etc. Camera rotation speed (degrees/frame) is CONSTANT across
+        the whole animation: each segment's SCREEN TIME (frame count) is
+        proportional to its own rotation count -- not split evenly across
+        segments -- so a segment with more rotations gets more time, never
+        faster spinning (see :func:`hypertools.plot.morph.segment_frame_counts`
+        and its `ZERO_ROTATION_FLOOR`: a segment with 0 rotations still gets
+        a small amount of screen time so it stays visible). Within a
+        segment, that segment's own rotation count is spread uniformly over
+        its own frames, and the camera azimuth accumulates CONTINUOUSLY
+        across segment boundaries (no jump). `N` is the number
         of morphing datasets AFTER the reduce/align/cluster/hue pipeline
         (the FINAL, drawn dataset count), which can differ from the number
         of datasets originally passed in. `ValueError` if a list is given

@@ -29,7 +29,24 @@ __all__ = [
     "morph_color",
     "resolve_morph_rotations",
     "segment_azimuths",
+    "morph_schedule",
+    "ZERO_ROTATION_FLOOR",
 ]
+
+#: Constant-rotation-speed fix (maintainer request, 2026-07-06): when a
+#: LIST of per-segment `rotations` is given to ``animate='morph'``, each
+#: segment's screen time is made PROPORTIONAL to its own rotation count so
+#: the camera's angular speed (degrees/frame) is identical everywhere --
+#: more rotations means more time spent on that part of the animation,
+#: never faster spinning. A segment with `rotations[k] == 0` would
+#: otherwise get ZERO proportional share (and thus collapse to the
+#: minimum/instant), so its EFFECTIVE weight for frame allocation is
+#: floored at `ZERO_ROTATION_FLOOR` turns -- it still gets exactly the
+#: screen time a 0.1-rotation segment would, purely so it stays visible;
+#: its actual camera motion is still governed by its real `rotations[k]`
+#: (0, i.e. the camera does not move during that segment). See
+#: :func:`segment_frame_counts`.
+ZERO_ROTATION_FLOOR = 0.1
 
 
 def smoothstep(t):
@@ -95,15 +112,79 @@ def sample_and_match_clouds(clouds, morph_samples=None, seed=0):
     return sampled
 
 
-def segment_frame_counts(n_datasets, total_frames):
-    """Split `total_frames` as evenly as possible across the ``2 *
-    n_datasets - 1`` hold/morph segments (``[hold_1, morph_1->2, hold_2,
-    ..., hold_N]``), any remainder going to the earliest segments.
+def _largest_remainder_alloc(weights, total):
+    """Apportion the integer `total` across `weights` proportionally
+    (Hamilton/largest-remainder method): each share is
+    ``total * weights[i] / sum(weights)``, floored, then the leftover
+    units (``total - sum(floors)``) go one-by-one to the segments with
+    the largest fractional remainder (ties broken by earliest index).
+    Sums to exactly `total`."""
+    n = len(weights)
+    wsum = sum(weights)
+    raw = [total * w / wsum for w in weights]
+    counts = [int(np.floor(r)) for r in raw]
+    remainder = total - sum(counts)
+    order = sorted(range(n), key=lambda i: (-(raw[i] - counts[i]), i))
+    for i in order[:remainder]:
+        counts[i] += 1
+    return counts
 
-    Returns a list of ``2 * n_datasets - 1`` positive ints summing to
-    exactly ``max(2 * n_datasets - 1, total_frames)`` (there is always at
-    least 1 frame per segment, even if `total_frames` is smaller than the
-    segment count).
+
+def _proportional_frame_counts(rotations, total_frames):
+    """Largest-remainder proportional split of `total_frames` across
+    ``len(rotations)`` segments, weighted by each segment's EFFECTIVE
+    rotation count (``max(r, ZERO_ROTATION_FLOOR)``), then topped up so
+    every segment has at least 2 frames (taking the surplus from
+    whichever segment currently has the most, one frame at a time --
+    total stays exactly `total_frames`)."""
+    n = len(rotations)
+    total_frames = max(2 * n, int(total_frames))
+    weights = [max(float(r), ZERO_ROTATION_FLOOR) for r in rotations]
+    counts = _largest_remainder_alloc(weights, total_frames)
+
+    while True:
+        short = [i for i, c in enumerate(counts) if c < 2]
+        if not short:
+            break
+        for i in short:
+            j = max(range(n), key=lambda idx: counts[idx])
+            counts[j] -= 1
+            counts[i] += 1
+    return counts
+
+
+def segment_frame_counts(n_datasets, total_frames, rotations=None):
+    """Split `total_frames` across the ``2 * n_datasets - 1`` hold/morph
+    segments (``[hold_1, morph_1->2, hold_2, ..., hold_N]``).
+
+    `rotations` is `resolve_morph_rotations`'s already-resolved return
+    value (or ``None``):
+
+    - Omitted, ``None``, or a SCALAR: split EVENLY, any remainder going to
+      the earliest segments (unchanged since `animate='morph'`'s first
+      release -- a scalar already means "spread uniformly over the whole
+      animation in TIME", so equal segment durations already give
+      constant angular speed by construction). Returns a list of ``2 *
+      n_datasets - 1`` positive ints summing to exactly ``max(2 *
+      n_datasets - 1, total_frames)`` (at least 1 frame per segment).
+
+    - A LIST/tuple (length ``2 * n_datasets - 1``, one entry per
+      hold/morph segment): split PROPORTIONALLY to each segment's own
+      rotation count instead, via the largest-remainder method, so every
+      segment plays at the SAME angular speed (degrees/frame) -- segment
+      `k` gets ``total_frames * effective_r_k / sum(effective_r)`` frames,
+      where ``effective_r_k = max(rotations[k], ZERO_ROTATION_FLOOR)``
+      (see module docstring): a zero-rotation segment still gets the
+      screen time a `ZERO_ROTATION_FLOOR`-rotation segment would, so it
+      stays visible instead of collapsing to an instant. Every segment
+      gets at least 2 frames regardless (`total_frames` is bumped up to
+      ``2 * (2 * n_datasets - 1)`` if needed).
+
+    Raises
+    ------
+    ValueError
+        `n_datasets` < 2, or a `rotations` list/tuple with the wrong
+        length (names the expected length in the message).
     """
     if n_datasets < 2:
         raise ValueError(
@@ -111,6 +192,15 @@ def segment_frame_counts(n_datasets, total_frames):
             f"got {n_datasets}"
         )
     n_segments = 2 * n_datasets - 1
+    if isinstance(rotations, (list, tuple)):
+        if len(rotations) != n_segments:
+            raise ValueError(
+                f"rotations list has {len(rotations)} entries but "
+                f"animate='morph' with {n_datasets} morphing datasets "
+                f"needs exactly {n_segments} (2 * n_datasets - 1: "
+                "[hold_1, morph_1->2, hold_2, ..., hold_N])"
+            )
+        return _proportional_frame_counts(rotations, total_frames)
     total_frames = max(n_segments, int(total_frames))
     base, rem = divmod(total_frames, n_segments)
     return [base + (1 if i < rem else 0) for i in range(n_segments)]
@@ -241,3 +331,31 @@ def segment_azimuths(frame_counts, rotations, azim0):
             azims.append(current + 360.0 * rot * step / m)
         current += 360.0 * rot
     return azims
+
+
+def morph_schedule(n_datasets, total_frames, rotations, azim0):
+    """Compute the ENTIRE ``animate='morph'`` per-frame schedule exactly
+    ONCE: resolve `rotations` (:func:`resolve_morph_rotations`), allocate
+    `frame_counts` (:func:`segment_frame_counts` -- equal for a scalar,
+    proportional-to-rotation for a list, so angular speed stays constant
+    either way), and expand the per-GLOBAL-frame azimuth track
+    (:func:`segment_azimuths`).
+
+    Both ``hypertools.plot.matplotlib_backend`` and
+    ``hypertools.plot.plotly_backend`` call this SAME function for
+    ``animate='morph'`` -- neither ever reassembles the schedule from the
+    pieces itself -- so the two backends can never drift out of sync.
+
+    Returns
+    -------
+    (frame_counts, rotations_resolved, azimuths)
+        `frame_counts`: list of ``2 * n_datasets - 1`` ints summing to
+        (approximately, see :func:`segment_frame_counts`) `total_frames`.
+        `rotations_resolved`: `resolve_morph_rotations`'s return value.
+        `azimuths`: list of ``sum(frame_counts)`` per-frame azimuths.
+    """
+    rotations_resolved = resolve_morph_rotations(rotations, n_datasets)
+    frame_counts = segment_frame_counts(n_datasets, total_frames,
+                                        rotations_resolved)
+    azimuths = segment_azimuths(frame_counts, rotations_resolved, azim0)
+    return frame_counts, rotations_resolved, azimuths
