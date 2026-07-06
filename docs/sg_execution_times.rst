@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**50:09.139** total execution time for 48 files **from all galleries**:
+**02:48.154** total execution time for 48 files **from all galleries**:
 
 .. container::
 
@@ -32,37 +32,37 @@ Computation times
    * - Example
      - Time
      - Mem (MB)
-   * - :ref:`sphx_glr_auto_examples_animate_plotly.py` (``../examples/animate_plotly.py``)
-     - 46:56.795
-     - 0.0
    * - :ref:`sphx_glr_auto_examples_animate_surface_morph.py` (``../examples/animate_surface_morph.py``)
-     - 01:58.959
+     - 01:57.221
      - 0.0
    * - :ref:`sphx_glr_auto_examples_animate.py` (``../examples/animate.py``)
-     - 00:15.666
+     - 00:12.906
      - 0.0
    * - :ref:`sphx_glr_auto_examples_save_movie.py` (``../examples/save_movie.py``)
-     - 00:13.138
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_chemtrails.py` (``../examples/chemtrails.py``)
-     - 00:08.234
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_precog.py` (``../examples/precog.py``)
-     - 00:08.218
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_animate_spin.py` (``../examples/animate_spin.py``)
-     - 00:08.160
+     - 00:09.680
      - 0.0
    * - :ref:`sphx_glr_auto_examples_animate_trails_mix.py` (``../examples/animate_trails_mix.py``)
-     - 00:08.023
+     - 00:06.351
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_chemtrails.py` (``../examples/chemtrails.py``)
+     - 00:06.295
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_precog.py` (``../examples/precog.py``)
+     - 00:06.255
      - 0.0
    * - :ref:`sphx_glr_auto_examples_animate_MDS.py` (``../examples/animate_MDS.py``)
-     - 00:07.712
+     - 00:05.847
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_shape_morph.py` (``../examples/plot_shape_morph.py``)
-     - 00:04.233
+     - 00:03.598
      - 0.0
    * - :ref:`sphx_glr_auto_examples_analyze.py` (``../examples/analyze.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_animate_plotly.py` (``../examples/animate_plotly.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_animate_spin.py` (``../examples/animate_spin.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_explore.py` (``../examples/explore.py``)

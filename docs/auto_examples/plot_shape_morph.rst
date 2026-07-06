@@ -57,8 +57,8 @@ holds below play roughly 4x longer than the quarter-turn transitions
 
 .. video:: /auto_examples/images/sphx_glr_plot_shape_morph_001.mp4
    :class: sphx-glr-single-img
-   :height: 960
-   :width: 1280
+   :height: 480
+   :width: 640
    :autoplay:
 
 
@@ -111,7 +111,7 @@ holds below play roughly 4x longer than the quarter-turn transitions
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 4.233 seconds)
+   **Total running time of the script:** (0 minutes 3.598 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_shape_morph.py:

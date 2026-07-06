@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**50:09.139** total execution time for 48 files **from auto_examples**:
+**02:48.154** total execution time for 48 files **from auto_examples**:
 
 .. container::
 
@@ -32,37 +32,37 @@ Computation times
    * - Example
      - Time
      - Mem (MB)
-   * - :ref:`sphx_glr_auto_examples_animate_plotly.py` (``animate_plotly.py``)
-     - 46:56.795
-     - 0.0
    * - :ref:`sphx_glr_auto_examples_animate_surface_morph.py` (``animate_surface_morph.py``)
-     - 01:58.959
+     - 01:57.221
      - 0.0
    * - :ref:`sphx_glr_auto_examples_animate.py` (``animate.py``)
-     - 00:15.666
+     - 00:12.906
      - 0.0
    * - :ref:`sphx_glr_auto_examples_save_movie.py` (``save_movie.py``)
-     - 00:13.138
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_chemtrails.py` (``chemtrails.py``)
-     - 00:08.234
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_precog.py` (``precog.py``)
-     - 00:08.218
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_animate_spin.py` (``animate_spin.py``)
-     - 00:08.160
+     - 00:09.680
      - 0.0
    * - :ref:`sphx_glr_auto_examples_animate_trails_mix.py` (``animate_trails_mix.py``)
-     - 00:08.023
+     - 00:06.351
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_chemtrails.py` (``chemtrails.py``)
+     - 00:06.295
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_precog.py` (``precog.py``)
+     - 00:06.255
      - 0.0
    * - :ref:`sphx_glr_auto_examples_animate_MDS.py` (``animate_MDS.py``)
-     - 00:07.712
+     - 00:05.847
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_shape_morph.py` (``plot_shape_morph.py``)
-     - 00:04.233
+     - 00:03.598
      - 0.0
    * - :ref:`sphx_glr_auto_examples_analyze.py` (``analyze.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_animate_plotly.py` (``animate_plotly.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_animate_spin.py` (``animate_spin.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_explore.py` (``explore.py``)

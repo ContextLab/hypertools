@@ -69,8 +69,8 @@ rather than the library default of 3 (roughly 20ms/frame instead of
 
 .. video:: /auto_examples/images/sphx_glr_animate_surface_morph_001.mp4
    :class: sphx-glr-single-img
-   :height: 960
-   :width: 1280
+   :height: 480
+   :width: 640
    :autoplay:
 
 
@@ -156,7 +156,7 @@ rather than the library default of 3 (roughly 20ms/frame instead of
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (1 minutes 58.959 seconds)
+   **Total running time of the script:** (1 minutes 57.221 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate_surface_morph.py:

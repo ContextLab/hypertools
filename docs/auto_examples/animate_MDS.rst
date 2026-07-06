@@ -30,8 +30,8 @@ This is a trajectory of brain data plotted in 3D with multidimensional scaling.
 
 .. video:: /auto_examples/images/sphx_glr_animate_MDS_001.mp4
    :class: sphx-glr-single-img
-   :height: 960
-   :width: 1280
+   :height: 480
+   :width: 640
    :autoplay:
 
 
@@ -72,7 +72,7 @@ This is a trajectory of brain data plotted in 3D with multidimensional scaling.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 7.712 seconds)
+   **Total running time of the script:** (0 minutes 5.847 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate_MDS.py:
