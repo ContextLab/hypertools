@@ -15,10 +15,12 @@ from scipy.spatial import ConvexHull, Delaunay
 from hypertools.plot.meshutil import (
     backface_cull,
     blinn_phong_colors,
+    blinn_phong_vertex_colors,
     face_normals,
     points_enclosed,
     smooth_hull_2d,
     smooth_hull_3d,
+    vertex_normals,
 )
 
 
@@ -247,6 +249,73 @@ class TestBlinnPhongColors:
             lightdir=np.array([1.0, 0.0, 0.0]),
         )
         assert not np.allclose(default_rgba, custom_rgba)
+
+
+class TestVertexNormals:
+    def test_unit_length(self):
+        verts, faces = smooth_hull_3d(_random_blob_3d())
+        vn = vertex_normals(verts, faces)
+        assert vn.shape == verts.shape
+        assert np.allclose(np.linalg.norm(vn, axis=1), 1.0, atol=1e-6)
+
+    def test_outward_facing(self):
+        verts, faces = smooth_hull_3d(_random_blob_3d())
+        centroid = verts.mean(axis=0)
+        vn = vertex_normals(verts, faces)
+        assert np.all(np.einsum("ij,ij->i", vn, verts - centroid) > 0)
+
+
+class TestBlinnPhongVertexColors:
+    """GH #109 round 3: the per-vertex Blinn-Phong variant that fixes
+    plotly's dark-jagged-patch defect (see `_mesh3d_trace`'s docstring)."""
+
+    def test_output_shape_and_range(self):
+        verts, faces = smooth_hull_3d(_random_blob_3d())
+        view = np.array([0.3, -0.6, 0.7])
+        rgba = blinn_phong_vertex_colors(
+            verts, faces, base_rgb=(0.3, 0.45, 0.65), view=view)
+        assert rgba.shape == (len(verts), 4)
+        assert np.all(rgba >= 0.0) and np.all(rgba <= 1.0)
+
+    def test_alpha_channel_defaults_opaque(self):
+        verts, faces = smooth_hull_3d(_random_blob_3d())
+        view = np.array([0.0, 0.0, 1.0])
+        rgba = blinn_phong_vertex_colors(
+            verts, faces, base_rgb=(0.5, 0.5, 0.5), view=view)
+        assert np.allclose(rgba[:, 3], 1.0)
+
+    def test_lighting_override_changes_result(self):
+        verts, faces = smooth_hull_3d(_random_blob_3d())
+        view = np.array([0.0, 0.0, 1.0])
+        default_rgba = blinn_phong_vertex_colors(
+            verts, faces, base_rgb=(0.5, 0.5, 0.5), view=view)
+        bright_rgba = blinn_phong_vertex_colors(
+            verts, faces, base_rgb=(0.5, 0.5, 0.5), view=view, ambient=0.9)
+        assert not np.allclose(default_rgba, bright_rgba)
+
+    def test_doubled_winding_faces_share_identical_vertex_colors(self):
+        """The whole point of shading per-VERTEX instead of per-FACE
+        (GH #109 round 3): plotly's Mesh3d double-sided workaround emits
+        every face TWICE, once per winding order, reusing the SAME three
+        vertex indices for both copies. A per-face color differs between
+        the two windings (the reversed copy's own normal points the
+        opposite way) -- which is exactly what produced round 2's dark
+        jagged patches. A per-vertex color is looked up by vertex index, so
+        both windings of a doubled face are colored identically by
+        construction, regardless of camera/light direction."""
+        verts, faces = smooth_hull_3d(_random_blob_3d())
+        view = np.array([0.4, 0.2, 0.9])
+        vertexcolor = blinn_phong_vertex_colors(
+            verts, faces, base_rgb=(0.8, 0.2, 0.2), view=view)
+        faces_reversed = faces[:, [0, 2, 1]]
+        # the two windings visit the SAME three vertex indices (just in a
+        # different order) -- as a per-face SET of colors (sorted so the
+        # reordering doesn't matter), winding A and winding B of the same
+        # face must be identical
+        for f_a, f_b in zip(faces, faces_reversed):
+            colors_a = np.sort(vertexcolor[f_a], axis=0)
+            colors_b = np.sort(vertexcolor[f_b], axis=0)
+            assert np.array_equal(colors_a, colors_b)
 
 
 class TestBackfaceCull:

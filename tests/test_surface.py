@@ -146,20 +146,50 @@ class TestDegenerateInputs:
 
 class TestStaticPlotly3D:
     def test_mesh3d_fields_and_lighting_roundtrip(self):
-        fig = hyp.plot(_two_datasets_3d(), '.', surface={'lighting': {'ambient': 0.9}},
-                       backend='plotly', show=False)
-        meshes = [t for t in fig.data if t.type == 'mesh3d']
-        assert len(meshes) == 2
-        for m in meshes:
+        """GH #109 round 3: plotly's OWN lighting engine is always the
+        identity (see test_default_lighting_present) -- shading is instead
+        precomputed per-vertex (matching the matplotlib renderer's
+        Blinn-Phong model) and handed to Mesh3d as `vertexcolor`. A
+        `lighting` override (e.g. `ambient`) therefore roundtrips into the
+        computed `vertexcolor` values, not into `mesh.lighting`."""
+        default_fig = hyp.plot(_two_datasets_3d(), '.', surface=True,
+                               backend='plotly', show=False)
+        bright_fig = hyp.plot(_two_datasets_3d(), '.',
+                              surface={'lighting': {'ambient': 0.9}},
+                              backend='plotly', show=False)
+        default_meshes = [t for t in default_fig.data if t.type == 'mesh3d']
+        bright_meshes = [t for t in bright_fig.data if t.type == 'mesh3d']
+        assert len(default_meshes) == len(bright_meshes) == 2
+        for m in default_meshes + bright_meshes:
             assert len(m.i) == len(m.j) == len(m.k) > 0
             assert len(m.x) == len(m.y) == len(m.z)
-        assert meshes[0].lighting.ambient == pytest.approx(0.9)
+            assert m.lighting.ambient == pytest.approx(1.0)
+
+        def _mean_channel_sum(mesh):
+            rgb = np.array([[int(v) for v in c[4:-1].split(',')]
+                            for c in mesh.vertexcolor])
+            return rgb.mean()
+
+        # a higher ambient term (0.9 vs the 0.45 default) should brighten
+        # the precomputed vertex colors on average
+        assert _mean_channel_sum(bright_meshes[0]) > _mean_channel_sum(
+            default_meshes[0])
 
     def test_default_lighting_present(self):
+        """GH #109 round 3: plotly's Mesh3d lighting engine is always set
+        to the identity (ambient=1, diffuse=specular=fresnel=0) so it
+        reproduces the precomputed `vertexcolor` values verbatim instead of
+        re-shading them (which is what produced round 2's dark jagged
+        patches on the doubled-winding faces)."""
         fig = hyp.plot(_two_datasets_3d(), '.', surface=True,
                        backend='plotly', show=False)
         meshes = [t for t in fig.data if t.type == 'mesh3d']
-        assert meshes[0].lighting.diffuse == pytest.approx(0.6)
+        assert meshes[0].lighting.ambient == pytest.approx(1.0)
+        assert meshes[0].lighting.diffuse == pytest.approx(0.0)
+        assert meshes[0].lighting.specular == pytest.approx(0.0)
+        assert meshes[0].lighting.fresnel == pytest.approx(0.0)
+        assert meshes[0].flatshading is False
+        assert len(meshes[0].vertexcolor) == len(meshes[0].x)
 
     def test_mesh3d_gets_full_unculled_face_set(self):
         """Regression (GH #109 rendering-fix): a lone (non-overlapping)

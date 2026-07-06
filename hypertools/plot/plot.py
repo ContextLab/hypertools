@@ -510,19 +510,22 @@ def plot(
           color. ``None`` inherits the dataset's own drawn line/marker
           color (resolved from `color`/`colors` if given, else the
           `palette` color cycle).
-        - ``lighting`` (dict, default ``{}``): overrides the lighting
-          model. matplotlib (a two-light Blinn-Phong model; see
-          `hypertools.plot.meshutil.blinn_phong_colors`) reads ``ambient``
-          (default 0.45), ``diffuse`` (0.55), ``fill`` (0.25, the weak
-          opposite-side fill light), ``specular`` (0.30), and
-          ``shininess`` (48, the specular exponent). plotly (a
-          ``go.Mesh3d(lighting=...)`` spec) reads ``ambient`` (0.45),
-          ``diffuse`` (0.6), ``specular`` (0.25), ``roughness`` (0.35),
-          and ``fresnel`` (0.15); its light position is fixed at
-          ``(2.5, -1.5, 3.0)`` in scene coordinates. Any of these 8 keys
-          may be set together; each backend uses only the subset it
-          understands. Ignored for 2D surfaces (flat fills have no
-          lighting).
+        - ``lighting`` (dict, default ``{}``): overrides the two-light
+          Blinn-Phong lighting model both backends use (see
+          `hypertools.plot.meshutil.blinn_phong_colors`/
+          `blinn_phong_vertex_colors`): ``ambient`` (default 0.45),
+          ``diffuse`` (0.55), ``fill`` (0.25, the weak opposite-side fill
+          light), ``specular`` (0.30), and ``shininess`` (48, the specular
+          exponent). matplotlib shades per-FACE; plotly shades per-VERTEX
+          (precomputed and handed to ``go.Mesh3d`` as ``vertexcolor``, with
+          plotly's own lighting engine forced to the identity so it
+          reproduces those colors verbatim -- needed so the double-sided
+          winding workaround below doesn't render dark self-shaded
+          patches). ``roughness``/``fresnel`` are also accepted (silently
+          ignored -- they only ever applied to plotly's now-unused own
+          lighting engine). plotly's light position is fixed at
+          ``(2.5, -1.5, 3.0)`` in scene coordinates. Ignored for 2D
+          surfaces (flat fills have no lighting).
         - ``smoothing`` (int, default 3): number of interleaved
           [subdivide, Taubin-smooth] rounds for a 3D hull (face count
           scales as ``4 ** smoothing``); ignored for 2D.

@@ -25,13 +25,15 @@ import warnings
 
 import numpy as np
 
-from .meshutil import points_enclosed
+from .meshutil import blinn_phong_vertex_colors, points_enclosed
 from .surface import (
+    PLOTLY_IDENTITY_LIGHTING,
     PLOTLY_LIGHTPOSITION,
     build_mesh_3d,
     build_outline_2d,
-    plotly_lighting_kwargs,
+    mpl_lighting_kwargs,
     surface_cube_scale,
+    view_vector,
 )
 from .density import (
     DENSITY_DEFAULTS,
@@ -710,47 +712,79 @@ def _blend_toward_white(color_rgb, alpha):
     return tuple(alpha * c + (1.0 - alpha) * 1.0 for c in color_rgb)
 
 
-def _mesh3d_trace(go, verts, faces, color_rgb, opacity, lighting_kw):
-    """A single ``go.Mesh3d`` surface trace (GH #109), lit per the tuned
-    plotly Blinn-Phong-ish lighting model, with hypertools' verified
-    parameters.
+def _vertexcolor_strings(verts, faces, blended_rgb, view, light_kw):
+    """Precomputed per-vertex Blinn-Phong shading (GH #109 round 3), as a
+    list of plotly 'rgb(...)' strings -- one per vertex in `verts`, in
+    order, suitable for ``go.Mesh3d(vertexcolor=...)``.
+
+    Shades `blended_rgb` (the ALREADY alpha-composited-toward-white base
+    color -- see `_blend_toward_white`) with the SAME two-light Blinn-Phong
+    model the matplotlib renderer uses (`light_kw` is
+    `mpl_lighting_kwargs(spec)`), so plotly's rendered surface matches the
+    matplotlib one instead of plotly's own (face-based, doubled-winding-
+    incompatible) lighting engine.
+    """
+    vertexcolor = blinn_phong_vertex_colors(
+        verts, faces, blended_rgb, view, **light_kw)
+    return [_rgb_string(c) for c in vertexcolor]
+
+
+def _mesh3d_trace(go, verts, faces, color_rgb, opacity, view, light_kw):
+    """A single ``go.Mesh3d`` surface trace (GH #109), lit via precomputed
+    per-vertex Blinn-Phong shading (GH #109 round 3) that matches the
+    matplotlib renderer's own lighting model exactly, with hypertools'
+    verified parameters.
 
     `opacity` (the user-requested `surface['alpha']`) is NOT passed through
     to plotly's own opacity/blending -- see `_blend_toward_white` -- the
     trace is always rendered fully opaque (`opacity=1.0`), which plotly's
-    Mesh3d renders correctly and without artifacts.
+    Mesh3d renders correctly and without artifacts. The alpha-composite
+    adjustment is instead baked into the base color BEFORE per-vertex
+    shading (so the shading itself is computed against the correct,
+    already-blended base color, exactly like the matplotlib path shades its
+    own unblended base color and then relies on real alpha compositing).
 
-    Double-sided + `flatshading=True` (GH #109 round 2): plotly's Mesh3d
-    back-face-culls each triangle independently against the camera. Our
-    finely-tessellated smoothed-hull meshes are only outward-facing ON
-    AVERAGE (verified via `face_normals`); Taubin smoothing routinely
-    leaves small, genuinely concave dimples (an expected side effect of
-    smoothing an irregular point cloud's hull, not a meshing bug -- see
-    `smooth_hull_3d`'s docstring), and at some camera angles the dimpled
-    triangles' true normals face far enough away from the camera to get
-    culled -- verified via a live Chromium render (not just kaleido) that
-    this reproduces on a SINGLE, non-overlapping mesh with NO other trace
-    in the scene, so it is independent of the mesh-mesh interaction below.
-    The culled triangles leave a visible hole clear through to the
-    background (or, when another mesh happens to be trimmed/positioned
-    behind it, that mesh's color instead) since Mesh3d has no
-    depth-independent "this is definitely occluded" fallback. Emitting
-    EVERY face twice, once with each winding order, means at least one of
-    the two copies is always front-facing from any camera angle, so no
-    triangle can ever go missing; `flatshading=True` (per-face, not
-    per-vertex-averaged, normals) keeps the reversed copies' lighting
-    correct instead of corrupting the smooth-shaded vertex normals shared
-    with their original-winding twin (verified: Gouraud shading with
-    doubled faces renders the whole mesh uniformly dark).
+    Double-sided (GH #109 round 2): plotly's Mesh3d back-face-culls each
+    triangle independently against the camera. Our finely-tessellated
+    smoothed-hull meshes are only outward-facing ON AVERAGE (verified via
+    `face_normals`); Taubin smoothing routinely leaves small, genuinely
+    concave dimples (an expected side effect of smoothing an irregular
+    point cloud's hull, not a meshing bug -- see `smooth_hull_3d`'s
+    docstring), and at some camera angles the dimpled triangles' true
+    normals face far enough away from the camera to get culled -- verified
+    via a live Chromium render (not just kaleido) that this reproduces on a
+    SINGLE, non-overlapping mesh with NO other trace in the scene, so it is
+    independent of the mesh-mesh interaction below. The culled triangles
+    leave a visible hole clear through to the background (or, when another
+    mesh happens to be trimmed/positioned behind it, that mesh's color
+    instead) since Mesh3d has no depth-independent "this is definitely
+    occluded" fallback. Emitting EVERY face twice, once with each winding
+    order, means at least one of the two copies is always front-facing from
+    any camera angle, so no triangle can ever go missing.
+
+    GH #109 round 3: round 2's `flatshading=True` (per-face normals) fixed
+    the holes but broke the LOOK of both meshes -- plotly computes each
+    doubled face's shading from ITS OWN (possibly reversed) normal, so the
+    reversed-winding copy renders dark/black wherever the original copy
+    faces the light, producing large jagged dark patches wherever the two
+    windings' triangles interleave in screen space. Fixed by shading per
+    VERTEX instead (`flatshading=False` + precomputed `vertexcolor`, with
+    plotly's own lighting engine set to the identity
+    (`PLOTLY_IDENTITY_LIGHTING`) so it reproduces those colors verbatim
+    rather than re-shading them): both windings of a doubled face share the
+    SAME three vertex indices, so they are always colored identically,
+    making the dark-patch defect structurally impossible regardless of
+    camera angle.
     """
     faces_both_windings = np.vstack([faces, faces[:, [0, 2, 1]]])
     blended = _blend_toward_white(color_rgb, opacity)
+    vertexcolor = _vertexcolor_strings(verts, faces, blended, view, light_kw)
     return go.Mesh3d(
         x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
         i=faces_both_windings[:, 0], j=faces_both_windings[:, 1],
         k=faces_both_windings[:, 2],
-        color=_rgb_string(blended), opacity=1.0, flatshading=True,
-        lighting=lighting_kw, lightposition=PLOTLY_LIGHTPOSITION,
+        vertexcolor=vertexcolor, opacity=1.0, flatshading=False,
+        lighting=PLOTLY_IDENTITY_LIGHTING, lightposition=PLOTLY_LIGHTPOSITION,
         hoverinfo='skip', showlegend=False, showscale=False)
 
 
@@ -818,6 +852,7 @@ def _build_surface_traces_3d(go, data, surface, surface_colors, elev, azim):
             continue
         meshes[i] = mesh
 
+    view = view_vector(elev, azim)
     traces, dataset_indices = [], []
     for i, (arr, spec) in enumerate(zip(data, surface)):
         if i not in meshes:
@@ -829,7 +864,8 @@ def _build_surface_traces_3d(go, data, surface, surface_colors, elev, azim):
                 continue
         base_rgb = _surface_base_rgb(spec, surface_colors[i])
         traces.append(_mesh3d_trace(go, verts, faces, base_rgb,
-                                    spec['alpha'], plotly_lighting_kwargs(spec)))
+                                    spec['alpha'], view,
+                                    mpl_lighting_kwargs(spec)))
         dataset_indices.append(i)
     return traces, dataset_indices, meshes
 
@@ -963,30 +999,53 @@ def _build_density_traces_3d(go, data, density, density_colors):
     return traces
 
 
-def _degenerate_mesh3d_update(go, point):
+def _degenerate_mesh3d_update(go, point, color_rgb=(0.5, 0.5, 0.5)):
     """A zero-area placeholder ``go.Mesh3d`` geometry update (GH #109):
     used for an animation frame whose current window is too small/degenerate
     to form a real hull, so the trace stays valid (and invisible) rather
-    than being dropped (plotly frames cannot vary trace count)."""
+    than being dropped (plotly frames cannot vary trace count).
+
+    `vertexcolor` (GH #109 round 3) must be supplied explicitly here too,
+    sized to these 4 placeholder vertices -- the base trace's own
+    `vertexcolor` array is sized to its (very different) real vertex count,
+    and plotly does not broadcast/truncate a stale per-vertex array across a
+    frame's new geometry. The actual color is irrelevant (the placeholder
+    triangle has zero area, so nothing is ever visibly drawn), but the
+    array LENGTH must match `len(v)` or plotly errors.
+    """
     v = np.tile(np.asarray(point, dtype=np.float64), (4, 1))
     f = np.array([[0, 1, 2]])
     return go.Mesh3d(x=v[:, 0], y=v[:, 1], z=v[:, 2],
-                     i=f[:, 0], j=f[:, 1], k=f[:, 2])
+                     i=f[:, 0], j=f[:, 1], k=f[:, 2],
+                     vertexcolor=[_rgb_string(color_rgb)] * len(v))
 
 
-def _mesh3d_geometry_update(go, verts, faces):
-    """A ``go.Mesh3d`` geometry-only frame update (x/y/z/i/j/k), doubled to
-    both winding orders like `_mesh3d_trace` (GH #109 round 2): frame
-    updates only override the attributes given here, so the base trace's
-    `flatshading=True`/`opacity`/`lighting`/`color` persist across frames --
+def _mesh3d_geometry_update(go, verts, faces, color_rgb, opacity, view, light_kw):
+    """A ``go.Mesh3d`` geometry-only frame update (x/y/z/i/j/k/vertexcolor),
+    doubled to both winding orders like `_mesh3d_trace` (GH #109 round 2):
+    frame updates only override the attributes given here, so the base
+    trace's `flatshading=False`/`opacity`/`lighting` persist across frames --
     but the i/j/k arrays themselves are replaced wholesale each frame, so
     the double-sided fix must be reapplied here too, or every animated
     frame would silently revert to the single-sided (holes-prone) geometry
-    the base (first) frame fixed."""
+    the base (first) frame fixed.
+
+    `vertexcolor` (GH #109 round 3) must ALSO be recomputed every frame,
+    for two independent reasons: (1) the mesh's own vertex count/positions
+    change every frame for the 'serial'/sliding-window animation modes
+    (the base trace's array would be the wrong length), and (2) even in
+    'spin' mode (mesh geometry frozen, only the camera orbits) the LIGHTING
+    must still be recomputed every frame from the current camera view --
+    exactly like the matplotlib renderer recomputes `blinn_phong_colors`
+    every spin frame (see `matplotlib_backend._shade_and_cull_3d`) -- via
+    `view`, the direction-towards-camera vector for THIS frame's angle.
+    """
     faces_both_windings = np.vstack([faces, faces[:, [0, 2, 1]]])
+    blended = _blend_toward_white(color_rgb, opacity)
+    vertexcolor = _vertexcolor_strings(verts, faces, blended, view, light_kw)
     return go.Mesh3d(x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
                      i=faces_both_windings[:, 0], j=faces_both_windings[:, 1],
-                     k=faces_both_windings[:, 2])
+                     k=faces_both_windings[:, 2], vertexcolor=vertexcolor)
 
 
 def _parse_fmt(fmt_str, tkwargs):
@@ -1225,21 +1284,30 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
         else []
     )
 
-    def _surface_frame_data(windows_by_index):
+    def _surface_frame_data(windows_by_index, angle):
         """One Mesh3d geometry update per surfaced dataset, built from
-        `windows_by_index[dataset_idx]` (that dataset's current window)."""
+        `windows_by_index[dataset_idx]` (that dataset's current window),
+        shaded (GH #109 round 3) from `angle` -- THIS frame's camera azimuth
+        (the camera rotates every frame in every animate mode, matching the
+        matplotlib renderer -- see `_shade_and_cull_3d`), so the vertex
+        colors stay lit consistently with wherever the camera actually is."""
+        view = view_vector(elev, angle)
         out = []
         for i in surface_dataset_indices:
             window = windows_by_index[i]
             pts = np.atleast_2d(np.asarray(window, dtype=np.float64))[:, :3]
-            mesh = build_mesh_3d(pts, surface[i], dataset_label=f' {i}',
+            spec = surface[i]
+            base_rgb = _surface_base_rgb(spec, surface_colors[i])
+            light_kw = mpl_lighting_kwargs(spec)
+            mesh = build_mesh_3d(pts, spec, dataset_label=f' {i}',
                                  quiet=True) if len(pts) >= 4 else None
             if mesh is None:
                 pt = pts[-1] if len(pts) else np.zeros(3)
-                out.append(_degenerate_mesh3d_update(go, pt))
+                out.append(_degenerate_mesh3d_update(go, pt, base_rgb))
             else:
                 v, f = mesh
-                out.append(_mesh3d_geometry_update(go, v, f))
+                out.append(_mesh3d_geometry_update(
+                    go, v, f, base_rgb, spec['alpha'], view, light_kw))
         return out
 
     if animate == 'spin' and ndims >= 3:
@@ -1260,14 +1328,27 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 layout=dict(scene_camera=dict(
                     eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom)))))
             if surface_trace_indices:
+                # GH #109 round 3: the mesh itself is frozen in 'spin' mode
+                # (only the camera orbits), but the LIGHTING still must be
+                # recomputed every frame from the current camera angle --
+                # exactly like the matplotlib renderer's spin animation
+                # recomputes `blinn_phong_colors` every frame (see
+                # `matplotlib_backend._shade_and_cull_3d`) -- or the
+                # rendered surface would stay lit as if the camera were
+                # still at the FIRST frame's angle while visibly orbiting.
+                view = view_vector(elev, angle)
                 surf_data = []
-                for mesh in spin_meshes:
+                for idx, mesh in zip(surface_dataset_indices, spin_meshes):
+                    spec = surface[idx]
+                    base_rgb = _surface_base_rgb(spec, surface_colors[idx])
                     if mesh is None:
                         surf_data.append(_degenerate_mesh3d_update(
-                            go, np.zeros(3)))
+                            go, np.zeros(3), base_rgb))
                     else:
                         v, f = mesh
-                        surf_data.append(_mesh3d_geometry_update(go, v, f))
+                        light_kw = mpl_lighting_kwargs(spec)
+                        surf_data.append(_mesh3d_geometry_update(
+                            go, v, f, base_rgb, spec['alpha'], view, light_kw))
                 frame_kwargs['data'] = surf_data
                 frame_kwargs['traces'] = surface_trace_indices
             frames.append(go.Frame(**frame_kwargs))
@@ -1302,7 +1383,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     scene_camera=dict(eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
             if surface_trace_indices:
                 frame_kwargs['data'] = (list(frame_kwargs['data'])
-                                        + _surface_frame_data(windows_by_index))
+                                        + _surface_frame_data(windows_by_index, angle))
                 frame_kwargs['traces'] = (list(frame_kwargs['traces'])
                                           + surface_trace_indices)
             frames.append(go.Frame(**frame_kwargs))
@@ -1384,7 +1465,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     scene_camera=dict(eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
             if surface_trace_indices:
                 frame_kwargs['data'] = (list(frame_kwargs['data'])
-                                        + _surface_frame_data(windows_by_index))
+                                        + _surface_frame_data(windows_by_index, angle))
                 frame_kwargs['traces'] = (list(frame_kwargs['traces'])
                                           + surface_trace_indices)
             frames.append(go.Frame(**frame_kwargs))

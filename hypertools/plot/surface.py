@@ -27,6 +27,7 @@ __all__ = [
     "view_vector",
     "surface_cube_scale",
     "PLOTLY_LIGHTPOSITION",
+    "PLOTLY_IDENTITY_LIGHTING",
 ]
 
 VALID_SURFACE_KEYS = {
@@ -53,6 +54,23 @@ _PLOTLY_LIGHTING_DEFAULTS = dict(
     ambient=0.45, diffuse=0.6, specular=0.25, roughness=0.35, fresnel=0.15
 )
 PLOTLY_LIGHTPOSITION = dict(x=2.5, y=-1.5, z=3.0)
+
+# GH #109 round 3: plotly's own go.Mesh3d lighting engine computes shading
+# per-FACE from each triangle's own (possibly reversed, for the doubled-
+# winding self-culling workaround -- see plotly_backend._mesh3d_trace)
+# normal, which renders the reversed winding's copy dark wherever the
+# original copy faces the light -- large jagged dark patches on both
+# meshes. Fixed by precomputing per-VERTEX Blinn-Phong colors ourselves
+# (matching the matplotlib renderer's own lighting model exactly -- see
+# `mpl_lighting_kwargs`/`hypertools.plot.meshutil.blinn_phong_vertex_colors`)
+# and handing them to Mesh3d as `vertexcolor`, then telling Mesh3d's OWN
+# lighting engine to leave those colors alone: identity lighting (ambient=1,
+# diffuse=specular=fresnel=0) reproduces the vertex colors verbatim instead
+# of re-shading them. Both windings of a doubled face share the same three
+# vertex indices, so they always get identical (already-correct) colors.
+PLOTLY_IDENTITY_LIGHTING = dict(
+    ambient=1.0, diffuse=0.0, specular=0.0, roughness=1.0, fresnel=0.0
+)
 
 
 def _validate_surface_dict(d):

@@ -26,7 +26,9 @@ __all__ = [
     "smooth_hull_3d",
     "smooth_hull_2d",
     "face_normals",
+    "vertex_normals",
     "blinn_phong_colors",
+    "blinn_phong_vertex_colors",
     "backface_cull",
     "points_enclosed",
 ]
@@ -403,6 +405,37 @@ def face_normals(verts, faces):
     return fn
 
 
+def vertex_normals(verts, faces):
+    """Compute unit per-vertex normals as the (unweighted) average of each
+    vertex's adjacent face normals.
+
+    Parameters
+    ----------
+    verts : ndarray of shape (n, 3)
+    faces : ndarray of shape (f, 3), dtype int
+        Triangle indices into `verts`, assumed consistently wound (e.g. as
+        returned by :func:`smooth_hull_3d`).
+
+    Returns
+    -------
+    ndarray of shape (n, 3)
+        Unit-length per-vertex normals. Vertices with no adjacent faces
+        (shouldn't occur for a real mesh) get an arbitrary unit normal
+        rather than a division-by-zero NaN.
+    """
+    verts = np.asarray(verts, dtype=float)
+    faces = np.asarray(faces)
+    fn = face_normals(verts, faces)
+    vn = np.zeros_like(verts)
+    for k in range(3):
+        np.add.at(vn, faces[:, k], fn)
+    norms = np.linalg.norm(vn, axis=1, keepdims=True)
+    degenerate = (norms < 1e-12).ravel()
+    norms[degenerate, 0] = 1.0
+    vn[degenerate] = np.array([0.0, 0.0, 1.0])
+    return vn / norms
+
+
 def _view_frame(view):
     """Build an orthonormal (view, up, right) frame for a given view vector."""
     v = np.asarray(view, dtype=float)
@@ -413,6 +446,52 @@ def _view_frame(view):
     right = np.cross(v, up)
     right = right / (np.linalg.norm(right) + 1e-12)
     return v, up, right
+
+
+def _blinn_phong_shade(
+    normals,
+    base_rgb,
+    view,
+    lightdir=None,
+    ambient=0.45,
+    diffuse=0.55,
+    fill=0.25,
+    specular=0.30,
+    shininess=48,
+):
+    """Shared two-light Blinn-Phong math for :func:`blinn_phong_colors`
+    (per-face) and :func:`blinn_phong_vertex_colors` (per-vertex): given a
+    (k, 3) array of unit normals (one per face, or one per vertex), returns
+    a (k, 4) RGBA array. See :func:`blinn_phong_colors` for parameter docs.
+    """
+    v, up, right = _view_frame(view)
+
+    if lightdir is None:
+        key = v + 0.7 * up - 0.5 * right
+    else:
+        key = np.asarray(lightdir, dtype=float)
+    key = key / (np.linalg.norm(key) + 1e-12)
+
+    fill_dir = v - 0.5 * up + 0.6 * right
+    fill_dir = fill_dir / (np.linalg.norm(fill_dir) + 1e-12)
+
+    half = key + v
+    half = half / (np.linalg.norm(half) + 1e-12)
+
+    lam_key = np.clip(normals @ key, 0.0, 1.0)
+    lam_fill = np.clip(normals @ fill_dir, 0.0, 1.0)
+    spec = np.clip(normals @ half, 0.0, 1.0) ** shininess
+
+    base = np.asarray(base_rgb, dtype=float)
+    rgb = (
+        ambient * base
+        + diffuse * lam_key[:, None] * base
+        + fill * lam_fill[:, None] * base
+        + specular * spec[:, None]
+    )
+    rgb = np.clip(rgb, 0.0, 1.0)
+    alpha = np.ones((len(normals), 1))
+    return np.concatenate([rgb, alpha], axis=1)
 
 
 def blinn_phong_colors(
@@ -463,36 +542,61 @@ def blinn_phong_colors(
         Per-face RGBA color, values clipped to [0, 1]. Alpha is always 1.0
         (callers that need transparency can overwrite the alpha column).
     """
-    faces = np.asarray(faces)
-    n = face_normals(verts, faces)
-    v, up, right = _view_frame(view)
-
-    if lightdir is None:
-        key = v + 0.7 * up - 0.5 * right
-    else:
-        key = np.asarray(lightdir, dtype=float)
-    key = key / (np.linalg.norm(key) + 1e-12)
-
-    fill_dir = v - 0.5 * up + 0.6 * right
-    fill_dir = fill_dir / (np.linalg.norm(fill_dir) + 1e-12)
-
-    half = key + v
-    half = half / (np.linalg.norm(half) + 1e-12)
-
-    lam_key = np.clip(n @ key, 0.0, 1.0)
-    lam_fill = np.clip(n @ fill_dir, 0.0, 1.0)
-    spec = np.clip(n @ half, 0.0, 1.0) ** shininess
-
-    base = np.asarray(base_rgb, dtype=float)
-    rgb = (
-        ambient * base
-        + diffuse * lam_key[:, None] * base
-        + fill * lam_fill[:, None] * base
-        + specular * spec[:, None]
+    n = face_normals(verts, np.asarray(faces))
+    return _blinn_phong_shade(
+        n, base_rgb, view, lightdir=lightdir, ambient=ambient, diffuse=diffuse,
+        fill=fill, specular=specular, shininess=shininess,
     )
-    rgb = np.clip(rgb, 0.0, 1.0)
-    alpha = np.ones((len(faces), 1))
-    return np.concatenate([rgb, alpha], axis=1)
+
+
+def blinn_phong_vertex_colors(
+    verts,
+    faces,
+    base_rgb,
+    view,
+    lightdir=None,
+    ambient=0.45,
+    diffuse=0.55,
+    fill=0.25,
+    specular=0.30,
+    shininess=48,
+):
+    """Per-VERTEX variant of :func:`blinn_phong_colors` (GH #109 round 3).
+
+    Identical two-light Blinn-Phong model, but shaded at each mesh VERTEX
+    (using its averaged-adjacent-face normal -- see :func:`vertex_normals`)
+    rather than at each face.
+
+    This is what makes plotly's ``Mesh3d`` ``vertexcolor`` workaround for
+    the double-winding self-culling fix (see
+    ``plotly_backend._mesh3d_trace``) actually work: both windings of a
+    doubled face share the SAME three vertex indices, so with per-vertex
+    colors they are colored identically. A per-FACE color, by contrast, is
+    computed from each face's own (possibly reversed) normal and so differs
+    between the two winding copies -- the reversed copy's normal points
+    away from the key light wherever the original copy's points towards it,
+    rendering it dark/black and producing the large jagged dark patches
+    this function fixes.
+
+    Parameters
+    ----------
+    verts : ndarray of shape (n, 3)
+    faces : ndarray of shape (f, 3), dtype int
+    base_rgb, view, lightdir, ambient, diffuse, fill, specular, shininess
+        See :func:`blinn_phong_colors`.
+
+    Returns
+    -------
+    ndarray of shape (n, 4)
+        Per-vertex RGBA color, values clipped to [0, 1]. Alpha is always
+        1.0 (callers that need transparency can overwrite the alpha
+        column).
+    """
+    vn = vertex_normals(verts, faces)
+    return _blinn_phong_shade(
+        vn, base_rgb, view, lightdir=lightdir, ambient=ambient, diffuse=diffuse,
+        fill=fill, specular=specular, shininess=shininess,
+    )
 
 
 def points_enclosed(points, verts):
