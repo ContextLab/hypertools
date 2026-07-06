@@ -410,6 +410,31 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # right dataset's window each frame.
     surface_trace_start_3d = len(traces)
     surface_dataset_indices = []
+
+    # animate='morph': sampled once here (rather than down where the
+    # traveling trace is built) so the cube_scale block below can reuse the
+    # EXACT `sampled0` arrays `_add_animation`'s 'morph' branch will later
+    # draw -- see the M3b box-containment note on `cube_scale` just below.
+    morph_indices_3d = None
+    sampled0 = None
+    ds_colors0 = None
+    morph_surface_spec_3d = None
+    if morph_tags is not None and ndims >= 3:
+        morph_indices_3d = [i for i, t in enumerate(morph_tags) if t]
+        clouds0 = [np.atleast_2d(np.asarray(data[i], dtype=np.float64))[:, :3]
+                  for i in morph_indices_3d]
+        sampled0 = _morph.sample_and_match_clouds(
+            clouds0, morph_samples=morph_samples)
+        ds_colors0 = [
+            tuple(morph_colors[i]) if morph_colors is not None
+            else (0.2, 0.4, 0.8)
+            for i in morph_indices_3d
+        ]
+        for i in morph_indices_3d:
+            if surface is not None and i < len(surface) and surface[i] is not None:
+                morph_surface_spec_3d = surface[i]
+                break
+
     # cube_scale (GH #109 round 2): sized to whatever the built surface
     # meshes actually need (see `surface_cube_scale`), not assumed to be
     # the standard 1 -- otherwise a smoothed hull's pre_inflate/smoothing
@@ -435,16 +460,34 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             _build_surface_traces_3d(go, data, surface_for_static,
                                      surface_colors, elev, azim))
         traces.extend(surface_traces_3d)
+        # M3b box-containment fix: `full`-cloud meshes (built above, from
+        # each morphing dataset's FULL, differently-ORDERED cloud) are NOT
+        # a safe bound for the per-frame rebuilt mesh -- smooth_hull_3d's
+        # ConvexHull/Taubin-smoothing pipeline is not invariant to input
+        # row order for hulls with many coplanar/degenerate faces (e.g. a
+        # cube's flat sides), so the SAME points in a different order can
+        # produce a mesh whose extent exceeds the fixed 2% margin. Mid-morph
+        # interpolated points are also convex combinations of two
+        # consecutive `sampled0` clouds and so can lie outside either
+        # endpoint's OWN hull even though they always lie inside the hull
+        # of their UNION. Fix: size from meshes built with the EXACT
+        # `sampled0` arrays that will actually be drawn (guaranteeing
+        # hold-frame containment) plus one mesh built from the union of
+        # every sampled cloud (a cheap, strictly-safe bound for every
+        # interpolated frame).
         morph_full_meshes_for_scale = []
-        if morph_tags is not None:
-            for i, tag in enumerate(morph_tags):
-                if tag and surface[i] is not None:
-                    pts_i = np.atleast_2d(
-                        np.asarray(data[i], dtype=np.float64))[:, :3]
-                    m = build_mesh_3d(pts_i, surface[i], dataset_label=f' {i}',
-                                      quiet=True)
-                    if m is not None:
-                        morph_full_meshes_for_scale.append(m)
+        if morph_surface_spec_3d is not None and sampled0 is not None:
+            spec = morph_surface_spec_3d
+            for cloud in sampled0:
+                m = build_mesh_3d(cloud, spec, dataset_label=' morph',
+                                  quiet=True)
+                if m is not None:
+                    morph_full_meshes_for_scale.append(m)
+            union_cloud = np.concatenate(sampled0, axis=0)
+            m_union = build_mesh_3d(union_cloud, spec,
+                                    dataset_label=' morph-union', quiet=True)
+            if m_union is not None:
+                morph_full_meshes_for_scale.append(m_union)
         cube_scale = surface_cube_scale(
             list(surface_meshes.values()) + morph_full_meshes_for_scale)
 
@@ -455,23 +498,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # `_add_animation`'s 'morph' branch.
     morph_trace_start_3d = None
     morph_mesh_trace_start_3d = None
-    morph_surface_spec_3d = None
     if morph_tags is not None and ndims >= 3:
-        morph_indices_3d = [i for i, t in enumerate(morph_tags) if t]
-        clouds0 = [np.atleast_2d(np.asarray(data[i], dtype=np.float64))[:, :3]
-                  for i in morph_indices_3d]
-        sampled0 = _morph.sample_and_match_clouds(
-            clouds0, morph_samples=morph_samples)
-        ds_colors0 = [
-            tuple(morph_colors[i]) if morph_colors is not None
-            else (0.2, 0.4, 0.8)
-            for i in morph_indices_3d
-        ]
-        for i in morph_indices_3d:
-            if surface is not None and i < len(surface) and surface[i] is not None:
-                morph_surface_spec_3d = surface[i]
-                break
-
         pts0 = sampled0[0]
         color0_str = _rgb_string(ds_colors0[0])
         msize0 = float((kwargs_list[morph_indices_3d[0]] or {}).get('markersize')

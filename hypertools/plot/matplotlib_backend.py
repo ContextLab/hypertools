@@ -1026,7 +1026,45 @@ def _draw(
             _hide_no_keep_points(lines, surface)
             _hide_no_keep_points(trail, surface)
             full_meshes = _build_mesh_list(x, surface, quiet=True)
-            cube_scale_anim = surface_cube_scale(full_meshes)
+            sizing_meshes = full_meshes
+            if style == "morph" and morph_state is not None:
+                # M3b box-containment fix: sizing from `full_meshes` (built
+                # from each morphing dataset's FULL, differently-ORDERED
+                # cloud) is NOT a safe bound for the per-frame rebuilt mesh,
+                # even when it covers the exact same set of points --
+                # smooth_hull_3d's underlying ConvexHull/Taubin-smoothing
+                # pipeline is not invariant to input row order for hulls
+                # with many coplanar/degenerate faces (e.g. a cube's flat
+                # sides), so the SAME points in a different order can
+                # produce a mesh with a larger extent than the one used to
+                # size the cube (verified empirically: a cube-shaped cloud's
+                # full-order mesh vs. its Hungarian-reordered `sampled`
+                # mesh differ in max |vertex| by more than the fixed 2%
+                # margin). On top of that, mid-morph interpolated points are
+                # convex combinations of two consecutive `sampled` clouds
+                # and so can lie outside either endpoint's OWN hull even
+                # though they always lie inside the hull of their UNION.
+                # Fix: size the cube once, up front, from meshes built with
+                # the EXACT `sampled` arrays `update_morph` will actually
+                # draw (guaranteeing hold-frame containment) plus one mesh
+                # built from the union of every sampled cloud (a cheap,
+                # strictly-safe bound for every interpolated frame, since
+                # every interpolated point is a convex combination of union
+                # points).
+                spec = morph_state["surface_spec"]
+                if spec is not None:
+                    sampled = morph_state["sampled"]
+                    morph_sizing_meshes = [
+                        build_mesh_3d(cloud, spec, dataset_label=" morph",
+                                     quiet=True)
+                        for cloud in sampled
+                    ]
+                    union_cloud = np.concatenate(sampled, axis=0)
+                    morph_sizing_meshes.append(
+                        build_mesh_3d(union_cloud, spec,
+                                     dataset_label=" morph-union", quiet=True))
+                    sizing_meshes = full_meshes + morph_sizing_meshes
+            cube_scale_anim = surface_cube_scale(sizing_meshes)
             if style == "spin":
                 # 'spin' keeps the FULL dataset static (only the camera
                 # rotates) -- reuse the just-built full-data meshes so

@@ -399,6 +399,116 @@ class TestMplMorphAnimation:
 
 
 # ---------------------------------------------------------------------------
+# M3b box-containment fix: the axes cube/limits (mpl) and scene ranges
+# (plotly) must be sized from the SAME `sampled` clouds `update_morph`/
+# `_add_animation` actually draw each frame (plus their union), not from
+# each dataset's full-order cloud. A cube-corner-like cloud's convex hull
+# is degenerate enough (many coplanar points) that smooth_hull_3d's
+# ConvexHull/Taubin pipeline is not invariant to input row order, so sizing
+# from a differently-ordered copy of the exact same points under-covers
+# the actual per-frame mesh -- confirmed visually in
+# docs/images/v1.0-seven-features/surface_morph_frames.png (the "hold:
+# cube" panel's hull spilled past the drawn wireframe box) and empirically
+# (the same 400 cube-shaped points, reordered, gave a mesh whose max
+# |vertex| exceeded the containment margin computed from the original
+# order).
+# ---------------------------------------------------------------------------
+
+def _cube_corners():
+    """The 8 corners of the [-1, 1]^3 cube -- the degenerate, many-
+    coplanar-point shape that exposed the box-containment bug (this is
+    exactly the failing case: a cloud that spans the full [-1, 1] cube)."""
+    return np.array([[sx, sy, sz]
+                     for sx in (-1.0, 1.0)
+                     for sy in (-1.0, 1.0)
+                     for sz in (-1.0, 1.0)])
+
+
+def _sphere_cloud(n=64, seed=7):
+    """A different, non-degenerate blob on the unit ball -- the morph
+    partner for `_cube_corners`."""
+    rng = np.random.default_rng(seed)
+    v = rng.standard_normal((n, 3))
+    v /= np.linalg.norm(v, axis=1, keepdims=True)
+    return v * rng.uniform(0.3, 1.0, size=(n, 1))
+
+
+class TestBoxContainmentUnionHull:
+    """Regression for the M3b box-containment bug: the cube-corner cloud
+    is dataset 0 of a 2-dataset morph (hold: cube-corners -> morph ->
+    hold: sphere-blob); both hold frames and mid-morph frames must keep
+    every surface vertex inside the drawn box on both backends."""
+
+    def _data(self):
+        return [_cube_corners(), _sphere_cloud()]
+
+    def test_mpl_hold_and_mid_morph_within_axes_cube(self):
+        fig, ani = hyp.plot(self._data(), '.', animate='morph',
+                            surface=True, duration=2, frame_rate=10,
+                            show=False)
+        ax = fig.axes[0]
+        morph_state = ani._args[0]
+        cube_scale = ani._args[1]
+        frame_counts = morph_state['frame_counts']
+        assert len(frame_counts) == 3  # 2 datasets -> 3 segments
+
+        xlim, ylim, zlim = ax.get_xlim3d(), ax.get_ylim3d(), ax.get_zlim3d()
+        assert xlim == pytest.approx((-cube_scale, cube_scale))
+        assert ylim == pytest.approx((-cube_scale, cube_scale))
+        assert zlim == pytest.approx((-cube_scale, cube_scale))
+
+        mid_morph = frame_counts[0] + frame_counts[1] // 2
+        hold_cube, hold_sphere = 0, frame_counts[0] + frame_counts[1]
+        for frame in [hold_cube, mid_morph, hold_sphere]:
+            ani._func(frame, *ani._args)
+
+            colls = [c for c in ax.collections
+                    if isinstance(c, Poly3DCollection)]
+            assert colls, f"expected a surface mesh at frame {frame}"
+            for c in colls:
+                verts = _poly3d_verts(c)
+                if len(verts) == 0:
+                    continue
+                assert verts[:, 0].min() >= xlim[0] - 1e-6
+                assert verts[:, 0].max() <= xlim[1] + 1e-6
+                assert verts[:, 1].min() >= ylim[0] - 1e-6
+                assert verts[:, 1].max() <= ylim[1] + 1e-6
+                assert verts[:, 2].min() >= zlim[0] - 1e-6
+                assert verts[:, 2].max() <= zlim[1] + 1e-6
+
+            # the drawn wireframe cube itself is sized to the SAME bound
+            planes = ani._func.planes
+            assert planes
+            for plane in planes:
+                seg_pts = np.vstack([np.asarray(s, dtype=float)
+                                     for s in plane._segments3d])
+                assert np.abs(seg_pts).max() == pytest.approx(cube_scale)
+
+    def test_plotly_mesh_within_scene_ranges_every_frame(self):
+        fig = hyp.plot(self._data(), '.', animate='morph', surface=True,
+                       backend='plotly', duration=2, frame_rate=10,
+                       show=False)
+        xr = fig.layout.scene.xaxis.range
+        yr = fig.layout.scene.yaxis.range
+        zr = fig.layout.scene.zaxis.range
+
+        mesh_seen = False
+        for frame in fig.frames:
+            for trace in frame.data:
+                if trace.type != 'mesh3d':
+                    continue
+                x, y, z = (np.asarray(trace.x), np.asarray(trace.y),
+                          np.asarray(trace.z))
+                if x.size == 0:
+                    continue
+                mesh_seen = True
+                assert x.min() >= xr[0] - 1e-6 and x.max() <= xr[1] + 1e-6
+                assert y.min() >= yr[0] - 1e-6 and y.max() <= yr[1] + 1e-6
+                assert z.min() >= zr[0] - 1e-6 and z.max() <= zr[1] + 1e-6
+        assert mesh_seen, "expected at least one frame with a mesh3d trace"
+
+
+# ---------------------------------------------------------------------------
 # plotly backend: frame counts, camera eyes, static datasets, surface
 # ---------------------------------------------------------------------------
 
