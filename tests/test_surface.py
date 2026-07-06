@@ -212,7 +212,7 @@ class TestStaticPlotly3D:
         pts = _blob_3d(seed=0, center=(0.0, 0.0, 0.0))
         fig = hyp.plot([pts], '.', surface=True, backend='plotly', show=False)
         mesh = [t for t in fig.data if t.type == 'mesh3d'][0]
-        _, expected_faces = smooth_hull_3d(pts, rounds=3, pre_inflate=1.15)
+        _, expected_faces = smooth_hull_3d(pts, rounds=3, pre_inflate=1.0)
         assert len(mesh.i) == 2 * len(expected_faces)
         assert len(mesh.i) == len(mesh.j) == len(mesh.k)
 
@@ -228,7 +228,7 @@ class TestStaticPlotly3D:
         faces = np.column_stack([mesh.i, mesh.j, mesh.k])
         sorted_faces = np.sort(faces, axis=1)
         uniq, counts = np.unique(sorted_faces, axis=0, return_counts=True)
-        _, expected_faces = smooth_hull_3d(pts, rounds=3, pre_inflate=1.15)
+        _, expected_faces = smooth_hull_3d(pts, rounds=3, pre_inflate=1.0)
         assert len(uniq) == len(expected_faces)
         assert np.all(counts == 2)
 
@@ -412,8 +412,8 @@ class TestPlotlyMeshDoubleSidedAndTrimPriority:
 
         pts0 = _blob_3d(seed=0, center=(-1.2, 0, 0))
         pts1 = _blob_3d(seed=1, center=(1.2, 0, 0))
-        mesh0 = smooth_hull_3d(pts0, rounds=2, pre_inflate=1.15)
-        mesh1 = smooth_hull_3d(pts1, rounds=2, pre_inflate=1.15)
+        mesh0 = smooth_hull_3d(pts0, rounds=2, pre_inflate=1.0)
+        mesh1 = smooth_hull_3d(pts1, rounds=2, pre_inflate=1.0)
         meshes = {0: mesh0, 1: mesh1}
 
         keep0 = _trim_faces_inside_other_meshes(0, meshes)
@@ -443,6 +443,6 @@ class TestPlotlyMeshDoubleSidedAndTrimPriority:
         # same, already-scaled points) has a known face count -- the
         # dataset-0 trace (lowest index, never trimmed) must carry EXACTLY
         # double that (both windings), not some cut-down subset.
-        _, expected_faces0 = smooth_hull_3d(pts0, rounds=3, pre_inflate=1.15)
+        _, expected_faces0 = smooth_hull_3d(pts0, rounds=3, pre_inflate=1.0)
         face_counts = sorted(len(m.i) for m in meshes)
         assert face_counts[-1] == 2 * len(expected_faces0)

@@ -137,14 +137,14 @@ def _taubin_smooth(verts, faces, iterations=8, lam=0.5, mu=-0.53):
     return v
 
 
-def smooth_hull_3d(points, rounds=3, taubin_iters=8, lam=0.5, mu=-0.53, pre_inflate=1.15):
+def smooth_hull_3d(points, rounds=3, taubin_iters=8, lam=0.5, mu=-0.53, pre_inflate=1.0):
     """Build a smooth, outward-oriented triangle mesh from a 3-D point cloud.
 
-    Computes the convex hull of `points`, pre-inflates it about its centroid,
-    then performs `rounds` interleaved rounds of midpoint (1 -> 4) subdivision
-    followed by Taubin lambda/mu smoothing. Interleaving (rather than
-    subdividing fully and then smoothing once) avoids pinched creases at the
-    original hull vertices.
+    Computes the convex hull of `points`, optionally pre-inflates it about
+    its centroid, then performs `rounds` interleaved rounds of midpoint
+    (1 -> 4) subdivision followed by Taubin lambda/mu smoothing. Interleaving
+    (rather than subdividing fully and then smoothing once) avoids pinched
+    creases at the original hull vertices.
 
     Parameters
     ----------
@@ -161,9 +161,14 @@ def smooth_hull_3d(points, rounds=3, taubin_iters=8, lam=0.5, mu=-0.53, pre_infl
         Taubin mu (inflate) factor. Default -0.53.
     pre_inflate : float, optional
         Scale factor applied to hull vertices about the centroid before
-        subdivision/smoothing begins, to compensate for the net shrinkage
-        introduced by Taubin smoothing and keep (most of) the original
-        points inside the final surface. Default 1.15.
+        subdivision/smoothing begins. Default 1.0 (no blanket padding) --
+        maintainer feedback (2026-07-06) reported that a default of 1.15
+        (the previous default) made surfaces visibly balloon past the data
+        they were meant to hug, in some cases past the plotted axes cube
+        entirely. Any shrinkage Taubin smoothing introduces is instead
+        recovered by a MINIMAL, mathematically bounded post-hoc grow (see
+        :func:`_rescale_for_containment`) targeting the *actual input
+        points*, not this pre-inflation.
 
     Returns
     -------
@@ -206,64 +211,153 @@ def smooth_hull_3d(points, rounds=3, taubin_iters=8, lam=0.5, mu=-0.53, pre_infl
         ) from exc
 
     centroid = verts.mean(axis=0)
-    hull_verts_inflated = centroid + pre_inflate * (verts - centroid)
-    verts = hull_verts_inflated
+    if pre_inflate != 1.0:
+        verts = centroid + pre_inflate * (verts - centroid)
 
     for _ in range(rounds):
         verts, faces = _subdivide(verts, faces)
         verts = _taubin_smooth(verts, faces, iterations=taubin_iters, lam=lam, mu=mu)
 
-    # GH #109: `pre_inflate` compensates for Taubin smoothing's net
-    # shrinkage, but that compensation is tuned against the SAME fixed
-    # `taubin_iters`/`rounds` regardless of hull size -- a small, sparse
-    # hull (few input points -> few, often widely-spaced hull vertices)
-    # loses proportionally much MORE of its "bulge" to the same number of
-    # smoothing passes than a large, dense one does, so small point clouds
-    # can end up with the final surface pulled far inside the original
-    # data (observed: a 5-point cloud's mesh contained as few as ~1/5 of
-    # its own input points, with no warning). Post-hoc rescale the mesh
-    # (uniformly, about its centroid -- never shrinking it) so it recovers
-    # containment of the inflated hull vertices, then verify against the
-    # ACTUAL input points and warn if that still falls short.
-    verts = _rescale_for_containment(verts, hull_verts_inflated, centroid)
+    # GH #109 (maintainer feedback 2026-07-06, "tight hulls"): Taubin
+    # smoothing has a net shrinking effect that is NOT proportional across
+    # hull sizes -- a small, sparse hull (few input points -> few, often
+    # widely-spaced hull vertices) loses proportionally much MORE of its
+    # "bulge" to the same fixed `taubin_iters`/`rounds` than a large, dense
+    # one does. Rather than compensate with a blanket `pre_inflate` (which
+    # over-inflates the common case to cover the rare sparse-hull case --
+    # exactly what made surfaces balloon past the data), post-hoc rescale
+    # the mesh (uniformly about its centroid, GROW-ONLY, mathematically
+    # bounded to at most `_RESCALE_CAP`) so it recovers containment of the
+    # ACTUAL input points, not any inflated proxy for them.
+    verts = _rescale_for_containment(verts, points, centroid)
 
     contained_frac = points_enclosed(points, verts).mean()
-    if contained_frac < 0.96:
+    if contained_frac < 0.99:
         warnings.warn(
             "smooth_hull_3d: the smoothed surface contains only "
             f"{100 * contained_frac:.0f}% of the input points (target "
-            "96%) even after rescaling for containment; it may visibly "
-            "fail to enclose some of the data."
+            "99%) even after rescaling for containment (capped at "
+            f"{_RESCALE_CAP:.0%} growth); it may visibly fail to enclose "
+            "some of the data."
         )
 
     return verts, faces
 
 
-def _rescale_for_containment(verts, hull_verts_inflated, centroid, margin=1.02):
+_RESCALE_CAP = 3.0
+
+
+def _rescale_for_containment(
+    verts, points, centroid, target_frac=0.99, tol_frac=0.005, cap=_RESCALE_CAP,
+):
     """Uniformly rescale `verts` about `centroid` (growing only, never
-    shrinking) so the (already pre-inflated) original hull vertices
-    `hull_verts_inflated` are contained within it (GH #109).
+    shrinking, and capped at `cap`) so at least `target_frac` of the
+    ACTUAL input `points` fall within it (GH #109, "tight hulls").
 
-    For each inflated hull vertex, finds the final-mesh vertex nearest it
-    BY DIRECTION from the centroid -- a cheap proxy for "where the
-    smoothed surface lies along that same ray from the centroid" -- and
-    computes how much farther out the hull vertex is along that ray. The
-    whole mesh is grown by the worst (largest) such ratio across all hull
-    vertices, plus a small safety `margin`, so the rescaled surface clears
-    every hull vertex rather than just meeting it exactly.
+    For each input point, casts a ray from `centroid` through the point
+    and finds exactly where that ray exits the convex hull of `verts` --
+    via the hull's halfspace (facet normal/offset) representation, i.e.
+    ``min`` over facets the ray is moving towards of ``offset / (normal
+    . ray_direction)`` -- the standard, exact ray-vs-convex-polytope exit
+    distance. This is precisely the same containment notion
+    :func:`points_enclosed` tests (a point is "in" iff it falls inside
+    the convex hull of `verts`), so the ratio of the point's own distance
+    from the centroid to this exit distance is exactly the uniform scale
+    that would place the mesh boundary AT that point along its ray. A
+    small absolute margin (`tol_frac` of the cloud's extent) is added on
+    top of the point's distance so it ends up genuinely, strictly inside
+    -- not merely touching the boundary: :func:`points_enclosed`'s
+    Delaunay test is a hard binary in/out check with no notion of "close
+    enough", so a point placed EXACTLY on the boundary (zero margin) is a
+    floating-point/triangulation-round-off coin flip, while one placed
+    `tol_frac` inside is not.
+
+    This replaces two flawed earlier proxies for that same exit distance:
+    (1) matching each hull vertex to its nearest-BY-ANGLE mesh vertex and
+    using that single vertex's radial distance -- unstable, since two
+    directions can be almost perfectly aligned (cosine similarity ~0.999)
+    while the nearest-angle vertex still sits well short of the surface's
+    true reach along that exact ray; and (2) a per-ray support-function
+    value (farthest mesh vertex projected ONTO the ray direction) --
+    mathematically tempting but WRONG, because the vertex achieving that
+    projection maximum generally lies off to the side of the ray, not on
+    it (support-function value >= true ray-exit distance always, for any
+    convex body not centered on that vertex), so it systematically
+    UNDER-estimates how much growth is truly needed and left points
+    falsely "already contained" that the rescaled mesh did not actually
+    reach. Both proxies compounded with a blanket `pre_inflate` to
+    balloon the mesh far past the data (the "explosion" maintainer
+    feedback reported, 2026-07-06) or, in the second proxy's case, to
+    silently under-cover. The exact halfspace-based ray exit has neither
+    failure mode, and the result is additionally capped at `cap` so a
+    single degenerate ray can never blow the whole mesh up unboundedly.
+
+    `cap` = 3.0, not the tighter ~1.1 one might initially expect: measured
+    across n=4..2000 (see docs/superpowers/plans/2026-07-06-morph-
+    animation.md Task M1 report), well-SAMPLED clouds (n >~ 100, several
+    hundred+ hull vertices) need at most ~1.15x-1.25x to hit
+    `target_frac` -- this cap essentially never binds for them, and it is
+    THIS regime (not the cap) where the "explosion" bug lived (a WRONG,
+    overestimated ratio from the flawed proxy above, now fixed). But very
+    SPARSE hulls (n=4-20, few/no interior points -- literally every point
+    close to a hull vertex) genuinely, unavoidably need much more: Taubin
+    smoothing's net shrinkage is proportionally far larger on a coarse,
+    few-vertex hull than a dense one (the very asymmetry `pre_inflate`
+    used to paper over with a blanket constant) -- a bare (degenerate)
+    4-point tetrahedron needs ~2.9x, a 5-point cloud ~2.3x, to recover 99%
+    containment. A hard 1.1 cap would silently regress that long-standing
+    guarantee (GH #109 round 1; `TestSmoothHull3DTinyCloudContainment`)
+    back to the "5-point cloud contains as few as ~1/5 of its own points"
+    bug it originally fixed. 3.0 is a generously-calibrated but still
+    HARD, FINITE ceiling -- unlike the old code's literally unbounded
+    `ratios.max()` -- chosen so genuinely sparse hulls (down to the
+    smallest possible 4-point hull) keep their historical containment
+    guarantee, while well-sampled data (where the real explosion bug
+    lived) is governed almost entirely by the corrected computation
+    above, not by where this ceiling happens to sit.
+
+    Only `target_frac` of points need to be covered (rather than all of
+    them) so that a single outlier point cannot force an outsized grow;
+    remaining shortfall (if any, given the `cap`) is reported by the
+    caller's containment warning.
     """
-    to_hull = hull_verts_inflated - centroid
-    dist_hull = np.linalg.norm(to_hull, axis=1)
-    unit_hull = to_hull / (dist_hull[:, None] + 1e-12)
+    extent = np.ptp(points, axis=0).mean()
+    tol_abs = tol_frac * extent
 
-    to_mesh = verts - centroid
-    dist_mesh = np.linalg.norm(to_mesh, axis=1)
-    unit_mesh = to_mesh / (dist_mesh[:, None] + 1e-12)
+    to_pts = points - centroid
+    r_pts = np.linalg.norm(to_pts, axis=1)
+    nonzero = r_pts > 1e-12
+    unit_pts = np.zeros_like(to_pts)
+    unit_pts[nonzero] = to_pts[nonzero] / r_pts[nonzero, None]
 
-    nearest = np.argmax(unit_hull @ unit_mesh.T, axis=1)
-    ratios = dist_hull / np.maximum(dist_mesh[nearest], 1e-12)
+    # Halfspace (facet normal/offset) representation of the mesh's own
+    # convex hull, centered on `centroid`: facet k is the halfspace
+    # {x : normals[k] . x <= offsets[k]}. This is exactly the convex body
+    # `points_enclosed` tests membership against (via Delaunay(verts)).
+    mesh_hull = ConvexHull(verts)
+    normals = mesh_hull.equations[:, :3]
+    offsets = -mesh_hull.equations[:, 3] - normals @ centroid
 
-    scale = max(1.0, ratios.max() * margin)
+    # ray exit distance: for x = t * unit_pts (t >= 0, centroid-relative),
+    # each facet the ray moves TOWARDS (normals . unit_pts > 0) bounds t
+    # from above at offsets / (normals . unit_pts); the ray exits the hull
+    # at the smallest such bound. Facets the ray moves away from impose
+    # no constraint.
+    proj = unit_pts @ normals.T
+    with np.errstate(divide="ignore", invalid="ignore"):
+        candidates = np.where(proj > 1e-12, offsets[None, :] / proj, np.inf)
+    exit_dist = np.maximum(candidates.min(axis=1), 1e-12)
+
+    needed_scale = np.ones(len(points))
+    needed_scale[nonzero] = (
+        (r_pts[nonzero] + tol_abs) / exit_dist[nonzero]
+    )
+
+    n = len(points)
+    k = min(n, int(np.ceil(target_frac * n)))
+    required = np.partition(needed_scale, k - 1)[k - 1]
+
+    scale = min(max(1.0, required), cap)
     if scale > 1.0:
         verts = centroid + scale * (verts - centroid)
     return verts

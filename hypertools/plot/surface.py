@@ -38,7 +38,7 @@ SURFACE_DEFAULTS = {
     "color": None,
     "lighting": {},
     "smoothing": 3,
-    "pre_inflate": 1.15,
+    "pre_inflate": 1.0,
     "keep_points": True,
 }
 
@@ -209,7 +209,7 @@ def build_mesh_3d(points, spec, dataset_label="", quiet=False):
         return smooth_hull_3d(
             points,
             rounds=int(spec.get("smoothing", 3)),
-            pre_inflate=float(spec.get("pre_inflate", 1.15)),
+            pre_inflate=float(spec.get("pre_inflate", 1.0)),
         )
     except ValueError as exc:
         if not quiet:

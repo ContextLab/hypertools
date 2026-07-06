@@ -538,10 +538,13 @@ def plot(
         - ``smoothing`` (int, default 3): number of interleaved
           [subdivide, Taubin-smooth] rounds for a 3D hull (face count
           scales as ``4 ** smoothing``); ignored for 2D.
-        - ``pre_inflate`` (float, default 1.15): scale factor applied to
-          the 3D hull about its centroid before smoothing, compensating
-          for smoothing's shrinkage so the surface still contains most of
-          the original points; ignored for 2D.
+        - ``pre_inflate`` (float, default 1.0): scale factor applied to
+          the 3D hull about its centroid before smoothing (default: no
+          blanket inflation). Any shrinkage smoothing introduces is
+          instead recovered by a minimal, mathematically bounded (grow at
+          most 10%) post-hoc rescale targeting the actual input points, so
+          the surface hugs the data rather than ballooning past it;
+          ignored for 2D.
         - ``keep_points`` (bool, default True): if False, hides that
           dataset's own line/marker (only the surface is shown).
 
