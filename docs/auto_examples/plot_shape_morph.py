@@ -18,6 +18,7 @@ the camera slowly spins around the scene.
 # License: MIT
 
 import numpy as np
+import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
@@ -67,9 +68,13 @@ for i in range(len(sampled)):
 total_frames = len(segments) * n_steps
 
 # draw the first shape as small black dots, then animate the point
-# artist's coordinates directly on every frame
-fig = hyp.plot(sampled[0], 'k.', show=False)
-ax = fig.axes[0]
+# artist's coordinates directly on every frame. Supplying our own axes
+# keeps the figure registered with pyplot (hyp.plot's show=False otherwise
+# deregisters it, GH #148), which sphinx-gallery needs in order to capture
+# the FuncAnimation below as a video.
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+hyp.plot(sampled[0], 'k.', show=False, ax=ax)
 ax.set_position([0.0, 0.0, 1.0, 1.0])
 point_artist = ax.get_lines()[0]
 point_artist.set_markersize(1.5)

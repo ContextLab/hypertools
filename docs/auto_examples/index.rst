@@ -393,6 +393,23 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="The colorbar kwarg draws a colorbar reflecting whatever color mapping is already in use (GH #100). For a continuous hue, the colorbar is a continuous gradient spanning the actual value range. For discrete groups (categorical hue, cluster/`n_clusters`, or a plain list of datasets), the colorbar is segmented into one block per group, labeled the same way the legend would be.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_colorbar_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_colorbar`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Colorbars</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="In this example, we load in some synthetic data, rotate it, and then use the procustes function to get the datasets back in alignment.  The procrustes function uses linear transformations to project a source matrix into the space of a target matrix.">
 
 .. only:: html
@@ -529,6 +546,40 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="The density kwarg overlays a subtle KDE (kernel density estimate) &quot;glow&quot; behind the data: a 2D alpha-ramped heatmap, or a 3D volumetric cloud, showing where each dataset&#x27;s points are concentrated (GH #108, #191). Density shading is OFF by default (`density=None`) -- pass density=True for the defaults, or a dict to override alpha/`levels`/`grid`/`per_group`.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_density_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_density`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Density shading</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The surface kwarg overlays a smooth, lit surface over each dataset&#x27;s convex hull: a filled outline for 2D data, or a shaded, Taubin-smoothed 3D &quot;blob&quot; for 3D data (GH #109). Pass surface=True for sensible defaults, or a dict to customize the alpha, color, lighting, and amount of smoothing.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_surface_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_surface`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Surfaces around point clouds</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="When you pass a matrix with with missing data, hypertools will attempt to fill in the values using probabalistic principal components analysis (PPCA). Here is an example where we generate some synthetic data, remove some of the values, and then use PPCA to interpolate those missing values. Then, we plot both the original and data with missing values together to see how it performed.">
 
 .. only:: html
@@ -541,6 +592,23 @@ Gallery of Examples
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Interpolating missing data with probabalistic PCA</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="chemtrails, precog, and bullettime each accept a per-dataset list of bools instead of a single bool, so different datasets in the same animation can show different trail styles (GH #127): a low-opacity trace of the past (chemtrails), of the future (precog), or of the entire timeseries at once (bullettime -- equivalent to chemtrails AND precog together).">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_animate_trails_mix_thumb.gif
+    :alt:
+
+  :doc:`/auto_examples/animate_trails_mix`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Mixing trail styles per dataset</div>
     </div>
 
 
@@ -682,6 +750,23 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="A DataFrame with a row MultiIndex (2 or more levels) is automatically expanded by hyp.plot into one &quot;leaf&quot; trace per unique index combination, plus one thicker, more opaque &quot;mean&quot; trace per level of grouping above the leaves (GH #95). Color is assigned by the top-level index value; leaves are thin and faint, and each successive level of averaging gets a thicker line and higher alpha, up to a fully opaque top-level mean that also carries the legend label.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_multiindex_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_multiindex`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">MultiIndex DataFrames</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="Hypertools fills missing (NaN) values via hypertools.impute before reducing/plotting. This compares two imputers on the weights_avg dataset after randomly knocking out 10% of its entries -- plus three CONSECUTIVE rows where every feature is missing. That fully-missing-row case is the motivating example for GH #169: PPCA reconstructs a row from its own observed features, so a row with NO observed features at all cannot be recovered, so PPCA warns and leaves those rows NaN (they are dropped below purely so the PPCA panel has something plottable). The Kalman imputer instead smooths across time, so it can fill a fully-missing row from the neighboring (observed) timepoints, at the cost of assuming the data are a reasonably smooth timeseries -- its panel keeps every row.">
 
 .. only:: html
@@ -731,6 +816,23 @@ Gallery of Examples
     </div>
 
 
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="Building on the Morphing through the shapes zoo example, HyperTools can also render a smooth, lit convex-hull SURFACE around a moving point cloud (the surface= plot() kwarg -- see hypertools.plot.meshutil and hypertools.plot.surface, GH #109) instead of just the raw points. Here the same Hungarian-matched morph machinery drives a point cloud that morphs between shapes in the zoo, but on every frame the cloud&#x27;s smoothed hull mesh is rebuilt from scratch, shaded with a two-light Blinn-Phong model, and backface-culled for the current camera angle -- so the &quot;blob&quot; skin flows continuously as the underlying points rearrange themselves. Since a convex hull cannot reproduce concave features, holds on concave shapes like the bunny necessarily render as a smooth, rounded blob; that loss of concavity is an expected trade-off of the hull-surface approach, not a bug.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_animate_surface_morph_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/animate_surface_morph`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Morphing hull surfaces through shapes</div>
+    </div>
+
+
 .. thumbnail-parent-div-close
 
 .. raw:: html
@@ -763,6 +865,7 @@ Gallery of Examples
    /auto_examples/save_image
    /auto_examples/plot_hue
    /auto_examples/plot_nested_lists
+   /auto_examples/plot_colorbar
    /auto_examples/plot_procrustes
    /auto_examples/plot_labels
    /auto_examples/save_movie
@@ -771,7 +874,10 @@ Gallery of Examples
    /auto_examples/plot_clusters2
    /auto_examples/animate_plotly
    /auto_examples/plot_multicolored_lines
+   /auto_examples/plot_density
+   /auto_examples/plot_surface
    /auto_examples/plot_PPCA
+   /auto_examples/animate_trails_mix
    /auto_examples/plot_normalize
    /auto_examples/plot_mixture_models
    /auto_examples/plot_datasaurus
@@ -780,9 +886,11 @@ Gallery of Examples
    /auto_examples/plot_apply_model
    /auto_examples/plot_missing_data
    /auto_examples/plot_predict
+   /auto_examples/plot_multiindex
    /auto_examples/plot_impute
    /auto_examples/plot_sotus
    /auto_examples/plot_shape_morph
+   /auto_examples/animate_surface_morph
 
 
 .. only:: html

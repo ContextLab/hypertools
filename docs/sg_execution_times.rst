@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**00:00.217** total execution time for 42 files **from all galleries**:
+**03:42.892** total execution time for 48 files **from all galleries**:
 
 .. container::
 
@@ -32,8 +32,11 @@ Computation times
    * - Example
      - Time
      - Mem (MB)
-   * - :ref:`sphx_glr_auto_examples_plot_predict.py` (``../examples/plot_predict.py``)
-     - 00:00.217
+   * - :ref:`sphx_glr_auto_examples_animate_surface_morph.py` (``../examples/animate_surface_morph.py``)
+     - 03:29.729
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_shape_morph.py` (``../examples/plot_shape_morph.py``)
+     - 00:13.163
      - 0.0
    * - :ref:`sphx_glr_auto_examples_analyze.py` (``../examples/analyze.py``)
      - 00:00.000
@@ -48,6 +51,9 @@ Computation times
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_animate_spin.py` (``../examples/animate_spin.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_animate_trails_mix.py` (``../examples/animate_trails_mix.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_chemtrails.py` (``../examples/chemtrails.py``)
@@ -86,6 +92,9 @@ Computation times
    * - :ref:`sphx_glr_auto_examples_plot_clusters3.py` (``../examples/plot_clusters3.py``)
      - 00:00.000
      - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_colorbar.py` (``../examples/plot_colorbar.py``)
+     - 00:00.000
+     - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_corpus.py` (``../examples/plot_corpus.py``)
      - 00:00.000
      - 0.0
@@ -93,6 +102,9 @@ Computation times
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_datasaurus.py` (``../examples/plot_datasaurus.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_density.py` (``../examples/plot_density.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_describe.py` (``../examples/plot_describe.py``)
@@ -128,22 +140,28 @@ Computation times
    * - :ref:`sphx_glr_auto_examples_plot_multicolored_lines.py` (``../examples/plot_multicolored_lines.py``)
      - 00:00.000
      - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_multiindex.py` (``../examples/plot_multiindex.py``)
+     - 00:00.000
+     - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_nested_lists.py` (``../examples/plot_nested_lists.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_normalize.py` (``../examples/plot_normalize.py``)
      - 00:00.000
      - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_procrustes.py` (``../examples/plot_procrustes.py``)
+   * - :ref:`sphx_glr_auto_examples_plot_predict.py` (``../examples/plot_predict.py``)
      - 00:00.000
      - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_shape_morph.py` (``../examples/plot_shape_morph.py``)
+   * - :ref:`sphx_glr_auto_examples_plot_procrustes.py` (``../examples/plot_procrustes.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_shapes_zoo.py` (``../examples/plot_shapes_zoo.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_sotus.py` (``../examples/plot_sotus.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_surface.py` (``../examples/plot_surface.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_text.py` (``../examples/plot_text.py``)
