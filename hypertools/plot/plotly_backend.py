@@ -47,6 +47,7 @@ from .density import (
     resolve_plotly_volume_params,
 )
 from .trails import broadcast_trail_flag
+from . import morph as _morph
 
 
 VALID_BACKENDS = ('auto', 'matplotlib', 'plotly')
@@ -153,7 +154,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 elev=10, azim=-60, point_colors=None, tail_duration=2,
                 chemtrails=False, precog=False, bullettime=False, zoom=1,
                 forecasts=None, colorbar_info=None, surface=None,
-                surface_colors=None, density=None, density_colors=None):
+                surface_colors=None, density=None, density_colors=None,
+                morph_tags=None, morph_colors=None, morph_samples=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -199,6 +201,19 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
     ndims = data[0].shape[1] if data[0].ndim > 1 else 1
 
+    # animate='morph' (Hungarian point-cloud morphs, maintainer request):
+    # `plot.py` already raises `NotImplementedError` for 2-D data before
+    # ever calling this backend; this is a defensive re-check (mirrors
+    # `broadcast_trail_flag`'s own defensive re-normalization above) for
+    # direct callers (tests) that bypass `plot.py`.
+    if animate == "morph" and ndims != 3:
+        raise NotImplementedError(
+            "animate='morph' is only supported for 3-D plots; got "
+            f"{ndims}-D data."
+        )
+    morph_tags = (morph_tags if morph_tags is not None
+                 else ([True] * len(data) if animate == "morph" else None))
+
     # density= (GH #108/#191), 2-D case: subtle KDE density layers must
     # render BELOW everything else (including surface= fills). Plotly's 2D
     # layering follows trace order in `fig.data` (no zorder), so these are
@@ -232,6 +247,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # start: 0 unless 2-D density/surface layers were seeded at the front.
     data_trace_start = n_density_traces_2d + n_surface_traces_2d
     for i, arr in enumerate(data):
+        if morph_tags is not None and morph_tags[i]:
+            # animate='morph': this dataset joins the single traveling
+            # point-cloud trace built below (after this loop) instead of
+            # getting its own full-cloud trace -- nothing is appended for
+            # it here (n_data_traces below is a plain COUNT, not a
+            # positional map, so skipping entries is safe).
+            continue
         arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
         tkwargs = kwargs_list[i] or {}
         mode, symbol, dash = _parse_fmt(fmt[i], tkwargs)
@@ -397,11 +419,86 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # already-computed-once source for this bound.
     cube_scale = 1.0
     if surface is not None and ndims >= 3:
+        # animate='morph': morph-tagged datasets never get their own STATIC
+        # per-dataset mesh trace (they'd sit there, unmoving, duplicating
+        # the single traveling morph mesh built below) -- excluded here via
+        # a surface list with their entries forced to None; their FULL
+        # (unsampled) cloud's hull is still measured (below) so the axes
+        # cube is sized to contain it as a safe upper bound, mirroring
+        # `matplotlib_backend.animate_plot3D`'s identical tradeoff.
+        surface_for_static = (
+            [None if (morph_tags is not None and morph_tags[i]) else s
+             for i, s in enumerate(surface)]
+            if morph_tags is not None else surface
+        )
         surface_traces_3d, surface_dataset_indices, surface_meshes = (
-            _build_surface_traces_3d(go, data, surface, surface_colors,
-                                     elev, azim))
+            _build_surface_traces_3d(go, data, surface_for_static,
+                                     surface_colors, elev, azim))
         traces.extend(surface_traces_3d)
-        cube_scale = surface_cube_scale(list(surface_meshes.values()))
+        morph_full_meshes_for_scale = []
+        if morph_tags is not None:
+            for i, tag in enumerate(morph_tags):
+                if tag and surface[i] is not None:
+                    pts_i = np.atleast_2d(
+                        np.asarray(data[i], dtype=np.float64))[:, :3]
+                    m = build_mesh_3d(pts_i, surface[i], dataset_label=f' {i}',
+                                      quiet=True)
+                    if m is not None:
+                        morph_full_meshes_for_scale.append(m)
+        cube_scale = surface_cube_scale(
+            list(surface_meshes.values()) + morph_full_meshes_for_scale)
+
+    # animate='morph': ONE traveling point-cloud trace (+ one Mesh3d trace
+    # if any morphing dataset requests a surface), appended after every
+    # normal data/trail/surface trace. `morph_trace_start_3d`/
+    # `morph_mesh_trace_start_3d` record their positions for
+    # `_add_animation`'s 'morph' branch.
+    morph_trace_start_3d = None
+    morph_mesh_trace_start_3d = None
+    morph_surface_spec_3d = None
+    if morph_tags is not None and ndims >= 3:
+        morph_indices_3d = [i for i, t in enumerate(morph_tags) if t]
+        clouds0 = [np.atleast_2d(np.asarray(data[i], dtype=np.float64))[:, :3]
+                  for i in morph_indices_3d]
+        sampled0 = _morph.sample_and_match_clouds(
+            clouds0, morph_samples=morph_samples)
+        ds_colors0 = [
+            tuple(morph_colors[i]) if morph_colors is not None
+            else (0.2, 0.4, 0.8)
+            for i in morph_indices_3d
+        ]
+        for i in morph_indices_3d:
+            if surface is not None and i < len(surface) and surface[i] is not None:
+                morph_surface_spec_3d = surface[i]
+                break
+
+        pts0 = sampled0[0]
+        color0_str = _rgb_string(ds_colors0[0])
+        msize0 = float((kwargs_list[morph_indices_3d[0]] or {}).get('markersize')
+                       or DEFAULT_MARKERSIZE_PT) * PT_TO_PX
+        hide_morph_points = (morph_surface_spec_3d is not None and
+                            not morph_surface_spec_3d.get('keep_points', True))
+        morph_trace_start_3d = len(traces)
+        traces.append(go.Scatter3d(
+            x=pts0[:, 0], y=pts0[:, 1], z=pts0[:, 2], mode='markers',
+            marker=dict(color=color0_str, size=msize0, symbol='circle'),
+            showlegend=False, visible=not hide_morph_points, hoverinfo='skip'))
+
+        if morph_surface_spec_3d is not None:
+            view0 = view_vector(elev, azim)
+            light_kw0 = mpl_lighting_kwargs(morph_surface_spec_3d)
+            mesh0 = (build_mesh_3d(pts0, morph_surface_spec_3d,
+                                   dataset_label=' morph', quiet=True)
+                     if pts0.shape[0] >= 4 else None)
+            if mesh0 is None:
+                v0 = np.tile(pts0[-1] if len(pts0) else np.zeros(3), (4, 1))
+                f0 = np.array([[0, 1, 2]])
+            else:
+                v0, f0 = mesh0
+            morph_mesh_trace_start_3d = len(traces)
+            traces.append(_mesh3d_trace(
+                go, v0, f0, ds_colors0[0], morph_surface_spec_3d['alpha'],
+                view0, light_kw0))
 
     # density= (GH #108/#191), 3-D case: one go.Volume trace per dataset (or
     # one pooled trace), computed ONCE from the full data. Appended here,
@@ -498,7 +595,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        surface=surface, surface_colors=surface_colors,
                        surface_trace_start=surface_trace_start_3d,
                        surface_dataset_indices=surface_dataset_indices,
-                       data_trace_start=data_trace_start)
+                       data_trace_start=data_trace_start,
+                       morph_tags=morph_tags, morph_colors=morph_colors,
+                       morph_samples=morph_samples,
+                       morph_trace_start=morph_trace_start_3d,
+                       morph_mesh_trace_start=morph_mesh_trace_start_3d,
+                       morph_surface_spec=morph_surface_spec_3d)
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
@@ -1262,10 +1364,19 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    trail_dataset_indices=None,
                    surface=None, surface_colors=None,
                    surface_trace_start=None,
-                   surface_dataset_indices=None, data_trace_start=0):
+                   surface_dataset_indices=None, data_trace_start=0,
+                   morph_tags=None, morph_colors=None, morph_samples=None,
+                   morph_trace_start=None, morph_mesh_trace_start=None,
+                   morph_surface_spec=None):
     """Attach frames + play controls: 'spin' rotates the camera; True /
-    'parallel' reveals trajectories through a sliding time window. Frames
-    only touch the data traces, so the cube/frame stays put.
+    'parallel' reveals trajectories through a sliding time window; 'morph'
+    eases the single traveling point-cloud trace (+ mesh, if surfaced)
+    built by `plotly_draw` through the Hungarian-matched hold/morph
+    schedule (see `hypertools.plot.morph`) while camera eye rotation
+    follows `rotations` (scalar: uniform over the whole animation, exactly
+    like every other style; list: per-segment, see
+    `hypertools.plot.morph.segment_azimuths`). Frames only touch the data
+    traces, so the cube/frame stays put.
 
     `surface`/`surface_colors`/`surface_trace_start`/`surface_dataset_indices`
     (GH #109, 3-D only): if surfaces are in play, each frame ALSO carries a
@@ -1390,6 +1501,63 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 frame_kwargs['data'] = surf_data
                 frame_kwargs['traces'] = surface_trace_indices
             frames.append(go.Frame(**frame_kwargs))
+    elif animate == 'morph' and ndims >= 3:
+        # Hungarian-matched point-cloud morph (maintainer request): ONE
+        # traveling Scatter3d trace (+ one Mesh3d trace if surfaced) eases
+        # through the hold/morph schedule; camera eye rotates per
+        # `rotations` (scalar: uniform over the whole animation; list:
+        # per-segment, continuous across boundaries -- see
+        # `hypertools.plot.morph.segment_azimuths`).
+        morph_indices = [i for i, t in enumerate(morph_tags or []) if t]
+        n_morph_datasets = len(morph_indices)
+        clouds = [np.atleast_2d(np.asarray(data[i], dtype=np.float64))[:, :3]
+                 for i in morph_indices]
+        sampled = _morph.sample_and_match_clouds(
+            clouds, morph_samples=morph_samples)
+        ds_colors = [
+            tuple(morph_colors[i]) if morph_colors is not None
+            else (0.2, 0.4, 0.8)
+            for i in morph_indices
+        ]
+        frame_counts = _morph.segment_frame_counts(n_morph_datasets, n_frames)
+        rotations_resolved = _morph.resolve_morph_rotations(
+            rotations, n_morph_datasets)
+        azimuths = _morph.segment_azimuths(frame_counts, rotations_resolved, azim)
+        n_frames = sum(frame_counts)
+
+        morph_trace_indices = [morph_trace_start]
+        if morph_mesh_trace_start is not None:
+            morph_trace_indices.append(morph_mesh_trace_start)
+
+        for k in range(n_frames):
+            seg_idx, step, n_steps = _morph.frame_to_segment(frame_counts, k)
+            pts = _morph.morph_positions(sampled, seg_idx, step, n_steps)
+            color = _morph.morph_color(ds_colors, seg_idx, step, n_steps)
+            angle = azimuths[k]
+
+            frame_traces = [go.Scatter3d(
+                x=pts[:, 0], y=pts[:, 1], z=pts[:, 2],
+                marker=dict(color=_rgb_string(color)))]
+            if morph_mesh_trace_start is not None:
+                view = view_vector(elev, angle)
+                light_kw = mpl_lighting_kwargs(morph_surface_spec)
+                mesh = (build_mesh_3d(pts, morph_surface_spec,
+                                      dataset_label=' morph', quiet=True)
+                       if pts.shape[0] >= 4 else None)
+                if mesh is None:
+                    pt = pts[-1] if len(pts) else np.zeros(3)
+                    frame_traces.append(
+                        _degenerate_mesh3d_update(go, pt, color))
+                else:
+                    v, f = mesh
+                    frame_traces.append(_mesh3d_geometry_update(
+                        go, v, f, color, morph_surface_spec['alpha'],
+                        view, light_kw))
+
+            frames.append(go.Frame(
+                name=str(k), data=frame_traces, traces=morph_trace_indices,
+                layout=dict(scene_camera=dict(
+                    eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))))
     elif animate == 'serial':
         # datasets appear one at a time, each growing into place while
         # earlier ones stay fully drawn (never connected to each other)

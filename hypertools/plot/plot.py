@@ -19,6 +19,70 @@ from .surface import broadcast_surface, normalize_surface_arg
 from .density import broadcast_density, normalize_density_arg
 from .trails import broadcast_trail_flag
 from .multiindex import expand_multiindex, build_multiindex_styles
+from .morph import resolve_morph_rotations
+
+
+def _resolve_animate_mode(animate, n_datasets):
+    """Resolve ``animate=`` for ``animate='morph'`` support (Hungarian
+    point-cloud morphs between datasets, maintainer request): `animate` may
+    be a single GLOBAL mode (``False``/``True``/``'parallel'``/``'spin'``/
+    ``'serial'``/``'morph'``, unchanged from before) OR, ONLY for morph, a
+    per-dataset list with ``'morph'``/``None``/``False`` entries (one per
+    FINAL -- post cluster/hue-reshape -- dataset, matching `n_datasets`):
+    ``'morph'``-tagged datasets join the morph sequence IN LIST ORDER;
+    untagged datasets render as static (unanimated) backdrops.
+
+    Returns
+    -------
+    (mode, morph_tags)
+        `mode` is what every backend actually receives: the raw scalar
+        `animate` unchanged, or ``'morph'`` if a list was given. `morph_tags`
+        is ``None`` for every non-morph mode, or a list of `n_datasets` bool
+        (``True`` where that dataset joins the morph sequence) whenever
+        `mode` is ``'morph'`` (scalar ``animate='morph'`` tags every
+        dataset).
+
+    Raises
+    ------
+    ValueError
+        A list entry is not ``'morph'``/``None``/``False``; a list's length
+        doesn't match `n_datasets`; or fewer than 2 datasets end up tagged
+        ``'morph'`` (scalar or list form).
+    """
+    if isinstance(animate, (list, tuple)):
+        tags = []
+        for item in animate:
+            if item in (None, False):
+                tags.append(False)
+            elif item == "morph":
+                tags.append(True)
+            else:
+                raise ValueError(
+                    "animate list entries must be 'morph' or None/False "
+                    "(per-dataset animate lists only support tagging "
+                    f"datasets for animate='morph'); got {item!r}."
+                )
+        if len(tags) != n_datasets:
+            raise ValueError(
+                f"animate list has {len(tags)} entries but there are "
+                f"{n_datasets} datasets to plot; pass a single mode to "
+                "apply it to every dataset, or a list matching the "
+                "dataset count."
+            )
+        if sum(tags) < 2:
+            raise ValueError(
+                "animate='morph' (per-dataset list form) requires at "
+                f"least 2 datasets tagged 'morph'; got {sum(tags)}."
+            )
+        return "morph", tags
+    if animate == "morph":
+        if n_datasets < 2:
+            raise ValueError(
+                "animate='morph' requires at least 2 datasets to morph "
+                f"between; got {n_datasets}."
+            )
+        return "morph", [True] * n_datasets
+    return animate, None
 
 
 @manage_backend
@@ -61,6 +125,7 @@ def plot(
     precog=False,
     bullettime=False,
     frame_rate=30,
+    morph_samples=None,
     interactive=False,
     explore=False,
     backend="auto",
@@ -307,7 +372,7 @@ def plot(
         /usr/bin/ruby -e "$(curl -fsSL
         https://raw.githubusercontent.com/Homebrew/install/master/install)".
 
-    animate : bool, 'parallel', 'spin' or 'serial'
+    animate : bool, 'parallel', 'spin', 'serial', 'morph', or list
         If True or 'parallel', plots the data as an animated trajectory, with
         each dataset plotted simultaneously. If 'spin', all the data is plotted
         at once but the camera spins around the plot. If 'serial', datasets
@@ -318,6 +383,37 @@ def plot(
         is always GLOBAL -- there is exactly one camera and one frame loop
         driving every dataset in the animation, so it cannot vary per
         dataset (unlike `chemtrails`/`precog`/`bullettime` below, which CAN).
+
+        If 'morph' (maintainer request, 2026-07-06), every dataset is
+        treated as a POINT CLOUD (not a trajectory, regardless of `fmt`) and
+        morphed ds_1 -> ds_2 -> ... -> ds_N through a hold/morph/hold/...
+        schedule (``2N - 1`` segments: ``[hold_1, morph_1->2, hold_2, ...,
+        hold_N]``). Each morph segment samples an equal number of points
+        from the two datasets involved (seeded, no replacement -- see
+        `morph_samples` below), chain-matches consecutive clouds point-for-
+        point with the Hungarian algorithm
+        (`scipy.optimize.linear_sum_assignment` on pairwise distances, so
+        each point travels the shortest total distance to its partner in
+        the next cloud -- exactly `examples/plot_shape_morph.py`'s
+        algorithm, now built into the library), and eases between clouds
+        with smoothstep interpolation. A SINGLE point artist/trace is drawn
+        (one per plot, not one per dataset): its color linearly (RGB)
+        interpolates between the two datasets' own colors during a morph
+        segment and is solid during a hold. Requires at least 2 datasets;
+        raises `ValueError` otherwise. `surface=True` recomputes that one
+        artist's hull every frame from its current interpolated positions;
+        3-D only (`NotImplementedError` for 2-D data).
+
+        `animate` may ALSO be a per-dataset LIST (length = the number of
+        FINAL, post `cluster`/`hue`-reshape datasets), with each entry
+        `'morph'`, `None`, or `False`: `'morph'`-tagged datasets join the
+        morph sequence IN LIST ORDER; untagged datasets are drawn as STATIC
+        (unanimated) backdrops, present in every frame. At least 2 entries
+        must be `'morph'` (`ValueError` otherwise); any other mode string
+        inside a list raises `ValueError` (list form only supports tagging
+        datasets for `animate='morph'` -- 'spin'/'serial'/etc. cannot vary
+        per dataset, see above). A scalar `animate='morph'` is equivalent to
+        tagging every dataset `'morph'`.
 
     backend : str
         Rendering backend: 'matplotlib' (the classic renderer),
@@ -335,11 +431,22 @@ def plot(
     tail_duration (animation only) : float
         Sets the length of the tail of the data (default: 2 seconds)
 
-    rotations (animation only) : float
+    rotations (animation only) : float or list
         Number of rotations around the box over the course of the
         animation (default: 1 -- with the default 30-second duration,
         one revolution every 30 seconds). Identical pacing on both
-        backends.
+        backends. A list is ONLY valid with `animate='morph'`: it must have
+        exactly ``2N - 1`` entries (`N` = the number of morphing datasets),
+        one per hold/morph segment (``[hold_1, morph_1->2, hold_2, ...,
+        hold_N]``) -- e.g. `rotations=[1, 0.25, 2, 0.25, 1]` for 3 morphing
+        datasets spins 1 full rotation during the first hold, a quarter
+        rotation during the first morph, 2 rotations during the second
+        hold, etc. Each segment's own rotation count is spread uniformly
+        over that segment's own frames, and the camera azimuth accumulates
+        CONTINUOUSLY across segment boundaries (no jump). `ValueError` if
+        the list length doesn't match ``2N - 1`` (names the expected
+        length), or if a list is given with any `animate` mode other than
+        `'morph'`.
 
     zoom (animation only) : float
         How far to zoom into the plot, positive numbers will zoom in (default: 0)
@@ -382,6 +489,16 @@ def plot(
         Both backends generate exactly frame_rate * duration frames, so
         matplotlib and plotly animations play at identical speed,
         duration, and framerate.
+
+    morph_samples (``animate='morph'`` only) : int or None
+        The number of points sampled (without replacement, seeded) from
+        EVERY morphing dataset before Hungarian-matching them -- all
+        morphing datasets are sampled down to this SAME count so points can
+        be matched 1-to-1 (default `None`: ``min(smallest morphing
+        dataset's point count, 1000)``, capping the Hungarian assignment's
+        cost for large datasets). A value larger than the smallest
+        morphing dataset is silently capped to that dataset's own count,
+        never padded. Ignored for every other `animate` mode.
 
     interactive : bool
         If True, display the plot using an interactive matplotlib
@@ -1168,27 +1285,58 @@ def plot(
     density_list = (broadcast_density(_density_norm, len(xform))
                     if _density_norm is not None else None)
 
+    # animate='morph' (Hungarian-matched point-cloud morphs between
+    # datasets, maintainer request): resolve a scalar or per-dataset LIST
+    # `animate` into the actual backend style (`animate` from here on is
+    # always one GLOBAL mode -- there is only ever one camera and one frame
+    # loop, exactly as before) plus `morph_tags` (which FINAL datasets join
+    # the morph sequence), now that `xform` reflects the final (post
+    # cluster/hue-reshape) dataset count -- same timing as
+    # surface_list/density_list above.
+    animate, morph_tags = _resolve_animate_mode(animate, len(xform))
+    if morph_tags is not None and xform[0].shape[1] != 3:
+        raise NotImplementedError(
+            "animate='morph' is only supported for 3-D plots; the data "
+            f"being plotted is {xform[0].shape[1]}-D. Pass ndims=3 (the "
+            "default) to use animate='morph'."
+        )
+
+    # `rotations` as a per-SEGMENT list ([hold_1, morph_1->2, hold_2, ...],
+    # length 2 * n_morph_datasets - 1) is only meaningful for
+    # animate='morph' -- every other mode has exactly one camera sweep over
+    # the whole animation, with no segment boundaries to assign rotations
+    # to.
+    if isinstance(rotations, (list, tuple)) and morph_tags is None:
+        raise ValueError(
+            "rotations as a list is only supported with animate='morph' "
+            f"(got animate={animate!r}); pass a scalar rotations= for "
+            "this animate mode."
+        )
+    if morph_tags is not None:
+        rotations = resolve_morph_rotations(rotations, sum(morph_tags))
+
     # chemtrails/precog/bullettime (GH #127): broadcast bool-or-list to the
     # FINAL (post cluster/hue-reshape) dataset count, same as surface=/
     # density= above -- each accepts a single bool (applied to every
     # dataset) or a list/tuple of bool (one entry per drawn dataset, mixed
-    # per-dataset combinations allowed). `animate` itself (True/'parallel'/
-    # 'spin'/'serial') stays a single GLOBAL mode -- there is only ever one
-    # camera and one frame loop -- only these trail FLAGS become per-dataset.
+    # per-dataset combinations allowed). `animate` itself stays a single
+    # GLOBAL mode -- only these trail FLAGS become per-dataset.
     chemtrails = broadcast_trail_flag(chemtrails, len(xform), "chemtrails")
     precog = broadcast_trail_flag(precog, len(xform), "precog")
     bullettime = broadcast_trail_flag(bullettime, len(xform), "bullettime")
 
-    # GH #127: 'spin' has no "current position" (only the camera moves, so a
-    # trail has nothing to trail BEHIND or AHEAD of) and 'serial' already
-    # communicates elapsed time via its point-by-point reveal -- trail
-    # styles are semantically meaningless in both, so warn once (naming the
-    # mode, which flag(s) were set, and for which dataset indices) rather
-    # than silently building frozen/invisible trail artists. `_draw`/
-    # `plotly_draw` skip creating those artists entirely for these two
-    # modes (see their own `style`/`animate` branches), so this is purely
+    # GH #127 (+ morph follow-up): 'spin' has no "current position" (only
+    # the camera moves, so a trail has nothing to trail BEHIND or AHEAD of),
+    # 'serial' already communicates elapsed time via its point-by-point
+    # reveal, and 'morph' draws a single traveling point-cloud artist with
+    # no per-dataset "current position" either -- trail styles are
+    # semantically meaningless in all three, so warn once (naming the mode,
+    # which flag(s) were set, and for which dataset indices) rather than
+    # silently building frozen/invisible trail artists. `_draw`/
+    # `plotly_draw` skip creating those artists entirely for these modes
+    # (see their own `style`/`animate` branches), so this is purely
     # informational -- no flags are mutated here.
-    if animate in ("spin", "serial"):
+    if animate in ("spin", "serial", "morph"):
         _ignored_trail_flags = [
             (_name, [i for i, v in enumerate(_flags) if v])
             for _name, _flags in (
@@ -1238,9 +1386,16 @@ def plot(
         colorbar, hue, multicolor_hue, cluster, n_clusters, xform,
         mpl_kwargs, legend, palette)
 
-    # interpolate if its a line plot
+    # interpolate if its a line plot. animate='morph' treats every dataset
+    # as a POINT CLOUD (Hungarian-matched to its neighbors in `morph.py`),
+    # never as a time-ordered trajectory -- interpolating it here would
+    # change its point count/order for no benefit and would desync the
+    # (separately, seed-controlled) morph sampling downstream, so this
+    # entire step is skipped for it.
     pre_interp_point_counts = [xi.shape[0] for xi in xform]
-    if fmt is None or isinstance(fmt, str):
+    if animate == "morph":
+        pass
+    elif fmt is None or isinstance(fmt, str):
         if is_line(fmt):
             if xform[0].shape[0] > 1:
                 xform = interp_array_list(
@@ -1353,6 +1508,15 @@ def plot(
     density_colors = (_resolve_dataset_colors()
                       if density_list is not None else None)
 
+    # animate='morph': resolve each dataset's OWN drawn color the SAME way
+    # as surface_colors/density_colors above -- the traveling morph cloud's
+    # color is a linear RGB interpolation between two datasets' OWN colors
+    # (see `hypertools.plot.morph.morph_color`), so both backends need
+    # every dataset's resolved color regardless of whether surface=/
+    # density= were requested.
+    morph_colors = (_resolve_dataset_colors()
+                    if morph_tags is not None else None)
+
     # handle format strings
     if fmt is not None:
         if type(fmt) is not list:
@@ -1408,6 +1572,9 @@ def plot(
             surface_colors=surface_colors,
             density=density_list,
             density_colors=density_colors,
+            morph_tags=morph_tags,
+            morph_colors=morph_colors,
+            morph_samples=morph_samples,
         )
         ax = None
         data = xform
@@ -1451,6 +1618,9 @@ def plot(
                 surface_colors=surface_colors,
                 density=density_list,
                 density_colors=density_colors,
+                morph_tags=morph_tags,
+                morph_colors=morph_colors,
+                morph_samples=morph_samples,
             )
 
             # predict=: overlay one dashed, low-opacity (alpha 0.6) forecast

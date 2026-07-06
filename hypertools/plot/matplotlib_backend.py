@@ -19,6 +19,7 @@ from .surface import (
     view_vector,
 )
 from .trails import broadcast_trail_flag
+from . import morph as _morph
 from .density import (
     DENSITY_DEFAULTS,
     HAS_SKIMAGE,
@@ -268,6 +269,9 @@ def _draw(
     surface_colors=None,
     density=None,
     density_colors=None,
+    morph_tags=None,
+    morph_colors=None,
+    morph_samples=None,
 ):
     """
     Draws the plot
@@ -775,6 +779,59 @@ def _draw(
 
         return lines
 
+    def update_morph(num, morph_state, cube_scale, azimuths, zoom=1, elev=10):
+        """animate='morph': one traveling point-cloud artist eases through
+        the Hungarian-matched hold/morph schedule (see `hypertools.plot.morph`)
+        while any UNTAGGED (static) datasets stay fully drawn, untouched, in
+        the background -- only the camera (and, if surfaced, this single
+        artist's hull) update every frame."""
+        if hasattr(update_morph, "planes"):
+            for plane in update_morph.planes:
+                plane.remove()
+        update_morph.planes = plot_cube(cube_scale, **frame_kwargs)
+
+        azim_now = azimuths[num]
+        ax.view_init(elev=elev, azim=azim_now)
+        ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
+
+        seg_idx, step, n_steps = _morph.frame_to_segment(
+            morph_state["frame_counts"], num)
+        pts = _morph.morph_positions(morph_state["sampled"], seg_idx, step,
+                                     n_steps)
+        color = _morph.morph_color(morph_state["colors"], seg_idx, step,
+                                   n_steps)
+
+        artist = morph_state["artist"]
+        artist.set_data(pts[:, 0], pts[:, 1])
+        artist.set_3d_properties(pts[:, 2])
+        artist.set_color(color)
+
+        # surface= (GH #109/morph): the traveling cloud's own hull (if it
+        # has a surface spec) is rebuilt from its CURRENT interpolated
+        # positions every frame (like 'parallel'/'serial'); any static
+        # (untagged) dataset's surface was already precomputed once
+        # (`morph_state['static_meshes']`, set in animate_plot3D) and is
+        # only re-shaded/re-culled here every frame, exactly like 'spin' --
+        # this runs whenever ANY dataset requested a surface, not only when
+        # the morphing cloud itself has one (a static dataset's surface
+        # must keep rendering even if no morph-tagged dataset has a spec).
+        if surface is not None:
+            frame_meshes = list(morph_state["static_meshes"])
+            frame_colors = surface_colors
+            if morph_state["surface_spec"] is not None:
+                mesh = (build_mesh_3d(pts, morph_state["surface_spec"],
+                                      dataset_label=" morph", quiet=True)
+                       if pts.shape[0] >= 4 else None)
+                frame_meshes[morph_state["mesh_slot"]] = mesh
+                frame_colors = list(surface_colors)
+                frame_colors[morph_state["mesh_slot"]] = color
+            prior = getattr(update_morph, "surface_colls", None)
+            update_morph.surface_colls = _shade_and_cull_3d(
+                ax, frame_meshes, surface, frame_colors, elev, azim_now,
+                prior_colls=prior)
+
+        return (artist,)
+
     def dispatch_animate(x, ani_params):
         if x[0].shape[1] == 3:
             return animate_plot3D(x, **ani_params)
@@ -790,6 +847,9 @@ def _draw(
         frame_rate=30,
         elev=10,
         style="parallel",
+        morph_tags=None,
+        morph_colors=None,
+        morph_samples=None,
     ):
 
         # initialize plot
@@ -826,7 +886,7 @@ def _draw(
         # ignored flags/dataset indices; this just skips ever creating them
         # so `_wants_trail` is forced False for every dataset in these modes.
         def _wants_trail(idx):
-            if style in ("spin", "serial"):
+            if style in ("spin", "serial", "morph"):
                 return False
             return chemtrails[idx] or precog[idx] or bullettime[idx]
 
@@ -888,6 +948,60 @@ def _draw(
             if _trail_line is not None:
                 _trail_line.set_label('_nolegend_')
 
+        # animate='morph' (Hungarian-matched point-cloud morphs, maintainer
+        # request): build the single traveling artist here (before the
+        # surface/cube-scale block below, which needs `morph_state` set to
+        # wire in the per-frame hull) -- the morph-tagged datasets' own
+        # `lines`/`trail` artists (created above, for legend bookkeeping)
+        # are hidden for the whole animation since only the ONE shared
+        # artist is ever actually drawn/moved.
+        morph_state = None
+        if style == "morph":
+            _tags = morph_tags if morph_tags is not None else [True] * len(x)
+            morph_indices = [i for i, tag in enumerate(_tags) if tag]
+            clouds = [np.asarray(x[i], dtype=np.float64)[:, :3]
+                     for i in morph_indices]
+            sampled = _morph.sample_and_match_clouds(
+                clouds, morph_samples=morph_samples)
+            ds_colors = [
+                tuple(morph_colors[i]) if morph_colors is not None
+                else (0.2, 0.4, 0.8)
+                for i in morph_indices
+            ]
+
+            for i in morph_indices:
+                lines[i].set_visible(False)
+                if i < len(trail) and trail[i] is not None:
+                    trail[i].set_visible(False)
+
+            mesh_slot = morph_indices[0]
+            morph_surface_spec = None
+            if surface is not None:
+                for i in morph_indices:
+                    if i < len(surface) and surface[i] is not None:
+                        morph_surface_spec = surface[i]
+                        break
+
+            first_pts = sampled[0]
+            _mkw = (kwargs_list[mesh_slot]
+                   if isinstance(kwargs_list[mesh_slot], dict) else {})
+            morph_markersize = _mkw.get("markersize") or 1.5
+            (morph_artist,) = ax.plot(
+                first_pts[:, 0], first_pts[:, 1], first_pts[:, 2],
+                linestyle="None", marker=".", markersize=morph_markersize,
+                color=ds_colors[0],
+            )
+            morph_artist.set_label("_nolegend_")
+            if (morph_surface_spec is not None
+                    and not morph_surface_spec.get("keep_points", True)):
+                morph_artist.set_visible(False)
+
+            morph_state = dict(
+                sampled=sampled, colors=ds_colors, artist=morph_artist,
+                mesh_slot=mesh_slot, surface_spec=morph_surface_spec,
+                indices=morph_indices,
+            )
+
         # surface= (GH #109)
         # cube_scale_anim (GH #109 round 2): the axes cube/limits must be
         # wide enough to contain every surface mesh built over the COURSE
@@ -918,6 +1032,20 @@ def _draw(
                 # rotates) -- reuse the just-built full-data meshes so
                 # update_lines_spin only has to re-shade/re-cull per frame.
                 update_lines_spin.meshes = full_meshes
+            elif style == "morph" and morph_state is not None:
+                # every OTHER morph-tagged slot is forced to None: only the
+                # single `mesh_slot` chosen above ever gets a (per-frame
+                # rebuilt) mesh -- there is only one traveling cloud, so
+                # only one hull. `full_meshes[mesh_slot]` (built from that
+                # dataset's FULL, unsampled cloud) is discarded here in
+                # favor of `update_morph` rebuilding it from the CURRENT
+                # interpolated (sampled) positions every frame; it was
+                # still built above so `cube_scale_anim` accounts for every
+                # morphing dataset's own full-data hull as a safe bound.
+                static_meshes = list(full_meshes)
+                for i in morph_state["indices"]:
+                    static_meshes[i] = None
+                morph_state["static_meshes"] = static_meshes
 
         # the axes cube is redrawn by `update_lines_*` every frame (camera
         # angle/zoom change), but the LIMITS are set once, up front: sized
@@ -987,6 +1115,25 @@ def _draw(
                 blit=False,
                 repeat=False,
             )
+        elif style == "morph":
+            n_morph_datasets = len(morph_state["indices"])
+            total_frames = frame_rate * duration
+            frame_counts = _morph.segment_frame_counts(
+                n_morph_datasets, total_frames)
+            morph_state["frame_counts"] = frame_counts
+            rotations_resolved = _morph.resolve_morph_rotations(
+                rotations, n_morph_datasets)
+            azimuths = _morph.segment_azimuths(
+                frame_counts, rotations_resolved, azim)
+            line_ani = animation.FuncAnimation(
+                fig,
+                update_morph,
+                sum(frame_counts),
+                fargs=(morph_state, cube_scale_anim, azimuths, zoom, elev),
+                interval=1000 / frame_rate,
+                blit=False,
+                repeat=False,
+            )
 
         return fig, ax, x, line_ani
 
@@ -1002,7 +1149,7 @@ def _draw(
     if frame_kwargs is None:
         frame_kwargs = {}
 
-    if animate in [True, "parallel", "spin", "serial"]:
+    if animate in [True, "parallel", "spin", "serial", "morph"]:
         assert (
             x[0].shape[1] == 3
         ), "Animations are currently only supported for 3d plots."
@@ -1018,6 +1165,9 @@ def _draw(
             frame_rate=frame_rate,
             elev=elev,
             style=animate,
+            morph_tags=morph_tags,
+            morph_colors=morph_colors,
+            morph_samples=morph_samples,
         )
 
         # dispatch animation
