@@ -1449,23 +1449,31 @@ def plot(
             # tight_layout would shrink them back into subplot margins)
             if not animate:
                 plt.tight_layout()
-                # tight_layout reserves room for an outside (right-side)
-                # legend on 2D axes but NOT on 3D axes, so a wide legend on a
-                # 3D plot overflows and clips off the figure's right edge.
-                # Pull the axes leftward until the legend fits within the
-                # canvas, keeping it fully visible to the right of the plot.
-                if legend is not None and ax is not None:
-                    _fit_right_legend(fig, ax)
 
-            # colorbar (GH #100): added AFTER the legend has been fitted (for
-            # static plots) so a right-side colorbar reserves its own strip
-            # beyond the legend rather than overlapping it. For animated
-            # plots this is the only figure-layout step that runs -- the
-            # colorbar is built once, here, from the (frame-independent)
-            # color mapping and is never touched by the per-frame update
-            # callbacks, so it stays static across every frame.
+            # colorbar (GH #100): built once, here, from the (frame-
+            # independent) color mapping. For animated plots this is never
+            # touched by the per-frame update callbacks, so it stays static
+            # across every frame. Added BEFORE the legend fit below so that
+            # fit accounts for whatever room/reposition the colorbar just
+            # consumed -- a 'left'/'top'/'bottom' colorbar reshapes `ax`
+            # via matplotlib's own `make_axes` machinery, which can discard
+            # an EARLIER legend fit; fitting the legend last, against
+            # whatever the current layout actually is, sidesteps that.
             if colorbar_info is not None and ax is not None:
                 _add_colorbar(fig, ax, colorbar_info)
+
+            # legend fitting (GH #100/#95 follow-up): a right-side (outside)
+            # legend can overflow the figure's right edge. `tight_layout`
+            # reserves room for it on 2D axes but NOT on 3D axes, and
+            # neither accounts for a colorbar sharing that edge (location=
+            # 'right') or reshaping `ax` (location='left'/'top'/'bottom').
+            # This previously only ran for STATIC plots, leaving the legend
+            # fully clipped whenever animate=True (the legend is added by
+            # `_draw` above regardless of `animate`, and is static across
+            # every animation frame, so fitting it once here -- exactly like
+            # the colorbar above -- is enough; no per-frame work needed).
+            if legend is not None and ax is not None:
+                _fit_right_legend(fig, ax)
 
             # save
             if save_path is not None:
@@ -1610,6 +1618,23 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
     labels = (list(legend) if isinstance(legend, list)
               else [i + 1 for i in range(n_groups)])
 
+    # A trace labeled '_nolegend_' (e.g. every MultiIndex leaf and
+    # intermediate-level mean, GH #95 -- only the TOP-level mean of each
+    # group carries a real label) must NEVER appear on the colorbar: filter
+    # colors/labels down to the REAL (legend-worthy) entries together, so a
+    # 2-level MultiIndex DataFrame (8 leaves + 2 top-level means) renders 2
+    # colorbar segments (one per top-level group), not 10.
+    if '_nolegend_' in labels:
+        keep = [i for i, l in enumerate(labels) if l != '_nolegend_']
+        if not keep:
+            raise ValueError(
+                "colorbar=True requires at least one labeled group, but "
+                "every trace is unlabeled ('_nolegend_') -- there is no "
+                "finite set of named groups to show."
+            )
+        colors = np.asarray(colors)[keep]
+        labels = [labels[i] for i in keep]
+
     return {
         'kind': 'discrete',
         'colors': colors,
@@ -1667,14 +1692,47 @@ def _add_colorbar(fig, ax, colorbar_info):
     return cbar
 
 
+def _tight_right_edge_in(fig):
+    """The TRUE required figure width (inches) to avoid clipping ANY artist
+    off the right edge -- e.g. a legend and/or a colorbar's tick labels/axis
+    label.
+
+    Uses `Figure.get_tightbbox`, which computes each artist's actual extent
+    from its text/renderer metrics independent of the figure's CURRENT
+    canvas size -- unlike measuring rasterized "inked" pixels (the
+    previous approach here), which silently UNDER-reports whenever content
+    already overflows the current canvas: pixels that fall outside the
+    canvas are simply never in the rendered buffer, so a rasterize-based
+    fit that only closes the gap by a small fixed margin each iteration
+    converges far too slowly for long labels (needing many more than
+    `max_iter` steps -- GH #100 follow-up) and can still leave content
+    clipped. Measuring the true extent directly lets every caller compute
+    the exact required width in one shot.
+
+    hypertools draws inside a seaborn `rc_context`, but the figure is
+    actually rendered downstream (the sphinx-gallery scraper, or a bare
+    savefig/display after `plot()` returns) under the RESTORED default
+    rcParams, whose font is WIDER than seaborn's. Measuring under the
+    seaborn font would make content look like it fits when it clips in the
+    real output, so this always measures under `matplotlib.rcParamsDefault`
+    to match what actually gets saved/displayed.
+    """
+    import matplotlib
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    with plt.rc_context(matplotlib.rcParamsDefault):
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        renderer = canvas.get_renderer()
+        return float(fig.get_tightbbox(renderer).x1)
+
+
 def _add_right_colorbar(fig, ax, mappable, pad_in=0.2, width_in=0.35,
-                        max_iter=6, ticklabels=None, label=None,
+                        max_iter=3, ticklabels=None, label=None,
                         **colorbar_kwargs):
     """Add `mappable`'s colorbar in a NEW strip to the right of the figure
     -- to the right of an existing right-side legend, if any -- widening
-    the figure (mirroring `_fit_right_legend`'s technique: measure the
-    ACTUAL rasterized rightmost inked pixel, then widen the figure and
-    reposition `ax` by its unchanged absolute inches so neither the plot
+    the figure (via `_tight_right_edge_in`'s true-extent measurement, then
+    repositioning `ax` by its unchanged absolute inches so neither the plot
     nor an already-fitted legend need to shrink or move).
 
     `ticklabels`/`label` (the FINAL tick label strings and axis label, if
@@ -1685,29 +1743,17 @@ def _add_right_colorbar(fig, ax, mappable, pad_in=0.2, width_in=0.35,
     swapping in the real ones afterward would fit the wrong content and
     leave the real labels clipped.
 
-    That fitting pass is a second rasterized-measurement loop (identical in
-    spirit to `_fit_right_legend`'s) that keeps widening the figure,
-    repositioning BOTH `ax` and the new colorbar axes by their unchanged
-    absolute inches, until nothing is clipped off the right edge."""
-    import matplotlib
-    from matplotlib.backends.backend_agg import FigureCanvasAgg
-
+    That fitting pass widens the figure to the exact true extent measured by
+    `_tight_right_edge_in`, repositioning BOTH `ax` and the new colorbar
+    axes by their unchanged absolute inches, so nothing is clipped off the
+    right edge regardless of label length."""
     try:
         fig.set_layout_engine('none')
     except Exception:
         pass
 
-    def _rasterize():
-        with plt.rc_context(matplotlib.rcParamsDefault):
-            canvas = FigureCanvasAgg(fig)
-            canvas.draw()
-            buf = np.asarray(canvas.buffer_rgba())[..., :3]
-        return buf, np.where((buf < 245).any(axis=(0, 2)))[0]
-
-    _, inked_cols = _rasterize()
+    right_edge_in = _tight_right_edge_in(fig)
     w, h = fig.get_size_inches()
-    right_edge_in = ((int(inked_cols.max()) + 1) / fig.dpi
-                     if len(inked_cols) else 0.0)
 
     cbar_x0_in = right_edge_in + pad_in
     new_w = cbar_x0_in + width_in + pad_in
@@ -1730,19 +1776,11 @@ def _add_right_colorbar(fig, ax, mappable, pad_in=0.2, width_in=0.35,
         cbar.set_label(label)
 
     # second pass: the colorbar's tick labels/title were just drawn and may
-    # extend past the reserved `width_in` strip -- widen further as needed.
-    target_px = max(6.0, pad_in * fig.dpi)
+    # extend past the reserved `width_in` strip -- widen to the exact true
+    # extent (in one shot, not a fixed-step guess) as needed.
     for _ in range(max_iter):
-        buf, inked_cols = _rasterize()
-        if not len(inked_cols):
-            break
-        w_px = buf.shape[1]
-        margin_px = w_px - 1 - int(inked_cols.max())
-        if margin_px >= target_px:
-            break
-        deficit_in = (target_px - margin_px) / fig.dpi
         w_cur, h_cur = fig.get_size_inches()
-        new_w = w_cur + deficit_in
+        new_w = _tight_right_edge_in(fig) + pad_in
         if new_w <= w_cur + 1e-3:
             break
         ax_pos, cbar_pos = ax.get_position(), cbar_ax.get_position()
@@ -1756,7 +1794,7 @@ def _add_right_colorbar(fig, ax, mappable, pad_in=0.2, width_in=0.35,
     return cbar
 
 
-def _fit_right_legend(fig, ax, pad_in=0.15, max_iter=6):
+def _fit_right_legend(fig, ax, pad_in=0.15, max_iter=3):
     """Ensure a right-side (outside) legend stays fully within the figure.
 
     hypertools anchors its legend to the RIGHT of the plot via
@@ -1769,9 +1807,15 @@ def _fit_right_legend(fig, ax, pad_in=0.15, max_iter=6):
     size and position, until the legend's right edge sits inside the canvas.
     Fixing the figure itself (rather than a save kwarg) means every downstream
     save path AND interactive/notebook display shows the full legend.
+
+    Runs for BOTH static and animated plots (GH #100/#95 follow-up: the
+    legend is added by `_draw` regardless of `animate` and is static across
+    every animation frame, so a single fit here -- after the figure/axes
+    already reflect whatever a colorbar in ANY location did to `ax` -- is
+    enough; no per-frame work needed), and after ANY colorbar has already
+    been added (see the call site in `plot()`), so this always fits against
+    the figure's current, final layout rather than being undone by it.
     """
-    import matplotlib
-    from matplotlib.backends.backend_agg import FigureCanvasAgg
     legend = ax.get_legend()
     if legend is None:
         return
@@ -1782,41 +1826,19 @@ def _fit_right_legend(fig, ax, pad_in=0.15, max_iter=6):
         fig.set_layout_engine('none')
     except Exception:
         pass
-    target_px = max(6.0, pad_in * fig.dpi)   # desired right-edge margin, pixels
-    # hypertools draws inside a seaborn rc_context, but the figure is actually
-    # rendered downstream (the sphinx-gallery scraper, or a bare savefig after
-    # plot() returns) under the RESTORED default rcParams, whose font is WIDER
-    # than seaborn's. Measuring under the seaborn font makes a legend look like
-    # it fits when it clips in the real output, so measure under the default
-    # rcParams to match what actually gets saved.
-    with plt.rc_context(matplotlib.rcParamsDefault):
-        for _ in range(max_iter):
-            # Measure the ACTUAL rasterized pixels via a fresh Agg canvas --
-            # the only reliable extent (get_tightbbox / get_window_extent both
-            # under-report the legend's rendered text and stop too early).
-            canvas = FigureCanvasAgg(fig)
-            canvas.draw()
-            buf = np.asarray(canvas.buffer_rgba())[..., :3]
-            inked_cols = np.where((buf < 245).any(axis=(0, 2)))[0]
-            if not len(inked_cols):
-                return
-            w_px = buf.shape[1]
-            margin_px = w_px - 1 - int(inked_cols.max())
-            if margin_px >= target_px:
-                return  # legend already has a right-edge margin
-            deficit_in = (target_px - margin_px) / fig.dpi
-            w, h = fig.get_size_inches()
-            pos = ax.get_position()
-            left_in, plot_w_in = pos.x0 * w, pos.width * w
-            # widen (add room only on the right) while keeping the plot's
-            # absolute size and position, so the legend gains room without
-            # shrinking the plot; cap total growth at 3x as a runaway guard.
-            new_w = min(w + deficit_in, 3.0 * w)
-            if new_w <= w + 1e-3:
-                return
-            fig.set_size_inches(new_w, h)
-            ax.set_position([left_in / new_w, pos.y0,
-                             plot_w_in / new_w, pos.height])
+    for _ in range(max_iter):
+        w, h = fig.get_size_inches()
+        new_w = min(_tight_right_edge_in(fig) + pad_in, 3.0 * w)
+        if new_w <= w + 1e-3:
+            return  # legend (and anything else) already fits
+        pos = ax.get_position()
+        left_in, plot_w_in = pos.x0 * w, pos.width * w
+        # widen (add room only on the right) while keeping the plot's
+        # absolute size and position, so the legend gains room without
+        # shrinking the plot.
+        fig.set_size_inches(new_w, h)
+        ax.set_position([left_in / new_w, pos.y0,
+                         plot_w_in / new_w, pos.height])
 
 
 def _flatten_nested(x, _depth=1):

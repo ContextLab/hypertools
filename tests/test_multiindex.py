@@ -459,6 +459,39 @@ def test_predict_plus_multiindex_raises():
         hyp.plot(df, predict='Kalman', show=False)
 
 
+def test_multiindex_colorbar_shows_only_top_level_segments():
+    """SEVERE regression (GH #100/#95): colorbar for a MultiIndex-expanded
+    plot must show exactly ONE SEGMENT PER TOP-LEVEL GROUP (2, for a 2-level
+    df with 8 leaves + 2 top-level means -- NOT 10, one per drawn trace),
+    labeled with the top-level values, and must NEVER show '_nolegend_'
+    (the label every leaf/intermediate-level mean carries)."""
+    df = _make_2level_df()
+    fig = hyp.plot(df, colorbar=True, show=False)
+    plt.close(fig)
+
+    assert len(fig.axes) == 2, "expected the plot axes + one colorbar axes"
+    _, cbar_ax = fig.axes
+    labels = [t.get_text() for t in cbar_ax.get_yticklabels()]
+    assert labels == ['condA', 'condB']
+    assert '_nolegend_' not in labels
+
+    from matplotlib.collections import QuadMesh
+    mesh = next(c for c in cbar_ax.collections if isinstance(c, QuadMesh))
+    # BoundaryNorm over exactly 2 groups -> 3 boundaries
+    assert np.allclose(mesh.norm.boundaries, [-0.5, 0.5, 1.5])
+
+
+def test_multiindex_colorbar_3level_shows_only_top_level_segments():
+    df = _make_3level_df()
+    fig = hyp.plot(df, colorbar=True, show=False)
+    plt.close(fig)
+
+    _, cbar_ax = fig.axes
+    labels = [t.get_text() for t in cbar_ax.get_yticklabels()]
+    assert labels == ['grpX', 'grpY']
+    assert '_nolegend_' not in labels
+
+
 def test_build_styles_3level_unequal_lengths_warns_exactly_once():
     """A 3-level tree where one leaf is short: the leaf is a member of BOTH
     its (grp, cond) prefix group AND its grp prefix group, so a naive

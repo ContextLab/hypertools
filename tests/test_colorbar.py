@@ -281,3 +281,90 @@ def test_colorbar_requires_color_mapping_raises_plotly_too():
     x = np.random.default_rng(0).standard_normal((20, 3))
     with pytest.raises(ValueError, match='color mapping'):
         hyp.plot(x, colorbar=True, backend='plotly', show=False)
+
+
+# ------------------------------------------------------------------------
+# regression: legend fitting must run in EVERY layout (GH #100 follow-up)
+# --------------------------------------------------------------------------
+# `_fit_right_legend` previously only ran for STATIC plots, and only BEFORE
+# a colorbar was added -- so a 'left'/'top' colorbar (which reshapes `ax`
+# via matplotlib's own `make_axes`) or `animate=True` (which skipped the fit
+# entirely) left the right-side legend fully clipped off the canvas. These
+# assertions rasterize the ACTUAL figure and check the rightmost/leftmost
+# inked pixel sits strictly inside the canvas -- not just "a legend exists
+# somewhere" -- so a passing test proves nothing is cut off in the real
+# rendered output.
+
+def _rightmost_leftmost_inked(fig):
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+    buf = np.asarray(canvas.buffer_rgba())[..., :3]
+    inked_cols = np.where((buf < 245).any(axis=(0, 2)))[0]
+    assert len(inked_cols), "nothing rendered at all"
+    return int(inked_cols.max()), int(inked_cols.min()), buf.shape[1]
+
+
+def test_legend_fully_inside_canvas_colorbar_location_left():
+    x, hue = _discrete_hue_data()
+    fig = hyp.plot(x, hue=hue, legend=True,
+                   colorbar={'location': 'left'}, show=False)
+    rightmost, leftmost, w_px = _rightmost_leftmost_inked(fig)
+    assert rightmost < w_px - 1, "legend clipped off the right edge"
+    assert leftmost > 0, "colorbar clipped off the left edge"
+    plt.close(fig)
+
+
+def test_legend_fully_inside_canvas_colorbar_location_top():
+    x, hue = _discrete_hue_data()
+    fig = hyp.plot(x, hue=hue, legend=True,
+                   colorbar={'location': 'top'}, show=False)
+    rightmost, leftmost, w_px = _rightmost_leftmost_inked(fig)
+    assert rightmost < w_px - 1, "legend clipped off the right edge"
+    plt.close(fig)
+
+
+def test_legend_fully_inside_canvas_animate():
+    rng = np.random.default_rng(0)
+    walk = np.cumsum(rng.standard_normal((30, 3)), axis=0)
+    hue = ['a'] * 10 + ['b'] * 10 + ['c'] * 10
+    fig, ani = hyp.plot(walk, hue=hue, animate=True, duration=1,
+                        frame_rate=5, legend=True, show=False)
+    ani._draw_frame(0)
+    rightmost, _, w_px = _rightmost_leftmost_inked(fig)
+    assert rightmost < w_px - 1, "legend clipped off the right edge (animate=True)"
+    plt.close(fig)
+
+
+def test_legend_and_colorbar_fully_inside_canvas_animate():
+    rng = np.random.default_rng(0)
+    walk = np.cumsum(rng.standard_normal((30, 3)), axis=0)
+    hue = ['a'] * 10 + ['b'] * 10 + ['c'] * 10
+    fig, ani = hyp.plot(walk, hue=hue, animate=True, duration=1,
+                        frame_rate=5, legend=True, colorbar=True, show=False)
+    ani._draw_frame(0)
+    rightmost, _, w_px = _rightmost_leftmost_inked(fig)
+    assert rightmost < w_px - 1, (
+        "legend/colorbar clipped off the right edge (animate=True)")
+    plt.close(fig)
+
+
+def test_long_labels_legend_and_colorbar_fully_inside_canvas():
+    """The width fit must measure the ACTUAL final label strings, not a
+    fixed per-iteration guess -- a naive small-step fit converges far too
+    slowly for long labels and leaves them clipped (GH #100 follow-up)."""
+    rng = np.random.default_rng(0)
+    g1 = rng.standard_normal((50, 3))
+    g2 = rng.standard_normal((50, 3)) + np.array([5, 0, 0])
+    g3 = rng.standard_normal((50, 3)) + np.array([0, 5, 0])
+    long_labels = ['very long group label A', 'longer label B',
+                   'the longest label C']
+    fig = hyp.plot([g1, g2, g3], legend=long_labels, colorbar=True,
+                   show=False)
+    rightmost, leftmost, w_px = _rightmost_leftmost_inked(fig)
+    assert rightmost < w_px - 1, "long label(s) clipped off the right edge"
+    assert leftmost > 0
+
+    _, cbar_ax = fig.axes
+    cbar_labels = [t.get_text() for t in cbar_ax.get_yticklabels()]
+    assert cbar_labels == long_labels
+    plt.close(fig)
