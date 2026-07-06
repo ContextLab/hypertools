@@ -11,7 +11,13 @@ import matplotlib.animation as animation
 import matplotlib.patches as patches
 from .._shared.helpers import *
 from .meshutil import backface_cull, blinn_phong_colors
-from .surface import build_mesh_3d, build_outline_2d, mpl_lighting_kwargs, view_vector
+from .surface import (
+    build_mesh_3d,
+    build_outline_2d,
+    mpl_lighting_kwargs,
+    surface_cube_scale,
+    view_vector,
+)
 from .trails import broadcast_trail_flag
 from .density import (
     DENSITY_DEFAULTS,
@@ -157,17 +163,25 @@ def _shade_and_cull_3d(ax, mesh_list, surface, surface_colors, elev, azim,
     return new_colls
 
 
+def _build_mesh_list(points_list, surface, quiet=False):
+    """Build one `(verts, faces)` mesh (or `None`) per dataset from the
+    CURRENT per-dataset points (`points_list`) -- shared by
+    `_mesh_and_draw_3d` and the cube-scale computation (GH #109 round 2),
+    so the mesh is never built twice for the same points."""
+    return [
+        build_mesh_3d(np.asarray(pts), spec, dataset_label=f" {i}", quiet=quiet)
+        if spec is not None else None
+        for i, (pts, spec) in enumerate(zip(points_list, surface))
+    ]
+
+
 def _mesh_and_draw_3d(ax, points_list, surface, surface_colors, elev, azim,
                       prior_colls=None, quiet=False):
     """Build fresh meshes from the CURRENT per-dataset point windows
     (`points_list`) and delegate to `_shade_and_cull_3d`. Used whenever the
     visible point window changes (static plots; 'parallel'/'serial'
     animation frames)."""
-    mesh_list = [
-        build_mesh_3d(np.asarray(pts), spec, dataset_label=f" {i}", quiet=quiet)
-        if spec is not None else None
-        for i, (pts, spec) in enumerate(zip(points_list, surface))
-    ]
+    mesh_list = _build_mesh_list(points_list, surface, quiet=quiet)
     return _shade_and_cull_3d(ax, mesh_list, surface, surface_colors, elev,
                               azim, prior_colls=prior_colls)
 
@@ -845,21 +859,43 @@ def _draw(
                 _trail_line.set_label('_nolegend_')
 
         # surface= (GH #109)
+        # cube_scale_anim (GH #109 round 2): the axes cube/limits must be
+        # wide enough to contain every surface mesh built over the COURSE
+        # of the animation, not just the initial [-1, 1] data cube. Per-
+        # frame windows (parallel/serial) vary in size, so recomputing an
+        # exact per-frame bound would mean rebuilding every dataset's mesh
+        # a second time on every frame just to measure it (expensive: a
+        # full smooth_hull_3d call, not a cheap lookup). Instead this uses
+        # the FULL-DATA mesh's extent as the (fixed, precomputed-once)
+        # bound for the whole animation -- cheap, and exactly what 'spin'
+        # already needed anyway (its mesh is static for the whole
+        # animation). This can, in principle, under-cover a transient,
+        # very small early window (few points need proportionally more
+        # `_rescale_for_containment` growth than the full dataset does),
+        # which is an accepted tradeoff for not rebuilding meshes twice
+        # per frame.
+        cube_scale_anim = 1
         if surface is not None:
             # keep_points=False: hide (not remove) that dataset's line/trail
             # for the whole animation -- visibility is set once here and
             # persists across every frame update.
             _hide_no_keep_points(lines, surface)
             _hide_no_keep_points(trail, surface)
+            full_meshes = _build_mesh_list(x, surface, quiet=True)
+            cube_scale_anim = surface_cube_scale(full_meshes)
             if style == "spin":
                 # 'spin' keeps the FULL dataset static (only the camera
-                # rotates) -- precompute each dataset's mesh once here so
+                # rotates) -- reuse the just-built full-data meshes so
                 # update_lines_spin only has to re-shade/re-cull per frame.
-                update_lines_spin.meshes = [
-                    build_mesh_3d(np.asarray(pts), spec, dataset_label=f" {i}",
-                                 quiet=True) if spec is not None else None
-                    for i, (pts, spec) in enumerate(zip(x, surface))
-                ]
+                update_lines_spin.meshes = full_meshes
+
+        # the axes cube is redrawn by `update_lines_*` every frame (camera
+        # angle/zoom change), but the LIMITS are set once, up front: sized
+        # to `cube_scale_anim` so a surface (if any) never spills past the
+        # visible frame, exactly mirroring the static 3-D path above.
+        ax.set_xlim3d([-cube_scale_anim, cube_scale_anim])
+        ax.set_ylim3d([-cube_scale_anim, cube_scale_anim])
+        ax.set_zlim3d([-cube_scale_anim, cube_scale_anim])
 
         # density= (GH #108/#191): computed ONCE from the FULL dataset `x`
         # (never per-frame -- a KDE evaluation is ~536ms @ 50**3, far over a
@@ -888,7 +924,7 @@ def _draw(
                     x,
                     lines,
                     trail,
-                    1,
+                    cube_scale_anim,
                     tail_duration,
                     rotations,
                     zoom,
@@ -906,7 +942,7 @@ def _draw(
                 fig,
                 update_lines_serial,
                 frame_rate * duration,
-                fargs=(x, lines, 1, rotations, zoom, elev),
+                fargs=(x, lines, cube_scale_anim, rotations, zoom, elev),
                 interval=1000 / frame_rate,
                 blit=False,
                 repeat=False,
@@ -916,7 +952,7 @@ def _draw(
                 fig,
                 update_lines_spin,
                 frame_rate * duration,
-                fargs=(x, lines, 1, rotations, zoom, elev),
+                fargs=(x, lines, cube_scale_anim, rotations, zoom, elev),
                 interval=1000 / frame_rate,
                 blit=False,
                 repeat=False,
@@ -965,8 +1001,18 @@ def _draw(
         # if 3d, plot the cube
         if x[0].shape[1] == 3:
 
-            # set cube scale
-            cube_scale = 1
+            # surface= (GH #109 round 2): build each dataset's mesh ONCE,
+            # from the FULL static data, before the cube is drawn -- the
+            # smoothed hull (pre_inflate + smoothing overshoot, further
+            # grown by `_rescale_for_containment` for small point clouds)
+            # can bulge past the standard [-1, 1] data cube, so the cube
+            # and axis limits must be sized to whatever was actually built,
+            # not assumed to be 1. Reusing this SAME mesh_list for the
+            # shading pass below (rather than rebuilding it) also avoids
+            # computing every dataset's mesh twice.
+            mesh_list = _build_mesh_list(data, surface) if surface is not None else None
+            cube_scale = (surface_cube_scale(mesh_list)
+                         if mesh_list is not None else 1)
 
             # plot cube
             plot_cube(cube_scale, **frame_kwargs)
@@ -981,7 +1027,8 @@ def _draw(
 
             # surface= (GH #109): smooth lit hull surfaces, one per dataset
             if surface is not None:
-                _mesh_and_draw_3d(ax, data, surface, surface_colors, elev, azim)
+                _shade_and_cull_3d(ax, mesh_list, surface, surface_colors,
+                                   elev, azim)
                 _hide_no_keep_points(ax.lines, surface)
 
             # density= (GH #108/#191): subtle KDE density shading, one

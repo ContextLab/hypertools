@@ -25,6 +25,7 @@ __all__ = [
     "build_mesh_3d",
     "build_outline_2d",
     "view_vector",
+    "surface_cube_scale",
     "PLOTLY_LIGHTPOSITION",
 ]
 
@@ -233,3 +234,51 @@ def view_vector(elev, azim):
     expect."""
     e, a = np.radians(elev), np.radians(azim)
     return np.array([np.cos(e) * np.cos(a), np.cos(e) * np.sin(a), np.sin(e)])
+
+
+def surface_cube_scale(mesh_list, default=1.0, margin=1.02):
+    """Return the half-width of the smallest axis-aligned cube, centered at
+    the origin, that contains every vertex across `mesh_list` (GH #109
+    round 2).
+
+    Data is centered/scaled into the [-1, 1] cube upstream (in `plot()`)
+    BEFORE surface meshes are built; `build_mesh_3d`/`smooth_hull_3d`'s
+    `pre_inflate` (bulges the hull outward before smoothing) plus the
+    smoothing's own overshoot -- and, for small/sparse point clouds,
+    `_rescale_for_containment`'s further grow-only correction -- can push
+    mesh vertices outside that cube, so both backends' axes cube and
+    (for matplotlib) axis limits / (for plotly) scene ranges must be
+    widened to whatever the ACTUAL built meshes need, not assumed to be 1.
+
+    Parameters
+    ----------
+    mesh_list : sequence of (verts, faces) tuples, or None entries
+        Built meshes (e.g. from :func:`build_mesh_3d`); ``None`` entries
+        (no surface spec for that dataset, or too few/degenerate points)
+        are skipped.
+    default : float, optional
+        The cube half-width to return when no mesh vertex exceeds it (the
+        library's standard [-1, 1] data cube). Default 1.0.
+    margin : float, optional
+        Safety factor applied to the observed max |vertex coordinate| when
+        it exceeds `default`, so meshes clear the drawn cube rather than
+        just touching it. Default 1.02.
+
+    Returns
+    -------
+    float
+        `default` if every mesh vertex already fits within it, otherwise
+        ``margin * max(|vertex coordinate|)`` across all meshes.
+    """
+    max_abs = 0.0
+    for mesh in mesh_list:
+        if mesh is None:
+            continue
+        verts = np.asarray(mesh[0], dtype=float)
+        if verts.size:
+            m = float(np.max(np.abs(verts)))
+            if m > max_abs:
+                max_abs = m
+    if max_abs <= default:
+        return float(default)
+    return max_abs * margin

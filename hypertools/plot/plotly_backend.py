@@ -31,6 +31,7 @@ from .surface import (
     build_mesh_3d,
     build_outline_2d,
     plotly_lighting_kwargs,
+    surface_cube_scale,
 )
 from .density import (
     DENSITY_DEFAULTS,
@@ -382,10 +383,20 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # right dataset's window each frame.
     surface_trace_start_3d = len(traces)
     surface_dataset_indices = []
+    # cube_scale (GH #109 round 2): sized to whatever the built surface
+    # meshes actually need (see `surface_cube_scale`), not assumed to be
+    # the standard 1 -- otherwise a smoothed hull's pre_inflate/smoothing
+    # overshoot can bulge past the drawn cube and axis ranges. `meshes`
+    # holds every dataset's UNTRIMMED mesh (trimming only ever drops
+    # faces, never moves vertices), so it is a fully-representative,
+    # already-computed-once source for this bound.
+    cube_scale = 1.0
     if surface is not None and ndims >= 3:
-        surface_traces_3d, surface_dataset_indices = _build_surface_traces_3d(
-            go, data, surface, surface_colors, elev, azim)
+        surface_traces_3d, surface_dataset_indices, surface_meshes = (
+            _build_surface_traces_3d(go, data, surface, surface_colors,
+                                     elev, azim))
         traces.extend(surface_traces_3d)
+        cube_scale = surface_cube_scale(list(surface_meshes.values()))
 
     # density= (GH #108/#191), 3-D case: one go.Volume trace per dataset (or
     # one pooled trace), computed ONCE from the full data. Appended here,
@@ -399,7 +410,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                                                density_colors))
 
     if ndims >= 3:
-        traces.append(_cube_trace(go))
+        traces.append(_cube_trace(go, scale=cube_scale))
 
     # colorbar (GH #100): appended LAST (after the cube trace) so it never
     # falls within `trace_indices = range(n_data_traces [+ n_trail_traces])`
@@ -447,9 +458,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
     if ndims >= 3:
         layout['scene'] = dict(
-            xaxis=dict(visible=False, range=[-1, 1]),
-            yaxis=dict(visible=False, range=[-1, 1]),
-            zaxis=dict(visible=False, range=[-1, 1]),
+            xaxis=dict(visible=False, range=[-cube_scale, cube_scale]),
+            yaxis=dict(visible=False, range=[-cube_scale, cube_scale]),
+            zaxis=dict(visible=False, range=[-cube_scale, cube_scale]),
             camera=dict(eye=_camera_eye(
                 elev, azim,
                 r=_anim_zoom_r(zoom) if animate else _zoom_r(zoom))),
@@ -702,46 +713,79 @@ def _blend_toward_white(color_rgb, alpha):
 def _mesh3d_trace(go, verts, faces, color_rgb, opacity, lighting_kw):
     """A single ``go.Mesh3d`` surface trace (GH #109), lit per the tuned
     plotly Blinn-Phong-ish lighting model, with hypertools' verified
-    parameters (`flatshading=False` for Gouraud-style smooth shading).
+    parameters.
 
     `opacity` (the user-requested `surface['alpha']`) is NOT passed through
     to plotly's own opacity/blending -- see `_blend_toward_white` -- the
     trace is always rendered fully opaque (`opacity=1.0`), which plotly's
     Mesh3d renders correctly and without artifacts.
+
+    Double-sided + `flatshading=True` (GH #109 round 2): plotly's Mesh3d
+    back-face-culls each triangle independently against the camera. Our
+    finely-tessellated smoothed-hull meshes are only outward-facing ON
+    AVERAGE (verified via `face_normals`); Taubin smoothing routinely
+    leaves small, genuinely concave dimples (an expected side effect of
+    smoothing an irregular point cloud's hull, not a meshing bug -- see
+    `smooth_hull_3d`'s docstring), and at some camera angles the dimpled
+    triangles' true normals face far enough away from the camera to get
+    culled -- verified via a live Chromium render (not just kaleido) that
+    this reproduces on a SINGLE, non-overlapping mesh with NO other trace
+    in the scene, so it is independent of the mesh-mesh interaction below.
+    The culled triangles leave a visible hole clear through to the
+    background (or, when another mesh happens to be trimmed/positioned
+    behind it, that mesh's color instead) since Mesh3d has no
+    depth-independent "this is definitely occluded" fallback. Emitting
+    EVERY face twice, once with each winding order, means at least one of
+    the two copies is always front-facing from any camera angle, so no
+    triangle can ever go missing; `flatshading=True` (per-face, not
+    per-vertex-averaged, normals) keeps the reversed copies' lighting
+    correct instead of corrupting the smooth-shaded vertex normals shared
+    with their original-winding twin (verified: Gouraud shading with
+    doubled faces renders the whole mesh uniformly dark).
     """
+    faces_both_windings = np.vstack([faces, faces[:, [0, 2, 1]]])
     blended = _blend_toward_white(color_rgb, opacity)
     return go.Mesh3d(
         x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
-        i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
-        color=_rgb_string(blended), opacity=1.0, flatshading=False,
+        i=faces_both_windings[:, 0], j=faces_both_windings[:, 1],
+        k=faces_both_windings[:, 2],
+        color=_rgb_string(blended), opacity=1.0, flatshading=True,
         lighting=lighting_kw, lightposition=PLOTLY_LIGHTPOSITION,
         hoverinfo='skip', showlegend=False, showscale=False)
 
 
 def _trim_faces_inside_other_meshes(i, meshes):
     """Boolean keep-mask (len(faces),) for dataset `i`'s mesh: drops faces
-    whose centroid falls inside any OTHER dataset's mesh volume (GH #109
-    rendering-fix).
+    whose centroid falls inside an EARLIER (lower dataset-index) mesh's
+    volume (GH #109 rendering-fix; priority rule reworked in round 2).
 
     When two datasets' surfaces geometrically intersect (e.g. two
     overlapping point-cloud "blobs"), plotly cannot correctly depth-
-    composite the two closed opaque ``Mesh3d`` volumes where they overlap:
-    whichever mesh trace was added to the scene FIRST gets a visible hole
-    punched through it wherever the OTHER (later) mesh's volume encloses
-    it (verified: this reproduces identically in a real Chromium browser,
-    not just static image export, and simply swapping dataset order moves
-    the hole to whichever dataset is now first -- so it is inherent to
-    plotly's renderer, not this mesh's geometry). Removing the overlapping
-    faces from the earlier mesh (they would be hidden by the other
-    dataset's own opaque surface anyway) avoids the defect: the two
-    surfaces meet at a plain (if slightly faceted) seam instead of either
-    one z-fighting or punching through the other.
+    composite the two closed opaque ``Mesh3d`` volumes where they overlap
+    -- confirmed in round 2 via a live Chromium render of two overlapping,
+    fully-opaque meshes with NO trimming at all: the shared volume renders
+    as a noisy, jagged interleaving of both colors (WebGL depth-buffer
+    z-fighting), not a clean occlusion either way.
+
+    Round 1 traded this off symmetrically (every dataset trimmed against
+    every other), which left each mesh's cut boundary equally ragged and,
+    since NEITHER side extends fully into the shared region, occasionally
+    let a gap open onto the far mesh's own interior. Round 2 instead only
+    ever trims a dataset against LOWER-indexed ones: the first (lowest-
+    index) dataset in any overlapping cluster is always left completely
+    intact, so it is guaranteed to be a closed, complete surface covering
+    the whole overlap volume -- later datasets' cut edges are hidden
+    against that intact surface instead of against another equally-cut
+    one. This does not eliminate every possible camera-angle artifact for
+    deep, near-symmetric overlaps (there is no discrete per-face trim that
+    does, short of true CSG boolean geometry), but it is a strict
+    improvement over mutual trimming for the common case.
     """
     verts_i, faces_i = meshes[i]
     keep = np.ones(len(faces_i), dtype=bool)
     centers = verts_i[faces_i].mean(axis=1)
     for j, (verts_j, _faces_j) in meshes.items():
-        if j == i:
+        if j >= i:
             continue
         keep &= ~points_enclosed(centers, verts_j)
     return keep
@@ -749,13 +793,17 @@ def _trim_faces_inside_other_meshes(i, meshes):
 
 def _build_surface_traces_3d(go, data, surface, surface_colors, elev, azim):
     """Build one ``go.Mesh3d`` trace per dataset with a (non-None,
-    non-degenerate) surface spec. Returns ``(traces, dataset_indices)``
-    where ``dataset_indices[k]`` is the ORIGINAL dataset index that produced
-    ``traces[k]`` (datasets with no spec, or too few/degenerate points,
-    contribute no trace, so the two lists can be shorter than `data`).
+    non-degenerate) surface spec. Returns ``(traces, dataset_indices,
+    meshes)`` where ``dataset_indices[k]`` is the ORIGINAL dataset index
+    that produced ``traces[k]`` (datasets with no spec, or too few/
+    degenerate points, contribute no trace, so the two lists can be
+    shorter than `data`), and ``meshes`` is the ``{dataset_index: (verts,
+    faces)}`` dict of every (untrimmed) built mesh, reused by the caller to
+    size the axes cube (GH #109 round 2 -- see `surface_cube_scale`)
+    without rebuilding every mesh a second time.
 
     All of the (non-degenerate) datasets' meshes are built FIRST, then each
-    is trimmed against every OTHER dataset's mesh (see
+    is trimmed against lower-indexed datasets' meshes (see
     `_trim_faces_inside_other_meshes`) before any trace is constructed --
     this needs the full set of meshes up front since datasets can overlap
     pairwise in either direction.
@@ -783,7 +831,7 @@ def _build_surface_traces_3d(go, data, surface, surface_colors, elev, azim):
         traces.append(_mesh3d_trace(go, verts, faces, base_rgb,
                                     spec['alpha'], plotly_lighting_kwargs(spec)))
         dataset_indices.append(i)
-    return traces, dataset_indices
+    return traces, dataset_indices, meshes
 
 
 def _build_surface_traces_2d(go, data, surface, surface_colors):
@@ -924,6 +972,21 @@ def _degenerate_mesh3d_update(go, point):
     f = np.array([[0, 1, 2]])
     return go.Mesh3d(x=v[:, 0], y=v[:, 1], z=v[:, 2],
                      i=f[:, 0], j=f[:, 1], k=f[:, 2])
+
+
+def _mesh3d_geometry_update(go, verts, faces):
+    """A ``go.Mesh3d`` geometry-only frame update (x/y/z/i/j/k), doubled to
+    both winding orders like `_mesh3d_trace` (GH #109 round 2): frame
+    updates only override the attributes given here, so the base trace's
+    `flatshading=True`/`opacity`/`lighting`/`color` persist across frames --
+    but the i/j/k arrays themselves are replaced wholesale each frame, so
+    the double-sided fix must be reapplied here too, or every animated
+    frame would silently revert to the single-sided (holes-prone) geometry
+    the base (first) frame fixed."""
+    faces_both_windings = np.vstack([faces, faces[:, [0, 2, 1]]])
+    return go.Mesh3d(x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
+                     i=faces_both_windings[:, 0], j=faces_both_windings[:, 1],
+                     k=faces_both_windings[:, 2])
 
 
 def _parse_fmt(fmt_str, tkwargs):
@@ -1176,8 +1239,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 out.append(_degenerate_mesh3d_update(go, pt))
             else:
                 v, f = mesh
-                out.append(go.Mesh3d(x=v[:, 0], y=v[:, 1], z=v[:, 2],
-                                     i=f[:, 0], j=f[:, 1], k=f[:, 2]))
+                out.append(_mesh3d_geometry_update(go, v, f))
         return out
 
     if animate == 'spin' and ndims >= 3:
@@ -1205,9 +1267,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                             go, np.zeros(3)))
                     else:
                         v, f = mesh
-                        surf_data.append(go.Mesh3d(
-                            x=v[:, 0], y=v[:, 1], z=v[:, 2],
-                            i=f[:, 0], j=f[:, 1], k=f[:, 2]))
+                        surf_data.append(_mesh3d_geometry_update(go, v, f))
                 frame_kwargs['data'] = surf_data
                 frame_kwargs['traces'] = surface_trace_indices
             frames.append(go.Frame(**frame_kwargs))

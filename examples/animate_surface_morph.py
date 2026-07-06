@@ -39,7 +39,12 @@ from scipy.spatial.distance import cdist
 
 import hypertools as hyp
 from hypertools.plot.meshutil import blinn_phong_colors, backface_cull
-from hypertools.plot.surface import build_mesh_3d, mpl_lighting_kwargs, view_vector
+from hypertools.plot.surface import (
+    build_mesh_3d,
+    mpl_lighting_kwargs,
+    surface_cube_scale,
+    view_vector,
+)
 
 # a subset of the shapes zoo -- smaller point-cloud shapes are used so the
 # per-frame convex-hull/smoothing pass stays fast (see module docstring)
@@ -112,8 +117,14 @@ point_artist.set_alpha(0.25)
 
 # the smoothed hull surface (pre_inflate=1.15 plus smoothing overshoot)
 # bulges past the [-1, 1] cube hyp.plot() sized the axes to -- widen the
-# view limits so it never clips against the plot bounds
-cube_scale = 1.35
+# view limits so it never clips against the plot bounds. GH #109 round 2:
+# rather than a hand-picked fudge factor, compute the ACTUAL bound needed
+# from every shape's own hull mesh (the morph interpolates between these,
+# so their hulls -- not necessarily the in-between frames -- set the
+# widest extent) via the same `surface_cube_scale` helper the library
+# itself now uses to size its own axes cube/plotly scene range.
+shape_meshes = [build_mesh_3d(cloud, surface_spec, quiet=True) for cloud in sampled]
+cube_scale = surface_cube_scale(shape_meshes)
 ax.set_xlim3d([-cube_scale, cube_scale])
 ax.set_ylim3d([-cube_scale, cube_scale])
 ax.set_zlim3d([-cube_scale, cube_scale])
