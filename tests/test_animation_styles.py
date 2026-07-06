@@ -12,6 +12,8 @@ MODE itself (True/'parallel'/'spin'/'serial') stays a single global camera/
 frame-loop setting -- only the trail FLAGS become per-dataset.
 """
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -228,35 +230,98 @@ def test_bad_length_list_names_actual_counts():
 
 
 # ---------------------------------------------------------------------------
-# spin / serial modes: trails still resolve per-dataset (though, matching
-# pre-existing global behavior, spin/serial never actually ANIMATE the trail
-# artists/traces -- only 'parallel'/True does). This locks in that the
-# per-dataset flags don't crash or change spin/serial's own behavior.
+# spin / serial modes (GH #127 follow-up): trail styles are semantically
+# meaningless in both -- 'spin' has no "current position" for a trail to
+# lead/follow (only the camera moves), and 'serial''s point-by-point reveal
+# already communicates elapsed time. `plot()` now warns ONCE (naming the
+# mode, the ignored flag(s), and which dataset indices had them set) and
+# neither backend creates a trail artist/trace at all in these modes
+# (previously the artists/traces WERE created but stayed frozen/invisible
+# for the whole animation -- dead stubs).
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize('mode', ['spin', 'serial'])
-def test_mpl_spin_serial_unaffected_by_per_dataset_trails(mode):
-    data = _walks(k=2)
-    bundle = hyp.plot(
-        data, animate=mode, duration=1, tail_duration=1,
-        chemtrails=[True, False], precog=[False, True],
-        show=False, return_model=True,
-    )
+def test_mpl_spin_serial_warns_and_skips_trail_artists(mode):
+    data = _walks(k=3, n=20)
+    with pytest.warns(UserWarning,
+                       match=r"animate=%r.*chemtrails.*\[0, 2\]" % mode):
+        bundle = hyp.plot(
+            data, animate=mode, duration=1, tail_duration=1, frame_rate=5,
+            chemtrails=[True, False, True],
+            show=False, return_model=True,
+        )
     assert bundle['animation'] is not None
+
+    fig = bundle['fig']
+    ax = fig.axes[0]
+    # exactly one Line3D per dataset -- no trail artists were ever created
+    # (not merely hidden/frozen)
+    assert len(ax.lines) == 3
+
     import matplotlib.pyplot as plt
     plt.close('all')
 
 
 @pytest.mark.parametrize('mode', ['spin', 'serial'])
-def test_plotly_spin_serial_unaffected_by_per_dataset_trails(mode):
+def test_mpl_spin_serial_warning_names_multiple_ignored_flags(mode):
+    """precog on dataset 1 only -- the warning names precog (not
+    chemtrails/bullettime, which are unset) and dataset index [1]."""
+    data = _walks(k=2, n=20)
+    with pytest.warns(UserWarning,
+                       match=r"animate=%r.*precog.*\[1\]" % mode):
+        hyp.plot(
+            data, animate=mode, duration=1, tail_duration=1, frame_rate=5,
+            precog=[False, True], show=False,
+        )
+    import matplotlib.pyplot as plt
+    plt.close('all')
+
+
+@pytest.mark.parametrize('mode', ['spin', 'serial'])
+def test_plotly_spin_serial_warns_and_skips_trail_traces(mode):
     pytest.importorskip('plotly')
-    data = _walks(k=2)
-    fig = hyp.plot(data, animate=mode, duration=1, tail_duration=1,
-                   chemtrails=[True, False], precog=[False, True],
-                   backend='plotly', show=False)
+    data = _walks(k=2, n=20)
+    with pytest.warns(UserWarning,
+                       match=r"animate=%r.*bullettime.*\[0\]" % mode):
+        fig = hyp.plot(data, animate=mode, duration=1, tail_duration=1,
+                       frame_rate=5, bullettime=[True, False],
+                       backend='plotly', show=False)
     # no trail traces in spin/serial mode -- only 'parallel'/True builds them
     assert len(fig.data) == 3  # 2 data + cube
     assert len(fig.frames) > 0
+
+
+def test_mpl_parallel_not_warned_for_trails():
+    """animate=True/'parallel' is the one mode where trail styles DO apply
+    -- no warning should fire, and the trail artist should still be built
+    normally."""
+    data = _walks(k=2, n=20)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        bundle = hyp.plot(
+            data, animate=True, duration=1, tail_duration=1, frame_rate=5,
+            chemtrails=[True, False], show=False, return_model=True,
+        )
+    assert not any('trail styles' in str(w.message) for w in caught)
+    num = 5
+    lines, trail_lines = bundle['animation']._func(
+        num, *bundle['animation']._args)
+    assert trail_lines[0] is not None
+
+    import matplotlib.pyplot as plt
+    plt.close('all')
+
+
+def test_plotly_parallel_not_warned_for_trails():
+    pytest.importorskip('plotly')
+    data = _walks(k=2, n=20)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        fig = hyp.plot(data, animate=True, duration=1, tail_duration=1,
+                       frame_rate=5, precog=[True, False],
+                       backend='plotly', show=False)
+    assert not any('trail styles' in str(w.message) for w in caught)
+    assert len(fig.data) == 4  # 2 data + 1 trail (dataset 0) + cube
 
 
 # ---------------------------------------------------------------------------

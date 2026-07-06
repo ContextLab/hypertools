@@ -351,7 +351,9 @@ def plot(
         per-dataset control (GH #127): e.g. `chemtrails=[True, False]` turns
         chemtrails on for dataset 0 only. A bare bool is broadcast to every
         dataset. Raises `ValueError` if a list's length does not match the
-        number of drawn datasets (naming both counts).
+        number of drawn datasets (naming both counts). Trail styles
+        (`chemtrails`/`precog`/`bullettime`) only apply when
+        `animate=True`/`'parallel'` -- see the note under `bullettime` below.
 
     precog (animation only) : bool or list of bool
         A low-opacity trail is plotted ahead of the trajectory (default:
@@ -367,6 +369,13 @@ def plot(
         `chemtrails` alone shows only the past window; `precog` alone shows
         only the future window; none of the three shows just the moving
         window (no separate trail artist/trace at all for that dataset).
+        GH #127: trail styles apply ONLY to `animate=True`/`'parallel'`.
+        `'spin'` has no "current position" for a trail to lead/follow (only
+        the camera moves), and `'serial'`'s point-by-point reveal already
+        communicates elapsed time, so `animate='spin'`/`'serial'` ignore
+        `chemtrails`/`precog`/`bullettime` entirely (no trail artist/trace
+        is created) and emit a `UserWarning` naming the mode, the ignored
+        flag(s), and which dataset indices had them set.
 
     frame_rate (animation only) : int or float
         Frame rate for animation in frames per second (default: 30).
@@ -1166,6 +1175,38 @@ def plot(
     chemtrails = broadcast_trail_flag(chemtrails, len(xform), "chemtrails")
     precog = broadcast_trail_flag(precog, len(xform), "precog")
     bullettime = broadcast_trail_flag(bullettime, len(xform), "bullettime")
+
+    # GH #127: 'spin' has no "current position" (only the camera moves, so a
+    # trail has nothing to trail BEHIND or AHEAD of) and 'serial' already
+    # communicates elapsed time via its point-by-point reveal -- trail
+    # styles are semantically meaningless in both, so warn once (naming the
+    # mode, which flag(s) were set, and for which dataset indices) rather
+    # than silently building frozen/invisible trail artists. `_draw`/
+    # `plotly_draw` skip creating those artists entirely for these two
+    # modes (see their own `style`/`animate` branches), so this is purely
+    # informational -- no flags are mutated here.
+    if animate in ("spin", "serial"):
+        _ignored_trail_flags = [
+            (_name, [i for i, v in enumerate(_flags) if v])
+            for _name, _flags in (
+                ("chemtrails", chemtrails),
+                ("precog", precog),
+                ("bullettime", bullettime),
+            )
+        ]
+        _ignored_trail_flags = [
+            (name, idxs) for name, idxs in _ignored_trail_flags if idxs
+        ]
+        if _ignored_trail_flags:
+            _detail = ", ".join(
+                f"{name} for datasets {idxs}" for name, idxs in _ignored_trail_flags
+            )
+            warnings.warn(
+                f"animate={animate!r} does not support trail styles; "
+                f"ignoring {_detail}",
+                UserWarning,
+                stacklevel=2,
+            )
 
     # handle legend
     if legend is not None:

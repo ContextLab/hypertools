@@ -814,7 +814,20 @@ def _draw(
         # `trail_lines` in `update_lines_parallel` tolerates `None` entries
         # via `itertools.zip_longest` already (marker-only animations relied
         # on this same mechanism before this change).
+        #
+        # 'spin'/'serial' (GH #127 follow-up): neither `update_lines_spin`
+        # nor `update_lines_serial` accepts (or ever touches) a trail_lines
+        # argument -- 'spin' has no "current position" for a trail to lead/
+        # follow (only the camera moves) and 'serial' already communicates
+        # elapsed time via its point-by-point reveal. Trail artists created
+        # here for those two styles would therefore stay frozen at their
+        # initial (single-point) state for the whole animation: invisible/
+        # useless stubs. `plot.py` already warns the caller and names the
+        # ignored flags/dataset indices; this just skips ever creating them
+        # so `_wants_trail` is forced False for every dataset in these modes.
         def _wants_trail(idx):
+            if style in ("spin", "serial"):
+                return False
             return chemtrails[idx] or precog[idx] or bullettime[idx]
 
         trail = []
