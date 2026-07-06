@@ -24,6 +24,8 @@ from .density import (
     HAS_SKIMAGE,
     POOLED_COLOR,
     alpha_colormap,
+    bbox_extent,
+    density_alpha_boost,
     fit_kde,
     iso_surfaces_3d,
     kde_grid_2d,
@@ -68,14 +70,20 @@ def _draw_density_2d(ax, points_list, density, density_colors):
                              density_colors[i], label=f" {i}")
 
 
-def _draw_one_density_3d(ax, pts, spec, color, label=""):
+def _draw_one_density_3d(ax, pts, spec, color, label="", boost=1.0):
     """Draw a single dataset's (or the pooled cloud's) 3-D density layer:
     nested translucent iso-surfaces via marching cubes if scikit-image is
-    available, else a translucent scatter "fog" fallback (GH #108/#191)."""
+    available, else a translucent scatter "fog" fallback (GH #108/#191).
+
+    `boost` (see :func:`~.density.density_alpha_boost`) multiplies the
+    alpha on top of the user's own `spec['alpha']`, so a dataset that's
+    small relative to the whole scene (widely-separated clusters, GH #108
+    round 2) stays visible instead of vanishing -- it is ``1.0`` (a no-op)
+    for a scene-filling dataset."""
     kde = fit_kde(pts, dataset_label=label)
     if kde is None:
         return
-    alpha_scale = spec["alpha"] / DENSITY_DEFAULTS["alpha"]
+    alpha_scale = spec["alpha"] / DENSITY_DEFAULTS["alpha"] * boost
     if HAS_SKIMAGE:
         gridsize = resolve_grid(spec, 3)
         _, _, _, D, lo, spacing = kde_grid_3d(pts, kde, gridsize=gridsize)
@@ -86,8 +94,8 @@ def _draw_one_density_3d(ax, pts, spec, color, label=""):
         for (verts, faces), base_alpha in zip(
                 iso_surfaces_3d(D, lo, spacing, fracs=fracs), base_alphas):
             coll = Poly3DCollection(
-                verts[faces], alpha=base_alpha * alpha_scale, facecolor=color,
-                edgecolor="none", linewidths=0, shade=False,
+                verts[faces], alpha=min(base_alpha * alpha_scale, 1.0),
+                facecolor=color, edgecolor="none", linewidths=0, shade=False,
             )
             coll.set_label("_nolegend_")
             ax.add_collection3d(coll)
@@ -103,7 +111,7 @@ def _draw_one_density_3d(ax, pts, spec, color, label=""):
         rng = np.random.default_rng()
         fog = kde.resample(4000, seed=rng).T
         ax.scatter(fog[:, 0], fog[:, 1], fog[:, 2], s=6, c=[color],
-                  alpha=0.03 * alpha_scale, edgecolors="none",
+                  alpha=min(0.03 * alpha_scale, 1.0), edgecolors="none",
                   depthshade=False, label="_nolegend_")
 
 
@@ -112,17 +120,26 @@ def _draw_density_3d(ax, points_list, density, density_colors):
     KDE density layer (GH #108/#191). Computed ONCE from the full point set
     passed in -- callers are responsible for passing the FULL data (not a
     per-frame animation window): a KDE evaluation is far too slow (~536ms
-    @ 50**3) to redo every animation frame."""
+    @ 50**3) to redo every animation frame.
+
+    Each per-dataset layer's alpha is boosted (GH #108 round 2) by how
+    small that dataset's own bounding box is relative to the bounding box
+    of the WHOLE scene (all datasets combined) -- see
+    :func:`~.density.density_alpha_boost`."""
     if density[0] is not None and not density[0].get("per_group", True):
         all_pts = np.vstack([np.asarray(p)[:, :3] for p in points_list])
         _draw_one_density_3d(ax, all_pts, density[0], POOLED_COLOR,
-                             label=" (pooled)")
+                             label=" (pooled)", boost=1.0)
         return
+    scene_pts = np.vstack([np.asarray(p)[:, :3] for p in points_list])
+    scene_extent = bbox_extent(scene_pts)
     for i, (pts, spec) in enumerate(zip(points_list, density)):
         if spec is None:
             continue
-        _draw_one_density_3d(ax, np.asarray(pts)[:, :3], spec,
-                             density_colors[i], label=f" {i}")
+        pts3 = np.asarray(pts)[:, :3]
+        boost = density_alpha_boost(bbox_extent(pts3), scene_extent)
+        _draw_one_density_3d(ax, pts3, spec, density_colors[i], label=f" {i}",
+                             boost=boost)
 
 
 def _shade_and_cull_3d(ax, mesh_list, surface, surface_colors, elev, azim,

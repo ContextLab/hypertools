@@ -38,10 +38,13 @@ from .surface import (
 from .density import (
     DENSITY_DEFAULTS,
     POOLED_COLOR,
+    bbox_extent,
+    density_alpha_boost,
     fit_kde,
     kde_grid_2d,
     kde_grid_3d,
     resolve_grid,
+    resolve_plotly_volume_params,
 )
 from .trails import broadcast_trail_flag
 
@@ -938,7 +941,7 @@ def _build_density_traces_2d(go, data, density, density_colors):
     return traces
 
 
-def _one_density_volume_trace(go, pts, spec, color_rgb, label=""):
+def _one_density_volume_trace(go, pts, spec, color_rgb, label="", boost=1.0):
     """One ``go.Volume`` KDE iso-surface layer (GH #108/#191, 3-D), or
     ``None`` if `pts` is too small/degenerate to fit a KDE.
 
@@ -957,43 +960,78 @@ def _one_density_volume_trace(go, pts, spec, color_rgb, label=""):
     gradation, and the opacity/opacityscale curve reaches
     meaningfully-visible mid-tones well before the peak rather than only
     right at it.
+
+    `boost` (see :func:`~.density.density_alpha_boost`, GH #108 round 2) is
+    ``1.0`` (a no-op) for a scene-filling dataset -- so a single dataset's
+    params are unchanged from before -- and ramps up for a dataset that's
+    small relative to the whole scene (e.g. one of several widely-separated
+    clusters, jointly scaled into the same shared cube).
+
+    Boosting `opacity`/`surface_count` alone is NOT enough to fix that
+    small-in-scene case: hypertools' plotly scatter markers are large,
+    fully-opaque, same-colored disks that -- for a small dataset -- cover
+    almost its entire on-screen footprint, hiding any density volume drawn
+    underneath except for a thin glow peeking out past the markers' edges.
+    That glow's visibility is governed by how far out the KDE grid reaches
+    (`pad`) and how much opacity its low density values get (`isomin`,
+    `opacityscale`), not by the trace's overall `opacity` -- verified
+    empirically: rendering an isolated small, separated cluster showed the
+    glow stayed invisible even at `opacity` near its ceiling until `pad`
+    and the opacity ramp were ALSO widened (see
+    :func:`~.density.resolve_plotly_volume_params`). The boosted opacity is
+    capped at :data:`~.density.MAX_VOLUME_OPACITY` so the volume never
+    becomes fully opaque (the underlying data markers must stay the
+    dominant visual element).
     """
     kde = fit_kde(pts, dataset_label=label)
     if kde is None:
         return None
     gridsize = resolve_grid(spec, 3)
-    X, Y, Z, D, _, _ = kde_grid_3d(pts, kde, gridsize=gridsize)
+    levels = spec.get('levels', DENSITY_DEFAULTS['levels'])
+    pad, isomin, opacityscale, opacity, surface_count = (
+        resolve_plotly_volume_params(spec['alpha'], levels, boost))
+    X, Y, Z, D, _, _ = kde_grid_3d(pts, kde, gridsize=gridsize, pad=pad)
     dmax = D.max()
     if dmax <= 0:
         return None
     color = _rgb_string(color_rgb)
-    levels = spec.get('levels', DENSITY_DEFAULTS['levels'])
     return go.Volume(
         x=X.ravel(), y=Y.ravel(), z=Z.ravel(), value=(D / dmax).ravel(),
-        isomin=0.05, isomax=1.0, surface_count=5 * levels,
-        opacity=min(3.0 * spec['alpha'], 0.6),
-        opacityscale=[[0, 0], [0.3, 0.4], [1, 0.8]],
+        isomin=isomin, isomax=1.0, surface_count=surface_count,
+        opacity=opacity,
+        opacityscale=opacityscale,
         colorscale=[[0, color], [1, color]],
         showscale=False, hoverinfo='skip')
 
 
 def _build_density_traces_3d(go, data, density, density_colors):
     """Build each dataset's (or, with ``per_group=False``, one pooled)
-    ``go.Volume`` KDE density layer (GH #108/#191, 3-D)."""
+    ``go.Volume`` KDE density layer (GH #108/#191, 3-D).
+
+    Each per-dataset layer's opacity is boosted (GH #108 round 2) by how
+    small that dataset's own bounding box is relative to the bounding box
+    of the WHOLE scene (all datasets combined) -- see
+    :func:`~.density.density_alpha_boost`."""
     if density[0] is not None and not density[0].get('per_group', True):
         all_pts = np.vstack([
             np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :3]
             for arr in data])
         trace = _one_density_volume_trace(go, all_pts, density[0],
-                                          POOLED_COLOR, label=' (pooled)')
+                                          POOLED_COLOR, label=' (pooled)',
+                                          boost=1.0)
         return [trace] if trace is not None else []
+    scene_pts = np.vstack([
+        np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :3]
+        for arr in data])
+    scene_extent = bbox_extent(scene_pts)
     traces = []
     for i, (arr, spec) in enumerate(zip(data, density)):
         if spec is None:
             continue
         pts = np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :3]
+        boost = density_alpha_boost(bbox_extent(pts), scene_extent)
         trace = _one_density_volume_trace(go, pts, spec, density_colors[i],
-                                          label=f' {i}')
+                                          label=f' {i}', boost=boost)
         if trace is not None:
             traces.append(trace)
     return traces

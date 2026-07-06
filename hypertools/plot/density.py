@@ -27,6 +27,9 @@ __all__ = [
     "DENSITY_DEFAULTS",
     "POOLED_COLOR",
     "HAS_SKIMAGE",
+    "DENSITY_BOOST_GAMMA",
+    "DENSITY_BOOST_MAX",
+    "MAX_VOLUME_OPACITY",
     "normalize_density_arg",
     "broadcast_density",
     "resolve_grid",
@@ -36,6 +39,9 @@ __all__ = [
     "kde_grid_3d",
     "alpha_colormap",
     "iso_surfaces_3d",
+    "bbox_extent",
+    "density_alpha_boost",
+    "resolve_plotly_volume_params",
 ]
 
 VALID_DENSITY_KEYS = {"alpha", "levels", "grid", "per_group"}
@@ -52,6 +58,33 @@ DENSITY_DEFAULTS = {
 # Neutral color used for a single pooled density layer (`per_group=False`)
 # that doesn't belong to any one dataset.
 POOLED_COLOR = (0.3, 0.3, 0.3)
+
+# Auto-boost constants (GH #108 round 2 -- "invisible when separated"): both
+# 3-D renderers (matplotlib iso-surfaces, plotly Volume) tune their BASE
+# alpha/opacity for a dataset that fills the whole shared plotting cube. When
+# datasets are jointly scaled into that one cube but sit far apart (each
+# occupying only a small fraction of it), that same base alpha covers only a
+# tiny screen area and reads as invisible even though the geometry is drawn
+# correctly. `density_alpha_boost` computes a multiplier -- ~1 (no-op) for a
+# scene-filling dataset, ramping up to `DENSITY_BOOST_MAX` for a dataset
+# that's small relative to the scene -- that both backends apply on TOP of
+# the user's own `alpha=` (which still scales everything linearly, exactly
+# as before). `gamma=2` (quadratic in the extent ratio -- visibility of an
+# alpha-composited layer tracks the SCREEN AREA it covers, which scales
+# with the square of its linear extent, not the extent itself) and
+# `max_boost=6` were chosen by rendering two-blob scenes at separations
+# 0/5/10 (in units of the blobs' own std) and iterating until the density
+# was clearly visible but still subtle at every separation, with the data
+# points always the dominant visual element -- see `tests/test_density.py`
+# and
+# `docs/images/v1.0-seven-features/density_3d_{mpl,plotly}.png`.
+DENSITY_BOOST_GAMMA = 2.0
+DENSITY_BOOST_MAX = 6.0
+# Absolute ceiling for plotly's boosted `go.Volume` opacity: high enough
+# that a maximally-boosted (small-in-scene) cluster is unmistakably visible,
+# but held below 1.0 so the volume never reads as a fully opaque blob --
+# the underlying data markers must stay the dominant visual element.
+MAX_VOLUME_OPACITY = 0.95
 
 try:
     from skimage import measure as _skimage_measure
@@ -222,6 +255,94 @@ def kde_grid_3d(points, kde, gridsize=50, pad=0.15):
     D = kde(np.vstack([X.ravel(), Y.ravel(), Z.ravel()])).reshape(X.shape)
     spacing = [(hi[i] - lo[i]) / (gridsize - 1) for i in range(3)]
     return X, Y, Z, D, lo, spacing
+
+
+def bbox_extent(points):
+    """Scalar "size" of a point cloud's axis-aligned bounding box: the
+    Euclidean norm of its per-axis span (``hi - lo``). Used by
+    :func:`density_alpha_boost` to compare one dataset's own extent against
+    the overall scene's extent."""
+    points = np.asarray(points, dtype=float)
+    lo = points.min(axis=0)
+    hi = points.max(axis=0)
+    return float(np.linalg.norm(hi - lo))
+
+
+def density_alpha_boost(dataset_extent, scene_extent,
+                        gamma=DENSITY_BOOST_GAMMA, max_boost=DENSITY_BOOST_MAX):
+    """Multiplicative boost for a dataset's density alpha/opacity, based on
+    how small `dataset_extent` (that dataset's own bounding-box size, e.g.
+    from :func:`bbox_extent`) is relative to `scene_extent` (the whole
+    plotted scene's bounding-box size).
+
+    ``boost = clamp((scene_extent / dataset_extent) ** gamma, 1, max_boost)``
+
+    A dataset that fills the whole scene (``dataset_extent ~= scene_extent``,
+    e.g. a single dataset plotted alone) gets ``boost ~= 1`` -- a no-op, so
+    today's tuned base alphas are unchanged. A dataset that's small relative
+    to the scene (e.g. one of several widely-separated clusters, jointly
+    scaled into the same shared cube) gets boosted up to `max_boost`-fold,
+    so its density shading stays visible instead of vanishing into a
+    handful of near-transparent pixels/voxels.
+
+    ``effective_alpha = base_alpha * density_alpha_boost(...)`` -- the
+    boost multiplies ON TOP of the user's own explicit ``alpha=``; it does
+    not replace or override it.
+
+    Returns ``1.0`` (no boost) if either extent is non-positive (e.g. a
+    degenerate single-point dataset), rather than dividing by zero.
+    """
+    if dataset_extent <= 0 or scene_extent <= 0:
+        return 1.0
+    boost = (scene_extent / dataset_extent) ** gamma
+    return float(np.clip(boost, 1.0, max_boost))
+
+
+def resolve_plotly_volume_params(alpha, levels, boost, max_boost=DENSITY_BOOST_MAX):
+    """Resolve boost-scaled ``go.Volume`` rendering parameters (GH #108
+    round 2, plotly-only): the KDE grid's padding, `isomin`, `opacityscale`,
+    `opacity`, and `surface_count`.
+
+    Boosting `opacity` and `surface_count` alone (see
+    :func:`density_alpha_boost`) is NOT enough to fix plotly's invisibility
+    problem: hypertools' plotly scatter markers are large, fully-opaque,
+    same-colored disks that -- for a dataset small relative to the scene --
+    cover almost its entire on-screen footprint, hiding any density
+    volume drawn underneath. The only part of the volume that can still
+    show is a thin glow peeking out past the markers' edges, and that glow
+    is governed by how far out the KDE grid is evaluated (`pad`) and how
+    much opacity low density VALUES get (`isomin`, `opacityscale`) -- not
+    by the trace's overall `opacity`. This was verified empirically:
+    rendering an isolated small, separated cluster showed the glow stayed
+    invisible even at `opacity` near :data:`MAX_VOLUME_OPACITY` until `pad`
+    and the opacity ramp were also widened.
+
+    All five returned values equal their ORIGINAL, pre-boost constants
+    when `boost == 1` (a scene-filling dataset) -- `pad=0.15`,
+    `isomin=0.05`, `opacityscale=[[0, 0], [0.3, 0.4], [1, 0.8]]`,
+    `opacity=min(3*alpha, 0.6)`, `surface_count=5*levels` -- so nothing
+    changes for that (already correctly-tuned) case. As `boost` ramps up
+    to `max_boost`, `pad` widens (0.15 -> 0.5), `isomin` and the
+    `opacityscale` breakpoint shift left (exposing more of the KDE's outer
+    tail) and up (giving that tail more opacity), and `opacity`/
+    `surface_count` scale as in :func:`density_alpha_boost`'s docstring.
+
+    Returns
+    -------
+    (pad, isomin, opacityscale, opacity, surface_count)
+    """
+    t = 0.0 if max_boost <= 1 else float(np.clip(
+        (boost - 1) / (max_boost - 1), 0.0, 1.0))
+    pad = 0.15 + 0.35 * t
+    isomin = 0.05 - 0.04 * t
+    mid_x = 0.3 - 0.24 * t
+    mid_y = 0.4 + 0.15 * t
+    top_y = 0.8 + 0.1 * t
+    opacityscale = [[0, 0], [mid_x, mid_y], [1, top_y]]
+    base_opacity = min(3.0 * alpha, 0.6)
+    opacity = min(base_opacity * boost, MAX_VOLUME_OPACITY)
+    surface_count = int(round(5 * levels * boost))
+    return pad, isomin, opacityscale, opacity, surface_count
 
 
 def alpha_colormap(color, max_alpha, name="hypertools_density"):

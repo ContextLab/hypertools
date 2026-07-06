@@ -18,7 +18,15 @@ import pytest
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 import hypertools as hyp
-from hypertools.plot.density import DENSITY_DEFAULTS, HAS_SKIMAGE
+from hypertools.plot.density import (
+    DENSITY_BOOST_MAX,
+    DENSITY_DEFAULTS,
+    HAS_SKIMAGE,
+    MAX_VOLUME_OPACITY,
+    bbox_extent,
+    density_alpha_boost,
+    resolve_plotly_volume_params,
+)
 
 mpl.rcParams['figure.max_open_warning'] = 25
 
@@ -39,6 +47,26 @@ def _two_datasets_3d():
 
 def _two_datasets_2d():
     return [_blob_2d(seed=0, center=(-3, 0)), _blob_2d(seed=1, center=(3, 0))]
+
+
+def _two_identical_datasets_3d():
+    """Two datasets built from the exact SAME underlying points (just
+    duplicated) -- guarantees each dataset's own bounding box exactly
+    equals the whole scene's bounding box, so the GH #108 round-2 density
+    auto-boost (see `density_alpha_boost`) is EXACTLY `1.0` (a no-op) for
+    both. Used by tests that pin the BASE, pre-boost `density=` formula
+    constants; `_two_datasets_3d` (genuinely separated) is used instead
+    wherever a test wants the boost engaged."""
+    pts = _blob_3d(n=200, seed=0, center=(0, 0, 0))
+    return [pts, pts.copy()]
+
+
+def _two_blobs_3d_sep(sep, n=200):
+    """Two well-separated 3-D blobs, `sep` units apart (center-to-center,
+    in RAW pre-transform units) along x -- used to exercise the density
+    auto-boost at a range of separations (GH #108 round 2)."""
+    return [_blob_3d(n=n, seed=0, center=(-sep / 2, 0, 0)),
+            _blob_3d(n=n, seed=1, center=(sep / 2, 0, 0))]
 
 
 class TestStaticMatplotlib2D:
@@ -241,7 +269,10 @@ class TestFogFallbackSubprocess:
 
 class TestStaticPlotly3D:
     def test_volume_trace_params_exact(self):
-        fig = hyp.plot(_two_datasets_3d(), '.', density=True,
+        # identical-points fixture -> boost == 1.0 (no-op): this pins the
+        # BASE, pre-boost formula constants (GH #108 round 2 dedicated
+        # tests below cover the boosted, genuinely-separated case).
+        fig = hyp.plot(_two_identical_datasets_3d(), '.', density=True,
                        backend='plotly', show=False)
         volumes = [t for t in fig.data if t.type == 'volume']
         assert len(volumes) == 2
@@ -259,8 +290,10 @@ class TestStaticPlotly3D:
             assert v.colorscale[0][1] == v.colorscale[1][1]
 
     def test_opacity_scales_with_alpha_capped(self):
-        fig = hyp.plot(_two_datasets_3d(), '.', density={'alpha': 0.3},
-                       backend='plotly', show=False)
+        # identical-points fixture -> boost == 1.0 (no-op): pins the BASE
+        # opacity-capping formula.
+        fig = hyp.plot(_two_identical_datasets_3d(), '.',
+                       density={'alpha': 0.3}, backend='plotly', show=False)
         volumes = [t for t in fig.data if t.type == 'volume']
         for v in volumes:
             # min(3.0 * 0.3, 0.6) == 0.6 (capped)
@@ -274,15 +307,17 @@ class TestStaticPlotly3D:
         assert colors[0] != colors[1]
 
     def test_surface_count_scales_with_levels(self):
-        fig = hyp.plot(_two_datasets_3d(), '.', density={'levels': 5},
-                       backend='plotly', show=False)
+        # identical-points fixture -> boost == 1.0 (no-op): pins the BASE
+        # surface_count formula.
+        fig = hyp.plot(_two_identical_datasets_3d(), '.',
+                       density={'levels': 5}, backend='plotly', show=False)
         volumes = [t for t in fig.data if t.type == 'volume']
         assert len(volumes) == 2
         for v in volumes:
             assert v.surface.count == 25  # 5 * levels
 
     def test_surface_count_default_levels_unchanged(self):
-        fig = hyp.plot(_two_datasets_3d(), '.', density=True,
+        fig = hyp.plot(_two_identical_datasets_3d(), '.', density=True,
                        backend='plotly', show=False)
         volumes = [t for t in fig.data if t.type == 'volume']
         for v in volumes:
@@ -437,3 +472,142 @@ class TestDegenerateInputs:
         assert any('density' in str(warning.message) for warning in w)
         ax = fig.axes[0]
         assert len(ax.get_images()) == 0
+
+
+class TestDensityAlphaBoostFormula:
+    """Direct, numeric tests of the `density_alpha_boost`/`bbox_extent`
+    formula (GH #108 round 2: 3-D density was effectively invisible once
+    datasets were separated beyond ~4-5 std, at default alpha, for ALL
+    `levels` values -- see the through-`hyp.plot` engagement tests below
+    for the end-to-end regression)."""
+
+    def test_scene_filling_dataset_boost_is_one(self):
+        assert density_alpha_boost(2.0, 2.0) == pytest.approx(1.0)
+
+    def test_small_dataset_boost_exceeds_one(self):
+        assert density_alpha_boost(1.0, 3.0) > 1.0
+
+    def test_boost_clamped_at_max(self):
+        # scene_extent / dataset_extent = 100 -- far past max_boost
+        boost = density_alpha_boost(0.01, 1.0, max_boost=6.0)
+        assert boost == pytest.approx(6.0)
+
+    def test_boost_never_below_one(self):
+        # a dataset bigger than the whole scene shouldn't happen in
+        # practice, but the formula must never DARKEN (return < 1)
+        assert density_alpha_boost(5.0, 1.0) >= 1.0
+
+    def test_degenerate_zero_extent_returns_one(self):
+        assert density_alpha_boost(0.0, 2.0) == pytest.approx(1.0)
+        assert density_alpha_boost(2.0, 0.0) == pytest.approx(1.0)
+
+    def test_bbox_extent_matches_known_box(self):
+        pts = np.array([[0.0, 0.0, 0.0], [3.0, 4.0, 0.0]])
+        # span (3, 4, 0) -> Euclidean norm 5
+        assert bbox_extent(pts) == pytest.approx(5.0)
+
+    def test_gamma_two_matches_quadratic_scaling(self):
+        # explicit gamma overrides the module default
+        boost = density_alpha_boost(1.0, 2.0, gamma=2.0, max_boost=100.0)
+        assert boost == pytest.approx(4.0)
+
+
+class TestDensityBoostEngagementMatplotlib:
+    """Numeric regression: mpl iso-surface alphas are boosted for a
+    well-separated (small-in-scene) two-blob 3-D scene, but NOT for a
+    single, scene-filling dataset (GH #108 round 2)."""
+
+    def test_separated_blobs_boost_effective_alphas(self):
+        fig = hyp.plot(_two_blobs_3d_sep(10), '.', density=True, show=False)
+        ax = fig.axes[0]
+        colls = [c for c in ax.collections if isinstance(c, Poly3DCollection)]
+        assert len(colls) == 6  # 2 datasets * 3 levels
+        alphas = [float(c.get_facecolor()[0][3]) for c in colls]
+        base_alphas = (0.03, 0.05, 0.07)
+        # every boosted alpha must be at least 3x its own base shell alpha
+        assert min(alphas) >= 3 * min(base_alphas)
+
+    def test_scene_filling_single_blob_keeps_base_alphas(self):
+        fig = hyp.plot([_blob_3d(n=200, seed=0, center=(0, 0, 0))], '.',
+                       density=True, show=False)
+        ax = fig.axes[0]
+        colls = [c for c in ax.collections if isinstance(c, Poly3DCollection)]
+        alphas = sorted(float(c.get_facecolor()[0][3]) for c in colls)
+        assert alphas == pytest.approx([0.03, 0.05, 0.07], abs=1e-9)
+
+    def test_boost_grows_with_separation(self):
+        peak_alpha_by_sep = {}
+        for sep in (0, 5, 10):
+            fig = hyp.plot(_two_blobs_3d_sep(sep), '.', density=True,
+                           show=False)
+            ax = fig.axes[0]
+            colls = [c for c in ax.collections
+                    if isinstance(c, Poly3DCollection)]
+            peak_alpha_by_sep[sep] = max(
+                float(c.get_facecolor()[0][3]) for c in colls)
+        assert peak_alpha_by_sep[0] < peak_alpha_by_sep[5] < peak_alpha_by_sep[10]
+
+    def test_levels_one_vs_six_distinguishable_when_separated(self):
+        # GH #108 round 2: the review found levels=1 vs levels=6 looked
+        # indistinguishable once the boost made both visible -- assert
+        # their peak (innermost-shell) alpha genuinely differs.
+        peak_alpha_by_levels = {}
+        for levels in (1, 6):
+            fig = hyp.plot(_two_blobs_3d_sep(10), '.',
+                           density={'levels': levels}, show=False)
+            ax = fig.axes[0]
+            colls = [c for c in ax.collections
+                    if isinstance(c, Poly3DCollection)]
+            assert len(colls) == 2 * levels
+            peak_alpha_by_levels[levels] = max(
+                float(c.get_facecolor()[0][3]) for c in colls)
+        assert peak_alpha_by_levels[6] > peak_alpha_by_levels[1]
+
+
+class TestDensityBoostEngagementPlotly:
+    """Numeric regression: plotly Volume opacity/surface_count are boosted
+    for a well-separated two-blob 3-D scene, capped at
+    `MAX_VOLUME_OPACITY`, but unchanged for a single, scene-filling
+    dataset (GH #108 round 2)."""
+
+    def test_separated_blobs_boost_opacity_above_base_cap(self):
+        fig = hyp.plot(_two_blobs_3d_sep(10), '.', density=True,
+                       backend='plotly', show=False)
+        volumes = [t for t in fig.data if t.type == 'volume']
+        assert len(volumes) == 2
+        for v in volumes:
+            # base (unboosted) cap is 0.6 -- boost must push past it
+            assert v.opacity > 0.6
+            assert v.opacity <= MAX_VOLUME_OPACITY + 1e-9
+
+    def test_separated_blobs_boost_surface_count(self):
+        fig = hyp.plot(_two_blobs_3d_sep(10), '.', density=True,
+                       backend='plotly', show=False)
+        volumes = [t for t in fig.data if t.type == 'volume']
+        for v in volumes:
+            assert v.surface.count > 15  # base is 5 * default levels (3)
+
+    def test_scene_filling_single_blob_keeps_base_opacity(self):
+        fig = hyp.plot([_blob_3d(n=200, seed=0, center=(0, 0, 0))], '.',
+                       density=True, backend='plotly', show=False)
+        volumes = [t for t in fig.data if t.type == 'volume']
+        assert len(volumes) == 1
+        assert volumes[0].opacity == pytest.approx(0.6, abs=1e-9)
+        assert volumes[0].surface.count == 15
+
+    def test_resolve_plotly_volume_params_noop_at_boost_one(self):
+        pad, isomin, opacityscale, opacity, surface_count = (
+            resolve_plotly_volume_params(0.2, 3, boost=1.0))
+        assert pad == pytest.approx(0.15)
+        assert isomin == pytest.approx(0.05)
+        assert opacityscale == [[0, 0], [0.3, 0.4], [1, 0.8]]
+        assert opacity == pytest.approx(0.6, abs=1e-9)
+        assert surface_count == 15
+
+    def test_resolve_plotly_volume_params_widens_at_max_boost(self):
+        pad, isomin, opacityscale, opacity, surface_count = (
+            resolve_plotly_volume_params(0.2, 3, boost=DENSITY_BOOST_MAX))
+        assert pad > 0.15
+        assert isomin < 0.05
+        assert opacity == pytest.approx(MAX_VOLUME_OPACITY, abs=1e-9)
+        assert surface_count == 5 * 3 * DENSITY_BOOST_MAX
