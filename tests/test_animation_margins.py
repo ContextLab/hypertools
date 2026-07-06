@@ -343,3 +343,109 @@ class TestSaveDpiGeometry:
             f"animate={style!r}: y ink-bbox fraction native={fy_native:.4f} "
             f"vs thumbnail-dpi={fy_thumb:.4f}"
         )
+
+
+# --- D3: chemtrails "cut off right side" -- verified NOT an overshoot bug --
+# Maintainer report: sphx_glr_chemtrails_001.gif looked "cut off" on the
+# right around the 3-second mark. Hypothesis investigated: PCHIP
+# interpolation (`_shared.helpers.interp_array_list`, used to densify line/
+# animate trajectories for smooth playback) overshoots the [-1, 1] data
+# cube, while the drawn cube/axis limits stay fixed at 1, so a trail drawn
+# past the cube clips at the canvas edge.
+#
+# Verified FALSE on every front:
+# 1. PCHIP (`scipy.interpolate.PchipInterpolator`) is monotonicity-
+#    preserving by construction (Fritsch-Carlson): it cannot introduce a
+#    new extremum beyond the input data's own min/max on any column, even
+#    for a sharp zig-zag reversal (confirmed with a synthetic zigzag below).
+# 2. Even if it could, `plot.py` applies `center()`/`scale()` to the FULL
+#    interpolated array AFTER interpolation (`xform = interp_array_list(...)`
+#    at plot.py:1472, THEN `xform = center(xform); xform = scale(xform)` at
+#    plot.py:1538-1539) -- `scale()` maps the GLOBAL stacked min/max to
+#    exactly [-1, 1], so the array handed to `_draw`/`animate_plot3D` (the
+#    same array the chemtrail/trail artists draw from) is bounded to
+#    exactly 1.0, not "approximately".
+# 3. Empirically confirmed on the real `examples/chemtrails.py` call
+#    (`hyp.load('weights_avg')`, `animate=True, chemtrails=True`): the
+#    `xform` array `_draw` receives has `max(abs(...)) == 1.0` exactly
+#    (901-frame trajectory, both datasets).
+# 4. Pixel-level, across all 901 frames of the real
+#    `docs/auto_examples/images/sphx_glr_chemtrails_001.gif`: the colored
+#    (red/cyan trail) ink never extends a single pixel past the black cube
+#    wireframe's own rightmost ink column (checked exhaustively, every
+#    frame) -- there is no clipped/overshooting trail.
+# 5. The ~25px worst-case right margin (at the 198px-wide thumbnail size
+#    sphinx-gallery renders, ~frame 69-100 of 901) is IDENTICAL, at the
+#    same frame, in `precog`/`animate_MDS`/`animate_spin`/
+#    `animate_trails_mix`/`save_movie` -- none of which show any visible
+#    "cut off" -- confirming it is the ordinary camera-rotation cube
+#    margin (proportionally consistent with the ~80px measured at native
+#    640px resolution in `task-jeremy-animzoom-report.md`), not a
+#    chemtrails-specific or trail-overshoot regression.
+#
+# No source fix was made (there is nothing to fix); these tests lock in
+# the two verified invariants above as a permanent regression guard.
+class TestChemtrailsOvershootMargins:
+
+    @staticmethod
+    def _zigzag_trajectory(n_segments=8, amplitude=5.0, seed=0):
+        """A sharp-reversal trajectory (zig-zag), the classic case
+        theorized to make an interpolator overshoot: every OTHER point
+        flips sign at full amplitude."""
+        rng = np.random.default_rng(seed)
+        y = np.array([amplitude if i % 2 == 0 else -amplitude
+                      for i in range(n_segments)], dtype=float)
+        other = rng.normal(scale=0.5, size=n_segments)
+        z = rng.normal(scale=0.1, size=n_segments)
+        return np.column_stack([y, other, z])
+
+    def test_pchip_does_not_overshoot_sharp_reversals(self):
+        """Ground-truth check on the interpolator itself (isolated from
+        `plot()`'s downstream center/scale): PCHIP is monotonicity-
+        preserving, so densifying a sharp zig-zag must NOT produce any
+        interpolated value outside the raw data's own [min, max]."""
+        from hypertools._shared.helpers import interp_array_list
+
+        raw = self._zigzag_trajectory()
+        raw_max_abs = float(np.max(np.abs(raw)))
+        interped = interp_array_list([raw], interp_val=25)[0]
+        interp_max_abs = float(np.max(np.abs(interped)))
+
+        assert interp_max_abs <= raw_max_abs + 1e-9, (
+            f"PCHIP overshot the raw data range: raw max|coord|="
+            f"{raw_max_abs}, interpolated max|coord|={interp_max_abs}"
+        )
+
+    def test_chemtrails_zigzag_containment_and_margins(self):
+        """End-to-end: a chemtrails=True animation of a sharp-reversal
+        trajectory must (a) never draw data outside the axes limits, and
+        (b) keep the same healthy margin floor every other animate style
+        uses, across >= one full rotation."""
+        clouds = [self._zigzag_trajectory(n_segments=12, seed=s)
+                  for s in (0, 1)]
+        fig, ani = hyp.plot(clouds, animate=True, chemtrails=True,
+                            duration=3, frame_rate=10, show=False)
+        ax = fig.axes[0]
+
+        idx, total = _full_rotation_frames(ani, n_samples=8)
+        assert len(idx) >= 8
+
+        xlim = ax.get_xlim3d()
+        ylim = ax.get_ylim3d()
+        zlim = ax.get_zlim3d()
+        cube_scale = max(abs(v) for lim in (xlim, ylim, zlim) for v in lim)
+
+        # the interpolated+scaled data (`ani._args[0]`, the same array the
+        # trail/chemtrail artists draw from) must be fully contained by the
+        # drawn cube/axis limits -- containment check (a).
+        data_lines = ani._args[0]
+        max_abs_data = max(float(np.max(np.abs(d))) for d in data_lines)
+        assert max_abs_data <= cube_scale + 1e-9, (
+            f"interpolated trajectory max|coord|={max_abs_data} exceeds "
+            f"the drawn cube/axis limit {cube_scale}"
+        )
+
+        mins = _min_margins_over_frames(fig, ani, idx)
+        plt.close(fig)
+        _assert_healthy(mins, f"animate=True + chemtrails=True (zigzag), "
+                              f"{total} frames")
