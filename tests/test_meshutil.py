@@ -357,8 +357,10 @@ class TestSmoothHull3DPerformance:
         start = time.perf_counter()
         smooth_hull_3d(pts, rounds=3)
         elapsed = time.perf_counter() - start
-        # loose bound to avoid CI flakiness; verified prototype runs <50ms
-        assert elapsed < 0.5
+        # pathological-slowness guard, not a benchmark: local runs measure
+        # ~15-25ms, but shared CI runners (Windows especially) have measured
+        # right at a 0.5s bound (0.5006s once) -- keep a wide margin
+        assert elapsed < 3.0
 
 
 class TestSmoothHull3DDegenerateInputs:
