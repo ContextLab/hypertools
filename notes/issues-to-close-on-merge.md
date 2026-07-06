@@ -90,8 +90,6 @@ NOT_ADDRESSED issues, still-open STILL_BUG issues, and ADDRESSED-but-partial iss
 | 162 | autoencoders as a reduce algorithm | `reduce.py`'s model registry is sklearn-only; no torch/keras/autoencoder integration (the custom-class escape hatch is now at least functional post-fix, see section 2) |
 | 123 | 2D animations | `matplotlib_backend.py` has a hard `assert x[0].shape[1] == 3` requiring 3D data for animation |
 | 116 | kaggle/538 dataset loading functions | No `source='kaggle'`/`'538'` parameter anywhere in `io/load.py` or `io/sources.py` |
-| 109 | triangular mesh support | No trimesh/mesh code anywhere in the package |
-| 108 | kernel density plots in 2D/3D | No kde/`KernelDensity` code anywhere; still an open design question (3D density rendering approach) |
 | 103 | adjustable label opacity | `annotate_plot()`'s label bbox alpha is hardcoded (0.5); no user-facing opacity kwarg |
 
 ### Whimsical / pie-in-the-sky
@@ -99,7 +97,6 @@ NOT_ADDRESSED issues, still-open STILL_BUG issues, and ADDRESSED-but-partial iss
 | # | title | why still open |
 |-|-|-|
 | 163 | add a soundtrack to animations | No audio/soundtrack code anywhere; a fun but genuine unimplemented ask |
-| 191 | replace matplotlib with ipyvolume | Never adopted; 2.0 added a Plotly backend instead, addressing the same interactivity desire via a different, actively-maintained library |
 | 113 | grand challenge: streaming brain decoding (OpenBCI) | Explicitly gated on 4 sub-pieces; only streaming (#101) is done — decoding, interactive labels, and live device reading are not |
 | 112 | on-the-fly decoding (nearest-event highlighting) | Sub-piece of #113's grand challenge; no decoding mode exists |
 | 111 | on-the-fly interactive labels (spacebar prompt) | Sub-piece of #113's grand challenge; no keypress/labeling UI exists |
