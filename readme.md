@@ -49,6 +49,29 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
 + **Nested-list input:** `hyp.plot([[a, b], [c]])` colors datasets by their
   outermost grouping and renders more deeply nested datasets with thinner,
   fainter lines.
++ **Hull surfaces (optional):** `hyp.plot(..., surface=True)` overlays a
+  smooth, lit surface over each dataset's convex hull — a filled outline in
+  2D, or a shaded, Taubin-smoothed "blob" in 3D — with a dict form for
+  per-dataset alpha/color/lighting/smoothing control.
++ **Density shading (optional):** `hyp.plot(..., density=True)` overlays a
+  subtle KDE "glow" behind the data (a 2D heatmap or 3D volumetric cloud)
+  showing where each dataset's points concentrate; off by default.
++ **Colorbars:** `hyp.plot(..., colorbar=True)` draws a colorbar matching
+  whatever color mapping is already in use — a continuous gradient for a
+  numeric `hue`, or a segmented, labeled bar for discrete groups/clusters.
++ **MultiIndex DataFrames:** a DataFrame with a row `MultiIndex` is expanded
+  automatically into one leaf trace per index combination plus a thicker,
+  more opaque mean trace per level of grouping, colored by the top-level
+  index value.
++ **Per-dataset animation trails:** `chemtrails`/`precog`/`bullettime` each
+  accept a list of bools (one per dataset) so different datasets in the same
+  animation can show different trail styles, in addition to a single bool
+  applied to all of them.
++ **More `hyp.load` sources:** in addition to the built-in example datasets
+  and local files, `hyp.load` now resolves Hugging Face dataset ids, Google
+  Sheets/Drive links, Dropbox links, and arbitrary URLs, plus more local file
+  formats (`.npy`/`.npz`, `.csv`/`.tsv`/`.txt`, `.json`, `.parquet`, `.mat`,
+  `.xlsx`/`.xls`).
 + **Faster and cleaner:** `import hypertools` is ~3.5x faster (heavy
   dependencies load lazily); plotting no longer mutates global matplotlib
   settings; the unreliable result cache was removed; HDBSCAN now comes from
