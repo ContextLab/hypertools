@@ -12,6 +12,7 @@ import pytest
 from matplotlib.path import Path
 from scipy.spatial import ConvexHull, Delaunay, cKDTree
 
+import hypertools as hyp
 from hypertools.plot.meshutil import (
     backface_cull,
     blinn_phong_colors,
@@ -62,6 +63,21 @@ def _cube_surface_3d(n=400, seed=0):
         pts[mask, others[0]] = uv[mask, 0]
         pts[mask, others[1]] = uv[mask, 1]
     return pts
+
+
+def _teapot_3d(n=400, seed=0):
+    """`n`-point sample of the packaged `teapot` shape (Task M1b, "tighter
+    hulls"): a real, organically-curved (non-adversarial) point cloud --
+    unlike `_cube_surface_3d`'s deliberately sharp corners, the teapot's
+    hull vertices are already fairly rounded, so it exercises the
+    hull-hugging pull-back on a shape closer to typical real-world data.
+    """
+    pts = np.asarray(hyp.load('teapot'), dtype=float)
+    pts = pts - pts.mean(axis=0)
+    pts = pts / np.abs(pts).max()
+    rng = np.random.default_rng(seed)
+    idx = rng.choice(len(pts), size=min(n, len(pts)), replace=False)
+    return pts[idx]
 
 
 def hull_slack(points, verts):
@@ -169,34 +185,40 @@ class TestSmoothHull3DTinyCloudContainment:
 
 
 class TestSmoothHull3DTightness:
-    """Task M1 (2026-07-06, "tight hulls" maintainer feedback): with the
-    blanket `pre_inflate` default dropped from 1.15 to 1.0 and the
-    post-hoc containment rescale now exact (see
-    `TestSmoothHull3DTinyCloudContainment`), verify the two headline
-    tightness properties the plan calls for: (1) mesh max|vert| is never
-    grotesquely larger than cloud max|point| (the "explosion" bug is
-    gone), and (2) the surface stays CLOSE to the data (`hull_slack`), not
-    just "eventually contains it".
+    """Task M1 (2026-07-06, "tight hulls" maintainer feedback) established
+    the two headline tightness properties the plan calls for: (1) mesh
+    max|vert| is never grotesquely larger than cloud max|point| (the
+    "explosion" bug is gone), and (2) the surface stays CLOSE to the data
+    (`hull_slack`), not just "eventually contains it". Task M1b (same day,
+    follow-up maintainer feedback: "the convex hulls need to be tighter;
+    they don't hug the observations as closely as they should") retightens
+    both: `smooth_hull_3d` now pulls smoothed vertices that fell INSIDE the
+    original hull back towards its surface DURING smoothing (see
+    `hull_blend`/`_pull_back_to_hull`), rather than relying solely on a
+    uniform post-hoc regrow -- so the mesh hugs the data BY CONSTRUCTION
+    instead of shrinking and uniformly re-growing (which was compensating
+    Taubin's corner-shrink by ballooning the already-tight flat faces
+    outward).
 
-    Note on numbers: the plan's own aspirational slack target (<=2% of
-    cloud extent) is not achievable simultaneously with >=99% strict
-    containment for a purely UNIFORM (isotropic, about-the-centroid)
-    rescale, which is what a "minimal grow" means here -- forcing the
-    single farthest-short direction to close its gap necessarily grows
-    every OTHER direction by the same factor, creating slack elsewhere.
-    Measured across many fixtures/sizes (n=4..2000, see
-    docs/superpowers/plans/2026-07-06-morph-animation.md Task M1 report),
-    slack instead ranges ~0.5-10% of cloud extent depending on hull
-    sparsity; 12% comfortably covers every case measured (using the same
-    seed=n convention as `TestSmoothHull3DTinyCloudContainment` above, for
-    reproducibility -- not every arbitrary random seed at every n is
-    guaranteed to land under any fixed bound, since a handful of points in
-    3-D can occasionally form an unusually skewed/sliver-shaped hull) while
-    still being a small fraction of the cloud's own size (and a
-    night-and-day improvement over the pre-fix code's demo explosion,
-    where the drawn surface could be 60%+ larger than the data outright)."""
+    Note on numbers: even with by-construction hugging, the plan's own
+    aspirational slack target (<=2% of cloud extent) is not achievable for
+    EVERY size down to a bare 4-point tetrahedron simultaneously with
+    >=99% strict containment: `_pull_back_to_hull` only pulls vertices
+    that fell INSIDE the original hull back OUT (pushing already-outside,
+    Taubin-bulged vertices further out would defeat the point of hugging),
+    so the residual containment gap the final uniform safety-net rescale
+    (`_rescale_for_containment`) still has to close is smaller than
+    before, but not zero, and a handful of points in 3-D can occasionally
+    form an unusually skewed/sliver-shaped hull at small n regardless.
+    Measured across n=4..2000 (`rng.normal`, seed=n, library defaults):
+    slack now ranges ~0.6-4.9% (down from Task M1's ~0.5-10%), worst at
+    n=8 (4.94%); 6% comfortably covers every case measured. See
+    `TestSmoothHull3DTightnessAtScale` below for the n>=100,
+    named-fixture (cube/blob/teapot) numbers the plan's 2%/1.05 targets
+    are stated against -- those come much closer (and for teapot, meet it
+    outright)."""
 
-    _SLACK_BOUND = 0.12
+    _SLACK_BOUND = 0.06
 
     @pytest.mark.parametrize('n', [4, 5, 8, 20, 50, 200, 500, 2000])
     def test_hull_slack_is_bounded(self, n):
@@ -217,6 +239,68 @@ class TestSmoothHull3DTightness:
         sig = inspect.signature(smooth_hull_3d)
         assert sig.parameters['pre_inflate'].default == 1.0
 
+    def test_default_hull_blend_is_0_85(self):
+        # Task M1b: by-construction hugging is ON by default, but not
+        # snapped all the way to the hull (blend=1.0) -- see
+        # `smooth_hull_3d`'s docstring for the smoothness/tightness
+        # trade-off this default balances (confirmed visually: renders in
+        # /private/tmp/.../scratchpad/morph_inspect/blend_compare_*.png
+        # show blend=1.0 introduces a visibly sharper apex on a
+        # single-extremal-point blob that 0.85 mostly avoids, at nearly
+        # identical measured tightness).
+        import inspect
+        sig = inspect.signature(smooth_hull_3d)
+        assert sig.parameters['hull_blend'].default == 0.85
+
+
+class TestSmoothHull3DTightnessAtScale:
+    """Task M1b (2026-07-06): the maintainer's tightness targets
+    (mesh/cloud extent ratio <=1.05, slack <=2%) stated specifically for
+    n>=100 clouds, checked against three named fixtures spanning the
+    realistic range: `_cube_surface_3d` (adversarial: sharp 90-degree
+    corners), `_random_blob_3d` (a smooth but single-extremal-point
+    Gaussian-ish blob), and `_teapot_3d` (a real, organically-curved
+    packaged shape).
+
+    Measured (library defaults, n=100 and n=400): `_teapot_3d` meets BOTH
+    targets outright (ratio <=1.02, slack <=1.95%). `_random_blob_3d`
+    meets the ratio target (<=1.05) but not the slack one (up to 4.4% at
+    n=100) -- its hull has one genuinely sharp extremal point (visually
+    confirmed: a real, narrow spike, not a rendering artifact -- see
+    blend_compare_blob.png), and hugging that spike tightly necessarily
+    costs some slack elsewhere for a uniform-about-centroid pipeline.
+    `_cube_surface_3d` meets NEITHER target as tightly (ratio up to 1.12,
+    slack up to 3.3%): `_pull_back_to_hull` only pulls IN vertices that
+    fell inside the original hull, by design (see
+    `TestSmoothHull3DTightness`'s docstring) -- vertices Taubin smoothing
+    already bulged OUTSIDE the sharp cube (a real, measured effect,
+    present even at `hull_blend=0`) are deliberately left alone, so a
+    single already-bulged vertex can still dominate the ratio metric.
+    All three are nonetheless a large, measured improvement over Task M1's
+    own numbers for the same fixtures (cube ratio 1.161/slack 5.03% ->
+    <=1.12/<=3.3%; teapot ratio 1.082/slack 6.47% -> <=1.02/<=1.95%)."""
+
+    @pytest.mark.parametrize('n', [100, 400])
+    def test_teapot_hits_both_targets(self, n):
+        pts = _teapot_3d(n=n)
+        verts, faces = smooth_hull_3d(pts)
+        assert np.max(np.abs(verts)) <= 1.05 * np.max(np.abs(pts))
+        assert hull_slack(pts, verts) <= 0.026
+
+    @pytest.mark.parametrize('n', [100, 400])
+    def test_blob_hits_ratio_target(self, n):
+        pts = _random_blob_3d(n=n)
+        verts, faces = smooth_hull_3d(pts)
+        assert np.max(np.abs(verts)) <= 1.05 * np.max(np.abs(pts))
+        assert hull_slack(pts, verts) <= 0.05
+
+    @pytest.mark.parametrize('n', [100, 400])
+    def test_cube_within_documented_bounds(self, n):
+        pts = _cube_surface_3d(n=n)
+        verts, faces = smooth_hull_3d(pts)
+        assert np.max(np.abs(verts)) <= 1.15 * np.max(np.abs(pts))
+        assert hull_slack(pts, verts) <= 0.035
+
 
 class TestSmoothHull3DExplosionRegression:
     """Task M1 regression test for the maintainer-reported (2026-07-06)
@@ -227,9 +311,12 @@ class TestSmoothHull3DExplosionRegression:
     OLD `_rescale_for_containment`'s nearest-angle-vertex proxy computing
     a wildly overstated grow ratio (observed: mesh max|vert| = 1.63 *
     cloud max|point| on the real demo data, with pre_inflate=1.15 on top).
-    With the fix (default pre_inflate=1.0, exact ray-exit-distance
-    rescale, capped growth), the same style of adversarial, well-sampled
-    cube point cloud stays bounded well under half that overshoot."""
+    With the Task M1 fix (default pre_inflate=1.0, exact ray-exit-distance
+    rescale, capped growth) the same style of cube stayed under 1.5x,
+    and Task M1b's hull-hugging pull-back tightens that further (measured
+    worst case across n=4..1000, rounds=2 matching the demo's smoothing:
+    1.264x at n=50) -- retightened here to 1.35x, still a comfortable
+    margin above the measured worst case."""
 
     @pytest.mark.parametrize('n', [4, 50, 100, 400, 1000])
     def test_cube_mesh_stays_boundedly_close_to_cloud(self, n):
@@ -237,10 +324,9 @@ class TestSmoothHull3DExplosionRegression:
         verts, faces = smooth_hull_3d(pts, rounds=2)
         cloud_max = np.max(np.abs(pts))
         mesh_max = np.max(np.abs(verts))
-        # the pre-fix code reached 1.63x on the real demo cube (n=400,
-        # pre_inflate=1.15); this synthetic cube at library defaults
-        # (pre_inflate=1.0) stays comfortably under that across n=4..1000
-        assert mesh_max <= 1.5 * cloud_max
+        # Task M1b retightened this from the original 1.5x (itself already
+        # a big improvement over the pre-M1 1.63x explosion) to 1.35x
+        assert mesh_max <= 1.35 * cloud_max
 
     def test_cube_mesh_contains_99_percent_of_points(self):
         pts = _cube_surface_3d(n=400)

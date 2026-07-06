@@ -6,9 +6,12 @@ set of shading/culling helpers used to render those surfaces.
 
 Pipeline (3-D): ``ConvexHull`` -> outward-oriented triangle mesh -> pre-inflate
 about the centroid -> interleaved rounds of [midpoint 1->4 subdivision, then
-Taubin lambda/mu smoothing]. Interleaving subdivision with smoothing (rather
-than subdividing everything up front and smoothing once at the end) avoids
-pinched creases at the original hull vertices.
+Taubin lambda/mu smoothing, then a hull-hugging pull-back of any vertex that
+smoothing pulled inside the original hull]. Interleaving subdivision with
+smoothing (rather than subdividing everything up front and smoothing once at
+the end) avoids pinched creases at the original hull vertices; the pull-back
+(Task M1b, "tighter hulls") makes the mesh hug the data's own convex hull BY
+CONSTRUCTION rather than relying solely on a uniform post-hoc regrow.
 
 Pipeline (2-D): ``ConvexHull`` vertices (already ordered) -> centripetal
 Catmull-Rom spline (alpha=0.5) through the closed polygon.
@@ -137,7 +140,10 @@ def _taubin_smooth(verts, faces, iterations=8, lam=0.5, mu=-0.53):
     return v
 
 
-def smooth_hull_3d(points, rounds=3, taubin_iters=8, lam=0.5, mu=-0.53, pre_inflate=1.0):
+def smooth_hull_3d(
+    points, rounds=3, taubin_iters=8, lam=0.5, mu=-0.53, pre_inflate=1.0,
+    hull_blend=0.85,
+):
     """Build a smooth, outward-oriented triangle mesh from a 3-D point cloud.
 
     Computes the convex hull of `points`, optionally pre-inflates it about
@@ -145,6 +151,17 @@ def smooth_hull_3d(points, rounds=3, taubin_iters=8, lam=0.5, mu=-0.53, pre_infl
     (1 -> 4) subdivision followed by Taubin lambda/mu smoothing. Interleaving
     (rather than subdividing fully and then smoothing once) avoids pinched
     creases at the original hull vertices.
+
+    Task M1b (2026-07-06, maintainer feedback: "the convex hulls need to be
+    tighter; they don't hug the observations as closely as they should"):
+    after every round's Taubin pass, any mesh vertex that has fallen INSIDE
+    the original (unsmoothed) hull of `points` is pulled back out towards
+    that hull's surface -- see :func:`_pull_back_to_hull`/`hull_blend`
+    below. This makes the mesh hug the data BY CONSTRUCTION, rather than
+    (as Task M1 did) shrinking uniformly via Taubin and then uniformly
+    re-growing the whole mesh to restore containment, which compensates
+    Taubin's corner-shrink by ballooning the already-tight flat faces
+    outward instead.
 
     Parameters
     ----------
@@ -166,9 +183,21 @@ def smooth_hull_3d(points, rounds=3, taubin_iters=8, lam=0.5, mu=-0.53, pre_infl
         (the previous default) made surfaces visibly balloon past the data
         they were meant to hug, in some cases past the plotted axes cube
         entirely. Any shrinkage Taubin smoothing introduces is instead
-        recovered by a MINIMAL, mathematically bounded post-hoc grow (see
-        :func:`_rescale_for_containment`) targeting the *actual input
-        points*, not this pre-inflation.
+        recovered by the hull-hugging pull-back below (and, as a final
+        bounded safety net, :func:`_rescale_for_containment`) targeting
+        the *actual input points*, not this pre-inflation.
+    hull_blend : float, optional
+        How aggressively interior mesh vertices are pulled back towards
+        the original hull's surface after each smoothing round, in
+        ``[0, 1]``. 0 disables pull-back entirely (Task M1 behavior); 1
+        snaps pulled vertices exactly onto the original hull surface
+        (perfectly tight, but polyhedral/faceted at corners); the default
+        0.85 keeps most of the tightness while leaving enough slack for
+        Taubin's final light touch-up pass to round corners smoothly.
+        Applied progressively (increasing across rounds, lighter on the
+        final touch-up pass) so early, coarse rounds don't lock in sharp
+        facets that later subdivision could otherwise still soften. See
+        :func:`_pull_back_to_hull`.
 
     Returns
     -------
@@ -214,9 +243,35 @@ def smooth_hull_3d(points, rounds=3, taubin_iters=8, lam=0.5, mu=-0.53, pre_infl
     if pre_inflate != 1.0:
         verts = centroid + pre_inflate * (verts - centroid)
 
-    for _ in range(rounds):
+    # Task M1b ("tight hulls, by construction"): the ORIGINAL (unsmoothed,
+    # un-inflated) hull of the actual input points is the surface every
+    # smoothed vertex should hug -- its halfspace (facet normal/offset)
+    # equations are computed once, up front, and reused by every pull-back
+    # below (both the per-round ones and the final touch-up), all rooted
+    # at this same `centroid`.
+    orig_hull_eqs = ConvexHull(points).equations
+
+    for round_idx in range(rounds):
         verts, faces = _subdivide(verts, faces)
         verts = _taubin_smooth(verts, faces, iterations=taubin_iters, lam=lam, mu=mu)
+        if hull_blend > 0:
+            # ramp `hull_blend` up across rounds: a full-strength pull-back
+            # on an early, coarse (barely-subdivided) mesh would lock in
+            # sharp facets that later subdivision/smoothing could otherwise
+            # still round off, so early rounds pull back lightly and only
+            # the final round applies the full requested `hull_blend`.
+            round_blend = hull_blend * (round_idx + 1) / rounds
+            verts = _pull_back_to_hull(verts, orig_hull_eqs, centroid, round_blend)
+
+    if hull_blend > 0 and rounds > 0:
+        # The final round's pull-back can leave faint facets at vertices
+        # it snapped onto the hull surface. A short, light Taubin touch-up
+        # rounds those off -- but a touch-up alone would let the mesh sink
+        # back inside the hull, undoing the tightness just gained, so a
+        # second, gentler pull-back (half strength) follows it to restore
+        # snugness without re-introducing hard facets.
+        verts = _taubin_smooth(verts, faces, iterations=2, lam=lam, mu=mu)
+        verts = _pull_back_to_hull(verts, orig_hull_eqs, centroid, 0.5 * hull_blend)
 
     # GH #109 (maintainer feedback 2026-07-06, "tight hulls"): Taubin
     # smoothing has a net shrinking effect that is NOT proportional across
@@ -245,6 +300,104 @@ def smooth_hull_3d(points, rounds=3, taubin_iters=8, lam=0.5, mu=-0.53, pre_infl
 
 
 _RESCALE_CAP = 3.0
+
+
+def _ray_exit_distance(hull_eqs, centroid, dirs):
+    """Exact ray-vs-convex-polytope exit distance, reused by both
+    :func:`_rescale_for_containment` (Task M1) and :func:`_pull_back_to_hull`
+    (Task M1b).
+
+    For each ray ``x = t * dirs[k]`` (``t >= 0``, coordinates relative to
+    `centroid`), returns the `t` at which the ray exits the convex polytope
+    described by the halfspace (facet normal/offset) equations `hull_eqs`
+    (e.g. ``ConvexHull(...).equations``, shape ``(n_facets, 4)``): the
+    smallest ``offset / (normal . dir)`` over every facet the ray is moving
+    TOWARDS (``normal . dir > 0``); facets the ray moves away from impose
+    no constraint. This is the standard exact formula -- not a proxy -- for
+    where a ray leaves a convex body, and matches precisely what a
+    Delaunay/ConvexHull containment test (e.g. :func:`points_enclosed`)
+    checks.
+
+    Parameters
+    ----------
+    hull_eqs : ndarray of shape (n_facets, 4)
+        Halfspace equations of a convex hull (``ConvexHull.equations``):
+        row k is ``[normals[k, 0], normals[k, 1], normals[k, 2], offset_k]``
+        such that the hull is ``{x : normals[k] . x + offset_k <= 0}``.
+    centroid : ndarray of shape (3,)
+        Point the rays originate from (must be strictly inside the hull
+        described by `hull_eqs` for the result to be finite/positive).
+    dirs : ndarray of shape (n, 3)
+        Unit ray directions, relative to `centroid`.
+
+    Returns
+    -------
+    ndarray of shape (n,)
+        Exit distance (``t``) along each ray, floored at ``1e-12`` to avoid
+        returning exactly zero (e.g. for a degenerate all-zero direction).
+    """
+    normals = hull_eqs[:, :3]
+    offsets = -hull_eqs[:, 3] - normals @ centroid
+    proj = dirs @ normals.T
+    with np.errstate(divide="ignore", invalid="ignore"):
+        candidates = np.where(proj > 1e-12, offsets[None, :] / proj, np.inf)
+    return np.maximum(candidates.min(axis=1), 1e-12)
+
+
+def _pull_back_to_hull(verts, hull_eqs, centroid, blend):
+    """Task M1b ("tight hulls, by construction"): pull mesh vertices that
+    fell INSIDE the original hull back out towards that hull's surface.
+
+    For each vertex, casts a ray from `centroid` through the vertex (the
+    same exact halfspace ray-exit machinery :func:`_rescale_for_containment`
+    uses, via :func:`_ray_exit_distance`) and, if the vertex's own distance
+    from `centroid` is currently SHORTER than where that ray would exit the
+    original hull described by `hull_eqs`, moves the vertex to
+    ``centroid + dir * (blend * d_hull + (1 - blend) * d_current)``. This
+    is exactly the "shrink then blend back towards the boundary" that makes
+    the mesh hug the hull directly, rather than (as the uniform post-hoc
+    rescale alone does) growing the ENTIRE mesh -- including faces that were
+    already snug -- to compensate for a few corners Taubin smoothing pulled
+    in the most.
+
+    Vertices already outside (or exactly on) the original hull along their
+    own ray (``d_current >= d_hull``) are left untouched: pulling them
+    "back" would mean pushing them further out, past the hull, which is not
+    what this step is for (containment growth, if still needed after this,
+    is `_rescale_for_containment`'s job).
+
+    Parameters
+    ----------
+    verts : ndarray of shape (n, 3)
+    hull_eqs : ndarray of shape (n_facets, 4)
+        Halfspace equations of the ORIGINAL (unsmoothed) hull to hug --
+        see :func:`_ray_exit_distance`.
+    centroid : ndarray of shape (3,)
+    blend : float
+        In ``[0, 1]``: 0 leaves every vertex untouched, 1 snaps every
+        interior vertex exactly onto the original hull surface.
+
+    Returns
+    -------
+    ndarray of shape (n, 3)
+        Vertex positions after pull-back.
+    """
+    to_v = verts - centroid
+    r = np.linalg.norm(to_v, axis=1)
+    nonzero = r > 1e-12
+    dirs = np.zeros_like(to_v)
+    dirs[nonzero] = to_v[nonzero] / r[nonzero, None]
+
+    d_hull = _ray_exit_distance(hull_eqs, centroid, dirs)
+    inside = nonzero & (r < d_hull)
+    if not inside.any():
+        return verts
+
+    new_r = r.copy()
+    new_r[inside] = blend * d_hull[inside] + (1 - blend) * r[inside]
+    out = verts.copy()
+    out[inside] = centroid + dirs[inside] * new_r[inside, None]
+    return out
 
 
 def _rescale_for_containment(
@@ -331,22 +484,10 @@ def _rescale_for_containment(
     unit_pts[nonzero] = to_pts[nonzero] / r_pts[nonzero, None]
 
     # Halfspace (facet normal/offset) representation of the mesh's own
-    # convex hull, centered on `centroid`: facet k is the halfspace
-    # {x : normals[k] . x <= offsets[k]}. This is exactly the convex body
+    # convex hull, centered on `centroid`: this is exactly the convex body
     # `points_enclosed` tests membership against (via Delaunay(verts)).
     mesh_hull = ConvexHull(verts)
-    normals = mesh_hull.equations[:, :3]
-    offsets = -mesh_hull.equations[:, 3] - normals @ centroid
-
-    # ray exit distance: for x = t * unit_pts (t >= 0, centroid-relative),
-    # each facet the ray moves TOWARDS (normals . unit_pts > 0) bounds t
-    # from above at offsets / (normals . unit_pts); the ray exits the hull
-    # at the smallest such bound. Facets the ray moves away from impose
-    # no constraint.
-    proj = unit_pts @ normals.T
-    with np.errstate(divide="ignore", invalid="ignore"):
-        candidates = np.where(proj > 1e-12, offsets[None, :] / proj, np.inf)
-    exit_dist = np.maximum(candidates.min(axis=1), 1e-12)
+    exit_dist = _ray_exit_distance(mesh_hull.equations, centroid, unit_pts)
 
     needed_scale = np.ones(len(points))
     needed_scale[nonzero] = (
