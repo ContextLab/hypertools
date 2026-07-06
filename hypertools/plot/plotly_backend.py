@@ -474,13 +474,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # draw -- see the M3b box-containment note on `cube_scale` just below.
     morph_indices_3d = None
     sampled0 = None
+    dup_masks0 = None
     ds_colors0 = None
     morph_surface_spec_3d = None
     if morph_tags is not None and ndims >= 3:
         morph_indices_3d = [i for i, t in enumerate(morph_tags) if t]
         clouds0 = [np.atleast_2d(np.asarray(data[i], dtype=np.float64))[:, :3]
                   for i in morph_indices_3d]
-        sampled0 = _morph.sample_and_match_clouds(
+        sampled0, dup_masks0 = _morph.sample_and_match_clouds(
             clouds0, morph_samples=morph_samples)
         ds_colors0 = [
             tuple(morph_colors[i]) if morph_colors is not None
@@ -551,6 +552,11 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 morph_full_meshes_for_scale.append(m_union)
         cube_scale = surface_cube_scale(
             list(surface_meshes.values()) + morph_full_meshes_for_scale)
+        if morph_surface_spec_3d is not None:
+            # full-sample duplication can make the endpoint+union sizing
+            # bound above under-cover the worst actual mid-morph frame --
+            # see `_morph.MORPH_SURFACE_SIZING_MARGIN`.
+            cube_scale *= _morph.MORPH_SURFACE_SIZING_MARGIN
 
     # animate='morph': ONE traveling point-cloud trace (+ one Mesh3d trace
     # if any morphing dataset requests a surface), appended after every
@@ -561,6 +567,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     morph_mesh_trace_start_3d = None
     if morph_tags is not None and ndims >= 3:
         pts0 = sampled0[0]
+        # full-sample morphs (maintainer request, 2026-07-06 follow-up):
+        # this initial trace is frame 0 -- a HOLD frame of dataset 0 -- so
+        # its own duplicated (padding) points are excluded here too, exactly
+        # like every other hold frame (see `_add_animation`'s 'morph'
+        # branch below and `hypertools.plot.morph.morph_visible_mask`).
+        hide0 = _morph.morph_visible_mask(dup_masks0, 0)
+        draw_pts0 = pts0[~hide0] if hide0 is not None else pts0
         color0_str = _rgb_string(ds_colors0[0])
         # matplotlib's morph trace always draws marker='.' (see
         # `MORPH_DEFAULT_MARKERSIZE_PT`'s docstring) -- so the plotly
@@ -574,7 +587,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                             not morph_surface_spec_3d.get('keep_points', True))
         morph_trace_start_3d = len(traces)
         traces.append(go.Scatter3d(
-            x=pts0[:, 0], y=pts0[:, 1], z=pts0[:, 2], mode='markers',
+            x=draw_pts0[:, 0], y=draw_pts0[:, 1], z=draw_pts0[:, 2],
+            mode='markers',
             marker=dict(color=color0_str, size=msize0, symbol='circle'),
             showlegend=False, visible=not hide_morph_points, hoverinfo='skip'))
 
@@ -1647,7 +1661,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
         n_morph_datasets = len(morph_indices)
         clouds = [np.atleast_2d(np.asarray(data[i], dtype=np.float64))[:, :3]
                  for i in morph_indices]
-        sampled = _morph.sample_and_match_clouds(
+        sampled, dup_masks = _morph.sample_and_match_clouds(
             clouds, morph_samples=morph_samples)
         ds_colors = [
             tuple(morph_colors[i]) if morph_colors is not None
@@ -1668,8 +1682,19 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             color = _morph.morph_color(ds_colors, seg_idx, step, n_steps)
             angle = azimuths[k]
 
+            # full-sample morphs (maintainer request, 2026-07-06 follow-up):
+            # on a HOLD frame, the held dataset's own duplicated (padding)
+            # points are sliced out of the DRAWN trace -- a per-frame
+            # array-length change, which plotly frames support fine -- so
+            # alpha compositing looks exactly like a plain plot of that
+            # dataset's true points; `pts` itself (fed to the mesh below)
+            # stays the FULL n-point cloud, since duplicates never change a
+            # convex hull's shape. On a MORPH frame nothing is hidden.
+            hide = _morph.morph_visible_mask(dup_masks, seg_idx)
+            draw_pts = pts[~hide] if hide is not None else pts
+
             frame_traces = [go.Scatter3d(
-                x=pts[:, 0], y=pts[:, 1], z=pts[:, 2],
+                x=draw_pts[:, 0], y=draw_pts[:, 1], z=draw_pts[:, 2],
                 marker=dict(color=_rgb_string(color)))]
             if morph_mesh_trace_start is not None:
                 view = view_vector(elev, angle)

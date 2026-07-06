@@ -14,10 +14,12 @@ import pytest
 
 import matplotlib
 matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 import hypertools as hyp
 from hypertools.plot import morph
+from hypertools.plot.matplotlib_backend import _anim_box_zoom
 
 
 def _poly3d_verts(coll):
@@ -74,12 +76,17 @@ class TestSampleAndMatchClouds:
         cloud b's points are the EXACT reverse order of cloud a's."""
         a = np.array([[0.0, 0.0, 0.0], [10.0, 10.0, 10.0]])
         b = np.array([[10.0, 10.0, 10.0], [0.0, 0.0, 0.0]])
-        sampled = morph.sample_and_match_clouds([a, b], morph_samples=2, seed=0)
+        sampled, dup_masks = morph.sample_and_match_clouds(
+            [a, b], morph_samples=2, seed=0)
         # after matching, sampled[1] row i must be b's point NEAREST to
         # sampled[0] row i, i.e. sampled[1] == a (reordered from b)
         np.testing.assert_allclose(sorted(sampled[0].tolist()),
                                    sorted(a.tolist()))
         np.testing.assert_allclose(sampled[1], sampled[0])
+        # both clouds already have 2 points (the target count) -- no
+        # duplication needed for either.
+        assert not dup_masks[0].any()
+        assert not dup_masks[1].any()
 
     def test_three_cloud_chain_matches_pairwise(self):
         """Chained matching: for every consecutive pair, the REALIZED
@@ -91,7 +98,8 @@ class TestSampleAndMatchClouds:
         from scipy.spatial.distance import cdist
 
         clouds = _blobs(n=20, k=3, seed=1)
-        sampled = morph.sample_and_match_clouds(clouds, morph_samples=20, seed=1)
+        sampled, dup_masks = morph.sample_and_match_clouds(
+            clouds, morph_samples=20, seed=1)
         for k in range(2):
             cost = cdist(sampled[k], sampled[k + 1])
             realized = cost[np.arange(len(cost)), np.arange(len(cost))].sum()
@@ -99,19 +107,128 @@ class TestSampleAndMatchClouds:
             assert realized == pytest.approx(cost[row, col].sum())
 
     def test_samples_equal_count_from_every_cloud(self):
+        """`morph_samples` caps EVERY cloud at 8 points before duplication;
+        all 3 clouds here (10/30/15) exceed the cap, so all are downsampled
+        to exactly 8 -- an all-equal-post-cap case, so no duplication is
+        needed and every dup mask is all-False."""
         clouds = [np.zeros((10, 3)), np.zeros((30, 3)), np.zeros((15, 3))]
-        sampled = morph.sample_and_match_clouds(clouds, morph_samples=8, seed=0)
+        sampled, dup_masks = morph.sample_and_match_clouds(
+            clouds, morph_samples=8, seed=0)
         assert all(s.shape[0] == 8 for s in sampled)
+        assert all(not m.any() for m in dup_masks)
 
-    def test_default_cap_is_min_count_capped_at_1000(self):
+    def test_default_is_uncapped_target_is_largest_cloud(self):
+        """Full-sample morphs (maintainer request, 2026-07-06 follow-up):
+        the DEFAULT (`morph_samples=None`) no longer shrinks every cloud
+        to the smallest one capped at 1000 -- it applies NO cap at all, so
+        the target count is simply the largest cloud's own point count,
+        and every smaller cloud is padded (duplicated) up to it."""
         clouds = [np.zeros((1500, 3)), np.zeros((1200, 3))]
-        sampled = morph.sample_and_match_clouds(clouds, seed=0)
-        assert all(s.shape[0] == 1000 for s in sampled)
+        sampled, dup_masks = morph.sample_and_match_clouds(clouds, seed=0)
+        assert all(s.shape[0] == 1500 for s in sampled)
+        assert not dup_masks[0].any()
+        assert dup_masks[1].sum() == 300
 
-    def test_morph_samples_larger_than_cloud_is_capped_not_padded(self):
+    def test_morph_samples_caps_before_duplication(self):
+        """A `morph_samples` cap LARGER than every cloud has no downsampling
+        effect on either cloud, but the smaller cloud is still padded
+        (duplicated) up to the larger cloud's own (uncapped) size --
+        `morph_samples` only ever caps from above, it never prevents the
+        padding-to-largest behavior."""
         clouds = [np.zeros((5, 3)), np.zeros((20, 3))]
-        sampled = morph.sample_and_match_clouds(clouds, morph_samples=50, seed=0)
-        assert all(s.shape[0] == 5 for s in sampled)
+        sampled, dup_masks = morph.sample_and_match_clouds(
+            clouds, morph_samples=50, seed=0)
+        assert all(s.shape[0] == 20 for s in sampled)
+        assert dup_masks[0].sum() == 15  # 20 - 5
+        assert not dup_masks[1].any()
+
+
+class TestFullSampleDuplication:
+    """Numerical evidence for the full-sample-morph algorithm (maintainer
+    request, 2026-07-06 follow-up): 3 datasets of UNEQUAL size (100, 250,
+    40) -- the largest (250) is the target `n`; the other two are padded
+    up to it by duplicating their own points."""
+
+    def _clouds(self, seed=0):
+        rng = np.random.default_rng(seed)
+        return [rng.standard_normal((100, 3)),
+                rng.standard_normal((250, 3)),
+                rng.standard_normal((40, 3))]
+
+    def test_target_n_is_largest_dataset_and_dup_counts_are_exact(self):
+        clouds = self._clouds()
+        sampled, dup_masks = morph.sample_and_match_clouds(clouds, seed=0)
+        assert all(s.shape[0] == 250 for s in sampled)
+        assert dup_masks[0].sum() == 150   # 250 - 100
+        assert dup_masks[1].sum() == 0     # the largest: no duplicates
+        assert dup_masks[2].sum() == 210   # 250 - 40
+        assert all(m.shape == (250,) for m in dup_masks)
+
+    def test_every_original_point_present_exactly_once_among_non_dups(self):
+        """Set equality: the non-duplicate rows of `sampled[k]` are EXACTLY
+        the original dataset's points, each appearing exactly once (no
+        original point dropped, none appearing twice among non-dups)."""
+        clouds = self._clouds()
+        sampled, dup_masks = morph.sample_and_match_clouds(clouds, seed=0)
+        for k, original in enumerate(clouds):
+            non_dup = sampled[k][~dup_masks[k]]
+            assert non_dup.shape[0] == original.shape[0]
+            # exact set equality (row order may differ after Hungarian
+            # matching for k >= 1, so sort both by their raw bytes)
+            a = sorted(map(tuple, non_dup.tolist()))
+            b = sorted(map(tuple, original.tolist()))
+            assert a == b
+
+    def test_duplicates_are_exact_copies_of_the_same_datasets_own_points(self):
+        clouds = self._clouds()
+        sampled, dup_masks = morph.sample_and_match_clouds(clouds, seed=0)
+        for k, original in enumerate(clouds):
+            dup_rows = sampled[k][dup_masks[k]]
+            original_set = set(map(tuple, original.tolist()))
+            for row in dup_rows.tolist():
+                assert tuple(row) in original_set
+
+    def test_n_greater_than_2m_uses_replacement_and_masks_are_correct(self):
+        """Edge case: a 10-point dataset paired against a 25-point dataset
+        (n = 25 > 2 * 10): 15 duplicates are needed from only 10 real
+        points, so sampling MUST be done with replacement (some real
+        points get copied more than once) -- this must not raise, and the
+        resulting mask/set-equality guarantees above must still hold."""
+        rng = np.random.default_rng(3)
+        small = rng.standard_normal((10, 3))
+        big = rng.standard_normal((25, 3))
+        sampled, dup_masks = morph.sample_and_match_clouds(
+            [small, big], seed=3)
+        assert sampled[0].shape[0] == 25
+        assert dup_masks[0].sum() == 15  # 25 - 10, need > m -> replacement
+        assert not dup_masks[1].any()
+        non_dup = sampled[0][~dup_masks[0]]
+        assert sorted(map(tuple, non_dup.tolist())) == sorted(
+            map(tuple, small.tolist()))
+        dup_rows = sampled[0][dup_masks[0]]
+        small_set = set(map(tuple, small.tolist()))
+        for row in dup_rows.tolist():
+            assert tuple(row) in small_set
+
+
+class TestMorphVisibleMask:
+    def test_none_dup_masks_hides_nothing(self):
+        assert morph.morph_visible_mask(None, 0) is None
+        assert morph.morph_visible_mask(None, 1) is None
+
+    def test_hold_segment_returns_that_datasets_own_mask(self):
+        masks = [np.array([True, False]), np.array([False, False]),
+                 np.array([False, True])]
+        np.testing.assert_array_equal(
+            morph.morph_visible_mask(masks, 0), masks[0])
+        np.testing.assert_array_equal(
+            morph.morph_visible_mask(masks, 2), masks[1])
+        np.testing.assert_array_equal(
+            morph.morph_visible_mask(masks, 4), masks[2])
+
+    def test_morph_segment_hides_nothing(self):
+        masks = [np.array([True, False]), np.array([False, True])]
+        assert morph.morph_visible_mask(masks, 1) is None
 
 
 class TestSegmentFrameCounts:
@@ -556,6 +673,107 @@ class TestMplMorphAnimation:
         assert verts0.shape != verts1.shape or not np.allclose(verts0, verts1)
 
 
+class TestMplFullSampleMorphVisibility:
+    """Numerical evidence #4 (maintainer spec): with 3 UNEQUAL-size
+    datasets (100, 250, 40), the target count `n` is 250 (the largest);
+    the DRAWN artist must show only each dataset's own `m_k` true points
+    during that dataset's hold, and all `n` points (both endpoints'
+    duplicates included) during a mid-morph frame."""
+
+    def _build(self):
+        rng = np.random.default_rng(11)
+        data = [rng.standard_normal((100, 3)),
+                rng.standard_normal((250, 3)) + 8.0,
+                rng.standard_normal((40, 3)) + 16.0]
+        fig, ani = hyp.plot(data, '.', animate='morph', show=False,
+                            duration=2, frame_rate=10)
+        return fig, ani
+
+    def test_hold_frame_visible_count_equals_own_dataset_size(self):
+        fig, ani = self._build()
+        morph_state = ani._args[0]
+        frame_counts = morph_state['frame_counts']
+        assert len(frame_counts) == 5  # 3 datasets -> 5 segments
+
+        hold_frames = [0, sum(frame_counts[:2]), sum(frame_counts[:4])]
+        sizes = [100, 250, 40]
+        for frame, m in zip(hold_frames, sizes):
+            ani._func(frame, *ani._args)
+            xs, ys, zs = morph_state['artist'].get_data_3d()
+            assert len(xs) == m, f"hold frame {frame}: {len(xs)} != {m}"
+
+    def test_mid_morph_frame_visible_count_equals_n(self):
+        fig, ani = self._build()
+        morph_state = ani._args[0]
+        frame_counts = morph_state['frame_counts']
+        mid = frame_counts[0] + frame_counts[1] // 2
+        ani._func(mid, *ani._args)
+        xs, ys, zs = morph_state['artist'].get_data_3d()
+        assert len(xs) == 250  # n = the largest dataset's own count
+
+
+class TestAlphaCompositingEquivalence:
+    """Numerical evidence #5 (the maintainer's STATED REASON for hiding
+    duplicated points at holds): rasterizing a hold frame with alpha<1
+    markers must be PIXEL-IDENTICAL (tiny AA tolerance) to rasterizing a
+    plain static `hyp.plot` of that dataset's own true points, same
+    style/camera. Uses dataset 0, which `sample_and_match_clouds` never
+    reorders (it's the first cloud in the chain), so its hold-frame
+    points are the LITERAL, identically-ordered `data[0]` array."""
+
+    def test_hold_frame_matches_plain_plot_pixel_for_pixel(self):
+        rng = np.random.default_rng(12)
+        data = [rng.standard_normal((100, 3)),
+                rng.standard_normal((250, 3)) + 8.0,
+                rng.standard_normal((40, 3)) + 16.0]
+        # a bare color STRING (not an RGB tuple) avoids the ambiguity of a
+        # 3-element tuple being broadcast as "one color per dataset" for
+        # the 3-dataset morph call below (an RGB tuple happens to have the
+        # same length as the dataset count here).
+        color = 'crimson'
+        zoom = 1
+
+        fig, ani = hyp.plot(data, '.', animate='morph', show=False,
+                            duration=2, frame_rate=10, color=color,
+                            markersize=6, zoom=zoom)
+        morph_state = ani._args[0]
+        morph_state['artist'].set_alpha(0.5)
+        ani._func(0, *ani._args)  # frame 0: hold on dataset 0, dups hidden
+        fig.canvas.draw()
+        anim_rgba = np.asarray(fig.canvas.buffer_rgba()).copy()
+
+        # Plain STATIC plot of the SAME 3-dataset list (so the normalize/
+        # reduce/align pipeline -- which runs identically regardless of
+        # `animate=` -- produces IDENTICAL processed coordinates for
+        # dataset 0 as the morph call above), with datasets 1/2's own
+        # lines hidden so only dataset 0's true points are visible -- an
+        # independent, from-scratch render of "just plot dataset 0's own
+        # points, plain." The static and animated 3-D code paths differ
+        # slightly in axes positioning/box-aspect zoom by default, so both
+        # are pinned to the SAME values here (matching what
+        # `animate_plot3D` sets up internally) rather than relying on
+        # coincidental defaults.
+        fig2 = hyp.plot(data, '.', show=False, color=color, markersize=6)
+        ax2 = fig2.axes[0]
+        lines2 = ax2.get_lines()
+        lines2[1].set_visible(False)
+        lines2[2].set_visible(False)
+        lines2[0].set_alpha(0.5)
+        ax2.set_position([0.0, 0.0, 1.0, 1.0])
+        ax2.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
+        fig2.set_size_inches(fig.get_size_inches())
+        fig2.set_dpi(fig.dpi)
+        fig2.canvas.draw()
+        plain_rgba = np.asarray(fig2.canvas.buffer_rgba()).copy()
+
+        assert anim_rgba.shape == plain_rgba.shape
+        match = (anim_rgba == plain_rgba).mean()
+        assert match >= 0.999, f"only {match:.4%} of pixels matched"
+
+        plt.close(fig)
+        plt.close(fig2)
+
+
 # ---------------------------------------------------------------------------
 # M3b box-containment fix: the axes cube/limits (mpl) and scene ranges
 # (plotly) must be sized from the SAME `sampled` clouds `update_morph`/
@@ -800,3 +1018,52 @@ class TestPlotlyMorphAnimation:
     def test_trails_ignored_with_warning_for_morph(self):
         with pytest.warns(UserWarning, match="morph"):
             self._build(animate='morph', chemtrails=True)
+
+
+# ---------------------------------------------------------------------------
+# Numerical evidence #4/#6 (maintainer spec), plotly backend: full-sample
+# morphs with 3 UNEQUAL-size datasets -- each frame's Scatter3d trace must
+# carry exactly `m_k` points at dataset `k`'s own hold and exactly `n`
+# points (the largest dataset's count) mid-morph.
+# ---------------------------------------------------------------------------
+
+class TestPlotlyFullSampleMorphVisibility:
+    def _build(self):
+        rng = np.random.default_rng(13)
+        data = [rng.standard_normal((100, 3)),
+                rng.standard_normal((250, 3)) + 8.0,
+                rng.standard_normal((40, 3)) + 16.0]
+        return hyp.plot(data, '.', animate='morph', backend='plotly',
+                        show=False, duration=2, frame_rate=10)
+
+    def test_frame_point_counts_match_hold_and_mid_morph_expectations(self):
+        fig = self._build()
+        frame_counts, _, _ = morph.morph_schedule(3, len(fig.frames), 1, -60)
+        assert len(frame_counts) == 5
+
+        hold_frames_and_sizes = [
+            (0, 100),
+            (sum(frame_counts[:2]), 250),
+            (sum(frame_counts[:4]), 40),
+        ]
+        for frame_idx, m in hold_frames_and_sizes:
+            trace = fig.frames[frame_idx].data[0]
+            assert len(trace.x) == m, (
+                f"hold frame {frame_idx}: {len(trace.x)} points, expected {m}"
+            )
+
+        mid = frame_counts[0] + frame_counts[1] // 2
+        mid_trace = fig.frames[mid].data[0]
+        assert len(mid_trace.x) == 250  # n = the largest dataset's count
+
+    def test_morph_frame_includes_duplicate_points(self):
+        """A mid-morph frame must include ALL `n` points -- i.e. it must
+        NOT match either endpoint dataset's own (smaller) true-point
+        count, proving duplicates are shown (not filtered) while
+        traveling."""
+        fig = self._build()
+        frame_counts, _, _ = morph.morph_schedule(3, len(fig.frames), 1, -60)
+        mid = frame_counts[0] + frame_counts[1] // 2
+        mid_trace = fig.frames[mid].data[0]
+        assert len(mid_trace.x) == 250
+        assert len(mid_trace.x) not in (100, 40)

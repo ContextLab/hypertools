@@ -388,21 +388,31 @@ def plot(
         treated as a POINT CLOUD (not a trajectory, regardless of `fmt`) and
         morphed ds_1 -> ds_2 -> ... -> ds_N through a hold/morph/hold/...
         schedule (``2N - 1`` segments: ``[hold_1, morph_1->2, hold_2, ...,
-        hold_N]``). Each morph segment samples an equal number of points
-        from the two datasets involved (seeded, no replacement -- see
-        `morph_samples` below), chain-matches consecutive clouds point-for-
-        point with the Hungarian algorithm
-        (`scipy.optimize.linear_sum_assignment` on pairwise distances, so
-        each point travels the shortest total distance to its partner in
-        the next cloud -- exactly `examples/plot_shape_morph.py`'s
-        algorithm, now built into the library), and eases between clouds
-        with smoothstep interpolation. A SINGLE point artist/trace is drawn
+        hold_N]``). Every dataset keeps its FULL point count (maintainer
+        request, 2026-07-06 follow-up): the target count `n` is the
+        LARGEST morphing dataset's own size (after the optional
+        `morph_samples` cap below), and any dataset with `m < n` points is
+        padded up to `n` by duplicating `n - m` of its OWN points, chosen
+        at random (seeded) -- no real data point is ever dropped. The
+        duplicated (padding) points are hidden during that dataset's own
+        HOLD segments (so semi-transparent markers alpha-composite exactly
+        like a plain plot of that dataset's true points) and shown, like
+        every other point, during MORPH segments. Consecutive (now equal-
+        sized, `n`-point) clouds are chain-matched point-for-point with the
+        Hungarian algorithm (`scipy.optimize.linear_sum_assignment` on
+        pairwise distances, so each point travels the shortest total
+        distance to its partner in the next cloud -- exactly
+        `examples/plot_shape_morph.py`'s original hand-rolled algorithm,
+        now built into the library), and eased between clouds with
+        smoothstep interpolation. A SINGLE point artist/trace is drawn
         (one per plot, not one per dataset): its color linearly (RGB)
         interpolates between the two datasets' own colors during a morph
         segment and is solid during a hold. Requires at least 2 datasets;
         raises `ValueError` otherwise. `surface=True` recomputes that one
-        artist's hull every frame from its current interpolated positions;
-        3-D only (`NotImplementedError` for 2-D data).
+        artist's hull every frame from its current interpolated positions
+        (unaffected by which points are duplicates -- a duplicate is an
+        exact copy of an existing point, so it never changes a convex
+        hull's shape); 3-D only (`NotImplementedError` for 2-D data).
 
         `animate` may ALSO be a per-dataset LIST (length = the number of
         FINAL, post `cluster`/`hue`-reshape datasets), with each entry
@@ -503,14 +513,17 @@ def plot(
         duration, and framerate.
 
     morph_samples (``animate='morph'`` only) : int or None
-        The number of points sampled (without replacement, seeded) from
-        EVERY morphing dataset before Hungarian-matching them -- all
-        morphing datasets are sampled down to this SAME count so points can
-        be matched 1-to-1 (default `None`: ``min(smallest morphing
-        dataset's point count, 1000)``, capping the Hungarian assignment's
-        cost for large datasets). A value larger than the smallest
-        morphing dataset is silently capped to that dataset's own count,
-        never padded. Ignored for every other `animate` mode.
+        An OPTIONAL cap on morphing-dataset size, applied BEFORE the
+        duplicate-padding described under `animate` above: any morphing
+        dataset larger than `morph_samples` is first downsampled (without
+        replacement, seeded) to exactly `morph_samples` points. Default
+        `None`: no cap -- every dataset keeps its full point count, and the
+        target count is simply the largest dataset's own size. Since the
+        Hungarian assignment's cost is roughly ``O(n^3)`` in the (post-cap)
+        target point count, `morph_samples` is RECOMMENDED for clouds
+        larger than ~2000 points (e.g. `morph_samples=1000`) -- the
+        uncapped default can be slow, or memory-heavy, for very large
+        datasets. Ignored for every other `animate` mode.
 
     interactive : bool
         If True, display the plot using an interactive matplotlib

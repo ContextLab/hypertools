@@ -105,6 +105,11 @@ surface_spec = {
     'keep_points': True,
 }
 
+# morph_samples=n_points: every shape is ALREADY downsampled to exactly
+# n_points above, so under the new full-sample-with-duplication semantics
+# (PR #272 follow-up, 2026-07-06) this is a no-op safety cap -- no shape
+# ever exceeds n_points, so none is downsampled again and no duplication
+# is needed (all 5 clouds already share the same point count).
 fig, ani = hyp.plot(clouds, fmt='.', color='k', markersize=0.6,
                     animate='morph', rotations=rotations,
                     duration=12, frame_rate=30,

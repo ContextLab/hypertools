@@ -868,9 +868,22 @@ def _draw(
         color = _morph.morph_color(morph_state["colors"], seg_idx, step,
                                    n_steps)
 
+        # full-sample morphs (maintainer request, 2026-07-06 follow-up): on
+        # a HOLD frame, the held dataset's own duplicated (padding) points
+        # are excluded from the DRAWN artist -- so alpha compositing (e.g.
+        # semi-transparent markers) looks exactly like a plain plot of that
+        # dataset's true points -- but never from `pts` itself, which stays
+        # the FULL n-point cloud for hull-building below (duplicates are
+        # exact copies of existing points and so never change a convex
+        # hull's shape). On a MORPH frame, nothing is hidden: every point,
+        # including both endpoints' duplicates, is shown while traveling.
+        hide = _morph.morph_visible_mask(morph_state.get("dup_masks"),
+                                         seg_idx)
+        draw_pts = pts[~hide] if hide is not None else pts
+
         artist = morph_state["artist"]
-        artist.set_data(pts[:, 0], pts[:, 1])
-        artist.set_3d_properties(pts[:, 2])
+        artist.set_data(draw_pts[:, 0], draw_pts[:, 1])
+        artist.set_3d_properties(draw_pts[:, 2])
         artist.set_color(color)
 
         # surface= (GH #109/morph): the traveling cloud's own hull (if it
@@ -1028,7 +1041,7 @@ def _draw(
             morph_indices = [i for i, tag in enumerate(_tags) if tag]
             clouds = [np.asarray(x[i], dtype=np.float64)[:, :3]
                      for i in morph_indices]
-            sampled = _morph.sample_and_match_clouds(
+            sampled, dup_masks = _morph.sample_and_match_clouds(
                 clouds, morph_samples=morph_samples)
             ds_colors = [
                 tuple(morph_colors[i]) if morph_colors is not None
@@ -1067,12 +1080,20 @@ def _draw(
                         morph_surface_spec = surface[i]
                         break
 
+            # full-sample morphs (maintainer request, 2026-07-06 follow-up):
+            # dataset 0's own duplicated rows (padding it up to the target
+            # `n`) are hidden at this initial hold-frame-0 draw, exactly
+            # like every other hold frame -- see `update_morph` below and
+            # `hypertools.plot.morph.morph_visible_mask`.
             first_pts = sampled[0]
+            first_hide = _morph.morph_visible_mask(dup_masks, 0)
+            first_draw = (first_pts[~first_hide] if first_hide is not None
+                         else first_pts)
             _mkw = (kwargs_list[mesh_slot]
                    if isinstance(kwargs_list[mesh_slot], dict) else {})
             morph_markersize = _mkw.get("markersize") or 1.5
             (morph_artist,) = ax.plot(
-                first_pts[:, 0], first_pts[:, 1], first_pts[:, 2],
+                first_draw[:, 0], first_draw[:, 1], first_draw[:, 2],
                 linestyle="None", marker=".", markersize=morph_markersize,
                 color=ds_colors[0],
             )
@@ -1082,9 +1103,9 @@ def _draw(
                 morph_artist.set_visible(False)
 
             morph_state = dict(
-                sampled=sampled, colors=ds_colors, artist=morph_artist,
-                mesh_slot=mesh_slot, surface_spec=morph_surface_spec,
-                indices=morph_indices,
+                sampled=sampled, dup_masks=dup_masks, colors=ds_colors,
+                artist=morph_artist, mesh_slot=mesh_slot,
+                surface_spec=morph_surface_spec, indices=morph_indices,
             )
 
         # surface= (GH #109)
@@ -1177,6 +1198,12 @@ def _draw(
                                      dataset_label=" morph-union", quiet=True))
                     sizing_meshes = full_meshes + morph_sizing_meshes
             cube_scale_anim = surface_cube_scale(sizing_meshes)
+            if (style == "morph" and morph_state is not None
+                    and morph_state["surface_spec"] is not None):
+                # full-sample duplication can make the endpoint+union
+                # sizing bound above under-cover the worst actual mid-
+                # morph frame -- see `_morph.MORPH_SURFACE_SIZING_MARGIN`.
+                cube_scale_anim *= _morph.MORPH_SURFACE_SIZING_MARGIN
             if style == "spin":
                 # 'spin' keeps the FULL dataset static (only the camera
                 # rotates) -- reuse the just-built full-data meshes so

@@ -13,6 +13,20 @@ morph_1->2, hold_2, ..., hold_N] -- ``2*N - 1`` segments for ``N``
 datasets). Both ``hypertools.plot.matplotlib_backend`` and
 ``hypertools.plot.plotly_backend`` build their ``animate='morph'`` frames
 from these same helpers, so the two backends stay in lockstep.
+
+Full-sample morphs (maintainer request, 2026-07-06 follow-up): earlier
+versions of this module sampled every dataset down to the SMALLEST
+morphing dataset's point count so clouds could be matched 1-to-1. Every
+dataset now keeps its FULL point count instead: the target count ``n`` is
+the LARGEST (post-`morph_samples`-cap) dataset's size, and any dataset
+with ``m < n`` points is padded up to ``n`` by duplicating ``n - m`` of
+its OWN points (chosen at random, seeded). No real data point is ever
+dropped. The duplicated rows are tracked per dataset (see
+:func:`sample_and_match_clouds`'s ``dup_masks`` return value) and hidden
+during that dataset's own HOLD frames (see :func:`morph_visible_mask`) so
+alpha-compositing a hold frame looks identical to a plain plot of that
+dataset's true points; they are shown, like every other point, during
+MORPH frames.
 """
 
 import numpy as np
@@ -22,6 +36,7 @@ from scipy.spatial.distance import cdist
 __all__ = [
     "smoothstep",
     "sample_and_match_clouds",
+    "morph_visible_mask",
     "segment_frame_counts",
     "frame_to_segment",
     "morph_positions",
@@ -31,6 +46,7 @@ __all__ = [
     "segment_azimuths",
     "morph_schedule",
     "ZERO_ROTATION_FLOOR",
+    "MORPH_SURFACE_SIZING_MARGIN",
 ]
 
 #: Constant-rotation-speed fix (maintainer request, 2026-07-06): when a
@@ -48,6 +64,28 @@ __all__ = [
 #: :func:`segment_frame_counts`.
 ZERO_ROTATION_FLOOR = 0.1
 
+#: Extra box-containment safety margin (maintainer request, 2026-07-06
+#: follow-up: full-sample duplication) for ``surface=True`` + ``animate=
+#: 'morph'`` sizing ONLY, multiplied on top of `surface_cube_scale`'s own
+#: (2%) margin. `matplotlib_backend.animate_plot3D`/`plotly_backend
+#: ._add_animation` size the axes box/scene ranges once, up front, from
+#: meshes built from the two ENDPOINT `sampled` clouds plus their flat
+#: union (see the "M3b" sizing notes in both backends) -- a cheap,
+#: normally-safe bound, since every interpolated mid-morph point is a
+#: convex combination of union points. But `smooth_hull_3d`'s Taubin-
+#: smoothing + containment-regrow pipeline is NOT simply monotonic in its
+#: input point set: a mid-morph cloud built from a HEAVILY duplicated
+#: dataset (e.g. a small cloud padded far past its own size, see
+#: `sample_and_match_clouds`) can, after its own smoothing pass, need MORE
+#: containment growth than either endpoint's or the union's mesh did --
+#: verified empirically (a 2-dataset morph, an 8-point cube-corner cloud
+#: padded up to a 64-point target against a genuine 64-point sphere cloud,
+#: `surface=True`): the endpoint+union sizing bound alone under-covered
+#: the worst actual mid-morph frame by up to ~9%. This fixed extra margin
+#: is a generous, empirically-validated buffer over that observed
+#: worst case.
+MORPH_SURFACE_SIZING_MARGIN = 1.2
+
 
 def smoothstep(t):
     """Smoothstep easing: ``3t^2 - 2t^3``, clipped to ``t in [0, 1]``.
@@ -58,10 +96,23 @@ def smoothstep(t):
 
 
 def sample_and_match_clouds(clouds, morph_samples=None, seed=0):
-    """Sample an equal-sized subset of points from every cloud in `clouds`
-    (no replacement, seeded) and chain-match consecutive clouds with the
-    Hungarian algorithm, exactly as ``examples/plot_shape_morph.py`` did by
-    hand.
+    """Pad every cloud in `clouds` up to the LARGEST (post-`morph_samples`-
+    cap) cloud's point count by duplicating points at random (seeded), then
+    chain-match consecutive clouds with the Hungarian algorithm.
+
+    Maintainer request (2026-07-06): earlier versions of this function
+    SHRANK every cloud down to the smallest morphing dataset's point count.
+    Every dataset now keeps its own FULL point count instead -- no real
+    point is ever dropped. This works by duplicating points on the smaller
+    datasets: the target count ``n`` is the LARGEST dataset's size (after
+    the optional `morph_samples` cap below), and a dataset with ``m < n``
+    points is padded with ``n - m`` extra copies of its OWN points, chosen
+    at random. If ``n - m > m`` (more duplicates are needed than the
+    dataset has real points -- e.g. a 10-point dataset padded up to a
+    25-point target), duplicates are drawn WITH replacement (some real
+    points get copied more than once); otherwise they are drawn WITHOUT
+    replacement (every duplicate is a distinct real point, just also
+    appearing once more).
 
     Parameters
     ----------
@@ -69,25 +120,39 @@ def sample_and_match_clouds(clouds, morph_samples=None, seed=0):
         One point cloud per morphing dataset, in morph order. Must contain
         at least 2 clouds.
     morph_samples : int or None, optional
-        The number of points sampled from EVERY cloud (all clouds are
-        sampled down to the SAME count, so points can be matched 1-to-1).
-        Default (``None``): ``min(smallest cloud's point count, 1000)`` --
-        capped at 1000 so the Hungarian assignment's ``O(n^3)`` cost stays
-        tractable for large datasets. If given, the effective count is
-        ``min(morph_samples, smallest cloud's point count)`` -- a count
-        larger than the smallest cloud is silently capped, never padded.
+        An OPTIONAL cap on cloud size, applied BEFORE the duplication
+        logic: any cloud larger than `morph_samples` is first downsampled
+        (without replacement, seeded) to exactly `morph_samples` points.
+        Default (``None``): no cap -- the target count is simply the
+        largest cloud's own (real) point count. Since the Hungarian
+        assignment's cost is roughly ``O(n^3)``, `morph_samples` is
+        recommended for clouds larger than ~2000 points (e.g.
+        ``morph_samples=1000``) to keep matching tractable; the default,
+        uncapped behavior can be slow -- or exhaust memory -- for very
+        large datasets.
     seed : int, optional
         Seed for the sampling RNG (``numpy.random.default_rng``), default 0
         -- deterministic and reproducible across calls.
 
     Returns
     -------
-    list of (n_points, d) ndarray
-        One sampled+matched cloud per input, same length as `clouds`.
-        ``sampled[0]`` is sampled but unmatched (nothing precedes it);
-        every subsequent ``sampled[k]`` is REORDERED so row ``i`` is the
-        optimal (minimum total travel distance) partner of
-        ``sampled[k - 1][i]``.
+    (sampled, dup_masks) : (list of (n, d) ndarray, list of (n,) bool ndarray)
+        `sampled`: one padded+matched cloud per input, same length as
+        `clouds`, each with exactly `n` rows (`n` = the largest capped
+        cloud's point count). ``sampled[0]`` is padded but unmatched
+        (nothing precedes it); every subsequent ``sampled[k]`` is
+        REORDERED so row ``i`` is the optimal (minimum total travel
+        distance) partner of ``sampled[k - 1][i]`` -- this reordering
+        never changes which points are duplicates, only their row
+        position (`dup_masks` is permuted identically).
+        `dup_masks`: one ``bool`` mask of length `n` per input, aligned
+        row-for-row with `sampled`. ``dup_masks[k][i] is True`` iff
+        ``sampled[k][i]`` is a DUPLICATE of another row in ``sampled[k]``
+        (i.e. not that dataset's own original data) -- exactly ``n -
+        m_k`` entries are `True`, where ``m_k`` is dataset `k`'s own
+        (capped) point count. All-`False` for any dataset whose own count
+        already equals `n` (the largest dataset has no duplicates at
+        all).
     """
     if len(clouds) < 2:
         raise ValueError(
@@ -95,21 +160,63 @@ def sample_and_match_clouds(clouds, morph_samples=None, seed=0):
             f"{len(clouds)}"
         )
     clouds = [np.atleast_2d(np.asarray(c, dtype=np.float64)) for c in clouds]
-    min_count = min(c.shape[0] for c in clouds)
-    cap = 1000 if morph_samples is None else int(morph_samples)
-    n_points = max(1, min(min_count, cap))
-
     rng = np.random.default_rng(seed)
-    sampled = [
-        c[rng.choice(c.shape[0], size=n_points, replace=False)]
-        for c in clouds
-    ]
 
-    for i in range(len(sampled) - 1):
-        cost = cdist(sampled[i], sampled[i + 1])
+    cap = None if morph_samples is None else int(morph_samples)
+    capped = []
+    for c in clouds:
+        if cap is not None and c.shape[0] > cap:
+            idx = rng.choice(c.shape[0], size=cap, replace=False)
+            capped.append(c[idx])
+        else:
+            capped.append(c)
+
+    n_points = max(1, max(c.shape[0] for c in capped))
+
+    full = []
+    dup_masks = []
+    for c in capped:
+        m = c.shape[0]
+        mask = np.zeros(n_points, dtype=bool)
+        if m >= n_points:
+            full.append(c.copy())
+        else:
+            need = n_points - m
+            replace = need > m
+            dup_idx = rng.choice(m, size=need, replace=replace)
+            full.append(np.vstack([c, c[dup_idx]]))
+            mask[m:] = True
+        dup_masks.append(mask)
+
+    for i in range(len(full) - 1):
+        cost = cdist(full[i], full[i + 1])
         _, col_ind = linear_sum_assignment(cost)
-        sampled[i + 1] = sampled[i + 1][col_ind]
-    return sampled
+        full[i + 1] = full[i + 1][col_ind]
+        dup_masks[i + 1] = dup_masks[i + 1][col_ind]
+    return full, dup_masks
+
+
+def morph_visible_mask(dup_masks, seg_idx):
+    """Boolean mask (length `n`, or ``None``) of which points to HIDE for
+    schedule segment `seg_idx`, given `dup_masks` (`sample_and_match_clouds`'s
+    second return value, or ``None``).
+
+    On a HOLD segment (`seg_idx` even), the currently-held dataset's own
+    duplicated rows (``dup_masks[seg_idx // 2]``) are hidden -- so drawing
+    only the non-hidden rows reproduces a plain plot of that dataset's true
+    (non-duplicated) points exactly, which is what makes alpha-compositing
+    (e.g. semi-transparent markers) behave correctly at a hold. On a MORPH
+    segment (odd), nothing is hidden: every one of the `n` points --
+    including both endpoint datasets' duplicates -- is visible, since a
+    morph is a continuous interpolation between the FULL `n`-point clouds.
+
+    Returns ``None`` (meaning "hide nothing") if `dup_masks` is ``None``.
+    """
+    if dup_masks is None:
+        return None
+    if seg_idx % 2 == 0:
+        return dup_masks[seg_idx // 2]
+    return None
 
 
 def _largest_remainder_alloc(weights, total):
