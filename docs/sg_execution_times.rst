@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**01:59.809** total execution time for 48 files **from all galleries**:
+**46:09.593** total execution time for 48 files **from all galleries**:
 
 .. container::
 
@@ -32,11 +32,17 @@ Computation times
    * - Example
      - Time
      - Mem (MB)
-   * - :ref:`sphx_glr_auto_examples_animate_surface_morph.py` (``../examples/animate_surface_morph.py``)
-     - 01:56.135
+   * - :ref:`sphx_glr_auto_examples_animate_plotly.py` (``../examples/animate_plotly.py``)
+     - 46:06.097
      - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_shape_morph.py` (``../examples/plot_shape_morph.py``)
-     - 00:03.674
+   * - :ref:`sphx_glr_auto_examples_plot_interactive_backend.py` (``../examples/plot_interactive_backend.py``)
+     - 00:03.341
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_multicolored_lines.py` (``../examples/plot_multicolored_lines.py``)
+     - 00:00.113
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_geo.py` (``../examples/plot_geo.py``)
+     - 00:00.042
      - 0.0
    * - :ref:`sphx_glr_auto_examples_analyze.py` (``../examples/analyze.py``)
      - 00:00.000
@@ -47,10 +53,10 @@ Computation times
    * - :ref:`sphx_glr_auto_examples_animate_MDS.py` (``../examples/animate_MDS.py``)
      - 00:00.000
      - 0.0
-   * - :ref:`sphx_glr_auto_examples_animate_plotly.py` (``../examples/animate_plotly.py``)
+   * - :ref:`sphx_glr_auto_examples_animate_spin.py` (``../examples/animate_spin.py``)
      - 00:00.000
      - 0.0
-   * - :ref:`sphx_glr_auto_examples_animate_spin.py` (``../examples/animate_spin.py``)
+   * - :ref:`sphx_glr_auto_examples_animate_surface_morph.py` (``../examples/animate_surface_morph.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_animate_trails_mix.py` (``../examples/animate_trails_mix.py``)
@@ -113,16 +119,10 @@ Computation times
    * - :ref:`sphx_glr_auto_examples_plot_digits.py` (``../examples/plot_digits.py``)
      - 00:00.000
      - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_geo.py` (``../examples/plot_geo.py``)
-     - 00:00.000
-     - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_hue.py` (``../examples/plot_hue.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_impute.py` (``../examples/plot_impute.py``)
-     - 00:00.000
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_interactive_backend.py` (``../examples/plot_interactive_backend.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_labels.py` (``../examples/plot_labels.py``)
@@ -135,9 +135,6 @@ Computation times
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_mixture_models.py` (``../examples/plot_mixture_models.py``)
-     - 00:00.000
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_multicolored_lines.py` (``../examples/plot_multicolored_lines.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_multiindex.py` (``../examples/plot_multiindex.py``)
@@ -153,6 +150,9 @@ Computation times
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_procrustes.py` (``../examples/plot_procrustes.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_shape_morph.py` (``../examples/plot_shape_morph.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_shapes_zoo.py` (``../examples/plot_shapes_zoo.py``)

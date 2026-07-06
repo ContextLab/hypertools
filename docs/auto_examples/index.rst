@@ -767,23 +767,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="HyperTools&#x27; &quot;shapes zoo&quot; (bunny, cube, dragon, sphere, teapot, vase, biplane -- see the A zoo of 3D shapes example) can be morphed smoothly from one point cloud to the next with the animate=&#x27;morph&#x27; hyp.plot style (PR #272, maintainer request 2026-07-06 -- see the animate/ rotations/`morph_samples` entries of the hyp.plot docstring for the full spec). Under the hood, an equal-sized sample of points is drawn from each shape, consecutive shapes are matched point-for-point with the Hungarian algorithm (`scipy.optimize.linear_sum_assignment`) so that each point travels the shortest total distance to its partner in the next shape, and the coordinates are eased between shapes frame by frame while the camera spins around the scene -- exactly the hand-rolled recipe this example used to implement itself before animate=&#x27;morph&#x27; existed, now built into the library behind a single hyp.plot call. rotations also accepts a per-segment list for finer camera control: below, holds spin a slow, easy-to-watch full rotation while each transition only spins a brisk quarter-turn, so the camera visibly &quot;steps&quot; forward every time one shape morphs into the next.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_shape_morph_thumb.gif
-    :alt:
-
-  :doc:`/auto_examples/plot_shape_morph`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Morphing through the shapes zoo</div>
-    </div>
-
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="Hypertools fills missing (NaN) values via hypertools.impute before reducing/plotting. This compares two imputers on the weights_avg dataset after randomly knocking out 10% of its entries -- plus three CONSECUTIVE rows where every feature is missing. That fully-missing-row case is the motivating example for GH #169: PPCA reconstructs a row from its own observed features, so a row with NO observed features at all cannot be recovered, so PPCA warns and leaves those rows NaN (they are dropped below purely so the PPCA panel has something plottable). The Kalman imputer instead smooths across time, so it can fill a fully-missing row from the neighboring (observed) timepoints, at the cost of assuming the data are a reasonably smooth timeseries -- its panel keeps every row.">
 
 .. only:: html
@@ -796,6 +779,23 @@ Gallery of Examples
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Imputing missing data: PPCA vs Kalman smoothing</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="HyperTools&#x27; &quot;shapes zoo&quot; (bunny, cube, dragon, sphere, teapot, vase, biplane -- see the A zoo of 3D shapes example) can be morphed smoothly from one point cloud to the next with the animate=&#x27;morph&#x27; hyp.plot style (PR #272, maintainer request 2026-07-06 -- see the animate/ rotations/`morph_samples` entries of the hyp.plot docstring for the full spec). Under the hood, an equal-sized sample of points is drawn from each shape, consecutive shapes are matched point-for-point with the Hungarian algorithm (`scipy.optimize.linear_sum_assignment`) so that each point travels the shortest total distance to its partner in the next shape, and the coordinates are eased between shapes frame by frame while the camera spins around the scene -- exactly the hand-rolled recipe this example used to implement itself before animate=&#x27;morph&#x27; existed, now built into the library behind a single hyp.plot call. rotations also accepts a per-segment list for finer camera control: below, holds spin a slow, easy-to-watch full rotation while each transition only spins a brisk quarter-turn, so the camera visibly &quot;steps&quot; forward every time one shape morphs into the next. Camera speed (degrees/frame) is always CONSTANT across the whole animation -- a segment&#x27;s rotations entry sets how much SCREEN TIME it gets, not how fast it spins, so the full-rotation holds below play roughly 4x longer than the quarter-turn transitions (1 / 0.25), never faster.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_shape_morph_thumb.gif
+    :alt:
+
+  :doc:`/auto_examples/plot_shape_morph`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Morphing through the shapes zoo</div>
     </div>
 
 
@@ -818,7 +818,7 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="Building on the Morphing through the shapes zoo example, HyperTools can also render a smooth, lit convex-hull SURFACE around a moving point cloud (the surface= hyp.plot kwarg -- see hypertools.plot.meshutil and hypertools.plot.surface, GH #109) instead of just the raw points. Combining surface= with animate=&#x27;morph&#x27; (PR #272, maintainer request 2026-07-06) recomputes the moving cloud&#x27;s smoothed hull mesh from scratch on every frame, shaded with a two-light Blinn-Phong model and backface-culled for the current camera angle -- so the &quot;blob&quot; skin flows continuously as the underlying points rearrange themselves, all from one hyp.plot call. Since a convex hull cannot reproduce concave features, holds on concave shapes like the bunny necessarily render as a smooth, rounded blob; that loss of concavity is an expected trade-off of the hull-surface approach, not a bug. Hulls hug the data tightly BY CONSTRUCTION (each smoothing round pulls stray vertices back onto the original hull surface, see hypertools.plot.meshutil.smooth_hull_3d) rather than via any fixed overshoot allowance, so the axes box never needs a hand-computed fudge factor to contain the surface. A final, bounded, grow-only rescale then guarantees at least 99% containment of the actual points; for ordinary, reasonably-sampled clouds this rescale rarely does more than nudge the mesh a few percent, and only grows large for very sparse clouds (rule of thumb: fewer than ~10 points), where a coarse, few-vertex hull loses proportionally more to smoothing and needs more correction to recover that same 99% guarantee.">
+    <div class="sphx-glr-thumbcontainer" tooltip="Building on the Morphing through the shapes zoo example, HyperTools can also render a smooth, lit convex-hull SURFACE around a moving point cloud (the surface= hyp.plot kwarg -- see hypertools.plot.meshutil and hypertools.plot.surface, GH #109) instead of just the raw points. Combining surface= with animate=&#x27;morph&#x27; (PR #272, maintainer request 2026-07-06) recomputes the moving cloud&#x27;s smoothed hull mesh from scratch on every frame, shaded with a two-light Blinn-Phong model and backface-culled for the current camera angle -- so the &quot;blob&quot; skin flows continuously as the underlying points rearrange themselves, all from one hyp.plot call. Camera rotation speed (degrees/frame) is always constant across the whole animation, so a per-segment rotations list (below) controls how much SCREEN TIME each hold/transition gets, never how fast it spins. Since a convex hull cannot reproduce concave features, holds on concave shapes like the bunny necessarily render as a smooth, rounded blob; that loss of concavity is an expected trade-off of the hull-surface approach, not a bug. Hulls hug the data tightly BY CONSTRUCTION (each smoothing round pulls stray vertices back onto the original hull surface, see hypertools.plot.meshutil.smooth_hull_3d) rather than via any fixed overshoot allowance, so the axes box never needs a hand-computed fudge factor to contain the surface. A final, bounded, grow-only rescale then guarantees at least 99% containment of the actual points; for ordinary, reasonably-sampled clouds this rescale rarely does more than nudge the mesh a few percent, and only grows large for very sparse clouds (rule of thumb: fewer than ~10 points), where a coarse, few-vertex hull loses proportionally more to smoothing and needs more correction to recover that same 99% guarantee.">
 
 .. only:: html
 
@@ -887,8 +887,8 @@ Gallery of Examples
    /auto_examples/plot_missing_data
    /auto_examples/plot_predict
    /auto_examples/plot_multiindex
-   /auto_examples/plot_shape_morph
    /auto_examples/plot_impute
+   /auto_examples/plot_shape_morph
    /auto_examples/plot_sotus
    /auto_examples/animate_surface_morph
 

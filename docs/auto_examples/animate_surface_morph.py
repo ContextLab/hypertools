@@ -13,7 +13,10 @@ request 2026-07-06) recomputes the moving cloud's smoothed hull mesh from
 scratch on every frame, shaded with a two-light Blinn-Phong model and
 backface-culled for the current camera angle -- so the "blob" skin flows
 continuously as the underlying points rearrange themselves, all from one
-`hyp.plot` call. Since a convex hull cannot reproduce concave features,
+`hyp.plot` call. Camera rotation speed (degrees/frame) is always constant
+across the whole animation, so a per-segment `rotations` list (below)
+controls how much SCREEN TIME each hold/transition gets, never how fast
+it spins. Since a convex hull cannot reproduce concave features,
 holds on concave shapes like the bunny necessarily render as a smooth,
 rounded blob; that loss of concavity is an expected trade-off of the
 hull-surface approach, not a bug. Hulls hug the data tightly BY
@@ -83,8 +86,12 @@ clouds = [load_shape(shape) for shape in shapes]
 # frame schedule: hold, morph, hold, morph, ..., hold -- 2 * n_shapes - 1 =
 # 9 segments in all. Holds get a slow, easy-to-watch full rotation (1)
 # while transitions get a brisk quarter-turn (0.25), so the camera visibly
-# steps forward every time one shape morphs into the next. 9 segments * 40
-# frames/segment (30 fps) = 360 frames total, gallery-tractable.
+# steps forward every time one shape morphs into the next. Camera speed
+# stays CONSTANT (degrees/frame) across the whole animation, so each
+# segment's SCREEN TIME is proportional to its own rotation count instead
+# of split evenly: the 5 full-rotation holds get 60 frames each and the 4
+# quarter-turn transitions get 15 frames each (360 frames total @ 30 fps,
+# 12 sec, same total length as an equal-time split would have given).
 rotations = [1, 0.25] * (len(shapes) - 1) + [1]
 
 # surface look: a solid, lit blue-teal hull with 2 rounds of smoothing
