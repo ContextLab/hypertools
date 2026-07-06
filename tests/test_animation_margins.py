@@ -35,15 +35,20 @@ any style, these tests fail. The floor (15px) is deliberately far below
 every measured value above -- loose enough to tolerate CI font/anti-
 aliasing variation, tight enough to catch an actual clipping regression.
 """
+import shutil
+
 import numpy as np
 import pytest
 import matplotlib
 matplotlib.use('Agg')
+import matplotlib.animation as mpl_animation
 import matplotlib.pyplot as plt
+from PIL import Image, ImageSequence
 
 import hypertools as hyp
 
 MARGIN_FLOOR_PX = 15
+HAS_FFMPEG = shutil.which('ffmpeg') is not None
 
 
 def _measure_margins(fig, bg_thresh=250):
@@ -191,3 +196,148 @@ class TestOtherStyleAnimationMargins:
         plt.close(fig)
         _assert_healthy(mins, f"morph + surface (sparse, grown cube), "
                               f"{total} frames")
+
+
+# --- D1b: rendering must be identical regardless of the SAVE dpi -----------
+# Root cause: `Animation.save(path, dpi=X)` -- the call sphinx-gallery (and
+# any other external caller that doesn't pass `writer=` explicitly) makes to
+# re-save a captured animation as a thumbnail GIF, at a much lower dpi than
+# the figure's own -- resolves its writer from `rcParams['animation.writer']`
+# (typically 'ffmpeg', if installed). `MovieWriter._adjust_frame_size` (run
+# from `writer.setup()`, itself called from INSIDE `Animation.save()` before
+# it even knows the output isn't h264) reads `self.codec`, which still holds
+# its h264-default value at that point, and "corrects" the figure size via
+# `Figure.set_size_inches(w, h, forward=True)` for EVERY format, not just
+# h264. That call is a no-op on a plain Agg canvas, but hypertools' animated
+# figures are created under a REAL interactive backend (so `show=True`/
+# `interactive=True` plots can display live) and keep that backend's
+# OS-managed canvas for their whole life -- `forward=True` there resizes a
+# REAL window, and the figure size read back afterward is snapped to that
+# window's coarser pixel/point grid, corrupting the deliberately-EVEN target
+# pixel size into an odd one and visibly shearing every rendered frame at
+# that dpi (as if the cube were zoomed in and its corner cut off).
+# `_make_save_dpi_safe` (matplotlib_backend.py) guards every `line_ani.save`
+# call by nulling `fig.canvas.manager` for the call's duration, exactly like
+# `Animation.save()` itself does -- just early enough to matter.
+class TestSaveDpiGeometry:
+
+    def test_save_nulls_canvas_manager_for_the_call_only(self):
+        """Direct guard check (works whether or not this machine even has a
+        real GUI backend available): `line_ani.save` must swap
+        `fig.canvas.manager` out to `None` for the duration of the call --
+        pre-empting matplotlib's own too-late guard -- and restore the
+        original manager afterward (so a live/interactive display, if any,
+        keeps working after the save)."""
+        clouds = _blob_clouds(2, n=20, seed=8)
+        fig, ani = hyp.plot(clouds, '.', animate=True, duration=1,
+                            frame_rate=5, show=False)
+        original_manager = fig.canvas.manager
+        seen = {}
+
+        class _Spy(mpl_animation.AbstractMovieWriter):
+            def setup(self, fig, outfile, dpi=None):
+                seen['manager_during_save'] = fig.canvas.manager
+                super().setup(fig, outfile, dpi=dpi)
+
+            def grab_frame(self, **kwargs):
+                pass
+
+            def finish(self):
+                pass
+
+        ani.save('unused.gif', writer=_Spy(fps=5))
+        plt.close(fig)
+
+        assert seen['manager_during_save'] is None, (
+            "fig.canvas.manager must be nulled while .save() runs, or a "
+            "real interactive backend's forward=True resize can corrupt "
+            "the figure's exact size"
+        )
+        assert fig.canvas.manager is original_manager, (
+            "the original canvas manager must be restored after .save() "
+            "returns"
+        )
+
+    @pytest.mark.parametrize('style', [True, 'morph'])
+    def test_adjust_frame_size_forward_resize_does_not_corrupt_figure(
+            self, style):
+        """Exercises the exact vulnerable matplotlib primitive
+        (`MovieWriter._adjust_frame_size`, called from `writer.setup()`
+        with the writer's default (h264) codec -- BEFORE it is ever told
+        the real output format) directly, without needing the ffmpeg
+        binary installed: with the guard active, a `forward=True` resize
+        at a small save dpi must leave the figure at EXACTLY the size
+        `adjusted_figsize` computed (an even multiple of pixels at that
+        dpi), not some OS-window-snapped approximation of it."""
+        clouds = _blob_clouds(2, n=20, seed=9)
+        fig, ani = hyp.plot(clouds, '.', animate=style, duration=1,
+                            frame_rate=5, show=False)
+
+        save_dpi = 31
+        expected_w, expected_h = mpl_animation.adjusted_figsize(
+            *fig.get_size_inches(), save_dpi, 2)
+
+        def _adjust_under_guard():
+            writer = mpl_animation.FFMpegWriter(fps=5)
+            writer.fig = fig
+            writer.dpi = save_dpi
+            # mirrors `_make_save_dpi_safe`'s wrapper around the vulnerable
+            # `forward=True` resize `MovieWriter.setup()` performs
+            manager = fig.canvas.manager
+            fig.canvas.manager = None
+            try:
+                return writer._adjust_frame_size()
+            finally:
+                fig.canvas.manager = manager
+
+        w, h = _adjust_under_guard()
+        plt.close(fig)
+
+        assert w == pytest.approx(expected_w, abs=1e-9)
+        assert h == pytest.approx(expected_h, abs=1e-9)
+        assert int(w * save_dpi) % 2 == 0
+        assert int(h * save_dpi) % 2 == 0
+
+    @staticmethod
+    def _mid_frame_ink_bbox_fraction(gif_path):
+        with Image.open(gif_path) as im:
+            frames = list(ImageSequence.Iterator(im))
+            mid = frames[len(frames) // 2].convert('RGB')
+            arr = np.asarray(mid)
+            w, h = mid.size
+        inked = arr.min(axis=2) < 250
+        cols = np.where(inked.any(axis=0))[0]
+        rows = np.where(inked.any(axis=1))[0]
+        assert len(cols) and len(rows), "gif frame is entirely blank"
+        return (cols.max() - cols.min()) / w, (rows.max() - rows.min()) / h
+
+    @pytest.mark.skipif(not HAS_FFMPEG, reason='ffmpeg not installed')
+    @pytest.mark.parametrize('style', [True, 'morph'])
+    def test_save_at_thumbnail_dpi_matches_native_dpi_geometry(
+            self, style, tmp_path):
+        """End-to-end: `ani.save(path, dpi=X)` with NO `writer=` given (the
+        exact call sphinx-gallery makes) must render the same scene at a
+        sphinx-gallery-thumbnail-like dpi (~31) as at a native dpi (100) --
+        the cube's inked bounding box, as a fraction of the (different-
+        sized) canvas, must match within 2%."""
+        clouds = _blob_clouds(2, n=20, seed=10)
+        fig, ani = hyp.plot(clouds, '.', animate=style, duration=1,
+                            frame_rate=5, show=False)
+
+        native_path = str(tmp_path / 'native.gif')
+        thumb_path = str(tmp_path / 'thumb.gif')
+        ani.save(native_path, dpi=100)
+        ani.save(thumb_path, dpi=31)
+        plt.close(fig)
+
+        fx_native, fy_native = self._mid_frame_ink_bbox_fraction(native_path)
+        fx_thumb, fy_thumb = self._mid_frame_ink_bbox_fraction(thumb_path)
+
+        assert fx_thumb == pytest.approx(fx_native, abs=0.02), (
+            f"animate={style!r}: x ink-bbox fraction native={fx_native:.4f} "
+            f"vs thumbnail-dpi={fx_thumb:.4f}"
+        )
+        assert fy_thumb == pytest.approx(fy_native, abs=0.02), (
+            f"animate={style!r}: y ink-bbox fraction native={fy_native:.4f} "
+            f"vs thumbnail-dpi={fy_thumb:.4f}"
+        )

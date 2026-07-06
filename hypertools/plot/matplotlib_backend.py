@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import functools
 import itertools
 import warnings
 
@@ -240,6 +241,72 @@ def _anim_box_zoom(zoom):
     Static plots are unaffected: they use the default box aspect (zoom=1).
     """
     return 9.0 / max(0.5, 9.0 - zoom)
+
+
+def _make_save_dpi_safe(line_ani):
+    """Guard every future ``line_ani.save(...)`` call against a real
+    matplotlib/canvas-manager interaction that corrupts the rendered pixel
+    dimensions at some save dpi values -- this is what made sphinx-gallery's
+    thumbnail GIFs (re-saved via ``anim.save(gif_path, dpi≈31)``, at a much
+    lower dpi than the figure's own) come out with the cube's bounding box
+    sheared and cut off at every rotation, for every animation style.
+
+    Root cause: ``Animation.save()`` builds its `MovieWriter` via
+    ``writer.setup(fig, outfile, dpi)``, and `MovieWriter._adjust_frame_size`
+    reads ``self.codec`` to decide whether to "correct" the figure size for
+    macroblock alignment (via ``Figure.set_size_inches(w, h, forward=True)``)
+    -- but at that point ``self.codec`` is still whatever
+    ``rcParams['animation.codec']`` defaults to (``'h264'``), because it is
+    only set from the OUTPUT FILE'S suffix later, when ``self.output_args``
+    is first accessed. So this "h264-only" resize runs for every format,
+    including GIF/APNG/SVG, whenever the default writer is used (matplotlib
+    picks the default writer -- typically 'ffmpeg' if installed -- for any
+    ``anim.save(...)`` call that doesn't pass ``writer=`` explicitly, which
+    is exactly how sphinx-gallery and other third-party callers invoke it).
+
+    ``forward=True`` is normally a harmless no-op on a plain (Agg) canvas.
+    But hypertools creates animated (and interactive) figures under a REAL
+    interactive backend so they can be shown live -- the figure's canvas
+    keeps that interactive, OS-backed ``.manager`` for its whole life, even
+    after ``show=False`` switches pyplot's *default* backend back (that only
+    affects figures created afterward, not this one). When the resize above
+    runs, ``manager.resize(...)`` resizes a REAL OS window, and the figure
+    size read back afterward gets snapped to that window's (coarser)
+    pixel/point grid -- turning the deliberately-EVEN pixel size
+    ``_adjust_frame_size`` computed (e.g. 198x148 at dpi=31) into an ODD one
+    (e.g. 197x147). Piping ODD-width/height raw RGBA frames through
+    ffmpeg's GIF ``palettegen``/``paletteuse`` filter chain visibly corrupts
+    every frame (a diagonal shear, as if the box were zoomed in and its
+    corner cut off).
+
+    matplotlib's own ``Animation.save()`` already null-guards this exact
+    thing (it sets ``fig.canvas.manager = None`` for the duration of the
+    save, specifically to prevent a live GUI window from being resized) --
+    but it does so too late, AFTER ``writer.setup()`` (and its harmful
+    resize) already ran. Pre-empting ``manager = None`` here, before
+    matplotlib's own (too-late) guard takes over, makes the ``forward=True``
+    resize a no-op for the whole call, regardless of the requested dpi --
+    exactly like saving at the figure's own (native) dpi already was, which
+    never needed the resize in the first place (its pixel size is already
+    an even multiple).
+    """
+    real_save = line_ani.save
+
+    @functools.wraps(real_save)
+    def save(*args, **kwargs):
+        fig = line_ani._fig
+        canvas = getattr(fig, "canvas", None)
+        manager = getattr(canvas, "manager", None) if canvas is not None else None
+        if canvas is not None:
+            canvas.manager = None
+        try:
+            return real_save(*args, **kwargs)
+        finally:
+            if canvas is not None:
+                canvas.manager = manager
+
+    line_ani.save = save
+    return line_ani
 
 
 def _draw(
@@ -1334,5 +1401,8 @@ def _draw(
 
     if size is not None:
         fig.set_size_inches(size)
+
+    if line_ani is not None:
+        _make_save_dpi_safe(line_ani)
 
     return fig, ax, data, line_ani
