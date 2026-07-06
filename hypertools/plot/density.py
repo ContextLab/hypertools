@@ -82,9 +82,16 @@ DENSITY_BOOST_GAMMA = 2.0
 DENSITY_BOOST_MAX = 6.0
 # Absolute ceiling for plotly's boosted `go.Volume` opacity: high enough
 # that a maximally-boosted (small-in-scene) cluster is unmistakably visible,
-# but held below 1.0 so the volume never reads as a fully opaque blob --
-# the underlying data markers must stay the dominant visual element.
-MAX_VOLUME_OPACITY = 0.95
+# but held well below 1.0 so the volume never reads as a fully opaque blob
+# -- the underlying data markers must stay the dominant visual element.
+# Lowered from the original 0.95 (R2 fix, maintainer request: plotly's
+# volumetric shading read as noticeably heavier/denser than matplotlib's
+# airy iso-shells -- see `docs/images/v1.0-seven-features/density_3d_{mpl,
+# plotly}.png`) -- retuned by rendering the standard 2-blob scene AND the
+# separated (`sep=10`, auto-boost-engaged) scene side by side with the
+# matplotlib version and iterating until the glow reads as subtle in both,
+# while staying clearly visible in the boosted/separated case.
+MAX_VOLUME_OPACITY = 0.75
 
 try:
     from skimage import measure as _skimage_measure
@@ -319,13 +326,24 @@ def resolve_plotly_volume_params(alpha, levels, boost, max_boost=DENSITY_BOOST_M
 
     All five returned values equal their ORIGINAL, pre-boost constants
     when `boost == 1` (a scene-filling dataset) -- `pad=0.15`,
-    `isomin=0.05`, `opacityscale=[[0, 0], [0.3, 0.4], [1, 0.8]]`,
-    `opacity=min(3*alpha, 0.6)`, `surface_count=5*levels` -- so nothing
+    `isomin=0.05`, `opacityscale=[[0, 0], [0.3, 0.27], [1, 0.53]]`,
+    `opacity=min(2*alpha, 0.4)`, `surface_count=5*levels` -- so nothing
     changes for that (already correctly-tuned) case. As `boost` ramps up
     to `max_boost`, `pad` widens (0.15 -> 0.5), `isomin` and the
     `opacityscale` breakpoint shift left (exposing more of the KDE's outer
     tail) and up (giving that tail more opacity), and `opacity`/
     `surface_count` scale as in :func:`density_alpha_boost`'s docstring.
+
+    The `opacity`/`opacityscale` constants (R2 fix, maintainer request:
+    plotly's volumetric shading read noticeably heavier/denser than
+    matplotlib's airy iso-shells) were lowered from the original
+    `opacity=min(3*alpha, 0.6)` / `opacityscale=[[0, 0], [0.3, 0.4],
+    [1, 0.8]]` -- retuned by rendering the standard 2-blob 3-D density
+    scene AND the separated (`sep=10`, auto-boost-engaged) scene side by
+    side with the matplotlib version and iterating until the plotly glow
+    read as subtle/airy in both while remaining clearly visible in the
+    boosted case (see
+    `docs/images/v1.0-seven-features/density_3d_plotly.png`).
 
     Returns
     -------
@@ -336,10 +354,10 @@ def resolve_plotly_volume_params(alpha, levels, boost, max_boost=DENSITY_BOOST_M
     pad = 0.15 + 0.35 * t
     isomin = 0.05 - 0.04 * t
     mid_x = 0.3 - 0.24 * t
-    mid_y = 0.4 + 0.15 * t
-    top_y = 0.8 + 0.1 * t
+    mid_y = 0.27 + 0.10 * t
+    top_y = 0.53 + 0.07 * t
     opacityscale = [[0, 0], [mid_x, mid_y], [1, top_y]]
-    base_opacity = min(3.0 * alpha, 0.6)
+    base_opacity = min(2.0 * alpha, 0.4)
     opacity = min(base_opacity * boost, MAX_VOLUME_OPACITY)
     surface_count = int(round(5 * levels * boost))
     return pad, isomin, opacityscale, opacity, surface_count

@@ -280,9 +280,9 @@ class TestStaticPlotly3D:
             assert v.isomin == pytest.approx(0.05)
             assert v.isomax == pytest.approx(1.0)
             assert v.surface.count == 15
-            assert v.opacity == pytest.approx(0.6, abs=1e-9)  # 3.0 * 0.2
+            assert v.opacity == pytest.approx(0.4, abs=1e-9)  # 2.0 * 0.2
             assert tuple(tuple(p) for p in v.opacityscale) == (
-                (0, 0), (0.3, 0.4), (1, 0.8))
+                (0, 0), (0.3, 0.27), (1, 0.53))
             assert v.showscale is False
             assert v.hoverinfo == 'skip'
             # solid (2-stop, same color) colorscale
@@ -296,8 +296,8 @@ class TestStaticPlotly3D:
                        density={'alpha': 0.3}, backend='plotly', show=False)
         volumes = [t for t in fig.data if t.type == 'volume']
         for v in volumes:
-            # min(3.0 * 0.3, 0.6) == 0.6 (capped)
-            assert v.opacity == pytest.approx(0.6, abs=1e-9)
+            # min(2.0 * 0.3, 0.4) == 0.4 (capped)
+            assert v.opacity == pytest.approx(0.4, abs=1e-9)
 
     def test_per_group_colors_distinct(self):
         fig = hyp.plot(_two_datasets_3d(), '.', density=True,
@@ -576,8 +576,8 @@ class TestDensityBoostEngagementPlotly:
         volumes = [t for t in fig.data if t.type == 'volume']
         assert len(volumes) == 2
         for v in volumes:
-            # base (unboosted) cap is 0.6 -- boost must push past it
-            assert v.opacity > 0.6
+            # base (unboosted) cap is 0.4 -- boost must push past it
+            assert v.opacity > 0.4
             assert v.opacity <= MAX_VOLUME_OPACITY + 1e-9
 
     def test_separated_blobs_boost_surface_count(self):
@@ -592,7 +592,7 @@ class TestDensityBoostEngagementPlotly:
                        density=True, backend='plotly', show=False)
         volumes = [t for t in fig.data if t.type == 'volume']
         assert len(volumes) == 1
-        assert volumes[0].opacity == pytest.approx(0.6, abs=1e-9)
+        assert volumes[0].opacity == pytest.approx(0.4, abs=1e-9)
         assert volumes[0].surface.count == 15
 
     def test_resolve_plotly_volume_params_noop_at_boost_one(self):
@@ -600,8 +600,8 @@ class TestDensityBoostEngagementPlotly:
             resolve_plotly_volume_params(0.2, 3, boost=1.0))
         assert pad == pytest.approx(0.15)
         assert isomin == pytest.approx(0.05)
-        assert opacityscale == [[0, 0], [0.3, 0.4], [1, 0.8]]
-        assert opacity == pytest.approx(0.6, abs=1e-9)
+        assert opacityscale == [[0, 0], [0.3, 0.27], [1, 0.53]]
+        assert opacity == pytest.approx(0.4, abs=1e-9)
         assert surface_count == 15
 
     def test_resolve_plotly_volume_params_widens_at_max_boost(self):
@@ -611,3 +611,44 @@ class TestDensityBoostEngagementPlotly:
         assert isomin < 0.05
         assert opacity == pytest.approx(MAX_VOLUME_OPACITY, abs=1e-9)
         assert surface_count == 5 * 3 * DENSITY_BOOST_MAX
+
+
+class TestVolumeMoreTransparentThanR1:
+    """Regression (R2 fix, maintainer request): plotly's `go.Volume`
+    density shading must be strictly LESS opaque than the original R1
+    tuning at every boost level -- both the absolute ceiling
+    (`MAX_VOLUME_OPACITY`) and the base (`boost=1`, unboosted) opacity/
+    opacityscale constants were lowered so the glow reads as subtle/airy
+    like matplotlib's iso-surfaces instead of a heavy, dense blob (see
+    `docs/images/v1.0-seven-features/density_3d_plotly.png`)."""
+
+    R1_MAX_VOLUME_OPACITY = 0.95
+    R1_BASE_OPACITY_CAP = 0.6
+    R1_OPACITYSCALE_NOOP = ((0, 0), (0.3, 0.4), (1, 0.8))
+
+    def test_max_volume_opacity_lowered(self):
+        assert MAX_VOLUME_OPACITY < self.R1_MAX_VOLUME_OPACITY
+
+    def test_base_opacity_lowered_at_every_alpha(self):
+        for alpha in (0.05, 0.2, 0.5, 1.0):
+            _, _, _, opacity, _ = resolve_plotly_volume_params(
+                alpha, 3, boost=1.0)
+            r1_opacity = min(3.0 * alpha, self.R1_BASE_OPACITY_CAP)
+            assert opacity < r1_opacity
+
+    def test_opacityscale_ramp_lowered_at_noop_boost(self):
+        _, _, opacityscale, _, _ = resolve_plotly_volume_params(
+            0.2, 3, boost=1.0)
+        # skip the trivial (0, 0) origin breakpoint shared by both curves
+        for (new_x, new_y), (r1_x, r1_y) in zip(
+                opacityscale[1:], self.R1_OPACITYSCALE_NOOP[1:]):
+            assert new_x == pytest.approx(r1_x)  # x breakpoints unchanged
+            assert new_y < r1_y  # y (opacity at that breakpoint) lowered
+
+    def test_boosted_opacity_still_lower_than_r1_ceiling(self):
+        # even a maximally-boosted (small-in-scene) cluster must stay
+        # below the OLD ceiling -- boosting must never claw back the
+        # transparency win.
+        _, _, _, opacity, _ = resolve_plotly_volume_params(
+            0.2, 3, boost=DENSITY_BOOST_MAX)
+        assert opacity < self.R1_MAX_VOLUME_OPACITY

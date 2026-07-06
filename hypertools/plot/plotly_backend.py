@@ -52,14 +52,69 @@ from . import morph as _morph
 
 VALID_BACKENDS = ('auto', 'matplotlib', 'plotly')
 
-# matplotlib sizes are in points; plotly sizes are in pixels (1pt = 4/3 px)
-PT_TO_PX = 4.0 / 3.0
+# matplotlib sizes are in points; plotly sizes are in pixels. hypertools'
+# matplotlib figures render at dpi=100 (rcParams['figure.dpi'], never
+# overridden by this codebase -- see `matplotlib_backend`'s lack of any
+# `dpi=` kwarg), and this module deliberately sizes its own canvas at the
+# same 100 px/inch (`layout['width'] = size[0] * 100` etc., below), so the
+# exact points->pixels factor at that SHARED dpi is `100/72`, not the
+# `4/3` (96/72, i.e. CSS/web dpi=96) previously used here (R2 fix --
+# verified empirically: matplotlib 'o' markers rendered at dpi=100 and
+# measured by pixel bounding-box gave e.g. markersize=100 -> ~139px
+# diameter, matching `100 * 100/72 = 138.9` almost exactly; see
+# `scripts/measure_marker_parity.py`).
+PT_TO_PX = 100.0 / 72.0
 DEFAULT_FIGSIZE = (6.4, 4.8)  # matplotlib rcParams['figure.figsize'] inches
 DEFAULT_LINEWIDTH_PT = 1.5   # matplotlib rcParams['lines.linewidth']
 DEFAULT_MARKERSIZE_PT = 6.0  # matplotlib rcParams['lines.markersize']
 CUBE_LINEWIDTH_PT = 1.5      # hypertools' wireframe cube linewidth (1pt in
                              # matplotlib; slightly heavier here because
                              # plotly's 3D line antialiasing renders lighter)
+
+# matplotlib's '.' and ',' marker glyphs are defined with HALF the path
+# scale of every other marker character (verified via
+# `matplotlib.markers.MarkerStyle(ch).get_transform()`, whose scale is
+# `0.25` for '.'/',' vs. `0.5` for 'o' and most others) -- so at the SAME
+# `markersize`, matplotlib renders a '.' marker at exactly half the pixel
+# diameter of an 'o' (confirmed by rendering both at dpi=100 and measuring
+# pixel diameter: markersize=100 gave ~139px for 'o' vs ~71px for '.',
+# `scripts/measure_marker_parity.py`). plotly has no equivalently-tiny
+# "dot" symbol of its own -- both '.' and 'o' map to plotly's 'circle' (see
+# `_MARKER_SYMBOLS`) -- so without this explicit discount plotly's dots
+# render ~2x fatter than matplotlib's for `fmt='.'` (hypertools' most
+# common scatter fmt, used throughout the density=/morph examples): this
+# was half of the R2 "fat dots" bug.
+_DOT_MARKER_CHARS = ('.', ',')
+_DOT_MARKER_SCALE = 0.5
+
+# matplotlib's animate='morph' traveling point cloud always draws with
+# marker='.' and, when no explicit `markersize=` kwarg is given, a smaller
+# default of 1.5pt -- NOT the general `DEFAULT_MARKERSIZE_PT` (6.0) used
+# everywhere else -- see `matplotlib_backend.animate_plot3D`'s
+# `morph_markersize = _mkw.get("markersize") or 1.5`. Without matching
+# both that smaller default AND the `_DOT_MARKER_SCALE` above, plotly's
+# default morph dots rendered ~8x fatter than matplotlib's (6.0 vs 1.5,
+# doubled again for the missing dot-marker scale) -- this was the more
+# severe half of the R2 bug (see
+# `docs/images/v1.0-seven-features/morph_anim_plotly.png` before the fix).
+MORPH_DEFAULT_MARKERSIZE_PT = 1.5
+
+# plotly's `go.Scatter3d` (WebGL/gl3d) interprets `marker.size` differently
+# from `go.Scatter`'s (SVG, 2-D) -- empirically verified (see
+# `scripts/measure_marker_parity.py`'s 3-D calibration) by rendering
+# isolated Scatter3d markers at a wide range of nominal `size` values
+# (2..100) at several different camera distances (ruling out perspective
+# as the cause -- the ratio is constant regardless of camera-to-origin
+# distance) and fitting the nominal size -> measured pixel-diameter
+# relationship: `diameter_px ~= 1.776 * size + 0.9` (R^2 ~1.0 across two
+# orders of magnitude; the tiny intercept is negligible in practice).
+# `go.Scatter`'s `marker.size` has NO such correction (it IS the rendered
+# pixel diameter almost exactly, see the 2-D calibration in the same
+# script) -- so every Scatter3d marker (all of hypertools' 3-D data
+# traces, trails, and the animate='morph' traveling point cloud) needs
+# its computed pixel size divided by this factor, or it renders ~1.8x
+# fatter than the already-corrected 2-D/mpl-matching size.
+_SCATTER3D_SIZE_FACTOR = 1.776
 
 # matplotlib format-string characters -> plotly marker symbols. This MUST
 # cover every marker character matplotlib's fmt grammar accepts (the printable
@@ -256,12 +311,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             continue
         arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
         tkwargs = kwargs_list[i] or {}
-        mode, symbol, dash = _parse_fmt(fmt[i], tkwargs)
+        mode, symbol, dash, marker_char = _resolve_fmt(fmt[i], tkwargs)
         color = _to_plotly_color(tkwargs.get('color'), tkwargs.get('alpha'))
         width = float(tkwargs.get('linewidth')
                       or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
-        msize = float(tkwargs.get('markersize')
-                      or DEFAULT_MARKERSIZE_PT) * PT_TO_PX
+        msize = _marker_size_px(
+            tkwargs.get('markersize') or DEFAULT_MARKERSIZE_PT, marker_char,
+            ndims=ndims)
         name = _trace_name(legend, tkwargs, i)
 
         if ndims >= 3 and symbol not in _SYMBOLS_3D:
@@ -386,12 +442,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     ] if animate in (True, 'parallel') else []
     for i in trail_dataset_indices:
         tkwargs = kwargs_list[i] or {}
-        mode, symbol, dash = _parse_fmt(fmt[i], tkwargs)
+        mode, symbol, dash, marker_char = _resolve_fmt(fmt[i], tkwargs)
         color = _to_plotly_color(tkwargs.get('color'), 0.3)
         width = float(tkwargs.get('linewidth')
                       or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
-        msize = float(tkwargs.get('markersize')
-                      or DEFAULT_MARKERSIZE_PT) * PT_TO_PX
+        msize = _marker_size_px(
+            tkwargs.get('markersize') or DEFAULT_MARKERSIZE_PT, marker_char,
+            ndims=ndims)
         trail = dict(mode=mode, showlegend=False, hoverinfo='skip',
                      line=dict(color=color, width=width, dash=dash),
                      marker=dict(color=color, size=msize))
@@ -505,8 +562,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     if morph_tags is not None and ndims >= 3:
         pts0 = sampled0[0]
         color0_str = _rgb_string(ds_colors0[0])
-        msize0 = float((kwargs_list[morph_indices_3d[0]] or {}).get('markersize')
-                       or DEFAULT_MARKERSIZE_PT) * PT_TO_PX
+        # matplotlib's morph trace always draws marker='.' (see
+        # `MORPH_DEFAULT_MARKERSIZE_PT`'s docstring) -- so the plotly
+        # counterpart always applies the dot-marker scale, and falls back
+        # to the SAME smaller 1.5pt default (not the general 6.0pt
+        # `DEFAULT_MARKERSIZE_PT`) when no explicit `markersize=` is given.
+        msize0 = _marker_size_px(
+            (kwargs_list[morph_indices_3d[0]] or {}).get('markersize')
+            or MORPH_DEFAULT_MARKERSIZE_PT, '.', ndims=3)
         hide_morph_points = (morph_surface_spec_3d is not None and
                             not morph_surface_spec_3d.get('keep_points', True))
         morph_trace_start_3d = len(traces)
@@ -1094,6 +1157,14 @@ def _one_density_volume_trace(go, pts, spec, color_rgb, label="", boost=1.0):
     meaningfully-visible mid-tones well before the peak rather than only
     right at it.
 
+    R2 follow-up (maintainer request): even with the above, plotly's glow
+    still read as heavier/denser than matplotlib's airy iso-surface shells
+    when the two were compared side by side. `opacity`/`opacityscale`/
+    `MAX_VOLUME_OPACITY` (see :func:`~.density.resolve_plotly_volume_params`
+    and that constant's docstrings) were retuned further down for more
+    transparency, re-verified against the same evidence images, with the
+    small-in-scene auto-boost still keeping a separated cluster visible.
+
     `boost` (see :func:`~.density.density_alpha_boost`, GH #108 round 2) is
     ``1.0`` (a no-op) for a scene-filling dataset -- so a single dataset's
     params are unchanged from before -- and ramps up for a dataset that's
@@ -1222,11 +1293,23 @@ def _mesh3d_geometry_update(go, verts, faces, color_rgb, opacity, view, light_kw
 def _parse_fmt(fmt_str, tkwargs):
     """Convert a matplotlib format string + kwargs into plotly
     (mode, marker symbol, line dash)."""
+    mode, symbol, dash, _marker_char = _resolve_fmt(fmt_str, tkwargs)
+    return mode, symbol, dash
+
+
+def _resolve_fmt(fmt_str, tkwargs):
+    """As `_parse_fmt`, but also returns the resolved single matplotlib
+    marker CHARACTER (e.g. '.', 'o', 's'), or ``None`` if no marker is
+    drawn at all -- so callers can look up character-specific size scaling
+    (`_DOT_MARKER_CHARS`/`_DOT_MARKER_SCALE`) using the exact same
+    character `_parse_fmt` used to pick the plotly symbol (explicit
+    `marker=` kwarg takes priority over `fmt_str`, matching matplotlib)."""
     fmt_str = fmt_str or ''
     symbol = 'circle'
     dash = 'solid'
     has_marker = False
     has_line = False
+    marker_char = None
 
     # explicit marker/linestyle kwargs take priority (matplotlib behavior)
     kw_marker = tkwargs.get('marker')
@@ -1242,11 +1325,13 @@ def _parse_fmt(fmt_str, tkwargs):
         if ch in _MARKER_SYMBOLS:
             has_marker = True
             symbol = _MARKER_SYMBOLS[ch]
+            marker_char = ch
             break
 
     if kw_marker is not None and kw_marker in _MARKER_SYMBOLS:
         has_marker = True
         symbol = _MARKER_SYMBOLS[kw_marker]
+        marker_char = kw_marker
     if kw_linestyle is not None:
         has_line = True
         dash = _LINESTYLE_NAMES.get(kw_linestyle, 'solid')
@@ -1257,7 +1342,26 @@ def _parse_fmt(fmt_str, tkwargs):
         mode = 'markers'
     else:
         mode = 'lines'
-    return mode, symbol, dash
+    return mode, symbol, dash, marker_char
+
+
+def _marker_size_px(markersize_pt, marker_char, ndims=2):
+    """Convert an mpl `markersize` (points, diameter) to the `marker.size`
+    value to pass to a plotly trace, matching matplotlib's rendered pixel
+    diameter at hypertools' shared 100-dpi canvas.
+
+    Applies the `_DOT_MARKER_SCALE` discount when `marker_char` is a
+    '.'/',' (see that constant's docstring), then -- for `ndims >= 3`
+    (`go.Scatter3d`, used for every 3-D data/trail/morph trace) -- divides
+    by `_SCATTER3D_SIZE_FACTOR` to correct for Scatter3d's different
+    `marker.size` -> rendered-pixel-diameter relationship (see that
+    constant's docstring). `go.Scatter` (`ndims` 1 or 2) needs no such
+    correction."""
+    scale = _DOT_MARKER_SCALE if marker_char in _DOT_MARKER_CHARS else 1.0
+    px = float(markersize_pt) * PT_TO_PX * scale
+    if ndims >= 3:
+        px /= _SCATTER3D_SIZE_FACTOR
+    return px
 
 
 def _colorbar_trace(go, colorbar_info, ndims, legend_present):

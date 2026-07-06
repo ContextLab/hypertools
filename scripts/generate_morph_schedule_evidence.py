@@ -139,7 +139,20 @@ def generate_plotly():
         frame = fig.frames[k]
         data_k = copy.deepcopy(base_data)
         for trace_idx, new_trace in zip(frame.traces, frame.data):
-            data_k[trace_idx] = new_trace
+            # R2 fix: MERGE the frame's (partial) trace update onto a copy
+            # of the base trace, rather than replacing it wholesale --
+            # `go.Frame` updates only specify what CHANGES per frame (e.g.
+            # the morph trace's frame data omits `marker.size`, matching
+            # real Plotly.js `animate()` semantics, which merges frame
+            # attributes onto the current trace state instead of
+            # discarding everything else). A wholesale replace silently
+            # reverted `marker.size` to plotly's own default (much bigger
+            # than hypertools' now-correctly-small morph dots), masking the
+            # R2 marker-size fix in this evidence script's reconstructed
+            # stills even though real animated playback is unaffected.
+            merged = copy.deepcopy(data_k[trace_idx])
+            merged.update(new_trace)
+            data_k[trace_idx] = merged
         layout = copy.deepcopy(fig.layout)
         if frame.layout is not None and frame.layout.scene is not None:
             layout.scene.camera = frame.layout.scene.camera
