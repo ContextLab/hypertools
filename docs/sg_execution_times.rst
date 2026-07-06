@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**03:42.892** total execution time for 48 files **from all galleries**:
+**01:59.809** total execution time for 48 files **from all galleries**:
 
 .. container::
 
@@ -33,10 +33,10 @@ Computation times
      - Time
      - Mem (MB)
    * - :ref:`sphx_glr_auto_examples_animate_surface_morph.py` (``../examples/animate_surface_morph.py``)
-     - 03:29.729
+     - 01:56.135
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_shape_morph.py` (``../examples/plot_shape_morph.py``)
-     - 00:13.163
+     - 00:03.674
      - 0.0
    * - :ref:`sphx_glr_auto_examples_analyze.py` (``../examples/analyze.py``)
      - 00:00.000

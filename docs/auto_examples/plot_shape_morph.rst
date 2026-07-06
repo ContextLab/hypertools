@@ -24,14 +24,23 @@ Morphing through the shapes zoo
 
 HyperTools' "shapes zoo" (bunny, cube, dragon, sphere, teapot, vase,
 biplane -- see the *A zoo of 3D shapes* example) can be morphed smoothly
-from one point cloud to the next. An equal-sized sample of points is drawn
-from each shape, consecutive shapes are matched point-for-point with the
+from one point cloud to the next with the ``animate='morph'`` `hyp.plot`
+style (PR #272, maintainer request 2026-07-06 -- see the `animate`/
+`rotations`/`morph_samples` entries of the `hyp.plot` docstring for the
+full spec). Under the hood, an equal-sized sample of points is drawn from
+each shape, consecutive shapes are matched point-for-point with the
 Hungarian algorithm (`scipy.optimize.linear_sum_assignment`) so that each
 point travels the shortest total distance to its partner in the next
 shape, and the coordinates are eased between shapes frame by frame while
-the camera slowly spins around the scene.
+the camera spins around the scene -- exactly the hand-rolled recipe this
+example used to implement itself before `animate='morph'` existed, now
+built into the library behind a single `hyp.plot` call. `rotations` also
+accepts a per-segment list for finer camera control: below, holds spin a
+slow, easy-to-watch full rotation while each transition only spins a
+brisk quarter-turn, so the camera visibly "steps" forward every time one
+shape morphs into the next.
 
-.. GENERATED FROM PYTHON SOURCE LINES 16-98
+.. GENERATED FROM PYTHON SOURCE LINES 25-57
 
 
 
@@ -40,7 +49,6 @@ the camera slowly spins around the scene.
    :height: 480
    :width: 640
    :autoplay:
-   :loop:
 
 
 
@@ -54,23 +62,11 @@ the camera slowly spins around the scene.
     # License: MIT
 
     import numpy as np
-    import matplotlib.pyplot as plt
-    import matplotlib.animation as animation
-    from scipy.optimize import linear_sum_assignment
-    from scipy.spatial.distance import cdist
 
     import hypertools as hyp
 
     # every point cloud in the shapes zoo, visited in this order
     shapes = ['bunny', 'cube', 'dragon', 'sphere', 'teapot', 'vase', 'biplane']
-
-    # frames per hold segment and per morph segment; kept modest so the
-    # gallery build finishes quickly -- 13 segments * 70 frames = 910 frames
-    # at 30 frames/sec, about the same length as the other animated examples
-    n_steps = 70
-    frame_rate = 30
-    rotations = 2
-    rng = np.random.default_rng(42)
 
 
     def normalize_shape(points):
@@ -82,60 +78,22 @@ the camera slowly spins around the scene.
 
     clouds = [normalize_shape(hyp.load(shape)) for shape in shapes]
 
-    # sample the same number of points (the smallest shape's count) from every
-    # cloud, without replacement, so morph frames can interpolate point-to-point
-    n_points = min(len(cloud) for cloud in clouds)
-    sampled = [cloud[rng.choice(len(cloud), size=n_points, replace=False)]
-              for cloud in clouds]
+    # frame schedule: hold, morph, hold, morph, ..., hold -- 2 * n_shapes - 1
+    # segments in all. `rotations` gives each segment its OWN camera-spin
+    # count: holds get a slow, easy-to-watch full rotation (1) while
+    # transitions get a brisk quarter-turn (0.25), so the camera visibly steps
+    # forward every time a shape morphs into the next one. 13 segments * 30
+    # frames/segment (1 sec/segment @ 30 fps) = 390 frames total, gallery-tractable.
+    rotations = [1, 0.25] * (len(shapes) - 1) + [1]
 
-    # Hungarian matching: reorder each shape so point i morphs to its optimal
-    # partner (minimum total travel distance) in the previous shape
-    for i in range(len(sampled) - 1):
-        cost = cdist(sampled[i], sampled[i + 1])
-        _, col_ind = linear_sum_assignment(cost)
-        sampled[i + 1] = sampled[i + 1][col_ind]
-
-    # frame schedule: hold, morph, hold, morph, ... (2 * n_shapes - 1 segments)
-    segments = []
-    for i in range(len(sampled)):
-        segments.append((sampled[i], sampled[i]))
-        if i < len(sampled) - 1:
-            segments.append((sampled[i], sampled[i + 1]))
-    total_frames = len(segments) * n_steps
-
-    # draw the first shape as small black dots, then animate the point
-    # artist's coordinates directly on every frame. Supplying our own axes
-    # keeps the figure registered with pyplot (hyp.plot's show=False otherwise
-    # deregisters it, GH #148), which sphinx-gallery needs in order to capture
-    # the FuncAnimation below as a video.
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    hyp.plot(sampled[0], 'k.', show=False, ax=ax)
-    ax.set_position([0.0, 0.0, 1.0, 1.0])
-    point_artist = ax.get_lines()[0]
-    point_artist.set_markersize(1.5)
-
-
-    def update(frame):
-        seg_idx, step = divmod(frame, n_steps)
-        start, end = segments[seg_idx]
-        t = step / max(1, n_steps - 1)
-        t = t * t * (3 - 2 * t)  # smoothstep easing (holds: start == end, so t
-                                 # has no effect and the shape simply sits still)
-        points = (1 - t) * start + t * end
-        point_artist.set_data(points[:, 0], points[:, 1])
-        point_artist.set_3d_properties(points[:, 2])
-        ax.view_init(elev=10, azim=-60 + 360.0 * rotations * frame / total_frames)
-        return (point_artist,)
-
-
-    ani = animation.FuncAnimation(fig, update, frames=total_frames,
-                                  interval=1000 / frame_rate, blit=False)
+    fig, ani = hyp.plot(clouds, fmt='.', color='k', markersize=1.5,
+                        animate='morph', rotations=rotations,
+                        duration=len(rotations), frame_rate=30)
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 13.163 seconds)
+   **Total running time of the script:** (0 minutes 3.674 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_shape_morph.py:
