@@ -17,8 +17,10 @@ This module is intentionally dependency-light (numpy + scipy only) and does
 not import anything from :mod:`hypertools.plot.plot` or the plot backends --
 it is a leaf geometry module that those higher-level modules import from.
 """
+import warnings
+
 import numpy as np
-from scipy.spatial import ConvexHull, QhullError
+from scipy.spatial import ConvexHull, Delaunay, QhullError
 
 __all__ = [
     "smooth_hull_3d",
@@ -26,6 +28,7 @@ __all__ = [
     "face_normals",
     "blinn_phong_colors",
     "backface_cull",
+    "points_enclosed",
 ]
 
 
@@ -201,13 +204,67 @@ def smooth_hull_3d(points, rounds=3, taubin_iters=8, lam=0.5, mu=-0.53, pre_infl
         ) from exc
 
     centroid = verts.mean(axis=0)
-    verts = centroid + pre_inflate * (verts - centroid)
+    hull_verts_inflated = centroid + pre_inflate * (verts - centroid)
+    verts = hull_verts_inflated
 
     for _ in range(rounds):
         verts, faces = _subdivide(verts, faces)
         verts = _taubin_smooth(verts, faces, iterations=taubin_iters, lam=lam, mu=mu)
 
+    # GH #109: `pre_inflate` compensates for Taubin smoothing's net
+    # shrinkage, but that compensation is tuned against the SAME fixed
+    # `taubin_iters`/`rounds` regardless of hull size -- a small, sparse
+    # hull (few input points -> few, often widely-spaced hull vertices)
+    # loses proportionally much MORE of its "bulge" to the same number of
+    # smoothing passes than a large, dense one does, so small point clouds
+    # can end up with the final surface pulled far inside the original
+    # data (observed: a 5-point cloud's mesh contained as few as ~1/5 of
+    # its own input points, with no warning). Post-hoc rescale the mesh
+    # (uniformly, about its centroid -- never shrinking it) so it recovers
+    # containment of the inflated hull vertices, then verify against the
+    # ACTUAL input points and warn if that still falls short.
+    verts = _rescale_for_containment(verts, hull_verts_inflated, centroid)
+
+    contained_frac = points_enclosed(points, verts).mean()
+    if contained_frac < 0.96:
+        warnings.warn(
+            "smooth_hull_3d: the smoothed surface contains only "
+            f"{100 * contained_frac:.0f}% of the input points (target "
+            "96%) even after rescaling for containment; it may visibly "
+            "fail to enclose some of the data."
+        )
+
     return verts, faces
+
+
+def _rescale_for_containment(verts, hull_verts_inflated, centroid, margin=1.02):
+    """Uniformly rescale `verts` about `centroid` (growing only, never
+    shrinking) so the (already pre-inflated) original hull vertices
+    `hull_verts_inflated` are contained within it (GH #109).
+
+    For each inflated hull vertex, finds the final-mesh vertex nearest it
+    BY DIRECTION from the centroid -- a cheap proxy for "where the
+    smoothed surface lies along that same ray from the centroid" -- and
+    computes how much farther out the hull vertex is along that ray. The
+    whole mesh is grown by the worst (largest) such ratio across all hull
+    vertices, plus a small safety `margin`, so the rescaled surface clears
+    every hull vertex rather than just meeting it exactly.
+    """
+    to_hull = hull_verts_inflated - centroid
+    dist_hull = np.linalg.norm(to_hull, axis=1)
+    unit_hull = to_hull / (dist_hull[:, None] + 1e-12)
+
+    to_mesh = verts - centroid
+    dist_mesh = np.linalg.norm(to_mesh, axis=1)
+    unit_mesh = to_mesh / (dist_mesh[:, None] + 1e-12)
+
+    nearest = np.argmax(unit_hull @ unit_mesh.T, axis=1)
+    ratios = dist_hull / np.maximum(dist_mesh[nearest], 1e-12)
+
+    scale = max(1.0, ratios.max() * margin)
+    if scale > 1.0:
+        verts = centroid + scale * (verts - centroid)
+    return verts
 
 
 def _catmull_rom_closed(poly, n_per_seg=20, alpha=0.5):
@@ -436,6 +493,44 @@ def blinn_phong_colors(
     rgb = np.clip(rgb, 0.0, 1.0)
     alpha = np.ones((len(faces), 1))
     return np.concatenate([rgb, alpha], axis=1)
+
+
+def points_enclosed(points, verts):
+    """Boolean mask of which `points` fall within the volume enclosed by a
+    `smooth_hull_3d` mesh's vertex set `verts` (GH #109 rendering-fix).
+
+    Containment is tested via the Delaunay triangulation of `verts` itself
+    (points on/inside the convex hull of the mesh's own vertices count as
+    "enclosed") -- this is deliberately the same style of exact-containment
+    test used by the smoothed-mesh containment tests in
+    ``tests/test_meshutil.py``, just exposed as a reusable primitive.
+
+    This is used by the plotly backend to work around two related, upstream
+    WebGL rendering defects it cannot otherwise avoid: (1) ``Scatter3d``
+    marker points enclosed by an opaque ``Mesh3d`` surface are not always
+    correctly depth-composited by plotly's renderer and can visibly "punch
+    through" the mesh; and (2) when two datasets' surfaces geometrically
+    intersect, the same defect can punch a hole in whichever mesh was drawn
+    first, wherever the other mesh's volume encloses it. In both cases the
+    enclosed geometry (marker points; the other mesh's overlapping faces)
+    is simply not drawn there instead, since it would be hidden by an
+    opaque enclosing surface anyway.
+
+    Parameters
+    ----------
+    points : array-like of shape (n, 3)
+    verts : array-like of shape (m, 3)
+        Vertex coordinates of the enclosing mesh (e.g. from
+        :func:`smooth_hull_3d`).
+
+    Returns
+    -------
+    ndarray of shape (n,), dtype bool
+        True where the corresponding point is enclosed.
+    """
+    points = np.atleast_2d(np.asarray(points, dtype=float))
+    tri = Delaunay(np.asarray(verts, dtype=float))
+    return tri.find_simplex(points) >= 0
 
 
 def backface_cull(verts, faces, view_vector, threshold=-0.05):

@@ -25,6 +25,7 @@ import warnings
 
 import numpy as np
 
+from .meshutil import points_enclosed
 from .surface import (
     PLOTLY_LIGHTPOSITION,
     build_mesh_3d,
@@ -250,6 +251,27 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         hide_points = (surface is not None and i < len(surface)
                       and surface[i] is not None
                       and not surface[i].get('keep_points', True))
+
+        # surface= (GH #109 rendering-fix), 3-D only: plotly cannot always
+        # correctly depth-composite Scatter3d points enclosed by an opaque
+        # Mesh3d surface (they can visibly "punch through" the mesh as a
+        # hole -- see `_trim_faces_inside_other_meshes`'s docstring for the
+        # full story and verification). Points this dataset's own surface
+        # encloses are dropped (set to NaN, plotly's standard "no point
+        # here" convention) from its marker/line trace instead -- they
+        # would be hidden behind the opaque surface anyway; any points the
+        # surface fails to enclose (smoothing/inflation only targets ~96%+
+        # containment, not 100%) are left visible as before.
+        if (ndims >= 3 and not hide_points and surface is not None
+                and i < len(surface) and surface[i] is not None):
+            mesh = build_mesh_3d(arr[:, :3], surface[i], dataset_label=f' {i}',
+                                 quiet=True)
+            if mesh is not None:
+                mesh_verts, _mesh_faces = mesh
+                enclosed = points_enclosed(arr[:, :3], mesh_verts)
+                if enclosed.any():
+                    arr = arr.copy()
+                    arr[enclosed] = np.nan
 
         common = dict(
             mode=mode,
@@ -658,16 +680,71 @@ def _surface_base_rgb(spec, fallback_rgb):
     return fallback_rgb
 
 
+def _blend_toward_white(color_rgb, alpha):
+    """Alpha-composite `color_rgb` over a white background (matching this
+    module's `paper_bgcolor='white'`), returning the resulting flat RGB.
+
+    Used to FAKE a translucent look for the plotly surface mesh (GH #109
+    rendering-fix) instead of asking plotly's Mesh3d for real `opacity <
+    1`: plotly's WebGL renderer has a documented, currently-unfixed
+    depth-sorting limitation for translucent meshes
+    (https://github.com/plotly/plotly.py/issues/3554 -- "an overlay of
+    multiple transparent surfaces may not perfectly be sorted in depth by
+    the webgl API") that manifests as severe per-triangle speckle/faceting
+    on these densely-tessellated smooth-hull meshes for ANY `opacity < 1`,
+    even values as close to 1 as 0.999. Baking the requested alpha into an
+    always-opaque color sidesteps that rendering path entirely -- plotly's
+    own bug report confirms "setting opacity to 1 removes these artifacts".
+    """
+    return tuple(alpha * c + (1.0 - alpha) * 1.0 for c in color_rgb)
+
+
 def _mesh3d_trace(go, verts, faces, color_rgb, opacity, lighting_kw):
     """A single ``go.Mesh3d`` surface trace (GH #109), lit per the tuned
     plotly Blinn-Phong-ish lighting model, with hypertools' verified
-    parameters (`flatshading=False` for Gouraud-style smooth shading)."""
+    parameters (`flatshading=False` for Gouraud-style smooth shading).
+
+    `opacity` (the user-requested `surface['alpha']`) is NOT passed through
+    to plotly's own opacity/blending -- see `_blend_toward_white` -- the
+    trace is always rendered fully opaque (`opacity=1.0`), which plotly's
+    Mesh3d renders correctly and without artifacts.
+    """
+    blended = _blend_toward_white(color_rgb, opacity)
     return go.Mesh3d(
         x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
         i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
-        color=_rgb_string(color_rgb), opacity=opacity, flatshading=False,
+        color=_rgb_string(blended), opacity=1.0, flatshading=False,
         lighting=lighting_kw, lightposition=PLOTLY_LIGHTPOSITION,
         hoverinfo='skip', showlegend=False, showscale=False)
+
+
+def _trim_faces_inside_other_meshes(i, meshes):
+    """Boolean keep-mask (len(faces),) for dataset `i`'s mesh: drops faces
+    whose centroid falls inside any OTHER dataset's mesh volume (GH #109
+    rendering-fix).
+
+    When two datasets' surfaces geometrically intersect (e.g. two
+    overlapping point-cloud "blobs"), plotly cannot correctly depth-
+    composite the two closed opaque ``Mesh3d`` volumes where they overlap:
+    whichever mesh trace was added to the scene FIRST gets a visible hole
+    punched through it wherever the OTHER (later) mesh's volume encloses
+    it (verified: this reproduces identically in a real Chromium browser,
+    not just static image export, and simply swapping dataset order moves
+    the hole to whichever dataset is now first -- so it is inherent to
+    plotly's renderer, not this mesh's geometry). Removing the overlapping
+    faces from the earlier mesh (they would be hidden by the other
+    dataset's own opaque surface anyway) avoids the defect: the two
+    surfaces meet at a plain (if slightly faceted) seam instead of either
+    one z-fighting or punching through the other.
+    """
+    verts_i, faces_i = meshes[i]
+    keep = np.ones(len(faces_i), dtype=bool)
+    centers = verts_i[faces_i].mean(axis=1)
+    for j, (verts_j, _faces_j) in meshes.items():
+        if j == i:
+            continue
+        keep &= ~points_enclosed(centers, verts_j)
+    return keep
 
 
 def _build_surface_traces_3d(go, data, surface, surface_colors, elev, azim):
@@ -675,8 +752,15 @@ def _build_surface_traces_3d(go, data, surface, surface_colors, elev, azim):
     non-degenerate) surface spec. Returns ``(traces, dataset_indices)``
     where ``dataset_indices[k]`` is the ORIGINAL dataset index that produced
     ``traces[k]`` (datasets with no spec, or too few/degenerate points,
-    contribute no trace, so the two lists can be shorter than `data`)."""
-    traces, dataset_indices = [], []
+    contribute no trace, so the two lists can be shorter than `data`).
+
+    All of the (non-degenerate) datasets' meshes are built FIRST, then each
+    is trimmed against every OTHER dataset's mesh (see
+    `_trim_faces_inside_other_meshes`) before any trace is constructed --
+    this needs the full set of meshes up front since datasets can overlap
+    pairwise in either direction.
+    """
+    meshes = {}
     for i, (arr, spec) in enumerate(zip(data, surface)):
         if spec is None:
             continue
@@ -684,7 +768,17 @@ def _build_surface_traces_3d(go, data, surface, surface_colors, elev, azim):
         mesh = build_mesh_3d(pts, spec, dataset_label=f' {i}')
         if mesh is None:
             continue
-        verts, faces = mesh
+        meshes[i] = mesh
+
+    traces, dataset_indices = [], []
+    for i, (arr, spec) in enumerate(zip(data, surface)):
+        if i not in meshes:
+            continue
+        verts, faces = meshes[i]
+        if len(meshes) > 1:
+            faces = faces[_trim_faces_inside_other_meshes(i, meshes)]
+            if len(faces) == 0:
+                continue
         base_rgb = _surface_base_rgb(spec, surface_colors[i])
         traces.append(_mesh3d_trace(go, verts, faces, base_rgb,
                                     spec['alpha'], plotly_lighting_kwargs(spec)))

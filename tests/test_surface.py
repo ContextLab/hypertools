@@ -12,6 +12,7 @@ import pytest
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 import hypertools as hyp
+from hypertools.plot.meshutil import smooth_hull_3d
 
 mpl.rcParams['figure.max_open_warning'] = 25
 
@@ -159,6 +160,60 @@ class TestStaticPlotly3D:
                        backend='plotly', show=False)
         meshes = [t for t in fig.data if t.type == 'mesh3d']
         assert meshes[0].lighting.diffuse == pytest.approx(0.6)
+
+    def test_mesh3d_gets_full_unculled_face_set(self):
+        """Regression (GH #109 rendering-fix): a lone (non-overlapping)
+        dataset's Mesh3d trace must carry the FULL face set that
+        smooth_hull_3d produces -- not some backface-culled subset (the
+        matplotlib renderer's own culled face list would punch exactly the
+        kind of hole through the plotly mesh that a fresh visual review
+        found)."""
+        pts = _blob_3d(seed=0, center=(0.0, 0.0, 0.0))
+        fig = hyp.plot([pts], '.', surface=True, backend='plotly', show=False)
+        mesh = [t for t in fig.data if t.type == 'mesh3d'][0]
+        _, expected_faces = smooth_hull_3d(pts, rounds=3, pre_inflate=1.15)
+        assert len(mesh.i) == len(expected_faces)
+        assert len(mesh.i) == len(mesh.j) == len(mesh.k)
+
+    def test_mesh3d_has_no_duplicate_faces(self):
+        pts = _blob_3d(seed=0, center=(0.0, 0.0, 0.0))
+        fig = hyp.plot([pts], '.', surface=True, backend='plotly', show=False)
+        mesh = [t for t in fig.data if t.type == 'mesh3d'][0]
+        faces = np.column_stack([mesh.i, mesh.j, mesh.k])
+        sorted_faces = np.sort(faces, axis=1)
+        uniq = np.unique(sorted_faces, axis=0)
+        assert len(uniq) == len(faces)
+
+    def test_opaque_alpha_hides_no_mesh_faces_from_overlap_trim(self):
+        """Regression: two overlapping datasets' Mesh3d traces must still
+        each carry a non-empty, valid triangle set once faces enclosed by
+        the OTHER dataset's surface are trimmed away (GH #109's fix for
+        the plotly-only "hole" when two surfaces geometrically
+        intersect)."""
+        fig = hyp.plot(_two_datasets_3d(), '.', surface={'alpha': 1.0},
+                       backend='plotly', show=False)
+        meshes = [t for t in fig.data if t.type == 'mesh3d']
+        assert len(meshes) == 2
+        for m in meshes:
+            assert len(m.i) > 0
+            faces = np.column_stack([m.i, m.j, m.k])
+            assert np.all(faces >= 0) and np.all(faces < len(m.x))
+
+    def test_enclosed_marker_points_are_hidden_not_removed(self):
+        """Regression: points a dataset's own surface encloses are hidden
+        (NaN'd) from its marker trace -- plotly cannot reliably depth-
+        composite Scatter3d points enclosed by an opaque Mesh3d surface --
+        while the trace itself keeps its full original point count (NaN
+        entries, not a shorter array)."""
+        data = _two_datasets_3d()
+        fig = hyp.plot(data, '.', surface={'alpha': 1.0}, backend='plotly',
+                       show=False)
+        markers = [t for t in fig.data
+                  if t.type == 'scatter3d' and t.mode == 'markers']
+        assert len(markers) == 2
+        for arr, trace in zip(data, markers):
+            assert len(trace.x) == len(arr)
+            assert np.isnan(np.asarray(trace.x, dtype=float)).any()
 
 
 class TestStaticPlotly2D:

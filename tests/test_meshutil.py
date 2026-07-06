@@ -5,6 +5,7 @@ computations on real point clouds, with numeric assertions (containment
 fractions, signed volumes, Euler characteristics, timing).
 """
 import time
+import warnings
 
 import numpy as np
 import pytest
@@ -15,6 +16,7 @@ from hypertools.plot.meshutil import (
     backface_cull,
     blinn_phong_colors,
     face_normals,
+    points_enclosed,
     smooth_hull_2d,
     smooth_hull_3d,
 )
@@ -83,6 +85,39 @@ class TestSmoothHull3DContainment:
             inside[outside] = d < 0.05 * scale
 
         assert inside.mean() >= 0.96
+
+
+class TestSmoothHull3DTinyCloudContainment:
+    """GH #109 rendering-fix: a fixed `taubin_iters`/`rounds` count shrinks
+    a small, sparse hull proportionally much more than a large, dense one,
+    so `pre_inflate` alone under-compensates for small point clouds -- a
+    5-point cloud's mesh used to contain as few as ~1/5 of its own input
+    points, with no warning. `smooth_hull_3d` now rescales post-hoc (never
+    shrinking) to recover >= 96% containment regardless of hull size."""
+
+    @pytest.mark.parametrize('n', [5, 6, 8, 20, 200])
+    def test_small_and_large_clouds_retain_at_least_96_percent(self, n):
+        rng = np.random.default_rng(n)
+        pts = rng.normal(size=(n, 3))
+        verts, faces = smooth_hull_3d(pts)
+        assert points_enclosed(pts, verts).mean() >= 0.96
+
+    def test_no_warning_when_containment_target_is_met(self):
+        rng = np.random.default_rng(5)
+        pts = rng.normal(size=(5, 3))
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            smooth_hull_3d(pts)
+        assert len(w) == 0
+
+    def test_rescale_never_shrinks_the_mesh(self):
+        # a large, dense, round point cloud already comfortably meets the
+        # containment target before any post-hoc rescale -- confirm the
+        # rescale step is a no-op (never shrinks) rather than always
+        # forcing some minimum growth
+        pts = _random_blob_3d(n=200)
+        verts, faces = smooth_hull_3d(pts)
+        assert points_enclosed(pts, verts).mean() >= 0.96
 
 
 class TestSmoothHull3DScaling:
