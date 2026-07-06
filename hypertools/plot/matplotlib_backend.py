@@ -1025,32 +1025,59 @@ def _draw(
             # persists across every frame update.
             _hide_no_keep_points(lines, surface)
             _hide_no_keep_points(trail, surface)
-            full_meshes = _build_mesh_list(x, surface, quiet=True)
+            # M4 fix (maintainer review, surface=True + animate='morph' on
+            # large clouds): a morph-tagged dataset NEVER gets a drawn
+            # static mesh -- `update_morph` rebuilds the single traveling
+            # hull every frame from the CURRENT (sampled/interpolated)
+            # positions (see `static_meshes` below), and its box-sizing
+            # bound comes entirely from the M3b sampled+union meshes built
+            # below. Building a full-cloud `build_mesh_3d` mesh here for a
+            # morph-tagged dataset was therefore ALWAYS pure waste (never
+            # drawn, never used once the sampled+union bound existed) --
+            # and worse, a correctness/performance cliff on large clouds:
+            # `smooth_hull_3d` (its `ConvexHull`/Taubin pipeline, and
+            # especially its `points_enclosed` containment check, a
+            # `Delaunay` build/query over the input points) scales with the
+            # FULL point count, not the usually-much-smaller `morph_samples`
+            # cap, so a ~20k-30k point raw cloud could make this one-time
+            # sizing call itself slow or memory-heavy. `surface_for_full`
+            # nulls out every morph-tagged index so `_build_mesh_list` skips
+            # them entirely; static (untagged) datasets are unaffected and
+            # still get their normal full-cloud mesh.
+            if style == "morph" and morph_state is not None:
+                surface_for_full = [
+                    None if i in morph_state["indices"] else s
+                    for i, s in enumerate(surface)
+                ]
+            else:
+                surface_for_full = surface
+            full_meshes = _build_mesh_list(x, surface_for_full, quiet=True)
             sizing_meshes = full_meshes
             if style == "morph" and morph_state is not None:
-                # M3b box-containment fix: sizing from `full_meshes` (built
-                # from each morphing dataset's FULL, differently-ORDERED
-                # cloud) is NOT a safe bound for the per-frame rebuilt mesh,
-                # even when it covers the exact same set of points --
-                # smooth_hull_3d's underlying ConvexHull/Taubin-smoothing
-                # pipeline is not invariant to input row order for hulls
-                # with many coplanar/degenerate faces (e.g. a cube's flat
-                # sides), so the SAME points in a different order can
-                # produce a mesh with a larger extent than the one used to
-                # size the cube (verified empirically: a cube-shaped cloud's
-                # full-order mesh vs. its Hungarian-reordered `sampled`
-                # mesh differ in max |vertex| by more than the fixed 2%
-                # margin). On top of that, mid-morph interpolated points are
-                # convex combinations of two consecutive `sampled` clouds
-                # and so can lie outside either endpoint's OWN hull even
-                # though they always lie inside the hull of their UNION.
-                # Fix: size the cube once, up front, from meshes built with
-                # the EXACT `sampled` arrays `update_morph` will actually
-                # draw (guaranteeing hold-frame containment) plus one mesh
-                # built from the union of every sampled cloud (a cheap,
-                # strictly-safe bound for every interpolated frame, since
-                # every interpolated point is a convex combination of union
-                # points).
+                # M3b box-containment fix: sizing a morph-tagged dataset
+                # from its FULL, differently-ORDERED cloud would not be a
+                # safe bound for the per-frame rebuilt mesh even setting
+                # aside the cost above -- smooth_hull_3d's underlying
+                # ConvexHull/Taubin-smoothing pipeline is not invariant to
+                # input row order for hulls with many coplanar/degenerate
+                # faces (e.g. a cube's flat sides), so the SAME points in a
+                # different order can produce a mesh with a larger extent
+                # than the one used to size the cube (verified empirically:
+                # a cube-shaped cloud's full-order mesh vs. its Hungarian-
+                # reordered `sampled` mesh differ in max |vertex| by more
+                # than the fixed 2% margin). On top of that, mid-morph
+                # interpolated points are convex combinations of two
+                # consecutive `sampled` clouds and so can lie outside either
+                # endpoint's OWN hull even though they always lie inside the
+                # hull of their UNION. Fix: size the cube once, up front,
+                # ONLY from meshes built with the EXACT `sampled` arrays
+                # `update_morph` will actually draw (guaranteeing hold-frame
+                # containment) plus one mesh built from the union of every
+                # sampled cloud (a cheap, strictly-safe bound for every
+                # interpolated frame, since every interpolated point is a
+                # convex combination of union points) -- cheap regardless of
+                # how large the ORIGINAL cloud was, since `sampled` is
+                # capped at `morph_samples`.
                 spec = morph_state["surface_spec"]
                 if spec is not None:
                     sampled = morph_state["sampled"]
@@ -1074,12 +1101,11 @@ def _draw(
                 # every OTHER morph-tagged slot is forced to None: only the
                 # single `mesh_slot` chosen above ever gets a (per-frame
                 # rebuilt) mesh -- there is only one traveling cloud, so
-                # only one hull. `full_meshes[mesh_slot]` (built from that
-                # dataset's FULL, unsampled cloud) is discarded here in
-                # favor of `update_morph` rebuilding it from the CURRENT
-                # interpolated (sampled) positions every frame; it was
-                # still built above so `cube_scale_anim` accounts for every
-                # morphing dataset's own full-data hull as a safe bound.
+                # only one hull. `full_meshes[i]` is already `None` for
+                # every morph-tagged `i` (see `surface_for_full` above, and
+                # the M4 fix note), so this loop is only strictly needed for
+                # `mesh_slot` itself; it is kept as an explicit, self-
+                # documenting no-op over the rest for clarity/robustness.
                 static_meshes = list(full_meshes)
                 for i in morph_state["indices"]:
                     static_meshes[i] = None

@@ -509,6 +509,69 @@ class TestBoxContainmentUnionHull:
 
 
 # ---------------------------------------------------------------------------
+# M4 review fix: surface=True + animate='morph' must size the axes box from
+# the sampled+union meshes only (M3b machinery) -- NEVER from a morph-tagged
+# dataset's full raw cloud, which was both redundant with that sizing and a
+# documented OOM/hang cliff on large (tens-of-thousands-point) clouds, since
+# `smooth_hull_3d` (especially its `points_enclosed` Delaunay containment
+# check) scales with the FULL point count, not the much smaller
+# `morph_samples` cap.
+# ---------------------------------------------------------------------------
+
+class TestMorphSurfaceSizingSkipsFullCloud:
+    def test_large_cloud_completes_quickly_and_never_builds_full_mesh(
+        self, monkeypatch
+    ):
+        """A 20,000-point Gaussian blob morphing against a small second
+        dataset, with surface=True, must (a) finish setting up the
+        animation quickly (well under the ~minutes-to-hang cliff a full-
+        cloud ConvexHull/smooth/containment pass on 20k points can trigger)
+        and (b) never call `build_mesh_3d` with anywhere near 20,000
+        points -- every call must be capped at `morph_samples` (or the
+        small union of two sampled clouds), proving the axes-box sizing
+        never touches the raw cloud."""
+        import time
+        from hypertools.plot import matplotlib_backend as mb
+
+        rng = np.random.default_rng(0)
+        big_cheap_blob = rng.standard_normal((20_000, 3))
+        small_blob = rng.standard_normal((30, 3)) + 6.0
+        morph_samples = 200
+
+        seen_point_counts = []
+        real_build_mesh_3d = mb.build_mesh_3d
+
+        def _spy_build_mesh_3d(points, *args, **kwargs):
+            seen_point_counts.append(len(points))
+            return real_build_mesh_3d(points, *args, **kwargs)
+
+        monkeypatch.setattr(mb, "build_mesh_3d", _spy_build_mesh_3d)
+
+        start = time.monotonic()
+        fig, ani = hyp.plot(
+            [big_cheap_blob, small_blob], '.', animate='morph',
+            surface=True, morph_samples=morph_samples,
+            duration=1, frame_rate=5, show=False,
+        )
+        elapsed = time.monotonic() - start
+
+        assert elapsed < 20, (
+            f"surface=True + animate='morph' setup took {elapsed:.1f}s "
+            "for a 20,000-point cloud (expected <20s) -- likely rebuilding "
+            "a full-cloud mesh solely for axes-box sizing"
+        )
+        assert seen_point_counts, "expected at least one build_mesh_3d call"
+        # the largest possible legitimate call is the union of both sampled
+        # clouds (<= 2 * morph_samples); 20,000 would blow well past this
+        assert max(seen_point_counts) <= 2 * morph_samples, (
+            f"build_mesh_3d was called with up to {max(seen_point_counts)} "
+            f"points (> 2 * morph_samples={morph_samples}) -- the full "
+            "20,000-point raw cloud was built for sizing instead of only "
+            "the sampled/union meshes"
+        )
+
+
+# ---------------------------------------------------------------------------
 # plotly backend: frame counts, camera eyes, static datasets, surface
 # ---------------------------------------------------------------------------
 

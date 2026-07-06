@@ -16,10 +16,17 @@ continuously as the underlying points rearrange themselves, all from one
 `hyp.plot` call. Since a convex hull cannot reproduce concave features,
 holds on concave shapes like the bunny necessarily render as a smooth,
 rounded blob; that loss of concavity is an expected trade-off of the
-hull-surface approach, not a bug. Hulls hug the data tightly by default
-(bounded to at most 10% overshoot past the actual points, GH #109 round
-2), so the axes box never needs a hand-computed fudge factor to contain
-the surface.
+hull-surface approach, not a bug. Hulls hug the data tightly BY
+CONSTRUCTION (each smoothing round pulls stray vertices back onto the
+original hull surface, see :func:`hypertools.plot.meshutil.smooth_hull_3d`)
+rather than via any fixed overshoot allowance, so the axes box never needs
+a hand-computed fudge factor to contain the surface. A final, bounded,
+grow-only rescale then guarantees at least 99% containment of the actual
+points; for ordinary, reasonably-sampled clouds this rescale rarely does
+more than nudge the mesh a few percent, and only grows large for very
+sparse clouds (rule of thumb: fewer than ~10 points), where a coarse,
+few-vertex hull loses proportionally more to smoothing and needs more
+correction to recover that same 99% guarantee.
 
 To keep the gallery build modest, only 5 of the 7 zoo shapes are used
 (dropping the very high point-count dragon and biplane meshes), and each

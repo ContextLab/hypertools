@@ -447,10 +447,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         # animate='morph': morph-tagged datasets never get their own STATIC
         # per-dataset mesh trace (they'd sit there, unmoving, duplicating
         # the single traveling morph mesh built below) -- excluded here via
-        # a surface list with their entries forced to None; their FULL
-        # (unsampled) cloud's hull is still measured (below) so the axes
-        # cube is sized to contain it as a safe upper bound, mirroring
-        # `matplotlib_backend.animate_plot3D`'s identical tradeoff.
+        # a surface list with their entries forced to None. This ALSO means
+        # `_build_surface_traces_3d` below never builds a mesh from a morph-
+        # tagged dataset's FULL (unsampled) cloud at all -- their box-sizing
+        # bound comes entirely from the sampled+union meshes computed below
+        # (M3b/M4), never from the full-order cloud (which would be both a
+        # correctness risk, see the M3b note just below, and, on a large raw
+        # cloud, needless cost -- mirroring `matplotlib_backend
+        # .animate_plot3D`'s identical M4 fix).
         surface_for_static = (
             [None if (morph_tags is not None and morph_tags[i]) else s
              for i, s in enumerate(surface)]

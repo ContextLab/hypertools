@@ -443,10 +443,15 @@ def plot(
         rotation during the first morph, 2 rotations during the second
         hold, etc. Each segment's own rotation count is spread uniformly
         over that segment's own frames, and the camera azimuth accumulates
-        CONTINUOUSLY across segment boundaries (no jump). `ValueError` if
-        the list length doesn't match ``2N - 1`` (names the expected
-        length), or if a list is given with any `animate` mode other than
-        `'morph'`.
+        CONTINUOUSLY across segment boundaries (no jump). `N` is the number
+        of morphing datasets AFTER the reduce/align/cluster/hue pipeline
+        (the FINAL, drawn dataset count), which can differ from the number
+        of datasets originally passed in. `ValueError` if a list is given
+        with any `animate` mode other than `'morph'` (checked immediately,
+        before the pipeline runs -- this only depends on `animate` itself),
+        or if the list length doesn't match ``2N - 1`` (names the expected
+        length; only knowable once `N` is, so checked after the pipeline
+        runs).
 
     zoom (animation only) : float
         How far to zoom into the plot, positive numbers will zoom in (default: 0)
@@ -799,6 +804,31 @@ def plot(
             "predict= is not yet supported with animate: forecast traces "
             "are static-plot only in this release. Pass animate=False (the "
             "default) to use predict=, or omit predict= for an animated plot."
+        )
+
+    # rotations= as a per-SEGMENT list is only meaningful for
+    # animate='morph' (every other mode has exactly one continuous camera
+    # sweep, with no segment boundaries to assign rotations to). Whether
+    # `animate` is IN morph mode at all is fully determined by the RAW
+    # `animate` argument -- a scalar `'morph'`, or ANY list/tuple (which
+    # `_resolve_animate_mode` below only ever uses to per-dataset-tag a
+    # morph sequence) -- never by how many datasets end up being plotted,
+    # so this mismatch is checked here, fail-fast, before the (expensive)
+    # analyze/reduce/align/cluster/hue pipeline runs, mirroring the
+    # colorbar=/surface=/density= early validation just below. The
+    # COMPLEMENTARY checks that DO depend on the FINAL (post cluster/hue-
+    # reshape) dataset count -- rotations' exact ``2N - 1`` length and the
+    # "at least 2 morph-tagged datasets" minimum -- cannot be resolved yet
+    # here and are still checked later, once `xform` (and so the final
+    # dataset count) is known; see `_resolve_animate_mode`/
+    # `resolve_morph_rotations` below.
+    if isinstance(rotations, (list, tuple)) and not (
+        animate == "morph" or isinstance(animate, (list, tuple))
+    ):
+        raise ValueError(
+            "rotations as a list is only supported with animate='morph' "
+            f"(got animate={animate!r}); pass a scalar rotations= for "
+            "this animate mode."
         )
 
     # colorbar= kwarg validation (GH #100): fail fast with a clear message
@@ -1302,16 +1332,13 @@ def plot(
         )
 
     # `rotations` as a per-SEGMENT list ([hold_1, morph_1->2, hold_2, ...],
-    # length 2 * n_morph_datasets - 1) is only meaningful for
-    # animate='morph' -- every other mode has exactly one camera sweep over
-    # the whole animation, with no segment boundaries to assign rotations
-    # to.
-    if isinstance(rotations, (list, tuple)) and morph_tags is None:
-        raise ValueError(
-            "rotations as a list is only supported with animate='morph' "
-            f"(got animate={animate!r}); pass a scalar rotations= for "
-            "this animate mode."
-        )
+    # length 2 * n_morph_datasets - 1): the mode-mismatch check (list given
+    # under a non-morph mode) was already raised, fail-fast, near the top
+    # of this function -- it depends only on the raw `animate` argument,
+    # not on `n_datasets`. The length check below, in contrast, genuinely
+    # cannot happen any earlier: `n_morph_datasets` is the count of FINAL
+    # (post cluster/hue-reshape) datasets tagged for morph, which is only
+    # known now that `xform`/`morph_tags` exist.
     if morph_tags is not None:
         rotations = resolve_morph_rotations(rotations, sum(morph_tags))
 
