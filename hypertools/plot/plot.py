@@ -649,21 +649,45 @@ def plot(
           color (resolved from `color`/`colors` if given, else the
           `palette` color cycle).
         - ``lighting`` (dict, default ``{}``): overrides the two-light
-          Blinn-Phong lighting model both backends use (see
+          Blinn-Phong lighting model BOTH backends use identically (see
           `hypertools.plot.meshutil.blinn_phong_colors`/
-          `blinn_phong_vertex_colors`): ``ambient`` (default 0.45),
-          ``diffuse`` (0.55), ``fill`` (0.25, the weak opposite-side fill
-          light), ``specular`` (0.30), and ``shininess`` (48, the specular
-          exponent). matplotlib shades per-FACE; plotly shades per-VERTEX
-          (precomputed and handed to ``go.Mesh3d`` as ``vertexcolor``, with
-          plotly's own lighting engine forced to the identity so it
-          reproduces those colors verbatim -- needed so the double-sided
-          winding workaround below doesn't render dark self-shaded
-          patches). ``roughness``/``fresnel`` are also accepted (silently
-          ignored -- they only ever applied to plotly's now-unused own
-          lighting engine). plotly's light position is fixed at
-          ``(2.5, -1.5, 3.0)`` in scene coordinates. Ignored for 2D
-          surfaces (flat fills have no lighting).
+          `blinn_phong_vertex_colors`) -- matplotlib shades per-FACE;
+          plotly shades per-VERTEX (precomputed and handed to
+          ``go.Mesh3d`` as ``vertexcolor``, with plotly's own lighting
+          engine forced to the identity so it reproduces those colors
+          verbatim -- needed so the double-sided winding workaround below
+          doesn't render dark self-shaded patches) -- so every key below
+          visibly affects both backends the same way. Accepted keys:
+
+          - ``ambient`` (float, default 0.45): flat, direction-independent
+            base brightness; higher values flatten/wash out shading
+            (matte look), 0 makes unlit faces fully black.
+          - ``diffuse`` (float, default 0.55): key-light (Lambertian)
+            contribution; scales how strongly faces facing the key light
+            brighten relative to those facing away.
+          - ``fill`` (float, default 0.25): weaker opposite-side fill-light
+            contribution, so faces angled away from the key light are not
+            rendered fully flat/black.
+          - ``specular`` (float, default 0.30): strength of the glossy
+            highlight; 0 gives a fully matte surface, higher values (e.g.
+            0.9) give a glossy/wet look.
+          - ``shininess`` (float, default 48): specular exponent -- higher
+            values (e.g. 128) tighten the highlight into a small glossy
+            spot; lower values spread it into a broad sheen.
+          - ``lightdir`` (3-vector ``(x, y, z)`` or None, default None):
+            explicit key-light direction in scene/data coordinates
+            (need not be normalized; must not be the zero vector). ``None``
+            (default) derives the key light automatically from the current
+            camera view (offset above and to the side), matching each
+            backend's own default camera-relative lighting.
+
+          plotly's light position (for its own, identity-forced lighting
+          engine, unrelated to the vertex-color computation above) is
+          fixed at ``(2.5, -1.5, 3.0)`` in scene coordinates. Ignored for
+          2D surfaces (flat fills have no lighting). Unrecognized keys
+          (e.g. the pre-GH-109-round-3 plotly-only ``roughness``/
+          ``fresnel``, which no longer affect either backend's rendering)
+          raise ``ValueError`` rather than being silently accepted.
         - ``smoothing`` (int, default 3): number of interleaved
           [subdivide, Taubin-smooth] rounds for a 3D hull (face count
           scales as ``4 ** smoothing``); ignored for 2D.

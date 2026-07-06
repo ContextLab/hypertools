@@ -21,7 +21,6 @@ __all__ = [
     "normalize_surface_arg",
     "broadcast_surface",
     "mpl_lighting_kwargs",
-    "plotly_lighting_kwargs",
     "build_mesh_3d",
     "build_outline_2d",
     "view_vector",
@@ -42,16 +41,31 @@ SURFACE_DEFAULTS = {
     "keep_points": True,
 }
 
-# mpl shading uses hypertools.plot.meshutil.blinn_phong_colors' kwargs;
-# plotly shading uses go.Mesh3d(lighting=...)'s keys. `surface['lighting']`
-# accepts the union of both -- each backend picks the subset it understands.
-_MPL_LIGHTING_KEYS = ("ambient", "diffuse", "fill", "specular", "shininess")
-_PLOTLY_LIGHTING_KEYS = ("ambient", "diffuse", "specular", "roughness", "fresnel")
+# Task R3 (2026-07-06, maintainer request: "confirm we can control
+# coloring, lighting, and shading via parameters passed to plot"): both
+# backends shade via the SAME two-light Blinn-Phong model
+# (`hypertools.plot.meshutil.blinn_phong_colors`/`blinn_phong_vertex_colors`)
+# -- matplotlib per-face, plotly per-vertex (precomputed and handed to
+# `go.Mesh3d` as `vertexcolor`, with plotly's OWN lighting engine forced to
+# the identity; see `PLOTLY_IDENTITY_LIGHTING` below) -- so `_LIGHTING_KEYS`
+# is the single, shared set of keys both `mpl_lighting_kwargs` callers (in
+# both `matplotlib_backend.py` and `plotly_backend.py`) resolve overrides
+# against; there is no longer a separate plotly-only key set. `roughness`
+# and `fresnel` (previously accepted, silently ignored) were removed here:
+# they only ever applied to plotly's own per-face lighting engine, which
+# GH #109 round 3 (commit fd064aa5) replaced with the precomputed
+# vertex-shading above -- accepting keys that provably had zero visual
+# effect on either backend violates this exact maintainer request, so they
+# now raise the same "unknown lighting key" `ValueError` as any other typo
+# instead of being silently swallowed. `lightdir` is new (Task R3): the
+# Blinn-Phong machinery already supported an explicit key-light direction
+# (`blinn_phong_colors`/`blinn_phong_vertex_colors`'s `lightdir` parameter)
+# but no `surface['lighting']` key ever exposed it to callers.
+_LIGHTING_KEYS = ("ambient", "diffuse", "fill", "specular", "shininess", "lightdir")
+_MPL_LIGHTING_KEYS = _LIGHTING_KEYS  # backwards-compat alias
 _MPL_LIGHTING_DEFAULTS = dict(
-    ambient=0.45, diffuse=0.55, fill=0.25, specular=0.30, shininess=48
-)
-_PLOTLY_LIGHTING_DEFAULTS = dict(
-    ambient=0.45, diffuse=0.6, specular=0.25, roughness=0.35, fresnel=0.15
+    ambient=0.45, diffuse=0.55, fill=0.25, specular=0.30, shininess=48,
+    lightdir=None,
 )
 PLOTLY_LIGHTPOSITION = dict(x=2.5, y=-1.5, z=3.0)
 
@@ -88,13 +102,25 @@ def _validate_surface_dict(d):
         raise ValueError(
             f"surface['lighting'] must be a dict; got {lighting!r}"
         )
-    allowed_lighting = set(_MPL_LIGHTING_KEYS) | set(_PLOTLY_LIGHTING_KEYS)
+    allowed_lighting = set(_LIGHTING_KEYS)
     unknown_lighting = set(lighting) - allowed_lighting
     if unknown_lighting:
         raise ValueError(
             f"surface['lighting'] got unknown key(s) {sorted(unknown_lighting)}; "
             f"valid keys are {sorted(allowed_lighting)}."
         )
+    if "lightdir" in lighting and lighting["lightdir"] is not None:
+        lightdir = np.asarray(lighting["lightdir"], dtype=float)
+        if lightdir.shape != (3,) or not np.all(np.isfinite(lightdir)):
+            raise ValueError(
+                "surface['lighting']['lightdir'] must be a finite 3-vector "
+                f"(x, y, z) or None; got {lighting['lightdir']!r}"
+            )
+        if np.allclose(lightdir, 0.0):
+            raise ValueError(
+                "surface['lighting']['lightdir'] must not be the zero "
+                "vector (no well-defined direction)"
+            )
     merged = dict(SURFACE_DEFAULTS)
     merged.update(d)
     merged["lighting"] = lighting
@@ -168,20 +194,15 @@ def broadcast_surface(normalized, n):
 
 
 def mpl_lighting_kwargs(spec):
-    """Resolve `spec['lighting']` overrides onto the matplotlib
-    (Blinn-Phong) lighting defaults; extra (plotly-only) keys are ignored."""
+    """Resolve `spec['lighting']` overrides onto the shared two-light
+    Blinn-Phong lighting defaults (Task R3: both matplotlib and plotly
+    resolve their shading through this same function -- see
+    `hypertools.plot.meshutil.blinn_phong_colors`/`blinn_phong_vertex_colors`
+    and `_LIGHTING_KEYS` above -- so both backends honor exactly the same
+    ``surface['lighting']`` keys)."""
     kw = dict(_MPL_LIGHTING_DEFAULTS)
     kw.update({k: v for k, v in spec.get("lighting", {}).items()
-               if k in _MPL_LIGHTING_KEYS})
-    return kw
-
-
-def plotly_lighting_kwargs(spec):
-    """Resolve `spec['lighting']` overrides onto the plotly ``go.Mesh3d``
-    lighting defaults; extra (mpl-only) keys are ignored."""
-    kw = dict(_PLOTLY_LIGHTING_DEFAULTS)
-    kw.update({k: v for k, v in spec.get("lighting", {}).items()
-               if k in _PLOTLY_LIGHTING_KEYS})
+               if k in _LIGHTING_KEYS})
     return kw
 
 

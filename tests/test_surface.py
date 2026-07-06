@@ -35,6 +35,26 @@ def _two_datasets_2d():
     return [_blob_2d(seed=0, center=(-2, 0)), _blob_2d(seed=1, center=(2, 0))]
 
 
+def _mpl_facecolors(fig):
+    """A single dataset's Poly3DCollection facecolors as an (f, 4) RGBA
+    array, for exact numeric comparison across two separately-built figures
+    of the SAME points (mesh face count/ordering is deterministic given the
+    same input points -- only shading differs)."""
+    colls = [c for c in fig.axes[0].collections
+            if isinstance(c, Poly3DCollection)]
+    assert len(colls) == 1
+    return np.asarray(colls[0].get_facecolor())
+
+
+def _plotly_vertexcolors(fig):
+    """A single dataset's Mesh3d ``vertexcolor`` strings, parsed into an
+    (n, 3) integer RGB array."""
+    meshes = [t for t in fig.data if t.type == 'mesh3d']
+    assert len(meshes) == 1
+    return np.array([[int(v) for v in c[4:-1].split(',')]
+                     for c in meshes[0].vertexcolor], dtype=float)
+
+
 class TestStaticMatplotlib3D:
     def test_collection_exists_with_faces(self):
         fig = hyp.plot(_two_datasets_3d(), '.', surface=True, show=False)
@@ -106,6 +126,29 @@ class TestValidation:
         with pytest.raises(ValueError):
             hyp.plot(_two_datasets_3d(),
                     surface={'lighting': {'bogus': 1}}, show=False)
+
+    @pytest.mark.parametrize('key', ['roughness', 'fresnel'])
+    def test_orphaned_plotly_only_lighting_keys_now_raise(self, key):
+        """Task R3: pre-GH-109-round-3 ``roughness``/``fresnel`` used to be
+        silently ACCEPTED but had zero effect on either backend's rendering
+        (plotly's own lighting engine -- the only thing that ever read
+        them -- was replaced by precomputed vertex-color shading). Accepting
+        a knob that provably does nothing violates "confirm we can control
+        coloring/lighting/shading via parameters" -- they now raise like any
+        other unrecognized key."""
+        with pytest.raises(ValueError):
+            hyp.plot(_two_datasets_3d(), surface={'lighting': {key: 0.5}},
+                     show=False)
+
+    def test_lightdir_wrong_shape_raises_valueerror(self):
+        with pytest.raises(ValueError):
+            hyp.plot(_two_datasets_3d(),
+                    surface={'lighting': {'lightdir': (1, 2)}}, show=False)
+
+    def test_lightdir_zero_vector_raises_valueerror(self):
+        with pytest.raises(ValueError):
+            hyp.plot(_two_datasets_3d(),
+                    surface={'lighting': {'lightdir': (0, 0, 0)}}, show=False)
 
     def test_1d_data_raises_valueerror(self):
         data_1d = [np.random.default_rng(0).normal(size=(20, 1))]
@@ -271,6 +314,126 @@ class TestStaticPlotly2D:
             assert len(t.x) > 3
             # explicitly closed
             assert t.x[0] == t.x[-1] and t.y[0] == t.y[-1]
+
+
+class TestKnobControlBothBackends:
+    """Task R3 (maintainer request: "confirm we can control coloring,
+    lighting, and shading via parameters passed to plot"): for every
+    accepted ``surface``/``surface['lighting']`` knob, changing it must
+    visibly (numerically) change the rendered colors on BOTH backends --
+    matplotlib's per-face ``Poly3DCollection`` facecolors and plotly's
+    per-vertex ``Mesh3d.vertexcolor`` -- since GH #109 round 3 (commit
+    fd064aa5) made plotly shade via the SAME precomputed Blinn-Phong
+    vertex-color computation matplotlib uses (rather than its own,
+    now-identity-forced lighting engine). One dataset per figure so mesh
+    face/vertex count and ordering are identical across the two compared
+    renders (same input points -- only the surface spec differs)."""
+
+    def _mpl(self, spec):
+        return hyp.plot([_blob_3d()], '.', surface=spec, show=False)
+
+    def _plotly(self, spec):
+        return hyp.plot([_blob_3d()], '.', surface=spec, backend='plotly',
+                        show=False)
+
+    def test_color_changes_both_backends(self):
+        base_mpl = _mpl_facecolors(self._mpl(True))
+        red_mpl = _mpl_facecolors(self._mpl({'color': 'crimson'}))
+        assert not np.allclose(base_mpl[:, :3], red_mpl[:, :3])
+
+        base_pl = _plotly_vertexcolors(self._plotly(True))
+        red_pl = _plotly_vertexcolors(self._plotly({'color': 'crimson'}))
+        assert not np.allclose(base_pl, red_pl)
+
+    def test_alpha_honored_both_backends(self):
+        """mpl: `alpha` is the collection's own RGBA alpha channel (real
+        compositing). plotly: `alpha` is baked into the base color via
+        alpha-compositing towards white BEFORE shading (see
+        `plotly_backend._blend_toward_white`) -- a lower alpha therefore
+        makes the precomputed vertex colors lighter (higher mean channel
+        value), not more see-through."""
+        opaque_mpl = _mpl_facecolors(self._mpl({'alpha': 1.0}))
+        translucent_mpl = _mpl_facecolors(self._mpl({'alpha': 0.3}))
+        assert np.allclose(opaque_mpl[:, 3], 1.0)
+        assert np.allclose(translucent_mpl[:, 3], 0.3)
+
+        opaque_pl = _plotly_vertexcolors(self._plotly({'alpha': 1.0}))
+        translucent_pl = _plotly_vertexcolors(self._plotly({'alpha': 0.3}))
+        assert translucent_pl.mean() > opaque_pl.mean()
+
+    def test_ambient_raises_darkest_face_both_backends(self):
+        low = _mpl_facecolors(self._mpl({'lighting': {'ambient': 0.1}}))
+        high = _mpl_facecolors(self._mpl({'lighting': {'ambient': 0.9}}))
+        assert high[:, :3].sum(axis=1).min() > low[:, :3].sum(axis=1).min()
+
+        low_pl = _plotly_vertexcolors(self._plotly({'lighting': {'ambient': 0.1}}))
+        high_pl = _plotly_vertexcolors(self._plotly({'lighting': {'ambient': 0.9}}))
+        assert high_pl.sum(axis=1).min() > low_pl.sum(axis=1).min()
+
+    def test_specular_raises_brightest_face_both_backends(self):
+        base_kw = {'ambient': 0.2, 'diffuse': 0.3, 'shininess': 64}
+        low = _mpl_facecolors(self._mpl(
+            {'lighting': dict(base_kw, specular=0.0)}))
+        high = _mpl_facecolors(self._mpl(
+            {'lighting': dict(base_kw, specular=0.95)}))
+        assert high[:, :3].sum(axis=1).max() > low[:, :3].sum(axis=1).max()
+
+        low_pl = _plotly_vertexcolors(self._plotly(
+            {'lighting': dict(base_kw, specular=0.0)}))
+        high_pl = _plotly_vertexcolors(self._plotly(
+            {'lighting': dict(base_kw, specular=0.95)}))
+        assert high_pl.sum(axis=1).max() > low_pl.sum(axis=1).max()
+
+    def test_shininess_changes_colors_both_backends(self):
+        base_kw = {'specular': 0.9}
+        tight = _mpl_facecolors(self._mpl(
+            {'lighting': dict(base_kw, shininess=200)}))
+        broad = _mpl_facecolors(self._mpl(
+            {'lighting': dict(base_kw, shininess=4)}))
+        assert not np.allclose(tight[:, :3], broad[:, :3])
+
+        tight_pl = _plotly_vertexcolors(self._plotly(
+            {'lighting': dict(base_kw, shininess=200)}))
+        broad_pl = _plotly_vertexcolors(self._plotly(
+            {'lighting': dict(base_kw, shininess=4)}))
+        assert not np.allclose(tight_pl, broad_pl)
+
+    def test_fill_changes_colors_both_backends(self):
+        low = _mpl_facecolors(self._mpl({'lighting': {'fill': 0.0}}))
+        high = _mpl_facecolors(self._mpl({'lighting': {'fill': 0.9}}))
+        assert not np.allclose(low[:, :3], high[:, :3])
+
+        low_pl = _plotly_vertexcolors(self._plotly({'lighting': {'fill': 0.0}}))
+        high_pl = _plotly_vertexcolors(self._plotly({'lighting': {'fill': 0.9}}))
+        assert not np.allclose(low_pl, high_pl)
+
+    def test_diffuse_changes_colors_both_backends(self):
+        low = _mpl_facecolors(self._mpl({'lighting': {'diffuse': 0.05}}))
+        high = _mpl_facecolors(self._mpl({'lighting': {'diffuse': 0.95}}))
+        assert not np.allclose(low[:, :3], high[:, :3])
+
+        low_pl = _plotly_vertexcolors(self._plotly({'lighting': {'diffuse': 0.05}}))
+        high_pl = _plotly_vertexcolors(self._plotly({'lighting': {'diffuse': 0.95}}))
+        assert not np.allclose(low_pl, high_pl)
+
+    def test_lightdir_moves_the_brightest_face_both_backends(self):
+        """A custom `lightdir` pointed away from the auto-derived default
+        key light must move which face/vertex is brightest -- not just
+        perturb magnitudes -- confirming the direction itself is honored,
+        not merely re-normalized away."""
+        default_mpl = _mpl_facecolors(self._mpl(True))
+        custom_mpl = _mpl_facecolors(self._mpl(
+            {'lighting': {'lightdir': (-1, -1, 1)}}))
+        assert not np.allclose(default_mpl[:, :3], custom_mpl[:, :3])
+        assert (default_mpl[:, :3].sum(axis=1).argmax()
+                != custom_mpl[:, :3].sum(axis=1).argmax())
+
+        default_pl = _plotly_vertexcolors(self._plotly(True))
+        custom_pl = _plotly_vertexcolors(self._plotly(
+            {'lighting': {'lightdir': (-1, -1, 1)}}))
+        assert not np.allclose(default_pl, custom_pl)
+        assert (default_pl.sum(axis=1).argmax()
+                != custom_pl.sum(axis=1).argmax())
 
 
 class TestAnimatedMatplotlib:
