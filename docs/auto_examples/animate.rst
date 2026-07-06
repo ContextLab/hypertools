@@ -31,8 +31,8 @@ calling hyp.plot.
 
 .. video:: /auto_examples/images/sphx_glr_animate_001.mp4
    :class: sphx-glr-single-img
-   :height: 480
-   :width: 640
+   :height: 960
+   :width: 1368
    :autoplay:
 
 
@@ -60,7 +60,7 @@ calling hyp.plot.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 9.527 seconds)
+   **Total running time of the script:** (0 minutes 15.666 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate.py:

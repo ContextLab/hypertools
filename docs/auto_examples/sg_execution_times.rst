@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**46:09.593** total execution time for 48 files **from auto_examples**:
+**50:09.139** total execution time for 48 files **from auto_examples**:
 
 .. container::
 
@@ -33,36 +33,36 @@ Computation times
      - Time
      - Mem (MB)
    * - :ref:`sphx_glr_auto_examples_animate_plotly.py` (``animate_plotly.py``)
-     - 46:06.097
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_interactive_backend.py` (``plot_interactive_backend.py``)
-     - 00:03.341
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_multicolored_lines.py` (``plot_multicolored_lines.py``)
-     - 00:00.113
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_geo.py` (``plot_geo.py``)
-     - 00:00.042
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_analyze.py` (``analyze.py``)
-     - 00:00.000
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_animate.py` (``animate.py``)
-     - 00:00.000
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_animate_MDS.py` (``animate_MDS.py``)
-     - 00:00.000
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_animate_spin.py` (``animate_spin.py``)
-     - 00:00.000
+     - 46:56.795
      - 0.0
    * - :ref:`sphx_glr_auto_examples_animate_surface_morph.py` (``animate_surface_morph.py``)
-     - 00:00.000
+     - 01:58.959
      - 0.0
-   * - :ref:`sphx_glr_auto_examples_animate_trails_mix.py` (``animate_trails_mix.py``)
-     - 00:00.000
+   * - :ref:`sphx_glr_auto_examples_animate.py` (``animate.py``)
+     - 00:15.666
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_save_movie.py` (``save_movie.py``)
+     - 00:13.138
      - 0.0
    * - :ref:`sphx_glr_auto_examples_chemtrails.py` (``chemtrails.py``)
+     - 00:08.234
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_precog.py` (``precog.py``)
+     - 00:08.218
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_animate_spin.py` (``animate_spin.py``)
+     - 00:08.160
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_animate_trails_mix.py` (``animate_trails_mix.py``)
+     - 00:08.023
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_animate_MDS.py` (``animate_MDS.py``)
+     - 00:07.712
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_shape_morph.py` (``plot_shape_morph.py``)
+     - 00:04.233
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_analyze.py` (``analyze.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_explore.py` (``explore.py``)
@@ -119,10 +119,16 @@ Computation times
    * - :ref:`sphx_glr_auto_examples_plot_digits.py` (``plot_digits.py``)
      - 00:00.000
      - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_geo.py` (``plot_geo.py``)
+     - 00:00.000
+     - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_hue.py` (``plot_hue.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_impute.py` (``plot_impute.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_interactive_backend.py` (``plot_interactive_backend.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_labels.py` (``plot_labels.py``)
@@ -135,6 +141,9 @@ Computation times
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_mixture_models.py` (``plot_mixture_models.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_plot_multicolored_lines.py` (``plot_multicolored_lines.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_multiindex.py` (``plot_multiindex.py``)
@@ -152,9 +161,6 @@ Computation times
    * - :ref:`sphx_glr_auto_examples_plot_procrustes.py` (``plot_procrustes.py``)
      - 00:00.000
      - 0.0
-   * - :ref:`sphx_glr_auto_examples_plot_shape_morph.py` (``plot_shape_morph.py``)
-     - 00:00.000
-     - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_shapes_zoo.py` (``plot_shapes_zoo.py``)
      - 00:00.000
      - 0.0
@@ -167,12 +173,6 @@ Computation times
    * - :ref:`sphx_glr_auto_examples_plot_text.py` (``plot_text.py``)
      - 00:00.000
      - 0.0
-   * - :ref:`sphx_glr_auto_examples_precog.py` (``precog.py``)
-     - 00:00.000
-     - 0.0
    * - :ref:`sphx_glr_auto_examples_save_image.py` (``save_image.py``)
-     - 00:00.000
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_save_movie.py` (``save_movie.py``)
      - 00:00.000
      - 0.0

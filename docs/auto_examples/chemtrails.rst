@@ -33,8 +33,8 @@ precog argument to plot a low-opacity trace of the entire timeseries.
 
 .. video:: /auto_examples/images/sphx_glr_chemtrails_001.mp4
    :class: sphx-glr-single-img
-   :height: 480
-   :width: 640
+   :height: 960
+   :width: 1280
    :autoplay:
 
 
@@ -62,7 +62,7 @@ precog argument to plot a low-opacity trace of the entire timeseries.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 8.012 seconds)
+   **Total running time of the script:** (0 minutes 8.234 seconds)
 
 
 .. _sphx_glr_download_auto_examples_chemtrails.py:

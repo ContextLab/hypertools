@@ -32,8 +32,8 @@ depends on having ffmpeg installed on your computer.
 
 .. video:: /auto_examples/images/sphx_glr_save_movie_001.mp4
    :class: sphx-glr-single-img
-   :height: 480
-   :width: 640
+   :height: 960
+   :width: 1280
    :autoplay:
 
 
@@ -64,7 +64,7 @@ depends on having ffmpeg installed on your computer.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 12.360 seconds)
+   **Total running time of the script:** (0 minutes 13.138 seconds)
 
 
 .. _sphx_glr_download_auto_examples_save_movie.py:

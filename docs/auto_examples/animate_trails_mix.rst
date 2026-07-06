@@ -34,8 +34,8 @@ can show different trail styles (GH #127): a low-opacity trace of the past
 
 .. video:: /auto_examples/images/sphx_glr_animate_trails_mix_001.mp4
    :class: sphx-glr-single-img
-   :height: 480
-   :width: 640
+   :height: 960
+   :width: 1280
    :autoplay:
 
 
@@ -75,7 +75,7 @@ can show different trail styles (GH #127): a low-opacity trace of the past
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 6.688 seconds)
+   **Total running time of the script:** (0 minutes 8.023 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate_trails_mix.py:

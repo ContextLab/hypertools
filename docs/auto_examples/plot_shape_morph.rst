@@ -27,14 +27,21 @@ biplane -- see the *A zoo of 3D shapes* example) can be morphed smoothly
 from one point cloud to the next with the ``animate='morph'`` `hyp.plot`
 style (PR #272, maintainer request 2026-07-06 -- see the `animate`/
 `rotations`/`morph_samples` entries of the `hyp.plot` docstring for the
-full spec). Under the hood, an equal-sized sample of points is drawn from
-each shape, consecutive shapes are matched point-for-point with the
-Hungarian algorithm (`scipy.optimize.linear_sum_assignment`) so that each
-point travels the shortest total distance to its partner in the next
-shape, and the coordinates are eased between shapes frame by frame while
-the camera spins around the scene -- exactly the hand-rolled recipe this
-example used to implement itself before `animate='morph'` existed, now
-built into the library behind a single `hyp.plot` call. `rotations` also
+full spec). Under the hood, every shape keeps its own full point count by
+default (smaller shapes are padded up to the largest shape's count by
+duplicating random points of their own) -- but the zoo's shapes range up
+to ~90,000 points (the biplane), and the Hungarian assignment used to
+match consecutive shapes point-for-point is roughly ``O(n^3)``, so
+`morph_samples=1000` below first downsamples every shape to a tractable
+1000 points (build-time: the full, uncapped 90k-point target would make
+the matching step infeasible for a gallery build). Consecutive shapes are
+matched point-for-point with the Hungarian algorithm
+(`scipy.optimize.linear_sum_assignment`) so that each point travels the
+shortest total distance to its partner in the next shape, and the
+coordinates are eased between shapes frame by frame while the camera
+spins around the scene -- exactly the hand-rolled recipe this example
+used to implement itself before `animate='morph'` existed, now built into
+the library behind a single `hyp.plot` call. `rotations` also
 accepts a per-segment list for finer camera control: below, holds spin a
 slow, easy-to-watch full rotation while each transition only spins a
 brisk quarter-turn, so the camera visibly "steps" forward every time one
@@ -44,14 +51,14 @@ how much SCREEN TIME it gets, not how fast it spins, so the full-rotation
 holds below play roughly 4x longer than the quarter-turn transitions
 (1 / 0.25), never faster.
 
-.. GENERATED FROM PYTHON SOURCE LINES 29-65
+.. GENERATED FROM PYTHON SOURCE LINES 36-75
 
 
 
 .. video:: /auto_examples/images/sphx_glr_plot_shape_morph_001.mp4
    :class: sphx-glr-single-img
-   :height: 480
-   :width: 640
+   :height: 960
+   :width: 1280
    :autoplay:
 
 
@@ -94,14 +101,17 @@ holds below play roughly 4x longer than the quarter-turn transitions
     # same total length as an equal-time split would have given).
     rotations = [1, 0.25] * (len(shapes) - 1) + [1]
 
+    # morph_samples=1000: caps every shape at 1000 points (build tractability --
+    # see module docstring) before the Hungarian matching step.
     fig, ani = hyp.plot(clouds, fmt='.', color='k', markersize=1.5,
                         animate='morph', rotations=rotations,
+                        morph_samples=1000,
                         duration=len(rotations), frame_rate=30)
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 3.723 seconds)
+   **Total running time of the script:** (0 minutes 4.233 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_shape_morph.py:

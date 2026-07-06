@@ -63,14 +63,14 @@ per-frame rebuild fast. The mesh smoothing is also capped at 2 rounds
 rather than the library default of 3 (roughly 20ms/frame instead of
 ~100ms+, measured on this machine).
 
-.. GENERATED FROM PYTHON SOURCE LINES 48-115
+.. GENERATED FROM PYTHON SOURCE LINES 48-120
 
 
 
 .. video:: /auto_examples/images/sphx_glr_animate_surface_morph_001.mp4
    :class: sphx-glr-single-img
-   :height: 480
-   :width: 640
+   :height: 960
+   :width: 1280
    :autoplay:
 
 
@@ -140,6 +140,11 @@ rather than the library default of 3 (roughly 20ms/frame instead of
         'keep_points': True,
     }
 
+    # morph_samples=n_points: every shape is ALREADY downsampled to exactly
+    # n_points above, so under the new full-sample-with-duplication semantics
+    # (PR #272 follow-up, 2026-07-06) this is a no-op safety cap -- no shape
+    # ever exceeds n_points, so none is downsampled again and no duplication
+    # is needed (all 5 clouds already share the same point count).
     fig, ani = hyp.plot(clouds, fmt='.', color='k', markersize=0.6,
                         animate='morph', rotations=rotations,
                         duration=12, frame_rate=30,
@@ -151,7 +156,7 @@ rather than the library default of 3 (roughly 20ms/frame instead of
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (1 minutes 58.242 seconds)
+   **Total running time of the script:** (1 minutes 58.959 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate_surface_morph.py:
