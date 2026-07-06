@@ -100,6 +100,9 @@ def _draw_one_density_3d(ax, pts, spec, color, label="", boost=1.0):
                 facecolor=color, edgecolor="none", linewidths=0, shade=False,
             )
             coll.set_label("_nolegend_")
+            # axes-box slicing fix (see `plot_cube`): unclip so this layer
+            # never gets sliced by Axes3D's shrunk-square viewport.
+            coll.set_clip_on(False)
             ax.add_collection3d(coll)
     else:
         warnings.warn(
@@ -112,9 +115,11 @@ def _draw_one_density_3d(ax, pts, spec, color, label="", boost=1.0):
         )
         rng = np.random.default_rng()
         fog = kde.resample(4000, seed=rng).T
-        ax.scatter(fog[:, 0], fog[:, 1], fog[:, 2], s=6, c=[color],
-                  alpha=min(0.03 * alpha_scale, 1.0), edgecolors="none",
-                  depthshade=False, label="_nolegend_")
+        fog_coll = ax.scatter(fog[:, 0], fog[:, 1], fog[:, 2], s=6, c=[color],
+                              alpha=min(0.03 * alpha_scale, 1.0),
+                              edgecolors="none", depthshade=False,
+                              label="_nolegend_")
+        fog_coll.set_clip_on(False)
 
 
 def _draw_density_3d(ax, points_list, density, density_colors):
@@ -177,6 +182,9 @@ def _shade_and_cull_3d(ax, mesh_list, surface, surface_colors, elev, azim,
             linewidths=0, shade=False, antialiaseds=(alpha < 1.0),
         )
         coll.set_label("_nolegend_")
+        # axes-box slicing fix (see `plot_cube`): unclip so a surface hull
+        # never gets sliced by Axes3D's shrunk-square viewport.
+        coll.set_clip_on(False)
         ax.add_collection3d(coll)
         new_colls.append(coll)
     return new_colls
@@ -400,6 +408,21 @@ def _draw(
 
     # plot data in 3D
     def plot3D(data, fig, ax):
+        # NOTE (D4 axes-box-slicing investigation): the static path is NOT
+        # subject to the animated path's defect -- only `animate_plot3D`
+        # forces `ax.set_position([0, 0, 1, 1])` (full canvas), which is
+        # what makes `Axes3D.apply_aspect`'s shrunk-square-viewport
+        # mismatch with `clip_on=True`'s clip_box actually slice content.
+        # The static path keeps matplotlib's normal (non-stretched) subplot
+        # margins, so its clip_box already matches what's drawn -- verified
+        # empirically (before/after pixel diff at several elev/azim
+        # combinations, including a wide/flat dataset, showed the cube
+        # always complete either way). Adding `set_clip_on(False)` here
+        # was tried and reverted: it changed `tight_layout()`'s computed
+        # axes bbox (an unclipped 3-D line's `get_window_extent()` differs
+        # from a clipped one), visibly resizing the static cube for no
+        # bug-fixing benefit -- not worth the regression risk for a path
+        # that was never actually clipping.
         n = len(data)
         for i in range(n):
             ikwargs = kwargs_list[i]
@@ -674,7 +697,19 @@ def _draw(
                 np.asarray(cube[side][1]) * scale,
                 np.asarray(cube[side][2]) * scale,
             )
-            plane_list.append(ax.plot_wireframe(Xs, Ys, Zs, **cube_kwargs))
+            wf = ax.plot_wireframe(Xs, Ys, Zs, **cube_kwargs)
+            # axes-box slicing fix: Axes3D's aspect machinery shrinks the
+            # effective viewport (`ax.get_position()`) to a centered square
+            # at draw time regardless of `ax.set_position([0, 0, 1, 1])`
+            # (see the comment above that call in `animate_plot3D`) --
+            # matplotlib's default `clip_on=True` then clips this wireframe
+            # to that narrower square, slicing the cube whenever its
+            # projection is wider than tall (e.g. at some rotation angles
+            # for animated plots, or wide/flat data). Disabling clipping
+            # lets it draw across the whole (already properly zoom/limit-
+            # sized) canvas instead.
+            wf.set_clip_on(False)
+            plane_list.append(wf)
         return plane_list
 
     def plot_square(ax, scale=1, **square_kwargs):
@@ -1028,6 +1063,17 @@ def _draw(
             if _trail_line is not None:
                 _trail_line.set_label('_nolegend_')
 
+        # axes-box slicing fix (see `plot_cube`): unclip every data/trail
+        # line artist -- Axes3D's shrunk-square viewport (`ax.get_position()`
+        # after `apply_aspect()` ignores the full-canvas `ax.set_position`
+        # call above) otherwise clips these lines exactly like the cube
+        # wireframe, at any rotation angle where the projected scene is
+        # wider than tall (the maintainer-reported "cut off right side"
+        # symptom, most visible with wide/flat trajectories like chemtrails).
+        for _artist in itertools.chain(lines, trail):
+            if _artist is not None:
+                _artist.set_clip_on(False)
+
         # animate='morph' (Hungarian-matched point-cloud morphs, maintainer
         # request): build the single traveling artist here (before the
         # surface/cube-scale block below, which needs `morph_state` set to
@@ -1098,6 +1144,9 @@ def _draw(
                 color=ds_colors[0],
             )
             morph_artist.set_label("_nolegend_")
+            # axes-box slicing fix (see `plot_cube`): unclip the traveling
+            # morph point-cloud artist too.
+            morph_artist.set_clip_on(False)
             if (morph_surface_spec is not None
                     and not morph_surface_spec.get("keep_points", True)):
                 morph_artist.set_visible(False)

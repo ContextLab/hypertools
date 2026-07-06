@@ -34,6 +34,37 @@ sizing in `matplotlib_backend.animate_plot3D`) ever breaks the margin for
 any style, these tests fail. The floor (15px) is deliberately far below
 every measured value above -- loose enough to tolerate CI font/anti-
 aliasing variation, tight enough to catch an actual clipping regression.
+
+D4 diagnosis (2026-07-06, maintainer report: "sphx_glr_chemtrails_001.gif
+in the 3 second range has the cut off right side issue"): the D1/D3
+harnesses above measured *margins* (nearest inked pixel to the canvas
+edge) using isotropic blob clouds and a synthetic zig-zag, and never
+caught the real defect because neither data shape happens to project wide
+enough, at the sampled frames, to trigger it. The actual bug is
+`ax.get_position()` after ``fig.canvas.draw()`` -- ``Axes3D.apply_aspect``
+recomputes the axes viewport to a centered SQUARE (e.g.
+``Bbox(x0=0.125, y0=0.0, x1=0.875, y1=1.0)`` on a 640x480 canvas) which
+IGNORES the full-canvas ``ax.set_position([0, 0, 1, 1])`` call in
+`animate_plot3D`. Every 3-D artist (`Line3D` from `ax.plot`,
+`Line3DCollection` from `ax.plot_wireframe`, `Poly3DCollection` surfaces)
+defaults to ``clip_on=True`` with its `clip_box` tied to that SAME shrunk
+square, so whenever the projected cube/data is wider than tall (common at
+many rotation angles, and especially for real elongated trajectories like
+`examples/chemtrails.py`'s `weights_avg` data), content is sliced by a
+hard vertical cut at the square's left/right edge -- a real defect, not a
+margin/measurement artifact. Confirmed directly: `ax.get_position()`
+after drawing a real `chemtrails.py` render is the shrunk square above
+(not `[0, 0, 1, 1]`), and every `Line3D`/`Line3DCollection` had
+``clip_on=True`` with a `clip_box` derived from it.
+
+Fix: every 3-D scene artist created in `matplotlib_backend.py` (cube
+wireframe, data/trail lines, the morph traveling point-cloud artist,
+surface `Poly3DCollection`s, density iso-surfaces/scatter-fog) now calls
+``set_clip_on(False)`` at creation, in both the animated AND static
+paths. `TestAxesBoxNoClipping` below locks this in directly (clip_on
+assertions + cube-corner containment/ink checks on a wide, chemtrails-
+style trajectory) rather than only via margins, since a margin-only guard
+is exactly what missed this the first two times.
 """
 import shutil
 
@@ -43,11 +74,13 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.animation as mpl_animation
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import proj3d
 from PIL import Image, ImageSequence
 
 import hypertools as hyp
 
 MARGIN_FLOOR_PX = 15
+NOCLIP_MARGIN_FLOOR_PX = 5
 HAS_FFMPEG = shutil.which('ffmpeg') is not None
 
 
@@ -449,3 +482,143 @@ class TestChemtrailsOvershootMargins:
         plt.close(fig)
         _assert_healthy(mins, f"animate=True + chemtrails=True (zigzag), "
                               f"{total} frames")
+
+
+def _inked_mask(fig, bg_thresh=250):
+    """Same "is this pixel part of the drawn scene" test `_measure_margins`
+    uses, exposed standalone (no edge/legend bookkeeping) for corner-ink
+    lookups below."""
+    fig.canvas.draw()
+    buf = np.asarray(fig.canvas.buffer_rgba())
+    rgb = buf[:, :, :3].astype(np.int32)
+    return rgb.min(axis=2) < bg_thresh
+
+
+def _cube_corner_pixels(fig, ax, scale=1.0):
+    """Project the 8 corners of the ``[-scale, scale]`` data cube through
+    the CURRENT camera (``ax.get_proj()``) to canvas pixel coordinates
+    (row, col), image convention (row 0 = top), matching `_inked_mask`'s
+    array layout."""
+    fig.canvas.draw()
+    h = fig.canvas.get_width_height()[1]
+    proj = ax.get_proj()
+    pixels = []
+    for cx in (-scale, scale):
+        for cy in (-scale, scale):
+            for cz in (-scale, scale):
+                x2, y2, _ = proj3d.proj_transform(cx, cy, cz, proj)
+                px, py = ax.transData.transform((x2, y2))
+                pixels.append((h - py, px))  # (row, col)
+    return pixels
+
+
+class TestAxesBoxNoClipping:
+    """D4: the real defect (see module docstring) is `clip_on=True` on
+    every 3-D scene artist, with its `clip_box` tied to `ax.get_position()`
+    -- which `Axes3D.apply_aspect` shrinks to a centered square regardless
+    of `animate_plot3D`'s full-canvas `ax.set_position([0, 0, 1, 1])`. A
+    margin-only guard (`_assert_healthy` above) already existed and did
+    NOT catch this, because it only ever exercised near-isotropic blob
+    clouds -- these tests exercise clip_on directly, plus cube-corner
+    containment/ink on a wide, `chemtrails.py`-style trajectory (the
+    reported case)."""
+
+    @staticmethod
+    def _wide_flat_trajectory(n=200, seed=0):
+        """A wide, flat, elongated trajectory -- the same shape (long in
+        one axis, thin in the others) as `examples/chemtrails.py`'s real
+        `weights_avg` data, whose elongated PCA projection is what makes
+        its rotated silhouette wider-than-tall at many azimuths."""
+        rng = np.random.default_rng(seed)
+        t = np.linspace(0, 1, n)
+        x = t * 6 - 3
+        y = np.sin(t * 10) * 0.3 + rng.normal(scale=0.05, size=n)
+        z = np.cos(t * 7) * 0.2 + rng.normal(scale=0.05, size=n)
+        return np.column_stack([x, y, z])
+
+    @pytest.mark.parametrize('style,kwargs', [
+        (True, dict(chemtrails=True)),
+        ('spin', dict()),
+        ('morph', dict()),
+    ])
+    def test_scene_artists_are_unclipped(self, style, kwargs):
+        """Every `Line3D`/`Line3DCollection`/`Poly3DCollection` in the
+        scene must have `clip_on=False` -- the direct fix for the axes-box
+        slicing defect, checked across the animate styles named in the
+        maintainer's report and this task."""
+        traj = self._wide_flat_trajectory(seed=0)
+        traj2 = self._wide_flat_trajectory(seed=1)
+        fig, ani = hyp.plot([traj, traj2], animate=style, duration=3,
+                            frame_rate=10, show=False, **kwargs)
+        ax = fig.axes[0]
+        ani._func(5, *ani._args)
+        fig.canvas.draw()
+
+        checked = 0
+        for line in ax.lines:
+            assert line.get_clip_on() is False, (
+                f"animate={style!r}: a Line3D artist still has clip_on=True"
+            )
+            checked += 1
+        for coll in ax.collections:
+            assert coll.get_clip_on() is False, (
+                f"animate={style!r}: a {type(coll).__name__} artist still "
+                f"has clip_on=True"
+            )
+            checked += 1
+        assert checked > 0, "no artists found to check -- test is vacuous"
+        plt.close(fig)
+
+    def test_wide_chemtrails_cube_corners_on_canvas_and_drawn(self):
+        """The maintainer's exact report: a wide/flat trajectory (like
+        `weights_avg`) with `chemtrails=True`. Across a full rotation, the
+        8 cube corners must (a) land strictly inside the canvas and (b)
+        actually have inked cube-wireframe pixels near them -- i.e. the
+        cube is genuinely complete, not sliced off before reaching a
+        corner. Also enforces the (relaxed, task-specified) 5px canvas-edge
+        margin floor."""
+        traj = self._wide_flat_trajectory(seed=2)
+        traj2 = self._wide_flat_trajectory(seed=3)
+        fig, ani = hyp.plot([traj, traj2], animate=True, chemtrails=True,
+                            duration=3, frame_rate=10, show=False)
+        ax = fig.axes[0]
+        fig.canvas.draw()
+        w, h = fig.canvas.get_width_height()
+
+        idx, total = _full_rotation_frames(ani, n_samples=24)
+        assert len(idx) >= 24
+
+        mins = dict(left=10**9, right=10**9, top=10**9, bottom=10**9)
+        for k in idx:
+            ani._func(k, *ani._args)
+            fig.canvas.draw()
+            inked = _inked_mask(fig)
+            cols = np.where(inked.any(axis=0))[0]
+            rows = np.where(inked.any(axis=1))[0]
+            assert len(cols) and len(rows), f"frame {k}: canvas is blank"
+            frame_mins = dict(
+                left=int(cols.min()), right=int(w - 1 - cols.max()),
+                top=int(rows.min()), bottom=int(h - 1 - rows.max()),
+            )
+            for edge in mins:
+                mins[edge] = min(mins[edge], frame_mins[edge])
+
+            for row, col in _cube_corner_pixels(fig, ax, scale=1.0):
+                assert 0 <= col <= w - 1 and 0 <= row <= h - 1, (
+                    f"frame {k}: a cube corner projects to ({row}, {col}), "
+                    f"outside the {h}x{w} canvas -- scene runs off-canvas"
+                )
+                r0, r1 = max(0, int(row) - 4), min(h, int(row) + 5)
+                c0, c1 = max(0, int(col) - 4), min(w, int(col) + 5)
+                assert inked[r0:r1, c0:c1].any(), (
+                    f"frame {k}: no ink found near cube corner "
+                    f"({row:.1f}, {col:.1f}) -- the cube is not fully "
+                    f"drawn (sliced before reaching this corner)"
+                )
+        plt.close(fig)
+
+        for edge, val in mins.items():
+            assert val >= NOCLIP_MARGIN_FLOOR_PX, (
+                f"wide chemtrails trajectory: {edge} margin only {val}px "
+                f"(floor {NOCLIP_MARGIN_FLOOR_PX}px)"
+            )
