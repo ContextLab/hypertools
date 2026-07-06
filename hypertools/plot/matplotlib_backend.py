@@ -974,6 +974,24 @@ def _draw(
                 if i < len(trail) and trail[i] is not None:
                     trail[i].set_visible(False)
 
+            # M4 visual-review fix: any UNTAGGED (static backdrop) dataset
+            # is drawn once, in full, right here -- `update_morph` (below)
+            # only ever moves the single traveling `morph_artist` and never
+            # touches `lines`/`trail`, so an untagged line left at its
+            # initial `dat[0:1, ...]` (a single point, same as every other
+            # style's pre-animation initialization) would silently stay a
+            # 1-point "cloud" for the WHOLE animation -- i.e. never
+            # actually render. Mirrors the plotly backend, where an
+            # untagged dataset's trace is simply never referenced by any
+            # frame's `traces=` list, so it keeps whatever it was drawn
+            # with up front (its full data).
+            for i in range(len(x)):
+                if i in morph_indices:
+                    continue
+                full = x[i]
+                lines[i].set_data(full[:, 0:2].T)
+                lines[i].set_3d_properties(full[:, 2])
+
             mesh_slot = morph_indices[0]
             morph_surface_spec = None
             if surface is not None:

@@ -359,16 +359,49 @@ class TestMplMorphAnimation:
             assert ax.azim == pytest.approx(expected_azim, abs=1e-6)
 
     def test_static_untagged_dataset_present_every_frame(self):
-        fig, ani = self._build(k=4, animate=['morph', 'morph', 'morph', None])
+        """M4 visual-review fix: with mixed tagging, the untagged (static
+        backdrop) dataset's Line3D must be initialized with -- and keep --
+        its FULL point count at every frame, not just the first point.
+        `update_morph` never touches untagged lines, so whatever they are
+        initialized with is what stays on screen for the whole animation;
+        before the fix they were initialized (like every other dataset's
+        line) with only `dat[0:1, ...]`, i.e. a single point, so the
+        static backdrop was invisible in practice (a 1-point "cloud")."""
+        n_points = 30
+        fig, ani = self._build(k=4, animate=['morph', 'morph', 'morph', None],
+                               legend=True)
+        fig.canvas.draw()
         ax = fig.axes[0]
         static_line = ax.lines[3]
         assert static_line.get_visible()
-        before = static_line.get_data_3d()
-        for k in [0, 5, 15, 19]:
+
+        morph_state = ani._args[0]
+        total_frames = sum(morph_state['frame_counts'])
+        frames = [0, total_frames // 2, total_frames - 1]
+
+        reference = None
+        for k in frames:
             ani._func(k, *ani._args)
-            after = static_line.get_data_3d()
-            np.testing.assert_allclose(before, after)
+            xs, ys, zs = static_line.get_data_3d()
+            assert len(xs) == n_points, (
+                f"frame {k}: untagged dataset's Line3D has {len(xs)} "
+                f"points, expected the full {n_points}"
+            )
+            current = np.stack([xs, ys, zs], axis=1)
+            if reference is None:
+                reference = current
+            else:
+                np.testing.assert_allclose(reference, current)
             assert static_line.get_visible()
+
+        # legend entries: untagged datasets keep their own legend entry
+        # (this must survive the fix -- only the DATA of the line changes,
+        # never its label/visibility bookkeeping)
+        legend = ax.get_legend()
+        assert legend is not None
+        legend_labels = [t.get_text() for t in legend.get_texts()]
+        assert len(legend_labels) == 4
+        assert '4' in legend_labels
 
     def test_morph_tagged_lines_hidden(self):
         fig, ani = self._build(k=4, animate=['morph', 'morph', 'morph', None])
