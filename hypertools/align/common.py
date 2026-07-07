@@ -49,10 +49,31 @@ class Aligner(BaseEstimator):
         self.transformer = kwargs.pop('transformer', None)
         self.required = kwargs.pop('required', [])
         self.kwargs = kwargs
+        self._fit_shape = None
+
+    @property
+    def is_fitted(self):
+        """Whether `fit`/`fit_transform` has already been run.
+
+        Lets a fitted `Aligner` returned from an earlier
+        `hypertools.align.align.align(..., return_model=True)` call be
+        passed back in as `model=` on NEW data and reuse its learned
+        alignment via `transform`, without re-fitting.
+        """
+        return self.data is not None
+
+    @staticmethod
+    def _shape_of(data):
+        """`(n_datasets, [n_columns_per_dataset])` for `data` (a single
+        DataFrame/array, or a list of them) -- the shape `transform`
+        validates new data against (GH #227)."""
+        items = data if isinstance(data, list) else [data]
+        return len(items), [np.asarray(d).shape[1] for d in items]
 
     def fit(self, data):
         assert data is not None, ValueError('cannot align empty dataset')
         self.data = data
+        self._fit_shape = self._shape_of(data)
         if self.fitter is None:
             return
         data = trim_and_pad(dw.unstack(self.data))
@@ -63,18 +84,60 @@ class Aligner(BaseEstimator):
         for k, v in params.items():
             setattr(self, k, v)
 
-    def transform(self, *_):
+    def transform(self, new_data=None):
+        """Apply the fitted alignment to `new_data`.
+
+        Parameters
+        ----------
+        new_data : DataFrame, array, list of these, or None
+            Held-out data to project into the fitted common space. Must
+            have the same number of datasets, each with the same number of
+            columns, as the data `fit` was called with (GH #227) --
+            raises `ValueError` naming the fit-time shape otherwise.
+            `None` (default) replays the fit-time data itself (no shape
+            check needed, since it trivially matches).
+
+        Returns
+        -------
+        The aligned `new_data` (or the aligned fit-time data, when
+        `new_data` is `None`), in the same list/single-item shape as the
+        input.
+
+        Raises
+        ------
+        sklearn.exceptions.NotFittedError
+            If `fit`/`fit_transform` has not been called yet, or a
+            required fitted attribute is missing.
+        ValueError
+            If `new_data`'s shape (dataset count or any per-dataset
+            column count) does not match the fit-time shape.
+        """
         if self.data is None:
             raise NotFittedError('must fit aligner before transforming data')
         for r in self.required:
             if not hasattr(self, r):
                 raise NotFittedError(f'missing fitted attribute: {r}')
+
+        if new_data is None:
+            data_to_use = self.data
+        else:
+            n_datasets, n_columns = self._shape_of(new_data)
+            fit_n_datasets, fit_n_columns = self._fit_shape
+            if n_datasets != fit_n_datasets or n_columns != fit_n_columns:
+                raise ValueError(
+                    f"aligner was fit on {fit_n_datasets} dataset(s) with "
+                    f"{fit_n_columns} column(s) each; got {n_datasets} "
+                    f"dataset(s) with {n_columns} column(s) (fit-time "
+                    f"shape: {fit_n_datasets} datasets x {fit_n_columns} "
+                    f"columns)")
+            data_to_use = new_data
+
         if self.transformer is None:
-            return self.data
-        data = trim_and_pad(dw.unstack(self.data))
+            return data_to_use
+        data = trim_and_pad(dw.unstack(data_to_use))
         required_params = {r: getattr(self, r) for r in self.required}
         return self.transformer(data, **dw.core.update_dict(required_params, self.kwargs))
 
     def fit_transform(self, data):
         self.fit(data)
-        return self.transform()
+        return self.transform(data)

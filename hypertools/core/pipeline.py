@@ -7,17 +7,20 @@ every step from scratch; `transform` re-applies steps that were already
 fit(-transformed), never refitting them.
 
 `build_pipeline` is the helper every dispatcher (manip/normalize/reduce/
-align/cluster) will use (Tasks 2-6) to assemble the cross-module stage
-kwargs (`manip=`, `normalize=`, `reduce=`, `align=`, `cluster=`) into a
-`Pipeline` in the canonical order (#153). reduce/cluster/normalize are still
-plain (pre-1.0) functions rather than fit/transform-capable classes, so
-their steps are wrapped as thin re-run-on-call adapters here; manip/align
-already have class-based dispatchers and get the same functional wrapping
-for interface consistency -- Tasks 2/3 swap these wrappers for genuine
-fitted-model reuse once `return_model` lands on every dispatcher, without
-changing `build_pipeline`'s signature or call sites.
+align/cluster) uses to assemble the cross-module stage kwargs (`manip=`,
+`normalize=`, `reduce=`, `align=`, `cluster=`) into a `Pipeline` in the
+canonical order (#153). reduce/cluster/normalize are still plain (pre-1.0)
+functions rather than fit/transform-capable classes, so their steps are
+wrapped as thin re-run-on-call adapters (`_CallableStep`) here; `Aligner`
+(align/common.py) is genuinely fit/transform-capable -- `transform(new_data)`
+validates `new_data`'s shape against the fit-time shape (#227) and applies
+the fitted alignment to it -- so a bare/class/instance `Aligner` step
+(`Pipeline(['HyperAlign'])`) is used directly, no wrapper needed. A
+`build_pipeline`-assembled `align` stage still goes through `_CallableStep`
+(re-running the full `hyp.align` dispatcher call on `transform`), since
+`build_pipeline` bakes stage specs into functional calls uniformly across
+all five stages.
 """
-import numpy as np
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 
@@ -88,19 +91,20 @@ def _resolve_step(spec):
         ref = _resolve_ref(spec)
         model = ref() if isinstance(ref, type) else ref
 
-    from ..align.common import Aligner
-    if isinstance(model, Aligner):
-        return _AlignedStep(model)
+    # `Aligner.fit`/`fit_transform`/`transform` (align/common.py) are
+    # already genuinely fit/transform-capable -- `transform(new_data)`
+    # validates `new_data`'s shape against the fit-time shape (#227) and
+    # applies the fitted alignment to it -- so no wrapper is needed here
+    # (unlike pre-#227, when `transform` ignored its argument entirely).
     return model
 
 
 def _base_name(model):
     """Auto-name a step the way scikit-learn does: the lowercased class
-    name of the (unwrapped) underlying model."""
+    name of the underlying model."""
     if isinstance(model, Pipeline):
         return 'pipeline'
-    target = getattr(model, '_aligner', model)
-    return type(target).__name__.lower()
+    return type(model).__name__.lower()
 
 
 def _name_steps(entries):
@@ -123,58 +127,6 @@ def _name_steps(entries):
         used.add(name)
         named.append((name, model))
     return named
-
-
-class _AlignedStep:
-    """Wrap an Aligner so a Pipeline can validate/apply it to NEW data.
-
-    `Aligner.transform` (align/common.py) ignores the argument passed to it
-    and always replays the data it was fit on -- there is no notion of
-    "apply this fitted alignment to a different dataset". This wrapper
-    records the fit-time dataset count and per-dataset column counts and,
-    on `transform`, validates new data against them (raising `ValueError`
-    naming the fit-time shape -- #227) before temporarily pointing the
-    aligner at the new data to compute a genuine projection of it.
-    """
-    def __init__(self, aligner):
-        self._aligner = aligner
-        self._n_datasets = None
-        self._n_columns = None
-
-    @staticmethod
-    def _shape_of(data):
-        items = data if isinstance(data, list) else [data]
-        return len(items), [np.asarray(d).shape[1] for d in items]
-
-    def fit(self, data):
-        self._aligner.fit(data)
-        self._n_datasets, self._n_columns = self._shape_of(data)
-        return self
-
-    def fit_transform(self, data):
-        out = self._aligner.fit_transform(data)
-        self._n_datasets, self._n_columns = self._shape_of(data)
-        return out
-
-    def transform(self, data):
-        if self._n_datasets is None:
-            raise NotFittedError('must fit align step before transforming data')
-        n_datasets, n_columns = self._shape_of(data)
-        if n_datasets != self._n_datasets or n_columns != self._n_columns:
-            raise ValueError(
-                f"align step was fit on {self._n_datasets} dataset(s) with "
-                f"{self._n_columns} column(s) each; got {n_datasets} "
-                f"dataset(s) with {n_columns} column(s) (fit-time shape: "
-                f"{self._n_datasets} datasets x {self._n_columns} columns)")
-        original_data = self._aligner.data
-        self._aligner.data = data
-        try:
-            return self._aligner.transform()
-        finally:
-            self._aligner.data = original_data
-
-    def __repr__(self):
-        return f"AlignStep({self._aligner!r})"
 
 
 class _CallableStep:
