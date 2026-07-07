@@ -1,3 +1,10 @@
+> **SUPERSEDED (2026-07-07):** the full issue audit has been EXECUTED. All 45 addressed/obsolete
+> ContextLab issues were closed with evidence comments linking PR #272; the 22 open feature requests
+> carry research comments + effort labels; 6 issues were migrated from the jeremymanning fork
+> (ContextLab #273-#278) and the fork's issue tracker is now empty. Fixed in the audit's fix wave:
+> #94, #141, #199, #206, #209, #244. Audit evidence: scratchpad issue_audit files + posting_log.
+> This file is retained as the historical triage record.
+
 # Issues to Close on dev-1.0-refactor -> master Merge
 
 This note catalogs all 67 currently-open GitHub issues on `ContextLab/hypertools`, triaged against the `dev-1.0-refactor` branch on 2026-07-04 (6-batch triage pass, `/tmp/savemovie/triage_batch1.md` through `triage_batch6.md`). Each issue was checked against live code/repros on `dev-1.0-refactor` and classified as ADDRESSED (the ask is satisfied), OBSOLETE (the ask targets API surface removed by design, e.g. public `DataGeometry`), STILL_BUG (the reported bug still reproduces), or NOT_ADDRESSED (the feature/design ask was never implemented). This file exists to guide a single triage sweep of GitHub issues once dev-1.0-refactor merges into master: section 2 and 3 below are safe to close at that point; section 4 should stay open.
