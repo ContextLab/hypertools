@@ -95,7 +95,11 @@ def load(
         resolves to scikit-learn's ``load_iris`` (columns like
         ``'sepal length (cm)'``), not seaborn's ``'iris'`` dataset
         (columns like ``'sepal_length'``), since both define an ``'iris'``
-        name.
+        name. Because these resolvers run before local-file resolution, a
+        local file whose name (without an extension) matches a
+        scikit-learn or seaborn dataset name is shadowed -- pass a path
+        with an extension, or an absolute/relative path containing a
+        ``/``, to force local-file resolution.
 
     Examples
     --------
