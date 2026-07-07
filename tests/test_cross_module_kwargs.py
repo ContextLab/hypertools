@@ -299,3 +299,65 @@ def test_predict_legacy_params_dict_warns():
     df = pd.DataFrame(_rng().randn(30, 2))
     with pytest.warns(DeprecationWarning, match="'params'"):
         predict(df, model={'model': 'Kalman', 'params': {}}, t=3)
+
+
+# --- fix wave 1 (post-b49e70c2 review findings) -----------------------------
+
+def test_plot_bundle_pipeline_cluster_stage_honors_n_clusters():
+    # HIGH: the bundle pipeline's cluster stage used to ignore n_clusters=,
+    # always defaulting to KMeans(n_clusters=3) regardless of what n_clusters=
+    # the figure itself was plotted with.
+    r = _rng()
+    x = np.vstack([r.randn(15, 4) + shift for shift in
+                  (0, 30, 60, 90, 120)])
+    bundle = hyp.plot(x, cluster='KMeans', n_clusters=5,
+                      return_model=True, show=False)
+    plt.close(bundle['fig'])
+    pipe = bundle['pipeline']
+    cluster_step = pipe.named_steps['cluster']
+    assert cluster_step._fitted.model_.n_clusters == 5
+
+    # reusing the bundle pipeline on structurally-identical new data yields
+    # 5 distinct label values
+    x2 = np.vstack([r.randn(15, 4) + shift for shift in
+                    (0, 30, 60, 90, 120)])
+    labels = pipe.transform(x2)
+    assert len(set(np.asarray(labels).tolist())) == 5
+
+
+def test_analyze_build_pipeline_path_honors_impute_same_as_legacy():
+    # MEDIUM: the build_pipeline path (return_model=True or manip=/cluster=
+    # given) used to silently ignore impute= (always PPCA at format time),
+    # contradicting analyze()'s own docstring ("impute is honored either
+    # way") and diverging from the legacy (return_model=False) path.
+    x = _rng().randn(30, 5)
+    x[0, 0] = np.nan
+    x[5, 2] = np.nan
+
+    legacy = analyze(x, normalize='across', impute='KNNImputer',
+                     return_model=False)
+    pipelined, model = analyze(x, normalize='across', impute='KNNImputer',
+                               return_model=True)
+    assert isinstance(model, Pipeline)
+    assert np.allclose(np.asarray(legacy), np.asarray(pipelined))
+
+
+def test_normalize_build_pipeline_path_honors_impute():
+    # same MEDIUM fix, hypertools.tools.normalize's own build_pipeline path
+    # (triggered by reduce=/align=/cluster=/manip= alongside normalize=).
+    from hypertools.tools.format_data import format_data as formatter
+    from hypertools.tools.normalize import Normalizer
+    from hypertools.reduce.reduce import reduce as reducer
+
+    x = _rng().randn(30, 5)
+    x[0, 0] = np.nan
+    x[5, 2] = np.nan
+
+    formatted = formatter(x, ppca=True, impute='KNNImputer')
+    expected = reducer(Normalizer('across').fit_transform(formatted),
+                       reduce='PCA', ndims=2, internal=True)
+
+    result, model = normalize(x, normalize='across', impute='KNNImputer',
+                              reduce='PCA', ndims=2, return_model=True)
+    assert isinstance(model, Pipeline)
+    assert np.allclose(np.asarray(expected), np.asarray(result))

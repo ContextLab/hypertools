@@ -2221,9 +2221,30 @@ def plot(
             bundle_pipeline = pipeline
         elif raw is not None:
             from ..core.pipeline import build_pipeline
+            from ..cluster.cluster import _resolve_cluster_spec
+            # mirror hypertools.cluster.cluster.cluster()'s own cross-kwarg
+            # pattern (round17 Task 6 HIGH fix): build_pipeline's cluster
+            # stage has no n_clusters= kwarg of its own, so the raw
+            # cluster= spec must be pre-resolved here with THIS call's
+            # n_clusters= baked in -- otherwise the cluster stage falls
+            # back to cluster.cluster()'s own hardcoded n_clusters=3
+            # default, silently mismatching a figure plotted with a
+            # different n_clusters=. cluster.cluster()'s own signature
+            # default (3) is used when n_clusters= was not given here
+            # either, matching this bundle's previous (implicit) behavior.
+            cluster_spec = (_resolve_cluster_spec(
+                cluster, n_clusters if n_clusters is not None else 3)
+                if cluster is not None else None)
+            # LOW (accepted tradeoff): this refits manip/normalize/reduce/
+            # align/cluster a second time on `raw`, duplicating the work
+            # already done above to produce `xform_data` for the figure --
+            # kept because it is the only way to hand back a genuinely
+            # fit-once-reusable `Pipeline` object (see the `pipeline=`
+            # discussion above) without threading a Pipeline out of every
+            # internal code path that can produce `xform_data`.
             bundle_pipeline = build_pipeline(manip=manip, normalize=normalize,
                                              reduce=reduce, ndims=ndims,
-                                             align=align, cluster=cluster)
+                                             align=align, cluster=cluster_spec)
             bundle_pipeline.fit_transform(raw)
         else:
             bundle_pipeline = None

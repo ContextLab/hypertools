@@ -138,6 +138,18 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
         # return_model=True hands back a genuinely fit-once-reusable
         # Pipeline (see hypertools.core.pipeline._DispatchStep).
         from ..core.pipeline import build_pipeline
+        if impute is not None and normalize not in (False, None):
+            # thread impute= through the same way the legacy chain below
+            # does (impute at format time, BEFORE any pipeline stage runs):
+            # build_pipeline's normalize stage calls
+            # hypertools.tools.normalize.normalize() with no impute=, so
+            # without this it always falls back to PPCA regardless of what
+            # impute= was passed here. Gated on `normalize not in (False,
+            # None)` to match normalize()'s own legacy gating -- format_data
+            # (and therefore impute=) only runs there when normalization is
+            # actually requested.
+            from .format_data import format_data as formatter
+            data = formatter(data, ppca=True, impute=impute)
         pipe = build_pipeline(manip=manip, normalize=normalize, reduce=reduce,
                               ndims=ndims, align=align, cluster=cluster)
         result = pipe.fit_transform(data)

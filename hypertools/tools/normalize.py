@@ -185,6 +185,17 @@ def normalize(x, normalize='across', internal=False, format_data=True, impute=No
     # cycle (core.pipeline itself lazily imports tools.normalize).
     if any(stage is not None for stage in (manip, reduce, align, cluster)):
         from ..core.pipeline import build_pipeline
+        if impute is not None and normalize not in (False, None):
+            # thread impute= through the same way the legacy (single-stage)
+            # path below does (impute at format time, BEFORE any pipeline
+            # stage runs): build_pipeline's normalize stage re-enters this
+            # function with return_model=True but no impute=, so without
+            # this it always falls back to PPCA regardless of what impute=
+            # was passed here. Gated on `normalize not in (False, None)` to
+            # match the legacy gating a few lines down (`if normalize in
+            # [False, None]: return x` -- format_data, and therefore
+            # impute=, only runs when normalization is actually requested).
+            x = formatter(x, ppca=True, impute=impute)
         pipeline = build_pipeline(manip=manip, normalize=normalize, reduce=reduce,
                                   ndims=ndims, align=align, cluster=cluster)
         result = pipeline.fit_transform(x)
