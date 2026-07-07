@@ -46,3 +46,11 @@ Constraints: must use the 1.0 API design language (module template: common.py ba
 - Commits: c0eff29a (bounded rescale, pre_inflate 1.0) d39a4ef1 (CI _vec/_faces test fix — mpl 3.11 moved Poly3DCollection internals) c8af7b58 (hull-hugging pull-back; cube ratio 1.63→1.13) b52b5b8b (animate='morph' + rotations 2N-1 lists + tagged-list form, both backends, morph.py) e1df0103 (demos → single hyp.plot calls) b6074f74 (union-hull box sizing — mid-morph clouds exceed per-dataset hulls) d71da011 (sampled-only sizing for large clouds; docs; early validation) f3e044bf (mpl mixed-tag untagged dataset now renders) 987fb5e7 (gallery regen + hull_tightness_before.png evidence).
 - Suite 765 passed. PR comment issuecomment-4889957250; body updated. CI watch on 987fb5e7 (prior run on eaf7fcaa FAILED 9 jobs on _vec — fixed by d39a4ef1).
 - KEY GOTCHAS: hyp.plot animated returns (fig, ani); FuncAnimation draw_event reset gotcha (draw once before stepping); mpl 3.11 Poly3DCollection stores verts in _faces+_invalid_vertices (not _vec); sphinx-gallery needs the figure REGISTERED in pyplot (hyp.plot static show=False deregisters per #148 — animated path keeps it; examples that hand-roll FuncAnimation must pass their own ax).
+
+## Issue audit round (2026-07-07) — COMPLETE
+- All 80 open issues (67 ContextLab + 13 jeremymanning) verified with RUN-CODE evidence by 12 parallel agents; every verdict posted as an issue comment with commands+output.
+- ContextLab: 45 closed (39 addressed / 6 obsolete), 22 features left open w/ research comments + low/medium/high effort labels, +6 imports (#273-278) = 28 open total.
+- jeremymanning fork: emptied (7 closed addressed, 6 migrated w/ cross-links).
+- Fix wave during audit: #199+#244 tests (bf33a54f), #209 isinstance (029ed07c), #141 marker+line smoothing (2b76d4e1), #94 resample= kwarg (966abe3d), #206 kwargs passthrough+validation (715f0558). Suite 947 passed; CI 12/12 green on 715f0558.
+- Highest-leverage next 1.0 candidate: #274 (manip= plot kwarg + chainable hyp.manip) — unblocks #275.
+- Audit artifacts: scratchpad/issue_audit/ (80 evidence files, POSTING_MANIFEST.tsv, posting_log.txt — 0 failures).
