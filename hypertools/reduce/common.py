@@ -62,6 +62,17 @@ models = {
 #: `import hypertools` even when UMAP is never used).
 REDUCERS = {**models, **mixture_models}
 
+#: the six torch-backed autoencoder reducers (GH #162,
+#: `hypertools.reduce.autoencoders`) -- deliberately excluded from
+#: `REDUCERS` and resolved lazily by `resolve_reducer` (mirroring
+#: `'UMAP'`), so `import hypertools` never requires `torch` to be
+#: installed. `torch` ships as the optional `[torch]` extra.
+AUTOENCODER_NAMES = (
+    'Autoencoder', 'DeepAutoencoder', 'SparseAutoencoder',
+    'ConvolutionalAutoencoder', 'SequenceAutoencoder',
+    'VariationalAutoencoder',
+)
+
 
 def resolve_reducer(name):
     """Resolve a registered reducer name to its class.
@@ -70,7 +81,8 @@ def resolve_reducer(name):
     ----------
     name : str
         A key of `REDUCERS` (any of `models`' or `mixture_models`' names),
-        or `'UMAP'` (resolved lazily via a local import -- see `REDUCERS`).
+        `'UMAP'`, or one of `AUTOENCODER_NAMES` (all resolved lazily via a
+        local import -- see `REDUCERS`/`AUTOENCODER_NAMES`).
 
     Returns
     -------
@@ -81,10 +93,22 @@ def resolve_reducer(name):
     ------
     KeyError
         If `name` is not a recognized reducer name.
+    ImportError
+        If `name` is one of `AUTOENCODER_NAMES` and `torch` is not
+        installed.
     """
     if name == 'UMAP':
         from umap import UMAP
         return UMAP
+    if name in AUTOENCODER_NAMES:
+        try:
+            from . import autoencoders
+        except ImportError as e:
+            raise ImportError(
+                f'{name} requires torch, which is not installed; install '
+                'it with pip install "hypertools[torch]"'
+            ) from e
+        return getattr(autoencoders, name)
     return REDUCERS[name]
 
 

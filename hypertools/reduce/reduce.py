@@ -41,7 +41,14 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         plus the mixture (soft-clustering) models GaussianMixture,
         BayesianGaussianMixture, LatentDirichletAllocation and NMF -- for
         these, the returned array holds (n_samples, ndims) membership
-        proportions rather than a projection (GH #174). Can be passed as a
+        proportions rather than a projection (GH #174). Also supports the
+        six torch-backed autoencoder reducers (GH #162,
+        `hypertools.reduce.autoencoders`): Autoencoder, DeepAutoencoder,
+        SparseAutoencoder, ConvolutionalAutoencoder, SequenceAutoencoder,
+        and VariationalAutoencoder -- these require the optional `torch`
+        dependency (`pip install "hypertools[torch]"`); resolving one of
+        these names without `torch` installed raises a friendly
+        `ImportError`. Can be passed as a
         string, a bare (uninstantiated) scikit-learn-style class, an
         already-constructed instance, the canonical dict spec
         `{'model': ..., 'args': [...], 'kwargs': {...}}`, or the LEGACY

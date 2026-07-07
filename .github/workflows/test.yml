@@ -69,7 +69,12 @@ jobs:
     - name: Install package with dev dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e ".[dev]"
+        # [torch] (also pulled in transitively by [dev]) is installed
+        # explicitly too so a future change to the dev extra can't
+        # silently drop torch coverage of the six autoencoder reducers
+        # (GH #162, tests/test_autoencoders.py). torch>=2.0 ships CPU
+        # wheels for all three CI platforms/Python versions here.
+        pip install -e ".[dev,torch]"
 
     - name: Rebuild matplotlib font cache (Ubuntu only)
       # GH #205: matplotlib scans installed fonts once and caches the

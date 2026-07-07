@@ -68,6 +68,12 @@ io = ["openpyxl>=3.1.0"]
 # this extra (or backend='plotly', which always renders a full go.Volume
 # without needing scikit-image at all).
 density3d = ["scikit-image>=0.22.0"]
+# hyp.reduce's six torch-backed autoencoder reducers (GH #162,
+# hypertools/reduce/autoencoders.py: Autoencoder, DeepAutoencoder,
+# SparseAutoencoder, ConvolutionalAutoencoder, SequenceAutoencoder,
+# VariationalAutoencoder). Opt-in; never in base install -- resolving one
+# of these reduce= names without this extra raises a friendly ImportError.
+torch = ["torch>=2.0"]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
@@ -91,6 +97,11 @@ dev = [
     # the scikit-image-absent fallback is exercised separately, in a
     # subprocess with a real import-system blocker (see that test module)
     "scikit-image>=0.22.0",
+    # exercise the six torch-backed autoencoder reducers (GH #162,
+    # tests/test_autoencoders.py); the torch-absent ImportError path is
+    # exercised separately, in a subprocess with a real import-system
+    # blocker (see that test module)
+    "torch>=2.0",
 ]
 
 [project.urls]
