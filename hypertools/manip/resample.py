@@ -10,7 +10,32 @@ from ..core.shared import get
 
 
 def fitter(data, **kwargs):
+    """Fit PCHIP resampling interpolators for the `Resample` manipulator.
+
+    Recurses over multi-index/list data (one fit per dataset, combined
+    via `listify_dicts`); for a single DataFrame, builds a PCHIP
+    interpolator per column against the original index values.
+
+    Parameters
+    ----------
+    data : DataFrame, multi-index DataFrame, or list of DataFrame
+        Data to fit resampling interpolators on.
+    **kwargs
+        `axis` : int, 0 to resample along rows (default), 1 to
+        transpose and resample along columns instead. `n_samples` : int,
+        number of resampled points to target.
+
+    Returns
+    -------
+    dict
+        `{'x': <original index values>, 'resampled_x': <target index
+        values>, 'pchip': <per-column PCHIP interpolators>, 'transpose':
+        bool, 'axis': axis, 'n_samples': n_samples}`, or (for
+        multi-index/list input) a dict of lists of these values, one
+        entry per dataset (see `listify_dicts`).
+    """
     def listify_dicts(dicts):
+        """Merge a list of same-keyed dicts into one dict of lists (one list per key)."""
         if len(dicts) == 0:
             return {}
         ld = {}
@@ -50,6 +75,36 @@ def fitter(data, **kwargs):
 
 
 def transformer(data, **kwargs):
+    """Resample `data` to `n_samples` evenly-spaced points via PCHIP interpolation.
+
+    Recurses over multi-index/list data (`kwargs` broadcast per dataset
+    via `core.shared.get`). For a single DataFrame, PCHIP interpolators
+    are rebuilt from `data`'s OWN index/values (not the fit-time data)
+    and evaluated at `n_samples` evenly-spaced points spanning `data`'s
+    own index range -- so a fitted `Resample` resamples new data using
+    that new data's own range, not a replay of the fit-time values.
+
+    Parameters
+    ----------
+    data : DataFrame, multi-index DataFrame, or list of DataFrame
+        Data to resample.
+    **kwargs
+        `axis` : int, 0 (default) or 1 (transpose first). `n_samples` :
+        int, target number of resampled points. `transpose` : bool,
+        whether to transpose, recurse with `axis` flipped, and transpose
+        back.
+
+    Returns
+    -------
+    The resampled data (DataFrame, multi-index DataFrame, or list,
+    matching the input structure), with `n_samples` rows.
+
+    Raises
+    ------
+    ValueError
+        If `axis` is missing from `kwargs`, or (after resolving
+        `transpose`) is not 0.
+    """
     if dw.zoo.is_multiindex_dataframe(data):
         stack_result = True
         data = dw.unstack(data)
@@ -94,6 +149,16 @@ def transformer(data, **kwargs):
 
 
 class Resample(Manipulator):
+    """Resample data to a fixed number of evenly-spaced points via PCHIP interpolation.
+
+    Parameters
+    ----------
+    axis : int, optional
+        0 to resample each column along the row (index) axis (default),
+        1 to resample along columns instead (transposed internally).
+    n_samples : int, optional
+        Number of evenly-spaced output points (default: 100).
+    """
     # noinspection PyShadowingBuiltins
     def __init__(self, axis=0, n_samples=100):
         required = ['transpose', 'axis', 'n_samples', 'x', 'resampled_x', 'pchip']

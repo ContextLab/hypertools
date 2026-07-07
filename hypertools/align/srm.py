@@ -12,6 +12,27 @@ from ..external.brainiak import SRM, DetSRM, RSRM
 
 
 def fitter(data, align_type, **kwargs):
+    """Fit a Shared Response Model variant (SRM, DetSRM, or RSRM) on `data`.
+
+    Parameters
+    ----------
+    data : DataFrame or list of DataFrame
+        Dataset(s) to fit the shared response model on (coerced to a
+        list if a single DataFrame is given).
+    align_type : type
+        The vendored brainiak model class to instantiate (`SRM`,
+        `DetSRM`, or `RSRM`).
+    **kwargs
+        `features` : int, optional number of shared features (default:
+        the minimum column count across `data`). Remaining kwargs are
+        ignored by this function.
+
+    Returns
+    -------
+    dict
+        `{'model': <fitted align_type instance>, 'features': features,
+        'indices': [d.index for d in data]}`.
+    """
     if not isinstance(data, list):
         data = [data]
 
@@ -26,6 +47,28 @@ def fitter(data, align_type, **kwargs):
 
 
 def transformer(data, **kwargs):
+    """Apply a fitted Shared Response Model to `data`.
+
+    Parameters
+    ----------
+    data : list of DataFrame
+        Held-out (or fit-time) dataset(s) to project into the shared
+        response space.
+    **kwargs
+        `model` : the fitted brainiak model instance (from `fitter`).
+
+    Returns
+    -------
+    list of pandas.DataFrame
+        The transformed dataset(s), one per entry in `data`, each
+        indexed by the corresponding entry's own index (not the
+        fit-time index -- see GH #227).
+
+    Raises
+    ------
+    sklearn.exceptions.NotFittedError
+        If `model` is missing/`None`.
+    """
     model = kwargs.pop('model', None)
     if model is None:
         raise NotFittedError('aligner model must be fit before data can be transformed')
@@ -37,14 +80,17 @@ def transformer(data, **kwargs):
 
 
 def srm_fitter(data, **kwargs):
+    """Fit a standard `SRM` model on `data`. See `fitter`."""
     return fitter(data, SRM, **kwargs)
 
 
 def detsrm_fitter(data, **kwargs):
+    """Fit a `DetSRM` (deterministic SRM) model on `data`. See `fitter`."""
     return fitter(data, DetSRM, **kwargs)
 
 
 def rsrm_fitter(data, **kwargs):
+    """Fit an `RSRM` (robust SRM) model on `data`. See `fitter`."""
     return fitter(data, RSRM, **kwargs)
 
 

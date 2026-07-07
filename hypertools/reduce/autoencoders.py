@@ -237,15 +237,19 @@ class _ShallowAENet(nn.Module):
         self.act = nn.ReLU()
 
     def encode(self, x):
+        """Map input `x` to its latent (`n_components`-dim) representation."""
         return self.enc2(self.act(self.enc1(x)))
 
     def decode(self, z):
+        """Reconstruct the input space from latent code `z`."""
         return self.dec2(self.act(self.dec1(z)))
 
     def forward(self, x):
+        """Full autoencoder pass: encode `x` then decode back to the input space."""
         return self.decode(self.encode(x))
 
     def compute_loss(self, x):
+        """MSE reconstruction loss between `x` and its autoencoded reconstruction."""
         return F.mse_loss(self.forward(x), x)
 
 
@@ -263,15 +267,19 @@ class _SparseAENet(nn.Module):
         self.sparsity_weight = sparsity_weight
 
     def encode(self, x):
+        """Map input `x` to its latent (`n_components`-dim) representation."""
         return self.enc2(self.act(self.enc1(x)))
 
     def decode(self, z):
+        """Reconstruct the input space from latent code `z`."""
         return self.dec2(self.act(self.dec1(z)))
 
     def forward(self, x):
+        """Full autoencoder pass: encode `x` then decode back to the input space."""
         return self.decode(self.encode(x))
 
     def compute_loss(self, x):
+        """MSE reconstruction loss plus an L1 sparsity penalty on the hidden-layer activation."""
         hidden = self.act(self.enc1(x))
         z = self.enc2(hidden)
         xhat = self.dec2(self.act(self.dec1(z)))
@@ -301,15 +309,19 @@ class _DeepAENet(nn.Module):
         self.decoder = nn.Sequential(*dec_layers)
 
     def encode(self, x):
+        """Map input `x` to its latent (`n_components`-dim) representation via the multi-layer encoder."""
         return self.encoder(x)
 
     def decode(self, z):
+        """Reconstruct the input space from latent code `z` via the multi-layer decoder."""
         return self.decoder(z)
 
     def forward(self, x):
+        """Full autoencoder pass: encode `x` then decode back to the input space."""
         return self.decode(self.encode(x))
 
     def compute_loss(self, x):
+        """MSE reconstruction loss between `x` and its autoencoded reconstruction."""
         return F.mse_loss(self.forward(x), x)
 
 
@@ -334,17 +346,21 @@ class _ConvAENet(nn.Module):
         self.c2 = c2
 
     def encode(self, x):
+        """Map input `x` to its latent (`n_components`-dim) representation via 1-D convolutions."""
         h = self.enc_conv(x.unsqueeze(1))
         return self.enc_fc(h.flatten(1))
 
     def decode(self, z):
+        """Reconstruct the input space from latent code `z` via transposed 1-D convolutions."""
         h = self.dec_fc(z).view(-1, self.c2, self.n_in)
         return self.dec_conv(h).squeeze(1)
 
     def forward(self, x):
+        """Full autoencoder pass: encode `x` then decode back to the input space."""
         return self.decode(self.encode(x))
 
     def compute_loss(self, x):
+        """MSE reconstruction loss between `x` and its autoencoded reconstruction."""
         return F.mse_loss(self.forward(x), x)
 
 
@@ -361,17 +377,21 @@ class _SeqAENet(nn.Module):
         self.dec_fc = nn.Linear(hidden_dim, n_in)
 
     def encode(self, x):
+        """Map the sequence `x` (`(seq_len, n_in)`) to one latent vector per timepoint via a GRU encoder."""
         h, _ = self.encoder_rnn(x.unsqueeze(0))
         return self.enc_fc(h.squeeze(0))
 
     def decode(self, z):
+        """Reconstruct the sequence's input space from its per-timepoint latent codes `z` via a GRU decoder."""
         h, _ = self.decoder_rnn(z.unsqueeze(0))
         return self.dec_fc(h.squeeze(0))
 
     def forward(self, x):
+        """Full autoencoder pass: encode sequence `x` then decode back to the input space."""
         return self.decode(self.encode(x))
 
     def compute_loss(self, x):
+        """MSE reconstruction loss between `x` and its autoencoded reconstruction."""
         return F.mse_loss(self.forward(x), x)
 
 
@@ -398,28 +418,40 @@ class _VAENet(nn.Module):
         self.kl_weight = kl_weight
 
     def encode_params(self, x):
+        """Map input `x` to the latent Gaussian's parameters `(mu, logvar)`."""
         h = self.enc_body(x)
         return self.mu(h), self.logvar(h)
 
     def encode(self, x):
+        """Map input `x` to its latent MEAN (`mu`), not a stochastic sample (used by `transform`)."""
         # transform() returns the latent MEANS, not stochastic samples.
         mu, _ = self.encode_params(x)
         return mu
 
     def reparameterize(self, mu, logvar):
+        """Sample a latent code from `N(mu, exp(logvar))` via the reparameterization trick."""
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return mu + eps * std
 
     def decode(self, z):
+        """Reconstruct the input space from latent code `z`."""
         return self.decoder(z)
 
     def forward(self, x):
+        """Full VAE pass: encode `x` to `(mu, logvar)`, sample `z`, and decode `z`.
+
+        Returns
+        -------
+        tuple of (Tensor, Tensor, Tensor)
+            `(reconstruction, mu, logvar)`.
+        """
         mu, logvar = self.encode_params(x)
         z = self.reparameterize(mu, logvar)
         return self.decode(z), mu, logvar
 
     def compute_loss(self, x):
+        """MSE reconstruction loss plus a KL-divergence term toward a standard normal prior."""
         xhat, mu, logvar = self.forward(x)
         recon = F.mse_loss(xhat, x)
         kl = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())

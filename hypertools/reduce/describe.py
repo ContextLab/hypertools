@@ -57,7 +57,27 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     warnings.warn('When input data is large, this computation can take a long time.')
 
     def summary(x, max_dims=None):
+        """Correlation between full-dimensional and reduced-dimensional pairwise distances, per component count.
 
+        For each number of components from 2 up to `max_dims - 1`,
+        reduces `x` to that many dimensions and correlates its pairwise
+        distance matrix against the full-dimensional pairwise distance
+        matrix (via `get_cdist`/`get_corr`).
+
+        Parameters
+        ----------
+        x : numpy.ndarray or list of numpy.ndarray
+            Data to summarize (stacked via `numpy.vstack` if a list).
+        max_dims : int or None, optional
+            Maximum number of components to consider. Defaults to
+            `min(x.shape)`.
+
+        Returns
+        -------
+        list of float
+            Correlation coefficient for each component count in
+            `range(2, max_dims)`.
+        """
         # if data is a list, stack it
         if isinstance(x, list):
             x = np.vstack(x)
@@ -115,8 +135,37 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
 
 
 def get_corr(reduced, alldims):
+    """Pearson correlation coefficient between two flattened distance matrices.
+
+    Parameters
+    ----------
+    reduced : numpy.ndarray
+        First pairwise-distance matrix (e.g. from `get_cdist` on
+        reduced-dimensional data).
+    alldims : numpy.ndarray
+        Second pairwise-distance matrix (e.g. from `get_cdist` on
+        full-dimensional data), same shape as `reduced`.
+
+    Returns
+    -------
+    float
+        The Pearson correlation coefficient between the two matrices'
+        flattened entries.
+    """
     return pearsonr(alldims.ravel(), reduced.ravel())[0]
 
 
 def get_cdist(x):
+    """Pairwise Euclidean distance matrix for the rows of `x`.
+
+    Parameters
+    ----------
+    x : array-like
+        2D array of observations.
+
+    Returns
+    -------
+    numpy.ndarray
+        Square pairwise-distance matrix, `scipy.spatial.distance.cdist(x, x)`.
+    """
     return cdist(x, x)

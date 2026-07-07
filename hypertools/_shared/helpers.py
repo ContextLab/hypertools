@@ -17,12 +17,40 @@ np.seterr(divide='ignore', invalid='ignore')
 
 
 def center(x):
+    """Mean-center a list of datasets around their shared (pooled) mean.
+
+    Parameters
+    ----------
+    x : list of numpy.ndarray
+        List of 2D arrays (observations x features). All arrays are
+        stacked together to compute a single pooled mean, which is then
+        subtracted from each array individually.
+
+    Returns
+    -------
+    list of numpy.ndarray
+        Centered copies of each array in `x`, same shapes as the inputs.
+    """
     assert isinstance(x, list), "Input data to center must be list"
     x_stacked = np.vstack(x)
     return [i - np.mean(x_stacked, 0) for i in x]
 
 
 def scale(x):
+    """Rescale a list of datasets into the range [-1, 1] using shared bounds.
+
+    Parameters
+    ----------
+    x : list of numpy.ndarray
+        List of 2D arrays. All arrays are stacked together to compute a
+        single pooled min/max, which is used to rescale each array.
+
+    Returns
+    -------
+    list of numpy.ndarray
+        Rescaled copies of each array in `x`, same shapes as the inputs,
+        with values mapped into [-1, 1] based on the pooled min/max.
+    """
     assert isinstance(x, list), "Input data to scale must be list"
     x_stacked = np.vstack(x)
     m1 = np.min(x_stacked)
@@ -32,6 +60,23 @@ def scale(x):
 
 
 def group_by_category(vals):
+    """Map each value in `vals` to an integer code for its category.
+
+    Categories are ordered by first appearance in `vals` (not sorted by
+    value), so the code for the first-seen category is 0, the next
+    distinct category is 1, and so on.
+
+    Parameters
+    ----------
+    vals : list, or list of lists
+        Values to categorize. If a list of lists is given, it is
+        flattened first via `itertools.chain`.
+
+    Returns
+    -------
+    list of int
+        Integer category code for each (flattened) entry in `vals`.
+    """
     if any(isinstance(el, list) for el in vals):
         vals = list(itertools.chain(*vals))
     val_set = list(sorted(set(vals), key=list(vals).index))
@@ -72,7 +117,23 @@ def vals2bins(vals,res=100):
     return list(np.digitize(vals, np.linspace(np.min(vals), np.max(vals)+1, res+1)) - 1)
 
 
-def interp_array(arr,interp_val=10):
+def interp_array(arr, interp_val=10):
+    """Upsample a 1D array via PCHIP (monotonic cubic) interpolation.
+
+    Parameters
+    ----------
+    arr : array-like
+        1D sequence of values, indexed by integer position.
+    interp_val : int, optional
+        Number of interpolated samples per original sample (default: 10).
+        The output has `interp_val` times as many points as `arr`
+        (minus a small remainder from the final step).
+
+    Returns
+    -------
+    numpy.ndarray
+        The interpolated (upsampled) array.
+    """
     from scipy.interpolate import PchipInterpolator as pchip
     x=np.arange(0, len(arr), 1)
     xx=np.arange(0, len(arr)-1, 1/interp_val)
@@ -80,14 +141,51 @@ def interp_array(arr,interp_val=10):
     return q(xx)
 
 
-def interp_array_list(arr_list,interp_val=10):
+def interp_array_list(arr_list, interp_val=10):
+    """Apply `interp_array` independently to each array in a list.
+
+    Parameters
+    ----------
+    arr_list : list of numpy.ndarray
+        List of 1D (or column-wise) arrays to interpolate.
+    interp_val : int, optional
+        Number of interpolated samples per original sample, passed
+        through to `interp_array` (default: 10).
+
+    Returns
+    -------
+    list of numpy.ndarray
+        Interpolated version of each array in `arr_list`, in the same
+        order.
+    """
     smoothed= [np.zeros(arr_list[0].shape) for item in arr_list]
     for idx,arr in enumerate(arr_list):
         smoothed[idx] = interp_array(arr,interp_val)
     return smoothed
 
 
-def parse_args(x,args):
+def parse_args(x, args):
+    """Broadcast positional plotting args across each dataset in `x`.
+
+    For each argument in `args`: if it is a list/tuple whose length
+    matches `len(x)`, one entry is assigned per dataset; otherwise the
+    same value is repeated for every dataset. Exits the process (via
+    `sys.exit(1)`) if a list/tuple argument's length does not match
+    `len(x)`.
+
+    Parameters
+    ----------
+    x : list
+        The datasets being plotted; only its length is used, to
+        determine how many per-dataset argument tuples to produce.
+    args : sequence
+        Positional arguments to distribute across the datasets.
+
+    Returns
+    -------
+    list of tuple
+        One tuple of arguments per dataset in `x`.
+    """
     args_list = []
     for i,item in enumerate(x):
         tmp = []
@@ -138,6 +236,31 @@ def parse_kwargs(x, kwargs):
 
 
 def reshape_data(x, hue, labels):
+    """Regroup stacked data and labels by category (for per-category plotting).
+
+    Stacks `x` into a single array, then splits its rows back out into
+    one sub-array per distinct value of `hue` (in first-seen order),
+    carrying the corresponding `labels` entries along with them.
+
+    Parameters
+    ----------
+    x : list of numpy.ndarray
+        Datasets to regroup; stacked row-wise before splitting.
+    hue : sequence
+        Category value for each row of the stacked `x` (same total
+        length as `np.vstack(x)`).
+    labels : sequence or None
+        Per-row labels to carry along with the regrouping. If None,
+        `None` is used for every row.
+
+    Returns
+    -------
+    tuple of (list of numpy.ndarray, list of list)
+        `x_reshaped` -- one array per distinct `hue` category, each
+        containing the rows belonging to that category (stacked).
+        `labels_reshaped` -- the corresponding labels for each category,
+        in matching order.
+    """
     categories = list(sorted(set(hue), key=list(hue).index))
     x_stacked = np.vstack(x)
     x_reshaped = [[] for _ in categories]
@@ -280,6 +403,20 @@ def get_type(data):
 
 
 def convert_text(data):
+    """Reshape raw string/text data into a column vector for downstream processing.
+
+    Parameters
+    ----------
+    data : list, numpy.ndarray, str, or bytes
+        Input data, as accepted by `get_type`.
+
+    Returns
+    -------
+    numpy.ndarray or original type
+        If `data` is a string, bytes, or a list of strings (`get_type`
+        returns `'str'` or `'list_str'`), returns `data` reshaped into an
+        (n, 1) numpy array. Otherwise, `data` is returned unchanged.
+    """
     dtype = get_type(data)
     if dtype in ['list_str', 'str']:
         data = np.array(data).reshape(-1, 1)

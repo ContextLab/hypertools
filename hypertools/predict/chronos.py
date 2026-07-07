@@ -31,6 +31,27 @@ def _import_chronos():
 
 
 def fitter(data, **kwargs):
+    """Load the pretrained Chronos pipeline and record each column's raw series.
+
+    There is no actual model fitting -- Chronos is a pretrained,
+    context-conditioned foundation model -- so "fitting" just loads the
+    pipeline once and stores each column's series for `forecaster`.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Data to record.
+    **kwargs
+        `model_name` : str, HuggingFace Hub id of the pretrained
+        checkpoint (default: `'amazon/chronos-t5-tiny'`). `device_map` :
+        str, passed to `ChronosPipeline.from_pretrained` (default: `'cpu'`).
+
+    Returns
+    -------
+    dict
+        `{'pipeline': <loaded ChronosPipeline>, 'series': {col: <float32
+        numpy array>, ...}}`.
+    """
     torch, chronos_pipeline_cls = _import_chronos()
     model_name = kwargs.get('model_name', 'amazon/chronos-t5-tiny')
     device_map = kwargs.get('device_map', 'cpu')
@@ -42,6 +63,29 @@ def fitter(data, **kwargs):
 
 
 def forecaster(data, n_steps, future_index, **kwargs):
+    """Forecast `n_steps` ahead per column via the Chronos pipeline's median prediction.
+
+    Each column's series is fed through `pipeline.predict` independently
+    (Chronos is a univariate model), producing sampled forecast
+    trajectories; the median (0.5 quantile) across samples is taken as
+    the point forecast.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        The (fit-time) data; only its column names/order are used.
+    n_steps : int
+        Number of steps to forecast ahead.
+    future_index : pandas.Index
+        Index to assign to the forecasted rows.
+    **kwargs
+        `pipeline`, `series` : loaded pipeline and per-column series from `fitter`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Forecasted values, indexed by `future_index`, columns matching `data`.
+    """
     torch, _ = _import_chronos()
     pipeline = kwargs['pipeline']
     series = kwargs['series']

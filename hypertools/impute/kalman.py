@@ -33,6 +33,21 @@ def _import_kalman_filter():
 
 
 def fitter(data, **kwargs):
+    """EM-fit a linear-Gaussian Kalman filter on `data` (missing entries masked).
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Data to fit on; NaN entries are masked (treated as missing) via
+        `numpy.ma.masked_invalid`.
+    **kwargs
+        `n_iter` : int, number of EM iterations (default: 5).
+
+    Returns
+    -------
+    dict
+        `{'kf': <fitted pykalman.KalmanFilter>}`.
+    """
     kalman_filter_cls = _import_kalman_filter()
     n_iter = kwargs.get('n_iter', 5)
 
@@ -44,6 +59,25 @@ def fitter(data, **kwargs):
 
 
 def transformer(data, **kwargs):
+    """Fill missing entries of `data` with Kalman-smoothed estimates.
+
+    Smooths the entire masked series with the fitted Kalman filter, then
+    splices the smoothed values back in ONLY where `data` was originally
+    missing (NaN) -- every non-missing entry passes through unchanged.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Data to impute.
+    **kwargs
+        `kf` : the fitted `pykalman.KalmanFilter` from `fitter`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        `data` with missing entries replaced by smoothed estimates,
+        same index/columns as `data`.
+    """
     kf = kwargs['kf']
     x = data.to_numpy(dtype=float)
     masked = np.ma.masked_invalid(x)

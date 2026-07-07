@@ -7,6 +7,15 @@ from scipy.linalg import orth
 
 
 class PPCA(object):
+    """Probabilistic PCA via an EM algorithm, with support for missing data.
+
+    Vendored from the `pca-magic` project. Unlike standard PCA, `fit`
+    tolerates NaN entries in the input (imputing them internally during
+    the EM iterations) and drops any column with fewer than `min_obs`
+    non-missing observations. After fitting, `self.C` holds the
+    (orthonormalized, variance-ordered) component loadings and
+    `self.var_exp` holds the cumulative fraction of variance explained.
+    """
 
     def __init__(self):
 
@@ -24,7 +33,34 @@ class PPCA(object):
         return (X - self.means) / self.stds
 
     def fit(self, data, d=None, tol=1e-4, min_obs=10, verbose=False):
+        """Fit the probabilistic PCA model on `data` via EM, tolerating NaNs.
 
+        Parameters
+        ----------
+        data : numpy.ndarray
+            2D array (observations x features), possibly containing NaN
+            (missing) and/or infinite entries. Infinite entries are
+            clipped to the maximum finite value in `data`. Modified
+            in-place (stored as `self.raw`).
+        d : int or None, optional
+            Number of latent components to fit. Defaults to the number
+            of (valid) columns in `data`.
+        tol : float, optional
+            Relative-change convergence tolerance on the EM objective
+            (default: 1e-4).
+        min_obs : int, optional
+            Columns with fewer than this many non-missing observations
+            are dropped before fitting (default: 10).
+        verbose : bool, optional
+            If True, print the convergence diagnostic each iteration.
+
+        Notes
+        -----
+        Fits `self.C` (component loadings, orthonormalized and sorted by
+        descending eigenvalue), `self.data` (the standardized, missing-
+        imputed data used for fitting), `self.eig_vals`, `self.means`,
+        `self.stds`, and (via `_calc_var`) `self.var_exp`.
+        """
         self.raw = data
         self.raw[np.isinf(self.raw)] = np.max(self.raw[np.isfinite(self.raw)])
 
@@ -110,7 +146,24 @@ class PPCA(object):
         self._calc_var()
 
     def transform(self, data=None):
+        """Project `data` onto the fitted principal components.
 
+        Parameters
+        ----------
+        data : numpy.ndarray or None, optional
+            Data to project. If `None` (default), projects the
+            (standardized, missing-imputed) data stored from `fit`.
+
+        Returns
+        -------
+        numpy.ndarray
+            `data @ self.C` (or `self.data @ self.C` when `data` is None).
+
+        Raises
+        ------
+        RuntimeError
+            If `fit` has not been called yet (`self.C` is None).
+        """
         if self.C is None:
             raise RuntimeError('Fit the data model first.')
         if data is None:
@@ -130,11 +183,29 @@ class PPCA(object):
         self.var_exp = self.eig_vals.cumsum() / total_var
 
     def save(self, fpath):
+        """Save the fitted component loadings (`self.C`) to `fpath` via `numpy.save`.
 
+        Parameters
+        ----------
+        fpath : str
+            Destination path (`.npy` extension appended by `numpy.save`
+            if not already present).
+        """
         np.save(fpath, self.C)
 
     def load(self, fpath):
+        """Load component loadings from `fpath` into `self.C` via `numpy.load`.
 
+        Parameters
+        ----------
+        fpath : str
+            Path to a `.npy` file previously written by `save`.
+
+        Raises
+        ------
+        AssertionError
+            If `fpath` does not exist.
+        """
         assert os.path.isfile(fpath)
 
         self.C = np.load(fpath)

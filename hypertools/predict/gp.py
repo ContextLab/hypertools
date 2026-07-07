@@ -19,6 +19,25 @@ from .common import Forecaster
 
 
 def fitter(data, **kwargs):
+    """Fit a `GaussianProcessRegressor` against the time index (0..n-1) for `data`.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Data to fit; the target `y` is `data`'s values, regressed
+        against the integer time index.
+    **kwargs
+        `kernel` : sklearn kernel or None, covariance kernel (default:
+        `DotProduct() + RBF(10.0) + WhiteKernel()`). `alpha` : float,
+        diagonal regularization (default: 1e-10). `normalize_y` : bool,
+        whether to normalize targets before fitting (default: True).
+
+    Returns
+    -------
+    dict
+        `{'gp': <fitted GaussianProcessRegressor>, 'n': <number of
+        fit-time observations>}`.
+    """
     kernel = kwargs.get('kernel', None)
     if kernel is None:
         kernel = DotProduct() + RBF(10.0) + WhiteKernel()
@@ -34,6 +53,25 @@ def fitter(data, **kwargs):
 
 
 def forecaster(data, n_steps, future_index, **kwargs):
+    """Forecast `n_steps` ahead by extending the fitted GP's time index.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        The (fit-time) data; only its column names/order are used.
+    n_steps : int
+        Number of steps to forecast ahead.
+    future_index : pandas.Index
+        Index to assign to the forecasted rows.
+    **kwargs
+        `gp`, `n` : the fitted `GaussianProcessRegressor` and fit-time
+        observation count from `fitter`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Forecasted values, indexed by `future_index`, columns matching `data`.
+    """
     gp = kwargs['gp']
     n = kwargs['n']
 

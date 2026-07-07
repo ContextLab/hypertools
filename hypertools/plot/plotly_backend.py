@@ -1026,6 +1026,13 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
     ext = save_path.lower().rsplit('.', 1)[-1]
 
     def frame_snapshots():
+        """Yield one static `go.Figure` snapshot per animation frame in `fig.frames`.
+
+        Each snapshot is a full copy of `fig` (frames cleared, play/pause
+        controls hidden) with that frame's layout/data updates applied,
+        suitable for rendering to a single static image (e.g. via
+        `to_image`) when assembling a GIF/video/SVG export.
+        """
         for frame in fig.frames:
             snapshot = go.Figure(fig)
             snapshot.frames = ()

@@ -302,6 +302,14 @@ def _make_save_dpi_safe(line_ani):
 
     @functools.wraps(real_save)
     def save(*args, **kwargs):
+        """Call the original `line_ani.save`, temporarily clearing the figure's canvas manager.
+
+        Prevents matplotlib's writer-setup dpi-correction resize from
+        resizing a real, OS-backed interactive window mid-save (which
+        would corrupt the pixel dimensions of the saved animation -- see
+        `_make_save_dpi_safe`); the manager is restored afterward
+        regardless of whether the save succeeds.
+        """
         fig = line_ani._fig
         canvas = getattr(fig, "canvas", None)
         manager = getattr(canvas, "manager", None) if canvas is not None else None
@@ -389,6 +397,11 @@ def _draw(
 
     # handle static plots
     def dispatch_static(x, ax=None):
+        """Create (or reuse) an Axes sized for `x`'s dimensionality and draw a static plot.
+
+        Dispatches to `plot1D`/`plot2D`/`plot3D` based on the number of
+        columns in `x[0]` (creating a 3D-projection Axes when it is 3).
+        """
         shape = x[0].shape[1]
         if shape == 3:
             opts = dict(projection="3d")
@@ -439,6 +452,7 @@ def _draw(
 
     # plot data in 1D
     def plot1D(data, fig, ax):
+        """Draw each dataset in `data` as a 1D line/scatter (using column 0) on `ax`."""
         n = len(data)
         for i in range(n):
             raw = raw_data[i] if raw_data is not None else data[i]
@@ -447,6 +461,7 @@ def _draw(
 
     # plot data in 2D
     def plot2D(data, fig, ax):
+        """Draw each dataset in `data` as a 2D line/scatter (columns 0-1) on `ax`."""
         n = len(data)
         for i in range(n):
             raw = raw_data[i] if raw_data is not None else data[i]
@@ -457,6 +472,7 @@ def _draw(
 
     # plot data in 3D
     def plot3D(data, fig, ax):
+        """Draw each dataset in `data` as a 3D line/scatter (columns 0-2) on `ax`."""
         # NOTE (D4 axes-box-slicing investigation): the static path is NOT
         # subject to the animated path's defect -- only `animate_plot3D`
         # forces `ax.set_position([0, 0, 1, 1])` (full canvas), which is
@@ -736,6 +752,25 @@ def _draw(
                 closestIndex_prev = closestIndex
 
     def plot_cube(scale, **cube_kwargs):
+        """Draw a wireframe cube of half-width `scale` (centered at the origin) on `ax`.
+
+        Draws all six faces via `ax.plot_wireframe` with clipping
+        disabled (so wide/flat rotated projections aren't sliced by
+        matplotlib's shrunk-viewport aspect handling).
+
+        Parameters
+        ----------
+        scale : float
+            Half-width of the cube.
+        **cube_kwargs
+            Passed to `ax.plot_wireframe` (with sensible defaults for
+            `color`/`linewidth`/`rstride`/`cstride` filled in if absent).
+
+        Returns
+        -------
+        list
+            The six `Line3DCollection` wireframe artists (one per face).
+        """
         if cube_kwargs.get('colors') is None:
             cube_kwargs.setdefault("color", "black")
         if cube_kwargs.get('linewidths') is None:
@@ -775,6 +810,19 @@ def _draw(
         return plane_list
 
     def plot_square(ax, scale=1, **square_kwargs):
+        """Draw a square outline of half-width `scale` (centered at the origin) on `ax`.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            Axes to draw the square patch on.
+        scale : float, optional
+            Half-width of the square (default: 1).
+        **square_kwargs
+            Passed to `matplotlib.patches.Rectangle`, with `edgecolor`/
+            `fill`/`linewidth` defaulted (respecting matplotlib's usual
+            abbreviated-argument precedence) if not already given.
+        """
         # follow default matplotlib behaviors of giving abbreviated
         # arguments priority of full arguments, and `color` priority
         # over `facecolor` and `edgecolor`
@@ -812,7 +860,21 @@ def _draw(
         bullettime=None,
         elev=10,
     ):
+        """FuncAnimation frame-update callback: redraw the cube and every dataset's 3D trail/head for frame `num`.
 
+        Removes and redraws the frame cube, rotates the view (`ax.view_init`)
+        by `azim = rotations * 360 * num / n_frames`, applies the zoom via
+        `ax.set_box_aspect`, then updates each dataset's line/trail
+        artists in lockstep ("parallel" animation, as opposed to the
+        serial/morph variants) according to its chemtrails/precog/
+        bullettime flags and `tail_duration`.
+
+        Returns
+        -------
+        tuple of (list, list)
+            `(lines, trail_lines)` -- the updated head-line and trail
+            artists, for `blit=True` animation.
+        """
         if hasattr(update_lines_parallel, "planes"):
             for plane in update_lines_parallel.planes:
                 plane.remove()
@@ -872,7 +934,18 @@ def _draw(
     def update_lines_spin(
         num, data_lines, lines, cube_scale, rotations=1, zoom=1, elev=10
     ):
+        """FuncAnimation frame-update callback: rotate the camera around fully-drawn ('spin') datasets for frame `num`.
 
+        Unlike `update_lines_parallel`, every dataset's FULL trajectory
+        is already drawn for every frame -- only the cube, camera
+        rotation, and (when `surface=` is set) shading/backface-culling
+        update per frame.
+
+        Returns
+        -------
+        list
+            The updated matplotlib line artists, for `blit=True` animation.
+        """
         if hasattr(update_lines_spin, "planes"):
             for plane in update_lines_spin.planes:
                 plane.remove()
@@ -1010,6 +1083,20 @@ def _draw(
         return (artist,)
 
     def dispatch_animate(x, ani_params):
+        """Dispatch to `animate_plot3D` or `animate_plot2D` based on `x[0]`'s column count.
+
+        Parameters
+        ----------
+        x : list of numpy.ndarray
+            Datasets to animate.
+        ani_params : dict
+            Keyword arguments forwarded to the resolved animate function.
+
+        Returns
+        -------
+        The resolved animate function's return value (e.g. `(fig, ax, x,
+        line_ani)`), or `None` if `x[0]` has neither 2 nor 3 columns.
+        """
         if x[0].shape[1] == 3:
             return animate_plot3D(x, **ani_params)
         if x[0].shape[1] == 2:
@@ -1031,6 +1118,46 @@ def _draw(
         morph_colors=None,
         morph_samples=None,
     ):
+        """Build and run a 3D matplotlib `FuncAnimation` for `x` (parallel/spin/serial/morph/window styles).
+
+        Creates the 3D axes and initial (single-point) line/trail
+        artists for every dataset, then wires up the appropriate
+        per-frame update callback (`update_lines_parallel`,
+        `update_lines_spin`, `update_lines_serial`, or `update_morph`,
+        selected by `style`) as a `matplotlib.animation.FuncAnimation`.
+
+        Parameters
+        ----------
+        x : list of numpy.ndarray
+            3-column datasets to animate.
+        tail_duration : int, optional
+            Number of trailing frames shown for chemtrails/precog/
+            bullettime trails (default: 2).
+        focused : optional
+            Index (or indices) of the dataset(s) to keep visually
+            emphasized; forwarded to the frame-window logic.
+        rotations : float, optional
+            Number of full camera rotations over the animation (default: 1).
+        zoom : float, optional
+            Camera zoom factor (default: 1).
+        chemtrails, precog, bullettime : list of bool, optional
+            Per-dataset trail-display flags (see `update_lines_parallel`).
+        frame_rate : int, optional
+            Animation frame rate in fps (default: 30).
+        elev : float, optional
+            Camera elevation angle in degrees (default: 10).
+        style : {'parallel', 'spin', 'serial', 'morph', 'window'}, optional
+            Which animation style/update-callback to use (default: 'parallel').
+        morph_tags, morph_colors, morph_samples : optional
+            Parameters controlling the `style='morph'` traveling
+            point-cloud animation (see `hypertools.plot.morph`).
+
+        Returns
+        -------
+        tuple
+            `(fig, ax, x, line_ani)` -- the created Figure, Axes3D,
+            original data `x`, and the `FuncAnimation` instance.
+        """
 
         # initialize plot
         fig = plt.figure()
@@ -1457,6 +1584,14 @@ def _draw(
         num, data_lines, lines, trail_lines, tail_duration=2,
         chemtrails=None, precog=None, bullettime=None,
     ):
+        """2D counterpart of `update_lines_parallel` (fixed viewport, no camera/cube).
+
+        Returns
+        -------
+        tuple of (list, list)
+            `(lines, trail_lines)` -- the updated head-line and trail
+            artists, for `blit=True` animation.
+        """
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
             if trail is not None:
@@ -1478,6 +1613,13 @@ def _draw(
         return lines, trail_lines
 
     def update_lines_serial_2d(num, data_lines, lines):
+        """2D counterpart of `update_lines_serial` (fixed viewport, no camera/cube).
+
+        Returns
+        -------
+        list
+            The updated matplotlib line artists, for `blit=True` animation.
+        """
         total_frames = frame_rate * duration
         lengths = [d.shape[0] for d in data_lines]
         total_points = sum(lengths)
@@ -1493,6 +1635,13 @@ def _draw(
         return lines
 
     def update_morph_2d(num, morph_state):
+        """2D counterpart of `update_morph`: move the single traveling morph point-cloud artist for frame `num`.
+
+        Returns
+        -------
+        tuple of (matplotlib.lines.Line2D,)
+            The updated morph artist, for `blit=True` animation.
+        """
         seg_idx, step, n_steps = _morph.frame_to_segment(
             morph_state["frame_counts"], num)
         pts = _morph.morph_positions(morph_state["sampled"], seg_idx, step,
@@ -1525,6 +1674,33 @@ def _draw(
         morph_colors=None,
         morph_samples=None,
     ):
+        """2D counterpart of `animate_plot3D`: build and run a fixed-viewport `FuncAnimation` (no camera rotation).
+
+        `style='spin'` is not supported (there is no 3D camera to
+        rotate) and raises `ValueError`. `rotations=`/`zoom=` are
+        accepted for signature parity with `animate_plot3D` but ignored
+        (they have no 2D meaning; `plot.py` already warns the caller
+        when either is set to a non-default value).
+
+        Parameters
+        ----------
+        x : list of numpy.ndarray
+            2-column datasets to animate.
+        tail_duration, focused, chemtrails, precog, bullettime,
+        frame_rate, elev, style, morph_tags, morph_colors, morph_samples
+            Same meaning as in `animate_plot3D`.
+
+        Returns
+        -------
+        tuple
+            `(fig, ax, x, line_ani)` -- the created Figure, Axes, original
+            data `x`, and the `FuncAnimation` instance.
+
+        Raises
+        ------
+        ValueError
+            If `style='spin'`.
+        """
         if style == "spin":
             raise ValueError(
                 "animate='spin' rotates the 3-D camera and has no meaning "

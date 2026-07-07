@@ -156,18 +156,60 @@ class _DispatchStep:
 
     @property
     def is_fitted(self):
+        """Whether `fit`/`fit_transform` has been called on this step yet."""
         return self._fitted is not None
 
     def fit(self, data):
+        """Fit this step's dispatcher on `data`, discarding the transformed result.
+
+        Parameters
+        ----------
+        data : the data to fit on.
+
+        Returns
+        -------
+        _DispatchStep
+            `self`, for chaining (mirrors scikit-learn's `fit` convention).
+        """
         self.fit_transform(data)
         return self
 
     def fit_transform(self, data):
+        """Fit this step's dispatcher on `data` and return the transformed result.
+
+        Calls the wrapped dispatcher with `return_model=True` and the
+        original spec, storing the returned fitted model for later
+        `transform` calls.
+
+        Parameters
+        ----------
+        data : the data to fit and transform.
+
+        Returns
+        -------
+        The dispatcher's transformed output for `data`.
+        """
         result, fitted = self._call(data, self._spec)
         self._fitted = fitted
         return result
 
     def transform(self, data):
+        """Apply the already-fitted dispatcher model to new `data`.
+
+        Parameters
+        ----------
+        data : the data to transform, using the model fitted by a prior
+            `fit`/`fit_transform` call.
+
+        Returns
+        -------
+        The dispatcher's transformed output for `data`.
+
+        Raises
+        ------
+        sklearn.exceptions.NotFittedError
+            If `fit`/`fit_transform` has not been called yet.
+        """
         if self._fitted is None:
             raise NotFittedError(f'{self._name} stage must be fit before transform')
         result, fitted = self._call(data, self._fitted)

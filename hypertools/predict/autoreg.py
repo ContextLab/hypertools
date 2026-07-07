@@ -70,6 +70,34 @@ def _fit_with_multioutput_fallback(estimator, x, y):
 
 
 def fitter(data, **kwargs):
+    """Fit a lagged-feature regressor for the `AutoRegressor` forecaster.
+
+    Builds a lagged design matrix (each row: the flattened previous
+    `lags` observations; target: the next observation) and fits `model`
+    on it, falling back to `MultiOutputRegressor` if `model` does not
+    natively support a multivariate target.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Data to fit on.
+    **kwargs
+        `model` : str, class, or instance, the regressor to use
+        (default: `'Ridge'`). `lags` : int, number of trailing
+        observations used as predictors (default: 10). `model_kwargs` :
+        dict, passed to `model` when it is a string or class.
+
+    Returns
+    -------
+    dict
+        `{'estimator': <fitted regressor>, 'lags': lags, 'history':
+        <last `lags` rows of data>, 'n_features': <number of columns>}`.
+
+    Raises
+    ------
+    AssertionError
+        If `data` has `lags` or fewer observations.
+    """
     model = kwargs.get('model', 'Ridge')
     lags = kwargs.get('lags', 10)
     model_kwargs = kwargs.get('model_kwargs', {}) or {}
@@ -87,6 +115,28 @@ def fitter(data, **kwargs):
 
 
 def forecaster(data, n_steps, future_index, **kwargs):
+    """Recursively forecast `n_steps` ahead using the fitted lagged-feature regressor.
+
+    Predicts one step from the trailing `lags`-observation window,
+    appends the prediction to that window (dropping the oldest entry),
+    and repeats `n_steps` times.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        The (fit-time) data; only its column names/order are used.
+    n_steps : int
+        Number of steps to forecast ahead.
+    future_index : pandas.Index
+        Index to assign to the forecasted rows.
+    **kwargs
+        `estimator`, `n_features`, `history` : fitted state from `fitter`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Forecasted values, indexed by `future_index`, columns matching `data`.
+    """
     estimator = kwargs['estimator']
     d = kwargs['n_features']
     history = kwargs['history'].copy()

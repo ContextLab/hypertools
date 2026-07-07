@@ -69,6 +69,22 @@ def _forecast_column(x, n_steps):
 
 
 def fitter(data, **kwargs):
+    """Record each column's raw series for the `Laplace` forecaster.
+
+    Nothing is actually pre-fit here: `skaters.api.laplace` is a
+    stateless-online estimator driven by the full series at forecast
+    time, so this just stores each column's series for `forecaster`.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Data to record.
+
+    Returns
+    -------
+    dict
+        `{'series': {col: <float numpy array>, ...}}`.
+    """
     # Nothing to pre-fit: skaters' laplace is a stateless-online estimator
     # that is driven by the (full) series at forecast time. Store the raw
     # per-column series so `forecaster` can feed them through the closure.
@@ -76,6 +92,28 @@ def fitter(data, **kwargs):
 
 
 def forecaster(data, n_steps, future_index, **kwargs):
+    """Forecast `n_steps` ahead per column via `skaters.api.laplace`'s online state loop.
+
+    Feeds each column's full series through a fresh `laplace(k=n_steps)`
+    closure (see `_forecast_column`) and takes each returned
+    distribution's mean as the point forecast.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        The (fit-time) data; only its column names/order are used.
+    n_steps : int
+        Number of steps to forecast ahead.
+    future_index : pandas.Index
+        Index to assign to the forecasted rows.
+    **kwargs
+        `series` : per-column raw series from `fitter`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Forecasted values, indexed by `future_index`, columns matching `data`.
+    """
     series = kwargs['series']
 
     columns = {}

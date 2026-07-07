@@ -59,19 +59,23 @@ class _SVGFrameCollector(animation.AbstractMovieWriter):
         self._stride = 1
 
     def setup(self, fig, outfile, dpi=None):
+        """Record the figure, output path, and DPI to use for captured frames."""
         self.fig = fig
         self.outfile = outfile
         self.dpi = dpi if dpi is not None else fig.dpi
 
     @property
     def frame_size(self):
+        """`(width_px, height_px)` of a captured frame, derived from the figure size and DPI."""
         w, h = self.fig.get_size_inches()
         return int(w * self.dpi), int(h * self.dpi)
 
     def set_stride(self, total_frames):
+        """Set the frame-capture stride so at most `self.max_frames` of `total_frames` are kept."""
         self._stride = max(1, int(np.ceil(total_frames / self.max_frames)))
 
     def grab_frame(self, **savefig_kwargs):
+        """Capture the current figure as an SVG frame, honoring the stride set by `set_stride`."""
         if self._seen % self._stride == 0:
             import io
             buf = io.StringIO()
@@ -80,6 +84,7 @@ class _SVGFrameCollector(animation.AbstractMovieWriter):
         self._seen += 1
 
     def finish(self):
+        """Combine all captured SVG frames into one SMIL-animated SVG and write it to `self.outfile`."""
         from .._shared.animated_svg import combine_frames_svg
         duration = max(1.0, len(self.frames) * self._stride / self.fps)
         with open(self.outfile, 'w') as f:

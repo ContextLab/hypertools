@@ -98,10 +98,18 @@ def _hf_fallback_model(name):
     """
     class _HFTextModel(BaseEstimator, TransformerMixin):
         def fit(self, X, y=None):
+            """No-op fit (the pretrained HuggingFace model needs no fitting); marks `self` as fitted."""
             self.fitted_ = True
             return self
 
         def transform(self, X):
+            """Embed each document in `X` with the pretrained HuggingFace model `name`.
+
+            Returns
+            -------
+            scipy.sparse.csr_matrix
+                The embedded documents as a sparse matrix.
+            """
             from datawrangler.zoo.text import apply_text_model
             from scipy import sparse
             embedded = apply_text_model(name, list(X), mode='transform')

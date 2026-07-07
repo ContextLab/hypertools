@@ -114,6 +114,30 @@ def resolve_t(data, t):
 
 
 class Forecaster(BaseEstimator):
+    """Scikit-learn-compatible base class for hypertools forecasters.
+
+    Wraps a `(fitter, forecaster, applier, required)` quadruple, fitting
+    ONE model PER dataset: `fit` runs `fitter` separately on each
+    dataset (a list of datasets yields a list of fitted param dicts,
+    stored in `models_`); `predict` returns a forecast with `t` new rows
+    continuing each dataset's index; `fit_predict` chains the two. Child
+    classes (Kalman, GaussianProcess, AutoRegressor, ARIMA, Laplace,
+    Chronos) supply the fitter/forecaster callables plus their own
+    defaults via `**kwargs` to `__init__`.
+
+    Parameters
+    ----------
+    **kwargs
+        `data` : the dataset(s) to forecast (may be `None` until `fit`
+        is called). `fitter` : callable that fits forecasting parameters
+        and returns a dict. `forecaster` : callable that produces a
+        forecast from fitted parameters. `applier` : optional callable
+        that applies learned parameters to NEW data (for `predict_new`).
+        `required` : list of parameter names `fitter` must return. Any
+        remaining kwargs are forwarded to `fitter`/`forecaster` on every
+        call.
+    """
+
     def __init__(self, **kwargs):
         self.data = kwargs.pop('data', None)
         self.fitter = kwargs.pop('fitter', None)
@@ -123,6 +147,27 @@ class Forecaster(BaseEstimator):
         self.kwargs = kwargs
 
     def fit(self, data):
+        """Fit a separate forecasting model on each dataset in `data`.
+
+        Parameters
+        ----------
+        data : DataFrame, array, or list of these
+            The dataset(s) to fit. Each is fit independently via
+            `self.fitter`, producing one fitted param dict per dataset
+            (stored in `self.models_`).
+
+        Returns
+        -------
+        Forecaster
+            `self`, for chaining.
+
+        Raises
+        ------
+        ValueError
+            If `data` is `None`, if `self.fitter` does not return a
+            dict, or if any name in `self.required` is missing from a
+            returned dict.
+        """
         assert data is not None, ValueError('cannot forecast an empty dataset')
         single = not isinstance(data, list)
         datasets = [_as_dataframe(data)] if single else [_as_dataframe(d) for d in data]
@@ -143,6 +188,26 @@ class Forecaster(BaseEstimator):
         return self
 
     def predict(self, t):
+        """Forecast `t` steps beyond each fitted dataset's end.
+
+        Parameters
+        ----------
+        t : int or datetime-like
+            Forecast horizon, resolved per-dataset via `resolve_t`. A
+            `t` at or before a dataset's last observation truncates
+            that dataset's history up to `t` instead of forecasting.
+
+        Returns
+        -------
+        A forecast DataFrame (or list of them, matching the structure of
+        the data `fit` was called with).
+
+        Raises
+        ------
+        sklearn.exceptions.NotFittedError
+            If `fit` has not been called yet, or a required fitted
+            attribute is missing for a dataset.
+        """
         if self.data is None or not hasattr(self, 'models_'):
             raise NotFittedError('must fit forecaster before predicting')
 
@@ -172,6 +237,19 @@ class Forecaster(BaseEstimator):
         return forecasts[0] if single else forecasts
 
     def fit_predict(self, data, t):
+        """Fit a forecasting model on `data`, then immediately forecast `t` steps ahead.
+
+        Parameters
+        ----------
+        data : DataFrame, array, or list of these
+            The dataset(s) to fit and forecast.
+        t : int or datetime-like
+            Forecast horizon (see `predict`/`resolve_t`).
+
+        Returns
+        -------
+        A forecast DataFrame (or list of them, matching `data`'s structure).
+        """
         self.fit(data)
         return self.predict(t)
 

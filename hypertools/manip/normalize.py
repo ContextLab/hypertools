@@ -8,6 +8,38 @@ from .common import Manipulator
 # noinspection PyShadowingBuiltins
 @dw.decorate.funnel
 def fitter(data, axis=0, min=0, max=1):
+    """Fit min-max normalization parameters for the `Normalize` manipulator.
+
+    Computes, per column (or per row if `axis=1`, via transposed
+    recursion), the minimum (`baseline`) and post-baseline maximum
+    (`peak`) needed to rescale values into `[min, max]`.
+
+    Parameters
+    ----------
+    data : DataFrame or list of DataFrame
+        Data to fit on. If a list, datasets are concatenated row-wise
+        before fitting (one shared baseline/peak across all of them).
+    axis : int, optional
+        0 to normalize each column (default), 1 to normalize each row
+        (implemented by transposing, fitting on axis=0, and flagging
+        `transpose=True` for the transformer).
+    min : float, optional
+        Lower bound of the target range (default: 0).
+    max : float, optional
+        Upper bound of the target range (default: 1).
+
+    Returns
+    -------
+    dict
+        `{'baseline': <per-column min>, 'peak': <per-column max after
+        baseline subtraction>, 'axis': axis, 'transpose': bool, 'min':
+        min, 'max': max}`.
+
+    Raises
+    ------
+    ValueError
+        If `min >= max`, or `axis` is not 0 or 1.
+    """
     assert min < max, ValueError('minimum must be strictly less than maximum')
 
     if isinstance(data, list):
@@ -45,6 +77,28 @@ def _transform_stacked(data, **kwargs):
 
 
 def transformer(data, **kwargs):
+    """Apply fitted min-max normalization parameters for the `Normalize` manipulator.
+
+    Parameters
+    ----------
+    data : DataFrame or list of DataFrame
+        Data to normalize.
+    **kwargs
+        `baseline`, `peak`, `min`, `max`, `axis` : parameters from
+        `fitter`. `transpose` : bool, whether to transpose, recurse with
+        `axis` flipped, and transpose back (the `axis=1` row-wise path).
+
+    Returns
+    -------
+    The normalized data, rescaled into `[min, max]` per the fitted
+    `baseline`/`peak`, in the same shape as `data`.
+
+    Raises
+    ------
+    ValueError
+        If `axis` is missing from `kwargs`, or (after resolving
+        `transpose`) is not 0.
+    """
     transpose = kwargs.pop('transpose', False)
     assert 'axis' in kwargs.keys(), ValueError('Must specify axis')
 
@@ -67,6 +121,18 @@ def transformer(data, **kwargs):
 
 
 class Normalize(Manipulator):
+    """Min-max normalize data into a `[min, max]` range, per column or per row.
+
+    Parameters
+    ----------
+    min : float, optional
+        Lower bound of the target range (default: 0).
+    max : float, optional
+        Upper bound of the target range (default: 1).
+    axis : int, optional
+        0 to normalize each column independently (default), 1 to
+        normalize each row independently.
+    """
     # noinspection PyShadowingBuiltins
     def __init__(self, min=0, max=1, axis=0):
         required = ['min', 'max', 'transpose', 'baseline', 'peak', 'axis']

@@ -108,9 +108,11 @@ def _fit_stream_models(head, reduce, ndims, normalize):
     # 'row' is stateless.
     if normalize in (None, False):
         def norm(m):
+            """No-op normalizer: return `m` unchanged."""
             return m
     elif normalize == 'row':
         def norm(m):
+            """Z-score each row of `m` independently (stateless, per-chunk)."""
             return (m - m.mean(axis=1, keepdims=True)) / \
                 _safe_std(m, axis=1, keepdims=True)
     elif normalize in ('across', 'within', True):
@@ -118,6 +120,7 @@ def _fit_stream_models(head, reduce, ndims, normalize):
         sd = _safe_std(head, axis=0, keepdims=True)
 
         def norm(m):
+            """Z-score `m` using the mean/std fitted on the head samples."""
             return (m - mu) / sd
     else:
         raise ValueError(f'unsupported normalize option for streaming data: '
@@ -155,6 +158,7 @@ def _fit_stream_models(head, reduce, ndims, normalize):
     model.fit(head_n)
 
     def project(m):
+        """Normalize (via `norm`) and reduce `m` using the fitted stream model."""
         return model.transform(norm(m))
 
     return model.transform(head_n), project, model
@@ -221,6 +225,12 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     box_m2 = (head_centered - box_m1).max() or 1.0
 
     def to_box(pts):
+        """Map `pts` into the frozen [-1, 1] display box fit from the head samples.
+
+        Applies the head-derived centering/scaling affine transform and
+        clamps any out-of-range values to the box surface, so the plot's
+        axis limits never change as new samples stream in.
+        """
         t = 2.0 * ((pts - head_mu) - box_m1) / box_m2 - 1.0
         return np.clip(t, -1.0, 1.0)
 

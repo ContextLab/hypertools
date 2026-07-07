@@ -27,6 +27,26 @@ def _splice(x, filled):
 
 
 def transformer(data, **kwargs):
+    """Fill missing entries of `data` using a fitted sklearn imputer.
+
+    Shared by `SimpleImputer`, `KNNImputer`, and `IterativeImputer`.
+    Runs the fitted sklearn imputer's `.transform` over the whole array,
+    then splices its output back in ONLY at the originally-missing (NaN)
+    positions -- every non-missing entry passes through byte-identical.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Data to impute.
+    **kwargs
+        `imputer` : the fitted sklearn imputer instance from the
+        corresponding `_*_fitter`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        `data` with missing entries filled, same index/columns as `data`.
+    """
     imputer = kwargs['imputer']
     x = data.to_numpy(dtype=float)
     filled = imputer.transform(x)

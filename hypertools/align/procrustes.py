@@ -60,7 +60,21 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
     """
 
     def fit(source, target):
+        """Compute the Procrustes projection matrix mapping `source` onto `target`.
 
+        Normalizes both arrays by their Frobenius norm, pads the
+        lower-dimensional one with zero columns (or raises if
+        `reduction=False` and `target` has fewer columns than
+        `source`), solves for the optimal linear map (SVD-based
+        orthogonal solution, or a least-squares oblique solution if
+        `oblique=True`), and rescales by the norm ratio if `scaling=True`.
+
+        Returns
+        -------
+        numpy.ndarray
+            The projection matrix `proj` such that `source @ proj`
+            approximates `target`.
+        """
         datas = (source, target)
         sn, sm = source.shape
         tn, tm = target.shape
@@ -144,6 +158,25 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
         return proj
 
     def transform(data, proj):
+        """Apply a fitted Procrustes projection matrix to `data`.
+
+        Parameters
+        ----------
+        data : array-like
+            Data to project.
+        proj : numpy.ndarray or None
+            Projection matrix returned by `fit`.
+
+        Returns
+        -------
+        numpy.ndarray
+            `data @ proj`.
+
+        Raises
+        ------
+        RuntimeError
+            If `proj` is `None` (mapper has not been fit).
+        """
         if proj is None:
             raise RuntimeError("Mapper needs to be trained before use.")
 
@@ -163,6 +196,51 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
 
 
 def align(source, target, scaling=True, reflection=True, reduction=False, oblique=False, oblique_rcond=-1):
+    """Compute a Procrustes projection matrix mapping `source` onto `target`.
+
+    Lower-level counterpart to `procrustes()` that works directly on
+    (already-formatted) arrays and returns only the projection matrix
+    (not the aligned data). Normalizes both inputs by their Frobenius
+    norm, pads the lower-dimensional one with zero columns (or raises if
+    `reduction=False` and `source` has more columns than `target`),
+    solves for the optimal linear map (SVD-based orthogonal solution, or
+    a least-squares oblique solution if `oblique=True`), and rescales by
+    the norm ratio if `scaling=True`.
+
+    Parameters
+    ----------
+    source : numpy.ndarray or pandas.DataFrame
+        Data to be aligned to `target`'s coordinate system. If it has a
+        `.values` attribute (e.g. a DataFrame), that is used.
+    target : numpy.ndarray or pandas.DataFrame
+        Data defining the target coordinate system.
+    scaling : bool, optional
+        Estimate a global scaling factor (default: True).
+    reflection : bool, optional
+        Allow reflections in the (non-oblique) rotation (default: True).
+    reduction : bool, optional
+        Allow mapping into a lower-dimensional space when `source` has
+        more columns than `target` (default: False).
+    oblique : bool, optional
+        Use a non-orthogonal (least-squares) transformation instead of
+        an orthogonal one (default: False).
+    oblique_rcond : float, optional
+        Cutoff for small singular values, passed to `numpy.linalg.lstsq`
+        when `oblique=True` (default: -1).
+
+    Returns
+    -------
+    numpy.ndarray
+        The projection matrix mapping `source` onto `target`, or the
+        identity matrix if `source` and `target` are already identical.
+
+    Raises
+    ------
+    ValueError
+        If `source` and `target` do not have the same number of rows, or
+        if either dataset is invariant (near-zero variance), or if
+        `reduction=False` but `source` has more columns than `target`.
+    """
     if hasattr(source, 'values'):
         source = getattr(source, 'values')
     if hasattr(target, 'values'):
@@ -255,6 +333,25 @@ def align(source, target, scaling=True, reflection=True, reduction=False, obliqu
 
 
 def xform(data, proj):
+    """Apply a fitted Procrustes projection matrix to a DataFrame.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Data to project; its index is preserved on the result.
+    proj : numpy.ndarray or None
+        Projection matrix returned by `align`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        `data @ proj`, indexed like `data`.
+
+    Raises
+    ------
+    RuntimeError
+        If `proj` is `None` (mapper has not been fit).
+    """
     if proj is None:
         raise RuntimeError("Mapper needs to be trained before use.")
 
@@ -263,6 +360,28 @@ def xform(data, proj):
 
 
 def fitter(data, **kwargs):
+    """Fit Procrustes projection matrix/matrices for the `Procrustes` Aligner.
+
+    Parameters
+    ----------
+    data : DataFrame or list of DataFrame
+        Dataset(s) to align. If a list, each is aligned to a common
+        `target` (or to `data[index]`/`data[0]` if `target` is None).
+    **kwargs
+        `target` : DataFrame or None, optional dataset to align to.
+        `index` : int, default 0, index used to select the default
+        target within `data` when `target` is None and `data` is a list
+        of length 0 (kept for downstream lookups). Remaining kwargs
+        (`scaling`, `reflection`, `reduction`, `oblique`,
+        `oblique_rcond`) are forwarded to `align`.
+
+    Returns
+    -------
+    dict
+        `{'index': index, 'proj': proj, ...other kwargs}`, where `proj`
+        is a single projection matrix (if `data` is a single dataset) or
+        a list of projection matrices (one per dataset in `data`).
+    """
     target = kwargs.pop('target', None)
     index = kwargs.pop('index', 0)
 
@@ -282,6 +401,33 @@ def fitter(data, **kwargs):
 
 
 def transformer(data, **kwargs):
+    """Apply fitted Procrustes projection matrix/matrices for the `Procrustes` Aligner.
+
+    Parameters
+    ----------
+    data : DataFrame or list of DataFrame
+        Dataset(s) to project, using the projection(s) from `fitter`.
+    **kwargs
+        `proj` : the fitted projection matrix, or list of matrices, from
+        `fitter`. `index` : int, used to select which fitted projection
+        to apply when `data` is a single (non-list) dataset and `proj`
+        is a list.
+
+    Returns
+    -------
+    DataFrame or list of DataFrame
+        The projected dataset(s), matching the list/single-item shape
+        implied by `data` and `proj`.
+
+    Raises
+    ------
+    AssertionError
+        If `proj` is `None`, or if `data` and `proj` are both lists of
+        mismatched length.
+    IndexError
+        If `index` is outside the range of `proj` (when `proj` is a
+        list and `data` is a single dataset).
+    """
     proj = kwargs.pop('proj', None)
     assert proj is not None, 'Need to fit model before transforming data'
 

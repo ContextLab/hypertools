@@ -43,6 +43,29 @@ def trim_and_pad(data):
 
 
 class Aligner(BaseEstimator):
+    """Scikit-learn-compatible base class for hypertools aligners.
+
+    Wraps a `(fitter, transformer, required)` triple that operates on a
+    *list* of DataFrames: `fit` unstacks the stored data into that list,
+    trims to common rows and zero-pads to common columns (see
+    `trim_and_pad`), runs `fitter` on it, and stores each key of the
+    returned dict as an attribute on `self`; `transform` re-derives the
+    list the same way and runs `transformer` with those fitted params.
+    Child classes (e.g. HyperAlign, Procrustes, SharedResponseModel)
+    supply `fitter`, `transformer`, and `required` (the list of
+    attribute names `fitter` must return) via `**kwargs` to `__init__`.
+
+    Parameters
+    ----------
+    **kwargs
+        `data` : the dataset(s) to align (may be `None` until `fit` is
+        called). `fitter` : callable that fits the alignment and returns
+        a dict of parameters. `transformer` : callable that applies a
+        fitted alignment. `required` : list of parameter names `fitter`
+        must return. Any remaining kwargs are forwarded to `fitter`/
+        `transformer` on every call.
+    """
+
     def __init__(self, **kwargs):
         self.data = kwargs.pop('data', None)
         self.fitter = kwargs.pop('fitter', None)
@@ -71,6 +94,26 @@ class Aligner(BaseEstimator):
         return len(items), [np.asarray(d).shape[1] for d in items]
 
     def fit(self, data):
+        """Fit the alignment on `data` and store the fitted parameters.
+
+        Records `data` and its shape (for later validation in
+        `transform`), then -- if `self.fitter` is set -- unstacks,
+        trims, and pads `data` (see `trim_and_pad`) and calls
+        `self.fitter` on it, setting each key of the returned dict as an
+        attribute on `self`.
+
+        Parameters
+        ----------
+        data : DataFrame, array, or list of these
+            The dataset(s) to fit the alignment on.
+
+        Raises
+        ------
+        ValueError
+            If `data` is `None`, if `self.fitter` does not return a
+            dict, or if any name in `self.required` is missing from the
+            returned dict.
+        """
         assert data is not None, ValueError('cannot align empty dataset')
         self.data = data
         self._fit_shape = self._shape_of(data)
@@ -148,5 +191,17 @@ class Aligner(BaseEstimator):
         return self.transformer(data, **dw.core.update_dict(required_params, self.kwargs))
 
     def fit_transform(self, data):
+        """Fit the alignment on `data`, then immediately transform it.
+
+        Parameters
+        ----------
+        data : DataFrame, array, or list of these
+            The dataset(s) to fit and align.
+
+        Returns
+        -------
+        The aligned `data`, in the same list/single-item shape as the
+        input (see `transform`).
+        """
         self.fit(data)
         return self.transform(data)

@@ -8,6 +8,29 @@ from .common import Manipulator
 # noinspection PyShadowingBuiltins
 @dw.decorate.funnel
 def fitter(data, axis=0):
+    """Fit z-score parameters (mean/std) for the `ZScore` manipulator.
+
+    Parameters
+    ----------
+    data : DataFrame or list of DataFrame
+        Data to fit on. If a list, datasets are concatenated row-wise
+        before fitting (one shared mean/std across all of them).
+    axis : int, optional
+        0 to z-score each column (default), 1 to z-score each row
+        (implemented by transposing, fitting on axis=0, and flagging
+        `transpose=True` for the transformer).
+
+    Returns
+    -------
+    dict
+        `{'mean': <per-column mean>, 'std': <per-column std>, 'axis':
+        axis, 'transpose': bool}`.
+
+    Raises
+    ------
+    ValueError
+        If `axis` is not 0 or 1.
+    """
     if isinstance(data, list):
         data = pd.concat(data, axis=0, ignore_index=True)
 
@@ -37,6 +60,28 @@ def _transform_stacked(data, **kwargs):
 
 
 def transformer(data, **kwargs):
+    """Apply fitted z-score parameters for the `ZScore` manipulator.
+
+    Parameters
+    ----------
+    data : DataFrame or list of DataFrame
+        Data to z-score.
+    **kwargs
+        `mean`, `std`, `axis` : parameters from `fitter`. `transpose` :
+        bool, whether to transpose, recurse with `axis` flipped, and
+        transpose back (the `axis=1` row-wise path).
+
+    Returns
+    -------
+    The z-scored data, `(data - mean) / std` per the fitted parameters,
+    in the same shape as `data`.
+
+    Raises
+    ------
+    ValueError
+        If `axis` is missing from `kwargs`, or (after resolving
+        `transpose`) is not 0.
+    """
     transpose = kwargs.pop('transpose', False)
     assert 'axis' in kwargs.keys(), ValueError('Must specify axis')
 
@@ -59,6 +104,14 @@ def transformer(data, **kwargs):
 
 
 class ZScore(Manipulator):
+    """Z-score (mean-center, unit-variance-scale) data, per column or per row.
+
+    Parameters
+    ----------
+    axis : int, optional
+        0 to z-score each column independently (default), 1 to z-score
+        each row independently.
+    """
     def __init__(self, axis=0):
         required = ['transpose', 'mean', 'std', 'axis']
         super().__init__(axis=axis, fitter=fitter, transformer=transformer, data=None,

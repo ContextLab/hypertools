@@ -29,6 +29,22 @@ def _import_kalman_filter():
 
 
 def fitter(data, **kwargs):
+    """EM-fit a linear-Gaussian Kalman filter on `data` (missing entries masked).
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Data to fit on; NaN entries are masked (treated as missing) via
+        `numpy.ma.masked_invalid`.
+    **kwargs
+        `n_iter` : int, number of EM iterations (default: 5).
+
+    Returns
+    -------
+    dict
+        `{'kf': <fitted pykalman.KalmanFilter>, 'mean': <final filtered
+        state mean>, 'cov': <final filtered state covariance>}`.
+    """
     kalman_filter_cls = _import_kalman_filter()
     n_iter = kwargs.get('n_iter', 5)
 
@@ -42,6 +58,26 @@ def fitter(data, **kwargs):
 
 
 def forecaster(data, n_steps, future_index, **kwargs):
+    """Forecast `n_steps` ahead by iterating `filter_update` with no new observations.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        The (fit-time) data; only its column names/order are used.
+    n_steps : int
+        Number of steps to forecast ahead.
+    future_index : pandas.Index
+        Index to assign to the forecasted rows.
+    **kwargs
+        `kf`, `mean`, `cov` : the fitted filter and final filtered state
+        from `fitter`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Forecasted state means, indexed by `future_index`, columns
+        matching `data`.
+    """
     kf = kwargs['kf']
     mean, cov = kwargs['mean'], kwargs['cov']
 

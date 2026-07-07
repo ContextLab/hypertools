@@ -2,10 +2,12 @@ from .common import Aligner
 
 
 def fitter(*args, **kwargs):
+    """No-op fitter: returns an empty parameter dict (nothing to fit)."""
     return {}
 
 
 def transformer(data, **kwargs):
+    """No-op transformer: returns `data` unchanged."""
     return data
 
 

@@ -26,6 +26,22 @@ from ..external.ppca import PPCA as _PPCAModel
 
 
 def fitter(data, **kwargs):
+    """Fit `hypertools.external.ppca.PPCA` on `data`, warning about fully-missing rows.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Data to fit on; NaN entries are treated as missing.
+    **kwargs
+        `d` : int or None, number of latent dimensions. `min_obs` : int,
+        minimum non-missing observations per column (default: 10). `tol`
+        : float, EM convergence tolerance (default: 1e-4).
+
+    Returns
+    -------
+    dict
+        `{'ppca': <fitted external.ppca.PPCA instance>}`.
+    """
     d = kwargs.get('d', None)
     min_obs = kwargs.get('min_obs', 10)
     tol = kwargs.get('tol', 1e-4)
@@ -45,6 +61,39 @@ def fitter(data, **kwargs):
 
 
 def transformer(data, **kwargs):
+    """Reconstruct `data` via the fitted PPCA model's PCA-basis projection.
+
+    On the original fit-time data, returns the EM-refined reconstruction
+    (byte-identical to the legacy `format_data.fill_missing` behavior).
+    On new data (the `return_model=True` reuse path), standardizes with
+    the fitted mean/std, zero-fills NaNs, and does a single-shot
+    projection through the fitted rotation (an approximation, since PPCA
+    has no clean way to reuse learned parameters without re-running EM).
+    Rows that were entirely missing in `data` are set back to NaN in the
+    output (PPCA cannot reconstruct them at all).
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Data to reconstruct/impute.
+    **kwargs
+        `ppca` : the fitted `external.ppca.PPCA` instance from `fitter`.
+        `_is_original_fit_data` : bool, whether `data` is the same data
+        `fitter` was called on (default: True).
+
+    Returns
+    -------
+    pandas.DataFrame
+        The reconstructed/imputed data, indexed like `data` (columns
+        fall back to a default integer range if PPCA dropped columns at
+        fit time).
+
+    Raises
+    ------
+    ValueError
+        If `data` has a different number of columns than the imputer was
+        fit on, on the new-data (non-original) path.
+    """
     m = kwargs['ppca']
     is_original = kwargs.get('_is_original_fit_data', True)
 

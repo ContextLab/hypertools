@@ -40,6 +40,26 @@ def _import_convergence_warning():
 
 
 def fitter(data, **kwargs):
+    """Fit an independent `statsmodels` ARIMA model per column of `data`.
+
+    Convergence/user warnings raised during each column's `.fit()` are
+    suppressed (narrowly, only around the fit call).
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Data to fit; one univariate ARIMA model is fit per column.
+    **kwargs
+        `order` : tuple of (p, d, q), ARIMA order (default: `(1, 1,
+        1)`). Remaining kwargs (excluding `order`/`n_iter`) are
+        forwarded to `statsmodels.tsa.arima.model.ARIMA`.
+
+    Returns
+    -------
+    dict
+        `{'results': [<fitted statsmodels ARIMAResults>, ...]}`, one
+        entry per column of `data`, in column order.
+    """
     sm_arima = _import_arima()
     convergence_warning = _import_convergence_warning()
     order = kwargs.get('order', (1, 1, 1))
@@ -58,6 +78,25 @@ def fitter(data, **kwargs):
 
 
 def forecaster(data, n_steps, future_index, **kwargs):
+    """Forecast `n_steps` ahead per column using each column's fitted ARIMA model.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        The (fit-time) data; only its column names/order are used.
+    n_steps : int
+        Number of steps to forecast ahead.
+    future_index : pandas.Index
+        Index to assign to the forecasted rows.
+    **kwargs
+        `results` : list of fitted `ARIMAResults`, one per column (from
+        `fitter`).
+
+    Returns
+    -------
+    pandas.DataFrame
+        Forecasted values, indexed by `future_index`, columns matching `data`.
+    """
     results = kwargs['results']
 
     columns = {}

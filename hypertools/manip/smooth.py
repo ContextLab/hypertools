@@ -17,6 +17,30 @@ KERNELS = ('savgol', 'gaussian', 'boxcar')
 # noinspection PyShadowingBuiltins
 @dw.decorate.funnel
 def fitter(data, **kwargs):
+    """Fit per-column min/max bounds for the `Smooth` manipulator.
+
+    Records each column's pre-smoothing min/max (used later by
+    `transformer` to clip smoothed output when `maintain_bounds=True`)
+    along with the smoothing parameters themselves, so they travel
+    together as one fitted-params dict.
+
+    Parameters
+    ----------
+    data : DataFrame or list of DataFrame
+        Data to fit on. If a list, datasets are concatenated row-wise
+        before computing bounds.
+    **kwargs
+        `axis`, `kernel_width`, `order`, `mode`, `var`,
+        `maintain_bounds` : the `Smooth` constructor parameters, passed
+        through unchanged.
+
+    Returns
+    -------
+    dict
+        `{'axis', 'kernel_width', 'order', 'mode', 'var',
+        'maintain_bounds', 'max': <per-column max>, 'min': <per-column
+        min>}`.
+    """
     if isinstance(data, list):
         data = pd.concat(data, axis=0, ignore_index=True)
 
@@ -89,6 +113,34 @@ def _transform_stacked(data, **kwargs):
 
 
 def transformer(data, **kwargs):
+    """Apply the fitted smoothing kernel for the `Smooth` manipulator.
+
+    Selects the smoothing branch via `_resolve_kernel` (savgol/gaussian/
+    boxcar), validates/coerces `kernel_width` to a positive odd integer
+    (rounding and/or incrementing with a warning if needed), and -- for
+    `axis=1` -- transposes, recurses with `axis` flipped, and transposes
+    the result back.
+
+    Parameters
+    ----------
+    data : DataFrame or list of DataFrame
+        Data to smooth.
+    **kwargs
+        `axis`, `kernel`, `kernel_width`, `order`, `mode`, `var`,
+        `maintain_bounds`, `min`, `max` : parameters from `fitter` (plus
+        `kernel`, passed through from the `Smooth` constructor).
+
+    Returns
+    -------
+    The smoothed data, in the same shape as `data`, with each column
+    optionally clipped to its fit-time min/max (`maintain_bounds=True`).
+
+    Raises
+    ------
+    ValueError
+        If `axis` is missing from `kwargs`, is not 0 or 1, or
+        `kernel_width` resolves to a non-positive value.
+    """
     assert 'axis' in kwargs.keys(), ValueError('Must specify axis')
     axis = kwargs.pop('axis', None)
 

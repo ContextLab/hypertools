@@ -1091,6 +1091,15 @@ def manage_backend(plot_func):
 
     @wraps(plot_func)
     def plot_wrapper(*args, **kwargs):
+        """Call `plot_func`, managing rcParams and the matplotlib backend around it.
+
+        Snapshots `mpl.rcParams` beforehand (setting `pdf.fonttype`/
+        `ps.fonttype` to 42 for editable-text vector exports) and
+        restores it afterward; also temporarily switches to an
+        interactive/animation-capable backend when needed, skipping that
+        switch entirely when already running inside a
+        `hypertools.set_interactive_backend` context.
+        """
         # record current rcParams
         old_rcParams = mpl.rcParams.copy()
         # Editable text in vector (PDF/PS) exports is a useful default for a
