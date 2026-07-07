@@ -328,6 +328,7 @@ def _draw(
     raw_data=None,
     animate=False,
     tail_duration=2,
+    focused=None,
     rotations=1,
     zoom=1,
     chemtrails=False,
@@ -1015,6 +1016,7 @@ def _draw(
     def animate_plot3D(
         x,
         tail_duration=2,
+        focused=None,
         rotations=1,
         zoom=1,
         chemtrails=None,
@@ -1062,7 +1064,7 @@ def _draw(
         # ignored flags/dataset indices; this just skips ever creating them
         # so `_wants_trail` is forced False for every dataset in these modes.
         def _wants_trail(idx):
-            if style in ("spin", "serial", "morph"):
+            if style in ("spin", "serial", "morph", "window"):
                 return False
             return chemtrails[idx] or precog[idx] or bullettime[idx]
 
@@ -1353,13 +1355,29 @@ def _draw(
             # dispatch_animate above; matplotlib animation has no 2-D path).
             _draw_density_3d(ax, x, density, density_colors)
 
-        if tail_duration == 0:
-            tail_duration = 1
+        # focused=/tail_duration= (round17 #8, GH #275): `focused` governs
+        # the OPAQUE "in-focus" head-window boundary for `animate='window'`
+        # and for any dataset with a chemtrails/precog/bullettime trail;
+        # plain `animate=True`/`'parallel'` with NO trail flag set on any
+        # dataset keeps using `tail_duration` alone, unaffected by `focused`
+        # (`plot.py`'s docstring/`focused=` resolution documents this as the
+        # "ignored for parallel" case). `focused` reaching this function is
+        # already fully resolved by `plot.py` (never `None` -- it defaults
+        # to `tail_duration`'s own value there), so when it IS used the
+        # numeric result is byte-identical to before whenever the caller
+        # never passed an explicit `focused=`.
+        _uses_focus_window = (
+            style == "window" or any(chemtrails) or any(precog)
+            or any(bullettime)
+        )
+        _window_duration = focused if _uses_focus_window else tail_duration
+        if _window_duration == 0:
+            window_frames = 1
         else:
-            tail_duration = int(frame_rate * tail_duration)
+            window_frames = int(frame_rate * _window_duration)
 
         # get line animation
-        if style in ["parallel", True]:
+        if style in ["parallel", True, "window"]:
             line_ani = animation.FuncAnimation(
                 fig,
                 update_lines_parallel,
@@ -1369,7 +1387,7 @@ def _draw(
                     lines,
                     trail,
                     cube_scale_anim,
-                    tail_duration,
+                    window_frames,
                     rotations,
                     zoom,
                     chemtrails,
@@ -1431,7 +1449,7 @@ def _draw(
     if frame_kwargs is None:
         frame_kwargs = {}
 
-    if animate in [True, "parallel", "spin", "serial", "morph"]:
+    if animate in [True, "parallel", "spin", "serial", "morph", "window"]:
         assert (
             x[0].shape[1] == 3
         ), "Animations are currently only supported for 3d plots."
@@ -1439,6 +1457,7 @@ def _draw(
         # animation params
         ani_params = dict(
             tail_duration=tail_duration,
+            focused=focused,
             rotations=rotations,
             zoom=zoom,
             chemtrails=chemtrails,

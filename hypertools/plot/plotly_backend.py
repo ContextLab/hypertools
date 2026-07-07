@@ -302,6 +302,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 title=None, animate=False, size=None, show=True,
                 save_path=None, frame_rate=30, duration=30, rotations=1,
                 elev=10, azim=-60, point_colors=None, tail_duration=2,
+                focused=None,
                 chemtrails=False, precog=False, bullettime=False, zoom=1,
                 forecasts=None, colorbar_info=None, surface=None,
                 surface_colors=None, density=None, density_colors=None,
@@ -365,6 +366,16 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     of `bgcolor='rgba(255,255,255,<label_alpha>)'` -- mirroring
     `annotate_plot`'s matplotlib `bbox` alpha exactly. Default 0.5 (the
     historical hardcoded value).
+
+    `focused` (round17 #8, GH #275): the length, in seconds (same unit as
+    `tail_duration`), of the opaque "in-focus" window for `animate='window'`
+    and any chemtrails/precog/bullettime-flagged dataset -- see
+    `hypertools.plot.plot.plot`'s `focused=` docstring for the full
+    semantics (when it applies vs. is ignored). `None` (default) resolves to
+    `tail_duration`'s own value here (defensively, mirroring the
+    `chemtrails`/`precog`/`bullettime` re-broadcast above) when this
+    function is called directly rather than through `plot.py`, which always
+    resolves it first.
 
     `xlabel`/`ylabel`/`zlabel` (round17 #7): axis titles, in BOTH 2-D
     (`layout.xaxis.title`/`.yaxis.title`) and 3-D
@@ -880,7 +891,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     if animate:
         _add_animation(fig, data, ndims, animate, frame_rate, duration,
                        rotations, elev, azim, n_data_traces,
-                       tail_duration=tail_duration, chemtrails=chemtrails,
+                       tail_duration=tail_duration, focused=focused,
+                       chemtrails=chemtrails,
                        precog=precog, bullettime=bullettime, zoom=zoom,
                        n_trail_traces=n_trail_traces,
                        trail_trace_start=trail_trace_start,
@@ -1708,6 +1720,7 @@ def _camera_eye(elev, azim, r=1.95):
 
 def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    rotations, elev, azim, n_data_traces, tail_duration=2,
+                   focused=None,
                    chemtrails=None, precog=None, bullettime=None,
                    zoom=1, n_trail_traces=0, trail_trace_start=None,
                    trail_dataset_indices=None,
@@ -1953,10 +1966,27 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             frames.append(go.Frame(**frame_kwargs))
     else:
         max_len = max(arr.shape[0] for arr in data)
-        # the visible window covers tail_duration seconds of the
+        # focused=/tail_duration= (round17 #8, GH #275): `focused` governs
+        # the visible window for `animate='window'` and for any dataset with
+        # a chemtrails/precog/bullettime trail; plain `animate=True`/
+        # `'parallel'` with no trail flag set anywhere keeps using
+        # `tail_duration` alone (unaffected by `focused`), mirroring
+        # `matplotlib_backend.animate_plot3D`'s identical `_uses_focus_window`
+        # resolution exactly. `focused` may reach this function as `None`
+        # when `plotly_draw`/`_add_animation` are called directly (bypassing
+        # `plot.py`'s own resolution, which never passes `None` through) --
+        # resolved defensively here the same way `chemtrails`/`precog`/
+        # `bullettime` are re-broadcast defensively above.
+        _focused = focused if focused is not None else tail_duration
+        _uses_focus_window = (
+            animate == 'window' or any(chemtrails) or any(precog)
+            or any(bullettime)
+        )
+        _window_duration = _focused if _uses_focus_window else tail_duration
+        # the visible window covers `_window_duration` seconds of the
         # duration-second animation, matching the matplotlib renderer's
-        # tail_duration * frame_rate frame window
-        window = max(2, int(round(max_len * float(tail_duration)
+        # window_frames = frame_rate * _window_duration frame window
+        window = max(2, int(round(max_len * float(_window_duration)
                                   / max(float(duration), 1e-6))))
         has_trails = n_trail_traces > 0
         if has_trails:

@@ -177,6 +177,7 @@ def plot(
     precog=False,
     bullettime=False,
     frame_rate=30,
+    focused=None,
     morph_samples=None,
     interactive=False,
     explore=False,
@@ -616,7 +617,7 @@ def plot(
         /usr/bin/ruby -e "$(curl -fsSL
         https://raw.githubusercontent.com/Homebrew/install/master/install)".
 
-    animate : bool, 'parallel', 'spin', 'serial', 'morph', or list
+    animate : bool, 'parallel', 'spin', 'serial', 'window', 'morph', or list
         If True or 'parallel', plots the data as an animated trajectory, with
         each dataset plotted simultaneously. If 'spin', all the data is plotted
         at once but the camera spins around the plot. If 'serial', datasets
@@ -627,6 +628,21 @@ def plot(
         is always GLOBAL -- there is exactly one camera and one frame loop
         driving every dataset in the animation, so it cannot vary per
         dataset (unlike `chemtrails`/`precog`/`bullettime` below, which CAN).
+
+        If 'window' (round17 #8, GH #275 -- Jeremy's own definition:
+        "like bullettime, but without the precog and chemtrail parts"), a
+        sliding, FULLY-OPAQUE window of length `focused` (seconds; see
+        `focused` below) moves along each trajectory -- nothing outside the
+        window is drawn at all, not even a faded trail (unlike `bullettime`/
+        `chemtrails`/`precog`, which paint a low-opacity backdrop outside
+        their own in-focus window). The camera still rotates at a constant
+        speed per `rotations`, exactly like `True`/`'parallel'`. Any of
+        `chemtrails`/`precog`/`bullettime` passed alongside `animate='window'`
+        is ignored (`UserWarning`, naming the ignored flag(s) and dataset
+        indices -- see the note under `bullettime` below), since 'window' has
+        no trail artist/trace to configure. 3-D only on the matplotlib
+        backend (matplotlib animation has no 2-D path at all, independent of
+        `animate='window'`); both 2-D and 3-D on the plotly backend.
 
         If 'morph' (maintainer request, 2026-07-06), every dataset is
         treated as a POINT CLOUD (not a trajectory, regardless of `fmt`) and
@@ -676,7 +692,7 @@ def plot(
         e.g. `'spin'`) and every OTHER key maps onto one of the flat
         animation kwargs below (`duration`, `tail_duration`, `rotations`,
         `zoom`, `chemtrails`, `precog`, `bullettime`, `frame_rate`,
-        `morph_samples`) -- e.g. ``animate={'style': 'spin', 'rotations':
+        `focused`, `morph_samples`) -- e.g. ``animate={'style': 'spin', 'rotations':
         2, 'duration': 15}`` is exactly equivalent to
         ``animate='spin', rotations=2, duration=15``. The dict is unpacked
         into the flat kwargs at the very top of `plot()`, before anything
@@ -779,6 +795,25 @@ def plot(
         Both backends generate exactly frame_rate * duration frames, so
         matplotlib and plotly animations play at identical speed,
         duration, and framerate.
+
+    focused (animation only) : float or None
+        Round17 #8 (GH #275): the length, in SECONDS -- the SAME unit as
+        `tail_duration` -- of the "in-focus" (fully-opaque) window: the
+        portion of a trajectory drawn opaque by default under `chemtrails`/
+        `precog`/`bullettime`, or the sliding window size for the new
+        `animate='window'` (see `animate` above). Default `None`: resolves
+        to `tail_duration`'s own value -- today's hardcoded/`tail_duration`-
+        derived focus length -- so omitting `focused=` never changes
+        existing behavior; pass an explicit `focused=` to decouple the
+        in-focus window's length from `tail_duration` (e.g. a wide
+        `chemtrails` fade with a narrow opaque head, or vice versa).
+        Silently ignored (no error, no warning -- this is the documented,
+        expected no-op case) for `animate='spin'`/`'parallel'` (or `True`)
+        with NO `chemtrails`/`precog`/`bullettime` flag set on any dataset,
+        and for `animate='morph'` -- none of these has a separate "in-focus
+        window distinct from the whole trajectory" concept for `focused` to
+        control. Must be a non-negative number if given; raises `ValueError`
+        otherwise.
 
     morph_samples (``animate='morph'`` only) : int or None
         An OPTIONAL cap on morphing-dataset size, applied BEFORE the
@@ -1139,6 +1174,7 @@ def plot(
             'precog': False,
             'bullettime': False,
             'frame_rate': 30,
+            'focused': None,
             'morph_samples': None,
         }
         if 'style' not in animate:
@@ -1166,6 +1202,7 @@ def plot(
             'precog': precog,
             'bullettime': bullettime,
             'frame_rate': frame_rate,
+            'focused': focused,
             'morph_samples': morph_samples,
         }
         for _key, _dict_value in _animate_dict.items():
@@ -1187,8 +1224,32 @@ def plot(
         precog = _animate_dict.get('precog', precog)
         bullettime = _animate_dict.get('bullettime', bullettime)
         frame_rate = _animate_dict.get('frame_rate', frame_rate)
+        focused = _animate_dict.get('focused', focused)
         morph_samples = _animate_dict.get('morph_samples', morph_samples)
         animate = _animate_style
+
+    # focused= resolution (GH #275 round17 #8): the length, in SECONDS (the
+    # same unit as `tail_duration`), of the opaque "in-focus" window for
+    # `animate='window'` and for any dataset with a `chemtrails`/`precog`/
+    # `bullettime` trail. `None` (default) resolves to `tail_duration`'s own
+    # value -- today's hardcoded/tail_duration-derived focus length -- so
+    # omitting `focused=` never changes existing behavior. Silently ignored
+    # (no error) for `animate='spin'`/`'parallel'` (with no trail flags set)/
+    # `'morph'`, where the concept of a separate "in-focus" window distinct
+    # from `tail_duration` doesn't apply -- see `matplotlib_backend
+    # .animate_plot3D`/`plotly_backend._add_animation` for exactly where
+    # `focused` vs. `tail_duration` is used.
+    if focused is not None:
+        if (isinstance(focused, bool)
+                or not isinstance(focused, (int, float))
+                or focused < 0):
+            raise ValueError(
+                f"focused= must be a non-negative number, or None (default: "
+                f"tail_duration's value, {tail_duration!r}); got {focused!r}."
+            )
+        resolved_focused = focused
+    else:
+        resolved_focused = tail_duration
 
     # predict= + animate: forecast overlays are static-plot only in v1
     # (animating a growing/appended forecast trace is follow-up work).
@@ -1892,18 +1953,20 @@ def plot(
     precog = broadcast_trail_flag(precog, len(xform), "precog")
     bullettime = broadcast_trail_flag(bullettime, len(xform), "bullettime")
 
-    # GH #127 (+ morph follow-up): 'spin' has no "current position" (only
-    # the camera moves, so a trail has nothing to trail BEHIND or AHEAD of),
-    # 'serial' already communicates elapsed time via its point-by-point
-    # reveal, and 'morph' draws a single traveling point-cloud artist with
-    # no per-dataset "current position" either -- trail styles are
-    # semantically meaningless in all three, so warn once (naming the mode,
-    # which flag(s) were set, and for which dataset indices) rather than
-    # silently building frozen/invisible trail artists. `_draw`/
-    # `plotly_draw` skip creating those artists entirely for these modes
-    # (see their own `style`/`animate` branches), so this is purely
-    # informational -- no flags are mutated here.
-    if animate in ("spin", "serial", "morph"):
+    # GH #127 (+ morph/window follow-up): 'spin' has no "current position"
+    # (only the camera moves, so a trail has nothing to trail BEHIND or AHEAD
+    # of), 'serial' already communicates elapsed time via its point-by-point
+    # reveal, 'morph' draws a single traveling point-cloud artist with no
+    # per-dataset "current position" either, and 'window' (round17 #8) is
+    # explicitly bullettime MINUS its chemtrails/precog trail components
+    # (Jeremy's own definition) -- trail styles are semantically meaningless
+    # in all four, so warn once (naming the mode, which flag(s) were set, and
+    # for which dataset indices) rather than silently building frozen/
+    # invisible trail artists. `_draw`/`plotly_draw` skip creating those
+    # artists entirely for these modes (see their own `style`/`animate`
+    # branches), so this is purely informational -- no flags are mutated
+    # here.
+    if animate in ("spin", "serial", "morph", "window"):
         _ignored_trail_flags = [
             (_name, [i for i, v in enumerate(_flags) if v])
             for _name, _flags in (
@@ -2191,6 +2254,7 @@ def plot(
             azim=azim,
             point_colors=line_colors,
             tail_duration=tail_duration,
+            focused=resolved_focused,
             chemtrails=chemtrails,
             precog=precog,
             bullettime=bullettime,
@@ -2236,6 +2300,7 @@ def plot(
                 raw_data=raw_xform,
                 duration=duration,
                 tail_duration=tail_duration,
+                focused=resolved_focused,
                 rotations=rotations,
                 zoom=zoom,
                 chemtrails=chemtrails,
