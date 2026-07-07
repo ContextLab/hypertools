@@ -285,11 +285,46 @@ def fivethirtyeight_dataset(name):
 
     frames = {}
     for csv_name in csv_names:
-        raw, _ = _fetch_bytes(f'{_538_RAW}/{slug}/{csv_name}')
+        raw = _fetch_538_csv(slug, csv_name)
         frames[Path(csv_name).stem] = pd.read_csv(io.BytesIO(raw))
     if len(frames) == 1:
         return next(iter(frames.values()))
     return frames
+
+
+def _fetch_538_csv(slug, csv_name):
+    """Download one fivethirtyeight CSV, authenticated when possible.
+
+    When a GitHub token is available (``GITHUB_TOKEN``/``GH_TOKEN``), the
+    file is fetched through the authenticated GitHub *contents* API
+    (``Accept: application/vnd.github.raw``), which counts against the
+    5000-requests/hour authenticated quota. Without a token it falls back
+    to ``raw.githubusercontent.com`` -- convenient for interactive use, but
+    subject to an anonymous per-IP rate limit that many concurrent clients
+    (e.g. a CI matrix sharing a runner IP pool) can exhaust with HTTP 429.
+
+    Parameters
+    ----------
+    slug : str
+        The dataset folder in the fivethirtyeight/data repo.
+    csv_name : str
+        The CSV file name within that folder.
+
+    Returns
+    -------
+    bytes
+        The raw CSV bytes.
+    """
+    headers = _github_api_headers()
+    if 'Authorization' in headers:
+        url = (f'https://api.github.com/repos/fivethirtyeight/data/'
+               f'contents/{slug}/{csv_name}?ref=master')
+        headers = {**headers, 'Accept': 'application/vnd.github.raw'}
+        resp = requests.get(url, headers=headers, timeout=60)
+        resp.raise_for_status()
+        return resp.content
+    raw, _ = _fetch_bytes(f'{_538_RAW}/{slug}/{csv_name}')
+    return raw
 
 
 def kaggle_dataset(name):
