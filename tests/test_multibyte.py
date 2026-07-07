@@ -19,6 +19,7 @@ CI provisions a covering font separately -- see the F2 follow-up noted in
 notes/issues-to-close-on-merge.md).
 """
 
+import os
 import warnings
 
 import numpy as np
@@ -93,6 +94,35 @@ def test_covering_font_available_helper_is_a_bool():
     # sanity: the module-level gate itself must be a real bool derived
     # from a real font scan, not e.g. always-True from a broken skip.
     assert isinstance(covering_font_available, bool)
+
+
+def test_ci_has_covering_font():
+    # GH #205 (F2 follow-up): every `requires_covering_font`-gated test in
+    # this file SKIPS (doesn't fail) when no installed font covers the
+    # test's CJK characters -- correct for a random contributor's laptop
+    # that may not have a CJK font installed, but on CI this must be a
+    # hard FAILURE instead: if it silently skips there, the CJK code path
+    # (find_covering_font/resolve_font, the no-tofu proofs, the font=
+    # kwarg forms, the legend-fit and animated-frame checks) gets ZERO
+    # coverage on every PR, forever, with a green checkmark. The CI
+    # workflow (.github/workflows/test.yml) installs fonts-noto-cjk on
+    # ubuntu-latest and rebuilds matplotlib's font cache afterward
+    # specifically so this never fires; macOS/windows runners ship
+    # Hiragino Sans / Yu Gothic-family fonts out of the box.
+    if os.environ.get('GITHUB_ACTIONS') != 'true':
+        pytest.skip("only meaningful on CI (GITHUB_ACTIONS=true); a "
+                    "missing covering font on a local machine is expected "
+                    "and handled by requires_covering_font's skip")
+    assert covering_font_available, (
+        "no installed font covers a basic CJK test string on this CI "
+        "runner -- every requires_covering_font-gated test in "
+        "tests/test_multibyte.py just silently skipped. Check that "
+        ".github/workflows/test.yml's font-provisioning step (fonts-noto-cjk "
+        "install + fc-cache + matplotlib font-cache rebuild) ran, and that "
+        "it ran BEFORE this test's font scan (matplotlib caches its font "
+        "list after first scan -- a stale cache from before the font "
+        "install would hide the new font from find_covering_font)."
+    )
 
 
 def test_find_covering_font_returns_none_for_ascii_only():
@@ -325,3 +355,159 @@ def test_animated_cjk_legend_no_missing_glyph_warnings_across_frames():
     assert all_warnings == [], (
         f"missing-glyph warning(s) during animated frames: {all_warnings}")
     plt.close(fig)
+
+
+# --------------------------------------------------------- plotly backend
+#
+# GH #205 F2: the plotly backend now honors `font=` too (matplotlib was
+# F1). Plotly text surfaces only take a FAMILY NAME (not a font file), set
+# once at `layout.font.family` and inherited by every text surface
+# hypertools creates (legend trace names, colorbar title/ticktext, plot
+# title) unless that surface hardcodes its own family (none do, after
+# this change -- the plot title used to; see plotly_backend.py). NOTE:
+# plotly has no equivalent to matplotlib's point `labels=` annotations --
+# `plotly_draw` accepts `labels=` for call-signature parity with `_draw`
+# but never draws it (a pre-existing gap, not addressed here; see the
+# `font=`/`labels=` docstrings in plot.py).
+
+import json
+import subprocess
+import sys
+
+_RENDER_PLOTLY_SCRIPT = os.path.join(
+    os.path.dirname(__file__), '..', 'scripts', 'render_multibyte_plotly.py')
+_KALEIDO_TIMEOUT_S = 120
+
+
+def _plotly_plot(legend, **kwargs):
+    data = [_random_points(10, seed=i) for i in range(len(legend))]
+    return hyp.plot(data, legend=legend, backend='plotly', show=False,
+                    **kwargs)
+
+
+def test_plotly_labels_kwarg_is_accepted_but_not_drawn():
+    # documents the pre-existing (not new) limitation: plotly has no
+    # point-annotation machinery, so `labels=` is silently a no-op there,
+    # unlike the matplotlib backend. This is NOT a font= regression --
+    # verifying it stays a silent no-op (not e.g. a crash) either way.
+    x = _random_points(3)
+    fig = hyp.plot(x, '.', labels=['a', 'b', 'c'], backend='plotly',
+                   show=False)
+    assert fig is not None
+    # no text/annotation trace was created FOR the labels (only the data
+    # scatter trace(s) + whatever legend/colorbar traces were requested,
+    # of which none were here)
+    assert all(getattr(tr, 'text', None) is None for tr in fig.data)
+
+
+@requires_covering_font
+def test_plotly_legend_names_exact_string_equality():
+    fig = _plotly_plot(JP_LABELS_A[:2])
+    names = [tr.name for tr in fig.data if tr.name]
+    assert names == JP_LABELS_A[:2]
+
+
+@requires_covering_font
+def test_plotly_title_exact_string_equality():
+    fig = hyp.plot(_random_points(20), title='日本語のタイトル',
+                   backend='plotly', show=False)
+    assert fig.layout.title.text == '日本語のタイトル'
+
+
+@requires_covering_font
+def test_plotly_colorbar_label_and_ticktext_exact_string_equality():
+    fig = hyp.plot([_random_points(10, seed=1), _random_points(10, seed=2)],
+                   legend=['あ', 'い'], colorbar={'label': '色の凡例'},
+                   backend='plotly', show=False)
+    cb = fig.data[-1].marker.colorbar
+    assert cb.title.text == '色の凡例'
+    assert list(cb.ticktext) == ['あ', 'い']
+
+
+@requires_covering_font
+def test_plotly_layout_font_family_matches_auto_detected_font():
+    fp = find_covering_font(JP_LABELS_A[:2])
+    fig = _plotly_plot(JP_LABELS_A[:2])
+    assert fig.layout.font.family is not None
+    assert fp.get_name() in fig.layout.font.family
+
+
+@requires_covering_font
+def test_plotly_layout_font_family_matches_explicit_font_kwarg():
+    fp = find_covering_font(JP_LABELS_A[:2])
+    # ASCII-only text, but font= given explicitly -- must still be honored
+    fig = _plotly_plot(['group a', 'group b'], font=fp.get_name())
+    assert fig.layout.font.family is not None
+    assert fp.get_name() in fig.layout.font.family
+
+
+def test_plotly_ascii_only_layout_font_is_unset():
+    # ASCII-only regression: font=None + no non-ASCII text anywhere ->
+    # layout.font.family stays unset (plotly's own default), exactly as
+    # before this feature existed.
+    fig = _plotly_plot(['group a', 'group b'])
+    assert fig.layout.font.family is None
+
+
+def test_plotly_font_kwarg_invalid_family_raises_value_error():
+    with pytest.raises(ValueError, match='not a recognized'):
+        hyp.plot(_random_points(3), legend=None, backend='plotly',
+                 font='TotallyBogusFontXYZ123', show=False)
+
+
+# ---------------------------------------------- plotly pixel-level (kaleido)
+#
+# static kaleido export is exercised directly elsewhere in this repo (e.g.
+# tests/test_marker_parity.py calls fig.write_image in-process with no
+# issue) -- unlike the 6 known deadlock-prone ANIMATED/SVG plotly export
+# tests deselected in test_animation_export.py/test_round3.py. Still, this
+# spawns a real Chromium subprocess via kaleido, so these checks run the
+# render in a SEPARATE process (scripts/render_multibyte_plotly.py) via
+# subprocess.run(..., timeout=...), which can actually kill a wedged
+# child -- and skip (not fail) the test if that timeout fires.
+
+def _render_plotly_png(legend, title, out_path):
+    try:
+        result = subprocess.run(
+            [sys.executable, _RENDER_PLOTLY_SCRIPT, json.dumps(legend),
+             title, out_path],
+            timeout=_KALEIDO_TIMEOUT_S, capture_output=True, text=True)
+    except subprocess.TimeoutExpired:
+        pytest.skip(
+            f"kaleido/Chromium render did not complete within "
+            f"{_KALEIDO_TIMEOUT_S}s -- treating this as an environment "
+            "hang, not a test failure (see the known deadlock-prone "
+            "plotly export tests deselected in "
+            "test_animation_export.py/test_round3.py)")
+        return
+    assert result.returncode == 0, (
+        f"render_multibyte_plotly.py failed (exit {result.returncode}):\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}")
+
+
+@requires_covering_font
+def test_plotly_legend_different_cjk_text_renders_different_pixels(tmp_path):
+    from PIL import Image
+
+    png_a = str(tmp_path / 'jp_a.png')
+    png_b = str(tmp_path / 'jp_b.png')
+    png_ascii = str(tmp_path / 'ascii.png')
+    _render_plotly_png(JP_LABELS_A[:2], '', png_a)
+    _render_plotly_png(JP_LABELS_B[:2], '', png_b)
+    _render_plotly_png(['group a', 'group b'], '', png_ascii)
+
+    buf_a = np.asarray(Image.open(png_a).convert('RGB'))
+    buf_b = np.asarray(Image.open(png_b).convert('RGB'))
+    buf_ascii = np.asarray(Image.open(png_ascii).convert('RGB'))
+
+    assert buf_a.shape == buf_b.shape == buf_ascii.shape
+    assert not np.array_equal(buf_a, buf_b), (
+        "plotly renders with different Japanese legend text produced "
+        "IDENTICAL pixels -- exactly what silent tofu (identical empty "
+        "boxes for different strings) looks like")
+    assert not np.array_equal(buf_a, buf_ascii), (
+        "Japanese-legend render is pixel-identical to the ASCII-legend "
+        "render -- the Japanese text isn't actually being drawn")
+    assert not np.array_equal(buf_b, buf_ascii), (
+        "Japanese-legend render is pixel-identical to the ASCII-legend "
+        "render -- the Japanese text isn't actually being drawn")

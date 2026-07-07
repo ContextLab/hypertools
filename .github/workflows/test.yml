@@ -49,7 +49,11 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y ffmpeg
+        # fonts-noto-cjk (GH #205): ubuntu-latest ships no CJK-covering font
+        # at all, so tests/test_multibyte.py's `requires_covering_font`
+        # skipif would silently skip every CJK-dependent test on this OS.
+        sudo apt-get install -y ffmpeg fonts-noto-cjk
+        fc-cache -f
 
     - name: Install system dependencies (macOS)
       if: matrix.os == 'macos-latest'
@@ -66,6 +70,21 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
+
+    - name: Rebuild matplotlib font cache (Ubuntu only)
+      # GH #205: matplotlib scans installed fonts once and caches the
+      # result (~/.cache/matplotlib/fontlist-*.json). On ubuntu-latest
+      # runners that cache is built (by whatever process first imports
+      # matplotlib.font_manager -- here, `pip install`'s dependency
+      # resolution/build step, or a previous cached run) BEFORE
+      # fonts-noto-cjk is installed above, so `find_covering_font`
+      # (hypertools/plot/fonts.py) would scan a stale font list missing
+      # every Noto Sans CJK file and skip every CJK-dependent test in
+      # tests/test_multibyte.py. Force one rebuild here (expensive -- do
+      # it once per job, not from inside fonts.py on every call).
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        python -c "import matplotlib.font_manager as fm; fm._load_fontmanager(try_read_cache=False)"
 
     - name: Run pytest
       env:

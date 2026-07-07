@@ -265,6 +265,11 @@ def plot(
         A list of labels for each point. Must be dimensionality of data (x).
         If no label is wanted for a particular point, input None.
 
+        MATPLOTLIB BACKEND ONLY (GH #205): the plotly backend has no
+        equivalent point-annotation machinery today and silently ignores
+        `labels=` regardless of `font=` -- a pre-existing gap, not
+        addressed by the `font=` kwarg below.
+
     legend : list or bool
         If set to True, legend is implicitly computed from data. Passing a
         list will add string labels to the legend (one for each list item).
@@ -292,12 +297,15 @@ def plot(
         A title for the plot
 
     font : None, str, or matplotlib.font_manager.FontProperties
-        Controls the font used for every text surface hypertools draws on
-        the MATPLOTLIB backend: point annotations (`labels=`), the legend,
-        colorbar tick labels/axis label, and the plot title (GH #205).
+        Controls the font used for every text surface hypertools draws,
+        on BOTH backends (GH #205): on matplotlib, point annotations
+        (`labels=`), the legend, colorbar tick labels/axis label, and the
+        plot title; on plotly, the legend, colorbar title/ticks, and the
+        plot title (plotly has no point-annotation equivalent to
+        `labels=` -- see the `labels=` entry above).
 
         - `None` (default): AUTO-DETECT. If all text hypertools is about
-          to draw is plain ASCII, this is a no-op (matplotlib's default
+          to draw is plain ASCII, this is a no-op (each backend's default
           font is used, exactly as before this kwarg existed). If any
           text contains non-ASCII characters (e.g. Japanese/Chinese/
           Korean/Cyrillic labels), hypertools scans installed fonts for
@@ -309,7 +317,7 @@ def plot(
           usually already have one, e.g. Hiragino Sans/Yu Gothic). If no
           installed font covers the needed characters, a single
           ``UserWarning`` is raised naming a few of the missing characters
-          and rendering falls back to matplotlib's default (tofu).
+          and rendering falls back to the backend's default (tofu).
         - `str`: either the name of an installed font FAMILY (e.g.
           ``'Noto Sans CJK JP'``), or a path to a ``.ttf``/``.otf``/
           ``.ttc`` font FILE (existing paths are detected automatically,
@@ -317,8 +325,22 @@ def plot(
           neither a resolvable family name nor an existing file.
         - `matplotlib.font_manager.FontProperties`: used as-is.
 
-        Only affects the matplotlib backend; the plotly backend does not
-        yet honor `font=` (auto-detection there is planned separately).
+        Backend semantics differ because matplotlib and plotly resolve
+        fonts differently: matplotlib accepts a font FILE and sets a
+        `FontProperties` object on each `Text` artist individually
+        (exact glyph outlines, embedded at save time). plotly (rendered
+        by a browser, or by Chromium via kaleido for static image export)
+        only understands FAMILY NAMES -- there is no way to point it at a
+        specific font file -- so hypertools takes the resolved font's
+        family name (`FontProperties.get_name()`), wraps it in a small
+        fallback chain (``'"<name>", "Noto Sans CJK JP", sans-serif'``),
+        and sets it as `layout.font.family`, which every plotly text
+        surface hypertools creates inherits unless it overrides its own
+        `font.family` (none do, after this change). Static plotly image
+        export (`save_path=...png/.jpg` etc., via kaleido) still depends
+        on the exporting machine's OS having a font that actually covers
+        the requested family/characters -- unlike matplotlib, hypertools
+        cannot embed a specific font file into a plotly export.
 
     size : list
         A list of [width, height] in inches to resize the figure
@@ -1697,6 +1719,7 @@ def plot(
             morph_tags=morph_tags,
             morph_colors=morph_colors,
             morph_samples=morph_samples,
+            font=resolved_font,
         )
         ax = None
         data = xform

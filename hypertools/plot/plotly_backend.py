@@ -210,7 +210,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 chemtrails=False, precog=False, bullettime=False, zoom=1,
                 forecasts=None, colorbar_info=None, surface=None,
                 surface_colors=None, density=None, density_colors=None,
-                morph_tags=None, morph_colors=None, morph_samples=None):
+                morph_tags=None, morph_colors=None, morph_samples=None,
+                font=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -220,6 +221,22 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     format strings (one per trace); `kwargs_list` carries per-trace
     matplotlib kwargs ('color', 'linewidth', 'linestyle', 'marker',
     'alpha', 'label').
+
+    `font` (GH #205): the ALREADY-RESOLVED `matplotlib.font_manager.
+    FontProperties` from `hypertools.plot.fonts.resolve_font` (or `None`
+    -- no override), computed once in `plot.py` from every text source
+    (labels/legend/title/hue) shared with the matplotlib backend. Unlike
+    matplotlib, plotly text surfaces don't accept a font FILE -- only a
+    FAMILY NAME -- so only `font.get_name()` is used here, wrapped in a
+    small fallback chain (`'"<name>", "Noto Sans CJK JP", sans-serif'`)
+    and set as `layout.font.family`; every plotly text surface hypertools
+    creates (legend, colorbar title/ticks, plot title) inherits it unless
+    it hardcodes its own `font.family` (only the title used to -- fixed
+    below). `labels=` (point annotations) are matplotlib-only: plotly has
+    no equivalent annotation machinery today, so `labels=` is accepted
+    here (for call-signature parity with `_draw`) but silently unused --
+    a pre-existing gap (see the `font=` docstring in `plot.py`), not new
+    in this change.
 
     `forecasts` (predict=, GH #169): an optional list of (t+1, d) arrays,
     one per dataset in `data` (same length, same coordinate space -- already
@@ -645,6 +662,19 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         margin_r += 110
     if has_colorbar:
         margin_r += 110
+
+    # font= (GH #205): plotly text surfaces take a FAMILY NAME (not a file
+    # path), so only `font.get_name()` is used, wrapped in a small
+    # fallback chain in case the exact family name isn't installed in
+    # whatever renders this (browser/Chromium via kaleido) -- 'Noto Sans
+    # CJK JP' is a common pan-CJK fallback, then a generic sans-serif.
+    # `font_family` is None (no override -- byte-identical to before this
+    # kwarg existed) unless the caller passed `font=` or auto-detection
+    # (in `plot.py`, shared with the matplotlib backend) found non-ASCII
+    # text and a covering font.
+    font_family = (f'"{font.get_name()}", "Noto Sans CJK JP", sans-serif'
+                   if font is not None else None)
+
     layout = dict(
         paper_bgcolor='white',
         plot_bgcolor='white',
@@ -653,14 +683,26 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         legend=dict(bgcolor='rgba(255,255,255,0.8)',
                     x=1.02, y=0.5, xanchor='left', yanchor='middle'),
     )
+    if font_family is not None:
+        # layout.font is plotly's inherited default for every text
+        # surface (legend, colorbar title/ticks, plot title) that doesn't
+        # set its own `font.family` -- so this one line covers all of
+        # them except the title, which historically hardcoded its own
+        # family (fixed just below).
+        layout['font'] = dict(family=font_family)
     if title is not None:
         # centered over the plotting area (xref='paper'), like matplotlib
-        # centers its title over the axes; same 12pt sans-serif appearance
+        # centers its title over the axes; same 12pt sans-serif appearance.
+        # family: the resolved font (GH #205) when given/auto-detected,
+        # else the historical hardcoded default (ASCII-only regression:
+        # byte-identical to before this kwarg existed).
         layout['title'] = dict(text=title, x=0.5, xanchor='center',
                                xref='paper',
                                y=0.97, yanchor='top',
                                font=dict(color='black', size=16,
-                                         family='DejaVu Sans, Arial, '
+                                         family=font_family if font_family
+                                                is not None else
+                                                'DejaVu Sans, Arial, '
                                                 'sans-serif'))
     size = size if size is not None else DEFAULT_FIGSIZE
     layout['width'] = int(size[0] * 100)
