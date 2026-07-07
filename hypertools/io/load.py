@@ -55,24 +55,58 @@ def load(
         trust=False
 ):
     """
-    Load data from a built-in example dataset, a local file, a Hugging Face
-    dataset, Google Drive, Dropbox, or any URL
+    Load data from a built-in example dataset, a scikit-learn or seaborn
+    named dataset, a local file, a Hugging Face dataset, Google Drive,
+    Dropbox, or any URL
 
     A string is interpreted by trying, in order:
 
     1. a built-in example dataset name (listed below)
-    2. a path to a local file (.geo/pickle, .npy/.npz, .csv/.tsv/.txt,
+    2. a scikit-learn bundled dataset name -- ``'iris'``, ``'digits'``,
+       ``'wine'``, ``'breast_cancer'``, ``'diabetes'``, or ``'linnerud'``
+       (the small datasets shipped with ``sklearn.datasets``; the
+       network-fetched ``fetch_*`` datasets are not included). Loaded via
+       the corresponding ``sklearn.datasets.load_*`` function and returned
+       as a DataFrame of the features with the target appended as a
+       ``'target'`` column (for multi-output targets, e.g. ``'linnerud'``,
+       one column per target name instead)
+    3. a seaborn dataset name -- any name returned by
+       ``seaborn.get_dataset_names()`` (e.g. ``'penguins'``, ``'tips'``,
+       ``'titanic'``), loaded via ``seaborn.load_dataset()`` and returned
+       unchanged. This is a network lookup (cached per-process); if it
+       can't reach the seaborn-data repo, this step is skipped
+    4. a path to a local file (.geo/pickle, .npy/.npz, .csv/.tsv/.txt,
        .json, .parquet, .mat, .xlsx/.xls)
-    3. a Hugging Face dataset id such as ``'scikit-learn/iris'``
+    5. a Hugging Face dataset id such as ``'scikit-learn/iris'``
        (pass ``streaming=True`` for a streaming dataset, which can be
        passed straight to :func:`hypertools.plot`)
-    4. a Google Sheets URL (``docs.google.com/spreadsheets/d/<id>``),
+    6. a Google Sheets URL (``docs.google.com/spreadsheets/d/<id>``),
        loaded via its CSV export
-    5. a Google Drive URL or bare file id (large files behind Drive's
+    7. a Google Drive URL or bare file id (large files behind Drive's
        "can't scan this file for viruses" interstitial are followed
        automatically)
-    6. a Dropbox URL or shared-link path
-    7. any other URL, with or without an ``https://`` scheme
+    8. a Dropbox URL or shared-link path
+    9. any other URL, with or without an ``https://`` scheme
+
+    .. note::
+        Precedence: a built-in example dataset name (step 1) always wins,
+        even over a same-named scikit-learn/seaborn dataset. Between
+        scikit-learn and seaborn, scikit-learn wins -- e.g. ``'iris'``
+        resolves to scikit-learn's ``load_iris`` (columns like
+        ``'sepal length (cm)'``), not seaborn's ``'iris'`` dataset
+        (columns like ``'sepal_length'``), since both define an ``'iris'``
+        name.
+
+    Examples
+    --------
+    >>> hypertools.load('iris').columns.tolist()  # scikit-learn's iris
+    ['sepal length (cm)', 'sepal width (cm)', 'petal length (cm)',
+     'petal width (cm)', 'target']
+    >>> hypertools.load('penguins').columns.tolist()  # seaborn's penguins
+    ['species', 'island', 'bill_length_mm', 'bill_depth_mm',
+     'flipper_length_mm', 'body_mass_g', 'sex']
+    >>> hypertools.load('weights')  # built-in name always wins
+    [...]
 
     A **list of strings** resolves element-wise and returns a list of
     datasets that can be passed to any hypertools function.
@@ -192,18 +226,39 @@ def load(
             # geo_data is a sklearn.pipeline.Pipeline, not a DataGeometry
             return geo_data
     else:
-        dataset_path = Path(expanduser(expandvars(dataset))).resolve()
-        if dataset_path.is_file():
-            if legacy:
-                geo_data = _load_legacy(dataset_path)
+        # resolution chain, right after built-in names: scikit-learn's
+        # small bundled datasets, then seaborn's named datasets (see
+        # tools.sources; scikit-learn wins over seaborn for names both
+        # define, e.g. 'iris'), before falling back to local file ->
+        # Hugging Face -> Google Sheets -> Google Drive -> Dropbox ->
+        # generic URL.
+        from .sources import sklearn_dataset, seaborn_dataset, \
+            SKLEARN_DATASETS
+        extra_attempts = []
+        geo_data = sklearn_dataset(dataset)
+        if geo_data is None:
+            extra_attempts.append(
+                'scikit-learn bundled dataset: not one of '
+                f'{sorted(SKLEARN_DATASETS)}')
+            geo_data = seaborn_dataset(dataset)
+            if geo_data is None:
+                extra_attempts.append(
+                    'seaborn dataset: not found via '
+                    'seaborn.get_dataset_names() (or that lookup failed, '
+                    'e.g. no network access)')
+
+        if geo_data is None:
+            dataset_path = Path(expanduser(expandvars(dataset))).resolve()
+            if dataset_path.is_file():
+                if legacy:
+                    geo_data = _load_legacy(dataset_path)
+                else:
+                    geo_data = _load_local(dataset_path)
             else:
-                geo_data = _load_local(dataset_path)
-        else:
-            # resolution chain: Hugging Face -> Google Drive -> Dropbox ->
-            # generic URL (see tools.sources)
-            from .sources import load_source
-            geo_data = load_source(dataset, split=split,
-                                   streaming=streaming, trust=trust)
+                from .sources import load_source
+                geo_data = load_source(dataset, split=split,
+                                       streaming=streaming, trust=trust,
+                                       extra_attempts=extra_attempts)
 
     from .streaming import is_stream
     if is_stream(geo_data):

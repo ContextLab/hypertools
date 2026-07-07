@@ -4,11 +4,14 @@
 A string may name (tried in this order):
 
 1. a built-in example dataset (``EXAMPLE_DATA`` in tools.load)
-2. a path to a local file
-3. a Hugging Face dataset (including streaming datasets)
-4. a Google Drive URL or bare file ID
-5. a Dropbox URL or shared-link path
-6. any other URL (with or without an ``https://`` scheme)
+2. a scikit-learn bundled dataset name (``sklearn_dataset``)
+3. a seaborn dataset name (``seaborn_dataset``)
+4. a path to a local file
+5. a Hugging Face dataset (including streaming datasets)
+6. a Google Sheets URL
+7. a Google Drive URL or bare file ID
+8. a Dropbox URL or shared-link path
+9. any other URL (with or without an ``https://`` scheme)
 
 Lists of strings resolve element-wise to a list of datasets.
 
@@ -72,6 +75,81 @@ class HypertoolsTrustError(ValueError):
     """
 
 
+SKLEARN_DATASETS = {
+    'iris': 'load_iris',
+    'digits': 'load_digits',
+    'wine': 'load_wine',
+    'breast_cancer': 'load_breast_cancer',
+    'diabetes': 'load_diabetes',
+    'linnerud': 'load_linnerud',
+}
+
+# seaborn.get_dataset_names() is a network call (fetches the seaborn-data
+# GitHub repo's file listing); cache it per-process so repeated hyp.load()
+# calls don't re-hit the network for every unresolved name.
+_seaborn_names_cache = None
+
+
+def sklearn_dataset(name):
+    """Load one of scikit-learn's small, bundled example datasets by name.
+
+    Only the ``sklearn.datasets.load_*`` loaders that ship their data with
+    the package are considered (``'iris'``, ``'digits'``, ``'wine'``,
+    ``'breast_cancer'``, ``'diabetes'``, ``'linnerud'``); the network-fetched
+    ``fetch_*`` datasets are intentionally excluded so this never triggers a
+    download.
+
+    Returns
+    -------
+    data : pandas.DataFrame or None
+        The dataset's features as columns, with the target appended as a
+        ``'target'`` column (or, for multi-output targets such as
+        ``'linnerud'``, one column per target name). None if ``name`` isn't
+        one of the bundled dataset names above -- callers should treat this
+        as "not mine" and continue down the resolution chain.
+    """
+    fn_name = SKLEARN_DATASETS.get(name)
+    if fn_name is None:
+        return None
+    from sklearn import datasets as sk_datasets
+    bunch = getattr(sk_datasets, fn_name)(as_frame=True)
+    df = bunch.data.copy()
+    target = bunch.target
+    if isinstance(target, pd.DataFrame):
+        # multi-output datasets (e.g. linnerud): one column per target name
+        for col in target.columns:
+            df[col] = target[col]
+    else:
+        df[getattr(target, 'name', None) or 'target'] = target
+    return df
+
+
+def seaborn_dataset(name):
+    """Load a seaborn example dataset by name.
+
+    ``name`` is matched against ``seaborn.get_dataset_names()`` (a network
+    call to the seaborn-data GitHub repo; the result is cached per-process).
+
+    Returns
+    -------
+    data : pandas.DataFrame or None
+        The result of ``seaborn.load_dataset(name)``, unchanged. None if
+        ``name`` isn't a known seaborn dataset, or if the dataset name list
+        can't be fetched (network failure) -- either way, callers should
+        treat this as "not mine" and continue down the resolution chain.
+    """
+    global _seaborn_names_cache
+    import seaborn as sns
+    if _seaborn_names_cache is None:
+        try:
+            _seaborn_names_cache = set(sns.get_dataset_names())
+        except Exception:
+            return None
+    if name not in _seaborn_names_cache:
+        return None
+    return sns.load_dataset(name)
+
+
 def is_loadable_string(s):
     """Cheap (no-network) check: could this string plausibly name a data
     source? Used to decide whether to route strings through load() rather
@@ -101,8 +179,11 @@ def is_loadable_string(s):
     return False
 
 
-def load_source(source, split=None, streaming=False, trust=False):
-    """Resolve one non-builtin string source (steps 2-6 of the chain).
+def load_source(source, split=None, streaming=False, trust=False,
+                extra_attempts=None):
+    """Resolve one non-builtin string source (steps 4-9 of the chain --
+    scikit-learn/seaborn dataset names, steps 2-3, are tried by
+    :func:`hypertools.load` before this function is called).
 
     Returns the loaded dataset (DataFrame, array, list, dict, or a
     Hugging Face [Iterable]Dataset). Raises HypertoolsIOError listing
@@ -111,10 +192,15 @@ def load_source(source, split=None, streaming=False, trust=False):
     ``trust`` is threaded from :func:`hypertools.load`: it silences the
     remote-pickle security warning and re-enables ``allow_pickle`` for
     remote .npy/.npz payloads (see ``_parse_payload``).
-    """
-    attempts = []
 
-    # 2. local file
+    ``extra_attempts`` optionally seeds the "tried, in order" list with
+    descriptions of resolvers already attempted by the caller (e.g. the
+    scikit-learn/seaborn dataset-name lookups), so the final error message
+    reflects the whole chain.
+    """
+    attempts = list(extra_attempts) if extra_attempts else []
+
+    # 4. local file
     path = Path(source).expanduser()
     try:
         is_file = path.is_file()
@@ -128,7 +214,7 @@ def load_source(source, split=None, streaming=False, trust=False):
         or 'drive.google.com' in source or 'docs.google.com' in source \
         or 'dropbox.com' in source
 
-    # 3. Hugging Face dataset (skip for obvious URLs)
+    # 5. Hugging Face dataset (skip for obvious URLs)
     if not is_url_like and _HF_ID_RE.match(source):
         try:
             return _load_hf(source, split=split, streaming=streaming)
@@ -138,7 +224,7 @@ def load_source(source, split=None, streaming=False, trust=False):
             attempts.append(f'Hugging Face dataset: {type(e).__name__}: '
                             f'{str(e).splitlines()[0][:120]}')
 
-    # 4. Google Sheets URL -> CSV export (checked before generic Drive id
+    # 6. Google Sheets URL -> CSV export (checked before generic Drive id
     # extraction, since a Sheets URL also matches the '/d/<id>' pattern)
     sheet_url = _normalize_google_sheet(source)
     if sheet_url is not None:
@@ -151,7 +237,7 @@ def load_source(source, split=None, streaming=False, trust=False):
         except Exception as e:
             attempts.append(f'Google Sheets: {type(e).__name__}: {e}')
 
-    # 5. Google Drive URL or bare ID
+    # 7. Google Drive URL or bare ID
     drive_id = _extract_drive_id(source)
     if drive_id is not None:
         url = f'https://drive.google.com/uc?export=download&id={drive_id}'
@@ -165,7 +251,7 @@ def load_source(source, split=None, streaming=False, trust=False):
             attempts.append(f'Google Drive ({drive_id}): '
                             f'{type(e).__name__}: {e}')
 
-    # 6. Dropbox URL or shared-link path
+    # 8. Dropbox URL or shared-link path
     dropbox_url = _normalize_dropbox(source)
     if dropbox_url is not None:
         try:
@@ -177,7 +263,7 @@ def load_source(source, split=None, streaming=False, trust=False):
         except Exception as e:
             attempts.append(f'Dropbox: {type(e).__name__}: {e}')
 
-    # 7. any URL, with or without a scheme
+    # 9. any URL, with or without a scheme
     url = None
     if source.startswith(('http://', 'https://')):
         url = source
