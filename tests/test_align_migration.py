@@ -18,6 +18,9 @@ from hypertools.align.align import align as aligner, ALIGNERS
 from hypertools.align.common import Aligner
 from hypertools.align.hyperalign import HyperAlign
 from hypertools.align.null import NullAlign
+from hypertools.align.srm import (SharedResponseModel,
+                                   DeterministicSharedResponseModel,
+                                   RobustSharedResponseModel)
 from hypertools.core.pipeline import Pipeline
 from hypertools.tools.align import align as legacy_align
 
@@ -172,6 +175,84 @@ def test_aligner_transform_fits_on_half_and_applies_to_held_out_half():
     unaligned_corr = mean_pairwise_corr(held_out)
     aligned_corr = mean_pairwise_corr(aligned_held_out)
     assert aligned_corr > unaligned_corr + 0.3
+
+
+# --- SRM family: held-out transform (FINDING 1, GH #227) -------------------
+
+def _shared_trajectory_datasets(n_datasets=3, n_rows=90, n_cols=4, noise=0.05):
+    """3 rotated+noisy copies (real numeric data, no mocks) of a common
+    multi-dimensional trajectory, one per dataset."""
+    t = np.linspace(0, 4 * np.pi, n_rows)
+    common = np.stack([np.sin(t), np.cos(t), t / 10, np.sin(2 * t)], axis=1)[:, :n_cols]
+    out = []
+    for seed in range(1, n_datasets + 1):
+        r = np.random.RandomState(seed)
+        rot, _ = np.linalg.qr(r.randn(n_cols, n_cols))
+        out.append((common + noise * r.randn(*common.shape)) @ rot)
+    return out
+
+
+def _mean_pairwise_corr(dsets):
+    arrs = [np.asarray(d).flatten() for d in dsets]
+    corrs = [np.corrcoef(arrs[i], arrs[j])[0, 1]
+             for i in range(len(arrs)) for j in range(i + 1, len(arrs))]
+    return np.mean(corrs)
+
+
+@pytest.mark.parametrize('cls', [SharedResponseModel, DeterministicSharedResponseModel,
+                                  RobustSharedResponseModel])
+def test_srm_family_transform_applies_to_held_out_data_with_different_row_count(cls):
+    """FINDING 1 regression: fit on the first 40 rows of 3 rotated+noisy
+    copies of a shared trajectory, transform held-out data with a DIFFERENT
+    row count than fit-time. Must not raise (previously raised ValueError:
+    'Shape of passed values is (N, k), indices imply (M, k)'), must return
+    one row per held-out row, and must be measurably more correlated across
+    datasets than the raw (unaligned) held-out data."""
+    datasets = _shared_trajectory_datasets(n_rows=90)
+    train_n, held_out_n = 40, 25
+    train = [pd.DataFrame(d[:train_n]) for d in datasets]
+    held_out = [pd.DataFrame(d[train_n:train_n + held_out_n], index=range(held_out_n))
+                for d in datasets]
+
+    model = cls(features=3)
+    model.fit(train)
+    aligned_held_out = model.transform(held_out)
+
+    assert len(aligned_held_out) == len(held_out)
+    for a, h in zip(aligned_held_out, held_out):
+        assert np.asarray(a).shape[0] == np.asarray(h).shape[0] == held_out_n
+
+    unaligned_corr = _mean_pairwise_corr(held_out)
+    aligned_corr = _mean_pairwise_corr(aligned_held_out)
+    assert aligned_corr > unaligned_corr + 0.1
+
+
+@pytest.mark.parametrize('cls', [SharedResponseModel, DeterministicSharedResponseModel,
+                                  RobustSharedResponseModel])
+def test_srm_family_transform_preserves_new_data_custom_index(cls):
+    """FINDING 1 regression (silent-mislabeling case): when the held-out
+    row count happens to MATCH fit-time, the output index must still be
+    derived from the held-out (new) data's own index, not silently reused
+    from the fit-time `indices`."""
+    datasets = _shared_trajectory_datasets(n_rows=80)
+    train_n = 40
+    train = [pd.DataFrame(d[:train_n]) for d in datasets]
+    # same row COUNT as fit-time, but a custom, disjoint index
+    custom_index = pd.RangeIndex(1000, 1000 + train_n)
+    held_out = [pd.DataFrame(d[train_n:train_n + train_n], index=custom_index)
+                for d in datasets]
+
+    model = cls(features=3)
+    model.fit(train)
+    aligned_held_out = model.transform(held_out)
+
+    # NB: `Aligner.transform`'s internal `trim_and_pad` selects rows via a
+    # `set` intersection (order not guaranteed), so compare index MEMBERSHIP
+    # rather than exact order -- the regression this guards against is the
+    # index being the fit-time `indices` (train's default RangeIndex(0, 40),
+    # disjoint from `custom_index`), not row reordering.
+    for a in aligned_held_out:
+        assert set(a.index) == set(custom_index)
 
 
 def test_aligner_transform_before_fit_raises_not_fitted():

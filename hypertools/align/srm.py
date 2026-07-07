@@ -30,7 +30,10 @@ def transformer(data, **kwargs):
     if model is None:
         raise NotFittedError('aligner model must be fit before data can be transformed')
 
-    return [pd.DataFrame(j.T, index=i) for i, j in zip(kwargs['indices'], model.transform([i.values.T for i in data]))]
+    # Build the output index from the INCOMING data (`data`), not the
+    # fit-time `indices` -- the latter mislabels (or, on a row-count
+    # mismatch, raises on) held-out data passed to `.transform()` (GH #227).
+    return [pd.DataFrame(j.T, index=i.index) for i, j in zip(data, model.transform([i.values.T for i in data]))]
 
 
 def srm_fitter(data, **kwargs):

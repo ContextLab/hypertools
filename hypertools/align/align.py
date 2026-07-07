@@ -279,7 +279,7 @@ def align(data, model='HyperAlign', return_model=False,
         `hyp.plot(..., align='hyper')`-style call.
 
     Returns
-    ----------
+    -------
     aligned : list of numpy arrays (or a single array)
         The aligned data, in the same list/single-item shape as `data`
         (matching `hyp.reduce`/`hyp.cluster`/`hyp.manip`, and the classic
