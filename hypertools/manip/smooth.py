@@ -3,11 +3,15 @@ import datawrangler as dw
 import numpy as np
 import pandas as pd
 from scipy.signal import savgol_filter
-from scipy.ndimage import gaussian_filter1d
+from scipy.ndimage import gaussian_filter1d, uniform_filter1d
 
 import warnings
 
 from .common import Manipulator
+
+
+#: valid values for `Smooth`'s `kernel=` kwarg (GH #274/#153, round17 Task 5).
+KERNELS = ('savgol', 'gaussian', 'boxcar')
 
 
 # noinspection PyShadowingBuiltins
@@ -24,12 +28,52 @@ def fitter(data, **kwargs):
             'min': data_min, 'maintain_bounds': kwargs['maintain_bounds']}
 
 
+def _resolve_kernel(kwargs):
+    """Decide which smoothing branch to run and, for `'gaussian'`, which
+    sigma mapping to use.
+
+    `kernel=` (round17 Task 5, GH #274/#153) is the new, preferred kwarg:
+    `'savgol'` (default), `'gaussian'` (`scipy.ndimage.gaussian_filter1d`,
+    `sigma = kernel_width / 4` -- a sensible width-to-sigma mapping so
+    `kernel='gaussian'` needs no separate `var=` kwarg), or `'boxcar'`
+    (`scipy.ndimage.uniform_filter1d`, `size = kernel_width`).
+
+    The older `mode=`/`var=` kwargs (added for the weights-trajectory
+    recipe, GH #153 plan 6) are kept fully working, byte-identical, for
+    backward compatibility: when `kernel` is left at its default (`'savgol'`)
+    and `mode` is explicitly `'gaussian'`, gaussian smoothing uses
+    `sigma = sqrt(var)` as before. An explicit `kernel=` always takes
+    precedence over `mode=`.
+
+    Returns
+    -------
+    (branch, use_legacy_var) : (str, bool)
+        `branch` is one of `'savgol'`, `'gaussian'`, `'boxcar'`;
+        `use_legacy_var` is True only for the `mode='gaussian'` backward
+        -compat path (sigma from `var`, not `kernel_width`).
+    """
+    kernel = kwargs.get('kernel', 'savgol')
+    if kernel not in KERNELS:
+        raise ValueError(f"invalid Smooth kernel {kernel!r}; must be one of {KERNELS}")
+    if kernel != 'savgol':
+        return kernel, False
+    legacy_mode = kwargs.get('mode', 'savgol')
+    if legacy_mode == 'gaussian':
+        return 'gaussian', True
+    return 'savgol', False
+
+
 @dw.decorate.apply_stacked
 def _transform_stacked(data, **kwargs):
     smoothed = data.copy()
+    branch, use_legacy_var = _resolve_kernel(kwargs)
     for c in data.columns:
-        if kwargs['mode'] == 'gaussian':
-            smoothed[c] = gaussian_filter1d(np.asarray(data[c], dtype=float), sigma=np.sqrt(kwargs['var']))
+        values = np.asarray(data[c], dtype=float)
+        if branch == 'gaussian':
+            sigma = np.sqrt(kwargs['var']) if use_legacy_var else kwargs['kernel_width'] / 4
+            smoothed[c] = gaussian_filter1d(values, sigma=sigma)
+        elif branch == 'boxcar':
+            smoothed[c] = uniform_filter1d(values, size=kwargs['kernel_width'])
         else:
             smoothed[c] = savgol_filter(data[c].values, kwargs['kernel_width'], kwargs['order'])
 
@@ -77,18 +121,70 @@ def transformer(data, **kwargs):
 
 
 class Smooth(Manipulator):
+    """Smooth each dataset (per-column) along `axis`.
+
+    Parameters
+    ----------
+    axis : int
+        `0` smooths down each column (the default: time along rows);
+        `1` smooths across each row instead.
+
+    kernel : {'savgol', 'gaussian', 'boxcar'}
+        Which smoothing kernel to apply (GH #274/#153, round17 Task 5):
+
+        - `'savgol'` (default): `scipy.signal.savgol_filter` with window
+          length `kernel_width` and polynomial `order` -- unchanged from
+          pre-round17 behavior.
+        - `'gaussian'`: `scipy.ndimage.gaussian_filter1d` with
+          `sigma = kernel_width / 4` (a sensible width-to-sigma mapping;
+          e.g. `kernel_width=25` gives `sigma=6.25`).
+        - `'boxcar'`: `scipy.ndimage.uniform_filter1d` with
+          `size = kernel_width` (a moving average).
+
+        Invalid values raise `ValueError` listing the supported options.
+
+    mode : {'savgol', 'gaussian'}
+        LEGACY kwarg (predates `kernel=`), kept for backward compatibility:
+        when `kernel` is left at its default (`'savgol'`) and `mode` is
+        explicitly `'gaussian'`, gaussian smoothing uses
+        `sigma = sqrt(var)` instead of the `kernel_width`-based mapping
+        above -- byte-identical to the original weights-trajectory recipe
+        behavior. An explicit `kernel=` always takes precedence over
+        `mode=`.
+
+    kernel_width : int
+        Smoothing window width for `'savgol'`/`'boxcar'` (and, via the
+        mapping above, `'gaussian'` when using `kernel=`). Must be a
+        positive odd integer; non-integer/even values are rounded up with a
+        warning.
+
+    order : int
+        Polynomial order for the `'savgol'` kernel (ignored otherwise).
+
+    var : float
+        Variance for the LEGACY `mode='gaussian'` path (`sigma = sqrt(var)`,
+        default 300, matching the original weights-trajectory recipe).
+        Ignored by `kernel='gaussian'`.
+
+    maintain_bounds : bool
+        If True (default), clip the smoothed output to each column's
+        original (pre-smoothing) min/max.
+    """
+
     # noinspection PyShadowingBuiltins
-    def __init__(self, axis=0, mode='savgol', kernel_width=11, order=3, var=300, maintain_bounds=True):
+    def __init__(self, axis=0, kernel='savgol', mode='savgol', kernel_width=11, order=3, var=300,
+                 maintain_bounds=True):
         required = ['axis', 'min', 'max', 'mode', 'kernel_width', 'order', 'var', 'maintain_bounds']
         super().__init__(axis=axis, fitter=fitter, transformer=transformer, data=None, mode=mode,
-                         kernel_width=kernel_width, order=order, var=var, maintain_bounds=maintain_bounds,
-                         required=required)
+                         kernel=kernel, kernel_width=kernel_width, order=order, var=var,
+                         maintain_bounds=maintain_bounds, required=required)
 
         self.axis = axis
         self.fitter = fitter
         self.transformer = transformer
         self.data = None
         self.mode = mode
+        self.kernel = kernel
         self.kernel_width = kernel_width
         self.order = order
         self.var = var
