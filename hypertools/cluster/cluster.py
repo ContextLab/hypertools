@@ -50,6 +50,62 @@ mixture_models = {
 }
 
 
+def normalize_membership_rows(loadings):
+    """Normalize each row of a loadings matrix to sum to 1.
+
+    Used to turn LDA/NMF per-component loadings into membership
+    proportions. Shared with `hypertools.reduce.common.Reducer` (GH #174)
+    so both `hyp.cluster` and `hyp.reduce` use the exact same
+    normalization logic for these models.
+
+    Parameters
+    ----------
+    loadings : numpy.ndarray
+        An (n_samples, n_components) array of non-negative loadings.
+
+    Returns
+    -------
+    numpy.ndarray
+        `loadings` with each row divided by its sum (rows that sum to zero
+        are left unchanged, to avoid division by zero).
+    """
+    row_sums = loadings.sum(axis=1, keepdims=True)
+    return loadings / np.where(row_sums == 0, 1, row_sums)
+
+
+def mixture_proportions(model_name, model, stacked):
+    """Fit a mixture/soft-clustering model and return membership proportions.
+
+    Shared by `hyp.cluster` (this module) and
+    `hypertools.reduce.common.Reducer` (GH #174), so `hyp.reduce(x,
+    reduce='GaussianMixture', ndims=3)` returns exactly the same style of
+    proportions `hyp.cluster` does, via the SAME code path.
+
+    Parameters
+    ----------
+    model_name : str
+        One of `mixture_models`'s keys ('GaussianMixture',
+        'BayesianGaussianMixture', 'LatentDirichletAllocation', 'NMF').
+    model : object
+        An unfitted instance of the corresponding scikit-learn model.
+    stacked : numpy.ndarray
+        A single (row-concatenated) 2D array to fit and transform.
+
+    Returns
+    -------
+    numpy.ndarray
+        An (n_samples, n_components) array of membership proportions; rows
+        sum to 1 (except all-zero rows, left as-is).
+    """
+    if model_name in ("GaussianMixture", "BayesianGaussianMixture"):
+        model.fit(stacked)
+        return model.predict_proba(stacked)
+    # LDA / NMF: transform gives per-component loadings; normalize rows so
+    # they are interpretable as membership proportions
+    loadings = model.fit_transform(stacked)
+    return normalize_membership_rows(loadings)
+
+
 def cluster(x, cluster="KMeans", n_clusters=3, format_data=True):
     """
     Performs clustering analysis and returns a list of cluster labels
@@ -130,16 +186,7 @@ def cluster(x, cluster="KMeans", n_clusters=3, format_data=True):
         model_params.setdefault("n_components", n_clusters)
         model_cls = custom_cls or mixture_models[model_name]
         model = model_cls(**model_params)
-        if model_name in ("GaussianMixture", "BayesianGaussianMixture"):
-            model.fit(stacked)
-            proportions = model.predict_proba(stacked)
-        else:
-            # LDA / NMF: transform gives per-component loadings; normalize
-            # rows so they are interpretable as membership proportions
-            loadings = model.fit_transform(stacked)
-            row_sums = loadings.sum(axis=1, keepdims=True)
-            proportions = loadings / np.where(row_sums == 0, 1, row_sums)
-        return proportions
+        return mixture_proportions(model_name, model, stacked)
 
     # hard-clustering models: return a list of labels
     model = custom_cls or models[model_name]

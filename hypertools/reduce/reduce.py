@@ -3,43 +3,28 @@
 import inspect
 import warnings
 import numpy as np
-from sklearn.decomposition import PCA, FastICA, IncrementalPCA, KernelPCA, FactorAnalysis, TruncatedSVD, SparsePCA, MiniBatchSparsePCA, DictionaryLearning, MiniBatchDictionaryLearning
-from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
+from .common import Reducer, models, REDUCERS, resolve_reducer
 from .._shared.helpers import *
 from ..tools.format_data import format_data as formatter
 
-# dictionary of models
-models = {
-    'PCA': PCA,
-    'IncrementalPCA': IncrementalPCA,
-    'SparsePCA': SparsePCA,
-    'MiniBatchSparsePCA': MiniBatchSparsePCA,
-    'KernelPCA': KernelPCA,
-    'FastICA': FastICA,
-    'FactorAnalysis': FactorAnalysis,
-    'TruncatedSVD': TruncatedSVD,
-    'DictionaryLearning': DictionaryLearning,
-    'MiniBatchDictionaryLearning': MiniBatchDictionaryLearning,
-    'TSNE': TSNE,
-    'Isomap': Isomap,
-    'SpectralEmbedding': SpectralEmbedding,
-    'LocallyLinearEmbedding': LocallyLinearEmbedding,
-    'MDS': MDS,
-}
-
 
 def _resolve_model(model_name):
-    """Look up a reduction model by name. UMAP is resolved lazily because
-    importing umap triggers numba JIT compilation that adds seconds to
-    `import hypertools` even when UMAP is never used."""
-    if model_name == 'UMAP':
-        from umap import UMAP
-        return UMAP
-    return models[model_name]
+    """Look up a reduction model by name.
+
+    Covers `models` (the classic decomposition/manifold reducers) plus the
+    mixture/soft-clustering models (`GaussianMixture`,
+    `BayesianGaussianMixture`, `LatentDirichletAllocation`, `NMF` -- GH
+    #174) via `REDUCERS`. UMAP is resolved lazily because importing umap
+    triggers numba JIT compilation that adds seconds to `import hypertools`
+    even when UMAP is never used.
+    """
+    return resolve_reducer(model_name)
+
 
 # main function
-def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False,
-           format_data=True):
+def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
+           manip=None, normalize=None, align=None, cluster=None,
+           internal=False, format_data=True):
     """
     Reduces dimensionality of an array, or list of arrays
 
@@ -48,18 +33,46 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False,
     x : Numpy array or list of arrays
         Dimensionality reduction using PCA is performed on this array.
 
-    reduce : str or dict
+    reduce : str, dict, class, instance, or fitted Reducer
         Decomposition/manifold learning model to use.  Models supported: PCA,
         IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
         FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
-        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, MDS and UMAP.
-        Can be passed as a string, but for finer control of the model
-        parameters, pass as a dictionary, e.g. reduce={'model' : 'PCA',
-        'params' : {'whiten' : True}}. See scikit-learn specific model docs
-        for details on parameters supported for each model.
+        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, MDS and UMAP,
+        plus the mixture (soft-clustering) models GaussianMixture,
+        BayesianGaussianMixture, LatentDirichletAllocation and NMF -- for
+        these, the returned array holds (n_samples, ndims) membership
+        proportions rather than a projection (GH #174). Can be passed as a
+        string, a bare (uninstantiated) scikit-learn-style class, an
+        already-constructed instance, the canonical dict spec
+        `{'model': ..., 'args': [...], 'kwargs': {...}}`, or the LEGACY
+        dict spec `{'model' : 'PCA', 'params' : {'whiten' : True}}`
+        (accepted for backward compatibility, but emits a
+        `DeprecationWarning`). A previously-fitted `Reducer` (as returned
+        by `return_model=True`) is applied via `.transform` instead of
+        being refit. See scikit-learn specific model docs for details on
+        parameters supported for each model.
 
     ndims : int
         Number of dimensions to reduce
+
+    return_model : bool
+        If True, also return the fitted model: the fitted `Reducer` wrapper
+        when only the `reduce` stage ran, or a fitted `hypertools.Pipeline`
+        when `manip=`/`normalize=`/`align=`/`cluster=` made multiple stages
+        run (default: False).
+
+    manip, normalize, align, cluster : model spec or None
+        Cross-module stage kwargs (GH #138): when any of these is given,
+        the other stages also run (via
+        `hypertools.core.pipeline.build_pipeline`), in the canonical order
+        `manip -> normalize -> reduce -> align -> cluster` (GH #153), with
+        this function's own `reduce=`/`ndims=` slotted in at the reduce
+        stage (default: None for all four, i.e. only `reduce` runs).
+
+    internal : bool
+        (Internal use, e.g. by `hyp.plot`/`hyp.analyze`) if True, always
+        return a list even when the input was a single dataset (default:
+        False).
 
     format_data : bool
         Whether or not to first call the format_data function (default: True).
@@ -68,13 +81,34 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False,
     ----------
     x_reduced : Numpy array or list of arrays
         The reduced data with ndims dimensionality is returned.  If the input
-        is a list, a list is returned.
+        is a list, a list is returned. If `return_model=True`, an
+        `(x_reduced, model)` tuple is returned instead.
 
     """
+    # cross-module kwargs (#138): assemble and run a Pipeline (in canonical
+    # order, #153) instead of the single-stage path below whenever another
+    # stage is requested. Lazy import avoids a reduce<->core.pipeline cycle
+    # (core.pipeline itself lazily imports reduce.reduce).
+    if any(stage is not None for stage in (manip, normalize, align, cluster)):
+        from ..core.pipeline import build_pipeline
+        pipeline = build_pipeline(manip=manip, normalize=normalize,
+                                   reduce=reduce, ndims=ndims,
+                                   align=align, cluster=cluster)
+        result = pipeline.fit_transform(x)
+        return (result, pipeline) if return_model else result
 
     # if model is None, just return data
     if reduce is None:
-        return x
+        return (x, None) if return_model else x
+
+    # an already-fitted Reducer (returned from an earlier
+    # return_model=True call) is reused via `transform`, never refit
+    if isinstance(reduce, Reducer) and reduce.is_fitted:
+        if format_data:
+            x = formatter(x, ppca=True)
+        x_reduced, fitted = reduce_list(x, None, reuse=reduce)
+        result = x_reduced if (internal or len(x_reduced) > 1) else x_reduced[0]
+        return (result, fitted) if return_model else result
 
     elif isinstance(reduce, str):  # Remove np.string_ check as it's deprecated in NumPy 2.0
         model_name = reduce
@@ -83,12 +117,38 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False,
         }
 
     elif isinstance(reduce, dict):
-        try:
-            model_name = reduce['model']
-            model_params = reduce['params']
-        except KeyError:
-            raise ValueError('If passing a dictionary, pass the model as the value of the "model" key and a \
-            dictionary of custom params as the value of the "params" key.')
+        if 'args' in reduce or 'kwargs' in reduce:
+            # canonical 1.0 dict spec: {'model': ..., 'args': [...], 'kwargs': {...}}
+            try:
+                c_model = reduce['model']
+            except KeyError:
+                raise ValueError('If passing a dictionary, pass the model as the value of the "model" key and a \
+                dictionary of custom params as the value of the "params" key.')
+            c_args = list(reduce.get('args', []))
+            c_kwargs = dict(reduce.get('kwargs', {}))
+            if isinstance(c_model, str):
+                c_model = _resolve_model(c_model)
+            # construct immediately; the resulting instance flows through
+            # the same already-constructed-instance handling below as a
+            # bare instance passed directly as `reduce=`
+            model_name = c_model(*c_args, **c_kwargs)
+            model_params = {
+                'n_components': ndims
+            }
+        else:
+            try:
+                model_name = reduce['model']
+                model_params = reduce['params']
+            except KeyError:
+                raise ValueError('If passing a dictionary, pass the model as the value of the "model" key and a \
+                dictionary of custom params as the value of the "params" key.')
+            # LEGACY form (dev-1.0/fork): accepted for backward
+            # compatibility, but deprecated in favor of the canonical
+            # {'model', 'args', 'kwargs'} triple above.
+            warnings.warn(
+                "{'model': ..., 'params': {...}} is deprecated; use "
+                "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
+                DeprecationWarning, stacklevel=2)
 
     else:
         # handle other possibilities below: a bare (uninstantiated) custom
@@ -105,7 +165,12 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False,
         # otherwise check any custom object for necessary methods
         else:
             model = model_name
-            getattr(model, 'fit_transform')
+            if not hasattr(model, 'fit_transform'):
+                # mixture-style estimators (GaussianMixture, etc.) have no
+                # fit_transform; fit + predict_proba is an equally valid
+                # reducer-like interface (GH #174)
+                if not (hasattr(model, 'fit') and hasattr(model, 'predict_proba')):
+                    raise AttributeError
             # a bare class won't have n_components until it's constructed;
             # only already-constructed instances are expected to have it
             if not inspect.isclass(model):
@@ -140,15 +205,16 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False,
 
     # if ndims/n_components is not passed or all data is < ndims-dimensional, just return it
     if model_params['n_components'] is None or all([i.shape[1] <= model_params['n_components'] for i in x]):
-        return x
+        return (x, None) if return_model else x
 
     # Handle empty arrays and type conversion
     stacked_x = np.vstack([np.asarray(arr, dtype=np.float64) for arr in x])
-    
+
     if stacked_x.shape[0] == 1:
         warnings.warn('Cannot reduce the dimensionality of a single row of'
                       ' data. Return zeros length of ndims')
-        return [np.zeros((1, model_params['n_components']), dtype=np.float64)]
+        result = [np.zeros((1, model_params['n_components']), dtype=np.float64)]
+        return (result, None) if return_model else result
 
     elif stacked_x.shape[0] < model_params['n_components']:
             warnings.warn('The number of rows in your data is less than ndims.'
@@ -163,29 +229,63 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, internal=False,
         model = model(**model_params)
 
     # reduce data
-    x_reduced = reduce_list(x, model)
+    x_reduced, fitted = reduce_list(x, model)
 
     # return data
     if internal or len(x_reduced) > 1:
-        return x_reduced
+        result = x_reduced
     else:
-        return x_reduced[0]
+        result = x_reduced[0]
+    return (result, fitted) if return_model else result
 
 
 # sub functions
-def reduce_list(x, model):
-    """Helper function to reduce a list of arrays"""
+def reduce_list(x, model, reuse=None):
+    """Helper function to reduce a list of arrays.
+
+    Stacks `x` (row-concatenated) into one array, fits (or reuses an
+    already-fitted `Reducer` on) that single stacked array -- so the
+    reduction is comparable across datasets -- and splits the result back
+    into a list matching `x`'s per-dataset row counts.
+
+    Parameters
+    ----------
+    x : list of numpy.ndarray
+        Datasets to stack, reduce, and split back apart.
+
+    model : object or None
+        An already-configured (unfitted) scikit-learn-style reducer
+        instance to fit. Ignored when `reuse` is given.
+
+    reuse : Reducer or None
+        An already-fitted `Reducer` to `transform` `x` with instead of
+        fitting a new model (the `return_model=True` reuse path -- an
+        already-fitted model is applied via `.transform`, never refit).
+
+    Returns
+    -------
+    (list of numpy.ndarray, Reducer)
+        The reduced (or reused-transform) pieces, split back to match `x`'s
+        structure, and the (newly fitted, or reused) `Reducer` wrapper.
+    """
     # Ensure all arrays are float64 for consistent handling
     x = [np.asarray(arr, dtype=np.float64) for arr in x]
     split = np.cumsum([len(xi) for xi in x])[:-1]
     stacked = np.vstack(x)
-    
+
     # Handle potential NaN values
     if np.any(np.isnan(stacked)):
         warnings.warn('NaN values detected in input data. These may affect the reduction results.')
-    
-    x_r = np.vsplit(model.fit_transform(stacked), split)
-    if len(x) > 1:
-        return [xi for xi in x_r]
+
+    if reuse is not None:
+        fitted = reuse
+        transformed = np.asarray(fitted.transform(stacked))
     else:
-        return [x_r[0]]
+        fitted = Reducer(model)
+        transformed = np.asarray(fitted.fit_transform(stacked))
+
+    x_r = np.vsplit(transformed, split)
+    if len(x) > 1:
+        return [xi for xi in x_r], fitted
+    else:
+        return [x_r[0]], fitted
