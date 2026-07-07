@@ -4,8 +4,8 @@ DataGeometry objects (``geo``)
 
 The DataGeometry object is the hypertools data object class. A ``geo``
 contains the data, figure handles, and transform functions used to
-create a plot. Note that this class should not be called directly, but
-is used by the hyp.plot function to create a plot object.
+create a plot. Note that new instances of this class should not be
+initialized directly, but are created by the hyp.plot function.
 
 In this tutorial we will explore the features of a geo and how it may be
 used.
