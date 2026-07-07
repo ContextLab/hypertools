@@ -218,8 +218,29 @@ def fivethirtyeight_dataset(name):
             ) from e
         if resp.status_code == 404:
             csv_names = []
+        elif resp.status_code >= 400:
+            # Wrapped in HypertoolsIOError (not left as a raw requests
+            # HTTPError) so callers get a consistent exception type and,
+            # for the common unauthenticated-rate-limit case, an
+            # actionable message. The 403/rate-limited branch can't be
+            # exercised in tests on demand without burning GitHub's real
+            # 60-requests/hour unauthenticated quota -- reviewed by
+            # inspection instead of a live test; the 404 path above (and
+            # its HypertoolsIOError) is covered by
+            # test_load_538_bad_slug_raises_immediately.
+            message = (
+                f"GitHub API request for fivethirtyeight/data/{slug} "
+                f"failed with HTTP {resp.status_code}"
+                f"{' ' + resp.reason if resp.reason else ''}.")
+            if resp.status_code == 403 and \
+                    resp.headers.get('X-RateLimit-Remaining') == '0':
+                message += (
+                    " This looks like GitHub's unauthenticated API rate "
+                    "limit (60 requests/hour) has been exhausted -- wait "
+                    "for it to reset, or authenticate your requests to "
+                    "raise the limit.")
+            raise HypertoolsIOError(message)
         else:
-            resp.raise_for_status()
             entries = resp.json()
             csv_names = sorted(
                 e['name'] for e in entries
@@ -307,13 +328,33 @@ def kaggle_dataset(name):
             f"{download_path}, but it doesn't contain any .csv/.tsv "
             "files.")
 
+    keys = _table_file_keys(download_path, table_files)
     frames = {}
     for f in table_files:
         sep = '\t' if f.suffix.lower() == '.tsv' else ','
-        frames[f.stem] = pd.read_csv(f, sep=sep)
+        frames[keys[f]] = pd.read_csv(f, sep=sep)
     if len(frames) == 1:
         return next(iter(frames.values()))
     return frames
+
+
+def _table_file_keys(root, files):
+    """Build the dict keys :func:`kaggle_dataset` uses for a list of
+    downloaded CSV/TSV files under ``root``.
+
+    Keying by bare filename stem (``f.stem``) is nicer UX for the common
+    case (a flat download with unique filenames), but silently overwrites
+    entries when two files share a stem in different subdirectories (e.g.
+    ``train/data.csv`` and ``test/data.csv``). To avoid that collision:
+    use the plain stem when stems are unique across ``files``; otherwise
+    fall back to each file's path relative to ``root``, with '/'
+    separators and no extension (e.g. ``'train/data'``, ``'test/data'``).
+    """
+    stems = [f.stem for f in files]
+    if len(set(stems)) == len(stems):
+        return dict(zip(files, stems))
+    return {f: f.relative_to(root).with_suffix('').as_posix()
+            for f in files}
 
 
 def is_loadable_string(s):

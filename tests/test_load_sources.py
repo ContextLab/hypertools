@@ -20,7 +20,8 @@ import matplotlib.pyplot as plt
 
 import hypertools as hyp
 from hypertools._shared.exceptions import HypertoolsIOError
-from hypertools.io.sources import is_loadable_string, HypertoolsTrustError
+from hypertools.io.sources import (is_loadable_string, HypertoolsTrustError,
+                                    _table_file_keys)
 
 IRIS_CSV = 'raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv'
 # legacy hypertools 'spiral' pickle, still hosted on Google Drive
@@ -63,6 +64,33 @@ def test_is_loadable_string_discrimination():
     assert not is_loadable_string('the dog is happy')
     assert not is_loadable_string('')
     assert not is_loadable_string('nonexistent_dataset_name')
+
+
+def test_table_file_keys_unique_stems_use_plain_stem(tmp_path):
+    # flat, no-collision case: nicer UX keys by bare filename stem
+    a = tmp_path / 'alpha.csv'
+    b = tmp_path / 'beta.csv'
+    a.write_text('x,y\n1,2\n')
+    b.write_text('x,y\n3,4\n')
+    keys = _table_file_keys(tmp_path, [a, b])
+    assert keys == {a: 'alpha', b: 'beta'}
+
+
+def test_table_file_keys_colliding_stems_use_relative_path(tmp_path):
+    # GH review finding: two same-stem CSVs in different subdirectories
+    # must NOT silently overwrite each other in the resulting dict --
+    # real files on disk, no mocks.
+    sub = tmp_path / 'sub'
+    other = tmp_path / 'other'
+    sub.mkdir()
+    other.mkdir()
+    f1 = sub / 'data.csv'
+    f2 = other / 'data.csv'
+    f1.write_text('x,y\n1,2\n')
+    f2.write_text('x,y\n5,6\n')
+    keys = _table_file_keys(tmp_path, [f1, f2])
+    assert keys == {f1: 'sub/data', f2: 'other/data'}
+    assert len(set(keys.values())) == 2, "colliding stems overwrote a key"
 
 
 def test_load_local_formats(tmp_path):

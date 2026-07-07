@@ -22,6 +22,8 @@ folder listing is cached per-process in hypertools.io.sources, so repeated
 loads of the same slug within a test run don't re-hit the API).
 """
 
+import os
+
 import pandas as pd
 import pytest
 
@@ -30,11 +32,6 @@ matplotlib.use('Agg')
 
 import hypertools as hyp
 from hypertools._shared.exceptions import HypertoolsIOError
-
-kagglehub = pytest.importorskip(
-    'kagglehub',
-    reason="kagglehub is required to exercise hyp.load('kaggle/...') -- "
-          "install it with `pip install hypertools[kaggle]`")
 
 
 def test_load_538_bechdel_single_csv():
@@ -68,6 +65,14 @@ def test_load_538_bad_slug_raises_immediately():
 
 
 def test_load_kaggle_tiny_dataset():
+    # kagglehub is only required for this test and the one below (GH #205
+    # skip pattern: the skip must be scoped to the tests that actually need
+    # the optional dependency, not the whole module -- see
+    # test_ci_has_kagglehub, which fails hard on CI if it's ever missing).
+    pytest.importorskip(
+        'kagglehub',
+        reason="kagglehub is required to exercise hyp.load('kaggle/...') "
+              "-- install it with `pip install hypertools[kaggle]`")
     # uciml/iris is a tiny (~3.6KB) public dataset that downloads
     # anonymously (no Kaggle credentials needed) via kagglehub
     df = hyp.load('kaggle/uciml/iris')
@@ -77,11 +82,29 @@ def test_load_kaggle_tiny_dataset():
 
 
 def test_load_kaggle_malformed_name_raises_clear_error():
+    # malformed-name validation happens before kagglehub is even imported
+    # (hypertools/io/sources.py's kaggle_dataset checks the id shape
+    # first), so this test doesn't need kagglehub installed at all -- no
+    # importorskip here.
     with pytest.raises(HypertoolsIOError) as excinfo:
         hyp.load('kaggle/no-slash')
     message = str(excinfo.value)
     assert 'kaggle' in message.lower()
     assert '<owner>' in message or 'owner' in message.lower()
+
+
+def test_ci_has_kagglehub():
+    # GH #205-style CI guard: on GitHub Actions, kagglehub must be
+    # importable so test_load_kaggle_tiny_dataset actually exercises the
+    # kaggle_dataset() code path instead of silently skipping on every PR.
+    # Outside CI, a missing kagglehub is expected (it's an optional extra)
+    # and this test is a no-op.
+    if os.environ.get('GITHUB_ACTIONS') != 'true':
+        pytest.skip("only meaningful on CI (GITHUB_ACTIONS=true); a "
+                    "missing kagglehub on a local machine is expected and "
+                    "handled by importorskip in the kaggle-specific tests")
+    import kagglehub
+    assert kagglehub is not None
 
 
 def test_load_538_bechdel_plot_end_to_end():
