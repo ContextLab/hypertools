@@ -198,3 +198,32 @@ def test_hyp_reduce_exposed_at_top_level():
     x = _data()
     out = hyp.reduce(x, reduce='PCA', ndims=2)
     assert np.asarray(out[0]).shape == (20, 2)
+
+
+def test_fitted_reducer_reuse_warns_on_ndims_mismatch():
+    x = _data()
+    _, fitted = reducer(x, reduce='PCA', ndims=3, return_model=True)
+    with pytest.warns(UserWarning, match='Unequal values passed to dims and n_components'):
+        out = reducer([_rng().rand(12, 6)], reduce=fitted, ndims=5)
+    # the already-fitted model wins: output keeps the fit-time dimensionality
+    assert np.asarray(out).shape == (12, 3)
+
+
+def test_fitted_reducer_reuse_matching_ndims_no_warning():
+    x = _data()
+    _, fitted = reducer(x, reduce='PCA', ndims=3, return_model=True)
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', UserWarning)
+        out = reducer([_rng().rand(12, 6)], reduce=fitted, ndims=3)
+    assert np.asarray(out).shape == (12, 3)
+
+
+def test_bare_mixture_class_duck_typing():
+    from sklearn.mixture import GaussianMixture
+    x = _data()
+    out = reducer(x, reduce=GaussianMixture, ndims=2)
+    assert len(out) == 2
+    for piece in out:
+        piece = np.asarray(piece)
+        assert piece.shape == (20, 2)
+        assert np.allclose(piece.sum(axis=1), 1.0)

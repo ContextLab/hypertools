@@ -104,6 +104,9 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
     # an already-fitted Reducer (returned from an earlier
     # return_model=True call) is reused via `transform`, never refit
     if isinstance(reduce, Reducer) and reduce.is_fitted:
+        fitted_n_components = getattr(reduce.model_, 'n_components', None)
+        if (ndims is not None) and (fitted_n_components is not None) and (ndims != fitted_n_components):
+            warnings.warn('Unequal values passed to dims and n_components. Using the already-fitted model.')
         if format_data:
             x = formatter(x, ppca=True)
         x_reduced, fitted = reduce_list(x, None, reuse=reduce)
