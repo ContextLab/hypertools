@@ -288,6 +288,46 @@ def test_aligner_transform_raises_on_column_count_mismatch():
         m.transform([d1, d_bad])
 
 
+# --- raw numpy new_data must not crash dw.unstack (round17 wave2 HIGH) ----
+
+@pytest.mark.parametrize('model_name', ['HyperAlign', 'SharedResponseModel', 'Procrustes'])
+def test_aligner_transform_accepts_raw_numpy_held_out_data(model_name):
+    """Regression: `Aligner.transform` must coerce raw numpy array `new_data`
+    (not wrapped in DataFrames) to DataFrame(s) before `dw.unstack` -- calling
+    `.transform(...)` directly (bypassing the funnel/format_data path that
+    `align()` applies before `fit`) with a list of raw numpy arrays used to
+    raise `Exception: Unsupported datatype: <class 'list'>`. Held-out data
+    has a DIFFERENT row count than fit-time data."""
+    datasets = _shared_trajectory_datasets(n_rows=90)
+    train_n, held_out_n = 40, 25
+    train = [d[:train_n] for d in datasets]  # raw numpy, not DataFrames
+    held_out = [d[train_n:train_n + held_out_n] for d in datasets]  # raw numpy
+
+    _, model = aligner(train, model=model_name, return_model=True)
+    aligned_held_out = model.transform(held_out)
+
+    assert len(aligned_held_out) == len(held_out)
+    for a, h in zip(aligned_held_out, held_out):
+        assert np.asarray(a).shape[0] == np.asarray(h).shape[0] == held_out_n
+
+    unaligned_corr = _mean_pairwise_corr(held_out)
+    aligned_corr = _mean_pairwise_corr(aligned_held_out)
+    assert aligned_corr > unaligned_corr + 0.1
+
+
+def test_aligner_transform_bare_single_array_wraps_and_validates_count():
+    """A single bare 2D array (not a list) passed to `transform` is wrapped
+    as a 1-dataset input (mirroring `fit`'s own single-vs-list handling) and
+    validated against the fit-time dataset count -- fitting on 3 datasets
+    then transforming a single raw array must raise ValueError (dataset-count
+    mismatch), not silently succeed or crash inside `dw.unstack`."""
+    datasets = _shared_trajectory_datasets(n_datasets=3, n_rows=30)
+    model = HyperAlign()
+    model.fit([pd.DataFrame(d) for d in datasets])
+    with pytest.raises(ValueError, match=r'3 dataset'):
+        model.transform(datasets[0])
+
+
 def test_aligner_is_fitted_property():
     m = HyperAlign()
     assert m.is_fitted is False

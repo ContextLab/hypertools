@@ -121,6 +121,15 @@ class Aligner(BaseEstimator):
         if new_data is None:
             data_to_use = self.data
         else:
+            # `new_data` may arrive as raw array(s) rather than
+            # DataFrame(s) -- e.g. `model.transform(...)` called directly
+            # (bypassing the `@dw.decorate.funnel`/`format_data` coercion
+            # `align()` applies before `fit`). Coerce here (single
+            # array|DataFrame, or list of these) to the same DataFrame(s)
+            # format `fit` uses, BEFORE shape validation/`dw.unstack` below
+            # -- `dw.wrangle` preserves each DataFrame's index and the
+            # single-vs-list shape of the input, matching the funnel path.
+            new_data = dw.wrangle(new_data)
             n_datasets, n_columns = self._shape_of(new_data)
             fit_n_datasets, fit_n_columns = self._fit_shape
             if n_datasets != fit_n_datasets or n_columns != fit_n_columns:
