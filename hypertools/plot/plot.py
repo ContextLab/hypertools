@@ -113,6 +113,7 @@ def plot(
     align=None,
     normalize=None,
     impute=None,
+    resample=None,
     n_clusters=None,
     predict=None,
     t=10,
@@ -419,6 +420,25 @@ def plot(
         different `hypertools.impute` model, e.g. 'Kalman', 'KNNImputer'
         (default: None, i.e. PPCA -- byte-compatible with pre-1.0 behavior).
         See `hypertools.impute.impute` for accepted forms.
+
+    resample : int or False/None
+        If set to an integer `N` (GH #94), each input dataset is
+        PCHIP-resampled to exactly `N` rows via the existing
+        `hypertools.manip` ``Resample`` manipulator, applied right after
+        `hypertools.tools.format_data` (so it sees whatever `x` has been
+        normalized into -- a plain list of per-dataset numpy arrays) and
+        BEFORE the normalize/reduce/align pipeline. `resample=500` on a
+        100-row dataset produces per-dataset arrays with exactly 500 rows
+        going into normalize/reduce/align/cluster/hue -- and the SAME
+        values `hyp.manip(data, model='Resample', n_samples=500)` produces
+        on that same input, since it is the identical manipulator call
+        under the hood. This is independent
+        of, and happens well before, the later line-smoothing
+        interpolation (GH #141) applied for animation/line-drawing
+        purposes. Default `None` (no resampling, unchanged pre-existing
+        behavior); `False` is equivalent to `None`. Raises ``ValueError``
+        if `resample` is anything other than `False`/`None` or an integer
+        ``>= 2``.
 
     predict : str or dict or class or class instance or None
         If set, forecasts `t` new rows per input dataset (in the plotted,
@@ -1012,6 +1032,22 @@ def plot(
     # dataset count is known.
     _density_norm = normalize_density_arg(density)
 
+    # resample= kwarg validation (GH #94): fail fast before the expensive
+    # analyze/reduce pipeline runs, mirroring colorbar=/surface=/density=
+    # above. A valid `resample` is False/None (disabled, default) or an
+    # int >= 2 (PCHIP interpolation -- what `hypertools.manip.Resample`
+    # uses under the hood, same as the interpolation this module already
+    # does for line smoothing -- needs at least 2 points to fit a curve).
+    if resample is not None and resample is not False:
+        if (isinstance(resample, bool)
+                or not isinstance(resample, (int, np.integer))
+                or resample < 2):
+            raise ValueError(
+                "resample= must be an integer >= 2 (the target sample "
+                "count per dataset) or False/None to disable resampling; "
+                f"got {resample!r}."
+            )
+
     # streaming inputs (issue #101): iterators/generators and Hugging Face
     # IterableDatasets are detected from the structure of the input -- no
     # flag needed. Models are fitted on the first `stream_init` samples and
@@ -1114,6 +1150,30 @@ def plot(
     # analyze the data
     if transform is None:
         raw = format_data(x, impute=impute, **text_args)
+
+        # resample= (GH #94): PCHIP-resample each dataset to exactly
+        # `resample` rows via the existing `hyp.manip` `Resample`
+        # manipulator, applied HERE -- right after `format_data` has
+        # normalized `x` into a plain list of per-dataset numpy arrays,
+        # and BEFORE `analyze` (normalize/reduce/align) runs -- so the
+        # resampled row count is what normalize/reduce/align/cluster/hue
+        # all see, and (mirroring `predict=`'s forecast values) resample=
+        # values match `hyp.manip(data, model='Resample',
+        # n_samples=resample)` on the SAME per-dataset array exactly
+        # (`hyp.manip`'s dict model spec, e.g. ``{'model': 'Resample',
+        # 'args': [], 'kwargs': {'n_samples': resample}}``, is equivalent
+        # but the plain `model='Resample', n_samples=...` call form is
+        # simpler and used here). Runs before, and independently of, the
+        # later line-smoothing interpolation (GH #141) -- that step still
+        # only densifies for ANIMATION/line-drawing purposes and operates
+        # on whatever row count resample= (or the original data) leaves it.
+        if resample:
+            from ..manip.manip import manip as _manip
+            raw = [
+                np.asarray(_manip(ri, model='Resample', n_samples=resample))
+                for ri in raw
+            ]
+
         xform = analyze(
             raw,
             ndims=ndims,
