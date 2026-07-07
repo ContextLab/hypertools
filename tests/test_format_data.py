@@ -8,26 +8,40 @@ from hypertools.tools import format_data
 
 def test_np_array():
     data = np.random.rand(100,10)
-    assert isinstance(format_data(data), list)
-    assert isinstance(format_data(data)[0], np.ndarray)
+    res = format_data(data)
+    assert isinstance(res, list)
+    assert isinstance(res[0], np.ndarray)
+    # a plain numpy array should pass through unchanged (shape and values)
+    assert res[0].shape == (100, 10)
+    assert np.allclose(res[0], data)
 
 
 def test_df():
     data = pd.DataFrame(np.random.rand(100,10))
-    assert isinstance(format_data(data), list)
-    assert isinstance(format_data(data)[0], np.ndarray)
+    res = format_data(data)
+    assert isinstance(res, list)
+    assert isinstance(res[0], np.ndarray)
+    # DataFrame values must be preserved exactly, not just wrapped
+    assert res[0].shape == (100, 10)
+    assert np.allclose(res[0], data.values)
 
 
 def test_text():
     data = ['here is some test text', 'and a little more', 'and more']
-    assert isinstance(format_data(data), list)
-    assert isinstance(format_data(data)[0], np.ndarray)
+    res = format_data(data)
+    assert isinstance(res, list)
+    assert isinstance(res[0], np.ndarray)
+    # one row per text sample, projected into the (fixed) text-model
+    # feature space -- shape must reflect both, not just "be an array"
+    assert res[0].shape == (len(data), 50)
 
 
 def test_str():
     res = format_data('here is some test text')
     assert isinstance(res, list)
     assert isinstance(res[0], np.ndarray)
+    # a bare string is treated as a single document
+    assert res[0].shape == (1, 50)
 
 
 def test_mixed_list():
@@ -44,8 +58,13 @@ def test_missing_data():
     # format_data fills missing values via PPCA (no geo round-trip in 1.0)
     data = np.random.rand(100,10)
     data[0][0]=np.nan
-    assert isinstance(format_data(data), list)
-    assert isinstance(format_data(data)[0], np.ndarray)
+    res = format_data(data)
+    assert isinstance(res, list)
+    assert isinstance(res[0], np.ndarray)
+    # the whole point of this path is that the NaN gets filled in, and the
+    # shape of the data must be unchanged by the imputation
+    assert res[0].shape == (100, 10)
+    assert not np.isnan(res[0]).any()
 
 
 def test_force_align():

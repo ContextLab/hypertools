@@ -17,6 +17,11 @@ def test_reduce_is_list():
 def test_reduce_is_array():
     reduced_data_3d = reducer(data, ndims=3)
     assert isinstance(reduced_data_3d[0],np.ndarray)
+    # a real (non-tautological) check: reduction must actually reduce the
+    # dimensionality (input is 4D, requested output is 3D) while preserving
+    # the number of samples
+    assert reduced_data_3d[0].shape == (10, 3)
+    assert reduced_data_3d[0].shape[1] < data[0].shape[1]
 
 
 def test_reduce_dims_3d():

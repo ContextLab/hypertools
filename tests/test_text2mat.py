@@ -11,18 +11,41 @@ def test_transform_text():
     assert isinstance(text2mat(data)[0], np.ndarray)
 
 def test_count_LDA():
-    isinstance(text2mat(data, vectorizer='CountVectorizer',
-                        semantic='LatentDirichletAllocation', corpus=data)[0], np.ndarray)
+    # GH #244: this test previously called `isinstance(...)` with no
+    # `assert`, so it always passed regardless of the result. LDA's
+    # transform output is a per-document topic-probability distribution,
+    # so each row must sum to 1 -- a real, non-tautological invariant.
+    out = text2mat(data, vectorizer='CountVectorizer',
+                    semantic='LatentDirichletAllocation', corpus=data)
+    assert isinstance(out[0], np.ndarray)
+    assert all(o.shape == (3, 20) for o in out)
+    for o in out:
+        assert np.allclose(o.sum(axis=1), 1.0, atol=1e-6)
 
 def test_tfidf_LDA():
-    isinstance(text2mat(data, vectorizer='TfidfVectorizer',
-                        semantic='LatentDirichletAllocation', corpus=data)[0], np.ndarray)
+    out = text2mat(data, vectorizer='TfidfVectorizer',
+                    semantic='LatentDirichletAllocation', corpus=data)
+    assert isinstance(out[0], np.ndarray)
+    assert all(o.shape == (3, 20) for o in out)
+    for o in out:
+        assert np.allclose(o.sum(axis=1), 1.0, atol=1e-6)
 
 def test_count_NMF():
-    isinstance(text2mat(data, vectorizer='CountVectorizer', semantic='NMF', corpus=data)[0], np.ndarray)
+    # GH #244: same missing-`assert` bug as above. NMF factors are
+    # non-negative by construction, and the fitted model should explain
+    # some real signal in the data (not an all-zero degenerate fit).
+    out = text2mat(data, vectorizer='CountVectorizer', semantic='NMF', corpus=data)
+    assert isinstance(out[0], np.ndarray)
+    assert all(o.shape == (3, 20) for o in out)
+    assert all((o >= 0).all() for o in out)
+    assert max(o.max() for o in out) > 0
 
 def test_tfidf_NMF():
-    isinstance(text2mat(data, vectorizer='TfidfVectorizer', semantic='NMF', corpus=data)[0], np.ndarray)
+    out = text2mat(data, vectorizer='TfidfVectorizer', semantic='NMF', corpus=data)
+    assert isinstance(out[0], np.ndarray)
+    assert all(o.shape == (3, 20) for o in out)
+    assert all((o >= 0).all() for o in out)
+    assert max(o.max() for o in out) > 0
 
 def test_transform_no_text_model():
     assert isinstance(text2mat(data, semantic=None, corpus=data)[0], np.ndarray)
