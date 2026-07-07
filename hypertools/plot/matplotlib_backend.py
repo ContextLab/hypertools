@@ -325,6 +325,7 @@ def _draw(
     show=True,
     kwargs_list=None,
     fmt=None,
+    raw_data=None,
     animate=False,
     tail_duration=2,
     rotations=1,
@@ -351,6 +352,21 @@ def _draw(
 ):
     """
     Draws the plot
+
+    `raw_data` (GH #141): the PRE-interpolation per-dataset points, same
+    length as `x`/`fmt`. Used only by the STATIC (non-animated) plot1D/2D/
+    3D functions below: a dataset whose `fmt` combines a marker AND a line
+    (e.g. 'o-') is drawn as two artists -- a smoothed line from `x` (the
+    already-interpolated data) plus markers at the raw sample points from
+    `raw_data` -- so markers land on the true data regardless of how dense
+    the smoothed line is. Ignored (may be None) for pure line/marker-only
+    styles and for every ANIMATED style, which still draw marker+line
+    combos as a single artist against the (now also smoothed, since the
+    interpolation gate itself was fixed for GH #141) `x` data -- so an
+    animated 'o-' plot's line is correctly smoothed, but its markers
+    currently render at the interpolated points rather than only the
+    original samples; splitting the animated marker/line artists frame-by-
+    frame was judged out of scope for this fix.
     """
 
     # chemtrails/precog/bullettime (GH #127): normalize to one bool per
@@ -385,26 +401,53 @@ def _draw(
         elif x[0].shape[-1] == 3:
             return plot3D(x, fig, ax)
 
+    # GH #141: marker+line combo styles (e.g. 'o-') are split into a
+    # smoothed LINE artist (drawn from the already-interpolated `data[i]`,
+    # marker stripped) plus a MARKERS-only artist (drawn from the raw,
+    # pre-interpolation `raw_data[i]`, linestyle stripped) -- so the line
+    # gets the same smoothing a pure '-' style gets, while markers stay
+    # anchored to the true sample points instead of moving onto the dense
+    # interpolated line. Pure line-only / marker-only styles (one artist,
+    # unchanged) and `fmt=None` are untouched.
+    def _plot_possibly_split(ax, coords, raw_coords, i):
+        f = fmt[i] if fmt is not None else None
+        ikwargs = kwargs_list[i]
+        if f is None:
+            ax.plot(*coords, **ikwargs)
+            return
+        line_token, marker_char = split_marker_line_fmt(f)
+        if line_token is not None and marker_char is not None:
+            line_kwargs = {k: v for k, v in ikwargs.items() if k != 'marker'}
+            ax.plot(*coords, line_token, **line_kwargs)
+            # `linestyle` is set via the dict (rather than as a second,
+            # separate `linestyle=` call argument) so an explicit
+            # `linestyle=`/`linestyles=` kwarg already present in
+            # `ikwargs` is overwritten rather than colliding with it as a
+            # duplicate keyword argument.
+            marker_kwargs = {k: v for k, v in ikwargs.items() if k != 'marker'}
+            marker_kwargs['label'] = '_nolegend_'
+            marker_kwargs['linestyle'] = 'None'
+            marker_coords = raw_coords if raw_data is not None else coords
+            ax.plot(*marker_coords, marker_char, **marker_kwargs)
+        else:
+            ax.plot(*coords, f, **ikwargs)
+
     # plot data in 1D
     def plot1D(data, fig, ax):
         n = len(data)
         for i in range(n):
-            ikwargs = kwargs_list[i]
-            if fmt is None:
-                ax.plot(data[i][:, 0], **ikwargs)
-            else:
-                ax.plot(data[i][:, 0], fmt[i], **ikwargs)
+            raw = raw_data[i] if raw_data is not None else data[i]
+            _plot_possibly_split(ax, (data[i][:, 0],), (raw[:, 0],), i)
         return fig, ax, data
 
     # plot data in 2D
     def plot2D(data, fig, ax):
         n = len(data)
         for i in range(n):
-            ikwargs = kwargs_list[i]
-            if fmt is None:
-                ax.plot(data[i][:, 0], data[i][:, 1], **ikwargs)
-            else:
-                ax.plot(data[i][:, 0], data[i][:, 1], fmt[i], **ikwargs)
+            raw = raw_data[i] if raw_data is not None else data[i]
+            _plot_possibly_split(
+                ax, (data[i][:, 0], data[i][:, 1]),
+                (raw[:, 0], raw[:, 1]), i)
         return fig, ax, data
 
     # plot data in 3D
@@ -426,11 +469,10 @@ def _draw(
         # that was never actually clipping.
         n = len(data)
         for i in range(n):
-            ikwargs = kwargs_list[i]
-            if fmt is None:
-                ax.plot(data[i][:, 0], data[i][:, 1], data[i][:, 2], **ikwargs)
-            else:
-                ax.plot(data[i][:, 0], data[i][:, 1], data[i][:, 2], fmt[i], **ikwargs)
+            raw = raw_data[i] if raw_data is not None else data[i]
+            _plot_possibly_split(
+                ax, (data[i][:, 0], data[i][:, 1], data[i][:, 2]),
+                (raw[:, 0], raw[:, 1], raw[:, 2]), i)
         return fig, ax, data
 
     def annotate_plot(data, labels):

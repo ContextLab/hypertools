@@ -168,6 +168,66 @@ def is_line(format_str):
     return all(symbol not in remainder for symbol in markers)
 
 
+def has_line_component(format_str):
+    """True if the format string includes a LINE component (any linestyle
+    token), regardless of whether it ALSO has a marker. Companion to
+    `is_line` (which additionally requires the ABSENCE of a marker).
+
+    Used to gate line-smoothing interpolation (GH #141): marker+line
+    combo styles (e.g. 'o-') must get exactly the same connecting-line
+    smoothing/interpolation as pure line styles (e.g. '-') -- previously
+    the interpolation step was gated on `is_line`, so any format string
+    with a marker character skipped interpolation entirely, leaving
+    straight (unsmoothed) segments between raw points for 'o-' while '-'
+    alone rendered a smoothed curve on identical data. Markers are then
+    drawn separately, at the ORIGINAL (pre-interpolation) sample points --
+    see `split_marker_line_fmt` and matplotlib_backend.py's static
+    plot1D/2D/3D functions.
+    """
+    if isinstance(format_str, np.bytes_):
+        format_str = format_str.decode('utf-8')
+    if format_str is None:
+        return True
+    if isinstance(format_str, (list, tuple, np.ndarray)):
+        return all(has_line_component(f) for f in format_str)
+    return any(token in format_str for token in ('-.', '--', '-', ':'))
+
+
+def split_marker_line_fmt(format_str):
+    """Split a matplotlib format string into its LINE and MARKER
+    components (GH #141), so a combined style like 'o-' can be drawn as
+    two separate artists: a smoothed/interpolated line (no marker) plus
+    markers at the true sample points (no connecting line between
+    markers). Mirrors the token-stripping order `is_line` uses (longest
+    linestyle tokens matched first, so '-.' isn't misread as '-' + '.').
+
+    Returns
+    -------
+    (line_token, marker_char)
+        `line_token` is the matplotlib linestyle substring (one of '-.',
+        '--', '-', ':'), or None if `format_str` has no line component.
+        `marker_char` is the single marker character (e.g. 'o', 's'), or
+        None if there is no marker. `format_str=None` returns (None, None).
+    """
+    if format_str is None:
+        return None, None
+    if isinstance(format_str, np.bytes_):
+        format_str = format_str.decode('utf-8')
+    remainder = format_str
+    line_token = None
+    for token in ('-.', '--', '-', ':'):
+        if token in remainder:
+            line_token = token
+            remainder = remainder.replace(token, '')
+            break
+    marker_char = None
+    for ch in remainder:
+        if str(ch) in Line2D.markers and str(ch) not in ('', ' ', 'None', 'none'):
+            marker_char = ch
+            break
+    return line_token, marker_char
+
+
 def get_type(data):
     """
     Checks what the data type is and returns it as a string label

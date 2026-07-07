@@ -231,6 +231,25 @@ def plot(
     fmt : str or list of strings
         A list of format strings.  All matplotlib format strings are supported.
 
+        A format string combining a LINE style with a MARKER (e.g. 'o-',
+        's--') gets the SAME connecting-line smoothing/interpolation a
+        pure line style (e.g. '-') gets (GH #141 follow-up; previously
+        marker+line combos silently skipped interpolation, drawing
+        straight/unsmoothed segments between raw points). The line and
+        markers are drawn as two separate artists on the STATIC (non-
+        animated) matplotlib backend: the smoothed/interpolated line, plus
+        markers at the TRUE (pre-interpolation) sample points -- so
+        markers never drift onto the dense interpolated curve. Pure line-
+        only and pure marker-only styles are unaffected (still one
+        artist, as before). For ANIMATED matplotlib plots, and for the
+        plotly backend (static or animated -- it always draws a marker+
+        line combo as a single 'lines+markers' trace), a marker+line
+        combo's line is likewise now smoothed (the interpolation gate fix
+        is backend-agnostic), but its markers currently render at the
+        same (interpolated) points as the line rather than only the
+        original samples -- splitting those into separate artists/traces
+        for every animated style and for plotly is a follow-up.
+
     linestyle(s) : str or list of str
         A list of line styles
 
@@ -1537,18 +1556,33 @@ def plot(
     # change its point count/order for no benefit and would desync the
     # (separately, seed-controlled) morph sampling downstream, so this
     # entire step is skipped for it.
+    # GH #141: marker+line combo styles (e.g. 'o-') must get the SAME
+    # connecting-line smoothing/interpolation pure line styles (e.g. '-')
+    # already get -- gated on `has_line_component` (true whenever a line is
+    # drawn at all) rather than the stricter `is_line` (true only when
+    # there is NO marker), which previously skipped interpolation entirely
+    # for any marker+line combo. `raw_xform` keeps a reference to the
+    # PRE-interpolation per-dataset arrays so markers can still be drawn at
+    # the true sample points (matplotlib_backend's static plot1D/2D/3D
+    # split combo styles into a smoothed line artist + a markers-only
+    # artist using this raw copy); it is carried through the SAME later
+    # transforms (nan_to_num/center/scale, below) as `xform` so the two
+    # stay in the same coordinate space. `interp_array`/`interp_array_list`
+    # return NEW arrays rather than mutating their input, so this reference
+    # stays valid even after `xform` itself is reassigned below.
+    raw_xform = list(xform)
     pre_interp_point_counts = [xi.shape[0] for xi in xform]
     if animate == "morph":
         pass
     elif fmt is None or isinstance(fmt, str):
-        if is_line(fmt):
+        if has_line_component(fmt):
             if xform[0].shape[0] > 1:
                 xform = interp_array_list(
                     xform, interp_val=frame_rate * duration / (xform[0].shape[0] - 1)
                 )
     elif isinstance(fmt, list):
         for idx, xi in enumerate(xform):
-            if is_line(fmt[idx]):
+            if has_line_component(fmt[idx]):
                 if xi.shape[0] > 1:
                     # interp_array (singular): xi is one dataset. The
                     # historical interp_array_list call here treated the
@@ -1595,11 +1629,18 @@ def plot(
     # through the SAME transform. Otherwise forecasts that extend beyond
     # the observed data's range map outside [-1, 1] and render past the
     # square/cube frame (axes are off, so nothing clips them).
+    # GH #141: `raw_xform` (the pre-interpolation sample points, used to
+    # draw markers at their TRUE locations for marker+line combo styles --
+    # see the interpolation block above) must land in the EXACT same
+    # coordinate space as `xform`, so it is carried through the identical
+    # center/scale statistics computed from `xform` (+ forecasts, when
+    # present) below -- never its OWN, independently-computed stats.
     if raw_forecasts is not None:
         _joint = np.vstack([np.vstack(xform), np.vstack(raw_forecasts)])
         _mean = np.mean(_joint, 0)
         xform = [xi - _mean for xi in xform]
         raw_forecasts = [fc - _mean for fc in raw_forecasts]
+        raw_xform = [xi - _mean for xi in raw_xform]
 
         _joint = np.vstack([np.vstack(xform), np.vstack(raw_forecasts)])
         _m1 = np.min(_joint)
@@ -1607,10 +1648,24 @@ def plot(
         _rescale = lambda a: 2 * (np.divide(a - _m1, _m2)) - 1
         xform = [_rescale(xi) for xi in xform]
         raw_forecasts = [_rescale(fc) for fc in raw_forecasts]
+        raw_xform = [_rescale(xi) for xi in raw_xform]
     else:
-        # no forecasts: identical to the historical center()/scale() path
-        xform = center(xform)
-        xform = scale(xform)
+        # no forecasts: identical to the historical center()/scale() path,
+        # but with the SAME stats also applied to raw_xform (rather than
+        # calling center()/scale() a second time on raw_xform, which would
+        # compute DIFFERENT stats from raw_xform's own, possibly narrower,
+        # pre-interpolation range).
+        _stacked = np.vstack(xform)
+        _mean = np.mean(_stacked, 0)
+        xform = [xi - _mean for xi in xform]
+        raw_xform = [xi - _mean for xi in raw_xform]
+
+        _stacked = np.vstack(xform)
+        _m1 = np.min(_stacked)
+        _m2 = np.max(_stacked - _m1)
+        _rescale = lambda a: 2 * (np.divide(a - _m1, _m2)) - 1
+        xform = [_rescale(xi) for xi in xform]
+        raw_xform = [_rescale(xi) for xi in raw_xform]
 
     # handle palette with seaborn
     import seaborn as sns
@@ -1674,6 +1729,7 @@ def plot(
     # convert all nans to zeros
     for i, xi in enumerate(xform):
         xform[i] = np.nan_to_num(xi)
+    raw_xform = [np.nan_to_num(xi) for xi in raw_xform]
     if raw_forecasts is not None:
         raw_forecasts = [np.nan_to_num(fc) for fc in raw_forecasts]
 
@@ -1745,6 +1801,7 @@ def plot(
                 legend=legend,
                 title=title,
                 animate=animate,
+                raw_data=raw_xform,
                 duration=duration,
                 tail_duration=tail_duration,
                 rotations=rotations,
