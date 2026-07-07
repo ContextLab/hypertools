@@ -25,7 +25,6 @@ from .smooth import Smooth
 from .resample import Resample
 from ..core.shared import unpack_model
 from ..core.pipeline import Pipeline
-from ..core.configurator import apply_defaults
 
 
 MANIPULATORS = [Normalize, ZScore, Smooth, Resample]

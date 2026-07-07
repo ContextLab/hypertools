@@ -14,8 +14,8 @@ from sklearn.exceptions import NotFittedError
 import hypertools as hyp
 from hypertools.core.pipeline import Pipeline
 from hypertools.manip.manip import manip
-from hypertools.manip.common import Manipulator
 from hypertools.manip.smooth import Smooth
+from hypertools.manip.resample import Resample
 from hypertools.manip.zscore import ZScore
 
 
@@ -265,3 +265,90 @@ def test_manip_dispatcher_threads_smooth_kernel_kwarg():
     x = _wiggly(seed=11)
     out = manip(x, model='Smooth', kernel='gaussian', kernel_width=25)
     assert _roughness(np.asarray(out)) < _roughness(x)
+
+
+def test_smooth_explicit_kernel_savgol_wins_over_mode_gaussian():
+    """Round17 fix wave 1, finding 2 (GH #274/#153 regression guard): an
+    EXPLICIT `kernel='savgol'` must take precedence over `mode='gaussian'`
+    -- before the sentinel-default fix, `kernel='savgol'` was
+    indistinguishable from "left at default" and silently fell through to
+    the legacy gaussian path."""
+    from scipy.signal import savgol_filter
+    df = pd.DataFrame(_wiggly(seed=12))
+    out = Smooth(kernel='savgol', mode='gaussian', var=300,
+                 kernel_width=25, maintain_bounds=False).fit_transform(df)
+    for c in df.columns:
+        expected = savgol_filter(df[c].values, 25, 3)
+        np.testing.assert_array_equal(out[c].values, expected)
+
+
+def test_smooth_kernel_unspecified_mode_gaussian_unchanged():
+    """Companion to the above: with `kernel` left UNSPECIFIED (the new
+    `None` sentinel default) and `mode='gaussian'` explicit, the legacy
+    gaussian (sigma=sqrt(var)) path must still apply -- unchanged."""
+    from scipy.ndimage import gaussian_filter1d
+    df = pd.DataFrame(_wiggly(seed=13))
+    out = Smooth(mode='gaussian', var=300, maintain_bounds=False).fit_transform(df)
+    for c in df.columns:
+        expected = gaussian_filter1d(np.asarray(df[c], dtype=float), sigma=np.sqrt(300))
+        np.testing.assert_allclose(out[c].values, expected)
+
+
+# --- Resample.transform must use NEW data's values, not fit-time's -------
+# (round17 fix wave 1, finding 1: a fitted Resample previously replayed
+# fit-time interpolators/values for ANY same-shape new data.)
+
+def test_resample_transform_uses_new_data_values_not_fit_time():
+    n = 50
+    a = pd.DataFrame({'x': np.linspace(0, 10, n)})
+    b = pd.DataFrame({'x': np.linspace(100, 200, n)})
+
+    r = Resample(n_samples=20)
+    fit_time_out = r.fit_transform(a)
+    new_out = r.transform(b)
+
+    # row count equals the fitted n_samples
+    assert len(new_out) == 20 == r.n_samples
+
+    vals = new_out['x'].values
+    # resampled monotone ramp stays monotone
+    assert np.all(np.diff(vals) > 0)
+    # values are derived from B's own range, not A's fit-time range
+    np.testing.assert_allclose(vals.min(), 100, atol=1e-6)
+    np.testing.assert_allclose(vals.max(), 200, atol=1e-6)
+    # differs from the fit-time output
+    assert not np.allclose(vals, fit_time_out['x'].values)
+
+
+def test_resample_fit_transform_on_fit_time_data_unchanged():
+    """fit_transform behavior on fit-time data must remain byte-identical
+    to calling transform(None) / the pre-fix implementation."""
+    n = 60
+    df = pd.DataFrame({'x': np.linspace(0, 1, n), 'y': np.linspace(5, 6, n)})
+    out_fit_transform = Resample(n_samples=17).fit_transform(df)
+
+    r = Resample(n_samples=17)
+    r.fit(df)
+    out_transform_none = r.transform(None)
+
+    pd.testing.assert_frame_equal(out_fit_transform, out_transform_none)
+    assert out_fit_transform.shape[0] == 17
+
+
+def test_resample_transform_multi_dataset_list_reuse():
+    n = 40
+    a_list = [pd.DataFrame({'x': np.linspace(0, 1, n)}),
+              pd.DataFrame({'x': np.linspace(0, 1, n)})]
+    b_list = [pd.DataFrame({'x': np.linspace(0, 10, n)}),
+              pd.DataFrame({'x': np.linspace(20, 30, n)})]
+
+    r = Resample(n_samples=15)
+    r.fit_transform(a_list)
+    out = r.transform(b_list)
+
+    assert isinstance(out, list) and len(out) == 2
+    for o, b in zip(out, b_list):
+        assert len(o) == 15
+        vals = o['x'].values
+        np.testing.assert_allclose(vals.min(), b['x'].values.min(), atol=1e-6)
+        np.testing.assert_allclose(vals.max(), b['x'].values.max(), atol=1e-6)

@@ -74,13 +74,22 @@ def transformer(data, **kwargs):
         return transformer(data.T, **dw.core.update_dict(kwargs, {'axis': int(not kwargs['axis'])})).T
 
     assert kwargs['axis'] == 0, ValueError('invalid transformation')
-    resampled = pd.DataFrame(index=kwargs['resampled_x'], columns=data.columns, dtype=float)
+
+    # Build the interpolators from THE DATA BEING TRANSFORMED, not from the
+    # fit-time data: Resample's fitted state is only its `n_samples` target
+    # (and interpolation settings) -- applying a fitted Resample to new data
+    # must resample the new data's own values/x-index, not replay the
+    # fit-time values (round17 fix wave 1, finding 1).
+    if dw.zoo.is_multiindex_dataframe(data):
+        x = np.array(data.index.levels[-1])
+    else:
+        x = data.index.values
+
+    resampled_x = np.linspace(np.min(x), np.max(x), num=kwargs['n_samples'])
+    resampled = pd.DataFrame(index=resampled_x, columns=data.columns, dtype=float)
 
     for c in data.columns:
-        try:
-            resampled[c] = kwargs['pchip'][c](kwargs['resampled_x'])
-        except IndexError:
-            resampled[c] = kwargs['pchip'][int(c)](kwargs['resampled_x'])
+        resampled[c] = interpolate.pchip(x, data[c].values)(resampled_x)
     return resampled
 
 

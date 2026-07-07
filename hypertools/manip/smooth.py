@@ -33,34 +33,39 @@ def _resolve_kernel(kwargs):
     sigma mapping to use.
 
     `kernel=` (round17 Task 5, GH #274/#153) is the new, preferred kwarg:
-    `'savgol'` (default), `'gaussian'` (`scipy.ndimage.gaussian_filter1d`,
+    `'savgol'`, `'gaussian'` (`scipy.ndimage.gaussian_filter1d`,
     `sigma = kernel_width / 4` -- a sensible width-to-sigma mapping so
     `kernel='gaussian'` needs no separate `var=` kwarg), or `'boxcar'`
     (`scipy.ndimage.uniform_filter1d`, `size = kernel_width`).
 
-    The older `mode=`/`var=` kwargs (added for the weights-trajectory
-    recipe, GH #153 plan 6) are kept fully working, byte-identical, for
-    backward compatibility: when `kernel` is left at its default (`'savgol'`)
-    and `mode` is explicitly `'gaussian'`, gaussian smoothing uses
-    `sigma = sqrt(var)` as before. An explicit `kernel=` always takes
-    precedence over `mode=`.
+    Internally, `kernel` defaults to `None` ("unspecified") rather than
+    `'savgol'`, so this function can tell "kernel left at its default"
+    apart from "the user explicitly passed `kernel='savgol'`" (round17 fix
+    wave 1, finding 2). Any EXPLICIT `kernel=` string (including
+    `'savgol'`) always takes precedence over `mode=`/`var=`. Only when
+    `kernel` is left unspecified (`None`) does the older `mode=`/`var=`
+    kwargs (added for the weights-trajectory recipe, GH #153 plan 6) kick
+    in, byte-identical to their original behavior: `mode='gaussian'` uses
+    `sigma = sqrt(var)`; otherwise (the true default, neither `kernel` nor
+    `mode='gaussian'` given) smoothing is `'savgol'`.
 
     Returns
     -------
     (branch, use_legacy_var) : (str, bool)
         `branch` is one of `'savgol'`, `'gaussian'`, `'boxcar'`;
         `use_legacy_var` is True only for the `mode='gaussian'` backward
-        -compat path (sigma from `var`, not `kernel_width`).
+        -compat path (sigma from `var`, not `kernel_width`), which can only
+        happen when `kernel` was left unspecified.
     """
-    kernel = kwargs.get('kernel', 'savgol')
+    kernel = kwargs.get('kernel', None)
+    if kernel is None:
+        legacy_mode = kwargs.get('mode', 'savgol')
+        if legacy_mode == 'gaussian':
+            return 'gaussian', True
+        return 'savgol', False
     if kernel not in KERNELS:
         raise ValueError(f"invalid Smooth kernel {kernel!r}; must be one of {KERNELS}")
-    if kernel != 'savgol':
-        return kernel, False
-    legacy_mode = kwargs.get('mode', 'savgol')
-    if legacy_mode == 'gaussian':
-        return 'gaussian', True
-    return 'savgol', False
+    return kernel, False
 
 
 @dw.decorate.apply_stacked
@@ -129,11 +134,18 @@ class Smooth(Manipulator):
         `0` smooths down each column (the default: time along rows);
         `1` smooths across each row instead.
 
-    kernel : {'savgol', 'gaussian', 'boxcar'}
-        Which smoothing kernel to apply (GH #274/#153, round17 Task 5):
+    kernel : {'savgol', 'gaussian', 'boxcar', None}
+        Which smoothing kernel to apply (GH #274/#153, round17 Task 5).
+        Defaults to `None` ("unspecified"), which distinguishes "left at
+        its default" from an explicit `kernel='savgol'` -- an EXPLICIT
+        `kernel=` (any of the three strings below, including `'savgol'`)
+        ALWAYS takes precedence over `mode=`/`var=` below. When left
+        unspecified (`None`), the legacy `mode=`/`var=` kwargs decide the
+        branch instead (see `mode` below); with neither `kernel` nor
+        `mode='gaussian'` given, smoothing is `'savgol'`.
 
-        - `'savgol'` (default): `scipy.signal.savgol_filter` with window
-          length `kernel_width` and polynomial `order` -- unchanged from
+        - `'savgol'`: `scipy.signal.savgol_filter` with window length
+          `kernel_width` and polynomial `order` -- unchanged from
           pre-round17 behavior.
         - `'gaussian'`: `scipy.ndimage.gaussian_filter1d` with
           `sigma = kernel_width / 4` (a sensible width-to-sigma mapping;
@@ -145,12 +157,12 @@ class Smooth(Manipulator):
 
     mode : {'savgol', 'gaussian'}
         LEGACY kwarg (predates `kernel=`), kept for backward compatibility:
-        when `kernel` is left at its default (`'savgol'`) and `mode` is
-        explicitly `'gaussian'`, gaussian smoothing uses
+        when `kernel` is left UNSPECIFIED (`None`, the default) and `mode`
+        is explicitly `'gaussian'`, gaussian smoothing uses
         `sigma = sqrt(var)` instead of the `kernel_width`-based mapping
         above -- byte-identical to the original weights-trajectory recipe
-        behavior. An explicit `kernel=` always takes precedence over
-        `mode=`.
+        behavior. An explicit `kernel=` (including `kernel='savgol'`)
+        always takes precedence over `mode=`.
 
     kernel_width : int
         Smoothing window width for `'savgol'`/`'boxcar'` (and, via the
@@ -172,7 +184,7 @@ class Smooth(Manipulator):
     """
 
     # noinspection PyShadowingBuiltins
-    def __init__(self, axis=0, kernel='savgol', mode='savgol', kernel_width=11, order=3, var=300,
+    def __init__(self, axis=0, kernel=None, mode='savgol', kernel_width=11, order=3, var=300,
                  maintain_bounds=True):
         required = ['axis', 'min', 'max', 'mode', 'kernel_width', 'order', 'var', 'maintain_bounds']
         super().__init__(axis=axis, fitter=fitter, transformer=transformer, data=None, mode=mode,
