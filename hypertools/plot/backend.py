@@ -925,31 +925,29 @@ class set_interactive_backend:
     different ways:
 
     1. directly, to change the backend for all subsequent interactive
-       plots
-          ```
-          import hypertools as hyp
-          geo = hyp.load('weights_avg')
+       plots::
 
-          geo.plot(interactive=True)          # uses the default backend
+           import hypertools as hyp
+           geo = hyp.load('weights_avg')
 
-          hyp.set_interactive_backend('TkAgg')
-          geo.plot(interactive=True)          # uses the TkInter backend
-          geo.plot(animate=True)              # uses the TkInter backend
-          ```
+           geo.plot(interactive=True)          # uses the default backend
+
+           hyp.set_interactive_backend('TkAgg')
+           geo.plot(interactive=True)          # uses the TkInter backend
+           geo.plot(animate=True)              # uses the TkInter backend
 
     2. as a context manager with the `with` statement, to temporarily
-       change the backend
-          ```
-          import hypertools as hyp
-          geo = hyp.load('weights_avg')
+       change the backend::
 
-          geo.plot(interactive=True)          # uses the default backend
+           import hypertools as hyp
+           geo = hyp.load('weights_avg')
 
-          with hyp.set_interactive_backend('TkAgg'):
-              geo.plot(interactive=True)      # uses the TkInter backend
+           geo.plot(interactive=True)          # uses the default backend
 
-          geo.plot(animate=True)              # uses the default backend
-          ```
+           with hyp.set_interactive_backend('TkAgg'):
+               geo.plot(interactive=True)      # uses the TkInter backend
+
+           geo.plot(animate=True)              # uses the default backend
 
     Parameters
     ----------
@@ -970,27 +968,31 @@ class set_interactive_backend:
     3. However, when used as a context manager, the backend passed to
        `hypertools.set_interactive_backend` will be used for *all* plots
        created inside the context block, regardless of whether:
-         - they are interactive/animated or static
-         - the `mpl_backend` keyword argument is passed to
-           `hypertools.plot`
-         - they were created with `hypertools`, `matplotlib`, or a
-           different `matplotlib`-based library (e.g., `seaborn`,
-           `quail`, `umap-learn`)
+
+       - they are interactive/animated or static
+       - the `mpl_backend` keyword argument is passed to
+         `hypertools.plot`
+       - they were created with `hypertools`, `matplotlib`, or a
+         different `matplotlib`-based library (e.g., `seaborn`,
+         `quail`, `umap-learn`)
+
        There are a few reasons for this behavior:
-         - being able to skip inspecting the arguments passed to each
-           `hypertools.plot` call means almost no overhead is added for
-           calls after the first, and makes wrapping multiple calls much
-           more efficient
-         - the plotting backend is an attribute of `matplotlib` itself
-           and `matplotlib` doesn't support running multiple backends
-           simultaneously in the same namespace, so it's impossible to
-           avoid it affecting other `matplotlib`-based plotting libraries
-         - it's reasonable to assume this was the desired outcome when
-           multiple plots are generated inside a context block, since A)
-           the context block will always have been created manually by
-           the user, and B) the API provides multiple other ways to set
-           the backend without this effect
-    3. The `manage_backend` decorator for `hypertools.plot` determines
+
+       - being able to skip inspecting the arguments passed to each
+         `hypertools.plot` call means almost no overhead is added for
+         calls after the first, and makes wrapping multiple calls much
+         more efficient
+       - the plotting backend is an attribute of `matplotlib` itself
+         and `matplotlib` doesn't support running multiple backends
+         simultaneously in the same namespace, so it's impossible to
+         avoid it affecting other `matplotlib`-based plotting libraries
+       - it's reasonable to assume this was the desired outcome when
+         multiple plots are generated inside a context block, since A)
+         the context block will always have been created manually by
+         the user, and B) the API provides multiple other ways to set
+         the backend without this effect
+
+    4. The `manage_backend` decorator for `hypertools.plot` determines
        whether it's being called inside the
        `hypertools.set_interactive_backend` context manager by checking
        the value of a global variable (`IN_SET_CONTEXT`), which is

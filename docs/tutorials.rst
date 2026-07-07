@@ -109,6 +109,14 @@ Plotting streaming data
 
   tutorials/streaming_data.ipynb
 
+Streaming from a Lab Streaming Layer (LSL) device
+---------------------------------------------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/lsl_streaming.ipynb
+
 Forecasting stock prices with hyp.predict
 ----------------
 

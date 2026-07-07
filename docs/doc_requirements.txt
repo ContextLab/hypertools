@@ -30,3 +30,14 @@ skaters>=0.11
 # examples build with it installed so the docs show the iso-surface path
 # rather than the scatter-fog fallback
 scikit-image>=0.22.0
+# hypertools.reduce.autoencoders (GH #162) and hypertools.tools.gensim_models
+# (GH #198) import torch/gensim unconditionally at module level, so both are
+# needed for autodoc/autosummary to import those modules (docs/api.rst's
+# "Autoencoder reducers"/"Gensim text models" sections) as well as to run
+# examples/plot_autoencoders.py and examples/plot_gensim_text.py in the
+# gallery build
+torch>=2.0
+gensim>=4.3
+# hyp.load('kaggle/<owner>/<dataset>') (GH #116), used by
+# examples/plot_datasets_tour.py
+kagglehub>=0.3

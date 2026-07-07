@@ -31,6 +31,7 @@ Some key features of HyperTools are:
    :caption: Contents:
 
    api
+   pipeline_order
    tutorials
    auto_examples/index
 

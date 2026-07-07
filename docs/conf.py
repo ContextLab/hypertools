@@ -85,6 +85,17 @@ extensions = ['sphinx.ext.autodoc',
 # allow nbsphinx errors for missing optional dependencies
 nbsphinx_allow_errors = True
 
+# numpydoc auto-inserts a "Methods" autosummary (with :toctree:) into every
+# documented class's page by default, pointing at per-method stub pages
+# that autosummary_generate never creates for inherited/sklearn-mixin
+# methods (fit/transform/get_params/etc.) -- this task's api.rst additions
+# are the first CLASS entries (Pipeline, the six Autoencoder reducers, the
+# six gensim Vectorizer wrappers), so leaving this at its True default
+# produces ~100 "stub file not found" warnings. Off: classes' methods are
+# still fully documented on the class's own page (via numpydoc's docstring
+# rendering), just without the broken per-method stub links.
+numpydoc_class_members_toctree = False
+
 # Never execute notebooks during the docs build: tutorial notebooks are
 # committed pre-executed (with outputs), and 'auto' also re-executed every
 # sphinx-gallery-generated .ipynb -- doubling build time and hanging on

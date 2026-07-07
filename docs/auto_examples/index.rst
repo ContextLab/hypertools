@@ -767,6 +767,40 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="Every stage dispatcher (`hyp.manip`, hyp.normalize, hyp.reduce, hyp.align, hyp.cluster, hyp.analyze, hyp.impute, hyp.predict) and hyp.plot accept return_model=True to get back the fitted model alongside the transformed result (GH #227, #161): a single fitted wrapper when only one stage ran, or a fitted hyp.Pipeline when multiple stages ran together (e.g. via the cross-module normalize=/``reduce=``/ align=/``cluster=`` kwargs, GH #138). The fitted model/`Pipeline` can then be applied to held-out data via .transform() -- WITHOUT refitting -- so a train/test split, or streaming new data through an established projection, only ever fits once.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_pipelines_return_model_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_pipelines_return_model`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Fit once, reuse: pipelines and return_model</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="hyp.reduce supports six torch-backed autoencoder reducers (GH #162): Autoencoder (shallow), SparseAutoencoder, DeepAutoencoder, ConvolutionalAutoencoder, SequenceAutoencoder, and VariationalAutoencoder. They are used exactly like any other reduce= model -- by name, with parameters passed via the dict spec -- and require the optional torch dependency (``pip install &quot;hypertools[torch]&quot;``). This example fits a shallow Autoencoder and a VariationalAutoencoder on the same data and compares them against PCA.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_autoencoders_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_autoencoders`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Autoencoder reducers</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="Hypertools fills missing (NaN) values via hypertools.impute before reducing/plotting. This compares two imputers on the weights_avg dataset after randomly knocking out 10% of its entries -- plus three CONSECUTIVE rows where every feature is missing. That fully-missing-row case is the motivating example for GH #169: PPCA reconstructs a row from its own observed features, so a row with NO observed features at all cannot be recovered, so PPCA warns and leaves those rows NaN (they are dropped below purely so the PPCA panel has something plottable). The Kalman imputer instead smooths across time, so it can fill a fully-missing row from the neighboring (observed) timepoints, at the cost of assuming the data are a reasonably smooth timeseries -- its panel keeps every row.">
 
 .. only:: html
@@ -784,6 +818,40 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="This example walks through the &quot;story trajectories&quot; demo (GH #275): an animated, hyperaligned point cloud that shows how each subject&#x27;s whole-brain activity pattern moves through a shared, low-dimensional space over the course of a spoken story.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_story_trajectories_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_story_trajectories`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Story trajectories: brain activity while listening to a story</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="hypertools.load resolves a plain string dataset name against several built-in and third-party sources, in order (GH #116, #273): built-in example datasets, scikit-learn&#x27;s bundled datasets, seaborn&#x27;s example datasets, FiveThirtyEight&#x27;s published datasets (explicit &#x27;fivethirtyeight/&lt;slug&gt;&#x27; prefix), and Kaggle datasets (explicit &#x27;kaggle/&lt;owner&gt;/&lt;dataset&gt;&#x27; prefix, downloaded anonymously via kagglehub -- no Kaggle account or API key required). This example tours all four, loading one small dataset from each and plotting it.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_datasets_tour_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_datasets_tour`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">A tour of hyp.load's data sources</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="HyperTools&#x27; &quot;shapes zoo&quot; (bunny, cube, dragon, sphere, teapot, vase, biplane -- see the A zoo of 3D shapes example) can be morphed smoothly from one point cloud to the next with the animate=&#x27;morph&#x27; hyp.plot style (PR #272, maintainer request 2026-07-06 -- see the animate/ rotations/`morph_samples` entries of the hyp.plot docstring for the full spec). Under the hood, every shape keeps its own full point count by default (smaller shapes are padded up to the largest shape&#x27;s count by duplicating random points of their own) -- but the zoo&#x27;s shapes range up to ~90,000 points (the biplane), and the Hungarian assignment used to match consecutive shapes point-for-point is roughly O(n^3), so morph_samples=1000 below first downsamples every shape to a tractable 1000 points (build-time: the full, uncapped 90k-point target would make the matching step infeasible for a gallery build). Consecutive shapes are matched point-for-point with the Hungarian algorithm (`scipy.optimize.linear_sum_assignment`) so that each point travels the shortest total distance to its partner in the next shape, and the coordinates are eased between shapes frame by frame while the camera spins around the scene -- exactly the hand-rolled recipe this example used to implement itself before animate=&#x27;morph&#x27; existed, now built into the library behind a single hyp.plot call. rotations also accepts a per-segment list for finer camera control: below, holds spin a slow, easy-to-watch full rotation while each transition only spins a brisk quarter-turn, so the camera visibly &quot;steps&quot; forward every time one shape morphs into the next. Camera speed (degrees/frame) is always CONSTANT across the whole animation -- a segment&#x27;s rotations entry sets how much SCREEN TIME it gets, not how fast it spins, so the full-rotation holds below play roughly 4x longer than the quarter-turn transitions (1 / 0.25), never faster.">
 
 .. only:: html
@@ -796,6 +864,23 @@ Gallery of Examples
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Morphing through the shapes zoo</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="hyp.tools.text2mat resolves vectorizer=/``semantic=`` string specs in three tiers (GH #198): scikit-learn&#x27;s built-ins, then gensim&#x27;s models -- &#x27;Word2Vec&#x27;, &#x27;Doc2Vec&#x27;, &#x27;FastText&#x27; (vectorizer tier), and &#x27;LdaModel&#x27;, &#x27;LsiModel&#x27;, &#x27;HdpModel&#x27; (semantic tier) -- then HuggingFace sentence-transformers. gensim is an optional dependency (``pip install &quot;hypertools[gensim]&quot;``). This example embeds a small multi-topic corpus with gensim&#x27;s Word2Vec (averaged word vectors, no semantic-stage model) and separately with CountVectorizer + gensim&#x27;s LDA, then plots both.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_gensim_text_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_gensim_text`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Gensim text models</div>
     </div>
 
 
@@ -887,8 +972,13 @@ Gallery of Examples
    /auto_examples/plot_missing_data
    /auto_examples/plot_predict
    /auto_examples/plot_multiindex
+   /auto_examples/plot_pipelines_return_model
+   /auto_examples/plot_autoencoders
    /auto_examples/plot_impute
+   /auto_examples/plot_story_trajectories
+   /auto_examples/plot_datasets_tour
    /auto_examples/plot_shape_morph
+   /auto_examples/plot_gensim_text
    /auto_examples/plot_sotus
    /auto_examples/animate_surface_morph
 
