@@ -34,6 +34,7 @@ Lists of strings resolve element-wise to a list of datasets.
 """
 
 import io
+import os
 import re
 import tempfile
 import warnings
@@ -49,6 +50,30 @@ _DRIVE_ID_RE = re.compile(r'^[A-Za-z0-9_-]{25,}$')
 _DOMAIN_RE = re.compile(r'^[\w-]+(\.[\w-]+)+(/\S*)?$')
 _HF_ID_RE = re.compile(r'^[\w.-]+/[\w.-]+$')
 _UA = {'User-Agent': 'hypertools'}
+
+
+def _github_api_headers():
+    """Headers for a github.com API request, authenticated when possible.
+
+    GitHub's REST API allows only 60 requests/hour for unauthenticated
+    clients but 5000/hour for authenticated ones. If a token is available
+    in the environment (``GITHUB_TOKEN`` -- provided automatically inside
+    GitHub Actions -- or ``GH_TOKEN``), it is sent as a bearer token so the
+    listing calls don't exhaust the shared unauthenticated quota (e.g. when
+    many CI jobs run concurrently from the same runner IP pool). Without a
+    token the request is simply unauthenticated, exactly as before.
+
+    Returns
+    -------
+    dict
+        Request headers (always includes the ``hypertools`` User-Agent;
+        includes an ``Authorization`` bearer header when a token is found).
+    """
+    headers = dict(_UA)
+    token = os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN')
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
+    return headers
 
 # Google Sheets URL -> CSV export (must be checked before generic Drive id
 # extraction, since a Sheets URL also matches the '/d/<id>' Drive pattern).
@@ -209,7 +234,8 @@ def fivethirtyeight_dataset(name):
         csv_names = _538_listing_cache[slug]
     else:
         try:
-            resp = requests.get(f'{_538_API}/{slug}', headers=_UA,
+            resp = requests.get(f'{_538_API}/{slug}',
+                                headers=_github_api_headers(),
                                 timeout=30)
         except requests.RequestException as e:
             raise HypertoolsIOError(

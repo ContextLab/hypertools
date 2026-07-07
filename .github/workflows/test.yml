@@ -110,6 +110,13 @@ jobs:
     - name: Run pytest
       env:
         MPLBACKEND: Agg
+        # Authenticate the fivethirtyeight loader's GitHub API listing calls
+        # (tests/test_load_538_kaggle.py). The default GITHUB_TOKEN raises the
+        # REST API quota from 60 to 5000 requests/hour, so the ~12 concurrent
+        # matrix jobs sharing a runner IP pool don't exhaust the shared
+        # unauthenticated limit (403 rate-limit failures). See
+        # hypertools/io/sources.py::_github_api_headers.
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         pytest -v --tb=short
 
@@ -118,6 +125,7 @@ jobs:
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
       env:
         MPLBACKEND: Agg
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         pip install "pandas>=3.0"
         python -c "import pandas as pd; assert pd.__version__.split('.')[0] == '3', pd.__version__; print('pandas', pd.__version__)"
@@ -127,6 +135,7 @@ jobs:
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
       env:
         MPLBACKEND: Agg
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         pytest --cov=hypertools --cov-report=xml --cov-report=term-missing
 
