@@ -60,7 +60,8 @@ def _resolve_cluster_spec(cluster, n_clusters):
         except KeyError:
             raise ValueError("If passing a dictionary, pass the model as the "
                              "value of the 'model' key and a dictionary of "
-                             "custom params as the value of the 'params' key.")
+                             "custom parameters as the value of the 'kwargs' "
+                             "key (the legacy 'params' key is also accepted).")
         if "args" in cluster or "kwargs" in cluster:
             # canonical 1.0 dict spec: {'model': ..., 'args': [...], 'kwargs': {...}}
             model_params = dict(cluster.get("kwargs", {}))

@@ -26,7 +26,8 @@ from sklearn.decomposition import (
 )
 from sklearn.manifold import TSNE, MDS, SpectralEmbedding, LocallyLinearEmbedding, Isomap
 
-from ..cluster.cluster import mixture_models, mixture_proportions, normalize_membership_rows
+from ..cluster.common import MIXTURES as mixture_models
+from ..cluster.common import mixture_proportions, normalize_membership_rows
 
 
 #: name -> class registry for the decomposition/manifold-learning reducers
