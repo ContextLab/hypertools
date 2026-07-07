@@ -141,11 +141,14 @@ def test_find_covering_font_covers_every_requested_codepoint():
 
 
 def test_find_covering_font_warns_once_when_nothing_covers():
-    # An absurd/unassigned-plane codepoint that no real installed font
-    # covers -- exercises the "no covering font" warning path
-    # deterministically, independent of what fonts happen to be
-    # installed on the machine running this test.
-    exotic = chr(0x10FFFD)  # last valid Unicode codepoint (Plane 16, PUA)
+    # Unicode NONCHARACTERS (U+FDD0, U+10FFFE) are guaranteed by the
+    # standard never to be assigned and are excluded from font cmaps --
+    # unlike the Private Use Area codepoint this test originally used
+    # (U+10FFFD), which pan-Unicode fonts on CI runners genuinely map,
+    # making find_covering_font correctly return a font instead of None.
+    # Requiring BOTH noncharacters (different planes) makes a false
+    # positive from a permissive font practically impossible.
+    exotic = chr(0xFDD0) + chr(0x10FFFE)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter('always')
         result = find_covering_font([exotic])
