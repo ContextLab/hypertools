@@ -6,12 +6,22 @@ A string may name (tried in this order):
 1. a built-in example dataset (``EXAMPLE_DATA`` in tools.load)
 2. a scikit-learn bundled dataset name (``sklearn_dataset``)
 3. a seaborn dataset name (``seaborn_dataset``)
-4. a path to a local file
-5. a Hugging Face dataset (including streaming datasets)
-6. a Google Sheets URL
-7. a Google Drive URL or bare file ID
-8. a Dropbox URL or shared-link path
-9. any other URL (with or without an ``https://`` scheme)
+4. a fivethirtyeight/data dataset, explicit prefix ``'fivethirtyeight/<slug>'``
+   (``fivethirtyeight_dataset``)
+5. a Kaggle dataset, explicit prefix ``'kaggle/<owner>/<dataset>'``
+   (``kaggle_dataset``)
+6. a path to a local file
+7. a Hugging Face dataset (including streaming datasets)
+8. a Google Sheets URL
+9. a Google Drive URL or bare file ID
+10. a Dropbox URL or shared-link path
+11. any other URL (with or without an ``https://`` scheme)
+
+Steps 4 and 5 are explicit, unambiguous prefixes: unlike the scikit-learn/
+seaborn name lookups (which silently fall through to the next resolver when
+they don't recognize a name), a string that starts with ``'fivethirtyeight/'``
+or ``'kaggle/'`` unambiguously names that source, so a failure there raises
+immediately instead of falling through the rest of the chain.
 
 Lists of strings resolve element-wise to a list of datasets.
 
@@ -89,6 +99,14 @@ SKLEARN_DATASETS = {
 # calls don't re-hit the network for every unresolved name.
 _seaborn_names_cache = None
 
+# fivethirtyeight/data folder listings, keyed by slug (e.g. 'bechdel'):
+# GitHub's unauthenticated REST API rate limit is 60 requests/hour, so the
+# per-slug CSV-filename listing is cached per-process. Value is a (possibly
+# empty) list of CSV filenames.
+_538_listing_cache = {}
+_538_API = 'https://api.github.com/repos/fivethirtyeight/data/contents'
+_538_RAW = 'https://raw.githubusercontent.com/fivethirtyeight/data/master'
+
 
 def sklearn_dataset(name):
     """Load one of scikit-learn's small, bundled example datasets by name.
@@ -150,6 +168,154 @@ def seaborn_dataset(name):
     return sns.load_dataset(name)
 
 
+def fivethirtyeight_dataset(name):
+    """Load a dataset from FiveThirtyEight's public data repository
+    (https://github.com/fivethirtyeight/data) by explicit prefix.
+
+    ``name`` must look like ``'fivethirtyeight/<slug>'``, where ``<slug>``
+    is the dataset's top-level folder in that repo (e.g.
+    ``'fivethirtyeight/bechdel'``, whose folder is
+    https://github.com/fivethirtyeight/data/tree/master/bechdel). The
+    folder is listed via the GitHub contents API (cached per-process, since
+    the unauthenticated API is rate-limited to 60 requests/hour) and every
+    CSV file it contains is downloaded from raw.githubusercontent.com.
+
+    This is an explicit, unambiguous prefix -- unlike :func:`sklearn_dataset`
+    and :func:`seaborn_dataset`, an unrecognized slug or a folder with no
+    CSV files raises :class:`~hypertools._shared.exceptions.HypertoolsIOError`
+    directly rather than returning None to fall through to the next
+    resolver, since the user has unambiguously asked for a 538 dataset.
+
+    Returns
+    -------
+    data : pandas.DataFrame, dict of {str: pandas.DataFrame}, or None
+        A single DataFrame when the folder contains exactly one CSV file;
+        a dict mapping each CSV's filename (without extension) to its
+        DataFrame when it contains more than one. None if ``name`` doesn't
+        start with the ``'fivethirtyeight/'`` prefix -- callers should
+        treat this (and only this) case as "not mine".
+    """
+    if not isinstance(name, str) or not name.startswith('fivethirtyeight/'):
+        return None
+    slug = name[len('fivethirtyeight/'):].strip('/')
+    if not slug:
+        raise HypertoolsIOError(
+            f"{name!r} is missing a dataset slug -- expected "
+            "'fivethirtyeight/<slug>', e.g. 'fivethirtyeight/bechdel'. "
+            "Browse available slugs at "
+            "https://github.com/fivethirtyeight/data.")
+
+    if slug in _538_listing_cache:
+        csv_names = _538_listing_cache[slug]
+    else:
+        try:
+            resp = requests.get(f'{_538_API}/{slug}', headers=_UA,
+                                timeout=30)
+        except requests.RequestException as e:
+            raise HypertoolsIOError(
+                f"could not reach the GitHub API to list "
+                f"fivethirtyeight/data/{slug}: {type(e).__name__}: {e}"
+            ) from e
+        if resp.status_code == 404:
+            csv_names = []
+        else:
+            resp.raise_for_status()
+            entries = resp.json()
+            csv_names = sorted(
+                e['name'] for e in entries
+                if e.get('type') == 'file'
+                and e['name'].lower().endswith('.csv'))
+        _538_listing_cache[slug] = csv_names
+
+    if not csv_names:
+        raise HypertoolsIOError(
+            f"{name!r} does not look like a fivethirtyeight/data dataset "
+            f"-- no CSV files found in "
+            f"https://github.com/fivethirtyeight/data/tree/master/{slug} "
+            "(the slug may not exist, or the folder may hold no CSVs). "
+            "Browse available datasets at "
+            "https://github.com/fivethirtyeight/data.")
+
+    frames = {}
+    for csv_name in csv_names:
+        raw, _ = _fetch_bytes(f'{_538_RAW}/{slug}/{csv_name}')
+        frames[Path(csv_name).stem] = pd.read_csv(io.BytesIO(raw))
+    if len(frames) == 1:
+        return next(iter(frames.values()))
+    return frames
+
+
+def kaggle_dataset(name):
+    """Load a dataset from Kaggle (https://www.kaggle.com/datasets) by
+    explicit prefix, using ``kagglehub.dataset_download`` (anonymous
+    downloads work for public datasets).
+
+    ``name`` must look like ``'kaggle/<owner>/<dataset>'``, matching the
+    ``<owner>/<dataset>`` id in the dataset's Kaggle URL (e.g.
+    ``'kaggle/uciml/iris'`` for https://www.kaggle.com/datasets/uciml/iris).
+    Every CSV/TSV file in the downloaded dataset is loaded; other files
+    (e.g. a bundled sqlite database) are ignored.
+
+    This is an explicit, unambiguous prefix -- like
+    :func:`fivethirtyeight_dataset`, a malformed id or a dataset with no
+    tabular files raises
+    :class:`~hypertools._shared.exceptions.HypertoolsIOError` directly
+    rather than returning None to fall through to the next resolver.
+
+    Returns
+    -------
+    data : pandas.DataFrame, dict of {str: pandas.DataFrame}, or None
+        A single DataFrame when the dataset contains exactly one CSV/TSV
+        file; a dict mapping each file's name (without extension) to its
+        DataFrame when it contains more than one. None if ``name`` doesn't
+        start with the ``'kaggle/'`` prefix -- callers should treat this
+        (and only this) case as "not mine".
+    """
+    if not isinstance(name, str) or not name.startswith('kaggle/'):
+        return None
+    rest = name[len('kaggle/'):]
+    parts = [p for p in rest.split('/') if p != '']
+    if len(parts) != 2:
+        raise HypertoolsIOError(
+            f"{name!r} does not look like a valid Kaggle dataset id -- "
+            "expected 'kaggle/<owner>/<dataset>', e.g. 'kaggle/uciml/iris' "
+            "(from https://www.kaggle.com/datasets/uciml/iris).")
+    owner, dataset_slug = parts
+
+    try:
+        import kagglehub
+    except ImportError as e:
+        raise ImportError(
+            f"{name!r} looks like a Kaggle dataset id, but the "
+            "`kagglehub` package is not installed. Install it with "
+            "`pip install hypertools[kaggle]`.") from e
+
+    try:
+        download_path = Path(
+            kagglehub.dataset_download(f'{owner}/{dataset_slug}'))
+    except Exception as e:
+        raise HypertoolsIOError(
+            f"could not download Kaggle dataset '{owner}/{dataset_slug}' "
+            f"via kagglehub: {type(e).__name__}: {e}") from e
+
+    table_files = sorted(
+        p for p in download_path.rglob('*')
+        if p.is_file() and p.suffix.lower() in ('.csv', '.tsv'))
+    if not table_files:
+        raise HypertoolsIOError(
+            f"Kaggle dataset '{owner}/{dataset_slug}' was downloaded to "
+            f"{download_path}, but it doesn't contain any .csv/.tsv "
+            "files.")
+
+    frames = {}
+    for f in table_files:
+        sep = '\t' if f.suffix.lower() == '.tsv' else ','
+        frames[f.stem] = pd.read_csv(f, sep=sep)
+    if len(frames) == 1:
+        return next(iter(frames.values()))
+    return frames
+
+
 def is_loadable_string(s):
     """Cheap (no-network) check: could this string plausibly name a data
     source? Used to decide whether to route strings through load() rather
@@ -159,6 +325,8 @@ def is_loadable_string(s):
                                                       for c in s.strip()):
         return False
     if s in EXAMPLE_DATA:
+        return True
+    if s.startswith('fivethirtyeight/') or s.startswith('kaggle/'):
         return True
     try:
         if Path(s).expanduser().is_file():

@@ -74,6 +74,10 @@ density3d = ["scikit-image>=0.22.0"]
 # VariationalAutoencoder). Opt-in; never in base install -- resolving one
 # of these reduce= names without this extra raises a friendly ImportError.
 torch = ["torch>=2.0"]
+# hyp.load('kaggle/<owner>/<dataset>') (GH #116): anonymous dataset
+# downloads via kagglehub. Opt-in; never in base install -- resolving a
+# 'kaggle/...' name without this extra raises a friendly ImportError.
+kaggle = ["kagglehub>=0.3"]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
@@ -102,6 +106,9 @@ dev = [
     # exercised separately, in a subprocess with a real import-system
     # blocker (see that test module)
     "torch>=2.0",
+    # exercise hyp.load('kaggle/<owner>/<dataset>') (GH #116,
+    # tests/test_load_538_kaggle.py)
+    "kagglehub>=0.3",
 ]
 
 [project.urls]

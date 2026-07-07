@@ -75,18 +75,30 @@ def load(
        ``'titanic'``), loaded via ``seaborn.load_dataset()`` and returned
        unchanged. This is a network lookup (cached per-process); if it
        can't reach the seaborn-data repo, this step is skipped
-    4. a path to a local file (.geo/pickle, .npy/.npz, .csv/.tsv/.txt,
+    4. a FiveThirtyEight dataset, explicit prefix
+       ``'fivethirtyeight/<slug>'`` (e.g. ``'fivethirtyeight/bechdel'``),
+       where ``<slug>`` is the dataset's folder in
+       https://github.com/fivethirtyeight/data. The folder's CSV file(s)
+       are downloaded from raw.githubusercontent.com: a single CSV
+       becomes a DataFrame, multiple CSVs become a dict of
+       ``{filename: DataFrame}``
+    5. a Kaggle dataset, explicit prefix ``'kaggle/<owner>/<dataset>'``
+       (e.g. ``'kaggle/uciml/iris'``), downloaded anonymously via
+       ``kagglehub.dataset_download`` (requires the optional
+       ``kagglehub`` dependency -- ``pip install hypertools[kaggle]``).
+       Every CSV/TSV file in the dataset is loaded the same way as step 4
+    6. a path to a local file (.geo/pickle, .npy/.npz, .csv/.tsv/.txt,
        .json, .parquet, .mat, .xlsx/.xls)
-    5. a Hugging Face dataset id such as ``'scikit-learn/iris'``
+    7. a Hugging Face dataset id such as ``'scikit-learn/iris'``
        (pass ``streaming=True`` for a streaming dataset, which can be
        passed straight to :func:`hypertools.plot`)
-    6. a Google Sheets URL (``docs.google.com/spreadsheets/d/<id>``),
+    8. a Google Sheets URL (``docs.google.com/spreadsheets/d/<id>``),
        loaded via its CSV export
-    7. a Google Drive URL or bare file id (large files behind Drive's
+    9. a Google Drive URL or bare file id (large files behind Drive's
        "can't scan this file for viruses" interstitial are followed
        automatically)
-    8. a Dropbox URL or shared-link path
-    9. any other URL, with or without an ``https://`` scheme
+    10. a Dropbox URL or shared-link path
+    11. any other URL, with or without an ``https://`` scheme
 
     .. note::
         Precedence: a built-in example dataset name (step 1) always wins,
@@ -101,6 +113,13 @@ def load(
         with an extension, or an absolute/relative path containing a
         ``/``, to force local-file resolution.
 
+        The ``'fivethirtyeight/'`` and ``'kaggle/'`` prefixes (steps 4-5)
+        are explicit and unambiguous, so they never collide with another
+        resolver -- but for the same reason, a name that starts with one
+        of these prefixes and then fails (unknown slug/dataset id, no
+        CSV/TSV files found, malformed id) raises immediately instead of
+        falling through to the remaining steps.
+
     Examples
     --------
     >>> hypertools.load('iris').columns.tolist()  # scikit-learn's iris
@@ -109,6 +128,10 @@ def load(
     >>> hypertools.load('penguins').columns.tolist()  # seaborn's penguins
     ['species', 'island', 'bill_length_mm', 'bill_depth_mm',
      'flipper_length_mm', 'body_mass_g', 'sex']
+    >>> hypertools.load('fivethirtyeight/bechdel').shape  # 538's bechdel data
+    (1794, 15)
+    >>> hypertools.load('kaggle/uciml/iris').shape  # a Kaggle dataset
+    (150, 6)
     >>> hypertools.load('weights')  # built-in name always wins
     [...]
 
@@ -237,7 +260,7 @@ def load(
         # Hugging Face -> Google Sheets -> Google Drive -> Dropbox ->
         # generic URL.
         from .sources import sklearn_dataset, seaborn_dataset, \
-            SKLEARN_DATASETS
+            fivethirtyeight_dataset, kaggle_dataset, SKLEARN_DATASETS
         extra_attempts = []
         geo_data = sklearn_dataset(dataset)
         if geo_data is None:
@@ -250,6 +273,13 @@ def load(
                     'seaborn dataset: not found via '
                     'seaborn.get_dataset_names() (or that lookup failed, '
                     'e.g. no network access)')
+                # explicit prefixes -- 'fivethirtyeight/<slug>' and
+                # 'kaggle/<owner>/<dataset>' are unambiguous, so a
+                # matching-but-failing name raises directly instead of
+                # falling through to the attempts digest below
+                geo_data = fivethirtyeight_dataset(dataset)
+                if geo_data is None:
+                    geo_data = kaggle_dataset(dataset)
 
         if geo_data is None:
             dataset_path = Path(expanduser(expandvars(dataset))).resolve()
