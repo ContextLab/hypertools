@@ -23,6 +23,54 @@ from .morph import resolve_morph_rotations
 from .fonts import resolve_font
 
 
+# GH #206: the subset of mpl_kwargs keys `plotly_backend.plotly_draw` (and
+# its trail/forecast helpers) actually reads and maps onto a plotly trace
+# property, via the existing `_resolve_fmt`/`_trace_name` machinery -- see
+# every `tkwargs.get(...)` call in `hypertools/plot/plotly_backend.py`.
+# Any OTHER kwarg (arbitrary matplotlib-style passthrough, e.g. `zorder=`,
+# `markeredgecolor=`, `dashes=`) has no plotly equivalent and is silently
+# unusable there; `plot()` warns (once, naming every such kwarg) rather
+# than silently dropping it with no feedback at all.
+_PLOTLY_MAPPED_KWARGS = frozenset(
+    {'color', 'alpha', 'linewidth', 'markersize', 'marker', 'linestyle',
+     'label'})
+
+
+def _apply_extra_kwargs(kwargs_list, extra):
+    """Merge arbitrary extra matplotlib-style kwargs (GH #206's `**kwargs`
+    passthrough) into every per-dataset dict in `kwargs_list`, IN PLACE.
+
+    Deliberately bypasses `parse_kwargs`'s per-dataset list/tuple
+    broadcasting entirely: `extra`'s values are applied VERBATIM,
+    identically, to every dataset, whatever their type -- including a
+    list/tuple value (e.g. `dashes=(4, 2)`), which is a single matplotlib
+    property VALUE, not a per-dataset list of separate values. Running
+    such a value through `parse_kwargs`'s broadcast machinery (designed
+    for hypertools' own per-dataset style kwargs -- color/marker/
+    linestyle/etc., where a list genuinely means "one value per dataset")
+    would either misinterpret it (if its length happened to equal the
+    dataset count) or now raise a spurious ``ValueError`` (since
+    `parse_kwargs` was fixed, also for GH #206, to raise rather than
+    silently drop a length that does NOT match the dataset count) -- both
+    wrong for a kwarg whose natural value just happens to be tuple/list
+    shaped. Callers needing genuine PER-DATASET control over an arbitrary
+    property can already reach for the dedicated, per-dataset-aware kwargs
+    (`color`/`marker`/`linestyle`/`markersize`/`linewidth`).
+
+    A key already present in a given dataset's dict (set by a named
+    parameter, e.g. `color=`, or by internal styling logic, e.g.
+    MultiIndex/mixture-cluster `alpha`, `legend=`'s `label`, `explore=`'s
+    `picker`) is left untouched -- named/internal styling always wins over
+    a same-named extra kwarg.
+    """
+    if not extra:
+        return
+    for d in kwargs_list:
+        for k, v in extra.items():
+            if k not in d:
+                d[k] = v
+
+
 def _resolve_animate_mode(animate, n_datasets):
     """Resolve ``animate=`` for ``animate='morph'`` support (Hungarian
     point-cloud morphs between datasets, maintainer request): `animate` may
@@ -147,6 +195,7 @@ def plot(
     surface=None,
     density=None,
     font=None,
+    **kwargs,
 ):
     """
     Plots dimensionality reduced data and parses plot arguments
@@ -267,6 +316,43 @@ def plot(
 
     color(s) : str or list of str
         A list of colors
+
+    **kwargs : any other matplotlib-style keyword argument
+        GH #206: any keyword argument that isn't one of `plot()`'s own
+        named parameters above is passed straight through to each drawn
+        artist -- e.g. `zorder=3`, `alpha=0.5`, `dashes=(4, 2)`,
+        `markeredgecolor='k'`. Applied VERBATIM, identically, to every
+        drawn dataset -- unlike `color`/`marker`/`linestyle`/etc. (see
+        below), an extra kwarg's value is NEVER interpreted as "one entry
+        per dataset" even if it happens to be a list/tuple (e.g.
+        `dashes=(4, 2)` is a single dash-pattern VALUE, not per-dataset
+        values `4` and `2`) -- so there is no per-dataset form for an
+        extra kwarg; use one of the dedicated per-dataset-aware kwargs
+        (`color`/`marker`/`linestyle`/`markersize`/`linewidth`) for that.
+        Merged in AFTER the named style kwargs are resolved, so an
+        explicit named kwarg (or internal styling logic, e.g. MultiIndex/
+        mixture-cluster `alpha`, `legend=`'s `label`, `explore=`'s
+        `picker`) always wins on a naming collision. On the matplotlib
+        backend an unrecognized property surfaces matplotlib's OWN error
+        (e.g. ``AttributeError: ... has no property ...``) -- no separate
+        whitelist/validation is applied here. On the plotly backend, only
+        a small subset maps onto an actual trace property (`color`,
+        `alpha`, `linewidth`, `markersize`, `marker`, `linestyle`,
+        `label`); anything else is ignored with a ``UserWarning`` naming
+        every unmapped kwarg (rather than raising, since plotly's trace
+        objects were never going to support the same kwarg surface as
+        matplotlib).
+
+        Every per-dataset list/tuple-valued kwarg `plot()` itself
+        broadcasts this way (`color`/`colors`, `marker`/`markers`,
+        `linestyle`/`linestyles` -- NOT the generic `**kwargs` passthrough
+        above, which is never broadcast) has its length validated (GH
+        #206): it MUST equal the number of datasets being drawn (the
+        FINAL count, after any `cluster`/`hue`/MultiIndex reshaping), or
+        ``ValueError`` is raised naming the kwarg, the length actually
+        given, and the required dataset count. Previously a mismatched-
+        length list silently degraded to `None` for every dataset with no
+        error or warning at all.
 
     palette : str
         A matplotlib or seaborn color palette
@@ -1735,6 +1821,14 @@ def plot(
     # turn kwargs into a list
     kwargs_list = parse_kwargs(xform, mpl_kwargs)
 
+    # GH #206: arbitrary extra matplotlib-style kwargs (anything not one
+    # of plot()'s own named parameters, e.g. `zorder=`, `dashes=`,
+    # `alpha=`, `markeredgecolor=`) are merged in AFTER the named/internal
+    # style kwargs above (`_apply_extra_kwargs` never overwrites a key
+    # already set), verbatim -- no per-dataset list broadcasting is
+    # attempted for these (see `_apply_extra_kwargs`'s docstring for why).
+    _apply_extra_kwargs(kwargs_list, kwargs)
+
     def _resolve_dataset_colors():
         """Resolve each dataset's OWN drawn color: an explicit color/colors
         kwarg if given (already in `kwargs_list`), or -- if none was given --
@@ -1799,12 +1893,29 @@ def plot(
     if resolve_backend(backend) == "plotly":
         from .plotly_backend import plotly_draw
 
+        # GH #206: warn (once, listing every offending kwarg) about extra
+        # kwargs that reached `mpl_kwargs` (via the `**kwargs` passthrough
+        # above) but that the plotly backend has no property to map them
+        # onto -- checked against the RAW `kwargs` the caller passed
+        # (rather than `mpl_kwargs`, which also holds plotly-supported
+        # named params like `color=`/`linewidth=`), so only genuinely
+        # unmappable extras are reported.
+        _unmapped_plotly_kwargs = sorted(set(kwargs) - _PLOTLY_MAPPED_KWARGS)
+        if _unmapped_plotly_kwargs:
+            warnings.warn(
+                f"backend='plotly' cannot map the following extra "
+                f"kwarg(s) to a trace property and will ignore them: "
+                f"{_unmapped_plotly_kwargs}. Supported passthrough "
+                f"kwargs for plotly are: {sorted(_PLOTLY_MAPPED_KWARGS)}."
+            )
+
         if "color" not in mpl_kwargs:
             import seaborn as sns_local
             mpl_kwargs = dict(mpl_kwargs)
             mpl_kwargs["color"] = sns_local.color_palette(
                 palette, len(xform))
             kwargs_list = parse_kwargs(xform, mpl_kwargs)
+            _apply_extra_kwargs(kwargs_list, kwargs)
         fig = plotly_draw(
             xform,
             fmt=draw_fmt,

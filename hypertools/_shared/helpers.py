@@ -105,17 +105,34 @@ def parse_args(x,args):
 
 
 def parse_kwargs(x, kwargs):
+    """Broadcast each kwarg in `kwargs` across the datasets in `x`: a
+    scalar value is repeated for every dataset; a list/tuple value is
+    distributed one-entry-per-dataset and MUST match `len(x)` exactly.
+
+    GH #206: a mismatched-length list previously degraded SILENTLY to
+    `None` for every dataset (a user's `color=['red', 'blue']` against 3
+    datasets would silently plot with no color at all, no error/warning
+    ever raised) -- this now raises a clear ``ValueError`` naming the
+    kwarg, the length actually given, and the number of datasets it needed
+    to match, exactly as the original GH #206 request specified.
+    """
+    n = len(x)
     kwargs_list = []
-    for i,item in enumerate(x):
+    for i, item in enumerate(x):
         tmp = {}
         for kwarg in kwargs:
-            if isinstance(kwargs[kwarg], (tuple, list)):
-                if len(kwargs[kwarg]) == len(x):
-                    tmp[kwarg]=kwargs[kwarg][i]
-                else:
-                    tmp[kwarg] = None
+            val = kwargs[kwarg]
+            if isinstance(val, (tuple, list)):
+                if len(val) != n:
+                    raise ValueError(
+                        f"{kwarg}= was given as a list/tuple of length "
+                        f"{len(val)}, but there are {n} dataset(s) to plot; "
+                        f"pass either a single value (broadcast to every "
+                        f"dataset) or a list/tuple of length {n}."
+                    )
+                tmp[kwarg] = val[i]
             else:
-                tmp[kwarg]=kwargs[kwarg]
+                tmp[kwarg] = val
         kwargs_list.append(tmp)
     return kwargs_list
 
