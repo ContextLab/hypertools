@@ -2067,6 +2067,22 @@ def _add_colorbar(fig, ax, colorbar_info, font=None):
         if label:
             cbar.set_label(label)
         _apply_font_to_colorbar(cbar, font)
+
+    # A VERTICAL discrete colorbar ('right'/'left') must read top-to-bottom
+    # in the SAME order as the legend (first group at the TOP) -- matplotlib's
+    # default low-value-at-bottom convention otherwise reverses it relative
+    # to the legend, which reads first-to-last top-to-bottom (GH #100
+    # follow-up). `invert_yaxis` only flips the DISPLAY orientation of the
+    # existing data-to-color mapping -- the same data value still maps to
+    # the same color, so color<->label pairing survives the flip exactly;
+    # it just moves group 0 from the bottom to the top. A HORIZONTAL
+    # discrete colorbar ('top'/'bottom') already reads left-to-right in
+    # legend order (matplotlib's default), so it is left untouched.
+    # Continuous colorbars are numeric and must keep the conventional
+    # low-at-bottom orientation, so this only applies to 'discrete'.
+    if (colorbar_info['kind'] == 'discrete'
+            and colorbar_info['location'] in ('right', 'left')):
+        cbar.ax.invert_yaxis()
     return cbar
 
 

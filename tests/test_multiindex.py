@@ -492,6 +492,34 @@ def test_multiindex_colorbar_3level_shows_only_top_level_segments():
     assert '_nolegend_' not in labels
 
 
+def test_multiindex_colorbar_top_level_order_matches_legend_order():
+    """GH #100 follow-up: the MultiIndex-driven discrete colorbar (one
+    segment per TOP-level group) must inherit the top-to-bottom
+    legend-order fix, same as any other discrete colorbar -- the top-level
+    group order must read the same top-to-bottom as the legend, not
+    matplotlib's default bottom-up order."""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+    df = _make_2level_df()
+    fig = hyp.plot(df, colorbar=True, legend=True, show=False)
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+    renderer = canvas.get_renderer()
+
+    ax, cbar_ax = fig.axes
+    _, legend_labels = ax.get_legend_handles_labels()
+    assert list(legend_labels) == ['condA', 'condB']
+
+    ticklabels = cbar_ax.get_yticklabels()
+    entries = sorted(
+        ((t.get_window_extent(renderer).y0, t.get_text()) for t in ticklabels),
+        key=lambda e: -e[0])  # descending y = top first
+    cbar_order = [label for _, label in entries]
+    assert cbar_order == list(legend_labels), (
+        "MultiIndex colorbar's top-level order must match the legend order")
+    plt.close(fig)
+
+
 def test_build_styles_3level_unequal_lengths_warns_exactly_once():
     """A 3-level tree where one leaf is short: the leaf is a member of BOTH
     its (grp, cond) prefix group AND its grp prefix group, so a naive

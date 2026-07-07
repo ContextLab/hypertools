@@ -1554,12 +1554,27 @@ def _colorbar_trace(go, colorbar_info, ndims, legend_present):
     else:
         colors = colorbar_info['colors']
         n = len(colors)
-        colorscale = _discrete_plotly_colorscale(colors)
+        # A VERTICAL discrete colorbar ('right'/'left', orientation='v')
+        # must read top-to-bottom in the SAME order as the legend (first
+        # group at the TOP) -- plotly's default low-value-at-bottom
+        # convention otherwise reverses it relative to the legend (GH #100
+        # follow-up). Segment `i` (from the bottom) is built from
+        # `colors[n - 1 - i]` (i.e. `colors` reversed) so the FIRST group's
+        # color ends up in the TOP segment; `tickvals` are reversed to
+        # match (tick for group `g`, at `ticktext[g]`, is placed at the
+        # segment that now holds `colors[g]`), so label<->color pairing is
+        # unchanged -- only the physical position each group occupies
+        # flips. A HORIZONTAL discrete colorbar ('top'/'bottom',
+        # orientation='h') already reads left-to-right in legend order
+        # (plotly's default), so it is left untouched.
+        scale_colors = colors[::-1] if orientation == 'v' else colors
+        colorscale = _discrete_plotly_colorscale(scale_colors)
         cmin, cmax = -0.5, n - 0.5
         if colorbar_info.get('ticks') is not None:
             cb['tickvals'] = list(colorbar_info['ticks'])
         else:
-            cb['tickvals'] = list(range(n))
+            cb['tickvals'] = (list(range(n - 1, -1, -1)) if orientation == 'v'
+                              else list(range(n)))
             cb['ticktext'] = [str(l) for l in colorbar_info['labels']]
 
     marker = dict(color=[cmin], colorscale=colorscale, cmin=cmin, cmax=cmax,

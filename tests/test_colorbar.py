@@ -244,11 +244,20 @@ def test_continuous_colorbar_plotly_matches_palette():
 
 
 def test_discrete_colorbar_plotly_matches_groups():
+    # NOTE (GH #100 follow-up): a VERTICAL discrete colorbar must read
+    # top-to-bottom in the SAME order as the legend, i.e. group 0 (the
+    # FIRST group) must sit at the TOP -- plotly's vertical orientation
+    # places cmax (the largest value) at the top and cmin at the bottom, so
+    # group 0's tick now lives at the LARGEST value (n - 1) instead of 0,
+    # and the hard-edged colorscale segments are built from `colors[::-1]`
+    # so the segment nearest cmax (top) holds group 0's color. This was
+    # previously pinned to the old bottom-up order ([0, 1, 2] / segments in
+    # forward order); updated to assert the new top-down order instead.
     x, hue = _discrete_hue_data()
     fig = hyp.plot(x, hue=hue, colorbar=True, backend='plotly', show=False)
     cb_trace = fig.data[-1]
 
-    assert list(cb_trace.marker.colorbar.tickvals) == [0, 1, 2]
+    assert list(cb_trace.marker.colorbar.tickvals) == [2, 1, 0]
     assert list(cb_trace.marker.colorbar.ticktext) == ['1', '2', '3']
     assert cb_trace.marker.cmin == pytest.approx(-0.5)
     assert cb_trace.marker.cmax == pytest.approx(2.5)
@@ -258,12 +267,17 @@ def test_discrete_colorbar_plotly_matches_groups():
     def _parse_rgb(s):
         return tuple(int(v) for v in s[len('rgb('):-1].split(','))
 
-    # first stop of each of the 3 hard-edged segments == that group's color
+    # first stop of each of the 3 hard-edged segments -- segment 0 (nearest
+    # cmin, i.e. the BOTTOM of the vertical colorbar) now holds the LAST
+    # group's color, and segment 2 (nearest cmax, the TOP) holds the FIRST
+    # group's color, since group 0 must render at the top to match the
+    # legend.
     scale = cb_trace.marker.colorscale
     seg0_color = _parse_rgb(scale[0][1])
     seg1_color = _parse_rgb(scale[2][1])
     seg2_color = _parse_rgb(scale[4][1])
-    for seg_color, exp in zip((seg0_color, seg1_color, seg2_color), expected):
+    for seg_color, exp in zip((seg0_color, seg1_color, seg2_color),
+                              reversed(expected)):
         assert seg_color == tuple(int(round(255 * c)) for c in exp)
 
 
@@ -367,4 +381,165 @@ def test_long_labels_legend_and_colorbar_fully_inside_canvas():
     _, cbar_ax = fig.axes
     cbar_labels = [t.get_text() for t in cbar_ax.get_yticklabels()]
     assert cbar_labels == long_labels
+
+
+# ------------------------------------------------------------------------
+# discrete colorbar segment order must match the legend order (GH #100
+# follow-up): legend reads first-to-last TOP-to-BOTTOM, so a VERTICAL
+# discrete colorbar must too (first group at the top); a HORIZONTAL one
+# must read first-to-last LEFT-to-RIGHT (first group leftmost).
+# --------------------------------------------------------------------------
+
+def test_discrete_colorbar_mpl_vertical_reads_top_to_bottom_in_legend_order():
+    x, hue = _discrete_hue_data()
+    legend = ['group A', 'group B', 'group C']
+    fig = hyp.plot(x, hue=hue, colorbar=True, legend=legend, show=False)
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+    renderer = canvas.get_renderer()
+    ax, cbar_ax = fig.axes
+
+    # ground truth: the legend's own artists, top-to-bottom by DISPLAY y
+    # (descending y = higher on the canvas = earlier), and each group's
+    # actual drawn color (the legend proxy handles' colors).
+    handles, legend_texts = ax.get_legend().legend_handles, ax.get_legend().texts
+    legend_entries = sorted(
+        zip((t.get_window_extent(renderer).y0 for t in legend_texts),
+            (t.get_text() for t in legend_texts),
+            (h.get_color() for h in handles)),
+        key=lambda e: -e[0])
+    legend_order = [label for _, label, _ in legend_entries]
+    color_by_label = {label: color for _, label, color in legend_entries}
+    assert legend_order == legend, "sanity check: legend itself reads top-down"
+
+    # colorbar: tick labels sorted by DESCENDING display y (top first)
+    ticklabels = cbar_ax.get_yticklabels()
+    ticks = cbar_ax.get_yticks()
+    entries = sorted(
+        zip((t.get_window_extent(renderer).y0 for t in ticklabels),
+            (t.get_text() for t in ticklabels), ticks),
+        key=lambda e: -e[0])
+    cbar_order = [label for _, label, _ in entries]
+    assert cbar_order == legend_order, (
+        "discrete colorbar must read top-to-bottom in the SAME order as "
+        "the legend")
+
+    # critical invariant: the order flip must not break color<->label
+    # pairing -- each tick's face color (sampled through the colorbar's
+    # own cmap/norm at that tick's data value) must equal the actual
+    # drawn color for that group.
+    mesh = _quadmesh(cbar_ax)
+    for _, label, tickval in entries:
+        face = mesh.cmap(mesh.norm(tickval))[:3]
+        assert np.allclose(face, color_by_label[label], atol=1e-6), (
+            f"{label}'s colorbar segment color does not match its line color")
     plt.close(fig)
+
+
+def test_discrete_colorbar_mpl_horizontal_reads_left_to_right_in_legend_order():
+    x, hue = _discrete_hue_data()
+    legend = ['group A', 'group B', 'group C']
+    fig = hyp.plot(x, hue=hue, colorbar={'location': 'bottom'},
+                   legend=legend, show=False)
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+    renderer = canvas.get_renderer()
+    ax, cbar_ax = fig.axes
+
+    handles, legend_texts = ax.get_legend().legend_handles, ax.get_legend().texts
+    color_by_label = {t.get_text(): h.get_color()
+                      for t, h in zip(legend_texts, handles)}
+
+    ticklabels = cbar_ax.get_xticklabels()
+    ticks = cbar_ax.get_xticks()
+    entries = sorted(
+        zip((t.get_window_extent(renderer).x0 for t in ticklabels),
+            (t.get_text() for t in ticklabels), ticks),
+        key=lambda e: e[0])  # ascending x = left first
+    cbar_order = [label for _, label, _ in entries]
+    assert cbar_order == legend, (
+        "horizontal discrete colorbar must read left-to-right in legend order")
+
+    mesh = _quadmesh(cbar_ax)
+    for _, label, tickval in entries:
+        face = mesh.cmap(mesh.norm(tickval))[:3]
+        assert np.allclose(face, color_by_label[label], atol=1e-6)
+    plt.close(fig)
+
+
+def test_discrete_colorbar_plotly_vertical_reads_top_to_bottom_in_legend_order():
+    x, hue = _discrete_hue_data()
+    legend = ['group A', 'group B', 'group C']
+    fig = hyp.plot(x, hue=hue, colorbar=True, legend=legend,
+                   backend='plotly', show=False)
+    cb_trace = fig.data[-1]
+    cb = cb_trace.marker.colorbar
+
+    assert list(cb.ticktext) == legend
+    # tickvals descending -> tick for legend[0] sits at the HIGHEST value,
+    # which plotly renders nearest cmax, i.e. the TOP of a vertical colorbar
+    tickvals = list(cb.tickvals)
+    assert tickvals == sorted(tickvals, reverse=True)
+    assert tickvals[0] == max(tickvals), "first legend entry must be at the top"
+
+    # color pairing: the segment at each tickval's position holds the
+    # SAME group's actual drawn color
+    expected = get_palette_colors('hls', 3)
+
+    def _parse_rgb(s):
+        return tuple(int(v) for v in s[len('rgb('):-1].split(','))
+
+    cmin, cmax = cb_trace.marker.cmin, cb_trace.marker.cmax
+    scale = cb_trace.marker.colorscale
+    for label, tickval, exp in zip(legend, tickvals, expected):
+        frac = (tickval - cmin) / (cmax - cmin)
+        # find the segment whose [start, end) fraction range contains frac
+        seg_color = None
+        for i in range(0, len(scale), 2):
+            lo, hi = scale[i][0], scale[i + 1][0]
+            if lo - 1e-9 <= frac <= hi + 1e-9:
+                seg_color = _parse_rgb(scale[i][1])
+                break
+        assert seg_color is not None, f"no segment found for {label} at frac={frac}"
+        assert seg_color == tuple(int(round(255 * c)) for c in exp), (
+            f"{label}'s colorbar segment color does not match its group color")
+
+
+# --------------------------------------------------- continuous regression
+def test_continuous_colorbar_mpl_orientation_unchanged():
+    """Regression: CONTINUOUS colorbars are numeric and must keep the
+    conventional low-at-bottom orientation (untouched by the discrete
+    top-to-bottom legend-order fix, GH #100 follow-up)."""
+    x, hue = _continuous_hue_data()
+    fig = hyp.plot(x, hue=hue, fmt='-', colorbar=True, show=False)
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+    renderer = canvas.get_renderer()
+    _, cbar_ax = fig.axes
+
+    assert not cbar_ax.yaxis_inverted(), (
+        "continuous colorbar's y-axis must not be inverted")
+
+    ticklabels = cbar_ax.get_yticklabels()
+    ticks = cbar_ax.get_yticks()
+    # the tick with the SMALLEST data value must be at the BOTTOM (smallest
+    # display y0) -- i.e. vmin at bottom, vmax at top (unchanged convention)
+    pairs = sorted(zip(ticks, ticklabels), key=lambda p: p[0])
+    y_positions = [t.get_window_extent(renderer).y0 for _, t in pairs]
+    assert y_positions == sorted(y_positions), (
+        "vmin must render at the bottom and vmax at the top")
+    plt.close(fig)
+
+
+def test_continuous_colorbar_plotly_orientation_unchanged():
+    x, hue = _continuous_hue_data()
+    fig = hyp.plot(x, hue=hue, fmt='-', colorbar=True, backend='plotly',
+                   show=False)
+    cb_trace = fig.data[-1]
+    # stop 0.0 (bottom of a vertical colorbar) must be the LOW end of the
+    # palette (vmin's color), unchanged from before the discrete-only fix
+    first_stop, _ = cb_trace.marker.colorscale[0]
+    last_stop, _ = cb_trace.marker.colorscale[-1]
+    assert first_stop == pytest.approx(0.0)
+    assert last_stop == pytest.approx(1.0)
+    assert cb_trace.marker.cmin < cb_trace.marker.cmax
