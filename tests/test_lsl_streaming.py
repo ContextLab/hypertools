@@ -260,3 +260,44 @@ def test_import_error_without_pylsl_names_the_extra():
         f"stdout={result.stdout}\nstderr={result.stderr}"
     )
     assert 'SUBPROCESS_OK' in result.stdout
+
+
+@requires_pylsl
+def test_lsl_stream_resolves_any_stream(outlet_stream):
+    """With neither name= nor type=, lsl_stream falls back to
+    pylsl.resolve_streams ("any stream") and still yields real samples."""
+    stream = hyp.io.lsl_stream(timeout=10.0)
+    assert is_stream(stream)
+    sample = next(stream)
+    assert len(sample) == N_CHANNELS
+    assert all(isinstance(v, float) for v in sample)
+    stream.close()
+
+
+@requires_pylsl
+def test_lsl_stream_raises_when_source_stops_delivering():
+    """A stalled/disconnected source must not hang the consumer forever:
+    after ~timeout seconds of consecutive silent pulls, the generator
+    raises HypertoolsIOError instead of blocking indefinitely."""
+    import gc
+
+    name = f'HypertoolsStallTest-{threading.get_ident()}-{time.time_ns()}'
+    thread, stop = _start_outlet(name)
+    try:
+        stream = hyp.io.lsl_stream(name=name, timeout=2.0)
+        # receive at least one real sample while the outlet is alive
+        assert len(next(stream)) == N_CHANNELS
+    finally:
+        stop.set()
+        thread.join(timeout=5.0)
+        assert not thread.is_alive()
+    # the outlet object was owned by the pusher thread's closure; force
+    # its destruction so the stream goes truly silent
+    gc.collect()
+
+    deadline = time.time() + 30.0
+    with pytest.raises(HypertoolsIOError, match='stopped delivering'):
+        while time.time() < deadline:
+            next(stream)  # drains any buffered samples, then must raise
+    assert time.time() < deadline, \
+        'generator kept yielding (or blocking) instead of raising'

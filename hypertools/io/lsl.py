@@ -104,11 +104,30 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
 
     inlet = pylsl.StreamInlet(infos[0])
 
+    # a stalled/disconnected device must not hang the consumer forever:
+    # pull with a bounded per-sample timeout and give up (with a clear
+    # error) after `timeout` seconds of consecutive silence.
+    pull_timeout = min(1.0, timeout) if timeout else 1.0
+    max_silent_pulls = max(1, int(round(timeout / pull_timeout))) if timeout else 10
+
     def _samples():
-        while True:
-            sample, _timestamp = inlet.pull_sample()
-            if sample is None:
-                continue
-            yield sample
+        try:
+            silent_pulls = 0
+            while True:
+                sample, _timestamp = inlet.pull_sample(timeout=pull_timeout)
+                if sample is None:
+                    silent_pulls += 1
+                    if silent_pulls >= max_silent_pulls:
+                        raise HypertoolsIOError(
+                            f'LSL stream ({criterion}) stopped delivering '
+                            f'samples: nothing received for ~'
+                            f'{silent_pulls * pull_timeout:.1f}s. The source '
+                            f'may have disconnected.'
+                        )
+                    continue
+                silent_pulls = 0
+                yield sample
+        finally:
+            inlet.close_stream()
 
     return _samples()
