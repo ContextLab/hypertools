@@ -204,7 +204,7 @@ def _anim_zoom_r(zoom):
     return _zoom_r(zoom) * _ANIM_ZOOM_OUT
 
 
-def _build_point_annotations(data, labels, ndims, font_family):
+def _build_point_annotations(data, labels, ndims, font_family, label_alpha=0.5):
     """`labels=` point annotations (GH #205 F3): parity with
     `matplotlib_backend._draw`'s `annotate_plot`.
 
@@ -259,7 +259,7 @@ def _build_point_annotations(data, labels, ndims, font_family):
             ax=-20,
             ay=-20,
             font=font,
-            bgcolor='rgba(255,255,255,0.5)',
+            bgcolor=f'rgba(255,255,255,{label_alpha})',
             bordercolor='rgba(0,0,0,0.4)',
             borderwidth=1,
             borderpad=3,
@@ -270,6 +270,34 @@ def _build_point_annotations(data, labels, ndims, font_family):
     return annotations
 
 
+def _labeled_axis_layout(base, label, scene=False):
+    """Build a plotly axis layout dict (2-D `layout.xaxis`/`.yaxis` or
+    3-D `layout.scene.xaxis`/`.yaxis`/`.zaxis`), merged with `base` (e.g.
+    a `range`).
+
+    `visible=False` (when `label` is None -- the historical default,
+    byte-identical to before `xlabel=`/`ylabel=`/`zlabel=` existed)
+    hides EVERYTHING on that axis, including a title -- unlike
+    matplotlib's `set_axis_off()`, whose axis label Text artist at least
+    keeps its underlying text (`.get_text()` still returns it even when
+    invisible). So when `label` is given (round17 #7), the axis is kept
+    "visible" but every OTHER sub-property (ticks, gridlines, zero-line,
+    and -- 3-D scene axes only -- the gray background pane) is hidden
+    individually instead, leaving only `title` shown. `scene=True` adds
+    `showbackground=False` (a scene-axis-only property; plain 2-D
+    `layout.xaxis`/`.yaxis` has no such property and rejects it).
+    """
+    if label is None:
+        return dict(visible=False, **base)
+    layout = dict(
+        showticklabels=False, showgrid=False, zeroline=False,
+        showline=False, ticks='', title=dict(text=label), **base,
+    )
+    if scene:
+        layout['showbackground'] = False
+    return layout
+
+
 def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 title=None, animate=False, size=None, show=True,
                 save_path=None, frame_rate=30, duration=30, rotations=1,
@@ -278,7 +306,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 forecasts=None, colorbar_info=None, surface=None,
                 surface_colors=None, density=None, density_colors=None,
                 morph_tags=None, morph_colors=None, morph_samples=None,
-                font=None):
+                font=None, label_alpha=0.5, xlabel=None, ylabel=None,
+                zlabel=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -330,6 +359,22 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     marker trace -- plotly colorbars are a `marker`/`line` property of a
     trace, not a figure-level artist, so a real (invisible) trace carries
     it without adding a visible point.
+
+    `label_alpha` (GH #103): opacity of the translucent white background
+    box drawn behind each `labels=` point annotation -- the alpha channel
+    of `bgcolor='rgba(255,255,255,<label_alpha>)'` -- mirroring
+    `annotate_plot`'s matplotlib `bbox` alpha exactly. Default 0.5 (the
+    historical hardcoded value).
+
+    `xlabel`/`ylabel`/`zlabel` (round17 #7): axis titles, in BOTH 2-D
+    (`layout.xaxis.title`/`.yaxis.title`) and 3-D
+    (`layout.scene.xaxis.title`/`.yaxis.title`/`.zaxis.title`) -- see
+    `_labeled_axis_layout` for exactly which OTHER axis sub-properties
+    stay hidden (ticks/gridlines/zero-line/background) so only the title
+    itself becomes visible. `None` (default): axis fully hidden, byte-
+    identical to before these kwargs existed. `zlabel` on a 2-D/1-D plot
+    is rejected upstream in `plot.py` (`ValueError`, before this function
+    is ever called).
 
     Returns the plotly Figure.
     """
@@ -787,9 +832,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
     if ndims >= 3:
         layout['scene'] = dict(
-            xaxis=dict(visible=False, range=[-cube_scale, cube_scale]),
-            yaxis=dict(visible=False, range=[-cube_scale, cube_scale]),
-            zaxis=dict(visible=False, range=[-cube_scale, cube_scale]),
+            xaxis=_labeled_axis_layout(
+                {'range': [-cube_scale, cube_scale]}, xlabel, scene=True),
+            yaxis=_labeled_axis_layout(
+                {'range': [-cube_scale, cube_scale]}, ylabel, scene=True),
+            zaxis=_labeled_axis_layout(
+                {'range': [-cube_scale, cube_scale]}, zlabel, scene=True),
             camera=dict(eye=_camera_eye(
                 elev, azim,
                 r=_anim_zoom_r(zoom) if animate else _zoom_r(zoom))),
@@ -802,12 +850,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     elif ndims == 2:
         # matplotlib stretches the 2D frame to fill the axes region (no
         # equal-aspect constraint), so the plotly frame does the same
-        layout['xaxis'] = dict(visible=False, range=[-1.1, 1.1])
-        layout['yaxis'] = dict(visible=False, range=[-1.1, 1.1])
+        layout['xaxis'] = _labeled_axis_layout({'range': [-1.1, 1.1]}, xlabel)
+        layout['yaxis'] = _labeled_axis_layout({'range': [-1.1, 1.1]}, ylabel)
         layout['shapes'] = [_square_shape()]
     else:
-        layout['xaxis'] = dict(visible=False)
-        layout['yaxis'] = dict(visible=False)
+        layout['xaxis'] = _labeled_axis_layout({}, xlabel)
+        layout['yaxis'] = _labeled_axis_layout({}, ylabel)
 
     # labels= (GH #205 F3): point annotations, at parity with matplotlib's
     # annotate_plot -- see _build_point_annotations for the exact mapping
@@ -817,7 +865,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # would ignore the actual data coordinates).
     if labels is not None:
         point_annotations = _build_point_annotations(
-            data, labels, ndims, font_family)
+            data, labels, ndims, font_family, label_alpha=label_alpha)
         if point_annotations:
             if ndims == 3:
                 layout['scene']['annotations'] = point_annotations

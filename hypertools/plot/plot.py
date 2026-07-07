@@ -197,6 +197,10 @@ def plot(
     surface=None,
     density=None,
     font=None,
+    label_alpha=None,
+    xlabel=None,
+    ylabel=None,
+    zlabel=None,
     **kwargs,
 ):
     """
@@ -379,6 +383,17 @@ def plot(
         the same data coordinates, honoring the resolved `font=` (see
         below) the same way the legend/colorbar/title do.
 
+    label_alpha : float or None
+        Opacity of the translucent background box drawn behind each
+        `labels=` point annotation (GH #103). `None` (default) keeps the
+        historical opacity, 0.5, on both backends. Must be a number in
+        ``[0, 1]``; any other value raises `ValueError`. On matplotlib
+        this sets the annotation `bbox`'s `alpha`; on plotly it sets the
+        alpha channel of the annotation's `bgcolor`
+        (``'rgba(255,255,255,<label_alpha>)'``). Works for both static
+        and animated plots (labels are drawn once, at the original data
+        coordinates, and persist across every frame on both backends).
+
     legend : list or bool
         If set to True, legend is implicitly computed from data. Passing a
         list will add string labels to the legend (one for each list item).
@@ -450,6 +465,24 @@ def plot(
         on the exporting machine's OS having a font that actually covers
         the requested family/characters -- unlike matplotlib, hypertools
         cannot embed a specific font file into a plotly export.
+
+    xlabel, ylabel, zlabel : str or None
+        Axis labels, on BOTH backends, for STATIC and ANIMATED plots, in
+        2-D and 3-D (round17 #7). `None` (default): no label (byte-
+        identical to before these kwargs existed). matplotlib:
+        `ax.set_xlabel`/`ax.set_ylabel`/`ax.set_zlabel`; hypertools draws
+        its own cube/square frame in place of matplotlib's default axes
+        box (ticks/spines/panes are hidden), so whenever any of these
+        three is given, only the specific label Text artist(s) are kept
+        visible rather than the whole axis (ticks/spines/gridlines/3-D
+        panes stay hidden either way). plotly: `layout.scene.xaxis.title`/
+        `.yaxis.title`/`.zaxis.title` for 3-D, `layout.xaxis.title`/
+        `.yaxis.title` for 2-D -- again with only that axis's title shown
+        (ticks/gridlines/zero-line stay hidden). `zlabel` on a 2-D plot
+        (`ndims` < 3, or data that is intrinsically lower-dimensional)
+        raises `ValueError` (no z-axis to label) -- pass `ndims=3` (the
+        default) to use `zlabel=`, or use `xlabel=`/`ylabel=` for 2-D
+        data.
 
     size : list
         A list of [width, height] in inches to resize the figure
@@ -635,6 +668,30 @@ def plot(
         datasets for `animate='morph'` -- 'spin'/'serial'/etc. cannot vary
         per dataset, see above). A scalar `animate='morph'` is equivalent to
         tagging every dataset `'morph'`.
+
+        `animate` may ALSO be a `dict` (GH #154 resolution): a mega-dict
+        SPEC for the animation, mirroring the model-spec grammar used
+        elsewhere in hypertools -- `'style'` plays the role of `model`
+        (REQUIRED; the value is any of the scalar `animate` forms above,
+        e.g. `'spin'`) and every OTHER key maps onto one of the flat
+        animation kwargs below (`duration`, `tail_duration`, `rotations`,
+        `zoom`, `chemtrails`, `precog`, `bullettime`, `frame_rate`,
+        `morph_samples`) -- e.g. ``animate={'style': 'spin', 'rotations':
+        2, 'duration': 15}`` is exactly equivalent to
+        ``animate='spin', rotations=2, duration=15``. The dict is unpacked
+        into the flat kwargs at the very top of `plot()`, before anything
+        else runs, so every downstream code path only ever sees the flat
+        form. Raises `ValueError` if `'style'` is missing (message shows
+        an example dict), if the dict has any key that isn't `'style'` or
+        one of the flat animation kwargs above (message lists the valid
+        keys), or if a dict key's value CONFLICTS with that same flat
+        kwarg passed explicitly (a different value) -- naming the
+        conflicting key and both values. This mega-dict form is additive
+        sugar, not a new pipeline concept -- flat kwargs remain the
+        primary/documented direction (GH #154); note that a `style=`/
+        `labels=` mega-dict covering EVERY `plot()` kwarg (not just
+        animation) was considered and explicitly rejected as unnecessary
+        churn.
 
     backend : str
         Rendering backend: 'matplotlib' (the classic renderer),
@@ -1058,6 +1115,81 @@ def plot(
 
     """
 
+    # animate= dict form (GH #154 resolution): unpacked into the flat
+    # animation kwargs HERE, at the very top of the function, before
+    # anything else runs -- so every downstream code path (all of which
+    # predates this feature) only ever sees the flat kwargs it already
+    # understands; `animate` itself becomes the resolved style string/
+    # bool/list from here on. `'style'` plays the role of `model` in
+    # hypertools' usual spec-dict grammar; every other key must be one of
+    # the flat animation kwargs below. A dict key CONFLICTING with the
+    # same flat kwarg passed explicitly (a different value) is almost
+    # certainly a mistake -- raise rather than silently pick one; compared
+    # against each flat kwarg's own LITERAL default (mirroring the
+    # pipeline=/stage-kwarg conflict check below) since there is no other
+    # way to tell "explicitly passed, coincidentally equal to the default"
+    # from "never passed" from inside the function body.
+    if isinstance(animate, dict):
+        _ANIMATE_DICT_DEFAULTS = {
+            'duration': 30,
+            'tail_duration': 2,
+            'rotations': 1,
+            'zoom': 1,
+            'chemtrails': False,
+            'precog': False,
+            'bullettime': False,
+            'frame_rate': 30,
+            'morph_samples': None,
+        }
+        if 'style' not in animate:
+            raise ValueError(
+                "animate= dict form requires a 'style' key naming the "
+                "animation style (e.g. animate={'style': 'spin', "
+                "'rotations': 2, 'duration': 15}); got a dict with keys "
+                f"{sorted(animate.keys())}."
+            )
+        _animate_dict = dict(animate)
+        _animate_style = _animate_dict.pop('style')
+        _unknown_animate_keys = set(_animate_dict) - set(_ANIMATE_DICT_DEFAULTS)
+        if _unknown_animate_keys:
+            raise ValueError(
+                f"animate= dict got unknown key(s) "
+                f"{sorted(_unknown_animate_keys)}; valid keys are 'style' "
+                f"plus {sorted(_ANIMATE_DICT_DEFAULTS)}."
+            )
+        _animate_flat_locals = {
+            'duration': duration,
+            'tail_duration': tail_duration,
+            'rotations': rotations,
+            'zoom': zoom,
+            'chemtrails': chemtrails,
+            'precog': precog,
+            'bullettime': bullettime,
+            'frame_rate': frame_rate,
+            'morph_samples': morph_samples,
+        }
+        for _key, _dict_value in _animate_dict.items():
+            _default_value = _ANIMATE_DICT_DEFAULTS[_key]
+            _flat_value = _animate_flat_locals[_key]
+            if _flat_value != _default_value and _flat_value != _dict_value:
+                raise ValueError(
+                    f"animate= dict specifies {_key}={_dict_value!r} but "
+                    f"{_key}={_flat_value!r} was also passed explicitly as "
+                    f"a flat kwarg with a different value; pass {_key}= in "
+                    "only one place (either inside animate= or as its own "
+                    "kwarg)."
+                )
+        duration = _animate_dict.get('duration', duration)
+        tail_duration = _animate_dict.get('tail_duration', tail_duration)
+        rotations = _animate_dict.get('rotations', rotations)
+        zoom = _animate_dict.get('zoom', zoom)
+        chemtrails = _animate_dict.get('chemtrails', chemtrails)
+        precog = _animate_dict.get('precog', precog)
+        bullettime = _animate_dict.get('bullettime', bullettime)
+        frame_rate = _animate_dict.get('frame_rate', frame_rate)
+        morph_samples = _animate_dict.get('morph_samples', morph_samples)
+        animate = _animate_style
+
     # predict= + animate: forecast overlays are static-plot only in v1
     # (animating a growing/appended forecast trace is follow-up work).
     if predict is not None and animate:
@@ -1140,6 +1272,23 @@ def plot(
         _font_texts.append(colorbar.get('label'))
         _font_texts.append(colorbar.get('ticks'))
     resolved_font = resolve_font(font, _font_texts)
+
+    # label_alpha= resolution (GH #103): resolved ONCE, here, exactly like
+    # font= above -- `None` (default) keeps the historical hardcoded 0.5
+    # opacity on both backends; any other value must be a real alpha
+    # (a number in [0, 1]), validated fail-fast before the expensive
+    # analyze/reduce/align pipeline runs.
+    if label_alpha is None:
+        resolved_label_alpha = 0.5
+    elif (isinstance(label_alpha, bool)
+            or not isinstance(label_alpha, (int, float))
+            or not (0 <= label_alpha <= 1)):
+        raise ValueError(
+            f"label_alpha= must be a number in [0, 1], or None (default: "
+            f"0.5); got {label_alpha!r}."
+        )
+    else:
+        resolved_label_alpha = label_alpha
 
     # surface= kwarg validation (GH #109): fail fast (unknown dict keys)
     # before the expensive analyze/reduce pipeline runs. `_surface_norm` is
@@ -1432,6 +1581,16 @@ def plot(
         raise ValueError(
             "density= is not supported for 1D data (no 2D/3D density grid "
             "concept in a single dimension)."
+        )
+
+    # zlabel= (round17 #7): no z-axis to label on a 2D (or 1D) plot -- fail
+    # fast rather than silently ignoring the kwarg (mirrors surface=/
+    # density= above), now that xform's FINAL dimensionality is known.
+    if zlabel is not None and xform[0].shape[1] < 3:
+        raise ValueError(
+            f"zlabel= is not supported for {xform[0].shape[1]}-D data (no "
+            "z-axis in a 2-D or 1-D plot); pass ndims=3 (the default) to "
+            "use zlabel=, or use xlabel=/ylabel= for 2-D data."
         )
 
     # predict=: forecast `t` new rows per input dataset, in the plotted
@@ -2046,6 +2205,10 @@ def plot(
             morph_colors=morph_colors,
             morph_samples=morph_samples,
             font=resolved_font,
+            label_alpha=resolved_label_alpha,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            zlabel=zlabel,
         )
         ax = None
         data = xform
@@ -2094,6 +2257,10 @@ def plot(
                 morph_colors=morph_colors,
                 morph_samples=morph_samples,
                 font=resolved_font,
+                label_alpha=resolved_label_alpha,
+                xlabel=xlabel,
+                ylabel=ylabel,
+                zlabel=zlabel,
             )
 
             # predict=: overlay one dashed, low-opacity (alpha 0.6) forecast

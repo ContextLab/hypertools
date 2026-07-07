@@ -349,6 +349,10 @@ def _draw(
     morph_colors=None,
     morph_samples=None,
     font=None,
+    label_alpha=0.5,
+    xlabel=None,
+    ylabel=None,
+    zlabel=None,
 ):
     """
     Draws the plot
@@ -513,7 +517,7 @@ def _draw(
                         textcoords="offset points",
                         ha="right",
                         va="bottom",
-                        bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=0.5),
+                        bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=label_alpha),
                         arrowprops=dict(arrowstyle="-", connectionstyle="arc3,rad=0"),
                         **_label_font_kwargs,
                     )
@@ -527,7 +531,7 @@ def _draw(
                         textcoords="offset points",
                         ha="right",
                         va="bottom",
-                        bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=0.5),
+                        bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=label_alpha),
                         arrowprops=dict(arrowstyle="-", connectionstyle="arc3,rad=0"),
                         **_label_font_kwargs,
                     )
@@ -1516,8 +1520,66 @@ def _draw(
         # set line_ani to empty
         line_ani = None
 
-    # remove axes
-    ax.set_axis_off()
+    # remove axes -- hypertools draws its own cube/square frame in place of
+    # matplotlib's default axes box, so ticks/spines/(3-D) panes are always
+    # hidden. `Axes.set_axis_off()`/`Axes3D.set_axis_off()` remove the
+    # WHOLE axis (ticks AND the axis label Text artist together) from the
+    # draw list, so xlabel=/ylabel=/zlabel= (round17 #7) would never
+    # actually render if drawn while the axis is off (`get_xlabel()` etc.
+    # would still return the right string -- the Text's `.get_text()` is
+    # set regardless -- but the figure itself would show nothing, verified
+    # empirically: 0 changed pixels). When any of the three is given, hide
+    # ticks/spines/gridlines/(3-D) panes INDIVIDUALLY instead, leaving the
+    # axis unglobally "off" so its label artist(s) still draw; byte-
+    # identical to plain `set_axis_off()` otherwise (also verified
+    # empirically: 0 changed pixels when no label is requested).
+    if xlabel is None and ylabel is None and zlabel is None:
+        ax.set_axis_off()
+    elif hasattr(ax, "get_proj"):
+        # 3-D: Axes3D's own `_axis3don` flag gates panes/gridlines/ticks/
+        # labels ALL TOGETHER (see `Axes3D.draw`) -- there is no coarser
+        # public on/off switch to leave alone, so each axis's individual
+        # sub-artists are hidden instead, with `_axis3don` left True so
+        # `axis.draw()` (which draws the label) still runs.
+        for _axis in ax._axis_map.values():
+            _axis.pane.set_visible(False)
+            # NOTE: alpha=0 (transparent), not `set_visible(False)` --
+            # `Axis3D.get_tightbbox` (called by `plt.tight_layout()` on
+            # static plots below) unions the bboxes of the axis line,
+            # every tick, and (only if `for_layout_only=False`) the
+            # label; with ticks emptied by `set_ticks([])` above AND the
+            # line invisible, that union would be over an EMPTY list,
+            # which raises `ValueError` inside matplotlib itself. An
+            # alpha-0 line still counts as "visible" for bbox purposes
+            # (so the union is never empty) while remaining fully
+            # transparent -- i.e. absent from the rendered image.
+            _axis.line.set_alpha(0)
+            _axis.gridlines.set_visible(False)
+            _axis.set_ticks([])
+        ax.patch.set_visible(False)
+        if xlabel is not None:
+            ax.set_xlabel(xlabel)
+        if ylabel is not None:
+            ax.set_ylabel(ylabel)
+        if zlabel is not None:
+            ax.set_zlabel(zlabel)
+    else:
+        # 2-D (or 1-D): hide ticks/spines/gridlines individually, leaving
+        # `axison` at its default True so the axis label Text artist(s)
+        # still draw.
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for _spine in ax.spines.values():
+            _spine.set_visible(False)
+        ax.grid(False)
+        ax.patch.set_visible(False)
+        if xlabel is not None:
+            ax.set_xlabel(xlabel)
+        if ylabel is not None:
+            ax.set_ylabel(ylabel)
+        # zlabel on a 2-D/1-D plot is rejected upstream in plot.py
+        # (ValueError, before the pipeline even runs) -- zlabel is
+        # guaranteed None here.
 
     # add labels
     add_labels(x, labels, explore=explore)
