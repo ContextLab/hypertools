@@ -226,12 +226,20 @@ class Pipeline(BaseEstimator):
         The named, resolved (but not-yet-necessarily-fitted) steps, in
         order.
 
+    Notes
+    -----
+    `steps` stores already-*resolved* `(name, instance)` tuples (specs are
+    resolved to instances in `__init__`), not the raw constructor input. This
+    deviates from scikit-learn's clone contract, which expects `get_params`/
+    `set_params` to round-trip the exact constructor arguments -- so
+    `sklearn.base.clone(pipe)` compatibility is not guaranteed.
+
     Examples
     --------
     >>> from hypertools import Pipeline
-    >>> pipe = Pipeline(['ZScore', 'PCA'])
+    >>> pipe = Pipeline(['ZScore', 'PCA'])  # doctest: +SKIP
     >>> out = pipe.fit_transform(x)  # doctest: +SKIP
-    >>> out2 = pipe.transform(other_x)  # reuses the fitted PCA/ZScore
+    >>> out2 = pipe.transform(other_x)  # doctest: +SKIP
     """
 
     def __init__(self, steps):

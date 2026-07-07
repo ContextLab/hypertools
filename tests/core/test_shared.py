@@ -39,3 +39,17 @@ def test_unpack_model_dict_unpacks_inner_model():
 def test_unpack_model_list_maps_elementwise():
     out = unpack_model(["Child", "Base"], valid=[Child, Base])
     assert out == [Child, Base]
+
+
+class Unrelated:
+    pass
+
+
+def test_unpack_model_wrong_type_instance_with_parent_class_raises():
+    with pytest.raises(ValueError, match="unknown model"):
+        unpack_model(Unrelated(), valid=[], parent_class=Base)
+
+
+def test_unpack_model_instance_passes_through_when_parent_class_none():
+    obj = Unrelated()
+    assert unpack_model(obj, valid=[], parent_class=None) is obj

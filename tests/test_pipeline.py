@@ -183,6 +183,22 @@ def test_unpack_model_passes_through_fitted_instance_unchanged():
     assert unpack_model(fitted, valid=[], parent_class=None) is fitted
 
 
+def test_unpack_model_wrong_type_instance_with_parent_class_raises():
+    from sklearn.cluster import KMeans
+    from hypertools.align.common import Aligner
+    with pytest.raises(ValueError, match='unknown model'):
+        unpack_model(KMeans(), valid=[], parent_class=Aligner)
+
+
+def test_pipeline_still_accepts_fitted_pca_instance_as_step():
+    x = _rng().randn(20, 5)
+    fitted = PCA(n_components=3).fit(x)
+    pipe = Pipeline([fitted])
+    assert pipe.named_steps['pca'] is fitted
+    out = pipe.fit_transform(x)
+    assert out.shape == (20, 3)
+
+
 # --- auto-naming ---------------------------------------------------------
 
 def test_auto_naming_suffixes_on_collision():

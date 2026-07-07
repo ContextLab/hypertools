@@ -93,8 +93,15 @@ def unpack_model(m, valid=None, parent_class=None):
         raise ValueError(f"unknown model: {m!r}")
 
     # anything else (an already-constructed or already-fitted instance) is
-    # passed through unchanged for the caller to duck-type/apply directly
-    return m
+    # passed through unchanged for the caller to duck-type/apply directly --
+    # but only when no parent_class was given to validate against (the case
+    # Pipeline._resolve_step needs, e.g. a fitted sklearn model handed back
+    # in from an earlier return_model=True call). When a parent_class WAS
+    # given and this object didn't match it above, it is not a valid spec.
+    if parent_class is None:
+        return m
+
+    raise ValueError(f"unknown model: {m!r}")
 
 
 def get(value, i):
