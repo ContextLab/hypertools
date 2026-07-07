@@ -240,6 +240,11 @@ class Doc2VecVectorizer(BaseEstimator, TransformerMixin):
     a document was part of the training corpus, this wrapper always uses
     `infer_vector`.
 
+    Note that while two identically-seeded *fits* produce identical
+    `transform` outputs, repeated `transform()` calls on the SAME fitted
+    instance are not bitwise-identical: gensim's `infer_vector` advances
+    the model's internal random-number state on every call.
+
     Parameters
     ----------
 

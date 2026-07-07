@@ -335,3 +335,23 @@ def test_import_error_without_gensim_names_the_extra():
         f"stdout={result.stdout}\nstderr={result.stderr}"
     )
     assert 'SUBPROCESS_OK' in result.stdout
+
+
+@requires_gensim
+def test_word2vec_all_oov_doc_gets_zero_vector():
+    """A transform-time document whose tokens were ALL unseen at fit time
+    must produce a zero vector (the documented OOV fallback), not crash."""
+    from hypertools.tools.gensim_models import Word2VecVectorizer
+
+    vec = Word2VecVectorizer(vector_size=25, seed=0)
+    vec.fit(DOCS)
+    def _dense(m):
+        return np.asarray(m.todense() if hasattr(m, 'todense') else m)
+
+    out = _dense(vec.transform(['zzzunknown qqqmystery wwwnonsense']))
+    assert out.shape == (1, 25)
+    assert np.allclose(out, 0.0)
+    # a mixed doc (one known token) must NOT be all-zero
+    known_word = DOCS[0].split()[0]
+    mixed = _dense(vec.transform([f'{known_word} zzzunknown']))
+    assert not np.allclose(mixed, 0.0)
