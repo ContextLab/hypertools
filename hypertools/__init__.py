@@ -11,6 +11,7 @@ from .tools.normalize import normalize
 from .reduce.describe import describe
 from .cluster.cluster import cluster
 from .core.model import apply_model
+from .core.pipeline import Pipeline
 from .manip.manip import manip
 from .predict.predict import predict
 from .impute.impute import impute
