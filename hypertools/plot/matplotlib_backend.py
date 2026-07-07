@@ -1012,6 +1012,8 @@ def _draw(
     def dispatch_animate(x, ani_params):
         if x[0].shape[1] == 3:
             return animate_plot3D(x, **ani_params)
+        if x[0].shape[1] == 2:
+            return animate_plot2D(x, **ani_params)
 
     def animate_plot3D(
         x,
@@ -1437,6 +1439,272 @@ def _draw(
 
         return fig, ax, x, line_ani
 
+    # 2-D animations (round17 #9, GH #123): fixed (non-rotating) viewport --
+    # every style except 'spin' (meaningless without a 3-D camera to rotate)
+    # works exactly like its 3-D counterpart, minus all camera-angle
+    # bookkeeping. `rotations=`/`zoom=` are 3-D-camera controls with no 2-D
+    # equivalent; `plot.py` already warns (once, before dispatching to
+    # either backend) whenever either is set to a non-default value for
+    # 2-D data, so nothing further happens with them here -- they are
+    # simply never read. surface= tracking a per-frame 2-D window (an
+    # outline rebuilt every frame, mirroring `_mesh_and_draw_3d`) was
+    # judged out of scope; like the plotly backend (see `plotly_draw`'s
+    # `n_surface_traces_2d` gate), surface= is silently a no-op for
+    # animated 2-D plots. density= (computed once from the FULL dataset,
+    # same as every animated 3-D style already does) IS supported, drawn
+    # once as a static background before the FuncAnimation is created.
+    def update_lines_parallel_2d(
+        num, data_lines, lines, trail_lines, tail_duration=2,
+        chemtrails=None, precog=None, bullettime=None,
+    ):
+        for i, (line, data, trail) in enumerate(itertools.zip_longest(
+                lines, data_lines, trail_lines)):
+            if trail is not None:
+                ct, pc, bt = chemtrails[i], precog[i], bullettime[i]
+                if (pc and ct) or bt:
+                    trail.set_data(data[:, 0], data[:, 1])
+                elif ct:
+                    trail.set_data(data[0 : num - tail_duration + 1, 0],
+                                   data[0 : num - tail_duration + 1, 1])
+                elif pc:
+                    trail.set_data(data[num + 1 :, 0], data[num + 1 :, 1])
+
+            if num <= tail_duration:
+                window = data[0 : num + 1]
+            else:
+                window = data[num - tail_duration : num + 1]
+            line.set_data(window[:, 0], window[:, 1])
+
+        return lines, trail_lines
+
+    def update_lines_serial_2d(num, data_lines, lines):
+        total_frames = frame_rate * duration
+        lengths = [d.shape[0] for d in data_lines]
+        total_points = sum(lengths)
+        revealed = total_points * num / max(1, total_frames - 1)
+
+        start = 0
+        for line, data in zip(lines, data_lines):
+            shown = int(np.clip(revealed - start, 0, data.shape[0]))
+            window = data[:shown]
+            line.set_data(window[:, 0], window[:, 1])
+            start += data.shape[0]
+
+        return lines
+
+    def update_morph_2d(num, morph_state):
+        seg_idx, step, n_steps = _morph.frame_to_segment(
+            morph_state["frame_counts"], num)
+        pts = _morph.morph_positions(morph_state["sampled"], seg_idx, step,
+                                     n_steps)
+        color = _morph.morph_color(morph_state["colors"], seg_idx, step,
+                                   n_steps)
+        hide = _morph.morph_visible_mask(morph_state.get("dup_masks"),
+                                         seg_idx)
+        draw_pts = pts[~hide] if hide is not None else pts
+
+        artist = morph_state["artist"]
+        artist.set_data(draw_pts[:, 0], draw_pts[:, 1])
+        artist.set_color(color)
+
+        return (artist,)
+
+    def animate_plot2D(
+        x,
+        tail_duration=2,
+        focused=None,
+        rotations=1,
+        zoom=1,
+        chemtrails=None,
+        precog=None,
+        bullettime=None,
+        frame_rate=30,
+        elev=10,
+        style="parallel",
+        morph_tags=None,
+        morph_colors=None,
+        morph_samples=None,
+    ):
+        if style == "spin":
+            raise ValueError(
+                "animate='spin' rotates the 3-D camera and has no meaning "
+                "for 2-D data (2-D animations use a fixed, non-rotating "
+                "viewport). Use 'parallel'/True, 'serial', 'window', "
+                "'chemtrails', 'precog', 'bullettime', or 'morph' instead."
+            )
+
+        # initialize plot
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+
+        def _wants_trail(idx):
+            if style in ("serial", "morph", "window"):
+                return False
+            return chemtrails[idx] or precog[idx] or bullettime[idx]
+
+        trail = []
+        if fmt is not None:
+            lines = [
+                ax.plot(
+                    dat[0:1, 0],
+                    dat[0:1, 1],
+                    fmt[idx],
+                    linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
+                    **kwargs_list[idx]
+                )[0]
+                for idx, dat in enumerate(x)
+            ]
+            if any(is_line(f) for f in fmt):
+                trail = [
+                    ax.plot(
+                        dat[0:1, 0],
+                        dat[0:1, 1],
+                        fmt[idx],
+                        alpha=0.3,
+                        linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
+                        **kwargs_list[idx]
+                    )[0] if _wants_trail(idx) else None
+                    for idx, dat in enumerate(x)
+                ]
+        else:
+            lines = [
+                ax.plot(
+                    dat[0:1, 0],
+                    dat[0:1, 1],
+                    linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
+                    **kwargs_list[idx]
+                )[0]
+                for idx, dat in enumerate(x)
+            ]
+            if is_line(fmt):
+                trail = [
+                    ax.plot(
+                        dat[0:1, 0],
+                        dat[0:1, 1],
+                        alpha=0.3,
+                        linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
+                        **kwargs_list[idx]
+                    )[0] if _wants_trail(idx) else None
+                    for idx, dat in enumerate(x)
+                ]
+        for _trail_line in trail:
+            if _trail_line is not None:
+                _trail_line.set_label('_nolegend_')
+
+        # animate='morph': single traveling point-cloud artist, exactly
+        # mirroring `animate_plot3D`'s morph setup but in 2-D.
+        morph_state = None
+        if style == "morph":
+            _tags = morph_tags if morph_tags is not None else [True] * len(x)
+            morph_indices = [i for i, tag in enumerate(_tags) if tag]
+            clouds = [np.asarray(x[i], dtype=np.float64)[:, :2]
+                     for i in morph_indices]
+            sampled, dup_masks = _morph.sample_and_match_clouds(
+                clouds, morph_samples=morph_samples)
+            ds_colors = [
+                tuple(morph_colors[i]) if morph_colors is not None
+                else (0.2, 0.4, 0.8)
+                for i in morph_indices
+            ]
+
+            for i in morph_indices:
+                lines[i].set_visible(False)
+                if i < len(trail) and trail[i] is not None:
+                    trail[i].set_visible(False)
+
+            # any UNTAGGED (static backdrop) dataset is drawn once, in
+            # full -- see the identical M4 fix note in `animate_plot3D`.
+            for i in range(len(x)):
+                if i in morph_indices:
+                    continue
+                full = x[i]
+                lines[i].set_data(full[:, 0], full[:, 1])
+
+            mesh_slot = morph_indices[0]
+            first_pts = sampled[0]
+            first_hide = _morph.morph_visible_mask(dup_masks, 0)
+            first_draw = (first_pts[~first_hide] if first_hide is not None
+                         else first_pts)
+            _mkw = (kwargs_list[mesh_slot]
+                   if isinstance(kwargs_list[mesh_slot], dict) else {})
+            morph_markersize = _mkw.get("markersize") or 1.5
+            (morph_artist,) = ax.plot(
+                first_draw[:, 0], first_draw[:, 1],
+                linestyle="None", marker=".", markersize=morph_markersize,
+                color=ds_colors[0],
+            )
+            morph_artist.set_label("_nolegend_")
+
+            morph_state = dict(
+                sampled=sampled, dup_masks=dup_masks, colors=ds_colors,
+                artist=morph_artist, indices=morph_indices,
+            )
+
+        # border square + fixed axes limits (matches the static 2-D path)
+        plot_square(ax, **frame_kwargs)
+        ax.set_xlim(-1.1, 1.1)
+        ax.set_ylim(-1.1, 1.1)
+
+        # density= (GH #108/#191): computed ONCE from the FULL dataset,
+        # same as every animated 3-D style -- see `animate_plot3D`.
+        if density is not None:
+            _draw_density_2d(ax, x, density, density_colors)
+
+        _uses_focus_window = (
+            style == "window" or any(chemtrails) or any(precog)
+            or any(bullettime)
+        )
+        _window_duration = focused if _uses_focus_window else tail_duration
+        if _window_duration == 0:
+            window_frames = 1
+        else:
+            window_frames = int(frame_rate * _window_duration)
+
+        if style in ["parallel", True, "window"]:
+            line_ani = animation.FuncAnimation(
+                fig,
+                update_lines_parallel_2d,
+                x[0].shape[0],
+                fargs=(x, lines, trail, window_frames, chemtrails, precog,
+                      bullettime),
+                interval=1000 / frame_rate,
+                blit=False,
+                repeat=False,
+            )
+        elif style == "serial":
+            line_ani = animation.FuncAnimation(
+                fig,
+                update_lines_serial_2d,
+                frame_rate * duration,
+                fargs=(x, lines),
+                interval=1000 / frame_rate,
+                blit=False,
+                repeat=False,
+            )
+        elif style == "morph":
+            # 2-D morphs always use even segment timing regardless of
+            # `rotations=` -- see the module-level note above this
+            # function: `rotations` doubles as a per-segment PACING
+            # control for `animate='morph'` in 3-D (not purely a camera
+            # control), but is ignored uniformly for every 2-D style for
+            # consistency (and `plot.py` has already warned about it).
+            n_morph_datasets = len(morph_state["indices"])
+            total_frames = frame_rate * duration
+            frame_counts, _, _ = _morph.morph_schedule(
+                n_morph_datasets, total_frames, 1, 0)
+            morph_state["frame_counts"] = frame_counts
+            line_ani = animation.FuncAnimation(
+                fig,
+                update_morph_2d,
+                sum(frame_counts),
+                fargs=(morph_state,),
+                interval=1000 / frame_rate,
+                blit=False,
+                repeat=False,
+            )
+
+        return fig, ax, x, line_ani
+
     # if a single point, but formatted as a line, replace with a point
     for i, (xi, fi) in enumerate(zip(x, fmt)):
         if xi.shape[0] == 1 and fi in ("-", ":", "--"):
@@ -1450,9 +1718,15 @@ def _draw(
         frame_kwargs = {}
 
     if animate in [True, "parallel", "spin", "serial", "morph", "window"]:
-        assert (
-            x[0].shape[1] == 3
-        ), "Animations are currently only supported for 3d plots."
+        # round17 #9 (GH #123): animations now support 2-D as well as 3-D
+        # data (`dispatch_animate` above routes to `animate_plot2D` or
+        # `animate_plot3D` accordingly); 1-D (and any other dimensionality)
+        # still has no animatable trajectory concept.
+        assert x[0].shape[1] in (2, 3), (
+            "Animations are only supported for 2-D or 3-D plots (got "
+            f"{x[0].shape[1]}-D data); pass ndims=2 or ndims=3 (the "
+            "default)."
+        )
 
         # animation params
         ani_params = dict(

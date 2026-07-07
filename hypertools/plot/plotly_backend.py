@@ -407,14 +407,29 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     ndims = data[0].shape[1] if data[0].ndim > 1 else 1
 
     # animate='morph' (Hungarian point-cloud morphs, maintainer request):
-    # `plot.py` already raises `NotImplementedError` for 2-D data before
-    # ever calling this backend; this is a defensive re-check (mirrors
-    # `broadcast_trail_flag`'s own defensive re-normalization above) for
-    # direct callers (tests) that bypass `plot.py`.
-    if animate == "morph" and ndims != 3:
+    # `plot.py` already raises `NotImplementedError` for 1-D (or higher
+    # than 3-D) data before ever calling this backend; this is a defensive
+    # re-check (mirrors `broadcast_trail_flag`'s own defensive
+    # re-normalization above) for direct callers (tests) that bypass
+    # `plot.py`. round17 #9 (GH #123): 2-D is now supported too, exactly
+    # like every other animate style.
+    if animate == "morph" and ndims not in (2, 3):
         raise NotImplementedError(
-            "animate='morph' is only supported for 3-D plots; got "
+            "animate='morph' is only supported for 2-D or 3-D plots; got "
             f"{ndims}-D data."
+        )
+
+    # round17 #9 (GH #123): 'spin' rotates the 3-D camera and has no
+    # meaning for 2-D data (2-D animations use a fixed, non-rotating
+    # viewport, exactly like the matplotlib backend's `animate_plot2D`) --
+    # without this check it would silently fall through to `_add_animation`'s
+    # generic sliding-window branch instead of erroring.
+    if animate == "spin" and ndims == 2:
+        raise ValueError(
+            "animate='spin' rotates the 3-D camera and has no meaning for "
+            "2-D data (2-D animations use a fixed, non-rotating viewport). "
+            "Use 'parallel'/True, 'serial', 'window', 'chemtrails', "
+            "'precog', 'bullettime', or 'morph' instead."
         )
     morph_tags = (morph_tags if morph_tags is not None
                  else ([True] * len(data) if animate == "morph" else None))
@@ -622,14 +637,21 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # traveling trace is built) so the cube_scale block below can reuse the
     # EXACT `sampled0` arrays `_add_animation`'s 'morph' branch will later
     # draw -- see the M3b box-containment note on `cube_scale` just below.
+    # round17 #9 (GH #123): morph clouds/colors are resolved for 2-D too
+    # now, not just 3-D -- names keep their historical "_3d" suffix (private
+    # to this function) to minimize the diff, but `clouds0`'s column count
+    # follows `ndims` below. surface= tracking is still 3-D only (see the
+    # surface_for_static/cube_scale block just below, unchanged), so
+    # `morph_surface_spec_3d` is only ever resolved when `ndims >= 3`.
     morph_indices_3d = None
     sampled0 = None
     dup_masks0 = None
     ds_colors0 = None
     morph_surface_spec_3d = None
-    if morph_tags is not None and ndims >= 3:
+    if morph_tags is not None and ndims in (2, 3):
         morph_indices_3d = [i for i, t in enumerate(morph_tags) if t]
-        clouds0 = [np.atleast_2d(np.asarray(data[i], dtype=np.float64))[:, :3]
+        _morph_ncols = 3 if ndims >= 3 else 2
+        clouds0 = [np.atleast_2d(np.asarray(data[i], dtype=np.float64))[:, :_morph_ncols]
                   for i in morph_indices_3d]
         sampled0, dup_masks0 = _morph.sample_and_match_clouds(
             clouds0, morph_samples=morph_samples)
@@ -638,10 +660,11 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             else (0.2, 0.4, 0.8)
             for i in morph_indices_3d
         ]
-        for i in morph_indices_3d:
-            if surface is not None and i < len(surface) and surface[i] is not None:
-                morph_surface_spec_3d = surface[i]
-                break
+        if ndims >= 3:
+            for i in morph_indices_3d:
+                if surface is not None and i < len(surface) and surface[i] is not None:
+                    morph_surface_spec_3d = surface[i]
+                    break
 
     # cube_scale (GH #109 round 2): sized to whatever the built surface
     # meshes actually need (see `surface_cube_scale`), not assumed to be
@@ -715,7 +738,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # `_add_animation`'s 'morph' branch.
     morph_trace_start_3d = None
     morph_mesh_trace_start_3d = None
-    if morph_tags is not None and ndims >= 3:
+    if morph_tags is not None and ndims in (2, 3):
         pts0 = sampled0[0]
         # full-sample morphs (maintainer request, 2026-07-06 follow-up):
         # this initial trace is frame 0 -- a HOLD frame of dataset 0 -- so
@@ -732,15 +755,26 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         # `DEFAULT_MARKERSIZE_PT`) when no explicit `markersize=` is given.
         msize0 = _marker_size_px(
             (kwargs_list[morph_indices_3d[0]] or {}).get('markersize')
-            or MORPH_DEFAULT_MARKERSIZE_PT, '.', ndims=3)
+            or MORPH_DEFAULT_MARKERSIZE_PT, '.', ndims=ndims)
         hide_morph_points = (morph_surface_spec_3d is not None and
                             not morph_surface_spec_3d.get('keep_points', True))
         morph_trace_start_3d = len(traces)
-        traces.append(go.Scatter3d(
-            x=draw_pts0[:, 0], y=draw_pts0[:, 1], z=draw_pts0[:, 2],
-            mode='markers',
-            marker=dict(color=color0_str, size=msize0, symbol='circle'),
-            showlegend=False, visible=not hide_morph_points, hoverinfo='skip'))
+        # round17 #9 (GH #123): 2-D morphs use a plain go.Scatter marker
+        # trace (no z, no scene) -- surface= tracking (the Mesh3d block
+        # below) never runs for 2-D since `morph_surface_spec_3d` is only
+        # ever resolved when `ndims >= 3` above.
+        if ndims >= 3:
+            traces.append(go.Scatter3d(
+                x=draw_pts0[:, 0], y=draw_pts0[:, 1], z=draw_pts0[:, 2],
+                mode='markers',
+                marker=dict(color=color0_str, size=msize0, symbol='circle'),
+                showlegend=False, visible=not hide_morph_points, hoverinfo='skip'))
+        else:
+            traces.append(go.Scatter(
+                x=draw_pts0[:, 0], y=draw_pts0[:, 1],
+                mode='markers',
+                marker=dict(color=color0_str, size=msize0),
+                showlegend=False, visible=not hide_morph_points, hoverinfo='skip'))
 
         if morph_surface_spec_3d is not None:
             view0 = view_vector(elev, azim)
@@ -1863,16 +1897,22 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 frame_kwargs['data'] = surf_data
                 frame_kwargs['traces'] = surface_trace_indices
             frames.append(go.Frame(**frame_kwargs))
-    elif animate == 'morph' and ndims >= 3:
+    elif animate == 'morph' and ndims in (2, 3):
         # Hungarian-matched point-cloud morph (maintainer request): ONE
-        # traveling Scatter3d trace (+ one Mesh3d trace if surfaced) eases
-        # through the hold/morph schedule; camera eye rotates per
-        # `rotations` (scalar: uniform over the whole animation; list:
-        # per-segment, continuous across boundaries -- see
-        # `hypertools.plot.morph.segment_azimuths`).
+        # traveling Scatter3d/Scatter trace (+ one Mesh3d trace if surfaced,
+        # 3-D only) eases through the hold/morph schedule. In 3-D the camera
+        # eye rotates per `rotations` (scalar: uniform over the whole
+        # animation; list: per-segment, continuous across boundaries -- see
+        # `hypertools.plot.morph.segment_azimuths`). round17 #9 (GH #123):
+        # 2-D morphs use a fixed (non-rotating) viewport -- `rotations=` has
+        # no camera to drive in 2-D, so segment timing is always even
+        # (`rotations=1`, matching `matplotlib_backend.animate_plot2D`'s
+        # identical decision -- `plot.py` already warns once if the caller
+        # passed a non-default `rotations=`/`zoom=` for 2-D data).
         morph_indices = [i for i, t in enumerate(morph_tags or []) if t]
         n_morph_datasets = len(morph_indices)
-        clouds = [np.atleast_2d(np.asarray(data[i], dtype=np.float64))[:, :3]
+        _morph_ncols = 3 if ndims >= 3 else 2
+        clouds = [np.atleast_2d(np.asarray(data[i], dtype=np.float64))[:, :_morph_ncols]
                  for i in morph_indices]
         sampled, dup_masks = _morph.sample_and_match_clouds(
             clouds, morph_samples=morph_samples)
@@ -1881,8 +1921,12 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             else (0.2, 0.4, 0.8)
             for i in morph_indices
         ]
-        frame_counts, _, azimuths = _morph.morph_schedule(
-            n_morph_datasets, n_frames, rotations, azim)
+        if ndims >= 3:
+            frame_counts, _, azimuths = _morph.morph_schedule(
+                n_morph_datasets, n_frames, rotations, azim)
+        else:
+            frame_counts, _, azimuths = _morph.morph_schedule(
+                n_morph_datasets, n_frames, 1, 0)
         n_frames = sum(frame_counts)
 
         morph_trace_indices = [morph_trace_start]
@@ -1906,9 +1950,14 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             hide = _morph.morph_visible_mask(dup_masks, seg_idx)
             draw_pts = pts[~hide] if hide is not None else pts
 
-            frame_traces = [go.Scatter3d(
-                x=draw_pts[:, 0], y=draw_pts[:, 1], z=draw_pts[:, 2],
-                marker=dict(color=_rgb_string(color)))]
+            if ndims >= 3:
+                frame_traces = [go.Scatter3d(
+                    x=draw_pts[:, 0], y=draw_pts[:, 1], z=draw_pts[:, 2],
+                    marker=dict(color=_rgb_string(color)))]
+            else:
+                frame_traces = [go.Scatter(
+                    x=draw_pts[:, 0], y=draw_pts[:, 1],
+                    marker=dict(color=_rgb_string(color)))]
             if morph_mesh_trace_start is not None:
                 view = view_vector(elev, angle)
                 light_kw = mpl_lighting_kwargs(morph_surface_spec)
@@ -1925,10 +1974,12 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                         go, v, f, color, morph_surface_spec['alpha'],
                         view, light_kw))
 
-            frames.append(go.Frame(
-                name=str(k), data=frame_traces, traces=morph_trace_indices,
-                layout=dict(scene_camera=dict(
-                    eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))))
+            frame_kwargs = dict(
+                name=str(k), data=frame_traces, traces=morph_trace_indices)
+            if ndims >= 3:
+                frame_kwargs['layout'] = dict(scene_camera=dict(
+                    eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
+            frames.append(go.Frame(**frame_kwargs))
     elif animate == 'serial':
         # datasets appear one at a time, each growing into place while
         # earlier ones stay fully drawn (never connected to each other)

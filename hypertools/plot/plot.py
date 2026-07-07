@@ -629,20 +629,35 @@ def plot(
         driving every dataset in the animation, so it cannot vary per
         dataset (unlike `chemtrails`/`precog`/`bullettime` below, which CAN).
 
+        2-D animations (round17 #9, GH #123): every style EXCEPT `'spin'`
+        works for `ndims=2` as well as `ndims=3`, in both backends, using a
+        FIXED (non-rotating) viewport -- there is simply no camera-angle
+        bookkeeping to do in 2-D. `'spin'` rotates the camera and nothing
+        else, so it is meaningless for 2-D data and raises `ValueError`
+        (naming the other styles) instead of silently doing nothing.
+        `rotations=`/`zoom=` are 3-D camera controls with no 2-D
+        equivalent; passing either as a non-default value alongside a
+        2-D `animate` warns once (`UserWarning`) that it is ignored, in
+        both backends -- including `animate='morph'`, whose `rotations`
+        doubles as a per-segment PACING control in 3-D (not purely a
+        camera control there -- see the note under `'morph'` below), but
+        which is ignored the SAME way for consistency with every other
+        2-D style: 2-D morphs always use even segment timing.
+
         If 'window' (round17 #8, GH #275 -- Jeremy's own definition:
         "like bullettime, but without the precog and chemtrail parts"), a
         sliding, FULLY-OPAQUE window of length `focused` (seconds; see
         `focused` below) moves along each trajectory -- nothing outside the
         window is drawn at all, not even a faded trail (unlike `bullettime`/
         `chemtrails`/`precog`, which paint a low-opacity backdrop outside
-        their own in-focus window). The camera still rotates at a constant
-        speed per `rotations`, exactly like `True`/`'parallel'`. Any of
+        their own in-focus window). In 3-D, the camera still rotates at a
+        constant speed per `rotations`, exactly like `True`/`'parallel'`; in
+        2-D there is no camera, so only the window itself moves. Any of
         `chemtrails`/`precog`/`bullettime` passed alongside `animate='window'`
         is ignored (`UserWarning`, naming the ignored flag(s) and dataset
         indices -- see the note under `bullettime` below), since 'window' has
-        no trail artist/trace to configure. 3-D only on the matplotlib
-        backend (matplotlib animation has no 2-D path at all, independent of
-        `animate='window'`); both 2-D and 3-D on the plotly backend.
+        no trail artist/trace to configure. Both 2-D and 3-D, in both
+        backends.
 
         If 'morph' (maintainer request, 2026-07-06), every dataset is
         treated as a POINT CLOUD (not a trajectory, regardless of `fmt`) and
@@ -668,11 +683,15 @@ def plot(
         (one per plot, not one per dataset): its color linearly (RGB)
         interpolates between the two datasets' own colors during a morph
         segment and is solid during a hold. Requires at least 2 datasets;
-        raises `ValueError` otherwise. `surface=True` recomputes that one
-        artist's hull every frame from its current interpolated positions
-        (unaffected by which points are duplicates -- a duplicate is an
-        exact copy of an existing point, so it never changes a convex
-        hull's shape); 3-D only (`NotImplementedError` for 2-D data).
+        raises `ValueError` otherwise. Both 2-D and 3-D data are supported
+        (round17 #9, GH #123 -- previously 2-D raised `NotImplementedError`);
+        `surface=True` recomputes that one artist's hull every frame from
+        its current interpolated positions (unaffected by which points are
+        duplicates -- a duplicate is an exact copy of an existing point, so
+        it never changes a convex hull's shape), but this hull-tracking is
+        still 3-D only -- `surface=` is silently a no-op for an animated
+        2-D `'morph'` (or any other 2-D animate style; see `surface`'s own
+        docstring).
 
         `animate` may ALSO be a per-dataset LIST (length = the number of
         FINAL, post `cluster`/`hue`-reshape datasets), with each entry
@@ -1017,9 +1036,11 @@ def plot(
         - ``keep_points`` (bool, default True): if False, hides that
           dataset's own line/marker (only the surface is shown).
 
-        Animated plots (matplotlib and plotly, 3D only -- animation is not
-        supported for 2D data at all, with or without surfaces) recompute
-        each dataset's hull every frame from its CURRENTLY VISIBLE window:
+        Animated plots (matplotlib and plotly, 3D only -- round17 #9, GH
+        #123: 2-D `animate` is now supported, but per-frame hull tracking
+        is not, so `surface=` is silently a no-op on an animated 2-D plot,
+        in both backends) recompute each dataset's hull every frame from
+        its CURRENTLY VISIBLE window:
         the revealed portion for ``animate='serial'``, the sliding
         head/tail window for ``animate=True``/``'parallel'`` (matching the
         window drawn by `chemtrails`/`tail_duration`), or the full,
@@ -1925,11 +1946,15 @@ def plot(
     # cluster/hue-reshape) dataset count -- same timing as
     # surface_list/density_list above.
     animate, morph_tags = _resolve_animate_mode(animate, len(xform))
-    if morph_tags is not None and xform[0].shape[1] != 3:
+    # round17 #9 (GH #123): animate='morph' now supports 2-D as well as
+    # 3-D data, matching every other animate style -- only 1-D (and any
+    # higher-than-3-D result, which `plot.py` never actually produces for
+    # plotting) has no hull/point-cloud concept to morph between.
+    if morph_tags is not None and xform[0].shape[1] not in (2, 3):
         raise NotImplementedError(
-            "animate='morph' is only supported for 3-D plots; the data "
-            f"being plotted is {xform[0].shape[1]}-D. Pass ndims=3 (the "
-            "default) to use animate='morph'."
+            "animate='morph' is only supported for 2-D or 3-D plots; the "
+            f"data being plotted is {xform[0].shape[1]}-D. Pass ndims=2 or "
+            "ndims=3 (the default) to use animate='morph'."
         )
 
     # `rotations` as a per-SEGMENT list ([hold_1, morph_1->2, hold_2, ...],
@@ -1942,6 +1967,39 @@ def plot(
     # known now that `xform`/`morph_tags` exist.
     if morph_tags is not None:
         rotations = resolve_morph_rotations(rotations, sum(morph_tags))
+
+    # 2-D animations (round17 #9, GH #123): fixed (non-rotating) viewport --
+    # `rotations=`/`zoom=` are 3-D camera controls with no 2-D equivalent,
+    # so whenever `animate` is truthy on 2-D data and either was set to a
+    # non-default value, warn (once, here -- BEFORE dispatching to either
+    # backend, so both backends behave identically) that it is ignored.
+    # Applies uniformly to every animate style, including 'morph': its
+    # `rotations` doubles as a per-segment PACING control in 3-D (see
+    # `hypertools.plot.morph.segment_frame_counts`), not purely a camera
+    # control, but that coupling is itself 3-D-camera-derived, so 2-D
+    # morphs always use even segment timing for consistency with every
+    # other 2-D animate style (both backends -- see
+    # `matplotlib_backend.animate_plot2D`/`plotly_backend._add_animation`).
+    if animate and xform[0].shape[1] == 2:
+        _rotations_is_default = (
+            rotations == 1 if not isinstance(rotations, (list, tuple))
+            else False
+        )
+        if not _rotations_is_default:
+            warnings.warn(
+                "rotations= controls 3-D camera spin and has no effect on "
+                "2-D animations, which use a fixed (non-rotating) "
+                "viewport; ignoring.",
+                UserWarning,
+                stacklevel=2,
+            )
+        if zoom != 1:
+            warnings.warn(
+                "zoom= controls the 3-D camera's distance/box-aspect zoom "
+                "and has no 2-D equivalent; ignoring.",
+                UserWarning,
+                stacklevel=2,
+            )
 
     # chemtrails/precog/bullettime (GH #127): broadcast bool-or-list to the
     # FINAL (post cluster/hue-reshape) dataset count, same as surface=/

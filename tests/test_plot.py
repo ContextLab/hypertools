@@ -177,9 +177,15 @@ def test_plot_1d_animate():
 
 
 def test_plot_2d_animate():
+    # round17 #9 (GH #123): 2-D animations are now supported (fixed,
+    # non-rotating viewport) -- redefines the old "3-D only" contract
+    # (previously this raised).
     data_reduced_2d = reducer(data, ndims=2)
-    with pytest.raises(Exception) as e_info:
-        plot.plot(data_reduced_2d, animate=True, show=False)
+    fig, ani = plot.plot(data_reduced_2d, animate=True, show=False)
+    assert isinstance(fig, mpl.figure.Figure)
+    assert all([i.shape[1] == 2 for i in data_reduced_2d])
+    ax = fig.axes[0]
+    assert not hasattr(ax, "get_proj")  # a plain (2-D) Axes, not Axes3D
 
 
 def test_plot_3d_animate():

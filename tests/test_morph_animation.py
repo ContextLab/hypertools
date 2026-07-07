@@ -499,10 +499,34 @@ class TestAnimateMorphValidation:
             hyp.plot(_blobs(k=3), '.', animate='morph', rotations=[1, 2],
                      duration=1, frame_rate=5, show=False)
 
-    def test_morph_2d_raises_not_implemented(self):
-        data = [b[:, :2] for b in _blobs(k=3)]
-        with pytest.raises(NotImplementedError, match="3-D"):
-            hyp.plot(data, '.', animate='morph', ndims=2, duration=1,
+    def test_morph_2d_now_works(self):
+        # round17 #9 (GH #123): animate='morph' now supports 2-D data,
+        # same as every other animate style -- redefines the old 3-D-only
+        # contract (previously a NotImplementedError here). Mirrors
+        # `TestMplMorphAnimation.test_hold_frame_matches_sampled_cloud_exactly`
+        # below, but for a plain (non-Axes3D) 2-D figure.
+        data = [b[:, :2] for b in _blobs(k=3, seed=2)]
+        fig, ani = hyp.plot(data, '.', animate='morph', ndims=2, duration=1,
+                            frame_rate=5, show=False)
+        ax = fig.axes[0]
+        assert not hasattr(ax, "get_proj")  # a plain (2-D) Axes, not Axes3D
+
+        morph_state = ani._args[0]
+        frame_counts = morph_state['frame_counts']
+        assert len(frame_counts) == 5  # 3 datasets -> 5 segments
+
+        ani._func(0, *ani._args)  # frame 0: hold on dataset 0
+        artist = morph_state['artist']
+        xs, ys = artist.get_data()
+        expected = morph_state['sampled'][0]
+        np.testing.assert_allclose(xs, expected[:, 0])
+        np.testing.assert_allclose(ys, expected[:, 1])
+        plt.close(fig)
+
+    def test_morph_1d_still_raises_not_implemented(self):
+        data = [b[:, :1] for b in _blobs(k=3)]
+        with pytest.raises(NotImplementedError, match="2-D or 3-D"):
+            hyp.plot(data, '.', animate='morph', ndims=1, duration=1,
                      frame_rate=5, show=False)
 
 
