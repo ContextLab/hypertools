@@ -1458,7 +1458,9 @@ def plot(
             else:
                 params["n_clusters"] = n_clusters
 
-        cluster_labels = clusterer(xform, cluster={"model": model, "params": params})
+        # canonical dict spec (not the legacy {'model','params'} form) so
+        # this internal call doesn't trigger cluster()'s DeprecationWarning
+        cluster_labels = clusterer(xform, cluster={"model": model, "kwargs": params})
 
         if _mixture_name(model) in mixture_models:
             # soft assignments: color each observation by the proportion-

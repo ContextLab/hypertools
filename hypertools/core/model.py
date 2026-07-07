@@ -21,12 +21,14 @@ import numpy as np
 
 
 def _build_registry():
-    from ..reduce.reduce import models as reduce_models
-    from ..cluster.cluster import models as cluster_models, mixture_models
+    from ..reduce.common import REDUCERS
+    from ..cluster.common import CLUSTERERS
     registry = {}
-    registry.update(reduce_models)
-    registry.update(cluster_models)
-    registry.update(mixture_models)
+    # REDUCERS already includes the mixture/soft-clustering models (GH
+    # #174) shared with hyp.cluster; CLUSTERERS adds the hard-clustering
+    # models on top.
+    registry.update(REDUCERS)
+    registry.update(CLUSTERERS)
     # UMAP resolves lazily (importing umap triggers slow numba JIT)
     registry['UMAP'] = None
     return registry
@@ -61,8 +63,12 @@ def apply_model(data, model, mode='auto', return_model=False,
         (fitting first), then fit_transform/transform, then fit_predict.
 
     return_model : bool
-        If True, also return the fitted model (or list of fitted models for
-        a pipeline) so it can be reused on held-out data (default: False).
+        If True, also return the fitted model: the fitted model instance
+        when `model` is a single spec, or a fitted `hypertools.Pipeline`
+        (wrapping each stage's already-fitted model, in order) when `model`
+        is a list -- so it can be reused on held-out data via
+        `.transform()`/`pipeline.named_steps`/`pipeline.steps` (default:
+        False).
 
     format_data : bool
         Whether to run hypertools' format_data on the input (default: True).
@@ -102,7 +108,18 @@ def apply_model(data, model, mode='auto', return_model=False,
                 data = [data]
             fitted.append(stage_model)
         result = data if not single_input else data[0]
-        return (result, fitted) if return_model else result
+        if not return_model:
+            return result
+        # each `stage_model` is already a fitted scikit-learn-style
+        # instance (not a class/dict/string spec), so Pipeline's step
+        # resolution passes it through unchanged (never re-fit) --
+        # constructing the Pipeline from already-fitted steps and marking
+        # it fitted (skipping fit_transform, which would re-fit them) is
+        # what lets `pipeline.transform(held_out)` reuse this exact fit
+        from .pipeline import Pipeline
+        pipeline = Pipeline(fitted)
+        pipeline._is_fitted = True
+        return (result, pipeline)
 
     model_instance = _resolve_model(model, ndims)
 
@@ -129,39 +146,50 @@ def apply_model(data, model, mode='auto', return_model=False,
 
 
 def _resolve_model(model, ndims):
-    """Turn a model specification into a ready-to-fit instance."""
-    params = {}
-    if isinstance(model, dict):
-        # dev-1.0 form: {'model', 'params'}; fork form: {'model', 'args', 'kwargs'}
-        params = dict(model.get('params', model.get('kwargs', {})))
-        model = model['model']
+    """Turn a model specification into a ready-to-fit instance.
 
-    if isinstance(model, str):
+    Delegates dict/legacy-dict unpacking to `core.shared.unpack_model` (the
+    single eval-free spec resolver every dispatcher shares) instead of
+    re-implementing it here; only the string-registry lookup and the
+    `ndims=` convenience are specific to `apply_model`.
+    """
+    from .shared import unpack_model
+    resolved = unpack_model(model)
+
+    params = {}
+    if isinstance(resolved, dict):
+        # {'model': ..., 'args': [...], 'kwargs': {...}} (the LEGACY
+        # {'model', 'params'} form is normalized to this shape --  with a
+        # DeprecationWarning -- by unpack_model itself)
+        params = dict(resolved.get('kwargs', {}))
+        resolved = resolved['model']
+
+    if isinstance(resolved, str):
         registry = _build_registry()
-        if model not in registry:
+        if resolved not in registry:
             raise ValueError(
-                f'unknown model {model!r}; supported names: '
+                f'unknown model {resolved!r}; supported names: '
                 f'{", ".join(supported_models())} (or pass a scikit-learn '
                 f'style instance directly)')
-        if model == 'UMAP':
+        if resolved == 'UMAP':
             from umap import UMAP as model_cls
         else:
-            model_cls = registry[model]
+            model_cls = registry[resolved]
         if ndims is not None:
             params.setdefault('n_components', ndims)
         return model_cls(**params)
 
     # instance: duck-type on the sklearn convention
-    if not any(hasattr(model, m) for m in
+    if not any(hasattr(resolved, m) for m in
                ('fit_transform', 'fit_predict', 'transform', 'predict')):
         raise ValueError(
             'model instances must follow the scikit-learn convention '
             '(fit/transform/fit_transform/fit_predict/predict_proba)')
     if params:
-        model.set_params(**params)
-    if ndims is not None and hasattr(model, 'n_components'):
-        model.set_params(n_components=ndims)
-    return model
+        resolved.set_params(**params)
+    if ndims is not None and hasattr(resolved, 'n_components'):
+        resolved.set_params(n_components=ndims)
+    return resolved
 
 
 def _apply_single(model, stacked, mode):

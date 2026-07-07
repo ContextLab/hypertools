@@ -70,7 +70,16 @@ def test_apply_model_pipeline():
          {'model': 'PCA', 'params': {'n_components': 2}}],
         return_model=True)
     assert all(r.shape == (60, 2) for r in result)
-    assert len(fitted) == 2
+    # list-of-specs now returns a fitted hyp.Pipeline (not a plain list of
+    # fitted models) so the same fitted stages can be reused via
+    # pipeline.transform() -- the underlying fitted models are still
+    # reachable, via named_steps/steps
+    assert isinstance(fitted, hyp.Pipeline)
+    assert len(fitted.steps) == 2
+    assert all(hasattr(m, 'transform') for _, m in fitted.steps)
+    # the fitted pipeline reuses its exact fit, never refitting
+    held_out = fitted.transform(np.asarray(data2, dtype=np.float64))
+    assert np.asarray(held_out).shape == (60, 2)
 
 
 def test_apply_model_return_model_reusable():
