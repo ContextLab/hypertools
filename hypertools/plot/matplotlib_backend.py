@@ -635,7 +635,7 @@ def _draw(
             X[index, 0], X[index, 1], X[index, 2], ax.get_proj()
         )
 
-        if type(labels) is list:
+        if isinstance(labels, list):
             label = labels[index]
         else:
             label = (
@@ -681,7 +681,7 @@ def _draw(
             onMouseMotion.closestIndex_prev = calcClosestDatapoint(X, event)
 
         if closestIndex != onMouseMotion.closestIndex_prev:
-            if type(labels) is list:
+            if isinstance(labels, list):
                 annotate_plot_explore(X, closestIndex, labels)
                 closestIndex_prev = closestIndex
             else:

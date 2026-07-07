@@ -24,7 +24,7 @@ def fitter(data, **kwargs):
 
     if dw.zoo.is_multiindex_dataframe(data):
         return listify_dicts([fitter(d, **kwargs) for d in dw.unstack(data)])
-    elif type(data) is list:
+    elif isinstance(data, list):
         return listify_dicts([fitter(d, **kwargs) for d in data])
 
     transpose = kwargs.pop('transpose', False)
@@ -56,7 +56,7 @@ def transformer(data, **kwargs):
     else:
         stack_result = False
 
-    if type(data) is list:
+    if isinstance(data, list):
         transformed_data = []
         for i, d in enumerate(data):
             next_kwargs = {k: get(v, i) for k, v in kwargs.items()}

@@ -12,7 +12,7 @@ from ..external.brainiak import SRM, DetSRM, RSRM
 
 
 def fitter(data, align_type, **kwargs):
-    if type(data) is not list:
+    if not isinstance(data, list):
         data = [data]
 
     features = kwargs.pop('features', None)

@@ -266,7 +266,7 @@ def fitter(data, **kwargs):
     target = kwargs.pop('target', None)
     index = kwargs.pop('index', 0)
 
-    if type(data) is list:
+    if isinstance(data, list):
         if len(data) == 0:
             proj = []
         else:
@@ -285,10 +285,10 @@ def transformer(data, **kwargs):
     proj = kwargs.pop('proj', None)
     assert proj is not None, 'Need to fit model before transforming data'
 
-    if type(proj) is list:
+    if isinstance(proj, list):
         if len(proj) == 0:
             return data
-        if type(data) is list:
+        if isinstance(data, list):
             assert len(proj) == len(data), "Data must either be passed in as an individual matrix, or must be of the" \
                                            "same length as the fitted list of projections"
             return [xform(d, p) for d, p in zip(data, proj)]
@@ -296,7 +296,7 @@ def transformer(data, **kwargs):
             index = kwargs.pop('index', 0)
             assert index < len(proj), IndexError(f'Index {index} is outside the range of list length ({len(proj)}')
             return xform(data, proj[index])
-    if type(data) is list:
+    if isinstance(data, list):
         return [xform(d, proj) for d in data]
     else:
         return xform(data, proj)

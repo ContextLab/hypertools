@@ -71,7 +71,7 @@ def _one_pass(m):
 def fitter(data, n_iter=10, **kwargs):
     """Run dev-1.0's rescaled hyperalignment passes and return the composed
     per-dataset projections under key ``'proj'``."""
-    assert type(data) is list, 'data must be a list'
+    assert isinstance(data, list), 'data must be a list'
     n = len(data)
     dims = [np.asarray(d).shape[1] for d in data]
     if n == 0:

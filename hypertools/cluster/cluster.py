@@ -103,7 +103,7 @@ def cluster(x, cluster="KMeans", n_clusters=3, format_data=True):
     if isinstance(cluster, str):
         model_name = cluster
         model_params = None
-    elif type(cluster) is dict:
+    elif isinstance(cluster, dict):
         model_name = cluster["model"]
         model_params = dict(cluster.get("params", {})) or None
         if "n_clusters" in cluster:

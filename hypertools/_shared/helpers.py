@@ -17,13 +17,13 @@ np.seterr(divide='ignore', invalid='ignore')
 
 
 def center(x):
-    assert type(x) is list, "Input data to center must be list"
+    assert isinstance(x, list), "Input data to center must be list"
     x_stacked = np.vstack(x)
     return [i - np.mean(x_stacked, 0) for i in x]
 
 
 def scale(x):
-    assert type(x) is list, "Input data to scale must be list"
+    assert isinstance(x, list), "Input data to scale must be list"
     x_stacked = np.vstack(x)
     m1 = np.min(x_stacked)
     m2 = np.max(x_stacked - m1)

@@ -16,7 +16,7 @@ from sklearn.exceptions import NotFittedError
 
 def pad(x, c=None):
     """Horizontally zero-pad a DataFrame (or list of DataFrames) to `c` columns."""
-    if type(x) is list:
+    if isinstance(x, list):
         if c is None:
             c = np.max([d.shape[1] for d in x])
         return [pad(d, c) for d in x]
@@ -32,7 +32,7 @@ def trim_and_pad(data):
     """Select the common rows across a list of DataFrames and pad to common columns."""
     if len(data) == 0:
         return data
-    if type(data) is not list:
+    if not isinstance(data, list):
         data = [data]
     rows = set(data[0].index.values)
     for d in data[1:]:
@@ -57,7 +57,7 @@ class Aligner(BaseEstimator):
             return
         data = trim_and_pad(dw.unstack(self.data))
         params = self.fitter(data, **self.kwargs)
-        assert type(params) is dict, ValueError('fit function must return a dictionary')
+        assert isinstance(params, dict), ValueError('fit function must return a dictionary')
         assert all([r in params.keys() for r in self.required]), \
             ValueError('one or more required fields not returned')
         for k, v in params.items():

@@ -1546,7 +1546,7 @@ def plot(
                 xform = interp_array_list(
                     xform, interp_val=frame_rate * duration / (xform[0].shape[0] - 1)
                 )
-    elif type(fmt) is list:
+    elif isinstance(fmt, list):
         for idx, xi in enumerate(xform):
             if is_line(fmt[idx]):
                 if xi.shape[0] > 1:
@@ -1664,7 +1664,7 @@ def plot(
 
     # handle format strings
     if fmt is not None:
-        if type(fmt) is not list:
+        if not isinstance(fmt, list):
             draw_fmt = [fmt for i in xform]
         else:
             draw_fmt = fmt

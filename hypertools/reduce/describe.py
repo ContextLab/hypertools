@@ -59,7 +59,7 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     def summary(x, max_dims=None):
 
         # if data is a list, stack it
-        if type(x) is list:
+        if isinstance(x, list):
             x = np.vstack(x)
 
         # if max dims is not set, make it the length of the minimum number of columns
