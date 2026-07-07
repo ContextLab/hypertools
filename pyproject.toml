@@ -85,6 +85,13 @@ kaggle = ["kagglehub>=0.3"]
 # .github/workflows/test.yml for the per-OS native-library provisioning
 # needed in CI.
 lsl = ["pylsl>=1.16"]
+# hyp.tools.text2mat vectorizer=/semantic= gensim wrappers (GH #198):
+# Word2Vec/Doc2Vec/FastText (vectorizer stage) and LdaModel/LsiModel/
+# HdpModel (semantic stage), resolved after the scikit-learn registry and
+# before the Hugging Face fallback. Opt-in; never in base install --
+# requesting a gensim name without this extra raises a friendly
+# ImportError. gensim>=4.3 supports numpy>=2.
+gensim = ["gensim>=4.3"]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
@@ -120,6 +127,11 @@ dev = [
     # see .github/workflows/test.yml for the per-OS native liblsl
     # provisioning needed for pylsl to actually import/connect in CI
     "pylsl>=1.16",
+    # exercise the gensim vectorizer=/semantic= wrappers (GH #198,
+    # tests/test_gensim_text.py); the gensim-absent ImportError path is
+    # exercised separately, in a subprocess with a real import-system
+    # blocker (see that test module)
+    "gensim>=4.3",
 ]
 
 [project.urls]

@@ -1,5 +1,6 @@
 import numpy as np
 import inspect
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.utils.validation import check_is_fitted
@@ -20,6 +21,148 @@ texts = {
     'NMF' : NMF,
 }
 
+# GH #198 name-resolution order for vectorizer=/semantic= string specs:
+# scikit-learn (above) -> gensim (below, lazily imported) -> Hugging Face
+# (data-wrangler fallback, see `_hf_fallback_model`). Keys match gensim's
+# own class names, per Jeremy's directive on GH #198; values are the
+# corresponding wrapper class names in `hypertools.tools.gensim_models`.
+_GENSIM_VECTORIZER_NAMES = {
+    'Word2Vec': 'Word2VecVectorizer',
+    'Doc2Vec': 'Doc2VecVectorizer',
+    'FastText': 'FastTextVectorizer',
+}
+_GENSIM_SEMANTIC_NAMES = {
+    'LdaModel': 'LdaVectorizer',
+    'LsiModel': 'LsiVectorizer',
+    'HdpModel': 'HdpVectorizer',
+}
+
+
+def _gensim_model_for(name, kind):
+    """Look up a gensim wrapper class by its gensim-familiar name.
+
+    Parameters
+    ----------
+
+    name : str
+        A model name, e.g. 'Word2Vec' or 'LdaModel'.
+
+    kind : 'vectorizer' or 'semantic'
+        Which family of gensim wrappers is eligible for `name`.
+
+    Returns
+    ----------
+
+    cls : class or None
+        The matching wrapper class from `hypertools.tools.gensim_models`
+        (e.g. `Word2VecVectorizer` for `name='Word2Vec'`), or None if
+        `name` is not a recognized gensim model name for `kind`.
+
+    Raises
+    ----------
+
+    ImportError
+        If `name` is a recognized gensim model name but the optional
+        `gensim` dependency is not installed. Names the pip extra needed
+        to fix it (`pip install "hypertools[gensim]"`).
+    """
+    names = (_GENSIM_VECTORIZER_NAMES if kind == 'vectorizer'
+             else _GENSIM_SEMANTIC_NAMES)
+    if name not in names:
+        return None
+    from . import gensim_models  # lazy: raises a friendly ImportError
+    return getattr(gensim_models, names[name])
+
+
+def _hf_fallback_model(name):
+    """Wrap an unresolved vectorizer=/semantic= string as a pretrained
+    Hugging Face sentence-transformers embedding model -- the third and
+    final tier of the sklearn -> gensim -> HuggingFace name-resolution
+    order (GH #198), built on data-wrangler's existing HF text-embedding
+    support (`datawrangler.zoo.text.apply_text_model`).
+
+    Parameters
+    ----------
+
+    name : str
+        A Hugging Face sentence-transformers model name/id, e.g.
+        'all-MiniLM-L6-v2'.
+
+    Returns
+    ----------
+
+    cls : class
+        A fit/transform/fit_transform class (fit is a no-op -- Hugging
+        Face sentence-transformers models are pretrained) that embeds
+        documents with the named model when `.transform()` is called.
+    """
+    class _HFTextModel(BaseEstimator, TransformerMixin):
+        def fit(self, X, y=None):
+            self.fitted_ = True
+            return self
+
+        def transform(self, X):
+            from datawrangler.zoo.text import apply_text_model
+            from scipy import sparse
+            embedded = apply_text_model(name, list(X), mode='transform')
+            return sparse.csr_matrix(np.asarray(embedded))
+
+    return _HFTextModel
+
+
+def _spec_model_name(x):
+    """Extract the string model name from a vectorizer=/semantic= spec,
+    if there is one.
+
+    Parameters
+    ----------
+
+    x : str, dict, class or class instance
+        A vectorizer=/semantic= spec.
+
+    Returns
+    ----------
+
+    name : str or None
+        `x` itself if it is a string; `x['model']` if `x` is a dict with a
+        string 'model' key (covers both the canonical dict spec and the
+        legacy `{'model', 'params'}` spec); otherwise None.
+    """
+    if isinstance(x, str):
+        return x
+    if isinstance(x, dict) and isinstance(x.get('model'), str):
+        return x['model']
+    return None
+
+
+def _resolve_registry_name(name, registry, kind):
+    """Resolve `name` into `registry` (mutating it in place) following the
+    sklearn -> gensim -> HuggingFace order, so the rest of `text2mat`'s
+    dispatch logic (which only knows how to look names up in `registry`)
+    needs no gensim- or HuggingFace-specific special-casing.
+
+    Parameters
+    ----------
+
+    name : str
+        A vectorizer=/semantic= model name.
+
+    registry : dict
+        `vectorizer_models` or `texts` -- mutated in place by inserting
+        the resolved class under `name` if it is not already a native
+        scikit-learn entry.
+
+    kind : 'vectorizer' or 'semantic'
+        Which family of gensim wrappers is eligible for `name`.
+    """
+    if name in registry:
+        return  # tier 1: already a native scikit-learn registry entry
+    gensim_cls = _gensim_model_for(name, kind)  # tier 2: gensim
+    if gensim_cls is not None:
+        registry[name] = gensim_cls
+        return
+    registry[name] = _hf_fallback_model(name)  # tier 3: HuggingFace
+
 
 def text2mat(data, vectorizer='CountVectorizer',
              semantic='LatentDirichletAllocation', corpus='wiki'):
@@ -33,26 +176,38 @@ def text2mat(data, vectorizer='CountVectorizer',
         The text data to transform
 
     vectorizer : str, dict, class or class instance
-        The vectorizer to use. Built-in options are 'CountVectorizer' or
-        'TfidfVectorizer'. To change default parameters, set to a dictionary
-        e.g. {'model' : 'CountVectorizer', 'params' : {'max_features' : 10}}. See
+        The vectorizer to use. A string name is resolved in three tiers
+        (GH #198): (1) the built-in scikit-learn registry --
+        'CountVectorizer' or 'TfidfVectorizer'; (2) if not found there, the
+        gensim wrapper registry (`hypertools.tools.gensim_models`, requires
+        `pip install "hypertools[gensim]"`) -- 'Word2Vec', 'Doc2Vec', or
+        'FastText'; (3) if still not found, the name is treated as a
+        Hugging Face sentence-transformers model name/id (e.g.
+        'all-MiniLM-L6-v2'), via data-wrangler's HF embedding support. To
+        change default parameters, set to a dictionary e.g.
+        {'model' : 'CountVectorizer', 'kwargs' : {'max_features' : 10}}
+        (the legacy {'model', 'params'} form is also still accepted). See
         http://scikit-learn.org/stable/modules/classes.html#module-sklearn.feature_extraction.text
-        for details. You can also specify your own vectorizer model as a class,
-        or class instance.  With either option, the class must have a
-        fit_transform method (see here: http://scikit-learn.org/stable/data_transforms.html).
+        for scikit-learn details. You can also specify your own vectorizer
+        model as a class, or class instance.  With either option, the class
+        must have a fit_transform method (see here: http://scikit-learn.org/stable/data_transforms.html).
         If a class, pass any parameters as a dictionary to vectorizer_params. If
         a class instance, no parameters can be passed.
 
     semantic : str, dict, class or class instance
         Text model to use to transform text data. Built-in options are
-        'LatentDirichletAllocation' or 'NMF' (default: LDA). To change default
-        parameters, set to a dictionary e.g. {'model' : 'NMF', 'params' :
-        {'n_components' : 10}}. See
+        'LatentDirichletAllocation' or 'NMF' (default: LDA). String names
+        are resolved using the same three-tier order as `vectorizer`
+        (sklearn -> gensim -> HuggingFace, GH #198); the gensim tier adds
+        'LdaModel', 'LsiModel', and 'HdpModel'. To change default
+        parameters, set to a dictionary e.g. {'model' : 'NMF', 'kwargs' :
+        {'n_components' : 10}} (the legacy {'model', 'params'} form is also
+        still accepted). See
         http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
-        for details on the two model options. You can also specify your own
-        text model as a class, or class instance.  With either option, the class
-        must have a fit_transform method (see here:
-        http://scikit-learn.org/stable/data_transforms.html).
+        for details on the two scikit-learn model options. You can also
+        specify your own text model as a class, or class instance.  With
+        either option, the class must have a fit_transform method (see
+        here: http://scikit-learn.org/stable/data_transforms.html).
         If a class, pass any parameters as a dictionary to text_params. If
         a class instance, no parameters can be passed.
 
@@ -67,8 +222,14 @@ def text2mat(data, vectorizer='CountVectorizer',
     transformed data : list of numpy arrays
         The transformed text data
     """
-    if semantic is None:
-        semantic = 'LatentDirichletAllocation'
+    # semantic=None means "no semantic-stage model" (skip straight from the
+    # vectorizer's output to the returned matrix) -- semantic's function
+    # default is the string 'LatentDirichletAllocation', so an explicit
+    # None here is always a deliberate user override, never an "unset"
+    # sentinel (GH #198; also fixes GH #244's test_transform_no_text_model,
+    # whose name always documented this intent even though the previous
+    # `semantic is None -> 'LatentDirichletAllocation'` fallback silently
+    # ran LDA instead).
     if vectorizer is None:
         vectorizer = 'CountVectorizer'
     model_is_fit=False
@@ -83,11 +244,25 @@ def text2mat(data, vectorizer='CountVectorizer',
         else:
             corpus = np.array([corpus])
 
+    # GH #198: resolve vectorizer=/semantic= string specs (including the
+    # 'model' name inside a dict spec) through the sklearn -> gensim ->
+    # HuggingFace order before the existing str/dict/class dispatch below
+    # ever runs -- once resolved, the name is a plain `vectorizer_models`/
+    # `texts` registry key like any built-in scikit-learn one.
+    _vname = _spec_model_name(vectorizer)
+    if _vname is not None:
+        _resolve_registry_name(_vname, vectorizer_models, 'vectorizer')
+    _sname = _spec_model_name(semantic)
+    if _sname is not None:
+        _resolve_registry_name(_sname, texts, 'semantic')
+
     vtype = _check_mtype(vectorizer)
     if vtype == 'str':
-        vectorizer_params = default_params(vectorizer)
+        vectorizer_params = default_params(vectorizer) or {}
     elif vtype == 'dict':
-        vectorizer_params = default_params(vectorizer['model'], vectorizer['params'])
+        vectorizer_params = default_params(
+            vectorizer['model'],
+            vectorizer.get('kwargs', vectorizer.get('params', {}))) or {}
         vectorizer = vectorizer['model']
     elif vtype in ('class', 'class_instance'):
         if hasattr(vectorizer, 'fit_transform'):
@@ -100,9 +275,11 @@ def text2mat(data, vectorizer='CountVectorizer',
                                'http://scikit-learn.org/stable/data_transforms.html')
     ttype = _check_mtype(semantic)
     if ttype == 'str':
-        text_params = default_params(semantic)
+        text_params = default_params(semantic) or {}
     elif ttype == 'dict':
-        text_params = default_params(semantic['model'], semantic['params'])
+        text_params = default_params(
+            semantic['model'],
+            semantic.get('kwargs', semantic.get('params', {}))) or {}
         semantic = semantic['model']
     elif ttype in ('class', 'class_instance'):
         if hasattr(semantic, 'fit_transform'):
