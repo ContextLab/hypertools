@@ -1,11 +1,124 @@
 #!/usr/bin/env python
+"""hyp.normalize: z-score the columns/rows of an array (or list of arrays).
+
+Adds `return_model=True` (a fitted `Normalizer` wrapper -- round17 Task 6,
+GH #138) and the same cross-module stage kwargs (`manip=`, `reduce=`,
+`ndims=`, `align=`, `cluster=`) every other 1.0 dispatcher accepts, on top
+of the classic z-scoring behavior (kept byte-identical by default).
+"""
 
 import numpy as np
+from sklearn.exceptions import NotFittedError
 
 from .format_data import format_data as formatter
 
 
-def normalize(x, normalize='across', internal=False, format_data=True, impute=None):
+def _zscore_column(mean, std, y):
+    """Z-score `y` against a given `mean`/`std`, matching the classic
+    `normalize()` degenerate-input handling: an empty or constant-valued
+    `y`, or a zero-variance `std`, returns zeros rather than dividing by
+    zero."""
+    y = np.asarray(y)
+    if len(y) == 0 or len(set(y.ravel())) <= 1:
+        return np.zeros_like(y, dtype=np.float64)
+    if std == 0:
+        return np.zeros_like(y, dtype=np.float64)
+    return (y - mean) / std
+
+
+class Normalizer:
+    """Fit/transform wrapper around `normalize`'s z-scoring, capturing
+    fit-time statistics so a `return_model=True` result can be reapplied to
+    NEW data via `.transform` without re-estimating them -- mirrors
+    `hypertools.reduce.common.Reducer`/`hypertools.cluster.common.Clusterer`/
+    `hypertools.align.common.Aligner`/`hypertools.manip.common.Manipulator`'s
+    already-fitted-instance reuse contract (a fitted `Normalizer` passed
+    back in as `normalize=` is applied via `.transform`, never refit).
+
+    Only `normalize='across'` mode has cross-call state worth reusing: its
+    per-column mean/std are computed once, by stacking every dataset in the
+    fit-time list, and then frozen. `'within'`/`'row'` are inherently
+    self-referential (each dataset's/row's own values determine its own
+    z-score), so `.transform` on either simply re-runs the same
+    self-referential z-score on whatever data it is given -- byte-identical
+    to calling `normalize()` fresh on that data, regardless of what it was
+    fit on.
+
+    Parameters
+    ----------
+    normalize : {'across', 'within', 'row'}
+        Which z-scoring mode to use (see `normalize`'s docstring).
+
+    Attributes
+    ----------
+    mean_, std_ : numpy.ndarray or None
+        The fit-time per-column mean/std (`'across'` mode only); `None`
+        until `fit`/`fit_transform` runs, and always `None` for
+        `'within'`/`'row'` (no state to capture).
+    """
+
+    def __init__(self, normalize='across'):
+        self.normalize = normalize
+        self.mean_ = None
+        self.std_ = None
+
+    @property
+    def is_fitted(self):
+        """Whether `fit`/`fit_transform` has already been run.
+
+        `'within'`/`'row'` modes have no fit-time state to reuse, so they
+        report fitted immediately -- their `.transform` always re-derives
+        statistics from whatever data it is given, matching `normalize()`'s
+        classic self-referential behavior for those modes.
+        """
+        if self.normalize == 'across':
+            return self.mean_ is not None
+        return True
+
+    def fit(self, x):
+        """Compute per-column mean/std across the stacked fit-time data
+        (`'across'` mode only; a no-op for `'within'`/`'row'`)."""
+        if self.normalize == 'across':
+            x_stacked = np.vstack(x)
+            self.mean_ = np.mean(x_stacked, axis=0)
+            self.std_ = np.std(x_stacked, axis=0)
+        return self
+
+    def transform(self, x):
+        """Apply this normalizer's z-scoring to `x` (a list of arrays)."""
+        if self.normalize == 'across':
+            if self.mean_ is None:
+                raise NotFittedError('must fit Normalizer before transforming data')
+            return [
+                np.array([_zscore_column(self.mean_[j], self.std_[j], i[:, j])
+                          for j in range(i.shape[1])]).T
+                for i in x
+            ]
+        elif self.normalize == 'within':
+            return [
+                np.array([_zscore_column(np.mean(i[:, j]), np.std(i[:, j]), i[:, j])
+                          for j in range(i.shape[1])]).T
+                for i in x
+            ]
+        elif self.normalize == 'row':
+            return [
+                np.array([_zscore_column(np.mean(i[j, :]), np.std(i[j, :]), i[j, :])
+                          for j in range(i.shape[0])])
+                for i in x
+            ]
+        raise ValueError(
+            f"normalize must be 'across', 'within', or 'row'; got {self.normalize!r}")
+
+    def fit_transform(self, x):
+        """Fit then transform `x` (equivalent to `fit(x)` followed by
+        `transform(x)`)."""
+        self.fit(x)
+        return self.transform(x)
+
+
+def normalize(x, normalize='across', internal=False, format_data=True, impute=None,
+             return_model=False, manip=None, reduce=None, ndims=None, align=None,
+             cluster=None):
     """
     Z-transform the columns or rows of an array, or list of arrays
 
@@ -21,13 +134,15 @@ def normalize(x, normalize='across', internal=False, format_data=True, impute=No
     x : Numpy array or list of arrays
         This can either be a single array, or list of arrays
 
-    normalize : str or False or None
+    normalize : str, False, None, or fitted Normalizer
         If set to 'across', the columns of the input data will be z-scored
         across lists (default). That is, the z-scores will be computed with
         with respect to column n across all arrays passed in the list. If set
         to 'within', the columns will be z-scored within each list that is
         passed. If set to 'row', each row of the input data will be z-scored.
         If set to False, the input data will be returned with no z-scoring.
+        A previously-fitted `Normalizer` (as returned by `return_model=True`)
+        is applied via `.transform` instead of being refit.
 
     format_data : bool
         Whether or not to first call the format_data function (default: True).
@@ -37,46 +152,65 @@ def normalize(x, normalize='across', internal=False, format_data=True, impute=No
         `format_data` stage with a different `hypertools.impute` model
         (default: None, i.e. PPCA). Only used when `format_data` is True.
 
+    return_model : bool
+        If True, also return the fitted model: the fitted `Normalizer` when
+        only the `normalize` stage ran, or a fitted `hypertools.Pipeline`
+        when `manip=`/`reduce=`/`align=`/`cluster=` made multiple stages run
+        (default: False).
+
+    manip, reduce, align, cluster : model spec or None
+        Cross-module stage kwargs (GH #138): when any of these is given,
+        the other stages also run (via
+        `hypertools.core.pipeline.build_pipeline`), in the canonical order
+        `manip -> normalize -> reduce -> align -> cluster` (GH #153), with
+        this function's own `normalize=` slotted in at the normalize stage
+        (default: None for all four, i.e. only `normalize` runs).
+
+    ndims : int or None
+        Passed through to the `reduce` stage (as `ndims=`) when `reduce=`
+        is also given.
+
     Returns
     ----------
     normalized_x : Numpy array or list of arrays
         An array or list of arrays where the columns or rows are z-scored. If
         the input was a list, a list is returned.  Otherwise, an array is
-        returned.
+        returned. If `return_model=True`, a `(normalized_x, model)` tuple is
+        returned instead.
 
     """
+    # cross-module kwargs (#138): assemble and run a Pipeline (in canonical
+    # order, #153) instead of the single-stage path below whenever another
+    # stage is requested. Lazy import avoids a normalize<->core.pipeline
+    # cycle (core.pipeline itself lazily imports tools.normalize).
+    if any(stage is not None for stage in (manip, reduce, align, cluster)):
+        from ..core.pipeline import build_pipeline
+        pipeline = build_pipeline(manip=manip, normalize=normalize, reduce=reduce,
+                                  ndims=ndims, align=align, cluster=cluster)
+        result = pipeline.fit_transform(x)
+        return (result, pipeline) if return_model else result
 
-    assert normalize in ['across','within','row', False, None], "scale_type must be across, within, row or none."
+    assert (normalize in ['across', 'within', 'row', False, None]
+            or isinstance(normalize, Normalizer)), \
+        "scale_type must be across, within, row, none, or a fitted Normalizer."
 
     if normalize in [False, None]:
-        return x
+        return (x, None) if return_model else x
+
+    if format_data:
+        x = formatter(x, ppca=True, impute=impute)
+
+    if isinstance(normalize, Normalizer):
+        normalizer_ = normalize
+        normalized_x = normalizer_.transform(x) if normalizer_.is_fitted \
+            else normalizer_.fit_transform(x)
     else:
-        if format_data:
-            x = formatter(x, ppca=True, impute=impute)
+        normalizer_ = Normalizer(normalize)
+        normalized_x = normalizer_.fit_transform(x)
 
-        def zscore(X, y):
-            # Handle empty arrays and single-value arrays
-            if len(y) == 0 or len(set(y.ravel())) <= 1:
-                return np.zeros_like(y, dtype=np.float64)
-            
-            mean = np.mean(X)
-            std = np.std(X)
-            # Avoid division by zero
-            if std == 0:
-                return np.zeros_like(y, dtype=np.float64)
-            return (y - mean) / std
+    if internal or len(normalized_x) > 1:
+        result = normalized_x
+    else:
+        result = normalized_x[0]
 
-        if normalize == 'across':
-            x_stacked = np.vstack(x)
-            normalized_x = [np.array([zscore(x_stacked[:,j], i[:,j]) for j in range(i.shape[1])]).T for i in x]
-
-        elif normalize == 'within':
-            normalized_x = [np.array([zscore(i[:,j], i[:,j]) for j in range(i.shape[1])]).T for i in x]
-
-        elif normalize == 'row':
-            normalized_x = [np.array([zscore(i[j,:], i[j,:]) for j in range(i.shape[0])]) for i in x]
-
-        if internal or len(normalized_x)>1:
-            return normalized_x
-        else:
-            return normalized_x[0]
+    return (result, normalizer_) if return_model else result

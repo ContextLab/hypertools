@@ -15,6 +15,8 @@ forecaster returned by an earlier ``predict(..., return_model=True)`` call
 can be passed back as ``model=`` on NEW data without re-estimating its
 learned parameters.
 """
+import warnings
+
 import datawrangler as dw
 
 from .common import Forecaster
@@ -74,7 +76,14 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     if isinstance(model, dict) and 'kwargs' not in model and 'args' not in model:
         # {'model': ..., 'params': {...}} form: unpack before handing the
         # inner model spec to unpack_model (which only auto-unpacks the
-        # fork-style {'model', 'args', 'kwargs'} triple).
+        # fork-style {'model', 'args', 'kwargs'} triple). Warn here (round17
+        # Task 6 fix): this shortcut used to bypass unpack_model entirely
+        # for this dict shape, silently swallowing its DeprecationWarning.
+        if 'params' in model:
+            warnings.warn(
+                "{'model': ..., 'params': {...}} is deprecated; use "
+                "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
+                DeprecationWarning, stacklevel=2)
         kwargs = {**dict(model.get('params', {})), **kwargs}
         model = model['model']
 

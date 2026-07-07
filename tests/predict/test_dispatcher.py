@@ -45,7 +45,8 @@ def test_forecaster_names_match_registry():
 
 def test_dict_params_form():
     df = _make_df(n=60)
-    out = predict(df, model={'model': 'GaussianProcess', 'params': {'alpha': 1e-6}}, t=4)
+    with pytest.warns(DeprecationWarning, match="'params'"):
+        out = predict(df, model={'model': 'GaussianProcess', 'params': {'alpha': 1e-6}}, t=4)
     assert out.shape == (4, 2)
 
 

@@ -9,17 +9,23 @@ fit(-transformed), never refitting them.
 `build_pipeline` is the helper every dispatcher (manip/normalize/reduce/
 align/cluster) uses to assemble the cross-module stage kwargs (`manip=`,
 `normalize=`, `reduce=`, `align=`, `cluster=`) into a `Pipeline` in the
-canonical order (#153). reduce/cluster/normalize are still plain (pre-1.0)
-functions rather than fit/transform-capable classes, so their steps are
-wrapped as thin re-run-on-call adapters (`_CallableStep`) here; `Aligner`
-(align/common.py) is genuinely fit/transform-capable -- `transform(new_data)`
-validates `new_data`'s shape against the fit-time shape (#227) and applies
-the fitted alignment to it -- so a bare/class/instance `Aligner` step
-(`Pipeline(['HyperAlign'])`) is used directly, no wrapper needed. A
-`build_pipeline`-assembled `align` stage still goes through `_CallableStep`
-(re-running the full `hyp.align` dispatcher call on `transform`), since
-`build_pipeline` bakes stage specs into functional calls uniformly across
-all five stages.
+canonical order (#153). Each stage is wrapped as a `_DispatchStep`: it
+fits by calling the stage's own dispatcher (`hyp.manip`/`hyp.normalize`/
+`hyp.reduce`/`hyp.align`/`hyp.cluster`) with `return_model=True` and the
+ORIGINAL spec, then reuses the fitted model on `transform` by calling the
+SAME dispatcher again with the FITTED model handed back in as the spec --
+every dispatcher already documents (as the payoff of its own
+`return_model=True`) that a previously-fitted wrapper passed back in as
+the spec kwarg is applied via `.transform`, never refit. This keeps each
+dispatcher's own list<->stacked-array shape handling (`reduce`/`cluster`
+stack every dataset into one array internally; `manip`/`normalize`/`align`
+operate on lists directly) rather than requiring `Pipeline.transform` to
+know about it, while still genuinely avoiding a refit on `transform`
+(round17 Task 6 fix: the previous `_CallableStep` re-ran each dispatcher
+with the ORIGINAL, unfitted spec on every call, silently refitting on
+every `.transform()` -- e.g. a `reduce='PCA'` stage would fit a brand
+NEW PCA basis on whatever data `.transform` was given, rather than
+reusing the basis fit the first time).
 """
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
@@ -129,25 +135,44 @@ def _name_steps(entries):
     return named
 
 
-class _CallableStep:
-    """Wrap a plain `data -> result` callable (a pre-1.0 dispatcher function
-    bound to one spec) as a fit/transform step. `reduce`/`cluster`/
-    `normalize` (and, until Tasks 2/3 give them `return_model`, `manip`/
-    `align` too) have no persisted fitted state to reuse, so `transform`
-    re-runs the same call rather than genuinely reusing a fit."""
-    def __init__(self, name, call):
+class _DispatchStep:
+    """Wrap a stage dispatcher (`hyp.manip`/`hyp.normalize`/`hyp.reduce`/
+    `hyp.align`/`hyp.cluster`) as a fit/transform step that genuinely
+    reuses its fitted model on `transform`, rather than re-running the
+    dispatcher with the ORIGINAL (possibly unfitted) spec every time.
+
+    `fit_transform` calls the dispatcher with `return_model=True` and the
+    spec `build_pipeline` was given; `transform` calls the SAME dispatcher
+    again, but with the FITTED model (returned by the previous call)
+    substituted in as the spec -- reusing each dispatcher's own
+    already-fitted-instance branch (documented as the payoff of
+    `return_model=True` on every one of them) instead of refitting.
+    """
+    def __init__(self, name, spec, call):
         self._name = name
-        self._call = call
+        self._spec = spec
+        self._call = call  # (data, spec_or_fitted_model) -> (result, fitted_model)
+        self._fitted = None
+
+    @property
+    def is_fitted(self):
+        return self._fitted is not None
 
     def fit(self, data):
-        self._call(data)
+        self.fit_transform(data)
         return self
 
     def fit_transform(self, data):
-        return self._call(data)
+        result, fitted = self._call(data, self._spec)
+        self._fitted = fitted
+        return result
 
     def transform(self, data):
-        return self._call(data)
+        if self._fitted is None:
+            raise NotFittedError(f'{self._name} stage must be fit before transform')
+        result, fitted = self._call(data, self._fitted)
+        self._fitted = fitted
+        return result
 
     def __repr__(self):
         return f"<{self._name} stage>"
@@ -310,17 +335,27 @@ def build_pipeline(manip=None, normalize=None, reduce=None, ndims=None,
 def _make_stage_step(stage, spec, ndims):
     if stage == 'manip':
         from ..manip.manip import manip as _manip
-        return _CallableStep('manip', lambda data: _manip(data, model=spec))
+        return _DispatchStep(
+            'manip', spec,
+            lambda data, m: _manip(data, model=m, return_model=True))
     if stage == 'normalize':
         from ..tools.normalize import normalize as _normalize
-        return _CallableStep('normalize', lambda data: _normalize(data, normalize=spec))
+        return _DispatchStep(
+            'normalize', spec,
+            lambda data, m: _normalize(data, normalize=m, return_model=True))
     if stage == 'reduce':
         from ..reduce.reduce import reduce as _reduce
-        return _CallableStep('reduce', lambda data: _reduce(data, reduce=spec, ndims=ndims))
+        return _DispatchStep(
+            'reduce', spec,
+            lambda data, m: _reduce(data, reduce=m, ndims=ndims, return_model=True))
     if stage == 'align':
         from ..align.align import align as _align
-        return _CallableStep('align', lambda data: _align(data, model=spec))
+        return _DispatchStep(
+            'align', spec,
+            lambda data, m: _align(data, model=m, return_model=True))
     if stage == 'cluster':
         from ..cluster.cluster import cluster as _cluster
-        return _CallableStep('cluster', lambda data: _cluster(data, cluster=spec))
+        return _DispatchStep(
+            'cluster', spec,
+            lambda data, m: _cluster(data, cluster=m, return_model=True))
     raise ValueError(f"unknown pipeline stage {stage!r}; expected one of {CANONICAL_ORDER}")

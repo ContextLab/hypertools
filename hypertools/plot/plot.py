@@ -160,6 +160,8 @@ def plot(
     cluster=None,
     align=None,
     normalize=None,
+    manip=None,
+    pipeline=None,
     impute=None,
     resample=None,
     n_clusters=None,
@@ -458,6 +460,36 @@ def plot(
         z-scored within each list that is passed. If set to 'row', each row of
         the input data will be z-scored. If set to False, the input data will
         be returned (default is False).
+
+    manip : model spec or None
+        A `hypertools.manip` spec (a registry name, dict spec, class/
+        instance, or a `list` chaining several -- see
+        `hypertools.manip.manip.manip`), run at the canonical `manip` stage
+        position (GH #153): FIRST, before `normalize`/`reduce`/`align`/
+        `cluster` -- e.g. ``hyp.plot(data, manip=[{'model': 'Smooth',
+        'kwargs': {'kernel_width': 25}}, {'model': 'Resample', 'kwargs':
+        {'n_samples': 1000}}], align={'model': 'HyperAlign'},
+        reduce='UMAP')`` runs the whole cross-module pipeline in one call
+        (GH #275). `resample=` (below) is independent sugar for a single
+        `Resample` step applied BEFORE this stage's data reaches it (so
+        resample sugar always runs first when both are given). Mutually
+        exclusive with `pipeline=` (default: None).
+
+    pipeline : hypertools.Pipeline or None
+        A previously-FITTED `Pipeline` (e.g. from
+        ``hyp.analyze(data, ..., return_model=True)`` or this function's
+        own `return_model=True` bundle's `'pipeline'` key) to apply to `x`
+        via `.transform` instead of fitting new `manip`/`normalize`/
+        `reduce`/`align`/`cluster` models (GH #227) -- e.g. fit on dataset
+        A via ``p = hyp.analyze(A, manip='Smooth', reduce='PCA',
+        align='HyperAlign', return_model=True)[1]`` and reuse those exact
+        fitted parameters on a structurally-identical dataset B via
+        ``hyp.plot(B, pipeline=p)``. Mutually exclusive with `manip=`/
+        `normalize=`/`reduce=`/`ndims=`/`align=`/`cluster=` (each must be
+        left at its default) -- passing both raises `ValueError` naming the
+        conflicting kwarg(s). `resample=` is still applied (as sugar, before
+        `pipeline.transform` runs) since it is not one of the stage kwargs
+        the fitted `Pipeline` itself covers (default: None).
 
     reduce : str or dict
         Decomposition/manifold learning model to use.  Models supported: PCA,
@@ -995,11 +1027,17 @@ def plot(
 
     return_model : bool
         If True, return a dict bundle
-        ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...,
-        'predict': ...}`` instead of the bare figure, where ``xform_data`` is
-        the normalized/reduced/aligned data, ``animation`` is the
-        ``matplotlib.animation.Animation`` handle (``None`` unless
-        ``animate=True`` with the matplotlib backend), ``models`` holds the
+        ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'pipeline': ...,
+        'models': ..., 'predict': ...}`` instead of the bare figure, where
+        ``xform_data`` is the normalized/reduced/aligned data, ``animation``
+        is the ``matplotlib.animation.Animation`` handle (``None`` unless
+        ``animate=True`` with the matplotlib backend), ``pipeline`` is a
+        fitted `hypertools.Pipeline` covering whichever of `manip=`/
+        `normalize=`/`reduce=`/`align=`/`cluster=` ran (the SAME `pipeline=`
+        object passed in, if any; `None` when `transform=` was used, since
+        then there is no raw data to have fit one on) -- pass it back in as
+        `hyp.plot(new_data, pipeline=bundle['pipeline'])` to reuse these
+        exact fitted parameters (GH #227), ``models`` holds the
         reduce/align/cluster/impute specs, and ``predict`` is ``None`` unless
         `predict` was set, in which case it is
         ``{'model': ..., 'params': {'t': t}, 'forecasts': [...]}`` (one
@@ -1134,6 +1172,31 @@ def plot(
                 f"got {resample!r}."
             )
 
+    # pipeline= kwarg validation (GH #227): mutually exclusive with the
+    # stage kwargs it replaces -- fail fast before the expensive analyze/
+    # reduce pipeline runs, mirroring resample=/colorbar=/surface=/
+    # density= above. Compared against plot()'s own LITERAL defaults
+    # (reduce="IncrementalPCA", ndims=3) rather than `is not None` (unlike
+    # hyp.analyze's own pipeline= check, whose stage kwargs all default to
+    # None) since plot() always has a reduce=/ndims= value.
+    if pipeline is not None:
+        _conflicting = [name for name, default_value, value in (
+            ('manip', None, manip),
+            ('normalize', None, normalize),
+            ('reduce', 'IncrementalPCA', reduce),
+            ('ndims', 3, ndims),
+            ('align', None, align),
+            ('cluster', None, cluster),
+        ) if value != default_value]
+        if _conflicting:
+            raise ValueError(
+                "pipeline= is mutually exclusive with the stage kwarg(s) "
+                f"{', '.join(_conflicting)} (a fitted Pipeline already "
+                "encodes which stages run and their fitted parameters); "
+                "pass pipeline= alone (resample= is still applied first, "
+                "as sugar -- see pipeline='s docstring)."
+            )
+
     # streaming inputs (issue #101): iterators/generators and Hugging Face
     # IterableDatasets are detected from the structure of the input -- no
     # flag needed. Models are fitted on the first `stream_init` samples and
@@ -1234,6 +1297,7 @@ def plot(
         x, _multiindex_meta = expand_multiindex(x)
 
     # analyze the data
+    raw = None
     if transform is None:
         raw = format_data(x, impute=impute, **text_args)
 
@@ -1260,15 +1324,26 @@ def plot(
                 for ri in raw
             ]
 
-        xform = analyze(
-            raw,
-            ndims=ndims,
-            normalize=normalize,
-            reduce=reduce,
-            align=align,
-            internal=True,
-            impute=impute,
-        )
+        if pipeline is not None:
+            # pipeline= (GH #227): apply the fitted Pipeline's stages via
+            # .transform (never refit) instead of fitting new manip=/
+            # normalize=/reduce=/align=/cluster= models. reduce=/ndims=/
+            # normalize=/align=/cluster=/manip= were already validated
+            # (above) to still be at their defaults, so they are safely
+            # omitted here -- pipeline= governs every stage.
+            xform, _ = analyze(raw, pipeline=pipeline, internal=True,
+                               impute=impute, return_model=True)
+        else:
+            xform = analyze(
+                raw,
+                ndims=ndims,
+                normalize=normalize,
+                reduce=reduce,
+                align=align,
+                manip=manip,
+                internal=True,
+                impute=impute,
+            )
     else:
         xform = transform
 
@@ -1436,8 +1511,29 @@ def plot(
             model = cluster["model"]
             model_key = model if isinstance(model, str) \
                 else getattr(model, "__name__", str(model))
-            params = default_params(model_key,
-                                    cluster.get("params", {})) or {}
+            # canonical {'model': ..., 'args': [...], 'kwargs': {...}} (or
+            # just 'kwargs', no 'args') vs LEGACY {'model': ...,
+            # 'params': {...}} (accepted for backward compatibility, with
+            # a DeprecationWarning) -- mirrors
+            # hypertools.cluster.cluster._resolve_cluster_spec's own
+            # dict-shape handling (round17 Task 6 fix: this used to only
+            # read cluster.get('params', {}), silently DROPPING a
+            # canonical {'model', 'kwargs'} dict's kwargs). The spec below
+            # is always rebuilt in the canonical {'model', 'kwargs'} form
+            # before being handed to `clusterer()` further down, so that
+            # call never re-triggers this same warning -- do NOT
+            # double-warn.
+            if "args" in cluster or "kwargs" in cluster:
+                _spec_kwargs = dict(cluster.get("kwargs", {}))
+            elif "params" in cluster:
+                warnings.warn(
+                    "{'model': ..., 'params': {...}} is deprecated; use "
+                    "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
+                    DeprecationWarning, stacklevel=2)
+                _spec_kwargs = dict(cluster["params"])
+            else:
+                _spec_kwargs = {}
+            params = default_params(model_key, _spec_kwargs) or {}
             if "n_clusters" in cluster and n_clusters is None:
                 # top-level convenience:
                 # cluster={'model': ..., 'n_clusters': k}
@@ -2108,10 +2204,34 @@ def plot(
             align_dict = align
         else:
             align_dict = {"model": align, "params": {}}
+        # 'pipeline' (GH #227, round17 Task 6): a fitted hypertools.Pipeline
+        # covering whichever of manip/normalize/reduce/align/cluster ran,
+        # so `hyp.plot(B, pipeline=bundle['pipeline'])` reuses these exact
+        # fitted parameters on new data instead of refitting. When the
+        # caller passed pipeline= themselves (reuse case), that SAME
+        # (already-fitted) Pipeline is reused here too. When the caller
+        # supplied transform= directly (bypassing format_data/analyze
+        # entirely, so there is no `raw` this pipeline could have been fit
+        # on), no pipeline can be reconstructed. resample= sugar is NOT
+        # represented as a pipeline step (it is applied to `raw` before
+        # this pipeline is fit, mirroring how format_data itself is not a
+        # step either), so reusing this pipeline on new data does not
+        # re-apply resample=.
+        if pipeline is not None:
+            bundle_pipeline = pipeline
+        elif raw is not None:
+            from ..core.pipeline import build_pipeline
+            bundle_pipeline = build_pipeline(manip=manip, normalize=normalize,
+                                             reduce=reduce, ndims=ndims,
+                                             align=align, cluster=cluster)
+            bundle_pipeline.fit_transform(raw)
+        else:
+            bundle_pipeline = None
         return {
             "fig": fig,
             "xform_data": xform_data,
             "animation": line_ani,
+            "pipeline": bundle_pipeline,
             "models": {
                 "reduce": reduce_dict,
                 "align": align_dict,

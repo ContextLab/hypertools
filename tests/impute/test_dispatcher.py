@@ -32,7 +32,8 @@ def test_default_model_is_ppca():
 
 def test_dict_params_form():
     _, missing, _ = make_df_with_nans()
-    out = impute(missing, model={'model': 'KNNImputer', 'params': {'n_neighbors': 3}})
+    with pytest.warns(DeprecationWarning, match="'params'"):
+        out = impute(missing, model={'model': 'KNNImputer', 'params': {'n_neighbors': 3}})
     assert not out.isna().any().any()
 
 
