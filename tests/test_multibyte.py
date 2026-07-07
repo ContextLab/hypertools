@@ -364,11 +364,14 @@ def test_animated_cjk_legend_no_missing_glyph_warnings_across_frames():
 # once at `layout.font.family` and inherited by every text surface
 # hypertools creates (legend trace names, colorbar title/ticktext, plot
 # title) unless that surface hardcodes its own family (none do, after
-# this change -- the plot title used to; see plotly_backend.py). NOTE:
-# plotly has no equivalent to matplotlib's point `labels=` annotations --
-# `plotly_draw` accepts `labels=` for call-signature parity with `_draw`
-# but never draws it (a pre-existing gap, not addressed here; see the
-# `font=`/`labels=` docstrings in plot.py).
+# this change -- the plot title used to; see plotly_backend.py).
+#
+# GH #205 F3: plotly now ALSO draws point `labels=` annotations, at parity
+# with matplotlib's `annotate_plot` (`layout.scene.annotations` for 3-D,
+# `layout.annotations` for 2-D) -- see tests/test_plotly_labels.py for the
+# full label-to-point mapping / mismatched-count / animate parity suite.
+# This module only covers the multibyte (CJK) angle: exact string survival
+# and the kaleido anti-tofu pixel-diff check, below.
 
 import json
 import subprocess
@@ -385,19 +388,33 @@ def _plotly_plot(legend, **kwargs):
                     **kwargs)
 
 
-def test_plotly_labels_kwarg_is_accepted_but_not_drawn():
-    # documents the pre-existing (not new) limitation: plotly has no
-    # point-annotation machinery, so `labels=` is silently a no-op there,
-    # unlike the matplotlib backend. This is NOT a font= regression --
-    # verifying it stays a silent no-op (not e.g. a crash) either way.
+def test_plotly_labels_kwarg_is_drawn_as_scene_annotations():
+    # replaces the old F2 placeholder (`_kwarg_is_accepted_but_not_drawn`):
+    # plotly now really draws `labels=`, one `layout.scene.annotations`
+    # entry per non-None label, in the same order as the (single-dataset)
+    # input points.
     x = _random_points(3)
     fig = hyp.plot(x, '.', labels=['a', 'b', 'c'], backend='plotly',
                    show=False)
     assert fig is not None
-    # no text/annotation trace was created FOR the labels (only the data
-    # scatter trace(s) + whatever legend/colorbar traces were requested,
-    # of which none were here)
+    annotations = fig.layout.scene.annotations
+    assert [a.text for a in annotations] == ['a', 'b', 'c']
+    # still no `text` on the data trace itself -- annotations are a
+    # separate layout-level artist, exactly like matplotlib's `ax.annotate`
+    # calls are separate from the `ax.plot` trace
     assert all(getattr(tr, 'text', None) is None for tr in fig.data)
+
+
+@requires_covering_font
+def test_plotly_japanese_labels_exact_string_equality():
+    x = _random_points(3)
+    fig = hyp.plot(x, '.', labels=JP_LABELS_A, backend='plotly', show=False)
+    annotations = fig.layout.scene.annotations
+    assert [a.text for a in annotations] == JP_LABELS_A
+    assert fig.layout.font.family is not None
+    assert find_covering_font(JP_LABELS_A).get_name() in fig.layout.font.family
+    for a in annotations:
+        assert find_covering_font(JP_LABELS_A).get_name() in a.font.family
 
 
 @requires_covering_font
@@ -466,11 +483,11 @@ def test_plotly_font_kwarg_invalid_family_raises_value_error():
 # subprocess.run(..., timeout=...), which can actually kill a wedged
 # child -- and skip (not fail) the test if that timeout fires.
 
-def _render_plotly_png(legend, title, out_path):
+def _render_plotly_png(legend, title, out_path, labels=None):
     try:
         result = subprocess.run(
             [sys.executable, _RENDER_PLOTLY_SCRIPT, json.dumps(legend),
-             title, out_path],
+             title, out_path, json.dumps(labels)],
             timeout=_KALEIDO_TIMEOUT_S, capture_output=True, text=True)
     except subprocess.TimeoutExpired:
         pytest.skip(
@@ -511,3 +528,39 @@ def test_plotly_legend_different_cjk_text_renders_different_pixels(tmp_path):
     assert not np.array_equal(buf_b, buf_ascii), (
         "Japanese-legend render is pixel-identical to the ASCII-legend "
         "render -- the Japanese text isn't actually being drawn")
+
+
+@requires_covering_font
+def test_plotly_point_labels_different_cjk_text_renders_different_pixels(
+        tmp_path):
+    # GH #205 F3: same anti-tofu proof as the legend check above, but for
+    # `labels=` point annotations specifically -- two different single
+    # Japanese point labels (one non-None entry each, out of the render
+    # script's 15-point single dataset) must NOT render to identical
+    # pixels, and must differ from an unlabeled (labels=None) render.
+    from PIL import Image
+
+    png_a = str(tmp_path / 'jp_label_a.png')
+    png_b = str(tmp_path / 'jp_label_b.png')
+    png_none = str(tmp_path / 'no_label.png')
+    labels_a = [[JP_LABELS_A[0]] + [None] * 14]
+    labels_b = [[JP_LABELS_B[0]] + [None] * 14]
+    _render_plotly_png(['group a'], '', png_a, labels=labels_a)
+    _render_plotly_png(['group a'], '', png_b, labels=labels_b)
+    _render_plotly_png(['group a'], '', png_none, labels=None)
+
+    buf_a = np.asarray(Image.open(png_a).convert('RGB'))
+    buf_b = np.asarray(Image.open(png_b).convert('RGB'))
+    buf_none = np.asarray(Image.open(png_none).convert('RGB'))
+
+    assert buf_a.shape == buf_b.shape == buf_none.shape
+    assert not np.array_equal(buf_a, buf_b), (
+        "plotly renders with different Japanese point labels produced "
+        "IDENTICAL pixels -- exactly what silent tofu (identical empty "
+        "boxes for different strings) looks like")
+    assert not np.array_equal(buf_a, buf_none), (
+        "Japanese point-label render is pixel-identical to the unlabeled "
+        "render -- the label isn't actually being drawn")
+    assert not np.array_equal(buf_b, buf_none), (
+        "Japanese point-label render is pixel-identical to the unlabeled "
+        "render -- the label isn't actually being drawn")

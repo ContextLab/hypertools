@@ -19,6 +19,7 @@ elev=10/azim=-60 camera, 1.5pt lines, 6pt markers, and the same seaborn
 palette assignment per trace.
 """
 
+import itertools
 import os
 import sys
 import warnings
@@ -203,6 +204,72 @@ def _anim_zoom_r(zoom):
     return _zoom_r(zoom) * _ANIM_ZOOM_OUT
 
 
+def _build_point_annotations(data, labels, ndims, font_family):
+    """`labels=` point annotations (GH #205 F3): parity with
+    `matplotlib_backend._draw`'s `annotate_plot`.
+
+    Mirrors its semantics EXACTLY: `data` (the list of per-dataset (n_i, d)
+    arrays) is stacked into one (N, d) array `X` via `np.vstack`; `labels`
+    is flattened (via `itertools.chain`) if it is a list of per-dataset
+    lists, else used as-is -- one label per row of `X`, in the same order.
+    `labels[idx] is None` skips that point (no annotation), exactly like
+    `annotate_plot`. A `labels` shorter than `X` raises `IndexError` (same
+    as `annotate_plot`'s `labels[idx]` indexing); a longer `labels` simply
+    has its extra entries ignored (the loop only runs `len(X)` times) --
+    same mismatched-count behavior as matplotlib, not a new policy.
+
+    Only 2-D (`ndims == 2`) and 3-D (`ndims == 3`) are supported, matching
+    `annotate_plot`'s own two branches (`data[0].shape[-1] > 2` / `== 2`);
+    other dimensionalities silently draw no annotations, exactly as
+    `annotate_plot` does (neither of its branches match, so it draws
+    nothing and raises nothing).
+
+    Returns a list of plotly annotation dicts (3-D: includes `z`, meant for
+    `layout.scene.annotations`; 2-D: no `z`, meant for `layout.annotations`).
+    Style approximates `annotate_plot`'s matplotlib appearance (small text,
+    a translucent white background box, a short straight connector with no
+    arrowhead) as closely as plotly's annotation schema allows.
+    """
+    if ndims not in (2, 3):
+        return []
+
+    flat_labels = (list(itertools.chain(*labels))
+                   if any(isinstance(el, list) for el in labels)
+                   else list(labels))
+
+    X = np.vstack(data)
+
+    font = dict(size=10, color='black')
+    if font_family is not None:
+        font['family'] = font_family
+
+    annotations = []
+    for idx in range(X.shape[0]):
+        label = flat_labels[idx]
+        if label is None:
+            continue
+        ann = dict(
+            text=str(label),
+            x=float(X[idx, 0]),
+            y=float(X[idx, 1]),
+            showarrow=True,
+            arrowhead=0,
+            arrowwidth=1,
+            arrowcolor='rgba(0,0,0,0.6)',
+            ax=-20,
+            ay=-20,
+            font=font,
+            bgcolor='rgba(255,255,255,0.5)',
+            bordercolor='rgba(0,0,0,0.4)',
+            borderwidth=1,
+            borderpad=3,
+        )
+        if ndims == 3:
+            ann['z'] = float(X[idx, 2])
+        annotations.append(ann)
+    return annotations
+
+
 def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 title=None, animate=False, size=None, show=True,
                 save_path=None, frame_rate=30, duration=30, rotations=1,
@@ -232,11 +299,21 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     and set as `layout.font.family`; every plotly text surface hypertools
     creates (legend, colorbar title/ticks, plot title) inherits it unless
     it hardcodes its own `font.family` (only the title used to -- fixed
-    below). `labels=` (point annotations) are matplotlib-only: plotly has
-    no equivalent annotation machinery today, so `labels=` is accepted
-    here (for call-signature parity with `_draw`) but silently unused --
-    a pre-existing gap (see the `font=` docstring in `plot.py`), not new
-    in this change.
+    below).
+
+    `labels=` (GH #205 F3): point annotations, at parity with matplotlib's
+    `annotate_plot` -- see `_build_point_annotations` for the exact
+    label-to-point mapping semantics (mirrored from `annotate_plot`) and
+    styling. Rendered as `layout.scene.annotations` (3-D) or
+    `layout.annotations` (2-D); inherits the resolved `font=` family the
+    same way the legend/colorbar/title do. Drawn unconditionally
+    (including when `animate` is truthy) -- matplotlib never skips or
+    raises for animated + `labels=` either (`_draw` calls `add_labels`
+    after dispatching either the static or animated path); it just draws
+    static annotations at the ORIGINAL (pre-animation) data coordinates
+    on top of the animation, so this mirrors that by adding the SAME
+    annotations to the base layout (not per-frame), anchored at the given
+    data coordinates and persisting across every frame.
 
     `forecasts` (predict=, GH #169): an optional list of (t+1, d) arrays,
     one per dataset in `data` (same length, same coordinate space -- already
@@ -731,6 +808,24 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     else:
         layout['xaxis'] = dict(visible=False)
         layout['yaxis'] = dict(visible=False)
+
+    # labels= (GH #205 F3): point annotations, at parity with matplotlib's
+    # annotate_plot -- see _build_point_annotations for the exact mapping
+    # semantics. 3-D annotations live in layout.scene.annotations (data
+    # space, x/y/z); 2-D annotations live in layout.annotations (data
+    # space via xref/yref='x'/'y', since the default paper-relative refs
+    # would ignore the actual data coordinates).
+    if labels is not None:
+        point_annotations = _build_point_annotations(
+            data, labels, ndims, font_family)
+        if point_annotations:
+            if ndims == 3:
+                layout['scene']['annotations'] = point_annotations
+            elif ndims == 2:
+                for ann in point_annotations:
+                    ann.setdefault('xref', 'x')
+                    ann.setdefault('yref', 'y')
+                layout['annotations'] = point_annotations
 
     fig.update_layout(**layout)
 

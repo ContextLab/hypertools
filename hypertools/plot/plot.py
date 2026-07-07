@@ -265,10 +265,11 @@ def plot(
         A list of labels for each point. Must be dimensionality of data (x).
         If no label is wanted for a particular point, input None.
 
-        MATPLOTLIB BACKEND ONLY (GH #205): the plotly backend has no
-        equivalent point-annotation machinery today and silently ignores
-        `labels=` regardless of `font=` -- a pre-existing gap, not
-        addressed by the `font=` kwarg below.
+        Supported on BOTH backends (GH #205/#F3): matplotlib draws these as
+        `ax.annotate` call-outs; plotly draws the same points as
+        `layout.scene.annotations` (3D) or `layout.annotations` (2D), at
+        the same data coordinates, honoring the resolved `font=` (see
+        below) the same way the legend/colorbar/title do.
 
     legend : list or bool
         If set to True, legend is implicitly computed from data. Passing a
@@ -298,11 +299,11 @@ def plot(
 
     font : None, str, or matplotlib.font_manager.FontProperties
         Controls the font used for every text surface hypertools draws,
-        on BOTH backends (GH #205): on matplotlib, point annotations
-        (`labels=`), the legend, colorbar tick labels/axis label, and the
-        plot title; on plotly, the legend, colorbar title/ticks, and the
-        plot title (plotly has no point-annotation equivalent to
-        `labels=` -- see the `labels=` entry above).
+        on BOTH backends (GH #205): point annotations (`labels=`), the
+        legend, colorbar tick labels/axis label, and the plot title -- on
+        matplotlib via `ax.annotate`/`ax.legend`/etc.; on plotly via
+        `layout.scene.annotations`/`layout.annotations`, the legend,
+        colorbar title/ticks, and the plot title.
 
         - `None` (default): AUTO-DETECT. If all text hypertools is about
           to draw is plain ASCII, this is a no-op (each backend's default

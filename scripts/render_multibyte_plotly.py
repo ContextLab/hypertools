@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-"""Committed helper (GH #205, F2): renders a small hypertools plotly plot
-(legend + optional title, Japanese or ASCII) and writes it to a static PNG
-via kaleido.
+"""Committed helper (GH #205, F2/F3): renders a small hypertools plotly plot
+(legend + optional title + optional point labels, Japanese or ASCII) and
+writes it to a static PNG via kaleido.
 
 Run as a SUBPROCESS (not imported) by tests/test_multibyte.py's plotly
 pixel-level anti-tofu checks, specifically so a kaleido/Chromium hang can
@@ -13,9 +13,13 @@ plotly export tests, in test_animation_export.py and test_round3.py, are
 deselected rather than timeout-guarded).
 
 Usage: python render_multibyte_plotly.py <legend_json> <title> <out_png>
+       [<labels_json>]
 
 `legend_json` is a JSON list of strings (one per dataset); `title` is a
-plain string (pass '' for no title).
+plain string (pass '' for no title); `labels_json` (F3, optional) is a
+JSON list of per-dataset label lists (each inner list's length must match
+that dataset's 15 points -- see `hypertools.plot.plotly_backend.
+_build_point_annotations`), or 'null'/omitted for no point labels.
 """
 import json
 import os
@@ -29,10 +33,12 @@ import hypertools as hyp  # noqa: E402
 
 def main():
     legend_json, title, out_png = sys.argv[1], sys.argv[2], sys.argv[3]
+    labels_json = sys.argv[4] if len(sys.argv) > 4 else 'null'
     legend = json.loads(legend_json)
+    labels = json.loads(labels_json)
     data = [np.random.default_rng(i).standard_normal((15, 3))
             for i in range(len(legend))]
-    fig = hyp.plot(data, legend=legend, title=title or None,
+    fig = hyp.plot(data, legend=legend, title=title or None, labels=labels,
                    backend='plotly', show=False)
     fig.write_image(out_png, width=640, height=480)
 
