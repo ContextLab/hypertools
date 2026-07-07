@@ -86,15 +86,28 @@ def _non_ascii_codepoints(texts):
     return codepoints
 
 
+# Unicode NONCHARACTERS -- guaranteed by the standard never to be assigned,
+# so no legitimate text font maps them. Universal-fallback/placeholder fonts
+# (e.g. macOS's LastResort, whose format-13 cmap maps EVERY codepoint to a
+# missing-glyph box) do claim them -- which is exactly how we detect and
+# exclude such fonts: "covering" text with placeholder boxes is the tofu
+# problem this module exists to solve, not a solution to it.
+_NONCHARACTER_PROBES = (0xFDD0, 0x10FFFE)
+
+
 def _font_covers(fname, codepoints):
-    """Whether the font file at `fname` has a glyph for every codepoint in
-    `codepoints`, per its cmap (a nonzero `get_char_index` return). Fonts
-    that fail to load (corrupt/unsupported files) are cached as failures
-    and treated as non-covering rather than raising."""
+    """Whether the font file at `fname` has a REAL glyph for every codepoint
+    in `codepoints`, per its cmap (a nonzero `get_char_index` return). Fonts
+    that also claim to cover Unicode noncharacters are universal-fallback/
+    placeholder fonts (they'd render boxes, not glyphs) and never qualify.
+    Fonts that fail to load (corrupt/unsupported files) are cached as
+    failures and treated as non-covering rather than raising."""
     if fname in _font_load_failures:
         return False
     try:
         ft = FT2Font(fname)
+        if any(ft.get_char_index(cp) != 0 for cp in _NONCHARACTER_PROBES):
+            return False
         return all(ft.get_char_index(cp) != 0 for cp in codepoints)
     except Exception:
         _font_load_failures.add(fname)
