@@ -20,6 +20,7 @@ from .density import broadcast_density, normalize_density_arg
 from .trails import broadcast_trail_flag
 from .multiindex import expand_multiindex, build_multiindex_styles
 from .morph import resolve_morph_rotations
+from .fonts import resolve_font
 
 
 def _resolve_animate_mode(animate, n_datasets):
@@ -144,6 +145,7 @@ def plot(
     return_model=False,
     surface=None,
     density=None,
+    font=None,
 ):
     """
     Plots dimensionality reduced data and parses plot arguments
@@ -288,6 +290,35 @@ def plot(
 
     title : str
         A title for the plot
+
+    font : None, str, or matplotlib.font_manager.FontProperties
+        Controls the font used for every text surface hypertools draws on
+        the MATPLOTLIB backend: point annotations (`labels=`), the legend,
+        colorbar tick labels/axis label, and the plot title (GH #205).
+
+        - `None` (default): AUTO-DETECT. If all text hypertools is about
+          to draw is plain ASCII, this is a no-op (matplotlib's default
+          font is used, exactly as before this kwarg existed). If any
+          text contains non-ASCII characters (e.g. Japanese/Chinese/
+          Korean/Cyrillic labels), hypertools scans installed fonts for
+          one whose character map covers every character needed and uses
+          it automatically -- so ``labels=["いち", "に", "さん"]`` "just
+          works" without tofu (empty boxes) or missing-glyph warnings, as
+          long as SOME covering font is installed (on most Linux distros,
+          ``apt-get install fonts-noto-cjk`` provides one; macOS/Windows
+          usually already have one, e.g. Hiragino Sans/Yu Gothic). If no
+          installed font covers the needed characters, a single
+          ``UserWarning`` is raised naming a few of the missing characters
+          and rendering falls back to matplotlib's default (tofu).
+        - `str`: either the name of an installed font FAMILY (e.g.
+          ``'Noto Sans CJK JP'``), or a path to a ``.ttf``/``.otf``/
+          ``.ttc`` font FILE (existing paths are detected automatically,
+          relative or absolute). Raises ``ValueError`` if the string is
+          neither a resolvable family name nor an existing file.
+        - `matplotlib.font_manager.FontProperties`: used as-is.
+
+        Only affects the matplotlib backend; the plotly backend does not
+        yet honor `font=` (auto-detection there is planned separately).
 
     size : list
         A list of [width, height] in inches to resize the figure
@@ -903,6 +934,26 @@ def plot(
             )
     else:
         colorbar = None
+
+    # font= resolution (GH #205): resolved ONCE, here, from every piece of
+    # text hypertools might draw that is knowable before the (expensive)
+    # analyze/reduce/align pipeline runs -- labels=, a literal legend=
+    # list, title=, colorbar['label']/['ticks'] if given, and `hue=` (when
+    # `legend=True`, matplotlib's auto-legend draws one entry per unique
+    # CATEGORICAL hue value, so non-ASCII hue values need to be scanned
+    # here too -- their exact codepoints match what ends up in the legend
+    # even though the deduplicated/sorted unique-value list itself isn't
+    # known until the hue-grouping pipeline runs below). A continuous
+    # (all-numeric) `hue` contributes no strings and is silently skipped
+    # by the text-flattening helper. Resolving once up front means every
+    # text surface `_draw`/`_add_colorbar` touches later shares the exact
+    # same FontProperties, rather than each independently re-scanning
+    # installed fonts.
+    _font_texts = [labels, legend, title, hue]
+    if colorbar is not None:
+        _font_texts.append(colorbar.get('label'))
+        _font_texts.append(colorbar.get('ticks'))
+    resolved_font = resolve_font(font, _font_texts)
 
     # surface= kwarg validation (GH #109): fail fast (unknown dict keys)
     # before the expensive analyze/reduce pipeline runs. `_surface_norm` is
@@ -1692,6 +1743,7 @@ def plot(
                 morph_tags=morph_tags,
                 morph_colors=morph_colors,
                 morph_samples=morph_samples,
+                font=resolved_font,
             )
 
             # predict=: overlay one dashed, low-opacity (alpha 0.6) forecast
@@ -1745,7 +1797,7 @@ def plot(
             # an EARLIER legend fit; fitting the legend last, against
             # whatever the current layout actually is, sidesteps that.
             if colorbar_info is not None and ax is not None:
-                _add_colorbar(fig, ax, colorbar_info)
+                _add_colorbar(fig, ax, colorbar_info, font=resolved_font)
 
             # legend fitting (GH #100/#95 follow-up): a right-side (outside)
             # legend can overflow the figure's right edge. `tight_layout`
@@ -1930,7 +1982,23 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
     }
 
 
-def _add_colorbar(fig, ax, colorbar_info):
+def _apply_font_to_colorbar(cbar, font):
+    """Apply the resolved `font=` (GH #205) to every text surface a
+    colorbar draws: its tick labels (on whichever axis is the "long" one
+    for its orientation -- x for a horizontal top/bottom colorbar, y for a
+    vertical left/right one) and its axis label. Applied unconditionally
+    to BOTH axes (harmless -- the unused one has no text) rather than
+    branching on orientation, which keeps this correct regardless of
+    location=. A no-op when `font` is None (no override requested/needed)."""
+    if font is None:
+        return
+    for lbl in list(cbar.ax.get_xticklabels()) + list(cbar.ax.get_yticklabels()):
+        lbl.set_fontproperties(font)
+    cbar.ax.xaxis.label.set_fontproperties(font)
+    cbar.ax.yaxis.label.set_fontproperties(font)
+
+
+def _add_colorbar(fig, ax, colorbar_info, font=None):
     """Attach a matplotlib colorbar built from `_build_colorbar_info`'s
     output to `fig`/`ax` (GH #100): a continuous `ScalarMappable` for
     continuous hue, or a `BoundaryNorm`-segmented one (one block per
@@ -1965,7 +2033,7 @@ def _add_colorbar(fig, ax, colorbar_info):
 
     if colorbar_info['location'] == 'right':
         cbar = _add_right_colorbar(fig, ax, mappable, ticklabels=ticklabels,
-                                   label=label, **tick_kwargs)
+                                   label=label, font=font, **tick_kwargs)
     else:
         cbar = fig.colorbar(mappable, ax=ax,
                             location=colorbar_info['location'],
@@ -1974,6 +2042,7 @@ def _add_colorbar(fig, ax, colorbar_info):
             cbar.set_ticklabels(ticklabels)
         if label:
             cbar.set_label(label)
+        _apply_font_to_colorbar(cbar, font)
     return cbar
 
 
@@ -2012,7 +2081,7 @@ def _tight_right_edge_in(fig):
 
 
 def _add_right_colorbar(fig, ax, mappable, pad_in=0.2, width_in=0.35,
-                        max_iter=3, ticklabels=None, label=None,
+                        max_iter=3, ticklabels=None, label=None, font=None,
                         **colorbar_kwargs):
     """Add `mappable`'s colorbar in a NEW strip to the right of the figure
     -- to the right of an existing right-side legend, if any -- widening
@@ -2059,6 +2128,11 @@ def _add_right_colorbar(fig, ax, mappable, pad_in=0.2, width_in=0.35,
         cbar.set_ticklabels(ticklabels)
     if label:
         cbar.set_label(label)
+    # font (GH #205) applied BEFORE the width-fitting pass below so that
+    # pass measures the ACTUAL (possibly wider, multibyte-covering) font
+    # -- fitting against the default font first and swapping fonts
+    # afterward could leave a multibyte label/ticklabel clipped.
+    _apply_font_to_colorbar(cbar, font)
 
     # second pass: the colorbar's tick labels/title were just drawn and may
     # extend past the reserved `width_in` strip -- widen to the exact true

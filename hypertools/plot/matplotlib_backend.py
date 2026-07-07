@@ -347,6 +347,7 @@ def _draw(
     morph_tags=None,
     morph_colors=None,
     morph_samples=None,
+    font=None,
 ):
     """
     Draws the plot
@@ -449,6 +450,18 @@ def _draw(
 
         for idx, x in enumerate(data):
             if labels[idx] is not None:
+                # font (GH #205): an explicitly resolved FontProperties
+                # (covering whatever non-ASCII text is being drawn) takes
+                # the place of the historical `family="serif"` -- passing
+                # BOTH would be ambiguous, and `fontproperties` is what
+                # actually needs to carry the CJK-covering font face.
+                # When there is no resolved font (plain ASCII labels),
+                # `family="serif"` is kept exactly as before so ASCII-only
+                # plots render byte-identically to pre-#205 hypertools.
+                _label_font_kwargs = (
+                    dict(fontproperties=font) if font is not None
+                    else dict(family="serif")
+                )
                 if data[0].shape[-1] > 2:
                     x2, y2, _ = proj3d.proj_transform(x[0], x[1], x[2], proj)
                     label = plt.annotate(
@@ -460,7 +473,7 @@ def _draw(
                         va="bottom",
                         bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=0.5),
                         arrowprops=dict(arrowstyle="-", connectionstyle="arc3,rad=0"),
-                        family="serif",
+                        **_label_font_kwargs,
                     )
                     labels_and_points.append((label, x[0], x[1], x[2]))
                 elif data[0].shape[-1] == 2:
@@ -474,7 +487,7 @@ def _draw(
                         va="bottom",
                         bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=0.5),
                         arrowprops=dict(arrowstyle="-", connectionstyle="arc3,rad=0"),
-                        family="serif",
+                        **_label_font_kwargs,
                     )
                     label.draggable()
                     labels_and_points.append((label, x[0], x[1]))
@@ -635,6 +648,7 @@ def _draw(
                 + ")"
             )
 
+        _explore_font_kwargs = {} if font is None else dict(fontproperties=font)
         annotate_plot_explore.label = plt.annotate(
             label,
             xy=(x2, y2),
@@ -644,6 +658,7 @@ def _draw(
             va="bottom",
             bbox=dict(boxstyle="round,pad=0.5", fc="yellow", alpha=0.5),
             arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=0"),
+            **_explore_font_kwargs,
         )
         fig.canvas.draw()
 
@@ -1467,13 +1482,23 @@ def _draw(
 
     # add title
     if title is not None:
-        ax.set_title(title)
+        if font is not None:
+            ax.set_title(title, fontproperties=font)
+        else:
+            ax.set_title(title)
 
     # add legend: to the RIGHT of the plot, vertically centered on the
-    # box (never overlapping the data)
+    # box (never overlapping the data). `prop=font` (GH #205) applies the
+    # SAME resolved font to every legend text entry -- `_fit_right_legend`
+    # (plot.py) measures the legend's true extent from these Text artists'
+    # own fontproperties, so this also fixes multibyte legend clipping
+    # without any change needed there.
     if legend is not None:
-        ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5),
-                  borderaxespad=0.0, frameon=False)
+        legend_kwargs = dict(loc='center left', bbox_to_anchor=(1.02, 0.5),
+                             borderaxespad=0.0, frameon=False)
+        if font is not None:
+            legend_kwargs['prop'] = font
+        ax.legend(**legend_kwargs)
 
     if size is not None:
         fig.set_size_inches(size)
