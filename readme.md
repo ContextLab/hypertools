@@ -1,5 +1,8 @@
 ![Hypertools logo](images/hypercube.png)
 
+[![Tests](https://img.shields.io/github/actions/workflow/status/ContextLab/hypertools/test.yml?label=tests)](https://github.com/ContextLab/hypertools/actions/workflows/test.yml)
+[![Documentation Status](https://readthedocs.org/projects/hypertools/badge/?version=latest)](https://hypertools.readthedocs.io/en/latest/?badge=latest)
+[![PyPI version](https://img.shields.io/pypi/v/hypertools.svg)](https://pypi.org/project/hypertools/)
 
 "_To deal with hyper-planes in a 14 dimensional space, visualize a 3D space and say 'fourteen' very loudly.  Everyone does it._" - Geoff Hinton
 
@@ -16,9 +19,10 @@ datasets) and, in a single function call, reduce the dimensionality of
 the dataset(s) and create a plot.  The package is built atop many
 familiar friends, including [matplotlib](https://matplotlib.org/),
 [scikit-learn](http://scikit-learn.org/) and
-[seaborn](https://seaborn.pydata.org/).  Our package was recently
-featured on
-[Kaggle's No Free Hunch blog](http://blog.kaggle.com/2017/04/10/exploring-the-structure-of-high-dimensional-data-with-hypertools-in-kaggle-kernels/).  For a general overview, you may find [this talk](https://www.youtube.com/watch?v=hb_ER9RGtOM) useful (given as part of the [MIND Summer School](https://summer-mind.github.io) at Dartmouth).
+[seaborn](https://seaborn.pydata.org/).  Our package was featured in 2017 on
+Kaggle's now-retired "No Free Hunch" blog
+([archived copy](http://web.archive.org/web/20191202152212/http://blog.kaggle.com:80/2017/04/10/exploring-the-structure-of-high-dimensional-data-with-hypertools-in-kaggle-kernels/)).
+For a general overview, you may find [this talk](https://www.youtube.com/watch?v=hb_ER9RGtOM) useful (given as part of the [MIND Summer School](https://summer-mind.github.io) at Dartmouth).
 
 ## What's new in 1.0
 
@@ -92,13 +96,12 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
 
 ## Try it!
 
-Click the badge to launch a binder instance with example uses:
-
-[![Binder](http://mybinder.org/badge.svg)](http://mybinder.org:/repo/contextlab/hypertools-paper-notebooks)
-
-or
-
-Check the [repo](https://github.com/ContextLab/hypertools-paper-notebooks) of Jupyter notebooks from the HyperTools [paper](https://arxiv.org/abs/1701.08290).
+Check the [repo](https://github.com/ContextLab/hypertools-paper-notebooks) of
+Jupyter notebooks from the HyperTools [paper](https://arxiv.org/abs/1701.08290)
+(note: those notebooks predate the 1.0 API described below). For up-to-date,
+runnable examples covering every 1.0 feature, see the
+[example gallery](http://hypertools.readthedocs.io/en/latest/auto_examples/index.html)
+in the docs.
 
 ## Installation
 
@@ -119,9 +122,6 @@ Then, navigate to the folder and type:
 `pip install -e .`
 
 (These instructions assume that you have [pip](https://pip.pypa.io/en/stable/installing/) installed on your system)
-
-NOTE: If you have been using the development version of 0.5.0, please clear your
-data cache (/Users/yourusername/hypertools_data).
 
 ## Requirements
 
@@ -170,17 +170,16 @@ Here is a bibtex formatted reference:
 
 ## Contributing
 
-[![Join the chat at https://gitter.im/hypertools/Lobby](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/hypertools/Lobby)
-
 If you'd like to contribute, please first read our [Code of Conduct](https://www.mozilla.org/en-US/about/governance/policies/participation/).
 
 For specific information on how to contribute to the project, please see our [Contributing](https://github.com/ContextLab/hypertools/blob/master/CONTRIBUTING.md) page.
+
 ## Testing
 
-[![Build Status](https://travis-ci.org/ContextLab/hypertools.svg?branch=master)](https://travis-ci.org/ContextLab/hypertools)
+CI runs on every push via [GitHub Actions](https://github.com/ContextLab/hypertools/actions/workflows/test.yml)
+(badge at the top of this page).
 
-
-To test HyperTools, install pytest (`pip install pytest`) and run `pytest` in the HyperTools folder
+To test HyperTools locally, install pytest (`pip install -e ".[dev]"`) and run `pytest` in the HyperTools folder.
 
 ## Examples
 
@@ -190,7 +189,7 @@ See [here](http://hypertools.readthedocs.io/en/latest/auto_examples/index.html) 
 
 ```python
 import hypertools as hyp
-hyp.plot(list_of_arrays, '.', group=list_of_labels)
+hyp.plot(list_of_arrays, animate=True, hue=list_of_labels)
 ```
 
 ![Plot example](images/plot.gif)
@@ -206,25 +205,40 @@ hyp.plot(list_of_arrays, align='hyper')
 
 ![Align before example](images/align_before.gif)
 
-### AFTER</center>
+### AFTER
 
 ![Align after example](images/align_after.gif)
 
 
 ## Cluster
 
+Soft ("mixture-model") clustering, new in 1.0 -- each point's color blends
+its component memberships:
+
 ```python
 import hypertools as hyp
-hyp.plot(array, '.', n_clusters=10)
+hyp.plot(array, 'o', cluster='GaussianMixture', n_clusters=3)
 ```
 
 ![Cluster Example](images/cluster_example.png)
+
+
+## Surfaces
+
+New in 1.0: overlay a smooth, lit surface over each dataset's convex hull:
+
+```python
+import hypertools as hyp
+hyp.plot([blob_a, blob_b], '.', surface=True)
+```
+
+![Surface Example](images/surface_example.png)
 
 
 ## Describe
 
 ```python
 import hypertools as hyp
-hyp.tools.describe(list_of_arrays, reduce='PCA', max_dims=14)
+hyp.describe(list_of_arrays, reduce='PCA', max_dims=14)
 ```
 ![Describe Example](images/describe_example.png)
