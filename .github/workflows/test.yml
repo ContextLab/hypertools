@@ -67,6 +67,22 @@ jobs:
       continue-on-error: true
 
     - name: Install package with dev dependencies
+      # GH #130 (hyp.io.lsl_stream, tests/test_lsl_streaming.py): pylsl is
+      # in the [dev] extra (pyproject.toml) with NO separate native liblsl
+      # install step on any of the three platforms below -- investigated
+      # during Task 13's implementation, pylsl>=1.16's wheels BUNDLE the
+      # native liblsl library for every platform this matrix runs on:
+      #   - ubuntu-latest (x86_64): manylinux_2_35_x86_64 wheel -> ships
+      #     pylsl/lib/liblsl.so (ubuntu-latest's glibc satisfies 2.35+)
+      #   - macos-latest (arm64/x86_64): macosx_11_0_universal2 wheel ->
+      #     ships pylsl/lib/liblsl.dylib; verified working end-to-end
+      #     locally (real in-process StreamOutlet -> StreamInlet round trip)
+      #   - windows-latest (x86_64): win_amd64 wheel -> ships
+      #     pylsl/lib/lsl.dll
+      # so all three CI platforms are "provisioned" and none is excluded;
+      # tests/test_lsl_streaming.py::test_ci_has_pylsl fails the build (not
+      # skip) if pylsl is ever unimportable here, e.g. if a future pylsl
+      # release drops the bundled binary for one of these wheel tags.
       run: |
         python -m pip install --upgrade pip
         # [torch] (also pulled in transitively by [dev]) is installed

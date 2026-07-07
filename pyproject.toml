@@ -78,6 +78,13 @@ torch = ["torch>=2.0"]
 # downloads via kagglehub. Opt-in; never in base install -- resolving a
 # 'kaggle/...' name without this extra raises a friendly ImportError.
 kaggle = ["kagglehub>=0.3"]
+# hyp.io.lsl_stream() (GH #130): Lab Streaming Layer input, via pylsl (which
+# wraps the native liblsl library -- https://labstreaminglayer.org). Opt-in;
+# never in base install -- calling lsl_stream() without this extra raises a
+# friendly ImportError. pylsl's macOS/most-Linux wheels bundle liblsl; see
+# .github/workflows/test.yml for the per-OS native-library provisioning
+# needed in CI.
+lsl = ["pylsl>=1.16"]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
@@ -109,6 +116,10 @@ dev = [
     # exercise hyp.load('kaggle/<owner>/<dataset>') (GH #116,
     # tests/test_load_538_kaggle.py)
     "kagglehub>=0.3",
+    # exercise hyp.io.lsl_stream() (GH #130, tests/test_lsl_streaming.py);
+    # see .github/workflows/test.yml for the per-OS native liblsl
+    # provisioning needed for pylsl to actually import/connect in CI
+    "pylsl>=1.16",
 ]
 
 [project.urls]
