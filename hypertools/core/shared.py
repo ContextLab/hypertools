@@ -81,9 +81,15 @@ def unpack_model(m, valid=None, parent_class=None):
                 DeprecationWarning, stacklevel=2)
             m = {"model": m["model"], "args": [], "kwargs": dict(m["params"])}
 
-        if all(k in m for k in ("model", "args", "kwargs")):
+        # canonical dict spec: a 'model' key with OPTIONAL 'args'/'kwargs'
+        # (either may be omitted -- e.g. {'model': 'Smooth', 'kwargs': {...}}
+        # or a bare {'model': 'PCA'} -- matching reduce/cluster, which accept
+        # `'args' in x or 'kwargs' in x`). Missing pieces default to []/{}.
+        if "model" in m:
             resolved = dict(m)
             resolved["model"] = unpack_model(m["model"], valid=valid, parent_class=parent_class)
+            resolved.setdefault("args", [])
+            resolved.setdefault("kwargs", {})
             return resolved
 
     if isinstance(m, str):

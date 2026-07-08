@@ -13,6 +13,28 @@ from sklearn.exceptions import NotFittedError
 from .format_data import format_data as formatter
 
 
+def _as_list_2d(x):
+    """Coerce `x` to a list of 2-D float arrays, tracking single-vs-list input.
+
+    The classic ``normalize()`` entry point runs ``format_data`` first, so its
+    ``Normalizer`` only ever sees a list of 2-D arrays. But a fitted
+    ``Normalizer`` returned by ``return_model=True`` is documented to be
+    reapplied directly via ``.transform(new_data)`` -- where ``new_data`` is
+    typically a bare 2-D array. This coerces either shape (a single array/
+    DataFrame, or a list of them) to a list of 2-D float arrays so the
+    per-column z-scoring below is well-defined.
+
+    Returns
+    -------
+    (list of numpy.ndarray, bool)
+        The 2-D arrays, and whether the original input was a single array
+        (so callers can return single-in -> single-out).
+    """
+    if isinstance(x, (list, tuple)):
+        return [np.atleast_2d(np.asarray(a, dtype=np.float64)) for a in x], False
+    return [np.atleast_2d(np.asarray(x, dtype=np.float64))], True
+
+
 def _zscore_column(mean, std, y):
     """Z-score `y` against a given `mean`/`std`, matching the classic
     `normalize()` degenerate-input handling: an empty or constant-valued
@@ -77,37 +99,50 @@ class Normalizer:
 
     def fit(self, x):
         """Compute per-column mean/std across the stacked fit-time data
-        (`'across'` mode only; a no-op for `'within'`/`'row'`)."""
+        (`'across'` mode only; a no-op for `'within'`/`'row'`).
+
+        Accepts either a single 2-D array or a list of them.
+        """
         if self.normalize == 'across':
-            x_stacked = np.vstack(x)
+            arrs, _ = _as_list_2d(x)
+            x_stacked = np.vstack(arrs)
             self.mean_ = np.mean(x_stacked, axis=0)
             self.std_ = np.std(x_stacked, axis=0)
         return self
 
     def transform(self, x):
-        """Apply this normalizer's z-scoring to `x` (a list of arrays)."""
+        """Apply this normalizer's z-scoring to new data.
+
+        `x` may be a single 2-D array (or DataFrame) or a list of them; the
+        result mirrors the input (single array in -> single array out, list
+        in -> list out), matching `normalize()`'s own convention so a fitted
+        `Normalizer` can be reused directly on held-out data.
+        """
+        arrs, single = _as_list_2d(x)
         if self.normalize == 'across':
             if self.mean_ is None:
                 raise NotFittedError('must fit Normalizer before transforming data')
-            return [
+            out = [
                 np.array([_zscore_column(self.mean_[j], self.std_[j], i[:, j])
                           for j in range(i.shape[1])]).T
-                for i in x
+                for i in arrs
             ]
         elif self.normalize == 'within':
-            return [
+            out = [
                 np.array([_zscore_column(np.mean(i[:, j]), np.std(i[:, j]), i[:, j])
                           for j in range(i.shape[1])]).T
-                for i in x
+                for i in arrs
             ]
         elif self.normalize == 'row':
-            return [
+            out = [
                 np.array([_zscore_column(np.mean(i[j, :]), np.std(i[j, :]), i[j, :])
                           for j in range(i.shape[0])])
-                for i in x
+                for i in arrs
             ]
-        raise ValueError(
-            f"normalize must be 'across', 'within', or 'row'; got {self.normalize!r}")
+        else:
+            raise ValueError(
+                f"normalize must be 'across', 'within', or 'row'; got {self.normalize!r}")
+        return out[0] if single else out
 
     def fit_transform(self, x):
         """Fit then transform `x` (equivalent to `fit(x)` followed by

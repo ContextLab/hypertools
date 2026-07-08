@@ -352,3 +352,25 @@ def test_resample_transform_multi_dataset_list_reuse():
         vals = o['x'].values
         np.testing.assert_allclose(vals.min(), b['x'].values.min(), atol=1e-6)
         np.testing.assert_allclose(vals.max(), b['x'].values.max(), atol=1e-6)
+
+
+# --- QC P0-2: single dict spec must accept kwargs-only / args-only / model-only ---
+@pytest.mark.parametrize("spec", [
+    {'model': 'Smooth', 'kwargs': {'kernel_width': 15}},            # kwargs only, no args
+    {'model': 'Smooth', 'args': [], 'kwargs': {'kernel_width': 15}},  # both
+    {'model': 'Smooth', 'args': []},                                # args only
+    {'model': 'ZScore'},                                           # model only
+])
+def test_manip_single_dict_spec_optional_args_kwargs(spec):
+    x = np.cumsum(np.random.default_rng(0).normal(size=(120, 2)), axis=0)
+    out = np.asarray(manip(x, model=spec))
+    assert out.shape[0] == 120
+
+
+def test_manip_kwargs_only_dict_applies_kwargs():
+    # the kwargs must actually reach the constructor (not be dropped)
+    x = np.cumsum(np.random.default_rng(1).normal(size=(200, 1)), axis=0)
+    boxcar = np.asarray(manip(x, model={'model': 'Smooth', 'kwargs': {'kernel': 'boxcar', 'kernel_width': 25}}))
+    savgol = np.asarray(manip(x, model={'model': 'Smooth', 'kwargs': {'kernel': 'savgol', 'kernel_width': 25}}))
+    assert boxcar.shape == savgol.shape == (200, 1)
+    assert not np.allclose(boxcar, savgol)  # different kernels -> different output
