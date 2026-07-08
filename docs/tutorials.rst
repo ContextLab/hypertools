@@ -53,14 +53,6 @@ Cluster
 
   tutorials/cluster.ipynb
 
-DataGeometry Objects
-----------------
-
-.. toctree::
-  :maxdepth: 2
-
-  tutorials/geo.ipynb
-
 Plotting text
 ----------------
 

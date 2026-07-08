@@ -107,5 +107,6 @@ See also
 ----------
 
 - :doc:`api` -- full API reference for every stage dispatcher.
-- :doc:`tutorials` -- worked tutorials, including the story-trajectories
-  walkthrough that exercises the full manip -> align -> reduce pipeline.
+- :doc:`tutorials` -- worked tutorials covering each pipeline stage.
+- :doc:`/auto_examples/plot_story_trajectories` -- gallery example that
+  exercises the full manip -> align -> reduce pipeline.

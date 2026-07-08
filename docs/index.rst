@@ -4,7 +4,7 @@
    contain the root `toctree` directive.
 
 **HyperTools**: A python toolbox for gaining geometric insights into high-dimensional data
-======================================
+==============================================================================================
 
 .. image:: ../images/hypertools.gif
     :align: center
