@@ -49,7 +49,7 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
 + **Richer coloring:** the `hue` argument now accepts categorical labels,
   continuous values, or entire matrices (e.g. mixture proportions or model
   weights), which are mapped to colors via the new
-  `hypertools.tools.colors.mat2colors`.
+  `hypertools.plot.colors.mat2colors`.
 + **Nested-list input:** `hyp.plot([[a, b], [c]])` colors datasets by their
   outermost grouping and renders more deeply nested datasets with thinner,
   fainter lines.
@@ -64,6 +64,52 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
   and transition, and `surface=True` composes with it to morph a lit hull
   instead of raw points. See `examples/plot_shape_morph.py` and
   `examples/animate_surface_morph.py`.
++ **More animation styles, and 2-D animation:** in addition to `True`/
+  `'parallel'`, `animate='spin'` keeps all the data drawn and spins the
+  camera, `'serial'` reveals each dataset one at a time in list order, and
+  `'window'` (`hyp.plot(traj, animate='window', focused=2)`) slides a fixed-
+  length, fully-opaque window along each trajectory. Every style except
+  `'spin'` (which is inherently a 3-D camera move) now also works for
+  `ndims=2` data, using a fixed (non-rotating) viewport.
++ **`hyp.Pipeline`:** a scikit-learn-style `Pipeline` chains
+  `manip`/`normalize`/`reduce`/`align`/`cluster` stages, fit once and reused
+  on new data without refitting -- `hyp.plot(A, ..., return_model=True)`
+  returns a bundle whose `'pipeline'` entry can be passed back in as
+  `hyp.plot(B, pipeline=bundle['pipeline'])` to apply the exact same fitted
+  transformation to a structurally-identical dataset `B`.
++ **`hyp.manip` and manip chaining:** `hyp.manip(data, model='ZScore')`
+  applies a per-dataset manipulation (`Normalize`, `ZScore`, `Smooth`,
+  `Resample`); a `list` of specs chains several as a `Pipeline`, and
+  `hyp.plot(data, manip=[...])` runs the chain at the canonical `manip`
+  stage -- first, before `normalize`/`reduce`/`align`/`cluster` -- e.g.
+  `hyp.plot(data, manip=[{'model': 'Smooth', 'kwargs': {'kernel_width': 5}},
+  'ZScore'], reduce='PCA')`.
++ **Autoencoder reducers (optional):** `hyp.reduce`/`hyp.plot(..., reduce=
+  'Autoencoder')` supports six torch-backed autoencoder reducers
+  (`Autoencoder`, `DeepAutoencoder`, `SparseAutoencoder`,
+  `ConvolutionalAutoencoder`, `SequenceAutoencoder`,
+  `VariationalAutoencoder`), gated behind `pip install "hypertools[torch]"`.
++ **gensim text vectorizers/semantic models (optional):** `hyp.plot(texts,
+  vectorizer='Word2Vec', semantic=None, reduce='PCA')` (and
+  `hyp.tools.text2mat`) add `Word2Vec`/`Doc2Vec`/`FastText` vectorizers and
+  `LdaModel`/`LsiModel`/`HdpModel` semantic models, gated behind
+  `pip install "hypertools[gensim]"` -- pass `semantic=None` with an
+  embedding vectorizer like `Word2Vec` since the default LDA semantic stage
+  rejects negative embedding values.
++ **LSL streaming (optional):** `hyp.io.lsl_stream(type='EEG')` resolves a
+  live Lab Streaming Layer stream and wraps it for `hyp.plot(...,
+  stream_init=200, stream_chunk=20)`, gated behind
+  `pip install "hypertools[lsl]"`.
++ **`hyp.predict`/`hyp.impute`:** `hyp.predict(data, model='Kalman', t=10)`
+  forecasts `t` new rows continuing each dataset (`Kalman`,
+  `GaussianProcess`, `AutoRegressor`, `ARIMA`, `Laplace`, and -- with
+  `pip install "hypertools[predict-hf]"` -- `Chronos`); `hyp.impute(data,
+  model='PPCA')` fills missing (NaN) values in place, both with
+  `return_model=True` for reuse. The non-HF forecasters/imputers need
+  `pip install "hypertools[predict]"`.
++ **Kaggle loader:** `hyp.load('kaggle/uciml/iris')` downloads a public
+  Kaggle dataset anonymously via `kagglehub`, gated behind
+  `pip install "hypertools[kaggle]"`.
 + **Density shading (optional):** `hyp.plot(..., density=True)` overlays a
   subtle KDE "glow" behind the data (a 2D heatmap or 3D volumetric cloud)
   showing where each dataset's points concentrate; off by default.
@@ -134,12 +180,28 @@ Then, navigate to the folder and type:
 + numpy>=2.0.0
 + umap-learn>=0.5.5
 + requests, ipympl
-+ plotly + kaleido (optional, for the interactive backend: `pip install "hypertools[interactive]"`)
-+ pytest (for development: `pip install -e ".[dev]"`)
 + ffmpeg (for saving animations)
 
 All Python dependencies are declared in `pyproject.toml` and installed
-automatically by pip.
+automatically by pip. HyperTools ships a small, fast-importing base
+install; the following optional extras add features on request (mix and
+match, e.g. `pip install "hypertools[interactive,torch]"`):
+
++ `interactive` -- plotly + kaleido, for `hyp.plot(..., backend='plotly')`
++ `text` -- transformer/sentence-transformers text embeddings (via
+  datawrangler's `hf` extra)
++ `predict` -- `hyp.predict`/`hyp.impute` forecasters/imputers (Kalman,
+  ARIMA, and the skaters Laplace ensemble)
++ `predict-hf` -- the Hugging Face `Chronos` forecaster for `hyp.predict`
++ `io` -- `.xlsx` support for `hyp.load`
++ `density3d` -- smooth 3-D `density=True` iso-surfaces (scikit-image)
++ `torch` -- the six autoencoder reducers (`reduce='Autoencoder'` and
+  variants)
++ `kaggle` -- `hyp.load('kaggle/<owner>/<dataset>')`
++ `lsl` -- `hyp.io.lsl_stream(...)` (Lab Streaming Layer input)
++ `gensim` -- `Word2Vec`/`Doc2Vec`/`FastText` vectorizers and
+  `LdaModel`/`LsiModel`/`HdpModel` semantic models
++ `dev` -- test/development dependencies (`pip install -e ".[dev]"`)
 
 ## Documentation
 
