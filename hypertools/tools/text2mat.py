@@ -1,5 +1,6 @@
 import numpy as np
 import inspect
+import warnings
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
@@ -281,6 +282,24 @@ def text2mat(data, vectorizer='CountVectorizer',
                                'method following the scikit-learn API. See here '
                                'for more details: '
                                'http://scikit-learn.org/stable/data_transforms.html')
+    # GH #198 (QC P1-2): embedding vectorizers (gensim Word2Vec/Doc2Vec/
+    # FastText) emit continuous, often-negative document vectors, which the
+    # default topic-model semantic stage (LatentDirichletAllocation / NMF)
+    # cannot consume ("Negative values in data passed to ..."). Running a
+    # topic model on embeddings is not meaningful anyway, so skip the
+    # semantic stage in that combination with a clear warning rather than
+    # crashing. Pass semantic=None explicitly to silence this.
+    if (isinstance(vectorizer, str) and vectorizer in _GENSIM_VECTORIZER_NAMES
+            and isinstance(semantic, str)
+            and semantic in ('LatentDirichletAllocation', 'NMF')):
+        warnings.warn(
+            f"vectorizer={vectorizer!r} produces continuous embeddings that "
+            f"the {semantic} semantic model cannot consume; skipping the "
+            f"semantic stage and returning the embeddings directly. Pass "
+            f"semantic=None to silence this warning.",
+            UserWarning, stacklevel=2)
+        semantic = None
+
     ttype = _check_mtype(semantic)
     if ttype == 'str':
         text_params = default_params(semantic) or {}

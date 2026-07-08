@@ -355,3 +355,29 @@ def test_word2vec_all_oov_doc_gets_zero_vector():
     known_word = DOCS[0].split()[0]
     mixed = _dense(vec.transform([f'{known_word} zzzunknown']))
     assert not np.allclose(mixed, 0.0)
+
+
+# --- QC P1-2: embedding vectorizer + default topic-model semantic ---
+@requires_gensim
+def test_word2vec_default_semantic_skips_topic_model_with_warning():
+    # Word2Vec emits negative embeddings; the default LDA semantic can't
+    # consume them. text2mat should WARN and skip the semantic stage rather
+    # than raising "Negative values in data passed to LatentDirichletAllocation".
+    with pytest.warns(UserWarning, match="skipping the semantic stage"):
+        out = text2mat([DOCS], vectorizer='Word2Vec', corpus=None)  # semantic left at default
+    assert len(out) == 1 and out[0].shape[0] == len(DOCS)
+
+
+@requires_gensim
+def test_word2vec_explicit_semantic_none_no_skip_warning():
+    import warnings as _w
+    with _w.catch_warnings():
+        _w.simplefilter("error", UserWarning)  # any skip-warning would fail here
+        # (other benign warnings are filtered to error too, so scope tightly)
+        try:
+            out = text2mat([DOCS], vectorizer='Word2Vec', semantic=None, corpus=None)
+        except UserWarning as e:
+            assert "skipping the semantic stage" not in str(e), \
+                "explicit semantic=None must not emit the skip warning"
+            out = text2mat([DOCS], vectorizer='Word2Vec', semantic=None, corpus=None)
+    assert out[0].shape[0] == len(DOCS)
