@@ -3,7 +3,7 @@
 .. _tutorials:
 
 How to use `HyperTools`
-================
+=======================
 
 Plot
 ----------------
@@ -62,7 +62,7 @@ Plotting text
   tutorials/text.ipynb
 
 Visualizing Hugging Face embeddings
-----------------
+-----------------------------------
 
 .. toctree::
   :maxdepth: 2
@@ -70,7 +70,7 @@ Visualizing Hugging Face embeddings
   tutorials/hugging_face_embeddings.ipynb
 
 Modern scikit-learn models and dynamics
-----------------
+---------------------------------------
 
 .. toctree::
   :maxdepth: 2
@@ -78,7 +78,7 @@ Modern scikit-learn models and dynamics
   tutorials/modern_sklearn_dynamics.ipynb
 
 Mapping Wikipedia with modern text embeddings
-----------------
+---------------------------------------------
 
 .. toctree::
   :maxdepth: 2
@@ -86,7 +86,7 @@ Mapping Wikipedia with modern text embeddings
   tutorials/wikipedia_embeddings.ipynb
 
 Visualizing the shape of a conversation
-----------------
+---------------------------------------
 
 .. toctree::
   :maxdepth: 2
@@ -94,7 +94,7 @@ Visualizing the shape of a conversation
   tutorials/conversation_trajectories.ipynb
 
 Plotting streaming data
-----------------
+-----------------------
 
 .. toctree::
   :maxdepth: 2
@@ -110,7 +110,7 @@ Streaming from a Lab Streaming Layer (LSL) device
   tutorials/lsl_streaming.ipynb
 
 Forecasting stock prices with hyp.predict
-----------------
+-----------------------------------------
 
 .. toctree::
   :maxdepth: 2
@@ -118,7 +118,7 @@ Forecasting stock prices with hyp.predict
   tutorials/stock_forecasting.ipynb
 
 Imputing and forecasting a real projectile arc with hyp.impute and hyp.predict
-----------------
+------------------------------------------------------------------------------
 
 .. toctree::
   :maxdepth: 2
