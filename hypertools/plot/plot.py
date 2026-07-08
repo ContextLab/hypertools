@@ -488,12 +488,12 @@ def plot(
     size : list
         A list of [width, height] in inches to resize the figure
 
-    normalize : str or False
-        If set to 'across', the columns of the input data will be z-scored
-        across lists (default). If set to 'within', the columns will be
-        z-scored within each list that is passed. If set to 'row', each row of
-        the input data will be z-scored. If set to False, the input data will
-        be returned (default is False).
+    normalize : str, False, or None
+        If set to 'across', the columns of the input data are z-scored
+        across lists. If set to 'within', the columns are z-scored within
+        each list that is passed. If set to 'row', each row of the input
+        data is z-scored. If set to False or None, no normalization is
+        applied (default: None).
 
     manip : model spec or None
         A `hypertools.manip` spec (a registry name, dict spec, class/
@@ -525,42 +525,48 @@ def plot(
         `pipeline.transform` runs) since it is not one of the stage kwargs
         the fitted `Pipeline` itself covers (default: None).
 
-    reduce : str or dict
-        Decomposition/manifold learning model to use.  Models supported: PCA,
-        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
-        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
-        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be
-        passed as a string, but for finer control of the model parameters, pass
-        as a dictionary, e.g. reduce={'model' : 'PCA', 'params' : {'whiten' : True}}.
-        See scikit-learn specific model docs for details on parameters supported
-        for each model.
+    reduce : str, dict, class, instance, or fitted Reducer
+        Decomposition/manifold learning model to use (default:
+        'IncrementalPCA'). Models supported: PCA, IncrementalPCA, SparsePCA,
+        MiniBatchSparsePCA, KernelPCA, FastICA, FactorAnalysis, TruncatedSVD,
+        DictionaryLearning, MiniBatchDictionaryLearning, TSNE, Isomap,
+        SpectralEmbedding, LocallyLinearEmbedding, MDS, and UMAP; the mixture
+        (soft-clustering) models GaussianMixture, BayesianGaussianMixture,
+        LatentDirichletAllocation and NMF (which return per-observation
+        membership proportions, GH #174); and the torch-backed autoencoders
+        Autoencoder, DeepAutoencoder, SparseAutoencoder,
+        ConvolutionalAutoencoder, SequenceAutoencoder and
+        VariationalAutoencoder (GH #162, `pip install "hypertools[torch]"`).
+        Can be passed as a string, or for finer control of the model
+        parameters as a dictionary, e.g.
+        reduce={'model': 'PCA', 'kwargs': {'whiten': True}}. See scikit-learn
+        specific model docs for details on parameters supported for each model.
 
     ndims : int
         An `int` representing the number of dims to reduce the data x
         to. If ndims > 3, will plot in 3 dimensions but return the higher
-        dimensional data. Default is None, which will plot data in 3
-        dimensions and return the data with the same number of dimensions
-        possibly normalized and/or aligned according to normalize/align
-        kwargs.
+        dimensional data. Default is 3 (plot in 3 dimensions).
 
-    align : str or dict or False/None
-        If str, either 'hyper' or 'SRM'.  If 'hyper', alignment algorithm will be
-        hyperalignment. If 'SRM', alignment algorithm will be shared response
-        model.  You can also pass a dictionary for finer control, where the 'model'
-        key is a string that specifies the model and the params key is a dictionary
-        of parameter values (default : 'hyper').
+    align : str, dict, False, or None
+        Alignment model to bring a list of datasets into a shared space.
+        If str, 'hyper' (hyperalignment) or 'SRM' (shared response model).
+        You can also pass a dictionary for finer control, where the 'model'
+        key specifies the model and 'kwargs' holds its parameters, e.g.
+        align={'model': 'HyperAlign', 'kwargs': {'n_iter': 10}}. If False or
+        None, no alignment is applied (default: None).
 
-    cluster : str or dict or False/None
+    cluster : str, dict, False, or None
         If cluster is passed, HyperTools will perform clustering using the
-        specified clustering clustering model. Supportted algorithms are:
-        KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch,
-        FeatureAgglomeration, SpectralClustering and HDBSCAN (default: None).
-        Can be passed as a string, but for finer control of the model
-        parameters, pass as a dictionary, e.g.
-        reduce={'model' : 'KMeans', 'params' : {'max_iter' : 100}}. See
-        scikit-learn specific model docs for details on parameters supported for
-        each model. If no parameters are specified in the string a default set
-        of parameters will be used.
+        specified clustering model. Supported algorithms are: KMeans,
+        MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
+        SpectralClustering, MeanShift, DBSCAN, OPTICS, AffinityPropagation and
+        HDBSCAN, plus the mixture (soft-clustering) models GaussianMixture,
+        BayesianGaussianMixture, LatentDirichletAllocation and NMF. Can be
+        passed as a string, or for finer control of the model parameters as a
+        dictionary, e.g. cluster={'model': 'KMeans', 'kwargs': {'max_iter':
+        100}}. See scikit-learn specific model docs for details on parameters
+        supported for each model. If no parameters are specified a default set
+        of parameters will be used (default: None).
 
     n_clusters : int
         If n_clusters is passed, HyperTools will perform k-means clustering
@@ -774,7 +780,7 @@ def plot(
         runs).
 
     zoom (animation only) : float
-        How far to zoom into the plot, positive numbers will zoom in (default: 0)
+        How far to zoom into the plot, positive numbers will zoom in (default: 1)
 
     chemtrails (animation only) : bool or list of bool
         A low-opacity trail is left behind the trajectory (default: False).
@@ -1165,9 +1171,11 @@ def plot(
         retain a reference to the ``matplotlib.animation.FuncAnimation``
         (required to keep the animation alive). When ``return_model=True``,
         a dict
-        ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...,
-        'predict': ...}`` is returned (``animation`` included so the handle
-        isn't dropped for animated plots).
+        ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'pipeline': ...,
+        'models': ..., 'predict': ...}`` is returned (``animation`` included
+        so the handle isn't dropped for animated plots; ``pipeline`` is the
+        fitted `hypertools.Pipeline` covering the stages that ran, reusable
+        via ``hyp.plot(new_data, pipeline=...)``).
 
     """
 

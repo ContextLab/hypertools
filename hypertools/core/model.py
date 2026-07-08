@@ -51,7 +51,10 @@ def apply_model(data, model, mode='auto', return_model=False,
     model : str, dict, sklearn-style instance, or list
         - str: a registered model name (see `supported_models()`),
           e.g. 'PCA', 'KMeans', 'GaussianMixture'
-        - dict: {'model': <str or instance>, 'params': {...}}
+        - dict: the canonical {'model': <str or instance>, 'args': [...],
+          'kwargs': {...}} (both 'args' and 'kwargs' optional), or the legacy
+          {'model': ..., 'params': {...}} form (accepted for backward
+          compatibility, emits a DeprecationWarning)
         - instance: any object exposing fit/transform/fit_transform/
           fit_predict/predict_proba (scikit-learn convention)
         - list: a pipeline; each element is applied in sequence, with each

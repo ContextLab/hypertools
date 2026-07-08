@@ -187,25 +187,31 @@ def load(
         passed. If set to 'row', each row of the input data will be z-scored.
         If set to False, the input data will be returned with no z-scoring.
 
-    reduce : str or dict
-        Decomposition/manifold learning model to use.  Models supported: PCA,
-        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
-        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
-        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be
-        passed as a string, but for finer control of the model parameters, pass
-        as a dictionary, e.g. reduce={'model' : 'PCA', 'params' : {'whiten' : True}}.
-        See scikit-learn specific model docs for details on parameters supported
-        for each model.
+    reduce : str, dict, class, instance, or fitted Reducer
+        Decomposition/manifold learning model to use (default:
+        'IncrementalPCA'). Models supported: PCA, IncrementalPCA, SparsePCA,
+        MiniBatchSparsePCA, KernelPCA, FastICA, FactorAnalysis, TruncatedSVD,
+        DictionaryLearning, MiniBatchDictionaryLearning, TSNE, Isomap,
+        SpectralEmbedding, LocallyLinearEmbedding, MDS, and UMAP; the mixture
+        models GaussianMixture, BayesianGaussianMixture,
+        LatentDirichletAllocation and NMF (GH #174); and the torch autoencoders
+        Autoencoder, DeepAutoencoder, SparseAutoencoder,
+        ConvolutionalAutoencoder, SequenceAutoencoder and
+        VariationalAutoencoder (GH #162, `pip install "hypertools[torch]"`).
+        Can be passed as a string, or for finer control as a dictionary, e.g.
+        reduce={'model': 'PCA', 'kwargs': {'whiten': True}}. See scikit-learn
+        model docs for details on parameters supported for each model.
 
     ndims : int
         Number of dimensions to reduce
 
-    align : str or dict
-        If str, either 'hyper' or 'SRM'.  If 'hyper', alignment algorithm will be
-        hyperalignment. If 'SRM', alignment algorithm will be shared response
-        model.  You can also pass a dictionary for finer control, where the 'model'
-        key is a string that specifies the model and the params key is a dictionary
-        of parameter values (default : 'hyper').
+    align : str, dict, False, or None
+        Alignment model to bring a list of datasets into a shared space. If
+        str, 'hyper' (hyperalignment) or 'SRM' (shared response model). You
+        can also pass a dictionary for finer control, where 'model' specifies
+        the model and 'kwargs' holds its parameters, e.g.
+        align={'model': 'HyperAlign', 'kwargs': {'n_iter': 10}}. If False or
+        None, no alignment is applied (default: None).
 
     legacy : bool
         Pass legacy=True to load DataGeometry objects created with hypertools<0.8.0

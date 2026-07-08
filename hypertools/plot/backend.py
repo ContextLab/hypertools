@@ -928,26 +928,26 @@ class set_interactive_backend:
        plots::
 
            import hypertools as hyp
-           geo = hyp.load('weights_avg')
+           data = hyp.load('weights_avg')
 
-           geo.plot(interactive=True)          # uses the default backend
+           hyp.plot(data, interactive=True)          # uses the default backend
 
            hyp.set_interactive_backend('TkAgg')
-           geo.plot(interactive=True)          # uses the TkInter backend
-           geo.plot(animate=True)              # uses the TkInter backend
+           hyp.plot(data, interactive=True)          # uses the TkInter backend
+           hyp.plot(data, animate=True)              # uses the TkInter backend
 
     2. as a context manager with the `with` statement, to temporarily
        change the backend::
 
            import hypertools as hyp
-           geo = hyp.load('weights_avg')
+           data = hyp.load('weights_avg')
 
-           geo.plot(interactive=True)          # uses the default backend
+           hyp.plot(data, interactive=True)          # uses the default backend
 
            with hyp.set_interactive_backend('TkAgg'):
-               geo.plot(interactive=True)      # uses the TkInter backend
+               hyp.plot(data, interactive=True)      # uses the TkInter backend
 
-           geo.plot(animate=True)              # uses the default backend
+           hyp.plot(data, animate=True)              # uses the default backend
 
     Parameters
     ----------

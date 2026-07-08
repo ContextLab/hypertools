@@ -24,15 +24,20 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     x : Numpy array, DataFrame or list of arrays/dfs
         A list of Numpy arrays or Pandas Dataframes
 
-    reduce : str or dict
-        Decomposition/manifold learning model to use.  Models supported: PCA,
-        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
-        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
-        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be
-        passed as a string, but for finer control of the model parameters, pass
-        as a dictionary, e.g. reduce={'model' : 'PCA', 'params' : {'whiten' : True}}.
-        See scikit-learn specific model docs for details on parameters supported
-        for each model.
+    reduce : str, dict, class, instance, or fitted Reducer
+        Decomposition/manifold learning model to use (default:
+        'IncrementalPCA'). Models supported: PCA, IncrementalPCA, SparsePCA,
+        MiniBatchSparsePCA, KernelPCA, FastICA, FactorAnalysis, TruncatedSVD,
+        DictionaryLearning, MiniBatchDictionaryLearning, TSNE, Isomap,
+        SpectralEmbedding, LocallyLinearEmbedding, MDS, and UMAP; the mixture
+        models GaussianMixture, BayesianGaussianMixture,
+        LatentDirichletAllocation and NMF (GH #174); and the torch autoencoders
+        Autoencoder, DeepAutoencoder, SparseAutoencoder,
+        ConvolutionalAutoencoder, SequenceAutoencoder and
+        VariationalAutoencoder (GH #162, `pip install "hypertools[torch]"`).
+        Can be passed as a string, or for finer control as a dictionary, e.g.
+        reduce={'model': 'PCA', 'kwargs': {'whiten': True}}. See scikit-learn
+        model docs for details on parameters supported for each model.
 
     max_dims : int
         Maximum number of dimensions to consider
