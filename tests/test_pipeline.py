@@ -104,11 +104,24 @@ def test_inverse_transform_through_pca_reconstructs_reduced_space():
     assert np.allclose(back, x, atol=1e-8)
 
 
-def test_inverse_transform_raises_naming_blocking_step():
+def test_inverse_transform_succeeds_through_invertible_zscore():
+    # ZScore is invertible (QC P1-1): a Pipeline can inverse_transform
+    # through a leading ZScore step (it used to raise). PCA at full rank is
+    # lossless, so the round-trip recovers the original data.
     x = _rng().randn(15, 3)
-    pipe = Pipeline(['ZScore', ('pca', PCA(n_components=2))])
+    pipe = Pipeline(['ZScore', ('pca', PCA(n_components=3))])
+    out = pipe.fit_transform(x)
+    rec = np.asarray(pipe.inverse_transform(out))
+    assert rec.shape == (15, 3) and np.allclose(rec, x, atol=1e-6)
+
+
+def test_inverse_transform_raises_through_lossy_step():
+    # a genuinely lossy manipulator (Smooth) is NOT invertible, so
+    # inverse_transform through it still raises a clear NotImplementedError.
+    x = _rng().randn(15, 3)
+    pipe = Pipeline(['Smooth', ('pca', PCA(n_components=2))])
     pipe.fit_transform(x)
-    with pytest.raises(NotImplementedError, match='zscore'):
+    with pytest.raises(NotImplementedError, match='not invertible'):
         pipe.inverse_transform(pipe.fit_transform(x))
 
 

@@ -103,6 +103,25 @@ def transformer(data, **kwargs):
     return _transform_stacked(data, **kwargs)
 
 
+def inverter(data, **kwargs):
+    """Invert the z-score: reconstruct ``data * std + mean`` from the fitted
+    parameters. Column-wise (``axis=0``) only -- inverting a row-wise
+    (``axis=1``) z-score on held-out data is ill-defined, so it raises.
+
+    Operates at the numpy level (so it works on the plain arrays a
+    `hypertools.Pipeline` passes between inverse-transform steps as well as
+    on DataFrames), broadcasting the fitted per-column ``mean``/``std``.
+    """
+    import numpy as np
+    if kwargs.get('transpose', False) or kwargs.get('axis', 0) != 0:
+        raise NotImplementedError(
+            'ZScore.inverse_transform is only supported for axis=0 (column-wise)')
+    mean = np.asarray(kwargs['mean'], dtype=float)
+    std = np.asarray(kwargs['std'], dtype=float)
+    arr = np.asarray(data, dtype=float)
+    return arr * std + mean
+
+
 class ZScore(Manipulator):
     """Z-score (mean-center, unit-variance-scale) data, per column or per row.
 
@@ -114,8 +133,8 @@ class ZScore(Manipulator):
     """
     def __init__(self, axis=0):
         required = ['transpose', 'mean', 'std', 'axis']
-        super().__init__(axis=axis, fitter=fitter, transformer=transformer, data=None,
-                          required=required)
+        super().__init__(axis=axis, fitter=fitter, transformer=transformer,
+                          inverter=inverter, data=None, required=required)
 
         self.axis = axis
         self.fitter = fitter

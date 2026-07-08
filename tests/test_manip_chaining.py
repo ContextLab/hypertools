@@ -374,3 +374,43 @@ def test_manip_kwargs_only_dict_applies_kwargs():
     savgol = np.asarray(manip(x, model={'model': 'Smooth', 'kwargs': {'kernel': 'savgol', 'kernel_width': 25}}))
     assert boxcar.shape == savgol.shape == (200, 1)
     assert not np.allclose(boxcar, savgol)  # different kernels -> different output
+
+
+# --- QC P1-1: ZScore/Normalize are invertible; Smooth/Resample are not ---
+from hypertools.manip.normalize import Normalize
+
+
+def test_zscore_inverse_transform_round_trip():
+    rng = np.random.default_rng(3)
+    X = rng.normal(loc=5, scale=3, size=(40, 4))
+    z = ZScore()
+    zt = z.fit_transform(pd.DataFrame(X))
+    back = np.asarray(z.inverse_transform(zt))
+    assert np.allclose(back, X, atol=1e-8)
+
+
+def test_normalize_manip_inverse_transform_round_trip():
+    rng = np.random.default_rng(4)
+    X = rng.normal(size=(30, 3))
+    n = Normalize()
+    nt = n.fit_transform(pd.DataFrame(X))
+    back = np.asarray(n.inverse_transform(nt))
+    assert np.allclose(back, X, atol=1e-8)
+
+
+def test_pipeline_inverse_transform_through_zscore():
+    rng = np.random.default_rng(5)
+    X = rng.normal(size=(40, 4))
+    p = Pipeline(['ZScore', 'PCA'])
+    out = p.fit_transform(X)
+    rec = np.asarray(p.inverse_transform(out))
+    assert rec.shape == (40, 4) and np.allclose(rec, X, atol=1e-6)
+
+
+@pytest.mark.parametrize("M", [Smooth, Resample])
+def test_lossy_manipulators_not_invertible(M):
+    X = pd.DataFrame(np.random.default_rng(6).normal(size=(30, 2)))
+    m = M()
+    m.fit_transform(X)
+    with pytest.raises(NotImplementedError, match="not invertible"):
+        m.inverse_transform(X)

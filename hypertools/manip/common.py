@@ -24,6 +24,7 @@ class Manipulator(BaseEstimator):
         self.data = kwargs.pop("data", None)
         self.fitter = kwargs.pop("fitter", None)
         self.transformer = kwargs.pop("transformer", None)
+        self.inverter = kwargs.pop("inverter", None)
         self.required = kwargs.pop("required", [])
         self.kwargs = kwargs
 
@@ -85,6 +86,41 @@ class Manipulator(BaseEstimator):
         required_params = {r: getattr(self, r) for r in self.required}
         merged = {**required_params, **self.kwargs}
         return self.transformer(data_to_use, **merged)
+
+    def inverse_transform(self, data):
+        """Undo this manipulator's transform on `data`, when it is invertible.
+
+        Invertible manipulators (`ZScore`, `Normalize`) supply an `inverter`
+        that reconstructs the pre-transform values from their fitted
+        parameters (mean/std, or min-max baseline/peak). Lossy ones
+        (`Smooth`, `Resample`) have no inverter and raise
+        `NotImplementedError`. Lets a `hypertools.Pipeline` round-trip
+        `inverse_transform` through a leading `ZScore`/`Normalize` step.
+
+        Parameters
+        ----------
+        data : DataFrame or array
+            Data in this manipulator's OUTPUT space, to map back to its
+            input space.
+
+        Raises
+        ------
+        sklearn.exceptions.NotFittedError
+            If `fit`/`fit_transform` has not been called yet.
+        NotImplementedError
+            If this manipulator is not invertible.
+        """
+        if self.data is None:
+            raise NotFittedError("must fit manipulator before inverse-transforming data")
+        if self.inverter is None:
+            raise NotImplementedError(
+                f"{type(self).__name__} is not invertible (no inverse_transform)")
+        for r in self.required:
+            if not hasattr(self, r):
+                raise NotFittedError(f"missing fitted attribute: {r}")
+        required_params = {r: getattr(self, r) for r in self.required}
+        merged = {**required_params, **self.kwargs}
+        return self.inverter(data, **merged)
 
     def fit_transform(self, data):
         """Fit on `data`, then transform it (equivalent to `fit(data)`

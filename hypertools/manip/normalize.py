@@ -120,6 +120,27 @@ def transformer(data, **kwargs):
     return _transform_stacked(data, **kwargs)
 
 
+def inverter(data, **kwargs):
+    """Invert the min-max normalization: reconstruct the pre-normalization
+    values from the fitted ``baseline``/``peak`` and target ``[min, max]``.
+    Column-wise (``axis=0``) only.
+
+    Forward is ``z = (x - baseline) / peak * (max - min) + min``; this
+    computes ``x = (z - min) / (max - min) * peak + baseline``. Operates at
+    the numpy level so it works on the plain arrays a `hypertools.Pipeline`
+    passes between inverse-transform steps as well as on DataFrames.
+    """
+    import numpy as np
+    if kwargs.get('transpose', False) or kwargs.get('axis', 0) != 0:
+        raise NotImplementedError(
+            'Normalize.inverse_transform is only supported for axis=0 (column-wise)')
+    baseline = np.asarray(kwargs['baseline'], dtype=float)
+    peak = np.asarray(kwargs['peak'], dtype=float)
+    lo, hi = kwargs['min'], kwargs['max']
+    arr = np.asarray(data, dtype=float)
+    return (arr - lo) / (hi - lo) * peak + baseline
+
+
 class Normalize(Manipulator):
     """Min-max normalize data into a `[min, max]` range, per column or per row.
 
@@ -136,8 +157,8 @@ class Normalize(Manipulator):
     # noinspection PyShadowingBuiltins
     def __init__(self, min=0, max=1, axis=0):
         required = ['min', 'max', 'transpose', 'baseline', 'peak', 'axis']
-        super().__init__(min=min, max=max, axis=axis, fitter=fitter, transformer=transformer, data=None,
-                          required=required)
+        super().__init__(min=min, max=max, axis=axis, fitter=fitter, transformer=transformer,
+                          inverter=inverter, data=None, required=required)
 
         self.min = min
         self.max = max
