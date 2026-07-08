@@ -1,4 +1,23 @@
-These are the items the audit surfaced. Add your own as you work the checklist and notebook, then send the exported notes back and I'll fix them. The **static** commit audit came back clean (no high-risk logic in any of the 185 commits), but **running the verification notebook against the built library surfaced four real code issues** (P0/P1 below) — exactly what this pass was for. Everything else is documentation accuracy.
+## ✅ Resolution status — every item below is fixed, tested, and independently verified
+
+All audit findings have been addressed on branch `dev-1.0-refactor` (PR #272). Each fix has a hardened regression test; each was re-reproduced by an **independent verification subagent** (not self-reported). Full suite: **1287 passed, 0 failed**. Sphinx: 0 errors, 0 actionable warnings.
+
+| Item | Fix commit | Independent verify |
+|-|-|-|
+| P0-1 normalize return_model reuse crash | `5403530d` | PASS |
+| P0-2 manip kwargs-only dict rejected | `5403530d` | PASS |
+| P1-1 Pipeline.inverse_transform through ZScore/Normalize | `2badcf99` | PASS |
+| P1-2 Word2Vec + default LDA semantic crash | `7e42095f` | PASS |
+| A1 CLAUDE.md stale architecture | `6201e420` | PASS |
+| A2/A3 API docstring inaccuracies + incompleteness | `376e1d94` | PASS |
+| A4 README (mat2colors path + 1.0 coverage) | `3c5c8162` | PASS |
+| A5 Sphinx (geo.ipynb + 8 stale .rst + underlines) | `6397a241`, `724ad5f0` | PASS |
+
+The B-items from the original audit (SRM single-fit semantics, pandas-3 support) were **confirmed intentional** during the review, not defects. The original findings are preserved verbatim below for the record.
+
+---
+
+These are the items the audit surfaced. The **static** commit audit came back clean (no high-risk logic in any of the 185 commits), but **running the verification notebook against the built library surfaced four real code issues** (P0/P1 below) — exactly what this pass was for. Everything else is documentation accuracy.
 
 ### P0 · Confirmed code bugs (found by running the verification notebook)
 

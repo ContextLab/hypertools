@@ -86,7 +86,21 @@ dialog button{font:14px inherit;border:1px solid var(--line);background:var(--ca
 
 <h2 class="sec" id="tasks">Task list</h2>
 <p class="lead">Items surfaced by the audit that may need attention before release.</p>
-<div class="docsec"><p>These are the items the audit surfaced. Add your own as you work the checklist and notebook, then send the exported notes back and I&#x27;ll fix them. The <strong>static</strong> commit audit came back clean (no high-risk logic in any of the 185 commits), but <strong>running the verification notebook against the built library surfaced four real code issues</strong> (P0/P1 below) — exactly what this pass was for. Everything else is documentation accuracy.</p>
+<div class="docsec"><h3>✅ Resolution status — every item below is fixed, tested, and independently verified</h3>
+<p>All audit findings have been addressed on branch <code>dev-1.0-refactor</code> (PR #272). Each fix has a hardened regression test; each was re-reproduced by an <strong>independent verification subagent</strong> (not self-reported). Full suite: <strong>1287 passed, 0 failed</strong>. Sphinx: 0 errors, 0 actionable warnings.</p>
+<p>| Item | Fix commit | Independent verify |</p>
+<p>|-|-|-|</p>
+<p>| P0-1 normalize return_model reuse crash | <code>5403530d</code> | PASS |</p>
+<p>| P0-2 manip kwargs-only dict rejected | <code>5403530d</code> | PASS |</p>
+<p>| P1-1 Pipeline.inverse_transform through ZScore/Normalize | <code>2badcf99</code> | PASS |</p>
+<p>| P1-2 Word2Vec + default LDA semantic crash | <code>7e42095f</code> | PASS |</p>
+<p>| A1 CLAUDE.md stale architecture | <code>6201e420</code> | PASS |</p>
+<p>| A2/A3 API docstring inaccuracies + incompleteness | <code>376e1d94</code> | PASS |</p>
+<p>| A4 README (mat2colors path + 1.0 coverage) | <code>3c5c8162</code> | PASS |</p>
+<p>| A5 Sphinx (geo.ipynb + 8 stale .rst + underlines) | <code>6397a241</code>, <code>724ad5f0</code> | PASS |</p>
+<p>The B-items from the original audit (SRM single-fit semantics, pandas-3 support) were <strong>confirmed intentional</strong> during the review, not defects. The original findings are preserved verbatim below for the record.</p>
+<p>---</p>
+<p>These are the items the audit surfaced. The <strong>static</strong> commit audit came back clean (no high-risk logic in any of the 185 commits), but <strong>running the verification notebook against the built library surfaced four real code issues</strong> (P0/P1 below) — exactly what this pass was for. Everything else is documentation accuracy.</p>
 <h4>P0 · Confirmed code bugs (found by running the verification notebook)</h4>
 <p><strong>P0-1 · <code>hyp.normalize(..., return_model=True).transform(new_data)</code> crashes.</strong> <code>hypertools/tools/normalize.py:94</code> (<code>Normalizer.transform</code>) raises <code>IndexError: tuple index out of range</code> for <strong>all three</strong> modes (<code>across</code>/<code>within</code>/<code>row</code>) — it indexes <code>i.shape[1]</code> on what is a 1-D row. The entire normalize return-model *reuse* path (part of the #227 &quot;return_model on every module&quot; contract) is broken. It slipped through because Task 6&#x27;s test likely exercised a shape/list form that dodges this line. Fix <code>Normalizer.transform</code> to apply the stored fit-time statistics to new data correctly, and add a real 2-D-array reuse test.</p>
 <p><strong>P0-2 · <code>hyp.manip</code> rejects the <code>kwargs</code>-only dict spec.</strong> <code>hyp.manip(x, model={&#x27;model&#x27;:&#x27;Smooth&#x27;,&#x27;kwargs&#x27;:{...}})</code> raises <code>ValueError: unknown model</code>, but <code>{&#x27;model&#x27;:&#x27;Smooth&#x27;,&#x27;args&#x27;:[],&#x27;kwargs&#x27;:{...}}</code> (with an explicit <code>args</code>) and the list form both work. A canonical dict spec should accept <code>kwargs</code> without requiring an <code>args</code> key — this is an inconsistency with <code>reduce</code>/<code>cluster</code> (which check <code>&#x27;args&#x27; in x or &#x27;kwargs&#x27; in x</code>). Fix manip&#x27;s single-spec dict resolution to treat <code>args</code> as optional.</p>
