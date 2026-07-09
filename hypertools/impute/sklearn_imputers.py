@@ -48,7 +48,10 @@ def transformer(data, **kwargs):
         `data` with missing entries filled, same index/columns as `data`.
     """
     imputer = kwargs['imputer']
-    x = data.to_numpy(dtype=float)
+    # writable copy: IterativeImputer with keep_empty_features=True assigns into
+    # the transform input in-place, which raises "assignment destination is
+    # read-only" on the (copy-on-write) array pandas returns (QC 2026-07).
+    x = np.array(data.to_numpy(dtype=float))
     filled = imputer.transform(x)
     out = _splice(x, filled)
     return pd.DataFrame(out, index=data.index, columns=data.columns)
@@ -59,8 +62,12 @@ def _simple_fitter(data, **kwargs):
 
     strategy = kwargs.get('strategy', 'mean')
     fill_value = kwargs.get('fill_value', None)
-    imputer = _SimpleImputer(strategy=strategy, fill_value=fill_value)
-    imputer.fit(data.to_numpy(dtype=float))
+    # keep_empty_features=True: keep all-NaN columns (fill with 0) instead of
+    # DROPPING them -- a dropped column made the transform output narrower than
+    # the input, so _splice's boolean mask raised IndexError (QC 2026-07).
+    imputer = _SimpleImputer(strategy=strategy, fill_value=fill_value,
+                             keep_empty_features=True)
+    imputer.fit(np.array(data.to_numpy(dtype=float)))  # writable for keep_empty_features (QC 2026-07)
     return {'imputer': imputer}
 
 
@@ -69,8 +76,9 @@ def _knn_fitter(data, **kwargs):
 
     n_neighbors = kwargs.get('n_neighbors', 5)
     weights = kwargs.get('weights', 'uniform')
-    imputer = _KNNImputer(n_neighbors=n_neighbors, weights=weights)
-    imputer.fit(data.to_numpy(dtype=float))
+    imputer = _KNNImputer(n_neighbors=n_neighbors, weights=weights,
+                          keep_empty_features=True)  # keep all-NaN cols (QC 2026-07)
+    imputer.fit(np.array(data.to_numpy(dtype=float)))  # writable for keep_empty_features (QC 2026-07)
     return {'imputer': imputer}
 
 
@@ -80,8 +88,9 @@ def _iterative_fitter(data, **kwargs):
 
     max_iter = kwargs.get('max_iter', 10)
     random_state = kwargs.get('random_state', None)
-    imputer = _IterativeImputer(max_iter=max_iter, random_state=random_state)
-    imputer.fit(data.to_numpy(dtype=float))
+    imputer = _IterativeImputer(max_iter=max_iter, random_state=random_state,
+                                keep_empty_features=True)  # keep all-NaN cols (QC 2026-07)
+    imputer.fit(np.array(data.to_numpy(dtype=float)))  # writable for keep_empty_features (QC 2026-07)
     return {'imputer': imputer}
 
 

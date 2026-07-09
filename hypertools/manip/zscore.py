@@ -65,8 +65,13 @@ def _transform_stacked(data, **kwargs):
     if z.shape[1] != mean.shape[0]:
         raise ValueError(
             f'ZScore was fit on {mean.shape[0]} column(s) but got {z.shape[1]}')
+    # guard zero-variance (constant) columns: dividing by std=0 turned the whole
+    # column into NaN, silently corrupting the data (QC 2026-07). A constant
+    # column is already centered to 0 after subtracting its mean, so scaling by
+    # 1 leaves it 0 -- matching hypertools.tools.normalize._zscore_column.
+    std_safe = np.where(std == 0, 1.0, std)
     for i, c in enumerate(z.columns):
-        z[c] = (z[c] - mean[i]) / std[i]
+        z[c] = (z[c] - mean[i]) / std_safe[i]
     return z
 
 

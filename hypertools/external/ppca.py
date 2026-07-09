@@ -65,6 +65,11 @@ class PPCA(object):
         self.raw[np.isinf(self.raw)] = np.max(self.raw[np.isfinite(self.raw)])
 
         valid_series = np.sum(~np.isnan(self.raw), axis=0) >= min_obs
+        # remember which original columns were kept (>= min_obs observations),
+        # so callers can map the fitted (kept-column) reconstruction back to the
+        # full input width (QC 2026-07: the PPCA imputer needs this to preserve
+        # the input's column count).
+        self.valid_series = valid_series
 
         data = self.raw[:, valid_series].copy()
         N = data.shape[0]

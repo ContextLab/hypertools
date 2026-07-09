@@ -79,8 +79,12 @@ def _transform_stacked(data, **kwargs):
         raise ValueError(
             f'Normalize was fit on {baseline.shape[0]} column(s) but got '
             f'{z.shape[1]}')
+    # guard zero-range (constant) columns: dividing by peak=0 turned the whole
+    # column into NaN (QC 2026-07). A constant column is 0 after subtracting its
+    # baseline, so scaling by 1 leaves it 0.
+    peak_safe = np.where(peak == 0, 1.0, peak)
     for i, c in enumerate(z.columns):
-        z[c] = (z[c] - baseline[i]) / peak[i]
+        z[c] = (z[c] - baseline[i]) / peak_safe[i]
 
     z *= (kwargs['max'] - kwargs['min'])
     z += kwargs['min']

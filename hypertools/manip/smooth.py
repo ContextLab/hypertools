@@ -96,6 +96,20 @@ def _resolve_kernel(kwargs):
 def _transform_stacked(data, **kwargs):
     smoothed = data.copy()
     branch, use_legacy_var = _resolve_kernel(kwargs)
+    # clear, actionable errors for kernel_width edge cases (QC 2026-07): scipy
+    # otherwise raises opaque "window_length must be <= size of x" /
+    # "polyorder must be less than window_length" from deep in savgol_filter.
+    kw = kwargs.get('kernel_width')
+    n_rows = data.shape[0]
+    if kw is not None and kw > n_rows:
+        raise ValueError(
+            f"kernel_width ({kw}) is larger than the number of samples "
+            f"({n_rows}); use a kernel_width <= {n_rows}.")
+    if branch == 'savgol' and kw is not None and kw <= kwargs.get('order', 3):
+        raise ValueError(
+            f"the savgol kernel needs kernel_width ({kw}) > order "
+            f"({kwargs.get('order', 3)}); increase kernel_width or lower order "
+            "(or use kernel='gaussian'/'boxcar').")
     for c in data.columns:
         values = np.asarray(data[c], dtype=float)
         if branch == 'gaussian':
