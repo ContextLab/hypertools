@@ -112,6 +112,15 @@ def _resolve_align_spec(model, extra_kwargs):
         return resolved_inner
 
     resolved = unpack_model(model, valid=ALIGNERS, parent_class=Aligner)
+    if isinstance(resolved, str):
+        # unknown registry name: unpack_model passes strings through
+        # unchanged, so without this the string later hit
+        # "'str' object has no attribute 'fit_transform'" (QC 2026-07). Match
+        # the clear "unknown X model" errors reduce/cluster/predict give.
+        raise ValueError(
+            f"unknown align model {resolved!r}; supported names: "
+            f"{', '.join(sorted(a.__name__ for a in ALIGNERS))} (or pass an "
+            "Aligner subclass or instance directly).")
     if isinstance(resolved, type):
         return resolved(**extra_kwargs)
     # an already-constructed (unfitted) or already-fitted instance is

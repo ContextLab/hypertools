@@ -1944,6 +1944,18 @@ def plot(
             hue_array = np.asarray(hue)
         except Exception:
             hue_array = None
+        # validate hue length (QC 2026-07): a hue that was too SHORT silently
+        # truncated the plot (rendered only the first len(hue) points, no
+        # warning); too LONG raised a cryptic IndexError deep in reshape_data.
+        # hue must carry exactly one value/row per observation.
+        _hue_len = (hue_array.shape[0]
+                    if hue_array is not None and hue_array.ndim >= 1
+                    else len(hue))
+        if _hue_len != n_obs:
+            raise ValueError(
+                f"hue has {_hue_len} entr{'y' if _hue_len == 1 else 'ies'} but "
+                f"the data has {n_obs} observations; hue must have exactly one "
+                "value (or one row, for a matrix hue) per observation.")
         hue_is_matrix = (hue_array is not None and hue_array.ndim == 2
                          and np.issubdtype(hue_array.dtype, np.number)
                          and hue_array.shape[0] == n_obs)

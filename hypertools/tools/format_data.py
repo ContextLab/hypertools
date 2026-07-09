@@ -80,12 +80,28 @@ def format_data(x, vectorizer='CountVectorizer',
     from .df2mat import df2mat
     from .text2mat import text2mat
 
+    # a pandas Series is a single 1-D dataset (QC 2026-07: was rejected as
+    # "unsupported"); a tuple is treated like a list of datasets.
+    import pandas as pd
+    if isinstance(x, pd.Series):
+        x = x.to_numpy()
+    elif isinstance(x, tuple):
+        x = list(x)
+
     # if x is not a list, make it one
     if not isinstance(x, list):
         x = [x]
 
     if all([isinstance(xi, str) for xi in x]):
         x = [x]
+    # a FLAT list of numbers is a SINGLE 1-D dataset, not a list of scalar
+    # "datasets" -- wrap it so get_type sees one array (QC 2026-07: mapping
+    # get_type over the individual numbers raised "Unsupported data type",
+    # even though the message advertises "List of numbers" as supported).
+    elif len(x) > 0 and all(
+            isinstance(xi, (int, float, np.number)) and not isinstance(xi, bool)
+            for xi in x):
+        x = [np.asarray(x, dtype=float)]
 
     # check data type for each element in list
     dtypes = list(map(get_type, x))
@@ -159,6 +175,10 @@ def format_data(x, vectorizer='CountVectorizer',
             textidx+=1
         elif dtype == 'df':
             processed_x.append(df2mat(x[i]))
+        elif dtype == 'list_num':
+            # a numeric-list dataset -> array (QC 2026-07: a raw python list hit
+            # "'list' object has no attribute 'ndim'" at the reshape below)
+            processed_x.append(np.asarray(x[i], dtype=float))
         else:
             processed_x.append(x[i])
 
@@ -168,6 +188,25 @@ def format_data(x, vectorizer='CountVectorizer',
 
     contains_text = any([dtype in ['list_str', 'str', 'arr_str'] for dtype in dtypes])
     contains_num = any([dtype in ['list_num', 'array', 'df', 'arr_num'] for dtype in dtypes])
+
+    # fail fast with a CLEAR message on non-finite data (QC 2026-07): otherwise
+    # infinities surface as sklearn's opaque "Input X contains infinity" and an
+    # entirely-missing dataset surfaces as "zero-size array to reduction" deep
+    # inside PPCA. Missing values (NaN) are still fine -- PPCA imputes them.
+    if contains_num:
+        for _arr, _dtype in zip(processed_x, dtypes):
+            if _dtype not in ['list_num', 'array', 'df', 'arr_num']:
+                continue
+            _num = np.asarray(_arr, dtype=float)
+            if np.isinf(_num).any():
+                raise ValueError(
+                    'input contains infinite values; remove or replace them '
+                    '(e.g. with np.nan for missing entries) before plotting or '
+                    'analysis.')
+            if _num.size and np.isnan(_num).all():
+                raise ValueError(
+                    'input is entirely missing (all values are NaN); there is '
+                    'nothing to plot or analyze.')
 
     # if there are any nans in any of the lists, use ppca
     if ppca is True:
