@@ -148,6 +148,7 @@ def plot(
     colors=None,
     palette="hls",
     hue=None,
+    color_reduce=None,
     labels=None,
     legend=None,
     colorbar=None,
@@ -373,6 +374,20 @@ def plot(
         (e.g. mixture proportions or model weights; colors are blended per
         observation). To label a subset of points categorically, use None
         entries (i.e. ['a', None, 'b', 'a']).
+
+        A 2D matrix hue with MORE than 3 columns (or any matrix, if
+        `color_reduce=` is given) is first reduced to 3 columns and mapped
+        directly to (r, g, b) -- see `color_reduce`.
+
+    color_reduce : str, dict, class, instance, or None
+        How to reduce an arbitrary high-dimensional matrix `hue` to the 3
+        columns used as (r, g, b). Any `hyp.reduce` spec (default: None ->
+        'IncrementalPCA'). Only applies when `hue` is a 2D matrix; the three
+        reduced dimensions are min-max scaled to [0, 1] per column and used as
+        the red/green/blue channels, so an arbitrary per-observation feature
+        matrix becomes a continuous RGB coloring. A matrix `hue` with <=3
+        columns is left on the palette-blend path unless `color_reduce=` is
+        given explicitly.
 
     labels : list
         A list of labels for each point. Must be dimensionality of data (x).
@@ -1726,6 +1741,10 @@ def plot(
     # computed after interpolation). Dataset lengths are captured now so hue
     # values can be re-interpolated to match the interpolated trajectories.
     multicolor_hue = None
+    # when a high-dim matrix hue is reduced to a 3-column RGB matrix (see the
+    # color_reduce= branch below), multicolor_hue holds literal per-point RGB
+    # values that must be used AS colors rather than blended over a palette.
+    multicolor_hue_is_rgb = False
     pre_interp_lengths = [len(xi) for xi in xform]
 
     # original category NAMES for a categorical hue (set below, if
@@ -1880,6 +1899,26 @@ def plot(
                              and np.issubdtype(hue_array.dtype, np.number)
                              and hue_array.shape[0] == n_obs)
 
+        # arbitrary matrix hue -> RGB: when the hue matrix has MORE than 3
+        # columns, or color_reduce= is explicitly given, reduce it to 3 columns
+        # (default 'IncrementalPCA'; color_reduce accepts any hyp.reduce spec)
+        # and min-max each column to [0, 1] so the three reduced dimensions map
+        # directly to (r, g, b). Those per-observation rows are then used AS
+        # colors. A <=3-column matrix with no color_reduce= keeps the
+        # palette-blend path (mixture proportions etc.).
+        if hue_is_matrix and (hue_array.shape[1] > 3 or color_reduce is not None):
+            from ..reduce.reduce import reduce as _color_reducer
+            _rgb = np.asarray(
+                _color_reducer(hue_array,
+                               reduce=(color_reduce or 'IncrementalPCA'),
+                               ndims=3),
+                dtype=np.float64)
+            _lo = _rgb.min(axis=0, keepdims=True)
+            _hi = _rgb.max(axis=0, keepdims=True)
+            _span = np.where((_hi - _lo) > 0, _hi - _lo, 1.0)
+            hue_array = np.clip((_rgb - _lo) / _span, 0.0, 1.0)
+            multicolor_hue_is_rgb = True
+
         if (hue_is_matrix or hue_is_continuous) and not animate:
             # EXACT PER-POINT COLORS: color varies continuously across
             # observations. Datasets stay intact (no group reshape, which
@@ -1897,7 +1936,8 @@ def plot(
             # markers (or animated) path: blend colors per observation,
             # then group observations with (near-)identical colors into
             # traces
-            blended = mat2colors(hue_array, palette=palette)
+            blended = (hue_array if multicolor_hue_is_rgb
+                       else mat2colors(hue_array, palette=palette))
             group_ids, group_colors = colors2groups(blended)
             mpl_kwargs["color"] = [
                 group_colors[gid]
@@ -2154,7 +2194,8 @@ def plot(
     line_colors = None
     if multicolor_hue is not None:
         line_colors = _multicolor_line_colors(
-            multicolor_hue, pre_interp_lengths, xform, palette)
+            multicolor_hue, pre_interp_lengths, xform, palette,
+            is_rgb=multicolor_hue_is_rgb)
 
     # handle explore flag
     if explore:
@@ -2244,6 +2285,14 @@ def plot(
         if "color" in mpl_kwargs:
             _base_colors = [kwargs_list[i].get("color")
                             for i in range(len(xform))]
+        elif line_colors is not None:
+            # hue= is set: use each dataset's MEAN per-point hue color as its
+            # representative color, so surface=/density=/morph honor hue instead
+            # of falling back to the palette cycle (QC 2026-07: surface=True
+            # ignored hue -- the hull/mesh drew in a palette color while the
+            # points were hue-colored).
+            return [tuple(np.asarray(lc, dtype=float).mean(axis=0)[:3])
+                    for lc in line_colors]
         else:
             _base_colors = list(sns.color_palette(palette, len(xform)))
         return [
@@ -2957,7 +3006,7 @@ def _contains_string(el):
     return False
 
 
-def _multicolor_line_colors(hue_src, orig_lengths, xform, palette):
+def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False):
     """Per-point RGB colors for multicolored lines.
 
     hue_src holds one value (or one row) per ORIGINAL observation; the
@@ -2965,6 +3014,11 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette):
     resolution, so each dataset's hue values are linearly re-interpolated to
     its new length before color mapping. Colors are mapped over the
     CONCATENATED hue values so the scale is shared across datasets.
+
+    When `is_rgb` is True, `hue_src` already holds literal per-point RGB values
+    (e.g. a matrix hue reduced to 3 columns via `plot`'s `color_reduce=`), so
+    the re-interpolated values are used AS colors instead of being mapped
+    through `mat2colors`.
 
     Returns a list of (n_i, 3) arrays, one per dataset in xform.
     """
@@ -2988,9 +3042,12 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette):
              for c in range(piece.shape[1])]))
 
     stacked = np.vstack(interped)
-    colors = mat2colors(
-        stacked.ravel() if stacked.shape[1] == 1 else stacked,
-        palette=palette)
+    if is_rgb:
+        colors = np.clip(stacked, 0.0, 1.0)
+    else:
+        colors = mat2colors(
+            stacked.ravel() if stacked.shape[1] == 1 else stacked,
+            palette=palette)
 
     out, start = [], 0
     for xi in xform:

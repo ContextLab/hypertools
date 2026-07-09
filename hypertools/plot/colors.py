@@ -60,12 +60,24 @@ def mat2colors(m, palette='hls', n_bins=100):
         return np.asarray([base[r] for r in ranks])
 
     if m.ndim == 2:
-        # soft assignments / mixture proportions: blend component colors.
-        # Shift rows to be non-negative before normalizing so arbitrary
-        # matrices (e.g. embeddings) also produce valid blends.
-        weights = m - np.min(m, axis=1, keepdims=True)
+        # soft assignments / mixture proportions: each row is a weight vector
+        # over the k component colors, and the sample's color is that
+        # proportion-weighted blend.
+        weights = m.astype(np.float64, copy=True)
+        if weights.min() < 0:
+            # SIGNED matrix (e.g. an arbitrary embedding): shift each row to be
+            # non-negative before normalizing -- negative "weights" have no
+            # color meaning. (For matrices with >3 columns, callers typically
+            # reduce to a 3-column RGB matrix first; see plot()'s color_reduce=.)
+            weights = weights - np.min(weights, axis=1, keepdims=True)
+        # else: NON-NEGATIVE rows (mixture proportions / soft cluster
+        # assignments) are used AS-IS so a [0.5, 0.5] row blends the two
+        # component colors 50/50. The old code unconditionally subtracted the
+        # per-row min BEFORE normalizing, which collapsed every non-tied row
+        # onto its argmax vertex (pure component color) -- so mixture
+        # proportions never actually blended (QC 2026-07).
         row_sums = weights.sum(axis=1, keepdims=True)
-        # rows that sum to zero (uniform after shift) get uniform weights
+        # rows that sum to zero get uniform weights
         weights = np.where(row_sums > 0, weights / np.where(row_sums == 0, 1, row_sums),
                            1.0 / m.shape[1])
         base = np.asarray(_get_palette(palette, m.shape[1], sns))[:, :3]
