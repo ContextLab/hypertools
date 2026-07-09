@@ -153,8 +153,12 @@ class Clusterer(BaseEstimator):
     """
 
     def __init__(self, model, params=None):
+        # Store constructor args VERBATIM (no copy/normalization) so
+        # sklearn's `get_params`/`set_params`/`clone` round-trip correctly;
+        # copying params here broke `clone()` with a RuntimeError (QC 2026-07).
+        # `None` is normalized to `{}` at the point of use in `fit_transform`.
         self.model = model
-        self.params = dict(params) if params else {}
+        self.params = params
         self.model_ = None
 
     @property
@@ -188,7 +192,7 @@ class Clusterer(BaseEstimator):
             models, or -- for mixture models (GH #174) -- an
             `(n_samples, n_components)` array of membership proportions.
         """
-        model = self.model(**self.params) if inspect.isclass(self.model) else self.model
+        model = self.model(**(self.params or {})) if inspect.isclass(self.model) else self.model
         if self._is_mixture(model):
             result = mixture_proportions(type(model).__name__, model, stacked)
         else:
