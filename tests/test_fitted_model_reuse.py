@@ -122,3 +122,48 @@ def test_align_reuse_fitted_aligner_single_stage():
     xl, yl = _xy_lists()
     _, aa = hyp.align(xl, model='SharedResponseModel', return_model=True)
     assert len(hyp.align(yl, model=aa)) == 2
+
+
+# --- red-team follow-ups (QC 2026-07) ----------------------------------
+
+def test_reuse_fitted_pipeline_on_differently_labeled_dataframe():
+    # A fitted ZScore keyed its mean/std by column LABEL, so reusing a
+    # ndarray-fit cross-module pipeline on a string-column DataFrame crashed
+    # with KeyError. ZScore/Normalize now key positionally.
+    import pandas as pd
+    x = np.random.default_rng(0).normal(size=(40, 6))
+    _, model = hyp.cluster(x, cluster='KMeans', n_clusters=3, reduce='PCA',
+                           ndims=3, manip='ZScore', return_model=True)
+    ydf = pd.DataFrame(np.random.default_rng(2).normal(size=(40, 6)),
+                       columns=list('abcdef'))
+    labels = hyp.cluster(ydf, cluster=model)      # used to raise KeyError 'a'
+    assert len(np.asarray(labels)) == 40
+
+
+def test_zscore_reuse_is_column_label_invariant():
+    # positional keying: reusing a fitted ZScore on the SAME values with
+    # different column labels gives IDENTICAL output.
+    import pandas as pd
+    x = np.random.default_rng(0).normal(size=(40, 6))
+    _, zm = hyp.manip(x, model='ZScore', return_model=True)
+    vals = np.random.default_rng(3).normal(size=(10, 6))
+    out_arr = np.asarray(zm.transform(vals))
+    out_str = np.asarray(zm.transform(pd.DataFrame(vals, columns=list('abcdef'))))
+    assert np.allclose(out_arr, out_str, atol=1e-9)
+    # and it uses the FITTED (not refit) stats, positionally
+    manual = (vals - x.mean(0)) / x.std(0, ddof=1)
+    assert np.allclose(out_arr, manual, atol=1e-6)
+
+
+def test_plot_rejects_fitted_pipeline_as_stage_kwarg_with_clear_error():
+    # A whole fitted Pipeline passed as reduce= (rather than pipeline=) used to
+    # double-apply and raise a cryptic feature-count error; now a clear message
+    # points at pipeline=.
+    import matplotlib
+    matplotlib.use('Agg')
+    x = np.random.default_rng(0).normal(size=(40, 6))
+    _, rp = hyp.reduce(x, reduce='PCA', ndims=2, manip='ZScore',
+                       return_model=True)
+    with pytest.raises(ValueError, match='pipeline='):
+        hyp.plot(np.random.default_rng(1).normal(size=(40, 6)), reduce=rp,
+                 show=False)

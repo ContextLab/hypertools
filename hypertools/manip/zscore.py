@@ -52,10 +52,21 @@ def fitter(data, axis=0):
 # noinspection DuplicatedCode
 @dw.decorate.apply_stacked
 def _transform_stacked(data, **kwargs):
+    import numpy as np
     z = data.copy()
-    for c in z.columns:
-        z[c] -= kwargs['mean'][c]
-        z[c] /= kwargs['std'][c]
+    # Key the fitted mean/std POSITIONALLY (by column order), not by column
+    # LABEL -- matching this manipulator's `inverter`, which is already
+    # positional. Label keying broke reuse of a fitted ZScore on data whose
+    # column labels differ from the fit-time data (e.g. fit on an ndarray ->
+    # 'c0'.. then reused on a DataFrame with 'a'.. -> KeyError, QC 2026-07). In
+    # the normal (non-reuse) path the labels are identical, so this is a no-op.
+    mean = np.asarray(kwargs['mean'], dtype=float)
+    std = np.asarray(kwargs['std'], dtype=float)
+    if z.shape[1] != mean.shape[0]:
+        raise ValueError(
+            f'ZScore was fit on {mean.shape[0]} column(s) but got {z.shape[1]}')
+    for i, c in enumerate(z.columns):
+        z[c] = (z[c] - mean[i]) / std[i]
     return z
 
 

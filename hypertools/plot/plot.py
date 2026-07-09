@@ -1436,6 +1436,22 @@ def plot(
                 "as sugar -- see pipeline='s docstring)."
             )
 
+    # A whole already-fitted Pipeline belongs in pipeline=, not a single stage
+    # kwarg: passing one as reduce=/manip=/etc would apply it as that ONE stage
+    # and then plot re-applies the reduce stage to enforce ndims, double-applying
+    # it (QC 2026-07: this produced a cryptic "X has N features, but PCA is
+    # expecting M features" error). Point the user at the dedicated reuse path.
+    from ..core.pipeline import Pipeline as _HypPipeline
+    for _stage_name, _stage_value in (('manip', manip), ('normalize', normalize),
+                                      ('reduce', reduce), ('align', align),
+                                      ('cluster', cluster)):
+        if isinstance(_stage_value, _HypPipeline) and _stage_value.is_fitted:
+            raise ValueError(
+                f"{_stage_name}= received an already-fitted hypertools Pipeline. "
+                "A whole fitted Pipeline encodes all of its own stages -- reuse "
+                "it via hyp.plot(x, pipeline=<that Pipeline>), not as a single "
+                "stage kwarg.")
+
     # streaming inputs (issue #101): iterators/generators and Hugging Face
     # IterableDatasets are detected from the structure of the input -- no
     # flag needed. Models are fitted on the first `stream_init` samples and

@@ -66,10 +66,21 @@ def fitter(data, axis=0, min=0, max=1):
 # noinspection DuplicatedCode
 @dw.decorate.apply_stacked
 def _transform_stacked(data, **kwargs):
+    import numpy as np
     z = data.copy()
-    for c in z.columns:
-        z[c] -= kwargs['baseline'][c]
-        z[c] /= kwargs['peak'][c]
+    # Key the fitted baseline/peak POSITIONALLY (by column order), not by column
+    # LABEL -- matching this manipulator's `inverter`, which is already
+    # positional. Label keying broke reuse of a fitted Normalize on data whose
+    # column labels differ from the fit-time data (QC 2026-07). In the normal
+    # (non-reuse) path the labels are identical, so this is a no-op.
+    baseline = np.asarray(kwargs['baseline'], dtype=float)
+    peak = np.asarray(kwargs['peak'], dtype=float)
+    if z.shape[1] != baseline.shape[0]:
+        raise ValueError(
+            f'Normalize was fit on {baseline.shape[0]} column(s) but got '
+            f'{z.shape[1]}')
+    for i, c in enumerate(z.columns):
+        z[c] = (z[c] - baseline[i]) / peak[i]
 
     z *= (kwargs['max'] - kwargs['min'])
     z += kwargs['min']
