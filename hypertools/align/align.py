@@ -41,6 +41,17 @@ _ALIAS = {
 }
 
 
+def _reject_unknown_aligner(name):
+    """Raise a clear error for an unknown align-model name. `unpack_model`
+    passes unrecognized strings through unchanged, so without this the string
+    later hit "'str' object has no attribute 'fit_transform'" (QC 2026-07).
+    Matches the clear "unknown X model" errors reduce/cluster/predict give."""
+    raise ValueError(
+        f"unknown align model {name!r}; supported names: "
+        f"{', '.join(sorted(a.__name__ for a in ALIGNERS))} (or pass an "
+        "Aligner subclass or instance directly).")
+
+
 def _resolve_align_spec(model, extra_kwargs):
     """Resolve a `model=` spec (+ leftover `**kwargs`) into an unfitted (or,
     for an already-fitted/-constructed instance, passed-through-unchanged)
@@ -105,6 +116,11 @@ def _resolve_align_spec(model, extra_kwargs):
         if isinstance(c_model, str):
             c_model = _ALIAS.get(c_model, c_model)
         resolved_inner = unpack_model(c_model, valid=ALIGNERS, parent_class=Aligner)
+        if isinstance(resolved_inner, str):
+            # unknown name inside the DICT form -- previously slipped past the
+            # bare-string guard below and hit the cryptic AttributeError
+            # (QC 2026-07 red-team: align={'model': 'Nope'}).
+            _reject_unknown_aligner(resolved_inner)
         if isinstance(resolved_inner, type):
             return resolved_inner(*c_args, **c_kwargs)
         # already-constructed (or already-fitted) instance: params ignored,
@@ -113,14 +129,7 @@ def _resolve_align_spec(model, extra_kwargs):
 
     resolved = unpack_model(model, valid=ALIGNERS, parent_class=Aligner)
     if isinstance(resolved, str):
-        # unknown registry name: unpack_model passes strings through
-        # unchanged, so without this the string later hit
-        # "'str' object has no attribute 'fit_transform'" (QC 2026-07). Match
-        # the clear "unknown X model" errors reduce/cluster/predict give.
-        raise ValueError(
-            f"unknown align model {resolved!r}; supported names: "
-            f"{', '.join(sorted(a.__name__ for a in ALIGNERS))} (or pass an "
-            "Aligner subclass or instance directly).")
+        _reject_unknown_aligner(resolved)
     if isinstance(resolved, type):
         return resolved(**extra_kwargs)
     # an already-constructed (unfitted) or already-fitted instance is

@@ -182,9 +182,14 @@ def format_data(x, vectorizer='CountVectorizer',
         else:
             processed_x.append(x[i])
 
-    # reshape anything that is 1d
-    if any([i.ndim<=1 for i in processed_x]):
-        processed_x = [np.reshape(i,(i.shape[0],1)) if i.ndim==1 else i for i in processed_x]
+    # reshape anything that is 0d or 1d into a 2d (observations x features)
+    # array. QC 2026-07: a 0-d array like np.array(5) has ndim 0, so the old
+    # `if i.ndim==1` branch left it untouched and it later raised the opaque
+    # "tuple index out of range" on i.shape[0]; a scalar is now one observation
+    # with one feature (a (1, 1) array), consistent with [5] -> (1, 1).
+    if any([i.ndim <= 1 for i in processed_x]):
+        processed_x = [np.reshape(i, (i.shape[0] if i.ndim == 1 else 1, 1))
+                       if i.ndim <= 1 else i for i in processed_x]
 
     contains_text = any([dtype in ['list_str', 'str', 'arr_str'] for dtype in dtypes])
     contains_num = any([dtype in ['list_num', 'array', 'df', 'arr_num'] for dtype in dtypes])

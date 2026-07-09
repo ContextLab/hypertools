@@ -1,6 +1,7 @@
 # Vendored from the pca-magic project. See license in-repo.
 
 import os
+import warnings
 
 import numpy as np
 from scipy.linalg import orth
@@ -32,7 +33,8 @@ class PPCA(object):
 
         return (X - self.means) / self.stds
 
-    def fit(self, data, d=None, tol=1e-4, min_obs=10, verbose=False):
+    def fit(self, data, d=None, tol=1e-4, min_obs=10, verbose=False,
+            max_iter=500):
         """Fit the probabilistic PCA model on `data` via EM, tolerating NaNs.
 
         Parameters
@@ -141,6 +143,19 @@ class PPCA(object):
             if verbose:
                 print(diff)
             if (diff < tol) and (counter > 5):
+                break
+
+            # Bound the EM loop so degenerate / ill-conditioned data cannot spin
+            # it forever (QC 2026-07 red-team: small or very-sparse NaN inputs
+            # could hang for >25s). A non-finite diff (e.g. NaN from a collapsed
+            # ss) also never satisfies `diff < tol`, so it would loop forever too
+            # -- treat it as "no further progress" and stop.
+            if counter >= max_iter or not np.isfinite(diff):
+                warnings.warn(
+                    f'PPCA EM did not converge within {max_iter} iterations '
+                    f'(last relative change {diff:.3g}, tol {tol:g}); returning '
+                    'the current estimate. Results may be approximate; try '
+                    'a lower-rank d= or a different imputer if needed.')
                 break
 
             counter += 1

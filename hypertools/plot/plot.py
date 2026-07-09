@@ -1956,6 +1956,14 @@ def plot(
             hue_array = np.asarray(hue)
         except Exception:
             hue_array = None
+        # a SCALAR hue -- a single string or number, e.g. hue='red' -- means
+        # "put every observation in one group". Broadcast it to one value per
+        # observation so it is not mis-measured as len('red') == 3 characters
+        # (QC 2026-07 red-team: hue='red' on 20 points raised the nonsensical
+        # "hue has 3 entries but the data has 20 observations").
+        if hue_array is not None and hue_array.ndim == 0:
+            hue = [hue_array.item()] * n_obs
+            hue_array = np.asarray(hue)
         # validate hue length (QC 2026-07): a hue that was too SHORT silently
         # truncated the plot (rendered only the first len(hue) points, no
         # warning); too LONG raised a cryptic IndexError deep in reshape_data.

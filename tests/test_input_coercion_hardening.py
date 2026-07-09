@@ -71,12 +71,36 @@ def test_matching_hue_length_still_works():
     assert hyp.plot(x, 'o', hue=np.linspace(0, 1, 6), show=False) is not None
 
 
+@pytest.mark.parametrize('hue', ['red', 3])
+def test_scalar_hue_broadcasts_to_one_group(hue):
+    """A single string/number hue means 'one group for all observations'; it
+    must not be mis-measured as len('red')==3 characters (red-team of 7d71975b)."""
+    x = _rng().normal(size=(20, 3))
+    assert hyp.plot(x, 'o', hue=hue, show=False) is not None
+
+
+def test_zero_dim_ndarray_is_accepted():
+    """A 0-d array (np.array(5)) used to raise an opaque 'tuple index out of
+    range'; it is now one observation with one feature (red-team of 7d71975b)."""
+    assert hyp.plot(np.array(5.0), show=False) is not None
+
+
 # --- error quality -----------------------------------------------------
 
 def test_unknown_align_model_clear_error():
     x = _rng().normal(size=(20, 4))
     with pytest.raises(ValueError, match='unknown align model'):
         hyp.align([x, x + 1], model='NotAnAligner')
+
+
+@pytest.mark.parametrize('spec', [{'model': 'NotAnAligner'},
+                                  {'model': 'NotAnAligner', 'kwargs': {}}])
+def test_unknown_align_model_dict_form_clear_error(spec):
+    """The dict spec form used to slip past the bare-string guard and hit the
+    cryptic 'str object has no attribute fit_transform' (red-team of 7d71975b)."""
+    x = _rng().normal(size=(20, 4))
+    with pytest.raises(ValueError, match='unknown align model'):
+        hyp.align([x, x + 1], model=spec)
 
 
 def test_infinite_values_clear_error():
