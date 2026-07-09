@@ -117,10 +117,11 @@ def transformer(data, **kwargs):
         # Reuse path (return_model=True round-trip): standardize the KEPT
         # columns with the fitted mean/std, zero-fill NaNs, then project to the
         # latent space and back to reconstruct in feature space.
-        assert original[:, valid].shape[1] == len(m.means), ValueError(
-            'PPCA.transform on new data requires the same columns the imputer '
-            'was fit on (columns dropped for having fewer than min_obs valid '
-            'observations at fit time cannot be reused)')
+        if original[:, valid].shape[1] != len(m.means):
+            raise ValueError(
+                'PPCA.transform on new data requires the same columns the '
+                'imputer was fit on (columns dropped for having fewer than '
+                'min_obs valid observations at fit time cannot be reused)')
         standardized = (original[:, valid] - m.means) / m.stds
         standardized = np.where(np.isnan(standardized), 0.0, standardized)
         recon_kept = ((standardized @ m.C) @ m.C.T) * m.stds + m.means
@@ -134,6 +135,23 @@ def transformer(data, **kwargs):
     out = original.copy()
     fillable = np.isnan(original) & ~np.isnan(recon_full)
     out[fillable] = recon_full[fillable]
+
+    # Columns PPCA DROPPED (fewer than min_obs observations) are not modeled, so
+    # their missing entries are still NaN after the splice. Leaving them NaN
+    # regressed the primary path: hyp.reduce/hyp.plot feed PPCA's output straight
+    # into PCA, which raised "Input X contains NaN" on sparse-column data (QC
+    # 2026-07 red-team). Fill each still-missing position with its column's
+    # observed mean (0.0 for a column with no observations at all) so the imputed
+    # matrix is dense -- exactly as the pre-splice reconstruction was. Observed
+    # values are untouched (only originally-NaN positions are filled). Rows that
+    # are entirely missing are re-masked to NaN below (documented limitation).
+    still_missing = np.isnan(out)
+    if still_missing.any():
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', RuntimeWarning)  # all-NaN col -> nan
+            col_means = np.nanmean(original, axis=0)
+        col_means = np.where(np.isnan(col_means), 0.0, col_means)
+        out[still_missing] = np.broadcast_to(col_means, original.shape)[still_missing]
 
     # rows that were entirely missing cannot be reconstructed at all
     all_missing_rows = np.all(np.isnan(original), axis=1)

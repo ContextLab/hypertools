@@ -74,6 +74,17 @@ class PPCA(object):
         data = self.raw[:, valid_series].copy()
         N = data.shape[0]
         D = data.shape[1]
+        # PPCA models cross-column covariance, so it needs >= 2 kept columns;
+        # with a single column np.cov below collapses to a 0-d array and
+        # np.linalg.eig raised a cryptic "0-dimensional array" LinAlgError
+        # (QC 2026-07 red-team). Fail clearly and point at imputers that handle
+        # single-column / very-sparse data.
+        if D < 2:
+            raise ValueError(
+                f'PPCA needs at least 2 columns with >= min_obs ({min_obs}) '
+                f'non-missing observations to model cross-column structure; got '
+                f'{D}. Use model="Kalman", "SimpleImputer", or "KNNImputer" for '
+                'single-column (or very sparse) data.')
 
         self.means = np.nanmean(data, axis=0)
         self.stds = np.nanstd(data, axis=0)

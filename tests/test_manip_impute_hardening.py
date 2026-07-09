@@ -9,6 +9,8 @@
 
 Real data + sklearn/numeric cross-checks, no mocks.
 """
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -69,6 +71,33 @@ def test_ppca_impute_rank_deficient_preserves_shape():
     xm[_rng().random(x.shape) < 0.1] = np.nan
     out = np.asarray(hyp.impute(xm, model='PPCA'))
     assert out.shape == (50, 5)  # was (50, 2) -- latent scores
+
+
+def test_ppca_impute_dropped_column_is_dense_and_feeds_reduce():
+    """Red-team regression: a column with < min_obs observations is DROPPED by
+    PPCA; the splice used to leave its missing entries NaN, which then crashed
+    hyp.reduce/hyp.plot with 'Input X contains NaN'. Dropped columns must be
+    densified (observed-mean fill) while observed values stay exact."""
+    x = _rng().normal(size=(40, 5))
+    xm = x.copy()
+    xm[5:, 2] = np.nan  # column 2 keeps only 5 (< min_obs=10) observations
+    mask = np.isnan(xm)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        out = np.asarray(hyp.impute(xm, model='PPCA'))
+        red = np.asarray(hyp.reduce(xm, reduce='PCA', ndims=2))
+    assert out.shape == (40, 5)
+    assert np.isnan(out).sum() == 0            # dense: dropped column filled
+    assert np.allclose(out[~mask], x[~mask], atol=1e-9)  # observed preserved
+    assert red.shape == (40, 2)                # no longer crashes downstream
+
+
+def test_ppca_impute_single_column_clear_error():
+    """A single (or sub-2) valid column can't support PPCA's cross-column model;
+    it used to crash with a cryptic LinAlgError ('0-dimensional array')."""
+    df = pd.DataFrame({'a': ([1.0, 2.0, np.nan, 4.0, 5.0] * 4)})
+    with pytest.raises(ValueError, match='at least 2 columns'):
+        hyp.impute(df, model='PPCA')
 
 
 # --- manip cross-module stage kwargs (M4) ------------------------------
