@@ -362,7 +362,9 @@ def _load_legacy(dataset_path):
     except ImportError as e:
         # catches ModuleNotFoundError since it's a subclass
         raise HypertoolsIOError(
-            "To load legacy-format datasets, install the 'deepdish' module"
+            "This looks like a legacy (<1.0) deepdish/HDF5-format dataset. "
+            "Reading it needs the optional 'deepdish' dependency; install it "
+            'with `pip install "hypertools[legacy]"` (or `pip install deepdish`).'
         ) from e
     data_dict = dd.io.load(dataset_path)
 

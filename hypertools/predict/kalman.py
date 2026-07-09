@@ -6,10 +6,10 @@ observations) to produce a `t`-step-ahead forecast. NaNs in the input are
 tolerated via `np.ma.masked_invalid`, which pykalman treats as missing
 observations during both EM and filtering.
 
-`pykalman` ships via the optional `[predict]` extra; it is imported lazily
-(inside the fitter) so `hypertools.predict` stays importable without it, and
-a friendly `ImportError` is raised only when a `Kalman` forecaster is
-actually fit.
+`pykalman` is a core hypertools dependency (pure-python, lightweight), so the
+`Kalman` forecaster works out of the box. It is still imported lazily (inside
+the fitter) so `hypertools.predict` stays importable even in an environment
+where the core deps were stripped, raising a friendly `ImportError` only then.
 """
 import numpy as np
 import pandas as pd
@@ -22,8 +22,9 @@ def _import_kalman_filter():
         from pykalman import KalmanFilter
     except ImportError as e:
         raise ImportError(
-            'pykalman is required for the Kalman forecaster; install it with '
-            'pip install "hypertools[predict]"'
+            'pykalman is required for the Kalman forecaster. It is normally a '
+            'core hypertools dependency; reinstall hypertools, or install it '
+            'directly with `pip install pykalman`.'
         ) from e
     return KalmanFilter
 

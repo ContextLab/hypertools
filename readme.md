@@ -101,12 +101,12 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
   stream_init=200, stream_chunk=20)`, gated behind
   `pip install "hypertools[lsl]"`.
 + **`hyp.predict`/`hyp.impute`:** `hyp.predict(data, model='Kalman', t=10)`
-  forecasts `t` new rows continuing each dataset (`Kalman`,
-  `GaussianProcess`, `AutoRegressor`, `ARIMA`, `Laplace`, and -- with
-  `pip install "hypertools[predict-hf]"` -- `Chronos`); `hyp.impute(data,
-  model='PPCA')` fills missing (NaN) values in place, both with
-  `return_model=True` for reuse. The non-HF forecasters/imputers need
-  `pip install "hypertools[predict]"`.
+  forecasts `t` new rows continuing each dataset. `Kalman`, `GaussianProcess`,
+  `AutoRegressor`, and `ARIMA` work with the base install (pykalman/statsmodels
+  are core deps); `Laplace` needs `pip install "hypertools[predict]"` (skaters)
+  and `Chronos` needs `pip install "hypertools[predict-hf]"`. `hyp.impute(data,
+  model='PPCA')` fills missing (NaN) values in place; the `Kalman` imputer also
+  works with the base install. Both take `return_model=True` for reuse.
 + **Kaggle loader:** `hyp.load('kaggle/uciml/iris')` downloads a public
   Kaggle dataset anonymously via `kagglehub`, gated behind
   `pip install "hypertools[kaggle]"`.

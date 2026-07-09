@@ -10,10 +10,10 @@ observed features at all, the Kalman smoother's state propagates across
 time, so it CAN fill rows where every feature is missing, as long as
 neighboring rows have some observations -- this closes the GH #169 gap.
 
-`pykalman` ships via the optional `[predict]` extra (shared with
-`hypertools.predict.kalman`); imported lazily so `hypertools.impute` stays
-importable without it, and a friendly `ImportError` is raised only when a
-`Kalman` imputer is actually fit.
+`pykalman` is a core hypertools dependency (shared with
+`hypertools.predict.kalman`), so the `Kalman` imputer works out of the box;
+imported lazily so `hypertools.impute` stays importable even where the core
+deps were stripped, raising a friendly `ImportError` only then.
 """
 import numpy as np
 import pandas as pd
@@ -26,8 +26,9 @@ def _import_kalman_filter():
         from pykalman import KalmanFilter
     except ImportError as e:
         raise ImportError(
-            'pykalman is required for the Kalman imputer; install it with '
-            'pip install "hypertools[predict]"'
+            'pykalman is required for the Kalman imputer. It is normally a '
+            'core hypertools dependency; reinstall hypertools, or install it '
+            'directly with `pip install pykalman`.'
         ) from e
     return KalmanFilter
 
