@@ -675,3 +675,21 @@ class TestSurfaceHuePerVertex:
         flat = chroma_spread(_mpl_facecolors(
             hyp.plot(traj, '.', surface=True, show=False)))
         assert with_hue > flat * 2.0
+
+    def test_explicit_surface_color_wins_over_hue(self):
+        # an explicit surface color= must NOT be silently overridden by the
+        # per-vertex hue coloring: the explicit color wins (one flat hue), and
+        # hue only colors surfaces that inherit their color (color=None).
+        def chroma_spread(fc):
+            rgb = fc[:, :3]
+            ch = rgb / (rgb.sum(axis=1, keepdims=True) + 1e-9)
+            return float(ch.std(axis=0).sum())
+
+        traj, hue = self._gradient_traj()
+        explicit = _mpl_facecolors(hyp.plot(traj, '.', hue=hue,
+                                            surface={'color': 'crimson'},
+                                            show=False))
+        inherited = _mpl_facecolors(hyp.plot(traj, '.', hue=hue, surface=True,
+                                             show=False))
+        assert chroma_spread(explicit) < chroma_spread(inherited) * 0.5
+        assert explicit[:, 0].mean() > explicit[:, 2].mean()  # crimson: red > blue

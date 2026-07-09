@@ -2439,12 +2439,18 @@ def plot(
     # points' hue colors (meshutil.vertex_colors_from_points) rather than one
     # flat mean color (the old behavior painted the whole hull the average of
     # the points' colors -- e.g. gray for a rainbow hue). Bundle each dataset's
-    # (points, per-point RGB); None where a dataset has no surface, or when no
-    # per-point hue colors exist (then surface_colors' flat color is used).
+    # (points, per-point RGB); None where a dataset has no surface, no per-point
+    # hue colors, or an EXPLICIT surface color= was given (an explicit color
+    # wins over the inferred hue -- otherwise it would be silently ignored),
+    # in which case surface_colors' flat color is used.
+    def _surface_inherits_color(i):
+        spec = surface_list[i] if i < len(surface_list) else None
+        return spec is not None and spec.get('color') is None
+
     if surface_list is not None and line_colors is not None:
         surface_point_colors = [
             (np.asarray(xform[i])[:, :3], np.asarray(line_colors[i])[:, :3])
-            if i < len(surface_list) and surface_list[i] is not None else None
+            if _surface_inherits_color(i) else None
             for i in range(len(xform))
         ]
     else:
