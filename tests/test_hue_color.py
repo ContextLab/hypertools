@@ -85,6 +85,21 @@ def test_color_reduce_kwarg_accepts_reduce_spec():
     assert fig is not None
 
 
+@pytest.mark.parametrize('k', [1, 2, 3, 5, 10])
+def test_color_reduce_handles_any_column_count(k):
+    # red-team follow-up: color_reduce= with a <=3-column matrix used to crash
+    # (hyp.reduce(ndims=3) can't synthesize dims from <=3 features). Now <=3
+    # columns are used directly (scaled + padded); >3 are reduced.
+    rng = np.random.default_rng(0)
+    x = np.cumsum(rng.normal(size=(60, 4)), axis=0)
+    hue = rng.normal(size=(60, k)) if k > 1 else rng.normal(size=(60,))
+    # both marker and line paths
+    assert hyp.plot(x, '.', ndims=3, hue=hue, color_reduce='PCA',
+                    show=False) is not None
+    assert hyp.plot(x, '-', ndims=3, hue=hue, color_reduce='PCA',
+                    show=False) is not None
+
+
 def test_matrix_hue_le3_columns_stays_palette_blend():
     # a <=3-column matrix without color_reduce keeps blending over the palette
     # (mixture-proportion semantics), not the RGB-reduce path

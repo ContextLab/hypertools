@@ -963,10 +963,29 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             # html with the embedded frames capped (total duration and
             # rotations preserved, so pacing stays identical).
             _show_sphinx_gallery(fig)
-        else:
+        elif not _in_interactive_shell():
+            # Plain script (no IPython frontend): nothing else will display the
+            # figure, so show it here. In an interactive notebook we DON'T call
+            # fig.show(): plot() RETURNS the Figure, and the notebook frontend
+            # rich-displays that return value exactly once. Calling fig.show()
+            # too rendered it TWICE, and -- since fig.show() fires mid-cell,
+            # before matplotlib's end-of-cell flush -- made plotly figures jump
+            # ahead of matplotlib ones (Jeremy's QC 2026-07 double-display /
+            # ordering report). Assign the result or use show=False to hold the
+            # Figure without displaying it.
             fig.show()
 
     return fig
+
+
+def _in_interactive_shell():
+    """True inside an interactive IPython/Jupyter frontend (where a returned
+    figure is auto-displayed by the cell's rich-display hook)."""
+    try:
+        from IPython import get_ipython
+        return get_ipython() is not None
+    except Exception:
+        return False
 
 
 _SG_MAX_EMBEDDED_FRAMES = 150

@@ -150,6 +150,7 @@ def plot(
     hue=None,
     color_reduce=None,
     labels=None,
+    names=None,
     legend=None,
     colorbar=None,
     title=None,
@@ -388,6 +389,15 @@ def plot(
         matrix becomes a continuous RGB coloring. A matrix `hue` with <=3
         columns is left on the palette-blend path unless `color_reduce=` is
         given explicitly.
+
+    names : list or None
+        Per-DATASET names, one per dataset in a list input (default: None).
+        Distinct from `labels` (per-POINT text call-outs) and `hue` (per-
+        observation coloring): each name labels its dataset's trace and turns
+        the legend on, so `hyp.plot([raw, a, b], names=['raw', 'a', 'b'])`
+        shows a legend naming the three datasets. Must have exactly one entry
+        per dataset; mutually exclusive with passing a `legend=` list (use one
+        or the other). Rendered on both the matplotlib and plotly backends.
 
     labels : list
         A list of labels for each point. Must be dimensionality of data (x).
@@ -1907,16 +1917,33 @@ def plot(
         # colors. A <=3-column matrix with no color_reduce= keeps the
         # palette-blend path (mixture proportions etc.).
         if hue_is_matrix and (hue_array.shape[1] > 3 or color_reduce is not None):
-            from ..reduce.reduce import reduce as _color_reducer
-            _rgb = np.asarray(
-                _color_reducer(hue_array,
-                               reduce=(color_reduce or 'IncrementalPCA'),
-                               ndims=3),
-                dtype=np.float64)
+            _rgb = np.asarray(hue_array, dtype=np.float64)
+            if _rgb.shape[1] > 3:
+                # more than 3 columns: reduce to 3 (default IncrementalPCA;
+                # color_reduce accepts any hyp.reduce spec). A <=3-column matrix
+                # is NOT reduced -- hyp.reduce(ndims=3) can't synthesize more
+                # dimensions than the input has, and doing so crashed for k<=3
+                # (QC 2026-07 red-team); its columns are used directly instead.
+                from ..reduce.reduce import reduce as _color_reducer
+                _rgb = np.asarray(
+                    _color_reducer(_rgb,
+                                   reduce=(color_reduce or 'IncrementalPCA'),
+                                   ndims=3),
+                    dtype=np.float64)
+                if _rgb.ndim == 3 and _rgb.shape[0] == 1:
+                    _rgb = _rgb[0]
+            # min-max each column to [0, 1]
             _lo = _rgb.min(axis=0, keepdims=True)
             _hi = _rgb.max(axis=0, keepdims=True)
             _span = np.where((_hi - _lo) > 0, _hi - _lo, 1.0)
-            hue_array = np.clip((_rgb - _lo) / _span, 0.0, 1.0)
+            _rgb = np.clip((_rgb - _lo) / _span, 0.0, 1.0)
+            # pad to exactly 3 channels (a 1- or 2-column matrix given with an
+            # explicit color_reduce=): fill the missing channel(s) with a
+            # neutral 0.5 so the present columns still drive the color.
+            if _rgb.shape[1] < 3:
+                _rgb = np.hstack(
+                    [_rgb, np.full((_rgb.shape[0], 3 - _rgb.shape[1]), 0.5)])
+            hue_array = _rgb
             multicolor_hue_is_rgb = True
 
         if (hue_is_matrix or hue_is_continuous) and not animate:
@@ -2110,6 +2137,23 @@ def plot(
                 UserWarning,
                 stacklevel=2,
             )
+
+    # names= (QC 2026-07): per-DATASET names, distinct from per-point `labels=`
+    # (text call-outs on individual observations) and the `legend=True`
+    # auto-numbering. Each name labels its dataset's trace and turns the legend
+    # on, so `hyp.plot([raw, a, b, c], names=['raw','a','b','c'], ...)` shows a
+    # legend naming the four datasets. Resolved BEFORE the legend block below so
+    # it wins over a bare legend=True; explicit conflicting values raise.
+    if names is not None:
+        names = list(names)
+        if len(names) != len(xform):
+            raise ValueError(
+                f"names must have one entry per dataset ({len(xform)}); got "
+                f"{len(names)}")
+        if isinstance(legend, (list, tuple)):
+            raise ValueError(
+                "pass dataset names via names= OR a legend= list, not both")
+        legend = names
 
     # handle legend
     if legend is not None:
