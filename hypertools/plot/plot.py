@@ -1313,6 +1313,18 @@ def plot(
             "effects 'chemtrails'/'precog'/'bullettime' are boolean kwargs, not "
             "styles -- e.g. animate='parallel', chemtrails=True.")
 
+    # animations need a positive duration and frame rate (QC 2026-07: duration=0
+    # or frame_rate=0 raised ZeroDivisionError, and a negative duration a cryptic
+    # "zero-size array to reduction" error, from the frame-count math).
+    if animate:
+        if duration is not None and duration <= 0:
+            raise ValueError(
+                f"duration must be a positive number of seconds for an "
+                f"animation; got {duration!r}.")
+        if frame_rate is not None and frame_rate <= 0:
+            raise ValueError(
+                f"frame_rate must be a positive number; got {frame_rate!r}.")
+
     # focused= resolution (GH #275 round17 #8): the length, in SECONDS (the
     # same unit as `tail_duration`), of the opaque "in-focus" window for
     # `animate='window'` and for any dataset with a `chemtrails`/`precog`/

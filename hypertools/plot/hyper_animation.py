@@ -56,10 +56,30 @@ class HyperAnimation(tuple):
         delegates to ``matplotlib.animation.Animation.to_jshtml``)."""
         return self.animation.to_jshtml(*args, **kwargs)
 
-    def save(self, *args, **kwargs):
-        """Save the animation to a file (gif/mp4/...); delegates to
-        ``matplotlib.animation.Animation.save``."""
-        return self.animation.save(*args, **kwargs)
+    def save(self, filename, *args, **kwargs):
+        """Save the animation to a file. The writer is chosen by file extension
+        -- gif and png/apng (animated PNG) via Pillow, .svg as a frame-capped
+        vector animation, .mp4/.mov/.avi via ffmpeg -- matching what
+        ``hyp.plot(..., save_path=...)`` supports. Passing an explicit ``writer``
+        (or positional args) delegates straight to
+        ``matplotlib.animation.Animation.save`` instead.
+
+        QC 2026-07: ``.save('x.svg')`` / ``.save('x.png')`` used to crash (raw
+        ``Animation.save`` tried to pipe h264 into an svg/png), even though the
+        same extensions work via ``save_path=``.
+        """
+        if args or 'writer' in kwargs:
+            return self.animation.save(filename, *args, **kwargs)
+        from .animate import _save_animation
+        fps = kwargs.pop('fps', None) or self._fps()
+        return _save_animation(self.animation, str(filename), fps)
+
+    def _fps(self):
+        """Frames per second from the animation's frame interval (default 30)."""
+        interval = getattr(self.animation, '_interval', None)
+        if interval:
+            return max(1, round(1000.0 / interval))
+        return 30
 
     def _repr_html_(self):
         """Rich display in Jupyter/Colab: play the animation inline. Prefer an
