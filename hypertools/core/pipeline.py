@@ -105,6 +105,32 @@ def _resolve_step(spec):
     return model
 
 
+def _step_fit_transform(model, data):
+    """Fit and apply one pipeline step. Falls back to ``fit_predict`` for
+    models with no ``fit_transform`` -- density/agglomerative clusterers
+    (DBSCAN, AgglomerativeClustering, OPTICS, MeanShift, ...) produce labels,
+    not a transform (QC 2026-07: these previously crashed with "'X' object has
+    no attribute 'fit_transform'")."""
+    if hasattr(model, 'fit_transform'):
+        return model.fit_transform(data)
+    if hasattr(model, 'fit_predict'):
+        import numpy as np
+        return np.asarray(model.fit_predict(data))
+    model.fit(data)
+    return model.transform(data) if hasattr(model, 'transform') else data
+
+
+def _step_transform(model, data):
+    """Apply one already-fitted pipeline step, falling back to ``predict``
+    (then ``fit_predict``) for label-producing models with no ``transform``."""
+    if hasattr(model, 'transform'):
+        return model.transform(data)
+    import numpy as np
+    if hasattr(model, 'predict'):
+        return np.asarray(model.predict(data))
+    return np.asarray(model.fit_predict(data))
+
+
 def _base_name(model):
     """Auto-name a step the way scikit-learn does: the lowercased class
     name of the underlying model."""
@@ -292,7 +318,7 @@ class Pipeline(BaseEstimator):
         the next. Refits every step, even if some were already fitted."""
         out = data
         for _, model in self.steps:
-            out = model.fit_transform(out)
+            out = _step_fit_transform(model, out)
         self._is_fitted = True
         return out
 
@@ -303,7 +329,7 @@ class Pipeline(BaseEstimator):
             raise NotFittedError('Pipeline must be fit before transform')
         out = data
         for _, model in self.steps:
-            out = model.transform(out)
+            out = _step_transform(model, out)
         return out
 
     def inverse_transform(self, data):
@@ -368,7 +394,11 @@ def build_pipeline(manip=None, normalize=None, reduce=None, ndims=None,
     steps = []
     for stage in order:
         spec = specs.get(stage)
-        if spec is None:
+        # None -> the stage is omitted. normalize=False ALSO means "do not
+        # normalize", so skip it too (QC 2026-07: a normalize=False step's fit
+        # returned (data, None), leaving the step unfitted, so a later
+        # Pipeline.transform on the returned model raised NotFittedError).
+        if spec is None or (stage == 'normalize' and spec is False):
             continue
         steps.append((stage, _make_stage_step(stage, spec, ndims)))
     return Pipeline(steps)

@@ -159,6 +159,21 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
         pipe = build_pipeline(manip=manip, normalize=normalize, reduce=reduce,
                               ndims=ndims, align=align, cluster=cluster)
         result = pipe.fit_transform(data)
+        if cluster is not None:
+            # analyze returns the TRANSFORMED DATA, not cluster labels, even when
+            # cluster= is given -- the labels live in the fitted 'cluster' step
+            # of the returned Pipeline (see this function's docstring). The
+            # fit_transform above ran the whole chain (including cluster) to fit
+            # it, so its return value is the cluster labels; recover the
+            # pre-cluster transformed data by re-applying the fitted non-cluster
+            # steps (QC 2026-07: analyze previously returned the raw labels,
+            # contradicting its documented contract).
+            from ..core.pipeline import _step_transform
+            result = data
+            for name, step in pipe.steps:
+                if name == 'cluster':
+                    break
+                result = _step_transform(step, result)
         if internal and not isinstance(result, list):
             result = [result]
         return (result, pipe) if return_model else result

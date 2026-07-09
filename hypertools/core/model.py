@@ -17,6 +17,8 @@ strings with eval() over sklearn's namespace, which was fragile and
 security-sensitive; named models here are imported explicitly.
 """
 
+import inspect
+
 import numpy as np
 
 
@@ -178,8 +180,12 @@ def _resolve_model(model, ndims):
             from umap import UMAP as model_cls
         else:
             model_cls = registry[resolved]
-        if ndims is not None:
-            params.setdefault('n_components', ndims)
+        # only inject n_components on models that actually accept it (QC 2026-07:
+        # this used to force n_components onto e.g. KMeans -> "unexpected keyword
+        # argument 'n_components'"; the instance path below already guards it).
+        if (ndims is not None and 'n_components' not in params
+                and 'n_components' in inspect.signature(model_cls).parameters):
+            params['n_components'] = ndims
         return model_cls(**params)
 
     # instance: duck-type on the sklearn convention
