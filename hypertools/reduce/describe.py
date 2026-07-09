@@ -10,7 +10,7 @@ from ..tools.format_data import format_data as formatter
 
 
 def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
-             format_data=True):
+             format_data=True, backend='auto'):
     """
     Create plot describing covariance with as a function of number of dimensions
 
@@ -47,6 +47,15 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
 
     format_data : bool
         Whether or not to first call the format_data function (default: True).
+
+    backend : {'auto', 'matplotlib', 'plotly'}
+        Which plotting backend to draw the correlation-vs-dimensions figure
+        with when `show=True` (default: 'auto', resolved the same way
+        `hyp.plot` resolves it -- plotly on Colab/Kaggle when available, else
+        matplotlib). The matplotlib figure is a seaborn line plot with the top
+        and right spines removed; the plotly figure is an interactive
+        `go.Figure` (which has no top/right spines by default). The return
+        value (a dict) is identical either way.
 
     Returns
     ----------
@@ -116,26 +125,41 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     if max_dims is None:
         max_dims = len(result['average'])
 
-    # if show, plot it
+    # if show, plot it on the resolved backend
     if show:
-        fig, ax = plt.subplots()
-        # Convert to DataFrame for seaborn lineplot
-        import pandas as pd
-        df_data = []
-        for i, trace in enumerate(result['individual']):
-            for j, value in enumerate(trace):
-                df_data.append({
-                    'components': j + 2,
-                    'correlation': value,
-                    'trace': i
-                })
-        df = pd.DataFrame(df_data)
-        import seaborn as sns
-        ax = sns.lineplot(data=df, x='components', y='correlation', units='trace', estimator=None, alpha=0.7)
-        ax.set_title('Correlation with raw data by number of components')
-        ax.set_ylabel('Correlation')
-        ax.set_xlabel('Number of components')
-        plt.show()
+        from ..plot.plotly_backend import resolve_backend
+        resolved_backend = resolve_backend(backend)
+        title = 'Correlation with raw data by number of components'
+        if resolved_backend == 'plotly':
+            import plotly.graph_objects as go
+            pfig = go.Figure()
+            for i, trace in enumerate(result['individual']):
+                pfig.add_trace(go.Scatter(
+                    x=list(range(2, 2 + len(trace))), y=list(trace),
+                    mode='lines', opacity=0.7, name=f'dataset {i}',
+                    showlegend=len(result['individual']) > 1))
+            pfig.update_layout(title=title, xaxis_title='Number of components',
+                               yaxis_title='Correlation')
+            # plotly axes have no top/right spines by default (Jeremy's despine
+            # request is inherent here); return the dict, show the figure
+            pfig.show()
+        else:
+            import pandas as pd
+            import seaborn as sns
+            df = pd.DataFrame([
+                {'components': j + 2, 'correlation': value, 'trace': i}
+                for i, trace in enumerate(result['individual'])
+                for j, value in enumerate(trace)
+            ])
+            fig, ax = plt.subplots()
+            sns.lineplot(data=df, x='components', y='correlation', units='trace',
+                         estimator=None, alpha=0.7, ax=ax)
+            ax.set_title(title)
+            ax.set_ylabel('Correlation')
+            ax.set_xlabel('Number of components')
+            # drop the top and right spines (Jeremy's despine request)
+            sns.despine(ax=ax, top=True, right=True)
+            plt.show()
     return result
 
 
