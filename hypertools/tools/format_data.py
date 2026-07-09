@@ -215,7 +215,12 @@ def format_data(x, vectorizer='CountVectorizer',
             for i,j in zip(processed_x, dtypes):
                 if j in ['list_num', 'array', 'df', 'arr_num']:
                     num_data.append(i)
-            if np.isnan(np.vstack(num_data)).any():
+            # check for NaNs PER dataset rather than by vstacking them all --
+            # datasets can legitimately have DIFFERENT column counts (the
+            # canonical hyperalignment case: each subject aligns padded to a
+            # common width), and vstacking them raised "all the input array
+            # dimensions ... must match exactly" (QC 2026-07).
+            if any(np.isnan(np.asarray(a, dtype=float)).any() for a in num_data):
                 if impute is not None:
                     num_data = fill_missing(num_data, model=impute)
                 else:

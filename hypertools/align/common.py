@@ -39,6 +39,15 @@ def trim_and_pad(data):
         rows = rows.intersection(set(d.index.values))
     c = np.max([x.shape[1] for x in data])
     rows = list(rows)
+    # warn on data loss: alignment keeps only the rows COMMON to every dataset
+    # (matched observation-by-observation), so datasets with different row
+    # counts / indices are trimmed. This used to happen silently (QC 2026-07).
+    if any(len(rows) < d.shape[0] for d in data):
+        import warnings
+        warnings.warn(
+            f"alignment keeps only the {len(rows)} row(s) common to all "
+            "datasets; datasets with more rows were trimmed. Align datasets "
+            "with matching numbers of observations to avoid dropping data.")
     return [pad(d.loc[rows], c) for d in data]
 
 
