@@ -88,5 +88,5 @@ def test_friendly_import_error_when_pykalman_missing(monkeypatch):
     monkeypatch.setattr(builtins, '__import__', fake_import)
 
     df = _make_df(n=30)
-    with pytest.raises(ImportError, match='hypertools\\[predict\\]'):
+    with pytest.raises(ImportError, match='pip install pykalman'):
         kalman_mod.Kalman(n_iter=2).fit(df)

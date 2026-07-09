@@ -77,11 +77,12 @@ predict-hf = ["chronos-forecasting>=2.0"]
 # needs xlrd, which is NOT bundled here -- a friendly ImportError points
 # users at `pip install xlrd` if they hit a .xls file without it.
 io = ["openpyxl>=3.1.0"]
-# hyp.load() of legacy (<1.0) hosted example-dataset .geo files stored in the
-# deepdish/HDF5 format. Opt-in; without it, loading such a file raises a
-# friendly HypertoolsIOError pointing here. deepdish is unmaintained but still
-# installs and imports under numpy 2 / Python 3.10-3.13.
-legacy = ["deepdish>=0.3.7"]
+# NOTE: there is deliberately no `legacy`/`deepdish` extra. Loading legacy
+# (<1.0) hosted .geo files stored in the deepdish/HDF5 format needs `deepdish`,
+# which is unmaintained and imports only under numpy<2 (it references the
+# numpy-2-removed `np.ComplexWarning`) -- so it cannot coexist with this
+# package's `numpy>=2.0` core requirement. hyp.load() of such a file raises a
+# friendly HypertoolsIOError telling the user to read it in a numpy<2 env.
 # 3-D `density=` smooth iso-surfaces (marching cubes) via scikit-image.
 # Opt-in; without it, plot(..., density=True) on 3-D matplotlib plots falls
 # back to a translucent scatter "fog" and emits a UserWarning suggesting

@@ -359,12 +359,19 @@ def _load_local(dataset_path):
 def _load_legacy(dataset_path):
     try:
         import deepdish as dd
-    except ImportError as e:
-        # catches ModuleNotFoundError since it's a subclass
+    except Exception as e:
+        # Broad except (not just ImportError): `deepdish` is unmaintained and
+        # references numpy internals removed in numpy 2 (e.g. np.ComplexWarning),
+        # so on this package's required numpy>=2 it fails to IMPORT with an
+        # AttributeError, not an ImportError. Either way the user needs the same
+        # remedy, so surface one friendly message.
         raise HypertoolsIOError(
             "This looks like a legacy (<1.0) deepdish/HDF5-format dataset. "
-            "Reading it needs the optional 'deepdish' dependency; install it "
-            'with `pip install "hypertools[legacy]"` (or `pip install deepdish`).'
+            "Reading it needs the `deepdish` package, which is unmaintained and "
+            "only works under numpy<2 (incompatible with hypertools' numpy>=2 "
+            "requirement). Read the file in a separate environment with "
+            "`numpy<2` and `pip install deepdish`, then re-save it in a modern "
+            "format (e.g. .npz/.csv)."
         ) from e
     data_dict = dd.io.load(dataset_path)
 

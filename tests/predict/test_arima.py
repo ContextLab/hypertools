@@ -75,5 +75,5 @@ def test_friendly_import_error_when_statsmodels_missing(monkeypatch):
     monkeypatch.setattr(builtins, '__import__', fake_import)
 
     df = _make_df(n=30)
-    with pytest.raises(ImportError, match='hypertools\\[predict\\]'):
+    with pytest.raises(ImportError, match='pip install statsmodels'):
         arima_mod.ARIMA().fit(df)

@@ -28,8 +28,9 @@ def _import_arima():
         from statsmodels.tsa.arima.model import ARIMA as SMArima
     except ImportError as e:
         raise ImportError(
-            'statsmodels is required for the ARIMA forecaster; install it with '
-            'pip install "hypertools[predict]"'
+            'statsmodels is required for the ARIMA forecaster. It is normally a '
+            'core hypertools dependency; reinstall hypertools, or install it '
+            'directly with `pip install statsmodels`.'
         ) from e
     return SMArima
 
