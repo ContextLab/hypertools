@@ -78,9 +78,7 @@ the exact defect behind *both* story and surface_morph, now fails CI instead of 
 ---
 
 ### Tests
-Full suite (kaleido plotly-export tests excluded — pre-existing headless deadlock, not a regression):
-**1464 passed, 4 skipped, 0 failed** on the surface/story/precedence commits; the surface_morph commit
-adds only a docs gif + a comment directive + the guard test (2 passed) and touches no `hypertools/`
-source.
+Full suite on the final HEAD, all commits included (kaleido plotly-export tests excluded — pre-existing
+headless deadlock, not a regression): **1466 passed, 4 skipped, 0 failed**.
 
 **Branch is for review only — do not merge; base `dev-1.0-refactor`, `master` untouched.**
