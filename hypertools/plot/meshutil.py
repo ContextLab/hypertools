@@ -24,6 +24,7 @@ import warnings
 
 import numpy as np
 from scipy.spatial import ConvexHull, Delaunay, QhullError
+from scipy.spatial.distance import cdist
 
 __all__ = [
     "smooth_hull_3d",
@@ -832,6 +833,58 @@ def blinn_phong_vertex_colors(
         vn, base_rgb, view, lightdir=lightdir, ambient=ambient, diffuse=diffuse,
         fill=fill, specular=specular, shininess=shininess,
     )
+
+
+def vertex_colors_from_points(verts, points, point_colors, power=2.0, eps=1e-9):
+    """Per-vertex base colors as an inverse-distance-weighted average of the
+    data points' colors (Shepard's method / IDW).
+
+    For each mesh vertex, its color is a weighted blend of the data
+    coordinates' colors, with weight ``1 / distance**power`` -- so the
+    NEAREST coordinates dominate a vertex's color and distant ones fall off
+    smoothly (with the default ``power=2``). A vertex that coincides with a
+    data point takes that point's color exactly. This is what colors a
+    ``surface=`` hull to match the hue of the points it encloses, per-vertex,
+    instead of painting the whole hull one flat (mean) color.
+
+    Parameters
+    ----------
+    verts : array-like of shape (V, >=3)
+        Mesh vertex coordinates (only the first 3 columns are used).
+    points : array-like of shape (P, >=3)
+        Data-point coordinates the surface was built from (first 3 columns).
+    point_colors : array-like of shape (P, >=3)
+        Per-point RGB(A) colors in [0, 1] (only the first 3 channels used).
+    power : float, optional
+        Inverse-distance exponent (default 2.0; higher = sharper locality).
+    eps : float, optional
+        Added to ``distance**power`` before inverting so a zero distance
+        (a vertex exactly on a point) yields a large-but-finite weight
+        rather than a divide-by-zero. Default 1e-9.
+
+    Returns
+    -------
+    ndarray of shape (V, 3)
+        Per-vertex RGB in [0, 1].
+    """
+    verts = np.asarray(verts, dtype=float)[:, :3]
+    points = np.asarray(points, dtype=float)[:, :3]
+    colors = np.asarray(point_colors, dtype=float)[:, :3]
+    if len(points) == 0 or len(colors) == 0:
+        raise ValueError('need at least one data point/color to color a surface')
+    d = cdist(verts, points)                       # (V, P) euclidean distances
+    w = 1.0 / (d ** power + eps)                    # inverse-distance weights
+    w /= w.sum(axis=1, keepdims=True)               # normalize per vertex
+    return np.clip(w @ colors, 0.0, 1.0)
+
+
+def face_colors_from_vertex_colors(vertex_colors, faces):
+    """Per-face RGB as the mean of each triangle's three vertex colors -- the
+    per-face form the matplotlib backend needs (it shades whole faces), from
+    the per-vertex colors :func:`vertex_colors_from_points` produces."""
+    vertex_colors = np.asarray(vertex_colors, dtype=float)
+    faces = np.asarray(faces)
+    return vertex_colors[faces].mean(axis=1)
 
 
 def points_enclosed(points, verts):

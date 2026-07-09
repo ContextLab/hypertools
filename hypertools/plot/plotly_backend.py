@@ -26,7 +26,8 @@ import warnings
 
 import numpy as np
 
-from .meshutil import blinn_phong_vertex_colors, points_enclosed
+from .meshutil import (blinn_phong_vertex_colors, points_enclosed,
+                       vertex_colors_from_points)
 from .surface import (
     PLOTLY_IDENTITY_LIGHTING,
     PLOTLY_LIGHTPOSITION,
@@ -319,7 +320,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 focused=None,
                 chemtrails=False, precog=False, bullettime=False, zoom=1,
                 forecasts=None, colorbar_info=None, surface=None,
-                surface_colors=None, density=None, density_colors=None,
+                surface_colors=None, surface_point_colors=None,
+                density=None, density_colors=None,
                 morph_tags=None, morph_colors=None, morph_samples=None,
                 font=None, label_alpha=0.5, xlabel=None, ylabel=None,
                 zlabel=None):
@@ -707,7 +709,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         )
         surface_traces_3d, surface_dataset_indices, surface_meshes = (
             _build_surface_traces_3d(go, data, surface_for_static,
-                                     surface_colors, elev, azim))
+                                     surface_colors, elev, azim,
+                                     surface_point_colors=surface_point_colors))
         traces.extend(surface_traces_3d)
         # M3b box-containment fix: `full`-cloud meshes (built above, from
         # each morphing dataset's FULL, differently-ORDERED cloud) are NOT
@@ -1193,7 +1196,10 @@ def _blend_toward_white(color_rgb, alpha):
     always-opaque color sidesteps that rendering path entirely -- plotly's
     own bug report confirms "setting opacity to 1 removes these artifacts".
     """
-    return tuple(alpha * c + (1.0 - alpha) * 1.0 for c in color_rgb)
+    # array-aware so it handles BOTH a single (3,) base color and a per-VERTEX
+    # (V, 3) color array (QC 2026-07 surface hue-per-vertex): each channel is
+    # composited toward white independently, broadcasting over any shape.
+    return alpha * np.asarray(color_rgb, dtype=float) + (1.0 - alpha) * 1.0
 
 
 def _vertexcolor_strings(verts, faces, blended_rgb, view, light_kw):
@@ -1309,7 +1315,8 @@ def _trim_faces_inside_other_meshes(i, meshes):
     return keep
 
 
-def _build_surface_traces_3d(go, data, surface, surface_colors, elev, azim):
+def _build_surface_traces_3d(go, data, surface, surface_colors, elev, azim,
+                             surface_point_colors=None):
     """Build one ``go.Mesh3d`` trace per dataset with a (non-None,
     non-degenerate) surface spec. Returns ``(traces, dataset_indices,
     meshes)`` where ``dataset_indices[k]`` is the ORIGINAL dataset index
@@ -1346,7 +1353,16 @@ def _build_surface_traces_3d(go, data, surface, surface_colors, elev, azim):
             faces = faces[_trim_faces_inside_other_meshes(i, meshes)]
             if len(faces) == 0:
                 continue
-        base_rgb = _surface_base_rgb(spec, surface_colors[i])
+        spc = (surface_point_colors[i]
+               if surface_point_colors and i < len(surface_point_colors)
+               else None)
+        if spc is not None:
+            # per-VERTEX hue coloring (QC 2026-07): inverse-distance-weighted
+            # blend of the enclosed points' colors, one color per mesh vertex.
+            pts_i, cols_i = spc
+            base_rgb = vertex_colors_from_points(verts, pts_i, cols_i)
+        else:
+            base_rgb = _surface_base_rgb(spec, surface_colors[i])
         traces.append(_mesh3d_trace(go, verts, faces, base_rgb,
                                     spec['alpha'], view,
                                     mpl_lighting_kwargs(spec)))

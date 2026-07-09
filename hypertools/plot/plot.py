@@ -2434,6 +2434,22 @@ def plot(
     surface_colors = (_resolve_dataset_colors()
                       if surface_list is not None else None)
 
+    # surface= per-vertex coloring (QC 2026-07): when hue is set, color each
+    # surface hull VERTEX by an inverse-distance-weighted blend of the enclosed
+    # points' hue colors (meshutil.vertex_colors_from_points) rather than one
+    # flat mean color (the old behavior painted the whole hull the average of
+    # the points' colors -- e.g. gray for a rainbow hue). Bundle each dataset's
+    # (points, per-point RGB); None where a dataset has no surface, or when no
+    # per-point hue colors exist (then surface_colors' flat color is used).
+    if surface_list is not None and line_colors is not None:
+        surface_point_colors = [
+            (np.asarray(xform[i])[:, :3], np.asarray(line_colors[i])[:, :3])
+            if i < len(surface_list) and surface_list[i] is not None else None
+            for i in range(len(xform))
+        ]
+    else:
+        surface_point_colors = None
+
     # density= (GH #108/#191): resolve each dataset's OWN drawn color the
     # SAME way as surface_colors above (density has no color-override key,
     # so this is always what gets drawn, per_group=True case only -- the
@@ -2522,6 +2538,7 @@ def plot(
             colorbar_info=colorbar_info,
             surface=surface_list,
             surface_colors=surface_colors,
+            surface_point_colors=surface_point_colors,
             density=density_list,
             density_colors=density_colors,
             morph_tags=morph_tags,
@@ -2575,6 +2592,7 @@ def plot(
                 frame_kwargs=frame_kwargs,
                 surface=surface_list,
                 surface_colors=surface_colors,
+                surface_point_colors=surface_point_colors,
                 density=density_list,
                 density_colors=density_colors,
                 morph_tags=morph_tags,

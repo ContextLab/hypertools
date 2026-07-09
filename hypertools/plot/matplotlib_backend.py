@@ -11,7 +11,8 @@ from mpl_toolkits.mplot3d import proj3d
 import matplotlib.animation as animation
 import matplotlib.patches as patches
 from .._shared.helpers import *
-from .meshutil import backface_cull, blinn_phong_colors
+from .meshutil import (backface_cull, blinn_phong_colors,
+                       vertex_colors_from_points, face_colors_from_vertex_colors)
 from .surface import (
     build_mesh_3d,
     build_outline_2d,
@@ -150,12 +151,18 @@ def _draw_density_3d(ax, points_list, density, density_colors):
 
 
 def _shade_and_cull_3d(ax, mesh_list, surface, surface_colors, elev, azim,
-                       prior_colls=None):
+                       prior_colls=None, surface_point_colors=None):
     """(Re)build a ``Poly3DCollection`` per dataset from PRECOMPUTED
     ``(verts, faces)`` meshes, shading/culling for the CURRENT `elev`/`azim`,
     removing `prior_colls` first (animation frame swap). Returns the new
     per-dataset collection list (``None`` where that dataset has no surface)
-    so the caller can pass it back in as `prior_colls` next frame."""
+    so the caller can pass it back in as `prior_colls` next frame.
+
+    `surface_point_colors` (QC 2026-07): optional list, one entry per dataset,
+    of ``(points, per_point_rgb)`` -- when present for a dataset, each mesh
+    face is colored by an inverse-distance-weighted blend of the enclosed
+    points' colors (`vertex_colors_from_points`) instead of one flat
+    surface color, so a `hue=`'d surface matches the hue of its points."""
     from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
     if prior_colls:
@@ -170,7 +177,13 @@ def _shade_and_cull_3d(ax, mesh_list, surface, surface_colors, elev, azim,
             new_colls.append(None)
             continue
         verts, faces = mesh
-        base_rgb = _resolve_surface_color(spec, surface_colors[i])
+        spc = surface_point_colors[i] if surface_point_colors else None
+        if spc is not None:
+            pts, cols = spc
+            vcolors = vertex_colors_from_points(verts, pts, cols)
+            base_rgb = face_colors_from_vertex_colors(vcolors, faces)
+        else:
+            base_rgb = _resolve_surface_color(spec, surface_colors[i])
         light_kw = mpl_lighting_kwargs(spec)
         rgba = blinn_phong_colors(verts, faces, base_rgb, v, **light_kw)
         cull = backface_cull(verts, faces, v)
@@ -352,6 +365,7 @@ def _draw(
     frame_kwargs=None,
     surface=None,
     surface_colors=None,
+    surface_point_colors=None,
     density=None,
     density_colors=None,
     morph_tags=None,
@@ -1959,7 +1973,8 @@ def _draw(
             # surface= (GH #109): smooth lit hull surfaces, one per dataset
             if surface is not None:
                 _shade_and_cull_3d(ax, mesh_list, surface, surface_colors,
-                                   elev, azim)
+                                   elev, azim,
+                                   surface_point_colors=surface_point_colors)
                 _hide_no_keep_points(ax.lines, surface)
 
             # density= (GH #108/#191): subtle KDE density shading, one
