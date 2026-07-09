@@ -64,6 +64,12 @@ GIF_REPLACEMENTS = {
     # showed a frozen frame instead of the animation.
     "sphx_glr_plot_story_trajectories_thumb.png":
         "sphx_glr_plot_story_trajectories_thumb.gif",
+    # QC 2026-07: animate_surface_morph ends with a static-figure tweak (an
+    # alpha-fade), so sphinx-gallery thumbnailed that frozen frame instead of
+    # the morph animation. It now ships a gif thumbnail + thumbnail_path like
+    # the others; register the swap here too.
+    "sphx_glr_animate_surface_morph_thumb.png":
+        "sphx_glr_animate_surface_morph_thumb.gif",
 }
 
 def copy_gif_thumbnails():

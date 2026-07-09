@@ -49,6 +49,12 @@ rather than the library default of 3 (roughly 20ms/frame instead of
 # Code source: Contextual Dynamics Laboratory
 # License: MIT
 
+# use a pre-rendered gif of the morphing lit surface as this example's gallery
+# thumbnail, matching the other animated examples (animate_spin, chemtrails,
+# plot_story_trajectories, ...). Without this, sphinx-gallery thumbnailed the
+# trailing static-figure snapshot (the alpha-fade line below) as a frozen png.
+# sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_animate_surface_morph_thumb.gif'
+
 import numpy as np
 
 import hypertools as hyp
