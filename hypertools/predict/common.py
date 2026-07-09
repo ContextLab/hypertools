@@ -95,8 +95,11 @@ def resolve_t(data, t):
             future_index = pd.Index([last + step * (i + 1) for i in range(n_steps)])
         return n_steps, future_index
 
-    assert isinstance(index, pd.DatetimeIndex), \
-        ValueError('a datetime-like t requires a time-indexed (DatetimeIndex) dataset')
+    # a real raise (not `assert ..., ValueError(...)`, which raises
+    # AssertionError and is stripped under `python -O`) -- QC 2026-07 red-team.
+    if not isinstance(index, pd.DatetimeIndex):
+        raise ValueError('a datetime-like t requires a time-indexed '
+                         '(DatetimeIndex) dataset')
 
     target = pd.Timestamp(t)
     step = _infer_step(index)

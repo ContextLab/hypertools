@@ -1024,11 +1024,16 @@ class set_interactive_backend:
         # set_interactive_backend('plotly') followed by an animated plot raised
         # HypertoolsBackendError trying to switch matplotlib to a nonexistent
         # 'plotly' backend, and it silently did nothing for static plots.
-        self.is_render_backend = str(self.new_interactive_backend) in (
-            'plotly', 'matplotlib')
+        # match case-insensitively ('Plotly' etc.): otherwise a capitalized
+        # render-backend name was treated as an mpl backend and, with an
+        # animated plot, raised the exact HypertoolsBackendError this routing
+        # exists to prevent (QC 2026-07 red-team). Store the canonical lowercase
+        # value so resolve_backend()'s preference check matches.
+        _bk_str = str(self.new_interactive_backend).lower()
+        self.is_render_backend = _bk_str in ('plotly', 'matplotlib')
         if self.is_render_backend:
             self.old_render_backend = PREFERRED_RENDER_BACKEND
-            PREFERRED_RENDER_BACKEND = str(self.new_interactive_backend)
+            PREFERRED_RENDER_BACKEND = _bk_str
             self.new_is_different = False
             self.backend_switched = False
             return

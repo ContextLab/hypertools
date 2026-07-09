@@ -79,3 +79,21 @@ def test_real_matplotlib_backend_name_still_switches():
     hyp.set_interactive_backend('Agg')
     assert isinstance(hyp.plot(_traj(), ndims=3, show=False),
                       matplotlib.figure.Figure)
+
+
+@pytest.mark.parametrize('name', ['Plotly', 'PLOTLY'])
+def test_render_backend_name_is_case_insensitive(name):
+    # a capitalized render-backend name used to be treated as an mpl backend and
+    # (with animate) reproduced the HypertoolsBackendError this routing prevents
+    hyp.set_interactive_backend('matplotlib')
+    hyp.set_interactive_backend(name)
+    try:
+        assert isinstance(hyp.plot(_traj(), ndims=3, show=False), go.Figure)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+
+
+def test_explicit_backend_kwarg_case_insensitive():
+    hyp.set_interactive_backend('matplotlib')
+    assert isinstance(hyp.plot(_traj(), ndims=3, backend='Plotly', show=False),
+                      go.Figure)

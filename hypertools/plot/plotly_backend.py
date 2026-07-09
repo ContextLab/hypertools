@@ -163,6 +163,11 @@ def detect_environment():
 
 def resolve_backend(backend):
     """Resolve a user-requested backend to 'matplotlib' or 'plotly'."""
+    # accept any case ('Plotly', 'MATPLOTLIB', ...): the canonical values are
+    # lowercase, but matching case-insensitively avoids a surprising
+    # "backend must be one of ..." error on an obvious spelling (QC 2026-07).
+    if isinstance(backend, str):
+        backend = backend.lower()
     if backend not in VALID_BACKENDS:
         raise ValueError(
             f"backend must be one of {VALID_BACKENDS}; got {backend!r}")

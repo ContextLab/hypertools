@@ -82,7 +82,14 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     # validate the forecast horizon (QC 2026-07: a numeric t<=0 silently
     # returned an empty (0, n_features) forecast). t may ALSO be a target
     # datetime/Timestamp (forecast up to that time), which passes through.
-    if isinstance(t, bool):
+    # normalize a 0-d numpy array (np.array(5)) to its Python scalar so the
+    # checks below see the value, not an array (QC 2026-07 red-team: a 0-d array
+    # slipped past every check and hit a misleading downstream message).
+    if isinstance(t, np.ndarray) and t.ndim == 0:
+        t = t.item()
+    # bool is an int subclass, and np.bool_ (np.True_) is a separate type that
+    # is NOT caught by isinstance(t, bool) -- reject both explicitly.
+    if isinstance(t, (bool, np.bool_)):
         raise ValueError(f"t (forecast horizon) must be a positive integer or "
                          f"a target datetime; got {t!r}")
     if isinstance(t, (int, np.integer)):

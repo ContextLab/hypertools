@@ -58,6 +58,26 @@ def test_predict_positive_int_t_works():
     assert np.asarray(hyp.predict(df, model='GaussianProcess', t=5)).shape == (5, 1)
 
 
+def test_predict_numpy_bool_t_clear_error():
+    """np.True_ is np.bool_, NOT Python bool, so it slipped past the horizon
+    check and hit a misleading downstream message (red-team of be0dcb5a)."""
+    df = pd.DataFrame({'a': np.arange(40.0)})
+    with pytest.raises(ValueError, match='forecast horizon'):
+        hyp.predict(df, model='GaussianProcess', t=np.True_)
+
+
+@pytest.mark.parametrize('t,ok', [(np.array(5), True), (np.array(0), False),
+                                  (np.array(2.5), False)])
+def test_predict_zero_dim_array_t(t, ok):
+    """A 0-d numpy array is normalized to its scalar, then validated normally."""
+    df = pd.DataFrame({'a': np.arange(40.0)})
+    if ok:
+        assert np.asarray(hyp.predict(df, model='GaussianProcess', t=t)).shape == (5, 1)
+    else:
+        with pytest.raises(ValueError, match='forecast horizon'):
+            hyp.predict(df, model='GaussianProcess', t=t)
+
+
 # --- streaming reduce spec honors canonical kwargs ---------------------
 
 def test_streaming_reduce_spec_reads_canonical_kwargs():
