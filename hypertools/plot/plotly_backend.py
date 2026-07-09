@@ -167,6 +167,15 @@ def resolve_backend(backend):
         raise ValueError(
             f"backend must be one of {VALID_BACKENDS}; got {backend!r}")
     if backend == 'auto':
+        # a render preference set via hyp.set_interactive_backend('plotly' /
+        # 'matplotlib') wins over the environment default (QC 2026-07). Lazy
+        # import avoids a plotly_backend <-> backend import cycle at module load.
+        from . import backend as _backend
+        preferred = getattr(_backend, 'PREFERRED_RENDER_BACKEND', None)
+        if preferred == 'plotly' and _has_plotly():
+            return 'plotly'
+        if preferred == 'matplotlib':
+            return 'matplotlib'
         if detect_environment() in ('colab', 'kaggle') and _has_plotly():
             return 'plotly'
         return 'matplotlib'
