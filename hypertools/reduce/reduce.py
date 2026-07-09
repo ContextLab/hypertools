@@ -92,6 +92,17 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         `(x_reduced, model)` tuple is returned instead.
 
     """
+    # a whole already-fitted Pipeline handed back as reduce= (e.g. the model
+    # from an earlier cross-module return_model=True call) is reused as-is via
+    # .transform, BEFORE the cross-module branch below -- otherwise it would be
+    # wrapped in a fresh Reducer and crash (QC 2026-07). Any redundant stage
+    # kwargs are warned about + ignored (the Pipeline already encodes them).
+    from ..core.shared import is_reused_pipeline
+    if is_reused_pipeline(reduce, {'manip': manip, 'normalize': normalize,
+                                   'align': align, 'cluster': cluster}, 'reduce'):
+        result = reduce.transform(x)
+        return (result, reduce) if return_model else result
+
     # cross-module kwargs (#138): assemble and run a Pipeline (in canonical
     # order, #153) instead of the single-stage path below whenever another
     # stage is requested. Lazy import avoids a reduce<->core.pipeline cycle

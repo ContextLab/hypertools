@@ -54,6 +54,14 @@ def _resolve_cluster_spec(cluster, n_clusters):
     Clusterer
         An unfitted `Clusterer` wrapping the resolved model.
     """
+    # already-resolved wrapper: pass an existing Clusterer through UNWRAPPED
+    # (idempotent). Wrapping it again in a fresh Clusterer double-wraps, and
+    # Clusterer.fit_transform then calls `.fit`/`.labels_` on the inner
+    # Clusterer, which has no such attributes (QC 2026-07: this crashed when a
+    # fitted Clusterer was reused alongside cross-module reduce=/manip=).
+    if isinstance(cluster, Clusterer):
+        return cluster
+
     if isinstance(cluster, dict):
         try:
             model_name = cluster["model"]
@@ -185,6 +193,18 @@ def cluster(x, cluster="KMeans", n_clusters=3, return_model=False,
         a `(cluster_labels, model)` tuple is returned instead.
 
     """
+    # a whole already-fitted Pipeline handed back as cluster= (e.g. the model
+    # from an earlier cross-module return_model=True call) is reused as-is via
+    # .transform, BEFORE the cross-module branch below -- otherwise it would be
+    # wrapped in a fresh Clusterer whose fit_transform reads `.labels_` off the
+    # Pipeline and crashes (QC 2026-07). Redundant stage kwargs are warned +
+    # ignored (the Pipeline already encodes them).
+    from ..core.shared import is_reused_pipeline
+    if is_reused_pipeline(cluster, {'manip': manip, 'normalize': normalize,
+                                    'reduce': reduce, 'align': align}, 'cluster'):
+        result = cluster.transform(x)
+        return (result, cluster) if return_model else result
+
     # cross-module kwargs (#138): assemble and run a Pipeline (in canonical
     # order, #153) instead of the single-stage path below whenever another
     # stage is requested. Lazy import avoids a cluster<->core.pipeline cycle

@@ -175,6 +175,17 @@ def _align(data, model='HyperAlign', return_model=False,
         )
         model = legacy_model
 
+    # a whole already-fitted Pipeline handed back as model= (e.g. the model
+    # from an earlier cross-module return_model=True call) is reused as-is via
+    # .transform, BEFORE _resolve_align_spec below -- otherwise unpack_model
+    # raises "unknown model: Pipeline" (QC 2026-07). Redundant stage kwargs are
+    # warned + ignored (the Pipeline already encodes them).
+    from ..core.shared import is_reused_pipeline
+    if is_reused_pipeline(model, {'manip': manip, 'normalize': normalize,
+                                  'reduce': reduce, 'cluster': cluster}, 'model'):
+        result = _to_arrays(model.transform(data))
+        return (result, model) if return_model else result
+
     resolved = _resolve_align_spec(model, kwargs)
 
     # cross-module kwargs (#138): assemble and run a Pipeline (in canonical

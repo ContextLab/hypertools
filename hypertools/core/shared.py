@@ -9,6 +9,50 @@ resolve later.
 import warnings
 
 
+def is_reused_pipeline(spec, stage_kwargs, spec_label):
+    """Whether `spec` is a whole already-fitted `hypertools.Pipeline` handed
+    back as a dispatcher's model spec (e.g. the model returned by an earlier
+    cross-module `return_model=True` call, such as `hyp.cluster(..., reduce=,
+    manip=, return_model=True)`).
+
+    When it is, the caller should REUSE it via `spec.transform(data)` rather
+    than trying to wrap it in a Reducer/Clusterer/Aligner (which used to crash
+    with e.g. ``AttributeError: 'Pipeline' object has no attribute 'labels_'``,
+    QC 2026-07) -- the fitted Pipeline already encodes its own manip/normalize/
+    reduce/align/cluster stages. Any of those stages re-specified alongside it
+    would double-apply, so they are reported as redundant and ignored.
+
+    Parameters
+    ----------
+    spec : object
+        The primary model spec passed to the dispatcher (`reduce=`/`cluster=`/
+        `model=`).
+    stage_kwargs : dict
+        `{name: value}` for the OTHER cross-module stage kwargs on that
+        dispatcher (used only to warn about redundant ones).
+    spec_label : str
+        The dispatcher's spec-kwarg name (`'reduce'`, `'cluster'`, `'model'`),
+        for the warning message.
+
+    Returns
+    -------
+    bool
+        True if `spec` is a fitted `Pipeline` to reuse via `.transform`.
+    """
+    from .pipeline import Pipeline
+    if isinstance(spec, Pipeline) and spec.is_fitted:
+        redundant = sorted(name for name, value in stage_kwargs.items()
+                           if value is not None)
+        if redundant:
+            warnings.warn(
+                f"{spec_label}= is an already-fitted Pipeline that encodes its "
+                f"own stages; ignoring redundant {', '.join(redundant)}= (the "
+                "fitted Pipeline is reused as-is via .transform).",
+                stacklevel=3)
+        return True
+    return False
+
+
 class RobustDict(dict):
     """dict whose missing keys return a default value instead of raising."""
 
