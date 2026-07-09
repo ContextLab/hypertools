@@ -168,9 +168,70 @@ Reuse matrix (real 40x6, X vs Y=X+5):
   must be shown only when their datapoint is visible in the current frame.
 - Artifacts: `<scratchpad>/triage/anim_spin.gif`, repro scripts + frame PNGs.
 
-## NEXT STEPS (in order)
-1. TRIAGE COMPLETE (all 6). Synthesize full fix plan grouped by subsystem (consider
-   writing-plans skill). Reports were recovered INLINE via
+## COMMIT LEDGER (branch fix/qc-notes-2026-07, pushed as of triage; commits below LOCAL)
+Design decisions confirmed by Jeremy: animation return = auto-displaying
+HyperAnimation wrapper; pykalman+statsmodels -> core; story trajectory = wire the
+EXISTING examples/plot_story_trajectories.py into gallery+tutorials.
+- 901f3e22 deps: pykalman+statsmodels->core; plotly>=6.1.1/kaleido>=1.0; msgs [red-team: 3 defects -> fixed]
+- 8e07a591 deps red-team fixups: ARIMA msg, kalman/arima test msgs, deepdish numpy2 (dropped [legacy] extra), broadened guard
+- d9024ba3 sklearn estimator API: Aligner base stores kwargs as attrs+property; Normalizer->BaseEstimator; Reducer/Clusterer verbatim params [red-team SOLID; minor: fitted SRM get_params echoes fitted features - documented]
+- 8d32445e fitted-model reuse: is_reused_pipeline() in core/shared; reduce/cluster/align reuse fitted Pipeline via transform; idempotent _resolve_cluster_spec [red-team: 2 defects -> fixed in 621555b9]
+- 77d1e46f predict 'GP' alias + describe() despine + backend='auto' plotly path
+- 621555b9 reuse red-team fixups: ZScore/Normalize POSITIONAL keying (was label KeyError on relabeled reuse); plot() clear error for fitted-Pipeline-as-stage-kwarg
+NEW bug Jeremy reported mid-session (DONE): align Procrustes get_params AttributeError
+'target' -> fixed in d9024ba3 (was a whole family: 5 aligners + Normalizer + Reducer/Clusterer clone).
+Evidence screenshots: <scratchpad>/evidence/ (describe_despined_mpl.png, describe_plotly.png).
+
+## COMMIT LEDGER (cont.)
+- d458a5bb hue/color B1 (matrix-hue blend, colors.py), B2 (surface honors hue),
+  B3 (color_reduce=) [red-team: B1/B2 SOLID; B3 <=3col crash -> fixed in 5d3ecd76]
+- 5d3ecd76 names= dataset legend + notebook double-display (plotly fig.show gated on
+  IPython) + B3 color_reduce <=3col fixup
+Red-team ran for: deps(SOLID+fixed), estimator(SOLID), reuse(2 defects fixed), hue(B3 fixed).
+Evidence PNGs in <scratchpad>/evidence/: describe_despined_mpl, describe_plotly,
+hue_softcluster_blend, hue_surface_continuous, hue_matrix_rgb_pca, names_legend.
+
+## COMMIT LEDGER (cont. 2)
+- f5dfebe3 ANIMATION A+B: HyperAnimation (tuple subclass (fig,anim) w/
+  to_html5_video/save/to_jshtml/_repr_html_, exported hyp.HyperAnimation);
+  animate='chemtrails'/'precog'/'bullettime' -> parallel+flag sugar; unknown
+  style raises. [KNOWN PRE-EXISTING FAIL on 724ad5f0: test_animation_margins.py
+  ::...wide_chemtrails_cube_corners... env-sensitive pixel geometry - NOT mine]
+- 64721724 story tutorial: gif thumbnail (from mp4 via ffmpeg) +
+  sphinx_gallery_thumbnail_path + tutorials.rst "Story trajectories" section.
+- ANIMATION C+D (per-frame labels + animate+hue crashes): DELEGATED to subagent
+  a3e9703255c9e60dc (running). It commits its own work. Recover its report via
+  extract_report.py. If it couldn't fix cleanly, document as known limitation.
+
+## REMAINING TASKS (in order)
+- [ ] Integrate/verify C+D animation subagent result; red-team animation.
+- [ ] Full verification: whole pytest suite (deselect 6 kaleido-deadlock +
+      note the 1 pre-existing margin fail), sphinx docs build, numeric+screenshot.
+- [ ] Open ONE PR into dev-1.0-refactor with evidence-rich per-issue comments
+      (NEVER merge). Commits so far: 901f3e22 8e07a591 d9024ba3 8d32445e 77d1e46f
+      d458a5bb 5d3ecd76 621555b9 f5dfebe3 64721724 (+ C+D subagent commit).
+- [ ] ANIMATION (task A) -- THE BIG ONE. Jeremy chose the AUTO-DISPLAYING WRAPPER.
+      Current: animated mpl returns (fig, line_ani) TUPLE (plot.py ~2569); need a
+      HyperAnimation object with .to_html5_video()/.save()/.figure/_repr_html_ (auto-play
+      inline). `animate='chemtrails'/'precog'/'bullettime'` are NOT styles (they're bool
+      modifiers on animate=True/'parallel'); whitelist at matplotlib_backend.py:1896 ->
+      silent static. Fix: map animate='chemtrails' -> animate='parallel'+chemtrails=True
+      sugar (top of plot() where animate dict unpacks) AND validate unknown animate string
+      -> clear error. Per-frame labels: labels show every frame; should show only when the
+      datapoint is visible (matplotlib_backend.py add_labels 499-557 + plot.py ~3068).
+      ALSO (surfaced by hue red-team, pre-existing): animate='morph'+hue crashes IndexError
+      add_labels:515; animate+continuous-hue crashes "x must contain at least 2 elements".
+      Address these animation+hue/label crashes here too.
+      Valid animate styles: True,'parallel','spin','serial','morph','window', per-dataset
+      list (morph), dict{'style':...}. chemtrails/precog/bullettime only apply to
+      True/'parallel' (spin/serial ignore+warn).
+- [ ] STORY TUTORIAL: examples/plot_story_trajectories.py already exists + built in
+      docs/auto_examples/; add to gallery index + docs/tutorials.rst tutorial set + gif.
+- [ ] Red-team animation + story fixes; full pytest + docs build; open PR into
+      dev-1.0-refactor with evidence-rich per-issue comments (NEVER merge).
+
+## Original NEXT STEPS (superseded)
+1. TRIAGE COMPLETE (all 6). Reports recovered INLINE via
    `<scratchpad>/extract_report.py <task_output_file>` (harness blocks subagent .md writes).
 3. Implement fixes subsystem-by-subsystem; RED-TEAM each with an independent subagent.
    Likely design decisions to confirm with Jeremy: animation return-object shape;
