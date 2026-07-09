@@ -1,0 +1,70 @@
+"""Reduce-dispatch correctness (QC 2026-07 release hardening).
+
+- The canonical dict spec {'model':...,'kwargs':{...}} must honor ndims (it
+  silently returned full-dimensional data).
+- reduce() must return a bare array for a single-array input regardless of ndims
+  (it flipped between ndarray and list).
+- ndims must be validated (non-int / <1 gave cryptic errors or wrong output).
+- describe(max_dims > n_features) must not crash; describe(max_dims < 3, show=True)
+  must warn+skip instead of crashing seaborn.
+
+Real data, sklearn cross-check, no mocks.
+"""
+import warnings
+
+import numpy as np
+import pytest
+from sklearn.decomposition import PCA
+
+import hypertools as hyp
+from hypertools.reduce.reduce import reduce as reducer
+
+
+def test_canonical_dict_spec_honors_ndims_and_kwargs():
+    x = np.random.default_rng(0).normal(size=(120, 6))
+    out = np.asarray(reducer(x, reduce={'model': 'PCA', 'kwargs': {'whiten': True}},
+                             ndims=2))
+    assert out.shape == (120, 2)  # was (120, 6) -- ndims ignored
+    manual = PCA(whiten=True, n_components=2).fit_transform(x)
+    assert np.allclose(np.abs(out), np.abs(manual), atol=1e-6)  # whiten applied
+
+
+def test_user_supplied_n_components_in_kwargs_is_not_overridden():
+    x = np.random.default_rng(0).normal(size=(120, 6))
+    out = np.asarray(reducer(x, reduce={'model': 'PCA', 'kwargs': {'n_components': 3}}))
+    assert out.shape == (120, 3)
+
+
+@pytest.mark.parametrize('ndims', [3, None, 20])
+def test_single_array_returns_bare_array_for_any_ndims(ndims):
+    x = np.random.default_rng(0).normal(size=(40, 6))
+    out = reducer(x, reduce='PCA', ndims=ndims)
+    assert not isinstance(out, list)
+    assert np.asarray(out).ndim == 2
+
+
+def test_list_input_still_returns_list():
+    x = np.random.default_rng(0).normal(size=(30, 5))
+    out = reducer([x, x + 1], reduce='PCA', ndims=3)
+    assert isinstance(out, list) and len(out) == 2
+
+
+@pytest.mark.parametrize('bad', ['two', 0, -1, 2.5, True])
+def test_invalid_ndims_raises_clear_error(bad):
+    x = np.random.default_rng(0).normal(size=(30, 5))
+    with pytest.raises(ValueError, match='ndims'):
+        reducer(x, reduce='PCA', ndims=bad)
+
+
+def test_describe_max_dims_gt_features_does_not_crash():
+    x = np.random.default_rng(0).normal(size=(30, 4))
+    result = hyp.describe(x, reduce='PCA', max_dims=8, show=False)
+    assert set(result.keys()) == {'average', 'individual'}
+
+
+def test_describe_empty_component_range_warns_not_crashes():
+    import matplotlib
+    matplotlib.use('Agg')
+    x = np.random.default_rng(0).normal(size=(30, 4))
+    with pytest.warns(UserWarning, match='no components to plot'):
+        hyp.describe(x, reduce='PCA', max_dims=2, show=True)

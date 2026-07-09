@@ -125,7 +125,14 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     if max_dims is None:
         max_dims = len(result['average'])
 
-    # if show, plot it on the resolved backend
+    # if show, plot it on the resolved backend. With max_dims < 3 there is no
+    # component range to correlate over (range(2, max_dims) is empty), so the
+    # result is empty and there is nothing to plot -- warn and skip rather than
+    # crash inside seaborn/plotly (QC 2026-07).
+    if show and not any(result['individual']):
+        warnings.warn('describe() has no components to plot (need max_dims >= 3 '
+                      'and at least 3 features); skipping the figure.')
+        show = False
     if show:
         from ..plot.plotly_backend import resolve_backend
         resolved_backend = resolve_backend(backend)
