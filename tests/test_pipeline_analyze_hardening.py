@@ -75,3 +75,31 @@ def test_apply_model_kmeans_with_ndims_does_not_crash():
 def test_apply_model_pca_ndims_still_reduces():
     x = _rng().normal(size=(40, 6))
     assert np.asarray(hyp.apply_model(x, model='PCA', ndims=3)).shape == (40, 3)
+
+
+# --- C1 label recovery for hard clusterers (red-team) ------------------
+
+@pytest.mark.parametrize('clf', ['KMeans', 'DBSCAN', 'AgglomerativeClustering',
+                                 'SpectralClustering'])
+def test_analyze_cluster_label_recovery_all_clusterers(clf):
+    """The documented recovery -- named_steps['cluster'].transform(returned
+    data) -- must return per-observation labels for EVERY clusterer, not just
+    those with an out-of-sample predict. Hard clusterers (DBSCAN/Agglomerative/
+    Spectral) used to raise NotImplementedError here (red-team of 30725456)."""
+    x = np.vstack([_rng().normal(loc, 0.5, (30, 6)) for loc in (0, 5, 10)])
+    kw = {} if clf == 'DBSCAN' else {'n_clusters': 3}
+    data, model = analyze(x, reduce='PCA', ndims=3,
+                          cluster={'model': clf, 'kwargs': kw}, return_model=True)
+    assert np.asarray(data).shape == (90, 3)          # analyze returns the DATA
+    labels = np.asarray(model.named_steps['cluster'].transform(data))
+    assert labels.shape[0] == 90                       # one label per observation
+
+
+def test_hard_clusterer_transform_new_data_still_raises():
+    """Genuinely NEW data (a different row count) has no defined labels for a
+    hard clusterer -- that case must still raise, not silently reuse."""
+    x = np.vstack([_rng().normal(loc, 0.5, (30, 6)) for loc in (0, 5, 10)])
+    _, model = analyze(x, cluster={'model': 'DBSCAN', 'kwargs': {}},
+                       return_model=True)
+    with pytest.raises(NotImplementedError):
+        model.named_steps['cluster'].transform(_rng().normal(size=(17, 6)))

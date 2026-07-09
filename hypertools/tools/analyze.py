@@ -71,11 +71,16 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
         (not cluster labels) when `cluster=` is given; the cluster labels
         themselves are retrievable from the fitted `hypertools.Pipeline`'s
         `'cluster'` step (`model.named_steps['cluster']`) when
-        `return_model=True` is also passed -- pass the SAME data back
-        through that step's `.transform` to recover the labels, or call
-        `hypertools.cluster.cluster.cluster` directly for labels alongside
-        the transformed data in one call. `None` (default) skips this
-        stage.
+        `return_model=True` is also passed -- pass the RETURNED transformed
+        data back through that step's `.transform` to recover the labels
+        (this works for every clusterer, including hard clusterers such as
+        DBSCAN / AgglomerativeClustering that have no out-of-sample
+        `predict`). For a list of datasets, `.transform` returns one flat
+        label sequence over the row-concatenated data; to get labels split
+        PER dataset, call
+        `hypertools.cluster.cluster.cluster` directly (it returns per-dataset
+        labels alongside the transformed data in one call). `None` (default)
+        skips this stage.
 
     pipeline : hypertools.Pipeline or None
         A previously-FITTED `Pipeline` (e.g. from an earlier
