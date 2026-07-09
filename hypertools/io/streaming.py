@@ -130,7 +130,11 @@ def _fit_stream_models(head, reduce, ndims, normalize):
     # reduction spec: name / dict / class / instance, mirroring tools.reduce
     if isinstance(reduce, dict):
         model_spec = reduce.get('model')
-        params = dict(reduce.get('params', {}))
+        # accept the canonical 'kwargs' key (falling back to the legacy 'params')
+        # so a streaming reduce spec honors constructor kwargs like every other
+        # dispatcher (QC 2026-07: only 'params' was read, so
+        # reduce={'model':'PCA','kwargs':{'whiten':True}} silently used defaults).
+        params = dict(reduce.get('kwargs', reduce.get('params', {})))
     else:
         model_spec = reduce
         params = {}

@@ -17,6 +17,7 @@ learned parameters.
 """
 import warnings
 
+import numpy as np
 import datawrangler as dw
 
 from .common import Forecaster
@@ -78,6 +79,19 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     forecasts (and the fitted Forecaster if return_model=True). Lists in,
     lists out: a single input dataset returns a single forecast DataFrame.
     """
+    # validate the forecast horizon (QC 2026-07: a numeric t<=0 silently
+    # returned an empty (0, n_features) forecast). t may ALSO be a target
+    # datetime/Timestamp (forecast up to that time), which passes through.
+    if isinstance(t, bool):
+        raise ValueError(f"t (forecast horizon) must be a positive integer or "
+                         f"a target datetime; got {t!r}")
+    if isinstance(t, (int, np.integer)):
+        if t < 1:
+            raise ValueError(f"t (forecast horizon) must be >= 1; got {t}")
+    elif isinstance(t, (float, np.floating)):
+        raise ValueError(f"t (forecast horizon) must be an integer number of "
+                         f"steps or a target datetime, not a float; got {t!r}")
+
     args = []
     if isinstance(model, dict) and 'kwargs' not in model and 'args' not in model:
         # {'model': ..., 'params': {...}} form: unpack before handing the

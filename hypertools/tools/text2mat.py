@@ -245,7 +245,24 @@ def text2mat(data, vectorizer='CountVectorizer',
     if corpus is not None:
         if corpus in ('wiki', 'nips', 'sotus',):
             if semantic == 'LatentDirichletAllocation' and vectorizer == 'CountVectorizer':
-                semantic = load(corpus + '_model')
+                # The hosted pretrained topic model was pickled with an older
+                # scikit-learn; unpickling it under a newer sklearn emits an
+                # InconsistentVersionWarning. Its persisted state is just the
+                # fitted vocabulary_ / components_ arrays, which load and
+                # transform correctly across versions (verified numerically,
+                # QC 2026-07), so the warning is noise for this known-safe
+                # model -- silence it narrowly so every default text plot
+                # doesn't print a scary (and here spurious) "invalid results"
+                # warning.
+                import warnings as _warnings
+                try:
+                    from sklearn.exceptions import InconsistentVersionWarning
+                    _ver_warn = InconsistentVersionWarning
+                except Exception:
+                    _ver_warn = UserWarning
+                with _warnings.catch_warnings():
+                    _warnings.simplefilter('ignore', _ver_warn)
+                    semantic = load(corpus + '_model')
                 vectorizer = None
                 model_is_fit = True
             else:

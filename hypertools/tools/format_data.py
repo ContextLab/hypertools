@@ -198,6 +198,10 @@ def format_data(x, vectorizer='CountVectorizer',
             if _dtype not in ['list_num', 'array', 'df', 'arr_num']:
                 continue
             _num = np.asarray(_arr, dtype=float)
+            if _num.shape[0] == 0:
+                raise ValueError(
+                    'input has no observations (0 rows); there is nothing to '
+                    'plot or analyze.')
             if np.isinf(_num).any():
                 raise ValueError(
                     'input contains infinite values; remove or replace them '

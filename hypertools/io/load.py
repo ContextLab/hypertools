@@ -148,10 +148,11 @@ def load(
         The name of the example dataset.  Can be a `.geo` file, or one of a
         number of example datasets listed below.
 
-        `weights` is list of 2 numpy arrays, each containing average brain
-        activity (fMRI) from 18 subjects listening to the same story, fit using
-        Hierarchical Topographic Factor Analysis (HTFA) with 100 nodes. The rows
-        are fMRI measurements and the columns are parameters of the model.
+        `weights` is a list of numpy arrays, one PER SUBJECT (36 arrays),
+        containing brain activity (fMRI) from subjects listening to the same
+        story, fit using Hierarchical Topographic Factor Analysis (HTFA) with
+        100 nodes; each array's rows are timepoints and its columns are model
+        parameters. (`weights_avg` is the 2-array subject-averaged version.)
 
         `weights_sample` is a sample of 3 subjects from that dataset.
 
