@@ -403,6 +403,11 @@ def plot(
         A list of labels for each point. Must be dimensionality of data (x).
         If no label is wanted for a particular point, input None.
 
+        Known limitation (QC 2026-07): in an ANIMATION, per-point labels are
+        drawn once and remain visible in every frame (they are not yet synced
+        to which points are shown in the current frame). For animations, prefer
+        labeling a small number of stable points, or use a static plot.
+
         Supported on BOTH backends (GH #205/#F3): matplotlib draws these as
         `ax.annotate` call-outs; plotly draws the same points as
         `layout.scene.annotations` (3D) or `layout.annotations` (2D), at
@@ -1783,6 +1788,17 @@ def plot(
     multicolor_hue_is_rgb = False
     pre_interp_lengths = [len(xi) for xi in xform]
 
+    # morph interpolates between point CLOUDS, so hue (which colors fixed
+    # observations) has no stable point to attach to across the morph -- every
+    # hue form crashed here (IndexError from the data/label reshape, QC 2026-07,
+    # pre-existing). Drop hue (with a warning) before the cluster/hue grouping
+    # chain below rather than crash.
+    if (((animate == 'morph') or isinstance(animate, list))
+            and hue is not None):
+        warnings.warn("hue is not supported with animate='morph'; "
+                      "ignoring hue.")
+        hue = None
+
     # original category NAMES for a categorical hue (set below, if
     # applicable), used by `legend=True` so the legend/colorbar show the
     # actual category strings rather than the integer group ids `hue` gets
@@ -1972,12 +1988,22 @@ def plot(
             hue_array = _rgb
             multicolor_hue_is_rgb = True
 
-        if (hue_is_matrix or hue_is_continuous) and not animate:
+        # morph animations tag/reshape datasets specially, so continuous/matrix
+        # hue there keeps the grouped path below; every other animation (spin,
+        # window, parallel, serial, True) uses the SAME exact-per-point-color
+        # path as static plots (QC 2026-07). Excluding all animations here sent
+        # continuous hue into the categorical regroup below, which split it into
+        # single-point "groups" and crashed the frame interpolation
+        # (`interp_array`: "x must contain at least 2 elements").
+        _animate_is_morph = (animate == 'morph') or isinstance(animate, list)
+
+        if (hue_is_matrix or hue_is_continuous) and not _animate_is_morph:
             # EXACT PER-POINT COLORS: color varies continuously across
             # observations. Datasets stay intact (no group reshape, which
             # would fragment lines and quantize marker colors); per-point
             # colors are computed after interpolation, below, and rendered
-            # via collections (lines) or scatter (markers).
+            # via collections (lines) or scatter (markers), and -- for
+            # animations -- passed through to each frame as point_colors.
             multicolor_hue = np.asarray(hue_array, dtype=np.float64)
             if legend is True:
                 warnings.warn("legend is not supported for continuous or "
