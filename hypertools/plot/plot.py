@@ -1282,6 +1282,32 @@ def plot(
         morph_samples = _animate_dict.get('morph_samples', morph_samples)
         animate = _animate_style
 
+    # animate='chemtrails'/'precog'/'bullettime' sugar (QC 2026-07): these are
+    # trail EFFECTS, not animation styles. Historically, passing one as the
+    # animate STYLE silently produced a STATIC plot (the style whitelist in the
+    # matplotlib backend did not recognize them). Map each to animate='parallel'
+    # with the matching trail flag on -- what the effect actually needs (trails
+    # apply to animate=True/'parallel').
+    if isinstance(animate, str) and animate in ('chemtrails', 'precog',
+                                                'bullettime'):
+        if animate == 'chemtrails':
+            chemtrails = True
+        elif animate == 'precog':
+            precog = True
+        else:
+            bullettime = True
+        animate = 'parallel'
+
+    # validate the animate style: an unrecognized string used to fall through
+    # to a silent static plot (QC 2026-07). Fail fast with a clear message.
+    if isinstance(animate, str) and animate not in ('parallel', 'spin',
+                                                    'serial', 'morph', 'window'):
+        raise ValueError(
+            f"unknown animate style {animate!r}; valid styles are 'parallel', "
+            "'spin', 'serial', 'morph', 'window' (or True/False). The trail "
+            "effects 'chemtrails'/'precog'/'bullettime' are boolean kwargs, not "
+            "styles -- e.g. animate='parallel', chemtrails=True.")
+
     # focused= resolution (GH #275 round17 #8): the length, in SECONDS (the
     # same unit as `tail_duration`), of the opaque "in-focus" window for
     # `animate='window'` and for any dataset with a `chemtrails`/`precog`/
@@ -2674,9 +2700,15 @@ def plot(
         }
 
     # only animated matplotlib plots set line_ani; plotly and static plots
-    # leave it None
+    # leave it None. An animated plot returns a HyperAnimation (QC 2026-07): a
+    # single object exposing .to_html5_video()/.to_jshtml()/.save()/.figure that
+    # auto-plays inline in a notebook -- so `anim = hyp.plot(data, animate=...)`
+    # then `anim.to_html5_video()` works (it used to fail on the bare tuple).
+    # HyperAnimation still unpacks as the legacy (figure, animation) tuple, so
+    # `fig, anim = hyp.plot(...)` keeps working too.
     if line_ani is not None:
-        return fig, line_ani
+        from .hyper_animation import HyperAnimation
+        return HyperAnimation(fig, line_ani)
 
     return fig
 

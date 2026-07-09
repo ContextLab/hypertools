@@ -3,6 +3,7 @@
 from .config import __version__
 from .plot.plot import plot
 from .plot.backend import set_interactive_backend
+from .plot.hyper_animation import HyperAnimation
 from .io.load import load
 from .tools.analyze import analyze
 from .reduce.reduce import reduce
