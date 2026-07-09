@@ -87,6 +87,11 @@ Below: three representative frames -- early, middle, and late in the story
 # Code source: Contextual Dynamics Laboratory
 # License: MIT
 
+# use the pre-rendered story animation (a spinning, hyperaligned point cloud)
+# as this example's gallery thumbnail, matching the other animated examples
+# (animate_spin, chemtrails, ...).
+# sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_plot_story_trajectories_thumb.gif'
+
 import os
 
 import matplotlib.image as mpimg
