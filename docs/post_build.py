@@ -56,7 +56,14 @@ GIF_REPLACEMENTS = {
     "sphx_glr_animate_thumb.png": "sphx_glr_animate_thumb.gif",
     "sphx_glr_precog_thumb.png": "sphx_glr_precog_thumb.gif",
     "sphx_glr_save_movie_thumb.png": "sphx_glr_save_movie_thumb.gif",
-    "sphx_glr_animate_plotly_thumb.png": "sphx_glr_animate_plotly_thumb.gif"
+    "sphx_glr_animate_plotly_thumb.png": "sphx_glr_animate_plotly_thumb.gif",
+    # QC 2026-07: the story-trajectories example ships an animated gif thumbnail
+    # (docs/_static/thumbnails/sphx_glr_plot_story_trajectories_thumb.gif) and
+    # sets sphinx_gallery_thumbnail_path to it, but it was never registered here,
+    # so post_build never swapped its static png for the gif -- the gallery card
+    # showed a frozen frame instead of the animation.
+    "sphx_glr_plot_story_trajectories_thumb.png":
+        "sphx_glr_plot_story_trajectories_thumb.gif",
 }
 
 def copy_gif_thumbnails():
