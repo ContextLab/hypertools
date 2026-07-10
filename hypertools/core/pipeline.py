@@ -369,7 +369,8 @@ class Pipeline(BaseEstimator):
 
 
 def build_pipeline(manip=None, normalize=None, reduce=None, ndims=None,
-                    align=None, cluster=None, order=CANONICAL_ORDER):
+                    align=None, cluster=None, order=CANONICAL_ORDER,
+                    random_state=None):
     """Assemble a `Pipeline` from the cross-module stage kwargs (#138), in
     canonical order (#153).
 
@@ -412,11 +413,11 @@ def build_pipeline(manip=None, normalize=None, reduce=None, ndims=None,
         # Pipeline.transform on the returned model raised NotFittedError).
         if spec is None or (stage == 'normalize' and spec is False):
             continue
-        steps.append((stage, _make_stage_step(stage, spec, ndims)))
+        steps.append((stage, _make_stage_step(stage, spec, ndims, random_state)))
     return Pipeline(steps)
 
 
-def _make_stage_step(stage, spec, ndims):
+def _make_stage_step(stage, spec, ndims, random_state=None):
     if stage == 'manip':
         from ..manip.manip import manip as _manip
         return _DispatchStep(
@@ -431,7 +432,8 @@ def _make_stage_step(stage, spec, ndims):
         from ..reduce.reduce import reduce as _reduce
         return _DispatchStep(
             'reduce', spec,
-            lambda data, m: _reduce(data, reduce=m, ndims=ndims, return_model=True))
+            lambda data, m: _reduce(data, reduce=m, ndims=ndims,
+                                    random_state=random_state, return_model=True))
     if stage == 'align':
         from ..align.align import align as _align
         return _DispatchStep(
@@ -441,5 +443,6 @@ def _make_stage_step(stage, spec, ndims):
         from ..cluster.cluster import cluster as _cluster
         return _DispatchStep(
             'cluster', spec,
-            lambda data, m: _cluster(data, cluster=m, return_model=True))
+            lambda data, m: _cluster(data, cluster=m,
+                                     random_state=random_state, return_model=True))
     raise ValueError(f"unknown pipeline stage {stage!r}; expected one of {CANONICAL_ORDER}")

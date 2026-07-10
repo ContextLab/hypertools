@@ -167,6 +167,7 @@ def plot(
     impute=None,
     resample=None,
     n_clusters=None,
+    random_state=None,
     predict=None,
     t=10,
     save_path=None,
@@ -602,6 +603,14 @@ def plot(
         If n_clusters is passed, HyperTools will perform k-means clustering
         with the k parameter set to n_clusters. The resulting clusters will
         be plotted in different colors according to the color palette.
+
+    random_state : int, RandomState, or None
+        Seed for reproducibility, threaded to the reduce/cluster stages: it is
+        injected into any stage model whose constructor accepts a
+        `random_state` (UMAP, TSNE, KMeans, GaussianMixture, ...), so e.g.
+        `hyp.plot(x, reduce='UMAP', random_state=0)` gives a repeatable
+        embedding. Deterministic models and pre-constructed instances are
+        unaffected (default: None).
 
     impute : str or dict or class or class instance or None
         Overrides the default PPCA fill for missing (NaN) values with a
@@ -1666,6 +1675,7 @@ def plot(
                 manip=manip,
                 internal=True,
                 impute=impute,
+                random_state=random_state,
             )
     else:
         xform = transform

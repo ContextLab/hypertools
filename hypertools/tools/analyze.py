@@ -12,7 +12,8 @@ _STAGE_KWARG_NAMES = ('manip', 'normalize', 'reduce', 'align', 'cluster')
 
 
 def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=None,
-           cluster=None, pipeline=None, return_model=False, internal=False, impute=None):
+           cluster=None, pipeline=None, return_model=False, internal=False, impute=None,
+           random_state=None):
     """
     Wrapper function for manip -> normalize -> reduce -> align -> cluster
     transformations (the canonical 1.0 pipeline order, GH #153).
@@ -162,7 +163,8 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
             from .format_data import format_data as formatter
             data = formatter(data, ppca=True, impute=impute)
         pipe = build_pipeline(manip=manip, normalize=normalize, reduce=reduce,
-                              ndims=ndims, align=align, cluster=cluster)
+                              ndims=ndims, align=align, cluster=cluster,
+                              random_state=random_state)
         result = pipe.fit_transform(data)
         if cluster is not None:
             # analyze returns the TRANSFORMED DATA, not cluster labels, even when
@@ -189,4 +191,5 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
     # (hyp.plot, hyp.load, and every pre-1.0 script/test).
     return aligner(reducer(normalizer(data, normalize=normalize, internal=internal,
                                       impute=impute),
-                   reduce=reduce, ndims=ndims, internal=internal), align=align)
+                   reduce=reduce, ndims=ndims, internal=internal,
+                   random_state=random_state), align=align)

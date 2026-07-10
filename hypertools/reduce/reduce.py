@@ -24,7 +24,7 @@ def _resolve_model(model_name):
 # main function
 def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
            manip=None, normalize=None, align=None, cluster=None,
-           internal=False, format_data=True):
+           internal=False, format_data=True, random_state=None):
     """
     Reduces dimensionality of an array, or list of arrays
 
@@ -83,6 +83,15 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
 
     format_data : bool
         Whether or not to first call the format_data function (default: True).
+
+    random_state : int, RandomState, or None
+        Seed for reproducibility. Injected into the reduction model's
+        constructor when it accepts a `random_state` (UMAP, TSNE, MDS,
+        FastICA, the mixture models, ...); ignored for deterministic models
+        (PCA, IncrementalPCA, ...) and for an already-constructed model
+        instance you pass in (configure that yourself). An explicit
+        `random_state` in a dict spec's `kwargs` takes precedence
+        (default: None).
 
     Returns
     ----------
@@ -171,6 +180,12 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
                     and inspect.isclass(c_model)
                     and 'n_components' in inspect.signature(c_model).parameters):
                 c_kwargs['n_components'] = ndims
+            # same for a top-level random_state (QC 2026-07 reproducibility): the
+            # dict spec constructs its instance here, so inject before that
+            if (random_state is not None and 'random_state' not in c_kwargs
+                    and inspect.isclass(c_model)
+                    and 'random_state' in inspect.signature(c_model).parameters):
+                c_kwargs['random_state'] = random_state
             # construct immediately; the resulting instance flows through
             # the same already-constructed-instance handling below as a
             # bare instance passed directly as `reduce=`
@@ -271,6 +286,16 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
             model_params['n_components'] = stacked_x.shape[0]
             if model_is_instance:
                 model.n_components = stacked_x.shape[0]
+
+    # reproducibility (QC 2026-07): inject a top-level `random_state` into the
+    # model's constructor kwargs when the model accepts it and the user did not
+    # set it themselves -- so `hyp.reduce(x, reduce='UMAP', random_state=1)`
+    # gives repeatable embeddings. Already-constructed instances are left as the
+    # user configured them.
+    if (random_state is not None and not model_is_instance
+            and 'random_state' not in model_params
+            and 'random_state' in inspect.signature(model).parameters):
+        model_params['random_state'] = random_state
 
     # initialize model: bare classes are constructed with model_params;
     # already-configured instances are used as-is

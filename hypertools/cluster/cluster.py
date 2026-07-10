@@ -25,7 +25,7 @@ models = CLUSTERERS
 mixture_models = MIXTURES
 
 
-def _resolve_cluster_spec(cluster, n_clusters):
+def _resolve_cluster_spec(cluster, n_clusters, random_state=None):
     """Resolve a `cluster=` spec into an unfitted `Clusterer`.
 
     Accepts the full model-spec grammar: a registry name (string), a bare
@@ -122,12 +122,19 @@ def _resolve_cluster_spec(cluster, n_clusters):
         # and have no such __init__ parameter
         model_params.setdefault("n_clusters", n_clusters)
 
+    # reproducibility (QC 2026-07): inject a top-level random_state when the
+    # model accepts it and the user did not set it (KMeans, GaussianMixture,
+    # SpectralClustering, ...); density clusterers without one are left alone.
+    if (random_state is not None and 'random_state' not in model_params
+            and 'random_state' in inspect.signature(model_cls).parameters):
+        model_params['random_state'] = random_state
+
     return Clusterer(model_cls, params=model_params)
 
 
 def cluster(x, cluster="KMeans", n_clusters=3, return_model=False,
            manip=None, normalize=None, reduce=None, ndims=None, align=None,
-           format_data=True):
+           format_data=True, random_state=None):
     """
     Performs clustering analysis and returns a list of cluster labels
 
@@ -215,7 +222,8 @@ def cluster(x, cluster="KMeans", n_clusters=3, return_model=False,
         # has no n_clusters= kwarg of its own (mirrors how it threads ndims=
         # through to the reduce stage), so the resolved (unfitted) Clusterer
         # is what gets passed to the cluster stage instead of the raw spec
-        cluster_spec = _resolve_cluster_spec(cluster, n_clusters) if cluster is not None else None
+        cluster_spec = (_resolve_cluster_spec(cluster, n_clusters, random_state)
+                        if cluster is not None else None)
         pipeline = build_pipeline(manip=manip, normalize=normalize,
                                    reduce=reduce, ndims=ndims,
                                    align=align, cluster=cluster_spec)
@@ -241,6 +249,6 @@ def cluster(x, cluster="KMeans", n_clusters=3, return_model=False,
             result = cluster.fit_transform(stacked)
         return (result, cluster) if return_model else result
 
-    clusterer = _resolve_cluster_spec(cluster, n_clusters)
+    clusterer = _resolve_cluster_spec(cluster, n_clusters, random_state)
     result = clusterer.fit_transform(stacked)
     return (result, clusterer) if return_model else result
