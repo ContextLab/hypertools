@@ -66,7 +66,7 @@ result. Here is the exact code that produced it:
 
 .. code-block:: python
 
-    import matplotlib.pyplot as plt
+    import seaborn as sns
     import hypertools as hyp
 
     data = hyp.load('weights')   # 36 subjects, each (timepoints, 100 hubs)
@@ -84,14 +84,15 @@ result. Here is the exact code that produced it:
     aligned = hyp.align(manip_data,
                         align={'model': 'HyperAlign', 'kwargs': {'n_iter': 10}})
 
-    # one bold rainbow color per subject; a short sliding 'window' trail
-    # (focused=1.5 s) lets you watch all 36 subjects move together through the
-    # story. The lines are near-opaque and bold -- because the subjects are
-    # tightly aligned the overlapping ribbons read as ONE coherent shape, so
-    # opaque lines stay legible (translucent ones just blur into haze).
+    # one bold color per subject from seaborn's 'husl' palette (the classic
+    # HyperTools palette: evenly-spaced but tempered hues). A short sliding
+    # 'window' trail (focused=1.5 s) lets you watch all 36 subjects move
+    # together through the story. The lines are near-opaque and bold -- because
+    # the subjects are tightly aligned the overlapping ribbons read as ONE
+    # coherent shape, so opaque lines stay legible (translucent ones just blur
+    # into haze).
     n = len(aligned)
-    colors = [(*plt.get_cmap('gist_rainbow')(i / (n - 1))[:3], 0.85)
-              for i in range(n)]
+    colors = [(*c, 0.85) for c in sns.color_palette('husl', n)]
     hyp.plot(aligned, '-', color=colors, linewidth=1.6, reduce='IncrementalPCA',
              ndims=3, animate='window', focused=1.5, zoom=1.5, duration=9,
              save_path='story_trajectories.mp4')

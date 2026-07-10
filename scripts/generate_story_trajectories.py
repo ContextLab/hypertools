@@ -30,6 +30,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
 
 import hypertools as hyp
 
@@ -79,8 +80,11 @@ def main():
     os.makedirs(IMG_DIR, exist_ok=True)
     reduced = build_reduced()
     n = len(reduced)
-    colors = [(*plt.get_cmap('gist_rainbow')(i / (n - 1))[:3], LINE_ALPHA)
-              for i in range(n)]
+    # seaborn 'husl' -- the classic HyperTools palette: evenly-spaced but
+    # tempered hues (magenta/teal/gold/slate/coral), matching the reference
+    # hypertools.gif. gist_rainbow's pure-spectral colors read gaudy and make
+    # single strands pop out of the aligned bundle.
+    colors = [(*c, LINE_ALPHA) for c in sns.color_palette('husl', n)]
 
     mp4 = os.path.join(IMG_DIR, 'story_trajectories.mp4')
     anim = hyp.plot(reduced, '-', color=colors, linewidth=LINE_WIDTH,
