@@ -16,7 +16,7 @@ Why this pipeline (see examples/plot_story_trajectories.py for the full write-up
       onto a shared response; reducing to 3-10 dims BEFORE aligning starves it and
       leaves the subjects a poorly-aligned tangle. Aligning in the hub space and
       THEN reducing tightens the subjects' within-timepoint dispersion (their
-      spread around a shared centroid, / cloud scale) from ~0.73 to ~0.51.
+      spread around a shared centroid, / cloud scale) from ~0.64 to ~0.47.
     * WINDOW animation: a sliding opaque trail traverses each aligned trajectory,
       so you watch all 36 subjects move together through the story.
     * IncrementalPCA (linear) keeps the reduced trajectories smooth.
@@ -44,7 +44,12 @@ MANIP = [{'model': 'Smooth', 'kwargs': {'kernel_width': 40}},
          'ZScore']
 ALIGN = {'model': 'HyperAlign', 'kwargs': {'n_iter': 10}}
 FRAME_RATE, ZOOM, FOCUSED, DURATION = 30, 1.5, 1.5, 9
-LINE_ALPHA, LINE_WIDTH = 0.55, 1.3   # translucent, thin -> legible overlap
+# bold + near-opaque, matching the reference hypertools.gif: because the
+# subjects are tightly aligned the overlapping ribbons read as ONE coherent
+# shape, so opaque bold lines stay legible (translucent lines just blur into
+# haze). The SHORT window (focused=1.5s -> 45 of 300 frames) is what keeps the
+# overlap manageable, not transparency.
+LINE_ALPHA, LINE_WIDTH = 0.85, 1.6
 
 
 def build_reduced():

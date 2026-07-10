@@ -35,7 +35,7 @@ subjects travel the shared path in lock-step.
 
 A scale-free within-timepoint dispersion (how tightly the 36 subjects cluster
 around their shared centroid at each timepoint, divided by the overall cloud
-scale; lower = move together more) drops from ~0.73 to ~0.51 once the
+scale; lower = move together more) drops from ~0.64 to ~0.47 once the
 subjects are hyperaligned the RIGHT way -- see below.
 
 Getting alignment right
@@ -49,7 +49,7 @@ The critical choice is *where* to hyperalign:
   only 3 (or even 10) dimensions to work in it can barely align anything,
   leaving the subjects a poorly-aligned tangle. Aligning in the full 100-hub
   space and reducing to 3-D *afterwards* is what pulls the displayed
-  trajectories together (dispersion ~0.73 when reduced-then-aligned -> ~0.51
+  trajectories together (dispersion ~0.64 when reduced-then-aligned -> ~0.47
   when aligned-then-reduced). Note the hub space *is* the "low-dimensional"
   space to align in -- it is already a 100-dim summary of hundreds of
   thousands of voxels; the mistake is over-reducing further before aligning.
@@ -84,12 +84,15 @@ result. Here is the exact code that produced it:
     aligned = hyp.align(manip_data,
                         align={'model': 'HyperAlign', 'kwargs': {'n_iter': 10}})
 
-    # one translucent rainbow color per subject; a sliding 'window' trail lets
-    # you watch all 36 subjects move together through the story
+    # one bold rainbow color per subject; a short sliding 'window' trail
+    # (focused=1.5 s) lets you watch all 36 subjects move together through the
+    # story. The lines are near-opaque and bold -- because the subjects are
+    # tightly aligned the overlapping ribbons read as ONE coherent shape, so
+    # opaque lines stay legible (translucent ones just blur into haze).
     n = len(aligned)
-    colors = [(*plt.get_cmap('gist_rainbow')(i / (n - 1))[:3], 0.55)
+    colors = [(*plt.get_cmap('gist_rainbow')(i / (n - 1))[:3], 0.85)
               for i in range(n)]
-    hyp.plot(aligned, '-', color=colors, linewidth=1.3, reduce='IncrementalPCA',
+    hyp.plot(aligned, '-', color=colors, linewidth=1.6, reduce='IncrementalPCA',
              ndims=3, animate='window', focused=1.5, zoom=1.5, duration=9,
              save_path='story_trajectories.mp4')
 
