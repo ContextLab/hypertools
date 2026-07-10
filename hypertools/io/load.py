@@ -148,10 +148,11 @@ def load(
         The name of the example dataset.  Can be a `.geo` file, or one of a
         number of example datasets listed below.
 
-        `weights` is list of 2 numpy arrays, each containing average brain
-        activity (fMRI) from 18 subjects listening to the same story, fit using
-        Hierarchical Topographic Factor Analysis (HTFA) with 100 nodes. The rows
-        are fMRI measurements and the columns are parameters of the model.
+        `weights` is a list of numpy arrays, one PER SUBJECT (36 arrays),
+        containing brain activity (fMRI) from subjects listening to the same
+        story, fit using Hierarchical Topographic Factor Analysis (HTFA) with
+        100 nodes; each array's rows are timepoints and its columns are model
+        parameters. (`weights_avg` is the 2-array subject-averaged version.)
 
         `weights_sample` is a sample of 3 subjects from that dataset.
 
@@ -359,10 +360,19 @@ def _load_local(dataset_path):
 def _load_legacy(dataset_path):
     try:
         import deepdish as dd
-    except ImportError as e:
-        # catches ModuleNotFoundError since it's a subclass
+    except Exception as e:
+        # Broad except (not just ImportError): `deepdish` is unmaintained and
+        # references numpy internals removed in numpy 2 (e.g. np.ComplexWarning),
+        # so on this package's required numpy>=2 it fails to IMPORT with an
+        # AttributeError, not an ImportError. Either way the user needs the same
+        # remedy, so surface one friendly message.
         raise HypertoolsIOError(
-            "To load legacy-format datasets, install the 'deepdish' module"
+            "This looks like a legacy (<1.0) deepdish/HDF5-format dataset. "
+            "Reading it needs the `deepdish` package, which is unmaintained and "
+            "only works under numpy<2 (incompatible with hypertools' numpy>=2 "
+            "requirement). Read the file in a separate environment with "
+            "`numpy<2` and `pip install deepdish`, then re-save it in a modern "
+            "format (e.g. .npz/.csv)."
         ) from e
     data_dict = dd.io.load(dataset_path)
 

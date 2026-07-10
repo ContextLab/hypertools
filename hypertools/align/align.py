@@ -41,6 +41,17 @@ _ALIAS = {
 }
 
 
+def _reject_unknown_aligner(name):
+    """Raise a clear error for an unknown align-model name. `unpack_model`
+    passes unrecognized strings through unchanged, so without this the string
+    later hit "'str' object has no attribute 'fit_transform'" (QC 2026-07).
+    Matches the clear "unknown X model" errors reduce/cluster/predict give."""
+    raise ValueError(
+        f"unknown align model {name!r}; supported names: "
+        f"{', '.join(sorted(a.__name__ for a in ALIGNERS))} (or pass an "
+        "Aligner subclass or instance directly).")
+
+
 def _resolve_align_spec(model, extra_kwargs):
     """Resolve a `model=` spec (+ leftover `**kwargs`) into an unfitted (or,
     for an already-fitted/-constructed instance, passed-through-unchanged)
@@ -105,6 +116,11 @@ def _resolve_align_spec(model, extra_kwargs):
         if isinstance(c_model, str):
             c_model = _ALIAS.get(c_model, c_model)
         resolved_inner = unpack_model(c_model, valid=ALIGNERS, parent_class=Aligner)
+        if isinstance(resolved_inner, str):
+            # unknown name inside the DICT form -- previously slipped past the
+            # bare-string guard below and hit the cryptic AttributeError
+            # (QC 2026-07 red-team: align={'model': 'Nope'}).
+            _reject_unknown_aligner(resolved_inner)
         if isinstance(resolved_inner, type):
             return resolved_inner(*c_args, **c_kwargs)
         # already-constructed (or already-fitted) instance: params ignored,
@@ -112,6 +128,8 @@ def _resolve_align_spec(model, extra_kwargs):
         return resolved_inner
 
     resolved = unpack_model(model, valid=ALIGNERS, parent_class=Aligner)
+    if isinstance(resolved, str):
+        _reject_unknown_aligner(resolved)
     if isinstance(resolved, type):
         return resolved(**extra_kwargs)
     # an already-constructed (unfitted) or already-fitted instance is
@@ -174,6 +192,17 @@ def _align(data, model='HyperAlign', return_model=False,
             DeprecationWarning, stacklevel=2,
         )
         model = legacy_model
+
+    # a whole already-fitted Pipeline handed back as model= (e.g. the model
+    # from an earlier cross-module return_model=True call) is reused as-is via
+    # .transform, BEFORE _resolve_align_spec below -- otherwise unpack_model
+    # raises "unknown model: Pipeline" (QC 2026-07). Redundant stage kwargs are
+    # warned + ignored (the Pipeline already encodes them).
+    from ..core.shared import is_reused_pipeline
+    if is_reused_pipeline(model, {'manip': manip, 'normalize': normalize,
+                                  'reduce': reduce, 'cluster': cluster}, 'model'):
+        result = _to_arrays(model.transform(data))
+        return (result, model) if return_model else result
 
     resolved = _resolve_align_spec(model, kwargs)
 

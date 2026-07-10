@@ -5,10 +5,10 @@ each column (ARIMA has no native multivariate support), then forecasts `t`
 steps ahead per column via `.forecast(steps=t)`. Default order `(1, 1, 1)`;
 `order` and any other `ARIMA` constructor kwargs pass through.
 
-`statsmodels` ships via the optional `[predict]` extra; it is imported
-lazily (inside the fitter) so `hypertools.predict` stays importable without
-it, and a friendly `ImportError` is raised only when an `ARIMA` forecaster is
-actually fit.
+`statsmodels` is a core hypertools dependency, so the `ARIMA` forecaster works
+out of the box. It is still imported lazily (inside the fitter) so
+`hypertools.predict` stays importable even where the core deps were stripped,
+raising a friendly `ImportError` only then.
 
 Convergence warnings (non-invertible starting MA parameters, failure to
 fully converge on small/synthetic series, etc.) are common and harmless for
@@ -28,8 +28,9 @@ def _import_arima():
         from statsmodels.tsa.arima.model import ARIMA as SMArima
     except ImportError as e:
         raise ImportError(
-            'statsmodels is required for the ARIMA forecaster; install it with '
-            'pip install "hypertools[predict]"'
+            'statsmodels is required for the ARIMA forecaster. It is normally a '
+            'core hypertools dependency; reinstall hypertools, or install it '
+            'directly with `pip install statsmodels`.'
         ) from e
     return SMArima
 

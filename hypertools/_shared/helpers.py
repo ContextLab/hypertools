@@ -375,9 +375,11 @@ def get_type(data):
     from ..datageometry import DataGeometry
 
     if isinstance(data, list):
+        if len(data) == 0:
+            return 'list_num'  # empty list -> empty numeric dataset
         if isinstance(data[0], (str, bytes)):
             return 'list_str'
-        elif isinstance(data[0], (int, float)):
+        elif isinstance(data[0], (int, float, np.number)) and not isinstance(data[0], bool):
             return 'list_num'
         elif isinstance(data[0], np.ndarray):
             return 'list_arr'
@@ -386,10 +388,17 @@ def get_type(data):
                             'Numpy Array, Pandas DataFrame, String, List of strings'
                             ', List of numbers')
     elif isinstance(data, np.ndarray):
-        if isinstance(data[0][0], (str, bytes)):
+        # classify by dtype rather than indexing data[0][0] -- the latter
+        # crashed on 1-D arrays (data[0] is a scalar, so data[0][0] raised
+        # "invalid index to scalar variable") and on empty arrays (QC 2026-07).
+        # A plain 1-D feature vector is a natural input; format_data reshapes it
+        # to a column below.
+        if data.dtype.kind in ('U', 'S'):
             return 'arr_str'
-        else:
-            return 'arr_num'
+        if (data.dtype.kind == 'O' and data.size
+                and isinstance(data.reshape(-1)[0], (str, bytes))):
+            return 'arr_str'
+        return 'arr_num'
     elif isinstance(data, pd.DataFrame):
         return 'df'
     elif isinstance(data, (str, bytes)):

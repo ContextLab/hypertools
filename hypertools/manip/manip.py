@@ -65,7 +65,8 @@ def _resolve_single_step(model, kwargs):
 
 
 @dw.decorate.funnel
-def manip(data, model="ZScore", return_model=False, **kwargs):
+def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
+          ndims=None, align=None, cluster=None, **kwargs):
     """Apply a per-dataset manipulation (or chain of manipulations) to `data`.
 
     Parameters
@@ -113,6 +114,25 @@ def manip(data, model="ZScore", return_model=False, **kwargs):
     The manipulated data (and the fitted model/Pipeline if
     `return_model=True`).
     """
+    # cross-module stage kwargs (#138): manip is the FIRST stage in the
+    # canonical order (manip -> normalize -> reduce -> align -> cluster), so a
+    # manip call carrying any downstream stage kwarg assembles + runs a Pipeline
+    # via build_pipeline -- parity with normalize()/analyze() (QC 2026-07: these
+    # kwargs used to fall through **kwargs into the manipulator's constructor
+    # and raise TypeError).
+    if any(s is not None for s in (normalize, reduce, align, cluster)):
+        from ..core.pipeline import build_pipeline
+        # fold the manipulator's own constructor kwargs into a dict spec so they
+        # still reach the manip stage
+        manip_spec = ({'model': model, 'kwargs': dict(kwargs)}
+                      if (kwargs and not isinstance(model, (list, Pipeline)))
+                      else model)
+        pipe = build_pipeline(manip=manip_spec, normalize=normalize,
+                              reduce=reduce, ndims=ndims, align=align,
+                              cluster=cluster)
+        result = pipe.fit_transform(data)
+        return (result, pipe) if return_model else result
+
     if isinstance(model, list):
         pipeline = Pipeline(model)
         result = pipeline.fit_transform(data)

@@ -570,7 +570,8 @@ def _load_hf(name, split=None, streaming=False):
         raise ImportError(
             f'{name!r} looks like a Hugging Face dataset id, but the '
             "`datasets` package is not installed. Install it with "
-            "`pip install datasets`.") from e
+            '`pip install "hypertools[text]"` (which pulls it in via '
+            "pydata-wrangler[hf]), or `pip install datasets` directly.") from e
     ds = load_dataset(name, split=split, streaming=streaming)
     if split is None and hasattr(ds, 'keys'):  # (Iterable)DatasetDict
         keys = list(ds.keys())

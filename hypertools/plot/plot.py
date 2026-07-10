@@ -148,7 +148,9 @@ def plot(
     colors=None,
     palette="hls",
     hue=None,
+    color_reduce=None,
     labels=None,
+    names=None,
     legend=None,
     colorbar=None,
     title=None,
@@ -165,6 +167,7 @@ def plot(
     impute=None,
     resample=None,
     n_clusters=None,
+    random_state=None,
     predict=None,
     t=10,
     save_path=None,
@@ -374,9 +377,42 @@ def plot(
         observation). To label a subset of points categorically, use None
         entries (i.e. ['a', None, 'b', 'a']).
 
+        When the data is a list of datasets, `hue` may mirror that nesting --
+        one hue sub-sequence per dataset, each matching that dataset's length
+        (e.g. ``hyp.plot([d0, d1], hue=[h0, h1])``); it is flattened to one
+        value (or matrix row) per observation.
+
+        A 2D matrix hue with MORE than 3 columns (or any matrix, if
+        `color_reduce=` is given) is first reduced to 3 columns and mapped
+        directly to (r, g, b) -- see `color_reduce`.
+
+    color_reduce : str, dict, class, instance, or None
+        How to reduce an arbitrary high-dimensional matrix `hue` to the 3
+        columns used as (r, g, b). Any `hyp.reduce` spec (default: None ->
+        'IncrementalPCA'). Only applies when `hue` is a 2D matrix; the three
+        reduced dimensions are min-max scaled to [0, 1] per column and used as
+        the red/green/blue channels, so an arbitrary per-observation feature
+        matrix becomes a continuous RGB coloring. A matrix `hue` with <=3
+        columns is left on the palette-blend path unless `color_reduce=` is
+        given explicitly.
+
+    names : list or None
+        Per-DATASET names, one per dataset in a list input (default: None).
+        Distinct from `labels` (per-POINT text call-outs) and `hue` (per-
+        observation coloring): each name labels its dataset's trace and turns
+        the legend on, so `hyp.plot([raw, a, b], names=['raw', 'a', 'b'])`
+        shows a legend naming the three datasets. Must have exactly one entry
+        per dataset; mutually exclusive with passing a `legend=` list (use one
+        or the other). Rendered on both the matplotlib and plotly backends.
+
     labels : list
         A list of labels for each point. Must be dimensionality of data (x).
         If no label is wanted for a particular point, input None.
+
+        Known limitation (QC 2026-07): in an ANIMATION, per-point labels are
+        drawn once and remain visible in every frame (they are not yet synced
+        to which points are shown in the current frame). For animations, prefer
+        labeling a small number of stable points, or use a static plot.
 
         Supported on BOTH backends (GH #205/#F3): matplotlib draws these as
         `ax.annotate` call-outs; plotly draws the same points as
@@ -572,6 +608,14 @@ def plot(
         If n_clusters is passed, HyperTools will perform k-means clustering
         with the k parameter set to n_clusters. The resulting clusters will
         be plotted in different colors according to the color palette.
+
+    random_state : int, RandomState, or None
+        Seed for reproducibility, threaded to the reduce/cluster stages: it is
+        injected into any stage model whose constructor accepts a
+        `random_state` (UMAP, TSNE, KMeans, GaussianMixture, ...), so e.g.
+        `hyp.plot(x, reduce='UMAP', random_state=0)` gives a repeatable
+        embedding. Deterministic models and pre-constructed instances are
+        unaffected (default: None).
 
     impute : str or dict or class or class instance or None
         Overrides the default PPCA fill for missing (NaN) values with a
@@ -1257,6 +1301,44 @@ def plot(
         morph_samples = _animate_dict.get('morph_samples', morph_samples)
         animate = _animate_style
 
+    # animate='chemtrails'/'precog'/'bullettime' sugar (QC 2026-07): these are
+    # trail EFFECTS, not animation styles. Historically, passing one as the
+    # animate STYLE silently produced a STATIC plot (the style whitelist in the
+    # matplotlib backend did not recognize them). Map each to animate='parallel'
+    # with the matching trail flag on -- what the effect actually needs (trails
+    # apply to animate=True/'parallel').
+    if isinstance(animate, str) and animate in ('chemtrails', 'precog',
+                                                'bullettime'):
+        if animate == 'chemtrails':
+            chemtrails = True
+        elif animate == 'precog':
+            precog = True
+        else:
+            bullettime = True
+        animate = 'parallel'
+
+    # validate the animate style: an unrecognized string used to fall through
+    # to a silent static plot (QC 2026-07). Fail fast with a clear message.
+    if isinstance(animate, str) and animate not in ('parallel', 'spin',
+                                                    'serial', 'morph', 'window'):
+        raise ValueError(
+            f"unknown animate style {animate!r}; valid styles are 'parallel', "
+            "'spin', 'serial', 'morph', 'window' (or True/False). The trail "
+            "effects 'chemtrails'/'precog'/'bullettime' are boolean kwargs, not "
+            "styles -- e.g. animate='parallel', chemtrails=True.")
+
+    # animations need a positive duration and frame rate (QC 2026-07: duration=0
+    # or frame_rate=0 raised ZeroDivisionError, and a negative duration a cryptic
+    # "zero-size array to reduction" error, from the frame-count math).
+    if animate:
+        if duration is not None and duration <= 0:
+            raise ValueError(
+                f"duration must be a positive number of seconds for an "
+                f"animation; got {duration!r}.")
+        if frame_rate is not None and frame_rate <= 0:
+            raise ValueError(
+                f"frame_rate must be a positive number; got {frame_rate!r}.")
+
     # focused= resolution (GH #275 round17 #8): the length, in SECONDS (the
     # same unit as `tail_duration`), of the opaque "in-focus" window for
     # `animate='window'` and for any dataset with a `chemtrails`/`precog`/
@@ -1436,6 +1518,22 @@ def plot(
                 "as sugar -- see pipeline='s docstring)."
             )
 
+    # A whole already-fitted Pipeline belongs in pipeline=, not a single stage
+    # kwarg: passing one as reduce=/manip=/etc would apply it as that ONE stage
+    # and then plot re-applies the reduce stage to enforce ndims, double-applying
+    # it (QC 2026-07: this produced a cryptic "X has N features, but PCA is
+    # expecting M features" error). Point the user at the dedicated reuse path.
+    from ..core.pipeline import Pipeline as _HypPipeline
+    for _stage_name, _stage_value in (('manip', manip), ('normalize', normalize),
+                                      ('reduce', reduce), ('align', align),
+                                      ('cluster', cluster)):
+        if isinstance(_stage_value, _HypPipeline) and _stage_value.is_fitted:
+            raise ValueError(
+                f"{_stage_name}= received an already-fitted hypertools Pipeline. "
+                "A whole fitted Pipeline encodes all of its own stages -- reuse "
+                "it via hyp.plot(x, pipeline=<that Pipeline>), not as a single "
+                "stage kwarg.")
+
     # streaming inputs (issue #101): iterators/generators and Hugging Face
     # IterableDatasets are detected from the structure of the input -- no
     # flag needed. Models are fitted on the first `stream_init` samples and
@@ -1582,6 +1680,7 @@ def plot(
                 manip=manip,
                 internal=True,
                 impute=impute,
+                random_state=random_state,
             )
     else:
         xform = transform
@@ -1710,7 +1809,22 @@ def plot(
     # computed after interpolation). Dataset lengths are captured now so hue
     # values can be re-interpolated to match the interpolated trajectories.
     multicolor_hue = None
+    # when a high-dim matrix hue is reduced to a 3-column RGB matrix (see the
+    # color_reduce= branch below), multicolor_hue holds literal per-point RGB
+    # values that must be used AS colors rather than blended over a palette.
+    multicolor_hue_is_rgb = False
     pre_interp_lengths = [len(xi) for xi in xform]
+
+    # morph interpolates between point CLOUDS, so hue (which colors fixed
+    # observations) has no stable point to attach to across the morph -- every
+    # hue form crashed here (IndexError from the data/label reshape, QC 2026-07,
+    # pre-existing). Drop hue (with a warning) before the cluster/hue grouping
+    # chain below rather than crash.
+    if (((animate == 'morph') or isinstance(animate, list))
+            and hue is not None):
+        warnings.warn("hue is not supported with animate='morph'; "
+                      "ignoring hue.")
+        hue = None
 
     # original category NAMES for a categorical hue (set below, if
     # applicable), used by `legend=True` so the legend/colorbar show the
@@ -1849,6 +1963,23 @@ def plot(
         if color is not None:
             warnings.warn("Using group, color keyword will be ignored.")
 
+        # NESTED per-dataset hue: when the data is a list of datasets, hue may
+        # be given with the SAME nesting -- one hue sub-sequence per dataset,
+        # each matching that dataset's length (the classic list-of-lists form,
+        # e.g. examples/plot_hue.py). Flatten it to one value (or one matrix
+        # row) per observation before classifying, so np.asarray doesn't read a
+        # (n_datasets, len) block as a (3, ...) matrix hue. A genuinely flat or
+        # (n_obs, k) matrix hue has len(hue) != n_datasets (or scalar elements),
+        # so it is left untouched.
+        if (isinstance(hue, (list, tuple)) and len(xform) > 1
+                and len(hue) == len(xform)
+                and all(np.ndim(h) >= 1 and len(h) == len(xi)
+                        for h, xi in zip(hue, xform))):
+            flat_hue = []
+            for h in hue:
+                flat_hue.extend(list(h))
+            hue = flat_hue
+
         # classify the hue argument: per-observation numeric matrix
         # (mixture proportions, model weights, ...), continuous 1D values,
         # or discrete grouping labels
@@ -1857,6 +1988,26 @@ def plot(
             hue_array = np.asarray(hue)
         except Exception:
             hue_array = None
+        # a SCALAR hue -- a single string or number, e.g. hue='red' -- means
+        # "put every observation in one group". Broadcast it to one value per
+        # observation so it is not mis-measured as len('red') == 3 characters
+        # (QC 2026-07 red-team: hue='red' on 20 points raised the nonsensical
+        # "hue has 3 entries but the data has 20 observations").
+        if hue_array is not None and hue_array.ndim == 0:
+            hue = [hue_array.item()] * n_obs
+            hue_array = np.asarray(hue)
+        # validate hue length (QC 2026-07): a hue that was too SHORT silently
+        # truncated the plot (rendered only the first len(hue) points, no
+        # warning); too LONG raised a cryptic IndexError deep in reshape_data.
+        # hue must carry exactly one value/row per observation.
+        _hue_len = (hue_array.shape[0]
+                    if hue_array is not None and hue_array.ndim >= 1
+                    else len(hue))
+        if _hue_len != n_obs:
+            raise ValueError(
+                f"hue has {_hue_len} entr{'y' if _hue_len == 1 else 'ies'} but "
+                f"the data has {n_obs} observations; hue must have exactly one "
+                "value (or one row, for a matrix hue) per observation.")
         hue_is_matrix = (hue_array is not None and hue_array.ndim == 2
                          and np.issubdtype(hue_array.dtype, np.number)
                          and hue_array.shape[0] == n_obs)
@@ -1864,12 +2015,59 @@ def plot(
                              and np.issubdtype(hue_array.dtype, np.number)
                              and hue_array.shape[0] == n_obs)
 
-        if (hue_is_matrix or hue_is_continuous) and not animate:
+        # arbitrary matrix hue -> RGB: when the hue matrix has MORE than 3
+        # columns, or color_reduce= is explicitly given, reduce it to 3 columns
+        # (default 'IncrementalPCA'; color_reduce accepts any hyp.reduce spec)
+        # and min-max each column to [0, 1] so the three reduced dimensions map
+        # directly to (r, g, b). Those per-observation rows are then used AS
+        # colors. A <=3-column matrix with no color_reduce= keeps the
+        # palette-blend path (mixture proportions etc.).
+        if hue_is_matrix and (hue_array.shape[1] > 3 or color_reduce is not None):
+            _rgb = np.asarray(hue_array, dtype=np.float64)
+            if _rgb.shape[1] > 3:
+                # more than 3 columns: reduce to 3 (default IncrementalPCA;
+                # color_reduce accepts any hyp.reduce spec). A <=3-column matrix
+                # is NOT reduced -- hyp.reduce(ndims=3) can't synthesize more
+                # dimensions than the input has, and doing so crashed for k<=3
+                # (QC 2026-07 red-team); its columns are used directly instead.
+                from ..reduce.reduce import reduce as _color_reducer
+                _rgb = np.asarray(
+                    _color_reducer(_rgb,
+                                   reduce=(color_reduce or 'IncrementalPCA'),
+                                   ndims=3),
+                    dtype=np.float64)
+                if _rgb.ndim == 3 and _rgb.shape[0] == 1:
+                    _rgb = _rgb[0]
+            # min-max each column to [0, 1]
+            _lo = _rgb.min(axis=0, keepdims=True)
+            _hi = _rgb.max(axis=0, keepdims=True)
+            _span = np.where((_hi - _lo) > 0, _hi - _lo, 1.0)
+            _rgb = np.clip((_rgb - _lo) / _span, 0.0, 1.0)
+            # pad to exactly 3 channels (a 1- or 2-column matrix given with an
+            # explicit color_reduce=): fill the missing channel(s) with a
+            # neutral 0.5 so the present columns still drive the color.
+            if _rgb.shape[1] < 3:
+                _rgb = np.hstack(
+                    [_rgb, np.full((_rgb.shape[0], 3 - _rgb.shape[1]), 0.5)])
+            hue_array = _rgb
+            multicolor_hue_is_rgb = True
+
+        # morph animations tag/reshape datasets specially, so continuous/matrix
+        # hue there keeps the grouped path below; every other animation (spin,
+        # window, parallel, serial, True) uses the SAME exact-per-point-color
+        # path as static plots (QC 2026-07). Excluding all animations here sent
+        # continuous hue into the categorical regroup below, which split it into
+        # single-point "groups" and crashed the frame interpolation
+        # (`interp_array`: "x must contain at least 2 elements").
+        _animate_is_morph = (animate == 'morph') or isinstance(animate, list)
+
+        if (hue_is_matrix or hue_is_continuous) and not _animate_is_morph:
             # EXACT PER-POINT COLORS: color varies continuously across
             # observations. Datasets stay intact (no group reshape, which
             # would fragment lines and quantize marker colors); per-point
             # colors are computed after interpolation, below, and rendered
-            # via collections (lines) or scatter (markers).
+            # via collections (lines) or scatter (markers), and -- for
+            # animations -- passed through to each frame as point_colors.
             multicolor_hue = np.asarray(hue_array, dtype=np.float64)
             if legend is True:
                 warnings.warn("legend is not supported for continuous or "
@@ -1881,7 +2079,8 @@ def plot(
             # markers (or animated) path: blend colors per observation,
             # then group observations with (near-)identical colors into
             # traces
-            blended = mat2colors(hue_array, palette=palette)
+            blended = (hue_array if multicolor_hue_is_rgb
+                       else mat2colors(hue_array, palette=palette))
             group_ids, group_colors = colors2groups(blended)
             mpl_kwargs["color"] = [
                 group_colors[gid]
@@ -2055,6 +2254,23 @@ def plot(
                 stacklevel=2,
             )
 
+    # names= (QC 2026-07): per-DATASET names, distinct from per-point `labels=`
+    # (text call-outs on individual observations) and the `legend=True`
+    # auto-numbering. Each name labels its dataset's trace and turns the legend
+    # on, so `hyp.plot([raw, a, b, c], names=['raw','a','b','c'], ...)` shows a
+    # legend naming the four datasets. Resolved BEFORE the legend block below so
+    # it wins over a bare legend=True; explicit conflicting values raise.
+    if names is not None:
+        names = list(names)
+        if len(names) != len(xform):
+            raise ValueError(
+                f"names must have one entry per dataset ({len(xform)}); got "
+                f"{len(names)}")
+        if isinstance(legend, (list, tuple)):
+            raise ValueError(
+                "pass dataset names via names= OR a legend= list, not both")
+        legend = names
+
     # handle legend
     if legend is not None:
         if legend is False:
@@ -2138,7 +2354,8 @@ def plot(
     line_colors = None
     if multicolor_hue is not None:
         line_colors = _multicolor_line_colors(
-            multicolor_hue, pre_interp_lengths, xform, palette)
+            multicolor_hue, pre_interp_lengths, xform, palette,
+            is_rgb=multicolor_hue_is_rgb)
 
     # handle explore flag
     if explore:
@@ -2228,6 +2445,14 @@ def plot(
         if "color" in mpl_kwargs:
             _base_colors = [kwargs_list[i].get("color")
                             for i in range(len(xform))]
+        elif line_colors is not None:
+            # hue= is set: use each dataset's MEAN per-point hue color as its
+            # representative color, so surface=/density=/morph honor hue instead
+            # of falling back to the palette cycle (QC 2026-07: surface=True
+            # ignored hue -- the hull/mesh drew in a palette color while the
+            # points were hue-colored).
+            return [tuple(np.asarray(lc, dtype=float).mean(axis=0)[:3])
+                    for lc in line_colors]
         else:
             _base_colors = list(sns.color_palette(palette, len(xform)))
         return [
@@ -2240,6 +2465,28 @@ def plot(
     # when a dataset's surface spec has color=None, i.e. "inherit").
     surface_colors = (_resolve_dataset_colors()
                       if surface_list is not None else None)
+
+    # surface= per-vertex coloring (QC 2026-07): when hue is set, color each
+    # surface hull VERTEX by an inverse-distance-weighted blend of the enclosed
+    # points' hue colors (meshutil.vertex_colors_from_points) rather than one
+    # flat mean color (the old behavior painted the whole hull the average of
+    # the points' colors -- e.g. gray for a rainbow hue). Bundle each dataset's
+    # (points, per-point RGB); None where a dataset has no surface, no per-point
+    # hue colors, or an EXPLICIT surface color= was given (an explicit color
+    # wins over the inferred hue -- otherwise it would be silently ignored),
+    # in which case surface_colors' flat color is used.
+    def _surface_inherits_color(i):
+        spec = surface_list[i] if i < len(surface_list) else None
+        return spec is not None and spec.get('color') is None
+
+    if surface_list is not None and line_colors is not None:
+        surface_point_colors = [
+            (np.asarray(xform[i])[:, :3], np.asarray(line_colors[i])[:, :3])
+            if _surface_inherits_color(i) else None
+            for i in range(len(xform))
+        ]
+    else:
+        surface_point_colors = None
 
     # density= (GH #108/#191): resolve each dataset's OWN drawn color the
     # SAME way as surface_colors above (density has no color-override key,
@@ -2329,6 +2576,7 @@ def plot(
             colorbar_info=colorbar_info,
             surface=surface_list,
             surface_colors=surface_colors,
+            surface_point_colors=surface_point_colors,
             density=density_list,
             density_colors=density_colors,
             morph_tags=morph_tags,
@@ -2382,6 +2630,7 @@ def plot(
                 frame_kwargs=frame_kwargs,
                 surface=surface_list,
                 surface_colors=surface_colors,
+                surface_point_colors=surface_point_colors,
                 density=density_list,
                 density_colors=density_colors,
                 morph_tags=morph_tags,
@@ -2565,9 +2814,15 @@ def plot(
         }
 
     # only animated matplotlib plots set line_ani; plotly and static plots
-    # leave it None
+    # leave it None. An animated plot returns a HyperAnimation (QC 2026-07): a
+    # single object exposing .to_html5_video()/.to_jshtml()/.save()/.figure that
+    # auto-plays inline in a notebook -- so `anim = hyp.plot(data, animate=...)`
+    # then `anim.to_html5_video()` works (it used to fail on the bare tuple).
+    # HyperAnimation still unpacks as the legacy (figure, animation) tuple, so
+    # `fig, anim = hyp.plot(...)` keeps working too.
     if line_ani is not None:
-        return fig, line_ani
+        from .hyper_animation import HyperAnimation
+        return HyperAnimation(fig, line_ani)
 
     return fig
 
@@ -2941,7 +3196,7 @@ def _contains_string(el):
     return False
 
 
-def _multicolor_line_colors(hue_src, orig_lengths, xform, palette):
+def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False):
     """Per-point RGB colors for multicolored lines.
 
     hue_src holds one value (or one row) per ORIGINAL observation; the
@@ -2949,6 +3204,11 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette):
     resolution, so each dataset's hue values are linearly re-interpolated to
     its new length before color mapping. Colors are mapped over the
     CONCATENATED hue values so the scale is shared across datasets.
+
+    When `is_rgb` is True, `hue_src` already holds literal per-point RGB values
+    (e.g. a matrix hue reduced to 3 columns via `plot`'s `color_reduce=`), so
+    the re-interpolated values are used AS colors instead of being mapped
+    through `mat2colors`.
 
     Returns a list of (n_i, 3) arrays, one per dataset in xform.
     """
@@ -2972,9 +3232,12 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette):
              for c in range(piece.shape[1])]))
 
     stacked = np.vstack(interped)
-    colors = mat2colors(
-        stacked.ravel() if stacked.shape[1] == 1 else stacked,
-        palette=palette)
+    if is_rgb:
+        colors = np.clip(stacked, 0.0, 1.0)
+    else:
+        colors = mat2colors(
+            stacked.ravel() if stacked.shape[1] == 1 else stacked,
+            palette=palette)
 
     out, start = [], 0
     for xi in xform:

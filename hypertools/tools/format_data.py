@@ -80,12 +80,28 @@ def format_data(x, vectorizer='CountVectorizer',
     from .df2mat import df2mat
     from .text2mat import text2mat
 
+    # a pandas Series is a single 1-D dataset (QC 2026-07: was rejected as
+    # "unsupported"); a tuple is treated like a list of datasets.
+    import pandas as pd
+    if isinstance(x, pd.Series):
+        x = x.to_numpy()
+    elif isinstance(x, tuple):
+        x = list(x)
+
     # if x is not a list, make it one
     if not isinstance(x, list):
         x = [x]
 
     if all([isinstance(xi, str) for xi in x]):
         x = [x]
+    # a FLAT list of numbers is a SINGLE 1-D dataset, not a list of scalar
+    # "datasets" -- wrap it so get_type sees one array (QC 2026-07: mapping
+    # get_type over the individual numbers raised "Unsupported data type",
+    # even though the message advertises "List of numbers" as supported).
+    elif len(x) > 0 and all(
+            isinstance(xi, (int, float, np.number)) and not isinstance(xi, bool)
+            for xi in x):
+        x = [np.asarray(x, dtype=float)]
 
     # check data type for each element in list
     dtypes = list(map(get_type, x))
@@ -159,15 +175,47 @@ def format_data(x, vectorizer='CountVectorizer',
             textidx+=1
         elif dtype == 'df':
             processed_x.append(df2mat(x[i]))
+        elif dtype == 'list_num':
+            # a numeric-list dataset -> array (QC 2026-07: a raw python list hit
+            # "'list' object has no attribute 'ndim'" at the reshape below)
+            processed_x.append(np.asarray(x[i], dtype=float))
         else:
             processed_x.append(x[i])
 
-    # reshape anything that is 1d
-    if any([i.ndim<=1 for i in processed_x]):
-        processed_x = [np.reshape(i,(i.shape[0],1)) if i.ndim==1 else i for i in processed_x]
+    # reshape anything that is 0d or 1d into a 2d (observations x features)
+    # array. QC 2026-07: a 0-d array like np.array(5) has ndim 0, so the old
+    # `if i.ndim==1` branch left it untouched and it later raised the opaque
+    # "tuple index out of range" on i.shape[0]; a scalar is now one observation
+    # with one feature (a (1, 1) array), consistent with [5] -> (1, 1).
+    if any([i.ndim <= 1 for i in processed_x]):
+        processed_x = [np.reshape(i, (i.shape[0] if i.ndim == 1 else 1, 1))
+                       if i.ndim <= 1 else i for i in processed_x]
 
     contains_text = any([dtype in ['list_str', 'str', 'arr_str'] for dtype in dtypes])
     contains_num = any([dtype in ['list_num', 'array', 'df', 'arr_num'] for dtype in dtypes])
+
+    # fail fast with a CLEAR message on non-finite data (QC 2026-07): otherwise
+    # infinities surface as sklearn's opaque "Input X contains infinity" and an
+    # entirely-missing dataset surfaces as "zero-size array to reduction" deep
+    # inside PPCA. Missing values (NaN) are still fine -- PPCA imputes them.
+    if contains_num:
+        for _arr, _dtype in zip(processed_x, dtypes):
+            if _dtype not in ['list_num', 'array', 'df', 'arr_num']:
+                continue
+            _num = np.asarray(_arr, dtype=float)
+            if _num.shape[0] == 0:
+                raise ValueError(
+                    'input has no observations (0 rows); there is nothing to '
+                    'plot or analyze.')
+            if np.isinf(_num).any():
+                raise ValueError(
+                    'input contains infinite values; remove or replace them '
+                    '(e.g. with np.nan for missing entries) before plotting or '
+                    'analysis.')
+            if _num.size and np.isnan(_num).all():
+                raise ValueError(
+                    'input is entirely missing (all values are NaN); there is '
+                    'nothing to plot or analyze.')
 
     # if there are any nans in any of the lists, use ppca
     if ppca is True:
@@ -176,7 +224,12 @@ def format_data(x, vectorizer='CountVectorizer',
             for i,j in zip(processed_x, dtypes):
                 if j in ['list_num', 'array', 'df', 'arr_num']:
                     num_data.append(i)
-            if np.isnan(np.vstack(num_data)).any():
+            # check for NaNs PER dataset rather than by vstacking them all --
+            # datasets can legitimately have DIFFERENT column counts (the
+            # canonical hyperalignment case: each subject aligns padded to a
+            # common width), and vstacking them raised "all the input array
+            # dimensions ... must match exactly" (QC 2026-07).
+            if any(np.isnan(np.asarray(a, dtype=float)).any() for a in num_data):
                 if impute is not None:
                     num_data = fill_missing(num_data, model=impute)
                 else:

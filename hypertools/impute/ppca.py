@@ -96,43 +96,68 @@ def transformer(data, **kwargs):
     """
     m = kwargs['ppca']
     is_original = kwargs.get('_is_original_fit_data', True)
+    original = data.to_numpy(dtype=float)
+    # which original columns PPCA kept (>= min_obs observations). Dropped
+    # columns cannot be imputed and keep their original values.
+    valid = getattr(m, 'valid_series', None)
+    if valid is None:
+        valid = np.ones(original.shape[1], dtype=bool)
 
     if is_original:
-        # Byte-identical to the legacy `format_data.fill_missing` behavior:
-        # `m.transform()` with no args projects the EM-refined, fit-time
-        # filled data (`m.data`) through the learned rotation `m.C`.
-        filled = m.transform()
+        # Reconstruct the EM-imputed data in the ORIGINAL feature space:
+        # m.data is the standardized, EM-filled (kept-column) data, so
+        # un-standardizing it recovers the imputed values. QC 2026-07: this
+        # used to return m.transform() = m.data @ m.C, i.e. the LATENT PCA
+        # scores -- which ROTATED the observed values (for full-rank data the
+        # "imputed" output differed from the input by several units) and
+        # returned FEWER columns for rank-deficient data. Neither is the
+        # imputed data.
+        recon_kept = np.asarray(m.data, dtype=float) * m.stds + m.means
     else:
-        # Reuse path (`return_model=True` round-trip): no re-fitting, so
-        # there is no EM refinement available for NEW data. Best-effort
-        # single-shot projection using the LEARNED mean/std/rotation:
-        # standardize with the fitted `means`/`stds`, zero-fill any NaNs
-        # (mirroring PPCA's own initial E-step guess before EM iterates),
-        # then project through the fitted `C`. This is an approximation --
-        # PPCA has no clean way to reuse learned parameters without
-        # re-running EM -- and is documented as such.
-        x_new = data.to_numpy(dtype=float)
-        assert x_new.shape[1] == len(m.means), ValueError(
-            'PPCA.transform on new data requires the same number of '
-            'columns the imputer was fit on (columns dropped for having '
-            'fewer than min_obs valid observations at fit time cannot be '
-            'reused)')
-        standardized = (x_new - m.means) / m.stds
+        # Reuse path (return_model=True round-trip): standardize the KEPT
+        # columns with the fitted mean/std, zero-fill NaNs, then project to the
+        # latent space and back to reconstruct in feature space.
+        if original[:, valid].shape[1] != len(m.means):
+            raise ValueError(
+                'PPCA.transform on new data requires the same columns the '
+                'imputer was fit on (columns dropped for having fewer than '
+                'min_obs valid observations at fit time cannot be reused)')
+        standardized = (original[:, valid] - m.means) / m.stds
         standardized = np.where(np.isnan(standardized), 0.0, standardized)
-        filled = m.transform(data=standardized)
+        recon_kept = ((standardized @ m.C) @ m.C.T) * m.stds + m.means
 
-    filled = np.asarray(filled, dtype=float).copy()
+    # SPLICE: keep every observed (non-NaN) value exactly and fill ONLY the
+    # missing positions with the reconstruction -- preserving the input shape
+    # and matching the documented "fills missing values in place" contract and
+    # the sklearn imputers' behavior.
+    recon_full = np.full_like(original, np.nan)
+    recon_full[:, valid] = recon_kept
+    out = original.copy()
+    fillable = np.isnan(original) & ~np.isnan(recon_full)
+    out[fillable] = recon_full[fillable]
 
-    all_missing_rows = np.all(np.isnan(data.to_numpy(dtype=float)), axis=1)
+    # Columns PPCA DROPPED (fewer than min_obs observations) are not modeled, so
+    # their missing entries are still NaN after the splice. Leaving them NaN
+    # regressed the primary path: hyp.reduce/hyp.plot feed PPCA's output straight
+    # into PCA, which raised "Input X contains NaN" on sparse-column data (QC
+    # 2026-07 red-team). Fill each still-missing position with its column's
+    # observed mean (0.0 for a column with no observations at all) so the imputed
+    # matrix is dense -- exactly as the pre-splice reconstruction was. Observed
+    # values are untouched (only originally-NaN positions are filled). Rows that
+    # are entirely missing are re-masked to NaN below (documented limitation).
+    still_missing = np.isnan(out)
+    if still_missing.any():
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', RuntimeWarning)  # all-NaN col -> nan
+            col_means = np.nanmean(original, axis=0)
+        col_means = np.where(np.isnan(col_means), 0.0, col_means)
+        out[still_missing] = np.broadcast_to(col_means, original.shape)[still_missing]
+
+    # rows that were entirely missing cannot be reconstructed at all
+    all_missing_rows = np.all(np.isnan(original), axis=1)
     if all_missing_rows.any():
-        filled[all_missing_rows, :] = np.nan
-
-    # PPCA drops columns with too few observations (`min_obs`) before
-    # fitting, so the reconstruction can have fewer columns than the input
-    # in that (rare) edge case; fall back to a default column index rather
-    # than mismatching names.
-    columns = data.columns if filled.shape[1] == data.shape[1] else range(filled.shape[1])
-    return pd.DataFrame(filled, index=data.index, columns=columns)
+        out[all_missing_rows, :] = np.nan
+    return pd.DataFrame(out, index=data.index, columns=data.columns)
 
 
 class PPCA(Imputer):

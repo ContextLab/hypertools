@@ -56,7 +56,20 @@ GIF_REPLACEMENTS = {
     "sphx_glr_animate_thumb.png": "sphx_glr_animate_thumb.gif",
     "sphx_glr_precog_thumb.png": "sphx_glr_precog_thumb.gif",
     "sphx_glr_save_movie_thumb.png": "sphx_glr_save_movie_thumb.gif",
-    "sphx_glr_animate_plotly_thumb.png": "sphx_glr_animate_plotly_thumb.gif"
+    "sphx_glr_animate_plotly_thumb.png": "sphx_glr_animate_plotly_thumb.gif",
+    # QC 2026-07: the story-trajectories example ships an animated gif thumbnail
+    # (docs/_static/thumbnails/sphx_glr_plot_story_trajectories_thumb.gif) and
+    # sets sphinx_gallery_thumbnail_path to it, but it was never registered here,
+    # so post_build never swapped its static png for the gif -- the gallery card
+    # showed a frozen frame instead of the animation.
+    "sphx_glr_plot_story_trajectories_thumb.png":
+        "sphx_glr_plot_story_trajectories_thumb.gif",
+    # QC 2026-07: animate_surface_morph ends with a static-figure tweak (an
+    # alpha-fade), so sphinx-gallery thumbnailed that frozen frame instead of
+    # the morph animation. It now ships a gif thumbnail + thumbnail_path like
+    # the others; register the swap here too.
+    "sphx_glr_animate_surface_morph_thumb.png":
+        "sphx_glr_animate_surface_morph_thumb.gif",
 }
 
 def copy_gif_thumbnails():

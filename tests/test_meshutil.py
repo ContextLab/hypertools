@@ -17,10 +17,12 @@ from hypertools.plot.meshutil import (
     backface_cull,
     blinn_phong_colors,
     blinn_phong_vertex_colors,
+    face_colors_from_vertex_colors,
     face_normals,
     points_enclosed,
     smooth_hull_2d,
     smooth_hull_3d,
+    vertex_colors_from_points,
     vertex_normals,
 )
 
@@ -554,3 +556,47 @@ class TestBackfaceCull:
         fn = face_normals(verts, faces)
         facing = fn @ (view / np.linalg.norm(view))
         assert np.all(~mask[facing < -0.5])
+
+
+class TestVertexColorsFromPoints:
+    """Distance-weighted (IDW) per-vertex surface coloring (QC 2026-07)."""
+
+    def test_vertex_on_point_takes_that_points_color(self):
+        pts = np.array([[0.0, 0, 0], [10, 0, 0]])
+        cols = np.array([[1.0, 0, 0], [0, 0, 1]])          # red, blue
+        vc = vertex_colors_from_points(pts, pts, cols)
+        assert np.allclose(vc[0], [1, 0, 0], atol=1e-3)     # on red
+        assert np.allclose(vc[1], [0, 0, 1], atol=1e-3)     # on blue
+
+    def test_midpoint_is_even_blend(self):
+        pts = np.array([[0.0, 0, 0], [10, 0, 0]])
+        cols = np.array([[1.0, 0, 0], [0, 0, 1]])
+        vc = vertex_colors_from_points(np.array([[5.0, 0, 0]]), pts, cols)
+        assert np.allclose(vc[0], [0.5, 0, 0.5], atol=1e-6)  # equal weights
+
+    def test_nearer_point_dominates(self):
+        pts = np.array([[0.0, 0, 0], [10, 0, 0]])
+        cols = np.array([[1.0, 0, 0], [0, 0, 1]])
+        vc = vertex_colors_from_points(np.array([[1.0, 0, 0]]), pts, cols)
+        assert vc[0, 0] > vc[0, 2]                           # reddish
+
+    def test_output_shape_and_range(self):
+        rng = np.random.default_rng(1)
+        verts = rng.normal(size=(50, 3))
+        pts = rng.normal(size=(30, 3))
+        cols = rng.random((30, 3))
+        vc = vertex_colors_from_points(verts, pts, cols)
+        assert vc.shape == (50, 3)
+        assert (vc >= 0).all() and (vc <= 1).all()
+
+    def test_empty_points_raises(self):
+        with pytest.raises(ValueError, match='at least one data point'):
+            vertex_colors_from_points(np.zeros((3, 3)), np.zeros((0, 3)),
+                                      np.zeros((0, 3)))
+
+    def test_face_colors_are_triangle_vertex_means(self):
+        vc = np.array([[1.0, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 1]])
+        faces = np.array([[0, 1, 2], [1, 2, 3]])
+        fc = face_colors_from_vertex_colors(vc, faces)
+        assert np.allclose(fc[0], vc[[0, 1, 2]].mean(axis=0))
+        assert np.allclose(fc[1], vc[[1, 2, 3]].mean(axis=0))

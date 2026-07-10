@@ -12,7 +12,8 @@ _STAGE_KWARG_NAMES = ('manip', 'normalize', 'reduce', 'align', 'cluster')
 
 
 def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=None,
-           cluster=None, pipeline=None, return_model=False, internal=False, impute=None):
+           cluster=None, pipeline=None, return_model=False, internal=False, impute=None,
+           random_state=None):
     """
     Wrapper function for manip -> normalize -> reduce -> align -> cluster
     transformations (the canonical 1.0 pipeline order, GH #153).
@@ -71,11 +72,16 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
         (not cluster labels) when `cluster=` is given; the cluster labels
         themselves are retrievable from the fitted `hypertools.Pipeline`'s
         `'cluster'` step (`model.named_steps['cluster']`) when
-        `return_model=True` is also passed -- pass the SAME data back
-        through that step's `.transform` to recover the labels, or call
-        `hypertools.cluster.cluster.cluster` directly for labels alongside
-        the transformed data in one call. `None` (default) skips this
-        stage.
+        `return_model=True` is also passed -- pass the RETURNED transformed
+        data back through that step's `.transform` to recover the labels
+        (this works for every clusterer, including hard clusterers such as
+        DBSCAN / AgglomerativeClustering that have no out-of-sample
+        `predict`). For a list of datasets, `.transform` returns one flat
+        label sequence over the row-concatenated data; to get labels split
+        PER dataset, call
+        `hypertools.cluster.cluster.cluster` directly (it returns per-dataset
+        labels alongside the transformed data in one call). `None` (default)
+        skips this stage.
 
     pipeline : hypertools.Pipeline or None
         A previously-FITTED `Pipeline` (e.g. from an earlier
@@ -157,8 +163,24 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
             from .format_data import format_data as formatter
             data = formatter(data, ppca=True, impute=impute)
         pipe = build_pipeline(manip=manip, normalize=normalize, reduce=reduce,
-                              ndims=ndims, align=align, cluster=cluster)
+                              ndims=ndims, align=align, cluster=cluster,
+                              random_state=random_state)
         result = pipe.fit_transform(data)
+        if cluster is not None:
+            # analyze returns the TRANSFORMED DATA, not cluster labels, even when
+            # cluster= is given -- the labels live in the fitted 'cluster' step
+            # of the returned Pipeline (see this function's docstring). The
+            # fit_transform above ran the whole chain (including cluster) to fit
+            # it, so its return value is the cluster labels; recover the
+            # pre-cluster transformed data by re-applying the fitted non-cluster
+            # steps (QC 2026-07: analyze previously returned the raw labels,
+            # contradicting its documented contract).
+            from ..core.pipeline import _step_transform
+            result = data
+            for name, step in pipe.steps:
+                if name == 'cluster':
+                    break
+                result = _step_transform(step, result)
         if internal and not isinstance(result, list):
             result = [result]
         return (result, pipe) if return_model else result
@@ -169,4 +191,5 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
     # (hyp.plot, hyp.load, and every pre-1.0 script/test).
     return aligner(reducer(normalizer(data, normalize=normalize, internal=internal,
                                       impute=impute),
-                   reduce=reduce, ndims=ndims, internal=internal), align=align)
+                   reduce=reduce, ndims=ndims, internal=internal,
+                   random_state=random_state), align=align)

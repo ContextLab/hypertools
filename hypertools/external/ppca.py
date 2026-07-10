@@ -1,6 +1,7 @@
 # Vendored from the pca-magic project. See license in-repo.
 
 import os
+import warnings
 
 import numpy as np
 from scipy.linalg import orth
@@ -32,7 +33,8 @@ class PPCA(object):
 
         return (X - self.means) / self.stds
 
-    def fit(self, data, d=None, tol=1e-4, min_obs=10, verbose=False):
+    def fit(self, data, d=None, tol=1e-4, min_obs=10, verbose=False,
+            max_iter=500):
         """Fit the probabilistic PCA model on `data` via EM, tolerating NaNs.
 
         Parameters
@@ -65,10 +67,26 @@ class PPCA(object):
         self.raw[np.isinf(self.raw)] = np.max(self.raw[np.isfinite(self.raw)])
 
         valid_series = np.sum(~np.isnan(self.raw), axis=0) >= min_obs
+        # remember which original columns were kept (>= min_obs observations),
+        # so callers can map the fitted (kept-column) reconstruction back to the
+        # full input width (QC 2026-07: the PPCA imputer needs this to preserve
+        # the input's column count).
+        self.valid_series = valid_series
 
         data = self.raw[:, valid_series].copy()
         N = data.shape[0]
         D = data.shape[1]
+        # PPCA models cross-column covariance, so it needs >= 2 kept columns;
+        # with a single column np.cov below collapses to a 0-d array and
+        # np.linalg.eig raised a cryptic "0-dimensional array" LinAlgError
+        # (QC 2026-07 red-team). Fail clearly and point at imputers that handle
+        # single-column / very-sparse data.
+        if D < 2:
+            raise ValueError(
+                f'PPCA needs at least 2 columns with >= min_obs ({min_obs}) '
+                f'non-missing observations to model cross-column structure; got '
+                f'{D}. Use model="Kalman", "SimpleImputer", or "KNNImputer" for '
+                'single-column (or very sparse) data.')
 
         self.means = np.nanmean(data, axis=0)
         self.stds = np.nanstd(data, axis=0)
@@ -125,6 +143,19 @@ class PPCA(object):
             if verbose:
                 print(diff)
             if (diff < tol) and (counter > 5):
+                break
+
+            # Bound the EM loop so degenerate / ill-conditioned data cannot spin
+            # it forever (QC 2026-07 red-team: small or very-sparse NaN inputs
+            # could hang for >25s). A non-finite diff (e.g. NaN from a collapsed
+            # ss) also never satisfies `diff < tol`, so it would loop forever too
+            # -- treat it as "no further progress" and stop.
+            if counter >= max_iter or not np.isfinite(diff):
+                warnings.warn(
+                    f'PPCA EM did not converge within {max_iter} iterations '
+                    f'(last relative change {diff:.3g}, tol {tol:g}); returning '
+                    'the current estimate. Results may be approximate; try '
+                    'a lower-rank d= or a different imputer if needed.')
                 break
 
             counter += 1

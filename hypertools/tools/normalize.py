@@ -8,6 +8,7 @@ of the classic z-scoring behavior (kept byte-identical by default).
 """
 
 import numpy as np
+from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 
 from .format_data import format_data as formatter
@@ -48,7 +49,7 @@ def _zscore_column(mean, std, y):
     return (y - mean) / std
 
 
-class Normalizer:
+class Normalizer(BaseEstimator):
     """Fit/transform wrapper around `normalize`'s z-scoring, capturing
     fit-time statistics so a `return_model=True` result can be reapplied to
     NEW data via `.transform` without re-estimating them -- mirrors

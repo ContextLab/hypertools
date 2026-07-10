@@ -124,3 +124,23 @@ Imputing and forecasting a real projectile arc with hyp.impute and hyp.predict
   :maxdepth: 2
 
   tutorials/projectile_kalman.ipynb
+
+Story trajectories: brain activity while listening to a story
+-------------------------------------------------------------
+
+An animated cloud of hyperaligned trajectories showing how all 36 subjects'
+whole-brain activity traces out a *shared* path through a low-dimensional space
+while they listen to the same spoken story (fMRI data from Simony et al.,
+2016). Each subject is preprocessed with a per-subject ``manip`` (Smooth →
+Resample → ZScore), **hyperaligned in the 100-hub feature space** (``n_iter=10``)
+and only *then* reduced to 3-D with ``reduce='IncrementalPCA'``; an
+``animate='window'`` trail then slides along the aligned trajectories so you
+watch all 36 subjects move together through the story. Aligning in the hub
+space *before* reducing (rather than over-reducing first, which starves
+hyperalignment) is what pulls the trajectories together -- their within-timepoint
+spread tightens ~30%. See the full gallery example,
+:doc:`auto_examples/plot_story_trajectories`.
+
+.. image:: _static/thumbnails/sphx_glr_plot_story_trajectories_thumb.gif
+   :width: 400
+   :alt: Animated hyperaligned brain-activity trajectories through a spoken story

@@ -153,8 +153,12 @@ class Clusterer(BaseEstimator):
     """
 
     def __init__(self, model, params=None):
+        # Store constructor args VERBATIM (no copy/normalization) so
+        # sklearn's `get_params`/`set_params`/`clone` round-trip correctly;
+        # copying params here broke `clone()` with a RuntimeError (QC 2026-07).
+        # `None` is normalized to `{}` at the point of use in `fit_transform`.
         self.model = model
-        self.params = dict(params) if params else {}
+        self.params = params
         self.model_ = None
 
     @property
@@ -188,7 +192,7 @@ class Clusterer(BaseEstimator):
             models, or -- for mixture models (GH #174) -- an
             `(n_samples, n_components)` array of membership proportions.
         """
-        model = self.model(**self.params) if inspect.isclass(self.model) else self.model
+        model = self.model(**(self.params or {})) if inspect.isclass(self.model) else self.model
         if self._is_mixture(model):
             result = mixture_proportions(type(model).__name__, model, stacked)
         else:
@@ -232,7 +236,20 @@ class Clusterer(BaseEstimator):
             return normalize_membership_rows(loadings)
         if hasattr(model, 'predict'):
             return list(model.predict(stacked))
+        # Hard clusterers (AgglomerativeClustering, SpectralClustering, DBSCAN,
+        # OPTICS, HDBSCAN) have no out-of-sample predict. The documented
+        # analyze(cluster=...) label-RECOVERY path re-applies this fitted step to
+        # the SAME data it was fit on -- so when `stacked` has the same number of
+        # rows as the fit-time labels, return those stored labels (QC 2026-07
+        # red-team: this used to raise NotImplementedError, so the documented
+        # `named_steps['cluster'].transform(data)` recovery broke for 3 of the 5
+        # hard clusterers). Genuinely NEW data (a different row count) still
+        # cannot be labeled without refitting, so that case still raises.
+        labels = getattr(model, 'labels_', None)
+        if labels is not None and np.asarray(stacked).shape[0] == len(labels):
+            return list(labels)
         raise NotImplementedError(
             f"{type(model).__name__} has no out-of-sample prediction (no "
             f"predict method); cannot reuse a fitted {type(model).__name__} "
-            f"clusterer on new data without refitting")
+            f"clusterer on new data (a different number of rows than it was fit "
+            f"on) without refitting")

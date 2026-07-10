@@ -105,6 +105,32 @@ def _resolve_step(spec):
     return model
 
 
+def _step_fit_transform(model, data):
+    """Fit and apply one pipeline step. Falls back to ``fit_predict`` for
+    models with no ``fit_transform`` -- density/agglomerative clusterers
+    (DBSCAN, AgglomerativeClustering, OPTICS, MeanShift, ...) produce labels,
+    not a transform (QC 2026-07: these previously crashed with "'X' object has
+    no attribute 'fit_transform'")."""
+    if hasattr(model, 'fit_transform'):
+        return model.fit_transform(data)
+    if hasattr(model, 'fit_predict'):
+        import numpy as np
+        return np.asarray(model.fit_predict(data))
+    model.fit(data)
+    return model.transform(data) if hasattr(model, 'transform') else data
+
+
+def _step_transform(model, data):
+    """Apply one already-fitted pipeline step, falling back to ``predict``
+    (then ``fit_predict``) for label-producing models with no ``transform``."""
+    if hasattr(model, 'transform'):
+        return model.transform(data)
+    import numpy as np
+    if hasattr(model, 'predict'):
+        return np.asarray(model.predict(data))
+    return np.asarray(model.fit_predict(data))
+
+
 def _base_name(model):
     """Auto-name a step the way scikit-learn does: the lowercased class
     name of the underlying model."""
@@ -153,11 +179,19 @@ class _DispatchStep:
         self._spec = spec
         self._call = call  # (data, spec_or_fitted_model) -> (result, fitted_model)
         self._fitted = None
+        # A stage can legitimately fit to NO model: a reduce with ndims=None or
+        # ndims >= n_features is a no-op pass-through and returns model=None
+        # (QC 2026-07). `_fitted is None` therefore cannot distinguish "never
+        # fit" from "fit to an identity"; `_is_fit` records that fit_transform
+        # actually ran, so `transform` on such a step passes data through
+        # instead of wrongly raising NotFittedError (which broke
+        # cluster(..., reduce=, return_model=True) reuse).
+        self._is_fit = False
 
     @property
     def is_fitted(self):
         """Whether `fit`/`fit_transform` has been called on this step yet."""
-        return self._fitted is not None
+        return self._is_fit
 
     def fit(self, data):
         """Fit this step's dispatcher on `data`, discarding the transformed result.
@@ -191,6 +225,7 @@ class _DispatchStep:
         """
         result, fitted = self._call(data, self._spec)
         self._fitted = fitted
+        self._is_fit = True
         return result
 
     def transform(self, data):
@@ -210,8 +245,11 @@ class _DispatchStep:
         sklearn.exceptions.NotFittedError
             If `fit`/`fit_transform` has not been called yet.
         """
-        if self._fitted is None:
+        if not self._is_fit:
             raise NotFittedError(f'{self._name} stage must be fit before transform')
+        if self._fitted is None:
+            # a no-op stage (e.g. reduce with ndims >= n_features): pass through
+            return data
         result, fitted = self._call(data, self._fitted)
         self._fitted = fitted
         return result
@@ -292,7 +330,7 @@ class Pipeline(BaseEstimator):
         the next. Refits every step, even if some were already fitted."""
         out = data
         for _, model in self.steps:
-            out = model.fit_transform(out)
+            out = _step_fit_transform(model, out)
         self._is_fitted = True
         return out
 
@@ -303,7 +341,7 @@ class Pipeline(BaseEstimator):
             raise NotFittedError('Pipeline must be fit before transform')
         out = data
         for _, model in self.steps:
-            out = model.transform(out)
+            out = _step_transform(model, out)
         return out
 
     def inverse_transform(self, data):
@@ -331,7 +369,8 @@ class Pipeline(BaseEstimator):
 
 
 def build_pipeline(manip=None, normalize=None, reduce=None, ndims=None,
-                    align=None, cluster=None, order=CANONICAL_ORDER):
+                    align=None, cluster=None, order=CANONICAL_ORDER,
+                    random_state=None):
     """Assemble a `Pipeline` from the cross-module stage kwargs (#138), in
     canonical order (#153).
 
@@ -368,13 +407,17 @@ def build_pipeline(manip=None, normalize=None, reduce=None, ndims=None,
     steps = []
     for stage in order:
         spec = specs.get(stage)
-        if spec is None:
+        # None -> the stage is omitted. normalize=False ALSO means "do not
+        # normalize", so skip it too (QC 2026-07: a normalize=False step's fit
+        # returned (data, None), leaving the step unfitted, so a later
+        # Pipeline.transform on the returned model raised NotFittedError).
+        if spec is None or (stage == 'normalize' and spec is False):
             continue
-        steps.append((stage, _make_stage_step(stage, spec, ndims)))
+        steps.append((stage, _make_stage_step(stage, spec, ndims, random_state)))
     return Pipeline(steps)
 
 
-def _make_stage_step(stage, spec, ndims):
+def _make_stage_step(stage, spec, ndims, random_state=None):
     if stage == 'manip':
         from ..manip.manip import manip as _manip
         return _DispatchStep(
@@ -389,7 +432,8 @@ def _make_stage_step(stage, spec, ndims):
         from ..reduce.reduce import reduce as _reduce
         return _DispatchStep(
             'reduce', spec,
-            lambda data, m: _reduce(data, reduce=m, ndims=ndims, return_model=True))
+            lambda data, m: _reduce(data, reduce=m, ndims=ndims,
+                                    random_state=random_state, return_model=True))
     if stage == 'align':
         from ..align.align import align as _align
         return _DispatchStep(
@@ -399,5 +443,6 @@ def _make_stage_step(stage, spec, ndims):
         from ..cluster.cluster import cluster as _cluster
         return _DispatchStep(
             'cluster', spec,
-            lambda data, m: _cluster(data, cluster=m, return_model=True))
+            lambda data, m: _cluster(data, cluster=m,
+                                     random_state=random_state, return_model=True))
     raise ValueError(f"unknown pipeline stage {stage!r}; expected one of {CANONICAL_ORDER}")

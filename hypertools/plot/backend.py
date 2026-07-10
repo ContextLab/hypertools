@@ -120,6 +120,12 @@ IPYTHON_INSTANCE = None
 IS_NOTEBOOK = None
 reset_backend = None
 switch_backend = None
+# Preferred RENDER backend ('plotly' or 'matplotlib') chosen via
+# set_interactive_backend(); None means auto-detect (Colab/Kaggle -> plotly).
+# This selects WHICH LIBRARY draws the plot (consulted by
+# plotly_backend.resolve_backend), distinct from HYPERTOOLS_BACKEND, which is a
+# matplotlib backend name for interactive/animated matplotlib plots.
+PREFERRED_RENDER_BACKEND = None
 
 
 class ParrotDict(dict):
@@ -1008,11 +1014,32 @@ class set_interactive_backend:
     """
 
     def __init__(self, backend):
-        global BACKEND_WARNING, HYPERTOOLS_BACKEND
+        global BACKEND_WARNING, HYPERTOOLS_BACKEND, PREFERRED_RENDER_BACKEND
+
+        self.new_interactive_backend = HypertoolsBackend(backend).normalize()
+        # 'plotly'/'matplotlib' are RENDER-backend selectors (which library
+        # draws the plot), NOT matplotlib backend names. Route them to the
+        # render preference consulted by plotly_backend.resolve_backend(), and
+        # do NOT try to switch matplotlib's backend to them -- QC 2026-07:
+        # set_interactive_backend('plotly') followed by an animated plot raised
+        # HypertoolsBackendError trying to switch matplotlib to a nonexistent
+        # 'plotly' backend, and it silently did nothing for static plots.
+        # match case-insensitively ('Plotly' etc.): otherwise a capitalized
+        # render-backend name was treated as an mpl backend and, with an
+        # animated plot, raised the exact HypertoolsBackendError this routing
+        # exists to prevent (QC 2026-07 red-team). Store the canonical lowercase
+        # value so resolve_backend()'s preference check matches.
+        _bk_str = str(self.new_interactive_backend).lower()
+        self.is_render_backend = _bk_str in ('plotly', 'matplotlib')
+        if self.is_render_backend:
+            self.old_render_backend = PREFERRED_RENDER_BACKEND
+            PREFERRED_RENDER_BACKEND = _bk_str
+            self.new_is_different = False
+            self.backend_switched = False
+            return
 
         self.old_interactive_backend = HYPERTOOLS_BACKEND.normalize()
         self.old_backend_warning = BACKEND_WARNING
-        self.new_interactive_backend = HypertoolsBackend(backend).normalize()
         self.new_is_different = (
             self.new_interactive_backend != self.old_interactive_backend
         )
@@ -1026,6 +1053,9 @@ class set_interactive_backend:
         global IN_SET_CONTEXT
 
         IN_SET_CONTEXT = True
+        if self.is_render_backend:
+            # a render-backend preference needs no matplotlib backend switch
+            return
         self.curr_backend = HypertoolsBackend(mpl.get_backend()).normalize()
         if self.curr_backend != self.new_interactive_backend:
             # set this before calling switch_backend to make sure
@@ -1036,8 +1066,12 @@ class set_interactive_backend:
 
     def __exit__(self, exc_type, exc_value, traceback):
         global BACKEND_WARNING, HYPERTOOLS_BACKEND, IN_SET_CONTEXT
+        global PREFERRED_RENDER_BACKEND
 
         IN_SET_CONTEXT = False
+        if self.is_render_backend:
+            PREFERRED_RENDER_BACKEND = self.old_render_backend
+            return
         if self.new_is_different:
             HYPERTOOLS_BACKEND = self.old_interactive_backend
             BACKEND_WARNING = self.old_backend_warning
@@ -1119,14 +1153,25 @@ def manage_backend(plot_func):
         if not IN_SET_CONTEXT:
             plot_kwargs = _get_runtime_args(plot_func, *args, **kwargs)
             if plot_kwargs.get("animate") or plot_kwargs.get("interactive"):
-                curr_backend = HypertoolsBackend(mpl.get_backend()).normalize()
-                tmp_backend = plot_kwargs.get("mpl_backend")
-                if tmp_backend == "auto":
-                    tmp_backend = HYPERTOOLS_BACKEND.normalize()
+                # Only matplotlib-rendered plots need an interactive/animation-
+                # capable matplotlib backend. When the plot renders with plotly
+                # (the frames are embedded in the plotly Figure), skip the
+                # matplotlib backend switch entirely -- otherwise a render
+                # preference of 'plotly' resolved to a matplotlib backend name
+                # and crashed (QC 2026-07).
+                from .plotly_backend import resolve_backend as _resolve_backend
+                _render = _resolve_backend(plot_kwargs.get("backend", "auto"))
+                if _render != "plotly":
+                    curr_backend = HypertoolsBackend(mpl.get_backend()).normalize()
+                    tmp_backend = plot_kwargs.get("mpl_backend")
+                    if tmp_backend == "auto":
+                        tmp_backend = HYPERTOOLS_BACKEND.normalize()
 
-                if tmp_backend not in ("disable", curr_backend):
-                    # if all conditions are met, use the real context
-                    backend_context = set_interactive_backend
+                    # 'plotly' is a render backend, not a matplotlib backend --
+                    # never try to switch matplotlib to it
+                    if tmp_backend not in ("disable", "plotly", curr_backend):
+                        # if all conditions are met, use the real context
+                        backend_context = set_interactive_backend
 
         try:
             try:

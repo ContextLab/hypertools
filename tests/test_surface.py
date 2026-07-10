@@ -620,3 +620,76 @@ class TestPlotlyMeshDoubleSidedAndTrimPriority:
         _, expected_faces0 = smooth_hull_3d(pts0, rounds=3, pre_inflate=1.0)
         face_counts = sorted(len(m.i) for m in meshes)
         assert face_counts[-1] == 2 * len(expected_faces0)
+
+
+class TestSurfaceHuePerVertex:
+    """A `hue=`'d surface colors each hull vertex by a distance-weighted blend
+    of the enclosed points' colors, not one flat mean color (QC 2026-07)."""
+
+    @staticmethod
+    def _gradient_traj():
+        t = np.linspace(0, 4 * np.pi, 160)
+        traj = np.column_stack([np.cos(t) * (1 + 0.15 * t),
+                                np.sin(t) * (1 + 0.15 * t), t / 3.0])
+        return traj, t  # hue increases monotonically along the path
+
+    def test_mpl_surface_hue_is_spatial_not_flat(self):
+        traj, hue = self._gradient_traj()
+        # SAME points -> identical mesh geometry, so faces align 1:1. Per-vertex
+        # coloring makes REVERSING the hue reverse which vertices get which
+        # color, so the face colors change. A single flat mean color would be
+        # IDENTICAL for a hue and its reverse (same set of colors -> same mean).
+        fwd = _mpl_facecolors(hyp.plot(traj, '.', hue=hue, surface=True,
+                                       show=False))
+        rev = _mpl_facecolors(hyp.plot(traj, '.', hue=hue[::-1], surface=True,
+                                       show=False))
+        assert np.abs(fwd[:, :3] - rev[:, :3]).mean() > 0.02
+
+    def test_plotly_vertexcolor_varies_and_tracks_position(self):
+        traj, hue = self._gradient_traj()
+        fig = hyp.plot(traj, '.', hue=hue, surface=True, backend='plotly',
+                       show=False)
+        vc = _plotly_vertexcolors(fig)                 # (n, 3)
+        mesh = [t for t in fig.data if t.type == 'mesh3d'][0]
+        z = np.asarray(mesh.z)
+        # many distinct per-vertex colors (a flat surface would have 1)
+        assert len({tuple(map(int, c)) for c in vc}) > 10
+        # hue rises with z along the path -> vertex color tracks vertical pos
+        corrs = [abs(np.corrcoef(z, vc[:, c])[0, 1]) for c in range(3)]
+        assert max(corrs) > 0.3
+
+    def test_hue_adds_chromatic_variation_over_flat_surface(self):
+        # A no-hue surface is one base color (a saturated palette color) whose
+        # faces differ only by SHADING (a brightness scaling). Dividing each
+        # face color by its channel sum removes brightness, leaving pure
+        # chromaticity: it barely varies for the flat surface, but varies a lot
+        # once each vertex takes its nearby points' (rainbow) hue.
+        def chroma_spread(fc):
+            rgb = fc[:, :3]
+            chroma = rgb / (rgb.sum(axis=1, keepdims=True) + 1e-9)
+            return float(chroma.std(axis=0).sum())
+
+        traj, hue = self._gradient_traj()
+        with_hue = chroma_spread(_mpl_facecolors(
+            hyp.plot(traj, '.', hue=hue, surface=True, show=False)))
+        flat = chroma_spread(_mpl_facecolors(
+            hyp.plot(traj, '.', surface=True, show=False)))
+        assert with_hue > flat * 2.0
+
+    def test_explicit_surface_color_wins_over_hue(self):
+        # an explicit surface color= must NOT be silently overridden by the
+        # per-vertex hue coloring: the explicit color wins (one flat hue), and
+        # hue only colors surfaces that inherit their color (color=None).
+        def chroma_spread(fc):
+            rgb = fc[:, :3]
+            ch = rgb / (rgb.sum(axis=1, keepdims=True) + 1e-9)
+            return float(ch.std(axis=0).sum())
+
+        traj, hue = self._gradient_traj()
+        explicit = _mpl_facecolors(hyp.plot(traj, '.', hue=hue,
+                                            surface={'color': 'crimson'},
+                                            show=False))
+        inherited = _mpl_facecolors(hyp.plot(traj, '.', hue=hue, surface=True,
+                                             show=False))
+        assert chroma_spread(explicit) < chroma_spread(inherited) * 0.5
+        assert explicit[:, 0].mean() > explicit[:, 2].mean()  # crimson: red > blue

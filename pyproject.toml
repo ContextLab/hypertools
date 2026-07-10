@@ -38,6 +38,14 @@ dependencies = [
     "requests>=2.31.0",
     "dill>=0.3.8",
     "ipympl>=0.9.3",
+    # Timeseries forecasting (hyp.predict 'Kalman'/'ARIMA') and Kalman imputation
+    # (hyp.impute 'Kalman'). Both are pure-python and lightweight, so they live in
+    # the base install -- `hyp.predict(x, model='Kalman')` / `model='ARIMA'` work
+    # out of the box with a bare `pip install hypertools` (QC 2026-07: Colab hit
+    # ModuleNotFoundError when these were extras-only). The heavier skaters laplace
+    # ensemble stays in the [predict] extra.
+    "pykalman>=0.11",
+    "statsmodels>=0.14",
     # HyperTools 1.0: data-wrangling core (funnel/stack/unstack/format detection, model
     # dispatch, text+HF embeddings). 0.5.0+ adds pandas 3.0 support (dw#30/#31).
     # https://github.com/ContextLab/data-wrangler
@@ -47,14 +55,21 @@ dependencies = [
 [project.optional-dependencies]
 # Interactive plotly backend (auto-enabled on Colab/Kaggle, where plotly ships
 # preinstalled; local users opt in with `pip install hypertools[interactive]`).
-interactive = ["plotly>=5.20.0", "kaleido>=0.2.1"]
+# plotly>=6.1.1 + kaleido>=1.0 pinned together: kaleido 1.x requires plotly>=6.1.1
+# for static image export (write_image); with plotly<6.1.1, an unbounded kaleido
+# resolves to 1.x and fig.write_image() breaks (QC 2026-07: Colab's preinstalled
+# plotly 5.24.1 + kaleido 1.3.0 produced exactly this failure). Raising the plotly
+# floor upgrades such environments to a compatible pair.
+interactive = ["plotly>=6.1.1", "kaleido>=1.0"]
 # Transformer / sentence-transformers text embeddings via datawrangler's hf extra
 # (torch/transformers/sentence-transformers/tokenizers/datasets). Opt-in; never in base install.
 text = ["pydata-wrangler[hf]>=0.5.1"]
-# Timeseries forecasting (hyp.predict) / Kalman imputation (hyp.impute): Kalman
-# filtering, ARIMA, and the skaters laplace ensemble. GaussianProcess, sklearn
-# autoregression, and the sklearn imputers need only the base install.
-predict = ["pykalman>=0.11", "statsmodels>=0.14", "skaters>=0.11"]
+# Extra forecasters beyond the base install: the skaters laplace ensemble
+# (hyp.predict model='Laplace'). Kalman filtering (pykalman) and ARIMA
+# (statsmodels) moved to the core dependencies above, so 'Kalman'/'ARIMA' --
+# and GaussianProcess, sklearn autoregression, and the sklearn imputers --
+# all work without this extra.
+predict = ["skaters>=0.11"]
 # Hugging Face timeseries forecasting (hyp.predict model='Chronos'): pulls
 # torch. Opt-in; never in base install.
 predict-hf = ["chronos-forecasting>=2.0"]
@@ -62,6 +77,12 @@ predict-hf = ["chronos-forecasting>=2.0"]
 # needs xlrd, which is NOT bundled here -- a friendly ImportError points
 # users at `pip install xlrd` if they hit a .xls file without it.
 io = ["openpyxl>=3.1.0"]
+# NOTE: there is deliberately no `legacy`/`deepdish` extra. Loading legacy
+# (<1.0) hosted .geo files stored in the deepdish/HDF5 format needs `deepdish`,
+# which is unmaintained and imports only under numpy<2 (it references the
+# numpy-2-removed `np.ComplexWarning`) -- so it cannot coexist with this
+# package's `numpy>=2.0` core requirement. hyp.load() of such a file raises a
+# friendly HypertoolsIOError telling the user to read it in a numpy<2 env.
 # 3-D `density=` smooth iso-surfaces (marching cubes) via scikit-image.
 # Opt-in; without it, plot(..., density=True) on 3-D matplotlib plots falls
 # back to a translucent scatter "fog" and emits a UserWarning suggesting
@@ -98,16 +119,16 @@ dev = [
     "nbformat>=5.9.0",
     "nbclient>=0.9.0",
     "ipykernel>=6.29.0",
-    "plotly>=5.20.0",
-    "kaleido>=0.2.1",
+    # match the [interactive] pin (kaleido 1.x needs plotly>=6.1.1 for write_image)
+    "plotly>=6.1.1",
+    "kaleido>=1.0",
     # real Hugging Face streaming tests (tests/test_streaming.py)
     "datasets>=2.20.0",
     # kill hung tests (kaleido subprocesses have wedged for 6h on Windows CI)
     "pytest-timeout>=2.3.0",
-    # exercise the [predict] forecasters/imputers in CI (Kalman/ARIMA/Laplace);
-    # [predict-hf] stays out of CI (model download) -- its tests importorskip
-    "pykalman>=0.11",
-    "statsmodels>=0.14",
+    # exercise the skaters laplace forecaster in CI (pykalman/statsmodels are now
+    # core deps, so Kalman/ARIMA are always available); [predict-hf] stays out of
+    # CI (model download) -- its tests importorskip
     "skaters>=0.11",
     # exercise hyp.load .xlsx support (tests/test_load_sources.py)
     "openpyxl>=3.1.0",

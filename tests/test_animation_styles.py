@@ -345,3 +345,145 @@ def test_plotly_layout_lock_still_holds_with_per_dataset_flags():
     for frame in fig.frames:
         assert 2 not in frame.traces and 3 not in frame.traces
         assert 4 in frame.traces and 5 in frame.traces
+
+
+# ---------------------------------------------------------------------------
+# fractional duration must not crash (QC 2026-07)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize('style', ['spin', 'serial', True])
+def test_mpl_fractional_duration_frame_count(style):
+    """A fractional `duration` made `frame_rate * duration` a float, which
+    matplotlib's FuncAnimation rejected with `range(float)` ->
+    "'float' object cannot be interpreted as an integer" for the spin/serial
+    styles (the parallel/window styles used an int frame count already)."""
+    from hypertools import HyperAnimation
+    out = hyp.plot(_walks(n=40), animate=style, duration=2.5, frame_rate=20,
+                   show=False)
+    assert isinstance(out, HyperAnimation)
+
+
+@pytest.mark.parametrize('style', ['spin', 'serial'])
+def test_plotly_fractional_duration_frame_count(style):
+    pytest.importorskip('plotly')
+    fig = plotly_draw(_walks(n=40), animate=style, duration=2.5, frame_rate=20,
+                      show=False)
+    assert len(fig.frames) > 0
+
+
+# ---------------------------------------------------------------------------
+# per-point labels must track their datapoint's visibility window (QC 2026-07,
+# previously a documented "known limitation": labels drawn on EVERY frame)
+# ---------------------------------------------------------------------------
+
+def _labeled_helix():
+    t = np.linspace(0, 4 * np.pi, 40)
+    traj = np.column_stack([np.cos(t), np.sin(t), t / 4.0])
+    labels = [None] * 40
+    labels[8], labels[32] = 'AAA', 'BBB'
+    return traj, labels
+
+
+def test_window_animation_labels_scroll_with_their_datapoint():
+    traj, labels = _labeled_helix()
+    anim = hyp.plot(traj, '-o', labels=labels, animate='window', focused=1.0,
+                    duration=5, frame_rate=20, show=False)
+    fig, fa = anim[0], anim[1]
+    anns = {a.get_text(): a for a in fig.axes[0].get_children()
+            if getattr(a, '_hyp_point_idx', None) is not None}
+    assert set(anns) == {'AAA', 'BBB'}
+    assert anns['AAA']._hyp_point_idx < anns['BBB']._hyp_point_idx
+
+    def vis_at(frame):
+        fa._func(frame, *fa._args)
+        return {k: a.get_visible() for k, a in anns.items()}
+
+    frames = [vis_at(f) for f in range(0, 100, 4)]
+    # each label appears on SOME frames and is hidden on others (the old bug
+    # left both visible on every frame)
+    assert 0 < sum(f['AAA'] for f in frames) < len(frames)
+    assert 0 < sum(f['BBB'] for f in frames) < len(frames)
+    # AAA (earlier point) enters the window before BBB
+    first_aaa = next(i for i, f in enumerate(frames) if f['AAA'])
+    first_bbb = next(i for i, f in enumerate(frames) if f['BBB'])
+    assert first_aaa < first_bbb
+
+
+def test_spin_and_static_labels_stay_visible():
+    traj, labels = _labeled_helix()
+    # spin draws every point every frame -> labels stay shown
+    anim = hyp.plot(traj, '-o', labels=labels, animate='spin', duration=3,
+                    frame_rate=20, show=False)
+    fig, fa = anim[0], anim[1]
+    anns = [a for a in fig.axes[0].get_children()
+            if getattr(a, '_hyp_point_idx', None) is not None]
+    fa._func(7, *fa._args)
+    assert all(a.get_visible() for a in anns)
+    # static plot: labels visible
+    stat = hyp.plot(traj, '-o', labels=labels, show=False)
+    stat_anns = [a for a in stat.axes[0].get_children()
+                 if getattr(a, '_hyp_point_idx', None) is not None]
+    assert stat_anns and all(a.get_visible() for a in stat_anns)
+
+
+def _anns(fig):
+    return {a.get_text(): a for a in fig.axes[0].get_children()
+            if getattr(a, '_hyp_point_idx', None) is not None}
+
+
+def test_serial_animation_labels_reveal_cumulatively_multi_dataset():
+    """Serial reveals points cumulatively across datasets: a label shows once
+    its GLOBAL index is revealed and then stays. A label in the SECOND dataset
+    must only appear after the first dataset is fully drawn (global-index
+    mapping), not on every frame (red-team of 52bcff88)."""
+    t = np.linspace(0, 4 * np.pi, 30)
+    traj = np.column_stack([np.cos(t), np.sin(t), t / 4.0])
+    labs = [[None] * 30, [None] * 30]
+    labs[0][2] = 'START'
+    labs[1][27] = 'END'
+    anim = hyp.plot([traj, traj + 3], '-o', labels=labs, animate='serial',
+                    duration=4, frame_rate=20, show=False)
+    fig, fa = anim[0], anim[1]
+    anns = _anns(fig)
+
+    def vis(frame):
+        fa._func(frame, *fa._args)
+        return {k: a.get_visible() for k, a in anns.items()}
+
+    early, late = vis(2), vis(78)
+    assert early == {'START': False, 'END': False}   # nothing revealed yet
+    assert late == {'START': True, 'END': True}        # both revealed by the end
+    # END (2nd dataset) is NOT shown while only the 1st dataset is drawing
+    assert vis(30)['START'] and not vis(30)['END']
+
+
+def test_2d_window_animation_labels_scroll():
+    t = np.linspace(0, 4 * np.pi, 30)
+    tr = np.column_stack([np.cos(t), np.sin(t)])          # 2-D
+    labels = [None] * 30
+    labels[5], labels[25] = 'A', 'B'
+    anim = hyp.plot(tr, '-o', labels=labels, animate='window', focused=1.0,
+                    duration=4, frame_rate=20, show=False)
+    fig, fa = anim[0], anim[1]
+    anns = _anns(fig)
+
+    def vis(frame):
+        fa._func(frame, *fa._args)
+        return {k: a.get_visible() for k, a in anns.items()}
+
+    res = [vis(f) for f in range(0, 80, 5)]
+    assert 0 < sum(r['A'] for r in res) < len(res)     # scrolls in and out
+    assert 0 < sum(r['B'] for r in res) < len(res)
+
+
+def test_morph_animation_hides_per_point_labels():
+    t = np.linspace(0, 4 * np.pi, 30)
+    traj = np.column_stack([np.cos(t), np.sin(t), t / 4.0])
+    labs = [[None] * 30, [None] * 30]
+    labs[0][2] = 'X'
+    anim = hyp.plot([traj, traj + 2], '.', labels=labs, animate='morph',
+                    duration=3, frame_rate=20, show=False)
+    fig, fa = anim[0], anim[1]
+    anns = _anns(fig)
+    fa._func(20, *fa._args)
+    assert anns and all(not a.get_visible() for a in anns.values())

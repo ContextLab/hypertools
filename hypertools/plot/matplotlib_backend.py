@@ -11,7 +11,8 @@ from mpl_toolkits.mplot3d import proj3d
 import matplotlib.animation as animation
 import matplotlib.patches as patches
 from .._shared.helpers import *
-from .meshutil import backface_cull, blinn_phong_colors
+from .meshutil import (backface_cull, blinn_phong_colors,
+                       vertex_colors_from_points, face_colors_from_vertex_colors)
 from .surface import (
     build_mesh_3d,
     build_outline_2d,
@@ -150,12 +151,18 @@ def _draw_density_3d(ax, points_list, density, density_colors):
 
 
 def _shade_and_cull_3d(ax, mesh_list, surface, surface_colors, elev, azim,
-                       prior_colls=None):
+                       prior_colls=None, surface_point_colors=None):
     """(Re)build a ``Poly3DCollection`` per dataset from PRECOMPUTED
     ``(verts, faces)`` meshes, shading/culling for the CURRENT `elev`/`azim`,
     removing `prior_colls` first (animation frame swap). Returns the new
     per-dataset collection list (``None`` where that dataset has no surface)
-    so the caller can pass it back in as `prior_colls` next frame."""
+    so the caller can pass it back in as `prior_colls` next frame.
+
+    `surface_point_colors` (QC 2026-07): optional list, one entry per dataset,
+    of ``(points, per_point_rgb)`` -- when present for a dataset, each mesh
+    face is colored by an inverse-distance-weighted blend of the enclosed
+    points' colors (`vertex_colors_from_points`) instead of one flat
+    surface color, so a `hue=`'d surface matches the hue of its points."""
     from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
     if prior_colls:
@@ -170,7 +177,13 @@ def _shade_and_cull_3d(ax, mesh_list, surface, surface_colors, elev, azim,
             new_colls.append(None)
             continue
         verts, faces = mesh
-        base_rgb = _resolve_surface_color(spec, surface_colors[i])
+        spc = surface_point_colors[i] if surface_point_colors else None
+        if spc is not None:
+            pts, cols = spc
+            vcolors = vertex_colors_from_points(verts, pts, cols)
+            base_rgb = face_colors_from_vertex_colors(vcolors, faces)
+        else:
+            base_rgb = _resolve_surface_color(spec, surface_colors[i])
         light_kw = mpl_lighting_kwargs(spec)
         rgba = blinn_phong_colors(verts, faces, base_rgb, v, **light_kw)
         cull = backface_cull(verts, faces, v)
@@ -352,6 +365,7 @@ def _draw(
     frame_kwargs=None,
     surface=None,
     surface_colors=None,
+    surface_point_colors=None,
     density=None,
     density_colors=None,
     morph_tags=None,
@@ -496,17 +510,26 @@ def _draw(
                 (raw[:, 0], raw[:, 1], raw[:, 2]), i)
         return fig, ax, data
 
-    def annotate_plot(data, labels):
+    def annotate_plot(data, labels, lengths=None):
         """Create labels in 3d chart
         Args:
             X (np.array) - array of points, of shape (numPoints, 3)
             labels (list) - list of labels of shape (numPoints,1)
+            lengths (list or None) - per-dataset point counts, used to record
+                each label's WITHIN-dataset index so an animation can show a
+                label only while its datapoint is in the current frame's window
+                (QC 2026-07). `None` -> use the global index (static plots).
         Returns:
             None
         """
 
         global labels_and_points
         labels_and_points = []
+
+        if lengths is not None:
+            within = [j for L in lengths for j in range(int(L))]
+        else:
+            within = list(range(len(data)))
 
         if data[0].shape[-1] > 2:
             proj = ax.get_proj()
@@ -538,6 +561,8 @@ def _draw(
                         arrowprops=dict(arrowstyle="-", connectionstyle="arc3,rad=0"),
                         **_label_font_kwargs,
                     )
+                    label._hyp_point_idx = within[idx]
+                    label._hyp_global_idx = idx
                     labels_and_points.append((label, x[0], x[1], x[2]))
                 elif data[0].shape[-1] == 2:
                     x2, y2 = x[0], x[1]
@@ -553,6 +578,8 @@ def _draw(
                         **_label_font_kwargs,
                     )
                     label.draggable()
+                    label._hyp_point_idx = within[idx]
+                    label._hyp_global_idx = idx
                     labels_and_points.append((label, x[0], x[1]))
         fig.canvas.draw()
 
@@ -594,6 +621,61 @@ def _draw(
             label._visible = True
         fig.canvas.draw()
 
+    def _sync_anim_labels(num, window_frames, all_visible=False, revealed=None,
+                          hide_all=False):
+        """Per-animation-frame label bookkeeping (QC 2026-07): show each
+        per-point label ONLY while its datapoint is currently drawn (previously
+        every label was drawn on every frame), and reproject the visible ones
+        for the (possibly rotated) camera. The visibility rule depends on the
+        animation style:
+
+        * window / parallel: the datapoint is inside the head window
+          ``[num - window_frames, num]`` (matched on ``_hyp_point_idx``, the
+          within-dataset index, so multi-dataset plots window correctly);
+        * serial: the datapoint has been REVEALED, i.e. its global index
+          (``_hyp_global_idx``) ``<= revealed`` (serial accumulates points, so
+          there is no trailing edge);
+        * spin (``all_visible=True``): every point is always drawn;
+        * morph (``hide_all=True``): the single traveling cloud does not
+          correspond to the original labeled points, so labels are hidden for
+          the duration of the morph.
+        """
+        # `labels_and_points` is a module global set only when annotate_plot ran
+        # (i.e. this plot has labels); it may also still hold a PREVIOUS plot's
+        # labels, so guard for existence and restrict to THIS axes' labels.
+        laps = [e for e in (globals().get('labels_and_points') or [])
+                if getattr(e[0], 'axes', None) is ax]
+        if not laps:
+            return
+        is_3d = hasattr(ax, "get_proj")
+        proj = ax.get_proj() if is_3d else None
+        renderer = getattr(fig.canvas, "renderer", None)
+        if renderer is None and hasattr(fig.canvas, "get_renderer"):
+            try:
+                renderer = fig.canvas.get_renderer()
+            except Exception:
+                renderer = None
+        lo = num - window_frames
+        for entry in laps:
+            label = entry[0]
+            if hide_all:
+                visible = False
+            elif all_visible:
+                visible = True
+            elif revealed is not None:
+                g = getattr(label, "_hyp_global_idx", None)
+                visible = g is None or g <= revealed
+            else:
+                j = getattr(label, "_hyp_point_idx", None)
+                visible = j is None or (lo <= j <= num)
+            label.set_visible(visible)
+            if visible and is_3d:
+                x2, y2, _ = proj3d.proj_transform(entry[1], entry[2], entry[3],
+                                                  proj)
+                label.xy = (x2, y2)
+                if renderer is not None:
+                    label.update_positions(renderer)
+
     def hide_labels(e):
         """Hides labels on button press
         Args:
@@ -631,9 +713,10 @@ def _draw(
 
         elif labels is not None:
             X = np.vstack(x)
+            lengths = [np.atleast_2d(np.asarray(d)).shape[0] for d in x]
             if any(isinstance(el, list) for el in labels):
                 labels = list(itertools.chain(*labels))
-            annotate_plot(X, labels)
+            annotate_plot(X, labels, lengths=lengths)
             fig.canvas.mpl_connect("button_press_event", hide_labels)
             fig.canvas.mpl_connect("button_release_event", update_position)
 
@@ -929,6 +1012,9 @@ def _draw(
                 ax, windows, surface, surface_colors, elev, azim_now,
                 prior_colls=prior, quiet=True)
 
+        # per-point labels track their datapoint's visibility window (the same
+        # [num - tail_duration, num] window the head line uses above)
+        _sync_anim_labels(num, tail_duration)
         return lines, trail_lines
 
     def update_lines_spin(
@@ -972,6 +1058,9 @@ def _draw(
                 ax, update_lines_spin.meshes, surface, surface_colors, elev,
                 azim_now, prior_colls=prior)
 
+        # 'spin' draws every point every frame, so labels stay visible -- but
+        # still reproject them for the rotated camera
+        _sync_anim_labels(num, 0, all_visible=True)
         return lines
 
     def update_lines_serial(
@@ -986,7 +1075,7 @@ def _draw(
                 plane.remove()
         update_lines_serial.planes = plot_cube(cube_scale, **frame_kwargs)
 
-        total_frames = frame_rate * duration
+        total_frames = int(round(frame_rate * duration))
         ax.view_init(elev=elev,
                      azim=azim + rotations * 360.0 * num / total_frames)
         ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
@@ -1014,6 +1103,9 @@ def _draw(
                 ax, windows, surface, surface_colors, elev, azim_now,
                 prior_colls=prior, quiet=True)
 
+        # serial reveals points cumulatively: a label shows once its point has
+        # been revealed (global index <= revealed), and stays
+        _sync_anim_labels(num, 0, revealed=revealed)
         return lines
 
     def update_morph(num, morph_state, cube_scale, azimuths, zoom=1, elev=10):
@@ -1080,6 +1172,9 @@ def _draw(
                 ax, frame_meshes, surface, frame_colors, elev, azim_now,
                 prior_colls=prior)
 
+        # morph collapses the datasets to one traveling cloud that does not
+        # correspond to the original labeled points -> hide per-point labels
+        _sync_anim_labels(num, 0, hide_all=True)
         return (artist,)
 
     def dispatch_animate(x, ani_params):
@@ -1532,7 +1627,7 @@ def _draw(
             line_ani = animation.FuncAnimation(
                 fig,
                 update_lines_serial,
-                frame_rate * duration,
+                int(round(frame_rate * duration)),
                 fargs=(x, lines, cube_scale_anim, rotations, zoom, elev),
                 interval=1000 / frame_rate,
                 blit=False,
@@ -1542,7 +1637,7 @@ def _draw(
             line_ani = animation.FuncAnimation(
                 fig,
                 update_lines_spin,
-                frame_rate * duration,
+                int(round(frame_rate * duration)),
                 fargs=(x, lines, cube_scale_anim, rotations, zoom, elev),
                 interval=1000 / frame_rate,
                 blit=False,
@@ -1550,7 +1645,7 @@ def _draw(
             )
         elif style == "morph":
             n_morph_datasets = len(morph_state["indices"])
-            total_frames = frame_rate * duration
+            total_frames = int(round(frame_rate * duration))
             frame_counts, _, azimuths = _morph.morph_schedule(
                 n_morph_datasets, total_frames, rotations, azim)
             morph_state["frame_counts"] = frame_counts
@@ -1610,6 +1705,7 @@ def _draw(
                 window = data[num - tail_duration : num + 1]
             line.set_data(window[:, 0], window[:, 1])
 
+        _sync_anim_labels(num, tail_duration)
         return lines, trail_lines
 
     def update_lines_serial_2d(num, data_lines, lines):
@@ -1620,7 +1716,7 @@ def _draw(
         list
             The updated matplotlib line artists, for `blit=True` animation.
         """
-        total_frames = frame_rate * duration
+        total_frames = int(round(frame_rate * duration))
         lengths = [d.shape[0] for d in data_lines]
         total_points = sum(lengths)
         revealed = total_points * num / max(1, total_frames - 1)
@@ -1632,6 +1728,7 @@ def _draw(
             line.set_data(window[:, 0], window[:, 1])
             start += data.shape[0]
 
+        _sync_anim_labels(num, 0, revealed=revealed)
         return lines
 
     def update_morph_2d(num, morph_state):
@@ -1656,6 +1753,7 @@ def _draw(
         artist.set_data(draw_pts[:, 0], draw_pts[:, 1])
         artist.set_color(color)
 
+        _sync_anim_labels(num, 0, hide_all=True)
         return (artist,)
 
     def animate_plot2D(
@@ -1851,7 +1949,7 @@ def _draw(
             line_ani = animation.FuncAnimation(
                 fig,
                 update_lines_serial_2d,
-                frame_rate * duration,
+                int(round(frame_rate * duration)),
                 fargs=(x, lines),
                 interval=1000 / frame_rate,
                 blit=False,
@@ -1865,7 +1963,7 @@ def _draw(
             # control), but is ignored uniformly for every 2-D style for
             # consistency (and `plot.py` has already warned about it).
             n_morph_datasets = len(morph_state["indices"])
-            total_frames = frame_rate * duration
+            total_frames = int(round(frame_rate * duration))
             frame_counts, _, _ = _morph.morph_schedule(
                 n_morph_datasets, total_frames, 1, 0)
             morph_state["frame_counts"] = frame_counts
@@ -1959,7 +2057,8 @@ def _draw(
             # surface= (GH #109): smooth lit hull surfaces, one per dataset
             if surface is not None:
                 _shade_and_cull_3d(ax, mesh_list, surface, surface_colors,
-                                   elev, azim)
+                                   elev, azim,
+                                   surface_point_colors=surface_point_colors)
                 _hide_no_keep_points(ax.lines, surface)
 
             # density= (GH #108/#191): subtle KDE density shading, one

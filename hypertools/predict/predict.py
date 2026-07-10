@@ -17,6 +17,7 @@ learned parameters.
 """
 import warnings
 
+import numpy as np
 import datawrangler as dw
 
 from .common import Forecaster
@@ -30,6 +31,11 @@ from ..core.shared import unpack_model
 
 
 FORECASTERS = [Kalman, GaussianProcess, AutoRegressor, ARIMA, Laplace, Chronos]
+
+#: short-name aliases for forecasters, resolved before the registry lookup
+#: (QC 2026-07: `hyp.predict(x, model='GP')` used to raise "unknown predict
+#: model 'GP'" -- only the full 'GaussianProcess' name was registered).
+_FORECASTER_ALIASES = {'GP': 'GaussianProcess'}
 
 
 def _supported_names():
@@ -48,7 +54,8 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     model : str, dict, class, or Forecaster instance
         Which forecaster to use (default: 'Kalman'). A string is one of
         `FORECASTERS`' names (Kalman, GaussianProcess, AutoRegressor, ARIMA,
-        Laplace, Chronos). A dict may be ``{'model': ..., 'params': {...}}``
+        Laplace, Chronos); the short alias `'GP'` also resolves to
+        GaussianProcess. A dict may be ``{'model': ..., 'params': {...}}``
         or ``{'model': ..., 'args': [...], 'kwargs': {...}}``. A class or an
         already-constructed (unfitted) instance is used directly. An
         ALREADY-FITTED Forecaster instance (returned from a previous
@@ -72,6 +79,26 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     forecasts (and the fitted Forecaster if return_model=True). Lists in,
     lists out: a single input dataset returns a single forecast DataFrame.
     """
+    # validate the forecast horizon (QC 2026-07: a numeric t<=0 silently
+    # returned an empty (0, n_features) forecast). t may ALSO be a target
+    # datetime/Timestamp (forecast up to that time), which passes through.
+    # normalize a 0-d numpy array (np.array(5)) to its Python scalar so the
+    # checks below see the value, not an array (QC 2026-07 red-team: a 0-d array
+    # slipped past every check and hit a misleading downstream message).
+    if isinstance(t, np.ndarray) and t.ndim == 0:
+        t = t.item()
+    # bool is an int subclass, and np.bool_ (np.True_) is a separate type that
+    # is NOT caught by isinstance(t, bool) -- reject both explicitly.
+    if isinstance(t, (bool, np.bool_)):
+        raise ValueError(f"t (forecast horizon) must be a positive integer or "
+                         f"a target datetime; got {t!r}")
+    if isinstance(t, (int, np.integer)):
+        if t < 1:
+            raise ValueError(f"t (forecast horizon) must be >= 1; got {t}")
+    elif isinstance(t, (float, np.floating)):
+        raise ValueError(f"t (forecast horizon) must be an integer number of "
+                         f"steps or a target datetime, not a float; got {t!r}")
+
     args = []
     if isinstance(model, dict) and 'kwargs' not in model and 'args' not in model:
         # {'model': ..., 'params': {...}} form: unpack before handing the
@@ -87,6 +114,8 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
         kwargs = {**dict(model.get('params', {})), **kwargs}
         model = model['model']
 
+    if isinstance(model, str):
+        model = _FORECASTER_ALIASES.get(model, model)
     resolved = unpack_model(model, valid=FORECASTERS, parent_class=Forecaster)
 
     if isinstance(resolved, type):

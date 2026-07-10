@@ -133,8 +133,15 @@ class Reducer(BaseEstimator):
     """
 
     def __init__(self, model, params=None):
+        # Store constructor args VERBATIM (no copy/normalization) -- the
+        # scikit-learn estimator convention `get_params`/`set_params`/`clone`
+        # rely on. Copying params here (`dict(params) if params else {}`) made
+        # the stored dict a different object than the one passed in, so
+        # sklearn's `clone()` round-trip assertion failed with RuntimeError
+        # (QC 2026-07). `None` is normalized to `{}` at the point of use in
+        # `fit_transform` instead.
         self.model = model
-        self.params = dict(params) if params else {}
+        self.params = params
         self.model_ = None
 
     @property
@@ -168,7 +175,7 @@ class Reducer(BaseEstimator):
             models (GH #174) -- an `(n_samples, n_components)` array of
             membership proportions.
         """
-        model = self.model(**self.params) if inspect.isclass(self.model) else self.model
+        model = self.model(**(self.params or {})) if inspect.isclass(self.model) else self.model
         if self._is_mixture(model):
             result = mixture_proportions(type(model).__name__, model, stacked)
         else:

@@ -17,6 +17,17 @@ def _make_df(n=60, ncols=2, index=None):
     return df
 
 
+def test_gp_short_alias_resolves_to_gaussian_process():
+    # QC 2026-07: hyp.predict(x, model='GP') used to raise "unknown predict
+    # model 'GP'"; only the full 'GaussianProcess' name was registered.
+    df = _make_df(n=60)
+    out_alias = predict(df, model='GP', t=8)
+    out_full = predict(df, model='GaussianProcess', t=8)
+    assert np.asarray(out_alias).shape == (8, 2)
+    # the alias resolves to the same forecaster -> identical forecast
+    assert np.allclose(np.asarray(out_alias), np.asarray(out_full))
+
+
 # --- every registered forecaster name resolves (extras skip-gated) --------
 
 @pytest.mark.parametrize('name,extra', [

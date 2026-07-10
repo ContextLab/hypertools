@@ -68,8 +68,14 @@ def test_analyze_manip_and_cluster_cross_kwargs_run_full_pipeline():
                             align='HyperAlign', cluster='KMeans',
                             return_model=True, internal=True)
     assert [name for name, _ in model.steps] == ['manip', 'reduce', 'align', 'cluster']
-    # cluster stage produces per-observation labels (60 = two 30-row datasets stacked)
-    assert len(result) == 60
+    # analyze returns the TRANSFORMED DATA (not cluster labels), per its
+    # documented contract (QC 2026-07): two datasets, each reduced to ndims=2.
+    assert isinstance(result, list) and len(result) == 2
+    assert all(np.asarray(r).shape == (30, 2) for r in result)
+    # the cluster labels are recoverable from the fitted 'cluster' step
+    labels = model.named_steps['cluster'].transform(
+        np.vstack([np.asarray(r) for r in result]))
+    assert len(np.asarray(labels)) == 60
 
 
 # --- hyp.analyze: pipeline= reuse (GH #227) --------------------------------

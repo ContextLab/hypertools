@@ -24,7 +24,7 @@ def _resolve_model(model_name):
 # main function
 def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
            manip=None, normalize=None, align=None, cluster=None,
-           internal=False, format_data=True):
+           internal=False, format_data=True, random_state=None):
     """
     Reduces dimensionality of an array, or list of arrays
 
@@ -84,6 +84,15 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
     format_data : bool
         Whether or not to first call the format_data function (default: True).
 
+    random_state : int, RandomState, or None
+        Seed for reproducibility. Injected into the reduction model's
+        constructor when it accepts a `random_state` (UMAP, TSNE, MDS,
+        FastICA, the mixture models, ...); ignored for deterministic models
+        (PCA, IncrementalPCA, ...) and for an already-constructed model
+        instance you pass in (configure that yourself). An explicit
+        `random_state` in a dict spec's `kwargs` takes precedence
+        (default: None).
+
     Returns
     ----------
     x_reduced : Numpy array or list of arrays
@@ -92,6 +101,28 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         `(x_reduced, model)` tuple is returned instead.
 
     """
+    # validate ndims up front (QC 2026-07): a non-int silently hit a
+    # `TypeError: '<=' not supported between int and str`, and ndims<=0
+    # silently reduced to 0/negative columns. bool is an int subclass but is
+    # never a valid dimension count.
+    if ndims is not None:
+        if isinstance(ndims, bool) or not isinstance(ndims, (int, np.integer)):
+            raise ValueError(
+                f"ndims must be a positive integer or None; got {ndims!r}")
+        if ndims < 1:
+            raise ValueError(f"ndims must be >= 1; got {ndims}")
+
+    # a whole already-fitted Pipeline handed back as reduce= (e.g. the model
+    # from an earlier cross-module return_model=True call) is reused as-is via
+    # .transform, BEFORE the cross-module branch below -- otherwise it would be
+    # wrapped in a fresh Reducer and crash (QC 2026-07). Any redundant stage
+    # kwargs are warned about + ignored (the Pipeline already encodes them).
+    from ..core.shared import is_reused_pipeline
+    if is_reused_pipeline(reduce, {'manip': manip, 'normalize': normalize,
+                                   'align': align, 'cluster': cluster}, 'reduce'):
+        result = reduce.transform(x)
+        return (result, reduce) if return_model else result
+
     # cross-module kwargs (#138): assemble and run a Pipeline (in canonical
     # order, #153) instead of the single-stage path below whenever another
     # stage is requested. Lazy import avoids a reduce<->core.pipeline cycle
@@ -138,6 +169,23 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
             c_kwargs = dict(reduce.get('kwargs', {}))
             if isinstance(c_model, str):
                 c_model = _resolve_model(c_model)
+            # inject n_components=ndims when the model accepts it and the user
+            # did not set it themselves. Without this, the canonical dict form
+            # pre-built the instance with n_components=None (its default) and
+            # `ndims` was silently ignored -- e.g. reduce={'model':'PCA',
+            # 'kwargs':{'whiten':True}}, ndims=2 returned the FULL-dim data
+            # (QC 2026-07). The bare-string and legacy 'params' forms already
+            # applied ndims; this brings the documented dict form in line.
+            if (ndims is not None and 'n_components' not in c_kwargs
+                    and inspect.isclass(c_model)
+                    and 'n_components' in inspect.signature(c_model).parameters):
+                c_kwargs['n_components'] = ndims
+            # same for a top-level random_state (QC 2026-07 reproducibility): the
+            # dict spec constructs its instance here, so inject before that
+            if (random_state is not None and 'random_state' not in c_kwargs
+                    and inspect.isclass(c_model)
+                    and 'random_state' in inspect.signature(c_model).parameters):
+                c_kwargs['random_state'] = random_state
             # construct immediately; the resulting instance flows through
             # the same already-constructed-instance handling below as a
             # bare instance passed directly as `reduce=`
@@ -214,8 +262,13 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         x = formatter(x, ppca=True)
 
     # if ndims/n_components is not passed or all data is < ndims-dimensional, just return it
+    # (unwrap a single-dataset input to a bare array, matching the reduced-data
+    # path below and the fitted-model reuse path above -- QC 2026-07: this early
+    # return used to hand back a 1-element LIST for a single array, so the return
+    # type flipped between ndarray and list depending on ndims).
     if model_params['n_components'] is None or all([i.shape[1] <= model_params['n_components'] for i in x]):
-        return (x, None) if return_model else x
+        result = x if (internal or len(x) > 1) else x[0]
+        return (result, None) if return_model else result
 
     # Handle empty arrays and type conversion
     stacked_x = np.vstack([np.asarray(arr, dtype=np.float64) for arr in x])
@@ -224,6 +277,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         warnings.warn('Cannot reduce the dimensionality of a single row of'
                       ' data. Return zeros length of ndims')
         result = [np.zeros((1, model_params['n_components']), dtype=np.float64)]
+        result = result if (internal or len(x) > 1) else result[0]
         return (result, None) if return_model else result
 
     elif stacked_x.shape[0] < model_params['n_components']:
@@ -232,6 +286,16 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
             model_params['n_components'] = stacked_x.shape[0]
             if model_is_instance:
                 model.n_components = stacked_x.shape[0]
+
+    # reproducibility (QC 2026-07): inject a top-level `random_state` into the
+    # model's constructor kwargs when the model accepts it and the user did not
+    # set it themselves -- so `hyp.reduce(x, reduce='UMAP', random_state=1)`
+    # gives repeatable embeddings. Already-constructed instances are left as the
+    # user configured them.
+    if (random_state is not None and not model_is_instance
+            and 'random_state' not in model_params
+            and 'random_state' in inspect.signature(model).parameters):
+        model_params['random_state'] = random_state
 
     # initialize model: bare classes are constructed with model_params;
     # already-configured instances are used as-is

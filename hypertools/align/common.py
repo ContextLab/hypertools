@@ -39,6 +39,15 @@ def trim_and_pad(data):
         rows = rows.intersection(set(d.index.values))
     c = np.max([x.shape[1] for x in data])
     rows = list(rows)
+    # warn on data loss: alignment keeps only the rows COMMON to every dataset
+    # (matched observation-by-observation), so datasets with different row
+    # counts / indices are trimmed. This used to happen silently (QC 2026-07).
+    if any(len(rows) < d.shape[0] for d in data):
+        import warnings
+        warnings.warn(
+            f"alignment keeps only the {len(rows)} row(s) common to all "
+            "datasets; datasets with more rows were trimmed. Align datasets "
+            "with matching numbers of observations to avoid dropping data.")
     return [pad(d.loc[rows], c) for d in data]
 
 
@@ -71,8 +80,28 @@ class Aligner(BaseEstimator):
         self.fitter = kwargs.pop('fitter', None)
         self.transformer = kwargs.pop('transformer', None)
         self.required = kwargs.pop('required', [])
-        self.kwargs = kwargs
+        # Remaining kwargs are the aligner's configuration parameters (e.g.
+        # Procrustes's `target`/`scaling`, HyperAlign's `n_iter`, SRM's
+        # `features`). Store each as its OWN attribute -- the scikit-learn
+        # estimator convention that `get_params`/`set_params`/`clone` rely
+        # on (every __init__ parameter must be readable as `self.<param>`).
+        # Folding them into a single `self.kwargs` dict left e.g.
+        # `Procrustes().get_params()` raising `AttributeError: 'Procrustes'
+        # object has no attribute 'target'` (QC 2026-07). Remember their
+        # names so the `kwargs` property below can rebuild the dict that
+        # `fit`/`transform` forward to the fitter/transformer.
+        self._param_names = list(kwargs.keys())
+        for name, value in kwargs.items():
+            setattr(self, name, value)
         self._fit_shape = None
+
+    @property
+    def kwargs(self):
+        """Configuration kwargs forwarded to `fitter`/`transformer`, rebuilt
+        from the individually-stored parameter attributes (see `__init__`).
+        Reading it always reflects the current attribute values, so
+        `set_params(...)` correctly changes what `fit`/`transform` use."""
+        return {name: getattr(self, name) for name in self._param_names}
 
     @property
     def is_fitted(self):
