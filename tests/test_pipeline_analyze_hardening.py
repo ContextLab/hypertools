@@ -103,3 +103,32 @@ def test_hard_clusterer_transform_new_data_still_raises():
                        return_model=True)
     with pytest.raises(NotImplementedError):
         model.named_steps['cluster'].transform(_rng().normal(size=(17, 6)))
+
+
+# --- no-op reduce step must stay reusable (QC 2026-07 red-team) ---------
+
+def test_cluster_return_model_reusable_with_noop_reduce():
+    """cluster(..., reduce=, return_model=True) WITHOUT ndims makes the reduce a
+    no-op (ndims=None / >= n_features -> model=None). The returned Pipeline's
+    reduce step was left "unfitted", so p.transform / reusing p crashed
+    NotFittedError. A no-op stage must count as fit and pass data through."""
+    X = _rng().normal(size=(40, 6))
+    Y = X + 5
+    res, p = hyp.cluster(X, cluster='KMeans', n_clusters=3, reduce='PCA',
+                         manip='ZScore', return_model=True)
+    assert all(s.is_fitted for _, s in p.named_steps.items())   # incl. no-op reduce
+    assert np.asarray(res).shape == (40,)
+    assert np.asarray(p.transform(X)).shape == (40,)            # reuse via transform
+    assert np.asarray(hyp.cluster(Y, cluster=p)).shape == (40,)  # reuse as spec
+    # a genuine reduction (ndims=3) is unaffected
+    _, p3 = hyp.cluster(X, cluster='KMeans', n_clusters=3, reduce='PCA',
+                        ndims=3, manip='ZScore', return_model=True)
+    assert np.asarray(p3.transform(X)).shape == (40,)
+
+
+def test_analyze_reduce_noop_pipeline_reusable():
+    """Same no-op-reduce reuse bug via analyze(reduce=, return_model=True)."""
+    X = _rng().normal(size=(30, 4))
+    _, model = analyze(X, reduce='PCA', manip='ZScore', return_model=True)
+    assert all(s.is_fitted for _, s in model.named_steps.items())
+    assert np.asarray(model.transform(X + 1)).shape[0] == 30

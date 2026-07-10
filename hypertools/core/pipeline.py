@@ -179,11 +179,19 @@ class _DispatchStep:
         self._spec = spec
         self._call = call  # (data, spec_or_fitted_model) -> (result, fitted_model)
         self._fitted = None
+        # A stage can legitimately fit to NO model: a reduce with ndims=None or
+        # ndims >= n_features is a no-op pass-through and returns model=None
+        # (QC 2026-07). `_fitted is None` therefore cannot distinguish "never
+        # fit" from "fit to an identity"; `_is_fit` records that fit_transform
+        # actually ran, so `transform` on such a step passes data through
+        # instead of wrongly raising NotFittedError (which broke
+        # cluster(..., reduce=, return_model=True) reuse).
+        self._is_fit = False
 
     @property
     def is_fitted(self):
         """Whether `fit`/`fit_transform` has been called on this step yet."""
-        return self._fitted is not None
+        return self._is_fit
 
     def fit(self, data):
         """Fit this step's dispatcher on `data`, discarding the transformed result.
@@ -217,6 +225,7 @@ class _DispatchStep:
         """
         result, fitted = self._call(data, self._spec)
         self._fitted = fitted
+        self._is_fit = True
         return result
 
     def transform(self, data):
@@ -236,8 +245,11 @@ class _DispatchStep:
         sklearn.exceptions.NotFittedError
             If `fit`/`fit_transform` has not been called yet.
         """
-        if self._fitted is None:
+        if not self._is_fit:
             raise NotFittedError(f'{self._name} stage must be fit before transform')
+        if self._fitted is None:
+            # a no-op stage (e.g. reduce with ndims >= n_features): pass through
+            return data
         result, fitted = self._call(data, self._fitted)
         self._fitted = fitted
         return result
