@@ -43,7 +43,8 @@ MANIP = [{'model': 'Smooth', 'kwargs': {'kernel_width': 40}},
          {'model': 'Resample', 'kwargs': {'n_samples': 300}},
          'ZScore']
 ALIGN = {'model': 'HyperAlign', 'kwargs': {'n_iter': 10}}
-FRAME_RATE, ZOOM, FOCUSED, DURATION = 30, 1.5, 2.5, 9
+FRAME_RATE, ZOOM, FOCUSED, DURATION = 30, 1.5, 1.5, 9
+LINE_ALPHA, LINE_WIDTH = 0.55, 1.3   # translucent, thin -> legible overlap
 
 
 def build_reduced():
@@ -73,11 +74,12 @@ def main():
     os.makedirs(IMG_DIR, exist_ok=True)
     reduced = build_reduced()
     n = len(reduced)
-    colors = [(*plt.get_cmap('gist_rainbow')(i / (n - 1))[:3], 0.9)
+    colors = [(*plt.get_cmap('gist_rainbow')(i / (n - 1))[:3], LINE_ALPHA)
               for i in range(n)]
 
     mp4 = os.path.join(IMG_DIR, 'story_trajectories.mp4')
-    anim = hyp.plot(reduced, '-', color=colors, linewidth=1.5, animate='window',
+    anim = hyp.plot(reduced, '-', color=colors, linewidth=LINE_WIDTH,
+                    animate='window',
                     focused=FOCUSED, duration=DURATION, frame_rate=FRAME_RATE,
                     zoom=ZOOM, reduce=None, normalize=None, size=[6, 6], show=False)
     anim.save(mp4)

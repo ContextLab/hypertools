@@ -87,10 +87,10 @@ result. Here is the exact code that produced it:
     # one translucent rainbow color per subject; a sliding 'window' trail lets
     # you watch all 36 subjects move together through the story
     n = len(aligned)
-    colors = [(*plt.get_cmap('gist_rainbow')(i / (n - 1))[:3], 0.9)
+    colors = [(*plt.get_cmap('gist_rainbow')(i / (n - 1))[:3], 0.55)
               for i in range(n)]
-    hyp.plot(aligned, '-', color=colors, linewidth=1.5, reduce='IncrementalPCA',
-             ndims=3, animate='window', focused=2.5, zoom=1.5, duration=9,
+    hyp.plot(aligned, '-', color=colors, linewidth=1.3, reduce='IncrementalPCA',
+             ndims=3, animate='window', focused=1.5, zoom=1.5, duration=9,
              save_path='story_trajectories.mp4')
 
 Below: three moments as the story unfolds (the window sliding from the start
