@@ -109,3 +109,48 @@ def test_matrix_hue_le3_columns_stays_palette_blend():
     fig = hyp.plot(np.cumsum(rng.normal(size=(60, 3)), axis=0), '.', ndims=3,
                    hue=h3, show=False)
     assert fig is not None
+
+
+# --- nested per-dataset hue (examples/plot_hue.py) ---------------------
+
+def test_nested_per_dataset_hue_flattens():
+    # when the data is a list of datasets, hue may be given with the SAME
+    # nesting: one hue sub-list per dataset (the classic list-of-lists form
+    # from examples/plot_hue.py). It must flatten to one value per observation,
+    # NOT be misread as a (n_datasets, len) matrix hue -> used to raise
+    # "hue has 3 entries but the data has 900 observations".
+    rng = np.random.default_rng(0)
+    data = [rng.standard_normal((300, 10)) for _ in range(3)]
+    nested_hue = [[int(rng.integers(1000)) for _ in range(300)]
+                  for _ in range(3)]
+    fig = hyp.plot(data, '.', hue=nested_hue, show=False)
+    assert fig is not None
+
+
+def test_nested_per_dataset_matrix_hue_flattens():
+    # nested form also works when each dataset carries a per-observation matrix
+    # hue: 3 datasets each (300, 4) -> flatten to a (900, 4) matrix hue
+    rng = np.random.default_rng(1)
+    data = [rng.standard_normal((300, 8)) for _ in range(3)]
+    nested_hue = [rng.random((300, 4)) for _ in range(3)]
+    fig = hyp.plot(data, '.', hue=nested_hue, show=False)
+    assert fig is not None
+
+
+def test_flat_and_matrix_hue_on_multidataset_unaffected():
+    # a genuinely flat (n_obs,) hue and a (n_obs, k) matrix hue on multi-dataset
+    # data must still be accepted as-is (not swept up by the nesting rule)
+    rng = np.random.default_rng(2)
+    data = [rng.standard_normal((300, 10)) for _ in range(3)]
+    assert hyp.plot(data, '.', hue=rng.integers(0, 5, 900), show=False) is not None
+    assert hyp.plot(data, '.', hue=rng.random((900, 4)), show=False) is not None
+
+
+def test_wrong_length_nested_hue_still_errors():
+    # a nested hue whose sub-lists DON'T match dataset lengths is not a valid
+    # per-dataset hue and must still raise (no silent truncation)
+    rng = np.random.default_rng(3)
+    data = [rng.standard_normal((300, 10)) for _ in range(3)]
+    bad = [[0] * 299 for _ in range(3)]  # 299 != 300 per dataset
+    with pytest.raises(ValueError, match="observations"):
+        hyp.plot(data, '.', hue=bad, show=False)

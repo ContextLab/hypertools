@@ -377,6 +377,11 @@ def plot(
         observation). To label a subset of points categorically, use None
         entries (i.e. ['a', None, 'b', 'a']).
 
+        When the data is a list of datasets, `hue` may mirror that nesting --
+        one hue sub-sequence per dataset, each matching that dataset's length
+        (e.g. ``hyp.plot([d0, d1], hue=[h0, h1])``); it is flattened to one
+        value (or matrix row) per observation.
+
         A 2D matrix hue with MORE than 3 columns (or any matrix, if
         `color_reduce=` is given) is first reduced to 3 columns and mapped
         directly to (r, g, b) -- see `color_reduce`.
@@ -1957,6 +1962,23 @@ def plot(
     elif hue is not None:
         if color is not None:
             warnings.warn("Using group, color keyword will be ignored.")
+
+        # NESTED per-dataset hue: when the data is a list of datasets, hue may
+        # be given with the SAME nesting -- one hue sub-sequence per dataset,
+        # each matching that dataset's length (the classic list-of-lists form,
+        # e.g. examples/plot_hue.py). Flatten it to one value (or one matrix
+        # row) per observation before classifying, so np.asarray doesn't read a
+        # (n_datasets, len) block as a (3, ...) matrix hue. A genuinely flat or
+        # (n_obs, k) matrix hue has len(hue) != n_datasets (or scalar elements),
+        # so it is left untouched.
+        if (isinstance(hue, (list, tuple)) and len(xform) > 1
+                and len(hue) == len(xform)
+                and all(np.ndim(h) >= 1 and len(h) == len(xi)
+                        for h, xi in zip(hue, xform))):
+            flat_hue = []
+            for h in hue:
+                flat_hue.extend(list(h))
+            hue = flat_hue
 
         # classify the hue argument: per-observation numeric matrix
         # (mixture proportions, model weights, ...), continuous 1D values,
