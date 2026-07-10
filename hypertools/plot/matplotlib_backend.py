@@ -562,6 +562,7 @@ def _draw(
                         **_label_font_kwargs,
                     )
                     label._hyp_point_idx = within[idx]
+                    label._hyp_global_idx = idx
                     labels_and_points.append((label, x[0], x[1], x[2]))
                 elif data[0].shape[-1] == 2:
                     x2, y2 = x[0], x[1]
@@ -578,6 +579,7 @@ def _draw(
                     )
                     label.draggable()
                     label._hyp_point_idx = within[idx]
+                    label._hyp_global_idx = idx
                     labels_and_points.append((label, x[0], x[1]))
         fig.canvas.draw()
 
@@ -619,13 +621,25 @@ def _draw(
             label._visible = True
         fig.canvas.draw()
 
-    def _sync_anim_labels(num, window_frames, all_visible=False):
+    def _sync_anim_labels(num, window_frames, all_visible=False, revealed=None,
+                          hide_all=False):
         """Per-animation-frame label bookkeeping (QC 2026-07): show each
-        per-point label ONLY while its datapoint is inside the current frame's
-        drawn window ``[num - window_frames, num]`` (previously every label was
-        drawn on every frame), and reproject the visible ones for the rotated
-        camera. ``all_visible=True`` (``'spin'``, where every point is always
-        drawn) keeps them all shown but still reprojects them."""
+        per-point label ONLY while its datapoint is currently drawn (previously
+        every label was drawn on every frame), and reproject the visible ones
+        for the (possibly rotated) camera. The visibility rule depends on the
+        animation style:
+
+        * window / parallel: the datapoint is inside the head window
+          ``[num - window_frames, num]`` (matched on ``_hyp_point_idx``, the
+          within-dataset index, so multi-dataset plots window correctly);
+        * serial: the datapoint has been REVEALED, i.e. its global index
+          (``_hyp_global_idx``) ``<= revealed`` (serial accumulates points, so
+          there is no trailing edge);
+        * spin (``all_visible=True``): every point is always drawn;
+        * morph (``hide_all=True``): the single traveling cloud does not
+          correspond to the original labeled points, so labels are hidden for
+          the duration of the morph.
+        """
         # `labels_and_points` is a module global set only when annotate_plot ran
         # (i.e. this plot has labels); it may also still hold a PREVIOUS plot's
         # labels, so guard for existence and restrict to THIS axes' labels.
@@ -644,8 +658,16 @@ def _draw(
         lo = num - window_frames
         for entry in laps:
             label = entry[0]
-            j = getattr(label, "_hyp_point_idx", None)
-            visible = all_visible or j is None or (lo <= j <= num)
+            if hide_all:
+                visible = False
+            elif all_visible:
+                visible = True
+            elif revealed is not None:
+                g = getattr(label, "_hyp_global_idx", None)
+                visible = g is None or g <= revealed
+            else:
+                j = getattr(label, "_hyp_point_idx", None)
+                visible = j is None or (lo <= j <= num)
             label.set_visible(visible)
             if visible and is_3d:
                 x2, y2, _ = proj3d.proj_transform(entry[1], entry[2], entry[3],
@@ -1081,6 +1103,9 @@ def _draw(
                 ax, windows, surface, surface_colors, elev, azim_now,
                 prior_colls=prior, quiet=True)
 
+        # serial reveals points cumulatively: a label shows once its point has
+        # been revealed (global index <= revealed), and stays
+        _sync_anim_labels(num, 0, revealed=revealed)
         return lines
 
     def update_morph(num, morph_state, cube_scale, azimuths, zoom=1, elev=10):
@@ -1147,6 +1172,9 @@ def _draw(
                 ax, frame_meshes, surface, frame_colors, elev, azim_now,
                 prior_colls=prior)
 
+        # morph collapses the datasets to one traveling cloud that does not
+        # correspond to the original labeled points -> hide per-point labels
+        _sync_anim_labels(num, 0, hide_all=True)
         return (artist,)
 
     def dispatch_animate(x, ani_params):
@@ -1677,6 +1705,7 @@ def _draw(
                 window = data[num - tail_duration : num + 1]
             line.set_data(window[:, 0], window[:, 1])
 
+        _sync_anim_labels(num, tail_duration)
         return lines, trail_lines
 
     def update_lines_serial_2d(num, data_lines, lines):
@@ -1699,6 +1728,7 @@ def _draw(
             line.set_data(window[:, 0], window[:, 1])
             start += data.shape[0]
 
+        _sync_anim_labels(num, 0, revealed=revealed)
         return lines
 
     def update_morph_2d(num, morph_state):
@@ -1723,6 +1753,7 @@ def _draw(
         artist.set_data(draw_pts[:, 0], draw_pts[:, 1])
         artist.set_color(color)
 
+        _sync_anim_labels(num, 0, hide_all=True)
         return (artist,)
 
     def animate_plot2D(
