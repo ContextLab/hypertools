@@ -1000,7 +1000,7 @@ def _draw(
                 plane.remove()
         update_lines_serial.planes = plot_cube(cube_scale, **frame_kwargs)
 
-        total_frames = frame_rate * duration
+        total_frames = int(round(frame_rate * duration))
         ax.view_init(elev=elev,
                      azim=azim + rotations * 360.0 * num / total_frames)
         ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
@@ -1546,7 +1546,7 @@ def _draw(
             line_ani = animation.FuncAnimation(
                 fig,
                 update_lines_serial,
-                frame_rate * duration,
+                int(round(frame_rate * duration)),
                 fargs=(x, lines, cube_scale_anim, rotations, zoom, elev),
                 interval=1000 / frame_rate,
                 blit=False,
@@ -1556,7 +1556,7 @@ def _draw(
             line_ani = animation.FuncAnimation(
                 fig,
                 update_lines_spin,
-                frame_rate * duration,
+                int(round(frame_rate * duration)),
                 fargs=(x, lines, cube_scale_anim, rotations, zoom, elev),
                 interval=1000 / frame_rate,
                 blit=False,
@@ -1564,7 +1564,7 @@ def _draw(
             )
         elif style == "morph":
             n_morph_datasets = len(morph_state["indices"])
-            total_frames = frame_rate * duration
+            total_frames = int(round(frame_rate * duration))
             frame_counts, _, azimuths = _morph.morph_schedule(
                 n_morph_datasets, total_frames, rotations, azim)
             morph_state["frame_counts"] = frame_counts
@@ -1634,7 +1634,7 @@ def _draw(
         list
             The updated matplotlib line artists, for `blit=True` animation.
         """
-        total_frames = frame_rate * duration
+        total_frames = int(round(frame_rate * duration))
         lengths = [d.shape[0] for d in data_lines]
         total_points = sum(lengths)
         revealed = total_points * num / max(1, total_frames - 1)
@@ -1865,7 +1865,7 @@ def _draw(
             line_ani = animation.FuncAnimation(
                 fig,
                 update_lines_serial_2d,
-                frame_rate * duration,
+                int(round(frame_rate * duration)),
                 fargs=(x, lines),
                 interval=1000 / frame_rate,
                 blit=False,
@@ -1879,7 +1879,7 @@ def _draw(
             # control), but is ignored uniformly for every 2-D style for
             # consistency (and `plot.py` has already warned about it).
             n_morph_datasets = len(morph_state["indices"])
-            total_frames = frame_rate * duration
+            total_frames = int(round(frame_rate * duration))
             frame_counts, _, _ = _morph.morph_schedule(
                 n_morph_datasets, total_frames, 1, 0)
             morph_state["frame_counts"] = frame_counts

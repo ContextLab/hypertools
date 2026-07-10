@@ -345,3 +345,27 @@ def test_plotly_layout_lock_still_holds_with_per_dataset_flags():
     for frame in fig.frames:
         assert 2 not in frame.traces and 3 not in frame.traces
         assert 4 in frame.traces and 5 in frame.traces
+
+
+# ---------------------------------------------------------------------------
+# fractional duration must not crash (QC 2026-07)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize('style', ['spin', 'serial', True])
+def test_mpl_fractional_duration_frame_count(style):
+    """A fractional `duration` made `frame_rate * duration` a float, which
+    matplotlib's FuncAnimation rejected with `range(float)` ->
+    "'float' object cannot be interpreted as an integer" for the spin/serial
+    styles (the parallel/window styles used an int frame count already)."""
+    from hypertools import HyperAnimation
+    out = hyp.plot(_walks(n=40), animate=style, duration=2.5, frame_rate=20,
+                   show=False)
+    assert isinstance(out, HyperAnimation)
+
+
+@pytest.mark.parametrize('style', ['spin', 'serial'])
+def test_plotly_fractional_duration_frame_count(style):
+    pytest.importorskip('plotly')
+    fig = plotly_draw(_walks(n=40), animate=style, duration=2.5, frame_rate=20,
+                      show=False)
+    assert len(fig.frames) > 0
