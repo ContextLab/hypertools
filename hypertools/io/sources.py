@@ -37,6 +37,7 @@ import io
 import os
 import re
 import tempfile
+import time
 import warnings
 from pathlib import Path
 
@@ -74,6 +75,49 @@ def _github_api_headers():
     if token:
         headers['Authorization'] = f'Bearer {token}'
     return headers
+
+
+# GitHub's REST API and raw host intermittently return transient gateway
+# errors under load -- e.g. a CI matrix's shared runner-IP pool hammering the
+# API concurrently regularly sees 502 Bad Gateway. These are server-side, not
+# a client/code error, and almost always clear within a second or two.
+_TRANSIENT_STATUS = frozenset({502, 503, 504})
+
+
+def _github_get_with_retry(url, headers, timeout, attempts=4, backoff=1.0):
+    """``requests.get`` that retries transient failures with exponential
+    backoff.
+
+    Retries on a transient HTTP status (502/503/504 gateway errors) or a
+    connection-level ``requests.RequestException`` (dropped connection, DNS
+    blip, read timeout), sleeping ``backoff``, ``2*backoff``, ``4*backoff``,
+    ... between tries. Any non-transient response (2xx, 404, 403 rate-limit,
+    ...) is returned immediately on the first try, so healthy calls pay no
+    penalty and every caller's own status handling is unchanged. After the
+    final attempt the last response is returned (letting the caller's status
+    handling run) or, for a persistent connection error, the last exception
+    is re-raised.
+
+    ``attempts`` and ``backoff`` are tunable so tests can exercise the retry
+    loop quickly against a real local server; production callers use the
+    defaults (four tries over ~7s).
+    """
+    delay = backoff
+    last_exc = None
+    for attempt in range(attempts):
+        is_last = attempt == attempts - 1
+        try:
+            resp = requests.get(url, headers=headers, timeout=timeout)
+        except requests.RequestException as e:
+            last_exc = e
+            if is_last:
+                raise
+        else:
+            if resp.status_code not in _TRANSIENT_STATUS or is_last:
+                return resp
+        time.sleep(delay)
+        delay *= 2
+    raise last_exc  # unreachable: the loop always returns or raises
 
 # Google Sheets URL -> CSV export (must be checked before generic Drive id
 # extraction, since a Sheets URL also matches the '/d/<id>' Drive pattern).
@@ -234,9 +278,9 @@ def fivethirtyeight_dataset(name):
         csv_names = _538_listing_cache[slug]
     else:
         try:
-            resp = requests.get(f'{_538_API}/{slug}',
-                                headers=_github_api_headers(),
-                                timeout=30)
+            resp = _github_get_with_retry(f'{_538_API}/{slug}',
+                                          _github_api_headers(),
+                                          timeout=30)
         except requests.RequestException as e:
             raise HypertoolsIOError(
                 f"could not reach the GitHub API to list "
@@ -320,7 +364,7 @@ def _fetch_538_csv(slug, csv_name):
         url = (f'https://api.github.com/repos/fivethirtyeight/data/'
                f'contents/{slug}/{csv_name}?ref=master')
         headers = {**headers, 'Accept': 'application/vnd.github.raw'}
-        resp = requests.get(url, headers=headers, timeout=60)
+        resp = _github_get_with_retry(url, headers, timeout=60)
         resp.raise_for_status()
         return resp.content
     raw, _ = _fetch_bytes(f'{_538_RAW}/{slug}/{csv_name}')

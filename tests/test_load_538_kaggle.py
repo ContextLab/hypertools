@@ -112,3 +112,69 @@ def test_load_538_bechdel_plot_end_to_end():
     numeric = df.select_dtypes(include='number').dropna()
     fig = hyp.plot(numeric, show=False)
     assert fig is not None
+
+
+# --- transient-5xx retry (real GitHub-API 502 flake) --------------------
+# CI intermittently failed the 538 loader on a transient "502 Bad Gateway"
+# from api.github.com (a shared runner-IP pool hammering the API). The loader
+# now retries transient gateway errors via
+# hypertools.io.sources._github_get_with_retry. Exercised here against a REAL
+# local HTTP server (a real socket over the loopback interface -- NOT a mock
+# object) that returns 502 a few times before 200, so the retry actually
+# runs against live HTTP.
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+from hypertools.io.sources import _github_get_with_retry
+
+
+def _start_flaky_server(n_502, body=b'ok'):
+    """Start a real loopback HTTP server that answers its first ``n_502``
+    GETs with 502, then 200 + ``body``. Returns (url, server, hits)."""
+    hits = [0]
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            hits[0] += 1
+            if hits[0] <= n_502:
+                self.send_response(502)
+                self.end_headers()
+                self.wfile.write(b'Bad Gateway')
+            else:
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(('127.0.0.1', 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f'http://127.0.0.1:{server.server_address[1]}/data'
+    return url, server, hits
+
+
+def test_github_get_with_retry_recovers_from_transient_502():
+    url, server, hits = _start_flaky_server(n_502=2, body=b'recovered')
+    try:
+        resp = _github_get_with_retry(url, {}, timeout=5, backoff=0.01)
+    finally:
+        server.shutdown()
+    assert resp.status_code == 200
+    assert resp.content == b'recovered'
+    assert hits[0] == 3  # two 502s retried away, the third GET succeeded
+
+
+def test_github_get_with_retry_returns_final_502_after_exhausting():
+    url, server, hits = _start_flaky_server(n_502=99)  # always 502
+    try:
+        resp = _github_get_with_retry(url, {}, timeout=5, attempts=3,
+                                      backoff=0.01)
+    finally:
+        server.shutdown()
+    # a persistent 502 is returned (not raised) after the retries are spent,
+    # so each caller's own status handling still produces the actionable
+    # HypertoolsIOError / raise_for_status it did before.
+    assert resp.status_code == 502
+    assert hits[0] == 3
