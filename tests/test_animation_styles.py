@@ -369,3 +369,58 @@ def test_plotly_fractional_duration_frame_count(style):
     fig = plotly_draw(_walks(n=40), animate=style, duration=2.5, frame_rate=20,
                       show=False)
     assert len(fig.frames) > 0
+
+
+# ---------------------------------------------------------------------------
+# per-point labels must track their datapoint's visibility window (QC 2026-07,
+# previously a documented "known limitation": labels drawn on EVERY frame)
+# ---------------------------------------------------------------------------
+
+def _labeled_helix():
+    t = np.linspace(0, 4 * np.pi, 40)
+    traj = np.column_stack([np.cos(t), np.sin(t), t / 4.0])
+    labels = [None] * 40
+    labels[8], labels[32] = 'AAA', 'BBB'
+    return traj, labels
+
+
+def test_window_animation_labels_scroll_with_their_datapoint():
+    traj, labels = _labeled_helix()
+    anim = hyp.plot(traj, '-o', labels=labels, animate='window', focused=1.0,
+                    duration=5, frame_rate=20, show=False)
+    fig, fa = anim[0], anim[1]
+    anns = {a.get_text(): a for a in fig.axes[0].get_children()
+            if getattr(a, '_hyp_point_idx', None) is not None}
+    assert set(anns) == {'AAA', 'BBB'}
+    assert anns['AAA']._hyp_point_idx < anns['BBB']._hyp_point_idx
+
+    def vis_at(frame):
+        fa._func(frame, *fa._args)
+        return {k: a.get_visible() for k, a in anns.items()}
+
+    frames = [vis_at(f) for f in range(0, 100, 4)]
+    # each label appears on SOME frames and is hidden on others (the old bug
+    # left both visible on every frame)
+    assert 0 < sum(f['AAA'] for f in frames) < len(frames)
+    assert 0 < sum(f['BBB'] for f in frames) < len(frames)
+    # AAA (earlier point) enters the window before BBB
+    first_aaa = next(i for i, f in enumerate(frames) if f['AAA'])
+    first_bbb = next(i for i, f in enumerate(frames) if f['BBB'])
+    assert first_aaa < first_bbb
+
+
+def test_spin_and_static_labels_stay_visible():
+    traj, labels = _labeled_helix()
+    # spin draws every point every frame -> labels stay shown
+    anim = hyp.plot(traj, '-o', labels=labels, animate='spin', duration=3,
+                    frame_rate=20, show=False)
+    fig, fa = anim[0], anim[1]
+    anns = [a for a in fig.axes[0].get_children()
+            if getattr(a, '_hyp_point_idx', None) is not None]
+    fa._func(7, *fa._args)
+    assert all(a.get_visible() for a in anns)
+    # static plot: labels visible
+    stat = hyp.plot(traj, '-o', labels=labels, show=False)
+    stat_anns = [a for a in stat.axes[0].get_children()
+                 if getattr(a, '_hyp_point_idx', None) is not None]
+    assert stat_anns and all(a.get_visible() for a in stat_anns)

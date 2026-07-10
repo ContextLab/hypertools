@@ -510,17 +510,26 @@ def _draw(
                 (raw[:, 0], raw[:, 1], raw[:, 2]), i)
         return fig, ax, data
 
-    def annotate_plot(data, labels):
+    def annotate_plot(data, labels, lengths=None):
         """Create labels in 3d chart
         Args:
             X (np.array) - array of points, of shape (numPoints, 3)
             labels (list) - list of labels of shape (numPoints,1)
+            lengths (list or None) - per-dataset point counts, used to record
+                each label's WITHIN-dataset index so an animation can show a
+                label only while its datapoint is in the current frame's window
+                (QC 2026-07). `None` -> use the global index (static plots).
         Returns:
             None
         """
 
         global labels_and_points
         labels_and_points = []
+
+        if lengths is not None:
+            within = [j for L in lengths for j in range(int(L))]
+        else:
+            within = list(range(len(data)))
 
         if data[0].shape[-1] > 2:
             proj = ax.get_proj()
@@ -552,6 +561,7 @@ def _draw(
                         arrowprops=dict(arrowstyle="-", connectionstyle="arc3,rad=0"),
                         **_label_font_kwargs,
                     )
+                    label._hyp_point_idx = within[idx]
                     labels_and_points.append((label, x[0], x[1], x[2]))
                 elif data[0].shape[-1] == 2:
                     x2, y2 = x[0], x[1]
@@ -567,6 +577,7 @@ def _draw(
                         **_label_font_kwargs,
                     )
                     label.draggable()
+                    label._hyp_point_idx = within[idx]
                     labels_and_points.append((label, x[0], x[1]))
         fig.canvas.draw()
 
@@ -608,6 +619,41 @@ def _draw(
             label._visible = True
         fig.canvas.draw()
 
+    def _sync_anim_labels(num, window_frames, all_visible=False):
+        """Per-animation-frame label bookkeeping (QC 2026-07): show each
+        per-point label ONLY while its datapoint is inside the current frame's
+        drawn window ``[num - window_frames, num]`` (previously every label was
+        drawn on every frame), and reproject the visible ones for the rotated
+        camera. ``all_visible=True`` (``'spin'``, where every point is always
+        drawn) keeps them all shown but still reprojects them."""
+        # `labels_and_points` is a module global set only when annotate_plot ran
+        # (i.e. this plot has labels); it may also still hold a PREVIOUS plot's
+        # labels, so guard for existence and restrict to THIS axes' labels.
+        laps = [e for e in (globals().get('labels_and_points') or [])
+                if getattr(e[0], 'axes', None) is ax]
+        if not laps:
+            return
+        is_3d = hasattr(ax, "get_proj")
+        proj = ax.get_proj() if is_3d else None
+        renderer = getattr(fig.canvas, "renderer", None)
+        if renderer is None and hasattr(fig.canvas, "get_renderer"):
+            try:
+                renderer = fig.canvas.get_renderer()
+            except Exception:
+                renderer = None
+        lo = num - window_frames
+        for entry in laps:
+            label = entry[0]
+            j = getattr(label, "_hyp_point_idx", None)
+            visible = all_visible or j is None or (lo <= j <= num)
+            label.set_visible(visible)
+            if visible and is_3d:
+                x2, y2, _ = proj3d.proj_transform(entry[1], entry[2], entry[3],
+                                                  proj)
+                label.xy = (x2, y2)
+                if renderer is not None:
+                    label.update_positions(renderer)
+
     def hide_labels(e):
         """Hides labels on button press
         Args:
@@ -645,9 +691,10 @@ def _draw(
 
         elif labels is not None:
             X = np.vstack(x)
+            lengths = [np.atleast_2d(np.asarray(d)).shape[0] for d in x]
             if any(isinstance(el, list) for el in labels):
                 labels = list(itertools.chain(*labels))
-            annotate_plot(X, labels)
+            annotate_plot(X, labels, lengths=lengths)
             fig.canvas.mpl_connect("button_press_event", hide_labels)
             fig.canvas.mpl_connect("button_release_event", update_position)
 
@@ -943,6 +990,9 @@ def _draw(
                 ax, windows, surface, surface_colors, elev, azim_now,
                 prior_colls=prior, quiet=True)
 
+        # per-point labels track their datapoint's visibility window (the same
+        # [num - tail_duration, num] window the head line uses above)
+        _sync_anim_labels(num, tail_duration)
         return lines, trail_lines
 
     def update_lines_spin(
@@ -986,6 +1036,9 @@ def _draw(
                 ax, update_lines_spin.meshes, surface, surface_colors, elev,
                 azim_now, prior_colls=prior)
 
+        # 'spin' draws every point every frame, so labels stay visible -- but
+        # still reproject them for the rotated camera
+        _sync_anim_labels(num, 0, all_visible=True)
         return lines
 
     def update_lines_serial(
