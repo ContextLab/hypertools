@@ -1,0 +1,5 @@
+# Evidence images/gifs stay OUT of git history (43MB+): merging the audit
+# branch must not bloat dev-1.0-refactor forever. Findings JSONs are tracked;
+# curated evidence for the PR report goes to a separate orphan branch
+# (audit-evidence-2026-07) with SHA-pinned raw links.
+evidence/

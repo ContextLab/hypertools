@@ -1,0 +1,487 @@
+{
+  "unit": "F15-analyze",
+  "target": "hyp.analyze() pipeline dispatcher (hypertools/tools/analyze.py) on branch audit/release-1.0-2026-07; supporting docs docs/tutorials/analyze.ipynb. All runs: /Users/jmanning/hypertools/.venv/bin/python with MPLBACKEND=Agg and PYTHONPATH=/Users/jmanning/hypertools (required -- see F15-analyze-014 infra finding). Test scripts: /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F15-analyze/t1_workflows.py, t2_equivalence.py, t3_params.py, t4_edges.py, t5_tutorial.py (+ inline probes recorded in tested[] commands).",
+  "brainstormed_edge_cases": [
+    "empty kwargs: analyze(data) with no stages = identity? (tested)",
+    "single array vs list vs tuple vs generator input (tested)",
+    "empty list and zero-row array input (tested)",
+    "1-D vector input (tested)",
+    "single-row dataset with reduce (tested)",
+    "mismatched column counts across list datasets, normalize='across' and align (tested)",
+    "normalize=False/None identity (tested)",
+    "align=False documented as 'no alignment' -- does it work? (tested: crashes)",
+    "ndims= given without reduce= (docstring says reduce default IncrementalPCA) (tested: silently ignored)",
+    "ndims == n_features, > n_features, > n_rows (tested)",
+    "ndims wrong types/values: '3', 2.5, 0, -1 (tested)",
+    "bogus model names for every stage, on both legacy and build_pipeline code paths (tested)",
+    "bogus kwargs inside dict specs for reduce/align/cluster (tested: align silently swallows)",
+    "reduce models with no .transform (TSNE/MDS) combined with cluster= (post-cluster data-recovery loop) and with pipeline= reuse (tested: crashes)",
+    "pipeline= mutual exclusion with stage kwargs, single and multiple conflicts (tested)",
+    "pipeline= with an UNFITTED Pipeline (tested)",
+    "pipeline= with a non-Pipeline object (tested: cryptic AttributeError)",
+    "pipeline= plus ndims=/impute=/internal= (docstring claims all three honored) (tested: only internal= honored)",
+    "NaN data: default PPCA vs impute='Kalman' on both code paths; impute gating when normalize=False (tested)",
+    "int dtype and constant-column data (tested)",
+    "list-of-one dataset (tested)",
+    "text/string input through analyze (tested)",
+    "cluster-only pipeline: returned data == raw input? (tested)",
+    "return_model=True with NO stages -> empty Pipeline, and its reuse (tested)",
+    "mixture model as reduce (GaussianMixture memberships) (tested)",
+    "hard clusterer with no predict (DBSCAN) label recovery via cluster step (tested)",
+    "random_state repeatability for stochastic reducers (tested)",
+    "python -O: normalize validation uses bare assert, stripped under -O (untested)",
+    "concurrent analyze calls from multiple threads (untested)",
+    "very large ndims / memory pressure (untested)",
+    "datasets with DIFFERENT row counts + align stages (untested)",
+    "manip='Resample' kwargs routing through analyze (untested; Smooth/ZScore tested)",
+    "already-FITTED Reducer instance passed directly as reduce= to analyze (untested; unfitted instance and pipeline= reuse tested)",
+    "DataFrame with non-numeric/categorical columns (untested)",
+    "MultiIndex DataFrame input (untested)"
+  ],
+  "tested": [
+    {
+      "case": "W1: hosted weights (36 x 300x100), normalize='within' only -- returns list, columns z-scored",
+      "result": "pass",
+      "command": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg .venv/bin/python t1_workflows.py",
+      "output_excerpt": "within: max|colmean|=3.85e-17, max|colstd-1|=2.22e-16 / W1 PASS",
+      "evidence": []
+    },
+    {
+      "case": "W2: normalize='within' + reduce='PCA', ndims=3 -> (300,3) per dataset",
+      "result": "pass",
+      "command": "t1_workflows.py",
+      "output_excerpt": "shapes: [(300, 3), (300, 3), (300, 3)] ... W2 PASS",
+      "evidence": []
+    },
+    {
+      "case": "W3: reduce+align ground truth -- two rotated copies of one trajectory align to corr 1.000",
+      "result": "pass",
+      "command": "t1_workflows.py",
+      "output_excerpt": "rotated-copy mean column corr: before align=-0.220, after align=1.000 / W3 PASS",
+      "evidence": []
+    },
+    {
+      "case": "W4: normalize+reduce+align+cluster(KMeans k=4), return_model=True -- returns (transformed data, Pipeline); labels via model.named_steps['cluster'].transform(returned data)",
+      "result": "pass",
+      "command": "t1_workflows.py",
+      "output_excerpt": "data: <class 'list'> [(300, 3), (300, 3), (300, 3)] / named_steps keys: ['normalize', 'reduce', 'align', 'cluster'] / labels shape: (900,) unique: [0 1 2 3] / W4 PASS",
+      "evidence": []
+    },
+    {
+      "case": "W5: list of DataFrames and single DataFrame through normalize+reduce",
+      "result": "pass",
+      "command": "t1_workflows.py",
+      "output_excerpt": "out: <class 'list'> [(50, 2), (50, 2)] / single df out: <class 'numpy.ndarray'> (50, 2) / W5 PASS",
+      "evidence": []
+    },
+    {
+      "case": "W6: fit on train, analyze(test, pipeline=fitted) reuse; re-transform of train matches fit_transform output to atol 1e-3 and transform is deterministic (residual ~6e-5 is sklearn randomized-SVD fit_transform (U*S) vs transform (X@V^T), not a refit -- verified stage-by-stage: frozen Normalizer stats, same Reducer)",
+      "result": "pass",
+      "command": "t1_workflows.py + stage-isolation heredoc probe",
+      "output_excerpt": "re-transform ~= fit_transform output (atol 1e-3): True ; transform deterministic: True / W6 PASS ; probe: ds0 max|diff| fit_transform vs transform: 6.419186e-05, transform deterministic: True, normalize stage transform == fresh normalize: True",
+      "evidence": []
+    },
+    {
+      "case": "E1 NUMERIC EQUIVALENCE (mandated): analyze(data, normalize='within', reduce='PCA', ndims=3, align='hyper', random_state=0) vs manual staged tools.normalize -> reduce.reduce -> tools.align, and vs public hyp.normalize -> hyp.reduce -> hyp.align",
+      "result": "pass",
+      "command": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg .venv/bin/python t2_equivalence.py",
+      "output_excerpt": "legacy analyze == tools-staged: True / legacy analyze == public hyp.normalize/reduce/align staged: True (allclose atol=1e-10)",
+      "evidence": []
+    },
+    {
+      "case": "E2: legacy path (return_model=False) == build_pipeline path (return_model=True) for identical kwargs",
+      "result": "pass",
+      "command": "t2_equivalence.py",
+      "output_excerpt": "data equal across the two code paths: True",
+      "evidence": []
+    },
+    {
+      "case": "E3: single-stage equivalences (normalize-only, reduce-only, align-only) vs direct stage calls",
+      "result": "pass",
+      "command": "t2_equivalence.py",
+      "output_excerpt": "normalize-only equal: True / reduce-only equal: True / align-only equal: True",
+      "evidence": []
+    },
+    {
+      "case": "E4: stage ORDER verification -- analyze output matches normalize->reduce->align and does NOT match reduce->normalize->align",
+      "result": "pass",
+      "command": "t2_equivalence.py",
+      "output_excerpt": "analyze matches normalize->reduce->align: True / analyze matches reduce->normalize->align (should be False): False",
+      "evidence": []
+    },
+    {
+      "case": "E5: cluster= returns pre-cluster TRANSFORMED DATA -- equals same pipeline without cluster (allclose)",
+      "result": "pass",
+      "command": "t2_equivalence.py",
+      "output_excerpt": "cluster= output equals same-pipeline-without-cluster output: True",
+      "evidence": []
+    },
+    {
+      "case": "E6: random_state repeatability (FastICA twice with random_state=3)",
+      "result": "pass",
+      "command": "t2_equivalence.py",
+      "output_excerpt": "FastICA repeatable with random_state: True",
+      "evidence": []
+    },
+    {
+      "case": "P1: normalize= in {'across','within','row',False,None}; False/None are identity",
+      "result": "pass",
+      "command": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg .venv/bin/python t3_params.py",
+      "output_excerpt": "[OK] all five; normalize=False: identity == True; normalize=None: identity == True",
+      "evidence": []
+    },
+    {
+      "case": "P2: reduce= forms -- 'PCA','IncrementalPCA','TSNE','MDS','UMAP','NMF', dict {'model','kwargs'} (whiten VERIFIED routed: col stds 0.996 vs 1.27 plain), sklearn class, instance, legacy {'model','params'} dict (DeprecationWarning emitted)",
+      "result": "pass",
+      "command": "t3_params.py",
+      "output_excerpt": "whiten=True routed? stds whiten=[0.996 0.996 0.996] vs plain=[1.27 1.057 1.026]; warning: DeprecationWarning {'model': ..., 'params': {...}} is deprecated",
+      "evidence": []
+    },
+    {
+      "case": "P3: ndims=3 with NO reduce= -- silently returns UNREDUCED data on both paths (legacy: (40,8); pipeline path: Pipeline([]))",
+      "result": "fail",
+      "command": "t3_params.py",
+      "output_excerpt": "analyze(data, ndims=3) shapes: [(40, 8), (40, 8), (40, 8)] / return_model=True -> [(40, 8), ...] model: Pipeline([])",
+      "evidence": []
+    },
+    {
+      "case": "P4: align= forms -- 'hyper', 'SRM', docstring dict example {'model': 'HyperAlign', 'kwargs': {'n_iter': 10}}, None identity all OK; align=False CRASHES on both paths",
+      "result": "fail",
+      "command": "t3_params.py",
+      "output_excerpt": "[FAIL] align=False (docstring: no alignment) -> ValueError: unknown model: False / [FAIL] align=False on PIPELINE path (return_model=True) -> ValueError: unknown model: False",
+      "evidence": []
+    },
+    {
+      "case": "P5: manip= cross-module kwarg -- 'Smooth' (verified smoothing: std(diff) 0.229 vs 1.398 raw), chained list ['ZScore','Smooth'], dict kwargs kernel_width=20, and full 5-stage manip+normalize+reduce+align+cluster stack",
+      "result": "pass",
+      "command": "t3_params.py",
+      "output_excerpt": "smoothness: std(diff) manip=0.2293 vs raw=1.3977; full-stack out shapes: [(40, 3), (40, 3), (40, 3)]",
+      "evidence": []
+    },
+    {
+      "case": "P6: cluster='KMeans' without return_model returns DATA not labels; DBSCAN (no predict) labels retrievable via cluster step .transform (all -1 = noise on this random data, mechanism works)",
+      "result": "pass",
+      "command": "t3_params.py",
+      "output_excerpt": "returns data (not labels)? True / DBSCAN labels via cluster step transform: (120,) [-1]",
+      "evidence": []
+    },
+    {
+      "case": "P7: impute= -- default PPCA and impute='Kalman' fill NaNs on legacy AND pipeline paths (outputs differ across imputers as expected); with normalize=False impute is gated off and NaNs persist (matches code comment gating)",
+      "result": "pass",
+      "command": "t3_params.py",
+      "output_excerpt": "PPCA vs Kalman outputs differ (as expected): True / NaNs remaining: False / NaNs remaining with normalize=False: True",
+      "evidence": []
+    },
+    {
+      "case": "P8: pipeline= -- reuse works; mutual-exclusion ValueError names conflicting kwargs (single 'reduce' and multi 'cluster, normalize'); unfitted Pipeline -> NotFittedError('Pipeline must be fit before transform'); ndims= and impute= are IGNORED despite docstring 'still honored'; internal=True honored",
+      "result": "fail",
+      "command": "t3_params.py",
+      "output_excerpt": "shapes with ndims=2: [(40, 3), (40, 3), (40, 3)] (fitted was ndims=3) / impute='Kalman' vs default identical (=> impute IGNORED): True / internal=True returns list: True",
+      "evidence": []
+    },
+    {
+      "case": "P9: internal= -- single array: internal=False -> ndarray, internal=True -> 1-element list, on both legacy and pipeline paths",
+      "result": "pass",
+      "command": "t3_params.py",
+      "output_excerpt": "single array, internal=False -> ndarray ; internal=True -> list len 1 / pipeline path -> data type: list",
+      "evidence": []
+    },
+    {
+      "case": "P10: return_model=True with no stages -> (identical data, Pipeline([])) and the empty Pipeline is reusable via pipeline=",
+      "result": "pass",
+      "command": "t3_params.py",
+      "output_excerpt": "-> list model: Pipeline([]) steps: [] / data identity: True / empty-pipeline reuse works: True",
+      "evidence": []
+    },
+    {
+      "case": "EC1: analyze(data) with no stages returns the SAME objects (identity); single array in -> bare ndarray out (docstring Returns says 'list of numpy arrays')",
+      "result": "fail",
+      "command": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg .venv/bin/python t4_edges.py",
+      "output_excerpt": "list in -> list ; same objects: True / single array in -> ndarray ; same object: True",
+      "evidence": []
+    },
+    {
+      "case": "EC2: analyze([]) -> [] identity; with normalize -> good ValueError 'input has no observations (0 rows); there is nothing to plot or analyze.'",
+      "result": "pass",
+      "command": "t4_edges.py",
+      "output_excerpt": "[OK] analyze([]) -> list / [ERR] ValueError: input has no observations (0 rows)",
+      "evidence": []
+    },
+    {
+      "case": "EC3: 1-D vector normalized OK ((1,n) row); single-row + reduce warns 'Cannot reduce the dimensionality of a single row' and returns zeros",
+      "result": "pass",
+      "command": "t4_edges.py",
+      "output_excerpt": "[OK] analyze(1-row array, reduce='PCA', ndims=3) -> ndarray out: [[0. 0. 0.]]",
+      "evidence": []
+    },
+    {
+      "case": "EC4: mismatched column counts -- normalize='across' leaks raw numpy vstack error; align='hyper' handles it (pads/aligns)",
+      "result": "fail",
+      "command": "t4_edges.py",
+      "output_excerpt": "ValueError: all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 6 and the array at index 1 has size 4",
+      "evidence": []
+    },
+    {
+      "case": "EC5: bogus model names -- reduce/align/cluster/manip give good ValueErrors listing supported names (align=True gives dedicated removal message; reduce message links live readthedocs page, HTTP 200); normalize typo gives AssertionError naming nonexistent 'scale_type'",
+      "result": "fail",
+      "command": "t4_edges.py ; curl -sIL http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html -> 200",
+      "output_excerpt": "AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer. / ValueError: unknown align model 'hyperr'; supported names: ... / ValueError: unknown cluster model 'KMeanz'; supported names: ...",
+      "evidence": []
+    },
+    {
+      "case": "EC6: bogus kwargs in dict specs -- reduce and cluster raise TypeError naming the bad kwarg; align={'model':'HyperAlign','kwargs':{'bogus':5}} is SILENTLY ACCEPTED on both paths",
+      "result": "fail",
+      "command": "t4_edges.py + heredoc probe D",
+      "output_excerpt": "[ERR] reduce -> TypeError: PCA.__init__() got an unexpected keyword argument 'bogus_param' / [OK] align={'model':'HyperAlign','kwargs':{'bogus':5}} -> list / HyperAlign.__init__ sig: (self, n_iter=10, **kwargs); PIPELINE path also silent",
+      "evidence": []
+    },
+    {
+      "case": "EC7: wrong types -- ndims '3'/2.5/0/-1 all give clear ValueErrors; unknown top-level kwarg -> TypeError; pipeline='not a pipeline' -> cryptic AttributeError; data=None -> format_data TypeError (its supported-types list omits 'list of arrays/DataFrames'); cluster=False -> cryptic AttributeError",
+      "result": "fail",
+      "command": "t4_edges.py",
+      "output_excerpt": "ValueError: ndims must be a positive integer or None; got '3' / AttributeError: 'str' object has no attribute 'transform' / AttributeError: 'bool' object has no attribute 'fit'",
+      "evidence": []
+    },
+    {
+      "case": "EC8: ndims==n_features and ndims>n_features pass data through unreduced; ndims>n_rows warns and reduces to row count",
+      "result": "pass",
+      "command": "t4_edges.py",
+      "output_excerpt": "shapes: [(30, 6), (30, 6)] (pass-through expected) / UserWarning: The number of rows in your data is less than ndims.",
+      "evidence": []
+    },
+    {
+      "case": "EC9: reduce='TSNE' (and 'MDS') + cluster= crashes in post-cluster data-recovery loop, with and without return_model; pipeline= reuse of a TSNE step on new data also crashes",
+      "result": "fail",
+      "command": "t4_edges.py + heredoc probes B/C",
+      "output_excerpt": "AttributeError: 'TSNE' object has no attribute 'transform'. Did you mean: 'fit_transform'? (raised from analyze.py:183 -> core/pipeline.py:127 -> reduce/reduce.py:150) / MDS: AttributeError: 'MDS' object has no attribute 'transform'",
+      "evidence": []
+    },
+    {
+      "case": "EC10/EC11: int dtype normalized OK; constant columns zeroed under 'across'; list-of-one dataset unwraps to ndarray",
+      "result": "pass",
+      "command": "t4_edges.py",
+      "output_excerpt": "constant cols zeroed: True / list-of-one -> ndarray (30, 6)",
+      "evidence": []
+    },
+    {
+      "case": "EC12-EC16: text input embeds and reduces OK; align on single dataset is a no-op (verified unchanged); NaN->reduce imputes via PPCA at format; generator -> format_data TypeError; tuple input works like list",
+      "result": "pass",
+      "command": "t4_edges.py + heredoc probe (single-dataset align allclose True)",
+      "output_excerpt": "[OK] analyze(text, reduce='PCA', ndims=2) -> ndarray / single-dataset align returns unchanged: True / NaNs in output: False / [OK] tuple -> list",
+      "evidence": []
+    },
+    {
+      "case": "TUTORIAL (docs/tutorials/analyze.ipynb) cells 4,6,11,16,21,26 run VERBATIM (only plt.show->savefig swapped per audit rules); all 5 analyze/load calls succeed and shapes match the notebook's SAVED outputs ((100,100)); whiten verified (col stds 0.997); heatmap PNGs saved and visually inspected (correct 3-col heatmaps, colorbars, no clipping)",
+      "result": "fail",
+      "command": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg .venv/bin/python t5_tutorial.py",
+      "output_excerpt": "(100, 100) / FINDING: tutorial claims 300 TRs x 100 components, got (100, 100) / cell 21 warning: DeprecationWarning {'model': ..., 'params': {...}} is deprecated / cell 26 -> [(100, 3), (100, 3)]",
+      "evidence": ["tutorial_cell08_raw.png", "tutorial_cell13_norm_within.png", "tutorial_cell18_norm_reduced.png", "tutorial_cell23_whiten.png", "tutorial_cell28_srm.png"]
+    },
+    {
+      "case": "kwarg routing depth: align dict n_iter=3 verifiably reaches fitted HyperAlign (introspected via return_model); cluster n_clusters=4 produced exactly 4 label values (W4); manip kernel_width routed (P5); whiten routed (P2)",
+      "result": "pass",
+      "command": "heredoc probe: m2.named_steps['align']._fitted",
+      "output_excerpt": "fitted align stage object: HyperAlign / n_iter attr: 3",
+      "evidence": []
+    },
+    {
+      "case": "docstring claim: 'hypertools.cluster.cluster.cluster ... returns per-dataset labels alongside the transformed data in one call' -- actual: flat row-concatenated label list (100 labels for 2x50 datasets), no transformed data, even with return_model=True",
+      "result": "fail",
+      "command": "heredoc probe: ccluster([2x(50,4)], cluster={'model':'KMeans','kwargs':{'n_clusters':2}}, random_state=0, return_model=True)",
+      "output_excerpt": "res type: <class 'list'> len: 100 (flat labels; not split per dataset; no transformed data returned)",
+      "evidence": []
+    },
+    {
+      "case": "mixture reduce: GaussianMixture ndims=2 returns (n,2) memberships, rows sum to 1; cluster-only analyze returns raw input unchanged with labels recoverable",
+      "result": "pass",
+      "command": "heredoc probes E/F",
+      "output_excerpt": "GaussianMixture: [(30, 2), (30, 2)] rows sum to 1: True / returned == raw input: True / labels: (60,) [0 1]",
+      "evidence": []
+    },
+    {
+      "case": "environment sanity: .venv site-packages contains a STALE non-editable hypertools 1.0.0.dev0 snapshot that shadows the repo when cwd is outside the repo root (its analyze() lacks random_state and predates the cluster=-returns-data fix); diff verified",
+      "result": "fail",
+      "command": "diff .venv/lib/python3.12/site-packages/hypertools/tools/analyze.py hypertools/tools/analyze.py ; python -c 'import hypertools; print(hypertools.__file__)' from a non-repo cwd",
+      "output_excerpt": "TypeError: analyze() got an unexpected keyword argument 'random_state' / file: /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/hypertools/__init__.py / diff shows missing random_state param and old cluster-returns-labels code",
+      "evidence": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "F15-analyze-001",
+      "severity": "major",
+      "title": "align=False crashes with 'unknown model: False' although the docstring documents False as 'no alignment'",
+      "description": "analyze()'s align docstring says: 'If False or None, no alignment is applied (default: None).' Passing align=False raises ValueError on BOTH code paths (legacy and return_model=True/build_pipeline). tools/align.py only short-circuits align is None (and rejects align is True with a dedicated message); False falls through and is treated as a model name by the dispatcher (hypertools/align/align.py line ~324). Users toggling alignment programmatically (align=do_align and ...) hit this. Inconsistent with normalize=False, which is handled as skip on both paths.",
+      "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; d=[np.random.rand(30,6) for _ in range(2)]; hyp.analyze(d, align=False)\"",
+      "expected": "Data returned with no alignment applied (identity for that stage), as documented.",
+      "actual": "Traceback ... File \"/Users/jmanning/hypertools/hypertools/tools/analyze.py\", line 192, in analyze ... File \"/Users/jmanning/hypertools/hypertools/tools/align.py\", line 108, in align\n    out = _align_dispatch(data, model=model, format_data=False, **params)\n  File \"/Users/jmanning/hypertools/hypertools/align/align.py\", line 324, in align\n ...\nValueError: unknown model: False\n(also with return_model=True: ValueError: unknown model: False)",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/analyze.py (docstring)", "hypertools/tools/align.py", "hypertools/align/align.py"]
+    },
+    {
+      "id": "F15-analyze-002",
+      "severity": "major",
+      "title": "cluster= combined with a no-transform reducer (TSNE, MDS) crashes: AttributeError in the post-cluster data-recovery loop",
+      "description": "analyze() documents TSNE/MDS/SpectralEmbedding among supported reduce models and cluster= as composable with them. When cluster= is given, analyze re-applies the fitted non-cluster steps via _step_transform to recover the pre-cluster transformed data (analyze.py lines 169-183). For reducers with no out-of-sample .transform (sklearn TSNE, MDS), Reducer.transform calls model.transform and crashes with a raw AttributeError -- with OR without return_model. The pre-cluster data had already been computed inside pipe.fit_transform and was discarded. Same raw AttributeError surfaces when reusing a fitted pipeline containing such a reducer via pipeline= on new data (inherent TSNE limitation, but the error should be a friendly 'TSNE has no out-of-sample transform' message, not a leaked AttributeError).",
+      "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; d=[np.random.rand(30,6) for _ in range(2)]; hyp.analyze(d, reduce='TSNE', ndims=2, cluster='KMeans', random_state=0)\"",
+      "expected": "Returns the TSNE-embedded (pre-cluster) data as documented; at minimum a clear error naming the limitation and a workaround.",
+      "actual": "Traceback (most recent call last):\n  File \"/Users/jmanning/hypertools/hypertools/tools/analyze.py\", line 183, in analyze\n    result = _step_transform(step, result)\n  File \"/Users/jmanning/hypertools/hypertools/core/pipeline.py\", line 127, in _step_transform\n    return model.transform(data)\n  ...\n  File \"/Users/jmanning/hypertools/hypertools/reduce/reduce.py\", line 150, in reduce\n    x_reduced, fitted = reduce_list(x, None, reuse=reduce)\nAttributeError: 'TSNE' object has no attribute 'transform'. Did you mean: 'fit_transform'?\n(reduce='MDS' + cluster: AttributeError: 'MDS' object has no attribute 'transform')",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/analyze.py", "hypertools/reduce/common.py", "hypertools/core/pipeline.py"]
+    },
+    {
+      "id": "F15-analyze-003",
+      "severity": "major",
+      "title": "Unknown kwargs in the align dict spec are silently swallowed (HyperAlign.__init__ takes **kwargs)",
+      "description": "The docstring's own dict form align={'model': 'HyperAlign', 'kwargs': {...}} performs no kwarg validation: HyperAlign.__init__(self, n_iter=10, **kwargs) absorbs anything, so a typo (e.g. 'n_itr' for 'n_iter', or any bogus key) is accepted without error or warning on BOTH analyze code paths -- the user believes the parameter took effect. reduce= and cluster= dict specs correctly raise TypeError naming the unknown kwarg (e.g. \"PCA.__init__() got an unexpected keyword argument 'bogus_param'\"). Per audit rule, silent acceptance of a wrong kwarg = major.",
+      "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; d=[np.random.rand(30,6) for _ in range(2)]; out=hyp.analyze(d, align={'model':'HyperAlign','kwargs':{'bogus':5}}); print('silently accepted:', type(out)); out2=hyp.analyze(d, align={'model':'HyperAlign','kwargs':{'bogus':5}}, return_model=True); print('pipeline path too:', type(out2))\"",
+      "expected": "TypeError/ValueError naming the unknown HyperAlign kwarg, matching reduce=/cluster= behavior.",
+      "actual": "silently accepted: <class 'list'>\npipeline path too: <class 'tuple'>\n(HyperAlign.__init__ sig: (self, n_iter=10, **kwargs); HyperAlign(bogus=5) constructs fine and stores .bogus)",
+      "evidence": [],
+      "docs_impact": ["hypertools/align/hyperalign.py", "hypertools/tools/analyze.py (docstring example uses this dict form)"]
+    },
+    {
+      "id": "F15-analyze-004",
+      "severity": "doc",
+      "title": "Docstring claims ndims=/impute= are 'still honored' with pipeline=; both are silently ignored (only internal= is honored)",
+      "description": "analyze() pipeline= docstring: \"`ndims=`/`internal=`/`impute=` are still honored (`internal=True` still guarantees a list is returned...)\". The pipeline= branch (analyze.py lines 131-144) only implements internal=; ndims and impute never reach pipeline.transform. Verified: a pipeline fitted with ndims=3 still returns 3-dim output when called with ndims=2; NaN data transformed with impute='Kalman' is byte-identical to the default-PPCA call (impute ignored; the fitted normalize step's formatter always uses PPCA).",
+      "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, hypertools as hyp\nrng=np.random.default_rng(11); d=[rng.normal(size=(40,8)) for _ in range(3)]\nnd=[x.copy() for x in d]\nfor x in nd: x.ravel()[rng.choice(x.size,10,replace=False)]=np.nan\nres,f=hyp.analyze(d,normalize='across',reduce='PCA',ndims=3,return_model=True,random_state=0)\nprint('ndims=2 ->',[np.asarray(x).shape for x in hyp.analyze(d,pipeline=f,ndims=2)])\na=hyp.analyze(nd,pipeline=f,impute='Kalman'); b=hyp.analyze(nd,pipeline=f)\nprint('impute ignored:', all(np.allclose(np.asarray(x),np.asarray(y)) for x,y in zip(a,b)))\"",
+      "expected": "Either honor ndims=/impute= on the pipeline= branch or document that only internal= applies.",
+      "actual": "shapes with ndims=2: [(40, 3), (40, 3), (40, 3)] (fitted was ndims=3)\nimpute='Kalman' vs default identical (=> impute IGNORED): True",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/analyze.py (docstring, pipeline= section)"]
+    },
+    {
+      "id": "F15-analyze-005",
+      "severity": "doc",
+      "title": "Docstring documents wrong defaults: reduce 'default: IncrementalPCA' and normalize 'across ... (default)' -- actual default for both is None (stage skipped)",
+      "description": "analyze()'s reduce docstring says \"(default: 'IncrementalPCA')\" and the normalize docstring says \"If set to 'across', the columns ... will be z-scored across lists (default)\". The signature defaults are reduce=None and normalize=None, which SKIP those stages entirely (verified: analyze(data) returns the input objects unchanged, identity). The wording was inherited from reduce()'s/normalize()'s own docstrings where those ARE the callable defaults; in analyze they are not.",
+      "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; d=[np.random.rand(20,5) for _ in range(2)]; out=hyp.analyze(d); print('identity:', all(o is x for o,x in zip(out,d)))\"",
+      "expected": "Docstring states default None = stage skipped for both reduce= and normalize=.",
+      "actual": "identity: True (no z-scoring, no reduction, no IncrementalPCA run)",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/analyze.py (docstring)", "docs/api.rst (analyze entry if it repeats the claim)"]
+    },
+    {
+      "id": "F15-analyze-006",
+      "severity": "minor",
+      "title": "ndims= without reduce= is silently ignored (no warning) on both code paths",
+      "description": "analyze(data, ndims=3) returns the data UNREDUCED with no warning (legacy path: reduce=None short-circuits inside reduce(); pipeline path: build_pipeline omits the reduce stage entirely, returning Pipeline([])). Combined with F15-analyze-005's wrong documented default ('IncrementalPCA'), a scientist writing hyp.analyze(data, ndims=3) reasonably expects 3-D output and silently gets full-dimensional data. A warning ('ndims= given but reduce=None; no reduction performed') or defaulting reduce to IncrementalPCA when ndims is set would prevent silent wrong-shape results downstream.",
+      "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; d=[np.random.rand(40,8) for _ in range(3)]; print([x.shape for x in hyp.analyze(d, ndims=3)]); r,m=hyp.analyze(d, ndims=3, return_model=True); print(m)\"",
+      "expected": "Either reduction to 3 dims (per documented IncrementalPCA default) or an explicit warning/error that ndims requires reduce=.",
+      "actual": "[(40, 8), (40, 8), (40, 8)]\nPipeline([])",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/analyze.py"]
+    },
+    {
+      "id": "F15-analyze-007",
+      "severity": "doc",
+      "title": "Returns section says 'list of numpy arrays' unconditionally; single-array/DataFrame input returns a bare ndarray",
+      "description": "analyze() docstring Returns: 'analyzed_data : list of numpy arrays'. Actual: single dataset in -> single ndarray out (unless internal=True); list in -> list out. normalize()'s docstring documents this single-in/single-out convention explicitly; analyze()'s does not.",
+      "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; print(type(hyp.analyze(np.random.rand(40,8), normalize='within')))\"",
+      "expected": "Docstring documents array-in -> array-out / list-in -> list-out.",
+      "actual": "<class 'numpy.ndarray'>",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/analyze.py (docstring)"]
+    },
+    {
+      "id": "F15-analyze-008",
+      "severity": "doc",
+      "title": "random_state parameter is missing from the analyze() docstring",
+      "description": "analyze() accepts random_state=None (threaded to the reduce stage on the legacy path and to build_pipeline's reduce/cluster stages on the pipeline path; verified working, E6/W4) but the Parameters section does not document it. Every other kwarg in the signature is documented.",
+      "repro": "PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp; print('random_state' in hyp.analyze.__doc__)\"",
+      "expected": "random_state documented (which stages it seeds, and that already-constructed instances are left alone).",
+      "actual": "False",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/analyze.py (docstring)"]
+    },
+    {
+      "id": "F15-analyze-009",
+      "severity": "doc",
+      "title": "cluster= docstring misdirects: hypertools.cluster.cluster.cluster does NOT return per-dataset labels alongside the transformed data",
+      "description": "analyze() cluster= docstring: 'to get labels split PER dataset, call hypertools.cluster.cluster.cluster directly (it returns per-dataset labels alongside the transformed data in one call)'. Actual: cluster() returns a FLAT row-concatenated label list (its own docstring: 'returns a list of cluster labels'); with return_model=True it returns (flat labels, Clusterer) -- no per-dataset split, no transformed data. A user following analyze's pointer gets neither promised thing.",
+      "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np\nfrom hypertools.cluster.cluster import cluster as ccluster\nd=[np.random.rand(50,4) for _ in range(2)]\nout=ccluster(d, cluster={'model':'KMeans','kwargs':{'n_clusters':2}}, random_state=0)\nprint(type(out), len(out))\"",
+      "expected": "Per-dataset labels + transformed data, as analyze's docstring promises (or fix the docstring).",
+      "actual": "<class 'list'> 100   (flat labels over 2x50 concatenated rows; return_model=True gives (same flat list, Clusterer))",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/analyze.py (docstring)", "hypertools/cluster/cluster.py (if behavior should change instead)"]
+    },
+    {
+      "id": "F15-analyze-010",
+      "severity": "minor",
+      "title": "Invalid normalize= value raises a bare AssertionError naming a nonexistent parameter ('scale_type')",
+      "description": "analyze(data, normalize='acros') (typo) surfaces normalize()'s validation: 'AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.' Problems: (a) the public kwarg is normalize=, not scale_type (a pre-1.0 internal name) -- users cannot map the message to their code; (b) it is a bare assert, so running under python -O strips the check entirely; (c) every sibling stage (align/cluster/manip) raises a proper ValueError listing valid options. Same message on both analyze code paths.",
+      "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.analyze([np.random.rand(20,5)], normalize='acros')\"",
+      "expected": "ValueError: normalize must be 'across', 'within', 'row', False, None, or a fitted Normalizer; got 'acros'",
+      "actual": "AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/normalize.py (lines 240-242)"]
+    },
+    {
+      "id": "F15-analyze-011",
+      "severity": "minor",
+      "title": "pipeline= accepts any object; non-Pipeline input fails with a cryptic AttributeError",
+      "description": "analyze(data, pipeline='not a pipeline') raises \"AttributeError: 'str' object has no attribute 'transform'\" -- no type/fittedness validation before calling .transform. An isinstance check with a message naming hypertools.Pipeline (and pointing to return_model=True as the way to obtain one) would match the quality of the mutual-exclusion ValueError (which is excellent).",
+      "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.analyze([np.random.rand(20,5)], pipeline='not a pipeline')\"",
+      "expected": "TypeError: pipeline= expects a fitted hypertools.Pipeline (e.g. from analyze(..., return_model=True)); got str",
+      "actual": "AttributeError: 'str' object has no attribute 'transform'",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/analyze.py"]
+    },
+    {
+      "id": "F15-analyze-012",
+      "severity": "style",
+      "title": "Inconsistent False semantics across stage kwargs: normalize=False skips, align=False crashes, cluster=False and reduce=False give unrelated cryptic errors",
+      "description": "normalize=False -> documented skip (works, both paths). align=False -> documented skip but crashes (F15-analyze-001). cluster=False -> \"AttributeError: 'bool' object has no attribute 'fit'\" (build_pipeline treats False as a model spec). reduce=False -> generic 'reduce must be one of the supported options...' ValueError. Users who learn 'False disables a stage' from normalize/align docs will try it on the other stages. Either accept False as skip uniformly or reject it uniformly with a message naming None as the skip value.",
+      "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; d=[np.random.rand(20,5) for _ in range(2)]\nfor kw in ({'normalize':False},{'align':False},{'cluster':False},{'reduce':False,'ndims':2}):\n    try: hyp.analyze(d, **kw); print(kw, '-> ok')\n    except Exception as e: print(kw, '->', type(e).__name__, str(e)[:60])\"",
+      "expected": "Uniform False handling across the five stage kwargs.",
+      "actual": "{'normalize': False} -> ok\n{'align': False} -> ValueError unknown model: False\n{'cluster': False} -> AttributeError 'bool' object has no attribute 'fit'\n{'reduce': False, 'ndims': 2} -> ValueError reduce must be one of the supported options...",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/analyze.py", "hypertools/core/pipeline.py (build_pipeline False gating exists only for normalize)"]
+    },
+    {
+      "id": "F15-analyze-013",
+      "severity": "minor",
+      "title": "normalize='across' with mismatched column counts leaks a raw numpy vstack error",
+      "description": "analyze([30x6, 30x4], normalize='across') raises numpy's concatenation ValueError ('all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 6 and the array at index 1 has size 4') from Normalizer.fit's np.vstack. The message never says that 'across' z-scoring requires every dataset to share the same columns, nor names the normalize stage. (Root in tools/normalize.py; surfaced through analyze, the classic entry point for this combination.) format_data's unsupported-type message has a related gap: it lists 'Numpy Array, Pandas DataFrame, String, List of strings, List of numbers' -- omitting 'list of arrays/DataFrames', the most common hypertools input.",
+      "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.analyze([np.random.rand(30,6), np.random.rand(30,4)], normalize='across')\"",
+      "expected": "ValueError: normalize='across' requires all datasets to have the same number of columns; got 6 and 4 (datasets 0, 1)",
+      "actual": "ValueError: all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 6 and the array at index 1 has size 4",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/normalize.py", "hypertools/tools/format_data.py (supported-types message)"]
+    },
+    {
+      "id": "F15-analyze-014",
+      "severity": "minor",
+      "title": "infra: .venv site-packages holds a STALE non-editable hypertools 1.0.0.dev0 snapshot that shadows the repo outside the repo root",
+      "description": "infra. /Users/jmanning/hypertools/.venv has hypertools 1.0.0.dev0 installed as a regular (non-editable) copy. Its tools/analyze.py predates the current branch: analyze() lacks random_state entirely and still RETURNS RAW CLUSTER LABELS for cluster= (the pre-QC contract the current docstring explicitly disavows). Any script/notebook/test run with this venv from a cwd outside the repo imports the stale code -- e.g. analyze(..., random_state=0) raises TypeError, and cluster= silently returns labels instead of data. Verified by diff of site-packages vs repo and by reproducing the TypeError from a non-repo cwd. Release hazard for every audit/CI/docs job using this venv; fix is a maintainer action (pip install -e, out of audit scope -- no installs performed).",
+      "repro": "cd /tmp && /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; print(hyp.__file__); hyp.analyze([np.random.rand(20,5) for _ in range(2)], reduce='PCA', ndims=2, random_state=0)\"",
+      "expected": "Repo source imported everywhere (editable install), random_state accepted.",
+      "actual": "/Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/hypertools/__init__.py\nTypeError: analyze() got an unexpected keyword argument 'random_state'\n(diff also shows the old cluster=-returns-labels code and docstring)",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "F15-analyze-015",
+      "severity": "doc",
+      "title": "analyze tutorial: stale '300 TRs' comment contradicts the data, and cell 21 triggers a DeprecationWarning with the legacy 'params' dict form",
+      "description": "docs/tutorials/analyze.ipynb cell 6 comments '# 300 TRs and 100 components' but hyp.load('weights_avg') returns 2 arrays of shape (100, 100) -- and the notebook's own SAVED output already prints (100, 100), so only the comment is stale (the related weights/weights_sample datasets ARE 300x100, making the wrong comment extra confusing). Cell 21 uses reduce={'model': 'PCA', 'params': {...}}, which now emits 'DeprecationWarning: {'model': ..., 'params': {...}} is deprecated; use {'model': ..., 'args': [...], 'kwargs': {...}} instead' -- the official tutorial should demonstrate the canonical 'kwargs' form (the analyze docstring itself uses 'kwargs').",
+      "repro": "cd /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F15-analyze && PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python t5_tutorial.py",
+      "expected": "Comment matches actual shape (100 rows), or the dataset provides 300 TRs; tutorial uses the non-deprecated 'kwargs' dict form.",
+      "actual": "(100, 100)\n(100, 100)\nFINDING: tutorial claims 300 TRs x 100 components, got (100, 100)\ncell 21 warning: DeprecationWarning {'model': ..., 'params': {...}} is deprecated; use {'model': ..., 'args': [...], 'kwargs': {...}} instead",
+      "evidence": ["tutorial_cell08_raw.png", "tutorial_cell13_norm_within.png", "tutorial_cell18_norm_reduced.png", "tutorial_cell23_whiten.png", "tutorial_cell28_srm.png"],
+      "docs_impact": ["docs/tutorials/analyze.ipynb"]
+    },
+    {
+      "id": "F15-analyze-016",
+      "severity": "style",
+      "title": "Dead constant _STAGE_KWARG_NAMES in tools/analyze.py",
+      "description": "_STAGE_KWARG_NAMES = ('manip', 'normalize', 'reduce', 'align', 'cluster') is defined at hypertools/tools/analyze.py line 11 and referenced nowhere in the package or tests (grep confirms the definition is the only hit). The mutual-exclusion check builds its own stage_kwargs dict instead. Dead code in a 200-line release-critical module.",
+      "repro": "grep -rn _STAGE_KWARG_NAMES /Users/jmanning/hypertools/hypertools /Users/jmanning/hypertools/tests",
+      "expected": "Constant used (e.g. by the mutual-exclusion check) or removed.",
+      "actual": "/Users/jmanning/hypertools/hypertools/tools/analyze.py:11:_STAGE_KWARG_NAMES = ('manip', 'normalize', 'reduce', 'align', 'cluster')   (sole occurrence)",
+      "evidence": [],
+      "docs_impact": []
+    }
+  ]
+}

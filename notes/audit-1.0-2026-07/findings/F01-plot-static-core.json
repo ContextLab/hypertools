@@ -1,0 +1,1162 @@
+{
+ "unit": "F01-plot-static-core",
+ "target": "hyp.plot() static fundamentals -- hypertools/plot/plot.py + hypertools/plot/matplotlib_backend.py (branch audit/release-1.0-2026-07; run against the repo tree via PYTHONPATH; venv site-packages copy is stale, see finding 015)",
+ "brainstormed_edge_cases": [
+  "empty array (0 rows) [tested]",
+  "empty list [tested]",
+  "single point (1x3) [tested]",
+  "all-identical points / zero variance -> degenerate scale [tested]",
+  "NaN values (PPCA impute path) [tested]",
+  "Inf values [tested]",
+  "integer dtype input [tested]",
+  "DataFrame input (plain columns) [tested]",
+  "list mixing DataFrame + ndarray [tested]",
+  "list datasets with different column counts (3 vs 5) [tested]",
+  "n_samples < n_components (2x3 with default IncrementalPCA) [tested]",
+  "plain Python nested list matrix [[1,2,3],[4,5,6],...] [tested]",
+  "tuple of arrays instead of list [tested]",
+  "6+ column data auto-reduced to 3 [tested]",
+  "ndims=1 / ndims=2 / ndims=10 [tested]",
+  "hue length mismatch [tested]",
+  "fmt=None with hue regrouping on list input [tested]",
+  "fmt list shorter/longer than dataset count [tested]",
+  "empty fmt string '' [tested]",
+  "invalid fmt string 'qq' [tested]",
+  "bytes fmt b'-' [tested]",
+  "n=901 interpolation grid boundary (frame_rate*duration == n-1) [tested]",
+  "legacy hypertools-0.x group= kwarg [tested]",
+  "unknown arbitrary kwarg (frobnicate=3) [tested]",
+  "negative linewidth [tested: matplotlib accepts silently, upstream behavior]",
+  "invalid palette name [tested]",
+  "save_path with unsupported extension [tested]",
+  "legend list length mismatch [tested]",
+  "labels= shorter than points [tested]",
+  "user-supplied ax (right and wrong projection) [tested]",
+  "12 datasets > default 10-color cycle [tested]",
+  "two single-point datasets [tested]",
+  "explore=True on 2D data [tested]",
+  "string/text input with corpus fit (text pipeline) [untested: covered by text unit; slow model fit]",
+  "MultiIndex DataFrame expansion [untested: separate audit unit]",
+  "complex dtype array [untested]",
+  "datetime64 column DataFrame [untested]",
+  "extreme magnitudes (1e300) overflow in center/scale [untested]",
+  "masked numpy arrays [untested]",
+  "rcParams leak across successive plot() calls (GH #259 regression) [untested]"
+ ],
+ "tested": [
+  {
+   "case": "3col_gives_3d_axes [core shapes/fidelity/determinism/colors]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "ax.name=3d, type=Figure",
+   "evidence": [
+    "evidence/F01-plot-static-core/01_single_3d_line.png"
+   ]
+  },
+  {
+   "case": "2col_gives_2d_axes [core shapes/fidelity/determinism/colors]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "ax.name=rectilinear",
+   "evidence": [
+    "evidence/F01-plot-static-core/02_single_2d_line.png"
+   ]
+  },
+  {
+   "case": "1col_plots [core shapes/fidelity/determinism/colors]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "lines=1, ax.name=rectilinear",
+   "evidence": [
+    "evidence/F01-plot-static-core/03_single_1d_line.png"
+   ]
+  },
+  {
+   "case": "list_of_3_gives_3_lines [core shapes/fidelity/determinism/colors]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "n data lines=3",
+   "evidence": [
+    "evidence/F01-plot-static-core/04_list3_default.png"
+   ]
+  },
+  {
+   "case": "fidelity_point_count [core shapes/fidelity/determinism/colors]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "plotted (25, 3) vs input (25, 3)",
+   "evidence": []
+  },
+  {
+   "case": "fidelity_exact_raw [core shapes/fidelity/determinism/colors]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "plotted==input exactly: False",
+   "evidence": []
+  },
+  {
+   "case": "fidelity_affine [core shapes/fidelity/determinism/colors]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "matches documented(?) center+scale transform: True; inverse recovers input, maxerr=3.05e-16",
+   "evidence": [
+    "evidence/F01-plot-static-core/05_fidelity_scatter.png"
+   ]
+  },
+  {
+   "case": "line_is_interpolated [core shapes/fidelity/determinism/colors]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "line has 900 pts for 25 input pts (interp_val=37.5)",
+   "evidence": [
+    "evidence/F01-plot-static-core/05b_fidelity_line.png"
+   ]
+  },
+  {
+   "case": "line_passes_through_samples [core shapes/fidelity/determinism/colors]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "max err at knots=2.58e-02 (last input point dropped by interp grid: arange(0,n-1,step))",
+   "evidence": []
+  },
+  {
+   "case": "line_reaches_last_sample [core shapes/fidelity/determinism/colors]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "final plotted vertex vs last data point: err=3.019e-02",
+   "evidence": []
+  },
+  {
+   "case": "determinism_identical_renders [core shapes/fidelity/determinism/colors]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "md5 d44a210cd942f5d5d6af0ab30801274b vs d44a210cd942f5d5d6af0ab30801274b",
+   "evidence": []
+  },
+  {
+   "case": "default_colors_differ [core shapes/fidelity/determinism/colors]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "colors=['#db5f57', '#57db5f', '#5f57db']",
+   "evidence": []
+  },
+  {
+   "case": "marker_colors_differ [core shapes/fidelity/determinism/colors]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "colors=['#db5f57', '#57db5f', '#5f57db']",
+   "evidence": [
+    "evidence/F01-plot-static-core/06_list3_markers.png"
+   ]
+  },
+  {
+   "case": "returns_figure [core shapes/fidelity/determinism/colors]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "Figure",
+   "evidence": []
+  },
+  {
+   "case": "show_false_closes_registry [core shapes/fidelity/determinism/colors]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "open figs=[]",
+   "evidence": []
+  },
+  {
+   "case": "show_true_agg_no_crash [core shapes/fidelity/determinism/colors]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t01_core.py",
+   "output_excerpt": "warnings=[]",
+   "evidence": []
+  },
+  {
+   "case": "fmt_dot [fmt strings]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "[{'color': '#db5f57', 'ls': 'None', 'marker': '.', 'n': 15, 'label': '_child0'}]",
+   "evidence": []
+  },
+  {
+   "case": "fmt_dash [fmt strings]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "[{'color': '#db5f57', 'ls': '-', 'marker': 'None', 'n': 901, 'label': '_child0'}]",
+   "evidence": []
+  },
+  {
+   "case": "fmt_o [fmt strings]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "[{'color': '#db5f57', 'ls': 'None', 'marker': 'o', 'n': 15, 'label': '_child0'}]",
+   "evidence": []
+  },
+  {
+   "case": "fmt_o_colon_split [fmt strings]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "[{'color': '#db5f57', 'ls': ':', 'marker': 'None', 'n': 901, 'label': '_child0'}, {'color': '#db5f57', 'ls': 'None', 'marker': 'o', 'n': 15, 'label': '_nolegend_'}]",
+   "evidence": [
+    "evidence/F01-plot-static-core/10_fmt_o_colon.png"
+   ]
+  },
+  {
+   "case": "fmt_o_colon_line_marker_same_color [fmt strings]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "line=#db5f57 markers=#db5f57",
+   "evidence": []
+  },
+  {
+   "case": "fmt_r_dot_red [fmt strings]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "[{'color': '#ff0000', 'ls': 'None', 'marker': '.', 'n': 15, 'label': '_child0'}]",
+   "evidence": []
+  },
+  {
+   "case": "fmt_b_dash_blue [fmt strings]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "[{'color': '#0000ff', 'ls': '-', 'marker': 'None', 'n': 901, 'label': '_child0'}]",
+   "evidence": []
+  },
+  {
+   "case": "fmt_ro_dash_red_preserved [fmt strings]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "artists=[{'color': '#db5f57', 'ls': '-', 'marker': 'None', 'n': 901, 'label': '_child0'}, {'color': '#db5f57', 'ls': 'None', 'marker': 'o', 'n': 15, 'label': '_nolegend_'}]",
+   "evidence": [
+    "evidence/F01-plot-static-core/11_fmt_ro_dash.png"
+   ]
+  },
+  {
+   "case": "combo_two_datasets_artists [fmt strings]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "4 artists: [{'color': '#db5f57', 'ls': '-', 'marker': 'None', 'n': 901, 'label': '_child0'}, {'color': '#57d3db', 'ls': 'None', 'marker': 'o', 'n': 15, 'label': '_nolegend_'}, {'color': '#db5f57', 'ls': '-', 'marker': 'None', 'n': 901, 'label': '_child2'}, {'color': '#57d3db', 'ls': 'None', 'marker': 'o', 'n': 15, 'label': '_nolegend_'}]",
+   "evidence": []
+  },
+  {
+   "case": "combo_two_datasets_color_pairing [fmt strings]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "ds0 line/mark: #db5f57/#57d3db; ds1 line/mark: #db5f57/#57d3db",
+   "evidence": [
+    "evidence/F01-plot-static-core/12_combo_two_datasets.png"
+   ]
+  },
+  {
+   "case": "fmt_list_per_dataset [fmt strings]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "[{'color': '#db5f57', 'ls': '-', 'marker': 'None', 'n': 901, 'label': '_child0'}, {'color': '#57d3db', 'ls': 'None', 'marker': 'o', 'n': 15, 'label': '_child1'}]",
+   "evidence": [
+    "evidence/F01-plot-static-core/13_fmt_list.png"
+   ]
+  },
+  {
+   "case": "fmt_list_color_letters [fmt strings]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "[{'color': '#ff0000', 'ls': '-', 'marker': 'None', 'n': 901, 'label': '_child0'}, {'color': '#0000ff', 'ls': 'None', 'marker': '.', 'n': 15, 'label': '_child1'}]",
+   "evidence": []
+  },
+  {
+   "case": "fmt_list_too_long [fmt strings]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "no error; drew 2 artists: [{'color': '#db5f57', 'ls': '-', 'marker': 'None', 'n': 901, 'label': '_child0'}, {'color': '#57d3db', 'ls': 'None', 'marker': 'o', 'n': 15, 'label': '_child1'}]",
+   "evidence": []
+  },
+  {
+   "case": "fmt_list_too_short [fmt strings]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "IndexError: list index out of range",
+   "evidence": []
+  },
+  {
+   "case": "combo_markers_at_true_points [fmt strings]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "marker max err vs transformed input=5.02e-02",
+   "evidence": []
+  },
+  {
+   "case": "fmt_empty_string [fmt strings]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "no error, artists=[{'color': '#db5f57', 'ls': '-', 'marker': 'None', 'n': 15, 'label': '_child0'}]",
+   "evidence": []
+  },
+  {
+   "case": "fmt_invalid [fmt strings]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "ValueError: 'qq' is not a valid format string (unrecognized character 'q')",
+   "evidence": []
+  },
+  {
+   "case": "line_end_truncation_big_jump [fmt strings]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "line stops 0.2748 display-units short of final point (final segment len=2.117; gap=13.0% of it)",
+   "evidence": [
+    "evidence/F01-plot-static-core/14_line_end_truncation.png"
+   ]
+  },
+  {
+   "case": "line_end_truncation_n901 [fmt strings]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t02_fmt.py",
+   "output_excerpt": "gap to final point = 0.7063 display units (cube half-width=1); n_vertices=900",
+   "evidence": [
+    "evidence/F01-plot-static-core/15_trunc_n901.png"
+   ]
+  },
+  {
+   "case": "kw_linewidth [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "lw=4.0",
+   "evidence": []
+  },
+  {
+   "case": "kw_alpha_extra [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "alpha=0.3",
+   "evidence": []
+  },
+  {
+   "case": "kw_markersize [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "ms=11.0",
+   "evidence": []
+  },
+  {
+   "case": "kw_color [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "color=#008000",
+   "evidence": []
+  },
+  {
+   "case": "kw_zorder_extra [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "zorder=7",
+   "evidence": []
+  },
+  {
+   "case": "kw_dashes_extra [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "no error; dashes prop -> None",
+   "evidence": []
+  },
+  {
+   "case": "kw_markeredgecolor_extra [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "mec=#000000",
+   "evidence": []
+  },
+  {
+   "case": "kw_color_list [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "['#ff0000', '#0000ff']",
+   "evidence": []
+  },
+  {
+   "case": "kw_color_list_mismatch [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "ValueError: color= was given as a list/tuple of length 3, but there are 2 dataset(s) to plot; pass either a single value (broadcast to every dataset) or a list/tuple of length 2.",
+   "evidence": []
+  },
+  {
+   "case": "kw_title [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "title='My Title'",
+   "evidence": []
+  },
+  {
+   "case": "kw_legend_list [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "legend texts=['condA', 'condB']",
+   "evidence": [
+    "evidence/F01-plot-static-core/20_legend_list.png"
+   ]
+  },
+  {
+   "case": "kw_legend_true [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "legend texts=['1', '2']",
+   "evidence": []
+  },
+  {
+   "case": "legend_colors_match_lines [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "legend=['#db5f57', '#57d3db'] lines=['#db5f57', '#57d3db']",
+   "evidence": []
+  },
+  {
+   "case": "kw_names [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "['raw', 'smoothed']",
+   "evidence": []
+  },
+  {
+   "case": "kw_legend_mismatch [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "ValueError: label= was given as a list/tuple of length 1, but there are 2 dataset(s) to plot; pass either a single value (broadcast to every dataset) or a list/tuple of length 2.",
+   "evidence": []
+  },
+  {
+   "case": "kw_labels_points [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "annotations=['start', 'middle', 'end']",
+   "evidence": [
+    "evidence/F01-plot-static-core/21_labels.png"
+   ]
+  },
+  {
+   "case": "kw_labels_too_short [kwargs passthrough/title/legend/labels]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "IndexError: list index out of range",
+   "evidence": []
+  },
+  {
+   "case": "kw_size [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "size=(np.float64(4.0), np.float64(4.0))",
+   "evidence": []
+  },
+  {
+   "case": "kw_elev_azim [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "elev=45 azim=120",
+   "evidence": []
+  },
+  {
+   "case": "duration_affects_static [kwargs passthrough/title/legend/labels]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "line vertices: default=901, duration=1 -> 30, frame_rate=5 -> 150 (docstring labels duration/frame_rate '(animation only)')",
+   "evidence": []
+  },
+  {
+   "case": "combo_markers_affine_of_input [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "uniform scale=0.323682 const offset=True; markers are exact affine image of raw input",
+   "evidence": []
+  },
+  {
+   "case": "kw_ax_reuse [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "fig is user fig: True, lines=1",
+   "evidence": []
+  },
+  {
+   "case": "kw_ax_2d_for_3d [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "ValueError: If passing ax and the plot is 3D, ax must also be 3d",
+   "evidence": []
+  },
+  {
+   "case": "kw_legend_false [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "no legend drawn",
+   "evidence": []
+  },
+  {
+   "case": "kw_linestyle [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "['--', '--']",
+   "evidence": []
+  },
+  {
+   "case": "kw_linestyles_list [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "['-', ':']",
+   "evidence": []
+  },
+  {
+   "case": "kw_marker [kwargs passthrough/title/legend/labels]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t03_kwargs.py",
+   "output_excerpt": "['s', 's']",
+   "evidence": []
+  },
+  {
+   "case": "empty_array_0x3 [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "ValueError: input has no observations (0 rows); there is nothing to plot or analyze.",
+   "evidence": []
+  },
+  {
+   "case": "empty_list [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "ValueError: input has no observations (0 rows); there is nothing to plot or analyze.",
+   "evidence": []
+  },
+  {
+   "case": "single_point [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "drawn at (0.000,0.000,0.000); warns=[]",
+   "evidence": []
+  },
+  {
+   "case": "identical_points [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "warns=[]; lines=1",
+   "evidence": []
+  },
+  {
+   "case": "nan_values [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "warns=['UserWarning: Missing data: Inexact solution computed with PPCA (see https://gith']",
+   "evidence": []
+  },
+  {
+   "case": "inf_values [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "ValueError: input contains infinite values; remove or replace them (e.g. with np.nan for missing entries) before plotting or analysis.",
+   "evidence": []
+  },
+  {
+   "case": "int_dtype [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "ok",
+   "evidence": []
+  },
+  {
+   "case": "dataframe_input [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "3d axes, warns=[]",
+   "evidence": []
+  },
+  {
+   "case": "mixed_df_ndarray [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "lines=2",
+   "evidence": []
+  },
+  {
+   "case": "mixed_ncols [edge cases]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "ValueError: all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 3 and the array at index 1 has size 5",
+   "evidence": []
+  },
+  {
+   "case": "2x3_low_samples [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "ax=3d, warns=[]",
+   "evidence": []
+  },
+  {
+   "case": "python_list_matrix [edge cases]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "ValueError: color= was given as a list/tuple of length 12, but there are 1 dataset(s) to plot; pass either a single value (broadcast to every dataset) or a list/tuple of length 1.",
+   "evidence": []
+  },
+  {
+   "case": "tuple_input [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "lines=2",
+   "evidence": []
+  },
+  {
+   "case": "6col_autoreduce [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "ax=3d",
+   "evidence": []
+  },
+  {
+   "case": "ndims2 [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "ax=rectilinear",
+   "evidence": []
+  },
+  {
+   "case": "ndims1 [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "ax=rectilinear, lines=1",
+   "evidence": []
+  },
+  {
+   "case": "ndims10 [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "ax=3d",
+   "evidence": []
+  },
+  {
+   "case": "hue_len_mismatch [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "ValueError: hue has 19 entries but the data has 20 observations; hue must have exactly one value (or one row, for a matrix hue) per observation.",
+   "evidence": []
+  },
+  {
+   "case": "hue_categorical_legend [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "legend=['early', 'late'], lines=2",
+   "evidence": []
+  },
+  {
+   "case": "fmt_none_hue_list_input [edge cases]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "IndexError: list index out of range",
+   "evidence": []
+  },
+  {
+   "case": "save_path_png [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "file=31171B",
+   "evidence": [
+    "evidence/F01-plot-static-core/22_save_path.png"
+   ]
+  },
+  {
+   "case": "save_path_bad_ext [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "ValueError: Format 'xyz' is not supported (supported formats: eps, jpeg, jpg, pdf, pgf, png, ps, raw, rgba, svg, svgz, tif, tiff, webp)",
+   "evidence": []
+  },
+  {
+   "case": "invalid_palette [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "ValueError: 'not_a_palette' is not a valid palette name",
+   "evidence": []
+  },
+  {
+   "case": "negative_linewidth [edge cases]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "ok; warns=[]",
+   "evidence": []
+  },
+  {
+   "case": "unknown_kwarg [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "AttributeError: Line2D.set() got an unexpected keyword argument 'frobnicate'",
+   "evidence": []
+  },
+  {
+   "case": "legacy_group_kwarg [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "AttributeError: Line2D.set() got an unexpected keyword argument 'group'",
+   "evidence": []
+  },
+  {
+   "case": "twelve_datasets_colors [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "unique colors=12/12",
+   "evidence": []
+  },
+  {
+   "case": "bytes_fmt [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "TypeError: a bytes-like object is required, not 'str'",
+   "evidence": []
+  },
+  {
+   "case": "legend_true_single [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "legend=['1']",
+   "evidence": []
+  },
+  {
+   "case": "two_single_point_datasets [edge cases]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t04_edges.py",
+   "output_excerpt": "lines=2",
+   "evidence": []
+  },
+  {
+   "case": "w1_trajectory [realistic workflows]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t05_workflows.py",
+   "output_excerpt": "title='Session 1 neural trajectory'",
+   "evidence": [
+    "evidence/F01-plot-static-core/30_w1_trajectory.png"
+   ]
+  },
+  {
+   "case": "w2_conditions_names [realistic workflows]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t05_workflows.py",
+   "output_excerpt": "legend=['control', 'drug A', 'drug B'], lws=[2.0, 2.0, 2.0]",
+   "evidence": [
+    "evidence/F01-plot-static-core/31_w2_conditions.png"
+   ]
+  },
+  {
+   "case": "w3_nclusters [realistic workflows]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t05_workflows.py",
+   "output_excerpt": "groups=3, colors=['#db5f57', '#57db5f', '#5f57db'], sizes=[60, 60, 60]",
+   "evidence": [
+    "evidence/F01-plot-static-core/32_w3_clusters.png"
+   ]
+  },
+  {
+   "case": "w4_continuous_hue_colorbar [realistic workflows]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t05_workflows.py",
+   "output_excerpt": "line collections=7, axes(incl colorbar)=2, warns=[]",
+   "evidence": [
+    "evidence/F01-plot-static-core/33_w4_hue_time.png"
+   ]
+  },
+  {
+   "case": "w5_pca_hue [realistic workflows]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t05_workflows.py",
+   "output_excerpt": "lines=2, legend=['patient', 'control']",
+   "evidence": [
+    "evidence/F01-plot-static-core/34_w5_pca_hue.png"
+   ]
+  },
+  {
+   "case": "w6_weights_dataset [realistic workflows]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t05_workflows.py",
+   "output_excerpt": "datasets=3, lines=3",
+   "evidence": [
+    "evidence/F01-plot-static-core/35_w6_weights.png"
+   ]
+  },
+  {
+   "case": "w7_spiral_2d [realistic workflows]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t05_workflows.py",
+   "output_excerpt": "ax=rectilinear",
+   "evidence": [
+    "evidence/F01-plot-static-core/36_w7_spiral2d.png"
+   ]
+  },
+  {
+   "case": "default_lw_1.5_ms_6 [docstring claims + repros]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t06_final.py",
+   "output_excerpt": "lws=[1.5] mss=[6.0]",
+   "evidence": []
+  },
+  {
+   "case": "default_elev_azim [docstring claims + repros]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t06_final.py",
+   "output_excerpt": "elev=10 azim=-60",
+   "evidence": []
+  },
+  {
+   "case": "hls_continuous_endpoints_distinct [docstring claims + repros]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t06_final.py",
+   "output_excerpt": "RGB dist first-vs-last=0.000, first-vs-middle=0.000 (first=[0. 0. 0.], last=[0. 0. 0.])",
+   "evidence": [
+    "evidence/F01-plot-static-core/40_hls_circular_hue.png"
+   ]
+  },
+  {
+   "case": "trunc_marker_vs_line_end [docstring claims + repros]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t06_final.py",
+   "output_excerpt": "final marker sits 2.016 display-units beyond where the line ends (marker end=[1.8   1.8   0.901], line end=[ 1.    -0.007  0.499], n_line_pts=900)",
+   "evidence": [
+    "evidence/F01-plot-static-core/41_trunc_o_dash_n901.png"
+   ]
+  },
+  {
+   "case": "nested_list_matrix_repro [docstring claims + repros]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t06_final.py",
+   "output_excerpt": "ValueError: color= was given as a list/tuple of length 12, but there are 1 dataset(s) to plot; pass either a single value (broadcast to every dataset) or a list/tuple of length 1.",
+   "evidence": []
+  },
+  {
+   "case": "same_as_ndarray_ok [docstring claims + repros]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t06_final.py",
+   "output_excerpt": "lines=1",
+   "evidence": []
+  },
+  {
+   "case": "legacy_group_message [docstring claims + repros]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t06_final.py",
+   "output_excerpt": "AttributeError: Line2D.set() got an unexpected keyword argument 'group'",
+   "evidence": []
+  },
+  {
+   "case": "fmt_none_hue_repro [docstring claims + repros]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t06_final.py",
+   "output_excerpt": "IndexError: list index out of range",
+   "evidence": []
+  },
+  {
+   "case": "mixed_ncols_repro [docstring claims + repros]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t06_final.py",
+   "output_excerpt": "ValueError: all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 3 and the array at index 1 has size 5",
+   "evidence": []
+  },
+  {
+   "case": "mixed_ncols_with_align [docstring claims + repros]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t06_final.py",
+   "output_excerpt": "ValueError: all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 3 and the array at index 1 has size 5",
+   "evidence": []
+  },
+  {
+   "case": "linestyle_redundant_warning [docstring claims + repros]",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t06_final.py",
+   "output_excerpt": "UserWarning emitted on documented kwarg use: ['linestyle is redundantly defined by the \\'linestyle\\' keyword argument and the fmt string \"-\" (-> linestyle=\\'-\\'). The keyw']",
+   "evidence": []
+  },
+  {
+   "case": "zoom_static_noop [docstring claims + repros]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F01-plot-static-core/t06_final.py",
+   "output_excerpt": "box aspect default=[1.19  1.19  0.893] zoom=3 -> [1.19  1.19  0.893] (zoom documented as animation-only)",
+   "evidence": []
+  },
+  {
+   "case": "explore=True on static 3D sets picker without crashing",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"hyp.plot(X, explore=True, show=False)\"",
+   "output_excerpt": "explore3d: OK picker set: True",
+   "evidence": []
+  },
+  {
+   "case": "explore=True on 2D raises AssertionError (not ValueError)",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"hyp.plot(X, ndims=2, explore=True, show=False)\"",
+   "output_excerpt": "AssertionError : Explore mode is currently only supported for 3D plots.",
+   "evidence": []
+  },
+  {
+   "case": "frame_kwargs={'color':'red','linewidth':0.5} styles the cube",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"hyp.plot(X, frame_kwargs=...)\"",
+   "output_excerpt": "frame_kwargs: drew fig OK, 6 wireframe collections",
+   "evidence": []
+  },
+  {
+   "case": "nested per-dataset hue [[...],[...]] + legend=True",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"hyp.plot([d0,d1], '.', hue=[h0,h1], legend=True)\"",
+   "output_excerpt": "nested hue legend: ['a', 'b']",
+   "evidence": []
+  },
+  {
+   "case": "mat2colors('hls') continuous endpoints RGB distance",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"mat2colors(np.arange(100.), palette='hls')\"",
+   "output_excerpt": "first rgb: [0.86 0.371 0.34] last rgb: [0.86 0.34 0.34] dist(first,last)=0.0312 vs dist(first,mid)=0.8661",
+   "evidence": [
+    "evidence/F01-plot-static-core/40_hls_circular_hue.png"
+   ]
+  },
+  {
+   "case": "docstring '>>>' examples in plot.py / matplotlib_backend.py",
+   "result": "pass",
+   "command": "grep -n '>>>' hypertools/plot/plot.py hypertools/plot/matplotlib_backend.py",
+   "output_excerpt": "no doctest examples exist in either file (nothing to run verbatim)",
+   "evidence": []
+  },
+  {
+   "case": "venv site-packages hypertools matches repo tree (md5 of plot/plot.py)",
+   "result": "fail",
+   "command": "diff <(md5 -q .venv/.../hypertools/plot/plot.py) <(md5 -q hypertools/plot/plot.py)",
+   "output_excerpt": "DIFFERENT; installed copy lacks names= kwarg -> AttributeError: Line2D.set() got an unexpected keyword argument 'names'",
+   "evidence": []
+  }
+ ],
+ "findings": [
+  {
+   "id": "F01-plot-static-core-001",
+   "severity": "major",
+   "title": "Static line plots truncate the trajectory end: final sample(s) never drawn, and can spill outside the cube frame",
+   "description": "plot() interpolates every line-fmt dataset with interp_val = frame_rate*duration/(n-1) (hypertools/plot/plot.py:2328) and interp_array builds its sample grid as xx = np.arange(0, len(arr)-1, 1/interp_val) (hypertools/_shared/helpers.py:139), which NEVER reaches the final knot. The drawn line always stops up to one grid step short of the last data point; at n = 901 (with the default frame_rate=30, duration=30: step=1.0) the final sample is dropped ENTIRELY, and for n>901 multiple trailing samples are dropped. Because the center/scale display normalization is computed from the (truncated) interpolated data, the dropped endpoint is also excluded from the [-1,1] scaling, so with 'o-' the final marker (drawn at the true raw points) renders OUTSIDE the wireframe cube: measured final-marker-to-line-end gap 2.016 display units (cube half-width = 1). On a 301-point trajectory whose last segment is long, the line stops 13% of that segment short (0.275 display units). Scientists' trajectories (EEG/fMRI timeseries) routinely exceed 900 samples, so endpoints are silently misdrawn.",
+   "repro": "import numpy as np, hypertools as hyp\nn = 901\ntr = np.column_stack([np.linspace(0, 1, n), np.zeros(n), np.zeros(n)])\ntr[-1] = [2.0, 1.0, 0.0]\nfig = hyp.plot(tr, '-', show=False)\nlx, ly, lz = fig.axes[0].lines[0].get_data_3d()\nprint(len(lx))  # 900 vertices for 901 samples\n# expected display position of final sample vs where the line ends:\nc = tr - tr.mean(0); m1 = c.min(); m2 = (c - m1).max()\nexpT = 2*((c - m1)/m2) - 1\nprint(np.linalg.norm(np.array([lx[-1], ly[-1], lz[-1]]) - expT[-1]))  # 0.7063",
+   "expected": "The drawn line reaches the final data sample; every sample influences the display scaling.",
+   "actual": "n_vertices=900 (of 901); gap to final point = 0.7063 display units (cube half-width=1). 'o-' variant: final marker sits 2.016 display-units beyond where the line ends (marker end=[1.8 1.8 0.901], line end=[1. -0.007 0.499], n_line_pts=900)",
+   "evidence": [
+    "evidence/F01-plot-static-core/15_trunc_n901.png",
+    "evidence/F01-plot-static-core/41_trunc_o_dash_n901.png",
+    "evidence/F01-plot-static-core/14_line_end_truncation.png"
+   ],
+   "docs_impact": [
+    "hypertools/_shared/helpers.py (interp_array docstring)",
+    "hypertools/plot/plot.py"
+   ]
+  },
+  {
+   "id": "F01-plot-static-core-002",
+   "severity": "major",
+   "title": "Marker+line combo fmt ('o-') breaks color pairing: markers get a different palette color than their own line, and multiple datasets become indistinguishable",
+   "description": "GH #141's static split draws a combo style as TWO ax.plot artists (matplotlib_backend.py _plot_possibly_split, lines 444-463) without pinning a color, so each artist consumes one slot of the seaborn color cycle (sized to n_datasets by sns.set_palette(palette, n_colors=len(xform)) in plot.py:2602). One dataset with 'o-': line = palette[0], markers = palette[1]. TWO datasets with 'o-': ds0 line=palette[0], ds0 markers=palette[1], ds1 line=palette[0] (cycle wraps), ds1 markers=palette[1] -- BOTH datasets render with identical colors and neither's markers match its own line. Comparing conditions becomes impossible; legend colors also cannot correspond.",
+   "repro": "import numpy as np, hypertools as hyp, matplotlib.colors as mc\nrng = np.random.default_rng(7)\nL2 = [rng.standard_normal((15, 3)) for _ in range(2)]\nfig = hyp.plot(L2, 'o-', show=False)\nprint([(mc.to_hex(l.get_color()), l.get_marker()) for l in fig.axes[0].lines])",
+   "expected": "ds0 line+markers share palette color 0; ds1 line+markers share palette color 1.",
+   "actual": "ds0 line/mark: #db5f57/#57d3db; ds1 line/mark: #db5f57/#57d3db (4 artists: red line + cyan markers, twice -- datasets visually identical)",
+   "evidence": [
+    "evidence/F01-plot-static-core/12_combo_two_datasets.png"
+   ],
+   "docs_impact": [
+    "hypertools/plot/plot.py (fmt docstring)"
+   ]
+  },
+  {
+   "id": "F01-plot-static-core-003",
+   "severity": "major",
+   "title": "Color letter in a marker+line combo fmt is silently dropped: 'ro-' plots in palette colors, not red",
+   "description": "split_marker_line_fmt (helpers.py:336) extracts only the line token and marker char; the color letter in e.g. 'ro-' is discarded, and _plot_possibly_split redraws with bare '-' and 'o' fmts. 'r-' and 'r.' work (they take the unsplit branch), so the behavior is inconsistent within the fmt grammar the docstring promises ('All matplotlib format strings are supported'). In pure matplotlib, plt.plot(x, y, 'ro-') is red markers joined by a red line.",
+   "repro": "import numpy as np, hypertools as hyp, matplotlib.colors as mc\nX = np.random.default_rng(7).standard_normal((15, 3))\nfig = hyp.plot(X, 'ro-', show=False)\nprint([mc.to_hex(l.get_color()) for l in fig.axes[0].lines])  # expect ['#ff0000', '#ff0000']",
+   "expected": "Both split artists red (#ff0000), matching matplotlib's fmt grammar.",
+   "actual": "artists=[{'color': '#db5f57', 'ls': '-', ...}, {'color': '#db5f57', 'ls': 'None', 'marker': 'o', ...}] -- palette color, not red",
+   "evidence": [
+    "evidence/F01-plot-static-core/11_fmt_ro_dash.png"
+   ],
+   "docs_impact": [
+    "hypertools/plot/plot.py (fmt docstring)"
+   ]
+  },
+  {
+   "id": "F01-plot-static-core-004",
+   "severity": "major",
+   "title": "Plain Python nested numeric list x=[[1,2,3],[4,5,6],...] crashes with a nonsensical error about a color= kwarg the user never passed",
+   "description": "The nested-list flattening path (_flatten_nested, plot.py:1574-1576) treats each NUMBER of an ordinary list-of-lists 'matrix' as a leaf dataset (12 leaves for a 4x3 list), sets a 12-entry internal mpl_kwargs['color'] from nested_groups (plot.py:2121-2125), then format_data collapses the scalars into 1 dataset, and parse_kwargs raises \"color= was given as a list/tuple of length 12, but there are 1 dataset(s) to plot\". np.array of the identical data plots fine. Passing a matrix as a list of row-lists is an extremely common novice input; the error names a kwarg the caller never used.",
+   "repro": "import hypertools as hyp\nhyp.plot([[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]], show=False)",
+   "expected": "Either treat as a (4,3) matrix like np.array input, or raise a clear message about ambiguous nested-list input.",
+   "actual": "ValueError: color= was given as a list/tuple of length 12, but there are 1 dataset(s) to plot; pass either a single value (broadcast to every dataset) or a list/tuple of length 1.",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py (x docstring)"
+   ]
+  },
+  {
+   "id": "F01-plot-static-core-005",
+   "severity": "minor",
+   "title": "fmt=None combined with hue grouping on a list input crashes with bare IndexError",
+   "description": "When fmt is None, draw_fmt = ['-'] * len(x) (plot.py:2514) sizes the fmt list from the ORIGINAL input x, not the final post-hue-regroup dataset count. hyp.plot([arr], fmt=None, hue=<2 categories>) regroups into 2 datasets but draw_fmt has 1 entry -> IndexError inside matplotlib_backend._plot_possibly_split. (A bare ndarray input survives only because len(ndarray)=n_rows happens to exceed the group count.)",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.random.default_rng(3).standard_normal((20, 3))\nhyp.plot([X], fmt=None, hue=['a'] * 10 + ['b'] * 10, show=False)",
+   "expected": "Plot with default '-' fmt per drawn group (or a clear ValueError).",
+   "actual": "IndexError: list index out of range",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F01-plot-static-core-006",
+   "severity": "minor",
+   "title": "fmt list length is not validated: too short -> bare IndexError, too long -> extra entries silently ignored",
+   "description": "GH #206 added clear length validation for color/marker/linestyle lists (parse_kwargs raises a named ValueError), but a per-dataset fmt LIST is exempt: hyp.plot([a,b,c], fmt=['-','o']) raises bare 'IndexError: list index out of range' from the interpolation loop (plot.py:2331-2342), while hyp.plot([a,b], fmt=['-','o','.']) silently drops the third entry. Inconsistent with the library's own validation standard.",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(7)\nL3 = [rng.standard_normal((15, 3)) for _ in range(3)]\nhyp.plot(L3, fmt=['-', 'o'], show=False)  # IndexError\nL2 = L3[:2]\nhyp.plot(L2, fmt=['-', 'o', '.'], show=False)  # silently ignores '.'",
+   "expected": "ValueError naming fmt, the given length, and the required dataset count (like color=).",
+   "actual": "too short: 'IndexError: list index out of range'; too long: no error, extra entry ignored",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py (fmt docstring)"
+   ]
+  },
+  {
+   "id": "F01-plot-static-core-007",
+   "severity": "doc",
+   "title": "duration= and frame_rate= are documented '(animation only)' but control STATIC line rendering density (and where finding 001 truncates)",
+   "description": "Static line interpolation uses interp_val = frame_rate * duration / (n-1) (plot.py:2328). Defaults draw a 901-vertex smoothed line for 25 samples; duration=1 drops it to 30 vertices, frame_rate=5 to 150 -- visibly changing smoothing of a STATIC figure, while the docstring labels both kwargs '(animation only)'. For n-1 > frame_rate*duration the 'interpolation' silently becomes decimation (fewer vertices than samples). Also couples the finding-001 truncation magnitude to animation kwargs.",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.random.default_rng(3).standard_normal((20, 3))\nfor kw in ({}, {'duration': 1}, {'frame_rate': 5}):\n    fig = hyp.plot(X, '-', show=False, **kw)\n    print(kw, len(fig.axes[0].lines[0].get_xdata()))",
+   "expected": "Static rendering unaffected by animation kwargs, or the docstring documents the coupling.",
+   "actual": "line vertices: default=901, duration=1 -> 30, frame_rate=5 -> 150 (docstring: 'duration (animation only)', 'frame_rate (animation only)')",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py (duration/frame_rate docstrings)"
+   ]
+  },
+  {
+   "id": "F01-plot-static-core-008",
+   "severity": "doc",
+   "title": "plot() never documents that drawn coordinates are centered and rescaled to [-1,1] (original units are not plotted)",
+   "description": "Every static plot subtracts the stacked mean and rescales to [-1, 1] (plot.py:2401-2417) before drawing inside the cube/square frame; axes/ticks are hidden so no scale is visible. Verified: plotted scatter coordinates are an exact uniform affine image of the input (inverse recovers input to 3.05e-16), but they do NOT equal the input values, and nothing in the 1000-line docstring states this. A scientist extracting coordinates from the returned Figure (or comparing two separately-made figures, whose scales differ per-figure) can be misled; xlabel=/ylabel= labels also refer to normalized, not original, units.",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.random.default_rng(42).standard_normal((25, 3))\nfig = hyp.plot(X, '.', show=False)\npx, py, pz = fig.axes[0].lines[0].get_data_3d()\nprint(np.array_equal(np.column_stack([px, py, pz]), X))  # False",
+   "expected": "Docstring states the display normalization (center + rescale to [-1,1]).",
+   "actual": "plotted==input exactly: False; matches center+scale transform: True; inverse recovers input, maxerr=3.05e-16",
+   "evidence": [
+    "evidence/F01-plot-static-core/05_fidelity_scatter.png"
+   ],
+   "docs_impact": [
+    "hypertools/plot/plot.py (Returns / x docstring)"
+   ]
+  },
+  {
+   "id": "F01-plot-static-core-009",
+   "severity": "minor",
+   "title": "Documented linestyle= kwarg triggers matplotlib UserWarning 'linestyle is redundantly defined' on every draw",
+   "description": "With the default fmt='-', passing the documented linestyle=/linestyles= kwarg makes _plot_possibly_split call ax.plot(*coords, '-', linestyle='--') (matplotlib_backend.py:465), and matplotlib warns 'linestyle is redundantly defined by the linestyle keyword argument and the fmt string'. The kwarg wins (correct output) but a documented usage produces warning noise per dataset.",
+   "repro": "import warnings, numpy as np, hypertools as hyp\nX = np.random.default_rng(3).standard_normal((20, 3))\nwith warnings.catch_warnings(record=True) as w:\n    warnings.simplefilter('always')\n    hyp.plot(X, linestyle='--', show=False)\nprint([str(x.message) for x in w])",
+   "expected": "No warning for documented kwarg usage (strip the fmt line token when linestyle is supplied).",
+   "actual": "UserWarning: linestyle is redundantly defined by the 'linestyle' keyword argument and the fmt string \"-\" (-> linestyle='-'). The keyword argument will take precedence.",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F01-plot-static-core-010",
+   "severity": "minor",
+   "title": "labels= shorter than the number of points crashes with bare IndexError (no validation, unlike hue=)",
+   "description": "annotate_plot iterates every stacked data point and indexes labels[idx] (matplotlib_backend.py:537-538); a labels list shorter than the total point count raises 'IndexError: list index out of range' with no mention of labels. hue= got a clear length-mismatch ValueError in QC 2026-07; labels= did not.",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.random.default_rng(3).standard_normal((20, 3))\nhyp.plot(X, '.', labels=['a', 'b'], show=False)",
+   "expected": "ValueError naming labels, its length, and the observation count (mirroring hue=).",
+   "actual": "IndexError: list index out of range",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py (labels docstring)"
+   ]
+  },
+  {
+   "id": "F01-plot-static-core-011",
+   "severity": "minor",
+   "title": "List datasets with different column counts crash with a raw numpy vstack error (no dataset index, no fix hint)",
+   "description": "hyp.plot([<20x3>, <20x5>]) fails inside reduce (hypertools/reduce/reduce.py:274 np.vstack) with numpy's 'all the input array dimensions except for the concatenation axis must match exactly...'. The x docstring advertises 'mixed list' input; nothing tells the user which datasets mismatched or that per-dataset feature counts must agree. align='hyper' does not help (same crash: reduce runs first). Surfaced here because plot() is the primary entry point; the fix likely belongs in format_data/reduce.",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(9)\nhyp.plot([rng.standard_normal((20, 3)), rng.standard_normal((20, 5))], show=False)",
+   "expected": "Clear hypertools error naming the offending datasets and their shapes (or per-dataset reduction support).",
+   "actual": "ValueError: all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 3 and the array at index 1 has size 5",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py (x docstring)"
+   ]
+  },
+  {
+   "id": "F01-plot-static-core-012",
+   "severity": "style",
+   "title": "hypertools 0.x 'group=' kwarg (renamed hue=) surfaces as a cryptic Line2D AttributeError with no migration hint",
+   "description": "The GH #206 **kwargs passthrough forwards any unknown kwarg to matplotlib, so legacy code calling hyp.plot(x, group=[...]) -- the pre-1.0 documented name for hue= -- dies with 'AttributeError: Line2D.set() got an unexpected keyword argument 'group'' after the full pipeline has already run. A release aimed at existing users deserves a targeted 'group= was renamed to hue=' message (same for other renamed 0.x kwargs if any).",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.random.default_rng(2).standard_normal((10, 3))\nhyp.plot(X, group=['a'] * 10, show=False)",
+   "expected": "TypeError/ValueError: 'group= was renamed to hue= in hypertools 1.0'.",
+   "actual": "AttributeError: Line2D.set() got an unexpected keyword argument 'group'",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F01-plot-static-core-013",
+   "severity": "minor",
+   "title": "Default hls palette is circular: continuous hue start/end colors are visually identical (trajectory endpoints indistinguishable)",
+   "description": "With the default palette='hls', a continuous hue maps t=min and t=max to nearly the same red: mat2colors(np.arange(100.), palette='hls') gives first RGB (0.860,0.371,0.340) vs last (0.860,0.340,0.340), distance 0.031 (vs 0.866 to the midpoint). A time-colored trajectory's beginning and end cannot be told apart, and the colorbar drawn by colorbar=True is red at BOTH ends. A non-circular default (e.g. viridis) for the continuous-hue path would avoid this.",
+   "repro": "import numpy as np\nfrom hypertools.plot.colors import mat2colors\nc = np.asarray(mat2colors(np.arange(100).astype(float), palette='hls'))\nprint(c[0], c[-1], np.linalg.norm(c[0] - c[-1]))",
+   "expected": "Continuous hue endpoints clearly distinguishable with default settings.",
+   "actual": "first rgb: [0.86 0.371 0.34], last rgb: [0.86 0.34 0.34], dist(first,last)=0.0312, dist(first,mid)=0.8661",
+   "evidence": [
+    "evidence/F01-plot-static-core/40_hls_circular_hue.png",
+    "evidence/F01-plot-static-core/33_w4_hue_time.png"
+   ],
+   "docs_impact": [
+    "hypertools/plot/plot.py (hue/palette docstrings)"
+   ]
+  },
+  {
+   "id": "F01-plot-static-core-014",
+   "severity": "style",
+   "title": "hypertools.plot FUNCTION shadows the hypertools.plot SUBPACKAGE: 'import hypertools.plot.plot' fails",
+   "description": "hypertools/__init__.py binds the name 'plot' to the function, so after 'import hypertools', 'import hypertools.plot.plot' raises ImportError: cannot import name 'plot' from 'plot' (unknown location). Any user or downstream tool importing backend modules by dotted path (docs autodoc, debuggers, pickling) hits this; internal code avoids it only via relative imports.",
+   "repro": "import hypertools\nimport hypertools.plot.plot  # ImportError",
+   "expected": "Subpackage modules importable by dotted path (or documented alternative).",
+   "actual": "ImportError: cannot import name 'plot' from 'plot' (unknown location)",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F01-plot-static-core-015",
+   "severity": "minor",
+   "title": "[infra] Repo .venv contains a stale NON-editable hypertools install that diverges from the audit branch (names= kwarg missing)",
+   "description": "md5 of .venv/lib/python3.12/site-packages/hypertools/plot/plot.py differs from the working tree's hypertools/plot/plot.py; the installed copy predates the names= kwarg, so hyp.plot(x, names=[...]) run against the venv's default import path crashes with \"AttributeError: Line2D.set() got an unexpected keyword argument 'names'\". Anyone (CI, docs build, other audit units) importing hypertools from this venv is testing DIFFERENT code than the branch under audit. This audit re-ran everything with PYTHONPATH=/Users/jmanning/hypertools to target the repo tree. Reinstall editable (pip install -e) before release testing.",
+   "repro": "diff <(md5 -q /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/hypertools/plot/plot.py) \\\n     <(md5 -q /Users/jmanning/hypertools/hypertools/plot/plot.py)  # DIFFERENT\n# without PYTHONPATH: env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \\\n#   \"import numpy as np, hypertools as hyp; hyp.plot([np.random.rand(10,3)]*2, names=['a','b'], show=False)\"",
+   "expected": "Editable install tracking the working tree.",
+   "actual": "e9e5f5c31f69d49b86d4863beed23f98 (venv) != 68eaeeb2c5590bd9088207b72a810cc3 (repo); AttributeError: Line2D.set() got an unexpected keyword argument 'names'",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F01-plot-static-core-016",
+   "severity": "style",
+   "title": "explore=True on 2D data raises AssertionError instead of ValueError (disappears under python -O)",
+   "description": "plot.py:2362-2364 uses a bare assert for the documented 'explore is 3D-only' restriction; every sibling restriction (zlabel, surface 1D, animate 2D spin) raises ValueError. Under python -O the assert is stripped and explore silently misbehaves.",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.random.default_rng(2).standard_normal((15, 3))\nhyp.plot(X, ndims=2, explore=True, show=False)",
+   "expected": "ValueError: explore mode is only supported for 3D static plots.",
+   "actual": "AssertionError: Explore mode is currently only supported for 3D plots.",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F01-plot-static-core-017",
+   "severity": "style",
+   "title": "bytes fmt (b'-') raises TypeError; np.bytes_ is special-cased but plain bytes is not",
+   "description": "is_line/has_line_component/split_marker_line_fmt each decode np.bytes_ (helpers.py:296/327/354) but plain Python bytes falls through to \"'-' in b'-'\" -> TypeError: a bytes-like object is required, not 'str'. Either both should be accepted or both rejected with a clear fmt-type message.",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.random.default_rng(2).standard_normal((10, 3))\nhyp.plot(X, b'-', show=False)",
+   "expected": "Same handling as np.bytes_ (decode) or a clear 'fmt must be str' error.",
+   "actual": "TypeError: a bytes-like object is required, not 'str'",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F01-plot-static-core-018",
+   "severity": "enhancement",
+   "title": "plot()'s ~1000-line docstring contains zero usage examples (no doctests anywhere in plot.py/matplotlib_backend.py)",
+   "description": "grep '>>>' over hypertools/plot/plot.py and hypertools/plot/matplotlib_backend.py finds nothing. The main user-facing function of the library has no runnable example in its docstring (help(hyp.plot) gives a wall of parameter prose). Two or three doctest-style examples (single array; list + names/legend; hue + colorbar) would document the core contract and be CI-verifiable.",
+   "repro": "grep -n '>>>' /Users/jmanning/hypertools/hypertools/plot/plot.py /Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py",
+   "expected": "At least one runnable example in the plot() docstring.",
+   "actual": "(no output -- zero matches)",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py"
+   ]
+  }
+ ]
+}

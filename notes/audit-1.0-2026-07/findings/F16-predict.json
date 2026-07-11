@@ -1,0 +1,454 @@
+{
+  "unit": "F16-predict",
+  "target": "hyp.predict() forecasting dispatcher + hypertools/predict/ (common, kalman, gp, autoreg, arima, laplace, chronos), audited on branch audit/release-1.0-2026-07. IMPORTANT: the repo .venv contains a STALE non-editable hypertools install (see F16-predict-018); all results below were obtained against the repo working tree via `env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg .venv/bin/python`. Test scripts: /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/t01..t06; raw case-by-case outputs in t0*_repo_out.json alongside them.",
+  "brainstormed_edge_cases": [
+    "t=0 and negative t (tested)",
+    "t as float / bool / np.bool_ / np.float64 (tested)",
+    "t as 0-d numpy array np.array(5) (tested)",
+    "datetime-like t on RangeIndex (non-datetime) data (tested)",
+    "datetime t in the past -> truncation semantics (tested)",
+    "datetime t EXACTLY equal to the last timestamp (tested - crash, finding 004)",
+    "unparseable string t ('banana') on DatetimeIndex data (tested)",
+    "NaN scattered in the series, per model (tested - findings 010)",
+    "all-NaN column (tested - silent 0.0 forecast)",
+    "series shorter than AutoRegressor lags (tested)",
+    "1-row and 3-row datasets per model (tested)",
+    "empty DataFrame / empty list / None input (tested - finding 006)",
+    "pandas Series input (tested - crash, finding 002)",
+    "1-D numpy array input (tested - wrong semantics, finding 003)",
+    "plain python list of floats (tested - each float becomes a dataset)",
+    "list of raw strings routed into text-embedding pipeline (tested)",
+    "DataFrame with a non-numeric string column (tested)",
+    "typo'd kwargs (n_itr, kernle) silently ignored (tested - finding 008)",
+    "unknown/lowercase/empty-string model names (tested)",
+    "dict specs: params-form vs fork-form, outer-kwarg merging (tested - finding 009)",
+    "return_model=True round trip per model incl. GP reuse semantics (tested - finding 014)",
+    "predict_new dataset/model count mismatch and 1->N broadcast (tested)",
+    "predict_new on data with different feature count than fit (tested - finding 017)",
+    "determinism run-to-run per model; RF and Chronos seeding (tested - finding 016)",
+    "Chronos horizon > 64 (its native max prediction length) (tested - works, no warning)",
+    "irregular integer index (step 3) and all-identical timestamps (tested)",
+    "non-monotonic/descending index: resolve_t uses index[-1] not max, forecast could overlap existing rows (untested)",
+    "duplicate timestamps + datetime truncation (d.loc[future_index] row duplication) (untested)",
+    "MultiIndex-column DataFrame input (untested)",
+    "polars DataFrame input (untested)",
+    "datetime t falling between steps (np.round of fractional step counts) (untested)",
+    "tz-aware DatetimeIndex (untested)",
+    "very large t (e.g. 10000) memory/time behavior (untested)",
+    "nullable Int64 dtype with pd.NA (untested)",
+    "Chronos device_map='mps'/'cuda' (untested; only 'cpu' exercised)",
+    "concurrent predict() calls sharing one Chronos pipeline (untested)"
+  ],
+  "tested": [
+    {
+      "case": "t01: all 6 models (Kalman, GaussianProcess, AutoRegressor, ARIMA, Laplace, Chronos) x 3 series (noisy sine, linear trend, random walk), n=200, horizon 20, corr vs held-out truth + shape + index continuation + timing (18 cases)",
+      "result": "fail",
+      "command": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python .../scratchpad/audit/F16-predict/t01_core_models.py",
+      "output_excerpt": "noisy_sine: Kalman fc_std_over_train_std=0.0 first3=[0.24,0.24,0.24] (FLAT); GaussianProcess corr=0.906; AutoRegressor corr=0.958; ARIMA corr=0.464; Laplace corr=0.378; Chronos corr=0.917. linear_trend: Kalman FLAT (rmse 0.645); ARIMA flat (fc_std ratio 0.0004, corr -0.239); GP 0.873, AutoReg 0.865, Laplace 0.872, Chronos 0.614. random_walk: all near-constant (statistically correct). All shapes (20,1), index 180..199 correct. Times: Kalman 0.34s, GP 0.04s, AutoReg <0.01s, ARIMA 0.16s, Laplace ~2s, Chronos 2.6s first / 0.3s cached.",
+      "evidence": ["evidence/F16-predict/t01_noisy_sine.png", "evidence/F16-predict/t01_linear_trend.png", "evidence/F16-predict/t01_random_walk.png"]
+    },
+    {
+      "case": "Kalman root-cause: inspect fitted kf after hyp.predict(sine, model='Kalman', return_model=True); n_iter=25; 2-D sine/cos input; pykalman em_vars default; counterfactual fit with em_vars including transition_matrices",
+      "result": "fail",
+      "command": "env MPLBACKEND=Agg .venv/bin/python -c \"...m.models_[0]['kf'].transition_matrices...\" (run from repo cwd; see finding 001 repro)",
+      "output_excerpt": "transition_matrices: [[1.]]; observation_matrices: [[1.]]; forecast unique values: 1; n_iter=25 forecast std: 5.695e-17; 2D sine/cos forecast stds: {'s': 0.0, 'c': 2.278e-16}. Counterfactual pykalman with em_vars=[...,'transition_matrices',...]: forecast std per col [0.61, 1.40], learned rotation [[0.975,0.156],[-0.153,0.975]], corr col0 = 0.9876.",
+      "evidence": []
+    },
+    {
+      "case": "t02: model spec forms - 'GP' alias, unknown/lowercase/empty string names, class + kwargs, unfitted instance, params-dict (DeprecationWarning emitted), fork-dict (9 cases)",
+      "result": "pass",
+      "command": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg .venv/bin/python .../t02_dispatcher_api.py (full output t02_repo_out.json)",
+      "output_excerpt": "'GP' alias -> DataFrame OK; 'kalman' -> ValueError: unknown predict model 'kalman'; supported names: Kalman, GaussianProcess, AutoRegressor, ARIMA, Laplace, Chronos (...); params-form emitted DeprecationWarning as documented; class+kwargs and instance forms OK.",
+      "evidence": []
+    },
+    {
+      "case": "t02: outer **kwargs merging with dict specs - {'model':'Kalman','kwargs':{}} + n_iter=9 vs {'model':'Kalman','params':{}} + n_iter=9 (2 cases)",
+      "result": "fail",
+      "command": "t02_dispatcher_api.py cases dict_fork_outer_kwargs / dict_params_outer_kwargs",
+      "output_excerpt": "fork-form: n_iter_on_model = 5 (outer kwarg silently DROPPED); params-form: n_iter_on_model = 9 (merged).",
+      "evidence": []
+    },
+    {
+      "case": "t02: t validation - t=0, t=-3, t=2.5, True, np.True_, np.float64(4.0), np.array(5) 0-d, np.int64(4) (8 cases)",
+      "result": "pass",
+      "command": "t02_dispatcher_api.py t_validation_* cases",
+      "output_excerpt": "t=0 -> ValueError: t (forecast horizon) must be >= 1; got 0. t=2.5 -> ValueError: ...must be an integer number of steps or a target datetime, not a float; got 2.5. True/np.True_ -> ValueError ...must be a positive integer or a target datetime. np.array(5) -> forecast shape (5,2) OK; np.int64(4) -> (4,2) OK.",
+      "evidence": []
+    },
+    {
+      "case": "t02: datetime horizons - datetime t on RangeIndex (friendly error), future target (10 rows to 2026-05-10), past target (truncates, equals sliced original), datetime.datetime object, int t on DatetimeIndex (index continues as DatetimeIndex), unparseable 'banana' (6 cases)",
+      "result": "pass",
+      "command": "t02_dispatcher_api.py t_datetime_* / t_int_on_datetimeindex / t_garbage_string",
+      "output_excerpt": "RangeIndex + datetime t -> ValueError: a datetime-like t requires a time-indexed (DatetimeIndex) dataset. Future target -> shape (10,2), DatetimeIndex 2026-05-01..2026-05-10. Past target -> (46,2), equals_truncated_original: true. 'banana' -> DateParseError: Unknown datetime string format, unable to parse: banana.",
+      "evidence": []
+    },
+    {
+      "case": "t02: datetime t EXACTLY equal to last timestamp",
+      "result": "fail",
+      "command": "t02 t_datetime_exact_last + minimal repro in t05 (datetime_t_equals_last_repro, resolve_t_exact_last_returns)",
+      "output_excerpt": "hyp.predict(Xd, model='Laplace', t=str(Xd.index[-1])) -> ValueError: Length of values (0) does not match length of index (120). resolve_t(df, df.index[-1]) returns n_steps=0 with len(future_index)=10 (the FULL past index).",
+      "evidence": []
+    },
+    {
+      "case": "t02: list-in/list-out, single-in/single-out; return_model=True round trips for Kalman/GP/ARIMA/AutoRegressor/Laplace; predict_new pairing mismatch error; 1-model->N-datasets broadcast (9 cases)",
+      "result": "pass",
+      "command": "t02_dispatcher_api.py list/roundtrip/pairing cases",
+      "output_excerpt": "list->list len 2; single->DataFrame. All 5 round trips return correct shapes with new-data index continuation. Mismatch: ValueError: predict_new got 3 new dataset(s) but the fitted forecaster has 2 fitted model(s); pass either a matching number of new datasets or reuse a forecaster that was fit on a single dataset. GP roundtrip: forecast for B*1000 numerically IDENTICAL to continuing A (gp_new_forecast_equals_continuing_original: true - see finding 014). Laplace roundtrip tracks_new_data: true.",
+      "evidence": []
+    },
+    {
+      "case": "t03: NaN scattered in series per model (6 cases)",
+      "result": "fail",
+      "command": "env PYTHONPATH=... .venv/bin/python .../t03_edge_inputs.py (full output t03_repo_out.json)",
+      "output_excerpt": "Kalman OK (masked); ARIMA OK; Chronos OK. GaussianProcess -> ValueError: Input y contains NaN. AutoRegressor -> ValueError: Input X contains NaN. Ridge does not accept... Laplace -> 'AssertionError: ' (EMPTY message, from skaters internals).",
+      "evidence": []
+    },
+    {
+      "case": "t03: all-NaN column via Kalman",
+      "result": "fail",
+      "command": "t03 all_nan_kalman",
+      "output_excerpt": "Returns [[0.0],[0.0],[0.0]] silently - a fabricated flat-zero forecast from 100% missing data, no warning.",
+      "evidence": []
+    },
+    {
+      "case": "t03: short series - 3-row input for Kalman/GP/ARIMA/Laplace (work), AutoRegressor (assert), 1-row Kalman (works) (7 cases)",
+      "result": "pass",
+      "command": "t03 short3_* / one_row_kalman / autoreg_lags_gt_n_message",
+      "output_excerpt": "AutoRegressor -> AssertionError: AutoRegressor needs more than lags=10 observations to fit; got 3 (right message, WRONG exception type - see finding 007). Others return (3,1)/(2,1) forecasts.",
+      "evidence": []
+    },
+    {
+      "case": "t03: empty DataFrame, empty list, None, string column, list-of-strings (5 cases)",
+      "result": "fail",
+      "command": "t03 empty_dataframe / empty_list / none_input / string_column_df / list_of_strings",
+      "output_excerpt": "empty DataFrame and None -> IndexError: index -1 is out of bounds for axis 0 with size 0. empty list -> ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation (routed into text pipeline; printed 'loading corpus: minipedia...done!'). string column -> ValueError: could not convert string to float: 'a'. list of 2 strings -> silently embedded via LDA and 'forecast' returned (2x50 DataFrame).",
+      "evidence": []
+    },
+    {
+      "case": "t03/t05: pandas Series, 1-D numpy array, (n,1) 2-D array, list of python floats (4 cases + dw.wrangle root-cause probes)",
+      "result": "fail",
+      "command": "t03 pandas_series_input / numpy_1d_input / list_of_floats_input; t05 dw_wrangle_series_shape / dw_wrangle_1d_shape / predict_1d_array_semantics / predict_2d_column_ok",
+      "output_excerpt": "pd.Series -> IndexError: index -1 is out of bounds for axis 0 with size 0 (dw.wrangle(Series) yields a (0,0) DataFrame). 1-D array of 100 points -> forecast shape (4,100): treated as ONE observation with 100 features (dw.wrangle 1-D shape (1,100)). (100,1) array -> correct (4,1). List of floats -> returns a LIST of forecasts (each scalar treated as its own dataset).",
+      "evidence": []
+    },
+    {
+      "case": "t03: kwarg typos and bad kwargs - Kalman n_itr=50, GP kernle=None (silently ignored, 0 warnings); ARIMA bogus_flag / AutoRegressor bogus_flag (TypeError); AutoRegressor unknown inner model string (2 paths) (6 cases)",
+      "result": "fail",
+      "command": "t03 kalman_typo_kwarg_silent / gp_typo_kwarg_silent / arima_bad_kwarg / autoreg_bad_model_kwarg / autoreg_unknown_*",
+      "output_excerpt": "Kalman n_itr=50 -> ran fine, n_warnings=0. GP kernle=None -> ran fine. ARIMA -> TypeError: ARIMA.__init__() got an unexpected keyword argument 'bogus_flag'. AutoReg -> TypeError: Ridge.__init__() got an unexpected keyword argument 'bogus_flag'. Unknown inner model -> AssertionError: unknown model: 'NopeRegressor'; supported string names are ['Ridge', 'Lasso', 'LinearRegression', 'RandomForestRegressor', 'GradientBoostingRegressor', 'SVR', 'KNeighborsRegressor'].",
+      "evidence": []
+    },
+    {
+      "case": "t03/t05: determinism - Kalman, GP, ARIMA, AutoRegressor(Ridge), Laplace identical across runs; AutoRegressor(RandomForest) unseeded differs, seeded (random_state=0 flat kwarg) identical (8 cases)",
+      "result": "pass",
+      "command": "t03 determinism_* ; t05 autoreg_rf_seeded_flat_kwargs / autoreg_rf_unseeded_determinism",
+      "output_excerpt": "Deterministic: Kalman/GP/ARIMA/AutoReg-Ridge/Laplace all true. RF unseeded identical_without_seed: false; RF with {'random_state':0,'n_estimators':40} deterministic_with_seed: true.",
+      "evidence": []
+    },
+    {
+      "case": "t03: ARIMA constant series (forecast 1.0), trend='t' kwarg passthrough (slope continues 39.97->44.47), integer index with step 3 continues (300,303,306,309), all-identical timestamps (AssertionError with good message), 12-feature GP (7,12) (5 cases)",
+      "result": "pass",
+      "command": "t03 arima_constant_series / arima_trend_kwarg_passthrough / int_index_step3_continues / all_identical_timestamps / wide_12features_gp",
+      "output_excerpt": "all_identical_timestamps -> AssertionError: cannot infer a timestep: all observations share one timestamp (message good; type wrong, finding 007). Others behaved correctly.",
+      "evidence": []
+    },
+    {
+      "case": "t04 W1: EEG-like 5-channel DataFrame, DatetimeIndex @10ms, Kalman t=50",
+      "result": "fail",
+      "command": "env PYTHONPATH=... .venv/bin/python .../t04_workflows.py (t04_repo_out.json)",
+      "output_excerpt": "shape (50,5), DatetimeIndex continuation at exactly 10ms, starts_after_data true - but forecast_std_ch0 = 0.0: dead-flat 'forecast' of a strongly oscillating signal (finding 001).",
+      "evidence": ["evidence/F16-predict/t04_w1_eeg_kalman.png"]
+    },
+    {
+      "case": "t04 W2: hosted 'weights' dataset -> hyp.reduce(IncrementalPCA, ndims=4) -> GP forecast t=10",
+      "result": "pass",
+      "command": "t04 w2_weights_reduce_gp",
+      "output_excerpt": "input (300,100) -> reduced (300,4) -> forecast (10,4), index starts at 300, columns preserved.",
+      "evidence": []
+    },
+    {
+      "case": "t04 W3: stock-like business-day series, ARIMA t=30 and datetime target (last+14 days)",
+      "result": "pass",
+      "command": "t04 w3_stock_arima_datetime_target",
+      "output_excerpt": "t30 shape (30,1); datetime target -> (14,1) ending 2026-06-29. Note: business-day index extends by the min gap (1 day), so forecast dates include weekends - consistent with documented min-step semantics.",
+      "evidence": ["evidence/F16-predict/t04_w3_stock_arima.png"]
+    },
+    {
+      "case": "t04/t06 W4: logistic-growth series, AutoRegressor(RandomForestRegressor, lags=5, random_state=0) t=25; first attempt with model_kwargs={...} raised",
+      "result": "fail",
+      "command": "t04 w4 (trap) + t06_w4_fixed.py (flat kwargs)",
+      "output_excerpt": "With 'model_kwargs': {'random_state': 0} in the spec -> TypeError: RandomForestRegressor.__init__() got an unexpected keyword argument 'model_kwargs' (finding 012). With flat kwargs -> forecast (25,1), mean 993.5 (plausible saturation near K=1000).",
+      "evidence": ["evidence/F16-predict/t04_w4_population_rfar.png"]
+    },
+    {
+      "case": "t04 W5: cross-subject reuse - fit Kalman on subject A (return_model=True), predict_new on phase-shifted subject B",
+      "result": "pass",
+      "command": "t04 w5_cross_subject_reuse",
+      "output_excerpt": "fcB shape (15,2), index continues B (starts 120), model reused without refit.",
+      "evidence": []
+    },
+    {
+      "case": "t04 W6: examples/plot_predict.py gallery example VERBATIM (two 5-D helices, hyp.plot(..., predict='GaussianProcess', t=30))",
+      "result": "pass",
+      "command": "t04 w6_gallery_example_verbatim",
+      "output_excerpt": "Returns matplotlib Figure, 1 axes; PNG shows both helices with dashed same-color forecast tails continuing each sweep as the example text promises.",
+      "evidence": ["evidence/F16-predict/t04_w6_gallery_plot_predict.png"]
+    },
+    {
+      "case": "t04/t05 Chronos specifics: run-to-run determinism, torch.manual_seed control, horizon 100 (>64), 4-column multivariate, bad model_name message (5 cases)",
+      "result": "pass",
+      "command": "t04 chronos_* ; t05 chronos_torch_manual_seed_controls / chronos_bad_model_name_message",
+      "output_excerpt": "Two identical calls differ (a_first3 [-0.0922,-0.2199,-0.3192] vs b_first3 [-0.1182,-0.2317,-0.3263]) - sampling, no seed exposed (finding 016); torch.manual_seed(0) before each call -> identical_with_manual_seed: true. t=100 -> (100,1), 0 NaN, no warnings. 4-col -> (8,4) in 0.46s. Bad model name -> OSError: amazon/definitely-not-a-real-chronos-model is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models' (clear).",
+      "evidence": []
+    },
+    {
+      "case": "t04: laplace.py docstring numeric claim - skaters laplace(k) returns len(dists)==k for k in {5,10,50,80,100} on a 75-point series",
+      "result": "pass",
+      "command": "t04 laplace_docstring_len_dists_claim",
+      "output_excerpt": "k=5:5, k=10:10, k=50:50, k=80:80, k=100:100 - claim reproduces exactly (took 37.7s total, see finding 011 on cost).",
+      "evidence": []
+    },
+    {
+      "case": "t04: gp.py docstring claim - stationary RBF kernel forecast bends back toward the data cloud while default DotProduct kernel extrapolates the trend",
+      "result": "pass",
+      "command": "t04 gp_docstring_rbf_reversion_claim",
+      "output_excerpt": "0.5*t trend, horizon 40: RBF+White final 53.71 (below true continuation 59.5 - bending back toward mean 19.73); default kernel final 59.53 vs true 59.5. Claim verified qualitatively; default-kernel extrapolation is excellent.",
+      "evidence": []
+    },
+    {
+      "case": "t05: heterogeneous-width list ([50x2, 60x3]) GP; predict_new with mismatched feature count (Kalman fit 2 cols, new data 5 cols) (2 cases)",
+      "result": "fail",
+      "command": "t05 list_heterogeneous_columns / predict_new_feature_mismatch_kalman",
+      "output_excerpt": "Heterogeneous list OK: shapes [[4,2],[4,3]]. Feature mismatch -> ValueError: operands could not be broadcast together with shapes (5,) (2,) (cryptic, finding 017).",
+      "evidence": []
+    },
+    {
+      "case": "t05: Laplace timing at t=100 on 200x1",
+      "result": "fail",
+      "command": "t05 laplace_t100_timing",
+      "output_excerpt": "23.5 seconds for a single univariate 200-row series (ARIMA/GP: <0.05s for the same job).",
+      "evidence": []
+    },
+    {
+      "case": "infra: which hypertools does .venv import? (pip show, site-packages diff, cwd-dependence, PYTHONPATH sanity)",
+      "result": "fail",
+      "command": "pip show hypertools; diff -rq site-packages/hypertools repo/hypertools | grep -c differ; python -c 'import hypertools; print(hypertools.__file__)' from scratch cwd vs repo cwd",
+      "output_excerpt": "Location: .../site-packages (NON-editable); 125 files differ from the repo tree. From non-repo cwd: hypertools file = .../site-packages/hypertools/__init__.py; stale copy lacks the 'GP' alias and t<=0 validation (verified: model='GP' raised unknown-model; t=0 returned an empty DataFrame). From repo cwd or with PYTHONPATH=repo: correct behavior.",
+      "evidence": []
+    },
+    {
+      "case": "style probe: import hypertools.predict.kalman as k",
+      "result": "fail",
+      "command": "env PYTHONPATH=/Users/jmanning/hypertools .venv/bin/python -c 'import hypertools.predict.kalman as k'",
+      "output_excerpt": "ImportError: cannot import name 'kalman' from 'predict' (unknown location) - hypertools.predict (submodule) is shadowed by the predict function in hypertools/__init__.py; type of hypertools.predict attr: function.",
+      "evidence": []
+    },
+    {
+      "case": "docstring examples verbatim: no >>> doctest examples exist anywhere in hypertools/predict/ (grep); the only runnable documented example is examples/plot_predict.py, executed verbatim as W6",
+      "result": "pass",
+      "command": "grep -rn '>>>' /Users/jmanning/hypertools/hypertools/predict/",
+      "output_excerpt": "(no matches)",
+      "evidence": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "F16-predict-001",
+      "severity": "major",
+      "title": "Default 'Kalman' forecaster ALWAYS returns a constant flat-line forecast - EM never fits the transition/observation matrices",
+      "description": "kalman.fitter() calls pykalman KalmanFilter(n_dim_obs=d, n_dim_state=d).em(x, n_iter=n_iter) without em_vars, so pykalman's default em_vars only optimizes covariances + initial state; the transition and observation matrices remain IDENTITY. Iterating filter_update with no observations therefore repeats the last filtered state forever: hyp.predict()'s DEFAULT model produces a mathematically constant forecast for EVERY dataset. Verified: flat on a strong noisy sine, flat on a linear trend (does not continue the slope), flat on a 2-column sin/cos rotation (forecast stds 0.0 / 2.3e-16), and n_iter=25 does not help (forecast std 5.7e-17). There is no way to fix it through the API: fitter() only reads n_iter, and unknown kwargs are silently ignored (em_vars= would be a no-op). Counterfactual proof that the fix works: fitting the same pykalman model with em_vars including 'transition_matrices'/'observation_matrices' on the sin/cos data learns a rotation matrix [[0.975,0.156],[-0.153,0.975]] and forecasts with corr 0.988 vs held-out truth. Compounding: (a) the Kalman class docstring FALSELY states n_iter is the 'Number of EM iterations used to fit the transition/observation matrices and their noise covariances'; (b) the shipped tutorial docs/tutorials/projectile_kalman.ipynb forecasts projectile motion via hyp.predict(first30, model='Kalman', t=HORIZON), which returns a flat line for a parabolic trajectory; (c) tests/predict/test_kalman.py::test_trend_direction_sanity compares the forecast mean against df['a'].iloc[:35] (the FIRST half - its comment says 'second half'), so a flat forecast at the last value trivially passes.",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nrng = np.random.default_rng(42)\nt = np.arange(180)\nsine = pd.DataFrame({'y': np.sin(2*np.pi*t/40.0) + 0.1*rng.standard_normal(180)})\nfc, m = hyp.predict(sine, model='Kalman', t=20, return_model=True)\nkf = m.models_[0]['kf']\nprint('transition:', np.asarray(kf.transition_matrices))\nprint('unique forecast values:', fc['y'].nunique())\n\"",
+      "expected": "A fitted linear-Gaussian state-space model whose learned dynamics continue the oscillation (docstring: EM fits the transition/observation matrices); at minimum a non-constant forecast on a strong sine or trend.",
+      "actual": "transition_matrices: [[1.]]  observation_matrices: [[1.]]  forecast unique values: 1  (first3 = [0.24, 0.24, 0.24]; fc_std/train_std = 0.0 on sine, trend, and 2-D rotation data; n_iter=25 forecast std 5.695e-17)",
+      "evidence": ["evidence/F16-predict/t01_noisy_sine.png", "evidence/F16-predict/t01_linear_trend.png", "evidence/F16-predict/t04_w1_eeg_kalman.png"],
+      "docs_impact": ["hypertools/predict/kalman.py", "docs/tutorials/projectile_kalman.ipynb", "examples/plot_predict.py", "tests/predict/test_kalman.py"]
+    },
+    {
+      "id": "F16-predict-002",
+      "severity": "major",
+      "title": "pandas Series input crashes with a cryptic IndexError (wrangled to an empty (0,0) DataFrame)",
+      "description": "A pandas Series is the most natural container for a univariate timeseries, but dw.wrangle(pd.Series(...)) returns a (0,0) DataFrame, so resolve_t hits index[-1] on an empty index and hyp.predict crashes with 'IndexError: index -1 is out of bounds for axis 0 with size 0' - no mention of the input type or how to fix it (.to_frame()). Root cause is in datawrangler's funnel, but hyp.predict is the user-facing surface; it should either forecast the Series or reject it with a clear message.",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\ny = np.sin(np.arange(100)/5.0)\nhyp.predict(pd.Series(y, name='y'), model='Laplace', t=4)\n\"",
+      "expected": "A (4,1) forecast (Series treated as one univariate dataset), or a clear TypeError naming pandas Series and suggesting .to_frame().",
+      "actual": "IndexError: index -1 is out of bounds for axis 0 with size 0  (dw.wrangle(Series) shape: (0, 0))",
+      "evidence": [],
+      "docs_impact": ["hypertools/predict/predict.py"]
+    },
+    {
+      "id": "F16-predict-003",
+      "severity": "major",
+      "title": "1-D numpy array input is silently treated as ONE observation with n features - returns a (t, n) nonsense forecast",
+      "description": "hyp.predict(np.sin(np.arange(100)/5.0), t=4) does not forecast the 100-step series: dw.wrangle turns the 1-D array into a (1,100) DataFrame (one observation, 100 features), so the result is a (4,100) 'forecast' extrapolated from a single observation - meaningless values, no warning. The docstring advertises 'DataFrame/array or list of these', and a 1-D array is the most common way scientists hold a univariate series. Workaround (.reshape(-1,1)) works but nothing tells the user. Same mechanism makes a plain python list of floats come back as a LIST of per-scalar forecasts.",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, hypertools as hyp\ny = np.sin(np.arange(100)/5.0)\nprint(hyp.predict(y, model='Laplace', t=4).shape)   # (4, 100) !!\nprint(hyp.predict(y.reshape(-1,1), model='Laplace', t=4).shape)  # (4, 1) correct\n\"",
+      "expected": "(4, 1) - the 1-D array interpreted as a 100-observation univariate series (or at least a loud warning about the (1,100) interpretation).",
+      "actual": "(4, 100)  - forecast of 100 'features' conditioned on a single observation; silent.",
+      "evidence": [],
+      "docs_impact": ["hypertools/predict/predict.py"]
+    },
+    {
+      "id": "F16-predict-004",
+      "severity": "major",
+      "title": "datetime horizon exactly equal to the last timestamp crashes with a cryptic pandas ValueError",
+      "description": "resolve_t documents 'If t is at or before the last observation ... a negative count is returned, meaning truncate'. For t strictly before the last observation truncation works, but for t == index[-1] resolve_t returns n_steps=0 with future_index = the ENTIRE past index; Forecaster.predict then skips the truncation branch (n_steps < 0 is False) and calls the forecaster with n_steps=0, which builds a 0-row values array against a full-length index -> 'ValueError: Length of values (0) does not match length of index (N)'. Affects every model. Programmatically computed targets (e.g. forecast every subject to a common end time) will hit this whenever one dataset already reaches the target.",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\ndf = pd.DataFrame({'a': np.arange(10.0)}, index=pd.date_range('2026-01-01', periods=10, freq='D'))\nhyp.predict(df, model='Laplace', t=df.index[-1])\n\"",
+      "expected": "Truncation semantics per the resolve_t docstring: return the dataset unchanged (sliced up to t == last), like any past t.",
+      "actual": "ValueError: Length of values (0) does not match length of index (10)   [resolve_t returned n_steps=0, len(future_index)=10]",
+      "evidence": [],
+      "docs_impact": ["hypertools/predict/common.py"]
+    },
+    {
+      "id": "F16-predict-005",
+      "severity": "minor",
+      "title": "ARIMA default order (1,1,1) cannot extrapolate trends (flat forecast on a linear trend) and damps oscillations (sine corr 0.46)",
+      "description": "With the default order=(1,1,1) and no trend term, the ARIMA forecast of a clean linear trend is essentially constant (forecast std / train std = 0.0004; corr with held-out truth -0.239) - visually a horizontal red line while the data keeps climbing - and its sine forecast damps toward a constant (corr 0.464, just under the 0.5 plausibility bar; GP/AutoReg/Chronos reach 0.87-0.96). This is standard ARIMA(1,1,1) statistics, not a coding bug, and trend='t' passes through and fixes the trend case (verified: slope continues 39.97 -> 44.47), but nothing in the docstrings warns that the default order flat-lines on trending data. Recommend documenting (or defaulting to trend handling).",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nrng = np.random.default_rng(42)\ntr = pd.DataFrame({'y': 0.05*np.arange(180) + 2.0 + 0.2*rng.standard_normal(180)})\nfc = hyp.predict(tr, model='ARIMA', t=20)\nprint(float(fc['y'].std()), fc['y'].iloc[[0,-1]].tolist())\n\"",
+      "expected": "Forecast continues the upward trend (or docs state that order=(1,1,1) without trend= gives a level forecast).",
+      "actual": "linear_trend: fc_std_over_train_std = 0.0004, corr = -0.239, first3 = [10.916, 10.91, 10.911] (data ends ~11 and truth rises to ~12); noisy_sine corr = 0.464.",
+      "evidence": ["evidence/F16-predict/t01_linear_trend.png", "evidence/F16-predict/t01_noisy_sine.png"],
+      "docs_impact": ["hypertools/predict/arima.py"]
+    },
+    {
+      "id": "F16-predict-006",
+      "severity": "minor",
+      "title": "Empty/None inputs crash with IndexError; the intended 'cannot forecast an empty dataset' guard is unreachable; empty list falls into the text pipeline",
+      "description": "Forecaster.fit guards `assert data is not None, ValueError('cannot forecast an empty dataset')`, but the dw funnel converts None and pd.DataFrame() into empty DataFrames before fit sees them, so the guard never fires and users get 'IndexError: index -1 is out of bounds for axis 0 with size 0' from resolve_t instead. An empty LIST is even stranger: it is routed into the text-embedding pipeline (printed 'loading corpus: minipedia...done!', i.e. a corpus download) and dies inside sklearn LDA: 'ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation.' A DataFrame with a string column dies with the raw 'ValueError: could not convert string to float: 'a''. All should produce one clear hypertools-level message.",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport pandas as pd, hypertools as hyp\nhyp.predict(pd.DataFrame(), model='Laplace', t=3)\n\"",
+      "expected": "ValueError: cannot forecast an empty dataset (the message that already exists in fit()).",
+      "actual": "IndexError: index -1 is out of bounds for axis 0 with size 0 ; empty list -> ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation.",
+      "evidence": [],
+      "docs_impact": ["hypertools/predict/common.py"]
+    },
+    {
+      "id": "F16-predict-007",
+      "severity": "minor",
+      "title": "Input validation via `assert cond, ValueError(...)` raises AssertionError (wrong type) and vanishes under python -O",
+      "description": "Several user-reachable validations use the `assert cond, ValueError(msg)` anti-pattern, so callers get AssertionError (uncatchable as ValueError) and the checks are stripped entirely under `python -O`, letting execution continue into stranger downstream failures. Observed live: 'AssertionError: AutoRegressor needs more than lags=10 observations to fit; got 3' (autoreg.py fitter), 'AssertionError: unknown model: 'NopeRegressor'; supported string names are [...]' (autoreg.py _resolve_estimator), 'AssertionError: cannot infer a timestep: all observations share one timestamp' (common.py _infer_step). Same pattern (not individually triggered) in common.py fit() ('cannot forecast an empty dataset', 'fit function must return a dictionary', 'one or more required fields not returned') and autoreg.py applier. The QC pass already converted ONE of these (resolve_t's DatetimeIndex check, comment 'a real raise ... stripped under python -O') - the same reasoning applies to the rest.",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport pandas as pd, hypertools as hyp\ntry:\n    hyp.predict(pd.DataFrame({'y': [1.0, 2.0, 3.0]}), model='AutoRegressor', t=3)\nexcept ValueError:\n    print('caught ValueError')\nexcept AssertionError as e:\n    print('AssertionError leaked:', e)\n\"",
+      "expected": "ValueError raised (and validation active under python -O).",
+      "actual": "AssertionError leaked: AutoRegressor needs more than lags=10 observations to fit; got 3",
+      "evidence": [],
+      "docs_impact": ["hypertools/predict/common.py", "hypertools/predict/autoreg.py"]
+    },
+    {
+      "id": "F16-predict-008",
+      "severity": "minor",
+      "title": "Kalman/GaussianProcess silently ignore unknown kwargs (typos like n_itr=50 change nothing, no warning) while ARIMA/AutoRegressor raise",
+      "description": "Kalman and GP fitters read their options via kwargs.get(...), so any misspelled option (n_itr=50, kernle=..., em_vars=...) is silently swallowed - the run 'succeeds' with default settings and zero warnings, a reproducibility hazard for scientists who believe they changed the model. ARIMA and AutoRegressor forward extras to the underlying constructor and fail loudly (TypeError: ... got an unexpected keyword argument 'bogus_flag'). Behavior should be consistent, ideally warn-or-raise on unconsumed kwargs.",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport warnings, numpy as np, pandas as pd, hypertools as hyp\nx = pd.DataFrame({'y': np.sin(np.arange(100)/5.0)})\nwith warnings.catch_warnings(record=True) as w:\n    warnings.simplefilter('always')\n    hyp.predict(x, model='Kalman', t=3, n_itr=50)\n    print('warnings:', len(w))\n\"",
+      "expected": "TypeError or at least a warning naming the unknown kwarg.",
+      "actual": "warnings: 0  (run succeeds with the default n_iter=5; ARIMA path by contrast raises TypeError: ARIMA.__init__() got an unexpected keyword argument 'bogus_flag')",
+      "evidence": [],
+      "docs_impact": ["hypertools/predict/kalman.py", "hypertools/predict/gp.py"]
+    },
+    {
+      "id": "F16-predict-009",
+      "severity": "minor",
+      "title": "Outer **kwargs are silently dropped when model is a fork-style dict, but merged for the params-style dict",
+      "description": "hyp.predict(x, model={'model': 'Kalman', 'params': {}}, n_iter=9) honors n_iter (model.n_iter == 9), but hyp.predict(x, model={'model': 'Kalman', 'kwargs': {}}, n_iter=9) silently ignores it (model.n_iter == 5): in predict.py the fork-dict branch instantiates cls(*args, **resolved['kwargs']) without merging the call-level **kwargs. The docstring only says kwargs are 'ignored when model is already an instance', so users have no reason to expect the canonical (non-deprecated!) dict form to drop them while the deprecated form merges them.",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nx = pd.DataFrame({'y': np.sin(np.arange(60)/5.0)})\n_, m = hyp.predict(x, model={'model': 'Kalman', 'kwargs': {}}, t=3, n_iter=9, return_model=True)\nprint('fork-form n_iter:', m.n_iter)\n\"",
+      "expected": "fork-form n_iter: 9 (or a loud error/warning that call-level kwargs conflict with the dict spec).",
+      "actual": "fork-form n_iter: 5   (params-form comparison run: n_iter_on_model = 9)",
+      "evidence": [],
+      "docs_impact": ["hypertools/predict/predict.py"]
+    },
+    {
+      "id": "F16-predict-010",
+      "severity": "minor",
+      "title": "NaN handling is inconsistent across forecasters; Laplace dies with a BLANK AssertionError; all-NaN input yields a silent fabricated 0.0 forecast",
+      "description": "With a few NaNs in a 100-point series: Kalman, ARIMA, and Chronos forecast fine; GaussianProcess raises sklearn's 'ValueError: Input y contains NaN.'; AutoRegressor raises sklearn's long Ridge-NaN message; Laplace raises literally 'AssertionError: ' with an EMPTY message from deep inside skaters - no hint that NaNs are the cause. An all-NaN column through Kalman silently returns a forecast of exact 0.0s (masked EM with zero information fabricates zeros, no warning). Only kalman.py documents its NaN behavior; per-model NaN support/limits should be documented and errors normalized (e.g. 'Laplace cannot handle missing values; run hyp.impute first').",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nx = pd.DataFrame({'y': np.sin(np.arange(100)/5.0)})\nx.iloc[[10, 40, 41, 70], 0] = np.nan\nhyp.predict(x, model='Laplace', t=5)\n\"",
+      "expected": "Either a NaN-tolerant forecast or a clear error naming NaN as the problem and pointing at hyp.impute / dropna.",
+      "actual": "AssertionError:      (empty message; GP: 'ValueError: Input y contains NaN.'; all-NaN Kalman: [[0.0],[0.0],[0.0]] with no warning)",
+      "evidence": [],
+      "docs_impact": ["hypertools/predict/laplace.py", "hypertools/predict/gp.py", "hypertools/predict/autoreg.py", "hypertools/predict/kalman.py"]
+    },
+    {
+      "id": "F16-predict-011",
+      "severity": "minor",
+      "title": "Laplace forecaster is extremely slow at larger horizons (23.5 s for t=100 on a single 200-row column) and per-column cost is undocumented",
+      "description": "skaters' laplace(k) closure cost grows with k for every observation fed through it: t=20 on 180x1 already takes ~2 s (peers <0.35 s), and t=100 on 200x1 takes 23.5 s - roughly 1000x ARIMA/GP for the same job, and multiplied per column for multivariate data (a 10-column dataset at t=100 would be ~4 minutes). The laplace.py module docstring describes chunking verification in detail but never mentions the cost profile. Deserves a docstring performance note (and possibly a progress indicator).",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport time, numpy as np, pandas as pd, hypertools as hyp\nbig = pd.DataFrame({'y': np.sin(np.arange(200)/8.0)})\nt0 = time.time(); fc = hyp.predict(big, model='Laplace', t=100)\nprint(round(time.time()-t0, 1), 'seconds', fc.shape)\n\"",
+      "expected": "Seconds comparable to other classical models, or a documented warning about O(k*n) per-column cost.",
+      "actual": "23.5 seconds (100, 1)   [ARIMA: 0.01 s, GP: 0.02 s on comparable input]",
+      "evidence": [],
+      "docs_impact": ["hypertools/predict/laplace.py"]
+    },
+    {
+      "id": "F16-predict-012",
+      "severity": "minor",
+      "title": "Passing model_kwargs={...} to AutoRegressor (as its fitter docstring documents) double-nests and crashes inside sklearn",
+      "description": "autoreg.fitter's docstring documents \"`model_kwargs` : dict, passed to `model` when it is a string or class\", but AutoRegressor.__init__(model='Ridge', lags=10, **model_kwargs) captures an EXPLICIT model_kwargs= argument INSIDE the **model_kwargs catch-all, producing {'model_kwargs': {...}} which is then splatted into the sklearn constructor: TypeError: RandomForestRegressor.__init__() got an unexpected keyword argument 'model_kwargs'. The working spelling is flat kwargs ({'model': 'RandomForestRegressor', 'lags': 5, 'random_state': 0}) - verified working and seed-deterministic - but nothing tells the user, and the two docstrings (fitter vs class) describe different calling conventions.",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nx = pd.DataFrame({'y': np.sin(np.arange(100)/5.0)})\nhyp.predict(x, model={'model': 'AutoRegressor', 'kwargs': {'model': 'RandomForestRegressor', 'model_kwargs': {'random_state': 0}}}, t=3)\n\"",
+      "expected": "Either model_kwargs= accepted as the documented dict, or a clear error explaining that estimator options are passed flat.",
+      "actual": "TypeError: RandomForestRegressor.__init__() got an unexpected keyword argument 'model_kwargs'",
+      "evidence": [],
+      "docs_impact": ["hypertools/predict/autoreg.py"]
+    },
+    {
+      "id": "F16-predict-013",
+      "severity": "style",
+      "title": "AutoRegressor's inner-estimator kwarg is named 'model', colliding with hyp.predict's own model= - the inner regressor cannot be chosen with a flat kwarg",
+      "description": "hyp.predict(x, model='AutoRegressor', model='SVR') is a duplicate-keyword SyntaxError, so selecting AutoRegressor's underlying sklearn regressor through the dispatcher REQUIRES the dict spec ({'model': 'AutoRegressor', 'kwargs': {'model': 'SVR'}}) or a pre-constructed instance, unlike every other forecaster option (n_iter, order, kernel, lags... all work flat). Renaming the inner kwarg (e.g. estimator=) or documenting the dict-only path would remove the trap.",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nx = pd.DataFrame({'y': np.sin(np.arange(100)/5.0)})\nprint(hyp.predict(x, model={'model': 'AutoRegressor', 'kwargs': {'model': 'KNeighborsRegressor', 'lags': 4}}, t=3).shape)  # only working spelling\n\"",
+      "expected": "A flat spelling for choosing the inner regressor, consistent with other forecaster kwargs.",
+      "actual": "Flat spelling impossible (duplicate keyword 'model'); dict form works: (3, 1).",
+      "evidence": [],
+      "docs_impact": ["hypertools/predict/autoreg.py", "hypertools/predict/predict.py"]
+    },
+    {
+      "id": "F16-predict-014",
+      "severity": "style",
+      "title": "GaussianProcess predict_new ignores the new data's VALUES entirely - reuse returns the numerically identical forecast regardless of the new dataset",
+      "description": "The GP applier reuses the fitted gp over the ORIGINAL time index (documented in its docstring), so hyp.predict(B, model=fitted_gp, t=5) returns values numerically IDENTICAL to continuing dataset A - even when B = A*1000 (verified: allclose true). Only B's index/columns are used. Every other reusable forecaster conditions on the new series (Kalman filters it, ARIMA .apply()s it, AutoRegressor reseeds from its tail, Laplace re-feeds it), so GP's reuse semantics are a silent odd-one-out: a scientist reusing a GP across subjects gets subject-A forecasts labeled with subject-B's index and no warning.",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nt = np.arange(80)\nA = pd.DataFrame({'a': np.sin(t/6.0)})\nB = A * 1000.0\nfcA, m = hyp.predict(A, model='GaussianProcess', t=5, return_model=True)\nfcB = hyp.predict(B, model=m, t=5)\nprint(np.allclose(fcA.to_numpy(), fcB.to_numpy()))\n\"",
+      "expected": "Reuse conditioned on the new data (like the other models), or a runtime warning that GP reuse continues the ORIGINAL fit.",
+      "actual": "True  (forecast for B*1000 identical to A's continuation; no warning)",
+      "evidence": [],
+      "docs_impact": ["hypertools/predict/gp.py", "hypertools/predict/predict.py"]
+    },
+    {
+      "id": "F16-predict-015",
+      "severity": "style",
+      "title": "`import hypertools.predict.kalman as k` fails with a baffling ImportError (predict submodule shadowed by the predict function)",
+      "description": "hypertools/__init__.py rebinds the name `predict` to the dispatcher function, shadowing the hypertools.predict subpackage as an attribute. `import hypertools.predict.kalman as k` (the `as` form walks attributes) therefore raises \"ImportError: cannot import name 'kalman' from 'predict' (unknown location)\". tests/predict/test_kalman.py already documents the workaround (`from hypertools.predict import kalman`), confirming this is a known sharp edge; end users hitting it get no such hint. (Same pattern presumably affects the other shadowed subpackages - only predict audited here.)",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools.predict.kalman as k\"",
+      "expected": "Module imports (or an error message explaining the function/module shadowing and the from-import workaround).",
+      "actual": "ImportError: cannot import name 'kalman' from 'predict' (unknown location)",
+      "evidence": [],
+      "docs_impact": ["hypertools/__init__.py", "hypertools/predict/__init__.py"]
+    },
+    {
+      "id": "F16-predict-016",
+      "severity": "enhancement",
+      "title": "No seed control or nondeterminism documentation for stochastic forecasters (Chronos differs run-to-run; unseeded RandomForest too)",
+      "description": "Chronos point forecasts are sample medians and two identical hyp.predict(..., model='Chronos') calls return different values (verified: first3 -0.0922/-0.2199/-0.3192 vs -0.1182/-0.2317/-0.3263); AutoRegressor with RandomForestRegressor is likewise nondeterministic unless the user thinks to pass random_state. Nothing in predict()'s or Chronos's docstrings mentions nondeterminism, and no seed= kwarg exists. Verified workaround: torch.manual_seed(0) before each call makes Chronos exactly reproducible - exposing a seed kwarg (or documenting the torch.manual_seed recipe and random_state for sklearn estimators) would make forecasts reproducible for publication.",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nx = pd.DataFrame({'y': np.sin(np.arange(180)/6.0)})\na = hyp.predict(x, model='Chronos', t=8); b = hyp.predict(x, model='Chronos', t=8)\nprint('identical:', np.allclose(a.to_numpy(), b.to_numpy()))\n\"",
+      "expected": "A documented seed/reproducibility story (seed kwarg, or docstring note).",
+      "actual": "identical: False   (with torch.manual_seed(0) before each call: identical True)",
+      "evidence": [],
+      "docs_impact": ["hypertools/predict/chronos.py", "hypertools/predict/predict.py", "hypertools/predict/autoreg.py"]
+    },
+    {
+      "id": "F16-predict-017",
+      "severity": "minor",
+      "title": "predict_new with a different feature count than the fitted model crashes with a cryptic broadcast error",
+      "description": "Reusing a Kalman forecaster fit on 2 columns against 5-column new data dies inside pykalman with 'ValueError: operands could not be broadcast together with shapes (5,) (2,)' - nothing names the real problem (feature-count mismatch between the fitted model and the new data) or the fix. predict_new already validates dataset COUNTS with an excellent message; a matching width check would complete it.",
+      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nrng = np.random.default_rng(3)\n_, m = hyp.predict(pd.DataFrame(rng.standard_normal((40, 2))), model='Kalman', t=3, return_model=True, n_iter=2)\nhyp.predict(pd.DataFrame(rng.standard_normal((40, 5))), model=m, t=3)\n\"",
+      "expected": "ValueError naming the width mismatch, e.g. 'fitted on 2 features but new data has 5'.",
+      "actual": "ValueError: operands could not be broadcast together with shapes (5,) (2,)",
+      "evidence": [],
+      "docs_impact": ["hypertools/predict/common.py", "hypertools/predict/kalman.py"]
+    },
+    {
+      "id": "F16-predict-018",
+      "severity": "minor",
+      "title": "infra: repo .venv contains a STALE non-editable hypertools install - code under test depends on the current working directory",
+      "description": "infra. `pip show hypertools` in the repo venv reports a NON-editable install at .venv/lib/python3.12/site-packages, and 125 files differ between that copy and the repo working tree. Any python invocation whose cwd is not the repo root imports the STALE package: verified live, where model='GP' raised \"unknown predict model 'GP'\" and t=0 silently returned an empty (0,2) DataFrame - both bugs that the current repo source already fixes (this audit's first battery ran against the stale copy and had to be fully re-run with PYTHONPATH=/Users/jmanning/hypertools). Anything else that executes from a non-repo cwd (tools, tutorials, notebook kernels, other audit units) is silently testing outdated code. The venv should be reinstalled with `pip install -e .` before release validation (not done here - installs are out of audit scope).",
+      "repro": "cd /tmp && /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools; print(hypertools.__file__)\"  # -> .../site-packages/hypertools/__init__.py (stale); cd /Users/jmanning/hypertools && same command -> repo tree",
+      "expected": "The venv resolves hypertools to the repo working tree from any cwd (editable install).",
+      "actual": "Location: /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages (non-editable); 125 files differ; stale copy raised ValueError: unknown predict model 'GP' and returned an empty DataFrame for t=0.",
+      "evidence": [],
+      "docs_impact": []
+    }
+  ]
+}
