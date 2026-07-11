@@ -23,6 +23,24 @@ repr()/get_params()/clone() crash under sklearn 1.8 (`transform_input` attr miss
 - (c) re-host modern pickles (needs hosting decision — GitHub release asset or Jeremy's Drive).
 Leaning (a) for 1.0 stability + file (b) as tracked enhancement, but let the verification/fix phase decide.
 
+## Remaining criticals — root causes + fix sketches (from auditor line-level diagnosis)
+
+### F06-001: $HYPERTOOLS_BACKEND env var crashes `import hypertools`
+`plot/backend.py:550-556` `_init_backend`: reorder branch calls `backends.index(HYPERTOOLS_BACKEND)` using the module GLOBAL (still None) instead of the local `env_backend` → ValueError; `finally:` at ~691 references never-assigned `working_backend` → UnboundLocalError masks everything; import dies. Two latent bugs in the same branch: case-mismatch (`in` check lowercases, `index` doesn't) and bad splice `(backends[:idx], *backends[idx+1:])` nests a tuple as element 0 (should be `(*backends[:idx], ...)`). Fix: use `env_backend` with case-normalized lookup, fix splice, make `finally` guard `working_backend`, add real regression test spawning a subprocess with the env var set.
+
+### F06-002: failed backend switch permanently corrupts state
+`backend.py:1052-1065` `__enter__` sets `IN_SET_CONTEXT=True` and assigns `HYPERTOOLS_BACKEND` BEFORE `switch_backend()`; on raise, `__exit__` never runs → flag stuck, bad backend kept, BACKEND_WARNING cleared — reachable from plain `hyp.plot(animate=True)` after a bad `set_interactive_backend`, and from the class docstring's own TkAgg example on Tk-less machines. Fix: mutate globals only after a successful switch (or try/except restore); plus eager validation in set_interactive_backend (covers F06-003).
+
+### F08-001 (== F01-004): plain list-of-lists numeric matrix crashes plot()
+`plot/plot.py:1574-1576` `_flatten_nested` recurses into inner numeric lists and yields SCALARS as leaves → N*M singleton "datasets" → internally-generated color list of len N*M vs 1 merged dataset → nonsense "color= was given as..." error. `format_data` alone handles the same input; docstring advertises it. Fix: leaf-detect a pure numeric matrix (inner elements all scalars) before recursing so `[[1,2],[3,4]]` is ONE dataset; preserve the legit nested-GROUPS feature (examples/plot_nested_lists.py must stay identical — regression-test both).
+
+### F12-001: trim_and_pad silently scrambles row order (non-RangeIndex)
+`align/common.py` ~L41: `rows = list(set(index_values))` + `.loc[rows]` → hash-order rows for DatetimeIndex/string/shuffled-int indices; silent because align returns bare arrays. Consistent across datasets so dispersion metrics look fine — pure silent data corruption for timeseries users. Fix: preserve first-dataset index order: `common = set.intersection(*[set(d.index) for d in data]); rows = [r for r in data[0].index if r in common]` (order-preserving, deterministic); regression test with DatetimeIndex + identifiable rows (col0==i) asserting exact order preservation.
+
+## Phase-4 design refinement (verification wave)
+
+Per-UNIT verifier agents (~46) rather than per-finding (~450): each verifier gets its unit's findings as {id, title, repro, expected, actual, evidence paths} ONLY (no auditor reasoning), re-runs every repro against the audit branch, examines evidence PNGs directly (agents read images), returns per-finding verdicts {CONFIRMED|REFUTED|CANNOT-REPRO, severity_adjust, notes}. Controller pre-pass before dispatch: dedup obvious cross-unit clusters ([infra] stale-venv ×10 → env-resolved, skip; plot-shadows-subpackage ×4 → one finding; docstring-no-examples ×3 → one; fmt-list-length ×2; etc.).
+
 ## Environment notes
 
 - macOS has no `timeout` command — use Bash tool timeout param or python-side timeouts (bitten twice across sessions).
