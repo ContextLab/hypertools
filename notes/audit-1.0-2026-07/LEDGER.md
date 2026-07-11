@@ -44,3 +44,13 @@ Working truth for the release audit. Update after every phase transition, wave c
 ## Workflow runs
 
 (runId + purpose, for resume)
+
+- `wf_bc33c3c0-640` — Phase 1-3 red-team, 46 auditors (F18 first → 44 parallel → X3 alone). Script: `~/.claude/projects/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/workflows/scripts/audit-1p0-redteam-wf_bc33c3c0-640.js`
+
+## Seed observations (controller pre-warm, 2026-07-11 00:47)
+
+Cross-check that auditors independently find these (auditor-quality canary):
+
+1. `hyp.load('sotus')` (and likely other hosted geo pickles) emits 3× sklearn `InconsistentVersionWarning` — estimators pickled under sklearn 1.0.2, unpickled under 1.8.0 (CountVectorizer, LatentDirichletAllocation, Pipeline). Users see scary warnings + "invalid results" risk on a flagship dataset load. → F18/X4.
+2. `hyp.load('sotus')` returns a `Pipeline` (len 2), not raw data — 1.0 contract says load() returns raw data. Verify intended vs bug. → F18.
+3. Baseline: weights=list(36), spiral=list(2), mushrooms=DataFrame(8124).
