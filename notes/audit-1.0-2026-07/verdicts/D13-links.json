@@ -1,0 +1,138 @@
+{
+ "unit": "D13-links",
+ "verdicts": [
+  {
+   "id": "D13-links-001",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Link present at hypertools/plot/plot.py:668. curl -sIL https://raw.githubusercontent.com/Homebrew/install/master/install -> '404'; replacement .../HEAD/install.sh -> '200'. Exactly as claimed.",
+   "commands_run": [
+    "grep -rn 'Homebrew/install' hypertools/",
+    "curl -sIL --max-time 20 -o /dev/null -w '%{http_code}\\n' https://raw.githubusercontent.com/Homebrew/install/master/install",
+    "curl -sIL --max-time 20 -o /dev/null -w '%{http_code}\\n' https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
+   ]
+  },
+  {
+   "id": "D13-links-002",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Link present at CONTRIBUTING.md:30. curl followed redirects to final URL 'https://docs.github.com/articles/proposing-changes-to-a-project-with-pull-requests' with final code '404'.",
+   "commands_run": [
+    "grep -n 'proposing-changes' CONTRIBUTING.md",
+    "curl -sIL --max-time 20 -o /dev/null -w '%{http_code} %{url_effective}\\n' https://help.github.com/articles/proposing-changes-to-a-project-with-pull-requests/"
+   ]
+  },
+  {
+   "id": "D13-links-003",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Link present at CONTRIBUTING.md:32. curl -> '404 https://egghead.io/series/how-to-contribute-to-an-open-source-project-on-github' (no redirect, hard 404).",
+   "commands_run": [
+    "grep -n 'egghead.io' CONTRIBUTING.md",
+    "curl -sIL --max-time 20 -o /dev/null -w '%{http_code} %{url_effective}\\n' https://egghead.io/series/how-to-contribute-to-an-open-source-project-on-github"
+   ]
+  },
+  {
+   "id": "D13-links-004",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Link present in docs/tutorials/analyze.ipynb ('implements [hyperalignment](http://haxbylab.dartmouth.edu/publications/HGC+11.pdf)'). curl output: '200 https://sites.dartmouth.edu/haxbylab/ text/html; charset=UTF-8' -- redirected to the lab homepage, content-type text/html, not a PDF payload.",
+   "commands_run": [
+    "grep -rn 'haxbylab' docs/tutorials/analyze.ipynb",
+    "curl -sIL --max-time 20 http://haxbylab.dartmouth.edu/publications/HGC+11.pdf -o /dev/null -w '%{http_code} %{url_effective} %{content_type}\\n'"
+   ]
+  },
+  {
+   "id": "D13-links-005",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Real run of hy.reduce(np.random.rand(10,5), reduce='NotAModel') raised ValueError citing 'See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce' (http scheme, old tools.reduce page name; hypertools/reduce/reduce.py:237). Fetching that URL returns a page titled 'hypertools.tools.reduce — hypertools 0.8.1 documentation' -- it is the 0.8.1 page that will disappear when /en/latest/ rebuilds for 1.0 (1.0 docs use hypertools.reduce, not hypertools.tools.reduce).",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c \"import hypertools as hy, numpy as np; hy.reduce(np.random.rand(10,5), reduce='NotAModel')\"",
+    "curl -sL http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html + grep '<title>'"
+   ]
+  },
+  {
+   "id": "D13-links-006",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Links present in user-facing docstrings (hypertools/plot/plot.py:944,956; tools/text2mat.py:199,215; tools/format_data.py:29,41). Fetched http://scikit-learn.org/stable/modules/classes.html: grep -c 'id=\"module-sklearn.decomposition\"' -> 0, page <title> is 'scikit-learn: machine learning in Python' (homepage/redirect stub). The documented anchor target no longer exists.",
+   "commands_run": [
+    "grep -rn 'classes.html#module-sklearn' hypertools/",
+    "curl -sL http://scikit-learn.org/stable/modules/classes.html -o sk.html; grep -c 'id=\"module-sklearn.decomposition\"' sk.html; grep '<title>' sk.html"
+   ]
+  },
+  {
+   "id": "D13-links-007",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Reference at hypertools/plot/backend.py:79 (internal code comment, not user-facing docs -- downgraded doc->style). curl -sL https://matplotlib.org/faq/howto_faq.html redirects to https://matplotlib.org/stable/faq/howto_faq.html; grep -c 'working-with-threads' -> 0. Anchor is gone as claimed.",
+   "commands_run": [
+    "grep -rn 'working-with-threads' hypertools/",
+    "curl -sL --max-time 30 https://matplotlib.org/faq/howto_faq.html -o mpl.html -w '%{http_code} %{url_effective}\\n'; grep -c 'working-with-threads' mpl.html"
+   ]
+  },
+  {
+   "id": "D13-links-008",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Link at CONTRIBUTING.md:29 uses https://guides.github.com/activities/forking/#making-changes. curl follows redirect to 'https://docs.github.com/en/get-started/exploring-projects-on-github/contributing-to-a-project'; grep -c 'making-changes' on the final page -> 0. The anchor is dead after the redirect.",
+   "commands_run": [
+    "grep -n 'guides.github.com' CONTRIBUTING.md",
+    "curl -sL --max-time 30 https://guides.github.com/activities/forking/ -o gh.html -w '%{http_code} %{url_effective}\\n'; grep -c 'making-changes' gh.html"
+   ]
+  },
+  {
+   "id": "D13-links-009",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "http:// links exist in the code (e.g. procrustes.py:21 http://en.wikipedia.org/wiki/Procrustes_transformation, tools/align.py:41 http://brainiak.org). Observed: 'http://matplotlib.org/ -> 200 https://matplotlib.org/', 'http://brainiak.org -> 200 https://brainiak.org/', 'http://en.wikipedia.org/... -> 200 https://en.wikipedia.org/...' (all redirect to https). Caveat: http://scikit-learn.org/ served '200 http://scikit-learn.org/' with NO redirect in my run, so the auditor's 'each 301' is overstated for that host, but the https-preference substance is fair.",
+   "commands_run": [
+    "for u in http://scikit-learn.org/ http://matplotlib.org/ http://brainiak.org http://en.wikipedia.org/wiki/Procrustes_transformation; do curl -sIL --max-time 20 $u -o /dev/null -w '%{http_code} %{url_effective}\\n'; done"
+   ]
+  },
+  {
+   "id": "D13-links-010",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Link at hypertools/tools/align.py:41. curl -sIL https://github.com/IntelPNI/brainiak -> '200 https://github.com/brainiak/brainiak' (redirects to the moved repo). Link still resolves via GitHub's rename redirect, so downgraded doc->style: non-canonical but functional.",
+   "commands_run": [
+    "grep -rn 'IntelPNI' hypertools/",
+    "curl -sIL --max-time 20 https://github.com/IntelPNI/brainiak -o /dev/null -w '%{http_code} %{url_effective}\\n'"
+   ]
+  },
+  {
+   "id": "D13-links-011",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Legacy resolver at hypertools/align/procrustes.py:135 and :308. curl http://dx.doi.org/10.1007%2FBF02289451 -> '200 https://www.cambridge.org/core/journals/psychometrika/article/abs/generalized-solution-of-the-orthogonal-procrustes-problem/...' -- resolves fine but via legacy dx.doi.org + %2F-encoded slash; modern form is https://doi.org/10.1007/BF02289451. Style-level as the auditor said.",
+   "commands_run": [
+    "grep -rn 'dx.doi.org' hypertools/",
+    "curl -sIL --max-time 20 http://dx.doi.org/10.1007%2FBF02289451 -o /dev/null -w '%{http_code} %{url_effective}\\n'"
+   ]
+  },
+  {
+   "id": "D13-links-012",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "CONTRIBUTING.md:22 links milestone/5 and :45 links gitter.im/hypertools/Lobby. GitHub API returned title='mozsprint', due_on='2017-06-03T00:00:00Z', state='closed'. Gitter link redirects to '200 https://app.gitter.im/#/room/#hypertools_Lobby:gitter.im' (Matrix SPA). Both stale as claimed.",
+   "commands_run": [
+    "grep -n 'milestone\\|gitter' CONTRIBUTING.md",
+    "curl -s https://api.github.com/repos/ContextLab/hypertools/milestones/5 | python -c 'import sys,json;d=json.load(sys.stdin);print(d[\"title\"],d[\"due_on\"],d[\"state\"])'",
+    "curl -sIL --max-time 20 https://gitter.im/hypertools/Lobby -o /dev/null -w '%{http_code} %{url_effective}\\n'"
+   ]
+  },
+  {
+   "id": "D13-links-013",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "grep -l 'hypertools.git@dev-1.0-refactor' over docs/tutorials/*.ipynb -> 13 of 15 checked-in notebooks (projectile_kalman.ipynb and stock_forecasting.ipynb lack it), all installing from the mutable branch. Two corrections to the claim: the count is 13 notebooks (not 14), and docs/conf.py does NOT hardcode the branch -- it auto-detects the build branch and falls back to plain '%pip install hypertools[interactive]' (PyPI) when branch=='master' (docs/conf.py ~line 54-62, note even says 'On release this becomes: %pip install hypertools'). The checked-in notebook cells still ship the mutable-branch pin, so the release-audit substance stands.",
+   "commands_run": [
+    "grep -l 'hypertools.git@dev-1.0-refactor' /Users/jmanning/hypertools/docs/tutorials/*.ipynb /Users/jmanning/hypertools/docs/conf.py | wc -l",
+    "grep -c 'dev-1.0-refactor' docs/conf.py  # -> 0",
+    "sed -n '50,65p' docs/conf.py",
+    "curl -s https://api.github.com/repos/ContextLab/hypertools/branches/dev-1.0-refactor (branch exists per auditor; notebooks verified locally)"
+   ]
+  }
+ ]
+}

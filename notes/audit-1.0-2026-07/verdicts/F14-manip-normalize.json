@@ -1,0 +1,139 @@
+{
+ "unit": "F14-manip-normalize",
+ "verifier": "independent adversarial verifier (Claude), 2026-07-12, branch audit/release-1.0-2026-07, env /Users/jmanning/hypertools/.venv/bin/python (MPLBACKEND=Agg)",
+ "verdicts": [
+  {
+   "id": "F14-manip-normalize-001",
+   "verdict": "CONFIRMED",
+   "severity": "critical",
+   "justification": "Ran repro exactly. Observed 'ds0 tail: [0.03962704 0.2004662 0.3962704]', 'ds1 head: [0.6037296 0.7995338 0.96037296]', 'ds0 all zero: False', 'ds1 all one: False'. A constant all-zeros dataset gains values approaching 1 at its tail after Smooth on a list, proving smoothing runs across the stacked dataset boundary and silently mixes subjects. Evidence PNG f_smooth_boundary_bleed.png matches (A ramps up toward B at the boundary). Silent wrong results on a core documented use (list-of-datasets input) = critical.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f001.py (scratchpad verify/F14-manip-normalize)"]
+  },
+  {
+   "id": "F14-manip-normalize-002",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran repro exactly. Observed 'DTypePromotionError The DType <class 'numpy.dtypes._PyFloatDType'> could not be promoted by <class 'numpy.dtypes.StrDType'>...' -- a raw numpy internal crash for Resample axis=1 on a DataFrame with string column names ('abc'). Documented axis option crashes on the most ordinary DataFrame = major.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f002.py"]
+  },
+  {
+   "id": "F14-manip-normalize-003",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran repro exactly plus controls. Observed 'Smooth reuse: KeyError roi1', 'Smooth reuse 4col: KeyError w' (no column-count guard), while the identical scenario with ZScore succeeds: 'ZScore reuse OK: <class 'pandas.DataFrame'> (40, 3)'. Fitted-model reuse (a documented return_model workflow) crashes with a bare KeyError for Smooth only = major.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f003.py"]
+  },
+  {
+   "id": "F14-manip-normalize-004",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran repro exactly. Input centered at 100 produced 'out min/max: 1.052126358426947 2.2447566264860495' and fit-time column maxima '[1.05212636 2.24475663 1.35882342]'; per-column unique value counts were [1, 1, 1], i.e. every output value equals its column's FIT-TIME maximum. Silent clipping of new data to the old range = major.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f004.py"]
+  },
+  {
+   "id": "F14-manip-normalize-005",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran repro exactly. Observed 'wrangle(Series) -> <class 'pandas.DataFrame'> (0, 0)', then 'ZScore: IndexError list index out of range' and 'Smooth: ValueError kernel_width (11) is larger than the number of samples (0); use a kernel_width <= 0.' (nonsense advice), while hyp.normalize(Series) works: '(40, 1)' ndarray. A pandas Series is a completely reasonable input; manip silently wrangles it to (0,0) and fails incoherently = major.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f005.py"]
+  },
+  {
+   "id": "F14-manip-normalize-006",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Ran repro exactly. Observed 'manip 1d: (1, 4) [[nan nan nan nan]]' vs 'normalize 1d: (4, 1) [-1.34164079 -0.4472136 0.4472136 1.34164079]'. manip ZScore treats 1-D as a single row and returns silent all-NaN; normalize treats it as a column and returns finite values. Confirmed as filed = minor.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f006.py"]
+  },
+  {
+   "id": "F14-manip-normalize-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Ran all three cases. empty DataFrame and None both raise 'IndexError: list index out of range' (at 'n_levels = len(groups[0][1].index.levels)'). Empty list takes the text path and dies inside sklearn: 'ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation.' -- shape (0, 1220) proves the topic-model corpus vocabulary was loaded for an empty list. Cryptic errors on degenerate input = minor.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f007.py empty_df", "/Users/jmanning/hypertools/.venv/bin/python f007.py none", "/Users/jmanning/hypertools/.venv/bin/python f007.py empty_list"]
+  },
+  {
+   "id": "F14-manip-normalize-008",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "The auditor's linear-ramp repro is non-discriminating (savgol order 3 is identity on a ramp for any width: matched BOTH 11 and 13), so I re-ran with a sine signal: output matched savgol width 11 (True) and NOT width 13 (False), proving truncation of 11.7 -> 11. Source confirms: hypertools/manip/smooth.py:168-170 warns 'Rounding smoothing kernel width to the nearest integer' then executes int(kwargs['kernel_width']) which truncates (int(11.7)=11, round=12); docstring line 236 even claims 'rounded up'. Warning/docs vs behavior mismatch = minor.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f008.py", "inline sine-signal discriminating test", "grep smooth.py"]
+  },
+  {
+   "id": "F14-manip-normalize-009",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Ran repro exactly. Observed 'AssertionError minimum must be strictly less than maximum' and 'AssertionError scale_type must be across, within, row, none, or a fitted Normalizer.' Source: hypertools/manip/normalize.py:43 uses 'assert min < max, ValueError(...)' while its Raises section (lines 38-40) documents ValueError; asserts are stripped under python -O, and 'scale_type' is not a parameter of hyp.normalize (the kwarg is 'normalize') = minor.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f009_012.py", "grep normalize.py"]
+  },
+  {
+   "id": "F14-manip-normalize-010",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Ran repro exactly. Observed \"F010: AttributeError 'str' object has no attribute 'fit_transform'\" for model={'model': 'Bar', 'kwargs': {}}, while the bare-string path (F017 run) raises the clear \"ValueError: unknown manip model 'Foo'; supported names: ...\". Dict path leaks an internal AttributeError = minor.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f009_012.py"]
+  },
+  {
+   "id": "F14-manip-normalize-011",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Ran repro exactly. mode='hann' -> 'F011 NO ERROR: DataFrame (30, 3)' (silently falls through to savgol), while kernel='hann' properly raises \"ValueError invalid Smooth kernel 'hann'; must be one of ('savgol', 'gaussian', 'boxcar')\". Asymmetric validation between the legacy and new kwarg = minor.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f009_012.py"]
+  },
+  {
+   "id": "F14-manip-normalize-012",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Ran repro exactly ('F012 NO ERROR: DataFrame (30, 5)') plus a discriminating check: axis=1 Normalize fit on N(0,1) data then applied to (30,5) data centered at 50 returned 'out range: 16.92 155.94' -- far outside [0,1], so the transform replayed FIT-TIME per-row baseline/peak onto unrelated new rows instead of re-deriving or erroring. Silent, but reuse of a row-wise fitted model on new data is an edge workflow = minor.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f009_012.py", "inline axis=1 reuse range check"]
+  },
+  {
+   "id": "F14-manip-normalize-013",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Ran repro exactly. ZScore on [zeros, ones] returned 'ds0 values: [-0.99163165 -0.99163165]' (shared stats; per-dataset stats would give 0s, since std=0 within each dataset). Source: hypertools/manip/manip.py:70 docstring says 'Apply a per-dataset manipulation ...'. Docs contradict behavior = doc.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f013_018.py", "grep manip/*.py for per-dataset"]
+  },
+  {
+   "id": "F14-manip-normalize-014",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Ran repro exactly. 'normalize([A]) -> ndarray' while 'manip([A]) -> list'. Source: hypertools/tools/normalize.py:213 docstring reads '...the input was a list, a list is returned.' False for single-element lists = doc.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f013_018.py", "grep tools/normalize.py"]
+  },
+  {
+   "id": "F14-manip-normalize-015",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Ran repro exactly. 'manip popstd: [0.8660254 0.8660254]' (ddof=1 z-scoring) vs 'normalize popstd: [1. 1.]' (ddof=0); 'allclose: False'. Same data, different numbers between the two z-scoring APIs, neither documented. Both are legitimate conventions, so this is a cross-API inconsistency = style.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f013_018.py"]
+  },
+  {
+   "id": "F14-manip-normalize-016",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Ran repro exactly. 'manip type: DataFrame' (index/columns preserved) vs 'normalize type: ndarray' (metadata lost) for the same DataFrame input. Cross-API inconsistency = style.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f013_018.py"]
+  },
+  {
+   "id": "F14-manip-normalize-017",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Ran repro exactly. Error text: \"...(or pass a dict {'model': ..., 'params': {...}}, a Manipulator subclass, or a Manipulator instance directly)\". Source confirms 'params' is the LEGACY form: hypertools/core/shared.py:123-124 emits a deprecation warning \"{'model': ..., 'params': {...}} is deprecated; use {'model': ..., 'args': [...], 'kwargs': {...}} instead\"; manip.py:60 is the error string recommending it = style.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f013_018.py", "grep core/shared.py manip/manip.py"]
+  },
+  {
+   "id": "F14-manip-normalize-018",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Ran repro exactly. Resample on a DataFrame with a duplicate index raised the raw scipy message 'ValueError: `x` must be strictly increasing sequence.' with no hypertools context (never mentions the index or Resample) = minor.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python f013_018.py"]
+  },
+  {
+   "id": "F14-manip-normalize-019",
+   "verdict": "CONFIRMED",
+   "severity": "enhancement",
+   "justification": "Ran the stated grep: grep -rn '>>>' hypertools/manip/ hypertools/tools/normalize.py produced no output (exit 1). No runnable doctest examples in any manip/normalize public docstring = enhancement.",
+   "commands_run": ["grep -rn '>>>' /Users/jmanning/hypertools/hypertools/manip/ /Users/jmanning/hypertools/hypertools/tools/normalize.py"]
+  }
+ ]
+}

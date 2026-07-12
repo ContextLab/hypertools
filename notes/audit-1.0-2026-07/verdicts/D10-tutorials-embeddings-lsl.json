@@ -1,0 +1,96 @@
+{
+ "unit": "D10-tutorials-embeddings-lsl",
+ "verdicts": [
+  {
+   "id": "D10-tutorials-embeddings-lsl-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Shipped wikipedia_embeddings.ipynb inspected with nbformat: cell idx 17 has 3 image/png outputs ([('execute_result',...), ('display_data',...), ('display_data',...)]) and cell idx 19 has 2, though each cell's source is a single hyp.plot call. Evidence images confirm shipped_wiki_cell17_out1.png is an untitled dense multi-thousand-point figure unrelated to the 20-keyword cell, and out0/out2 are duplicates of the intended plot. Full notebook execution (live Wikipedia fetch + embedding thousands of articles) exceeds the time budget, so the SAME claim was verified via a minimal nbclient notebook: cell 0 = hyp.plot(..., animate='spin', save_path='mini_spin.mp4', show=False); cell 1 = single static hyp.plot. Result: 'cell 1: pngs=3 types=[execute_result, display_data, display_data]' — exactly the shipped anomaly structure, i.e. the leaked animation figure (see -002) is flushed into the next plotting cell. Reproducible defect, not just a stale-publish artifact.",
+   "commands_run": ["nbformat inspection of docs/tutorials/wikipedia_embeddings.ipynb (png counts + output types per cell)", "Read of shipped_wiki_cell17_out0/1/2.png and wiki_cell17_2/3/4 evidence", "minimal nbclient notebook: animate+save_path+show=False cell followed by static hyp.plot cell; counted pngs in second cell"]
+  },
+  {
+   "id": "D10-tutorials-embeddings-lsl-010",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran the exact repro with a real 1-channel pylsl outlet: crash at hypertools/io/streaming.py:264 'artist.set_data(full[:, 0], full[:, 1]) ... IndexError: index 1 is out of bounds for axis 1 with size 1'. Static comparison verified separately: hyp.plot on a (60,1) array succeeds ('static (60,1) plot OK; n lines: 1'). Bare IndexError on a plausible single-sensor stream while the static path handles the same shape.",
+   "commands_run": ["exact repro via .venv python with real pylsl StreamOutlet (1 channel)", "static hyp.plot((60,1) array) comparison"]
+  },
+  {
+   "id": "D10-tutorials-embeddings-lsl-002",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Exact repro output: 'static: 0' then 'animated: 1 True' — static show=False deregisters the figure but animate='spin'+save_path+show=False leaves 1 registered figure manager and it is the returned figure. Note this leak is the mechanism behind the major finding -001 (leaked figure flushed into the next notebook cell), so fixing it is higher-leverage than 'minor' suggests.",
+   "commands_run": ["exact repro via .venv python (Agg), matplotlib._pylab_helpers.Gcf manager counts"]
+  },
+  {
+   "id": "D10-tutorials-embeddings-lsl-003",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Exact repro output: 'unseeded identical: False' / 'seeded identical: True' — hyp.plot(reduce='UMAP') re-fits an unseeded UMAP per call while {'model':'UMAP','kwargs':{'random_state':42}} is deterministic. Notebook cells 17 and 19 both call reduce='UMAP' with no random_state (verified in source). Evidence images confirm the visual: wiki_cell17_2.png has the 5 red neuroscience points separated; wiki_cell19_5.png (density cell, fresh run) is a different layout with red points buried in the cyan cluster and no visible red glow; shipped cell 17 vs 19 layouts also differ.",
+   "commands_run": ["exact repro via .venv python (Agg)", "grep of UMAP usage in wikipedia_embeddings.ipynb cells 17/19", "Read of wiki_cell17_2.png, wiki_cell19_5.png, shipped_wiki_cell17_out0.png, shipped_wiki_cell19_out0.png"]
+  },
+  {
+   "id": "D10-tutorials-embeddings-lsl-004",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Fresh run of the exact repro printed to stderr: '2026-07-12 15:47:19.740 ( 2.974s) [R_AuditErrRepr ] data_receiver.cpp:344 ERR| Stream transmission broke off (Input stream error.); re-connecting...'. Shipped lsl_streaming.ipynb cleanup cell (code cell 5, source 'stop_outlet.set()...') stores exactly the claimed outputs: 'outlet thread stopped: True\\n' plus '2026-07-07 17:56:52.527 ( 12.167s) [R_HypertoolsTu ] data_receiver.cpp:344 ERR| Stream transmission broke off...'. Auditor's 'cell 9' is the raw cell index; content matches verbatim.",
+   "commands_run": ["exact repro via .venv python with real pylsl outlet + 3s sleep", "nbformat inspection of lsl_streaming.ipynb cleanup cell outputs"]
+  },
+  {
+   "id": "D10-tutorials-embeddings-lsl-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Exact repro (PATH=/usr/bin:/bin so ffmpeg absent) printed: 'ffmpeg found: None', 'FileNotFoundError :: No such file or directory: hf_embeddings_spin.gif', 'formatter degrades to: [text/plain]'. Notebook sources confirm the failure mode: both tutorials guard the ffmpeg conversion with a bare 'if shutil.which(ffmpeg):' (silent skip; os.remove of the mp4 is inside the if, so the mp4 is orphaned) and then call Image('...gif') unconditionally.",
+   "commands_run": ["exact repro in empty scratchpad dir with PATH=/usr/bin:/bin", "nbformat inspection of gif-conversion cell sources in hugging_face_embeddings.ipynb (cell 13) and wikipedia_embeddings.ipynb (cell 11)"]
+  },
+  {
+   "id": "D10-tutorials-embeddings-lsl-011",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Exact repro output: 'n_samples = 50 | truncated = True' with stream_init=50, stream_max=20 — the head is fully consumed before stream_max is applied, with no warning. With the default stream_init=10000 this silently over-consumes a bounded stream.",
+   "commands_run": ["exact repro via .venv python (Agg) with generator input"]
+  },
+  {
+   "id": "D10-tutorials-embeddings-lsl-012",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Exact repro output: \"<class 'matplotlib.figure.Figure'>\" for hyp.plot(gen(), ..., backend='plotly', show=False) with no warning emitted. Docstring claim verified: hypertools/plot/plot.py:787 says 'the return value is a plotly Figure (any animation frames are...'. Silent contract violation for streaming inputs.",
+   "commands_run": ["exact repro via .venv python (Agg)", "grep 'plotly Figure' hypertools/plot/plot.py"]
+  },
+  {
+   "id": "D10-tutorials-embeddings-lsl-006",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Exact repro (real BAAI/bge-small-en-v1.5 tokenizer over first 100 hyp.load('wiki') articles truncated to 2000 chars): 'mean=372 median=374 min=137 max=447'. The notebook markdown contains verbatim '2,000 characters (roughly 512 tokens)'. Even the max (447) is below 512; mean is ~372, so 'roughly 512' is inaccurate.",
+   "commands_run": ["exact repro via .venv python (sentence_transformers + hyp.load('wiki'))", "grep '2,000 characters' docs/tutorials/wikipedia_embeddings.ipynb"]
+  },
+  {
+   "id": "D10-tutorials-embeddings-lsl-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Exact repro raised: \"ValueError :: label= was given as a list/tuple of length 1, but there are 3 dataset(s) to plot; pass either a single value (broadcast to every dataset) or a list/tuple of length 3.\" — verbatim as claimed. The user passed legend=, not label=, and the 3 groups come from hue=, not from 3 datasets, so the message points at the wrong parameter and the wrong concept.",
+   "commands_run": ["exact repro via .venv python (Agg)"]
+  },
+  {
+   "id": "D10-tutorials-embeddings-lsl-008",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Exact repro raised ValueError with literal whitespace runs preserved: 'reduce must be one of the supported options or support n_components and fit_transform          methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce          for supported models' — 10-space runs and an http:// legacy 0.x docs URL, verbatim as claimed.",
+   "commands_run": ["exact repro via .venv python (Agg), repr() of exception text"]
+  },
+  {
+   "id": "D10-tutorials-embeddings-lsl-013",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Exact repro raised: \"TypeError :: descriptor 'encode' for 'str' objects doesn't apply to a 'int' object\" — a pylsl-internal message that never names the name= parameter, verbatim as claimed.",
+   "commands_run": ["exact repro via .venv python"]
+  },
+  {
+   "id": "D10-tutorials-embeddings-lsl-009",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "ls: hugging_face_embeddings.ipynb 14,770,425 B; wikipedia_embeddings.ipynb 9,296,333 B; hf_embeddings_spin.gif 10,936,882 B; wikipedia_embeddings_spin.gif 6,563,054 B. git ls-files confirms both .gif files AND both notebooks are tracked. nbformat scan confirms the duplication is base64 gif embeds in stored outputs: wikipedia_embeddings.ipynb has 8,750,740 image/gif base64 chars, hugging_face_embeddings.ipynb 14,582,512 — each gif is shipped twice (~25 MB combined overhead).",
+   "commands_run": ["ls -la docs/tutorials/*.ipynb docs/tutorials/*spin.gif", "git ls-files docs/tutorials/", "nbformat scan counting image/gif base64 chars per notebook"]
+  }
+ ]
+}

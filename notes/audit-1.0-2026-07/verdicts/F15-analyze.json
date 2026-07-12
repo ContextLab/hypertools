@@ -1,0 +1,124 @@
+{
+ "unit": "F15-analyze",
+ "verdicts": [
+  {
+   "id": "F15-analyze-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran repro: align=False raises 'ValueError: unknown model: False' from hypertools/core/shared.py:154 via align/align.py:130. Also reproduced align=True with return_model=True -> 'ValueError: unknown model: True'. Docstring (tools/analyze.py) verbatim: 'If False or None, no alignment is applied (default: None).' Documented value crashes.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r001.py", "MPLBACKEND=Agg .venv/bin/python r001b.py", "sed -n 38,100p hypertools/tools/analyze.py"]
+  },
+  {
+   "id": "F15-analyze-002",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran repro: crashes with \"AttributeError: 'TSNE' object has no attribute 'transform'. Did you mean: 'fit_transform'?\" at hypertools/reduce/common.py:214 after fitting. TSNE and MDS are explicitly listed as supported reduce models in the analyze docstring, and cluster= is a documented stage kwarg; no up-front validation.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r002.py"]
+  },
+  {
+   "id": "F15-analyze-003",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran repro: fit path returned ndarray (60, 2); pipeline= reuse returned list of shape (60,) with first5 [1 0 0 2 0] -- cluster labels. Docstring verbatim: '`analyze` still returns the TRANSFORMED DATA (not cluster labels) when `cluster=` is given'. Evidence PNG w3_pipeline_reuse_clusters.png is consistent (test panel colored by returned labels). Contract flips between fit and reuse.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r003.py", "Read evidence/F15-analyze/w3_pipeline_reuse_clusters.png"]
+  },
+  {
+   "id": "F15-analyze-004",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran repro: 'impute ignored (identical): True' (impute='Kalman' output byte-identical to default, PPCA warning fired both times) and 'ndims=4 cols: [2, 2]' (ndims silently ignored). Docstring verbatim: '`ndims=`/`internal=`/`impute=` are still honored'. Both documented claims are false on the pipeline= path.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r004.py", "sed -n 38,100p hypertools/tools/analyze.py"]
+  },
+  {
+   "id": "F15-analyze-005",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran repro: 'typo==default: True' and 'typo==n_iter0: False' -- n_itr silently swallowed, run proceeds with n_iter=10, no error or warning. Independently verified the asymmetry: reduce={'kwargs':{'bogus':1}} raises \"TypeError: PCA.__init__() got an unexpected keyword argument 'bogus'\" and cluster likewise for KMeans, so align is the odd stage out. Silently ignoring user parameters can change scientific results without signal.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r005.py", "inline check of reduce/cluster bogus-kwarg behavior"]
+  },
+  {
+   "id": "F15-analyze-006",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Ran repro: hyp.analyze(data, ndims=3) returned [(30, 6), (30, 6)] with zero warnings -- no reduction. Docstring verbatim: \"Decomposition/manifold learning model to use (default: 'IncrementalPCA')\" while the signature default is reduce=None and reduction is skipped entirely.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r006.py", "sed -n 38,100p hypertools/tools/analyze.py"]
+  },
+  {
+   "id": "F15-analyze-007",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Ran hyp.load('weights_avg'): weights[0].shape == (100, 100). docs/tutorials/analyze.ipynb line 92 verbatim: \"print(weights[0].shape) # 300 TRs and 100 components\". Evidence heatmap PNG shows 100x100 axes, consistent.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r008.py (prints shape0: (100, 100))", "grep -n '300 TRs' docs/tutorials/analyze.ipynb", "Read evidence/F15-analyze/tut_raw_weights_heatmap.png"]
+  },
+  {
+   "id": "F15-analyze-008",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Ran repro with weights_avg: DeprecationWarning captured verbatim: \"{'model': ..., 'params': {...}} is deprecated; use {'model': ..., 'args': [...], 'kwargs': {...}} instead\". docs/tutorials/analyze.ipynb line 332 teaches the 'params' spec: \"reduce={'model' : 'PCA', 'params' : {'whiten' : True}}\".",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r008.py", "grep -n \"'params'\" docs/tutorials/analyze.ipynb"]
+  },
+  {
+   "id": "F15-analyze-009",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Ran repro: 'AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.' from hypertools/tools/normalize.py:240. The user-facing parameter is named 'normalize'; 'scale_type' does not exist in the analyze signature, and AssertionError is the wrong exception type for input validation.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r009.py"]
+  },
+  {
+   "id": "F15-analyze-010",
+   "verdict": "REFUTED",
+   "severity": "style",
+   "justification": "Repro reproduces the ValueError, but the claim that this contradicts documentation is wrong: the pipeline= docstring explicitly states the stage kwargs 'all must be left at their default of `None`) -- passing both raises `ValueError` naming the conflicting kwarg(s)'. Raising on normalize=False is therefore the documented, intentional contract, and the curated message tells the user exactly what to do. At most a design-consistency nit with build_pipeline's internal False handling.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r010.py", "sed -n 38,100p hypertools/tools/analyze.py"]
+  },
+  {
+   "id": "F15-analyze-011",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Ran repro: hyp.analyze(data, pipeline='PCA') raises \"AttributeError: 'str' object has no attribute 'transform'\" at tools/analyze.py:141 -- no type validation of pipeline=, cryptic error for a wrong-type argument.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r011.py"]
+  },
+  {
+   "id": "F15-analyze-012",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Ran repro: analyze(np.zeros((4,5,6)), normalize='across') silently returned shape (6, 4, 5) (axis-mangled); the non-constant 3-D input raised 'ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()' from deep inside tools/normalize.py rather than a clear input-shape error.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r012.py"]
+  },
+  {
+   "id": "F15-analyze-013",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Ran repro: normalize='within' -> ndarray (30, 6); align='hyper' -> list of length 1; manip='ZScore' -> ['DataFrame', 'DataFrame']. Returns docstring verbatim: 'analyzed_data : list of numpy arrays'. Return convention varies by stage combo and does not match the docstring.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r013.py", "grep 'list of numpy arrays' hypertools/tools/analyze.py"]
+  },
+  {
+   "id": "F15-analyze-014",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Ran repro: 'ValueError: reduce must be one of the supported options or support n_components and fit_transform methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce for supported models' -- no model-name list, embedded whitespace from line continuation, and a hypertools.tools.reduce URL that reflects the pre-1.0 module layout (reduce now lives in hypertools/reduce/).",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r014.py"]
+  },
+  {
+   "id": "F15-analyze-015",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Ran repro: 'random_state' in inspect.signature(hyp.analyze).parameters -> True; 'random_state' in hyp.analyze.__doc__ -> False. Parameter accepted (used it successfully in the F15-002 repro) but absent from the docstring.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r015.py"]
+  },
+  {
+   "id": "F15-analyze-016",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Ran repro: analyze(data, reduce='PCA', ndims=10) on (30, 6) data returned [(30, 6), (30, 6)] with an empty warning list -- silent pass-through with no signal that the requested reduction did not occur.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r016.py"]
+  },
+  {
+   "id": "F15-analyze-017",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Ran repro: outputs with and without impute='Kalman' are identical (True) and contain no NaNs, while the PPCA warning ('Missing data: Inexact solution computed with PPCA...') fired in both runs -- so imputation DID run on the reduce-only path, but the documented override ('Overrides the default PPCA missing-data fill') was silently dropped because no normalize= was requested.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python r017.py", "awk '/impute :/,/^$/' hypertools/tools/analyze.py"]
+  }
+ ]
+}

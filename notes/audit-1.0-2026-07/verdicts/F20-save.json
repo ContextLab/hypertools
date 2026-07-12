@@ -1,0 +1,78 @@
+{
+ "unit": "F20-save",
+ "verifier": "independent adversarial verifier (Claude, F20-save)",
+ "date": "2026-07-12",
+ "environment": "/Users/jmanning/hypertools/.venv/bin/python, MPLBACKEND=Agg, branch audit/release-1.0-2026-07",
+ "verdicts": [
+  {
+   "id": "F20-save-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Reproduced exactly. Good 8152-byte pickle at path; hyp.save of a dict containing an open file handle raised 'TypeError cannot pickle 'BufferedReader' instances'; observed 'size before: 8152' -> 'size after: 0'; subsequent hyp.load raised 'EOFError Ran out of input'. The pre-existing file is destroyed by truncate-on-open with no temp-file/rename. Partial-file variant also confirmed: failed HyperAnimation save left a 65549-byte partial anim.pkl ('anim.pkl exists: True size: 65549'). Source (hypertools/io/save.py lines 19-22) is a bare open(fname,'wb') + pickle.dump. Real data loss on a plausible mistake; major is fair.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python verify_main.py (section 001)", "/Users/jmanning/hypertools/.venv/bin/python verify_003.py (partial-file check)"]
+  },
+  {
+   "id": "F20-save-002",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced. hyp.save(arr,'data.npy') wrote pickle magic b'\\x80\\x04'; np.load raised 'ValueError This file contains pickled (object) data...'; pd.read_csv on the .csv raised \"UnicodeDecodeError 'utf-8' codec can't decode byte 0x80 in position 0\". hyp.load round-trips both (.npy returned ndarray equal to input). Module docstring admits the format-aware exporter 'comes later', so this is a known rough edge, but there is no runtime warning. Minor is fair.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python verify_main.py (section 002)"]
+  },
+  {
+   "id": "F20-save-003",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced. hyp.plot(data, animate=True) returned hypertools.plot.hyper_animation.HyperAnimation; hyp.save(res,'anim.pkl') raised \"AttributeError | Can't get local object '_draw.<locals>.update_lines_parallel'\" with no guidance, and left a 65549-byte partial file. Cryptic error for a natural workflow (save what plot returned); minor is fair.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python verify_003.py"]
+  },
+  {
+   "id": "F20-save-004",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced. Saved a matplotlib Line2D via hyp.save; hyp.load returned \"<class 'tuple'> value: (array([1, 2, 3]), array([4, 5, 6]))\" -- load's get_data() hook silently transforms any object exposing .get_data(), breaking type round-trip with no documentation. Minor is fair.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python verify_main.py (section 004)"]
+  },
+  {
+   "id": "F20-save-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced. hyp.save(arr, f, protocol=0, compress=True, format='npy', banana=42) raised nothing; output byte-identical to plain save ('kwargs accepted; byte-identical: True', magic b'\\x80\\x04' so protocol=0 was not honored). Signature is (obj, fname, **kwargs) with kwargs never used (save.py line 19-22). Minor is fair.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python verify_main.py (section 005)"]
+  },
+  {
+   "id": "F20-save-006",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced both directions. hyp.save(arr,'~/f20_verify_should_not_exist.pkl') raised \"FileNotFoundError [Errno 2] No such file or directory: '~/f20_verify_should_not_exist.pkl'\" and hyp.save(arr,'$F20VDIR/envvar_save.pkl') likewise, while hyp.load('~/f20_verify_load.pkl') and hyp.load('$F20VDIR/envvar.pkl') both succeeded (returned the saved ndarrays). Genuine save/load asymmetry. Minor is fair.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python verify_main.py (section 006)"]
+  },
+  {
+   "id": "F20-save-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced verbatim. Truncated pickle (b'\\x80\\x04TRUNC'): 'HypertoolsIOError | Failed to load DataGeometry object from .../truncated.pkl. If truncated.pkl was created with hypertools<0.8.0, pass legacy=True to load it.' -- misleading for a file that was never a DataGeometry. Empty file: bare 'EOFError | Ran out of input' with no path. Minor is fair.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python verify_main.py (section 007)"]
+  },
+  {
+   "id": "F20-save-008",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Reproduced. hyp.save.__doc__ is exactly 'Pickle `obj` to `fname`.' -- no Parameters/Returns/Examples, no mention that kwargs are ignored, no pickle-security note in the user-facing docstring (the security note exists only in the module docstring). Doc is fair.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python verify_main.py (section 008)"]
+  },
+  {
+   "id": "F20-save-009",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Reproduced. Nested nonexistent dir: raw 'FileNotFoundError | [Errno 2] No such file or directory: .../no/such/dir/f.pkl'; swapped args: raw 'TypeError | expected str, bytes or os.PathLike object, not ndarray'. load() by contrast wraps failures in HypertoolsIOError (seen in 007). Inconsistent error branding; style is fair.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python verify_main.py (section 009)"]
+  },
+  {
+   "id": "F20-save-010",
+   "verdict": "CONFIRMED",
+   "severity": "enhancement",
+   "justification": "Reproduced. hyp.save(np.eye(3),'m.csv') wrote pickle magic b'\\x80\\x04'; signature (obj, fname, **kwargs) offers no format parameter. save.py's own docstring says the format-aware exporter 'comes later' (Plan 6), so this is acknowledged missing functionality. Enhancement is fair.",
+   "commands_run": ["/Users/jmanning/hypertools/.venv/bin/python verify_main.py (section 010)"]
+  }
+ ]
+}

@@ -1,0 +1,196 @@
+{
+ "unit": "X2-error-quality",
+ "verifier": "independent adversarial verifier (subagent), 2026-07-12",
+ "method": "Each repro executed in an isolated subprocess with /Users/jmanning/hypertools/.venv/bin/python, MPLBACKEND=Agg, via scratchpad/verify/X2-error-quality/{repros.py,driver.py}; full raw output in scratchpad/verify/X2-error-quality/out.txt. Docstring claims additionally checked against hypertools/io/load.py source and inspect.getdoc.",
+ "verdicts": [
+  {
+   "id": "X2-error-quality-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "hyp.load('/tmp/junk.xyz') on a file containing 'hello' returned 'Empty DataFrame\\nColumns: [he, Unnamed: 1, o]\\nIndex: []' with no exception or warning -- unsupported extension silently delimiter-sniffed as CSV, returning garbage. Downgraded from critical to major: silent wrong result, but only on an unsupported-extension path a user has to construct.",
+   "commands_run": ["driver.py f001 (repros.py f001)"]
+  },
+  {
+   "id": "X2-error-quality-002",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "hyp.predict(np.array([]), t=5) returned a (5, 0) DataFrame and hyp.predict(5, t=2) returned a (2, 1) DataFrame, both silently -- nonsense forecasts from zero/one datapoint with no error or warning. Downgraded from critical to major: degenerate inputs, but silence lets garbage propagate.",
+   "commands_run": ["driver.py f002"]
+  },
+  {
+   "id": "X2-error-quality-003",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "align([X,Y], n_itr=5) result was np.allclose-identical to default align([X,Y]) -> 'align typo == default: True'; impute(XNAN, model='SimpleImputer', stratgy='median') identical to default -> 'impute typo == default: True'. Misspelled kwargs are silently dropped, so users get default-parameter results believing their settings applied.",
+   "commands_run": ["driver.py f003"]
+  },
+  {
+   "id": "X2-error-quality-004",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Observed exactly as claimed: manip(None) -> 'IndexError: list index out of range [datawrangler/decorate/decorate.py:467]'; predict(None) -> 'ValueError: negative dimensions are not allowed [pykalman/standard.py:533]'; impute(None) -> 'ValueError: zero-size array to reduction operation maximum...'; analyze(None) -> None silently; reduce(None) -> clean 'TypeError: Unsupported data type passed...'. Downgraded to minor: None is not reasonable use; issue is inconsistent error quality, not wrong results.",
+   "commands_run": ["driver.py f004"]
+  },
+  {
+   "id": "X2-error-quality-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.align([]) printed 'loading corpus: minipedia...done!' to stdout then raised 'ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation. [sklearn/utils/validation.py:1097]' -- empty list is indeed misrouted into the text-embedding pipeline. Downgraded to minor: degenerate input that does crash (no silent wrong result), though the corpus load + LDA error are very confusing.",
+   "commands_run": ["driver.py f005"]
+  },
+  {
+   "id": "X2-error-quality-006",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "type(hyp.load('sotus')) -> <class 'sklearn.pipeline.Pipeline'> with 3 InconsistentVersionWarnings ('Trying to unpickle estimator CountVectorizer from version 1.0.2...'). load.py docstring line: '`sotus` is a collection of State of the Union speeches from 1989-2018.' -- documented dataset returns the wrong object entirely.",
+   "commands_run": ["driver.py f006", "sed -n 140,200p hypertools/io/load.py"]
+  },
+  {
+   "id": "X2-error-quality-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "manip(X, model='Resample', n_samples=0) -> shape (0, 4) silently; n_samples=7.5 -> \"TypeError: 'float' object cannot be interpreted as an integer [numpy/_core/function_base.py:122]\"; n_samples=-10 -> 'ValueError: Number of samples, -10, must be non-negative. [numpy/_core/function_base.py:124]'. Downgraded to minor: n_samples=0 returning 0 rows is arguably as-requested; the real defect is leaked numpy internals for negative/float.",
+   "commands_run": ["driver.py f007"]
+  },
+  {
+   "id": "X2-error-quality-008",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "normalize(X, normalize='ACROSS') -> 'AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer. [hypertools/tools/normalize.py:240]' -- AssertionError class, internal name 'scale_type' instead of the public normalize= kwarg, and silently case-sensitive, exactly as claimed.",
+   "commands_run": ["driver.py f008"]
+  },
+  {
+   "id": "X2-error-quality-009",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "kernel_width=10 and 4.5 both returned (20, 4); kernel_width=-5 -> 'AssertionError: smoothing kernel width must be a positive odd integer [manip/smooth.py:174]'; kernel_width=0 -> 'ValueError: the savgol kernel needs kernel_width (1) > order (3)...'. Inconsistent exception classes and inaccurate 'positive odd integer' message confirmed. Caveat: 10/4.5 are not fully silent -- UserWarnings 'Increasing smoothing kernel width by 1 (must be odd)' / 'Rounding smoothing kernel width to the nearest integer' are emitted.",
+   "commands_run": ["driver.py f009"]
+  },
+  {
+   "id": "X2-error-quality-010",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "model=42 produced three different behaviors: reduce -> 'ValueError: reduce must be one of the supported options or support n_components and fit_transform methods...'; cluster -> \"AttributeError: 'int' object has no attribute 'fit' [cluster/common.py:199]\"; align -> 'ValueError: unknown model: 42 [core/shared.py:154]'. cluster's bare AttributeError is the worst of the three.",
+   "commands_run": ["driver.py f010"]
+  },
+  {
+   "id": "X2-error-quality-011",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "reduce(X, reduce='NotARealModel') -> 'ValueError: reduce must be one of the supported options or support n_components and fit_transform          methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#...' -- no supported-name listing, legacy 0.8-era docs URL, and doubled internal whitespace, as claimed.",
+   "commands_run": ["driver.py f011"]
+  },
+  {
+   "id": "X2-error-quality-012",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "cluster(X, n_clusters=0) -> \"InvalidParameterError: The 'n_clusters' parameter of KMeans must be an int in the range [1, inf). Got 0 instead. [sklearn/utils/_param_validation.py:98]\" -- sklearn's private exception class leaks through, though its message is actually clear; style-level only.",
+   "commands_run": ["driver.py f012"]
+  },
+  {
+   "id": "X2-error-quality-013",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.plot([X, Y], ['r-'], show=False) -> 'IndexError: list index out of range [hypertools/plot/plot.py:2333]' -- fmt list shorter than dataset count crashes with a bare IndexError instead of the per-dataset length validation other style kwargs received.",
+   "commands_run": ["driver.py f013"]
+  },
+  {
+   "id": "X2-error-quality-014",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Static plot(X, duration=-5, show=False) -> 'ValueError: zero-size array to reduction operation minimum which has no identity' (plus 'RuntimeWarning: Mean of empty slice'); plot(X, zoom=-1, show=False) -> Figure returned silently; animated save with rotations='two' -> 'IndexError: list index out of range [matplotlib/animation.py:506]'. All three claimed behaviors reproduced.",
+   "commands_run": ["driver.py f014", "driver.py f014b"]
+  },
+  {
+   "id": "X2-error-quality-015",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "ax='myaxis' -> \"AttributeError: 'str' object has no attribute 'name' [plot/plot.py:1562]\"; size=[4,4,4] -> 'ValueError: too many values to unpack (expected 2) [matplotlib/figure.py:3139]'; transform='banana' -> \"AttributeError: 'str' object has no attribute 'shape' [reduce/reduce.py:269]\"; fmt=123 -> \"TypeError: argument of type 'int' is not iterable [_shared/helpers.py:359]\". 4 of the 6 listed cases directly reproduced; all are cryptic low-level errors that never name the offending kwarg.",
+   "commands_run": ["driver.py f015"]
+  },
+  {
+   "id": "X2-error-quality-016",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "plot(X[20 rows], labels=['only-label'], show=False) -> figure with exactly 1 text annotation and zero warnings ('n texts: 1 warnings: []'); plot(X, hue='notacolumn', show=False) -> Figure returned; plot(X, legend=7, show=False) -> Figure returned. All silent as claimed.",
+   "commands_run": ["driver.py f016"]
+  },
+  {
+   "id": "X2-error-quality-017",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "describe(X, max_dims=0, show=False) -> {'average': [], 'individual': [[]]} silently; max_dims=2.5 -> \"TypeError: 'float' object cannot be interpreted as an integer [reduce/describe.py:110]\".",
+   "commands_run": ["driver.py f017"]
+  },
+  {
+   "id": "X2-error-quality-018",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "reduce(X(20x4), reduce='PCA', ndims=10) -> shape (20, 4) with zero warnings captured (warnings.catch_warnings(record=True)); apply_model(X, 'PCA', ndims=0) -> shape (20, 0) silently.",
+   "commands_run": ["driver.py f018"]
+  },
+  {
+   "id": "X2-error-quality-019",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "align([X, Y], model='SRM', features=-1) -> 'ValueError: negative dimensions are not allowed [numpy/random/_common.pyx:310]' -- raw numpy random-state internals, no mention of the features= kwarg.",
+   "commands_run": ["driver.py f019"]
+  },
+  {
+   "id": "X2-error-quality-020",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "predict(np.random.rand(1, 4), t=5) -> 'ValueError: could not broadcast input array from shape (4,4) into shape (4,1) [pykalman/standard.py:400]' -- pykalman broadcast error instead of a minimum-observations message.",
+   "commands_run": ["driver.py f020"]
+  },
+  {
+   "id": "X2-error-quality-021",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "load(123) -> 'TypeError: expected str, bytes or os.PathLike object, not int [<frozen posixpath>:323]'; load(None) -> same with 'not NoneType'. Raw os.fspath error with no hypertools context.",
+   "commands_run": ["driver.py f021"]
+  },
+  {
+   "id": "X2-error-quality-022",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "save(arr, 42) -> 'OSError: [Errno 9] Bad file descriptor [hypertools/io/save.py:21]' (int treated as OS fd); saving a lambda -> \"AttributeError: Can't get local object '...<lambda>' [io/save.py:22]\"; inspect.getdoc(hypertools.save) == 'Pickle `obj` to `fname`.' (single line). All three claims verified.",
+   "commands_run": ["driver.py f022", "python -c inspect.getdoc(hypertools.save)"]
+  },
+  {
+   "id": "X2-error-quality-023",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "impute(np.full((10, 3), np.nan)) -> 'ValueError: zero-size array to reduction operation maximum which has no identity [numpy/_core/fromnumeric.py:86]'. Caveat: a helpful UserWarning from hypertools/impute/ppca.py:52 ('PPCA cannot fill 10 row(s) with no observed features at all...') IS emitted first, but the process still dies on the raw numpy error rather than a clear all-NaN message.",
+   "commands_run": ["driver.py f023"]
+  },
+  {
+   "id": "X2-error-quality-024",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "load('spiral') -> list of 2 arrays, elem0 shape (1000, 3); load.py:161 docstring says '`spiral` is numpy array containing data for a 3D spiral'; load.py:165 contains the 'mushroomm' typo. Both doc claims verified against source and runtime.",
+   "commands_run": ["driver.py f024", "grep -n 'mushroomm|spiral' hypertools/io/load.py"]
+  },
+  {
+   "id": "X2-error-quality-025",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "analyze(None) -> None returned silently; analyze(X, pipeline='notapipeline') -> \"AttributeError: 'str' object has no attribute 'transform' [hypertools/tools/analyze.py:141]\".",
+   "commands_run": ["driver.py f025"]
+  },
+  {
+   "id": "X2-error-quality-026",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Pipeline('PCA') -> \"ValueError: unknown pipeline step 'P'; supported names: AffinityPropagation, ...\" (string iterated character-wise); Pipeline([42]) -> constructed OK as 'Pipeline([int=42])' (failure deferred to fit); Pipeline(None) -> \"TypeError: 'NoneType' object is not iterable [core/pipeline.py:304]\".",
+   "commands_run": ["driver.py f026"]
+  },
+  {
+   "id": "X2-error-quality-027",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "reduce([rand(20,4), rand(20,3)], ndims=2) -> 'ValueError: all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 4 and the array at index 1 has size 3 [numpy/_core/shape_base.py:292]' -- raw vstack message, does not name the ragged datasets or suggest align.",
+   "commands_run": ["driver.py f027"]
+  }
+ ]
+}

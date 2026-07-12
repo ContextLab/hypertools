@@ -1,0 +1,111 @@
+{
+ "unit": "D03-gallery-basics",
+ "verdicts": [
+  {
+   "id": "D03-gallery-basics-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Reproduced exactly: 'palette=viridis clean: unique colors = 60' vs 'palette=viridis with-NaN: unique colors = 2' with example colors [[0.27, 0.015, 0.341, 1.0], [0.974, 0.904, 0.13, 1.0]]; same 60->2 collapse for hls; warnings list was empty both times (silent). Evidence PNG nanhue_collapsed.png shows the all-one-color scatter. Silently wrong visual from a single NaN on reasonable input justifies major.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python scratchpad/verify/D03-gallery-basics/v001_nanhue.py"
+   ]
+  },
+  {
+   "id": "D03-gallery-basics-002",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "With -W error::DeprecationWarning the script raises at examples/plot_hue.py line 31: 'DeprecationWarning: Conversion of an array with ndim > 0 to a scalar is deprecated, and will error in future... (Deprecated NumPy 1.25.)'. With -W always, grep -c counted exactly 900 DeprecationWarning lines. File read confirms np.random.randint used with no seed anywhere in the example.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -W error::DeprecationWarning examples/plot_hue.py",
+    "MPLBACKEND=Agg .venv/bin/python -W always::DeprecationWarning examples/plot_hue.py 2>&1 | grep -c DeprecationWarning"
+   ]
+  },
+  {
+   "id": "D03-gallery-basics-003",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced: 'hypertools/tools/df2mat.py:32: Pandas4Warning: For backward compatibility, 'str' dtypes are included by select_dtypes when 'object' dtype is specified. This behavior is deprecated and will be removed in a future version.' Source confirms select_dtypes(include=['object']) / exclude=['object'] at df2mat.py lines 31-32 under pandas 3.0.3.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -W always examples/plot_dataframe.py 2>&1 | grep -i warning",
+    "sed -n '25,40p' hypertools/tools/df2mat.py"
+   ]
+  },
+  {
+   "id": "D03-gallery-basics-004",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "examples/plot_basic.py docstring says 'take the first two arrays in the list and plot them as points with the 'o'' but the code is hyp.plot(data, fmt='.') on the full loaded list (no slicing, no 'o'). Docstring/code mismatch verified by direct file read.",
+   "commands_run": [
+    "Read examples/plot_basic.py"
+   ]
+  },
+  {
+   "id": "D03-gallery-basics-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced exactly: traceback ends 'File hypertools/plot/matplotlib_backend.py, line 538, in annotate_plot / if labels[idx] is not None: / IndexError: list index out of range'. Bare IndexError instead of an informative ValueError for a 5-label / 60-observation mismatch.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python scratchpad/verify/D03-gallery-basics/v005_labels.py"
+   ]
+  },
+  {
+   "id": "D03-gallery-basics-006",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced: mat2colors(np.arange(100.0), palette='hls') endpoints are first [0.86 0.371 0.34] last [0.86 0.34 0.34], L2 0.0312 (visually identical). Defaults verified in source: colors.py 'def mat2colors(m, palette=\"hls\", ...)' and plot.py line 149 'palette=\"hls\"', so continuous hue wraps around by default.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c \"...mat2colors(np.arange(100.0), palette='hls')...\"",
+    "grep -n hls hypertools/plot/colors.py; grep -n palette hypertools/plot/plot.py"
+   ]
+  },
+  {
+   "id": "D03-gallery-basics-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced exactly: 'File hypertools/plot/morph.py, line 169, in sample_and_match_clouds / idx = rng.choice(c.shape[0], size=cap, replace=False) / ... ValueError: negative dimensions are not allowed' — numpy internal error leaks instead of validating morph_samples=-5.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python scratchpad/verify/D03-gallery-basics/v007_morph.py"
+   ]
+  },
+  {
+   "id": "D03-gallery-basics-008",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Reproduced both: 'examples/plot_datasaurus.py:44: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown' and 'examples/plot_shapes_zoo.py:43: UserWarning: ...'. grep confirms plt.show() appears in only 7 of the example files (these two are the only ones among the basics set audited); the rest omit it, so the convention is inconsistent.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -W always examples/plot_datasaurus.py",
+    "MPLBACKEND=Agg .venv/bin/python -W always examples/plot_shapes_zoo.py",
+    "grep -ln 'plt.show()' examples/*.py"
+   ]
+  },
+  {
+   "id": "D03-gallery-basics-009",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Reproduced exactly: passing legend=['A','B'] with 3 datasets raises 'ValueError: label= was given as a list/tuple of length 2, but there are 3 dataset(s) to plot...' — the message names label= while the user supplied legend=.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python scratchpad/verify/D03-gallery-basics/v009_legend.py"
+   ]
+  },
+  {
+   "id": "D03-gallery-basics-010",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "grep found 'Pandas.Dataframe.get_dummies' in examples/plot_dataframe.py:11 and hypertools/tools/df2mat.py:11; python check printed '3.0.3 False True' — pandas 3.0.3 has pd.get_dummies but no DataFrame.get_dummies method, so the referenced API does not exist.",
+   "commands_run": [
+    "grep -rn get_dummies examples/plot_dataframe.py hypertools/tools/df2mat.py",
+    ".venv/bin/python -c \"import pandas as pd; print(pd.__version__, hasattr(pd.DataFrame,'get_dummies'), hasattr(pd,'get_dummies'))\""
+   ]
+  },
+  {
+   "id": "D03-gallery-basics-011",
+   "verdict": "CONFIRMED",
+   "severity": "enhancement",
+   "justification": "Visual inspection of evidence plot_dataframe_fig1.png shows a single red tangled connected-line mass with no visible cluster structure; the example plots 8,124 arbitrarily-ordered categorical rows with the default line format. A point fmt would be more informative; example itself runs clean (only the Pandas4Warning from finding 003).",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -W always examples/plot_dataframe.py",
+    "Read notes/audit-1.0-2026-07/evidence/D03-gallery-basics/plot_dataframe_fig1.png"
+   ]
+  }
+ ]
+}

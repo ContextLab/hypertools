@@ -1,0 +1,200 @@
+{
+ "unit": "D12-docstrings-rest",
+ "verdicts": [
+  {
+   "id": "D12-docstrings-rest-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Reproduced exactly. load('sotus') returned <class 'sklearn.pipeline.Pipeline'> and print(s) raised \"AttributeError: 'Pipeline' object has no attribute 'transform_input'\". MD5(~/hypertools_data/sotus) == MD5(~/hypertools_data/nips_model) == 6a350ab8d85db34e7b924ac8a7f2a19b (sotus_model differs: b885ba9e...). Root cause verified in source: hypertools/io/load.py line 24 ('sotus': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm') and line 27 ('nips_model': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm') share the same Google Drive id, while load.py:167 documents sotus as 'a collection of State of the Union speeches from 1989-2018'. Documented dataset is unloadable -> major.",
+   "commands_run": [
+    "env MPLBACKEND=Agg .venv/bin/python -c \"import hypertools as hyp; s = hyp.load('sotus'); print(type(s)); print(s)\"",
+    "md5 ~/hypertools_data/sotus ~/hypertools_data/nips_model ~/hypertools_data/sotus_model",
+    "grep -rn \"sotus\\|nips_model\" hypertools/io/load.py"
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-002",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Reproduced. With -W always, loading sotus_model emitted \"InconsistentVersionWarning: Trying to unpickle estimator CountVectorizer from version 1.0.2 when using version 1.8.0\" (and the same for LatentDirichletAllocation and Pipeline), then print(m) raised \"AttributeError: 'Pipeline' object has no attribute 'transform_input'\" from sklearn's get_params/repr path. The docstring-promised usable text model is not even printable under the pinned sklearn.",
+   "commands_run": [
+    "env MPLBACKEND=Agg .venv/bin/python -W always -c \"import hypertools as hyp; m = hyp.load('sotus_model'); print(m)\""
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-003",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced: hyp.align(np.random.randn(50, 5)) -> <class 'list'> 1 <class 'numpy.ndarray'>. The docstring explicitly promises \"The aligned data, in the same list/single-item shape as `data`\" (Returns: 'aligned : list of numpy arrays (or a single array)'), so a single-array input should come back as a single array; it comes back as a 1-element list, unlike reduce/normalize.",
+   "commands_run": [
+    "env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; r = hyp.align(np.random.randn(50, 5)); print(type(r), len(r), type(r[0]))\"",
+    ".venv/bin/python -c \"import hypertools as hyp; print([l for l in hyp.align.__doc__.splitlines() if 'aligned' in l.lower()])\""
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-004",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Reproduced. format_data.__doc__ opens with \"This function is useful to identify rows of your array that contain missing data or nans. The returned indices can be used to remove the rows with missing data...\" (copy-pasted missing_inds summary), and the doc references vectorizer_params/text_params ('vectorizer_params in doc: True', 'text_params in doc: True') while the actual signature is (x, vectorizer='CountVectorizer', semantic='LatentDirichletAllocation', corpus='wiki', ppca=True, text_align='hyper', impute=None) with no such kwargs.",
+   "commands_run": [
+    ".venv/bin/python -c \"from hypertools.tools.format_data import format_data; print(format_data.__doc__[:500]); import inspect; print(inspect.signature(format_data)); print('vectorizer_params' in format_data.__doc__, 'text_params' in format_data.__doc__)\""
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-005",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Reproduced: load('spiral') -> <class 'list'> [(1000, 3), (1000, 3)] and s.shape raised \"AttributeError: 'list' object has no attribute 'shape'\". Source hypertools/io/load.py:161 reads \"`spiral` is numpy array containing data for a 3D spiral\". Evidence PNG align_spiral_before_after.png is consistent (two distinct trajectories before align, overlapping after).",
+   "commands_run": [
+    "env MPLBACKEND=Agg .venv/bin/python -c \"import hypertools as hyp; s = hyp.load('spiral'); print(type(s), [x.shape for x in s]); s.shape\"",
+    "grep -n spiral hypertools/io/load.py"
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-006",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Reproduced. inspect.signature(analyze) shows normalize=None (and inspect.signature(load) shows normalize default None), yet both analyze.__doc__ and load.__doc__ contain the line \"across lists (default). That is, the z-scores will be computed with\" -- i.e. they claim 'across' is the default when the actual default is None (no normalization).",
+   "commands_run": [
+    ".venv/bin/python -c \"import inspect; from hypertools.tools.analyze import analyze; from hypertools.io.load import load; print(inspect.signature(analyze)); print([l for l in analyze.__doc__.splitlines() if 'across lists' in l]); print([l for l in load.__doc__.splitlines() if 'across lists' in l]); print(inspect.signature(load).parameters['normalize'].default)\""
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-007",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Reproduced. hypertools/tools/analyze.py:82-83 states cluster \"returns per-dataset labels alongside the transformed data in one call\", but hyp.cluster([60x8, 50x8], n_clusters=3, random_state=0) returned <class 'list'> of len 110 -- one flat label sequence over the stacked rows, with no per-dataset split and no transformed data.",
+   "commands_run": [
+    "env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; r = hyp.cluster([np.random.randn(60, 8), np.random.randn(50, 8)], n_clusters=3, random_state=0); print(type(r), len(r))\"",
+    "grep -n -i 'alongside\\|per-dataset' hypertools/tools/analyze.py"
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-008",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Reproduced with one caveat. analyze has random_state in signature but 'random_state' in analyze.__doc__ -> False; cluster likewise -> False; normalize's Parameters section lacks 'internal' (-> False) though internal=False is in its signature; manip's signature carries normalize/reduce/ndims/align/cluster kwargs but its docstring has no 'align :' entry (-> False). Caveat: df2mat DOES mention return_labels in its Returns text ('To return this, set return_labels=True.'), though it has no Parameters entry for it -- that sub-claim is only half-right; the overall drift claim stands.",
+   "commands_run": [
+    ".venv/bin/python -c \"import inspect; from hypertools.tools.analyze import analyze; from hypertools.cluster.cluster import cluster; from hypertools.tools.normalize import normalize; from hypertools.manip.manip import manip; from hypertools.tools.df2mat import df2mat; print(inspect.signature(analyze), 'random_state' in analyze.__doc__); print(inspect.signature(cluster), 'random_state' in cluster.__doc__); print('internal' in normalize.__doc__.split('Returns')[0].split('Parameters')[1]); print(inspect.signature(manip), 'align :' in manip.__doc__); print(inspect.signature(df2mat), 'return_labels' in df2mat.__doc__)\"",
+    ".venv/bin/python -c \"from hypertools.tools.df2mat import df2mat; print(df2mat.__doc__)\""
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-009",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced exactly: hyp.normalize(x, normalize='bogus') raised \"AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.\" The parameter is named 'normalize', not 'scale_type', and an AssertionError (assert-based, strippable under -O) is used where a ValueError is conventional.",
+   "commands_run": [
+    "env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.normalize(np.random.randn(10, 3), normalize='bogus')\""
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-010",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced: smooth.transformer(df) with no axis raised \"AssertionError: Must specify axis\". The same file's docstring (hypertools/manip/smooth.py:152-156) promises \"Raises ------ ValueError If `axis` is missing from `kwargs`...\", and line 158 is `assert 'axis' in kwargs.keys(), ValueError('Must specify axis')` -- an assert whose 'message' is an unraised ValueError instance, and which vanishes under python -O.",
+   "commands_run": [
+    "env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, pandas as pd; from hypertools.manip.smooth import transformer; transformer(pd.DataFrame(np.random.randn(20, 3)))\"",
+    "grep -n -B2 -A2 'ValueError\\|assert' hypertools/manip/smooth.py"
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-011",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced verbatim: \"ValueError: reduce must be one of the supported options or support n_components and fit_transform          methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce          for supported models\" -- embedded run-on indentation whitespace, no list of supported reducer names, and a stale pre-1.0 http readthedocs URL.",
+   "commands_run": [
+    "env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.reduce(np.random.randn(20, 5), reduce='NotAModel', ndims=2)\""
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-012",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Reproduced: hyp.reduce(x, reduce={}) raised \"ValueError: If passing a dictionary, pass the model as the value of the \\\"model\\\" key and a                 dictionary of custom params as the value of the \\\"params\\\" key.\" -- recommending the {'model','params'} form that the codebase itself deprecates (hypertools/core/shared.py:123 and hypertools/reduce/reduce.py:207 both emit \"{'model': ..., 'params': {...}} is deprecated; use ...\").",
+   "commands_run": [
+    "env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.reduce(np.random.randn(20, 5), reduce={}, ndims=2)\"",
+    "grep -rn deprecat hypertools/core/shared.py hypertools/reduce/reduce.py"
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-013",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Reproduced: grep -rln '>>>' over hypertools/ excluding plot/_externals returned exactly hypertools/core/pipeline.py, hypertools/io/lsl.py, hypertools/io/load.py (the only other hit anywhere was hypertools/plot/meshutil.py). analyze/reduce/align/normalize/cluster/manip/predict/impute/describe/save have no runnable Examples sections.",
+   "commands_run": [
+    "grep -rln '>>>' hypertools/ --include='*.py'"
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-014",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced: hyp.save(np.eye(3), fname, protocol=5, compression='gzip', bogus=1) printed 'accepted silently' -- no TypeError, kwargs discarded -- and hyp.save.__doc__ is exactly 'Pickle `obj` to `fname`.' with no Parameters/Returns sections.",
+   "commands_run": [
+    ".venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.save(np.eye(3), '/tmp/x_audit_d12.pkl', protocol=5, compression='gzip', bogus=1); print('accepted silently'); print(repr(hyp.save.__doc__))\""
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-015",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced: loading a local file starting with b'\\x80hello-not-valid' raised raw \"ValueError: unsupported pickle protocol: 104\" from pickle.loads inside load, not the friendly HypertoolsIOError/legacy=True hint -- the wrapper evidently catches only pickle.UnpicklingError, and ValueError escapes.",
+   "commands_run": [
+    ".venv/bin/python -c \"import hypertools as hyp, pathlib; p = pathlib.Path('/tmp/corrupt_audit_d12.pkl'); p.write_bytes(b'\\\\x80hello-not-valid'); hyp.load(str(p))\""
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-016",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "All three sub-claims reproduced: (1) describe on a 20x4 array emitted \"UserWarning: When input data is large, this computation can take a long time.\" (describe.py:71, unconditional); (2) describe.py:15 summary line is garbled: 'Create plot describing covariance with as a function of number of dimensions'; (3) show=True under Agg emitted \"UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown\" and the return value is a dict (no figure handle). Evidence describe_pca.png shows the correlation-vs-components plot renders correctly, supporting doc (not major) severity.",
+   "commands_run": [
+    "env MPLBACKEND=Agg .venv/bin/python -W always -c \"import numpy as np, hypertools as hyp; hyp.describe(np.random.randn(20, 4), show=False)\"",
+    "env MPLBACKEND=Agg .venv/bin/python -W always -c \"import numpy as np, hypertools as hyp; r = hyp.describe(np.random.randn(20, 4), show=True); print(type(r))\"",
+    "sed -n 1,60p hypertools/reduce/describe.py"
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-017",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Reproduced: kernel_width=10.4 emitted \"UserWarning: Rounding smoothing kernel width to the nearest integer\" then \"UserWarning: Increasing smoothing kernel width by 1 (must be odd)\" (code: smooth.py:168 uses int(np.round(...))), while the docstring at smooth.py:236 says non-integer/even values are \"rounded up\". For e.g. 11.4 the two rules give different widths (nearest->11 vs up->12->13), so the doc is wrong, not just loose.",
+   "commands_run": [
+    "env MPLBACKEND=Agg .venv/bin/python -W always -c \"import numpy as np, hypertools as hyp; hyp.manip(np.random.randn(80, 4), model='Smooth', kernel_width=10.4)\"",
+    "grep -n -i round hypertools/manip/smooth.py"
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-018",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Reproduced: missing_inds(clean 60x6 array) printed None; missing_inds([B, A]) printed [array([2]), None]. The docstring's Returns says 'inds : list, or list of lists ... If a list of numpy arrays is passed, a list of lists will be returned' -- no mention of the None sentinel for clean data (and the per-dataset entries are ndarrays, not lists).",
+   "commands_run": [
+    ".venv/bin/python -c \"import numpy as np; from hypertools.tools.missing_inds import missing_inds; A = np.random.randn(60, 6); B = A.copy(); B[2, 3] = np.nan; print(missing_inds(A)); print(missing_inds([B, A])); print(missing_inds.__doc__)\""
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-019",
+   "verdict": "CANNOT_REPRO",
+   "severity": "style",
+   "justification": "The exact repro (with -W always) produced NO PendingDeprecationWarning in this environment -- output was clean. Investigation: np.asmatrix IS still used (hypertools/align/procrustes.py:183, 'd = np.asmatrix(data)') and bare numpy 2.3.5 does warn on asmatrix, but importing hypertools installs a global warnings filter ('ignore', re.compile('the matrix subclass is not the recommended way', re.IGNORECASE), Warning) via its import chain, which suppresses the warning even under -W always. So no warning 'leaks on every call' as claimed; the np.matrix usage itself is real but silent here.",
+   "commands_run": [
+    "env MPLBACKEND=Agg .venv/bin/python -W always -c \"import hypertools as hyp; from hypertools.align.procrustes import procrustes; s = hyp.load('spiral'); r = procrustes(s[0], s[1]); print(type(r))\"",
+    ".venv/bin/python -W always -c \"import numpy as np; print(np.__version__); np.asmatrix(np.eye(3))\"",
+    ".venv/bin/python -W always -c \"import warnings; import hypertools; [print(f) for f in warnings.filters[:12]]\"",
+    "grep -n 'matrix\\|np\\.mat' hypertools/align/procrustes.py"
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-020",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Reproduced: apply_model(60x8, 'KMeans') returned shape (60, 8) (cluster-distance space via transform) while hyp.cluster on the same data returned 60 labels. The behavior is documented (model.py:66-68: mode 'auto' \"prefers predict_proba (fitting first), then fit_transform/transform, then fit_predict\") -- KMeans has no predict_proba so transform wins. Documented-but-surprising is a fair style-level characterization.",
+   "commands_run": [
+    "env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; A = np.random.randn(60, 8); print(np.asarray(hyp.apply_model(A, 'KMeans')).shape); print(len(hyp.cluster(A)))\"",
+    "grep -n -A5 mode hypertools/core/model.py"
+   ]
+  }
+ ]
+}

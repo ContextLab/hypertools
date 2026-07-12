@@ -1,0 +1,124 @@
+{
+ "unit": "F10-plot-kwargs-sweep",
+ "verdicts": [
+  {
+   "id": "F10-plot-kwargs-sweep-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran the exact repro: with frame_rate=5, duration=1.0 (5 frames < 30 samples), 'len labels_and_points (fr=5): 0' -- both labels silently gone, 'warnings: []'. With frame_rate=20: 'len labels_and_points (fr=20): 1' (one of two labels lost, no warning). Static control draws both: 'len labels_and_points (static): 2'. Documented feature silently dropped with no warning; major is fair.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v001.py (hyp.plot(A, animate=True, duration=1.0, frame_rate=5/20, labels=[None]*30 with L0,L15, show=False); counted matplotlib_backend.labels_and_points and captured warnings)"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-002",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "inspect.getdoc(hyp.plot): no parameter entry matching '^elev :' or '^azim :' (regex over docstring lines -> False/False); the only 'azim' hit is animation prose ('the camera azimuth accumulates CONTINUOUSLY'), 'elev' absent entirely. Runtime works: default axes report 'default elev/azim: 10 -60'; hyp.plot(A, elev=90, azim=0) -> 'custom elev/azim: 90 0'. Functional kwargs with no docs.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v_batch.py section 002", "python -c docstring context grep for 'azim'"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-003",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.plot([A,B], ['-'], show=False) -> 'IndexError | list index out of range' at hypertools/plot/plot.py line 2333 'if has_line_component(fmt[idx])'. hyp.plot([A,B], ['-','o',':'], show=False) -> 'long fmt: NO ERROR, warnings: []' (extra entry silently ignored). No fmt-length validation, unlike parse_kwargs' color/marker/linestyle messages.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v_batch.py section 003"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-004",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.plot(A, color=(0.2,0.4,0.6)) -> 'ValueError | color= was given as a list/tuple of length 3, but there are 1 dataset(s) to plot; pass either a single value (broadcast to every dataset) or a list/tuple of length 1.' With 3 datasets: 'ValueError | 0.9 is not a valid value for color: supported inputs are (r, g, b) and (r, g, b, a) 0-1 float tuples; ...' -- the tuple is split element-wise into per-dataset 'colors'. A bare RGB tuple is a standard matplotlib color spec; rejection/splitting reproduced exactly.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v_batch.py section 004"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Re-rendered fresh (v005_collide.png) with the exact repro: 'PC3' zlabel text is drawn directly on top of the legend's first entry (overlapping the red 'subject 1' line sample) in the right margin. Auditor's evidence w1_neuro_names_title_axes.png shows the same overlap. Visually verified by opening both PNGs.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python -c hyp.plot([d(1),d(2)], names=[...], xlabel/ylabel/zlabel, save_path='v005_collide.png')", "Read v005_collide.png and evidence/w1_neuro_names_title_axes.png"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-006",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "hypertools/plot/plot.py:934 (docstring): 'If set to False, the figure will not be displayed, but the figure, axis and data objects will still be returned (default: True).' Runtime: out = hyp.plot(A, show=False) -> 'return type: <class matplotlib.figure.Figure>' -- only a Figure, no axis/data objects. 0.x return-signature leftover.",
+   "commands_run": ["grep -n 'axis and data' hypertools/plot/plot.py", "MPLBACKEND=Agg .venv/bin/python v_batch.py section 006"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Exact repro with warnings captured: warnings=['Using group, color keyword will be ignored.'] -- names the pre-1.0 'group' kwarg instead of hue=, and grammar is garbled. Reproduced verbatim.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v_batch.py section 007"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-008",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "repr of the captured warning: 'Both marker and markers defined: marker will be                               ignored in favor of markers.' -- literal ~31-space run from an unwrapped multiline string literal. Reproduced verbatim.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v_batch.py section 008"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-009",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.plot([A,B], names='ab', show=False) succeeds and the legend reads ['a', 'b'] -- the bare string is iterated character-by-character into per-dataset names with no error or warning. Reproduced exactly.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v_batch.py section 009"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-010",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.plot([A,B], legend='groups') -> legend texts ['groups', 'groups'] (scalar string broadcast into N identical entries). Wrong length: hyp.plot([A,B], legend=['only-one']) -> 'ValueError | label= was given as a list/tuple of length 1, but there are 2 dataset(s) to plot; ...' -- error names label=, not legend=. Both halves reproduced.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v_batch.py section 010"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-011",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "labels len 1 vs 30 points: 'NO ERROR; annotations: 1'; labels len 50 vs 30: 'NO ERROR; annotations: 30' (extras silently dropped). Control: hue with 1 entry raises 'ValueError | hue has 1 entry but the data has 30 observations; ...' -- labels= lacks the validation its sibling kwarg has.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v_batch.py section 011"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-012",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.plot(A, size='big') -> 'ValueError | too many values to unpack (expected 2)'; hyp.plot(A, size=[8]) -> 'ValueError | not enough values to unpack (expected 2, got 1)'. Neither message contains the string 'size' ('size= named in msg: False'); errors surface from matplotlib's set_size_inches after the pipeline runs.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v_batch.py section 012"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-013",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.plot(A, ndims=2, explore=True, show=False) -> 'AssertionError | Explore mode is currently only supported for 3D plots.' -- user-input misuse surfaced as AssertionError rather than ValueError, reproduced verbatim.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v_batch.py section 013"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-014",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.plot(A, elev='up', show=False) -> 'plot(): NO ERROR'; subsequent fig.savefig(...) -> \"TypeError | ufunc 'deg2rad' not supported for the input types, and the inputs could not be safely coerced to any supported types according to the casting rule 'safe'\". Crash deferred to draw time with a message that never mentions elev=.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v_batch.py section 014"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-015",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.plot(A, ax='not-an-axes', show=False) -> \"AttributeError | 'str' object has no attribute 'name'\" -- cryptic internal failure instead of a TypeError naming ax=. Reproduced verbatim.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v_batch.py section 015"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-016",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "inspect.getdoc(hyp.plot): 'Examples' in docstring -> False; 'Geo' -> True, in the parameter line 'x : Numpy array, DataFrame, String, Geo or mixed list' -- a 0.x DataGeometry leftover (1.0 never returns/accepts Geo objects per CLAUDE.md).",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v_batch.py section 016"]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-017",
+   "verdict": "SKIPPED",
+   "severity": "minor",
+   "justification": "skip_verification set by controller: 'environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run.' Not executed. (Incidentally, hypertools.__file__ now resolves to the repo source, consistent with the fix.)",
+   "commands_run": []
+  }
+ ]
+}

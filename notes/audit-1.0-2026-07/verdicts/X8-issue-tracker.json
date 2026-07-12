@@ -1,0 +1,95 @@
+{
+ "unit": "X8-issue-tracker",
+ "verdicts": [
+  {
+   "id": "X8-issue-tracker-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Repro crashes exactly as claimed: 'ValueError: `x` must contain at least 2 elements.' raised from hypertools/_shared/helpers.py:140 (q=pchip(x,arr)) via plot.py:2328 interp_array_list. Order-dependence also confirmed: reversed list [1-row, 25-row] does NOT crash but silently disables smoothing (per-artist point counts [1, 25]) while the solo 25-row dataset gets [900] interpolated points. All-1-row list renders markers (counts [1, 1]) and mixed list with fmt='.' works, so the crash is specific to default line fmt with a multi-row dataset first. Evidence PNGs (X8_192_verbatim_all1row.png, X8_192_mixed_markers_ok.png) match those working cases. Crash + inconsistent order-dependent output on a plausible input; major.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; np.random.seed(1); hyp.plot([np.random.randn(25,3), np.random.randn(1,3)], show=False)\"",
+    "MPLBACKEND=Agg .venv/bin/python <reverse-order + solo + all-1-row + fmt='.' comparison script; printed per-artist point counts>"
+   ]
+  },
+  {
+   "id": "X8-issue-tracker-002",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output exactly matches claim: \"{'backend_fallback': (True, False)}\" -- importing hypertools flips matplotlib.rcParams['backend_fallback'] from True to False, a real import-time rcParams side effect. Impact is small (one non-visual config key), so minor is the right severity.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c \"<deepcopy rcParams; import hypertools; diff rcParams>\""
+   ]
+  },
+  {
+   "id": "X8-issue-tracker-003",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro reproduces verbatim: hyp.load('/tmp/tiny_x8.png') raises '_pickle.UnpicklingError: A load persistent id instruction was encountered, but no persistent_load function was specified.' from dill/_dill.py:453 -- a raw pickle-internal error with no hypertools-level 'unsupported file type' message. Error-message quality issue on a user mistake; minor.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c \"<imsave 8x8 png to /tmp/tiny_x8.png; hyp.load it>\""
+   ]
+  },
+  {
+   "id": "X8-issue-tracker-004",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro reproduces: loading 'wiki_model' emits sklearn InconsistentVersionWarning three times ('Trying to unpickle estimator CountVectorizer/LatentDirichletAllocation/Pipeline from version 1.0.2 when using version 1.8.0. This might lead to breaking code or invalid results.') and then prints 'Pipeline' (load succeeds). Warning is real and matches the claim word-for-word; model still loads, so minor.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c \"import hypertools as hyp; m = hyp.load('wiki_model'); print(type(m).__name__)\""
+   ]
+  },
+  {
+   "id": "X8-issue-tracker-005",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Both staleness claims verified against live tracker via gh api. #113 comment (jeremymanning, 2026-07-07T05:35:04Z) says 'Live device ingestion (e.g. OpenBCI) has no code anywhere in the repo' -- but hypertools/io/lsl.py exists (mtime Jul 7 16:00, after the comment) and works end-to-end: my pylsl loopback test received 100 rows of shape (4,) through hyp.io.lsl_stream(name='verify_x8') ('LSL rows received: 100 row shape: (4,)'). #225 comment (2026-07-07T05:35:40Z) says \"animate='morph' raises NotImplementedError at ndims=2\" -- but the repro returned 'HyperAnimation' with no error, and evidence X8_225_hop_morph_2d_frame.png shows a rendered 2D frame. grep key_press_event empty as stated. Tracker comments genuinely understate shipped 1.0 behavior; doc.",
+   "commands_run": [
+    "gh api repos/ContextLab/hypertools/issues/113/comments",
+    "gh api repos/ContextLab/hypertools/issues/225/comments",
+    "grep -rn key_press_event hypertools/; ls hypertools/io/lsl.py",
+    "MPLBACKEND=Agg .venv/bin/python -c \"<3 bootstrap resamples; hyp.plot(boots, animate='morph', ndims=2, reduce='PCA', show=False)>\"",
+    "MPLBACKEND=Agg .venv/bin/python -c \"<pylsl outlet thread + hyp.io.lsl_stream(name='verify_x8') consume 100 rows>\""
+   ]
+  },
+  {
+   "id": "X8-issue-tracker-006",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Repro reproduces: \"TypeError: cluster() got an unexpected keyword argument 'model'\" with no suggestion of the cluster= kwarg. Signature inspection confirms the split: align(data, model, ...) and manip(data, model, ...) vs cluster(x, cluster, ...), reduce(x, reduce, ...), normalize(x, normalize, ...) -- both the model=/own-name and x/data first-arg inconsistencies are real. API-consistency issue; style.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c \"hyp.cluster(x, model={'model':'KMeans','kwargs':{'n_clusters':2}})\"",
+    "MPLBACKEND=Agg .venv/bin/python -c \"<inspect.signature of align/manip/cluster/reduce/normalize>\""
+   ]
+  },
+  {
+   "id": "X8-issue-tracker-007",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Repro output exactly matches claim: '[] [1, 1, 1] [False, False, False]' -- pyplot manages no figures, yet all three returned figures carry .number == 1 and none is the figure plt.figure(1) creates. Misleading attribute but no wrong rendering (evidence loop PNGs show three distinct correct plots); style.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c \"<3x hyp.plot; print plt.get_fignums(), [f.number], [f is plt.figure(1)]>\""
+   ]
+  },
+  {
+   "id": "X8-issue-tracker-008",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Repro reproduces verbatim: \"AttributeError: Line2D.set() got an unexpected keyword argument 'soundtrack'\" raised from matplotlib/artist.py:1206 -- the unknown hyp.plot kwarg surfaces as a matplotlib internal rather than a hypertools-level message. An error is still raised (nothing silently succeeds), so this is error-message quality only; style.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c \"hyp.plot(np.random.randn(30,4), animate=True, soundtrack='epic.mp3', show=False, duration=1, frame_rate=5)\""
+   ]
+  },
+  {
+   "id": "X8-issue-tracker-009",
+   "verdict": "CONFIRMED",
+   "severity": "enhancement",
+   "justification": "All classification evidence verified independently. gh issue list shows exactly 5 open issues (225, 163, 113, 112, 111), and each carries a 2026-07-07 maintainer deferral comment: #225 'defer for now', #163 'Leave this open; punt for a future release', #113 'Defer this for now', #112 'Do not implement this for now', #111 'Do not implement for now'. Greps all empty as claimed: key_press_event (none), soundtrack|audio in hypertools/plot/+pyproject.toml (none), decode in io/streaming.py (none). Shipped sub-pieces pass real runs: ndims=2 morph returns HyperAnimation, LSL loopback delivered 100 real samples. Absent features are all maintainer-deferred enhancements; classification is fair.",
+   "commands_run": [
+    "gh issue list --repo ContextLab/hypertools --state open --limit 100",
+    "gh api repos/ContextLab/hypertools/issues/{111,112,163}/comments (latest comment each)",
+    "grep -rn key_press_event hypertools/; grep -rniE 'soundtrack|audio' hypertools/plot/ pyproject.toml; grep -n decode hypertools/io/streaming.py",
+    "morph ndims=2 run and LSL loopback run (see 005)"
+   ]
+  }
+ ]
+}

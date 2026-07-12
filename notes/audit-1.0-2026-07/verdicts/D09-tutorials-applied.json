@@ -1,0 +1,141 @@
+{
+ "unit": "D09-tutorials-applied",
+ "verifier": "independent adversarial re-run, 2026-07-12, env /Users/jmanning/hypertools/.venv (hypertools 1.0.0.dev0, MPLBACKEND=Agg), branch audit/release-1.0-2026-07",
+ "verdicts": [
+  {
+   "id": "D09-tutorials-applied-001",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro run against cached reddit-corpus-small printed exactly the claimed window counts: 'implode573 [1] ALL-INVISIBLE' and 'mattgrum [1] ALL-INVISIBLE' (CCtenor [31,1,13,11,6,17], ChucktheUnicorn [3], rnclark [12]). Evidence conv_cell11_out0.png shows 5 legend entries but no yellow-green (implode573) or blue (mattgrum) strokes anywhere in the plot. The notebook markdown really says 'so that every utterance array has at least 2 rows (a drawable line)' -- a duplicated point is a zero-length, invisible stroke, so the text is misleading. Fair minor.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f001.py (exact auditor repro; corpus already at ~/.convokit/saved-corpora/reddit-corpus-small)",
+    "grep -o '[^\"]*drawable[^\"]*' docs/tutorials/conversation_trajectories.ipynb",
+    "Read notes/audit-1.0-2026-07/evidence/D09-tutorials-applied/conv_cell11_out0.png"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-002",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Extracted the embedded image/png from docs/tutorials/projectile_kalman.ipynb cells[17] outputs[0] (634x470). Visual inspection shows the title cut at BOTH edges: it reads 'man-forecast jump shot in raw (x, y, z) space (solid=observed, dashed=forec' -- the leading 'Kal' and trailing 'ast)' are clipped. The cell source confirms the full intended title 'Kalman-forecast jump shot in raw (x, y, z) space (solid=ob...'. Reader-visible defect in the shipped notebook output.",
+   "commands_run": [
+    ".venv/bin/python f002.py (nbformat read cell 17, decode image/png, save PNG)",
+    "Read scratchpad .../cell17_out0.png and visually inspected"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-003",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Fresh live run (yfinance 2y download, 2026-07-12) printed dashed-tail spans 'tail span 0.0013 0.0117', '0.0013 0.0023', '0.0018 0.0118', '0.0026 0.0619' with axes (-1.1, 1.1)/(-1.1, 1.1) -- i.e. the largest tail covers ~2.8% of one axis, the rest <1%. The saved full-figure render (f003_full.png) shows no discernible dashed segments. The tutorial cell title literally promises 'Kalman forecasts (dashed) in reduced (price, volume) space'. Forecasts exist but are visually indistinguishable at plotted scale; claim fair.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f003.py (exact auditor repro + savefig)",
+    "Read scratchpad .../f003_full.png",
+    "grep -o 'Kalman forecasts (dashed)[^\"]*' docs/tutorials/stock_forecasting.ipynb"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-004",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Verified install cells directly: conversation_trajectories and streaming_data cell 0 contain the dev-1.0-refactor git install; projectile_kalman cell 1 only runs \"%pip install -q 'hypertools[predict]'\" when pykalman is missing, and stock_forecasting similarly -- neither installs hypertools from the dev branch. '.venv/bin/pip index versions hypertools' -> 'hypertools (0.8.2)' as newest PyPI release, which predates hyp.predict/hyp.impute, so on a fresh Colab these two tutorials would import a hypertools without the taught APIs until 1.0 ships. Inconsistent with the other two tutorials' explicit dev-preview cells.",
+   "commands_run": [
+    ".venv/bin/python f004.py (dump pip-install cells of all four notebooks)",
+    ".venv/bin/pip index versions hypertools"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro printed 'n_samples: 500' for hyp.plot(gen, stream_init=500, stream_chunk=100, stream_max=300) -- 500 samples consumed despite stream_max=300, with no error or warning. The plot() docstring says stream_max means 'stop streaming after this many samples', which this violates when stream_max < stream_init.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f005.py",
+    "sed -n 975,1015p hypertools/plot/plot.py (docstring check)"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-006",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Instrumented generator printed 'pulled: 1201 n_samples: 1200' for stream_max=1200 -- exactly one sample beyond stream_max is silently consumed (and lost) from the underlying stream. Grep of plot.py/streaming docstrings found no mention of a +1 peek, so it is undocumented as claimed.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f006.py",
+    "grep -rn 'stream_max' hypertools/plot/plot.py; grep for 'peek/one extra' in plot + io/streaming"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "stream_init=-5 raised 'ValueError : Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize.' -- an itertools internal leak that never names stream_init. stream_window=0 was silently ignored: 'window=0 displayed points: 300 n_samples: 300' (all 300 points displayed instead of 0/erroring).",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f007.py"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-008",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Scalar-yield generator crashed exactly as claimed: 'RAISED IndexError : index 1 is out of bounds for axis 1 with size 1'. No hint that single-feature streams are unsupported. Kept minor (cryptic crash on a somewhat unusual but plausible 1-feature stream, not a mainline tutorial path).",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f008.py"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-009",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Streaming save_path='stream.mp4' raised 'ValueError : unknown file extension: .mp4' (leaked from PIL). Parity claim independently verified: non-streaming hyp.plot(data, animate=True, save_path='anim_test.mp4') succeeded and wrote a 6,192,067-byte mp4 in the same env. So mp4 works for animate but not streaming, with an unhelpful error.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f009.py (streaming mp4 -> ValueError)",
+    "MPLBACKEND=Agg .venv/bin/python f009b.py (non-streaming animate mp4 -> OK, 6.2 MB file)"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-010",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.impute(pd.DataFrame({'a':[1.0],'b':[np.nan]}), model='Kalman') raised exactly 'ValueError : could not broadcast input array from shape (2,2) into shape (2,1)' -- a cryptic internal broadcast error rather than a clear minimum-rows message. Degenerate 1-row input, so minor.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f010_012_014.py"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-011",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Both claimed messages reproduced verbatim: fitted-model reuse on mismatched columns -> 'ValueError : X has 10 features, but Ridge is expecting 30 features as input.' (sklearn internals, no hypertools branding); 3-row train -> 'AssertionError : AutoRegressor needs more than lags=10 observations to fit; got 3' (AssertionError instead of ValueError). Error-polish issue only; style.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f011.py"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-012",
+   "verdict": "CONFIRMED",
+   "severity": "enhancement",
+   "justification": "With warnings.catch_warnings(record=True) and simplefilter('always'), hyp.impute on a frame whose column 'c' is all-NaN returned 'F012 max abs c: 0.0 warnings: []' -- the never-observed column is silently filled with 0.0 and zero warnings are emitted. Missing-guardrail enhancement, as filed.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f010_012_014.py"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-013",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Direct JSON inspection of the four notebooks (all nbformat 4.5): 'conversation_trajectories kernelspec= python3 cells_missing_id= 1', 'projectile_kalman ... cells_missing_id= 0', 'stock_forecasting ... cells_missing_id= 0', 'streaming_data kernelspec= MISSING cells_missing_id= 1'. Matches the claim exactly; metadata hygiene only.",
+   "commands_run": [
+    ".venv/bin/python f013.py"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-014",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "hyp.predict(..., model='kalman') raised exactly \"ValueError: unknown predict model 'kalman'; supported names: Kalman, GaussianProcess, AutoRegressor, ARIMA, Laplace, Chronos (or pass a dict ...)\". Case-sensitive lookup confirmed; the error does list the exact supported names, so impact is cosmetic -- style, as filed.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f010_012_014.py"
+   ]
+  }
+ ]
+}

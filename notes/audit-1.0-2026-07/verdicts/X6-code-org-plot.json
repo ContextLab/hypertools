@@ -1,0 +1,146 @@
+{
+ "unit": "X6-code-org-plot",
+ "verifier": "independent adversarial re-run, 2026-07-12, env /Users/jmanning/hypertools/.venv (branch audit/release-1.0-2026-07, HEAD 13421453)",
+ "verdicts": [
+  {
+   "id": "X6-code-org-plot-001",
+   "verdict": "CONFIRMED",
+   "severity": "critical",
+   "justification": "Reproduced exactly: 'ValueError: tuple.index(x): x not in tuple' at backend.py:552 then 'UnboundLocalError: cannot access local variable working_backend' at backend.py:691. Independently established scope: TkAgg, Qt5Agg, and MacOSX (the platform default) all crash on import; Agg/WebAgg/notebook import fine and 'plotly' falls back with a warning. Root cause verified by code read: backend.py:552 calls backends.index(HYPERTOOLS_BACKEND) using the module global instead of env_backend, so ANY env value case-matching the interactive-backend tuple (TkAgg/QtAgg/Qt5Agg/Qt4Agg/GTK4Agg/GTK3Agg/WXAgg/MacOSX) crashes before any backend is even tried. The env var is user-facing (plot.py:925 docstring names $HYPERTOOLS_BACKEND). Import crash on a documented knob = critical.",
+   "commands_run": ["env MPLBACKEND=Agg HYPERTOOLS_BACKEND=TkAgg .venv/bin/python -c 'import hypertools'", "loop over HYPERTOOLS_BACKEND in Agg Qt5Agg WebAgg notebook plotly MacOSX", "read backend.py:500-620"]
+  },
+  {
+   "id": "X6-code-org-plot-002",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "AST re-count (my own script): plot() in hypertools/plot/plot.py is '2690 lines, 69 params' (args+kwonlyargs; auditor's 70 presumably includes the trailing **kwargs). Magnitude claim fair.",
+   "commands_run": ["python AST count of plot() lineno span and arg count"]
+  },
+  {
+   "id": "X6-code-org-plot-003",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "AST re-count: _draw in matplotlib_backend.py is '1841 lines; 28 nested defs' (auditor said 26; ast.walk boundary counting differs slightly but the substance -- a ~1.8k-line function full of closures -- is exact).",
+   "commands_run": ["python AST count of _draw lineno span and nested FunctionDefs"]
+  },
+  {
+   "id": "X6-code-org-plot-004",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "grep output matches claim exactly: literal fallback color 'else (0.2, 0.4, 0.8)' at matplotlib_backend.py:1381, matplotlib_backend.py:1880, plotly_backend.py:676, plotly_backend.py:1977 -- four copies across two backends.",
+   "commands_run": ["grep -n '0.2, 0.4, 0.8' matplotlib_backend.py plotly_backend.py"]
+  },
+  {
+   "id": "X6-code-org-plot-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Runtime instrumentation (monkeypatched hypertools.plot.morph.sample_and_match_clouds, called through plotly_backend's '_morph.' module-attribute reference so the patch intercepts): output '005 calls: 2' for one animated morph figure. Code read confirms plotly_backend.py:672 (sampled0/dup_masks0) and plotly_backend.py:1973 (sampled/dup_masks) are independent calls, while the comment at 652-656 claims _add_animation's morph branch will reuse 'the EXACT sampled0 arrays'.",
+   "commands_run": ["scratchpad f005.py: patched sample_and_match_clouds, plotly_draw(animate='morph') -> 2 calls", "sed -n 650,680p;1965,1985p plotly_backend.py"]
+  },
+  {
+   "id": "X6-code-org-plot-006",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "grep -rn onMouseClick over hypertools/ and tests/ returns ONLY the two commented mpl_connect lines at matplotlib_backend.py:707 and :712; no definition anywhere. Downgraded minor->style: the lines are comments with zero runtime effect -- pure dead-code hygiene.",
+   "commands_run": ["grep -rn 'onMouseClick' hypertools tests"]
+  },
+  {
+   "id": "X6-code-org-plot-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "pyflakes: 'matplotlib_backend.py:835:17: local variable closestIndex_prev is assigned to but never used'. Code read of onMouseMotion (lines 811-836) confirms the substantive claim: onMouseMotion.closestIndex_prev is set once on the first event and both branch assignments 'closestIndex_prev = closestIndex' (lines ~832/835) bind a dead local, so the attribute never updates and the hover label re-annotates on every motion event whenever the cursor is away from the initial closest point, instead of only on change.",
+   "commands_run": [".venv/bin/python -m pyflakes matplotlib_backend.py | grep closestIndex", "read matplotlib_backend.py:805-845"]
+  },
+  {
+   "id": "X6-code-org-plot-008",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Runtime repro: passed user_fmt=['-','-'] with a single-point first dataset; after hyp.plot(..., show=False) the caller's list printed \"008: ['.', '-']\" -- plot() mutated the caller's fmt list in place.",
+   "commands_run": ["runtime script: hyp.plot([1-point array, 10x3 walk], ['-','-'], show=False); print(user_fmt)"]
+  },
+  {
+   "id": "X6-code-org-plot-009",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Runtime repro: hyp.plot(traj, animate=True, chemtrails=True, linewidth=5, ...) printed \"009: [5.0, 1.0]\" -- head line gets linewidth 5 but the trail artist falls back to matplotlib's default 1.0, i.e. the user's linewidth is dropped for the trail.",
+   "commands_run": ["runtime script printing [l.get_linewidth() for l in fig.axes[0].lines]"]
+  },
+  {
+   "id": "X6-code-org-plot-010",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Runtime repro with azim=-60 after ani._init_draw(); ani._draw_frame(0): output 'parallel 0.0 / spin 0.0 / serial -60.0' -- exactly the claimed inconsistency (parallel/spin start the camera at azimuth 0, ignoring azim=, while serial honors it).",
+   "commands_run": ["runtime script over styles parallel/spin/serial printing fig.axes[0].azim after frame 0"]
+  },
+  {
+   "id": "X6-code-org-plot-011",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "resolve_plotly_volume_params(0.2, 3, 1.0) returned (0.15, 0.05, [[0, 0], [0.3, 0.27], [1, 0.53]], 0.4, 15) -- opacity 0.4 = min(2*alpha, 0.4), matching density.py's own docstring which explicitly says the constants 'were lowered from the original opacity=min(3*alpha, 0.6) / opacityscale=[[0,0],[0.3,0.4],[1,0.8]]'. plot.py:1169 still documents 'opacity=min(3.0 * alpha, 0.6)'. plot()'s docstring is stale relative to the retuned code.",
+   "commands_run": ["python -c 'from hypertools.plot.density import resolve_plotly_volume_params; print(resolve_plotly_volume_params(0.2, 3, 1.0))'", "sed -n 1160,1175p plot.py", "read density.py resolve_plotly_volume_params docstring"]
+  },
+  {
+   "id": "X6-code-org-plot-012",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "meshutil._RESCALE_CAP prints 3.0 and is the containment-rescale cap (meshutil.py:286-303, default cap=_RESCALE_CAP at :405, warning text f'{_RESCALE_CAP:.0%} growth'); plot.py:1082-1083 docstring says the rescale is bounded to 'grow at most 10%'. 10% vs 300% -- docstring wrong.",
+   "commands_run": ["python -c 'from hypertools.plot import meshutil; print(meshutil._RESCALE_CAP)'", "grep -n 'most 10%' plot.py", "grep -n _RESCALE_CAP meshutil.py"]
+  },
+  {
+   "id": "X6-code-org-plot-013",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "All greps reproduce: plotly_backend.py:205,1141,1168,2162 reference 'draw.py' (which is now a shim; the code lives in matplotlib_backend.py); backend.py:4 cites 'hypertools.DataGeometry.plot' while grep 'def plot' in datageometry.py returns 0 matches; backend.py:51 'manage_backed' (typo/nonexistent name) and backend.py:68 '_switch_notebook_backend'.",
+   "commands_run": ["grep -n 'draw.py' plotly_backend.py", "grep -n 'DataGeometry.plot|manage_backed|_switch_notebook_backend' backend.py", "grep -c 'def plot' datageometry.py -> 0"]
+  },
+  {
+   "id": "X6-code-org-plot-014",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Auditor's scratchpad script was unavailable, so I ran a minimal faithful equivalent of docstring example 1 (backend.py:941: hyp.set_interactive_backend('TkAgg') then hyp.plot(data, interactive=True)): raised 'hypertools.core.exceptions.HypertoolsBackendError: Failed to switch the plotting backend to TkAgg...' ; python -c 'import _tkinter' gives ModuleNotFoundError in the project's own dev venv. Both docstring examples (:941 and :953) hardcode 'TkAgg'.",
+   "commands_run": ["scratchpad f014.py (set_interactive_backend('TkAgg') + interactive plot)", ".venv/bin/python -c 'import _tkinter'", "read backend.py set_interactive_backend docstring"]
+  },
+  {
+   "id": "X6-code-org-plot-015",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "pyflakes over hypertools/plot/*.py reproduces every cited item verbatim (__init__.py:2 warnings, __init__.py:3 matplotlib as mpl, animate.py:11 + :88 combine_frames_svg, backend.py:480:41 lab_version_stdout, colors.py:167 vals2colors/vals2bins, matplotlib_backend.py:7 matplotlib, plot.py:4 matplotlib.animation, plot.py:17 _SVGFrameCollector/_save_animated_svg) plus additional ones (plotly_backend.py:25 warnings, :197 plotly).",
+   "commands_run": [".venv/bin/python -m pyflakes hypertools/plot/*.py | grep -v 'star imports|unable to detect'"]
+  },
+  {
+   "id": "X6-code-org-plot-016",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "pyflakes on plot.py + matplotlib_backend.py: 121 'may be undefined, or defined from star imports' lines (even more than the auditor's 60 -- count discrepancy noted but the claim direction holds; plotly_backend.py by contrast uses explicit imports).",
+   "commands_run": [".venv/bin/python -m pyflakes plot.py matplotlib_backend.py | grep -c 'star imports' -> 121"]
+  },
+  {
+   "id": "X6-code-org-plot-017",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "grep confirms def calcClosestDatapoint (:746), def onMouseMotion (:811), def update_lines_parallel (:932) with tail_duration=2 param; matplotlib_backend.py:1601 computes 'window_frames = int(frame_rate * _window_duration)' and :1614 passes window_frames positionally into that tail_duration slot -- a frame count in a parameter named like a duration. plotly_backend.py:756/:778 morph_trace_start_3d is used for 2-D too (the round17 #9 comment at :656-661 explicitly says the '_3d' names are kept for 2-D 'to minimize the diff').",
+   "commands_run": ["grep for the four names", "grep window_frames matplotlib_backend.py", "read plotly_backend.py:650-680"]
+  },
+  {
+   "id": "X6-code-org-plot-018",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "ast.get_docstring(ast.parse(src)) is None for all three: 'plot.py False / matplotlib_backend.py False / __init__.py False' (plotly_backend.py has one).",
+   "commands_run": ["python AST get_docstring check over the three files"]
+  },
+  {
+   "id": "X6-code-org-plot-019",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "plotly_backend.py:1694 reads \"thickness=15 if orientation == 'v' else 15)\" -- both branches identical; backend.py backends tuple (lines 530-539) lists 'TkAgg' at index 0 and again at index 6.",
+   "commands_run": ["grep -n 'thickness=15 if' plotly_backend.py", "sed -n 528,540p backend.py"]
+  },
+  {
+   "id": "X6-code-org-plot-020",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Runtime: hyp.plot(..., animate='spin', show=False) returned type 'HyperAnimation' with isinstance(out, tuple) True; plot.py Returns section (:1213-1216) documents only 'a (fig, animation) tuple' with no mention of HyperAnimation, and plot.py:1003 (stream_window) still says samples are 'retained on the returned geometry' -- 0.x DataGeometry language for an API that no longer returns a geometry.",
+   "commands_run": ["runtime script printing type(out).__name__/isinstance tuple", "sed -n 1000,1006p;1210,1220p plot.py"]
+  }
+ ]
+}

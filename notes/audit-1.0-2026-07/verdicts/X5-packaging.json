@@ -1,0 +1,116 @@
+{
+ "unit": "X5-packaging",
+ "verifier": "independent adversarial verifier, 2026-07-12, branch audit/release-1.0-2026-07 (HEAD 13421453)",
+ "verdicts": [
+  {
+   "id": "X5-packaging-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Rebuilt wheel+sdist myself (python -m build to scratchpad). Build log line 611: \"adding 'hypertools-dev/bin/activate_this.py'\"; unzip -l wheel: \"2383  07-02-2026 12:30   hypertools-dev/bin/activate_this.py\"; top_level.txt reads \"hypertools\\nhypertools-dev\"; sdist also contains hypertools-1.0.0.dev0/hypertools-dev/bin/activate_this.py. After pip install of the wheel into a fresh 3.13 venv, site-packages contains a 'hypertools-dev' directory. A stray local-venv file installs into every user's site-packages.",
+   "commands_run": [
+    "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -m build --outdir <scratch>/dist /Users/jmanning/hypertools",
+    "unzip -l <scratch>/dist/hypertools-1.0.0.dev0-py3-none-any.whl | grep hypertools-dev",
+    "unzip -p <wheel> hypertools-1.0.0.dev0.dist-info/top_level.txt",
+    "ls <scratch>/fresh313/lib/python3.13/site-packages/ | grep hypertools-dev"
+   ]
+  },
+  {
+   "id": "X5-packaging-002",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "config.ini absent from both wheel and sdist (unzip -l / tar -tzf grep 'config.ini': no hit; installed site-packages/hypertools/core/ has no config.ini). In fresh 3.13 venv with the wheel: get_default_options()['reduce'] printed \"reduce defaults: {}\", apply_defaults('reduce', {'ndims': 5}) printed \"merged: {'ndims': 5}\" then \"KeyError: 'algorithm'\". Source-tree reference (repo .venv) printed \"reduce defaults: {'ndims': '3', 'algorithm': 'IncrementalPCA'}\" and \"algorithm: IncrementalPCA\". Kept major (not critical): top-level hyp.reduce(x) and hyp.plot(x) still succeeded on the wheel install, so the degradation is silent-empty-defaults + KeyError on the apply_defaults path rather than total breakage.",
+   "commands_run": [
+    "python3.13 -m venv <scratch>/fresh313 && <scratch>/fresh313/bin/pip install <wheel>",
+    "<scratch>/fresh313/bin/python -c \"from hypertools.core.configurator import get_default_options, apply_defaults; ...\"",
+    "/Users/jmanning/hypertools/.venv/bin/python -c (same snippet, source-tree reference)",
+    "<scratch>/fresh313/bin/python -c \"hyp.reduce(x); hyp.plot(x)\" (both succeeded)"
+   ]
+  },
+  {
+   "id": "X5-packaging-003",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "uv venv --python 3.13 + uv pip install <wheel>: dry-run resolved \"+ llvmlite==0.36.0 / + numba==0.53.1 / + umap-learn==0.5.12\"; real install exited 1 with \"RuntimeError: Cannot install on Python version 3.13.12; only versions >=3.6,<3.10 are supported\" and \"help: `llvmlite` (v0.36.0) was included because `hypertools` (v1.0.0.dev0) depends on `umap-learn` (v0.5.12) which depends on `numba` (v0.53.1)\"; afterwards import matplotlib/hypertools fails (nothing installed). uv 3.14 dry-run also resolves numba==0.53.1. Contrast confirmed: pip on the same 3.13 installed numba 0.66.0 + llvmlite 0.48.0 and hypertools works. uv is a mainstream installer, so this is a real user-facing install failure fixable with a numba/llvmlite floor in hypertools deps.",
+   "commands_run": [
+    "uv venv --python 3.13 <scratch>/uv313; uv pip install --dry-run --python <scratch>/uv313/bin/python <wheel>",
+    "uv pip install --python <scratch>/uv313/bin/python <wheel> (exit 1, llvmlite 0.36.0 build failure)",
+    "<scratch>/uv313/bin/python -c 'import hypertools' (ModuleNotFoundError)",
+    "uv venv --python 3.14 <scratch>/uv314; uv pip install --dry-run ... (also numba==0.53.1)"
+   ]
+  },
+  {
+   "id": "X5-packaging-004",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "tar -tzf sdist shows only 'hypertools-1.0.0.dev0/tests/' plus flat test_*.py; repo tests/ additionally has __init__.py, context.py, matplotlibrc, data/, and subdirs (align, cluster, core, io, manip, plot, predict, reduce, external, impute) — all absent from the archive. Non-runnable is fair: e.g. tests/test_load_sources.py line 206 reads (Path(__file__).parent / 'data' / ...), and tests/data is not shipped.",
+   "commands_run": [
+    "tar -tzf <sdist> | grep tests/",
+    "ls /Users/jmanning/hypertools/tests/",
+    "grep -n \"data/\" tests/test_load_sources.py"
+   ]
+  },
+  {
+   "id": "X5-packaging-005",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "unzip -p wheel .dist-info/METADATA | grep '](images/' returns exactly 8 relative refs starting with \"![Hypertools logo](images/hypercube.png)\" and \"![Hypertools example](images/hypertools.gif)\". Relative repo paths do not resolve from pypi.org, so the project page would show 8 broken images.",
+   "commands_run": [
+    "unzip -p <wheel> hypertools-1.0.0.dev0.dist-info/METADATA | grep -n '](images/'",
+    "... | grep -c '](images/'  -> 8"
+   ]
+  },
+  {
+   "id": "X5-packaging-006",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "All three parts reproduce: dist/ contains hypertools-0.8.2-py3-none-any.whl + hypertools-0.8.2.tar.gz (dated Jan 29 01:12); 'git check-ignore -v hypertools-dev' prints nothing and exits 1 (not ignored, and the hypertools-dev venv dir exists at repo root); hypertools.egg-info/top_level.txt reads \"hypertools\\nhypertools-dev\" and its mtime updated to my build time (Jul 12 15:50:49 2026), proving python -m build refreshes the in-tree egg-info.",
+   "commands_run": [
+    "ls -la /Users/jmanning/hypertools/dist/",
+    "git -C /Users/jmanning/hypertools check-ignore -v hypertools-dev; echo exit=$?",
+    "cat /Users/jmanning/hypertools/hypertools.egg-info/top_level.txt; stat -f '%Sm' .../top_level.txt"
+   ]
+  },
+  {
+   "id": "X5-packaging-007",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Ran hyp.save('/tmp/x5f.hyp', np.zeros((3,3))) (np.save-style argument order) in the repo venv: exact claimed traceback \"File .../hypertools/io/save.py, line 21, in save / with open(fname, 'wb') as f: / TypeError: expected str, bytes or os.PathLike object, not ndarray\". Source check: save(obj, fname, **kwargs) never uses **kwargs, and the module docstring itself invokes the numpy.save analogy (\"the same trust model as `numpy.save`\"). Style/UX polish, not a correctness bug — agreed.",
+   "commands_run": [
+    "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.save('/tmp/x5f.hyp', np.zeros((3,3)))\"",
+    "Read /Users/jmanning/hypertools/hypertools/io/save.py"
+   ]
+  },
+  {
+   "id": "X5-packaging-008",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "hypertools/config.py lines 1-5 are exactly the claimed try/except with comment \"# Fallback for Python < 3.8\" importing importlib_metadata; pyproject.toml sets requires-python = \">=3.10\", so the fallback is dead code (and importlib_metadata is not a declared dependency, so the fallback would ImportError anyway).",
+   "commands_run": [
+    "Read /Users/jmanning/hypertools/hypertools/config.py",
+    "grep requires-python /Users/jmanning/hypertools/pyproject.toml"
+   ]
+  },
+  {
+   "id": "X5-packaging-009",
+   "verdict": "CONFIRMED",
+   "severity": "enhancement",
+   "justification": "pyproject classifiers list only 3.10/3.11/3.12/3.13. Machine default python3 is 3.14.4. uv dry-run on 3.14 exits 0 (resolves umap-learn 0.5.12, though to old numba 0.53.1); pip dry-run on 3.14 exits 0 and resolves modern numba 0.66.0 + llvmlite 0.48.0, so the dependency set genuinely resolves on 3.14. Fair as an enhancement: add a 3.14 classifier once CI covers it, or document the ceiling.",
+   "commands_run": [
+    "python3 --version  -> Python 3.14.4",
+    "grep -A12 classifiers /Users/jmanning/hypertools/pyproject.toml",
+    "uv venv --python 3.14 + uv pip install --dry-run <wheel> (exit 0)",
+    "python3.14 -m venv + pip install --dry-run --report <wheel> (exit 0; numba 0.66.0, llvmlite 0.48.0)"
+   ]
+  },
+  {
+   "id": "X5-packaging-010",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "My own build log contains (twice) \"setuptools/config/_apply_pyprojecttoml.py:82: SetuptoolsDeprecationWarning: `project.license` as a TOML table is deprecated ... Please use a simple string containing a SPDX expression ... By 2027-Feb-18, you need to update your project and remove deprecated calls or your builds will no longer be supported.\" pyproject.toml line 10 is license = { text = \"MIT\" } (the deprecated table form).",
+   "commands_run": [
+    "grep -A3 'project.license' <scratch>/build.log",
+    "grep -B2 -A4 license /Users/jmanning/hypertools/pyproject.toml"
+   ]
+  }
+ ]
+}

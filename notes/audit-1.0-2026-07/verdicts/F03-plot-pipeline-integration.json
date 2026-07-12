@@ -1,0 +1,110 @@
+{
+ "unit": "F03-plot-pipeline-integration",
+ "verdicts": [
+  {
+   "id": "F03-plot-pipeline-integration-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Both repros crash identically: 'F001a EXC: TypeError cannot unpack non-iterable NoneType object' (reduce=PCA(n_components=5)) and 'F001b EXC: TypeError cannot unpack non-iterable NoneType object' (reduce=None), raised from matplotlib_backend.py _draw via dispatch_static returning None. plot.py:564 documents 'reduce : str, dict, class, instance, or fitted Reducer', so a 5-component instance is a documented input; the error names neither the >3-D data nor a fix.",
+   "commands_run": ["MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python .../scratchpad/verify/F03-plot-pipeline-integration/v1.py (sections F001a/F001b)"]
+  },
+  {
+   "id": "F03-plot-pipeline-integration-002",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Standalone 'hyp.reduce(new_data, reduce=model)' returned shape (30, 3) OK, but 'hyp.plot(rng.normal(0,1,(30,10)), reduce=model)' raised 'ValueError: X has 3 features, but PCA is expecting 10 features as input.' from plot.py:1756 'xform = reducer(xform, ndims=3, reduce=reduce, internal=True' -- plot re-applies the fitted model to its own already-reduced 3-column output. plot.py:564 explicitly documents 'or fitted Reducer'.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v1.py (section F002)", "grep -n -A12 'reduce : ' hypertools/plot/plot.py"]
+  },
+  {
+   "id": "F03-plot-pipeline-integration-003",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "hyp.plot(DL, align=False) raised 'ValueError: unknown model: False' from plot.py:1674 via analyze. plot.py:586-592 and tools/analyze.py:59-65 both promise 'If False or None, no alignment is applied'. One nuance vs the auditor's title: the standalone align() docstrings do NOT advertise False (tools/align.py:48 says 'str or dict'; align/align.py model= says 'str, class, instance, dict, or None'), though hyp.align(model=False) and legacy align(align=False) also raise 'unknown model: False'. Core defect (documented plot()/analyze() behavior crashes) stands.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v1.py (section F003)", "grep -n -A10 'align : ' hypertools/plot/plot.py hypertools/tools/align.py hypertools/tools/analyze.py", "python heredoc: hyp.align(model=False), legacy align(align=False)"]
+  },
+  {
+   "id": "F03-plot-pipeline-integration-004",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "hyp.plot(x, cluster=False) raised 'ValueError: Invalid cluster model specified; should be string or dictionary!' from plot.py:1905, while plot.py:594 documents 'cluster : str, dict, False, or None'.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v1.py (section F004)", "grep -n 'cluster : ' hypertools/plot/plot.py"]
+  },
+  {
+   "id": "F03-plot-pipeline-integration-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.plot(x, fmt='.', n_dims=2) ran the full pipeline then crashed with 'AttributeError: Line2D.set() got an unexpected keyword argument 'n_dims'' -- a matplotlib artist error with no hint that 'ndims' was meant. (Plotly variant not re-run; the matplotlib half alone substantiates the finding.)",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v1.py (section F005)"]
+  },
+  {
+   "id": "F03-plot-pipeline-integration-006",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.plot(DL, normalize='none') raised 'AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.' -- the message lists 'none' as accepted yet the value that triggered it WAS 'none'; it also names the internal 'scale_type' rather than the user-facing 'normalize' kwarg, and is an AssertionError rather than ValueError.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v1.py (section F006)"]
+  },
+  {
+   "id": "F03-plot-pipeline-integration-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Integer hue=np.repeat([0,1,2],30): 'int hue: n_lines = 0 n_coll = 7', legend None, 'UserWarning: legend is not supported for continuous or matrix-valued hue; ignoring legend.' Same data with str labels: 'str hue: n_lines = 3 legend labels: ['a','b','c']'. plot.py hue docstring (lines 370-387) distinguishes 'categorical labels' vs 'continuous numeric values' but never states the dtype rule that numeric labels are always routed to the continuous path. Evidence PNG t6_hue_str.png shows the 3-group categorical rendering with legend.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v1.py (section F007)", "grep -n -A20 'hue : ' hypertools/plot/plot.py", "Read t6_hue_str.png"]
+  },
+  {
+   "id": "F03-plot-pipeline-integration-008",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.plot([ (50,10), (50,7) ]) raised the raw numpy error 'ValueError: all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 10 and the array at index 1 has size 7' from the reduce stage, while 'align alone OK, shapes: [(50, 10), (50, 10)]' -- hyp.align pads the same input.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v1.py (section F008)"]
+  },
+  {
+   "id": "F03-plot-pipeline-integration-009",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "One plot() call with reduce={'model':'PCA','params':{}} produced 'DeprecationWarning count: 2' (identical messages); one plot() call on unequal-row datasets with align='hyper' produced 'UserWarning count: 2' of the identical 'alignment keeps only the 40 row(s) common to all datasets...' trim warning.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v1.py (section F009, warnings.simplefilter('always'), record=True)"]
+  },
+  {
+   "id": "F03-plot-pipeline-integration-010",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "plot.py:581-584 docstring: 'If ndims > 3, will plot in 3 dimensions but return the higher dimensional data.' Actual run with ndims=10 on (50,20) data: 'return type: <class 'matplotlib.figure.Figure'>' -- no data returned; higher-D data only via return_model=True.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v1.py (section F010)", "grep -n -A8 'ndims : ' hypertools/plot/plot.py"]
+  },
+  {
+   "id": "F03-plot-pipeline-integration-011",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "CLAUDE.md lines 89-96 list '3. Alignment ... 4. Dimensionality Reduction'. The code is the opposite: tools/analyze.py docstring says 'manip -> normalize -> reduce -> align -> cluster (the canonical 1.0 pipeline order, GH #153)' and its legacy path (line 179) is literally 'aligner(reducer(normalizer(data...)))'. Verified via code inspection instead of re-running the auditor's numeric-equivalence script -- the stage nesting is unambiguous.",
+   "commands_run": ["grep -n -A8 'Data Flow' /Users/jmanning/hypertools/CLAUDE.md", "awk '/def analyze/,0' hypertools/tools/analyze.py | grep 'aligner(reducer(normalizer'"]
+  },
+  {
+   "id": "F03-plot-pipeline-integration-012",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "reduce='NotAModel' -> 'ValueError: reduce must be one of the supported options or support n_components and fit_transform          methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html...' (no model list, embedded whitespace, pre-1.0 docs path; curl: 200 at the readthedocs URL, i.e. the archived 0.x page). Same-run comparison: align='NotAModel' -> \"unknown align model 'NotAModel'; supported names: DeterministicSharedResponseModel, HyperAlign, ...\"; cluster='NotAModel' -> \"unknown cluster model 'NotAModel'; supported names: AffinityPropagation, ...\" -- both far richer.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v1.py (section F012)", "curl -sIL -o /dev/null -w '%{http_code} %{url_effective}' http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html"]
+  },
+  {
+   "id": "F03-plot-pipeline-integration-013",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "'2col ndims=3 xform shape: (40, 2) warnings: 0' and '10feat ndims=20 xform shape: (50, 10) warnings: 0' (silent), while the rows case warns: '2rows ndims=3 ... warnings: 2: The number of rows in your data is less than ndims. The data will be reduced to the number of rows.' (and that warning itself fires twice, consistent with finding 009). Evidence PNG t4_2col_ndims3.png shows the silent 2-D fallback figure.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v1.py (section F013)", "Read t4_2col_ndims3.png"]
+  },
+  {
+   "id": "F03-plot-pipeline-integration-014",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "hyp.plot(D, cluster=KMeans(n_clusters=3)) -> 'ValueError: Invalid cluster model specified; should be string or dictionary!' while hyp.cluster(D, cluster=KMeans(n_clusters=3)) succeeds ('n_labels: 3, shape: (90,)') and plot(align=HyperAlign() instance) is accepted ('plot align=HyperAlign() instance: OK'). Inconsistent instance handling confirmed.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python v1.py (section F014)", "python heredoc: hyp.cluster(D, cluster=KMeans(n_clusters=3))"]
+  },
+  {
+   "id": "F03-plot-pipeline-integration-015",
+   "verdict": "CONFIRMED",
+   "severity": "enhancement",
+   "justification": "Primary claim confirmed: grep -c '>>>' hypertools/plot/plot.py = 0 (no Examples section). The infra half is now STALE: from cwd /tmp, .venv/bin/python -c 'import hypertools; print(hypertools.__file__)' prints /Users/jmanning/hypertools/hypertools/__init__.py and pip list shows 'hypertools 1.0.0.dev0 /Users/jmanning/hypertools' (editable) -- the stale site-packages shadow no longer reproduces in this environment.",
+   "commands_run": ["grep -c '>>>' hypertools/plot/plot.py", "cd /tmp && .venv/bin/python -c 'import hypertools; print(hypertools.__file__)'", ".venv/bin/pip list | grep -i hypertools"]
+  }
+ ]
+}

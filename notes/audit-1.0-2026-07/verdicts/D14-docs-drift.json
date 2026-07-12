@@ -1,0 +1,170 @@
+{
+ "unit": "D14-docs-drift",
+ "verdicts": [
+  {
+   "id": "D14-docs-drift-001",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "grep HyperAnimation docs/api.rst -> exit 1 (no match); ls docs/hypertools.HyperAnimation.rst -> 'No such file or directory'. api.rst header states 'This page lists every public entry point exported from ``hypertools``'. 'HyperAnimation' in dir(hyp) -> True; hyp.plot([randn(60,8)], animate=True, show=False) returned <class 'hypertools.plot.hyper_animation.HyperAnimation'> (a tuple subclass); 'HyperAnimation in plot docstring: False'.",
+   "commands_run": [
+    "grep -n HyperAnimation docs/api.rst; ls docs/hypertools.HyperAnimation.rst",
+    ".venv/bin/python -c \"import numpy as np, hypertools as hyp; print('HyperAnimation' in dir(hyp)); print(type(hyp.plot([np.random.randn(60,8)], animate=True, show=False)))\" (MPLBACKEND=Agg)",
+    ".venv/bin/python -c \"...print(type(a).__mro__)\" and plot docstring Returns-section dump"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-002",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "readme.md '## Requirements' lists scikit-learn/pandas/seaborn/matplotlib/scipy/numpy/umap-learn/requests/ipympl/ffmpeg only; pyproject.toml [project] dependencies additionally declare 'dill>=0.3.8', 'pykalman>=0.11', 'statsmodels>=0.14', 'pydata-wrangler>=0.5.1' -- none of the four appear anywhere in the README Requirements block. README does add 'All Python dependencies are declared in pyproject.toml', but the enumerated list it keeps is partial/stale exactly as claimed.",
+   "commands_run": [
+    "sed -n '165,200p' readme.md",
+    "sed -n '/^dependencies = \\[/,/^\\]/p' pyproject.toml"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-003",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "readme.md extras bullet reads '`predict` -- `hyp.predict`/`hyp.impute` forecasters/imputers (Kalman, ARIMA, and the skaters Laplace ensemble)', but pyproject.toml has 'predict = [\"skaters>=0.11\"]' only, with pykalman/statsmodels in base dependencies and a pyproject comment stating 'Kalman filtering (pykalman) and ARIMA ... core deps, so Kalman/ARIMA are always available'. The README bullet misattributes Kalman/ARIMA to the extra.",
+   "commands_run": [
+    "grep -n 'predict' pyproject.toml",
+    "sed -n '/^\\[project.optional-dependencies\\]/,/^\\[/p' pyproject.toml",
+    "sed -n '165,200p' readme.md"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-004",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Fresh venv: pip install 'numpy>=2' deepdish succeeded (exit 0), then 'import deepdish' failed with \"AttributeError: module 'numpy' has no attribute 'ComplexWarning'\" under numpy 2.5.1 -- doc_requirements.txt pins numpy>=2.0.0 12 lines below deepdish, and hypertools' own load.py error text says legacy deepdish reads need 'numpy<2'. PPCA pip package is never imported (hypertools/impute/ppca.py imports the vendored hypertools/external/ppca.py). With sys.modules['hdbscan']=None, hyp.cluster(..., cluster='HDBSCAN') ran fine via sklearn ('HDBSCAN ok, shape (60,) uniq [-1]'), and cluster/common.py comments that sklearn's HDBSCAN 'replaces the unmaintained external hdbscan package'.",
+   "commands_run": [
+    "python3 -m venv <scratch>/dd-venv && pip install 'numpy>=2' deepdish && python -c 'import deepdish'",
+    "grep -rn deepdish/PPCA/hdbscan across hypertools/ docs/ examples/",
+    ".venv/bin/python blocked-hdbscan cluster='HDBSCAN' run (MPLBACKEND=Agg)"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "grep 'plotly|kaleido|ffmpeg' docs/doc_requirements.txt .readthedocs.yaml -> exit 1 (zero matches); .readthedocs.yaml has no build.apt_packages. docs/conf.py registers plotly_sg_scraper in image_scrapers and comments 'renders interactive figures into the gallery via kaleido' and 'embedded HTML5 video via ffmpeg'; examples/animate_plotly.py and examples/plot_interactive_backend.py use the plotly backend. With plotly blocked, hyp.plot(..., backend='plotly') raised \"ImportError : The plotly backend requires plotly. Install it with:\\n    pip install hypertools[interactive]\" -- so a fresh RTD gallery re-run would fail; currently masked by committed auto_examples md5 artifacts. conf.py's scraper itself degrades gracefully, so 'latent' is the right characterization.",
+   "commands_run": [
+    "grep -n 'plotly\\|kaleido\\|ffmpeg' docs/doc_requirements.txt .readthedocs.yaml docs/conf.py",
+    "grep -ln plotly examples/*.py",
+    ".venv/bin/python blocked-plotly backend='plotly' run (MPLBACKEND=Agg)"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-006",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "hyp.reduce(randn(30,4), 'NotAModel') raised \"ValueError : reduce must be one of the supported options ... See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce ... for supported models\" (string hardcoded at hypertools/reduce/reduce.py:238). docs/ contains hypertools.reduce.rst but no hypertools.tools.reduce.rst (exact-name grep exit 1), so the 1.0 docs build cannot produce the referenced page.",
+   "commands_run": [
+    ".venv/bin/python -c \"hyp.reduce(np.random.randn(30,4),'NotAModel')\" (MPLBACKEND=Agg)",
+    "ls docs | grep -x 'hypertools\\.tools\\.reduce\\.rst'",
+    "grep -rn 'tools.reduce.html' hypertools/ --include='*.py'"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-007",
+   "verdict": "CONFIRMED",
+   "severity": "enhancement",
+   "justification": "ls /Users/jmanning/hypertools/CHANGELOG* -> '(eval):1: no matches found'; only RELEASE_NOTES_0.8.1.md exists while pyproject.toml declares version = \"1.0.0.dev0\". No 1.0 changelog/release notes anywhere in the repo root.",
+   "commands_run": [
+    "ls /Users/jmanning/hypertools/CHANGELOG* /Users/jmanning/hypertools/RELEASE_NOTES*",
+    "grep -n version pyproject.toml"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-008",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Fitted model from hyp.analyze(..., reduce='PCA', ndims=3, align='hyper', normalize='across', return_model=True) has steps ['normalize', 'reduce', 'align'], but CLAUDE.md Data Flow lists '3. **Alignment**: Optional cross-dataset alignment via `align()`' before '4. **Dimensionality Reduction**'. hypertools/plot/hyper_animation.py exists but CLAUDE.md's Plot Module section lists only animate.py (grep hyper_animation -> no match). CLAUDE.md also states unqualified '`plot()` returns a matplotlib `Figure`' while animate=True actually returns a HyperAnimation (tuple subclass) and backend='plotly' returns a plotly figure.",
+   "commands_run": [
+    ".venv/bin/python analyze return_model steps print (MPLBACKEND=Agg)",
+    "sed -n '88,98p' CLAUDE.md; grep -n 'hyper_animation\\|animate.py\\|returns a matplotlib' CLAUDE.md",
+    "ls hypertools/plot/hyper_animation.py"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-009",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.reduce(randn(50,8), 'PCA', return_model=True) with default ndims returned shape (50, 8), np.allclose to input True, and model <class 'NoneType'>; with ndims=3 it returned (50, 3) and <class 'hypertools.reduce.common.Reducer'>. Docstring says 'ndims : int -- Number of dimensions to reduce' (no None/no-op behavior documented) and 'return_model : bool -- If True, also return the fitted model: the fitted `Reducer` wrapper when only the `reduce` stage ran' -- contradicted by the silent no-op + None model, with no warning emitted.",
+   "commands_run": [
+    ".venv/bin/python reduce default-ndims and ndims=3 return_model comparison (MPLBACKEND=Agg)",
+    ".venv/bin/python docstring ndims/return_model/Returns section dump"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-010",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Independent numpydoc Parameters-section parser (own script, not the auditor's) over live objects: plot.elev, plot.azim, manip.align, manip.cluster, manip.ndims, manip.normalize, manip.reduce, cluster.random_state, analyze.random_state, procrustes.format_data, df2mat.return_labels are ALL in_sig=True documented_in_Parameters=False. (azim/align/return_labels appear as prose substrings elsewhere in the docstrings but have no 'name :' Parameters entry, so the rendered numpydoc Parameters tables omit them.)",
+   "commands_run": [
+    ".venv/bin/python custom Parameters-section parser over hyp.plot/manip/cluster/analyze, hypertools.align.procrustes, hypertools.tools.df2mat (MPLBACKEND=Agg)"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-011",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.save({'a':1}, f, protocol=5, banana='x') completed with 'no error; warnings: []' (warnings.catch_warnings(record=True)). Source verified: def save(obj, fname, **kwargs): docstring is the single sentence 'Pickle `obj` to `fname`.' and the body calls pickle.dump(obj, f) without forwarding kwargs -- so an explicitly passed protocol= is silently ignored. Upgraded from doc to minor because silently discarding a functional kwarg is behavioral, not just a docs gap.",
+   "commands_run": [
+    ".venv/bin/python save(protocol=5, banana='x') with warning capture (MPLBACKEND=Agg)",
+    ".venv/bin/python inspect.getsource(hypertools.io.save.save)"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-012",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Own Parameters-section parser over the live classes: DeepAutoencoder UNDOC [batch_size, device, epochs, lr, random_state, verbose]; ConvolutionalAutoencoder and VariationalAutoencoder identical; SequenceAutoencoder UNDOC [device, epochs, lr, random_state, verbose]; SparseAutoencoder UNDOC [batch_size, device, epochs, hidden_dims, lr, random_state, verbose]. Each subclass has its own docstring (so autodoc will not fall back to the base class doc), and per-class rst stubs exist under docs/ (hypertools.reduce.autoencoders.*.rst).",
+   "commands_run": [
+    ".venv/bin/python custom Parameters parser over the 5 autoencoder subclasses (MPLBACKEND=Agg)",
+    "ls docs | grep autoencoders"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-013",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "docs/api.rst:143-144: '`hypertools.Pipeline` is the fitted-model object returned by ``return_model=True`` when more than one pipeline stage runs'. Live run: hyp.plot(randn(50,8), reduce='PCA', return_model=True, show=False) -> bundle['pipeline'] is <class 'hypertools.core.pipeline.Pipeline'> with steps ['reduce'] -- a single-stage plot also yields a Pipeline, so the blurb's condition is inaccurate for plot().",
+   "commands_run": [
+    "grep -n -B2 -A4 'more than one pipeline stage' docs/api.rst",
+    ".venv/bin/python single-stage plot return_model bundle inspection (MPLBACKEND=Agg)"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-014",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "docs/index.rst intro still reads 'built on top of matplotlib (for plotting), seaborn (for plot styling), and scikit-learn (for data manipulation)' and the key-features list is the 0.x set ('1. Functions for plotting high-dimensional datasets in 2/3D ... 4. Set of powerful data manipulation tools including hyperalignment, k-means clustering, normalizing and more'); grep for plotly/predict/impute/surface/mixture/interactive in index.rst returned no feature-list hits. No flagship 1.0 feature is mentioned.",
+   "commands_run": [
+    "sed -n '1,35p' docs/index.rst",
+    "grep -n 'plotly\\|predict\\|impute\\|surface\\|mixture\\|interactive' docs/index.rst"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-015",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Numeric repro (seed 0, 3x randn(60,8)): hyp.describe(d, reduce='PCA', max_dims=14, show=False) returned 'average' of length 12 (components 2..13) with values [0.895 ... 0.991 1. 1. 1. 1. 1. 1.] -- correlation pinned at exactly 1.0 from component 8 onward on 8-feature data; the only warning captured was 'When input data is large, this computation can take a long time.' (nothing about max_dims > n_features). Evidence PNG w5_readme_describe.png matches: x-axis runs to 13 with a flat 1.00 line past 8.",
+   "commands_run": [
+    ".venv/bin/python describe(max_dims=14) with warning capture and dict dump (MPLBACKEND=Agg)",
+    "Read notes/audit-1.0-2026-07/evidence/D14-docs-drift/w5_readme_describe.png"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-016",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "CONTRIBUTING.md line 22: 'Take a look at the issues in our [ milestone](https://github.com/ContextLab/hypertools/milestone/5) for the mozsprint!' -- the 2017 Mozilla Global Sprint milestone; curl -sL -w '%{http_code}' on the milestone URL returned 200 (page exists but is the stale sprint milestone, not the current 1.0 backlog).",
+   "commands_run": [
+    "grep -n -B2 -A2 mozsprint CONTRIBUTING.md",
+    "curl -sL -o /dev/null -w '%{http_code}' https://github.com/ContextLab/hypertools/milestone/5"
+   ]
+  }
+ ]
+}

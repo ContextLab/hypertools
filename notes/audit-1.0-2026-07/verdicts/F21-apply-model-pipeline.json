@@ -1,0 +1,119 @@
+{
+ "unit": "F21-apply-model-pipeline",
+ "verifier": "independent adversarial verifier (Claude), 2026-07-12",
+ "environment": "/Users/jmanning/hypertools/.venv/bin/python, MPLBACKEND=Agg, branch audit/release-1.0-2026-07",
+ "verdicts": [
+  {
+   "id": "F21-apply-model-pipeline-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran repro: apply_model(d, {'model': 'PCA', 'args': [3]}) -> shape (80, 8); Pipeline([{'model': 'PCA', 'args': [3]}]).fit_transform(d) -> (80, 3). The dict-with-args form IS documented as canonical in hypertools/core/model.py:56-57 (\"the canonical {'model': <str or instance>, 'args': [...], 'kwargs': {...}}\"), yet apply_model silently drops 'args' and fits PCA with default components. No warning, no error.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F21-apply-model-pipeline/v1.py (section F001)", "grep -n args hypertools/core/model.py"]
+  },
+  {
+   "id": "F21-apply-model-pipeline-002",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "All three claimed forms raise identically: pickle.dumps(bp) -> \"AttributeError: Can't get local object '_make_stage_step.<locals>.<lambda>'\"; hyp.save(bp, ...) -> same; pickle.dumps(bundle['pipeline']) from hyp.plot(..., return_model=True) -> same. Control: a user-constructed Pipeline([{'model': 'PCA', 'kwargs': {'n_components': 3}}]) pickles OK after fit_transform, so the breakage is specific to dispatcher-built pipelines.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F21-apply-model-pipeline/v1.py (section F002)"]
+  },
+  {
+   "id": "F21-apply-model-pipeline-003",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Repro output verbatim: pipe repr = \"Pipeline([list=[PCA(n_components=4), PCA(n_components=4)], list-1=[PCA(n_components=2), PCA(n_components=2)]])\"; pipe.transform(np.asarray(d1, float)) -> \"AttributeError: 'list' object has no attribute 'fit_predict'\". return_model hands back an unusable object with no error at construction time.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F21-apply-model-pipeline/v1.py (section F003)"]
+  },
+  {
+   "id": "F21-apply-model-pipeline-004",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "All three sub-repros raise raw AttributeErrors exactly as claimed: apply_model([d1, d1], ['PCA', 'KMeans'], mode='fit_predict') -> \"AttributeError: 'PCA' object has no attribute 'predict'\"; mode='predict_proba' on 'PCA' -> \"'PCA' object has no attribute 'predict_proba'\"; mode='fit_transform' on 'DBSCAN' -> \"'DBSCAN' object has no attribute 'transform'\". mode indeed applies to every stage so reduce->cluster+fit_predict is impossible.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F21-apply-model-pipeline/v1.py (section F004)"]
+  },
+  {
+   "id": "F21-apply-model-pipeline-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.supported_models() -> \"AttributeError: module 'hypertools' has no attribute 'supported_models'\"; hypertools.core.supported_models() works and returns 31 names; verified 'supported_models' appears in the apply_model docstring with no importable path given.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F21-apply-model-pipeline/v1.py (section F005)"]
+  },
+  {
+   "id": "F21-apply-model-pipeline-006",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "hyp.apply_model(d, 'ZScore') -> \"ValueError: unknown model 'ZScore'; supported names: AffinityPropagation, ...\" while hyp.Pipeline(['ZScore']).fit_transform(d) succeeds ((30, 4)). Counted the name lists in both error messages: apply_model lists 31 names, Pipeline lists 41 -- exactly the claimed registry split.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F21-apply-model-pipeline/v1.py (section F006)", ".venv/bin/python -c '<count supported-names in both ValueErrors>' -> apply_model count: 31, Pipeline count: 41"]
+  },
+  {
+   "id": "F21-apply-model-pipeline-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "apply_model(d, PCA), apply_model(d, {'model': PCA, 'kwargs': {...}}), and Pipeline([{'model': PCA, 'kwargs': {...}}]) all raise \"ValueError: unknown model: <class 'sklearn.decomposition._pca.PCA'>\" while Pipeline([PCA]).fit_transform(d) succeeds ((30, 4)). Inconsistent class acceptance with an unhelpful message, as claimed.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F21-apply-model-pipeline/v1.py (section F007)"]
+  },
+  {
+   "id": "F21-apply-model-pipeline-008",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Pipeline.transform docstring verified to begin \"Apply the already-fitted steps (in order) to `data` without refitting them.\" Yet Pipeline(['DBSCAN']): fit_transform(train) -> (120,), then transform(test) -> (50,) with zero warnings captured (warnings.catch_warnings recorder empty) -- a fresh fit_predict on the test data, contradicting the docstring.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F21-apply-model-pipeline/v1.py (section F008)"]
+  },
+  {
+   "id": "F21-apply-model-pipeline-009",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "PCA->TSNE pipeline returned by apply_model(..., return_model=True): p.transform(new_data) -> \"AttributeError: 'TSNE' object has no attribute 'fit_predict'\" -- raw AttributeError instead of a clear cannot-transform message, exactly as claimed.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F21-apply-model-pipeline/v1.py (section F009)"]
+  },
+  {
+   "id": "F21-apply-model-pipeline-010",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Pipeline('PCA') -> \"ValueError: unknown pipeline step 'P'; supported names: ...\" (string iterated character-wise); Pipeline([('a', 'PCA', 'extra')]) constructs (repr: Pipeline([tuple=('a', 'PCA', 'extra')])) and only fails at fit_transform with \"AttributeError: 'tuple' object has no attribute 'fit'\".",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F21-apply-model-pipeline/v1.py (section F010)"]
+  },
+  {
+   "id": "F21-apply-model-pipeline-011",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "stack=True: caller's PCA instance mutated in place (hasattr(inst, 'components_') -> True); stack=False: original left unfitted (False); apply_model(d1, 'PCA', ndims=2, stack=False, return_model=True) returns fitted of type <class 'list'> containing ['PCA'] even for a single input. All three observations match the claim.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F21-apply-model-pipeline/v1.py (section F011)"]
+  },
+  {
+   "id": "F21-apply-model-pipeline-012",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Pipeline(['ZScore', {'model': 'PCA', ...}]).fit_transform([x, y]) -> \"ValueError: setting an array element with a sequence. The requested array has an inhomogeneous shape after 1 dimensions...\"; Pipeline(['HyperAlign']).fit_transform([ndarray, ndarray]) -> \"Exception: Unsupported datatype: <class 'list'>\"; same call with DataFrames succeeds ([(40, 6), (40, 6)]). Cryptic numpy/raw errors on hypertools' canonical list input, as claimed.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F21-apply-model-pipeline/v1.py (section F012)"]
+  },
+  {
+   "id": "F21-apply-model-pipeline-013",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Identical GaussianMixture(n_components=3, random_state=0) spec: apply_model -> shape (100, 3) (predict_proba), Pipeline -> shape (100,) (labels). Also confirmed apply_model(d, 'KMeans') on (60, 8) data returns (60, 8) float64 (transform distances, never labels).",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F21-apply-model-pipeline/v1.py (section F013)"]
+  },
+  {
+   "id": "F21-apply-model-pipeline-014",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Ran the gallery example with -W always::DeprecationWarning: exactly 2 emissions of \"DeprecationWarning: {'model': ..., 'params': {...}} is deprecated; use {'model': ..., 'args': [...], 'kwargs': {...}} instead\" (from hypertools/core/model.py:162). grep confirms docs/auto_examples/plot_apply_model.py lines 32-33 use the deprecated 'params' form.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python -W always::DeprecationWarning docs/auto_examples/plot_apply_model.py", "grep -n params docs/auto_examples/plot_apply_model.py"]
+  },
+  {
+   "id": "F21-apply-model-pipeline-015",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Ran docs/auto_examples/plot_pipelines_return_model.py: \"UserWarning: alignment keeps only the 80 row(s) common to all datasets; datasets with more rows were trimmed...\" (hypertools/align/common.py:47) emitted twice; script then prints \"train: (200, 3), test (via .transform): (80, 3)\" -- 120 of 200 training rows silently discarded by the example's own data choice.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python docs/auto_examples/plot_pipelines_return_model.py"]
+  },
+  {
+   "id": "F21-apply-model-pipeline-016",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "(a) hyp.apply_model(A, {'mode': 'PCA'}) -> bare \"KeyError: 'model'\". (b) {'model': 'PCA', 'params': {'n_components': 2}, 'kwargs': {'n_components': 3}} -> shape (30, 3) with warnings list [] under warnings.simplefilter('always') -- 'params' silently dropped, no DeprecationWarning, kwargs wins.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F21-apply-model-pipeline/v1.py (section F016)"]
+  }
+ ]
+}

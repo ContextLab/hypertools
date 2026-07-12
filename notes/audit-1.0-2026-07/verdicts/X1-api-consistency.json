@@ -1,0 +1,160 @@
+{
+ "unit": "X1-api-consistency",
+ "verified_by": "independent adversarial verifier, 2026-07-12, branch audit/release-1.0-2026-07 @ 13421453",
+ "verdicts": [
+  {
+   "id": "X1-api-consistency-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran repro: hyp.load('sotus') returned <class 'sklearn.pipeline.Pipeline'> (unpickled with InconsistentVersionWarning 'Trying to unpickle estimator CountVectorizer from version 1.0.2 when using version 1.8.0'), and print(s) even crashed with AttributeError: 'Pipeline' object has no attribute 'transform_input'. load.py:167 documents \"`sotus` is a collection of State of the Union speeches from 1989-2018.\" Independently verified the id collision in hypertools/io/load.py: 'sotus': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm' (line 24) is byte-identical to 'nips_model': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm' (line 27). Documented dataset is entirely wrong -> major.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"import hypertools as hyp; s = hyp.load('sotus'); print(type(s)); print(s)\"", "grep -n sotus hypertools/io/load.py", "Read hypertools/io/load.py:14-38"]
+  },
+  {
+   "id": "X1-api-consistency-002",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Repro output: \"<class 'list'> 1 <class 'numpy.ndarray'>\" for align(single 30x5 array) and \"<class 'pandas.DataFrame'>\" for manip(same array). align.py:312-315 Returns section says 'in the same list/single-item shape as `data` (matching hyp.reduce/hyp.cluster/hyp.manip ... which have always returned arrays)' and align.py:239-241 says 'every OTHER dispatcher (reduce, cluster, manip) returns arrays too' -- both wrong: single-in gives list-out, and manip returns DataFrames.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"...align(A)...manip(A)...\"", "Read hypertools/align/align.py:228-319"]
+  },
+  {
+   "id": "X1-api-consistency-003",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Repro output exactly as claimed: \"<class 'numpy.ndarray'> <class 'numpy.ndarray'> <class 'list'> <class 'list'>\" for reduce([A]), normalize([A]), align([A]), manip([A]) -- list-of-1 collapsed by reduce/normalize, preserved by align/manip.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"...print(type(hyp.reduce([A], ndims=2)), type(hyp.normalize([A])), type(hyp.align([A])), type(hyp.manip([A])))\""]
+  },
+  {
+   "id": "X1-api-consistency-004",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Repro output exactly as claimed: \"DataFrame DataFrame DataFrame ndarray ndarray\" for manip/impute/predict vs reduce/normalize on the same ndarray input.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"...print(type(hyp.manip(A)).__name__, type(hyp.impute(A)).__name__, type(hyp.predict(A, t=3)).__name__, type(hyp.reduce(A, ndims=2)).__name__, type(hyp.normalize(A)).__name__)\""]
+  },
+  {
+   "id": "X1-api-consistency-005",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Repro output: \"plot -> missing a required argument: 'x'; reduce -> reduce() got an unexpected keyword argument 'data'; manip -> manip() missing 1 required positional argument: 'data'; cluster -> cluster() got an unexpected keyword argument 'data'\" -- data-arg name genuinely split x vs data across the API.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"for f,kw in [(hyp.plot,'data'),(hyp.reduce,'data'),(hyp.manip,'x'),(hyp.cluster,'data')]: ...\""]
+  },
+  {
+   "id": "X1-api-consistency-006",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro raised exactly: \"AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.\" from hypertools/tools/normalize.py:240, whose assert accepts ['across','within','row',False,None] -- the string 'none' named in the message is rejected, and it is an AssertionError (message also names 'scale_type', not the 'normalize' kwarg the user passed) while reduce raises ValueError for the analogous case.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"hyp.normalize(np.random.randn(10,3), normalize='none')\""]
+  },
+  {
+   "id": "X1-api-consistency-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output: 'reduce must be one of the supported options or support n_components and fit_transform          methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce          for supported models' -- embedded runs of 10 spaces and a pre-1.0 http:// docs URL, unlike e.g. apply_model's \"unknown model 'X'; supported names: ...\" style (observed in finding 015 run). Note the tail actually says 'for supported models', not the auditor's quoted 'for supported options' -- immaterial.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"try: hyp.reduce(..., reduce='NotAModel', ndims=2)\\nexcept ValueError as e: print(repr(str(e)))\""]
+  },
+  {
+   "id": "X1-api-consistency-008",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output: reduce -> \"ValueError input has no observations (0 rows); there is nothing to plot or analyze.\"; align -> printed 'loading corpus: minipedia...done!' then \"ValueError Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentD[irichletAllocation]\"; analyze -> [] silently. Three different behaviors for [] exactly as claimed, including the text-corpus download side effect.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"for f in (hyp.reduce, hyp.align, hyp.analyze): f([])...\""]
+  },
+  {
+   "id": "X1-api-consistency-009",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro: align([X,Y], model='SRM', totally_bogus_kwarg=123) returned <class 'list'> with no error, and random_state=0 vs random_state=1 gave 'differ: False' (seed silently ignored). Supplementary run: predict(X, t=2, totally_bogus_kwarg=123) and impute(Xm, totally_bogus_kwarg=123) both returned DataFrame with no error, while manip raised \"TypeError: ZScore.__init__() got an unexpected keyword argument 'totally_bogus_kw...\" -- all four sub-claims verified.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"align SRM bogus kwarg + random_state 0/1 compare\"", "env MPLBACKEND=Agg .venv/bin/python -c \"predict/impute bogus kwarg + manip TypeError\""]
+  },
+  {
+   "id": "X1-api-consistency-010",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Repro output exactly as claimed: {'plot': True, 'analyze': True, 'reduce': True, 'cluster': True, 'align': False, 'manip': False, 'predict': False, 'impute': False, 'apply_model': False}. Finding 009 additionally shows align has no working seed path even via **kwargs.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"inspect.signature census of random_state\""]
+  },
+  {
+   "id": "X1-api-consistency-011",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output: 'no error; kwargs dropped' -- hyp.save(np.eye(3), p, protocol=999, bogus=1) succeeded although protocol=999 would be an invalid pickle protocol if forwarded, proving **kwargs are silently discarded.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"hyp.save(np.eye(3), p, protocol=999, bogus=1)\""]
+  },
+  {
+   "id": "X1-api-consistency-012",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Repro output: len(r['average']) == 4 for max_dims=6 (dims 2..5, exclusive bound; source confirms range(2, max_dims) in describe.py summary), and np.allclose(average, mean(individual)) -> False ('average' is the stacked-data curve, keys are ['average','individual']). The unconditional UserWarning 'When input data is large, this computation can take a long time.' (describe.py:71) fired even on 2x(50,8) toy data.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"r=hyp.describe(D, show=False, max_dims=6); len/allclose checks\"", "sed -n 100,165p hypertools/reduce/describe.py"]
+  },
+  {
+   "id": "X1-api-consistency-013",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Repro output: \"<class 'list'> [(1000, 3), (1000, 3)]\" while hypertools/io/load.py:161 says \"`spiral` is numpy array containing data for a 3D spiral\" -- docstring wrong about both container and count.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"s=hyp.load('spiral'); print(type(s), [e.shape for e in s])\"", "grep -n spiral hypertools/io/load.py"]
+  },
+  {
+   "id": "X1-api-consistency-014",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Repro: star-import names include 'config','core','datageometry','external','tools' (full list observed); datageometry.__doc__ begins 'INTERNAL -- not part of the public API.'; hypertools.config.version is '<function version at 0x...>' (leaked importlib.metadata.version). No __all__ filtering the namespace.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"exec('from hypertools import *', ns); ... dg.__doc__ ...; c.version\""]
+  },
+  {
+   "id": "X1-api-consistency-015",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output: hyp.Pipeline(['ZScore','PCA']).fit_transform(A).shape == (30, 5) (works); apply_model with 'ZScore' in a list pipeline -> \"unknown model 'ZScore'; supported names: AffinityPropagation, AgglomerativeClust...\"; hyp.Pipeline('ZScore') -> \"unknown pipeline step 'Z'; supported names: ...\" (string iterated character-by-character). All three sub-claims reproduce.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"Pipeline(['ZScore','PCA']) / apply_model(A, ['ZScore', ...]) / Pipeline('ZScore')\""]
+  },
+  {
+   "id": "X1-api-consistency-016",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output: hyp.predict(traj, model='Kalman', t=25).shape == (25, 3) but the plot(..., predict='Kalman', t=25, return_model=True) bundle forecast is (26, 3) with params {'t': 25} -- off-by-one between the two documented surfaces, exactly as claimed.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"predict Kalman t=25 shape vs plot bundle forecasts[0].shape\""]
+  },
+  {
+   "id": "X1-api-consistency-017",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output: hyp.reduce(np.random.randn(30,5), ndims=10).shape == (30, 5) with no warning printed -- requested dimensionality silently capped at the feature count.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"print(hyp.reduce(np.random.randn(30,5), ndims=10).shape)\""]
+  },
+  {
+   "id": "X1-api-consistency-018",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro (with -W default): manip recorded ['Pandas4Warning@decorate.py:421'] whose message is 'The copy keyword is deprecated and will be removed in a future version...' and whose class subclasses pandas.errors.PandasDeprecationWarning (auditor labeled it DeprecationWarning -- same substance, slightly different class name in this env); reduce(..., reduce='MDS') emitted both sklearn FutureWarnings verbatim: _mds.py:744 'The default value of `n_init` will change from 4 to 1 in 1.9' and _mds.py:754 'The default value of `init` will change from random to classical_mds in 1.10'.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -W default -c \"catch_warnings around manip; then reduce MDS\"", "MRO check of Pandas4Warning"]
+  },
+  {
+   "id": "X1-api-consistency-019",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Re-rendered the figure myself (weights_sample[:80], max_dims=8, backend='matplotlib'): 3 lines, colors ['#1f77b4', '#1f77b4', '#1f77b4'] (all identical), labels ['_child0','_child1','_child2'], ax.get_legend() -> None; evidence W6_describe.png shows the same 3 indistinguishable blue lines. Source hypertools/reduce/describe.py plotly branch adds name=f'dataset {i}' with showlegend=True per trace; neither branch plots result['average']. Backend visual encodings genuinely diverge.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"describe(weights_sample slices, backend='matplotlib'); inspect line colors/labels/legend; savefig describe_check.png\"", "Read evidence/X1-api-consistency/W6_describe.png", "sed -n 100,165p hypertools/reduce/describe.py"]
+  },
+  {
+   "id": "X1-api-consistency-020",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Repro output: [] -- no DeprecationWarning recorded for align([X,Y], model='hyper') with simplefilter('always'), while align.py:265 documents \"`'hyper'` is a deprecated alias\" and the align= kwarg alias / legacy dict specs are documented to (and do, per align.py:186/274) emit DeprecationWarning.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"catch_warnings around hyp.align([X,Y], model='hyper')\"", "grep -n 'deprecated alias' hypertools/align/align.py"]
+  },
+  {
+   "id": "X1-api-consistency-021",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output matched all four claims verbatim: 3d -> \"ValueError Found array with dim 3, while dim <= 2 is required by IncrementalPCA.\"; tuple-align -> \"ValueError input has no observations (0 rows); there is nothing to plot or analyze.\" (tuple misparsed while reduce handles it); load-int -> \"TypeError expected str, bytes or os.PathLike object, not int\" (raw os.fspath); pipe-str -> \"AttributeError 'str' object has no attribute 'transform'\".",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"3d / tuple-align / load-int / pipe-str error surface probes\""]
+  },
+  {
+   "id": "X1-api-consistency-022",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Repro output: \"<class 'list'> <class 'numpy.int32'> no shape\" for hyp.cluster(A) (Python list of numpy int32 scalars, no .shape), and hyp.set_interactive_backend('NotABackend') returned with no exception ('bogus backend accepted silently' printed).",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c \"lab=hyp.cluster(A); type checks; hyp.set_interactive_backend('NotABackend')\""]
+  }
+ ]
+}

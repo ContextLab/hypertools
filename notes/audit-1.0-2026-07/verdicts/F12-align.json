@@ -1,0 +1,75 @@
+{
+ "unit": "F12-align",
+ "verdicts": [
+  {
+   "id": "F12-align-001",
+   "verdict": "CONFIRMED",
+   "severity": "critical",
+   "justification": "Independently reproduced with hyp.align([d0,d1], model='NullAlign'). DatetimeIndex input (row i has col0==i) returned '[8, 1, 3, 9, 5, 7, 0, 4, 2, 6]' instead of 0..9; string index t00..t11 returned '[5, 4, 3, 7, 8, 10, 2, 6, 11, 9, 1, 0]'; RangeIndex control returned '[0..9]' preserved. Exact permutation differs run-to-run (set-order nondeterminism) but the scramble is fully reproducible for any non-RangeIndex index. Evidence PNG (spiral trajectory scrambled vs re-sorted) is consistent with what I observed. Silent wrong results on ordinary time-indexed data: critical.",
+   "commands_run": ["MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python f001.py (scratchpad verify/F12-align)"]
+  },
+  {
+   "id": "F12-align-002",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Ran hyp.align([randn(30,6), randn(30,4), randn(30,8)], model='SRM', return_model=True): output 'features= 8 out cols= 8'. Model class docstring line observed in the same run: ':param features: number of shared features (default: minimum number of'. Actual default is the padded common width (max=8), not the minimum (4). Docstring is wrong.",
+   "commands_run": ["MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python f002.py"]
+  },
+  {
+   "id": "F12-align-003",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "With warnings.simplefilter('always'), hyp.align([randn(40,5), randn(30,5)], model='NullAlign') emitted the 'alignment keeps only the 30 row(s) common to all datasets...' warning twice (observed 'F003 count: 2', identical message text both times).",
+   "commands_run": ["MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python f003_009.py"]
+  },
+  {
+   "id": "F12-align-004",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Observed 'F004 align type: list 1' vs 'F004 reduce type: ndarray (30, 3)' for a single bare-array input. The hyp.align docstring Returns section explicitly promises 'The aligned data, in the same list/single-item shape as `data` (matching hyp.reduce/...)', so returning a list-of-one for bare-array input violates the documented contract, not just style. Upgraded style -> minor.",
+   "commands_run": ["MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python f003_009.py", "python inline: print hyp.align.__doc__ Returns section"]
+  },
+  {
+   "id": "F12-align-005",
+   "verdict": "CONFIRMED",
+   "severity": "enhancement",
+   "justification": "Observed: type(hyp.align)=function; `import hypertools.align as A` also resolves to the function (subpackage shadowed); hasattr(hyp,'HyperAlign')=False and hasattr(hyp,'Procrustes')=False, while the docstring advertises passing 'a bare (uninstantiated) Aligner subclass' or an 'already-constructed instance'. Nuance: deep import DOES work (`from hypertools.align.hyperalign import HyperAlign` succeeded), so classes are reachable but undiscoverable/undocumented. Fair as an enhancement.",
+   "commands_run": ["MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python f005.py"]
+  },
+  {
+   "id": "F12-align-006",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.align([], model='HyperAlign') printed 'loading corpus: minipedia...done!' then raised 'ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation.' Exactly as claimed: empty list triggers a text-corpus download path and a cryptic downstream error instead of a clear empty-input message.",
+   "commands_run": ["MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python f006.py"]
+  },
+  {
+   "id": "F12-align-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Observed 'n_iter=-1 EXC: AssertionError : n_iter must be non-negative' (assert-based validation, stripped under -O) and 'n_iter=2.5: ran OK, out shapes [(20, 4), (20, 4), (20, 4)]' (silent truncation of float n_iter).",
+   "commands_run": ["MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python f007.py"]
+  },
+  {
+   "id": "F12-align-008",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Both error messages reproduced verbatim: case1 ValueError 'reduction=False, so mapping from                               higher dimensionality                               template space is not supported...' (runs of ~30 embedded spaces from an unparenthesized multiline string) and case2 ValueError 'For now do not handle invariant in time datasets' (jargony wording). User-facing error text is malformed.",
+   "commands_run": ["MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python f008.py"]
+  },
+  {
+   "id": "F12-align-009",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "hyp.align on DataFrames with disjoint indexes [0..3] vs [10..13] returned 'F009 shapes: [(0, 4), (0, 4)]' — empty arrays, no error. Nuance: it is not literally silent; a UserWarning 'alignment keeps only the 0 row(s) common to all datasets...' is emitted (twice, cf. F12-align-003). Still, succeeding with (0,k) outputs instead of raising a clear no-common-observations error is a genuine rough edge, so the substance stands.",
+   "commands_run": ["MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python f003_009.py"]
+  },
+  {
+   "id": "F12-align-010",
+   "verdict": "SKIPPED",
+   "severity": "minor",
+   "justification": "skip_verification present: 'environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run.' Incidentally consistent with my env check: hypertools.__file__ now resolves to /Users/jmanning/hypertools/hypertools/__init__.py (editable).",
+   "commands_run": []
+  }
+ ]
+}

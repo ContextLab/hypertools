@@ -1,0 +1,127 @@
+{
+ "unit": "F19-load-external",
+ "verdicts": [
+  {
+   "id": "F19-load-external-001",
+   "verdict": "CONFIRMED",
+   "severity": "critical",
+   "justification": "Reproduced exactly. hyp.load('single_col.csv') on a one-column CSV (header 'solo', values 1,2,3) returned a (3,3) DataFrame: columns ['s', 'l', 'Unnamed: 2'] with NaN-filled extra columns ('   s   l  Unnamed: 2\\n0  1 NaN         NaN ...'), while pd.read_csv on the same file returns the correct single 'solo' column. Silent data corruption on a completely ordinary input; auditor's evidence PNG matches my run.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F19-load-external/local_checks.py (F001 section)"
+   ]
+  },
+  {
+   "id": "F19-load-external-002",
+   "verdict": "CONFIRMED",
+   "severity": "critical",
+   "justification": "hyp.load('sotus') returned <class 'sklearn.pipeline.Pipeline'> (with sklearn InconsistentVersionWarning unpickle warnings), not speeches. md5(~/hypertools_data/sotus) == md5(~/hypertools_data/nips_model) == 6a350ab8d85db34e7b924ac8a7f2a19b. Root cause verified in source independent of any stale cache: hypertools/io/load.py lines 24 and 27 both map 'sotus' and 'nips_model' to Drive id '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm', while the docstring (load.py:167) documents sotus as 'a collection of State of the Union speeches from 1989-2018'. Silently wrong data for a documented dataset.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F19-load-external/hosted_checks.py (F002 section)",
+    "grep -n 'sotus|nips' hypertools/io/load.py; sed -n '10,40p' hypertools/io/load.py"
+   ]
+  },
+  {
+   "id": "F19-load-external-003",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Code inspection confirms the asymmetry: hypertools/io/sources.py:370 'raw, _ = _fetch_bytes(f...{_538_RAW}/{slug}/{csv_name}...)' is a single-shot requests.get (def _fetch_bytes, line 691, no retry loop), while the 538 listing (~line 281) and the authenticated fetch (~line 367) both use _github_get_with_retry (line 87, retries 502/503/504 up to 4 attempts). Verified with a real local ThreadingHTTPServer serving 502,502,200: '_fetch_bytes -> HTTPError : 502 Server Error ... | attempts seen: 1' vs '_github_get_with_retry -> status 200 | attempts seen: 3'. A transient 502 on the anonymous raw fetch therefore fails the load.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F19-load-external/f003_retry.py",
+    "sed -n '340,395p' hypertools/io/sources.py; inspected _fetch_bytes and _github_get_with_retry"
+   ]
+  },
+  {
+   "id": "F19-load-external-004",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced under the shipped sklearn 1.8.0: repr(hyp.load('wiki_model')) raises \"AttributeError: 'Pipeline' object has no attribute 'transform_input'\" (traceback through sklearn/utils/_pprint.py -> pipeline.get_params, exactly as claimed), so print()/notebook display of any hosted *_model crashes. m.transform(['hello world this is a test']) works, output shape (1, 50). Kept minor: load and transform succeed; only display breaks (sklearn 1.0.2-pickle vs 1.8.0 compat).",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F19-load-external/hosted_checks.py (F004 section)"
+   ]
+  },
+  {
+   "id": "F19-load-external-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced verbatim: 'empty.csv -> Error : Could not determine delimiter', 't.csv.gz -> UnpicklingError : invalid load key, '\\x1f'.', 'binary.garbage -> UnpicklingError : invalid load key, '\\x00'.'. None are HypertoolsIOError, none name the file or attempted formats.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F19-load-external/local_checks.py (F005 section)"
+   ]
+  },
+  {
+   "id": "F19-load-external-006",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced: hyp.load('f19_missing_xyz.csv') raised HypertoolsIOError whose digest ends with '- URL (https://f19_missing_xyz.csv): ConnectionError: ... NameResolutionError(...Failed to resolve 'f19_missing_xyz.csv'...)' -- a real DNS lookup was attempted for an obvious missing-local-file typo. On this machine failure was fast (0.5s), but the network attempt is real and could hang on slow DNS.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F19-load-external/f006_f013.py (F006 section)"
+   ]
+  },
+  {
+   "id": "F19-load-external-007",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "hyp.load('spiral') returned <class 'list'> of length 2, np.asarray shape (2, 1000, 3); docstring (hypertools/io/load.py:160-161) says '`spiral` is numpy array containing data for a 3D spiral'. The 'mushroomm' typo is at load.py:165 ('8,124 mushroomm samples'). Evidence PNG matches (two (1000,3) arrays plotted).",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F19-load-external/hosted_checks.py (F007 section)",
+    "sed -n '150,200p' hypertools/io/load.py"
+   ]
+  },
+  {
+   "id": "F19-load-external-008",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "grep confirms all five stale references: sources.py:498 'steps 4-9 of the chain', sources.py:517 '# 4. local file', sources.py:580 '# 9. any URL' -- while the load() docstring chain numbers local file as step 6 and 'any other URL' as step 11 (538/kaggle are steps 4-5); sources.py:6 says 'EXAMPLE_DATA in tools.load' and load.py:265 says 'tools.sources', but the modules are hypertools/io/load.py and hypertools/io/sources.py.",
+   "commands_run": [
+    "grep -n 'steps 4-9|# 4. local file|# 9. any URL|tools.load|tools.sources' hypertools/io/sources.py hypertools/io/load.py",
+    "sed -n '60,110p' hypertools/io/load.py (docstring chain numbering)"
+   ]
+  },
+  {
+   "id": "F19-load-external-009",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Reproduced: with a local file ./fivethirtyeight/bechdel containing a single 'local' column, hyp.load('fivethirtyeight/bechdel') returned the remote 538 data (columns ['year', 'imdb', 'title']) -- the local file is silently shadowed. The docstring claim is at hypertools/io/load.py:116-117: prefixes 'are explicit and unambiguous, so they never collide with another resolver'. Precedence itself is defensible; the absolute docstring claim is what's wrong, so doc severity.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c \"...mkdir fivethirtyeight; write local bechdel; hyp.load('fivethirtyeight/bechdel')...\" (in scratchpad)"
+   ]
+  },
+  {
+   "id": "F19-load-external-010",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Reproduced verbatim: int/None/float -> TypeError 'expected str, bytes or os.PathLike object, not int/NoneType/float' (raw os.path.expandvars error); dict -> TypeError \"unhashable type: 'dict'\". No hypertools-level message naming load()'s expected argument types.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F19-load-external/local_checks.py (F010 section)"
+   ]
+  },
+  {
+   "id": "F19-load-external-011",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced with a fresh slug to avoid any cache: GITHUB_TOKEN=ghp_invalid_token_for_audit + hyp.load('fivethirtyeight/murder_2016') -> 'HypertoolsIOError : GitHub API request for fivethirtyeight/data/murder_2016 failed with HTTP 401 Unauthorized.' The message never mentions GITHUB_TOKEN/GH_TOKEN as the cause, even though the same load succeeds without the env var.",
+   "commands_run": [
+    "MPLBACKEND=Agg GITHUB_TOKEN=ghp_invalid_token_for_audit .venv/bin/python -c \"hyp.load('fivethirtyeight/murder_2016')\""
+   ]
+  },
+  {
+   "id": "F19-load-external-012",
+   "verdict": "CONFIRMED",
+   "severity": "enhancement",
+   "justification": "Reproduced: hyp.save(df, 'lie.csv') wrote pickle bytes (first bytes b'\\x80\\x04'); pd.read_csv('lie.csv') -> UnicodeDecodeError \"'utf-8' codec can't decode byte 0x80 in position 0\"; hyp.load('lie.csv') round-trips only via pickle sniffing ((2,1) DataFrame). Kept as enhancement because save() is literally documented as 'Pickle obj to fname' (hypertools/io/save.py) -- extension-aware output (or a warning) is missing functionality, not a broken documented behavior.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F19-load-external/local_checks.py (F012 section)",
+    "sed hypertools/io/save.py def save docstring"
+   ]
+  },
+  {
+   "id": "F19-load-external-013",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "All three rough edges reproduced: (1) URL input digest contains 'local file: not found at https:/raw.githubusercontent.com/...' (scheme collapsed to a single slash, listed as a local-file attempt); (2) hyp.load('/tmp') digest says 'local file: not found at /tmp' although /tmp is an existing directory (wording differs slightly from the auditor's quote but the substance -- directory reported as not found -- is identical); (3) '127.0.0.1:8000/t.csv' digest ends at the local-file line with no URL attempt and no add-a-scheme hint.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python scratchpad/verify/F19-load-external/f006_f013.py (F013 section)"
+   ]
+  }
+ ]
+}

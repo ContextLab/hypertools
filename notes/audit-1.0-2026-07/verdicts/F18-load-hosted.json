@@ -1,0 +1,68 @@
+{
+ "unit": "F18-load-hosted",
+ "verdicts": [
+  {
+   "id": "F18-load-hosted-001",
+   "verdict": "CONFIRMED",
+   "severity": "critical",
+   "justification": "load('sotus') returned \"type: <class 'sklearn.pipeline.Pipeline'>\" and repr raised \"AttributeError : 'Pipeline' object has no attribute 'transform_input'\". Source confirms the root cause: hypertools/io/load.py line 24 'sotus': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm' is identical to line 27 'nips_model': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm', and cached files hash identically (sotus == nips_model == 4f93308a48002730866659bda7ef393f5451dc8360b9e3c91c9cf5d77f73a762) while sotus_model and nips differ. Docstring (load.py:167) promises 'a collection of State of the Union speeches from 1989-2018'. Documented dataset returns entirely wrong (and broken) object: critical is fair.",
+   "commands_run": ["env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg .venv/bin/python -c \"import hypertools as hyp; d=hyp.load('sotus'); print(type(d)); print(repr(d))\"", "grep -nE 'sotus|nips' hypertools/io/sources.py hypertools/io/load.py", "shasum -a 256 ~/hypertools_data/sotus* ~/hypertools_data/nips*"]
+  },
+  {
+   "id": "F18-load-hosted-002",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Loading wiki_model emitted three sklearn/base.py:463 InconsistentVersionWarning messages ('Trying to unpickle estimator CountVectorizer from version 1.0.2 when using version 1.8.0', likewise LatentDirichletAllocation and Pipeline). m.transform(['the quick brown fox']).shape == (1, 50) works, but repr(m) raises \"AttributeError : 'Pipeline' object has no attribute 'transform_input'\" — so merely displaying the returned model in a REPL/notebook crashes. Documented hosted model object broken on standard sklearn surface: major.",
+   "commands_run": ["env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg .venv/bin/python -W always -c \"import hypertools as hyp; m=hyp.load('wiki_model'); print(m.transform(['the quick brown fox']).shape); print(repr(m))\""]
+  },
+  {
+   "id": "F18-load-hosted-003",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Actual outputs: spiral -> <class 'list'> 2 [(1000, 3), (1000, 3)]; mushrooms -> pandas.DataFrame (8124, 22); weights_avg -> [(100, 100), (100, 100)] vs weights[0] (300, 100) x36; wiki -> list of 1 array (3136, 1) object dtype. Docstring (load.py ~162-170) says 'spiral is numpy array', 'mushrooms is a numpy array comprised of features ... 8,124 mushroomm samples' (typo present), 'weights_avg is the dataset split in half and averaged into two groups' (inconsistent with (100,100) shapes vs (300,100) per-subject arrays), and wiki's returned structure is not described. All four doc-accuracy claims verified against the real docstring text and real outputs.",
+   "commands_run": ["env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg .venv/bin/python -c \"...load spiral/mushrooms/weights_avg/weights/wiki, print types+shapes...\"", "sed -n '120,220p' hypertools/io/load.py"]
+  },
+  {
+   "id": "F18-load-hosted-004",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Repro printed exactly ['nips', 'nips_model', 'sotus_model'] — three registered EXAMPLE_DATA names absent from the load() docstring.",
+   "commands_run": ["env PYTHONPATH=/Users/jmanning/hypertools .venv/bin/python -c \"import hypertools as hyp; from hypertools.io.load import EXAMPLE_DATA; print([n for n in EXAMPLE_DATA if n not in hyp.load.__doc__])\""]
+  },
+  {
+   "id": "F18-load-hosted-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Observed exactly the claimed raw errors: 'TypeError : expected str, bytes or os.PathLike object, not int' (and NoneType, float), 'TypeError : argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'bytes'', 'TypeError : unhashable type: 'dict''. No hypertools-branded contract message. Rough edge on invalid input: minor.",
+   "commands_run": ["env PYTHONPATH=/Users/jmanning/hypertools .venv/bin/python -c \"import hypertools as hyp; [try hyp.load(bad) for bad in (123, None, 3.14, b'weights', {'a':1})]\""]
+  },
+  {
+   "id": "F18-load-hosted-006",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "With HOME pointing at a temp dir containing a plain file named hypertools_data, hyp.load('spiral') died with raw \"FileExistsError: [Errno 17] File exists: '/var/folders/.../hypertools_data'\" from pathlib mkdir — no hypertools guidance, exactly as claimed.",
+   "commands_run": ["S=$(mktemp -d); touch $S/hypertools_data; env HOME=$S PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg .venv/bin/python -c \"import hypertools as hyp; hyp.load('spiral')\""]
+  },
+  {
+   "id": "F18-load-hosted-007",
+   "verdict": "CONFIRMED",
+   "severity": "enhancement",
+   "justification": "hyp.load('Weights') raised HypertoolsIOError with digest: \"could not load 'Weights'. Tried, in order: - scikit-learn bundled dataset: not one of ['breast_cancer', 'diabetes', 'digits', 'iris', 'linnerud', 'wine'] - seaborn dataset: not found ... - local file: not found at Weights\". The digest never lists hypertools' own built-in example names and offers no 'did you mean weights?' suggestion. Missing-nicety, not broken behavior (the error itself is decent): enhancement.",
+   "commands_run": ["env PYTHONPATH=/Users/jmanning/hypertools .venv/bin/python -c \"import hypertools as hyp; hyp.load('Weights')\""]
+  },
+  {
+   "id": "F18-load-hosted-008",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "hyp.load('spiral', normalize='bogus') raised exactly \"AssertionError : scale_type must be across, within, row, none, or a fitted Normalizer.\" — assert-based validation surfacing as AssertionError instead of ValueError. Message content is fine; exception type is the only issue: style.",
+   "commands_run": ["env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg .venv/bin/python -c \"import hypertools as hyp; hyp.load('spiral', normalize='bogus')\""]
+  },
+  {
+   "id": "F18-load-hosted-009",
+   "verdict": "SKIPPED",
+   "severity": "minor",
+   "justification": "skip_verification: environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run.",
+   "commands_run": []
+  }
+ ]
+}

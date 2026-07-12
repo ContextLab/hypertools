@@ -1,0 +1,130 @@
+{
+ "unit": "F02-plot-hue",
+ "verdicts": [
+  {
+   "id": "F02-plot-hue-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Repro output matched the claim exactly: 'unique colors with 1 NaN: 2' vs 'unique colors without NaN: 20'; first rows all [0.86 0.34 0.34]. Evidence PNG e6_nan_continuous_hue.png shows a linspace(0,1) hue rendered as a single red color with no warning. Silent, clearly-wrong visual on a reasonable input (missing value in hue).",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c '<auditor repro: mat2colors with h[5]=nan, plus no-NaN control>'"
+   ]
+  },
+  {
+   "id": "F02-plot-hue-002",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Repro crashed as claimed: 'ValueError: `x` must contain at least 2 elements.' from hypertools/_shared/helpers.py:140 interp_array -> scipy pchip, triggered by hyp.plot(randn(20,4), hue=['a']*19+['b']) with default line fmt. Auditor's variant claims also verified: hue=['b']+['a']*19 -> OK, fmt='.' -> OK, confirming the order-dependent crash.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c '<auditor repro: default fmt, singleton last category>'",
+    "MPLBACKEND=Agg .venv/bin/python -c '<variants: singleton-first and fmt=\".\">'"
+   ]
+  },
+  {
+   "id": "F02-plot-hue-003",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Repro crashed as claimed: 'KeyError: 0' raised from pandas core/indexes/range.py:523 get_loc when hue=pd.Series([...], index=range(100,120)) is passed (plot.py indexes hue[0] positionally). A pandas Series sliced from a filtered DataFrame is an ordinary way to supply hue; crash message gives the user no clue about the cause.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c '<auditor repro: Series hue with index range(100,120)>'"
+   ]
+  },
+  {
+   "id": "F02-plot-hue-004",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Repro output matched exactly: hue run gave \"lines: 0 collections: [('PathCollection', (901, 2))]\" while the no-hue 'o-' control gave \"lines: 2 markers: ['None', 'o'] colls: 0\". Evidence PNG e23_continuous_combo_fmt.png shows dense marker dots at all 901 interpolated points and no distinct connecting line -- clearly different rendering semantics for the same fmt with vs without hue, silently.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c '<auditor repro: fmt=\"o-\" + continuous hue, plus no-hue control>'"
+   ]
+  },
+  {
+   "id": "F02-plot-hue-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Both crash variants reproduced verbatim: 'matrix: IndexError too many indices for array: array is 1-dimensional, but 2 were indexed' and identical for the colorbar variant; my added control showed the SAME hex-list palette works on the plain categorical path ('categorical no-colorbar: OK'), confirming the inconsistency. Downgraded major->minor: the docstring documents palette as str only (see 011), so this is an unsupported-but-partially-tolerated form with a cryptic error rather than a broken documented feature.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c '<auditor repro: hex-list palette with matrix hue and with colorbar, plus categorical control>'"
+   ]
+  },
+  {
+   "id": "F02-plot-hue-006",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro raised exactly 'ValueError: palette supplies 2 colors but 100 are required' from hypertools/plot/colors.py:160 _get_palette. The 100-bin requirement is undocumented and the message does not tell the user how to satisfy it.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c '<auditor repro: 2-tuple RGB list palette with continuous hue>'"
+   ]
+  },
+  {
+   "id": "F02-plot-hue-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output matched exactly: \"alone: ['1', '2', '3']\" vs \"with legend: ['a', 'b', 'c']\" -- colorbar tick labels use category names only when legend=True is also passed, though the names are known in both cases.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c '<auditor repro: categorical hue + colorbar with and without legend>'"
+   ]
+  },
+  {
+   "id": "F02-plot-hue-008",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro raised the exact message claimed: 'ValueError: reduce must be one of the supported options or support n_components and fit_transform          methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce          for supported models' (raised from hypertools/reduce/reduce.py:237 via the color_reduce path): says 'reduce' not 'color_reduce', omits 'NotAModelXYZ', embedded whitespace runs, http link to old-API docs.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c '<auditor repro: color_reduce=\"NotAModelXYZ\" with matrix hue>'"
+   ]
+  },
+  {
+   "id": "F02-plot-hue-009",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro raised exactly 'ValueError: names must have one entry per dataset (3); got 2' (plot.py:2266) for 2 datasets + 3 hue categories -- the '3' is the post-hue group count presented as the dataset count, which misleads a user who passed one name per actual dataset.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c '<auditor repro: 2 datasets, 3-category hue, names of length 2>'"
+   ]
+  },
+  {
+   "id": "F02-plot-hue-010",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro raised exactly \"TypeError: unhashable type: 'dict'\" from hypertools/_shared/helpers.py:264 reshape_data (categories = list(sorted(set(hue), ...))) via plot.py:2113 -- a bare TypeError deep in internals instead of an input-validation error naming hue=.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c '<auditor repro: hue={\"a\": 1}>'"
+   ]
+  },
+  {
+   "id": "F02-plot-hue-011",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Read plot.py lines 360-375: docstring literally says 'palette : str\\n    A matplotlib or seaborn color palette' and 'hue : list or numpy array'. Runs for 003/005 confirm list palettes and pandas Series hue partially work, so the declared types understate (and the working subset is inconsistent).",
+   "commands_run": [
+    "sed -n '360,375p' /Users/jmanning/hypertools/hypertools/plot/plot.py"
+   ]
+  },
+  {
+   "id": "F02-plot-hue-012",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Running examples/plot_hue.py with -W error::DeprecationWarning fails at line 31 with exactly 'DeprecationWarning: Conversion of an array with ndim > 0 to a scalar is deprecated, and will error in future. ... (Deprecated NumPy 1.25.)' on tmp.append(int(np.random.randint(1000, size=1))).",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -W error::DeprecationWarning /Users/jmanning/hypertools/examples/plot_hue.py"
+   ]
+  },
+  {
+   "id": "F02-plot-hue-013",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output matched exactly: \"groups: 3 legend: ['a', 'b']\" with colors ['#db5f57', '#57db5f', '#5f57db'] -- the None entries form a green (#57db5f) group that consumes the second palette slot but is absent from the legend. Evidence PNG e5_hue_with_none.png shows unexplained green points. Upgraded style->minor: a fully-colored group the legend cannot explain actively misleads figure readers.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python -c '<auditor repro: hue=[\"a\", None, \"b\", \"a\"]*5 with legend=True>'"
+   ]
+  },
+  {
+   "id": "F02-plot-hue-014",
+   "verdict": "SKIPPED",
+   "severity": "minor",
+   "justification": "skip_verification set by controller: 'environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run.' Consistent with my environment check: hypertools.__file__ resolves to /Users/jmanning/hypertools/hypertools/__init__.py (editable install).",
+   "commands_run": []
+  }
+ ]
+}

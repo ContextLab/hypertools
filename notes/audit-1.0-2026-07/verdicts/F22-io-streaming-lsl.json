@@ -1,0 +1,90 @@
+{
+ "unit": "F22-io-streaming-lsl",
+ "verifier": "independent adversarial verifier, 2026-07-12, branch audit/release-1.0-2026-07, env /Users/jmanning/hypertools/.venv (pylsl 1.18.2 / liblsl 117, datasets 5.0.0)",
+ "verdicts": [
+  {
+   "id": "F22-io-streaming-lsl-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran the repro verbatim: crashed with 'File .../hypertools/io/streaming.py, line 264, in _redraw / artist.set_data(full[:, 0], full[:, 1]) / IndexError: index 1 is out of bounds for axis 1 with size 1' -- a bare IndexError at first redraw. The static counterpart hyp.plot(np.sin(np.arange(100)/8)) returns a Figure fine ('static 1-D ok: Figure'), so the expected behavior is fair. Crash on a plausible single-sensor stream, but a narrow input shape: major.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c '<F22-001 repro verbatim>'", "env MPLBACKEND=Agg .venv/bin/python -c 'hyp.plot(np.sin(np.arange(100)/8), show=False)'"]
+  },
+  {
+   "id": "F22-io-streaming-lsl-002",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Reproduced independently: streamed iris (stream_init=50, stream_chunk=25) renders a dense straight band of points pinned along the top box edge, while a static plot of the same 150 rows shows two mid-box clusters (my own renders iris_streamed.png / iris_static.png match evidence x5). My own count using the frozen head-box transform from streaming.py (to_box: np.clip(t,-1,1), lines 228-239): 'samples landing outside frozen box (clamped): 100 of 150'. Clamping is described only in code comments; the hyp.plot stream_* docstring (plot.py:979-1004) never mentions it, and no runtime warning fires. Visibly wrong plot on the project's own tutorial dataset: major.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python v002_iris.py", "env MPLBACKEND=Agg .venv/bin/python -c '<clamp count via stream_info.xform_data, head-box formula from streaming.py>'", "Read notes/.../evidence/F22-io-streaming-lsl/x5_iris_streamed_clamped_vs_static.png"]
+  },
+  {
+   "id": "F22-io-streaming-lsl-003",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran the generator repro verbatim (save_path in my scratchpad): printed 'lost everything: sensor unplugged gif exists: False' -- the RuntimeError propagates out of hyp.plot, no figure is returned, stream_info (with the 120 consumed samples) is unreachable, and the gif was never created despite writer.setup()+grab_frame() having run (streaming.py:249-252; writer.finish() at line 294 is skipped because only KeyboardInterrupt is caught at 291). This contradicts the documented contract at plot.py:998 'is finalized whenever streaming stops (including on interrupt)'. Real-LSL variant is credible: lsl.py itself raises HypertoolsIOError after ~timeout s of silence (verified live in my 011 run), which would take the same uncaught path. Major.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c '<F22-003 repro verbatim, scratchpad gif path>'", "Read hypertools/io/streaming.py lines 240-299", "grep -n finaliz hypertools/plot/plot.py"]
+  },
+  {
+   "id": "F22-io-streaming-lsl-004",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Ran the repro verbatim: 'warnings: [] legend: None' -- hue= and legend= silently ignored with no warning. Verified the claimed contrast myself: align='hyper' raises \"ValueError: align is not supported for streaming data (a stream is a single dataset)\" and cluster='KMeans' raises \"ValueError: cluster is not yet supported for streaming data\", so the inconsistency is real. The stream_* docstring section (plot.py:979-1004) does not state which other kwargs apply to streams. Minor.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c '<F22-004 repro verbatim>'", "env MPLBACKEND=Agg .venv/bin/python -c '<same stream with align=hyper, cluster=KMeans>'"]
+  },
+  {
+   "id": "F22-io-streaming-lsl-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Re-implemented the X2 check myself (same jagged 60-sample generator, seed 11): 'static line pts: 900 | streamed line pts: 60' -- static plots interpolate/smooth the line while streamed redraws set raw vertices (streaming.py _redraw set_data_3d of raw accum). Matches the claimed ('static line pts', 900, 'streamed line pts', 60). Evidence x1_headsmooth_vs_rawredraw.png shows frame 0 with smooth curves vs frame 1 with sharp zig-zags of the same stream, consistent with the head being drawn through the normal (smoothing) pipeline and redraws bypassing it. Minor.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python -c '<own X2-equivalent: static vs streamed pt counts after canvas.draw>'", "Read evidence x1_headsmooth_vs_rawredraw.png and x2_static_vs_streamed_same_data.png"]
+  },
+  {
+   "id": "F22-io-streaming-lsl-006",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Wrote my own edge script (v006_edges.py) rather than the auditor's. All sub-claims reproduced: stream_init=0 -> 'ValueError: stream produced no samples' (blames the stream); stream_init=-5 and stream_chunk=-10 -> 'ValueError: Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize.' (cryptic, parameter unnamed); stream_chunk=0 -> ('n_samples', 50, 'truncated', False) with 450 samples unread; stream_window=0 -> displayed [300] of 300 (shown[-0:] slice gotcha, streaming.py:259); stream_window=-50 -> displayed [250] of 300, i.e. the OLDEST 50 dropped ([-(-50):] == [50:]); sanity window=+50 -> [50]. Displayed counts measured via get_data_3d() after canvas.draw(). Minor.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python v006_edges.py", "env MPLBACKEND=Agg .venv/bin/python -c '<window=0/-50/+50 counts via get_data_3d after canvas.draw>'"]
+  },
+  {
+   "id": "F22-io-streaming-lsl-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "My own run: stream_init=200, stream_chunk=50, stream_max=100 on a 1000-sample generator -> ('stream_max', 100, 'consumed', 200, 'truncated', True). The head consumes stream_init samples before the stream_max check (streaming.py:277 runs only in the chunk loop), silently overshooting the documented cap ('stop streaming after this many samples', plot.py:993-994). Minor.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python v006_edges.py (case max=100<init=200)"]
+  },
+  {
+   "id": "F22-io-streaming-lsl-008",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "My own run: 6-channel stream with ndims=5 -> 'TypeError: cannot unpack non-iterable NoneType object' -- cryptic, and raised only after 40 head samples were consumed. Note the auditor's expected wording overstates the static contrast: static hyp.plot(50x4, ndims=4) raised NO error in my run (it plots), so streaming does not merely lack a pre-existing ValueError -- but the streaming crash itself is real and cryptic. Minor.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python v006_edges.py (cases stream ndims=5, static ndims=4)"]
+  },
+  {
+   "id": "F22-io-streaming-lsl-009",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Real pylsl run (my own outlet subprocess, cf_string Markers, 1 channel): lsl_stream(type='Markers') resolved and yielded string samples -- '009| first sample: [\\'marker-14\\'] | plot error: ValueError: could not convert string to float: \\'marker-15\\''. The docstring (lsl.py:49) explicitly offers 'Markers' as a type= example and promises 'per-sample numeric vectors' (line 36), yet string-format streams pass through unchecked and hyp.plot dies with a context-free float-conversion error. Minor.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python v_lsl.py (real pylsl string outlet via outlet.py subprocess)"]
+  },
+  {
+   "id": "F22-io-streaming-lsl-010",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "grep reproduced: plot.py:1003 'all consumed samples are still retained on the returned geometry.' In 1.0 plot() returns a matplotlib Figure with a plain dict attached (fig.stream_info with keys ['data','xform_data','n_samples','reduce_model','truncated'], observed in my 002 run); no geometry object exists. Stale pre-1.0 wording: doc.",
+   "commands_run": ["grep -n 'returned geometry' hypertools/plot/plot.py", "printed sorted(fig.stream_info keys) in v002_iris.py run"]
+  },
+  {
+   "id": "F22-io-streaming-lsl-011",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Real pylsl run (my own outlet pushing 300 samples then staying alive but silent): '011| received 244 real samples, then HypertoolsIOError (timeout=2.0): LSL stream (name=WSilent-W57700) stopped delivering samples: nothing received for ~2.0s. The source may have disconnected.' The docstring documents timeout only as resolve wait (lsl.py:52-56) and Raises only 'If no matching stream is found within timeout seconds' (lines 72-73), while iteration also aborts after ~timeout s of mid-stream silence (lsl.py:110-126). Doc omission confirmed.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python v_lsl2.py (real silent-after-300 outlet)", "Read hypertools/io/lsl.py"]
+  },
+  {
+   "id": "F22-io-streaming-lsl-012",
+   "verdict": "CONFIRMED",
+   "severity": "enhancement",
+   "justification": "Real pylsl run with two simultaneous outlets of type='WMulti' (4ch and 8ch): '012| 2 matches, picked: WMultiA-W57700 | warnings: [] | yielded type: list (timestamps discarded)' -- the first resolved stream is used silently (inlet = pylsl.StreamInlet(infos[0]), lsl.py:105, no warning), samples are plain lists with the LSL timestamp discarded (sample, _timestamp = inlet.pull_sample(...), line 117), and there is no inlet-kwargs passthrough (only resolve_kwargs). All missing-functionality, nothing broken: enhancement.",
+   "commands_run": ["env MPLBACKEND=Agg .venv/bin/python v_lsl2.py (two real outlets, same type)", "Read hypertools/io/lsl.py lines 105-133"]
+  }
+ ]
+}

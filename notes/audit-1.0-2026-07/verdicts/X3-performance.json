@@ -1,0 +1,69 @@
+{
+ "unit": "X3-performance",
+ "verifier": "independent adversarial re-run, 2026-07-12, env /Users/jmanning/hypertools/.venv (hypertools 1.0.0.dev0, branch audit/release-1.0-2026-07), MPLBACKEND=Agg",
+ "verdicts": [
+  {
+   "id": "X3-performance-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Reproduced exactly: load('sotus') returned \"type: <class 'sklearn.pipeline.Pipeline'>\" and hyp.plot(sotus) raised \"TypeError Unsupported data type passed. Supported types: Numpy Array, Pandas DataFrame, String, List of strings, List of numbers\". Root cause independently confirmed in the registry: hypertools/io/load.py line 24 \"'sotus': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm'\" and line 27 \"'nips_model': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm'\" -- identical Google Drive IDs -- and md5 of both cached files is 6a350ab8d85db34e7b924ac8a7f2a19b. load.py's own docstring (line 167) promises \"`sotus` is a collection of State of the Union speeches from 1989-2018.\" Documented example dataset is entirely broken.",
+   "commands_run": ["scratchpad/verify/X3-performance/f001_sotus.py", "md5 ~/hypertools_data/sotus ~/hypertools_data/nips_model", "grep -n \"'sotus'\\|'nips_model'\" hypertools/io/load.py"]
+  },
+  {
+   "id": "X3-performance-002",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Reproduced: fig.axes[0].lines[0].get_data_3d() gives \"F002 vertices: (900,)\" for 10000-sample input; \"true max coord: 53.88 drawn max coord: 1.0\". To rule out mere normalization I measured outlier structure of the drawn line: max/99th-pct distance-from-median ratio of the 900 drawn points is 1.05 (no needle) vs 12.94 for identically-normalized ground truth -- the 50-sigma spike is dropped before scaling, not rescaled. Endpoint variant (+500 on last sample): last drawn point r=0.545 vs bulk max 1.83 -- endpoint spike also absent. Re-rendered PNGs (spike_hypertools_reverify.png vs spike_groundtruth_reverify.png) visually confirm: hypertools shows only the random-walk cloud, ground truth is dominated by the needle to (50,50,50). Silent lossy resampling of static plots producing a clearly-wrong visual: major is fair.",
+   "commands_run": ["scratchpad/verify/X3-performance/f002_003_resample.py", "scratchpad/verify/X3-performance/f002_detail.py"]
+  },
+  {
+   "id": "X3-performance-003",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced exactly: \"F003 static dur=30 fr=30 -> (900,)\", \"dur=60 fr=30 -> (1800,)\", \"dur=1 fr=2 -> (2,)\" -- a 10000-sample static trajectory drawn as 2 vertices. plot() docstring lines 791 and 862 literally label these \"duration (animation only)\" and \"frame_rate (animation only)\", so their effect on static plots contradicts the documentation.",
+   "commands_run": ["scratchpad/verify/X3-performance/f002_003_resample.py", "grep -n 'animation only' hypertools/plot/plot.py"]
+  },
+  {
+   "id": "X3-performance-004",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced: hyp.align([2 arrays of shape (2,100,3)]) printed \"F004: ACCEPTED in 0.131s, out[0] shape: (2, 300)\" -- no error, no warning; the 3D arrays were silently flattened to (n_slices, time*channels). I did not re-run the ~59 s slow variant (same code path, core claim already proven); the accepted-and-meaningless-output claim stands on its own.",
+   "commands_run": ["scratchpad/verify/X3-performance/f004_005_009.py"]
+  },
+  {
+   "id": "X3-performance-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Reproduced verbatim: ValueError 'reduce must be one of the supported options or support n_components and fit_transform          methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce          for supported models' -- embedded multi-space whitespace artifacts, http:// URL, no model list. Contrast independently verified: hyp.align(..., align='NotAModel') raises \"ValueError : unknown align model 'NotAModel'; supported names: DeterministicSharedResponseModel, HyperAlign, NullAlign, Procrustes, RobustSharedResponseModel, SharedResponseModel (or pass an Aligner subclass or instance directly).\"",
+   "commands_run": ["scratchpad/verify/X3-performance/f004_005_009.py", "python -c align unknown-model comparison"]
+  },
+  {
+   "id": "X3-performance-006",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Reproduced: exported gif has \"F006: n_frames=60 first_delay=30ms total=1.80s size=1.55MB\" (all 60 frame delays summed = 1.80 s) for duration=2, frame_rate=30. animate.py lines 23-26 claim frames are written \"at 1000/frame_rate ms each\" so the file \"plays in real time: ... total ~= duration seconds\"; PillowWriter's GIF centisecond quantization makes 33.33 ms -> 30 ms, a systematic 10% fast playback at the default frame rate. Comment's specific '1000/frame_rate ms each' claim is factually wrong; doc severity is right.",
+   "commands_run": ["scratchpad/verify/X3-performance/f006_007_anim.py", "sed -n '18,30p' hypertools/plot/animate.py"]
+  },
+  {
+   "id": "X3-performance-007",
+   "verdict": "CONFIRMED",
+   "severity": "enhancement",
+   "justification": "Reproduced: \"F007: wall=47.59s n_frames=901 size=19.70MB\" for hyp.plot(300x10 data, animate=True, save_path='default.gif') with all defaults -- matches the auditor's 46.10 s / 19.70 MB. No cost documentation exists at the save_path/duration docstrings. Enhancement severity is appropriate: behavior is correct, just expensive and undocumented.",
+   "commands_run": ["scratchpad/verify/X3-performance/f006_007_anim.py"]
+  },
+  {
+   "id": "X3-performance-008",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Docstring verified verbatim at hypertools/plot/plot.py lines 582-584: \"If ndims > 3, will plot in 3 dimensions but return the higher dimensional data.\" In every run this session plot() returned a matplotlib Figure (e.g. F001 repro path and F002/F003 figures were matplotlib.figure.Figure objects); no higher-dimensional data is returned in 1.0. Stale pre-1.0 docstring.",
+   "commands_run": ["sed -n '578,590p' hypertools/plot/plot.py", "figure-returning runs in f002_003_resample.py"]
+  },
+  {
+   "id": "X3-performance-009",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Reproduced: hyp.plot(randn(100,10), bananas=7, show=False) raises \"AttributeError: Line2D.set() got an unexpected keyword argument 'bananas'\" with a traceback terminating inside matplotlib (matplotlib/artist.py _update_props via axes/_base.py _make_line), i.e. only after hypertools' format/reduce pipeline has run. No hypertools-level validation of unknown kwargs.",
+   "commands_run": ["scratchpad/verify/X3-performance/f004_005_009.py"]
+  }
+ ]
+}

@@ -1,0 +1,110 @@
+{
+ "unit": "F09-plot-save-return",
+ "verdicts": [
+  {
+   "id": "F09-plot-save-return-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Ran repro exactly (Agg). Output: 'saved size: (200, 200)', 'returned fig is user fig: True'. Opened out.png with the Read tool: it is the 2x2-inch decoy diagonal-line figure, not the hypertools 3D plot drawn on userax. save_path saves whatever figure is pyplot-current instead of the plotted figure when ax= is supplied.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python f001.py (scratchpad verify/F09-plot-save-return)", "Read out.png (visual inspection)"]
+  },
+  {
+   "id": "F09-plot-save-return-002",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Wrote 'PRECIOUS USER DATA' to movie.png, then hyp.plot(..., animate=True, save_path='movie.apng', show=False). Output: 'apng exists: True size: 791925' and 'movie.png exists: False'. The pre-existing sibling movie.png was silently deleted.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python f002.py"]
+  },
+  {
+   "id": "F09-plot-save-return-003",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "12 discarded animated show=False calls: 'fignums progression: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]' plus one matplotlib 'Animation was deleted without rendering' UserWarning per call. Control: 3 static show=False calls leave 'static fignums after 3 calls: []'. Animated path leaks one registered pyplot figure per call, unbounded in export loops; static path does not.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python f003.py"]
+  },
+  {
+   "id": "F09-plot-save-return-004",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Output: 'static Path save ok: True'; 'anim Path save FAILED: AttributeError 'PosixPath' object has no attribute 'lower''; 'plotly Path save FAILED: AttributeError 'PosixPath' object has no attribute 'lower''. Exactly as claimed: pathlib.Path works for static matplotlib but crashes animated matplotlib and plotly saves.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python f004.py"]
+  },
+  {
+   "id": "F09-plot-save-return-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "MPLBACKEND=Agg, size=[4,3] for both: 'backend before: Agg', 'backend after anim: Agg', 'gif: (800, 600) png: (400, 300)'. Animated export is 2x the requested pixel size on this retina Mac while the static export honors 400x300. (Did not separately verify the FigureCanvasMac internals claim; the observable 2x defect reproduces.)",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python f005.py"]
+  },
+  {
+   "id": "F09-plot-save-return-006",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Two failed show=False saves to /nonexistent_dir_xyz/f.png each raised FileNotFoundError; afterwards 'fignums: [1, 2]'. Figure cleanup is not exception-safe: each failed save leaks a registered figure.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python f006.py"]
+  },
+  {
+   "id": "F09-plot-save-return-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "All four cases reproduced: save_path=123 -> \"AttributeError 'int' object has no attribute 'write'\"; save_path='' -> 'no error; .png exists: True' (silent hidden file); save_path='~/...png' -> 'FileNotFoundError [Errno 2] ... ~/hypertools_f09_tilde_verify.png' (tilde not expanded); animate to .html -> CalledProcessError with ffmpeg 'Unable to choose an output format' stderr dump. No up-front save_path validation anywhere.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python f007.py"]
+  },
+  {
+   "id": "F09-plot-save-return-008",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "grep hit at hypertools/plot/plot.py:934: 'axis and data objects will still be returned (default: True).' In 1.0, plot() returns a Figure (or HyperAnimation / dict), never axis-and-data objects; docstring is stale.",
+   "commands_run": ["grep -n 'axis and data objects' hypertools/plot/plot.py"]
+  },
+  {
+   "id": "F09-plot-save-return-009",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "Runtime: animated plot returned <class 'hypertools.plot.hyper_animation.HyperAnimation'> (which does unpack as (Figure, FuncAnimation)). The Returns section at plot.py:1210-1216 documents only 'a ``(fig, animation)`` tuple' and never mentions HyperAnimation.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python -c 'type(hyp.plot(..., animate=True, show=False))'", "grep -n -A8 'Returns' hypertools/plot/plot.py"]
+  },
+  {
+   "id": "F09-plot-save-return-010",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "curl -sI on the docstring's Homebrew install URL returned 'HTTP/2 404'. Docstring (plot.py:662-668) claims 'If saving an animation, FFMPEG must be installed', but hypertools/plot/animate.py:17 states '.gif and .png/.apng use PillowWriter (no ffmpeg required...)' and lines 32/41 call PillowWriter; my F002 run wrote a 791925-byte .apng successfully via that path. FFMPEG requirement overclaimed, URL dead, supported extensions never listed.",
+   "commands_run": ["curl -sI https://raw.githubusercontent.com/Homebrew/install/master/install", "grep -n 'PillowWriter|FFMpeg|writer=' hypertools/plot/animate.py"]
+  },
+  {
+   "id": "F09-plot-save-return-011",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "examples/save_movie.py:22-23 read 'group1 = np.mean(data[:17], 0)' / 'group2 = np.mean(data[18:], 0)'; hyp.load('weights') returned a list of 36 datasets, so dataset index 17 belongs to neither group. (Verified the split and dataset count; did not re-render the full mp4.)",
+   "commands_run": [".venv/bin/python -c \"import hypertools as hyp; d=hyp.load('weights'); print(type(d), len(d))\" -> <class 'list'> 36", "grep -rn 'data\\[' examples/save_movie.py"]
+  },
+  {
+   "id": "F09-plot-save-return-012",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "25 hyp.plot(data, show=True) calls under Agg: 'fignums: 25' and matplotlib warning 'More than 20 figures have been opened...'; nothing displayed and no plt.show() exists anywhere in plot.py's matplotlib path, while plotly_backend.py:993 explicitly calls fig.show() for script contexts. Backend show= semantics differ as claimed.",
+   "commands_run": ["MPLBACKEND=Agg .venv/bin/python (25x show=True loop with warnings captured)", "grep -n '\\.show()' hypertools/plot/plot.py hypertools/plot/plotly_backend.py"]
+  },
+  {
+   "id": "F09-plot-save-return-013",
+   "verdict": "SKIPPED",
+   "severity": "minor",
+   "justification": "skip_verification: environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run. (Sanity check during setup: hypertools.__file__ now resolves to /Users/jmanning/hypertools/hypertools/__init__.py from a non-repo cwd, consistent with the resolution.)",
+   "commands_run": []
+  },
+  {
+   "id": "F09-plot-save-return-014",
+   "verdict": "SKIPPED",
+   "severity": "minor",
+   "justification": "skip_verification: environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run.",
+   "commands_run": []
+  },
+  {
+   "id": "F09-plot-save-return-015",
+   "verdict": "CONFIRMED",
+   "severity": "enhancement",
+   "justification": "grep -c 'dpi=' hypertools/plot/plot.py -> 0 (no dpi kwarg anywhere); the static save is a bare 'plt.savefig(save_path)' at plot.py:2718 with no way to pass savefig kwargs. Missing functionality as claimed.",
+   "commands_run": ["grep -cn 'dpi=' hypertools/plot/plot.py", "grep -n 'savefig' hypertools/plot/plot.py"]
+  }
+ ]
+}

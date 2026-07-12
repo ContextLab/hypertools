@@ -1,0 +1,118 @@
+{
+ "unit": "F04-plot-animate-window",
+ "verified": "2026-07-12",
+ "verifier": "independent adversarial verifier (branch audit/release-1.0-2026-07, editable venv confirmed: hypertools.__file__ = /Users/jmanning/hypertools/hypertools/__init__.py)",
+ "verdicts": [
+  {
+   "id": "F04-plot-animate-window-001",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Repro output: 'ax.lines: 0', 'collections segs: [39]', 'after frame30: [39, 4, 4, 4, 4, 4, 4]' -- the full-trajectory Line3DCollection (39 segments) is never removed. Re-rendered hue_window.gif myself: extracted frames 10 and 30 are visually identical, both showing the ENTIRE rainbow trajectory; control run without hue shows a short sliding red window segment. Minor deviation from auditor: _func(30) appends small 4-seg window collections on top ([39,4,4,4,4,4,4], not 'still [39]'), but the static full trajectory dominates every frame so the window animation is visually lost exactly as claimed.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f001.py (repro as filed)",
+    "MPLBACKEND=Agg .venv/bin/python f001_gif.py (saved hue_window.gif + nohue_window.gif, extracted frames 0/10/30 via PIL, inspected visually)"
+   ]
+  },
+  {
+   "id": "F04-plot-animate-window-002",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Fresh-process runs: 'precog=True -> [19.2 4.8]', 'bullettime=True -> [19.2 4.8]', no-trail -> [6.84475 4.8]. The 3x-cap canvas bug reproduces for precog and bullettime. PARTIAL refutation: chemtrails (the flag in the filed repro) now yields [6.84475 4.8] -- identical to no-trail -- so the chemtrails case appears fixed on this branch; the defect survives for the other two trail flags, so the finding stands as major with narrowed scope.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f002.py (filed repro: chemtrails 6.84475, precog 19.2)",
+    "per-flag fresh-process loop over chemtrails/precog/bullettime/none"
+   ]
+  },
+  {
+   "id": "F04-plot-animate-window-003",
+   "verdict": "CONFIRMED",
+   "severity": "major",
+   "justification": "Repro output: 'save_count: 40', 'interp shapes: [40, 121]' -- FuncAnimation frame count is set from the first dataset only; the 300-row dataset has 121 interpolated points but only the first 40 frames are ever rendered/saved (33% shown), with no warning. Silent truncation of user data in a documented multi-dataset animation path.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f003.py"
+   ]
+  },
+  {
+   "id": "F04-plot-animate-window-004",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output: 'N=300 fr=30 dur=30: arange size=901 target=900', 'N=10 ... 41 target=40', 'N=50 ... 41 target=40', 'N=300 fr=10 dur=4: 40 target=40'; hypertools-level save_count for N=300 defaults = 901. Docstring at plot.py:864 states 'Both backends generate exactly frame_rate * duration frames', so the off-by-one contradicts documented behavior; visual impact negligible -> minor.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f004_007.py",
+    "grep -n frame_rate hypertools/plot/plot.py (docstring line 864)"
+   ]
+  },
+  {
+   "id": "F04-plot-animate-window-005",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output: \"F005 fmt='.' save_count: 300\" -- marker-only animation ignores duration=4/frame_rate=10 (expected 40 frames) and uses the raw row count, so a saved gif plays ~30s instead of 4s. Undocumented pacing exception -> minor.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f004_007.py"
+   ]
+  },
+  {
+   "id": "F04-plot-animate-window-006",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output: \"F006 animate=2 type: <class 'matplotlib.figure.Figure'>\" (silent static plot, no warning) and \"F006 save_path RAISED: AttributeError 'NoneType' object has no attribute 'save'\". Contrast verified: animate='bogus' raises a helpful ValueError ('unknown animate style ... valid styles are ...'), so the int case is an inconsistent validation gap.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f004_007.py"
+   ]
+  },
+  {
+   "id": "F04-plot-animate-window-007",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output: \"F007 duration=None RAISED: TypeError unsupported operand type(s) for *: 'int' and 'NoneType'\" while duration=0 raises the friendly \"ValueError duration must be a positive number of seconds for an animation; got 0.\" -- None slips past the validation that catches 0/negative.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f004_007.py"
+   ]
+  },
+  {
+   "id": "F04-plot-animate-window-008",
+   "verdict": "CONFIRMED",
+   "severity": "doc",
+   "justification": "grep -rn HyperAnimation docs --include='*.rst' returned zero matches, while plot.py returns HyperAnimation for animated plots (plot.py:2824-2825) and the Returns docstring at plot.py:1213-1214 still reads 'For animated matplotlib plots a ``(fig, animation)`` tuple is returned instead'. Both halves of the claim verified against the working tree.",
+   "commands_run": [
+    "grep -rn HyperAnimation /Users/jmanning/hypertools/docs --include='*.rst'",
+    "grep -n 'tuple is returned|HyperAnimation' hypertools/plot/plot.py; sed -n '1200,1225p'"
+   ]
+  },
+  {
+   "id": "F04-plot-animate-window-009",
+   "verdict": "SKIPPED",
+   "severity": "minor",
+   "justification": "skip_verification set by controller: 'environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run.' Incidentally consistent with my env check (hypertools.__file__ now resolves to the repo working tree).",
+   "commands_run": []
+  },
+  {
+   "id": "F04-plot-animate-window-010",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output: 'F010 n_frames: 30 first per-frame ms: 30 wall-clock s: 0.9' for a requested duration=1 at frame_rate=30 -- the 33.3ms frame delay lands on GIF's 10ms grid as 30ms, so playback runs ~10% fast, matching the claimed 27s-for-30s default case.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f010_012.py (saved d1fr30.gif, read per-frame durations via PIL ImageSequence)"
+   ]
+  },
+  {
+   "id": "F04-plot-animate-window-011",
+   "verdict": "CONFIRMED",
+   "severity": "minor",
+   "justification": "Repro output: \"F011 RAISED: CalledProcessError Command '['ffmpeg', '-f', 'rawvideo', ...]\" plus raw MovieWriter stderr ('Unable to choose an output format for .../anim.xyz') -- the unsupported extension surfaces as a leaked ffmpeg command line rather than a ValueError naming supported formats.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f010_012.py"
+   ]
+  },
+  {
+   "id": "F04-plot-animate-window-012",
+   "verdict": "CONFIRMED",
+   "severity": "style",
+   "justification": "Repro output: 'F012 RAISED: AssertionError Animations are only supported for 2-D or 3-D plots (got 1-D data); pass ndims=2 or ndims=3 (the default).' -- bare assert (stripped under -O) where sibling animate validations raise ValueError. The secondary 'first window frame is an empty cube' sub-claim did NOT reproduce for actual gif exports: frame 0 of my freshly saved animate='window' gif shows a visible multi-point trajectory segment (the auditor's window3d_frame000.png empty cube likely captured the pre-_func init state, not an exported frame). Style severity rests on the assert inconsistency alone.",
+   "commands_run": [
+    "MPLBACKEND=Agg .venv/bin/python f010_012.py",
+    "PIL extraction of nohue_window.gif frame 0 + visual inspection; viewed evidence window3d_frame000.png"
+   ]
+  }
+ ]
+}
