@@ -1,6 +1,6 @@
 {
   "unit": "X4-warnings",
-  "target": "Runtime warning hygiene across hypertools 1.0 (branch audit/release-1.0-2026-07). Environment: Python 3.12.10, numpy 2.3.5, pandas 3.0.3, matplotlib 3.10.8, sklearn 1.8.0, scipy 1.17.0, umap 0.5.11, plotly 6.8.0, statsmodels 0.14.6. Method: 26-workflow harness + 22 edge-case probes + 13 targeted shell probes, all real subprocess runs under MPLBACKEND=Agg PYTHONWARNINGS=always; strict -W error runs; pytest sampled on 9 test files with -W always; AST census of all 59 warnings.warn call sites; grep for deprecated dependency APIs; verbatim docstring-example runs for hypertools.load.",
+  "target": "Runtime warning hygiene across hypertools 1.0 (branch audit/release-1.0-2026-07). Environment: Python 3.12.10, numpy 2.3.5, pandas 3.0.3, matplotlib 3.10.8, sklearn 1.8.0, scipy 1.17.0, umap 0.5.11, plotly 6.8.0, statsmodels 0.14.6. Method: 26-workflow harness + 22 edge-case probes + 13 targeted shell probes, all real subprocess runs under MPLBACKEND=Agg PYTHONWARNINGS=always; strict -W error runs; pytest sampled on 9 test files with -W always; AST census of all 59 warnings.warn call sites; grep for deprecated dependency APIs; verbatim docstring-example runs for hypertools.load. Re-verified 2026-07-12 in a fresh session: findings 001-005, 007, 008, 011, 012 reproduced verbatim by fresh runs; strict -W error golden path still passes; pytest tests/test_plot.py warning profile identical (41 passed, 13 warnings); 3 gap probes added (fonts missing-glyph, submodule-import variants, sklearn text-plot path) yielding finding 018.",
   "brainstormed_edge_cases": [
     "import hypertools emits warnings at import time (tested: clean, 0 warnings)",
     "import hypertools installs/mutates global warning filters (tested: hypertools adds none itself; scipy/sklearn/urllib3/requests add 6 upstream filters during transitive import)",
@@ -32,12 +32,13 @@
     "unknown plot kwarg typo (animat=True) error message quality (tested: AttributeError from matplotlib Line2D.set names the kwarg but not the fix)",
     ">20 hyp.plot calls grow pyplot figure registry -> matplotlib RuntimeWarning (observed in test_window_animation sample via our matplotlib_backend.py:1258 plt.figure; not reproduced as single-call bug)",
     "predict ARIMA suppresses statsmodels convergence warnings wholesale (source-verified arima.py:72-74; run was clean; finding 015)",
-    "text2mat/gensim text pipeline warnings (untested: text extras not installed in audit venv; importorskip-guarded)",
+    "text2mat/gensim text pipeline warnings (sklearn text path tested 2026-07-12: hyp.plot(nested str lists) with default CountVectorizer+LDA is clean, 0 warnings; gensim/hf embedding paths untested: text extras not installed in audit venv; importorskip-guarded)",
     "Chronos predict warnings (untested: predict-hf extra not installed)",
     "lsl_stream warning behavior (untested: no LSL hardware)",
-    "fonts.py missing-glyph warning path (untested)",
-    "surface/density warning paths on degenerate meshes (untested)",
-    "set_interactive_backend BACKEND_WARNING in non-GUI env (untested directly; no warning seen in plotly workflows)"
+    "fonts.py missing-glyph warning path (tested 2026-07-12: fires once with actionable message naming the font= fix and pan-Unicode install; accompanied by 2 matplotlib per-glyph 'Glyph missing from font(s) Arial' UserWarnings at savefig attributed to plot.py:2685)",
+    "surface/density warning paths on degenerate meshes (untested here; covered by unit F07-plot-density-surface)",
+    "set_interactive_backend BACKEND_WARNING in non-GUI env (tested 2026-07-12: BACKEND_WARNING is None under Agg, no spurious warning; probe exposed cryptic ImportError for 'import hypertools.plot.backend as B', finding 018)",
+    "public function names shadow their subpackages (hypertools.plot/reduce/... are functions): 'import hypertools.X.Y as Z' fails with misleading ImportError (tested: CONFIRMED, finding 018)"
   ],
   "tested": [
     {"case": "w01 basic plot 100x10 -> savefig", "result": "pass", "command": "harness.py w01_basic_plot (PYTHONWARNINGS=always MPLBACKEND=Agg)", "output_excerpt": "rc=0 ok=True warnings=0", "evidence": ["w01_basic_plot.png"]},
@@ -88,7 +89,14 @@
     {"case": "pytest test_reduce+test_align+test_cluster+test_normalize -W always", "result": "pass", "command": "python -m pytest tests/test_reduce.py tests/test_align.py tests/test_cluster.py tests/test_normalize.py -W always -q", "output_excerpt": "47 passed, 11 warnings: MDS n_init/init FutureWarnings, umap ImportWarning + n_jobs UserWarning, SpectralEmbedding connectivity UserWarning, hdbscan copy FutureWarning, 3x params DeprecationWarning (test code), reduce.py:255 dims-mismatch UserWarning", "evidence": []},
     {"case": "pytest animation-heavy files + manip hardening -W always", "result": "fail", "command": "python -m pytest tests/test_animation_styles.py tests/test_hyper_animation.py tests/test_window_animation.py tests/test_manip_impute_hardening.py -W always -q", "output_excerpt": "80 passed, 52 warnings: 41x mpl 'Animation was deleted without rendering anything' (11+10+20 across the 3 animation files - the dominant source of the suite's ~304 warnings), 6x datawrangler Pandas4Warning (copy), 1x mpl 'More than 20 figures' RuntimeWarning at our matplotlib_backend.py:1258, 2x exemplary PPCA warnings, 1x window-trails UserWarning, 1x smooth parity", "evidence": []},
     {"case": "AST census of warnings.warn call sites", "result": "fail", "command": "ast walk over hypertools/ excluding _externals", "output_excerpt": "total warn calls: 59; with stacklevel: 15; with explicit category: 15 (44 bare UserWarnings pointing at library internals)", "evidence": []},
-    {"case": "grep source for deprecated numpy/pandas/matplotlib APIs", "result": "pass", "command": "grep -rnE 'np.(float_|bool8|...)|iteritems|applymap|get_cmap|pkg_resources...' hypertools/", "output_excerpt": "no matches", "evidence": []}
+    {"case": "grep source for deprecated numpy/pandas/matplotlib APIs", "result": "pass", "command": "grep -rnE 'np.(float_|bool8|...)|iteritems|applymap|get_cmap|pkg_resources...' hypertools/", "output_excerpt": "no matches", "evidence": []},
+    {"case": "RE-VERIFY 2026-07-12: majors 001/002/003 fresh runs", "result": "fail", "command": "PYTHONWARNINGS=always mushrooms-plot; manip([a,b],'ZScore'); python -W error::FutureWarning reduce MDS", "output_excerpt": "001: df2mat.py:32 Pandas4Warning reproduced verbatim; 002: datawrangler decorate.py:421 Pandas4Warning reproduced verbatim; 003: FutureWarning n_init raised as error from sklearn _mds.py:744 - all three still live", "evidence": []},
+    {"case": "RE-VERIFY 2026-07-12: 004 hdbscan copy / 005 describe tiny / 007 sotus 3x InconsistentVersion / 008 invisible params deprecation via plot / 011 UMAP ImportWarning / 012 animation GC warning", "result": "fail", "command": "six fresh PYTHONWARNINGS=always probes + one default-filters probe", "output_excerpt": "all six reproduced verbatim; 008 default-filters stderr still empty (deprecation invisible); 007 still returns Pipeline", "evidence": []},
+    {"case": "RE-VERIFY 2026-07-12: strict -W error golden path (plot/reduce PCA/cluster/normalize/align)", "result": "pass", "command": "python -W error -c '...5-function pipeline...'", "output_excerpt": "STRICT-OK", "evidence": []},
+    {"case": "RE-VERIFY 2026-07-12: pytest tests/test_plot.py -W always -q", "result": "pass", "command": "python -m pytest tests/test_plot.py -W always -q", "output_excerpt": "41 passed, 13 warnings in 2.86s - identical profile to 07-11 sample (9x Animation deleted, 3x params DeprecationWarning at plot.py:1756/backend.py:1182, 1x hdbscan copy FutureWarning)", "evidence": []},
+    {"case": "e25 fonts missing-glyph path: plot title with GOTHIC HWAIR U+10348 + NUSHU U+1B170", "result": "pass", "command": "hyp.plot(randn(30,4), '.', title='glyph test \\U00010348 \\U0001B170') under catch_warnings(always)", "output_excerpt": "3 warnings: fonts UserWarning \"hypertools: no installed font covers the character(s) '\\ud800\\udf48...'... Pass font=<family name or path...> or install a pan-Unicode font\" (actionable, GOOD) + 2x matplotlib 'Glyph 66376 (\\\\N{GOTHIC LETTER HWAIR}) missing from font(s) Arial.' at savefig (plot.py:2685)", "evidence": ["e26_text_plot.png"]},
+    {"case": "e26 text plot: nested lists of sentences, default CountVectorizer+LDA (wiki model cached)", "result": "pass", "command": "hyp.plot([[3 sentences],[3 sentences]], '.') under catch_warnings(always)", "output_excerpt": "VTEXT-DONE 0 - zero warnings", "evidence": ["e26_text_plot.png"]},
+    {"case": "e27 submodule import variants + BACKEND_WARNING probe (headless Agg)", "result": "fail", "command": "import hypertools.plot.backend; import hypertools.plot.backend as B; from hypertools.plot import backend", "output_excerpt": "plain 'import hypertools.plot.backend' OK; 'import hypertools.plot.backend as B' -> ImportError: cannot import name 'backend' from 'plot' (unknown location); 'from hypertools.plot import backend' OK, BACKEND_WARNING=None; type(hypertools.plot)=function, type(hypertools.reduce)=function", "evidence": []}
   ],
   "findings": [
     {
@@ -277,6 +285,17 @@
       "actual": "hypertools adds 0 filters; scipy 4, sklearn 2, requests/urllib3 4, IPython 1 (on first plot).",
       "evidence": [],
       "docs_impact": ["release notes / known-warnings section"]
+    },
+    {
+      "id": "X4-warnings-018",
+      "severity": "style",
+      "title": "Public functions shadow their subpackages: 'import hypertools.plot.backend as B' fails with cryptic ImportError \"cannot import name 'backend' from 'plot' (unknown location)\"",
+      "description": "hypertools/__init__.py binds the package attributes hypertools.plot, hypertools.reduce, hypertools.cluster, hypertools.align, etc. to FUNCTIONS (from .plot.plot import plot ...), shadowing the identically-named subpackages. Plain 'import hypertools.plot.backend' and 'from hypertools.plot import backend' both work (sys.modules holds the real module), but the equally-idiomatic 'import hypertools.plot.backend as B' resolves the dotted chain via attribute lookup, hits the plot FUNCTION, and dies with ImportError: cannot import name 'backend' from 'plot' (unknown location) - a message that names a bare module 'plot' that the user never imported and gives no hint that hypertools.plot is a function or that 'from hypertools.plot import backend' works. The function-as-attribute design is intentional and long-standing (users call hyp.plot(...)), so this is filed as an error-message/API rough edge rather than a bug; a release-notes or FAQ line ('to reach submodules use from hypertools.plot import ...') would cover it.",
+      "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools.plot.backend as B\"",
+      "expected": "Either the import works, or the error explains that hypertools.plot is the plot() function and suggests 'from hypertools.plot import backend'.",
+      "actual": "ImportError: cannot import name 'backend' from 'plot' (unknown location)  [verified same session: 'import hypertools.plot.backend' -> OK; 'from hypertools.plot import backend' -> OK, BACKEND_WARNING=None; type(hypertools.plot) is function]",
+      "evidence": [],
+      "docs_impact": ["hypertools/__init__.py", "release notes / FAQ"]
     }
   ]
 }

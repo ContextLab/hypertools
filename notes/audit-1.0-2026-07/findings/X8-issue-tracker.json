@@ -1,39 +1,315 @@
 {
   "unit": "X8-issue-tracker",
-  "target": "All open ContextLab/hypertools issues (5 as of 2026-07-11: #225, #163, #113, #112, #111) vs 1.0 branch audit/release-1.0-2026-07 @ 2d3085d8; plus regression sample of the 37 issues closed 2026-07-07",
+  "target": "All open ContextLab/hypertools issues (5 as of 2026-07-12: #225, #163, #113, #112, #111) vs 1.0 branch audit/release-1.0-2026-07 @ 931fbe94 (hypertools 1.0.0.dev0, numpy 2.3.5, matplotlib 3.10.8, python 3.12.10); plus regression spot-checks of 28 closed issues (the tracker went 28-open -> 5-open during the 2026-07-07 triage). Completes the 2026-07-11 stub report (which had brainstorm + evidence images but 0 recorded tests).",
   "brainstormed_edge_cases": [
-    "#225: bootstrap-HOP recipe from issue comment verbatim spirit: hyp.plot(boots, animate='morph', ndims=3, reduce='PCA')",
-    "#225: animate='morph' with ndims=2 (issue comment claims NotImplementedError; plot.py:2162 suggests 2-D now supported)",
-    "#225: animate='morph' with ndims=1 -> error message quality",
-    "#225: animate='morph' with a single dataset (list of 1)",
-    "#225: animate='morph' with unequal-length datasets (comment claims duplicate-safe padding)",
-    "#163: hyp.plot(x, soundtrack='theme.mp3') deliberate misuse -> error message quality",
-    "#163: mp4 export via ffmpeg writer (prereq claimed in issue comment for audio muxing)",
-    "#113/#101: generator stream with stream_init/stream_chunk/stream_max/stream_window on Agg; stream_info contract",
-    "#113: stream exhausted naturally -> truncated=False, n_samples=total",
-    "#113: empty stream -> error message quality",
-    "#113: stream shorter than stream_init (head-only plot)",
-    "#112: cluster= with streaming input -> documented ValueError",
-    "#113: align= with streaming input -> documented ValueError",
-    "#112: hyp.predict is forward forecasting (comment's claim), not nearest-label decoding -> real forecast run",
-    "#113: dict-valued stream rows with non-numeric fields ignored (row_to_vector)",
-    "#113: streaming reduce spec as dict {'model':'PCA','kwargs':{'whiten':True}} honored (QC fix claim in streaming.py)",
-    "#113 sub-piece 4: REAL pylsl outlet -> hyp.io.lsl_stream(type='EEG') -> hyp.plot streaming (issue comment claims 'no code anywhere in the repo' for device ingestion -- lsl.py exists now)",
-    "#113: lsl_stream with no outlet on network, short timeout -> HypertoolsIOError message",
-    "#113: lsl_stream without pylsl installed -> ImportError message (untested: cannot uninstall from venv)",
-    "#113: Hugging Face IterableDataset streaming end-to-end (untested if datasets pkg absent/downloads needed)",
-    "closed #264 regression: multiple hypertools figures in a for loop stay distinct",
-    "closed #259 regression: import hypertools must not mutate matplotlib rcParams",
-    "closed #211 regression: linewidth= kwarg honored on artists",
-    "closed #205 regression: multibyte (CJK/Greek) labels render",
-    "closed #192 regression: single-row array in list input not omitted with line fmt",
-    "closed #226 regression: ndims + custom reduce model kwargs both honored simultaneously",
-    "closed #236 regression: extract reduced/cluster data from plot via return_model=True",
-    "closed #217 regression: procrustes/alignment can return fitted transform (projection) objects",
-    "closed #265 regression: animations render under numpy>=2 (venv has numpy 2.3.5)",
-    "closed #223/#207 regression: animated plot with large many-entry legend saves without breaking; legend visually correct"
+    "#225: bootstrap-HOP recipe from issue comment verbatim spirit: hyp.plot(boots, animate='morph', ndims=3, reduce='PCA') [TESTED]",
+    "#225: animate='morph' with ndims=2 (issue comment claims NotImplementedError; suspected now supported) [TESTED - works, comment stale]",
+    "#225: animate='morph' with ndims=1 -> error message quality [TESTED]",
+    "#225: animate='morph' with a single dataset (list of 1) [TESTED]",
+    "#225: animate='morph' with unequal-length datasets (comment claims duplicate-safe padding) [TESTED]",
+    "#163: hyp.plot(x, soundtrack='theme.mp3') deliberate misuse -> error message quality [TESTED]",
+    "#163: mp4 export via ffmpeg writer (prereq claimed in issue comment for audio muxing) [TESTED]",
+    "#113/#101: generator stream with stream_init/stream_chunk/stream_max/stream_window on Agg; stream_info contract [TESTED]",
+    "#113: stream exhausted naturally -> truncated=False, n_samples=total [TESTED]",
+    "#113: empty stream -> error message quality [TESTED]",
+    "#113: stream shorter than stream_init (head-only plot) [TESTED]",
+    "#112: cluster= with streaming input -> documented ValueError [TESTED]",
+    "#113: align= with streaming input -> documented ValueError [TESTED]",
+    "#112: hyp.predict is forward forecasting (comment's claim), not nearest-label decoding -> real forecast run [TESTED]",
+    "#113: dict-valued stream rows with non-numeric fields ignored (row_to_vector) [TESTED]",
+    "#113: streaming reduce spec as dict {'model':'PCA','kwargs':{'whiten':True}} honored (QC fix claim in streaming.py) [TESTED]",
+    "#113 sub-piece 4: REAL pylsl outlet -> hyp.io.lsl_stream(type='EEG') -> hyp.plot streaming (issue comment claims 'no code anywhere in the repo' for device ingestion -- lsl.py exists now) [TESTED - works end-to-end]",
+    "#113: lsl_stream with no outlet on network, short timeout -> HypertoolsIOError message [TESTED]",
+    "#113: lsl_stream without pylsl installed -> ImportError message [UNTESTED: pylsl IS installed in the venv and uninstalling is forbidden; code path read only]",
+    "#113: Hugging Face IterableDataset streaming end-to-end [TESTED via Dataset.from_generator().to_iterable_dataset(), no download]",
+    "closed #264 regression: multiple hypertools figures in a for loop stay distinct [TESTED]",
+    "closed #259 regression: import hypertools must not mutate matplotlib rcParams [TESTED - 1 residual key]",
+    "closed #211 regression: linewidth= kwarg honored on artists [TESTED]",
+    "closed #205 regression: multibyte (CJK/Greek) labels render [TESTED]",
+    "closed #192 regression: single-row array in list input not omitted with line fmt [TESTED - verbatim fixed, mixed-size variant CRASHES]",
+    "closed #226 regression: ndims + custom reduce model kwargs both honored simultaneously [TESTED]",
+    "closed #236 regression: extract reduced/cluster data from plot via return_model=True [TESTED]",
+    "closed #217 regression: procrustes/alignment can return fitted transform (projection) objects [TESTED numerically]",
+    "closed #265 regression: animations render under numpy>=2 (venv has numpy 2.3.5) [TESTED incl. to_jshtml]",
+    "closed #223/#207 regression: animated plot with large many-entry legend saves without breaking; legend visually correct [TESTED]",
+    "NEW: mixed list [multi-row, 1-row] with default line fmt (guard checks only first dataset) [TESTED - CRASH, finding 001]",
+    "NEW: reverse order [1-row, multi-row] -> does interpolation silently turn off for all datasets? [TESTED - yes, order-dependent smoothing]",
+    "NEW: hyp.load() on an unsupported binary file (.png) -> error quality [TESTED - raw UnpicklingError, finding 003]",
+    "NEW: hyp.load('sklearn-iris') wrong-name error quality [TESTED - good error listing valid names]",
+    "NEW: hyp.load('wiki_model') hosted sklearn-model pickle under sklearn 1.8 [TESTED - InconsistentVersionWarning, finding 004]",
+    "NEW: hyp.cluster(x, model=...) kwarg-name consistency vs hyp.align(data, model=...) [TESTED - TypeError, finding 006]",
+    "NEW: all 5 load() docstring examples VERBATIM incl. network-dependent numeric claims (bechdel shape, kaggle shape) [TESTED - all reproduce]",
+    "NEW: rcParams isolation test re-baselined after 'import matplotlib.pyplot' to separate pyplot's own mutation from hypertools' [TESTED]"
   ],
-  "tested": [],
-  "findings": [],
-  "status_note": "DRAFT - testing in progress"
+  "tested": [
+    {
+      "case": "ISSUE TABLE #225 'Suggestion: animating uncertainty' (OPEN, enhancement/low effort) -> missing-desired-functionality; workaround VERIFIED: exact comment recipe hyp.plot(boots, animate='morph', ndims=3, reduce='PCA') renders a 4-resample HOP animation; ndims=2 morph ALSO works now (comment's 'ndims=3-only' claim stale). Maintainer 2026-07-07: 'defer for now'. Not a 1.0 blocker.",
+      "result": "pass",
+      "command": "scratchpad/audit/X8-issue-tracker/t1_hop_morph.py + t13_final.py",
+      "output_excerpt": "HOP morph return type: HyperAnimation / frame PNG saved / ndims=2 morph: NO ERROR -- comment claim now stale / 225 ndims=2 morph rendered + saved: HyperAnimation",
+      "evidence": ["X8_225_hop_morph.gif", "X8_225_hop_morph_frame.png", "X8_225_hop_morph_2d.gif", "X8_225_hop_morph_2d_frame.png"]
+    },
+    {
+      "case": "ISSUE TABLE #163 'add soundtrack' (OPEN, medium effort) -> missing-desired-functionality; greps confirm zero soundtrack/audio code in hypertools/plot/ + pyproject.toml; ffmpeg muxing prereq claims verified (ffmpeg 8.1.2 at /opt/homebrew/bin/ffmpeg; mp4 export works, 92165 bytes). Maintainer 2026-07-07: 'punt for a future release'. Not a 1.0 blocker.",
+      "result": "pass",
+      "command": "grep -rni 'soundtrack|audio' hypertools/plot/ pyproject.toml; t14_regressions.py mp4 export",
+      "output_excerpt": "(grep: no matches) / mp4 export via ffmpeg: OK bytes= 92165 / ffmpeg version 8.1.2",
+      "evidence": ["X8_163_ffmpeg_export.mp4"]
+    },
+    {
+      "case": "ISSUE TABLE #113 'grand challenge: streaming brain decoding' (OPEN, high effort, pie-in-the-sky) -> partially-addressed vision issue, correctly kept open. Sub-piece 1 streaming: VERIFIED (generator -> plot, stream_info contract exact). Sub-piece 4 device ingestion: NOW EXISTS contrary to the 2026-07-07 status comment -- hyp.io.lsl_stream verified END-TO-END against a real pylsl StreamOutlet (400 samples, (400,8)->(400,3)). Sub-pieces 2 (#111) and 3 (#112) unbuilt (greps). Maintainer: 'defer'.",
+      "result": "pass",
+      "command": "t2_stream.py + t8_lsl_e2e.py; grep -rn key_press_event hypertools/; grep -n decode hypertools/io/streaming.py",
+      "output_excerpt": "stream_info keys: ['data','n_samples','reduce_model','truncated','xform_data'] / n_samples: 300 | truncated: True / LSL n_samples: 400 | truncated: True | raw shape: (400, 8) | xform shape: (400, 3) / LSL end-to-end OK / (key_press_event: no matches) / (decode: no matches)",
+      "evidence": ["X8_113_stream.gif", "X8_113_stream_final.png", "X8_130_lsl_e2e.png"]
+    },
+    {
+      "case": "ISSUE TABLE #112 'on-the-fly decoding' (OPEN, low priority/medium effort) -> missing-desired-functionality; no decode code in streaming.py (grep); status-comment claim that hyp.predict is unrelated forward forecasting VERIFIED by real Kalman forecast run. Maintainer 2026-07-07: 'Do not implement this for now'. Not a 1.0 blocker.",
+      "result": "pass",
+      "command": "t6_proc_bundle_predict.py: hyp.predict(ts, model='Kalman', t=10)",
+      "output_excerpt": "112 predict output type: DataFrame | shape: (10, 3)",
+      "evidence": []
+    },
+    {
+      "case": "ISSUE TABLE #111 'on-the-fly interactive labels' (OPEN, low priority/medium effort) -> missing-desired-functionality; status-comment claim 'no key_press_event binding anywhere in the codebase' VERIFIED by grep on this branch (no matches). Maintainer 2026-07-07: 'Do not implement for now'. Not a 1.0 blocker.",
+      "result": "pass",
+      "command": "grep -rn key_press_event /Users/jmanning/hypertools/hypertools/",
+      "output_excerpt": "(no matches)",
+      "evidence": []
+    },
+    {
+      "case": "CLOSED #101 'support streaming data' (COMPLETED) -- generator stream, short stream (30<init100, truncated=False), empty stream (clean ValueError), stream_max truncation flag, dict rows w/ string fields ignored ((120,5) from a+b+vec[3]), reduce dict spec honored (whiten=True reached PCA), HF IterableDataset ((120,4), 'label' str ignored)",
+      "result": "pass",
+      "command": "t2_stream.py + t14_regressions.py + standalone HF run",
+      "output_excerpt": "short-stream n_samples: 30 truncated: False / empty stream ValueError: stream produced no samples / dict-row stream: n_samples 120 raw dims (120, 5) / stream reduce dict spec: model PCA whiten = True / HF IterableDataset stream: n_samples 120 dims (120, 4)",
+      "evidence": ["X8_101_hf_iterable.png"]
+    },
+    {
+      "case": "CLOSED #130 'add support for LSL data streams' (COMPLETED) -- hyp.io.lsl_stream real end-to-end (see #113 row); no-outlet timeout raises actionable HypertoolsIOError; docs page docs/hypertools.io.lsl_stream.rst + tutorial lsl_streaming.ipynb exist",
+      "result": "pass",
+      "command": "hyp.io.lsl_stream(type='EEG', timeout=0.5) with no outlet",
+      "output_excerpt": "HypertoolsIOError: no LSL stream found (type='EEG') within timeout=0.5s. Make sure the source application/device is running and publishing an LSL outlet on the local network, and that name=/type= (if given) match its StreamInfo.",
+      "evidence": ["X8_130_lsl_e2e.png"]
+    },
+    {
+      "case": "CLOSED #192 'arrays with one row are omitted if using line plot' (COMPLETED) -- VERBATIM repro [rand(1,10) x10] now renders 16 artists (fixed); solo 1-row OK; mixed w/ '.' fmt OK; BUT mixed [randn(25,3), randn(1,3)] with DEFAULT line fmt CRASHES (finding 001) and [1-row, 25-row] silently disables line smoothing for all datasets (point counts [1,25] vs [900] solo)",
+      "result": "fail",
+      "command": "hyp.plot([np.random.randn(25,3), np.random.randn(1,3)], show=False)",
+      "output_excerpt": "A OK, artists with data: 16 / B CRASH: ValueError: `x` must contain at least 2 elements. / C OK / D OK / reverse-order OK; per-artist point counts: [1, 25] / solo 25-row point counts (interp expected ~900): [900]",
+      "evidence": ["X8_192_verbatim_all1row.png", "X8_192_mixed_markers_ok.png"]
+    },
+    {
+      "case": "CLOSED #259 'importing hypertools updates matplotlib rcParams' (COMPLETED) -- re-baselined after 'import matplotlib.pyplot': import hypertools still flips rcParams['backend_fallback'] True->False (finding 002); all style params untouched",
+      "result": "fail",
+      "command": "t3_rcparams.py + isolation variant",
+      "output_excerpt": "rcParams keys changed by 'import hypertools': 1 / backend_fallback : True -> False / rcParams changed by import hypertools (after pyplot baseline): {'backend_fallback': (True, False)}",
+      "evidence": []
+    },
+    {
+      "case": "CLOSED #264 'multiple hypertools figures in a for loop' (COMPLETED) -- 3 figures in a loop are distinct objects with distinct content (3 PNGs); figures are NOT pyplot-managed (plt.get_fignums()==[]) and all carry fig.number==1 (cosmetic, finding 007)",
+      "result": "pass",
+      "command": "t5_loop_lw_misuse.py + t10_followups.py",
+      "output_excerpt": "264 distinct fig objects: True / 264 fig numbers: [1, 1, 1] / 264 plt.get_fignums(): [] / 264 same object as plt.figure(1)? [False, False, False]",
+      "evidence": ["X8_264_loop_fig0.png", "X8_264_loop_fig1.png", "X8_264_loop_fig2.png"]
+    },
+    {
+      "case": "CLOSED #265 'animations incompatible with numpy>=2' + #235 'animate=True in Colab' (COMPLETED) -- animate=True under numpy 2.3.5 returns HyperAnimation (fig, FuncAnimation); anim.to_jshtml() (the notebook/Colab render path) produces 795519-char HTML; _repr_html_ present. Colab itself untestable here (infra: no Colab runtime); jshtml path is the verifiable proxy",
+      "result": "pass",
+      "command": "t4_anim_numpy2.py",
+      "output_excerpt": "numpy version: 2.3.5 / return type: HyperAnimation | tuple? True | len: 2 / fig type: Figure | anim type: FuncAnimation / to_jshtml OK, length: 795519 / has _repr_html_: True",
+      "evidence": []
+    },
+    {
+      "case": "CLOSED #223 'rotation & saving not working on large legends' (COMPLETED) -- 12-group legend renders fully (no clipping, all 12 entries) in static PNG; animate='spin' with 12-entry legend saves GIF without error",
+      "result": "pass",
+      "command": "t7_story_legend.py",
+      "output_excerpt": "223 spin+legend save OK: HyperAnimation",
+      "evidence": ["X8_223_legend12_static.png", "X8_223_legend12_spin.gif"]
+    },
+    {
+      "case": "CLOSED #236 'extract cluster and latent variable data from plot result' (COMPLETED) -- return_model=True bundle: xform_data (120,3) = latent coords; bundle['pipeline'].transform(x) returns the 120 cluster labels, stable across calls (documented: 'models' holds SPECS by design, 'pipeline' holds fitted stages)",
+      "result": "pass",
+      "command": "t6_proc_bundle_predict.py + t11_bundle_deep.py + t12_remaining.py",
+      "output_excerpt": "236 bundle type: dict | keys: ['animation','fig','models','pipeline','predict','xform_data'] / 236 xform_data shape: (120, 3) / 236 pipeline.steps: [('reduce', <reduce stage>), ('cluster', <cluster stage>)] / 236 pipeline.transform(x) -> list (120,) / 236 pipeline labels stable across calls: True | n unique: 3",
+      "evidence": ["X8_236_cluster_extract.png"]
+    },
+    {
+      "case": "CLOSED #217 'return projection matrix for procrustes' (COMPLETED) -- hyp.align([tgt,src], model='Procrustes', return_model=True) returns (aligned, model); model.proj is (2,3,3); NUMERIC: src @ model.proj[1] == aligned[1] exactly (max|diff| 0.0); aligned[0]~=aligned[1] at 1.44e-15",
+      "result": "pass",
+      "command": "t10_followups.py",
+      "output_excerpt": "217 found attr proj : list (2, 3, 3) / 217 aligned[0]~=aligned[1]? max|diff|: 1.4432899320127035e-15 / 217 src@proj[1] == aligned[1]? max|diff|: 0.0",
+      "evidence": []
+    },
+    {
+      "case": "CLOSED #211 'customize linewidth?' (COMPLETED) -- hyp.plot(x, linewidth=5) sets 5.0 on data artists",
+      "result": "pass",
+      "command": "t5_loop_lw_misuse.py",
+      "output_excerpt": "211 linewidths on data lines: [5.0]",
+      "evidence": ["X8_211_linewidth5.png"]
+    },
+    {
+      "case": "CLOSED #214 'Missing wiki-models data?' (COMPLETED) -- 'wiki'/'wiki_model' (and all 19 hosted names) present in registry and pre-cached; hyp.load('wiki_model') returns the sklearn Pipeline BUT with InconsistentVersionWarning (pickled sklearn 1.0.2 vs installed 1.8.0; finding 004)",
+      "result": "pass",
+      "command": "t13_final.py",
+      "output_excerpt": "214 registry: [...'weights','weights_avg','weights_sample','wiki','wiki_model'] / InconsistentVersionWarning: Trying to unpickle estimator LatentDirichletAllocation from version 1.0.2 when using version 1.8.0 / 214 wiki_model: Pipeline None",
+      "evidence": []
+    },
+    {
+      "case": "CLOSED #273 'Extend hyp.load() to additional source types' (COMPLETED, scope narrowed by maintainer to sklearn+seaborn named datasets) -- load('iris') (150,5), load('penguins') (344,7) both work; images intentionally NOT supported per closing comment, but a .png path dies with a raw dill UnpicklingError (finding 003); csv (4,3) OK; wrong-name 'sklearn-iris' gives a GOOD error listing the 6 valid sklearn names",
+      "result": "pass",
+      "command": "t9_load_ext.py + t12_remaining.py",
+      "output_excerpt": "273 load('iris'): DataFrame (150, 5) / 273 load('penguins'): DataFrame (344, 7) / 273 csv load: DataFrame (4, 3) / 273 sklearn-iris FAILED: HypertoolsIOError: could not load 'sklearn-iris'. Tried, in order: - scikit-learn bundled dataset: not one of ['breast_cancer','diabetes','digits','iris','linnerud','wine'] ...",
+      "evidence": []
+    },
+    {
+      "case": "VERBATIM docstring examples, hypertools/io/load.py Examples section (all 5, incl. both numeric claims; live network for 538 + kaggle) -- iris columns exact, penguins columns exact, bechdel shape (1794, 15) exact, kaggle/uciml/iris shape (150, 6) exact, weights loads (list of 36)",
+      "result": "pass",
+      "command": "t12_remaining.py",
+      "output_excerpt": "['sepal length (cm)', 'sepal width (cm)', 'petal length (cm)', 'petal width (cm)', 'target'] / ['species','island','bill_length_mm','bill_depth_mm','flipper_length_mm','body_mass_g','sex'] / (1794, 15) / (150, 6) / list 36",
+      "evidence": []
+    },
+    {
+      "case": "CLOSED #274/#275 story pipeline (COMPLETED) -- hyp.plot(data, manip=[{'model':'Smooth','kwargs':{'kernel_width':10}}, 'ZScore'], reduce='PCA', animate='window', focused=15) renders + saves; Smooth warns clearly on even kernel ('Increasing smoothing kernel width by 1 (must be odd)')",
+      "result": "pass",
+      "command": "t7_story_legend.py",
+      "output_excerpt": "275 window anim return: HyperAnimation / 275 story pipeline OK (manip chain + window + focused)",
+      "evidence": ["X8_275_window_anim.gif", "X8_275_window_frame.png"]
+    },
+    {
+      "case": "CLOSED #227 Pipeline (COMPLETED) -- hyp.Pipeline([{'model':'ZScore'},{'model':'PCA','kwargs':{'n_components':3}}]).fit_transform -> (120,3)",
+      "result": "pass",
+      "command": "t12_remaining.py",
+      "output_excerpt": "227 Pipeline fit_transform: ndarray (120, 3)",
+      "evidence": []
+    },
+    {
+      "case": "CLOSED #276 docstrings (hyp.manip has one), #277 README images regenerated 2026-07-07 (ls dates), #278 api.rst contains manip + formerly-orphaned tools.format_data/missing_inds/df2mat/text2mat/gensim pages in toctrees, #251 tests/test_backend.py + test_backend_render_selection.py exist, #209 single remaining 'type(...) is' is a legitimate exact-type check (align.py:320), #224 tutorial set exists (plot/analyze/align/cluster/reduce/normalize/text/streaming/lsl notebooks), #220 NOT_PLANNED justified (matplotlib 3.0.0 bug; branch runs 3.10.8), #212 editable install imports (this venv), #244/#257 test-suite run + sphinx build delegated to sibling audit units (out of this unit's scope by instruction)",
+      "result": "pass",
+      "command": "greps + ls (see transcript); hyp.manip.__doc__ check in t12_remaining.py",
+      "output_excerpt": "276 hyp.manip docstring first line: Apply a per-dataset manipulation (or chain of manipulations) to `data`. / images/: align_after.gif ... Jul  7 18:16 / api.rst:196 tools.format_data, 201 tools.missing_inds, 206 tools.df2mat / tests/test_backend.py exists",
+      "evidence": []
+    },
+    {
+      "case": "CLOSED #226 (ndims + custom reduce kwargs simultaneously) and #205 (multibyte labels) -- reduce({'model':'PCA','kwargs':{'whiten':True}}, ndims=4) -> (50,4); Japanese + Greek legend entries render without tofu",
+      "result": "pass",
+      "command": "t14_regressions.py",
+      "output_excerpt": "226 reduce ndims+kwargs: (50, 4) / 205 multibyte legend: saved",
+      "evidence": ["X8_205_multibyte_legend.png"]
+    },
+    {
+      "case": "Misuse battery -- unknown kwarg soundtrack= surfaces as matplotlib 'Line2D.set() got an unexpected keyword argument' (finding 008); invalid animate='dramatic' gives an EXCELLENT hypertools error naming all valid styles; morph with 1 dataset: clear ValueError; morph ndims=1: clear NotImplementedError telling user to pass ndims=2/3; morph unequal sizes: works (duplicate-safe padding claim TRUE); streaming+cluster / streaming+align raise the documented ValueErrors; hyp.cluster(x, model=...) TypeError exposes kwarg-naming inconsistency (finding 006)",
+      "result": "pass",
+      "command": "t5_loop_lw_misuse.py + t13_final.py + t14_regressions.py + t11_bundle_deep.py",
+      "output_excerpt": "163 soundtrack kwarg -> AttributeError | Line2D.set() got an unexpected keyword argument 'soundtrack' / bad animate -> ValueError | unknown animate style 'dramatic'; valid styles are 'parallel','spin','serial','morph','window' (or True/False)... / morph single dataset -> ValueError | animate='morph' requires at least 2 datasets to morph between; got 1. / morph ndims=1 -> NotImplementedError | ... Pass ndims=2 or ndims=3 (the default) ... / stream+cluster ValueError: cluster is not yet supported for streaming data / stream+align ValueError: align is not supported for streaming data (a stream is a single dataset) / TypeError: cluster() got an unexpected keyword argument 'model'",
+      "evidence": []
+    },
+    {
+      "case": "Realistic workflows executed: (W1) bootstrap-HOP morph animation on resampled data; (W2) synthetic-EEG generator stream -> live trajectory + GIF; (W3) reduce+cluster pipeline with label extraction via fitted pipeline; (W4) 3-dataset comparison loop -> 3 figures; (W5) story pipeline smooth->zscore->PCA->window animation; (W6) procrustes alignment with projection-matrix recovery verified numerically; (W7) real LSL amplifier simulation -> lsl_stream -> live plot",
+      "result": "pass",
+      "command": "t1,t2,t5,t6,t7,t8 scripts in scratchpad/audit/X8-issue-tracker/",
+      "output_excerpt": "(see per-issue rows above)",
+      "evidence": ["X8_225_hop_morph.gif", "X8_113_stream.gif", "X8_236_cluster_extract.png", "X8_264_loop_fig0.png", "X8_275_window_anim.gif", "X8_130_lsl_e2e.png"]
+    }
+  ],
+  "findings": [
+    {
+      "id": "X8-issue-tracker-001",
+      "severity": "major",
+      "title": "Crash: list mixing a multi-row and a 1-row dataset with default line fmt dies in scipy pchip; smoothing is order-dependent (guard checks only first dataset)",
+      "description": "plot.py's static line-interpolation guard (scalar-fmt branch, ~line 2326) is `if xform[0].shape[0] > 1:` -- it checks ONLY the FIRST dataset before calling interp_array_list on ALL datasets. Consequences, all verified: (a) hyp.plot([25-row, 1-row]) with the default '-' fmt crashes with an uncaught scipy ValueError from hypertools/_shared/helpers.py:140 interp_array -> pchip -- cryptic, no hint of which dataset or the fmt='.' workaround; (b) the reverse order [1-row, 25-row] silently SKIPS interpolation for every dataset (per-artist point counts [1, 25] vs [900] when the same 25-row data is plotted alone), so line smoothing depends on list order; (c) the fmt-LIST branch directly below checks per-dataset (`xi.shape[0] > 1`) -- the scalar branch should do the same. Discovered while regression-testing closed issue #192 (whose verbatim all-1-row repro IS fixed: 16 artists render). Realistic trigger: plotting subject trajectories alongside a single-observation dataset (group mean, single text embedding).",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, hypertools as hyp\nnp.random.seed(1)\nhyp.plot([np.random.randn(25, 3), np.random.randn(1, 3)], show=False)\"",
+      "expected": "Line for the 25-row dataset + marker for the 1-row dataset (matching the behavior of the all-1-row case, the solo-1-row case, and fmt='.'), with no dependence on list order",
+      "actual": "Traceback ... File \"/Users/jmanning/hypertools/hypertools/plot/plot.py\", line 2328, in plot\n    xform = interp_array_list(\n  File \"/Users/jmanning/hypertools/hypertools/_shared/helpers.py\", line 163, in interp_array_list\n    smoothed[idx] = interp_array(arr,interp_val)\n  File \"/Users/jmanning/hypertools/hypertools/_shared/helpers.py\", line 140, in interp_array\n    q=pchip(x,arr)\n  File \".../scipy/interpolate/_cubic.py\", line 50, in prepare_input\n    raise ValueError(\\\"`x` must contain at least 2 elements.\\\")\nValueError: `x` must contain at least 2 elements.\n-- and reverse order: per-artist point counts [1, 25] (no smoothing) vs [900] solo",
+      "evidence": ["X8_192_verbatim_all1row.png", "X8_192_mixed_markers_ok.png"],
+      "docs_impact": []
+    },
+    {
+      "id": "X8-issue-tracker-002",
+      "severity": "minor",
+      "title": "Residual of closed #259: `import hypertools` still mutates matplotlib rcParams (backend_fallback True -> False)",
+      "description": "Issue #259 ('importing hypertools updates matplotlib rcParams') was closed COMPLETED, and style params are indeed untouched, but importing hypertools still flips rcParams['backend_fallback'] from True to False -- a side effect of hypertools/plot/backend.py calling matplotlib.use() at import time (mpl.use() sets backend_fallback=False). Verified with a baseline taken AFTER `import matplotlib.pyplot`, so the mutation is attributable to hypertools, not pyplot. Impact: after importing hypertools, a later invalid backend assignment raises instead of falling back -- a small but real change to global matplotlib behavior from a bare import.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport copy, matplotlib\nimport matplotlib.pyplot as plt\nbefore = copy.deepcopy(dict(matplotlib.rcParams))\nimport hypertools\nafter = dict(matplotlib.rcParams)\nprint({k: (before[k], after[k]) for k in before if repr(before[k]) != repr(after[k])})\"",
+      "expected": "{} (import has no rcParams side effects)",
+      "actual": "{'backend_fallback': (True, False)}",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X8-issue-tracker-003",
+      "severity": "minor",
+      "title": "hyp.load() on an unsupported binary file (e.g. .png) raises a raw _pickle.UnpicklingError from dill internals instead of a clear 'unsupported file type' error",
+      "description": "Images are intentionally out of scope for hyp.load() (issue #273 was closed with maintainer-narrowed scope: sklearn+seaborn named datasets only), but the failure mode for an image path is a leaked internal: _load_local's pickle sniff (suffix list + first byte b'\\\\x80') correctly rejects the PNG, then sources.load_local_file's extension/sniff fallback ends up unpickling the bytes via dill and surfaces `_pickle.UnpicklingError: A load persistent id instruction was encountered, but no persistent_load function was specified.` -- no mention of the file, the unsupported extension, or what formats ARE supported (docstring: pickle/.geo, .npy/.npz, .csv/.tsv/.txt, .json, .parquet, .mat, .xlsx/.xls). Should raise HypertoolsIOError naming the extension and the supported list.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport matplotlib.pyplot as plt, hypertools as hyp\narr = np.zeros((8, 8, 3)); arr[::2, ::2] = [1, 0, 0]\nplt.imsave('/tmp/tiny_x8.png', arr)\nhyp.load('/tmp/tiny_x8.png')\"",
+      "expected": "HypertoolsIOError: unsupported file type '.png' -- hyp.load() reads .npy/.npz/.csv/.tsv/.txt/.json/.parquet/.mat/.xlsx/.xls and pickled .geo/.pkl (or similar)",
+      "actual": "File \".../dill/_dill.py\", line 453, in load\n    obj = StockUnpickler.load(self)\n_pickle.UnpicklingError: A load persistent id instruction was encountered, but no persistent_load function was specified.",
+      "evidence": [],
+      "docs_impact": ["hypertools/io/load.py", "hypertools/io/sources.py"]
+    },
+    {
+      "id": "X8-issue-tracker-004",
+      "severity": "minor",
+      "title": "Hosted *_model example datasets are sklearn-1.0.2-era pickles: loading under the 1.0 stack (sklearn 1.8.0) emits InconsistentVersionWarning ('might lead to breaking code or invalid results')",
+      "description": "hyp.load('wiki_model') (and by construction nips_model/sotus_model, same vintage) unpickles LatentDirichletAllocation/CountVectorizer/Pipeline estimators created under scikit-learn 1.0.2 into the installed scikit-learn 1.8.0, emitting sklearn's InconsistentVersionWarning for each estimator. sklearn explicitly does not support cross-version unpickling ('Use at your own risk'). The load succeeds and returns a Pipeline, but a scientist following docs/examples that use *_model datasets gets a wall of scary warnings and no guarantee of valid topic-model outputs. Recommend re-fitting/re-pickling the hosted *_model files under the 1.0 dependency floor (or documenting the warning as expected + verified-harmless).",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp; m = hyp.load('wiki_model'); print(type(m).__name__)\"",
+      "expected": "Model loads with no version-compatibility warnings (pickle created under the supported sklearn range), or documentation stating the warning is expected and outputs verified",
+      "actual": "sklearn/base.py:463: InconsistentVersionWarning: Trying to unpickle estimator LatentDirichletAllocation from version 1.0.2 when using version 1.8.0. This might lead to breaking code or invalid results. ... (repeated for CountVectorizer, Pipeline) then: Pipeline",
+      "evidence": [],
+      "docs_impact": ["docs (any example using wiki_model/nips_model/sotus_model)"]
+    },
+    {
+      "id": "X8-issue-tracker-005",
+      "severity": "doc",
+      "title": "Stale 2026-07-07 status comments on open issues #113 and #225 understate what 1.0 ships -- update when the release lands so the tracker matches reality",
+      "description": "Two factual claims in the tracker's own 1.0-status comments are now false on this branch: (1) #113's comment says 'Live device ingestion (e.g. OpenBCI) has no code anywhere in the repo' -- but hypertools/io/lsl.py (hyp.io.lsl_stream, GH #130) exists, is exported, documented (docs/hypertools.io.lsl_stream.rst, docs/tutorials/lsl_streaming.ipynb), and I verified it END-TO-END against a live pylsl outlet (400 samples streamed and plotted); sub-piece 4 of the grand challenge is now partially shipped, changing the issue's remaining scope to #111+#112 only. (2) #225's comment says morph has an 'ndims=3-only restriction' ('animate=morph raises NotImplementedError at ndims=2') -- ndims=2 morph now renders fine (verified twice, GIF+PNG saved), which matters because the comment itself notes HOP is traditionally a 1-2 variable technique. All other status-comment claims I checked (ffmpeg path/version, no-audio-code, no-key_press_event, no-decode-code, predict-is-forecasting, morph padding for unequal sizes) verified TRUE. Recommend a one-line follow-up comment on #113 and #225 at release time.",
+      "repro": "grep -rn key_press_event /Users/jmanning/hypertools/hypertools/  # (empty, claim true)\nls /Users/jmanning/hypertools/hypertools/io/lsl.py  # exists, contradicting #113 comment\nMPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, hypertools as hyp\nrng = np.random.default_rng(0); base = rng.standard_normal((40, 8))\nboots = [base[rng.integers(0, 40, 40)] for _ in range(3)]\nprint(type(hyp.plot(boots, animate='morph', ndims=2, reduce='PCA', show=False, duration=1.5, frame_rate=6)).__name__)\"",
+      "expected": "Tracker status comments match branch behavior",
+      "actual": "#113 comment: 'no code anywhere in the repo' vs working lsl.py ('LSL n_samples: 400 ... LSL end-to-end OK'); #225 comment: 'raises NotImplementedError at ndims=2' vs 'ndims=2 morph: NO ERROR ... HyperAnimation'",
+      "evidence": ["X8_130_lsl_e2e.png", "X8_225_hop_morph_2d.gif", "X8_225_hop_morph_2d_frame.png"],
+      "docs_impact": ["GitHub issues #113, #225 (comments)"]
+    },
+    {
+      "id": "X8-issue-tracker-006",
+      "severity": "style",
+      "title": "Model-spec kwarg naming is inconsistent across sibling dispatchers: hyp.align/hyp.manip use model=, hyp.cluster/hyp.reduce/hyp.normalize use the function's own name; first arg is x vs data",
+      "description": "Signatures on this branch: cluster(x, cluster='KMeans', ...), reduce(x, reduce='IncrementalPCA', ...), normalize(x, normalize='across', ...) vs manip(data, model='ZScore', ...), align(data, model='HyperAlign', ...). A user who learns hyp.align(data, model={'model': 'Procrustes'}) and tries the same with cluster gets `TypeError: cluster() got an unexpected keyword argument 'model'` with no pointer to the correct kwarg (cluster=). Positional use works everywhere, and the dict-spec grammar consistently uses 'model' as its key, which makes the top-level kwarg divergence more surprising. For a 1.0 API freeze this is worth either aliasing (accept model= everywhere, warn on conflict) or documenting the convention prominently.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, hypertools as hyp\nx = np.random.randn(30, 4)\nhyp.cluster(x, model={'model': 'KMeans', 'kwargs': {'n_clusters': 2}})\"",
+      "expected": "Either accepted (model= alias) or an error suggesting the cluster= kwarg",
+      "actual": "TypeError: cluster() got an unexpected keyword argument 'model'",
+      "evidence": [],
+      "docs_impact": ["docs/api.rst"]
+    },
+    {
+      "id": "X8-issue-tracker-007",
+      "severity": "style",
+      "title": "hyp.plot figures are pyplot-unmanaged yet every figure carries fig.number == 1",
+      "description": "After creating 3 figures in a loop (closed #264's scenario -- the actual bug IS fixed: distinct objects, distinct content), plt.get_fignums() == [] (figures deliberately not registered with pyplot -- avoids the old leak) but each figure still exposes fig.number == 1, and plt.figure(1) creates an unrelated new figure. Harmless for savefig workflows, but fig.number is matplotlib's documented handle for pyplot lookup, so a stale duplicated value invites confusion (e.g. plt.close(fig.number) semantics). Either strip the attribute or register real numbers.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib.pyplot as plt, hypertools as hyp\nfigs = [hyp.plot(np.random.randn(20, 3), '.', show=False) for _ in range(3)]\nprint(plt.get_fignums(), [f.number for f in figs], [f is plt.figure(1) for f in figs])\"",
+      "expected": "Consistent state: either managed figures with unique numbers, or no misleading .number attribute",
+      "actual": "[] [1, 1, 1] [False, False, False]",
+      "evidence": ["X8_264_loop_fig0.png", "X8_264_loop_fig1.png", "X8_264_loop_fig2.png"],
+      "docs_impact": []
+    },
+    {
+      "id": "X8-issue-tracker-008",
+      "severity": "style",
+      "title": "Unknown hyp.plot kwargs surface as matplotlib internals ('Line2D.set() got an unexpected keyword argument ...') rather than a hypertools-level message",
+      "description": "Deliberate misuse hyp.plot(x, animate=True, soundtrack='epic.mp3') (a plausible guess given open issue #163) raises AttributeError from matplotlib's Line2D.set. The message does name the offending kwarg (so it is actionable), but it leaks the backend artist class, does not mention hyp.plot, and surfaces from inside the draw path. Contrast with the excellent hypertools-authored animate-style error ('unknown animate style ...; valid styles are ...'). A cheap pre-validation pass or a try/except re-raise naming hyp.plot would align the two experiences.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, hypertools as hyp\nhyp.plot(np.random.randn(30, 4), animate=True, soundtrack='epic.mp3', show=False, duration=1, frame_rate=5)\"",
+      "expected": "Error mentioning hyp.plot received an unexpected keyword argument 'soundtrack' (and, ideally, that audio is not a supported feature)",
+      "actual": "AttributeError: Line2D.set() got an unexpected keyword argument 'soundtrack'",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X8-issue-tracker-009",
+      "severity": "enhancement",
+      "title": "Remaining open-issue functionality absent from 1.0 -- all explicitly maintainer-deferred 2026-07-07; none blocks release",
+      "description": "Desired functionality still missing on this branch, per real checks: #111 keypress labeling of live streams (no key_press_event anywhere -- grep verified), #112 nearest-labeled-point decoding for streams (no decode code in streaming.py; hyp.predict is unrelated forecasting -- run verified), #163 animation soundtrack (no audio code; the ffmpeg-mux prerequisite verified present: mp4 export works via ffmpeg 8.1.2), #225 first-class bootstrap/HOP kwarg (workaround verified: animate='morph' over resamples works in 3-D AND 2-D), #113 the composite brain-decoding vision (2 of 4 sub-pieces shipped: streaming + LSL ingestion, both verified end-to-end here). Block-1.0 judgment: NO for all five -- each carries an explicit maintainer deferral comment ('defer', 'punt for a future release', 'do not implement for now') dated 2026-07-07, effort labels are set (low/medium/high), #111/#112 are 'low priority', and #225/#163 have working workarounds or no renewed demand. 'All desired functionality present' holds for 1.0 in the sense that every remaining ask is a deliberately deferred enhancement, not a gap the release claims to cover.",
+      "repro": "gh issue list --repo ContextLab/hypertools --state open --limit 100  # 5 issues: 225,163,113,112,111\ngrep -rn key_press_event /Users/jmanning/hypertools/hypertools/  # empty\ngrep -rni 'soundtrack|audio' /Users/jmanning/hypertools/hypertools/plot/ /Users/jmanning/hypertools/pyproject.toml  # empty\ngrep -n decode /Users/jmanning/hypertools/hypertools/io/streaming.py  # empty",
+      "expected": "n/a (enhancement classification for the release decision)",
+      "actual": "5 open issues, all enhancements with maintainer deferral comments; verification commands above all return empty (features absent) while the shipped sub-pieces (streaming, LSL, morph) all pass real runs",
+      "evidence": ["X8_225_hop_morph.gif", "X8_113_stream.gif", "X8_130_lsl_e2e.png", "X8_163_ffmpeg_export.mp4"],
+      "docs_impact": []
+    }
+  ]
 }

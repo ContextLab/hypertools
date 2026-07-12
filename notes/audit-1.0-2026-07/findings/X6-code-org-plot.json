@@ -1,0 +1,466 @@
+{
+  "unit": "X6-code-org-plot",
+  "target": "hypertools/plot package (17 modules, 11,999 lines): code organization, readability, dead code, comment accuracy, naming, shims -- plus real-run verification of docstring examples, numeric claims, error messages, and visuals. Branch audit/release-1.0-2026-07, venv python 3.12, MPLBACKEND=Agg.",
+  "brainstormed_edge_cases": [
+    "HYPERTOOLS_BACKEND env var set to a SUPPORTED backend name at import time (tested -- crashes import)",
+    "HYPERTOOLS_BACKEND env var set to a name NOT in the candidate list, e.g. Agg (tested -- works)",
+    "hue= shorter than the observation count (tested -- clear ValueError)",
+    "hue= as a bare scalar string, e.g. hue='red' (untested; code comment claims QC fix broadcasts it)",
+    "surface= dict with unknown key; surface['lighting'] with removed 'roughness' key (tested)",
+    "density= alpha=0 (out of (0,1]) and unknown dict key (tested)",
+    "chemtrails= list whose length mismatches the drawn dataset count (tested)",
+    "animate= mega-dict with a conflicting flat kwarg, and with 'style' missing (tested)",
+    "unknown animate style string, e.g. animate='waltz' (tested)",
+    "animate=True with duration=0 (tested; frame_rate=0 untested but same guard)",
+    "font= unresolvable family name; path-looking .ttf that does not exist; non-str/FontProperties type (tested)",
+    "zlabel= on ndims=2 data (tested)",
+    "mat2colors with 3-D array input, and with an explicit palette list shorter than needed (tested)",
+    "smooth_hull_3d on exactly coplanar points and on (n,2)-shaped input (tested)",
+    "colorbar=True with a single ungrouped dataset; colorbar={'location':'middle'} (tested)",
+    "names= length mismatch vs datasets (tested)",
+    "rotations= list combined with a non-morph animate style (tested)",
+    "label_alpha=2 (out of [0,1]) (tested)",
+    "resample=1 (< 2) (tested)",
+    "predict= combined with animate (tested -- NotImplementedError)",
+    "backend='plotlyy' typo (tested); capitalized 'Plotly' accepted-case path (untested)",
+    "single-point dataset passed with a line fmt in a user-supplied fmt LIST (tested -- caller's list mutated)",
+    "user linewidth= on an animated plot with trails (tested -- trail ignores it)",
+    "azim= starting angle across animate styles and backends (tested on matplotlib; plotly checked by code-read only)",
+    "HyperAnimation.save() to .svg and .png/apng extensions (tested)",
+    "animate='morph' with a single dataset; per-dataset animate list containing 'spin' (tested)",
+    "explore=True mouse-hover behavior (untested -- requires live GUI mouse events; static-analysis finding filed instead)",
+    "set_interactive_backend('TkAgg') on a Python built without tkinter (tested -- docstring example crashes)",
+    "2-D animation with non-default rotations=/zoom= (tested -- warning)",
+    "animate='spin' with chemtrails=True (tested -- warning, trails skipped)",
+    "fit_kde with fewer than 3 points (tested -- warning + skip)",
+    "plotly animation file export via kaleido/_export_animation_file (untested -- kaleido deadlocks on this machine per audit ground rules; infra)",
+    "notebook-only backend paths: _switch_backend_notebook/_reset_backend_notebook/_get_jupyter_frontend (untested -- needs a live Jupyter server; infra)",
+    "_block_greedy_completer_execution IPython tab-completion import path (untested -- needs IPython completer stack)",
+    "streaming input dispatch to io.plot_stream from plot() (untested here -- covered by the io/streaming audit unit)"
+  ],
+  "tested": [
+    {
+      "case": "import hypertools with HYPERTOOLS_BACKEND=TkAgg (env var names a SUPPORTED backend)",
+      "result": "fail",
+      "command": "env MPLBACKEND=Agg HYPERTOOLS_BACKEND=TkAgg .venv/bin/python -c 'import hypertools'",
+      "output_excerpt": "backend.py line 552, in _init_backend: backends[: backends.index(HYPERTOOLS_BACKEND)] -> ValueError: tuple.index(x): x not in tuple ... UnboundLocalError: cannot access local variable 'working_backend'",
+      "evidence": []
+    },
+    {
+      "case": "import hypertools with HYPERTOOLS_BACKEND=Agg (name not in candidate list)",
+      "result": "pass",
+      "command": "env MPLBACKEND=Agg HYPERTOOLS_BACKEND=Agg .venv/bin/python -c \"import hypertools; from hypertools.plot import backend; print(backend.HYPERTOOLS_BACKEND)\"",
+      "output_excerpt": "IMPORT OK; HYPERTOOLS_BACKEND = 'Agg'",
+      "evidence": []
+    },
+    {
+      "case": "W1 scientist workflow: hyp.load('weights'); hyp.plot(data[:3]) static 3-D",
+      "result": "pass",
+      "command": "workflows.py::w1",
+      "output_excerpt": "[PASS] W1 weights static 3D: type=Figure, n_axes=1",
+      "evidence": ["w1_weights_static3d.png"]
+    },
+    {
+      "case": "W2 scientist workflow: spiral + continuous hue + colorbar=True (visual: multicolored line, colorbar spans actual 0..949 hue range)",
+      "result": "pass",
+      "command": "workflows.py::w2",
+      "output_excerpt": "[PASS] W2 spiral hue colorbar: type=Figure",
+      "evidence": ["w2_spiral_hue_colorbar.png"]
+    },
+    {
+      "case": "W3 scientist workflow: 2-level row-MultiIndex DataFrame; recompute docstring style claims (leaves lw=1 alpha=0.7, top means lw=2 alpha=1.0)",
+      "result": "pass",
+      "command": "workflows.py::w3",
+      "output_excerpt": "linewidths=[1.0, 2.0] (claim [1,2]), alphas=[0.7, 1.0] (claim [0.7, 1.0])",
+      "evidence": ["w3_multiindex.png"]
+    },
+    {
+      "case": "W4 scientist workflow: n_clusters=3 on 3 synthetic blobs with legend",
+      "result": "pass",
+      "command": "workflows.py::w4",
+      "output_excerpt": "[PASS] W4 n_clusters=3: n_lines=3",
+      "evidence": ["w4_nclusters3.png"]
+    },
+    {
+      "case": "W5 scientist workflow: surface=True (3-D, matplotlib) and density=True (2-D); visuals correct (hulls hug clouds; subtle per-dataset glow)",
+      "result": "pass",
+      "command": "workflows.py::w5",
+      "output_excerpt": "[PASS] W5 surface3d + density2d: both saved",
+      "evidence": ["w5_surface3d.png", "w5_density2d.png"]
+    },
+    {
+      "case": "W6 scientist workflow: animate='spin' returns HyperAnimation (tuple-compatible), .figure works, .save('.svg') writes valid file",
+      "result": "pass",
+      "command": "workflows.py::w6",
+      "output_excerpt": "type=HyperAnimation, unpacks=True, figure_prop=Figure, svg_ok=True",
+      "evidence": ["w6_anim.svg"]
+    },
+    {
+      "case": "plotly backend: surface=True 3-D two-blob figure -> write_html + Playwright screenshot (visual: two smooth lit hulls in cube, legend 1/2, no dark patches/holes)",
+      "result": "pass",
+      "command": "hyp.plot([a,b],'.',surface=True,backend='plotly',legend=True,show=False).write_html(...)",
+      "output_excerpt": "plotly fig type: Figure n_traces: 5",
+      "evidence": ["plotly_surface3d.html", "plotly_surface3d_screenshot.png"]
+    },
+    {
+      "case": "N1 numeric claims: resolve_iso_fracs_alphas(3) == (0.10,0.35,0.65)/(0.03,0.05,0.07); linspace(0.10,0.65,3) middle == 0.375; resolve_plotly_volume_params(0.2,3,1.0)",
+      "result": "pass",
+      "command": "workflows.py::n1",
+      "output_excerpt": "fracs3=(0.1, 0.35, 0.65) alphas3=(0.03, 0.05, 0.07) linspace=(0.1, 0.375, 0.65) | boost=1: pad=0.15, isomin=0.05, oscale=[[0,0],[0.3,0.27],[1,0.53]], opacity=0.4 (plot.py docstring claims 0.6), surface_count=15, MAX_VOL=0.75",
+      "evidence": []
+    },
+    {
+      "case": "N2 numeric claim: meshutil._RESCALE_CAP vs plot.py surface docstring 'grow at most 10%'",
+      "result": "fail",
+      "command": "workflows.py::n2",
+      "output_excerpt": "_RESCALE_CAP=3.0 (allows 200% growth); plot.py docstring says 'grow at most 10%': False (the exact string is 'grow at most 10%' in the pre_inflate bullet)",
+      "evidence": []
+    },
+    {
+      "case": "N3 numeric claim: _anim_box_zoom(1) == 9/8 == 1.125",
+      "result": "pass",
+      "command": "workflows.py::n3",
+      "output_excerpt": "_anim_box_zoom(1)=1.125 (claim 1.125)",
+      "evidence": []
+    },
+    {
+      "case": "E7 side effect: plot() mutates the CALLER's fmt list for single-point datasets",
+      "result": "fail",
+      "command": "workflows.py::e7 -- user_fmt=['-','-']; hyp.plot([single_point, traj], user_fmt, show=False)",
+      "output_excerpt": "user fmt list after plot: ['.', '-'] (was ['-', '-'])",
+      "evidence": []
+    },
+    {
+      "case": "E8 animated trail artist ignores user linewidth= (kwargs_list dict.pop mutation)",
+      "result": "fail",
+      "command": "workflows.py::e8 -- hyp.plot(traj, animate=True, chemtrails=True, linewidth=5, ...)",
+      "output_excerpt": "artist linewidths (head, trail): [5.0, 1.0] (user asked linewidth=5)",
+      "evidence": []
+    },
+    {
+      "case": "E9 azim= start-angle consistency across matplotlib animate styles (frame 0 drawn via ani._draw_frame(0))",
+      "result": "fail",
+      "command": "workflows.py::e9",
+      "output_excerpt": "azim after frame 0 (requested azim=-60): {'parallel': 0.0, 'spin': 0.0, 'serial': -60.0}",
+      "evidence": []
+    },
+    {
+      "case": "E13 HyperAnimation.save('.png') writes an animated PNG via PillowWriter (QC-claimed fix)",
+      "result": "pass",
+      "command": "workflows.py::e13",
+      "output_excerpt": "png size=85335",
+      "evidence": ["e13_anim.png"]
+    },
+    {
+      "case": "E21 return_model=True bundle keys and fitted Pipeline",
+      "result": "pass",
+      "command": "workflows.py::e21",
+      "output_excerpt": "keys=['animation','fig','models','pipeline','predict','xform_data'], pipeline=Pipeline",
+      "evidence": []
+    },
+    {
+      "case": "misuse battery: 26 expected-error cases (hue length, surface/density keys, trail list length, animate dict conflict/missing style, unknown style, duration=0, font errors, zlabel 2-D, mat2colors 3-D/short palette, hull degenerate/shape, colorbar misuse x2, names length, rotations list, label_alpha, resample, predict+animate, backend typo, resolve_font x2, broadcast_trail_flag, morph 1 dataset, animate list bad entry)",
+      "result": "pass",
+      "command": "misuse.py",
+      "output_excerpt": "all 26 raised typed errors whose messages name BOTH the problem and the fix, e.g. \"surface dict got unknown key(s) ['glow']; valid keys are ['alpha','color','keep_points','lighting','pre_inflate','smoothing'].\" -- zero cryptic tracebacks",
+      "evidence": []
+    },
+    {
+      "case": "misuse battery: 3 expected-warning cases (fit_kde 2 points; 2-D animate + rotations=3; spin + chemtrails)",
+      "result": "pass",
+      "command": "misuse.py",
+      "output_excerpt": "'rotations= controls 3-D camera spin and has no effect on 2-D animations...ignoring.' / \"animate='spin' does not support trail styles; ignoring chemtrails for datasets [0]\"",
+      "evidence": []
+    },
+    {
+      "case": "docstring examples VERBATIM: meshutil.smooth_hull_3d and smooth_hull_2d doctests",
+      "result": "pass",
+      "command": ".venv/bin/python -m doctest -v hypertools/plot/meshutil.py",
+      "output_excerpt": "10 tests in 20 items. 10 passed and 0 failed. Test passed.",
+      "evidence": []
+    },
+    {
+      "case": "docstring example VERBATIM: backend.py set_interactive_backend example 1 (hyp.load('weights_avg'); hyp.set_interactive_backend('TkAgg'); hyp.plot(data, interactive=True))",
+      "result": "fail",
+      "command": "backend_docstring_example.py (verbatim copy of both docstring examples)",
+      "output_excerpt": "hypertools.core.exceptions.HypertoolsBackendError: Failed to switch the plotting backend to TkAgg. You may be missing required dependencies... (.venv python has no _tkinter: ModuleNotFoundError: No module named '_tkinter')",
+      "evidence": []
+    },
+    {
+      "case": "same code path with an INSTALLED backend: set_interactive_backend('MacOSX') + plot(interactive=True)",
+      "result": "pass",
+      "command": "hyp.set_interactive_backend('MacOSX'); hyp.plot(hyp.load('weights_avg'), interactive=True, show=False)",
+      "output_excerpt": "MacOSX interactive OK: Figure",
+      "evidence": []
+    },
+    {
+      "case": "renamed-module shims: hypertools.plot.draw._draw, hypertools.plot.interactive.{plotly_draw,detect_environment,resolve_backend,_parse_fmt,_camera_eye}, animate.save_animation alias all importable",
+      "result": "pass",
+      "command": ".venv/bin/python -c 'from hypertools.plot.draw import _draw; from hypertools.plot.interactive import plotly_draw; ...'",
+      "output_excerpt": "shim imports OK: True True True",
+      "evidence": []
+    },
+    {
+      "case": "static analysis: pyflakes over all 17 modules + AST function-length scan + repo-wide dead-code reference scan (every top-level def grepped across hypertools/ AND tests/)",
+      "result": "pass",
+      "command": ".venv/bin/python -m pyflakes hypertools/plot/*.py; static_analysis.py; deadcode.py",
+      "output_excerpt": "no top-level function is fully dead (all have in-module or external refs); unused imports and 2 dead locals found (see findings); functions >100 lines: plot (2690), _draw (1841), animate_plot3D (463), _add_animation (378), animate_plot2D (222), _init_backend (193), smooth_hull_3d (157), build_multiindex_styles (151), _get_jupyter_frontend (135), manage_backend (111), _rescale_for_containment (102), plotly_draw (680), _build_colorbar_info (101)",
+      "evidence": []
+    },
+    {
+      "case": "TODO/FIXME/XXX/HACK census",
+      "result": "pass",
+      "command": "grep -nE 'TODO|FIXME|XXX|HACK' hypertools/plot/*.py",
+      "output_excerpt": "exactly ONE marker in the whole package: backend.py:545 '# TODO: document setting environment variable' (sitting directly above the env-var code that crashes import -- see finding 001). No FIXME/XXX/HACK.",
+      "evidence": []
+    },
+    {
+      "case": "debug-print census",
+      "result": "pass",
+      "command": "grep -n 'print(' hypertools/plot/*.py",
+      "output_excerpt": "zero print() calls in library code",
+      "evidence": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "X6-code-org-plot-001",
+      "severity": "critical",
+      "title": "Setting HYPERTOOLS_BACKEND env var to any supported backend makes `import hypertools` crash",
+      "description": "backend.py _init_backend's env-var branch (lines 547-556) is doubly broken: (1) it indexes `backends.index(HYPERTOOLS_BACKEND)` -- the module GLOBAL, which is still None at this point -- instead of `env_backend`, so the index call raises ValueError whenever the user's env value IS in the candidate list (MacOSX/TkAgg/QtAgg/Qt5Agg/Qt4Agg/GTK4Agg/GTK3Agg/WXAgg, any case); and (2) even with the right name it builds `(backends[:i], *backends[i+1:])` -- the first slice is missing its `*` unpack, which would nest a tuple into the candidates. The ValueError propagates out of the except-branch, `working_backend` is never bound, and the trailing `finally` raises UnboundLocalError -- import of the whole package fails. The env var is real, semi-documented functionality: plot()'s mpl_backend docstring says 'Set the `$HYPERTOOLS_BACKEND` environment variable ... to override the backend used by auto', and the code comment directly above the bug reads '# TODO: document setting environment variable'. Values NOT in the list (e.g. Agg) skip the branch and work.",
+      "repro": "env MPLBACKEND=Agg HYPERTOOLS_BACKEND=TkAgg /Users/jmanning/hypertools/.venv/bin/python -c 'import hypertools'",
+      "expected": "hypertools imports and prefers the user-specified backend (falling back with a warning if it cannot be used), per the mpl_backend docstring.",
+      "actual": "File \"hypertools/plot/backend.py\", line 552, in _init_backend\n    backends[: backends.index(HYPERTOOLS_BACKEND)],\nValueError: tuple.index(x): x not in tuple\n...\n  File \"hypertools/plot/backend.py\", line 691, in _init_backend\n    HYPERTOOLS_BACKEND = HypertoolsBackend(working_backend).normalize()\nUnboundLocalError: cannot access local variable 'working_backend' where it is not associated with a value",
+      "evidence": [],
+      "docs_impact": ["hypertools/plot/backend.py", "hypertools/plot/plot.py"]
+    },
+    {
+      "id": "X6-code-org-plot-002",
+      "severity": "style",
+      "title": "plot() is a single 2,690-line function with ~70 parameters",
+      "description": "hypertools/plot/plot.py `plot` spans lines 138-2827 (2,690 lines: ~1,090 lines of docstring + ~1,600 lines of body) and takes 70 keyword parameters plus **kwargs. The body chains kwarg validation, MultiIndex expansion, the analyze pipeline, forecast computation, hue classification (5 sub-branches), morph resolution, interpolation, center/scale, backend dispatch, colorbar/legend fitting, save, and 4 different return shapes in one scope, with state threaded through ~30 locals (xform, raw_xform, multicolor_hue, morph_tags, surface_list, ...). It is the package's largest readability liability: understanding any one feature requires paging through all of it, and its sections are already individually commented as if they were functions. The comments are excellent, which mitigates but does not remove the problem.",
+      "repro": "python - <<'EOF'\nimport ast\nsrc = open('/Users/jmanning/hypertools/hypertools/plot/plot.py').read()\nf = [n for n in ast.parse(src).body if getattr(n, 'name', '') == 'plot'][0]\nprint(f.end_lineno - f.lineno + 1, 'lines,', len(f.args.args) + len(f.args.kwonlyargs), 'params')\nEOF",
+      "expected": "Cohesive stages factored into module-level helpers (as _build_colorbar_info/_resolve_animate_mode already are), keeping plot() an orchestrator.",
+      "actual": "2690 lines, 70 params",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X6-code-org-plot-003",
+      "severity": "style",
+      "title": "matplotlib_backend._draw is an 1,841-line function containing ~24 nested closures",
+      "description": "`_draw` (matplotlib_backend.py lines 341-2181) defines ~24 nested functions (dispatch_static, plot1D/2D/3D, annotate_plot, update_position, _sync_anim_labels, hide_labels, add_labels, distance, calcClosestDatapoint, annotate_plot_explore, onMouseMotion, plot_cube, plot_square, update_lines_parallel/_spin/_serial, update_morph, dispatch_animate, animate_plot3D (463 lines), update_lines_parallel_2d, update_lines_serial_2d, update_morph_2d, animate_plot2D (222 lines), _plot_possibly_split, _wants_trail x2) that communicate through closure captures of _draw's 40 parameters and through function ATTRIBUTES used as mutable frame state (`update_lines_parallel.planes`, `.surface_colls`, `update_lines_spin.meshes`, `annotate_plot_explore.clicked`) plus a module-level `global labels_and_points`. None of these closures is unit-testable in isolation, and the function-attribute state leaks across successive plots (the code itself guards for this: 'it may also still hold a PREVIOUS plot's labels'). Also uses `assert` for user-facing input validation at line 1999 ('Animations are only supported for 2-D or 3-D plots'), which disappears under python -O.",
+      "repro": "python - <<'EOF'\nimport ast\nsrc = open('/Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py').read()\nf = [n for n in ast.parse(src).body if getattr(n, 'name', '') == '_draw'][0]\nnested = [n.name for n in ast.walk(f) if isinstance(n, ast.FunctionDef) and n.name != '_draw']\nprint(f.end_lineno - f.lineno + 1, 'lines;', len(nested), 'nested defs')\nEOF",
+      "expected": "Frame-update callbacks and the explore/label helpers as module-level functions taking explicit state (as the newer surface/density helpers _draw_density_2d/_shade_and_cull_3d already are).",
+      "actual": "1841 lines; 26 nested defs",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X6-code-org-plot-004",
+      "severity": "style",
+      "title": "Large duplicated logic blocks: 3-D vs 2-D animation paths and cross-backend morph setup",
+      "description": "Within matplotlib_backend._draw, animate_plot3D and animate_plot2D duplicate near-identical blocks: the 4-way lines/trail artist construction (lines 1296-1343 vs 1820-1863) repeats the inline idiom `linewidth=kwargs_list[idx].pop(\"linewidth\", 1) if isinstance(kwargs_list[idx], dict) else 1` EIGHT times; the morph setup (1372-1445 vs 1871-1915), `_wants_trail` (1290-1293 vs 1814-1817), and the `_uses_focus_window`/window_frames computation (1593-1601 vs 1927-1935) are copy-pasted with only the z-column removed. Across backends, the morph sampling + default-color fallback `(0.2, 0.4, 0.8)` appears FOUR times (matplotlib_backend 1379-1383 and 1878-1882; plotly_backend 674-678 and 1975-1979). update_lines_parallel/update_lines_parallel_2d and update_morph/update_morph_2d are further 3D/2D twins. Any bug fix in one copy must be manually mirrored to 3+ places.",
+      "repro": "grep -n '0.2, 0.4, 0.8' /Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py /Users/jmanning/hypertools/hypertools/plot/plotly_backend.py",
+      "expected": "One shared artist-construction/morph-setup helper parameterized by dimensionality; the default morph color as a named module constant.",
+      "actual": "matplotlib_backend.py:1381, matplotlib_backend.py:1880, plotly_backend.py:676, plotly_backend.py:1977 all contain the literal fallback color (0.2, 0.4, 0.8)",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X6-code-org-plot-005",
+      "severity": "minor",
+      "title": "Animated plotly morph runs the O(n^3) Hungarian matching twice per figure",
+      "description": "plotly_draw computes `sampled0, dup_masks0 = _morph.sample_and_match_clouds(clouds0, morph_samples=...)` (plotly_backend.py:672) with a comment claiming this is 'so the cube_scale block below can reuse the EXACT sampled0 arrays _add_animation's 'morph' branch will later draw' -- but _add_animation does NOT receive sampled0; it independently re-runs `sample_and_match_clouds(clouds, morph_samples=morph_samples)` (line 1973) on the same data. The two results only coincide because both use the default seed=0; the linear_sum_assignment cost is roughly O(n^3), so every animated plotly morph pays the matching cost twice, and the 'EXACT arrays' invariant is enforced by nothing but the shared default seed.",
+      "repro": "env MPLBACKEND=Agg .venv/bin/python - <<'EOF'\nimport numpy as np, hypertools.plot.morph as m\ncalls = []\norig = m.sample_and_match_clouds\nm.sample_and_match_clouds = lambda *a, **k: (calls.append(1), orig(*a, **k))[1]\nfrom hypertools.plot.plotly_backend import plotly_draw\nrng = np.random.default_rng(0)\nplotly_draw([rng.normal(size=(30,3)), rng.normal(3,1,(30,3))], fmt=['.','.'],\n            kwargs_list=[{},{}], animate='morph', duration=1, frame_rate=5, show=False)\nprint('sample_and_match_clouds calls:', len(calls))\nEOF",
+      "expected": "1 call per figure (plotly_draw passes sampled0/dup_masks0 into _add_animation).",
+      "actual": "2 calls per animated morph figure (code-read: plotly_backend.py:672 and plotly_backend.py:1973; the comment at 652-656 asserts reuse that does not happen)",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X6-code-org-plot-006",
+      "severity": "minor",
+      "title": "Commented-out code referencing a function that does not exist (onMouseClick)",
+      "description": "matplotlib_backend.py lines 707 and 712 both carry the commented-out line `# fig.canvas.mpl_connect('button_press_event', lambda event: onMouseClick(event, X, labels))  # on mouse click`. `grep -rn onMouseClick hypertools tests` finds no definition anywhere -- the referenced function was deleted long ago, so the comment is unresurrectable dead code duplicated twice. This is the only genuine commented-out code found in the package.",
+      "repro": "grep -rn 'onMouseClick' /Users/jmanning/hypertools/hypertools /Users/jmanning/hypertools/tests",
+      "expected": "No commented-out calls to nonexistent functions.",
+      "actual": "hypertools/plot/matplotlib_backend.py:707 and :712 contain the commented-out mpl_connect('button_press_event', ... onMouseClick ...) line; no definition of onMouseClick exists in the repo",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X6-code-org-plot-007",
+      "severity": "minor",
+      "title": "explore mode: onMouseMotion never updates its previous-index state (dead local assignment)",
+      "description": "matplotlib_backend.py onMouseMotion (lines 811-835) initializes `onMouseMotion.closestIndex_prev` once on the first event, then on later events assigns `closestIndex_prev = closestIndex` -- a LOCAL variable that is never read (pyflakes: \"matplotlib_backend.py:835:17: local variable 'closestIndex_prev' is assigned to but never used\"); the function ATTRIBUTE is never updated. Consequence (from code): after the mouse leaves the initial closest point, every subsequent motion event with closestIndex != the FIRST-ever index re-runs annotate_plot_explore (redundant redraw per event), and moving back exactly onto the first point's region draws nothing. Not runtime-tested (requires live GUI mouse events; explore is documented as experimental) -- static evidence only. Related smell: `distance()` (line 739) uses `plt.gca().get_proj()` while the same function uses the closed-over `ax.transData` two lines later, so a different active axes would silently mix projections.",
+      "repro": "/Users/jmanning/hypertools/.venv/bin/python -m pyflakes /Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py | grep closestIndex",
+      "expected": "onMouseMotion.closestIndex_prev = closestIndex (attribute update), so the hover label re-renders exactly when the closest point changes.",
+      "actual": "hypertools/plot/matplotlib_backend.py:835:17: local variable 'closestIndex_prev' is assigned to but never used (same dead assignment at line 832)",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X6-code-org-plot-008",
+      "severity": "minor",
+      "title": "plot() mutates the caller's fmt list in place (single-point line fmt rewritten to '.')",
+      "description": "plot.py line 2510-2512 aliases the user's list (`draw_fmt = fmt`, no copy) and matplotlib_backend._draw lines 1983-1985 then rewrite entries in place (`fmt[i] = '.'` for any single-point dataset whose fmt is '-', ':' or '--'). The caller's own list object is silently modified -- verified: a user list ['-', '-'] becomes ['.', '-'] after the call, so reusing the same fmt list for a second plot draws different styles.",
+      "repro": "env MPLBACKEND=Agg .venv/bin/python - <<'EOF'\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nuser_fmt = ['-', '-']\nhyp.plot([np.array([[0.5, 0.5, 0.5]]), np.cumsum(np.random.default_rng(5).normal(size=(10, 3)), axis=0)], user_fmt, show=False)\nprint(user_fmt)\nEOF",
+      "expected": "['-', '-'] (user input unmodified; the '.'-substitution applied to an internal copy)",
+      "actual": "['.', '-']",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X6-code-org-plot-009",
+      "severity": "minor",
+      "title": "Animated trail artists ignore the user's linewidth= (destructive dict.pop in artist-creation comprehensions)",
+      "description": "In animate_plot3D/animate_plot2D the head-line comprehension calls `kwargs_list[idx].pop('linewidth', 1)` (matplotlib_backend.py:1303 etc.), destructively removing the key from the shared per-dataset dict; the trail comprehension that runs NEXT pops the now-missing key and falls back to 1. Verified: hyp.plot(traj, animate=True, chemtrails=True, linewidth=5) yields artist linewidths [5.0, 1.0] -- the faint trail renders at default width while the head honors 5. The same pop-mutation idiom is repeated 8 times across the two functions (see finding 004).",
+      "repro": "env MPLBACKEND=Agg .venv/bin/python - <<'EOF'\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\ntraj = np.cumsum(np.random.default_rng(6).normal(size=(30, 3)), axis=0)\nfig, ani = hyp.plot(traj, animate=True, chemtrails=True, linewidth=5, duration=1, frame_rate=5, show=False)\nprint([l.get_linewidth() for l in fig.axes[0].lines])\nEOF",
+      "expected": "[5.0, 5.0] (trail mirrors the head's linewidth, differing only in alpha=0.3)",
+      "actual": "[5.0, 1.0]",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X6-code-org-plot-010",
+      "severity": "minor",
+      "title": "azim= starting angle ignored by animate='parallel'/'spin' but honored by 'serial'/'morph' and by every plotly style",
+      "description": "update_lines_parallel (matplotlib_backend.py:966) and update_lines_spin (:1040) compute `azim_now = rotations * 360 * frac` -- dropping the user's/default `azim` offset -- while update_lines_serial (:1080) computes `azim + rotations * 360 * frac` and morph threads azim through morph_schedule. The plotly backend adds `azim` in ALL styles (plotly_backend.py:1926, :2065, :2164). So an animate=True or 'spin' matplotlib animation starts at azimuth 0 instead of the requested/default -60, differing both from its own 'serial'/'morph' siblings and from the plotly rendering of the identical call (first frame rotated 60 degrees apart). Verified by driving frame 0 of each style with azim=-60: {'parallel': 0.0, 'spin': 0.0, 'serial': -60.0}.",
+      "repro": "env MPLBACKEND=Agg .venv/bin/python - <<'EOF'\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\ntraj = np.cumsum(np.random.default_rng(7).normal(size=(30, 3)), axis=0)\nfor style in ('parallel', 'spin', 'serial'):\n    fig, ani = hyp.plot(traj, animate=style, duration=1, frame_rate=5, azim=-60, show=False)\n    ani._init_draw(); ani._draw_frame(0)\n    print(style, fig.axes[0].azim)\nEOF",
+      "expected": "All styles (and both backends) start the camera at the requested azim (-60), as 'serial'/'morph'/plotly already do.",
+      "actual": "parallel 0.0 / spin 0.0 / serial -60.0",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X6-code-org-plot-011",
+      "severity": "doc",
+      "title": "plot() density docstring documents plotly Volume constants two retunes out of date",
+      "description": "plot.py's density docstring (lines 1168-1170) says plotly's 3-D layer uses \"`opacity=min(3.0 * alpha, 0.6)`, a fixed `opacityscale` ramp\". The shipped code (density.resolve_plotly_volume_params) uses `base_opacity = min(2.0 * alpha, 0.4)`, a BOOST-DEPENDENT opacityscale, and a MAX_VOLUME_OPACITY cap of 0.75; density.py's own docstrings explicitly describe the old min(3*alpha, 0.6) values as \"lowered from the original\" (R2 maintainer retune). Verified by running resolve_plotly_volume_params(0.2, 3, 1.0): opacity=0.4 vs the docstring's implied 0.6. (The 2-D claim '1.5 * alpha' IS accurate -- plotly_backend.py:1410.)",
+      "repro": "env MPLBACKEND=Agg .venv/bin/python -c \"from hypertools.plot.density import resolve_plotly_volume_params; print(resolve_plotly_volume_params(0.2, 3, 1.0))\"",
+      "expected": "Docstring matches code: opacity=min(2*alpha, 0.4) at boost=1, boost-scaled opacityscale, MAX_VOLUME_OPACITY=0.75 ceiling.",
+      "actual": "(0.15, 0.05, [[0, 0], [0.3, 0.27], [1, 0.53]], 0.4, 15) -- docstring claims opacity would be min(3*0.2, 0.6)=0.6",
+      "evidence": [],
+      "docs_impact": ["hypertools/plot/plot.py"]
+    },
+    {
+      "id": "X6-code-org-plot-012",
+      "severity": "doc",
+      "title": "plot() surface docstring says containment rescale 'grow at most 10%'; the code cap is 3.0x",
+      "description": "plot.py surface pre_inflate bullet (lines 1081-1085): 'Any shrinkage smoothing introduces is instead recovered by a minimal, mathematically bounded (grow at most 10%) post-hoc rescale'. meshutil.py sets `_RESCALE_CAP = 3.0` (grow up to 200%), with a long docstring in _rescale_for_containment explaining precisely why a ~1.1 cap would be WRONG ('A hard 1.1 cap would silently regress that long-standing guarantee... a bare (degenerate) 4-point tetrahedron needs ~2.9x'). The plot.py docstring predates that fix and now contradicts both the code and meshutil's own rationale.",
+      "repro": "env MPLBACKEND=Agg .venv/bin/python -c \"from hypertools.plot import meshutil; print(meshutil._RESCALE_CAP)\"; grep -n 'grow at most 10%' /Users/jmanning/hypertools/hypertools/plot/plot.py",
+      "expected": "plot.py describes the actual grow-only cap (3.0x, generous for sparse hulls; ~1.15-1.25x typical for well-sampled data).",
+      "actual": "3.0\nplot.py:1083:          most 10%) post-hoc rescale targeting the actual input points, so",
+      "evidence": [],
+      "docs_impact": ["hypertools/plot/plot.py"]
+    },
+    {
+      "id": "X6-code-org-plot-013",
+      "severity": "doc",
+      "title": "Stale pre-1.0 references: four comments cite 'draw.py' for code now in matplotlib_backend.py; backend.py docstring cites removed DataGeometry.plot and misnames functions",
+      "description": "draw.py is a documented 3-line rename shim ('Renamed to hypertools.plot.matplotlib_backend (HyperTools 1.0)'), but plotly_backend.py still points readers at it as if it held code: line 206 \"(see draw.py's set_box_aspect conversion)\", line 1141 \"Mirrors draw.py's plot_cube\", line 1168 \"(mirrors draw.py's plot_square)\", line 2162 \"(draw.py update_lines_parallel)\" -- all four functions live in matplotlib_backend.py (plot_cube/plot_square/update_lines_parallel are closures inside _draw; the zoom mapping is _anim_box_zoom). Separately, backend.py's module docstring (line 3-4) says the module manages the backend for plots 'created via hypertools.plot and hypertools.DataGeometry.plot' -- datageometry.py has no plot method in 1.0 (unpickle-only shell per its own docstring); line 51 misspells the decorator as 'manage_backed'; and lines 61-69 describe `switch_backend`/`reset_backend` as 'matplotlib.pyplot.switch_backend' (actually the wrapper `_switch_backend_regular`) and name '`_switch_notebook_backend`' (actual function: `_switch_backend_notebook`).",
+      "repro": "grep -n \"draw.py\" /Users/jmanning/hypertools/hypertools/plot/plotly_backend.py; grep -n 'DataGeometry.plot\\|manage_backed\\|_switch_notebook_backend' /Users/jmanning/hypertools/hypertools/plot/backend.py; grep -n 'def plot' /Users/jmanning/hypertools/hypertools/datageometry.py",
+      "expected": "Comments name the module/function that actually holds the code; backend.py docstring reflects the 1.0 API (no DataGeometry.plot) and the real function names.",
+      "actual": "plotly_backend.py:206,1141,1168,2162 reference draw.py; backend.py:4 references hypertools.DataGeometry.plot (grep for 'def plot' in datageometry.py returns nothing); backend.py:51 'manage_backed'; backend.py:68 '_switch_notebook_backend'",
+      "evidence": [],
+      "docs_impact": ["hypertools/plot/plotly_backend.py", "hypertools/plot/backend.py"]
+    },
+    {
+      "id": "X6-code-org-plot-014",
+      "severity": "doc",
+      "title": "set_interactive_backend docstring examples hardcode 'TkAgg' and crash on Pythons built without tkinter (infra-sensitive example)",
+      "description": "Both usage examples in backend.py's set_interactive_backend docstring (lines 936-956) use hyp.set_interactive_backend('TkAgg') + hyp.plot(data, interactive=True). Run VERBATIM on this repo's own .venv (a uv/pyenv-style CPython with no _tkinter -- common on macOS/Linux), example 1 raises HypertoolsBackendError at the second plot call ('Failed to switch the plotting backend to TkAgg. You may be missing required dependencies...'). The mechanism itself is fine -- the identical call with an installed backend ('MacOSX') succeeds -- so the canonical example is what fails. Tagged infra: whether it crashes depends on the host's Tk availability, but a doc example should use a portable pattern (e.g. mention checking matplotlib.rcsetup.interactive_bk, or use the render-backend form set_interactive_backend('plotly') that 1.0 added).",
+      "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/X6-code-org-plot/backend_docstring_example.py",
+      "expected": "Docstring examples run on a stock install of the package's own dev venv.",
+      "actual": "hypertools.core.exceptions.HypertoolsBackendError: Failed to switch the plotting backend to TkAgg. You may be missing required dependencies, or this backend may not be available for your system  (root cause: ModuleNotFoundError: No module named '_tkinter')",
+      "evidence": [],
+      "docs_impact": ["hypertools/plot/backend.py"]
+    },
+    {
+      "id": "X6-code-org-plot-015",
+      "severity": "style",
+      "title": "Unused imports and dead locals (pyflakes-confirmed) across 6 modules",
+      "description": "pyflakes over the package: __init__.py:2-3 `warnings` and `matplotlib as mpl` unused; animate.py:11 module-level `combine_frames_svg` unused (shadowed by the local re-import at line 88 -- pyflakes flags the redefinition); plot.py:4 `matplotlib.animation` unused, plot.py:17 `_SVGFrameCollector`/`_save_animated_svg` imported but never used (nothing imports them FROM plot.py either -- grep-verified); matplotlib_backend.py:7 `matplotlib` unused; backend.py:480 local `lab_version_stdout` assigned but never read (only the retcode is used, unlike the parallel notebook_version_stdout block that reads its buffer); colors.py:167 re-exports `vals2colors`/`vals2bins` 'so plot.colors is the single coloring surface' but no module or test imports them from plot.colors (grep-verified) -- an aspirational re-export at the bottom of the file.",
+      "repro": "/Users/jmanning/hypertools/.venv/bin/python -m pyflakes /Users/jmanning/hypertools/hypertools/plot/*.py | grep -v 'star imports\\|unable to detect'",
+      "expected": "No unused imports/locals, or a noqa with a reason where a re-export is intentional.",
+      "actual": "__init__.py:2:1 'warnings' imported but unused; __init__.py:3:1 'matplotlib as mpl' imported but unused; animate.py:11:1 '.._shared.animated_svg.combine_frames_svg' imported but unused; animate.py:88:9 redefinition of unused 'combine_frames_svg'; backend.py:480:41 local variable 'lab_version_stdout' is assigned to but never used; colors.py:167 vals2colors/vals2bins re-export never consumed; matplotlib_backend.py:7:1 'matplotlib' imported but unused; plot.py:4:1 'matplotlib.animation' imported but unused; plot.py:17 '_SVGFrameCollector'/'_save_animated_svg' imported but unused",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X6-code-org-plot-016",
+      "severity": "style",
+      "title": "Star imports make load-bearing names invisible in the two biggest modules",
+      "description": "plot.py:7 and matplotlib_backend.py:13 both do `from .._shared.helpers import *`. Critical names -- np, itertools, reshape_data, parse_kwargs, is_line, has_line_component, interp_array(_list), patch_lines, group_by_category, vals2bins, split_marker_line_fmt -- arrive invisibly: pyflakes emits 60+ \"'np' may be undefined, or defined from star imports\" warnings and cannot check these files; plot.py uses `itertools` (lines 2098, 3287) and `np` throughout without importing either directly, so readers must know _shared.helpers re-exports whole modules. This hides the dependency surface of the package's two largest files and defeats linting.",
+      "repro": "/Users/jmanning/hypertools/.venv/bin/python -m pyflakes /Users/jmanning/hypertools/hypertools/plot/plot.py /Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py | grep -c 'star imports'",
+      "expected": "Explicit imports (import numpy as np, import itertools, from .._shared.helpers import reshape_data, ...), as plotly_backend.py already does.",
+      "actual": "60 'may be undefined, or defined from star imports' pyflakes lines across the two files",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X6-code-org-plot-017",
+      "severity": "style",
+      "title": "Naming inconsistencies: camelCase explore helpers, a 'tail_duration' parameter that receives frame counts, and '_3d' names reused for 2-D",
+      "description": "(1) The explore-mode closures in matplotlib_backend use camelCase against the package's otherwise-uniform snake_case: `calcClosestDatapoint`, `onMouseMotion`, `closestIndex`, `closestIndex_prev` (lines 746, 811, 821, 827). (2) `update_lines_parallel`'s parameter is named `tail_duration` (line 938) but every caller passes `window_frames` -- an int FRAME COUNT (frame_rate * seconds, matplotlib_backend.py:1601/1614) -- so `data[0 : num - tail_duration + 1]` reads as seconds arithmetic but is frames; the sibling plotly code names the same quantity `window`. (3) plotly_backend deliberately keeps `_3d`-suffixed locals (`morph_indices_3d`, `sampled0`... `morph_trace_start_3d`) for values now also used in 2-D, acknowledged in-code ('names keep their historical \"_3d\" suffix ... to minimize the diff', lines 658-661). (4) plot_cube(scale) uses the closed-over ax while its sibling plot_square(ax, scale) takes ax explicitly.",
+      "repro": "grep -n 'def calcClosestDatapoint\\|def onMouseMotion\\|def update_lines_parallel(\\|morph_trace_start_3d' /Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py /Users/jmanning/hypertools/hypertools/plot/plotly_backend.py",
+      "expected": "snake_case throughout; the frame-count parameter named window_frames; dimension-neutral names for dimension-neutral values.",
+      "actual": "matplotlib_backend.py:746 def calcClosestDatapoint; :811 def onMouseMotion; :932 def update_lines_parallel( with tail_duration=2 receiving window_frames; plotly_backend.py:756 morph_trace_start_3d used for 2-D too",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X6-code-org-plot-018",
+      "severity": "doc",
+      "title": "Missing module docstrings in the package's two largest files and __init__.py",
+      "description": "plot.py (3,332 lines) and matplotlib_backend.py (2,181 lines) have no module docstring at all (shebang + imports only), and plot/__init__.py (which runs _init_backend() at import time -- a side effect worth documenting) has none either. Every other module in the package carries a good module docstring (plotly_backend, backend, meshutil, morph, density, surface, fonts, multiindex, trails, animate, hyper_animation, colors); draw.py/interactive.py use a one-line `#` comment that does state their shim status. The two undocumented files are exactly the ones a new contributor needs orientation for most.",
+      "repro": "env MPLBACKEND=Agg .venv/bin/python - <<'EOF'\nimport ast\nfor f in ('plot.py', 'matplotlib_backend.py', '__init__.py'):\n    src = open(f'/Users/jmanning/hypertools/hypertools/plot/{f}').read()\n    print(f, ast.get_docstring(ast.parse(src)) is not None)\nEOF",
+      "expected": "Module docstrings present (matching the standard set by plotly_backend.py's).",
+      "actual": "plot.py False / matplotlib_backend.py False / __init__.py False",
+      "evidence": [],
+      "docs_impact": ["hypertools/plot/plot.py", "hypertools/plot/matplotlib_backend.py", "hypertools/plot/__init__.py"]
+    },
+    {
+      "id": "X6-code-org-plot-019",
+      "severity": "style",
+      "title": "Vestigial code fragments: dead conditional in _colorbar_trace and a duplicated TkAgg fallback entry",
+      "description": "(1) plotly_backend.py:1694: `thickness=15 if orientation == 'v' else 15` -- both branches identical; either a leftover from a removed asymmetric value or noise. (2) backend.py:530-539: the non-notebook fallback tuple lists \"TkAgg\" TWICE -- backends = (\"TkAgg\", \"QtAgg\", \"Qt5Agg\", \"Qt4Agg\", \"GTK4Agg\", \"GTK3Agg\", \"TkAgg\", \"WXAgg\") -- so a failing TkAgg import is attempted twice on every non-notebook import of hypertools.",
+      "repro": "grep -n \"thickness=15 if\" /Users/jmanning/hypertools/hypertools/plot/plotly_backend.py; sed -n '530,540p' /Users/jmanning/hypertools/hypertools/plot/backend.py",
+      "expected": "A plain thickness=15; each backend listed once.",
+      "actual": "plotly_backend.py:1694: thickness=15 if orientation == 'v' else 15; backend.py backends tuple contains 'TkAgg' at positions 0 and 6",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X6-code-org-plot-020",
+      "severity": "doc",
+      "title": "plot() Returns section omits HyperAnimation and retains 0.x 'geometry' language for streaming",
+      "description": "(1) plot.py's Returns section (lines 1213-1216) says 'For animated matplotlib plots a `(fig, animation)` tuple is returned' -- the actual return since QC 2026-07 is a `HyperAnimation` (a tuple subclass with .save/.to_html5_video/.figure, verified: type=HyperAnimation, unpacks=True); the class hyper_animation.py presents as 'the object an animated hyp.plot(...) returns' is never mentioned in plot()'s own docs, so its export methods are undiscoverable from the primary docstring. (2) The stream_window bullet (line 1003) says 'all consumed samples are still retained on the returned geometry' -- 0.x DataGeometry language; 1.0 returns no geometry object.",
+      "repro": "env MPLBACKEND=Agg .venv/bin/python - <<'EOF'\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nout = hyp.plot(np.random.default_rng(3).normal(size=(20, 3)).cumsum(0), animate='spin', duration=1, frame_rate=5, show=False)\nprint(type(out).__name__, isinstance(out, tuple))\nEOF",
+      "expected": "Returns section names HyperAnimation (noting tuple compatibility); streaming bullet reworded without 'geometry'.",
+      "actual": "HyperAnimation True -- while plot.py:1213-1216 documents only 'a (fig, animation) tuple' and plot.py:1003 says 'retained on the returned geometry'",
+      "evidence": [],
+      "docs_impact": ["hypertools/plot/plot.py"]
+    }
+  ],
+  "readability_verdicts": {
+    "note": "per-file verdicts (supplementary to the required schema)",
+    "__init__.py": "trivial; unused imports, no docstring, import-time side effect undocumented (findings 015/018)",
+    "animate.py": "clean; one shadowed module-level import (015)",
+    "backend.py": "hardest file to trust: 7 module globals as state (self-acknowledged in docstring), 3 functions >100 lines, the env-var import crash (001), stale module docstring (013); notebook logic untestable outside Jupyter",
+    "colors.py": "clean and well-commented; bottom-of-file aspirational re-export (015)",
+    "density.py": "exemplary -- backend-agnostic, constants documented with tuning rationale",
+    "draw.py / interactive.py": "documented rename shims, consumed by tests; fine",
+    "fonts.py": "exemplary; caches and noncharacter-probe trick clearly explained",
+    "hyper_animation.py": "clean",
+    "matplotlib_backend.py": "WORST OFFENDER #2: _draw 1841 lines / ~24 closures / function-attribute state / module global labels_and_points / 8x duplicated pop idiom / camelCase explore helpers / commented-out dead code (003/004/006/007/009/016/017)",
+    "meshutil.py": "exemplary leaf module; long functions are long docstrings, math carefully justified",
+    "morph.py": "exemplary; every scheduling rule documented and cross-referenced",
+    "multiindex.py": "very good; docstring numeric claims reproduce exactly",
+    "plot.py": "WORST OFFENDER #1: one 2690-line function, 70 params, star imports, no module docstring; comments excellent but structure monolithic (002/012/016/018/020)",
+    "plotly_backend.py": "large but well-factored into top-level helpers with unusually good empirical-calibration comments; stale draw.py pointers and _3d naming debt (005/013/017/019). WORST OFFENDER #3 is backend.py rather than this file",
+    "surface.py": "exemplary",
+    "trails.py": "exemplary"
+  }
+}

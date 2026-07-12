@@ -1,0 +1,642 @@
+{
+ "unit": "X7-code-org-rest",
+ "target": "Code organization/readability outside plot/: hypertools/{tools,reduce,align,cluster,manip,io,predict,impute,core,_shared,_externals,external}, datageometry.py, __init__.py, config.py; tests/ layout; examples/ + scripts/ shipping hygiene; TODO/2.0 census. Branch audit/release-1.0-2026-07 @ 931fbe94.",
+ "brainstormed_edge_cases": [
+  "analyze(x, align=False) vs docstring 'If False or None, no alignment is applied' [tested]",
+  "reduce(ndims=True) bool rejected as int subclass [tested]",
+  "reduce(ndims=np.int64(3)) numpy integer accepted [tested]",
+  "save(obj, fname, **bogus_kwargs) silently swallowed [tested]",
+  "save(fig, 'x.png') writes a pickle with .png extension [tested]",
+  "load() of a 0-byte .pkl file: error quality [tested]",
+  "load(['spiral','iris']) list resolves element-wise [tested]",
+  "manip chain with unknown name inside list spec [tested]",
+  "cluster dict with BOTH 'params' and 'kwargs' keys: which wins [tested]",
+  "cluster dict top-level n_clusters convenience [tested]",
+  "apply_model(x, []) empty pipeline list [tested]",
+  "Pipeline([]).fit_transform passthrough [tested]",
+  "predict model='GP' alias [tested]",
+  "impute on data with no NaNs [tested]",
+  "df2mat(return_labels=True) undocumented param [tested]",
+  "missing_inds on diagonal-NaN matrix [tested]",
+  "normalize='within' on list input [tested]",
+  "describe(show=False) return keys + show=True visual [tested]",
+  "align([x]) single-element list and align(x) bare array return shapes [tested]",
+  "reduce([])/cluster([]) empty-list input [tested]",
+  "analyze(pipeline=fitted, reduce='PCA') mutual-exclusion error [tested]",
+  "RobustDict missing key returns default [tested]",
+  "reduce dict canonical with unknown inner model name: error type [tested]",
+  "procrustes(z,z) identity vs module-level align(z,z) short-circuit divergence [tested]",
+  "np.asmatrix PendingDeprecationWarning on every procrustes() call [tested]",
+  "Procrustes(index=2) effect on fit target [tested]",
+  "impute legacy {'model','params'} dict emits DeprecationWarning [tested]",
+  "import hypertools changes global np.geterr state [tested]",
+  "standalone import of all 16 subpackages/modules in fresh interpreters (cycle check) [tested]",
+  "wheel build: does hypertools/core/config.ini ship? [tested via pip wheel]",
+  "get_default_options() with missing config.ini: crash vs silent empty [tested]",
+  "hyp.plot(cluster='KMeans') vs hyp.cluster() default cluster-count divergence (_shared/params.py 5 vs signature 3) [tested]",
+  "nips_model vs sotus duplicate Drive id: md5 of cached payloads [tested]",
+  "load() docstring doctests verbatim: iris/penguins/bechdel/kaggle/weights [tested]",
+  "text2mat corpus='sotus' blast radius of the sotus id bug [untested - already root-caused in notes/audit-1.0-2026-07/fix-intel.md F18-001]",
+  "sdist contents audit [untested - infra: python -m build not installed in repo venv and installs are forbidden; wheel checked via pip wheel --no-build-isolation instead]",
+  "normalize() invalid-value validation under python -O (assert stripped) [untested]",
+  "configurator HOME guard on Windows [untested - platform unavailable]",
+  "concurrent DATA_DIR.mkdir race in _load_example_data [untested]",
+  "lsl_stream without pylsl friendly ImportError [untested here - covered by tests/test_lsl_streaming.py census]"
+ ],
+ "tested": [
+  {
+   "case": "WF1 fMRI-style: load weights_sample -> normalize -> reduce -> align",
+   "result": "pass",
+   "command": "wf1_5.py (scratch)",
+   "output_excerpt": "aligned: <class 'list'> [(300, 3), (300, 3), (300, 3)] dtype: float64",
+   "evidence": []
+  },
+  {
+   "case": "WF2 spiral procrustes alignment + before/after render",
+   "result": "pass",
+   "command": "wf1_5.py + evidence.py",
+   "output_excerpt": "procrustes mean dist after: 5.89e-13 (before: 88.18)",
+   "evidence": [
+    "procrustes_spiral_before_after.png"
+   ]
+  },
+  {
+   "case": "WF3 mushrooms -> cluster (8124x22 DataFrame)",
+   "result": "pass",
+   "command": "wf1_5.py",
+   "output_excerpt": "labels type: <class 'list'> n unique: 4",
+   "evidence": []
+  },
+  {
+   "case": "WF4 predict (AutoRegressor t=5) + impute (SimpleImputer) on synthetic timeseries",
+   "result": "pass",
+   "command": "wf1_5.py",
+   "output_excerpt": "forecast: DataFrame (5, 3); imputed nans remaining: 0",
+   "evidence": []
+  },
+  {
+   "case": "WF5 apply_model + Pipeline fit/reuse on iris",
+   "result": "pass",
+   "command": "wf1_5.py",
+   "output_excerpt": "apply_model out: ndarray (150, 2); reuse ok, close: True",
+   "evidence": []
+  },
+  {
+   "case": "import hypertools changes numpy error state globally",
+   "result": "fail",
+   "command": "python -c \"import numpy as np; b=np.geterr(); import hypertools; print(b, np.geterr())\"",
+   "output_excerpt": "before: {'divide': 'warn', ...'invalid': 'warn'} after: {'divide': 'ignore', ...'invalid': 'ignore'}; 1/0 produced [inf] with NO warning raised",
+   "evidence": []
+  },
+  {
+   "case": "load('sotus') returns documented speeches?",
+   "result": "fail",
+   "command": "probe_sotus.py",
+   "output_excerpt": "load('sotus') type: <class 'sklearn.pipeline.Pipeline'>; md5(sotus)==md5(nips_model)==6a350ab8d85db34e7b924ac8a7f2a19b",
+   "evidence": []
+  },
+  {
+   "case": "repr() of loaded hosted models under sklearn 1.8",
+   "result": "fail",
+   "command": "probe_sotus.py",
+   "output_excerpt": "repr FAILED: AttributeError 'Pipeline' object has no attribute 'transform_input' (transform() itself works: (1, 50))",
+   "evidence": []
+  },
+  {
+   "case": "load() docstring doctests verbatim (iris/penguins/bechdel/kaggle/weights)",
+   "result": "pass",
+   "command": "doctest_load.py",
+   "output_excerpt": "iris columns exact; penguins exact; bechdel (1794, 15); kaggle (150, 6); weights list of 36",
+   "evidence": []
+  },
+  {
+   "case": "analyze(x, align=False)",
+   "result": "fail",
+   "command": "misuse2.py case A",
+   "output_excerpt": "ValueError: unknown model: False (docstring: 'If False or None, no alignment is applied')",
+   "evidence": []
+  },
+  {
+   "case": "analyze(x, normalize=False)",
+   "result": "pass",
+   "command": "misuse2.py case B",
+   "output_excerpt": "OK -> ndarray",
+   "evidence": []
+  },
+  {
+   "case": "procrustes duplicate implementations agree numerically; identity short-circuit only in one copy",
+   "result": "pass",
+   "command": "misuse2.py case E",
+   "output_excerpt": "align(z,z) -> identity; procrustes(z,z) max dev 4.4e-16",
+   "evidence": []
+  },
+  {
+   "case": "procrustes() emits PendingDeprecationWarning (np.asmatrix) every call",
+   "result": "fail",
+   "command": "misuse2.py case F",
+   "output_excerpt": "PendingDeprecationWarning: the matrix subclass is not the recommended way...",
+   "evidence": []
+  },
+  {
+   "case": "Procrustes(index=2) vs index=0 fit results",
+   "result": "fail",
+   "command": "misuse2.py case H",
+   "output_excerpt": "same result regardless of index: True (index has no effect at fit time)",
+   "evidence": []
+  },
+  {
+   "case": "impute legacy dict {'model','params'} DeprecationWarning",
+   "result": "pass",
+   "command": "misuse2.py case G",
+   "output_excerpt": "DeprecationWarning: {'model': ..., 'params': {...}} is deprecated...",
+   "evidence": []
+  },
+  {
+   "case": "misuse battery: unknown model names across all 7 dispatchers",
+   "result": "fail",
+   "command": "misuse.py",
+   "output_excerpt": "cluster/align/manip/predict/impute/apply_model: clear 'unknown X model ...; supported names: ...'; reduce/describe: no model name, whitespace runs, stale URL http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html",
+   "evidence": []
+  },
+  {
+   "case": "reduce dict spec missing 'model' key error text",
+   "result": "fail",
+   "command": "misuse.py",
+   "output_excerpt": "ValueError: ...pass the model as the value of the \"model\" key and a [whitespace run] dictionary of custom params as the value of the \"params\" key. (recommends the DEPRECATED key)",
+   "evidence": []
+  },
+  {
+   "case": "tools.align dict without 'model' key",
+   "result": "fail",
+   "command": "misuse.py",
+   "output_excerpt": "KeyError: 'model' (bare)",
+   "evidence": []
+  },
+  {
+   "case": "reduce canonical dict with unknown inner model",
+   "result": "fail",
+   "command": "edges.py",
+   "output_excerpt": "KeyError: 'Bogus' (bare KeyError; bare-string path raises ValueError)",
+   "evidence": []
+  },
+  {
+   "case": "load of 0-byte pickle",
+   "result": "fail",
+   "command": "edges.py",
+   "output_excerpt": "EOFError: Ran out of input (no hypertools context)",
+   "evidence": []
+  },
+  {
+   "case": "normalize invalid value exception type",
+   "result": "fail",
+   "command": "misuse.py",
+   "output_excerpt": "AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer. (assert-based; names internal 'scale_type' not the normalize= kwarg)",
+   "evidence": []
+  },
+  {
+   "case": "single-input return shapes across dispatchers",
+   "result": "fail",
+   "command": "python -c (see JSON finding X7-007)",
+   "output_excerpt": "align(single)->list len 1; reduce(single)->ndarray (25,3); manip(single)->DataFrame; cluster(single)->list labels",
+   "evidence": []
+  },
+  {
+   "case": "edge battery: ndims bool/np.int64, empty lists, empty Pipeline, GP alias, no-NaN impute, df2mat return_labels, missing_inds, describe show=False, analyze pipeline mutual exclusion, RobustDict, cluster dict conveniences, load list-of-names",
+   "result": "pass",
+   "command": "edges.py (22 cases)",
+   "output_excerpt": "ndims=True -> ValueError; empty list -> 'input has no observations (0 rows)'; mutual exclusion -> clear ValueError; n_clusters=7 honored",
+   "evidence": []
+  },
+  {
+   "case": "save(fig,'x.png', dpi=300, quality='high')",
+   "result": "fail",
+   "command": "probe_load_save.py",
+   "output_excerpt": "wrote fig_saved_via_hyp_save.png size 84848 first bytes: b'\\x80\\x04...' is PNG: False | is pickle: True (kwargs silently swallowed)",
+   "evidence": []
+  },
+  {
+   "case": "save/load pickle round trip of list of arrays",
+   "result": "pass",
+   "command": "probe_load_save.py",
+   "output_excerpt": "roundtrip type: list, equal: True",
+   "evidence": []
+  },
+  {
+   "case": "describe(show=True) visual",
+   "result": "fail",
+   "command": "evidence.py",
+   "output_excerpt": "correct increasing correlation curve, labeled axes; but average vs individual curves same color, no legend (indistinguishable)",
+   "evidence": [
+    "describe_show_true.png"
+   ]
+  },
+  {
+   "case": "wheel build contents (pip wheel --no-deps --no-build-isolation)",
+   "result": "fail",
+   "command": "pip wheel -w wheelout /Users/jmanning/hypertools && unzip -l",
+   "output_excerpt": "95 files, 90 .py + 5 dist-info; hypertools/core/config.ini ABSENT",
+   "evidence": []
+  },
+  {
+   "case": "get_default_options() with missing config.ini",
+   "result": "fail",
+   "command": "python -c cfg.get_default_options('/nonexistent/config.ini')",
+   "output_excerpt": "missing-ini [plot]: {} / [cluster]: {} -- silently empty, no exception",
+   "evidence": []
+  },
+  {
+   "case": "cluster-count default divergence plot vs cluster",
+   "result": "fail",
+   "command": "python -c (3-blob data)",
+   "output_excerpt": "hyp.cluster default -> 3 labels; hyp.plot(cluster='KMeans') -> 5 distinct line colors (from _shared/params.py n_clusters=5)",
+   "evidence": []
+  },
+  {
+   "case": "standalone import of 16 subpackages/modules in fresh interpreters + import time",
+   "result": "pass",
+   "command": "for mod in ...; python -c 'import $mod'",
+   "output_excerpt": "no errors; import hypertools wall time: 1.51s",
+   "evidence": []
+  },
+  {
+   "case": "dead-helper census (_shared/helpers.py) + star-import usage in reduce/cluster",
+   "result": "fail",
+   "command": "grep -c per-name across hypertools/ and tests/",
+   "output_excerpt": "parse_args: 0 prod uses (only tests/test_helpers.py); convert_text: 0; get_dtype: 0; reduce.py/cluster.py use 0 names from their 'from .._shared.helpers import *'",
+   "evidence": []
+  },
+  {
+   "case": "tests census: skips/xfails/collection",
+   "result": "pass",
+   "command": "pytest --collect-only -q; grep skip/importorskip",
+   "output_excerpt": "1500/1502 collected (2 deselected = bigdata marker); all skips conditional with reasons (plotly/torch/datasets/gensim/pylsl/ffmpeg/CI-gating/xlrd); no unconditional skips",
+   "evidence": []
+  },
+  {
+   "case": "tests/context.py usage",
+   "result": "fail",
+   "command": "grep -rln 'from context import|import context' tests/",
+   "output_excerpt": "(no matches) -- dead boilerplate",
+   "evidence": []
+  },
+  {
+   "case": "vendored license text vs master",
+   "result": "fail",
+   "command": "git show master:hypertools/_externals/srm.py | sed -n 1,8p",
+   "output_excerpt": "master: 'Apache License, Version 2.0'; current external/brainiak.py line 5: 'Apache License, Version 1.0'; external/ppca.py: 'See license in-repo' but no pca-magic license file exists in repo",
+   "evidence": []
+  },
+  {
+   "case": "stale docs URL in reduce error",
+   "result": "pass",
+   "command": "curl -sL -o /dev/null -w '%{http_code}' http://hypertools.tools.reduce URL",
+   "output_excerpt": "301 -> https, final 200 today (page is the pre-1.0 hypertools.tools.reduce API page; will not exist in 1.0 docs layout)",
+   "evidence": []
+  },
+  {
+   "case": "docstring-vs-signature systematic scan of 18 public functions",
+   "result": "fail",
+   "command": "docparam_check.py",
+   "output_excerpt": "analyze: ['random_state']; cluster: ['random_state']; manip: ['normalize','reduce','ndims','align','cluster']; save: ['obj','fname']; tools.df2mat: ['return_labels']; normalize/tools.normalize: ['internal']; io.lsl_stream: ['resolve_kwargs']",
+   "evidence": []
+  },
+  {
+   "case": "load() dataset-listing accuracy (spiral/weights/weights_avg/mushrooms counts)",
+   "result": "fail",
+   "command": "python -c load checks",
+   "output_excerpt": "weights: 36 arrays OK; mushrooms 8124 rows OK; weights_avg 2 arrays OK; spiral documented as 'numpy array' but returns LIST of two (1000,3) arrays; nips/nips_model/sotus_model absent from docstring listing",
+   "evidence": []
+  }
+ ],
+ "findings": [
+  {
+   "id": "X7-code-org-rest-001",
+   "severity": "critical",
+   "title": "load('sotus') returns a broken sklearn Pipeline instead of the documented SOTU speeches (Drive-id duplicated with nips_model)",
+   "description": "hypertools/io/load.py EXAMPLE_DATA maps BOTH 'sotus' (line 24) and 'nips_model' (line 27) to Drive id '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm'. Cached payloads are byte-identical (md5 6a350ab8d85db34e7b924ac8a7f2a19b) and unpickle to a CountVectorizer->LatentDirichletAllocation(n_components=50) sklearn Pipeline -- not the docstring's 'collection of State of the Union speeches from 1989-2018'. The shipped gallery example examples/plot_sotus.py works around it with fabricated text ('Note: sotus loads a text processing model, not the actual SOTU speeches'). Independently reproduced; already root-caused as F18-001 in notes/audit-1.0-2026-07/fix-intel.md (bug inherited from master; dw.zoo.text.get_corpus('sotus') identified as recovery path). Same root cause breaks text2mat corpus='sotus'.",
+   "repro": "python -c \"import hypertools as hyp; s = hyp.load('sotus'); print(type(s))\"  # after clearing ~/hypertools_data/sotus if needed\nmd5 ~/hypertools_data/sotus ~/hypertools_data/nips_model",
+   "expected": "A list/array of 29-ish SOTU speech texts (1989-2018) per the load() docstring",
+   "actual": "load('sotus') type: <class 'sklearn.pipeline.Pipeline'>; MD5 (sotus) = MD5 (nips_model) = 6a350ab8d85db34e7b924ac8a7f2a19b",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/io/load.py",
+    "examples/plot_sotus.py",
+    "docs (any page demonstrating sotus)"
+   ]
+  },
+  {
+   "id": "X7-code-org-rest-002",
+   "severity": "major",
+   "title": "import hypertools permanently silences numpy divide/invalid warnings process-wide",
+   "description": "hypertools/_shared/helpers.py line 16 executes np.seterr(divide='ignore', invalid='ignore') at module import time. helpers is imported (mostly via star-imports) by plot, reduce, cluster, etc., so ANY 'import hypertools' flips the user's global numpy error state for the rest of their session -- their own 0-division / NaN-producing bugs are silenced. For a scientific library this can mask real numerical errors in user analysis code.",
+   "repro": "env MPLBACKEND=Agg python -c \"import numpy as np; b=np.geterr(); import hypertools; a=np.geterr(); print(b); print(a); print(np.array([1.0])/np.array([0.0]))\"",
+   "expected": "np.geterr() unchanged by importing a library; divide-by-zero in user code still warns",
+   "actual": "before: {'divide': 'warn', 'over': 'warn', 'under': 'ignore', 'invalid': 'warn'} / after: {'divide': 'ignore', 'over': 'warn', 'under': 'ignore', 'invalid': 'ignore'}; 1/0 produced [inf] with NO warning raised",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "X7-code-org-rest-003",
+   "severity": "major",
+   "title": "analyze(x, align=False) crashes although its docstring documents False as 'no alignment'",
+   "description": "hypertools/tools/analyze.py docstring (lines 59-65): \"align : str, dict, False, or None ... If False or None, no alignment is applied (default: None).\" The legacy path forwards align=False to hypertools.tools.align.align, which only special-cases None (line 74) and True (line 76); False falls through to the dispatcher and unpack_model raises. hyp.load(..., align=False) is unaffected (load guards 'is not False'), which makes analyze the odd one out. Same crash from hyp.tools.align(data, align=False).",
+   "repro": "env MPLBACKEND=Agg python -c \"import numpy as np, hypertools as hyp; hyp.analyze(np.random.rand(25,6), align=False, ndims=3)\"",
+   "expected": "No alignment applied; reduced data returned (per docstring)",
+   "actual": "ValueError: unknown model: False",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/tools/analyze.py",
+    "hypertools/tools/align.py"
+   ]
+  },
+  {
+   "id": "X7-code-org-rest-004",
+   "severity": "major",
+   "title": "hypertools/core/config.ini is not packaged: wheels ship 90 .py files only, and get_default_options() silently returns empty defaults",
+   "description": "pyproject.toml has [tool.setuptools.packages.find] include=['hypertools*'] but no package-data configuration and no MANIFEST.in, so the only non-.py package file (hypertools/core/config.ini) is excluded from the wheel (verified by a real 'pip wheel' build: 95 entries = 90 .py + 5 dist-info, no .ini). On any pip-installed copy, hypertools.core.get_default_options()/apply_defaults() -- public core API, 'single source of truth' per its docstring -- silently return {} for every hypertools section (configparser ignores missing files; verified by pointing at a nonexistent path). Mitigating: nothing inside hypertools currently consumes these defaults (see X7-code-org-rest-022), so only direct API users are hit. infra note: sdist contents could not be audited (python -m build not installed in the venv and installs are forbidden); the wheel was built with pip wheel --no-deps --no-build-isolation instead.",
+   "repro": "cd /tmp && python -m pip wheel --no-deps --no-build-isolation -w wheelout /Users/jmanning/hypertools && unzip -l wheelout/hypertools-*.whl | grep -c '\\.ini'\npython -c \"import hypertools.core.configurator as cfg; print(dict(cfg.get_default_options('/nonexistent/config.ini')['plot']))\"",
+   "expected": "config.ini included in wheel; get_default_options() returns the shipped [plot]/[reduce]/[align]/[cluster] defaults on installed copies",
+   "actual": "wheel: 95 files, no config.ini; missing-ini [plot]: {} / [cluster]: {} -- silently empty, no exception",
+   "evidence": [],
+   "docs_impact": [
+    "pyproject.toml",
+    "hypertools/core/configurator.py"
+   ]
+  },
+  {
+   "id": "X7-code-org-rest-005",
+   "severity": "major",
+   "title": "Hosted *_model example datasets are sklearn-1.0.2 pickles: repr()/display crashes under the required sklearn>=1.4",
+   "description": "hyp.load('wiki_model'/'nips_model'/'sotus_model') unpickles Pipelines saved with scikit-learn 1.0.2. Under the installed 1.8.0 (requirement is >=1.4), loading emits InconsistentVersionWarning for every estimator, and repr(model) -- what a Jupyter user sees by just evaluating the loaded model -- raises AttributeError. .transform() still works. Independently reproduced; already filed as F18-002 in notes/audit-1.0-2026-07/fix-intel.md.",
+   "repro": "env MPLBACKEND=Agg python -c \"import hypertools as hyp; m = hyp.load('nips_model'); print(m.transform(['neural networks'])); print(repr(m))\"",
+   "expected": "Loaded model usable and displayable",
+   "actual": "InconsistentVersionWarning: Trying to unpickle estimator CountVectorizer from version 1.0.2 when using version 1.8.0 ...; transform -> (1, 50); repr(nips_model) FAILED: AttributeError 'Pipeline' object has no attribute 'transform_input'",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/io/load.py"
+   ]
+  },
+  {
+   "id": "X7-code-org-rest-006",
+   "severity": "minor",
+   "title": "Full Procrustes math implemented twice in align/procrustes.py, already diverging",
+   "description": "procrustes() embeds the complete algorithm as nested fit()/transform() (lines 62-195) and the SAME algorithm is re-implemented at module level as align()/xform() (lines 198-359) for the Procrustes Aligner -- near-verbatim duplicates down to the shared 'Just do silly linear system of equations ;)' and duplicated XXX comments (lines 91/264, 142/315). They have already diverged: (a) align() short-circuits identical inputs to an identity matrix (line 253); the nested fit() does not; (b) the nested transform() uses deprecated np.asmatrix/.A (lines 183-186), so EVERY procrustes() call emits PendingDeprecationWarning ('the matrix subclass is not the recommended way...'), while xform() uses '@'. One implementation should be shared.",
+   "repro": "python -W always -c \"import numpy as np; from hypertools.align.procrustes import procrustes; procrustes(np.random.rand(10,3), np.random.rand(10,3), format_data=False)\"",
+   "expected": "One shared implementation; no deprecation warnings on normal use",
+   "actual": "PendingDeprecationWarning: the matrix subclass is not the recommended way to represent matrices ... (raised twice per call); duplicate code blocks confirmed by diff (301-line unified diff of two ~150-line twins)",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "X7-code-org-rest-007",
+   "severity": "minor",
+   "title": "hyp.align(single array) returns a 1-element list, violating its own documented return contract; internal comment about manip's return type is wrong",
+   "description": "align/align.py docstring (lines 312-317): returns 'The aligned data, in the same list/single-item shape as data (matching hyp.reduce/hyp.cluster/hyp.manip...)'. Real behavior: align(single 2D array) -> list of 1 ndarray, while reduce(single) -> bare ndarray, manip(single) -> DataFrame (not an ndarray, contradicting _to_arrays's comment at lines 238-241 that 'every OTHER dispatcher (reduce, cluster, manip) returns arrays too'), cluster(single) -> list of int labels. Cross-dispatcher single-input return types are inconsistent and mis-documented.",
+   "repro": "env MPLBACKEND=Agg python -c \"import numpy as np, hypertools as hyp; x=np.random.rand(25,6); print(type(hyp.align(x)), type(hyp.reduce(x, ndims=3)), type(hyp.manip(x)))\"",
+   "expected": "align(single) -> single ndarray per docstring; comment matches manip's actual return type",
+   "actual": "hyp.align(single array) -> <class 'list'> len 1; hyp.reduce -> ndarray; hyp.manip -> DataFrame",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/align/align.py"
+   ]
+  },
+  {
+   "id": "X7-code-org-rest-008",
+   "severity": "minor",
+   "title": "Error-message quality is inconsistent across dispatchers; reduce/describe and several IO paths give cryptic or misleading errors",
+   "description": "cluster/align/manip/predict/impute/apply_model give exemplary errors ('unknown X model NAME; supported names: ...'). But: (1) reduce (and describe) with an unknown string neither echoes the model name nor lists supported names, and points at the pre-1.0 URL http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html (http, and a page tied to the removed hypertools.tools.reduce layout); (2) reduce's dict-spec error instructs users to put params under the 'params' key -- the LEGACY form that elsewhere triggers DeprecationWarning (canonical is 'kwargs'); (3) reduce={'model':'Bogus','kwargs':{}} raises bare KeyError: 'Bogus' (bare-string path raises ValueError -- inconsistent by path); (4) hyp.tools.align(data, align={'kwargs':{}}) raises bare KeyError: 'model' (the 1.0 dispatcher's equivalent raises a helpful ValueError); (5) hyp.load() of a 0-byte/truncated pickle raises bare EOFError ('Ran out of input') -- _load_local catches only pickle.UnpicklingError; (6) hyp.normalize(x, normalize='sideways') raises AssertionError (not ValueError) naming the internal variable 'scale_type' instead of the user's normalize= kwarg, and disappears under python -O.",
+   "repro": "see tested cases 'misuse battery', 'reduce dict spec missing model key', 'tools.align dict without model key', 'reduce canonical dict with unknown inner model', 'load of 0-byte pickle', 'normalize invalid value' (misuse.py / edges.py in scratch dir)",
+   "expected": "Uniform, actionable ValueErrors naming the offending value and the fix",
+   "actual": "reduce: \"ValueError: reduce must be one of the supported options or support n_components and fit_transform          methods. See http://hypertools.readthedocs.io/...\"; KeyError: 'Bogus'; KeyError: 'model'; EOFError: Ran out of input; AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/reduce/reduce.py",
+    "hypertools/tools/align.py",
+    "hypertools/io/load.py",
+    "hypertools/tools/normalize.py"
+   ]
+  },
+  {
+   "id": "X7-code-org-rest-009",
+   "severity": "minor",
+   "title": "Error strings built with backslash line-continuations INSIDE the literal embed 20+ space runs into user-facing messages",
+   "description": "align/procrustes.py align() (lines 258-259, 282-285) and reduce/reduce.py (lines 166-167, 201-202, 237-239) continue the string across lines with a trailing backslash inside the literal, so the next line's indentation becomes part of the message.",
+   "repro": "python -c \"import numpy as np; from hypertools.align.procrustes import align; align(np.random.rand(10,5), np.random.rand(10,3))\"",
+   "expected": "Single-spaced message",
+   "actual": "ValueError: 'reduction=False, so mapping from                               higher dimensionality                               template space is not supported. template space had 5                               while target 3 dimensions (features)'",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "X7-code-org-rest-010",
+   "severity": "minor",
+   "title": "Dead code in _shared/helpers.py; reduce.py and cluster.py star-import helpers they never use",
+   "description": "parse_args() has zero production callers (kept alive only by tests/test_helpers.py); convert_text() and get_dtype() have zero callers anywhere (prod, tests, examples, docs). hypertools/reduce/reduce.py:7 and hypertools/cluster/cluster.py:17 both do 'from .._shared.helpers import *' yet use none of its 17 names (verified per-name grep: 0 hits in both files) -- the star imports only spread the module's np.seterr side effect (X7-...-002) and pollute namespaces.",
+   "repro": "for n in parse_args convert_text get_dtype; do grep -rn \"\\b$n\\b\" hypertools tests --include='*.py' | grep -v _shared/helpers.py | grep -v test_helpers.py; done",
+   "expected": "No unused helpers; imports only of names actually used",
+   "actual": "parse_args: only tests/test_helpers.py hits; convert_text: 0 hits; get_dtype: 0 hits; reduce.py/cluster.py per-helper usage all 0",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "X7-code-org-rest-011",
+   "severity": "minor",
+   "title": "Test/example debris: tests/context.py is dead boilerplate; examples/spin.gif is a committed run artifact",
+   "description": "tests/context.py (sys.path.insert boilerplate from the pre-1.0 test layout) is imported by no test file (grep 'from context import|import context' over tests/ -> no matches). examples/spin.gif (git-tracked) is the output that examples/animate_plotly.py writes (save_path='spin.gif'); it is not referenced by any doc or example as a source asset. tests/screenshots/ ('hypertools 2.0 visual verification matrix' INDEX.md) is untracked/gitignored, so it does not ship -- but it is the only remaining '2.0' reference found outside git history.",
+   "repro": "grep -rln 'from context import\\|import context' tests/ ; git ls-files examples | grep -v '\\.py'",
+   "expected": "No dead test scaffolding; no build artifacts committed",
+   "actual": "(no matches for context imports); git-tracked non-.py examples files: examples/README.txt, examples/spin.gif",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "X7-code-org-rest-012",
+   "severity": "minor",
+   "title": "Three divergent cluster-count defaults: signature 3, config.ini 3 (unused), _shared/params.py 5 (used by plot/text2mat)",
+   "description": "hypertools/cluster/cluster.py signature default n_clusters=3; hypertools/core/config.ini [cluster] n_clusters=3 (consumed by nothing, X7-...-022); hypertools/_shared/params.py parameters['KMeans']={'n_clusters': 5} feeds plot.py (lines 1872/1899) and text2mat. Real consequence: the SAME data clustered via hyp.cluster(x) gets 3 clusters, but hyp.plot(x, cluster='KMeans') colors 5 -- verified.",
+   "repro": "env MPLBACKEND=Agg python -c \"import numpy as np, hypertools as hyp; x=np.vstack([np.random.default_rng(i).normal(i*4,1,(60,4)) for i in range(3)]); print(len(set(hyp.cluster(x)))); fig=hyp.plot(x,'.',cluster='KMeans',show=False); print(len(fig.axes[0].lines))\"",
+   "expected": "One default cluster count across entry points",
+   "actual": "hyp.cluster default -> 3 labels; hyp.plot(cluster='KMeans') -> 5 distinct line colors / 5 lines",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "X7-code-org-rest-013",
+   "severity": "doc",
+   "title": "Systematic docstring gaps: 8 public functions have signature parameters absent from their Parameters sections",
+   "description": "Scan of 18 public functions (numpydoc-style param extraction) found: analyze() missing random_state (reduce() documents its identical kwarg; cluster() missing it too); manip() missing ALL FIVE cross-module stage kwargs (normalize/reduce/ndims/align/cluster) even though they are fully implemented (manip.py lines 123-134); save() one-liner documents neither obj/fname nor that **kwargs are accepted-and-ignored; tools.df2mat() missing return_labels; normalize()/tools.normalize() missing internal; io.lsl_stream() missing **resolve_kwargs.",
+   "repro": "docparam_check.py (scratch dir) -- inspect.signature vs docstring param extraction over the public API",
+   "expected": "Every documented function's Parameters section covers its signature",
+   "actual": "analyze: ['random_state']; cluster: ['random_state']; manip: ['normalize','reduce','ndims','align','cluster']; save: ['obj','fname']; tools.df2mat: ['return_labels']; normalize/tools.normalize: ['internal']; io.lsl_stream: ['resolve_kwargs']",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/tools/analyze.py",
+    "hypertools/cluster/cluster.py",
+    "hypertools/manip/manip.py",
+    "hypertools/io/save.py",
+    "hypertools/tools/df2mat.py",
+    "hypertools/tools/normalize.py",
+    "hypertools/io/lsl.py"
+   ]
+  },
+  {
+   "id": "X7-code-org-rest-014",
+   "severity": "doc",
+   "title": "load() docstring dataset listing: 'spiral' type wrong; nips/nips_model/sotus_model undocumented",
+   "description": "Docstring says \"`spiral` is numpy array containing data for a 3D spiral\" -- load('spiral') actually returns a LIST of two (1000, 3) arrays (aligned/misaligned pair for the procrustes demo). The registry entries 'nips', 'nips_model', and 'sotus_model' are loadable but absent from the docstring's dataset descriptions (weights/weights_avg/weights_sample/mushrooms/sotus/wiki/wiki_model/shapes-zoo/datasaurus are all described). Verified counts: weights=36 arrays (matches doc), mushrooms=8124 rows (matches), weights_avg=2 arrays (matches).",
+   "repro": "python -c \"import hypertools as hyp; s=hyp.load('spiral'); print(type(s), len(s), [a.shape for a in s])\"",
+   "expected": "Docstring types/coverage match reality",
+   "actual": "spiral: <class 'list'> 2 [(1000, 3), (1000, 3)]",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/io/load.py"
+   ]
+  },
+  {
+   "id": "X7-code-org-rest-015",
+   "severity": "doc",
+   "title": "Vendored-code license hygiene: brainiak header altered to 'Apache License, Version 1.0'; pca-magic license pointer dangles",
+   "description": "hypertools/external/brainiak.py line 5 reads 'Licensed under the Apache License, Version 1.0 (the \"License\")' -- the pre-refactor copy on master (hypertools/_externals/srm.py) correctly says 'Version 2.0' (the URL beneath still points at LICENSE-2.0), so the license text was corrupted during the 1.0 move. hypertools/external/ppca.py line 1 says 'Vendored from the pca-magic project. See license in-repo.' but no pca-magic license text exists anywhere in the repository (only hypertools' own MIT LICENSE). external/__init__.py promises the vendored code is 'kept under their original licenses'.",
+   "repro": "sed -n 5p hypertools/external/brainiak.py; git show master:hypertools/_externals/srm.py | sed -n 6p; grep -rn 'pca.magic' LICENSE* hypertools/",
+   "expected": "Apache-2.0 header intact; pca-magic's MIT notice included where referenced",
+   "actual": "current: '#  Licensed under the Apache License, Version 1.0 (the \"License\");' / master: '#  Licensed under the Apache License, Version 2.0 (the \"License\");' / no pca-magic license file found",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/external/brainiak.py",
+    "hypertools/external/ppca.py"
+   ]
+  },
+  {
+   "id": "X7-code-org-rest-016",
+   "severity": "minor",
+   "title": "hyp.save(): internal dev jargon in shipped docstring; silently swallows **kwargs; writes pickles under image extensions",
+   "description": "io/save.py module docstring ships 'lands in Plan 6 (plot)' and 'the format-aware exporter comes later' -- internal roadmap language, wrong register for a release. save(obj, fname, **kwargs) accepts arbitrary kwargs and ignores them: hyp.save(fig, 'out.png', dpi=300, quality='high') succeeds silently and writes an 84KB PICKLE named out.png (verified: first bytes \\x80\\x04, not \\x89PNG) -- a corrupt-'image' footgun for any scientist who assumes matplotlib savefig semantics.",
+   "repro": "probe_load_save.py (scratch): hyp.save(fig, 'fig_saved_via_hyp_save.png', dpi=300, quality='high'); open(...).read(8)",
+   "expected": "Unknown kwargs rejected (TypeError) or honored; ideally extension-aware export or at least a warning for image extensions",
+   "actual": "wrote fig_saved_via_hyp_save.png size 84848 first bytes: b'\\x80\\x04...' is PNG: False | is pickle: True",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/io/save.py"
+   ]
+  },
+  {
+   "id": "X7-code-org-rest-017",
+   "severity": "doc",
+   "title": "CLAUDE.md describes _externals/ as the vendored implementations; they are 3-line shims to the undocumented hypertools/external/",
+   "description": "CLAUDE.md 'External Dependencies (hypertools/_externals/)' lists ppca.py (PPCA) and srm.py (SRM) as the vendored code. In reality _externals/ppca.py and _externals/srm.py are 3-line re-export shims ('Moved to hypertools.external.* (HyperTools 1.0)'), and the real vendored code lives in hypertools/external/ (ppca.py, brainiak.py), which CLAUDE.md never mentions. Naming is also inconsistent: private '_shared' vs public-looking 'external' vs legacy '_externals'.",
+   "repro": "cat hypertools/_externals/ppca.py hypertools/_externals/srm.py; grep -n '_externals' CLAUDE.md",
+   "expected": "Checked-in project docs describe the real layout",
+   "actual": "_externals/ppca.py: '# Moved to hypertools.external.ppca (HyperTools 1.0). Shim preserves the old path.' (3 lines)",
+   "evidence": [],
+   "docs_impact": [
+    "CLAUDE.md"
+   ]
+  },
+  {
+   "id": "X7-code-org-rest-018",
+   "severity": "doc",
+   "title": "impute/predict docstrings invert the canonical/legacy dict-spec terminology used everywhere else",
+   "description": "align/reduce/cluster/manip docstrings define {'model','args','kwargs'} as THE canonical 1.0 spec and {'model','params'} as LEGACY (deprecated, warns). impute/impute.py and predict/predict.py module+function docstrings instead present \"a dict in either {'model': ..., 'params': {...}} or the fork-style {'model': ..., 'args': [...], 'kwargs': {...}} form\" -- calling the canonical form 'fork-style' and listing the deprecated form first with no deprecation note, even though passing it DOES emit DeprecationWarning via unpack_model (verified).",
+   "repro": "python -W always -c \"import numpy as np, hypertools as hyp; x=np.random.rand(20,5); x[3,2]=float('nan'); hyp.impute(x, model={'model':'PPCA','params':{'n_components':2}})\"",
+   "expected": "Consistent terminology; deprecated form flagged in impute/predict docs",
+   "actual": "DeprecationWarning: {'model': ..., 'params': {...}} is deprecated; use {'model': ..., 'args': [...], 'kwargs': {...}} instead (fires despite the docstring presenting 'params' as a co-equal form)",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/impute/impute.py",
+    "hypertools/predict/predict.py"
+   ]
+  },
+  {
+   "id": "X7-code-org-rest-019",
+   "severity": "style",
+   "title": "Cross-module helper duplication: _import_kalman_filter, _as_dataframe, _supported_names each reimplemented verbatim",
+   "description": "_import_kalman_filter(): predict/kalman.py:20 and impute/kalman.py:24 are identical except one word ('forecaster' vs 'imputer') in the error text. _as_dataframe(): predict/common.py:24-27 and impute/common.py:25-28 are byte-identical 4-liners. _supported_names(): trivially re-defined in manip/manip.py:33, predict/predict.py:41, impute/impute.py:33. Candidates for core/shared.py.",
+   "repro": "sed -n 20,30p hypertools/predict/kalman.py; sed -n 24,34p hypertools/impute/kalman.py; sed -n 24,28p hypertools/predict/common.py; sed -n 25,29p hypertools/impute/common.py",
+   "expected": "Shared helpers live in one place",
+   "actual": "Both kalman helpers: 'pykalman is required for the Kalman {forecaster|imputer}. It is normally a core hypertools dependency; ...' -- otherwise identical; _as_dataframe bodies byte-identical",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "X7-code-org-rest-020",
+   "severity": "style",
+   "title": "Leftover editing-instruction comments and TODO/XXX census",
+   "description": "reduce/reduce.py lines 154 and 221 carry '# Remove np.string_ check as it's deprecated in NumPy 2.0' -- a past edit instruction, not a description of the code. Full non-plot TODO/XXX census: align/procrustes.py:91 '# XXX check for being invariant?', :142 '# XXX with reflection False -- not sure if here or there or anywhere...', :264 '# TODO: check for being invariant?', :315 (duplicate of 142 -- both copies of the duplicated algorithm carry the same doubt). Remaining TODO in the codebase is plot/backend.py:545 (other unit). No FIXME/HACK/WIP found. Only '2.0' reference outside git history is the untracked tests/screenshots/verification_v1.0/INDEX.md ('hypertools 2.0 visual verification matrix').",
+   "repro": "grep -rn -E 'TODO|FIXME|XXX|HACK|WIP' hypertools --include='*.py'",
+   "expected": "No edit-instruction comments; uncertainty comments resolved before release",
+   "actual": "reduce.py:154 'elif isinstance(reduce, str):  # Remove np.string_ check as it's deprecated in NumPy 2.0' (and :221)",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "X7-code-org-rest-021",
+   "severity": "style",
+   "title": "Inconsistent subpackage export surfaces; hypertools' own modules import exceptions via the back-compat shim",
+   "description": "Subpackage __init__ exports differ arbitrarily: align exports Aligner+pad+trim_and_pad+all aligner classes; manip exports Manipulator+all manipulators; predict exports Forecaster+resolve_t+classes; impute exports Imputer+classes; but cluster exports only cluster/models/mixture_models (no Clusterer) and reduce exports only reduce/describe (no Reducer). Separately, first-party modules import exceptions from the legacy shim path hypertools._shared.exceptions (io/sources.py:48, io/load.py:10, io/lsl.py:81, plot/backend.py:100) instead of the canonical hypertools.core.exceptions the shim points to.",
+   "repro": "cat hypertools/*/__init__.py; grep -rn 'from.*_shared.exceptions' hypertools --include='*.py'",
+   "expected": "Uniform export policy (dispatcher + base class + models); internal imports use the canonical path",
+   "actual": "cluster/__init__.py: 'from .cluster import cluster, models, mixture_models' (no Clusterer); reduce/__init__.py: 2 lines, no Reducer; io/sources.py:48 'from .._shared.exceptions import HypertoolsIOError'",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "X7-code-org-rest-022",
+   "severity": "style",
+   "title": "Dead Python<3.8 fallback in config.py; three config-named things, one of which nothing consumes",
+   "description": "hypertools/config.py try/excepts to 'importlib_metadata' with a '# Fallback for Python < 3.8' comment, but requires-python is >=3.10 and importlib_metadata is not a dependency (the fallback could only ever ImportError). Naming triple: hypertools/config.py (version only) vs hypertools/core/config.ini (defaults) vs hypertools/core/configurator.py (reader). And get_default_options/apply_defaults have ZERO callers inside hypertools (grep: only the core/__init__ re-export; plot/backend.py:918 'bound_args.apply_defaults()' is inspect.BoundArguments) -- the 'Central default options ... single source of truth' machinery is currently unused by the package itself (real defaults live in signatures and _shared/params.py), compounding X7-...-004/012.",
+   "repro": "grep -rn 'apply_defaults\\|get_default_options' hypertools --include='*.py' | grep -v core/configurator.py",
+   "expected": "Version helper without dead branches; one live defaults mechanism",
+   "actual": "callers: hypertools/core/__init__.py:9 (re-export) and hypertools/plot/backend.py:918 (unrelated inspect API) only",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "X7-code-org-rest-023",
+   "severity": "style",
+   "title": "Repo shipping hygiene: 6.7MB dev/ directory git-tracked; stale 0.8.1 release notes; scripts/ mixes evidence dirs into source",
+   "description": "git-tracked: dev/hypertools_1.0_dev_executed.ipynb (5.8MB), dev/animation_demo.gif (342KB), dev/plotly_spin_demo.gif (622KB), dev/hypertools_1.0_dev.ipynb -- development scratch shipped in the repo/sdist-adjacent tree. RELEASE_NOTES_0.8.1.md sits in the root of what will be the 1.0 release. scripts/ contains 18 evidence/screenshot generators plus a round17_evidence/ subdir mixing committed .py sources with untracked __pycache__. hypertools-dev/ (a full virtualenv) and dist/ (0.8.2 wheels) exist locally but are untracked/ignored. version is still 1.0.0.dev0 (expected pre-release, listed for completeness).",
+   "repro": "git ls-files dev dist hypertools-dev scripts RELEASE_NOTES_0.8.1.md | head; ls -la dev/",
+   "expected": "Dev artifacts pruned or moved out of the shipping tree before release",
+   "actual": "dev/animation_demo.gif, dev/hypertools_1.0_dev.ipynb, dev/hypertools_1.0_dev_executed.ipynb (5,780,458 bytes), dev/plotly_spin_demo.gif, RELEASE_NOTES_0.8.1.md all git-tracked",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "X7-code-org-rest-024",
+   "severity": "minor",
+   "title": "describe(show=True): 'average' and 'individual' curves are visually indistinguishable (same color, no legend)",
+   "description": "reduce/describe.py plots the per-dataset curves and the average curve in the same default color with no legend, so the documented distinction between result['average'] and result['individual'] cannot be read off the figure.",
+   "repro": "evidence.py (scratch): hyp.describe([np.random.rand(100,20)]*2, show=True); savefig",
+   "expected": "Distinct styling + legend for average vs individual curves",
+   "actual": "Figure shows two overlapping light-blue curves, no legend (see evidence PNG)",
+   "evidence": [
+    "describe_show_true.png"
+   ],
+   "docs_impact": []
+  },
+  {
+   "id": "X7-code-org-rest-025",
+   "severity": "doc",
+   "title": "Procrustes(index=...) is accepted but has no effect at fit time; fitter docstring is garbled",
+   "description": "procrustes.py fitter() always uses data[0] as the default target (line 392-393); the index kwarg it pops is only stored for transformer-side lookups. Verified: hyp.align(data, model=Procrustes(index=2)) == hyp.align(data, model=Procrustes(index=0)) exactly. The fitter docstring both implies index picks the target ('aligned to a common target (or to data[index]/data[0] if target is None)') and contains a garbled clause ('index used to select the default target within data when target is None and data is a list of length 0 (kept for downstream lookups)'). Also transformer line 443 misuses assert with an IndexError instance as the message and the f-string is missing its closing paren: f'Index {index} is outside the range of list length ({len(proj)}'.",
+   "repro": "misuse2.py case H (scratch)",
+   "expected": "index either selects the fit target as implied, or is documented as transform-only",
+   "actual": "same result regardless of index: True",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/align/procrustes.py"
+   ]
+  },
+  {
+   "id": "X7-code-org-rest-026",
+   "severity": "style",
+   "title": "Tests layout census: comprehensive coverage; only gaps are a dedicated analyze test file and describe's helper functions; skip census clean",
+   "description": "83 top-level test files + 11 per-module subdirs; 1500/1502 tests collected (2 deselected via the documented 'bigdata' marker in pyproject addopts). Every top-level public API function has dedicated test files EXCEPT hyp.analyze (exercised only inside test_cross_module_kwargs.py / test_pipeline_analyze_hardening.py / others -- adequate but no tests/test_analyze.py) and reduce/describe.py's public helpers get_corr/get_cdist (no direct tests; describe() itself is tested). All skips are conditional with stated reasons (importorskip plotly/torch/datasets/gensim/pykalman/statsmodels; skipif ffmpeg/scikit-image/pylsl/fonts; CI-only guards); no unconditional @pytest.mark.skip dead tests found. tests/test_helpers.py keeps the otherwise-dead parse_args alive (X7-...-010). tests/matplotlibrc pins Agg (good); tests/data/drive_large_file_interstitial.html is a legitimate fixture.",
+   "repro": "pytest --collect-only -q | tail -1; grep -rn 'pytest.mark.skip|importorskip|skipif' tests --include='*.py'",
+   "expected": "Documented-coverage map; no dead tests",
+   "actual": "1500/1502 tests collected (2 deselected) in 4.55s; skip census: all conditional (see tested-case log)",
+   "evidence": [],
+   "docs_impact": []
+  }
+ ]
+}
