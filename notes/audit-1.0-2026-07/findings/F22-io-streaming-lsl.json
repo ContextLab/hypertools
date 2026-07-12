@@ -1,0 +1,822 @@
+{
+ "unit": "F22-io-streaming-lsl",
+ "target": "hypertools/io/streaming.py (is_stream, row_to_vector, plot_stream via hyp.plot stream dispatch) + hypertools/io/lsl.py (hyp.io.lsl_stream) + docs/tutorials/lsl_streaming.ipynb & streaming_data.ipynb accuracy; REAL pylsl 1.18.2 / liblsl 1.17.7 outlets used for all LSL tests",
+ "brainstormed_edge_cases": [
+  "empty stream (tested)",
+  "stream_init=0 with non-empty stream (tested)",
+  "negative stream_init / stream_chunk (tested)",
+  "stream_chunk=0 silently ends streaming after head (tested)",
+  "stream_max < stream_init overshoot (tested)",
+  "stream_max == stream length -> truncated flag (tested)",
+  "stream_window=0 and negative stream_window slice gotchas (tested)",
+  "single-channel (scalar-sample) stream (tested -> CRASH, finding -001)",
+  "two-channel stream / 2D drawing path (tested)",
+  "inconsistent sample lengths mid-stream (tested)",
+  "dict rows: no numeric fields / bool-only / None / nested lists (tested)",
+  "NaN or inf sample mid-stream (tested -> abort + total loss)",
+  "reduce model without transform(), e.g. TSNE (tested)",
+  "reduce dict spec: canonical 'kwargs' vs legacy 'params' (tested)",
+  "invalid normalize option (tested)",
+  "zero-variance head with normalize (safe-std path) (tested)",
+  "save_path with non-gif extension (.mp4) (tested)",
+  "generator raises mid-stream while saving animation (tested)",
+  "open file handle passes is_stream -> string samples (tested)",
+  "zip/map/enumerate/DataFrame.iterrows as streams (tested)",
+  "range() is Iterable but not Iterator -> not a stream (tested)",
+  "list of generators (multi-stream) rejected (tested)",
+  "hue=/animate=/legend= with streams silently dropped (tested)",
+  "float-valued stream_init/stream_chunk (tested)",
+  "user-supplied 3d ax= (tested)",
+  "ndims>3 with streams (tested -> cryptic TypeError)",
+  "HF IterableDataset local + real hub streaming (tested)",
+  "LSL: resolve by name / by type / any-stream (tested)",
+  "LSL: name= precedence over type= (tested)",
+  "LSL: no matching stream -> timeout error message (tested)",
+  "LSL: stalled-but-alive outlet -> silence abort (tested)",
+  "LSL: source dies mid-hyp.plot -> data/animation loss (tested)",
+  "LSL: string/Markers channel format (tested)",
+  "LSL: multiple matching outlets -> first silently picked (tested)",
+  "LSL: two inlets on one outlet both get full sequence (tested)",
+  "LSL: irregular rate (nominal_srate=0) (tested)",
+  "LSL: timeout=0 (tested)",
+  "LSL: **resolve_kwargs forwarding + junk kwarg (tested)",
+  "LSL: generator close() -> inlet cleanup, reopen cycles (tested)",
+  "LSL: Ctrl-C during infinite docstring example (tested via SIGINT)",
+  "LSL: pylsl not installed ImportError path (UNTESTED: pylsl is installed in the audit venv and uninstalling is forbidden by audit rules [infra]; static review: _import_pylsl raises ImportError with actionable message naming pip install \"hypertools[lsl]\", and the lsl extra exists at pyproject.toml:108)",
+  "interactive GUI live-redraw path (plt.pause branch) (UNTESTED: requires a GUI backend; audit environment is Agg-only [infra])",
+  "LSL stream from a second machine on the LAN (UNTESTED: single-host audit environment [infra])",
+  "KeyboardInterrupt during the resolve wait itself (UNTESTED)",
+  "very large stream_init memory pressure (UNTESTED: out of budget)",
+  "infinite stream without stream_max on non-interactive backend spins with no visible output until interrupted (UNTESTED as-such; bounded variants + SIGINT variant tested)"
+ ],
+ "tested": [
+  {
+   "case": "W1 basic 3D lorenz stream, finite generator",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_streaming_core.py  # case: 'W1 basic 3D lorenz stream, finite generator'",
+   "output_excerpt": "(800, (800, 3))",
+   "evidence": [
+    "w1_lorenz_stream.png"
+   ]
+  },
+  {
+   "case": "W2 16-channel stream reduced to 3D via default IncrementalPCA",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_streaming_core.py  # case: 'W2 16-channel stream reduced to 3D via default IncrementalPCA'",
+   "output_excerpt": "('IncrementalPCA', (600, 3))",
+   "evidence": [
+    "w2_eeg16_stream.png"
+   ]
+  },
+  {
+   "case": "W3 2D + normalize=across + stream_window=100 (comet)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_streaming_core.py  # case: 'W3 2D + normalize=across + stream_window=100 (comet)'",
+   "output_excerpt": "(500, 2)",
+   "evidence": [
+    "w3_2d_window_comet.png"
+   ]
+  },
+  {
+   "case": "W4 save_path GIF from stream (frame per chunk + head)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_streaming_core.py  # case: 'W4 save_path GIF from stream (frame per chunk + head)'",
+   "output_excerpt": "('gif frames', 6, 'bytes', 73186)",
+   "evidence": [
+    "w4_stream.gif"
+   ]
+  },
+  {
+   "case": "W5 real HF IterableDataset dict rows (numeric extraction)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_streaming_core.py  # case: 'W5 real HF IterableDataset dict rows (numeric extraction)'",
+   "output_excerpt": "((300, 4), 300)",
+   "evidence": [
+    "w5_hf_iterabledataset.png"
+   ]
+  },
+  {
+   "case": "stream_max=300 stops at exactly 300 and marks truncated",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_streaming_core.py  # case: 'stream_max=300 stops at exactly 300 and marks truncated'",
+   "output_excerpt": "(300, True)",
+   "evidence": []
+  },
+  {
+   "case": "stream_max == stream length -> truncated False (peek finds nothing)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_streaming_core.py  # case: 'stream_max == stream length -> truncated False (peek finds nothing)'",
+   "output_excerpt": "('truncated', False)",
+   "evidence": []
+  },
+  {
+   "case": "stream_info[\"data\"] exactly matches yielded samples",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_streaming_core.py  # case: 'stream_info[\"data\"] exactly matches yielded samples'",
+   "output_excerpt": "raw data == yielded values exactly",
+   "evidence": []
+  },
+  {
+   "case": "stream shorter than stream_init (head-only plot)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_streaming_core.py  # case: 'stream shorter than stream_init (head-only plot)'",
+   "output_excerpt": "50",
+   "evidence": []
+  },
+  {
+   "case": "reduce={\"model\":\"PCA\",\"kwargs\":{\"whiten\":True}} honored",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_streaming_core.py  # case: 'reduce={\"model\":\"PCA\",\"kwargs\":{\"whiten\":True}} honored'",
+   "output_excerpt": "('PCA whiten', True)",
+   "evidence": []
+  },
+  {
+   "case": "normalize options None/row/across/within/True/False all run",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_streaming_core.py  # case: 'normalize options None/row/across/within/True/False all run'",
+   "output_excerpt": "{'None': (200, 3), 'row': (200, 3), 'across': (200, 3), 'within': (200, 3), 'True': (200, 3), 'False': (200, 3)}",
+   "evidence": []
+  },
+  {
+   "case": "normalize=\"across\" math matches manual z-score (ddof=0)",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_streaming_core.py  # case: 'normalize=\"across\" math matches manual z-score (ddof=0)'",
+   "output_excerpt": "  File \"/Users/jmanning/hypertools/hypertools/plot/plot.py\", line 1546, in plot\n    return plot_stream(\n           ^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/io/streaming.py\", line 216, in plot_stream\n    fig = hyp_plot(head_red, fmt, reduce=None, normalize=None, ndims=ndims,\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/plot/backend.py\", line 1182, in plot_wrapper\n    return plot_func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/plot/plot.py\", lin [TEST-SCRIPT ARTIFACT: used unplottable ndims=4; classified by V5. Math itself verified correct by V4/V4b.]",
+   "evidence": []
+  },
+  {
+   "case": "align= with stream raises informative ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_streaming_core.py  # case: 'align= with stream raises informative ValueError'",
+   "output_excerpt": "ValueError: align is not supported for streaming data (a stream is a single dataset)",
+   "evidence": []
+  },
+  {
+   "case": "cluster= with stream raises informative ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_streaming_core.py  # case: 'cluster= with stream raises informative ValueError'",
+   "output_excerpt": "ValueError: cluster is not yet supported for streaming data",
+   "evidence": []
+  },
+  {
+   "case": "E1 empty stream",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E1 empty stream'",
+   "output_excerpt": "ValueError: stream produced no samples",
+   "evidence": []
+  },
+  {
+   "case": "E2 stream_init=0 with non-empty stream",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E2 stream_init=0 with non-empty stream'",
+   "output_excerpt": "ValueError: stream produced no samples",
+   "evidence": []
+  },
+  {
+   "case": "E3 stream_init=-5",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E3 stream_init=-5'",
+   "output_excerpt": "ValueError: Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize.",
+   "evidence": []
+  },
+  {
+   "case": "E4 stream_chunk=0 (silent stop after head?)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E4 stream_chunk=0 (silent stop after head?)'",
+   "output_excerpt": "('n_samples', 50, 'truncated', False)",
+   "evidence": []
+  },
+  {
+   "case": "E5 stream_chunk=-10",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E5 stream_chunk=-10'",
+   "output_excerpt": "ValueError: Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize.",
+   "evidence": []
+  },
+  {
+   "case": "E6 stream_max=100 < stream_init=200",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E6 stream_max=100 < stream_init=200'",
+   "output_excerpt": "('requested stream_max', 100, 'actually consumed', 200, 'truncated', True)",
+   "evidence": []
+  },
+  {
+   "case": "E7 stream_window=0 displays ALL points (slice gotcha)?",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E7 stream_window=0 displays ALL points (slice gotcha)?'",
+   "output_excerpt": "('displayed points with stream_window=0', 900, 'total', 300)",
+   "evidence": []
+  },
+  {
+   "case": "E8 inconsistent sample lengths mid-stream",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E8 inconsistent sample lengths mid-stream'",
+   "output_excerpt": "ValueError: all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 2 and the array at index 1 has size 3",
+   "evidence": []
+  },
+  {
+   "case": "E9 stream of scalar samples (1 feature)",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E9 stream of scalar samples (1 feature)'",
+   "output_excerpt": "/t02_edges.py\", line 115, in e9\n    fig = hyp.plot(g(), stream_init=30, stream_chunk=20, show=False)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/plot/backend.py\", line 1182, in plot_wrapper\n    return plot_func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/plot/plot.py\", line 1546, in plot\n    return plot_stream(\n           ^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/io/streaming.py\", line 290, in plot_stream\n    _redraw()\n  File \"/Users/jmanning/hypertoo [REAL BUG -> finding F22-io-streaming-lsl-001]",
+   "evidence": []
+  },
+  {
+   "case": "E10 matrix-shaped samples silently flattened",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E10 matrix-shaped samples silently flattened'",
+   "output_excerpt": "('sample (2,3) became row of', (60, 6))",
+   "evidence": []
+  },
+  {
+   "case": "E11 dict samples with no numeric fields",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E11 dict samples with no numeric fields'",
+   "output_excerpt": "ValueError: could not extract numeric features from stream sample with keys ['text', 'label']; streaming samples must contain numeric fields",
+   "evidence": []
+  },
+  {
+   "case": "E12 NaN sample mid-stream",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E12 NaN sample mid-stream'",
+   "output_excerpt": "ValueError: Input X contains NaN.\nIncrementalPCA does not accept missing values encoded as NaN natively. For supervised learning, you might want to consider sklearn.ensemble.HistGradientBoostingClassifier and Regressor which accept missing values encoded as NaNs natively. Alternatively, it is possible to prepro",
+   "evidence": []
+  },
+  {
+   "case": "E13 reduce=\"TSNE\" (no transform method)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E13 reduce=\"TSNE\" (no transform method)'",
+   "output_excerpt": "ValueError: streaming data requires a reduction model with a transform() method so that new samples can be projected with the model fitted on the initial samples; TSNE has none. Use e.g. IncrementalPCA, PCA, or UMAP.",
+   "evidence": []
+  },
+  {
+   "case": "E14 normalize=\"zscorez\" invalid",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E14 normalize=\"zscorez\" invalid'",
+   "output_excerpt": "ValueError: unsupported normalize option for streaming data: 'zscorez'",
+   "evidence": []
+  },
+  {
+   "case": "E15 fmt=\"o\" marker-only stream",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E15 fmt=\"o\" marker-only stream'",
+   "output_excerpt": "('fmt=o ok', 200)",
+   "evidence": [
+    "e15_fmt_marker.png"
+   ]
+  },
+  {
+   "case": "E16 fmt=\".\" with color=\"red\"",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E16 fmt=\".\" with color=\"red\"'",
+   "output_excerpt": "ok",
+   "evidence": []
+  },
+  {
+   "case": "E17 save_path=\"*.mp4\" (PillowWriter gif-only?)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E17 save_path=\"*.mp4\" (PillowWriter gif-only?)'",
+   "output_excerpt": "ValueError: unknown file extension: .mp4",
+   "evidence": []
+  },
+  {
+   "case": "E18 generator raises mid-stream during GIF save",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E18 generator raises mid-stream during GIF save'",
+   "output_excerpt": "RuntimeError propagated: sensor unplugged; gif size=-1, frames=unreadable: [Errno 2] No such file or directory: '/Users/jmanning/hypertools/notes/audit-1.0-2026-07/evidence/F22-io-streaming-lsl/e18_partial.gif', readable=False; figure/stream_info LOST (no return value)",
+   "evidence": []
+  },
+  {
+   "case": "E19 list of two generators (multi-stream unsupported)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E19 list of two generators (multi-stream unsupported)'",
+   "output_excerpt": "TypeError: Unsupported data type passed. Supported types: Numpy Array, Pandas DataFrame, String, List of strings, List of numbers",
+   "evidence": []
+  },
+  {
+   "case": "E20 hue= with stream (silently ignored?)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E20 hue= with stream (silently ignored?)'",
+   "output_excerpt": "('warnings:', [])",
+   "evidence": []
+  },
+  {
+   "case": "E21 animate=True with stream (silently ignored?)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E21 animate=True with stream (silently ignored?)'",
+   "output_excerpt": "('warnings:', [])",
+   "evidence": []
+  },
+  {
+   "case": "E22 legend= with stream (silently ignored?)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E22 legend= with stream (silently ignored?)'",
+   "output_excerpt": "('legend rendered:', False)",
+   "evidence": []
+  },
+  {
+   "case": "E23 pandas Series samples",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E23 pandas Series samples'",
+   "output_excerpt": "(80, 3)",
+   "evidence": []
+  },
+  {
+   "case": "E24 zip(...) iterator as stream",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E24 zip(...) iterator as stream'",
+   "output_excerpt": "('zip consumed', 100, (100, 3))",
+   "evidence": []
+  },
+  {
+   "case": "E25 open file handle (iterator of strings)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E25 open file handle (iterator of strings)'",
+   "output_excerpt": "ValueError: could not convert string to float: 'hello\\n'",
+   "evidence": []
+  },
+  {
+   "case": "E26 constant stream + normalize (zero variance)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E26 constant stream + normalize (zero variance)'",
+   "output_excerpt": "('all finite:', True)",
+   "evidence": []
+  },
+  {
+   "case": "E27 is_stream truth table",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E27 is_stream truth table'",
+   "output_excerpt": "{'generator': True, 'list': False, 'ndarray': False, 'DataFrame': False, 'Series': False, 'dict': False, 'str': False, 'range': False, 'iter(list)': True, 'map': True, 'tuple': False}",
+   "evidence": []
+  },
+  {
+   "case": "E28 stream_window=80 displays exactly 80 most recent",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E28 stream_window=80 displays exactly 80 most recent'",
+   "output_excerpt": "Traceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py\", line 15, in record\n    out = fn()\n          ^^^^\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py\", line 362, in e28\n    assert npts == 80, npts\n           ^^^^^^^^^^\nAssertionError: 901\n [MEASUREMENT ARTIFACT: Line3D.get_data() is stale before a canvas draw; V2 re-measured via get_data_3d after draw -> exactly 80. stream_window works as documented.]",
+   "evidence": []
+  },
+  {
+   "case": "E29 float stream_init/stream_chunk truncated via int()",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E29 float stream_init/stream_chunk truncated via int()'",
+   "output_excerpt": "('n', 200)",
+   "evidence": []
+  },
+  {
+   "case": "E30 user-supplied 3d ax=",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case: 'E30 user-supplied 3d ax='",
+   "output_excerpt": "('fig is user fig:', True)",
+   "evidence": [
+    "e30_user_ax.png"
+   ]
+  },
+  {
+   "case": "V1 single-channel (scalar-sample) stream",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t03_verify.py  # case: 'V1 single-channel (scalar-sample) stream'",
+   "output_excerpt": "Traceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t03_verify.py\", line 23, in record\n    out = fn()\n          ^^^^\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t03_verify.py\", line 40, in v1\n    hyp.plot(g(), stream_init=30, stream_chunk=20, show=False)\n  File \"/Users/jmanning/hypertools/hypertools/plot/backend.py\", line 1182, in plot_wrapper\n    return plot_func(*args, **kwargs)\n          [REAL BUG -> finding F22-io-streaming-lsl-001]",
+   "evidence": []
+  },
+  {
+   "case": "V1b two-channel stream (2D path)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t03_verify.py  # case: 'V1b two-channel stream (2D path)'",
+   "output_excerpt": "('2ch ok', (100, 2))",
+   "evidence": [
+    "v1b_2channel.png"
+   ]
+  },
+  {
+   "case": "V2 stream_window=80 measured via get_data_3d",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t03_verify.py  # case: 'V2 stream_window=80 measured via get_data_3d'",
+   "output_excerpt": "('lines point-counts', [80], 'first-nonempty', 80, 'want', 80)",
+   "evidence": []
+  },
+  {
+   "case": "V3 streaming_data.ipynb cell 8 verbatim (window=750, max=3000)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t03_verify.py  # case: 'V3 streaming_data.ipynb cell 8 verbatim (window=750, max=3000)'",
+   "output_excerpt": "('notebook cell 8 expression ->', (750, 3000), 'notebook implies', (750, 3000))",
+   "evidence": [
+    "v3_window750_final.png"
+   ]
+  },
+  {
+   "case": "V4 normalize=across math (3-feature, reduce=None)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t03_verify.py  # case: 'V4 normalize=across math (3-feature, reduce=None)'",
+   "output_excerpt": "across z-score matches manual ddof=0 computation on 3 features",
+   "evidence": []
+  },
+  {
+   "case": "V4b fitted normalization stats reused for post-head samples",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t03_verify.py  # case: 'V4b fitted normalization stats reused for post-head samples'",
+   "output_excerpt": "tail z-scored with HEAD stats (fitted-transform semantics) confirmed",
+   "evidence": []
+  },
+  {
+   "case": "V5 prior failure repro: reduce=None + ndims=4 (4 features)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t03_verify.py  # case: 'V5 prior failure repro: reduce=None + ndims=4 (4 features)'",
+   "output_excerpt": "TypeError: cannot unpack non-iterable NoneType object",
+   "evidence": []
+  },
+  {
+   "case": "V6 head-only plot: is initial line interpolated?",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t03_verify.py  # case: 'V6 head-only plot: is initial line interpolated?'",
+   "output_excerpt": "('head=100 samples; line point-counts', [901])",
+   "evidence": []
+  },
+  {
+   "case": "V7 stream_window=0 displayed-point count",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t03_verify.py  # case: 'V7 stream_window=0 displayed-point count'",
+   "output_excerpt": "('window=0 -> displayed', [300], '(0 or all-300 expected?)')",
+   "evidence": []
+  },
+  {
+   "case": "V8 negative stream_window",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t03_verify.py  # case: 'V8 negative stream_window'",
+   "output_excerpt": "('window=-50 -> displayed', [250])",
+   "evidence": []
+  },
+  {
+   "case": "L1 REAL outlet -> lsl_stream(name=): values+order+rate integrity",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L1 REAL outlet -> lsl_stream(name=): values+order+rate integrity'",
+   "output_excerpt": "('shape', (400, 6), 'first counter', 53, 'contiguous(no drops/reorder)', True, 'max |received - float32(sent)|', 0.0, 'elapsed s for 400 @200Hz', 2.5)",
+   "evidence": []
+  },
+  {
+   "case": "L3 name= precedence over type= (docstring claim)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L3 name= precedence over type= (docstring claim)'",
+   "output_excerpt": "('resolved by name despite wrong type=, sample len', 6)",
+   "evidence": []
+  },
+  {
+   "case": "L4 resolve by type=",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L4 resolve by type='",
+   "output_excerpt": "('resolved by type, sample len', 6)",
+   "evidence": []
+  },
+  {
+   "case": "L5 timeout when no matching stream exists (error msg quality)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L5 timeout when no matching stream exists (error msg quality)'",
+   "output_excerpt": "HypertoolsIOError after 1.5s (want ~1.5): no LSL stream found (name='NoSuchStream-82230') within timeout=1.5s. Make sure the source application/device is running and publishing an LSL outlet on the local network, and that name=/type= (if given) match its StreamInfo.",
+   "evidence": []
+  },
+  {
+   "case": "L6 silent (stalled) stream aborts after ~timeout s",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L6 silent (stalled) stream aborts after ~timeout s'",
+   "output_excerpt": "Traceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py\", line 33, in record\n    out = fn()\n          ^^^^\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py\", line 151, in l6\n    got = [next(stream) for _ in range(50)]\n           ^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/io/lsl.py\", line 121, in _samples\n    raise HypertoolsIOError(\nhypertools.core.exceptions.Hy [HARNESS RACE: outlet finished pushing before inlet connected (LSL delivers only post-connection samples); superseded by t07 L6r which PASSES: 81 samples then clean abort after 2.0s silence.]",
+   "evidence": []
+  },
+  {
+   "case": "L7 cleanup: close() closes inlet, no thread leak, reopen OK",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L7 cleanup: close() closes inlet, no thread leak, reopen OK'",
+   "output_excerpt": "('threads before/after', (1, 1), 'next() after close -> StopIteration', '5x open/close cycles OK')",
+   "evidence": []
+  },
+  {
+   "case": "L9 tutorial flow verbatim: plot LSL stream to GIF, data integrity",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L9 tutorial flow verbatim: plot LSL stream to GIF, data integrity'",
+   "output_excerpt": "('n_samples', 600, 'xform shape', (600, 3), 'truncated', True, 'counters contiguous', True, 'max value err vs sent', 0.0, 'gif frames', 18, 'gif bytes', 34727)",
+   "evidence": [
+    "l9_lsl_stream.gif",
+    "l9_lsl_stream_final.png"
+   ]
+  },
+  {
+   "case": "L10 LSL source dies mid-plot: figure/data/gif all lost?",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L10 LSL source dies mid-plot: figure/data/gif all lost?'",
+   "output_excerpt": "HypertoolsIOError propagated: \"LSL stream (name='AuditDies-82230') stopped delivering samples: nothing received for ~2.0s. The source may have disconnected.\" | figure+300 consumed samples LOST, gif exists=False size=0 readable=False frames=None",
+   "evidence": []
+  },
+  {
+   "case": "L11 string/marker stream (docstring suggests type=\"Markers\")",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L11 string/marker stream (docstring suggests type=\"Markers\")'",
+   "output_excerpt": "('lsl_stream yielded string sample', ['marker-14'], 'hyp.plot error:', \"ValueError: could not convert string to float: 'marker-15'\")",
+   "evidence": []
+  },
+  {
+   "case": "L12 **resolve_kwargs forwarding (minimum=) + junk kwarg",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L12 **resolve_kwargs forwarding (minimum=) + junk kwarg'",
+   "output_excerpt": "('minimum=1 forwarded OK, len', 6, '| junk kwarg ->', \"TypeError: resolve_byprop() got an unexpected keyword argument 'bogus_kwarg'\")",
+   "evidence": []
+  },
+  {
+   "case": "L13 no name/type: resolve_streams(wait_time=timeout) path",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L13 no name/type: resolve_streams(wait_time=timeout) path'",
+   "output_excerpt": "('resolved ANY stream, sample len', 6)",
+   "evidence": []
+  },
+  {
+   "case": "L14 multiple matching streams -> first picked silently; dual inlets",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L14 multiple matching streams -> first picked silently; dual inlets'",
+   "output_excerpt": "('2 matches, silently picked', 'AuditMultiA-82230', '| 2 inlets on one outlet, both contiguous', True)",
+   "evidence": []
+  },
+  {
+   "case": "L15 nominal_srate=0 (irregular rate) stream",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L15 nominal_srate=0 (irregular rate) stream'",
+   "output_excerpt": "('irregular-rate stream delivered', 30, 'samples')",
+   "evidence": []
+  },
+  {
+   "case": "L16 timeout=0 edge",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L16 timeout=0 edge'",
+   "output_excerpt": "timeout=0 -> HypertoolsIOError after 0.01s: no LSL stream found (name='AuditT0-82230') within timeout=0s. Make sure the source application/device is running and pub",
+   "evidence": []
+  },
+  {
+   "case": "L8 docstring example VERBATIM (infinite) + Ctrl-C finalization",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L8 docstring example VERBATIM (infinite) + Ctrl-C finalization'",
+   "output_excerpt": "('exit', 0, 'tail:', 'g.cpp:126   INFO| Loaded default config\\n2026-07-11 07:12:46.599 (   0.003s) [         50C35A1]             common.cpp:78    INFO| git:64988c6a14b8dc3b3f270ece58eab4f480bfab43/branch:refs/tags/v1.17.7/build:Release/compiler:AppleClang-17.0.0.17000013/link:SHARED\\nSURVIVED_INTERRUPT 1680 True (1680, 3)')",
+   "evidence": []
+  },
+  {
+   "case": "L6r stalled stream: samples flow, then abort ~timeout after silence",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t07_l6fix.py  # case: 'L6r stalled stream: samples flow, then abort ~timeout after silence'",
+   "output_excerpt": "received 81 real samples, then HypertoolsIOError after 2.0s of silence (timeout=2.0): LSL stream (name='AuditSilent2-83431') stopped delivering samples: nothing received for ~2.0s. The source may have disconnected.",
+   "evidence": []
+  },
+  {
+   "case": "FR frame_rate=10 honored in saved stream gif",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t07_l6fix.py  # case: 'FR frame_rate=10 honored in saved stream gif'",
+   "output_excerpt": "('frame_rate=10 -> per-frame ms', [100, 100, 100], '(100ms expected)')",
+   "evidence": []
+  },
+  {
+   "case": "X1 gif frame0 (smooth head) vs frame1 (raw) visual snap",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t06_visuals.py  # case: 'X1 gif frame0 (smooth head) vs frame1 (raw) visual snap'",
+   "output_excerpt": "('frames', 2, 'side-by-side saved', '/Users/jmanning/hypertools/notes/audit-1.0-2026-07/evidence/F22-io-streaming-lsl/x1_headsmooth_vs_rawredraw.png', 'left=frame0 (smoothed head), right=frame1 (raw polyline)')",
+   "evidence": [
+    "x1_headsmooth_vs_rawredraw.png"
+   ]
+  },
+  {
+   "case": "X2 same 60 samples: static (interpolated) vs streamed (raw)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t06_visuals.py  # case: 'X2 same 60 samples: static (interpolated) vs streamed (raw)'",
+   "output_excerpt": "('static line pts', 900, 'streamed line pts', 60, 'saved', '/Users/jmanning/hypertools/notes/audit-1.0-2026-07/evidence/F22-io-streaming-lsl/x2_static_vs_streamed_same_data.png')",
+   "evidence": [
+    "x2_static_vs_streamed_same_data.png"
+   ]
+  },
+  {
+   "case": "X3 static plot(50x4, reduce=None, ndims=4) comparison",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t06_visuals.py  # case: 'X3 static plot(50x4, reduce=None, ndims=4) comparison'",
+   "output_excerpt": "static reduce=None ndims=4 -> TypeError: cannot unpack non-iterable NoneType object",
+   "evidence": []
+  },
+  {
+   "case": "X4 streaming ndims=5 (6ch) -> cryptic error?",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t06_visuals.py  # case: 'X4 streaming ndims=5 (6ch) -> cryptic error?'",
+   "output_excerpt": "TypeError: cannot unpack non-iterable NoneType object",
+   "evidence": []
+  },
+  {
+   "case": "is_stream type matrix: 22 input types incl. real HF IterableDataset/materialized Dataset, file handle, range, zip/map/enumerate, iterrows",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_static.py",
+   "output_excerpt": "all 22 checks PASS (generators/iterators/HF IterableDataset True; list/tuple/str/ndarray/DataFrame/Series/dict/range/set/bytes/None False)",
+   "evidence": []
+  },
+  {
+   "case": "row_to_vector matrix: 14 sample shapes (list/tuple/ndarray/Series/scalar/dicts/nested/empty/strings/bool-only/2d/nan-inf)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_static.py",
+   "output_excerpt": "dict numeric extraction in insertion order OK; nested/2d silently raveled; empty -> ValueError('empty stream sample'); strings-only dict -> clear ValueError; list of strings -> raw \"could not convert string to float: 'a'\"",
+   "evidence": []
+  },
+  {
+   "case": "static hyp.plot of 1-D list and (100,1) array (contrast for the streaming 1-channel crash)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp; import numpy as np; hyp.plot([float(np.sin(i/8)) for i in range(100)], show=False)\"",
+   "output_excerpt": "static 1-D list plotted OK; static (100,1) array plotted OK",
+   "evidence": []
+  },
+  {
+   "case": "streaming_data.ipynb cell 10 VERBATIM: real HF hub streaming (scikit-learn/iris, streaming=True) -> claims \"50 -> 150 samples\", 4 features",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"<cell 10 code + show=False>\"  # network run",
+   "output_excerpt": "CELL10 OUTPUT: 150 (150, 4)  -- matches tutorial claim exactly",
+   "evidence": [
+    "hf_iris_tutorial_cell10.png"
+   ]
+  },
+  {
+   "case": "frozen-box clamp quantification on tutorial iris example",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"<recompute head box from xform_data, count out-of-box samples>\"",
+   "output_excerpt": "samples landing outside frozen box (clamped): 100 of 150",
+   "evidence": [
+    "x5_iris_streamed_clamped_vs_static.png"
+   ]
+  },
+  {
+   "case": "L9 gif frame-count arithmetic: 18 frames for 1 head + 20 chunks explained by Pillow merging identical consecutive frames (durations 17x30ms + 1x130ms = 21 frames-equivalent)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"<PIL frame duration dump of l9_lsl_stream.gif>\"",
+   "output_excerpt": "n_frames 18 durations(ms) [30x12, 130, 30x5] total_s 0.64 ~= 21/30fps; not a hypertools bug",
+   "evidence": [
+    "l9_lsl_stream.gif"
+   ]
+  },
+  {
+   "case": "pylsl/liblsl availability for the REAL-LSL battery",
+   "result": "pass",
+   "command": "/Users/jmanning/hypertools/.venv/bin/python -c \"import pylsl; print(pylsl.__version__, pylsl.library_version())\"",
+   "output_excerpt": "pylsl 1.18.2, liblsl 117 (v1.17.7 per liblsl log) -- native library loads; all LSL tests are real",
+   "evidence": []
+  }
+ ],
+ "findings": [
+  {
+   "id": "F22-io-streaming-lsl-001",
+   "severity": "major",
+   "title": "Single-channel stream crashes with bare IndexError at first redraw",
+   "description": "A stream whose samples are scalars (or length-1 vectors) -- e.g. one physiological signal or a 1-channel LSL device -- crashes as soon as the first post-head chunk is drawn: head_red has one column, is3d is False, and _redraw calls artist.set_data(full[:, 0], full[:, 1]) (streaming.py:264). Static hyp.plot of the same 1-D data works fine (plots against the index), and a head-only 1-channel stream (stream shorter than stream_init) also works, so the crash only fires once real streaming begins -- the worst time. No validation or fallback exists for n_features < 2.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport matplotlib; matplotlib.use('Agg')\nimport numpy as np, hypertools as hyp\ndef g():\n    for i in range(100):\n        yield float(np.sin(i / 8))\nhyp.plot(g(), stream_init=30, stream_chunk=20, show=False)\n\"",
+   "expected": "A 1-D trajectory plotted against sample index (like static hyp.plot of the same values), or a clear ValueError up front stating streams need >= 2 features.",
+   "actual": "File \"/Users/jmanning/hypertools/hypertools/io/streaming.py\", line 264, in _redraw\n    artist.set_data(full[:, 0], full[:, 1])\n                                ~~~~^^^^^^\nIndexError: index 1 is out of bounds for axis 1 with size 1",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F22-io-streaming-lsl-002",
+   "severity": "major",
+   "title": "Undocumented frozen-box clamping flattens post-head samples onto the display box -- visibly distorts the project's own iris tutorial example (100/150 points clamped)",
+   "description": "plot_stream freezes the centering/scaling affine from the first stream_init samples and CLAMPS every later sample to the [-1,1] box surface (streaming.py:226-239). Whenever the stream distribution shifts after the head -- the norm in streaming settings -- the display piles samples into straight bands on the box walls while fig.stream_info['xform_data'] keeps the true values, so the plot silently misrepresents the data. The shipped tutorial streaming_data.ipynb cell 10 (iris, stream_init=50) hits this: the head is 50 setosa rows, and ALL 100 versicolor/virginica samples land outside the frozen box (measured: 100 of 150 clamped) and render as a dense straight band along the top box edge -- fake structure, and the real two-cluster structure (visible in a static plot of the same 150 rows) is destroyed. No user-facing doc mentions clamping: the behavior is described only in internal comments/plot_stream docstring; hyp.plot docstring (stream_* params) and both streaming tutorials are silent. Also visible as flattened segments along the frame edges in the 2-channel run (v1b_2channel.png).",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nfrom datasets import load_dataset\nds = load_dataset('scikit-learn/iris', split='train', streaming=True)\nds = ds.select_columns(['SepalLengthCm', 'SepalWidthCm', 'PetalLengthCm', 'PetalWidthCm'])\nfig = hyp.plot(ds, '.', markersize=6, stream_init=50, stream_chunk=25, show=False)\nfig.savefig('/tmp/iris_streamed.png')\n\"  # top-edge band = 100 clamped samples",
+   "expected": "Either the post-head samples remain faithfully placed (e.g. axes rescale or clamping is clearly disclosed in hyp.plot docs + tutorials), or at least a runtime warning when a large fraction of streamed samples is being clamped.",
+   "actual": "Streamed iris: dense straight band of points pinned along the top box edge (see x5 side-by-side); measured 'samples landing outside frozen box (clamped): 100 of 150'. Static plot of the identical 150 rows shows two separated clusters mid-box.",
+   "evidence": [
+    "x5_iris_streamed_clamped_vs_static.png",
+    "hf_iris_tutorial_cell10.png",
+    "v1b_2channel.png"
+   ],
+   "docs_impact": [
+    "hypertools/plot/plot.py",
+    "docs/tutorials/streaming_data.ipynb",
+    "docs/tutorials/lsl_streaming.ipynb"
+   ]
+  },
+  {
+   "id": "F22-io-streaming-lsl-003",
+   "severity": "major",
+   "title": "Any mid-stream error (LSL source death, NaN sample, source exception) loses the figure, ALL consumed data, and the entire animation file",
+   "description": "plot_stream catches only KeyboardInterrupt (streaming.py:291); writer.finish() (line 294) and the fig.stream_info attachment are skipped on any other exception, and the figure is never returned. Demonstrated three ways, all real: (a) REAL LSL outlet that stops publishing mid-plot -> lsl_stream's HypertoolsIOError propagates out of hyp.plot; the 300 already-consumed samples and the partially-streamed GIF are unrecoverable -- with PillowWriter the file doesn't exist at all (frames are buffered in memory until finish()); (b) a generator raising RuntimeError mid-stream -- same total loss; (c) a single NaN sample -> IncrementalPCA.transform raises sklearn's 'Input X contains NaN' -> same total loss. For the flagship use case (long live acquisitions) this means an amp hiccup at minute 29 of 30 destroys everything. Contradicts the hyp.plot docstring claim that any animation being saved \"is finalized whenever streaming stops (including on interrupt)\" (plot.py ~line 997): true for Ctrl-C (verified), false for error stops.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport matplotlib; matplotlib.use('Agg')\nimport os, numpy as np, hypertools as hyp\ndef dying():\n    for i in range(200):\n        if i == 120: raise RuntimeError('sensor unplugged')\n        yield [float(i), np.sin(i/5.), np.cos(i/3.)]\ntry:\n    hyp.plot(dying(), stream_init=50, stream_chunk=25, save_path='/tmp/partial.gif', show=False)\nexcept RuntimeError as e:\n    print('lost everything:', e, 'gif exists:', os.path.exists('/tmp/partial.gif'))\n\"",
+   "expected": "On a source error: finalize the animation, attach stream_info (with the consumed data) to the figure, and either return the figure with a warning or re-raise an exception that still references the partial results -- matching the documented \"finalized whenever streaming stops\" contract.",
+   "actual": "REAL LSL run (L10): 'HypertoolsIOError propagated: \"LSL stream (name='AuditDies-82230') stopped delivering samples: nothing received for ~2.0s. The source may have disconnected.\" | figure+300 consumed samples LOST, gif exists=False'. Generator run (E18): RuntimeError propagated; gif size=-1 (never created); figure/stream_info LOST. NaN run (E12): ValueError: Input X contains NaN. IncrementalPCA does not accept missing values...",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py",
+    "docs/tutorials/streaming_data.ipynb"
+   ]
+  },
+  {
+   "id": "F22-io-streaming-lsl-004",
+   "severity": "minor",
+   "title": "Most hyp.plot kwargs are silently dropped for streaming inputs (hue, legend, animate, ...) while align/cluster raise",
+   "description": "The stream dispatch (plot.py:1546-1554) forwards only a fixed whitelist (fmt, stream_*, ndims, reduce, normalize, align, cluster, save_path, show, frame_rate, markersize, linewidth, color, palette, title, size, elev, azim, ax). Every other documented plot() parameter -- hue=, legend=, animate=, labels=, explore=, surface=, etc. -- is accepted without any warning and silently ignored for streams (verified for hue/animate/legend: no warnings emitted, no legend rendered). Inconsistent with align=/cluster=, which raise clear ValueErrors for streams.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport matplotlib; matplotlib.use('Agg')\nimport warnings, hypertools as hyp\ndef g():\n    for i in range(150):\n        yield [float(i), i*0.5, i*0.1]\nwith warnings.catch_warnings(record=True) as w:\n    warnings.simplefilter('always')\n    fig = hyp.plot(g(), stream_init=50, stream_chunk=50, hue=list(range(150)), legend=['s'], show=False)\nprint('warnings:', [str(x.message) for x in w], 'legend:', fig.axes[0].get_legend())\n\"",
+   "expected": "Unsupported-for-streams kwargs either warn or raise (like align/cluster do), or the docstring states which parameters apply to streaming inputs.",
+   "actual": "warnings: []  legend: None  (hue/legend/animate all silently ignored)",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py"
+   ]
+  },
+  {
+   "id": "F22-io-streaming-lsl-005",
+   "severity": "minor",
+   "title": "Streamed plots bypass line smoothing: style snaps from interpolated head (frame 0) to raw polyline (frame 1), and final figures mismatch static plots of the same data",
+   "description": "The initial head plot goes through hyp.plot and gets the standard interpolated/smoothed line (~900 rendered points for 100 samples), but every _redraw sets the raw projected samples on the artist (streaming.py:262-264). In saved animations the first frame is a smooth curve and the second snaps to a sharp polyline of the same data; the final streamed figure (60 rendered points) looks visibly different from a static hyp.plot of the identical samples (900 rendered points).",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t06_visuals.py  # cases X1 and X2",
+   "expected": "Consistent line styling between the head frame, streaming redraws, and static plots of equivalent data.",
+   "actual": "X2: ('static line pts', 900, 'streamed line pts', 60); x1 evidence: left frame smooth curves, right frame sharp zig-zags of the same stream.",
+   "evidence": [
+    "x1_headsmooth_vs_rawredraw.png",
+    "x2_static_vs_streamed_same_data.png"
+   ],
+   "docs_impact": []
+  },
+  {
+   "id": "F22-io-streaming-lsl-006",
+   "severity": "minor",
+   "title": "stream_* parameters unvalidated: window=0 shows all, negative window drops the OLDEST samples, chunk=0 silently truncates with truncated=False, negative values raise cryptic islice errors, init=0 blames the stream",
+   "description": "stream_window=0 displays ALL samples (shown[-0:] slice gotcha) instead of none/erroring; stream_window=-50 displays 250 of 300 (drops the first 50 -- inverted comet); stream_chunk=0 stops after the head, silently discarding the rest of the stream while reporting stream_info['truncated']=False (contradicting its documented meaning 'whether the stream was cut off before exhaustion'); stream_init=-5 / stream_chunk=-10 raise 'ValueError: Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize.' naming neither parameter; stream_init=0 raises 'ValueError: stream produced no samples' even though the stream has plenty of samples.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # cases E2-E7; and /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t03_verify.py  # cases V7, V8",
+   "expected": "Validate stream_init >= 1, stream_chunk >= 1, stream_window >= 1 (or None) with messages naming the parameter; truncated=True whenever consumption stopped before exhaustion.",
+   "actual": "V7: window=0 -> displayed [300] of 300; V8: window=-50 -> displayed [250]; E4: ('n_samples', 50, 'truncated', False) with 450 samples left unread; E3/E5: ValueError: Indices for islice() must be None or an integer...; E2: ValueError: stream produced no samples",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py"
+   ]
+  },
+  {
+   "id": "F22-io-streaming-lsl-007",
+   "severity": "minor",
+   "title": "stream_max smaller than stream_init is silently overshot: documented cap ignored for the head",
+   "description": "The head always consumes stream_init samples (streaming.py:207) before stream_max is checked, so hyp.plot(stream, stream_init=200, stream_max=100) consumes 200 samples and reports n_samples=200 despite the docstring 'stop streaming after this many samples'.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t02_edges.py  # case E6",
+   "expected": "Either cap the head at stream_max (consume min(stream_init, stream_max)) or document the interaction.",
+   "actual": "('requested stream_max', 100, 'actually consumed', 200, 'truncated', True)",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py"
+   ]
+  },
+  {
+   "id": "F22-io-streaming-lsl-008",
+   "severity": "minor",
+   "title": "ndims > 3 with streaming input crashes with cryptic 'TypeError: cannot unpack non-iterable NoneType object'",
+   "description": "plot_stream forwards ndims unvalidated; with a 6-channel stream and ndims=5 (or reduce=None with 4+ features) the head reaches the matplotlib backend's _draw which returns None for >3-dim input, producing an unpacking TypeError with no mention of ndims. Root TypeError is shared with static hyp.plot(data, reduce=None, ndims=4) (verified identical -- cross-reference for the plot-core audit unit), but the streaming path could validate ndims<=3 before consuming samples from a live source.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t06_visuals.py  # cases X3, X4",
+   "expected": "ValueError('ndims must be 1, 2, or 3 for plotting') before any samples are consumed.",
+   "actual": "TypeError: cannot unpack non-iterable NoneType object (from plot.py:2606 _draw unpacking)",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F22-io-streaming-lsl-009",
+   "severity": "minor",
+   "title": "lsl_stream docstring suggests type='Markers', but string-format LSL streams yield strings and hyp.plot dies with a cryptic float-conversion error",
+   "description": "The docstring lists 'Markers' among example type= values (lsl.py:49) and the Returns section promises 'per-sample numeric vectors', yet real LSL marker streams use channel_format='string': lsl_stream happily yields lists of strings (e.g. ['marker-14']), and plotting aborts with \"ValueError: could not convert string to float: 'marker-15'\" -- no hint that string-typed LSL streams are unsupported. The same raw float-cast error greets any other string-sample stream (open file handles pass is_stream; a str-yielding generator dies with \"could not convert string to float: 'hello\\n'\" with no streaming context).",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case L11 (spawns a REAL string-format outlet via outlet.py and consumes it)",
+   "expected": "Either lsl_stream raises/warns on non-numeric channel_format at resolve time (StreamInfo exposes it), or row_to_vector wraps the cast error with streaming context ('stream sample 15 is not numeric: ...'), and the docstring stops suggesting Markers or notes the restriction.",
+   "actual": "('lsl_stream yielded string sample', ['marker-14'], 'hyp.plot error:', \"ValueError: could not convert string to float: 'marker-15'\")",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/io/lsl.py"
+   ]
+  },
+  {
+   "id": "F22-io-streaming-lsl-010",
+   "severity": "doc",
+   "title": "hyp.plot stream_window docstring says data is 'retained on the returned geometry' -- stale pre-1.0 wording",
+   "description": "plot.py:1003 reads \"all consumed samples are still retained on the returned geometry.\" In 1.0 plot() returns a matplotlib Figure and the data lives on fig.stream_info; 'geometry' refers to the removed DataGeometry API. plot_stream's own docstring (streaming.py:186-188) has the correct 'returned figure's stream_info' wording.",
+   "repro": "grep -n 'returned geometry' /Users/jmanning/hypertools/hypertools/plot/plot.py",
+   "expected": "'...retained on the returned figure's stream_info.'",
+   "actual": "1003:        all consumed samples are still retained on the returned geometry.",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py"
+   ]
+  },
+  {
+   "id": "F22-io-streaming-lsl-011",
+   "severity": "doc",
+   "title": "lsl_stream docstring omits the mid-stream silence abort: timeout is documented only as resolve wait, but iteration also raises HypertoolsIOError after ~timeout seconds without samples",
+   "description": "The timeout parameter doc (lsl.py:52-56) and the Raises section (lsl.py:69-73) describe only the resolve-time behavior ('If no matching stream is found within timeout seconds'), but the returned generator ALSO aborts with HypertoolsIOError after ~timeout seconds of consecutive silence (verified: 81 real samples delivered, outlet stalls, next() raises after 2.0s with a good message). Consumers wrapping iteration need to know next() can raise; the behavior itself is good, just undocumented (only an inline comment, lsl.py:107-109).",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t07_l6fix.py  # case L6r",
+   "expected": "timeout/Raises docs also state: the generator raises HypertoolsIOError if no sample arrives for ~timeout seconds mid-stream.",
+   "actual": "Verified behavior: received 81 real samples, then HypertoolsIOError after 2.0s of silence (timeout=2.0): LSL stream (name='AuditSilent2-83431') stopped delivering samples: nothing received for ~2.0s. The source may have disconnected.",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/io/lsl.py",
+    "docs/api.rst"
+   ]
+  },
+  {
+   "id": "F22-io-streaming-lsl-012",
+   "severity": "enhancement",
+   "title": "lsl_stream discards LSL timestamps, offers no inlet tuning, and silently picks the first of multiple matching streams",
+   "description": "pull_sample returns (sample, timestamp) but the timestamp is dropped (lsl.py:117) with no option to keep it -- time-synchronization is the core point of LSL for scientists; there is no way to pass StreamInlet options (max_buflen, processing_flags for clock correction); and when several streams match the criterion the first resolved one is used with no warning (verified with two same-type outlets: silently picked one of them, order not user-controlled).",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case L14",
+   "expected": "e.g. lsl_stream(..., timestamps=True) yielding (vector, t) pairs, **inlet_kwargs passthrough, and a warning naming all matches when more than one stream resolves.",
+   "actual": "('2 matches, silently picked', 'AuditMultiA-82230', '| 2 inlets on one outlet, both contiguous', True)",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/io/lsl.py"
+   ]
+  }
+ ]
+}

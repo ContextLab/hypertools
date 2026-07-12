@@ -1,0 +1,390 @@
+{
+  "unit": "D08-tutorials-analysis",
+  "target": "docs/tutorials batch 2/4: cluster.ipynb, normalize.ipynb, text.ipynb, modern_sklearn_dynamics.ipynb (end-to-end fresh-kernel execution) + the APIs they exercise (hyp.cluster, hyp.normalize, text pipeline in format_data/text2mat, continuous-hue + animate in hyp.plot)",
+  "protocol_notes": "All four notebooks executed with fresh kernels via nbclient (timeout=600 s/cell, MPLBACKEND=Agg, venv python3 kernel) in isolated scratch cwds so tracked files (e.g. docs/tutorials/lorenz_trajectory.gif) were never touched. Cell 0 of each notebook is a Colab '%pip install ... @ git+...' bootstrap; it was neutralized in the scratch copies only, because running it would mutate the repo venv (forbidden by audit rules) -- every other cell ran verbatim. No docstring Examples sections exist in cluster.py / normalize.py / text2mat.py / format_data.py (verified by grep), so there were no API-level docstring examples to run verbatim; the tutorials themselves served that role.",
+  "brainstormed_edge_cases": [
+    "cluster: default call returns labels {0,1,2} (tutorial claims default 3 clusters) [tested]",
+    "cluster: list input stacked -> one labeling across all datasets, len == total rows [tested]",
+    "cluster: single-element list input [tested]",
+    "cluster: n_clusters larger than n_samples -- error message quality [tested]",
+    "cluster: n_clusters=0 / negative / float -- error message quality [tested]",
+    "cluster: unknown model name string -- error message quality [tested]",
+    "cluster: HDBSCAN with n_clusters passed -- silently ignored per docstring? [tested]",
+    "cluster: GaussianMixture returns (n_samples, k) membership rows summing to 1 [tested]",
+    "cluster: labels iterable/hashable so set()/Counter() work as tutorial shows [tested]",
+    "cluster: dict spec missing 'model' key [tested]",
+    "cluster: FeatureAgglomeration labels features not observations -- docstring contradiction [tested]",
+    "cluster: return_model=True then reuse fitted model on new data [tested]",
+    "cluster: mushrooms DataFrame (text/categorical features) via format_data dummies [tested via notebook]",
+    "normalize: 'across' stacked col means 0 / stds 1 [tested]",
+    "normalize: 'within' per-element col means 0 [tested]",
+    "normalize: 'row' per-row means 0 [tested]",
+    "normalize: default kwarg equals 'across' [tested]",
+    "normalize: one-element list returns bare array, contradicting docstring? [tested]",
+    "normalize: invalid mode string -- error message quality [tested]",
+    "normalize: constant (zero-variance) column -> zeros without divide-by-zero warnings [tested]",
+    "normalize: 1-D vector input [tested]",
+    "normalize: NaN input -> PPCA fill [tested]",
+    "normalize: normalize=False returns input unchanged [tested]",
+    "normalize: return_model=True reuse on held-out data [tested]",
+    "text: single text sample (reduce from one row) [tested]",
+    "text: empty string among documents [tested]",
+    "text: hue length mismatch vs number of documents [tested]",
+    "text: corpus='nips' and corpus='sotus' hosted corpora [tested]",
+    "text: misspelled corpus name silently treated as literal corpus [tested]",
+    "text: mixed text+numeric list, matching and mismatching sample counts [tested]",
+    "text: wikipedia package live fetch vs fallback path -- which one actually runs? [tested]",
+    "animate: HyperAnimation tuple-unpack (fig, ani = hyp.plot(..., animate=True)) [tested via notebook]",
+    "animate: 'spin' and chemtrails=True 'Next steps' suggestions actually work [tested]",
+    "animate: produced mp4->gif really has duration*frame_rate=900 frames [tested]",
+    "animate: cell 13 behavior when ffmpeg is absent and gif missing [tested]",
+    "hue: continuous float array -> monotonic color sweep along a known ramp [tested]",
+    "hue: cyclic hls endpoint wrap (first vs last timepoint color) [tested]",
+    "delay matrix + HDBSCAN 'Next steps' suggestion [tested]",
+    "notebook hygiene: nbformat versions / missing cell ids / kernelspec [tested]",
+    "numeric claims: 8124 mushrooms, (5000,3) trajectory, 30 s @ 30 fps, gif 9.2 MB [tested]",
+    "corpus='wiki' first-download on a machine with a cold cache [untested: local cache already warm; cannot un-cache without touching user state]",
+    "notebooks on real Colab incl. the %pip install cell [untested: would install into env / requires Colab]",
+    "non-English/unicode text documents through the default CountVectorizer+LDA pipeline [untested]",
+    "interactive plotly backend versions of these tutorial plots [untested: covered by another audit unit]",
+    "7 Line3DCollections created for one continuous-hue line (6 empty) -- internal artifact, no visual impact observed [tested, not filed as finding]"
+  ],
+  "tested": [
+    {
+      "case": "cluster.ipynb end-to-end, fresh kernel (9 code cells, pip cell neutralized)",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg .venv/bin/python run_nb.py docs/tutorials/cluster.ipynb <scratch>/exec_cluster",
+      "output_excerpt": "[runner] cluster: executed in 9.7s, errors=0 | cell12: {np.int32(0), np.int32(1), np.int32(2)} | cell14: Counter({np.int32(0): 3144, np.int32(1): 2880, np.int32(2): 2100}) (sum=8124, matches '8,124 samples' claim) | cell17: 10 labels",
+      "evidence": ["cluster_cell21_out0.png", "cluster_cell21_out1.png"]
+    },
+    {
+      "case": "normalize.ipynb end-to-end, fresh kernel (7 code cells)",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg .venv/bin/python run_nb.py docs/tutorials/normalize.ipynb <scratch>/exec_normalize",
+      "output_excerpt": "[runner] normalize: executed in 5.2s, errors=0; 4 figures rendered ('across' keeps clouds separate, 'row' intermixes -- both plausible)",
+      "evidence": ["normalize_cell09_out0.png", "normalize_cell14_out0.png", "normalize_cell17_out0.png", "normalize_cell19_out0.png"]
+    },
+    {
+      "case": "text.ipynb end-to-end, fresh kernel (11 code cells, live network available)",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg .venv/bin/python run_nb.py docs/tutorials/text.ipynb <scratch>/exec_text",
+      "output_excerpt": "executed in 16.4s, errors=0 -- BUT cell 6 output is 'Dogs are domesticated mammals, not nat' (39 chars): the wikipedia fetch silently fell back to 4-sentence toy text (see finding 001); cells 19/21 each emitted the same PNG twice (finding 003)",
+      "evidence": ["text_cell08_out0.png", "text_cell10_out0.png", "text_cell13_out0.png", "text_cell15_out0.png", "text_cell17_out0.png", "text_cell19_out0.png", "text_cell19_out1.png", "text_cell21_out0.png", "text_cell21_out1.png"]
+    },
+    {
+      "case": "modern_sklearn_dynamics.ipynb end-to-end, fresh kernel (8 code cells incl. 900-frame mp4 render + ffmpeg gif conversion)",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg .venv/bin/python run_nb.py docs/tutorials/modern_sklearn_dynamics.ipynb <scratch>/exec_modern",
+      "output_excerpt": "executed in 10.2s, errors=0 | cell8: (5000, 3) | cell13 stdout: 'gif: 9.2 MB' | produced gif: 900 frames, 30 ms/frame, 420x315 px (PIL count) -- matches 'duration=30, frame_rate=30' and the tracked gif (also 900 frames)",
+      "evidence": ["modern_sklearn_dynamics_cell04_out0.png", "modern_sklearn_dynamics_cell06_out0.png", "modern_sklearn_dynamics_cell10_out0.png", "lorenz_gif_frame000.png", "lorenz_gif_frame450.png", "lorenz_gif_frame899.png"]
+    },
+    {
+      "case": "W1 default hyp.cluster semantics: default 3 clusters, list stacking, single-element list, n_clusters=10, labels hashable for set()/Counter()",
+      "result": "pass",
+      "command": "probe_cluster_normalize.py sections C1-C4 (scratch dir)",
+      "output_excerpt": "C1 set: {0,1,2}; C2 list input [30x4, 20x4] -> type list len 50 (stacked across datasets as documented); C3 one-element list -> 30 labels; C4 n_clusters=10 -> 10 labels",
+      "evidence": []
+    },
+    {
+      "case": "W2 realistic pipeline: normalize('within') -> reduce(ndims=3) -> plot(hue, legend=True)",
+      "result": "pass",
+      "command": "probe: hyp.normalize([d1,d2],'within'); hyp.reduce(norm, ndims=3); hyp.plot(red,'.',hue=...,legend=True)",
+      "output_excerpt": "W2 OK, reduced shapes: [(80, 3), (80, 3)]; figure has legend with groups a/b",
+      "evidence": ["probe_w2_pipeline.png"]
+    },
+    {
+      "case": "W3 text corpus swap: corpus='nips' (markdown-instructed value) and corpus='sotus' on 4 scientific sentences",
+      "result": "pass",
+      "command": "hyp.plot(docs, 'o', corpus='nips'); hyp.plot(docs, 'o', corpus='sotus')",
+      "output_excerpt": "corpus='nips' OK; corpus='sotus' OK",
+      "evidence": ["probe_corpus_nips.png"]
+    },
+    {
+      "case": "W4 'Next steps' suggestion: cluster the Lorenz delay matrix with HDBSCAN",
+      "result": "pass",
+      "command": "hyp.plot(delay_matrix, '.', cluster='HDBSCAN', title='HDBSCAN on delay matrix')",
+      "output_excerpt": "no exception; attractor segmented into multiple colored regions",
+      "evidence": ["probe_delay_hdbscan.png"]
+    },
+    {
+      "case": "W5 'Next steps' suggestions: animate='spin' and chemtrails=True (tiny duration=1, frame_rate=5)",
+      "result": "pass",
+      "command": "hyp.plot(delay_matrix[::10], animate='spin', duration=1, frame_rate=5, show=False); hyp.plot(trajectory[::25], animate=True, chemtrails=True, duration=1, frame_rate=5, show=False)",
+      "output_excerpt": "spin return type: HyperAnimation; tuple-unpackable: True len: 2; chemtrails ok: True",
+      "evidence": []
+    },
+    {
+      "case": "W6/W7 return_model=True reuse: cluster model on new data; Normalizer.transform on held-out data",
+      "result": "pass",
+      "command": "labels, model = hyp.cluster(train, n_clusters=2, return_model=True); hyp.cluster(new, cluster=model); nrm, nmodel = hyp.normalize(train, return_model=True); nmodel.transform(new)",
+      "output_excerpt": "reuse OK, new labels: [1 x10, 0 x10] (perfect recovery); normalizer reuse OK: (20, 4) means: [-0.02 0.05 0. -0.03]",
+      "evidence": []
+    },
+    {
+      "case": "normalize semantics: 'across'/'within'/'row'/default/False, constant column, 1-D input, NaN PPCA fill",
+      "result": "pass",
+      "command": "probe_cluster_normalize.py sections N1-N4, N7-N10",
+      "output_excerpt": "'across': stacked col means [-0. 0. -0. 0.] stds [1. 1. 1. 1.]; 'within': per-element means 0 stds 1; 'row': row-mean max abs 1.7e-16; default==across True; constant cols -> zeros with no warning; 1-D (5,) -> (5,1) z-scored; NaN filled via PPCA (warns 'Inexact solution computed with PPCA'); normalize=False returns the identical object",
+      "evidence": []
+    },
+    {
+      "case": "cluster misuse battery: unknown name, n_clusters>n_samples, 0/-2/2.5, dict without 'model', HDBSCAN+n_clusters",
+      "result": "pass",
+      "command": "probe_cluster_normalize.py sections C5, C7-C10",
+      "output_excerpt": "unknown name -> ValueError listing all 15 supported names (excellent); n>samples -> sklearn 'n_samples=5 should be >= n_clusters=10.'; 0/-2/2.5 -> sklearn InvalidParameterError; dict w/o model -> instructive ValueError; HDBSCAN ignores n_clusters (2 clusters either way, as documented)",
+      "evidence": []
+    },
+    {
+      "case": "normalize misuse: invalid mode string; one-element list return type",
+      "result": "fail",
+      "command": "hyp.normalize([d1,d2], normalize='blah'); hyp.normalize([d1])",
+      "output_excerpt": "AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer. (stale param name, assert-based -- finding 008); one-element list in -> ndarray (60, 4) not list (finding 009)",
+      "evidence": []
+    },
+    {
+      "case": "text misuse battery: single doc, empty-string doc, hue length mismatch, misspelled corpus, mixed text+numeric",
+      "result": "fail",
+      "command": "probe_text_hue_anim.py sections T3-T7 + follow-up format_data probes",
+      "output_excerpt": "single doc: works with warning 'Cannot reduce the dimensionality of a single row of data. Return zeros length of ndims' (finding 015); empty string: OK; hue mismatch: excellent ValueError; corpus='bogus-name': silently accepted, fit as literal 1-doc corpus -> (2,20) garbage embedding (finding 011); mixed [2-doc text, (5,3) array]: raw numpy ValueError (finding 012); documented same-sample-count mixed case WORKS: format_data mixed OK [(3,50),(3,50)] with UserWarning 'Aligning data to a common space'",
+      "evidence": []
+    },
+    {
+      "case": "continuous-hue ground truth: 200-point straight ramp with hue=np.arange(200.)",
+      "result": "pass",
+      "command": "hyp.plot(ramp, hue=np.arange(200, dtype=float)); fig.canvas.draw(); inspect Line3DCollection colors",
+      "output_excerpt": "post-draw 199 unique segment colors; hls hue angle sweeps 0.01 -> 0.255 -> 0.505 -> 0.75 -> 0.0 (99.5% increasing, single monotonic sweep with endpoint wrap -- finding 013); PNG shows orange->green->blue->pink gradient",
+      "evidence": ["probe_hue_ramp.png"]
+    },
+    {
+      "case": "wikipedia dependency diagnosis (live network)",
+      "result": "fail",
+      "command": ".venv/bin/python -c \"import wikipedia; wikipedia.page('Domestic dog')\"; curl with descriptive vs library user-agent",
+      "output_excerpt": "wikipedia 1.4.0 raises requests.exceptions.JSONDecodeError: Expecting value: line 1 column 1 (char 0); curl with the library's UA gets Wikimedia's block page 'You are making too many requests to the API.'; curl with a descriptive UA succeeds (title 'Dog', length 192157) -- see finding 001",
+      "evidence": []
+    },
+    {
+      "case": "notebook hygiene: nbformat versions, missing cell ids, kernelspec",
+      "result": "fail",
+      "command": "json inspection of the four .ipynb files",
+      "output_excerpt": "cluster: nbformat 4.1; normalize/text: 4.2 (ids not required at those minors); modern_sklearn_dynamics: nbformat 4.5 with cell 0 missing the required 'id' -> MissingIDFieldWarning on every read (finding 010); all kernelspecs 'python3'",
+      "evidence": []
+    },
+    {
+      "case": "modern nb cell 13 without ffmpeg (PATH=/usr/bin:/bin) in a dir with no gif",
+      "result": "fail",
+      "command": "env PATH=/usr/bin:/bin python <<cell-13 source verbatim>>",
+      "output_excerpt": "ffmpeg on PATH: None; Image('lorenz_trajectory.gif') does NOT raise -- IPython stores the filename string as .data and _repr_html_ returns None, so the notebook silently displays nothing (finding 014). With ffmpeg present the executed nb embeds image/gif (12207688 bytes) correctly.",
+      "evidence": []
+    },
+    {
+      "case": "FeatureAgglomeration contract: labels per observation?",
+      "result": "fail",
+      "command": "hyp.cluster(np.random.randn(30,4), cluster='FeatureAgglomeration', n_clusters=2); hyp.plot(np.random.randn(30,4), '.', cluster='FeatureAgglomeration')",
+      "output_excerpt": "cluster() returns 4 labels for 30 observations (labels FEATURES); plot() crashes: ValueError: Cannot extract more clusters than samples: 5 clusters were given for a tree with 3 leaves. (finding 006)",
+      "evidence": []
+    },
+    {
+      "case": "cluster.ipynb HDBSCAN cell stderr noise",
+      "result": "fail",
+      "command": "executed notebook cell 20 outputs",
+      "output_excerpt": "stream/stderr: sklearn/cluster/_hdbscan/hdbscan.py:722: FutureWarning: The default value of `copy` will change from False to True in 1.10. Explicitly set a value for `copy` to silence this warning. (finding 004)",
+      "evidence": []
+    },
+    {
+      "case": "duplicate-figure display in text.ipynb cells 19/21 (fresh run AND shipped outputs)",
+      "result": "fail",
+      "command": "output-structure inspection of fresh + tracked text.ipynb",
+      "output_excerpt": "tracked cell 19: [('stream', []), ('execute_result', ['image/png','text/plain']), ('display_data', ['image/png','text/plain'])] -- same figure twice; fresh run identical (finding 003)",
+      "evidence": ["text_cell19_out0.png", "text_cell19_out1.png"]
+    }
+  ],
+  "findings": [
+    {
+      "id": "D08-tutorials-analysis-001",
+      "severity": "major",
+      "title": "text.ipynb: Wikipedia path is dead for everyone (wikipedia 1.4.0 UA blocked by Wikimedia); bare except silently swaps in 4-sentence toy text that contradicts the narration",
+      "description": "Cells 4/10 fetch pages with the unmaintained `wikipedia` 1.4.0 package. Wikimedia now blocks that package's shared User-Agent ('wikipedia (https://github.com/goldsmith/Wikipedia/)'): the API returns a plain-text block page, and the package dies with requests.exceptions.JSONDecodeError. The tutorial's bare `except:` then silently substitutes 1-2 sentence fallback strings, so every user (and the shipped notebook itself -- its stored cell 6 output is the 39-char fallback chunk) runs the whole 'Visualizing text' section on toy text. The narration still promises real content: 'Below is a snippet of some of the text from the dog wikipedia page ... words related to dog like wolf and carnivore appear' (the displayed 39-char chunk contains neither claim), and 'the 5 chunks of text from the dog/cat wiki pages cluster together' (in the actual figure the red/cyan points intermix; see text_cell08_out0.png). Fix options: fetch with a descriptive UA via requests directly (verified working: curl -A 'HyperToolsAudit/1.0 (email)' succeeds, title 'Dog', length 192157), vendor the two pages as a hosted dataset, or rewrite the narration for the fallback text; and replace `except:` with a printed notice so the substitution is never silent.",
+      "repro": "/Users/jmanning/hypertools/.venv/bin/python -c \"import wikipedia as wiki; wiki.page('Domestic dog')\"",
+      "expected": "Wikipedia page content downloads (the tutorial narrates real dog/cat/basketball wiki text), or at minimum a visible notice that fallback text is in use",
+      "actual": "requests.exceptions.JSONDecodeError: Expecting value: line 1 column 1 (char 0) -- underlying API response (curl with the package's UA): 'You are making too many requests to the API.\\nPlease follow the best practices at <https://www.mediawiki.org/wiki/Wikimedia_APIs/Rate_limits>.' Tutorial cell 6 stored output: 'Dogs are domesticated mammals, not nat'",
+      "evidence": ["text_cell08_out0.png", "text_cell10_out0.png"],
+      "docs_impact": ["docs/tutorials/text.ipynb"]
+    },
+    {
+      "id": "D08-tutorials-analysis-002",
+      "severity": "major",
+      "title": "text.ipynb cells 12-22: narration describes NIPS/Wikipedia/SOTUS dataset plots (dots colored+labeled by president, TSNE, HDBSCAN) but the code plots 4-16 generic sentences as bare red interpolated lines",
+      "description": "Cell 12 md: 'The next example is a dataset of all NIPS papers published from 1987 ... This example dataset can be loaded using the code below' -- the code creates 4 hardcoded sentences and never loads anything. Cell 14 md: 'we will plot a collection of wikipedia pages ... We will reduce the dimensionality of the data with TSNE, and then discover cluster with the HDBSCAN algorithm' -- the code uses 4 sample sentences with default PCA and no clustering. Cell 16 md: 'we will plot each state of the union address from 1989 to present. The dots are colored and labeled by president ... points generally seem to cluster by president ... democrats mostly on the left and republicans mostly on the right' -- the code plots 16 generic sentences with NO fmt/hue/labels, so the figure is a single unlabeled red line (text_cell17_out0.png), with no dots, no colors, no presidents. Cells 13/15/19/21 likewise render discrete documents as one connected interpolated red line, which is meaningless for unordered documents. Every claimed insight in this half of the tutorial is unverifiable from what the code shows. Fix: either load the real hosted 'nips'/'sotus' data (hyp.load) with hue/labels matching the prose, or rewrite the prose for the sample sentences and pass 'o' + hue so figures show grouped dots.",
+      "repro": "import hypertools as hyp\nsample_sotus = ['My fellow Americans, the state of our union is strong.']*1 + ['...15 more generic sentences...']\nfig = hyp.plot(sample_sotus, size=[10,8])  # exact cell 17 form: no fmt, no hue -> single red line",
+      "expected": "Dots colored and labeled by president, matching the markdown claims (or markdown matching the sample-sentence reality)",
+      "actual": "Figures are single-color connected interpolated lines with no labels/legend (text_cell17_out0.png, text_cell13_out0.png, text_cell19_out0.png, text_cell21_out0.png); no dataset is loaded in any of these cells",
+      "evidence": ["text_cell13_out0.png", "text_cell15_out0.png", "text_cell17_out0.png", "text_cell19_out0.png", "text_cell21_out0.png"],
+      "docs_impact": ["docs/tutorials/text.ipynb"]
+    },
+    {
+      "id": "D08-tutorials-analysis-003",
+      "severity": "minor",
+      "title": "text.ipynb cells 19 and 21 display each figure twice (unassigned hyp.plot(...) expression -> execute_result + inline display_data)",
+      "description": "Cells 19 and 21 call `hyp.plot(...)` without assigning the returned Figure. Under %matplotlib inline the figure is emitted once by the inline display hook (display_data) and again as the cell's execute_result (the Figure's rich repr), so readers of the rendered tutorial see the identical image twice back-to-back. Verified in BOTH the shipped notebook (tracked cell 19 outputs: stream + execute_result[image/png] + display_data[image/png]) and a fresh execution (cells 19/21 each produced two byte-identical PNGs). Every other plotting cell in the notebook uses `fig = hyp.plot(...)` and displays once. Fix: assign to fig (or add a trailing semicolon) in cells 19/21.",
+      "repro": "jupyter nbconvert --to notebook --execute docs/tutorials/text.ipynb  # then inspect cells 19/21: two identical image/png outputs each",
+      "expected": "One figure per plotting cell",
+      "actual": "tracked cell 19: 3 outputs -> [('stream', []), ('execute_result', ['image/png', 'text/plain']), ('display_data', ['image/png', 'text/plain'])]; fresh run: text_cell19_out0.png == text_cell19_out1.png (65004 bytes each)",
+      "evidence": ["text_cell19_out0.png", "text_cell19_out1.png", "text_cell21_out0.png", "text_cell21_out1.png"],
+      "docs_impact": ["docs/tutorials/text.ipynb"]
+    },
+    {
+      "id": "D08-tutorials-analysis-004",
+      "severity": "minor",
+      "title": "cluster='HDBSCAN' leaks a sklearn FutureWarning ('default value of copy will change ... in 1.10') into user-facing output, including cluster.ipynb cell 20",
+      "description": "hypertools constructs sklearn.cluster.HDBSCAN without pinning the `copy` parameter, so under scikit-learn 1.8 every HDBSCAN fit prints 'FutureWarning: The default value of `copy` will change from False to True in 1.10. Explicitly set a value for `copy` to silence this warning.' The warning appears as red stderr in the rendered cluster tutorial (cell 20) and in any user script using cluster='HDBSCAN' (modern_sklearn_dynamics.ipynb only avoids it via warnings.filterwarnings('ignore'), which hides ALL warnings -- itself a heavy hammer). Beyond the noise, the flagged default is changing under hypertools' feet in sklearn 1.10 (copy False -> True), so behavior/performance should be pinned deliberately in the Clusterer registry defaults.",
+      "repro": "import numpy as np, hypertools as hyp\nhyp.cluster(np.random.randn(100,3), cluster='HDBSCAN')",
+      "expected": "No FutureWarning in tutorial/user output; copy= pinned explicitly where HDBSCAN is constructed",
+      "actual": "stream/stderr in executed cluster.ipynb cell 20: '/Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/sklearn/cluster/_hdbscan/hdbscan.py:722: FutureWarning: The default value of `copy` will change from False to True in 1.10. Explicitly set a value for `copy` to silence this warning.'",
+      "evidence": [],
+      "docs_impact": ["docs/tutorials/cluster.ipynb", "hypertools/cluster/common.py"]
+    },
+    {
+      "id": "D08-tutorials-analysis-005",
+      "severity": "doc",
+      "title": "cluster.ipynb markdown/code errors: 'arrray', 'we have note specified' (x2), figure titled 'HCBSCAN clustering', cell-19 text claims n_clusters=10 is passed but the code omits it, supported-model list incomplete",
+      "description": "(1) Cell 2 md: 'clustering analysis on the data (an arrray, dataframe, or list)' -- typo. (2) Cells 11 and 16 md: 'since we have note specified' -- typo, twice. (3) Cell 21 code titles the second figure 'HCBSCAN clustering' (should be HDBSCAN); the typo is baked into the rendered figure (cluster_cell21_out1.png). (4) Cell 19 md: 'we specify both the clustering model (HDBSCAN) and the number of clusters (10)' but cell 20 runs hyp.cluster(mushrooms, cluster='HDBSCAN') with no n_clusters -- and n_clusters would be ignored for HDBSCAN anyway per the docstring, so the sentence teaches a wrong mental model. (5) Cell 2 md lists only 7 supported algorithms; the actual registry has 15 (adds MeanShift, DBSCAN, OPTICS, AffinityPropagation + mixtures GaussianMixture, BayesianGaussianMixture, LatentDirichletAllocation, NMF -- enumerated verbatim by the unknown-name error message).",
+      "repro": "grep -n 'arrray\\|have note\\|HCBSCAN' docs/tutorials/cluster.ipynb",
+      "expected": "Correct spelling ('array', 'not specified', 'HDBSCAN'), narration matching the code, and a supported-model list matching the registry",
+      "actual": "All five issues present in docs/tutorials/cluster.ipynb; figure title 'HCBSCAN clustering' visible in cluster_cell21_out1.png; C7 probe error message lists the true 15-model registry",
+      "evidence": ["cluster_cell21_out1.png"],
+      "docs_impact": ["docs/tutorials/cluster.ipynb"]
+    },
+    {
+      "id": "D08-tutorials-analysis-006",
+      "severity": "doc",
+      "title": "FeatureAgglomeration is advertised as a clustering model returning 'one label per observation' but actually labels FEATURES; via plot() it crashes with a cryptic sklearn tree error",
+      "description": "hyp.cluster's docstring promises 'a list of cluster labels (one per observation)' and both the docstring and cluster.ipynb cell 2 list FeatureAgglomeration among supported models with no caveat. FeatureAgglomeration clusters COLUMNS: hyp.cluster(randn(30,4), cluster='FeatureAgglomeration', n_clusters=2) returns 4 labels for 30 observations. Passed to plot (where labels become hue), it crashes deep in sklearn: 'ValueError: Cannot extract more clusters than samples: 5 clusters were given for a tree with 3 leaves.' (plot reduces to 3 columns first, then asks for 5 feature-clusters of 3 features). Either document the per-feature semantics prominently (and block/adapt it in plot with a clear message), or drop it from the advertised cluster list.",
+      "repro": "import numpy as np, hypertools as hyp\nlabels = hyp.cluster(np.random.randn(30, 4), cluster='FeatureAgglomeration', n_clusters=2)\nprint(len(labels))  # 4, not 30\nhyp.plot(np.random.randn(30, 4), '.', cluster='FeatureAgglomeration')  # crashes",
+      "expected": "Per the docstring, one label per observation (30), or a clear error/doc caveat explaining FeatureAgglomeration labels features",
+      "actual": "len(labels) == 4 for a (30,4) input; plot raises 'ValueError: Cannot extract more clusters than samples: 5 clusters were given for a tree with 3 leaves.'",
+      "evidence": [],
+      "docs_impact": ["hypertools/cluster/cluster.py", "docs/tutorials/cluster.ipynb"]
+    },
+    {
+      "id": "D08-tutorials-analysis-007",
+      "severity": "doc",
+      "title": "normalize.ipynb: dangling 'Or, to specify a different normalization...' with no preceding default example; ungrammatical intro; unseeded RNG makes shipped outputs irreproducible",
+      "description": "(1) Cell 10 heading 'Normalizing (Specified Cols or Rows)' is immediately followed by cell 11 'Or, to specify a different normalization, pass one of the following arguments...' -- the 'Or' refers to a default-usage example that does not exist in the notebook (the pre-1.0 tutorial had a 'normalize with defaults' section first). Readers meet an alternative before any primary usage. (2) Cell 2: 'The `normalize` is a helper function to z-score your data' -- grammar. (3) Cell 7 draws data with np.random.* and no seed, so every execution (and the shipped figures) differ run-to-run; the other three audited notebooks that need determinism use random_state/seeded generators.",
+      "repro": "jupyter nbconvert --to script docs/tutorials/normalize.ipynb --stdout | head -40",
+      "expected": "A default-usage example before the 'Or...' alternative, grammatical intro, and a seeded RNG for reproducible tutorial figures",
+      "actual": "Cell 11 begins 'Or, to specify a different normalization, pass one of the following arguments as a string' with no prior example; cell 7 has no seed",
+      "evidence": [],
+      "docs_impact": ["docs/tutorials/normalize.ipynb"]
+    },
+    {
+      "id": "D08-tutorials-analysis-008",
+      "severity": "minor",
+      "title": "hyp.normalize invalid-mode error is an AssertionError naming a nonexistent parameter 'scale_type'",
+      "description": "Passing a bad mode string raises 'AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.' Problems: (a) the parameter is named `normalize`, not `scale_type` (a pre-1.0 relic), so users grep for a kwarg that does not exist; (b) it is an assert, so running under `python -O` skips validation entirely and the bad value flows into Normalizer.transform (which raises its own, correctly-worded ValueError: \"normalize must be 'across', 'within', or 'row'; got ...\" -- the two messages also disagree); (c) 'none' in the message means the Python literals False/None, which a plain-string reading obscures. Replace the assert with a ValueError mirroring Normalizer.transform's wording.",
+      "repro": "import numpy as np, hypertools as hyp\nhyp.normalize([np.random.randn(10, 3)], normalize='blah')",
+      "expected": "ValueError: normalize must be 'across', 'within', 'row', False, None, or a fitted Normalizer; got 'blah'",
+      "actual": "AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/normalize.py"]
+    },
+    {
+      "id": "D08-tutorials-analysis-009",
+      "severity": "doc",
+      "title": "normalize docstring and tutorial claim 'If the input was a list, a list is returned' / 'output type same as input type' -- false for one-element lists",
+      "description": "hyp.normalize([single_array]) returns a bare ndarray, not a 1-element list: the return branch is `if internal or len(normalized_x) > 1: result = normalized_x else: result = normalized_x[0]`, which unwraps by ELEMENT COUNT rather than by input type. The docstring Returns section says 'If the input was a list, a list is returned. Otherwise, an array is returned', and normalize.ipynb cell 2 says 'returns an array or list of arrays where the columns or rows are z-scored (output type same as input type)'. Code written generically over lists of datasets (e.g. `[hyp.normalize(group)[0] for group in groups]`) silently indexes rows of the array when a group has one dataset. Either preserve list-in/list-out or document the single-element unwrap explicitly.",
+      "repro": "import numpy as np, hypertools as hyp\nout = hyp.normalize([np.random.randn(60, 4)])\nprint(type(out))  # <class 'numpy.ndarray'>, docstring promises list",
+      "expected": "list of length 1 (per docstring), or a docstring documenting the unwrap",
+      "actual": "one-element list in -> ndarray (60, 4)",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/normalize.py", "docs/tutorials/normalize.ipynb"]
+    },
+    {
+      "id": "D08-tutorials-analysis-010",
+      "severity": "minor",
+      "title": "modern_sklearn_dynamics.ipynb declares nbformat 4.5 but cell 0 has no 'id' -- MissingIDFieldWarning on every read, future hard error",
+      "description": "The notebook is nbformat 4.5, where cell ids are required, but the Colab pip-install cell (cell 0) was added without one. Every nbformat read/validate (nbconvert, jupyter, CI doc builds) emits 'MissingIDFieldWarning: Cell is missing an id field, this will become a hard error in future nbformat versions.' The other three audited notebooks are nbformat 4.1/4.2 where ids are not required (though normalizing them to 4.5 with ids would future-proof the whole tutorials folder). Fix: `jupyter nbconvert --to notebook --inplace` or nbformat.normalize() to stamp ids.",
+      "repro": "/Users/jmanning/hypertools/.venv/bin/python -c \"import nbformat; nbformat.read('/Users/jmanning/hypertools/docs/tutorials/modern_sklearn_dynamics.ipynb', as_version=4)\" -W error::UserWarning",
+      "expected": "No validation warnings when reading the shipped notebook",
+      "actual": "nbformat/__init__.py:96: MissingIDFieldWarning: Cell is missing an id field, this will become a hard error in future nbformat versions. (cell 0, the '%pip install' code cell, lacks 'id')",
+      "evidence": [],
+      "docs_impact": ["docs/tutorials/modern_sklearn_dynamics.ipynb"]
+    },
+    {
+      "id": "D08-tutorials-analysis-011",
+      "severity": "minor",
+      "title": "Misspelled corpus name is silently treated as a literal one-document training corpus (garbage embeddings, no warning)",
+      "description": "text2mat only special-cases corpus in ('wiki','nips','sotus'); any OTHER string falls through `corpus = np.array([corpus])` and the semantic model is fit on the literal string as a single document. hyp.plot(docs, corpus='wiki ') or corpus='Wiki' or corpus='bogus-name' therefore produces confidently-wrong topic vectors ((2,20) matrix from a vocabulary of the typo itself) with no error or warning. text.ipynb cell 20 explicitly teaches \"set corpus='nips'\", making name typos likely. Fix: warn (or raise) when corpus is a plain string that is not a hosted-corpus name -- a single string is almost never a meaningful corpus.",
+      "repro": "import warnings, hypertools as hyp\nm = hyp.tools.format_data(['some document to embed', 'another document here'], corpus='bogus-name')\nprint([x.shape for x in m])  # [(2, 20)] -- LDA fit on the literal string 'bogus-name'",
+      "expected": "ValueError or at least a UserWarning ('corpus 'bogus-name' is not one of wiki/nips/sotus; treating it as a 1-document corpus')",
+      "actual": "Silent success: bogus corpus result shape: [(2, 20)]",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/text2mat.py", "docs/tutorials/text.ipynb"]
+    },
+    {
+      "id": "D08-tutorials-analysis-012",
+      "severity": "minor",
+      "title": "Mixed text+numeric input with mismatched sample counts fails with a raw numpy vstack error that never mentions text/alignment",
+      "description": "format_data documents mixed lists ('x : numpy array, dataframe, string or (mixed) list') and auto-aligns text+numeric when sample counts match (verified working: [3 docs, (3,4) array] -> [(3,50),(3,50)] with a clear UserWarning). But when counts do NOT match -- [2 docs, (5,3) array] -- the vectorized (2,50) text and (5,3) array flow into a bare np.vstack and the user gets 'ValueError: all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 50 and the array at index 1 has size 3', with no hint that the issue is text/numeric sample-count mismatch or that same-count inputs would be hyperaligned. Raise a targeted message from format_data instead.",
+      "repro": "import numpy as np, hypertools as hyp\nhyp.plot([['text one', 'text two'], np.random.randn(5, 3)], 'o')",
+      "expected": "Error naming the real problem, e.g. 'mixed text (2 samples) and numeric (5 samples) datasets must have the same number of samples to be aligned to a common space'",
+      "actual": "ValueError: all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 50 and the array at index 1 has size 3",
+      "evidence": [],
+      "docs_impact": ["hypertools/tools/format_data.py"]
+    },
+    {
+      "id": "D08-tutorials-analysis-013",
+      "severity": "style",
+      "title": "Continuous hue uses the cyclic hls palette, so the FIRST and LAST timepoints get nearly the same red -- weakening the tutorial claim that 'color traces the passage of time'",
+      "description": "modern_sklearn_dynamics cell 9 md: 'Passing a continuous array as hue draws the trajectory as a multicolored line, so color traces the passage of time.' The multicolored line is real and the mapping is a single monotonic sweep (verified: 199 unique segment colors on a 200-point ramp, hls hue angle 0.01 -> 0.255 -> 0.505 -> 0.75 -> 0.0, 99.5% increasing). But hls is a CYCLIC palette: the endpoint wraps back to the start hue, so t=0 and t=T are both red-ish and cannot be told apart -- on the Lorenz attractor the trajectory's beginning and end look the same. A perceptually-ordered non-cyclic default (e.g. viridis) for continuous hue, or a sentence in the tutorial acknowledging the wrap, would make time uniquely readable.",
+      "repro": "import numpy as np, hypertools as hyp, matplotlib.colors as mc\nt = np.linspace(0, 1, 200); ramp = np.column_stack([t, 0*t, 0*t])\nfig = hyp.plot(ramp, hue=np.arange(200.)); fig.canvas.draw()\nbig = max(fig.axes[0].collections, key=lambda c: len(c.get_segments()))\nh = mc.rgb_to_hsv(np.asarray(big.get_colors())[:, :3])[:, 0]\nprint(h[0], h[-1])  # ~0.01 vs ~0.0 -- same hue at both ends",
+      "expected": "Distinct colors for earliest vs latest timepoints so time maps uniquely to color",
+      "actual": "hue angle start/25%/50%/75%/end: [0.01, 0.255, 0.505, 0.75, 0.0] -- endpoints visually identical red",
+      "evidence": ["probe_hue_ramp.png", "modern_sklearn_dynamics_cell10_out0.png"],
+      "docs_impact": ["docs/tutorials/modern_sklearn_dynamics.ipynb", "hypertools/plot/colors.py"]
+    },
+    {
+      "id": "D08-tutorials-analysis-014",
+      "severity": "minor",
+      "title": "modern_sklearn_dynamics cell 13: without ffmpeg the final Image('lorenz_trajectory.gif') silently displays nothing (missing file becomes the literal data string)",
+      "description": "Cell 13 guards the mp4->gif conversion behind shutil.which('ffmpeg') but runs Image('lorenz_trajectory.gif') unconditionally. In a fresh directory without ffmpeg (verified with PATH=/usr/bin:/bin), the gif never exists, yet IPython.display.Image does not raise -- it stores the FILENAME STRING as .data ('data attr: lorenz_trajectory.gif') and renders nothing, so the tutorial's finale is a blank output with no explanation. (Locally it 'works' only because a stale tracked gif sits next to the notebook.) An else-branch printing 'ffmpeg not found -- install it to render the gif' (or falling back to anim.save('...gif') via the Pillow writer, which needs no ffmpeg) would fail loudly or succeed.",
+      "repro": "mkdir /tmp/nogif && cd /tmp/nogif && env PATH=/usr/bin:/bin python - <<'EOF'\nimport shutil\nprint('ffmpeg:', shutil.which('ffmpeg'))\nfrom IPython.display import Image\nimg = Image('lorenz_trajectory.gif')\nprint('data attr:', repr(img.data))\nEOF",
+      "expected": "A clear notice when ffmpeg is unavailable, or a Pillow-based gif fallback (HyperAnimation.save supports .gif without ffmpeg)",
+      "actual": "ffmpeg on PATH: None; Image constructs without error; _repr_html_: None; data attr: 'lorenz_trajectory.gif' -- blank display",
+      "evidence": [],
+      "docs_impact": ["docs/tutorials/modern_sklearn_dynamics.ipynb"]
+    },
+    {
+      "id": "D08-tutorials-analysis-015",
+      "severity": "style",
+      "title": "Single-observation reduce warning is ungrammatical and vague: 'Cannot reduce the dimensionality of a single row of data. Return zeros length of ndims'",
+      "description": "Plotting a single text sample (or any single row) triggers hypertools/reduce/reduce.py:277: 'UserWarning: Cannot reduce the dimensionality of a single row of data. Return zeros length of ndims'. The second sentence is broken English and does not say what the caller should do. Suggest: 'Cannot reduce a single observation; returning a zero vector of length ndims. Pass at least 2 observations to compute a real embedding.'",
+      "repro": "import hypertools as hyp\nhyp.plot(['just one document'], 'o')",
+      "expected": "Grammatical warning stating the substitute behavior and the remedy",
+      "actual": "/Users/jmanning/hypertools/hypertools/reduce/reduce.py:277: UserWarning: Cannot reduce the dimensionality of a single row of data. Return zeros length of ndims",
+      "evidence": [],
+      "docs_impact": ["hypertools/reduce/reduce.py"]
+    },
+    {
+      "id": "D08-tutorials-analysis-016",
+      "severity": "enhancement",
+      "title": "No runnable Examples sections in the docstrings of the tutorial-facing APIs (cluster, normalize, text2mat, format_data)",
+      "description": "None of hypertools/cluster/cluster.py, hypertools/tools/normalize.py, hypertools/tools/text2mat.py, or hypertools/tools/format_data.py contains an 'Examples' docstring section (grep for 'Examples'/'>>>' finds only a prose 'Example use case' in format_data). Scientists reading help(hyp.cluster) get parameter tables but no copy-pasteable call; the tutorials carry the entire example burden and (per findings 001-002) drift from the code. Two-line numpydoc Examples blocks (which double as doctests) would anchor the documented behavior.",
+      "repro": "grep -rn 'Examples\\|>>>' hypertools/cluster/cluster.py hypertools/tools/normalize.py hypertools/tools/text2mat.py hypertools/tools/format_data.py",
+      "expected": "An Examples section per public API function",
+      "actual": "Only match: format_data.py:68 'aligned to a common space. Example use case: an array of movie frames' (prose, not runnable)",
+      "evidence": [],
+      "docs_impact": ["hypertools/cluster/cluster.py", "hypertools/tools/normalize.py", "hypertools/tools/text2mat.py", "hypertools/tools/format_data.py"]
+    },
+    {
+      "id": "D08-tutorials-analysis-017",
+      "severity": "enhancement",
+      "title": "cluster.ipynb final figures color 10 clusters with no legend or colorbar, so the colors carry no readable meaning",
+      "description": "Cell 21 plots hue=labels_10 (10 groups) and hue=labels_HDBSCAN without legend=True, producing 10-color scatters where no color can be tied to a cluster id (cluster_cell21_out0.png). Since hyp.plot supports legend=True (verified working in probe_w2_pipeline.png), the tutorial should demonstrate it here -- it is the natural next question for any reader ('which blob is cluster 3?').",
+      "repro": "import hypertools as hyp\nmushrooms = hyp.load('mushrooms')\nlabels_10 = hyp.cluster(mushrooms, n_clusters=10)\nfig = hyp.plot(mushrooms, '.', hue=labels_10, title='K-means clustering')  # no legend",
+      "expected": "legend=True (or a colorbar) so cluster colors are interpretable",
+      "actual": "10 unlabeled colors (cluster_cell21_out0.png)",
+      "evidence": ["cluster_cell21_out0.png", "probe_w2_pipeline.png"],
+      "docs_impact": ["docs/tutorials/cluster.ipynb"]
+    }
+  ]
+}

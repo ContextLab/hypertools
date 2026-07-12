@@ -45,6 +45,13 @@ Unit status: F01 18f · F02 14f · F03 15f · F04 12f · F05 15f · F06 12f · F
 
 Auditor-quality canaries: both pre-warm seeds (sotus Pipeline bug, sklearn version warnings) independently found by F18 ✓. F03 auditor also proved pipeline order normalize→reduce→align via exact coordinate equality and caught repo CLAUDE.md's Data Flow section listing the wrong order.
 
+## Wave-2 update (2026-07-11 ~02:50)
+
+Cumulative: 29 units workflow-completed + 3 orphan-valid JSONs (D01-readme, D05-gallery-data-text, D10-tutorials-embeddings-lsl) = **32/46 units on disk, 466 findings filed** (10 critical, ~72 major).
+New this wave: F13, F14, F15, F16, F17, F21, F22, F23, F24, D02, D03, D04, D06, D07, D08.
+Criticals added: F14-001 (Smooth on a list smooths ACROSS dataset boundaries — silent subject mixing), F16-001 (default Kalman forecaster never learns dynamics — flat forecasts), F16-002 (1-D input to predict → 1×n row), D07-001 (plot.ipynb tutorial crashes fresh execution: hue 8120 vs 8124), D01-crit + D05-crit (in orphan JSONs — details there).
+Wave 3 = second resume for remaining 17: D01, D05, D09, D10, D11, D12, D13, D14, F19 (server-error retry), X1-X8.
+
 ## Fix commits
 
 (one line per fix: `<sha> <finding-ids> <summary>`)

@@ -1,0 +1,346 @@
+{
+  "unit": "D02-sphinx-build",
+  "target": "Sphinx documentation build integrity: docs/conf.py + docs/Makefile `make html` (Sphinx 9.1.0, sphinx-gallery 0.21.0, furo, nbsphinx, numpydoc, sphinxcontrib-video) on branch audit/release-1.0-2026-07; autodoc/autosummary coverage of all public exports; 53-example gallery; 15 nbsphinx tutorials; built-page visual verification via Playwright on localhost-served _build/html",
+  "brainstormed_edge_cases": [
+    "cached-gallery incremental build (make html, no make clean): do only md5-stale examples re-execute? [tested: exactly 3 re-ran, 50 skipped]",
+    "stale example fails during build -> critical [tested: all 3 executed cleanly, 0 tracebacks]",
+    "every public export has an API page with real docstring content [tested: 33 pages OK; HyperAnimation + io missing]",
+    "HyperAnimation (new 1.0 export) present in api.rst/autosummary [tested: absent]",
+    "io submodule module-level docstring and API page [tested: empty docstring, no page]",
+    "extlinks config valid + sphinx.ext.extlinks loaded + :github: role used anywhere [tested: dead config, ext not loaded, role unused]",
+    "conf.py version/release vs hypertools.__version__ vs pyproject [tested: all 1.0.0.dev0, consistent]",
+    "orphan pages / dead internal refs -> sphinx warnings [tested: none among 24 warnings]",
+    "all 53 gallery thumbnails exist on disk and load with naturalWidth>0 [tested: 53/53 OK]",
+    "auto_examples/index.rst entry count vs examples/*.py count [tested: 53 == 53; audit brief said 54 - brief is wrong]",
+    "generated notebooks bake current git branch into pip-install cell [tested: audit/release-1.0-2026-07 baked in]",
+    "make html regenerates TRACKED docs/auto_examples files on any branch [tested: 24 tracked files modified by the mandated build]",
+    "post_build.py invoked as bare `python` in Makefile -> fails where only python3/venv exists [untested: needs clean PATH env; observed rule works only because venv bin prepended]",
+    "nbsphinx_allow_errors=True silently shipping tutorial error cells [tested: 0 error-output cells in 15 tutorial HTMLs]",
+    "tutorials.rst toctree covers all committed notebooks [tested: 15/15]",
+    "external links in index.rst live [tested: 3/3 HTTP 200; full linkcheck builder untested]",
+    "duplicate sg_execution_times.rst in docs/ root and auto_examples/ [tested: both build, no warnings]",
+    "numeric claims in docs prose reproduce (dispersion 0.64->0.47, '~30%' tightening, 'couple of minutes' runtime) [tested: recomputed]",
+    "ffmpeg-dependent matplotlib_animations (mp4) render + embed via sphinxcontrib-video [tested: 10 mp4s, video readyState=4]",
+    "plotly scraper (kaleido) deadlock if a plotly example goes md5-stale [untested: no plotly example was stale this build; kaleido known to hang on this machine]",
+    "cold rebuild after make clean [untested: forbidden by audit brief (cached gallery intentional)]",
+    "non-HTML builders (latexpdf, epub) [untested: out of mandate]",
+    "sphinx linkcheck builder over all pages [untested]",
+    "dark-mode furo rendering of custom.css [untested visually]",
+    "search UI querying searchindex.js [untested beyond file existence + genindex/search pages built]",
+    "Read the Docs env (READTHEDOCS_GIT_IDENTIFIER branch detection) [untested: no RTD env]",
+    "offline / credential-less build: plot_datasets_tour hits network incl. kaggle at build time [risk observed live; offline variant untested]",
+    "Windows make.bat build [untested]"
+  ],
+  "tested": [
+    {
+      "case": "Full `make html` (venv PATH, MPLBACKEND=Agg), incremental with cached gallery",
+      "result": "pass",
+      "command": "cd /Users/jmanning/hypertools/docs && env MPLBACKEND=Agg PATH=\"/Users/jmanning/hypertools/.venv/bin:$PATH\" make html",
+      "output_excerpt": "build succeeded, 24 warnings. ... after excluding 50 files that had previously been run (based on MD5). ... Build finished. The HTML pages are in _build/html. MAKE_EXIT=0",
+      "evidence": ["scratch: audit/D02-sphinx-build/build1.log (1129 lines)"]
+    },
+    {
+      "case": "Warning census: count and categorize every warning",
+      "result": "fail",
+      "command": "grep -c WARNING build1.log; grep -n WARNING build1.log",
+      "output_excerpt": "24 warnings = 22x 'WARNING: Title overline too short.' (auto_examples/*.rst:21) + 1x 'WARNING: cannot cache unpickleable configuration value: sphinx_gallery_conf' + 1x 'WARNING: The following HTTPError has occurred fetching https://docs.scipy.org/doc/scipy/reference//_static/documentation_options.js: 404'; 0 ERROR, 0 Traceback",
+      "evidence": ["scratch: build1.log"]
+    },
+    {
+      "case": "3 md5-stale examples re-executed live during build (plot_datasets_tour, plot_story_trajectories, animate_surface_morph)",
+      "result": "pass",
+      "command": "make html (above); grep -ln Traceback docs/auto_examples/*.rst",
+      "output_excerpt": "no Tracebacks in any generated rst/html; datasets_tour output fresh: 'sklearn: iris: (150, 5) / seaborn: penguins: (344, 7) / fivethirtyeight: bechdel: (1794, 15) / kaggle: uciml/iris: (150, 6)'",
+      "evidence": ["05-datasets-tour.png"]
+    },
+    {
+      "case": "autodoc/autosummary coverage: rendered API page for every public export",
+      "result": "fail",
+      "command": "ls docs/_build/html/hypertools.*.html; grep -c HyperAnimation docs/_build/html/api.html",
+      "output_excerpt": "33 autodoc pages built (plot, analyze, reduce+6 autoencoders, align+procrustes, normalize, describe, cluster, manip, predict, impute, load, save, apply_model, Pipeline, set_interactive_backend, io.lsl_stream, tools.*, 6 gensim vectorizers). grep HyperAnimation api.html -> 0; no hypertools.HyperAnimation.html; no hypertools.io.html",
+      "evidence": ["02-api.png"]
+    },
+    {
+      "case": "Autodoc page content quality: signature + body length for all 33 pages",
+      "result": "pass",
+      "command": "for f in hypertools.*.html; do grep -c 'class=\"sig ' $f; word-count; done",
+      "output_excerpt": "every page has >=1 signature; word counts 479 (save) to 8809 (plot); no empty/missing-docstring pages",
+      "evidence": []
+    },
+    {
+      "case": "Docstring presence via inspect for all 17 exports named in the audit mandate",
+      "result": "fail",
+      "command": ".venv/bin/python -c \"import hypertools, inspect; [print(n, len(inspect.getdoc(getattr(hypertools,n)) or '')) ...]\"",
+      "output_excerpt": "plot 57877, load 9309, ... HyperAnimation 272, save 24 ('Pickle `obj` to `fname`.'), io 0 (EMPTY)",
+      "evidence": []
+    },
+    {
+      "case": "Gallery completeness: examples/*.py vs auto_examples/index.rst thumbnails and toctree",
+      "result": "pass",
+      "command": "ls examples/*.py | wc -l; grep -c sphx-glr-thumbcontainer index.rst; grep -cE '^   /auto_examples/' index.rst",
+      "output_excerpt": "53 example scripts; 53 thumbnails; 53 toctree entries; 0 missing (audit brief said '54' - actual count is 53)",
+      "evidence": ["03-gallery-top.png"]
+    },
+    {
+      "case": "Thumbnail integrity in browser: naturalWidth>0 for every gallery <img>",
+      "result": "pass",
+      "command": "Playwright evaluate on /auto_examples/index.html: imgs.filter(i=>!i.complete||i.naturalWidth===0)",
+      "output_excerpt": "{\"total\": 53, \"broken\": []}",
+      "evidence": ["03-gallery-top.png"]
+    },
+    {
+      "case": "conf.py version strings vs package vs pyproject",
+      "result": "pass",
+      "command": ".venv/bin/python -c 'import hypertools; print(hypertools.__version__)'; grep version pyproject.toml",
+      "output_excerpt": "1.0.0.dev0 everywhere (conf.py sets version = release = hypertools.__version__; config.py reads installed metadata; pyproject version = \"1.0.0.dev0\")",
+      "evidence": []
+    },
+    {
+      "case": "Toctree/orphan/dead-ref integrity",
+      "result": "pass",
+      "command": "grep -n 'WARNING' build1.log | grep -iv 'title overline\\|config.cache\\|HTTPError'",
+      "output_excerpt": "zero toctree / orphan / undefined-label / missing-document warnings among the 24",
+      "evidence": []
+    },
+    {
+      "case": "External links in index.rst are live",
+      "result": "pass",
+      "command": "curl -s -o /dev/null -w '%{http_code}' -L on 3 URLs",
+      "output_excerpt": "200 arxiv.org/abs/1701.08290; 200 github.com/ContextLab/hypertools-paper-notebooks; 200 github.com/ContextLab/hypertools",
+      "evidence": []
+    },
+    {
+      "case": "Landing page visual render + browser console",
+      "result": "fail",
+      "command": "Playwright navigate http://127.0.0.1:8642/index.html + screenshot + console_messages",
+      "output_excerpt": "renders correctly (Furo, brand green, hero gif, sidebar). Console: [ERROR] Failed to load resource: 404 @ /favicon.ico + 2 benign jsdelivr widget warnings",
+      "evidence": ["01-landing.png"]
+    },
+    {
+      "case": "Example page with title-overline warning still renders title (plot_sotus)",
+      "result": "pass",
+      "command": "Playwright navigate /auto_examples/plot_sotus.html + screenshot",
+      "output_excerpt": "title 'plotting state of the union addresses with text analysis' renders; warning is cosmetic; page also exposes baked sklearn warning in Out block (see finding 006)",
+      "evidence": ["04-plot-sotus-title.png"]
+    },
+    {
+      "case": "Baked-in warning output + machine-local path leak scan across all 53 generated pages",
+      "result": "fail",
+      "command": "grep -l '/Users/jmanning' docs/auto_examples/*.rst; grep -n 'Warning' docs/auto_examples/*.rst",
+      "output_excerpt": "9 pages leak local paths inside shipped output blocks: animate_MDS, plot_PPCA, plot_clusters3, plot_describe, plot_hue, plot_sotus, plot_impute, plot_missing_data, plot_text",
+      "evidence": ["04-plot-sotus-title.png"]
+    },
+    {
+      "case": "Tutorials: notebook count vs tutorials.rst; nbsphinx render; hidden error cells",
+      "result": "pass",
+      "command": "ls docs/tutorials/*.ipynb | wc -l; grep -l 'output_error\\|class=\"stderr' _build/html/tutorials/*.html; Playwright on tutorials/plot.html",
+      "output_excerpt": "15 notebooks, all 15 in tutorials.rst; 0 error-output cells across tutorial HTMLs; plot.html: 39 nb cells, 16 images, 0 broken",
+      "evidence": ["06-tutorial-plot.png"]
+    },
+    {
+      "case": "Animation embeds: mp4 files + <video> playable",
+      "result": "pass",
+      "command": "ls _build/html/_images/*.mp4 | wc -l; Playwright evaluate video.readyState on animate.html",
+      "output_excerpt": "10 mp4s; {video: true, src: 'sphx_glr_animate_001.mp4', readyState: 4, w: 682, h: 474}; story_trajectories.mp4 (2.3MB) copied to _images and embedded via sphinxcontrib-video",
+      "evidence": ["07-animate-video.png"]
+    },
+    {
+      "case": "Plotly interactive embeds live-render in built docs",
+      "result": "pass",
+      "command": "Playwright evaluate on animate_plotly.html: document.querySelectorAll('.plotly-graph-div')",
+      "output_excerpt": "{plotlyDivs: 2, plotlyRendered: 13 (svg/canvas nodes), broken: []}",
+      "evidence": ["08-plotly-interactive.png"]
+    },
+    {
+      "case": "VERBATIM run of plot_story_trajectories.py docstring code block (which the build deliberately never executes)",
+      "result": "pass",
+      "command": "env MPLBACKEND=Agg .venv/bin/python scratchpad/audit/D02-sphinx-build/story_verbatim.py",
+      "output_excerpt": "UserWarning: Increasing smoothing kernel width by 1 (must be odd) | VERBATIM SNIPPET OK in 6.9s; mp4 size: 2284872",
+      "evidence": ["scratch: story_verbatim.py"]
+    },
+    {
+      "case": "Recompute numeric claim: dispersion ~0.64 -> ~0.47 (example prose) and 'tightens ~30%' (tutorials.rst)",
+      "result": "pass",
+      "command": "story_verbatim.py + follow-up variants (scale defs rms_global/mean_global/std; baselines 3d n_iter 1/10/default, 10d n_iter=10)",
+      "output_excerpt": "right(align-in-100d-then-reduce)=0.466 ~= 0.47 CLAIM OK (rms_global scale); baseline reduce-to-10d->align->3d = 0.643 ~= 0.64 CLAIM OK; drop 27.5% ~ '~30%'; note: reduce-to-3d-first baseline gives 0.750 (claim direction even stronger)",
+      "evidence": []
+    },
+    {
+      "case": "Search/index infrastructure built",
+      "result": "pass",
+      "command": "ls _build/html/searchindex.js _build/html/objects.inv genindex.html search.html",
+      "output_excerpt": "all present; genindex + search pages built; _downloads zips regenerated (auto_examples_python.zip newer than conf.py)",
+      "evidence": []
+    },
+    {
+      "case": "post_build.py animated-thumbnail pass",
+      "result": "pass",
+      "command": "make html (tail of log)",
+      "output_excerpt": "'Running post-build script to fix animated thumbnails...' ... 'Post-build processing completed successfully! Animated GIF thumbnails should now be working in the gallery.'",
+      "evidence": ["03-gallery-top.png"]
+    },
+    {
+      "case": "Side-effect audit: tracked files modified by the mandated build (NOT committed)",
+      "result": "fail",
+      "command": "git status --porcelain | grep -v notes/",
+      "output_excerpt": "24 tracked docs/auto_examples files modified by make html (3 stale examples' .py/.rst/.ipynb/.md5/.zip/images + auto_examples_jupyter.zip + auto_examples_python.zip + index.rst + both sg_execution_times.rst); regenerated notebooks bake '%pip install ... @audit/release-1.0-2026-07' branch URL",
+      "evidence": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "D02-sphinx-build-001",
+      "severity": "minor",
+      "title": "22 'Title overline too short' warnings: zero-warning 1.0 bar failed by example docstring title markup",
+      "description": "The build emits exactly 24 warnings; 22 are 'Title overline too short.' at line 21 of generated gallery pages. Root cause is in the SOURCE examples: docstring titles use '=' over/underlines shorter than the title text (e.g. examples/plot_sotus.py: 29 '=' chars over the 56-char title 'Plotting State of the Union Addresses with Text Analysis'). Affected (from build1.log): animate_MDS, animate_plotly, animate_trails_mix, plot_PPCA, plot_TSNE, plot_UMAP, plot_align, plot_apply_model, plot_clusters2, plot_clusters3, plot_corpus, plot_describe, plot_digits, plot_geo, plot_impute, plot_interactive_backend, plot_missing_data, plot_mixture_models, plot_nested_lists, plot_predict, plot_procrustes, plot_sotus. Titles still render (docutils recovers) so impact is warning noise only, but the stated 1.0 bar is zero warnings. Fix: lengthen the '=' lines to >= title length in those 22 example files.",
+      "repro": "cd /Users/jmanning/hypertools/docs && env MPLBACKEND=Agg PATH=\"/Users/jmanning/hypertools/.venv/bin:$PATH\" make html 2>&1 | grep -c 'Title overline too short'",
+      "expected": "0 warnings (1.0 zero-warning bar)",
+      "actual": "/Users/jmanning/hypertools/docs/auto_examples/plot_sotus.rst:21: WARNING: Title overline too short.  (22 occurrences; build1.log lines 455-560)",
+      "evidence": ["04-plot-sotus-title.png"],
+      "docs_impact": ["examples/plot_sotus.py and 21 other examples/*.py", "docs/auto_examples/*.rst (regenerated)"]
+    },
+    {
+      "id": "D02-sphinx-build-002",
+      "severity": "minor",
+      "title": "Sphinx cannot cache the build environment: unpickleable sphinx_gallery_conf warning on every build",
+      "description": "conf.py puts a function reference (plotly_sg_scraper fallback def) and computed first_notebook_cell into sphinx_gallery_conf, so Sphinx 9 warns it cannot pickle the config into the environment cache on every build. Harmless for this Makefile (html target passes -E anyway) but is 1/24 warnings against the zero-warning bar. Fix options: add suppress_warnings = ['config.cache'] to conf.py (the sphinx-gallery-documented remedy) or reference the scraper by string name.",
+      "repro": "cd /Users/jmanning/hypertools/docs && env MPLBACKEND=Agg PATH=\"/Users/jmanning/hypertools/.venv/bin:$PATH\" make html 2>&1 | grep 'config.cache'",
+      "expected": "no warning",
+      "actual": "pickling environment... WARNING: cannot cache unpickleable configuration value: 'sphinx_gallery_conf' (because it contains a function, class, or module object) [config.cache]",
+      "evidence": [],
+      "docs_impact": ["docs/conf.py"]
+    },
+    {
+      "id": "D02-sphinx-build-003",
+      "severity": "minor",
+      "title": "sphinx_gallery reference_url for scipy 404s (double slash), so scipy identifier links are not embedded",
+      "description": "conf.py sphinx_gallery_conf['reference_url']['scipy'] = 'https://docs.scipy.org/doc/scipy/reference/' produces 'https://docs.scipy.org/doc/scipy/reference//_static/documentation_options.js' -> 404 during 'embedding documentation hyperlinks', so gallery code links to scipy objects are silently skipped (matplotlib/numpy/pandas/sklearn resolve fine). Current correct base is 'https://docs.scipy.org/doc/scipy/'.",
+      "repro": "cd /Users/jmanning/hypertools/docs && env MPLBACKEND=Agg PATH=\"/Users/jmanning/hypertools/.venv/bin:$PATH\" make html 2>&1 | grep HTTPError",
+      "expected": "no HTTPError; scipy identifiers hyperlinked in gallery code blocks",
+      "actual": "WARNING: The following HTTPError has occurred fetching https://docs.scipy.org/doc/scipy/reference//_static/documentation_options.js: 404 (Not Found)",
+      "evidence": [],
+      "docs_impact": ["docs/conf.py"]
+    },
+    {
+      "id": "D02-sphinx-build-004",
+      "severity": "major",
+      "title": "Public export HyperAnimation has no API page and is absent from api.rst",
+      "description": "hypertools/__init__.py exports HyperAnimation (the (figure, animation) return object of plot(animate=...) in 1.0, docstring present, 272 chars), but docs/api.rst has no autosummary entry for it: the built site has no hypertools.HyperAnimation.html and api.html contains zero mentions. Scientists receiving a HyperAnimation from plot() have no reference page for its save/display API. Every other __init__ export has a page. Fix: add 'HyperAnimation' to an autosummary block in docs/api.rst (e.g. under Plot).",
+      "repro": "ls /Users/jmanning/hypertools/docs/_build/html/ | grep -i hyperanimation; grep -c HyperAnimation /Users/jmanning/hypertools/docs/_build/html/api.html",
+      "expected": "hypertools.HyperAnimation.html exists and api.html links it",
+      "actual": "grep -i hyperanimation over _build/html file list -> no matches; grep -c HyperAnimation api.html -> 0",
+      "evidence": ["02-api.png"],
+      "docs_impact": ["docs/api.rst"]
+    },
+    {
+      "id": "D02-sphinx-build-005",
+      "severity": "doc",
+      "title": "hypertools.io module docstring is empty (no io API page) and save() docstring is a single line",
+      "description": "inspect.getdoc(hypertools.io) returns '' -- the io subpackage (public per __init__ and CLAUDE.md) has no module docstring and no API page beyond io.lsl_stream. hypertools.save's entire docstring is 'Pickle `obj` to `fname`.' (24 chars): the rendered hypertools.save.html (479 words, mostly chrome) documents no Parameters/Returns/Examples, and **kwargs semantics are unexplained, in contrast to every other export (e.g. load: 9309-char docstring). For a 1.0 API reference this is the thinnest page on the site.",
+      "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools, inspect; print(repr(inspect.getdoc(hypertools.io))); print(repr(inspect.getdoc(hypertools.save)))\"",
+      "expected": "module docstring for io; numpydoc-style Parameters/Returns/Examples for save",
+      "actual": "None-equivalent ('' after getdoc) for io; 'Pickle `obj` to `fname`.' for save",
+      "evidence": ["02-api.png"],
+      "docs_impact": ["hypertools/io/__init__.py", "hypertools/io/save.py", "docs/api.rst"]
+    },
+    {
+      "id": "D02-sphinx-build-006",
+      "severity": "minor",
+      "title": "9 shipped gallery pages contain baked-in warning blocks leaking machine-local paths (/Users/jmanning/...)",
+      "description": "The cached (committed) sphinx-gallery outputs embed runtime warnings, each prefixed with an absolute path from the build machine, visible to every docs reader: animate_MDS (2x sklearn FutureWarning: MDS n_init/init defaults will change), plot_clusters3 (HDBSCAN FutureWarning), plot_PPCA + plot_missing_data (hypertools UserWarning 'Missing data: Inexact solution computed with PPCA' AND hypertools' own matplotlib_backend.py:102 UserWarning 'linestyle is redundantly defined...'), plot_text + plot_sotus (sklearn InconsistentVersionWarning unpickling the hosted model), plot_describe (UserWarning 'this computation can take a long time'), plot_hue (numpy DeprecationWarning raised BY THE EXAMPLE CODE, examples/plot_hue.py:31 'Conversion of an array with ndim > 0 to a scalar is deprecated' -- will hard-error on future numpy), plot_impute. Beyond polish, the FutureWarning/DeprecationWarning items flag examples that will change or break under upcoming sklearn/numpy. Fix: silence-or-fix warnings in the examples (preferred: fix the code paths) and re-render; consider a warnings filter in the gallery config only where the warning is intentional teaching content.",
+      "repro": "grep -l '/Users/jmanning' /Users/jmanning/hypertools/docs/auto_examples/*.rst",
+      "expected": "no machine-local paths or unexplained warning blocks in published example output",
+      "actual": "9 files match: animate_MDS.rst plot_PPCA.rst plot_clusters3.rst plot_describe.rst plot_hue.rst plot_sotus.rst plot_impute.rst plot_missing_data.rst plot_text.rst; e.g. plot_hue.rst:47 '/Users/jmanning/hypertools/examples/plot_hue.py:31: DeprecationWarning: Conversion of an array with ndim > 0 to a scalar is deprecated'",
+      "evidence": ["04-plot-sotus-title.png"],
+      "docs_impact": ["docs/auto_examples/{animate_MDS,plot_PPCA,plot_clusters3,plot_describe,plot_hue,plot_sotus,plot_impute,plot_missing_data,plot_text}.rst", "examples/plot_hue.py", "hypertools/plot/matplotlib_backend.py"]
+    },
+    {
+      "id": "D02-sphinx-build-007",
+      "severity": "minor",
+      "title": "Docs build executes plot_datasets_tour against the live network (fivethirtyeight CSV + kaggle download) when stale",
+      "description": "plot_datasets_tour.py was md5-stale and re-executed during this build, fetching remote data at build time: its fresh output shows 'fivethirtyeight: bechdel: (1794, 15)' and 'kaggle: uciml/iris: (150, 6)'. A docs build that requires internet plus configured Kaggle credentials is fragile (RTD/CI/offline builds of a modified example will fail; 'expected_failing_examples' is []). It also makes committed gallery artifacts nondeterministic. Consider caching these fetches, or trimming the tour's remote sources to pre-cached ones for the build. Tagged infra-sensitivity: succeeded on this machine because network + kaggle creds were available.",
+      "repro": "touch-equivalent: edit examples/plot_datasets_tour.py (md5 change), then cd docs && make html on a machine without kaggle credentials/network",
+      "expected": "docs build independent of external network/credentials",
+      "actual": "Out block regenerated live this build: 'sklearn: iris: (150, 5)\\nseaborn: penguins: (344, 7)\\nfivethirtyeight: bechdel: (1794, 15)\\nkaggle: uciml/iris: (150, 6)'",
+      "evidence": ["05-datasets-tour.png"],
+      "docs_impact": ["examples/plot_datasets_tour.py", "docs/conf.py"]
+    },
+    {
+      "id": "D02-sphinx-build-008",
+      "severity": "minor",
+      "title": "make html on any branch rewrites tracked docs/auto_examples artifacts and bakes the branch name into all downloadable notebooks",
+      "description": "The gallery outputs (.rst/.ipynb/.md5/.zip/images) are committed, and conf.py's _install_notebook_cell() embeds the CURRENT git branch into the first cell of every generated notebook (all 53, plus both download zips). This build (on audit/release-1.0-2026-07) modified 24 tracked files and produced notebooks whose install cell is '%pip install -q \"hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@audit/release-1.0-2026-07\"' -- an ephemeral branch URL that will dangle after the branch is deleted. Any contributor building docs on a feature branch dirties the tree the same way (the fix/qc-notes branch snapshot showed identical churn). For release this must be built from master (cell then becomes '%pip install -q \"hypertools[interactive]\"'). Consider excluding branch-derived content from committed artifacts or generating install cells at publish time only.",
+      "repro": "cd /Users/jmanning/hypertools/docs && make html; git status --porcelain docs/; python -c \"import json; print(''.join(json.load(open('auto_examples/plot_datasets_tour.ipynb'))['cells'][0]['source']))\"",
+      "expected": "docs build leaves the tree clean; published notebooks reference a stable install target",
+      "actual": "24 tracked files modified; first cell: '# Install hypertools (audit/release-1.0-2026-07 preview) -- run this first on Colab.\\n%pip install -q \"hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@audit/release-1.0-2026-07\"'",
+      "evidence": [],
+      "docs_impact": ["docs/conf.py", "docs/auto_examples/* (committed build products)"]
+    },
+    {
+      "id": "D02-sphinx-build-009",
+      "severity": "style",
+      "title": "Dead extlinks config in conf.py: extension not loaded and value format invalid",
+      "description": "conf.py line 197 sets extlinks = {'github': 'https://github.com/ContextLab/hypertools'} but 'sphinx.ext.extlinks' is not in extensions, so the setting is inert; additionally the value is a bare string, not the required ('https://...%s', caption) 2-tuple, so merely enabling the extension would fail. No .rst uses a :github: role (grep: 0 matches). Remove the line or wire it up properly.",
+      "repro": "grep -n \"extlinks\" /Users/jmanning/hypertools/docs/conf.py; grep -rn ':github:' /Users/jmanning/hypertools/docs/*.rst",
+      "expected": "either working extlinks or no dead config",
+      "actual": "extlinks = {'github': 'https://github.com/ContextLab/hypertools'} with no sphinx.ext.extlinks in extensions; zero :github: role uses",
+      "evidence": [],
+      "docs_impact": ["docs/conf.py"]
+    },
+    {
+      "id": "D02-sphinx-build-010",
+      "severity": "doc",
+      "title": "Footer copyright stuck at 2017",
+      "description": "conf.py copyright = u'2017, Contextual Dynamics Laboratory' renders 'Copyright © 2017, Contextual Dynamics Laboratory' in the footer of every page of the 2026 1.0 release. Update to a range (e.g. '2017-2026, Contextual Dynamics Laboratory') or compute the year.",
+      "repro": "grep -o 'Copyright[^<]*' /Users/jmanning/hypertools/docs/_build/html/index.html | head -1",
+      "expected": "current year (or range) in footer",
+      "actual": "Copyright &#169; 2017, Contextual Dynamics Laboratory",
+      "evidence": ["01-landing.png"],
+      "docs_impact": ["docs/conf.py"]
+    },
+    {
+      "id": "D02-sphinx-build-011",
+      "severity": "minor",
+      "title": "No favicon configured: every docs page logs a 404 console error",
+      "description": "html_favicon is unset and _static ships no favicon, so browsers request /favicon.ico and get 404 on every page (console ERROR observed on the served build; RTD would show the same). Cosmetic but visible in devtools and the browser tab lacks branding. Fix: add a favicon to docs/_static and set html_favicon in conf.py.",
+      "repro": "Serve _build/html and open any page with devtools: python -m http.server; observe console",
+      "expected": "favicon served, no console error",
+      "actual": "[ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8642/favicon.ico:0",
+      "evidence": ["01-landing.png"],
+      "docs_impact": ["docs/conf.py", "docs/_static/"]
+    },
+    {
+      "id": "D02-sphinx-build-012",
+      "severity": "style",
+      "title": "docs tree hygiene: tracked internal planning docs, obsolete generated stubs, and unnecessary :orphan: markers",
+      "description": "(a) 13 internal planning/spec markdown files are tracked under docs/superpowers/plans and docs/superpowers/specs (e.g. 2026-07-03-hypertools-2.0-plan-8-docs.md) -- internal process artifacts shipped in the release tree (not built into HTML since only .rst/.ipynb are sources, but published in the sdist/repo). (b) docs/modules/generated/*.examples are tracked leftovers from a removed backreferences setup, never used by the current build. (c) docs/api.rst and docs/tutorials.rst carry :orphan: markers although both ARE in index.rst's toctree; the markers only mask genuine orphanhood if the toctree entry is ever removed. Also note docs/__pycache__ exists in-tree (untracked).",
+      "repro": "git -C /Users/jmanning/hypertools ls-files docs/superpowers docs/modules | head; head -1 /Users/jmanning/hypertools/docs/api.rst /Users/jmanning/hypertools/docs/tutorials.rst",
+      "expected": "release docs tree contains only build sources/assets; no inert markers",
+      "actual": "13 tracked files under docs/superpowers/; tracked docs/modules/generated/hypertools.*.examples; ':orphan:' first line in api.rst and tutorials.rst",
+      "evidence": [],
+      "docs_impact": ["docs/superpowers/", "docs/modules/generated/", "docs/api.rst", "docs/tutorials.rst"]
+    },
+    {
+      "id": "D02-sphinx-build-013",
+      "severity": "doc",
+      "title": "Story-trajectories docstring: runtime claim off by ~20x and its recommended kernel_width triggers a UserWarning",
+      "description": "examples/plot_story_trajectories.py says 'The full pipeline takes a couple of minutes on the full dataset, so this example does not re-run it live'. Verbatim execution of the exact documented code block (36 subjects, full manip+hyperalign+animated mp4 export) completed in 6.9 s on this machine -- the stated justification overstates cost ~20x. The same documented spec uses kernel_width=40 (even), which emits 'UserWarning: Increasing smoothing kernel width by 1 (must be odd)' -- the docs' own recommended parameters warn. Numeric claims in the same prose DO reproduce (dispersion 0.643 vs '~0.64' for the reduce-to-10d-then-align baseline; 0.466 vs '~0.47' aligned-then-reduced; drop 27.5% vs tutorials.rst '~30%'). Suggest: kernel_width=41, and either run the example live or soften the runtime claim.",
+      "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D02-sphinx-build/story_verbatim.py",
+      "expected": "documented snippet runs warning-free; prose runtime matches reality",
+      "actual": "hypertools/manip/smooth.py:172: UserWarning: Increasing smoothing kernel width by 1 (must be odd) | VERBATIM SNIPPET OK in 6.9s; mp4 size: 2284872 | scale=rms_global: wrong=0.750 right=0.466; 10d-baseline=0.643",
+      "evidence": [],
+      "docs_impact": ["examples/plot_story_trajectories.py", "docs/tutorials.rst"]
+    },
+    {
+      "id": "D02-sphinx-build-014",
+      "severity": "style",
+      "title": "Furo edit/view-source links target master; Makefile invokes bare `python` for post_build",
+      "description": "(a) html_theme_options source_branch = 'master': the per-page GitHub source links 404 for any page whose source is not yet on master (all dev-1.0 content until merge). Harmless at release-from-master, wrong for previews. (b) docs/Makefile html target runs 'python post_build.py' with bare `python`; on macOS/CI environments without a `python` shim (only python3), make html dies AFTER a successful sphinx-build, at the thumbnail-fix step. This audit's build succeeded only because the venv bin (which has `python`) was prepended to PATH.",
+      "repro": "grep -n \"source_branch\\|python post_build\" /Users/jmanning/hypertools/docs/Makefile /Users/jmanning/hypertools/docs/conf.py",
+      "expected": "branch-aware source links (like the notebook cell already is); python3/$(PYTHON) in Makefile",
+      "actual": "conf.py: 'source_branch': 'master'; Makefile line 50: 'python post_build.py'",
+      "evidence": [],
+      "docs_impact": ["docs/conf.py", "docs/Makefile"]
+    }
+  ]
+}

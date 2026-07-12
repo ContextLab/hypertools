@@ -1,454 +1,1476 @@
 {
-  "unit": "F16-predict",
-  "target": "hyp.predict() forecasting dispatcher + hypertools/predict/ (common, kalman, gp, autoreg, arima, laplace, chronos), audited on branch audit/release-1.0-2026-07. IMPORTANT: the repo .venv contains a STALE non-editable hypertools install (see F16-predict-018); all results below were obtained against the repo working tree via `env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg .venv/bin/python`. Test scripts: /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/t01..t06; raw case-by-case outputs in t0*_repo_out.json alongside them.",
-  "brainstormed_edge_cases": [
-    "t=0 and negative t (tested)",
-    "t as float / bool / np.bool_ / np.float64 (tested)",
-    "t as 0-d numpy array np.array(5) (tested)",
-    "datetime-like t on RangeIndex (non-datetime) data (tested)",
-    "datetime t in the past -> truncation semantics (tested)",
-    "datetime t EXACTLY equal to the last timestamp (tested - crash, finding 004)",
-    "unparseable string t ('banana') on DatetimeIndex data (tested)",
-    "NaN scattered in the series, per model (tested - findings 010)",
-    "all-NaN column (tested - silent 0.0 forecast)",
-    "series shorter than AutoRegressor lags (tested)",
-    "1-row and 3-row datasets per model (tested)",
-    "empty DataFrame / empty list / None input (tested - finding 006)",
-    "pandas Series input (tested - crash, finding 002)",
-    "1-D numpy array input (tested - wrong semantics, finding 003)",
-    "plain python list of floats (tested - each float becomes a dataset)",
-    "list of raw strings routed into text-embedding pipeline (tested)",
-    "DataFrame with a non-numeric string column (tested)",
-    "typo'd kwargs (n_itr, kernle) silently ignored (tested - finding 008)",
-    "unknown/lowercase/empty-string model names (tested)",
-    "dict specs: params-form vs fork-form, outer-kwarg merging (tested - finding 009)",
-    "return_model=True round trip per model incl. GP reuse semantics (tested - finding 014)",
-    "predict_new dataset/model count mismatch and 1->N broadcast (tested)",
-    "predict_new on data with different feature count than fit (tested - finding 017)",
-    "determinism run-to-run per model; RF and Chronos seeding (tested - finding 016)",
-    "Chronos horizon > 64 (its native max prediction length) (tested - works, no warning)",
-    "irregular integer index (step 3) and all-identical timestamps (tested)",
-    "non-monotonic/descending index: resolve_t uses index[-1] not max, forecast could overlap existing rows (untested)",
-    "duplicate timestamps + datetime truncation (d.loc[future_index] row duplication) (untested)",
-    "MultiIndex-column DataFrame input (untested)",
-    "polars DataFrame input (untested)",
-    "datetime t falling between steps (np.round of fractional step counts) (untested)",
-    "tz-aware DatetimeIndex (untested)",
-    "very large t (e.g. 10000) memory/time behavior (untested)",
-    "nullable Int64 dtype with pd.NA (untested)",
-    "Chronos device_map='mps'/'cuda' (untested; only 'cpu' exercised)",
-    "concurrent predict() calls sharing one Chronos pipeline (untested)"
-  ],
-  "tested": [
-    {
-      "case": "t01: all 6 models (Kalman, GaussianProcess, AutoRegressor, ARIMA, Laplace, Chronos) x 3 series (noisy sine, linear trend, random walk), n=200, horizon 20, corr vs held-out truth + shape + index continuation + timing (18 cases)",
-      "result": "fail",
-      "command": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python .../scratchpad/audit/F16-predict/t01_core_models.py",
-      "output_excerpt": "noisy_sine: Kalman fc_std_over_train_std=0.0 first3=[0.24,0.24,0.24] (FLAT); GaussianProcess corr=0.906; AutoRegressor corr=0.958; ARIMA corr=0.464; Laplace corr=0.378; Chronos corr=0.917. linear_trend: Kalman FLAT (rmse 0.645); ARIMA flat (fc_std ratio 0.0004, corr -0.239); GP 0.873, AutoReg 0.865, Laplace 0.872, Chronos 0.614. random_walk: all near-constant (statistically correct). All shapes (20,1), index 180..199 correct. Times: Kalman 0.34s, GP 0.04s, AutoReg <0.01s, ARIMA 0.16s, Laplace ~2s, Chronos 2.6s first / 0.3s cached.",
-      "evidence": ["evidence/F16-predict/t01_noisy_sine.png", "evidence/F16-predict/t01_linear_trend.png", "evidence/F16-predict/t01_random_walk.png"]
-    },
-    {
-      "case": "Kalman root-cause: inspect fitted kf after hyp.predict(sine, model='Kalman', return_model=True); n_iter=25; 2-D sine/cos input; pykalman em_vars default; counterfactual fit with em_vars including transition_matrices",
-      "result": "fail",
-      "command": "env MPLBACKEND=Agg .venv/bin/python -c \"...m.models_[0]['kf'].transition_matrices...\" (run from repo cwd; see finding 001 repro)",
-      "output_excerpt": "transition_matrices: [[1.]]; observation_matrices: [[1.]]; forecast unique values: 1; n_iter=25 forecast std: 5.695e-17; 2D sine/cos forecast stds: {'s': 0.0, 'c': 2.278e-16}. Counterfactual pykalman with em_vars=[...,'transition_matrices',...]: forecast std per col [0.61, 1.40], learned rotation [[0.975,0.156],[-0.153,0.975]], corr col0 = 0.9876.",
-      "evidence": []
-    },
-    {
-      "case": "t02: model spec forms - 'GP' alias, unknown/lowercase/empty string names, class + kwargs, unfitted instance, params-dict (DeprecationWarning emitted), fork-dict (9 cases)",
-      "result": "pass",
-      "command": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg .venv/bin/python .../t02_dispatcher_api.py (full output t02_repo_out.json)",
-      "output_excerpt": "'GP' alias -> DataFrame OK; 'kalman' -> ValueError: unknown predict model 'kalman'; supported names: Kalman, GaussianProcess, AutoRegressor, ARIMA, Laplace, Chronos (...); params-form emitted DeprecationWarning as documented; class+kwargs and instance forms OK.",
-      "evidence": []
-    },
-    {
-      "case": "t02: outer **kwargs merging with dict specs - {'model':'Kalman','kwargs':{}} + n_iter=9 vs {'model':'Kalman','params':{}} + n_iter=9 (2 cases)",
-      "result": "fail",
-      "command": "t02_dispatcher_api.py cases dict_fork_outer_kwargs / dict_params_outer_kwargs",
-      "output_excerpt": "fork-form: n_iter_on_model = 5 (outer kwarg silently DROPPED); params-form: n_iter_on_model = 9 (merged).",
-      "evidence": []
-    },
-    {
-      "case": "t02: t validation - t=0, t=-3, t=2.5, True, np.True_, np.float64(4.0), np.array(5) 0-d, np.int64(4) (8 cases)",
-      "result": "pass",
-      "command": "t02_dispatcher_api.py t_validation_* cases",
-      "output_excerpt": "t=0 -> ValueError: t (forecast horizon) must be >= 1; got 0. t=2.5 -> ValueError: ...must be an integer number of steps or a target datetime, not a float; got 2.5. True/np.True_ -> ValueError ...must be a positive integer or a target datetime. np.array(5) -> forecast shape (5,2) OK; np.int64(4) -> (4,2) OK.",
-      "evidence": []
-    },
-    {
-      "case": "t02: datetime horizons - datetime t on RangeIndex (friendly error), future target (10 rows to 2026-05-10), past target (truncates, equals sliced original), datetime.datetime object, int t on DatetimeIndex (index continues as DatetimeIndex), unparseable 'banana' (6 cases)",
-      "result": "pass",
-      "command": "t02_dispatcher_api.py t_datetime_* / t_int_on_datetimeindex / t_garbage_string",
-      "output_excerpt": "RangeIndex + datetime t -> ValueError: a datetime-like t requires a time-indexed (DatetimeIndex) dataset. Future target -> shape (10,2), DatetimeIndex 2026-05-01..2026-05-10. Past target -> (46,2), equals_truncated_original: true. 'banana' -> DateParseError: Unknown datetime string format, unable to parse: banana.",
-      "evidence": []
-    },
-    {
-      "case": "t02: datetime t EXACTLY equal to last timestamp",
-      "result": "fail",
-      "command": "t02 t_datetime_exact_last + minimal repro in t05 (datetime_t_equals_last_repro, resolve_t_exact_last_returns)",
-      "output_excerpt": "hyp.predict(Xd, model='Laplace', t=str(Xd.index[-1])) -> ValueError: Length of values (0) does not match length of index (120). resolve_t(df, df.index[-1]) returns n_steps=0 with len(future_index)=10 (the FULL past index).",
-      "evidence": []
-    },
-    {
-      "case": "t02: list-in/list-out, single-in/single-out; return_model=True round trips for Kalman/GP/ARIMA/AutoRegressor/Laplace; predict_new pairing mismatch error; 1-model->N-datasets broadcast (9 cases)",
-      "result": "pass",
-      "command": "t02_dispatcher_api.py list/roundtrip/pairing cases",
-      "output_excerpt": "list->list len 2; single->DataFrame. All 5 round trips return correct shapes with new-data index continuation. Mismatch: ValueError: predict_new got 3 new dataset(s) but the fitted forecaster has 2 fitted model(s); pass either a matching number of new datasets or reuse a forecaster that was fit on a single dataset. GP roundtrip: forecast for B*1000 numerically IDENTICAL to continuing A (gp_new_forecast_equals_continuing_original: true - see finding 014). Laplace roundtrip tracks_new_data: true.",
-      "evidence": []
-    },
-    {
-      "case": "t03: NaN scattered in series per model (6 cases)",
-      "result": "fail",
-      "command": "env PYTHONPATH=... .venv/bin/python .../t03_edge_inputs.py (full output t03_repo_out.json)",
-      "output_excerpt": "Kalman OK (masked); ARIMA OK; Chronos OK. GaussianProcess -> ValueError: Input y contains NaN. AutoRegressor -> ValueError: Input X contains NaN. Ridge does not accept... Laplace -> 'AssertionError: ' (EMPTY message, from skaters internals).",
-      "evidence": []
-    },
-    {
-      "case": "t03: all-NaN column via Kalman",
-      "result": "fail",
-      "command": "t03 all_nan_kalman",
-      "output_excerpt": "Returns [[0.0],[0.0],[0.0]] silently - a fabricated flat-zero forecast from 100% missing data, no warning.",
-      "evidence": []
-    },
-    {
-      "case": "t03: short series - 3-row input for Kalman/GP/ARIMA/Laplace (work), AutoRegressor (assert), 1-row Kalman (works) (7 cases)",
-      "result": "pass",
-      "command": "t03 short3_* / one_row_kalman / autoreg_lags_gt_n_message",
-      "output_excerpt": "AutoRegressor -> AssertionError: AutoRegressor needs more than lags=10 observations to fit; got 3 (right message, WRONG exception type - see finding 007). Others return (3,1)/(2,1) forecasts.",
-      "evidence": []
-    },
-    {
-      "case": "t03: empty DataFrame, empty list, None, string column, list-of-strings (5 cases)",
-      "result": "fail",
-      "command": "t03 empty_dataframe / empty_list / none_input / string_column_df / list_of_strings",
-      "output_excerpt": "empty DataFrame and None -> IndexError: index -1 is out of bounds for axis 0 with size 0. empty list -> ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation (routed into text pipeline; printed 'loading corpus: minipedia...done!'). string column -> ValueError: could not convert string to float: 'a'. list of 2 strings -> silently embedded via LDA and 'forecast' returned (2x50 DataFrame).",
-      "evidence": []
-    },
-    {
-      "case": "t03/t05: pandas Series, 1-D numpy array, (n,1) 2-D array, list of python floats (4 cases + dw.wrangle root-cause probes)",
-      "result": "fail",
-      "command": "t03 pandas_series_input / numpy_1d_input / list_of_floats_input; t05 dw_wrangle_series_shape / dw_wrangle_1d_shape / predict_1d_array_semantics / predict_2d_column_ok",
-      "output_excerpt": "pd.Series -> IndexError: index -1 is out of bounds for axis 0 with size 0 (dw.wrangle(Series) yields a (0,0) DataFrame). 1-D array of 100 points -> forecast shape (4,100): treated as ONE observation with 100 features (dw.wrangle 1-D shape (1,100)). (100,1) array -> correct (4,1). List of floats -> returns a LIST of forecasts (each scalar treated as its own dataset).",
-      "evidence": []
-    },
-    {
-      "case": "t03: kwarg typos and bad kwargs - Kalman n_itr=50, GP kernle=None (silently ignored, 0 warnings); ARIMA bogus_flag / AutoRegressor bogus_flag (TypeError); AutoRegressor unknown inner model string (2 paths) (6 cases)",
-      "result": "fail",
-      "command": "t03 kalman_typo_kwarg_silent / gp_typo_kwarg_silent / arima_bad_kwarg / autoreg_bad_model_kwarg / autoreg_unknown_*",
-      "output_excerpt": "Kalman n_itr=50 -> ran fine, n_warnings=0. GP kernle=None -> ran fine. ARIMA -> TypeError: ARIMA.__init__() got an unexpected keyword argument 'bogus_flag'. AutoReg -> TypeError: Ridge.__init__() got an unexpected keyword argument 'bogus_flag'. Unknown inner model -> AssertionError: unknown model: 'NopeRegressor'; supported string names are ['Ridge', 'Lasso', 'LinearRegression', 'RandomForestRegressor', 'GradientBoostingRegressor', 'SVR', 'KNeighborsRegressor'].",
-      "evidence": []
-    },
-    {
-      "case": "t03/t05: determinism - Kalman, GP, ARIMA, AutoRegressor(Ridge), Laplace identical across runs; AutoRegressor(RandomForest) unseeded differs, seeded (random_state=0 flat kwarg) identical (8 cases)",
-      "result": "pass",
-      "command": "t03 determinism_* ; t05 autoreg_rf_seeded_flat_kwargs / autoreg_rf_unseeded_determinism",
-      "output_excerpt": "Deterministic: Kalman/GP/ARIMA/AutoReg-Ridge/Laplace all true. RF unseeded identical_without_seed: false; RF with {'random_state':0,'n_estimators':40} deterministic_with_seed: true.",
-      "evidence": []
-    },
-    {
-      "case": "t03: ARIMA constant series (forecast 1.0), trend='t' kwarg passthrough (slope continues 39.97->44.47), integer index with step 3 continues (300,303,306,309), all-identical timestamps (AssertionError with good message), 12-feature GP (7,12) (5 cases)",
-      "result": "pass",
-      "command": "t03 arima_constant_series / arima_trend_kwarg_passthrough / int_index_step3_continues / all_identical_timestamps / wide_12features_gp",
-      "output_excerpt": "all_identical_timestamps -> AssertionError: cannot infer a timestep: all observations share one timestamp (message good; type wrong, finding 007). Others behaved correctly.",
-      "evidence": []
-    },
-    {
-      "case": "t04 W1: EEG-like 5-channel DataFrame, DatetimeIndex @10ms, Kalman t=50",
-      "result": "fail",
-      "command": "env PYTHONPATH=... .venv/bin/python .../t04_workflows.py (t04_repo_out.json)",
-      "output_excerpt": "shape (50,5), DatetimeIndex continuation at exactly 10ms, starts_after_data true - but forecast_std_ch0 = 0.0: dead-flat 'forecast' of a strongly oscillating signal (finding 001).",
-      "evidence": ["evidence/F16-predict/t04_w1_eeg_kalman.png"]
-    },
-    {
-      "case": "t04 W2: hosted 'weights' dataset -> hyp.reduce(IncrementalPCA, ndims=4) -> GP forecast t=10",
-      "result": "pass",
-      "command": "t04 w2_weights_reduce_gp",
-      "output_excerpt": "input (300,100) -> reduced (300,4) -> forecast (10,4), index starts at 300, columns preserved.",
-      "evidence": []
-    },
-    {
-      "case": "t04 W3: stock-like business-day series, ARIMA t=30 and datetime target (last+14 days)",
-      "result": "pass",
-      "command": "t04 w3_stock_arima_datetime_target",
-      "output_excerpt": "t30 shape (30,1); datetime target -> (14,1) ending 2026-06-29. Note: business-day index extends by the min gap (1 day), so forecast dates include weekends - consistent with documented min-step semantics.",
-      "evidence": ["evidence/F16-predict/t04_w3_stock_arima.png"]
-    },
-    {
-      "case": "t04/t06 W4: logistic-growth series, AutoRegressor(RandomForestRegressor, lags=5, random_state=0) t=25; first attempt with model_kwargs={...} raised",
-      "result": "fail",
-      "command": "t04 w4 (trap) + t06_w4_fixed.py (flat kwargs)",
-      "output_excerpt": "With 'model_kwargs': {'random_state': 0} in the spec -> TypeError: RandomForestRegressor.__init__() got an unexpected keyword argument 'model_kwargs' (finding 012). With flat kwargs -> forecast (25,1), mean 993.5 (plausible saturation near K=1000).",
-      "evidence": ["evidence/F16-predict/t04_w4_population_rfar.png"]
-    },
-    {
-      "case": "t04 W5: cross-subject reuse - fit Kalman on subject A (return_model=True), predict_new on phase-shifted subject B",
-      "result": "pass",
-      "command": "t04 w5_cross_subject_reuse",
-      "output_excerpt": "fcB shape (15,2), index continues B (starts 120), model reused without refit.",
-      "evidence": []
-    },
-    {
-      "case": "t04 W6: examples/plot_predict.py gallery example VERBATIM (two 5-D helices, hyp.plot(..., predict='GaussianProcess', t=30))",
-      "result": "pass",
-      "command": "t04 w6_gallery_example_verbatim",
-      "output_excerpt": "Returns matplotlib Figure, 1 axes; PNG shows both helices with dashed same-color forecast tails continuing each sweep as the example text promises.",
-      "evidence": ["evidence/F16-predict/t04_w6_gallery_plot_predict.png"]
-    },
-    {
-      "case": "t04/t05 Chronos specifics: run-to-run determinism, torch.manual_seed control, horizon 100 (>64), 4-column multivariate, bad model_name message (5 cases)",
-      "result": "pass",
-      "command": "t04 chronos_* ; t05 chronos_torch_manual_seed_controls / chronos_bad_model_name_message",
-      "output_excerpt": "Two identical calls differ (a_first3 [-0.0922,-0.2199,-0.3192] vs b_first3 [-0.1182,-0.2317,-0.3263]) - sampling, no seed exposed (finding 016); torch.manual_seed(0) before each call -> identical_with_manual_seed: true. t=100 -> (100,1), 0 NaN, no warnings. 4-col -> (8,4) in 0.46s. Bad model name -> OSError: amazon/definitely-not-a-real-chronos-model is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models' (clear).",
-      "evidence": []
-    },
-    {
-      "case": "t04: laplace.py docstring numeric claim - skaters laplace(k) returns len(dists)==k for k in {5,10,50,80,100} on a 75-point series",
-      "result": "pass",
-      "command": "t04 laplace_docstring_len_dists_claim",
-      "output_excerpt": "k=5:5, k=10:10, k=50:50, k=80:80, k=100:100 - claim reproduces exactly (took 37.7s total, see finding 011 on cost).",
-      "evidence": []
-    },
-    {
-      "case": "t04: gp.py docstring claim - stationary RBF kernel forecast bends back toward the data cloud while default DotProduct kernel extrapolates the trend",
-      "result": "pass",
-      "command": "t04 gp_docstring_rbf_reversion_claim",
-      "output_excerpt": "0.5*t trend, horizon 40: RBF+White final 53.71 (below true continuation 59.5 - bending back toward mean 19.73); default kernel final 59.53 vs true 59.5. Claim verified qualitatively; default-kernel extrapolation is excellent.",
-      "evidence": []
-    },
-    {
-      "case": "t05: heterogeneous-width list ([50x2, 60x3]) GP; predict_new with mismatched feature count (Kalman fit 2 cols, new data 5 cols) (2 cases)",
-      "result": "fail",
-      "command": "t05 list_heterogeneous_columns / predict_new_feature_mismatch_kalman",
-      "output_excerpt": "Heterogeneous list OK: shapes [[4,2],[4,3]]. Feature mismatch -> ValueError: operands could not be broadcast together with shapes (5,) (2,) (cryptic, finding 017).",
-      "evidence": []
-    },
-    {
-      "case": "t05: Laplace timing at t=100 on 200x1",
-      "result": "fail",
-      "command": "t05 laplace_t100_timing",
-      "output_excerpt": "23.5 seconds for a single univariate 200-row series (ARIMA/GP: <0.05s for the same job).",
-      "evidence": []
-    },
-    {
-      "case": "infra: which hypertools does .venv import? (pip show, site-packages diff, cwd-dependence, PYTHONPATH sanity)",
-      "result": "fail",
-      "command": "pip show hypertools; diff -rq site-packages/hypertools repo/hypertools | grep -c differ; python -c 'import hypertools; print(hypertools.__file__)' from scratch cwd vs repo cwd",
-      "output_excerpt": "Location: .../site-packages (NON-editable); 125 files differ from the repo tree. From non-repo cwd: hypertools file = .../site-packages/hypertools/__init__.py; stale copy lacks the 'GP' alias and t<=0 validation (verified: model='GP' raised unknown-model; t=0 returned an empty DataFrame). From repo cwd or with PYTHONPATH=repo: correct behavior.",
-      "evidence": []
-    },
-    {
-      "case": "style probe: import hypertools.predict.kalman as k",
-      "result": "fail",
-      "command": "env PYTHONPATH=/Users/jmanning/hypertools .venv/bin/python -c 'import hypertools.predict.kalman as k'",
-      "output_excerpt": "ImportError: cannot import name 'kalman' from 'predict' (unknown location) - hypertools.predict (submodule) is shadowed by the predict function in hypertools/__init__.py; type of hypertools.predict attr: function.",
-      "evidence": []
-    },
-    {
-      "case": "docstring examples verbatim: no >>> doctest examples exist anywhere in hypertools/predict/ (grep); the only runnable documented example is examples/plot_predict.py, executed verbatim as W6",
-      "result": "pass",
-      "command": "grep -rn '>>>' /Users/jmanning/hypertools/hypertools/predict/",
-      "output_excerpt": "(no matches)",
-      "evidence": []
-    }
-  ],
-  "findings": [
-    {
-      "id": "F16-predict-001",
-      "severity": "major",
-      "title": "Default 'Kalman' forecaster ALWAYS returns a constant flat-line forecast - EM never fits the transition/observation matrices",
-      "description": "kalman.fitter() calls pykalman KalmanFilter(n_dim_obs=d, n_dim_state=d).em(x, n_iter=n_iter) without em_vars, so pykalman's default em_vars only optimizes covariances + initial state; the transition and observation matrices remain IDENTITY. Iterating filter_update with no observations therefore repeats the last filtered state forever: hyp.predict()'s DEFAULT model produces a mathematically constant forecast for EVERY dataset. Verified: flat on a strong noisy sine, flat on a linear trend (does not continue the slope), flat on a 2-column sin/cos rotation (forecast stds 0.0 / 2.3e-16), and n_iter=25 does not help (forecast std 5.7e-17). There is no way to fix it through the API: fitter() only reads n_iter, and unknown kwargs are silently ignored (em_vars= would be a no-op). Counterfactual proof that the fix works: fitting the same pykalman model with em_vars including 'transition_matrices'/'observation_matrices' on the sin/cos data learns a rotation matrix [[0.975,0.156],[-0.153,0.975]] and forecasts with corr 0.988 vs held-out truth. Compounding: (a) the Kalman class docstring FALSELY states n_iter is the 'Number of EM iterations used to fit the transition/observation matrices and their noise covariances'; (b) the shipped tutorial docs/tutorials/projectile_kalman.ipynb forecasts projectile motion via hyp.predict(first30, model='Kalman', t=HORIZON), which returns a flat line for a parabolic trajectory; (c) tests/predict/test_kalman.py::test_trend_direction_sanity compares the forecast mean against df['a'].iloc[:35] (the FIRST half - its comment says 'second half'), so a flat forecast at the last value trivially passes.",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nrng = np.random.default_rng(42)\nt = np.arange(180)\nsine = pd.DataFrame({'y': np.sin(2*np.pi*t/40.0) + 0.1*rng.standard_normal(180)})\nfc, m = hyp.predict(sine, model='Kalman', t=20, return_model=True)\nkf = m.models_[0]['kf']\nprint('transition:', np.asarray(kf.transition_matrices))\nprint('unique forecast values:', fc['y'].nunique())\n\"",
-      "expected": "A fitted linear-Gaussian state-space model whose learned dynamics continue the oscillation (docstring: EM fits the transition/observation matrices); at minimum a non-constant forecast on a strong sine or trend.",
-      "actual": "transition_matrices: [[1.]]  observation_matrices: [[1.]]  forecast unique values: 1  (first3 = [0.24, 0.24, 0.24]; fc_std/train_std = 0.0 on sine, trend, and 2-D rotation data; n_iter=25 forecast std 5.695e-17)",
-      "evidence": ["evidence/F16-predict/t01_noisy_sine.png", "evidence/F16-predict/t01_linear_trend.png", "evidence/F16-predict/t04_w1_eeg_kalman.png"],
-      "docs_impact": ["hypertools/predict/kalman.py", "docs/tutorials/projectile_kalman.ipynb", "examples/plot_predict.py", "tests/predict/test_kalman.py"]
-    },
-    {
-      "id": "F16-predict-002",
-      "severity": "major",
-      "title": "pandas Series input crashes with a cryptic IndexError (wrangled to an empty (0,0) DataFrame)",
-      "description": "A pandas Series is the most natural container for a univariate timeseries, but dw.wrangle(pd.Series(...)) returns a (0,0) DataFrame, so resolve_t hits index[-1] on an empty index and hyp.predict crashes with 'IndexError: index -1 is out of bounds for axis 0 with size 0' - no mention of the input type or how to fix it (.to_frame()). Root cause is in datawrangler's funnel, but hyp.predict is the user-facing surface; it should either forecast the Series or reject it with a clear message.",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\ny = np.sin(np.arange(100)/5.0)\nhyp.predict(pd.Series(y, name='y'), model='Laplace', t=4)\n\"",
-      "expected": "A (4,1) forecast (Series treated as one univariate dataset), or a clear TypeError naming pandas Series and suggesting .to_frame().",
-      "actual": "IndexError: index -1 is out of bounds for axis 0 with size 0  (dw.wrangle(Series) shape: (0, 0))",
-      "evidence": [],
-      "docs_impact": ["hypertools/predict/predict.py"]
-    },
-    {
-      "id": "F16-predict-003",
-      "severity": "major",
-      "title": "1-D numpy array input is silently treated as ONE observation with n features - returns a (t, n) nonsense forecast",
-      "description": "hyp.predict(np.sin(np.arange(100)/5.0), t=4) does not forecast the 100-step series: dw.wrangle turns the 1-D array into a (1,100) DataFrame (one observation, 100 features), so the result is a (4,100) 'forecast' extrapolated from a single observation - meaningless values, no warning. The docstring advertises 'DataFrame/array or list of these', and a 1-D array is the most common way scientists hold a univariate series. Workaround (.reshape(-1,1)) works but nothing tells the user. Same mechanism makes a plain python list of floats come back as a LIST of per-scalar forecasts.",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, hypertools as hyp\ny = np.sin(np.arange(100)/5.0)\nprint(hyp.predict(y, model='Laplace', t=4).shape)   # (4, 100) !!\nprint(hyp.predict(y.reshape(-1,1), model='Laplace', t=4).shape)  # (4, 1) correct\n\"",
-      "expected": "(4, 1) - the 1-D array interpreted as a 100-observation univariate series (or at least a loud warning about the (1,100) interpretation).",
-      "actual": "(4, 100)  - forecast of 100 'features' conditioned on a single observation; silent.",
-      "evidence": [],
-      "docs_impact": ["hypertools/predict/predict.py"]
-    },
-    {
-      "id": "F16-predict-004",
-      "severity": "major",
-      "title": "datetime horizon exactly equal to the last timestamp crashes with a cryptic pandas ValueError",
-      "description": "resolve_t documents 'If t is at or before the last observation ... a negative count is returned, meaning truncate'. For t strictly before the last observation truncation works, but for t == index[-1] resolve_t returns n_steps=0 with future_index = the ENTIRE past index; Forecaster.predict then skips the truncation branch (n_steps < 0 is False) and calls the forecaster with n_steps=0, which builds a 0-row values array against a full-length index -> 'ValueError: Length of values (0) does not match length of index (N)'. Affects every model. Programmatically computed targets (e.g. forecast every subject to a common end time) will hit this whenever one dataset already reaches the target.",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\ndf = pd.DataFrame({'a': np.arange(10.0)}, index=pd.date_range('2026-01-01', periods=10, freq='D'))\nhyp.predict(df, model='Laplace', t=df.index[-1])\n\"",
-      "expected": "Truncation semantics per the resolve_t docstring: return the dataset unchanged (sliced up to t == last), like any past t.",
-      "actual": "ValueError: Length of values (0) does not match length of index (10)   [resolve_t returned n_steps=0, len(future_index)=10]",
-      "evidence": [],
-      "docs_impact": ["hypertools/predict/common.py"]
-    },
-    {
-      "id": "F16-predict-005",
-      "severity": "minor",
-      "title": "ARIMA default order (1,1,1) cannot extrapolate trends (flat forecast on a linear trend) and damps oscillations (sine corr 0.46)",
-      "description": "With the default order=(1,1,1) and no trend term, the ARIMA forecast of a clean linear trend is essentially constant (forecast std / train std = 0.0004; corr with held-out truth -0.239) - visually a horizontal red line while the data keeps climbing - and its sine forecast damps toward a constant (corr 0.464, just under the 0.5 plausibility bar; GP/AutoReg/Chronos reach 0.87-0.96). This is standard ARIMA(1,1,1) statistics, not a coding bug, and trend='t' passes through and fixes the trend case (verified: slope continues 39.97 -> 44.47), but nothing in the docstrings warns that the default order flat-lines on trending data. Recommend documenting (or defaulting to trend handling).",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nrng = np.random.default_rng(42)\ntr = pd.DataFrame({'y': 0.05*np.arange(180) + 2.0 + 0.2*rng.standard_normal(180)})\nfc = hyp.predict(tr, model='ARIMA', t=20)\nprint(float(fc['y'].std()), fc['y'].iloc[[0,-1]].tolist())\n\"",
-      "expected": "Forecast continues the upward trend (or docs state that order=(1,1,1) without trend= gives a level forecast).",
-      "actual": "linear_trend: fc_std_over_train_std = 0.0004, corr = -0.239, first3 = [10.916, 10.91, 10.911] (data ends ~11 and truth rises to ~12); noisy_sine corr = 0.464.",
-      "evidence": ["evidence/F16-predict/t01_linear_trend.png", "evidence/F16-predict/t01_noisy_sine.png"],
-      "docs_impact": ["hypertools/predict/arima.py"]
-    },
-    {
-      "id": "F16-predict-006",
-      "severity": "minor",
-      "title": "Empty/None inputs crash with IndexError; the intended 'cannot forecast an empty dataset' guard is unreachable; empty list falls into the text pipeline",
-      "description": "Forecaster.fit guards `assert data is not None, ValueError('cannot forecast an empty dataset')`, but the dw funnel converts None and pd.DataFrame() into empty DataFrames before fit sees them, so the guard never fires and users get 'IndexError: index -1 is out of bounds for axis 0 with size 0' from resolve_t instead. An empty LIST is even stranger: it is routed into the text-embedding pipeline (printed 'loading corpus: minipedia...done!', i.e. a corpus download) and dies inside sklearn LDA: 'ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation.' A DataFrame with a string column dies with the raw 'ValueError: could not convert string to float: 'a''. All should produce one clear hypertools-level message.",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport pandas as pd, hypertools as hyp\nhyp.predict(pd.DataFrame(), model='Laplace', t=3)\n\"",
-      "expected": "ValueError: cannot forecast an empty dataset (the message that already exists in fit()).",
-      "actual": "IndexError: index -1 is out of bounds for axis 0 with size 0 ; empty list -> ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation.",
-      "evidence": [],
-      "docs_impact": ["hypertools/predict/common.py"]
-    },
-    {
-      "id": "F16-predict-007",
-      "severity": "minor",
-      "title": "Input validation via `assert cond, ValueError(...)` raises AssertionError (wrong type) and vanishes under python -O",
-      "description": "Several user-reachable validations use the `assert cond, ValueError(msg)` anti-pattern, so callers get AssertionError (uncatchable as ValueError) and the checks are stripped entirely under `python -O`, letting execution continue into stranger downstream failures. Observed live: 'AssertionError: AutoRegressor needs more than lags=10 observations to fit; got 3' (autoreg.py fitter), 'AssertionError: unknown model: 'NopeRegressor'; supported string names are [...]' (autoreg.py _resolve_estimator), 'AssertionError: cannot infer a timestep: all observations share one timestamp' (common.py _infer_step). Same pattern (not individually triggered) in common.py fit() ('cannot forecast an empty dataset', 'fit function must return a dictionary', 'one or more required fields not returned') and autoreg.py applier. The QC pass already converted ONE of these (resolve_t's DatetimeIndex check, comment 'a real raise ... stripped under python -O') - the same reasoning applies to the rest.",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport pandas as pd, hypertools as hyp\ntry:\n    hyp.predict(pd.DataFrame({'y': [1.0, 2.0, 3.0]}), model='AutoRegressor', t=3)\nexcept ValueError:\n    print('caught ValueError')\nexcept AssertionError as e:\n    print('AssertionError leaked:', e)\n\"",
-      "expected": "ValueError raised (and validation active under python -O).",
-      "actual": "AssertionError leaked: AutoRegressor needs more than lags=10 observations to fit; got 3",
-      "evidence": [],
-      "docs_impact": ["hypertools/predict/common.py", "hypertools/predict/autoreg.py"]
-    },
-    {
-      "id": "F16-predict-008",
-      "severity": "minor",
-      "title": "Kalman/GaussianProcess silently ignore unknown kwargs (typos like n_itr=50 change nothing, no warning) while ARIMA/AutoRegressor raise",
-      "description": "Kalman and GP fitters read their options via kwargs.get(...), so any misspelled option (n_itr=50, kernle=..., em_vars=...) is silently swallowed - the run 'succeeds' with default settings and zero warnings, a reproducibility hazard for scientists who believe they changed the model. ARIMA and AutoRegressor forward extras to the underlying constructor and fail loudly (TypeError: ... got an unexpected keyword argument 'bogus_flag'). Behavior should be consistent, ideally warn-or-raise on unconsumed kwargs.",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport warnings, numpy as np, pandas as pd, hypertools as hyp\nx = pd.DataFrame({'y': np.sin(np.arange(100)/5.0)})\nwith warnings.catch_warnings(record=True) as w:\n    warnings.simplefilter('always')\n    hyp.predict(x, model='Kalman', t=3, n_itr=50)\n    print('warnings:', len(w))\n\"",
-      "expected": "TypeError or at least a warning naming the unknown kwarg.",
-      "actual": "warnings: 0  (run succeeds with the default n_iter=5; ARIMA path by contrast raises TypeError: ARIMA.__init__() got an unexpected keyword argument 'bogus_flag')",
-      "evidence": [],
-      "docs_impact": ["hypertools/predict/kalman.py", "hypertools/predict/gp.py"]
-    },
-    {
-      "id": "F16-predict-009",
-      "severity": "minor",
-      "title": "Outer **kwargs are silently dropped when model is a fork-style dict, but merged for the params-style dict",
-      "description": "hyp.predict(x, model={'model': 'Kalman', 'params': {}}, n_iter=9) honors n_iter (model.n_iter == 9), but hyp.predict(x, model={'model': 'Kalman', 'kwargs': {}}, n_iter=9) silently ignores it (model.n_iter == 5): in predict.py the fork-dict branch instantiates cls(*args, **resolved['kwargs']) without merging the call-level **kwargs. The docstring only says kwargs are 'ignored when model is already an instance', so users have no reason to expect the canonical (non-deprecated!) dict form to drop them while the deprecated form merges them.",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nx = pd.DataFrame({'y': np.sin(np.arange(60)/5.0)})\n_, m = hyp.predict(x, model={'model': 'Kalman', 'kwargs': {}}, t=3, n_iter=9, return_model=True)\nprint('fork-form n_iter:', m.n_iter)\n\"",
-      "expected": "fork-form n_iter: 9 (or a loud error/warning that call-level kwargs conflict with the dict spec).",
-      "actual": "fork-form n_iter: 5   (params-form comparison run: n_iter_on_model = 9)",
-      "evidence": [],
-      "docs_impact": ["hypertools/predict/predict.py"]
-    },
-    {
-      "id": "F16-predict-010",
-      "severity": "minor",
-      "title": "NaN handling is inconsistent across forecasters; Laplace dies with a BLANK AssertionError; all-NaN input yields a silent fabricated 0.0 forecast",
-      "description": "With a few NaNs in a 100-point series: Kalman, ARIMA, and Chronos forecast fine; GaussianProcess raises sklearn's 'ValueError: Input y contains NaN.'; AutoRegressor raises sklearn's long Ridge-NaN message; Laplace raises literally 'AssertionError: ' with an EMPTY message from deep inside skaters - no hint that NaNs are the cause. An all-NaN column through Kalman silently returns a forecast of exact 0.0s (masked EM with zero information fabricates zeros, no warning). Only kalman.py documents its NaN behavior; per-model NaN support/limits should be documented and errors normalized (e.g. 'Laplace cannot handle missing values; run hyp.impute first').",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nx = pd.DataFrame({'y': np.sin(np.arange(100)/5.0)})\nx.iloc[[10, 40, 41, 70], 0] = np.nan\nhyp.predict(x, model='Laplace', t=5)\n\"",
-      "expected": "Either a NaN-tolerant forecast or a clear error naming NaN as the problem and pointing at hyp.impute / dropna.",
-      "actual": "AssertionError:      (empty message; GP: 'ValueError: Input y contains NaN.'; all-NaN Kalman: [[0.0],[0.0],[0.0]] with no warning)",
-      "evidence": [],
-      "docs_impact": ["hypertools/predict/laplace.py", "hypertools/predict/gp.py", "hypertools/predict/autoreg.py", "hypertools/predict/kalman.py"]
-    },
-    {
-      "id": "F16-predict-011",
-      "severity": "minor",
-      "title": "Laplace forecaster is extremely slow at larger horizons (23.5 s for t=100 on a single 200-row column) and per-column cost is undocumented",
-      "description": "skaters' laplace(k) closure cost grows with k for every observation fed through it: t=20 on 180x1 already takes ~2 s (peers <0.35 s), and t=100 on 200x1 takes 23.5 s - roughly 1000x ARIMA/GP for the same job, and multiplied per column for multivariate data (a 10-column dataset at t=100 would be ~4 minutes). The laplace.py module docstring describes chunking verification in detail but never mentions the cost profile. Deserves a docstring performance note (and possibly a progress indicator).",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport time, numpy as np, pandas as pd, hypertools as hyp\nbig = pd.DataFrame({'y': np.sin(np.arange(200)/8.0)})\nt0 = time.time(); fc = hyp.predict(big, model='Laplace', t=100)\nprint(round(time.time()-t0, 1), 'seconds', fc.shape)\n\"",
-      "expected": "Seconds comparable to other classical models, or a documented warning about O(k*n) per-column cost.",
-      "actual": "23.5 seconds (100, 1)   [ARIMA: 0.01 s, GP: 0.02 s on comparable input]",
-      "evidence": [],
-      "docs_impact": ["hypertools/predict/laplace.py"]
-    },
-    {
-      "id": "F16-predict-012",
-      "severity": "minor",
-      "title": "Passing model_kwargs={...} to AutoRegressor (as its fitter docstring documents) double-nests and crashes inside sklearn",
-      "description": "autoreg.fitter's docstring documents \"`model_kwargs` : dict, passed to `model` when it is a string or class\", but AutoRegressor.__init__(model='Ridge', lags=10, **model_kwargs) captures an EXPLICIT model_kwargs= argument INSIDE the **model_kwargs catch-all, producing {'model_kwargs': {...}} which is then splatted into the sklearn constructor: TypeError: RandomForestRegressor.__init__() got an unexpected keyword argument 'model_kwargs'. The working spelling is flat kwargs ({'model': 'RandomForestRegressor', 'lags': 5, 'random_state': 0}) - verified working and seed-deterministic - but nothing tells the user, and the two docstrings (fitter vs class) describe different calling conventions.",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nx = pd.DataFrame({'y': np.sin(np.arange(100)/5.0)})\nhyp.predict(x, model={'model': 'AutoRegressor', 'kwargs': {'model': 'RandomForestRegressor', 'model_kwargs': {'random_state': 0}}}, t=3)\n\"",
-      "expected": "Either model_kwargs= accepted as the documented dict, or a clear error explaining that estimator options are passed flat.",
-      "actual": "TypeError: RandomForestRegressor.__init__() got an unexpected keyword argument 'model_kwargs'",
-      "evidence": [],
-      "docs_impact": ["hypertools/predict/autoreg.py"]
-    },
-    {
-      "id": "F16-predict-013",
-      "severity": "style",
-      "title": "AutoRegressor's inner-estimator kwarg is named 'model', colliding with hyp.predict's own model= - the inner regressor cannot be chosen with a flat kwarg",
-      "description": "hyp.predict(x, model='AutoRegressor', model='SVR') is a duplicate-keyword SyntaxError, so selecting AutoRegressor's underlying sklearn regressor through the dispatcher REQUIRES the dict spec ({'model': 'AutoRegressor', 'kwargs': {'model': 'SVR'}}) or a pre-constructed instance, unlike every other forecaster option (n_iter, order, kernel, lags... all work flat). Renaming the inner kwarg (e.g. estimator=) or documenting the dict-only path would remove the trap.",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nx = pd.DataFrame({'y': np.sin(np.arange(100)/5.0)})\nprint(hyp.predict(x, model={'model': 'AutoRegressor', 'kwargs': {'model': 'KNeighborsRegressor', 'lags': 4}}, t=3).shape)  # only working spelling\n\"",
-      "expected": "A flat spelling for choosing the inner regressor, consistent with other forecaster kwargs.",
-      "actual": "Flat spelling impossible (duplicate keyword 'model'); dict form works: (3, 1).",
-      "evidence": [],
-      "docs_impact": ["hypertools/predict/autoreg.py", "hypertools/predict/predict.py"]
-    },
-    {
-      "id": "F16-predict-014",
-      "severity": "style",
-      "title": "GaussianProcess predict_new ignores the new data's VALUES entirely - reuse returns the numerically identical forecast regardless of the new dataset",
-      "description": "The GP applier reuses the fitted gp over the ORIGINAL time index (documented in its docstring), so hyp.predict(B, model=fitted_gp, t=5) returns values numerically IDENTICAL to continuing dataset A - even when B = A*1000 (verified: allclose true). Only B's index/columns are used. Every other reusable forecaster conditions on the new series (Kalman filters it, ARIMA .apply()s it, AutoRegressor reseeds from its tail, Laplace re-feeds it), so GP's reuse semantics are a silent odd-one-out: a scientist reusing a GP across subjects gets subject-A forecasts labeled with subject-B's index and no warning.",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nt = np.arange(80)\nA = pd.DataFrame({'a': np.sin(t/6.0)})\nB = A * 1000.0\nfcA, m = hyp.predict(A, model='GaussianProcess', t=5, return_model=True)\nfcB = hyp.predict(B, model=m, t=5)\nprint(np.allclose(fcA.to_numpy(), fcB.to_numpy()))\n\"",
-      "expected": "Reuse conditioned on the new data (like the other models), or a runtime warning that GP reuse continues the ORIGINAL fit.",
-      "actual": "True  (forecast for B*1000 identical to A's continuation; no warning)",
-      "evidence": [],
-      "docs_impact": ["hypertools/predict/gp.py", "hypertools/predict/predict.py"]
-    },
-    {
-      "id": "F16-predict-015",
-      "severity": "style",
-      "title": "`import hypertools.predict.kalman as k` fails with a baffling ImportError (predict submodule shadowed by the predict function)",
-      "description": "hypertools/__init__.py rebinds the name `predict` to the dispatcher function, shadowing the hypertools.predict subpackage as an attribute. `import hypertools.predict.kalman as k` (the `as` form walks attributes) therefore raises \"ImportError: cannot import name 'kalman' from 'predict' (unknown location)\". tests/predict/test_kalman.py already documents the workaround (`from hypertools.predict import kalman`), confirming this is a known sharp edge; end users hitting it get no such hint. (Same pattern presumably affects the other shadowed subpackages - only predict audited here.)",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools.predict.kalman as k\"",
-      "expected": "Module imports (or an error message explaining the function/module shadowing and the from-import workaround).",
-      "actual": "ImportError: cannot import name 'kalman' from 'predict' (unknown location)",
-      "evidence": [],
-      "docs_impact": ["hypertools/__init__.py", "hypertools/predict/__init__.py"]
-    },
-    {
-      "id": "F16-predict-016",
-      "severity": "enhancement",
-      "title": "No seed control or nondeterminism documentation for stochastic forecasters (Chronos differs run-to-run; unseeded RandomForest too)",
-      "description": "Chronos point forecasts are sample medians and two identical hyp.predict(..., model='Chronos') calls return different values (verified: first3 -0.0922/-0.2199/-0.3192 vs -0.1182/-0.2317/-0.3263); AutoRegressor with RandomForestRegressor is likewise nondeterministic unless the user thinks to pass random_state. Nothing in predict()'s or Chronos's docstrings mentions nondeterminism, and no seed= kwarg exists. Verified workaround: torch.manual_seed(0) before each call makes Chronos exactly reproducible - exposing a seed kwarg (or documenting the torch.manual_seed recipe and random_state for sklearn estimators) would make forecasts reproducible for publication.",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nx = pd.DataFrame({'y': np.sin(np.arange(180)/6.0)})\na = hyp.predict(x, model='Chronos', t=8); b = hyp.predict(x, model='Chronos', t=8)\nprint('identical:', np.allclose(a.to_numpy(), b.to_numpy()))\n\"",
-      "expected": "A documented seed/reproducibility story (seed kwarg, or docstring note).",
-      "actual": "identical: False   (with torch.manual_seed(0) before each call: identical True)",
-      "evidence": [],
-      "docs_impact": ["hypertools/predict/chronos.py", "hypertools/predict/predict.py", "hypertools/predict/autoreg.py"]
-    },
-    {
-      "id": "F16-predict-017",
-      "severity": "minor",
-      "title": "predict_new with a different feature count than the fitted model crashes with a cryptic broadcast error",
-      "description": "Reusing a Kalman forecaster fit on 2 columns against 5-column new data dies inside pykalman with 'ValueError: operands could not be broadcast together with shapes (5,) (2,)' - nothing names the real problem (feature-count mismatch between the fitted model and the new data) or the fix. predict_new already validates dataset COUNTS with an excellent message; a matching width check would complete it.",
-      "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, pandas as pd, hypertools as hyp\nrng = np.random.default_rng(3)\n_, m = hyp.predict(pd.DataFrame(rng.standard_normal((40, 2))), model='Kalman', t=3, return_model=True, n_iter=2)\nhyp.predict(pd.DataFrame(rng.standard_normal((40, 5))), model=m, t=3)\n\"",
-      "expected": "ValueError naming the width mismatch, e.g. 'fitted on 2 features but new data has 5'.",
-      "actual": "ValueError: operands could not be broadcast together with shapes (5,) (2,)",
-      "evidence": [],
-      "docs_impact": ["hypertools/predict/common.py", "hypertools/predict/kalman.py"]
-    },
-    {
-      "id": "F16-predict-018",
-      "severity": "minor",
-      "title": "infra: repo .venv contains a STALE non-editable hypertools install - code under test depends on the current working directory",
-      "description": "infra. `pip show hypertools` in the repo venv reports a NON-editable install at .venv/lib/python3.12/site-packages, and 125 files differ between that copy and the repo working tree. Any python invocation whose cwd is not the repo root imports the STALE package: verified live, where model='GP' raised \"unknown predict model 'GP'\" and t=0 silently returned an empty (0,2) DataFrame - both bugs that the current repo source already fixes (this audit's first battery ran against the stale copy and had to be fully re-run with PYTHONPATH=/Users/jmanning/hypertools). Anything else that executes from a non-repo cwd (tools, tutorials, notebook kernels, other audit units) is silently testing outdated code. The venv should be reinstalled with `pip install -e .` before release validation (not done here - installs are out of audit scope).",
-      "repro": "cd /tmp && /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools; print(hypertools.__file__)\"  # -> .../site-packages/hypertools/__init__.py (stale); cd /Users/jmanning/hypertools && same command -> repo tree",
-      "expected": "The venv resolves hypertools to the repo working tree from any cwd (editable install).",
-      "actual": "Location: /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages (non-editable); 125 files differ; stale copy raised ValueError: unknown predict model 'GP' and returned an empty DataFrame for t=0.",
-      "evidence": [],
-      "docs_impact": []
-    }
-  ]
+ "unit": "F16-predict",
+ "target": "hyp.predict() forecasting -- hypertools/predict/ (predict.py, common.py, kalman.py, gp.py, autoreg.py, arima.py, laplace.py, chronos.py) at commit 95303981 (branch audit/release-1.0-2026-07); deps: pykalman 0.11.2, statsmodels 0.14.6, sklearn 1.8.0, skaters 0.11.0, chronos 2.3.1, torch 2.12.1, pandas 3.0.3, numpy 2.3.5, datawrangler 0.5.1. NOTE: a wave-1 findings file for this unit existed (18 findings); this re-audit independently reproduced its substantive findings with fresh runs, added new ones (fork-dict kwargs drop, t=None NaT crash, half-step boundary, descending index, empty-list->LDA, Chronos num_samples ignored), and found wave-1's \"stale non-editable install\" finding NOT to reproduce today (hypertools.__file__ resolves into the repo).",
+ "brainstormed_edge_cases": [
+  "t=0 / negative t / float t / bool t / np.bool_ t / 0-d array t / np.int32 t (validation matrix) [tested]",
+  "datetime-like t on RangeIndex data; garbage date string; t=None on both index types [tested]",
+  "datetime t in the past (truncation), at EXACTLY the last timestamp, and <1 step ahead (boundary) [tested]",
+  "irregular DatetimeIndex (min-step inference); all-duplicate timestamps; non-uniform int index [tested]",
+  "reversed/descending DatetimeIndex (newest-first CSV export pattern) [tested]",
+  "tz-aware DatetimeIndex with tz-naive datetime t [tested]",
+  "1-D numpy array input (the canonical univariate series call) [tested]",
+  "flat python list of floats; list of 1 dataset; list of 2 datasets; empty list; empty DataFrame [tested]",
+  "pandas Series input [tested]",
+  "single-row dataset; 3-row dataset per model (series shorter than model needs) [tested]",
+  "integer dtype; string column; MultiIndex columns [tested]",
+  "NaN block per model; all-NaN column; inf values [tested]",
+  "constant series (zero variance) [tested]",
+  "unknown model string; lowercase name; GP alias; model=42/None; sklearn regressor class as model [tested]",
+  "deprecated {'model','params'} dict; canonical {'model','kwargs'} dict; class; instance; fitted instance [tested]",
+  "typo kwargs (n_itr, kernal); outer kwargs with fork-style dict; ARIMA bogus kwarg [tested]",
+  "AutoRegressor model_kwargs= explicit dict vs direct **kwargs; unknown registry string; seeded RandomForest [tested]",
+  "return_model round-trips: same/new data, count mismatch, feature-count mismatch, unfitted predict() [tested]",
+  "huge horizon t=2000 (GP); Chronos t=100 (>64 model horizon); n_iter=0 Kalman [tested]",
+  "determinism: every model run twice; Kalman refit determinism [tested]",
+  "ARIMA custom order pass-through (order=(4,0,0)) plausibility rescue [tested]",
+  "Chronos: NaN context, multivariate columns, bogus HF model name, num_samples kwarg [tested]",
+  "docstring numeric claims: skaters k<=100, GP kernel extrapolation, README call [tested]",
+  "import hypertools.predict.kalman submodule (shadowing) [tested]",
+  "polars DataFrame input [untested]",
+  "raw text/str input (funnel text-embedding path) [untested]",
+  "np.datetime64 as t; tz-aware t with matching tz-aware index [untested]",
+  "pickled fitted forecaster reused across processes (return_model persistence) [untested]",
+  "Chronos device_map='mps'/GPU and chronos-bolt checkpoints [untested]",
+  "nullable pandas dtypes (Int64 with pd.NA) [untested]",
+  "very long series (n~100k) performance/memory [untested]",
+  "thread-safety of concurrent hyp.predict calls [untested]",
+  "HF_HUB_OFFLINE=1 behavior for cached vs uncached Chronos checkpoints [untested]"
+ ],
+ "tested": [
+  {
+   "case": "grid: Kalman/sine",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case Kalman/sine",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): ValueError: could not broadcast input array from shape (200,200) into shape (200,1)",
+   "evidence": []
+  },
+  {
+   "case": "grid: GaussianProcess/sine",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case GaussianProcess/sine",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): {\"shape\": [30, 200], \"corr_with_truth\": null, \"seconds\": 0.0, \"deterministic\": true}",
+   "evidence": []
+  },
+  {
+   "case": "grid: AutoRegressor/sine",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case AutoRegressor/sine",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): AssertionError: AutoRegressor needs more than lags=10 observations to fit; got 1",
+   "evidence": []
+  },
+  {
+   "case": "grid: ARIMA/sine",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case ARIMA/sine",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): {\"shape\": [30, 200], \"corr_with_truth\": null, \"seconds\": 0.57, \"deterministic\": true}",
+   "evidence": []
+  },
+  {
+   "case": "grid: Laplace/sine",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case Laplace/sine",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): {\"shape\": [30, 200], \"corr_with_truth\": null, \"seconds\": 15.95, \"deterministic\": true}",
+   "evidence": []
+  },
+  {
+   "case": "grid: Chronos/sine",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case Chronos/sine",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): {\"shape\": [30, 200], \"corr_with_truth\": null, \"seconds\": 33.53, \"deterministic\": false}",
+   "evidence": []
+  },
+  {
+   "case": "grid: Kalman/trend",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case Kalman/trend",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): ValueError: could not broadcast input array from shape (200,200) into shape (200,1)",
+   "evidence": []
+  },
+  {
+   "case": "grid: GaussianProcess/trend",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case GaussianProcess/trend",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): {\"shape\": [30, 200], \"corr_with_truth\": null, \"seconds\": 0.0, \"deterministic\": true}",
+   "evidence": []
+  },
+  {
+   "case": "grid: AutoRegressor/trend",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case AutoRegressor/trend",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): AssertionError: AutoRegressor needs more than lags=10 observations to fit; got 1",
+   "evidence": []
+  },
+  {
+   "case": "grid: ARIMA/trend",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case ARIMA/trend",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): {\"shape\": [30, 200], \"corr_with_truth\": null, \"seconds\": 0.36, \"deterministic\": true}",
+   "evidence": []
+  },
+  {
+   "case": "grid: Laplace/trend",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case Laplace/trend",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): {\"shape\": [30, 200], \"corr_with_truth\": null, \"seconds\": 18.15, \"deterministic\": true}",
+   "evidence": []
+  },
+  {
+   "case": "grid: Chronos/trend",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case Chronos/trend",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): {\"shape\": [30, 200], \"corr_with_truth\": null, \"seconds\": 35.45, \"deterministic\": false}",
+   "evidence": []
+  },
+  {
+   "case": "grid: Kalman/walk",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case Kalman/walk",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): ValueError: could not broadcast input array from shape (200,200) into shape (200,1)",
+   "evidence": []
+  },
+  {
+   "case": "grid: GaussianProcess/walk",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case GaussianProcess/walk",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): {\"shape\": [30, 200], \"corr_with_truth\": null, \"seconds\": 0.0, \"deterministic\": true}",
+   "evidence": []
+  },
+  {
+   "case": "grid: AutoRegressor/walk",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case AutoRegressor/walk",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): AssertionError: AutoRegressor needs more than lags=10 observations to fit; got 1",
+   "evidence": []
+  },
+  {
+   "case": "grid: ARIMA/walk",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case ARIMA/walk",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): {\"shape\": [30, 200], \"corr_with_truth\": null, \"seconds\": 0.35, \"deterministic\": true}",
+   "evidence": []
+  },
+  {
+   "case": "grid: Laplace/walk",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case Laplace/walk",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): {\"shape\": [30, 200], \"corr_with_truth\": null, \"seconds\": 16.68, \"deterministic\": true}",
+   "evidence": []
+  },
+  {
+   "case": "grid: Chronos/walk",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01_models_grid.py  # case Chronos/walk",
+   "output_excerpt": "1D-INPUT RUN (data arrived as 1 row x 200 cols): {\"shape\": [30, 200], \"corr_with_truth\": null, \"seconds\": 31.99, \"deterministic\": false}",
+   "evidence": []
+  },
+  {
+   "case": "grid2d: Kalman/sine",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case Kalman/sine",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": \"flat forecast (std=0)\", \"seconds\": 0.38, \"deterministic\": true}",
+   "evidence": [
+    "grid_Kalman_sine.png"
+   ]
+  },
+  {
+   "case": "grid2d: GaussianProcess/sine",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case GaussianProcess/sine",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": 0.811, \"seconds\": 0.05, \"deterministic\": true}",
+   "evidence": [
+    "grid_GaussianProcess_sine.png"
+   ]
+  },
+  {
+   "case": "grid2d: AutoRegressor/sine",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case AutoRegressor/sine",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": 0.997, \"seconds\": 0.0, \"deterministic\": true}",
+   "evidence": [
+    "grid_AutoRegressor_sine.png"
+   ]
+  },
+  {
+   "case": "grid2d: ARIMA/sine",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case ARIMA/sine",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": -0.428, \"seconds\": 0.17, \"deterministic\": true}",
+   "evidence": [
+    "grid_ARIMA_sine.png"
+   ]
+  },
+  {
+   "case": "grid2d: Laplace/sine",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case Laplace/sine",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": -0.696, \"seconds\": 4.01, \"deterministic\": true}",
+   "evidence": [
+    "grid_Laplace_sine.png"
+   ]
+  },
+  {
+   "case": "grid2d: Chronos/sine",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case Chronos/sine",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": 0.997, \"seconds\": 3.01, \"deterministic\": false}",
+   "evidence": [
+    "grid_Chronos_sine.png"
+   ]
+  },
+  {
+   "case": "grid2d: Kalman/trend",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case Kalman/trend",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": \"flat forecast (std=0)\", \"seconds\": 0.13, \"deterministic\": true}",
+   "evidence": [
+    "grid_Kalman_trend.png"
+   ]
+  },
+  {
+   "case": "grid2d: GaussianProcess/trend",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case GaussianProcess/trend",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": 1.0, \"seconds\": 0.05, \"deterministic\": true}",
+   "evidence": [
+    "grid_GaussianProcess_trend.png"
+   ]
+  },
+  {
+   "case": "grid2d: AutoRegressor/trend",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case AutoRegressor/trend",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": 0.999, \"seconds\": 0.0, \"deterministic\": true}",
+   "evidence": [
+    "grid_AutoRegressor_trend.png"
+   ]
+  },
+  {
+   "case": "grid2d: ARIMA/trend",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case ARIMA/trend",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": -0.269, \"seconds\": 0.02, \"deterministic\": true}",
+   "evidence": [
+    "grid_ARIMA_trend.png"
+   ]
+  },
+  {
+   "case": "grid2d: Laplace/trend",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case Laplace/trend",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": 0.993, \"seconds\": 3.92, \"deterministic\": true}",
+   "evidence": [
+    "grid_Laplace_trend.png"
+   ]
+  },
+  {
+   "case": "grid2d: Chronos/trend",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case Chronos/trend",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": 0.781, \"seconds\": 0.46, \"deterministic\": false}",
+   "evidence": [
+    "grid_Chronos_trend.png"
+   ]
+  },
+  {
+   "case": "grid2d: Kalman/walk",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case Kalman/walk",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": \"flat forecast (std=0)\", \"seconds\": 0.13, \"deterministic\": true}",
+   "evidence": [
+    "grid_Kalman_walk.png"
+   ]
+  },
+  {
+   "case": "grid2d: GaussianProcess/walk",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case GaussianProcess/walk",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": 0.496, \"seconds\": 0.03, \"deterministic\": true}",
+   "evidence": [
+    "grid_GaussianProcess_walk.png"
+   ]
+  },
+  {
+   "case": "grid2d: AutoRegressor/walk",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case AutoRegressor/walk",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": 0.043, \"seconds\": 0.0, \"deterministic\": true}",
+   "evidence": [
+    "grid_AutoRegressor_walk.png"
+   ]
+  },
+  {
+   "case": "grid2d: ARIMA/walk",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case ARIMA/walk",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": 0.174, \"seconds\": 0.01, \"deterministic\": true}",
+   "evidence": [
+    "grid_ARIMA_walk.png"
+   ]
+  },
+  {
+   "case": "grid2d: Laplace/walk",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case Laplace/walk",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": -0.258, \"seconds\": 4.12, \"deterministic\": true}",
+   "evidence": [
+    "grid_Laplace_walk.png"
+   ]
+  },
+  {
+   "case": "grid2d: Chronos/walk",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case Chronos/walk",
+   "output_excerpt": "{\"shape\": [30, 1], \"corr_with_truth\": -0.459, \"seconds\": 0.55, \"deterministic\": false}",
+   "evidence": [
+    "grid_Chronos_walk.png"
+   ]
+  },
+  {
+   "case": "grid2d: Kalman/sincos2d",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case Kalman/sincos2d",
+   "output_excerpt": "{\"shape\": [30, 2], \"seconds\": 0.13, \"corr_col0\": \"flat\", \"corr_col1\": \"flat\"}",
+   "evidence": [
+    "grid_Kalman_sincos2d.png"
+   ]
+  },
+  {
+   "case": "grid2d: AutoRegressor/sincos2d",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case AutoRegressor/sincos2d",
+   "output_excerpt": "{\"shape\": [30, 2], \"seconds\": 0.0, \"corr_col0\": 0.999, \"corr_col1\": 1.0}",
+   "evidence": [
+    "grid_AutoRegressor_sincos2d.png"
+   ]
+  },
+  {
+   "case": "grid2d: GaussianProcess/sincos2d",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case GaussianProcess/sincos2d",
+   "output_excerpt": "{\"shape\": [30, 2], \"seconds\": 0.06, \"corr_col0\": 0.782, \"corr_col1\": 0.923}",
+   "evidence": [
+    "grid_GaussianProcess_sincos2d.png"
+   ]
+  },
+  {
+   "case": "grid2d: ARIMA/sincos2d",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/01b_grid2d.py  # case ARIMA/sincos2d",
+   "output_excerpt": "{\"shape\": [30, 2], \"seconds\": 0.08, \"corr_col0\": -0.538, \"corr_col1\": -0.904}",
+   "evidence": [
+    "grid_ARIMA_sincos2d.png"
+   ]
+  },
+  {
+   "case": "edges: t_zero",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_zero",
+   "output_excerpt": "ValueError: t (forecast horizon) must be >= 1; got 0",
+   "evidence": []
+  },
+  {
+   "case": "edges: t_negative",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_negative",
+   "output_excerpt": "ValueError: t (forecast horizon) must be >= 1; got -5",
+   "evidence": []
+  },
+  {
+   "case": "edges: t_float",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_float",
+   "output_excerpt": "ValueError: t (forecast horizon) must be an integer number of steps or a target datetime, not a float; got 2.5",
+   "evidence": []
+  },
+  {
+   "case": "edges: t_np_float64",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_np_float64",
+   "output_excerpt": "ValueError: t (forecast horizon) must be an integer number of steps or a target datetime, not a float; got np.float64(10.0)",
+   "evidence": []
+  },
+  {
+   "case": "edges: t_bool",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_bool",
+   "output_excerpt": "ValueError: t (forecast horizon) must be a positive integer or a target datetime; got True",
+   "evidence": []
+  },
+  {
+   "case": "edges: t_np_bool",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_np_bool",
+   "output_excerpt": "ValueError: t (forecast horizon) must be a positive integer or a target datetime; got np.True_",
+   "evidence": []
+  },
+  {
+   "case": "edges: t_0d_array",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_0d_array",
+   "output_excerpt": "(5, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: t_np_int32",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_np_int32",
+   "output_excerpt": "(5, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: t_datetime_on_rangeindex",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_datetime_on_rangeindex",
+   "output_excerpt": "ValueError: a datetime-like t requires a time-indexed (DatetimeIndex) dataset",
+   "evidence": []
+  },
+  {
+   "case": "edges: t_garbage_string_dtindex",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_garbage_string_dtindex",
+   "output_excerpt": "DateParseError: Unknown datetime string format, unable to parse: not a date",
+   "evidence": []
+  },
+  {
+   "case": "edges: t_none",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_none",
+   "output_excerpt": "ValueError: a datetime-like t requires a time-indexed (DatetimeIndex) dataset",
+   "evidence": []
+  },
+  {
+   "case": "edges: t_datetime_future",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_datetime_future",
+   "output_excerpt": "['2024-04-10', '2024-04-20']",
+   "evidence": []
+  },
+  {
+   "case": "edges: t_datetime_past_truncates",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_datetime_past_truncates",
+   "output_excerpt": "(32, 1)",
+   "evidence": []
+  },
+  {
+   "case": "edges: t_datetime_exact_last",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_datetime_exact_last",
+   "output_excerpt": "ValueError: Found array with 0 sample(s) (shape=(0, 1)) while a minimum of 1 is required by GaussianProcessRegressor.",
+   "evidence": []
+  },
+  {
+   "case": "edges: t_datetime_half_step_ahead",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_datetime_half_step_ahead",
+   "output_excerpt": "ValueError: Found array with 0 sample(s) (shape=(0, 1)) while a minimum of 1 is required by GaussianProcessRegressor.",
+   "evidence": []
+  },
+  {
+   "case": "edges: t_pd_timestamp_obj",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case t_pd_timestamp_obj",
+   "output_excerpt": "(6, 1)",
+   "evidence": []
+  },
+  {
+   "case": "edges: resolve_t_exact_last_direct",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case resolve_t_exact_last_direct",
+   "output_excerpt": "(0, DatetimeIndex(['2024-01-01', '2024-01-02', '2024-01-03', '2024-01-04',\n               '2024-01-05', '2024-01-06', '2024-01-07', '2024-01-08',\n               '2024-01-09', '2024-01-10', '2024-01-11', '2024-01-12',\n               '2024-01-13', '2024-01-14', '2024-01-15', '2024-01-16',\n               '2024-01-17', '20",
+   "evidence": []
+  },
+  {
+   "case": "edges: irregular_dtindex_int_t",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case irregular_dtindex_int_t",
+   "output_excerpt": "['2024-06-03 02:00:00', '2024-06-03 03:00:00', '2024-06-03 04:00:00', '2024-06-03 05:00:00', '2024-06-03 06:00:00']",
+   "evidence": []
+  },
+  {
+   "case": "edges: all_duplicate_timestamps",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case all_duplicate_timestamps",
+   "output_excerpt": "AssertionError: cannot infer a timestep: all observations share one timestamp",
+   "evidence": []
+  },
+  {
+   "case": "edges: nonuniform_int_index",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case nonuniform_int_index",
+   "output_excerpt": "[51, 52, 53]",
+   "evidence": []
+  },
+  {
+   "case": "edges: reversed_dtindex",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case reversed_dtindex",
+   "output_excerpt": "['2024-01-02', '2024-01-03', '2024-01-04']",
+   "evidence": []
+  },
+  {
+   "case": "edges: tz_aware_naive_t",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case tz_aware_naive_t",
+   "output_excerpt": "TypeError: Cannot compare tz-naive and tz-aware timestamps",
+   "evidence": []
+  },
+  {
+   "case": "edges: input_1d_array_shape",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case input_1d_array_shape",
+   "output_excerpt": "((4, 100), 'input was (100,)')",
+   "evidence": []
+  },
+  {
+   "case": "edges: input_list_of_two",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case input_list_of_two",
+   "output_excerpt": "[(4, 2), (4, 2)]",
+   "evidence": []
+  },
+  {
+   "case": "edges: input_list_of_one",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case input_list_of_one",
+   "output_excerpt": "list",
+   "evidence": []
+  },
+  {
+   "case": "edges: input_df_named_cols",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case input_df_named_cols",
+   "output_excerpt": "['sin', 'cos']",
+   "evidence": []
+  },
+  {
+   "case": "edges: input_empty_df",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case input_empty_df",
+   "output_excerpt": "ValueError: Found array with 0 sample(s) (shape=(0, 1)) while a minimum of 1 is required by GaussianProcessRegressor.",
+   "evidence": []
+  },
+  {
+   "case": "edges: input_single_row",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case input_single_row",
+   "output_excerpt": "     0    1\n1  1.0  2.0\n2  1.0  2.0\n3  1.0  2.0",
+   "evidence": []
+  },
+  {
+   "case": "edges: input_int_dtype",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case input_int_dtype",
+   "output_excerpt": "(3, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: input_string_col_df",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case input_string_col_df",
+   "output_excerpt": "ValueError: could not convert string to float: 'w'",
+   "evidence": []
+  },
+  {
+   "case": "edges: input_series",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case input_series",
+   "output_excerpt": "ValueError: Found array with 0 sample(s) (shape=(0, 1)) while a minimum of 1 is required by GaussianProcessRegressor.",
+   "evidence": []
+  },
+  {
+   "case": "edges: nan_kalman",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case nan_kalman",
+   "output_excerpt": "[[-0.16, 1.007], [-0.16, 1.007], [-0.16, 1.007]]",
+   "evidence": []
+  },
+  {
+   "case": "edges: nan_gp",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case nan_gp",
+   "output_excerpt": "ValueError: Input y contains NaN.",
+   "evidence": []
+  },
+  {
+   "case": "edges: nan_autoreg",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case nan_autoreg",
+   "output_excerpt": "ValueError: Input y contains NaN.",
+   "evidence": []
+  },
+  {
+   "case": "edges: nan_arima",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case nan_arima",
+   "output_excerpt": "[[0.114, 1.106], [0.271, 1.163], [0.41, 1.213]]",
+   "evidence": []
+  },
+  {
+   "case": "edges: nan_laplace",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case nan_laplace",
+   "output_excerpt": "AssertionError: {}",
+   "evidence": []
+  },
+  {
+   "case": "edges: short3_kalman",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case short3_kalman",
+   "output_excerpt": "(2, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: short3_gp",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case short3_gp",
+   "output_excerpt": "(2, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: short3_autoreg_default_lags",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case short3_autoreg_default_lags",
+   "output_excerpt": "AssertionError: AutoRegressor needs more than lags=10 observations to fit; got 3",
+   "evidence": []
+  },
+  {
+   "case": "edges: short3_autoreg_lags2",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case short3_autoreg_lags2",
+   "output_excerpt": "(2, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: short3_arima",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case short3_arima",
+   "output_excerpt": "(2, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: short3_laplace",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case short3_laplace",
+   "output_excerpt": "(2, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: constant_series_kalman",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case constant_series_kalman",
+   "output_excerpt": "[[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]]",
+   "evidence": []
+  },
+  {
+   "case": "edges: constant_series_arima",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case constant_series_arima",
+   "output_excerpt": "[[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]]",
+   "evidence": []
+  },
+  {
+   "case": "edges: model_unknown_string",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case model_unknown_string",
+   "output_excerpt": "ValueError: unknown predict model 'SuperForecaster'; supported names: Kalman, GaussianProcess, AutoRegressor, ARIMA, Laplace, Chronos (or pass a dict {'model': ..., 'params': {...}}, a Forecaster subclass, or a Forecaster instance directly)",
+   "evidence": []
+  },
+  {
+   "case": "edges: model_lowercase_kalman",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case model_lowercase_kalman",
+   "output_excerpt": "ValueError: unknown predict model 'kalman'; supported names: Kalman, GaussianProcess, AutoRegressor, ARIMA, Laplace, Chronos (or pass a dict {'model': ..., 'params': {...}}, a Forecaster subclass, or a Forecaster instance directly)",
+   "evidence": []
+  },
+  {
+   "case": "edges: model_gp_alias",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case model_gp_alias",
+   "output_excerpt": "(3, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: model_int",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case model_int",
+   "output_excerpt": "ValueError: unknown model: 42",
+   "evidence": []
+  },
+  {
+   "case": "edges: model_none",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case model_none",
+   "output_excerpt": "ValueError: unknown model: None",
+   "evidence": []
+  },
+  {
+   "case": "edges: model_params_dict",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case model_params_dict",
+   "output_excerpt": "(3, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: model_kwargs_dict",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case model_kwargs_dict",
+   "output_excerpt": "(3, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: model_class",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case model_class",
+   "output_excerpt": "(3, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: model_instance",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case model_instance",
+   "output_excerpt": "(3, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: model_sklearn_class_misuse",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case model_sklearn_class_misuse",
+   "output_excerpt": "ValueError: unknown model: <class 'sklearn.linear_model._ridge.Ridge'>",
+   "evidence": []
+  },
+  {
+   "case": "edges: kalman_typo_kwarg",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case kalman_typo_kwarg",
+   "output_excerpt": "(2, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: gp_typo_kwarg",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case gp_typo_kwarg",
+   "output_excerpt": "(2, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: arima_bad_kwarg",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case arima_bad_kwarg",
+   "output_excerpt": "TypeError: ARIMA.__init__() got an unexpected keyword argument 'bogus_flag'",
+   "evidence": []
+  },
+  {
+   "case": "edges: autoreg_unknown_model_string",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case autoreg_unknown_model_string",
+   "output_excerpt": "AssertionError: unknown model: 'MegaBoost'; supported string names are ['Ridge', 'Lasso', 'LinearRegression', 'RandomForestRegressor', 'GradientBoostingRegressor', 'SVR', 'KNeighborsRegressor']",
+   "evidence": []
+  },
+  {
+   "case": "edges: autoreg_rf_seeded",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case autoreg_rf_seeded",
+   "output_excerpt": "TypeError: RandomForestRegressor.__init__() got an unexpected keyword argument 'model_kwargs'",
+   "evidence": []
+  },
+  {
+   "case": "edges: arima_custom_order",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case arima_custom_order",
+   "output_excerpt": "ValueError: all the input arrays must have same number of dimensions, but the array at index 0 has 1 dimension(s) and the array at index 1 has 2 dimension(s)",
+   "evidence": []
+  },
+  {
+   "case": "edges: return_model_kalman_roundtrip",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case return_model_kalman_roundtrip",
+   "output_excerpt": "('Kalman', True, (3, 2), (4, 2))",
+   "evidence": []
+  },
+  {
+   "case": "edges: predict_new_gp_5col_new_data",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case predict_new_gp_5col_new_data",
+   "output_excerpt": "ValueError: Shape of passed values is (3, 2), indices imply (3, 5)",
+   "evidence": []
+  },
+  {
+   "case": "edges: predict_new_2_models_3_datasets",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case predict_new_2_models_3_datasets",
+   "output_excerpt": "ValueError: predict_new got 3 new dataset(s) but the fitted forecaster has 2 fitted model(s); pass either a matching number of new datasets or reuse a forecaster that was fit on a single dataset.",
+   "evidence": []
+  },
+  {
+   "case": "edges: return_model_laplace_condition_new",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case return_model_laplace_condition_new",
+   "output_excerpt": "(5, 100)",
+   "evidence": []
+  },
+  {
+   "case": "edges: predict_new_autoreg_too_short",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case predict_new_autoreg_too_short",
+   "output_excerpt": "AssertionError: predict_new needs at least lags=10 observations of new data; got 4",
+   "evidence": []
+  },
+  {
+   "case": "edges: forecaster_predict_before_fit",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case forecaster_predict_before_fit",
+   "output_excerpt": "NotFittedError: must fit forecaster before predicting",
+   "evidence": []
+  },
+  {
+   "case": "edges: kalman_n_iter_zero",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case kalman_n_iter_zero",
+   "output_excerpt": "(2, 2)",
+   "evidence": []
+  },
+  {
+   "case": "edges: huge_t_gp",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/02_edges.py  # case huge_t_gp",
+   "output_excerpt": "(2000, 2)",
+   "evidence": []
+  },
+  {
+   "case": "followups: arima_order_400_proper_input",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case arima_order_400_proper_input",
+   "output_excerpt": "((30, 1), 0.931)",
+   "evidence": []
+  },
+  {
+   "case": "followups: autoreg_ctor_model_kwargs",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case autoreg_ctor_model_kwargs",
+   "output_excerpt": "TypeError: SVR.__init__() got an unexpected keyword argument 'model_kwargs'",
+   "evidence": []
+  },
+  {
+   "case": "followups: autoreg_ctor_direct_kwargs",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case autoreg_ctor_direct_kwargs",
+   "output_excerpt": "(3, 1)",
+   "evidence": []
+  },
+  {
+   "case": "followups: autoreg_dict_direct_kwargs",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case autoreg_dict_direct_kwargs",
+   "output_excerpt": "(3, 1)",
+   "evidence": []
+  },
+  {
+   "case": "followups: autoreg_toplevel_lags",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case autoreg_toplevel_lags",
+   "output_excerpt": "(3, 1)",
+   "evidence": []
+  },
+  {
+   "case": "followups: autoreg_toplevel_sklearn_kwarg",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case autoreg_toplevel_sklearn_kwarg",
+   "output_excerpt": "(3, 1)",
+   "evidence": []
+  },
+  {
+   "case": "followups: series_direct_shape",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case series_direct_shape",
+   "output_excerpt": "ValueError: Found array with 0 sample(s) (shape=(0, 1)) while a minimum of 1 is required by GaussianProcessRegressor.",
+   "evidence": []
+  },
+  {
+   "case": "followups: dw_series_wrangle",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case dw_series_wrangle",
+   "output_excerpt": "(0, 0)",
+   "evidence": []
+  },
+  {
+   "case": "followups: dw_1d_wrangle",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case dw_1d_wrangle",
+   "output_excerpt": "(1, 5)",
+   "evidence": []
+  },
+  {
+   "case": "followups: dw_list_wrangle",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case dw_list_wrangle",
+   "output_excerpt": "AttributeError: 'list' object has no attribute 'shape'",
+   "evidence": []
+  },
+  {
+   "case": "followups: input_flat_python_list",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case input_flat_python_list",
+   "output_excerpt": "[     0\n1  1.0\n2  1.0\n3  1.0,      0\n1  2.0\n2  2.0\n3  2.0,      0\n1  3.0\n2  3.0\n3  3.0,      0\n1  4.0\n2  4.0\n3  4.0,      0\n1  5.0\n2  5.0\n3  5.0,      0\n1  1.0\n2  1.0\n3  1.0,      0\n1  2.0\n2  2.0\n3  2.0,      0\n1  3.0\n2  3.0\n3  3.0,      0\n1  4.0\n2  4.0\n3  4.0,      0\n1  5.0\n2  5.0\n3  5.0,      0\n1  1.0\n2  1.0\n3  1.0, ",
+   "evidence": []
+  },
+  {
+   "case": "followups: t_none_on_dtindex",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case t_none_on_dtindex",
+   "output_excerpt": "ValueError: cannot convert float NaN to integer",
+   "evidence": []
+  },
+  {
+   "case": "followups: kalman_t_exact_last",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case kalman_t_exact_last",
+   "output_excerpt": "(40, 1)",
+   "evidence": []
+  },
+  {
+   "case": "followups: arima_t_exact_last",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case arima_t_exact_last",
+   "output_excerpt": "ValueError: Prediction must have `end` after `start`.",
+   "evidence": []
+  },
+  {
+   "case": "followups: truncation_returns_original_rows",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case truncation_returns_original_rows",
+   "output_excerpt": "(True, (32, 1))",
+   "evidence": []
+  },
+  {
+   "case": "followups: gp_kernel_extrapolation_claim",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case gp_kernel_extrapolation_claim",
+   "output_excerpt": "{'train_mean': 5.97, 'rbf_last': 5.97, 'default_last': 12.94, 'true_last': 12.95}",
+   "evidence": []
+  },
+  {
+   "case": "followups: skaters_laplace_k_claim",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case skaters_laplace_k_claim",
+   "output_excerpt": "{5: 5, 10: 10, 50: 50, 80: 80, 100: 100}",
+   "evidence": []
+  },
+  {
+   "case": "followups: kalman_n2",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case kalman_n2",
+   "output_excerpt": "(2, 2)",
+   "evidence": []
+  },
+  {
+   "case": "followups: kalman_determinism",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case kalman_determinism",
+   "output_excerpt": "True",
+   "evidence": []
+  },
+  {
+   "case": "followups: readme_verbatim_kalman_t10",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case readme_verbatim_kalman_t10",
+   "output_excerpt": "('DataFrame', (10, 1))",
+   "evidence": []
+  },
+  {
+   "case": "followups: predict_new_kalman_5col",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case predict_new_kalman_5col",
+   "output_excerpt": "ValueError: operands could not be broadcast together with shapes (5,) (2,) ",
+   "evidence": []
+  },
+  {
+   "case": "followups: return_model_instance_identity",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case return_model_instance_identity",
+   "output_excerpt": "('DataFrame', True)",
+   "evidence": []
+  },
+  {
+   "case": "followups: multiindex_columns",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case multiindex_columns",
+   "output_excerpt": "[('roi', 'a'), ('roi', 'b')]",
+   "evidence": []
+  },
+  {
+   "case": "followups: all_nan_column_kalman",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case all_nan_column_kalman",
+   "output_excerpt": "[[0.0, 0.0], [0.0, 0.0]]",
+   "evidence": []
+  },
+  {
+   "case": "followups: input_empty_list",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case input_empty_list",
+   "output_excerpt": "ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation.",
+   "evidence": []
+  },
+  {
+   "case": "followups: inf_kalman",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case inf_kalman",
+   "output_excerpt": "[[0.32, -1.66], [0.32, -1.66]]",
+   "evidence": []
+  },
+  {
+   "case": "followups: inf_arima",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/03_followups.py  # case inf_arima",
+   "output_excerpt": "[[nan, -1.55], [nan, -1.56]]",
+   "evidence": []
+  },
+  {
+   "case": "workflows: W1_kalman_multisubject",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/04_workflows.py  # case W1_kalman_multisubject",
+   "output_excerpt": "{\"seconds\": 0.5}",
+   "evidence": [
+    "w1_kalman_subjects.png"
+   ]
+  },
+  {
+   "case": "workflows: W2_arima_datetime_horizon",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/04_workflows.py  # case W2_arima_datetime_horizon",
+   "output_excerpt": "{\"shape\": [32, 1]}",
+   "evidence": [
+    "w2_arima_datetime.png"
+   ]
+  },
+  {
+   "case": "workflows: W3_autoreg_gbm_holdout",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/04_workflows.py  # case W3_autoreg_gbm_holdout",
+   "output_excerpt": "{\"shape\": [30, 1]}",
+   "evidence": [
+    "w3_autoreg_gbm.png"
+   ]
+  },
+  {
+   "case": "workflows: W4_reuse_predict_new",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/04_workflows.py  # case W4_reuse_predict_new",
+   "output_excerpt": "{}",
+   "evidence": [
+    "w4_reuse_predict_new.png"
+   ]
+  },
+  {
+   "case": "workflows: W5_gp_spiral",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/04_workflows.py  # case W5_gp_spiral",
+   "output_excerpt": "{\"shape\": [40, 2]}",
+   "evidence": [
+    "w5_gp_spiral.png"
+   ]
+  },
+  {
+   "case": "chronos: chronos_t100_long_horizon",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/05_chronos.py  # case chronos_t100_long_horizon",
+   "output_excerpt": "{'shape': [100, 1], 'corr': 0.867, 'nans': 0}",
+   "evidence": [
+    "chronos_t100.png"
+   ]
+  },
+  {
+   "case": "chronos: chronos_nan_series",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/05_chronos.py  # case chronos_nan_series",
+   "output_excerpt": "{'shape': [5, 1], 'nans_in_forecast': 0}",
+   "evidence": []
+  },
+  {
+   "case": "chronos: chronos_multivariate_3col",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/05_chronos.py  # case chronos_multivariate_3col",
+   "output_excerpt": "{'shape': [12, 3], 'seconds': 0.5}",
+   "evidence": []
+  },
+  {
+   "case": "chronos: chronos_bogus_model_name",
+   "result": "pass",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/05_chronos.py  # case chronos_bogus_model_name",
+   "output_excerpt": "OSError: amazon/chronos-not-a-model is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'\nIf this is a private repository, make sure to pass a token having permission to this repo either by logging in with `hf auth login` or by passing `token=<your_token>`",
+   "evidence": []
+  },
+  {
+   "case": "chronos: chronos_num_samples_kwarg",
+   "result": "fail",
+   "command": "MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F16-predict/05_chronos.py  # case chronos_num_samples_kwarg",
+   "output_excerpt": "[4, 1]",
+   "evidence": []
+  },
+  {
+   "case": "inline: pykalman em_vars root cause",
+   "result": "fail",
+   "command": "python -c \"from pykalman import KalmanFilter; ...; hyp.predict(sine, model='Kalman', t=10, return_model=True)\"",
+   "output_excerpt": "default em_vars: None; transition_matrices after em: [[1.]]; observation_matrices after em: [[1.]]; forecast values: [-0.2037 x10 identical]; 2D transition after em: identity; 2D forecast rows identical: True",
+   "evidence": []
+  },
+  {
+   "case": "inline: Kalman t == last timestamp returns all-NaN frame",
+   "result": "fail",
+   "command": "hyp.predict(df_40days, model='Kalman', t=str(df.index[-1]), n_iter=2)",
+   "output_excerpt": "exact-last Kalman out shape: (40, 1) all NaN? True",
+   "evidence": []
+  },
+  {
+   "case": "inline: GP predict_new ignores new data values",
+   "result": "fail",
+   "command": "fcA,m = hyp.predict(rising, model='GaussianProcess', t=5, return_model=True); fcB = hyp.predict(falling, model=m, t=5)",
+   "output_excerpt": "GP fcA: [ 9.97 10.07 10.17 10.27 10.37]; GP fcB (new falling data): [ 9.97 10.07 10.17 10.27 10.37]; identical to fcA? True",
+   "evidence": []
+  },
+  {
+   "case": "inline: descending (newest-first) DatetimeIndex silently overlaps",
+   "result": "fail",
+   "command": "hyp.predict(df_desc_60days, model='ARIMA', t=5)",
+   "output_excerpt": "desc-index forecast index: ['2024-01-02'..'2024-01-06']; data range: 2024-01-01 -> 2024-02-29 | warnings: []",
+   "evidence": []
+  },
+  {
+   "case": "inline: examples/plot_predict.py VERBATIM via runpy",
+   "result": "pass",
+   "command": "runpy.run_path('examples/plot_predict.py'); fig.savefig(...)",
+   "output_excerpt": "gallery example ran; axes: 1 lines on ax0: 4 (2 helices + 2 dashed GP forecast tails)",
+   "evidence": [
+    "gallery_plot_predict_verbatim.png"
+   ]
+  },
+  {
+   "case": "inline: install provenance (wave-1 claimed stale non-editable install)",
+   "result": "pass",
+   "command": "python -c \"import hypertools as hyp; print(hyp.__file__)\"",
+   "output_excerpt": "hypertools.__file__: /Users/jmanning/hypertools/hypertools/__init__.py (editable; repo code IS under test today -- wave-1 finding 018 does not reproduce)",
+   "evidence": []
+  },
+  {
+   "case": "inline: fork-style dict drops outer **kwargs silently",
+   "result": "fail",
+   "command": "hyp.predict(X, model={'model': 'Kalman', 'kwargs': {}}, t=2, n_iter=1, return_model=True)",
+   "output_excerpt": "fork-dict outer n_iter=1 -> stored n_iter: 5 | params-dict outer n_iter=1 -> stored n_iter: 1",
+   "evidence": []
+  },
+  {
+   "case": "inline: import hypertools.predict.kalman (submodule shadowing)",
+   "result": "fail",
+   "command": "python -c \"import hypertools.predict.kalman as k\"",
+   "output_excerpt": "ImportError | cannot import name 'kalman' from 'predict' (unknown location); also: import hypertools.predict as hp -> <function predict at 0x...> (the function, not the module)",
+   "evidence": []
+  },
+  {
+   "case": "inline: Laplace timing t=200 on 200-obs univariate series",
+   "result": "fail",
+   "command": "hyp.predict(sine_200x1, model='Laplace', t=200)",
+   "output_excerpt": "Laplace t=200 seconds: 77.1 shape (200, 1)",
+   "evidence": []
+  },
+  {
+   "case": "inline: laplace docstring skaters claim (k in 5..100, len(dists)==k)",
+   "result": "pass",
+   "command": "from skaters.api import laplace; feed 75-pt series for k in [5,10,50,80,100]",
+   "output_excerpt": "{5: 5, 10: 10, 50: 50, 80: 80, 100: 100} -- docstring claim reproduces on skaters 0.11.0",
+   "evidence": []
+  },
+  {
+   "case": "inline: GP default-kernel extrapolation docstring claim",
+   "result": "pass",
+   "command": "hyp.predict(trend, model='GaussianProcess', t=40, kernel=RBF(10.0)) vs default kernel",
+   "output_excerpt": "{'train_mean': 5.97, 'rbf_last': 5.97, 'default_last': 12.94, 'true_last': 12.95} -- plain RBF reverts to mean; default DotProduct kernel extrapolates (claim verified)",
+   "evidence": []
+  },
+  {
+   "case": "inline: README verbatim hyp.predict(data, model='Kalman', t=10)",
+   "result": "pass",
+   "command": "hyp.predict(sine_50x1, model='Kalman', t=10)",
+   "output_excerpt": "('DataFrame', (10, 1))",
+   "evidence": []
+  }
+ ],
+ "findings": [
+  {
+   "id": "F16-predict-001",
+   "severity": "critical",
+   "title": "Default 'Kalman' forecaster can NEVER learn dynamics -- every forecast is a constant flat line (pykalman em() never fits the transition matrix)",
+   "description": "hypertools/predict/kalman.py fits `KalmanFilter(n_dim_obs=d, n_dim_state=d).em(x, n_iter=n_iter)` without passing `em_vars`. pykalman's default `_em_vars` (standard.py lines 1105-1113 of pykalman 0.11.2) is ['transition_covariance', 'observation_covariance', 'initial_state_mean', 'initial_state_covariance'] -- the transition and observation MATRICES are never estimated and stay at their identity defaults. Forecasting then iterates `filter_update(mean, cov)` with A=I, so the forecast is the last filtered state repeated forever, REGARDLESS of the data. Verified: after fitting a strong sine, transition_matrices == [[1.]] and all 10 forecast rows == -0.2037; on 2-D sin/cos, transition == identity and all forecast rows identical. Grid runs: forecast_std == 0.0 exactly on sine, trend, walk, and sincos2d (PNGs show a flat dashed line vs oscillating truth; W4 reuse forecast corr 0.0). This is hyp.predict's DEFAULT model, so `hyp.predict(data)` always returns a constant forecast. The class docstring compounds it: 'n_iter : Number of EM iterations used to fit the transition/observation matrices and their noise covariances' -- transition/observation matrices are NOT fit. There is also no API escape hatch: Kalman's fitter only reads `n_iter`, so `em_vars` cannot be passed. Fix: pass em_vars including 'transition_matrices' (e.g. em_vars=['transition_matrices', 'transition_covariance', 'observation_covariance', 'initial_state_mean', 'initial_state_covariance']) or expose em_vars as a parameter.",
+   "repro": "import numpy as np, hypertools as hyp\nx = np.sin(2*np.pi*np.arange(200)/40.0).reshape(-1,1)\nfc, m = hyp.predict(x, model='Kalman', t=10, return_model=True)\nprint(np.asarray(m.models_[0]['kf'].transition_matrices))  # [[1.]] -- identity, never fit\nprint(np.asarray(fc).ravel())  # constant vector\nprint(float(np.std(np.asarray(fc))))  # 0.0",
+   "expected": "EM-fit state-space dynamics whose forecast continues the sine oscillation (audit bar: corr with held-out truth > 0.5); docstring says transition/observation matrices are fit.",
+   "actual": "transition_matrices after em: [[1.]] | forecast values: [-0.2037 -0.2037 ... x10] | grid2d: Kalman corr_with_truth='flat forecast (std=0)' on sine/trend/walk; Kalman/sincos2d corr 'flat'; W4 reused-Kalman corr 0.0",
+   "evidence": [
+    "grid_Kalman_sine.png",
+    "grid_Kalman_trend.png",
+    "grid_Kalman_walk.png",
+    "grid_Kalman_sincos2d.png",
+    "w4_reuse_predict_new.png"
+   ],
+   "docs_impact": [
+    "hypertools/predict/kalman.py (module + class docstrings)",
+    "docs/tutorials/projectile_kalman.ipynb (Kalman forecast section presents a flat forecast as a trajectory forecast)",
+    "docs/tutorials/stock_forecasting.ipynb",
+    "examples/plot_predict.py (narrative lists Kalman first)",
+    "README.md"
+   ]
+  },
+  {
+   "id": "F16-predict-002",
+   "severity": "critical",
+   "title": "1-D array input is wrangled to ONE observation x n features: default model crashes with a cryptic pykalman error; other models silently return (t x n) nonsense",
+   "description": "The most natural forecasting call -- `hyp.predict(one_dimensional_series)` -- is destroyed by the funnel's row-vector convention: a (200,) array becomes a (1, 200) DataFrame. Consequences (all verified on a 200-pt noisy sine): (a) DEFAULT model Kalman crashes: 'ValueError: could not broadcast input array from shape (200,200) into shape (200,1)' (deep inside pykalman; no mention of the real problem); (b) ARIMA/Laplace/Chronos run 'successfully' and return a (30, 200) frame -- each 'column' forecast from its single observation, i.e. the input echoed 30 times, silently meaningless (Chronos burned 33.5 s producing it); (c) AutoRegressor raises the misleading 'AutoRegressor needs more than lags=10 observations to fit; got 1' when the user supplied 200 observations. A flat python list of floats is worse: hyp.predict([1.0, 2.0, ...]) treats EACH SCALAR as a separate dataset and returns a list of n constant 1-column forecasts. predict()'s docstring ('data : DataFrame/array or list of these') never warns about orientation. predict should either treat 1-D input as a univariate column series (the unambiguous reading for forecasting) or refuse it with a clear message.",
+   "repro": "import numpy as np, hypertools as hyp\nx = np.sin(2*np.pi*np.arange(200)/40.0)  # shape (200,)\nhyp.predict(x, t=30)  # default Kalman -> cryptic pykalman broadcast crash\nfc = hyp.predict(x, model='ARIMA', t=30); print(fc.shape)  # (30, 200) silent nonsense\nout = hyp.predict([1.0, 2.0, 3.0, 4.0, 5.0]*10, model='GaussianProcess', t=3)\nprint(type(out), len(out))  # list of 50 single-column constant 'forecasts'",
+   "expected": "Either a (30, 1) forecast continuing the series, or a clear error explaining that data must be shaped (n_samples, n_features).",
+   "actual": "Kalman: 'ValueError: could not broadcast input array from shape (200,200) into shape (200,1)'; ARIMA: shape [30, 200], forecast_std == hist_std (input echoed); AutoRegressor: 'AssertionError: AutoRegressor needs more than lags=10 observations to fit; got 1'; flat list -> list of 50 constant 1x1-series forecasts",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/predict/predict.py (data parameter docs)",
+    "README.md"
+   ]
+  },
+  {
+   "id": "F16-predict-003",
+   "severity": "major",
+   "title": "pandas Series input is wrangled to an EMPTY (0, 0) DataFrame -- silent data loss surfacing as a cryptic sklearn crash",
+   "description": "`hyp.predict(pd.Series([...]))` fails with 'ValueError: Found array with 0 sample(s) (shape=(0, 1)) while a minimum of 1 is required by GaussianProcessRegressor.' Root cause verified independently of predict: `dw.wrangle(pd.Series(np.arange(5, dtype=float))).shape == (0, 0)` (datawrangler 0.5.1 with pandas 3.0.3 silently converts any Series to an empty DataFrame). A Series is the canonical pandas type for a univariate timeseries, so this hits exactly the users predict targets, and the data silently vanishes before the model sees it. Affects every funnel-wrapped hypertools entry point, but predict is where Series input is most natural.",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp, datawrangler as dw\nprint(dw.wrangle(pd.Series(np.arange(5, dtype=float))).shape)  # (0, 0) -- data gone\nhyp.predict(pd.Series(np.arange(50, dtype=float)), model='GaussianProcess', t=3)  # cryptic crash",
+   "expected": "A (3, 1) forecast (or a clear 'convert your Series to a DataFrame/column array' error).",
+   "actual": "dw_series_wrangle: (0, 0); predict: 'ValueError: Found array with 0 sample(s) (shape=(0, 1)) while a minimum of 1 is required by GaussianProcessRegressor.'",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/predict/predict.py (data parameter docs)"
+   ]
+  },
+  {
+   "id": "F16-predict-004",
+   "severity": "major",
+   "title": "Datetime horizon at (or within one step past) the last observation is broken: Kalman silently returns an all-NaN frame; GP/ARIMA crash with cryptic library errors",
+   "description": "resolve_t's truncation branch only fires for n_steps < 0. When the target datetime equals the last timestamp (or rounds to 0 steps ahead), resolve_t returns n_steps=0 with future_index = the FULL PAST index, and Forecaster.predict falls through to the model forecaster with n_steps=0. Verified outcomes on a 40-day daily frame with t = the last timestamp: Kalman returns a (40, 1) DataFrame that is ENTIRELY NaN, indexed over the observed past -- silent garbage handed to the user; GaussianProcess raises 'ValueError: Found array with 0 sample(s) (shape=(0, 1)) while a minimum of 1 is required by GaussianProcessRegressor.'; ARIMA raises 'ValueError: Prediction must have `end` after `start`.'. A datetime a few hours past the last observation (rounding to 0 steps) hits the same GP crash. One step earlier (t < last) truncates correctly, and t >= 1 full step ahead forecasts correctly -- only the boundary is broken, in three different model-dependent ways.",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\ndf = pd.DataFrame({'a': np.random.randn(40)}, index=pd.date_range('2024-01-01', periods=40, freq='D'))\nout = hyp.predict(df, model='Kalman', t=str(df.index[-1]), n_iter=2)\nprint(out.shape, out.isna().all().all())  # (40, 1) True -- silent all-NaN\nhyp.predict(df, model='GaussianProcess', t=str(df.index[-1]))  # cryptic sklearn crash\nhyp.predict(df, model='ARIMA', t=str(df.index[-1]))  # statsmodels crash",
+   "expected": "Consistent, defined behavior: e.g. return the truncated history (as for t < last) or an empty forecast, or raise a clear 'horizon is not after the last observation' error.",
+   "actual": "Kalman: shape (40, 1), all NaN? True; GP: 'ValueError: Found array with 0 sample(s) (shape=(0, 1))...'; ARIMA: 'ValueError: Prediction must have `end` after `start`.'",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/predict/common.py (resolve_t docstring)"
+   ]
+  },
+  {
+   "id": "F16-predict-005",
+   "severity": "major",
+   "title": "Default configurations fail the sine-plausibility bar: ARIMA(1,1,1) anti-correlates (corr -0.43) and flatlines on a linear trend; Laplace anti-correlates (corr -0.70)",
+   "description": "Audit bar: on a strong noisy sine (n=200, period 40, t=30), a deterministic model's forecast should continue the oscillation (corr with held-out truth > 0.5). Measured (grid2d): GaussianProcess 0.811 PASS, AutoRegressor 0.997 PASS, Chronos 0.997 PASS, Kalman FLAT (F16-predict-001), ARIMA(1,1,1) -0.428 FAIL (damps to near-constant within a few steps), Laplace -0.696 FAIL (anti-phase). ARIMA's default also fails on a LINEAR TREND: forecast_std 0.0041, corr -0.269, rmse 1.19 vs GP's 0.045 -- statsmodels includes no trend/constant term when d>0, so the extrapolated slope decays to zero. The capability exists: order=(4,0,0) reaches corr 0.931 on the same sine, and Laplace tracks the trend well (0.993). Neither the predict() docstring nor the ARIMA/Laplace docstrings warn that the defaults are only suited to random-walk-like data; hypertools presents all six models as interchangeable `model=` options. On 2-D sin/cos ARIMA is also anti-phase (corr -0.538/-0.904). Timing note: Laplace additionally needs ~4 s per column at t=30 (see F16-predict-015).",
+   "repro": "import numpy as np, hypertools as hyp\nfull = np.sin(2*np.pi*np.arange(230)/40.0)\nhist = (full[:200] + 0.1*np.random.default_rng(42).standard_normal(200)).reshape(-1, 1)\nfor spec in ['ARIMA', 'Laplace', {'model': 'ARIMA', 'kwargs': {'order': (4, 0, 0)}}]:\n    fc = hyp.predict(hist, model=spec, t=30)\n    print(spec, np.corrcoef(np.asarray(fc).ravel(), full[200:])[0, 1])",
+   "expected": "corr > 0.5 with the held-out sine for deterministic models, or documented guidance that the defaults only suit drift/random-walk-like signals.",
+   "actual": "grid2d: ARIMA/sine corr -0.428 (forecast_std 0.1962); Laplace/sine corr -0.696; ARIMA/trend corr -0.269 forecast_std 0.0041 (flat); ARIMA/sincos2d corr (-0.538, -0.904); with order=(4,0,0): corr 0.931",
+   "evidence": [
+    "grid_ARIMA_sine.png",
+    "grid_Laplace_sine.png",
+    "grid_ARIMA_trend.png",
+    "grid_ARIMA_sincos2d.png",
+    "grid_GaussianProcess_sine.png",
+    "grid_AutoRegressor_sine.png",
+    "grid_Chronos_sine.png"
+   ],
+   "docs_impact": [
+    "hypertools/predict/arima.py",
+    "hypertools/predict/laplace.py",
+    "hypertools/predict/predict.py",
+    "examples/plot_predict.py"
+   ]
+  },
+  {
+   "id": "F16-predict-006",
+   "severity": "minor",
+   "title": "AutoRegressor(model_kwargs={...}) -- the parameter its own fitter docstring documents -- crashes with a TypeError deep in sklearn",
+   "description": "autoreg.fitter's docstring documents \"`model_kwargs` : dict, passed to `model` when it is a string or class\", and the class stores self.model_kwargs. But the constructor signature is `__init__(self, model='Ridge', lags=10, **model_kwargs)`, so an EXPLICIT model_kwargs={...} lands inside the catch-all and gets double-nested: the estimator is constructed as SVR(model_kwargs={...}) -> 'TypeError: SVR.__init__() got an unexpected keyword argument 'model_kwargs''. Only the direct-kwargs form works (AutoRegressor(model='SVR', C=2.0)). The same failure reaches hyp.predict via model={'model': 'AutoRegressor', 'kwargs': {'model': ..., 'model_kwargs': {...}}}.",
+   "repro": "import numpy as np, pandas as pd\nfrom hypertools.predict import AutoRegressor\nX = pd.DataFrame(np.random.randn(50, 1))\nAutoRegressor(model='SVR', model_kwargs={'C': 2.0}).fit_predict(X, 3)  # TypeError\nAutoRegressor(model='SVR', C=2.0).fit_predict(X, 3)  # works",
+   "expected": "model_kwargs={...} accepted (merged with direct kwargs), matching the fitter docstring and the self.model_kwargs attribute.",
+   "actual": "TypeError: SVR.__init__() got an unexpected keyword argument 'model_kwargs' (raised from _resolve_estimator)",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/predict/autoreg.py (fitter + class docstrings)"
+   ]
+  },
+  {
+   "id": "F16-predict-007",
+   "severity": "minor",
+   "title": "GaussianProcess predict_new ignores the new data's values entirely -- reuse on ANY new dataset returns the original fit's forecast",
+   "description": "Verified: fit GP on a RISING series A (return_model=True), then hyp.predict(B, model=fitted) where B is a FALLING series -- the forecast is byte-identical to A's ([9.97 10.07 10.17 10.27 10.37] both times). gp.applier deliberately reuses the original gp over its original time index and takes only index/columns from the new data (its internal docstring says so), but every other reusable model conditions on the new series (Kalman filters it, ARIMA .apply()s it, AutoRegressor reseeds its lag window, Laplace/Chronos re-derive), and the user-facing predict() docstring says a fitted instance 'is applied to `data`'. Same-model reuse thus silently produces a forecast unrelated to the new data. Also: if the new data's column count differs, it crashes (see F16-predict-012).",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(5)\nA = (0.1*np.arange(100) + rng.standard_normal(100)*0.1).reshape(-1, 1)\nB = (-0.1*np.arange(100) + rng.standard_normal(100)*0.1).reshape(-1, 1)\nfcA, m = hyp.predict(A, model='GaussianProcess', t=5, return_model=True)\nfcB = hyp.predict(B, model=m, t=5)\nprint(np.allclose(np.asarray(fcA), np.asarray(fcB)))  # True",
+   "expected": "Reuse semantics consistent with the other forecasters (condition on the new series), or a loud docstring warning on predict()/GaussianProcess itself.",
+   "actual": "GP fcA: [ 9.97 10.07 10.17 10.27 10.37]; GP fcB (new falling data): [ 9.97 10.07 10.17 10.27 10.37]; identical to fcA? True",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/predict/gp.py",
+    "hypertools/predict/predict.py (model parameter docs)"
+   ]
+  },
+  {
+   "id": "F16-predict-008",
+   "severity": "minor",
+   "title": "`assert cond, ValueError(...)` pattern raises AssertionError (wrong type, ugly message, stripped under python -O) in autoreg, _infer_step, Forecaster.fit, _resolve_estimator",
+   "description": "resolve_t was already converted to a real raise with a comment noting the assert pattern 'is stripped under python -O' (common.py lines 98-99), but five sibling sites keep it: autoreg.fitter (n > lags), autoreg.applier (len(x_new) >= lags), autoreg._resolve_estimator (unknown registry name), common._infer_step (all-duplicate timestamps), and Forecaster.fit (data is not None / fitter returns dict / required fields). Users get 'AssertionError: AutoRegressor needs more than lags=10 observations to fit; got 3' instead of ValueError (breaking except ValueError handlers), and under `python -O` the checks vanish entirely, letting execution continue into undefined behavior.",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nhyp.predict(np.random.randn(3, 2), model='AutoRegressor', t=2)  # AssertionError, not ValueError\ndf = pd.DataFrame({'a': np.ones(5)}, index=pd.DatetimeIndex(['2024-01-01']*5))\nhyp.predict(df, model='GaussianProcess', t=3)  # AssertionError from _infer_step",
+   "expected": "ValueError with the same message, raised unconditionally (as resolve_t already does).",
+   "actual": "'AssertionError: AutoRegressor needs more than lags=10 observations to fit; got 3'; 'AssertionError: cannot infer a timestep: all observations share one timestamp'; \"AssertionError: unknown model: 'MegaBoost'; supported string names are [...]\"",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F16-predict-009",
+   "severity": "minor",
+   "title": "Hyperparameter kwargs are silently ignored by Kalman/GaussianProcess/Chronos (typos included), while ARIMA/AutoRegressor raise -- and Chronos accepts num_samples but never forwards it",
+   "description": "Kalman's fitter reads only n_iter, GP's only kernel/alpha/normalize_y, Chronos's only model_name/device_map; everything else in **kwargs is stored and dropped. Verified: hyp.predict(X, model='Kalman', t=2, n_itr=99) and hyp.predict(X, model='GaussianProcess', t=2, kernal='rbf') run happily with the typo ignored, while hyp.predict(X, model='ARIMA', t=2, bogus_flag=True) raises TypeError from statsmodels. Chronos accepts num_samples=5 (runs fine) but chronos.forecaster never passes it (or any sampling controls) to pipeline.predict, so it does nothing -- there is consequently NO way to control num_samples/temperature/seed, and Chronos output is nondeterministic run-to-run (grid2d deterministic=False on all three signals), which no hypertools doc mentions.",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.random.randn(60, 2)\nprint(hyp.predict(X, model='Kalman', t=2, n_itr=99).shape)      # (2, 2), typo ignored\nprint(hyp.predict(X, model='GaussianProcess', t=2, kernal='x').shape)  # (2, 2), typo ignored\nx = np.sin(np.arange(120)/6).reshape(-1, 1)\na = hyp.predict(x, model='Chronos', t=5); b = hyp.predict(x, model='Chronos', t=5)\nprint(np.allclose(a, b))  # False -- and num_samples=... is accepted but unused",
+   "expected": "Unknown constructor/fitter kwargs rejected (or warned about) consistently across models; Chronos sampling controls exposed and its nondeterminism documented.",
+   "actual": "kalman_typo_kwarg: ok (2, 2); gp_typo_kwarg: ok (2, 2); arima_bad_kwarg: TypeError '...unexpected keyword argument bogus_flag'; chronos_num_samples_kwarg: ok [4, 1]; grid2d Chronos deterministic=false (sine/trend/walk)",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/predict/chronos.py",
+    "hypertools/predict/kalman.py",
+    "hypertools/predict/gp.py"
+   ]
+  },
+  {
+   "id": "F16-predict-010",
+   "severity": "minor",
+   "title": "Fork-style dict spec silently drops outer **kwargs (n_iter=1 ignored), while the DEPRECATED params-dict form honors them",
+   "description": "hyp.predict(X, model={'model': 'Kalman', 'kwargs': {}}, t=2, n_iter=1) constructs Kalman with the DEFAULT n_iter=5 -- the outer n_iter=1 is silently discarded (predict.py's dict branch instantiates cls(*args, **dict_kwargs) without merging the outer kwargs). The deprecated {'model': ..., 'params': {}} form DOES merge them (n_iter=1 honored). So migrating from the deprecated form to the recommended one silently changes behavior. The predict() docstring only says kwargs are 'Passed through to the forecaster's constructor when `model` resolves to a class', which does not warn that the canonical dict form eats them.",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.random.randn(40, 2)\n_, m1 = hyp.predict(X, model={'model': 'Kalman', 'kwargs': {}}, t=2, n_iter=1, return_model=True)\n_, m2 = hyp.predict(X, model={'model': 'Kalman', 'params': {}}, t=2, n_iter=1, return_model=True)\nprint(m1.n_iter, m2.n_iter)  # 5 1",
+   "expected": "Outer kwargs merged for both dict forms (or a loud error/warning about the conflict).",
+   "actual": "fork-dict outer n_iter=1 -> stored n_iter: 5 | params-dict outer n_iter=1 -> stored n_iter: 1",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/predict/predict.py (kwargs docs)"
+   ]
+  },
+  {
+   "id": "F16-predict-011",
+   "severity": "minor",
+   "title": "t=None produces misleading errors: 'a datetime-like t requires a DatetimeIndex' on numeric-indexed data, 'cannot convert float NaN to integer' on time-indexed data",
+   "description": "t=None passes every horizon check in predict() and reaches resolve_t. On RangeIndex data the user is told their t is 'datetime-like' and their data needs a DatetimeIndex -- neither describes t=None. On DatetimeIndex data pd.Timestamp(None) becomes NaT, NaT <= last is False, and the step computation crashes with 'ValueError: cannot convert float NaN to integer' at common.py line 114 -- no mention of t at all.",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nhyp.predict(np.random.randn(30, 2), model='GaussianProcess', t=None)   # misleading DatetimeIndex message\ndf = pd.DataFrame({'a': np.random.randn(30)}, index=pd.date_range('2024-01-01', periods=30))\nhyp.predict(df, model='GaussianProcess', t=None)  # 'cannot convert float NaN to integer'",
+   "expected": "'t (forecast horizon) must be a positive integer or a target datetime; got None' (matching the bool/float validation).",
+   "actual": "RangeIndex: 'ValueError: a datetime-like t requires a time-indexed (DatetimeIndex) dataset'; DatetimeIndex: 'ValueError: cannot convert float NaN to integer' (from n_steps = int(np.round((target - last) / step)))",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F16-predict-012",
+   "severity": "minor",
+   "title": "predict_new with a different feature count than the fitted model crashes with cryptic pandas/numpy internals -- no validation",
+   "description": "Reusing a fitted forecaster on new data with a different number of columns is never checked. GP: 'ValueError: Shape of passed values is (3, 2), indices imply (3, 5)' (pandas constructor); Kalman: 'ValueError: operands could not be broadcast together with shapes (5,) (2,)' (inside pykalman's filter). Neither names predict_new, the feature-count mismatch, nor the fix. Forecaster.predict_new already validates the DATASET-count pairing with an excellent message; a matching column-count check is the obvious sibling.",
+   "repro": "import numpy as np, hypertools as hyp\n_, m = hyp.predict(np.random.randn(40, 2), model='Kalman', t=3, n_iter=2, return_model=True)\nhyp.predict(np.random.randn(40, 5), model=m, t=3)  # cryptic broadcast error",
+   "expected": "ValueError like 'fitted forecaster expects 2 features but the new dataset has 5'.",
+   "actual": "GP: 'ValueError: Shape of passed values is (3, 2), indices imply (3, 5)'; Kalman: 'ValueError: operands could not be broadcast together with shapes (5,) (2,)'",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F16-predict-013",
+   "severity": "minor",
+   "title": "Empty inputs crash with baffling messages: empty DataFrame hits raw sklearn; empty LIST is routed into the TEXT pipeline and dies in LatentDirichletAllocation",
+   "description": "Forecaster.fit's guard ('cannot forecast an empty dataset') only catches data=None -- and is itself an assert (see F16-predict-008). An empty DataFrame reaches the model: 'ValueError: Found array with 0 sample(s) (shape=(0, 1)) while a minimum of 1 is required by GaussianProcessRegressor.'. hyp.predict([]) is even stranger: the funnel treats the empty list as a text corpus and crashes with 'ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation.' -- a forecasting call erroring inside a topic model.",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nhyp.predict(pd.DataFrame(np.empty((0, 2))), model='GaussianProcess', t=3)\nhyp.predict([], model='GaussianProcess', t=3)",
+   "expected": "'cannot forecast an empty dataset' for both.",
+   "actual": "empty df: 'ValueError: Found array with 0 sample(s) (shape=(0, 1)) while a minimum of 1 is required by GaussianProcessRegressor.'; []: 'ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation.'",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F16-predict-014",
+   "severity": "minor",
+   "title": "NaN tolerance is undocumented and wildly inconsistent: Kalman/ARIMA/Chronos accept NaN, GP/AutoRegressor raise raw sklearn errors, Laplace dies with a BARE AssertionError",
+   "description": "Same 100x2 sine input with x[10:14, 0] = NaN: Kalman ok (masked), ARIMA ok, Chronos ok (5-step forecast, no NaNs); GP and AutoRegressor raise sklearn's 'ValueError: Input y contains NaN.' with no hypertools guidance (e.g. 'impute first with hyp.impute'); Laplace crashes inside skaters with 'AssertionError' and an EMPTY message ('assert w_total > 0'). An all-NaN column in Kalman silently forecasts 0.0. No docstring states which forecasters tolerate missing data (kalman.py documents its own NaN masking, but predict() does not summarize, and Laplace/GP/AutoRegressor say nothing).",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.column_stack([np.sin(np.arange(100)/6), np.cos(np.arange(100)/6)])\nX[10:14, 0] = np.nan\nhyp.predict(X, model='Laplace', t=3)  # bare AssertionError from skaters",
+   "expected": "Consistent, documented NaN policy per model; Laplace should raise a clear ValueError naming NaN as the problem.",
+   "actual": "nan_laplace: 'AssertionError:' (empty message; tb: assert w_total > 0); nan_gp/nan_autoreg: 'ValueError: Input y contains NaN.'; nan_kalman/nan_arima/chronos ok",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/predict/predict.py",
+    "hypertools/predict/laplace.py",
+    "hypertools/predict/gp.py",
+    "hypertools/predict/autoreg.py"
+   ]
+  },
+  {
+   "id": "F16-predict-015",
+   "severity": "minor",
+   "title": "Laplace is extremely slow: 77 s for a t=200 forecast of a single 200-observation column (vs ~0.02 s for ARIMA); ~4 s at t=30",
+   "description": "Measured on this machine (skaters 0.11.0): hyp.predict(sine_200x1, model='Laplace', t=200) took 77.1 s; t=30 takes ~4 s per column (grid2d: 4.01/3.92/4.12 s), vs ARIMA 0.02-0.17 s, GP 0.03-0.05 s, AutoRegressor <0.01 s, Chronos 0.4-3 s. The skaters online loop re-feeds the whole series through a fresh laplace(k=t) closure whose per-observation cost grows with k. For a multi-column dataset this multiplies (200 columns took 16-18 s at t=30 in the 1-D-input run). No docstring warns about the cost.",
+   "repro": "import numpy as np, time, hypertools as hyp\nx = np.sin(np.arange(200)/6.0).reshape(-1, 1)\nt0 = time.time(); hyp.predict(x, model='Laplace', t=200); print(time.time() - t0)  # ~77 s",
+   "expected": "Seconds at most for a 200-point univariate forecast, or a documented performance caveat.",
+   "actual": "Laplace t=200 seconds: 77.1 shape (200, 1); grid2d Laplace seconds: 4.01 (sine), 3.92 (trend), 4.12 (walk) at t=30",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/predict/laplace.py"
+   ]
+  },
+  {
+   "id": "F16-predict-016",
+   "severity": "minor",
+   "title": "Descending (newest-first) DatetimeIndex is accepted silently and the \"forecast\" lands INSIDE the observed date range",
+   "description": "Newest-first CSV exports (Yahoo Finance et al.) are common. hyp.predict on a frame indexed 2024-02-29 down to 2024-01-01 forecasts from index[-1] (the OLDEST date): returned forecast dates 2024-01-02..2024-01-06 overlap the observed range, and the model was fit on the time-reversed series -- with no warning. A monotonicity check (warn + optional sort, or error) would prevent a silent wrong-forecast for a very common data shape.",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nidx = pd.date_range('2024-01-01', periods=60, freq='D')[::-1]\ndf = pd.DataFrame({'p': 100 + 0.5*np.arange(60)}, index=idx)\nprint(hyp.predict(df, model='ARIMA', t=5).index)  # dates inside the observed range, no warning",
+   "expected": "A warning (or error) for non-monotonic time indexes, or auto-sorting with a notice.",
+   "actual": "desc-index forecast index: ['2024-01-02'...'2024-01-06']; data range: 2024-01-01 -> 2024-02-29 | warnings: []",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/predict/common.py (resolve_t docs)"
+   ]
+  },
+  {
+   "id": "F16-predict-017",
+   "severity": "minor",
+   "title": "`import hypertools.predict.kalman` fails with a baffling ImportError -- the predict() function shadows the hypertools.predict subpackage",
+   "description": "hypertools/__init__.py binds the name `predict` to the FUNCTION, shadowing the subpackage as an attribute. Verified: `import hypertools.predict as hp` yields `<function predict at 0x...>` (not the module), and `import hypertools.predict.kalman as k` raises \"ImportError: cannot import name 'kalman' from 'predict' (unknown location)\". Meanwhile `from hypertools.predict import Kalman` works (sys.modules path), so importability depends on import syntax -- confusing for anyone extending or debugging the forecasters. Same pattern presumably affects the other function-shadowed subpackages (reduce, align, cluster, ...).",
+   "repro": "import hypertools.predict as hp; print(hp)          # <function predict ...>\nimport hypertools.predict.kalman as k               # ImportError: cannot import name 'kalman' from 'predict' (unknown location)",
+   "expected": "Submodule imports work, or a documented convention pointing at from-import style.",
+   "actual": "predict module file: <function predict at 0x1201aefc0>; import hypertools.predict.kalman FAILED: ImportError | cannot import name 'kalman' from 'predict' (unknown location)",
+   "evidence": [],
+   "docs_impact": [
+    "CLAUDE.md/docs developer notes (module layout)"
+   ]
+  },
+  {
+   "id": "F16-predict-018",
+   "severity": "style",
+   "title": "Unknown-model error quality is inconsistent: helpful for unknown strings, terse 'unknown model: 42' / 'unknown model: None' / 'unknown model: <class Ridge>' for everything else",
+   "description": "An unknown string gets the excellent \"unknown predict model 'SuperForecaster'; supported names: Kalman, ... (or pass a dict ..., a Forecaster subclass, or a Forecaster instance directly)\". But model=42, model=None, or a plain sklearn regressor class fall to core.shared.unpack_model's terse \"unknown model: 42\" with no list of supported specs -- and for sklearn regressors, no hint that AutoRegressor(model=Ridge) is the intended route. Also case-sensitive: model='kalman' is rejected (message does list the correct names).",
+   "repro": "import numpy as np, hypertools as hyp\nhyp.predict(np.random.randn(30, 2), model=42, t=3)      # ValueError: unknown model: 42\nfrom sklearn.linear_model import Ridge\nhyp.predict(np.random.randn(30, 2), model=Ridge, t=3)   # ValueError: unknown model: <class '...Ridge'>",
+   "expected": "The same rich message (supported names + accepted spec forms) for every unmatched spec type; a hint toward AutoRegressor for sklearn regressors.",
+   "actual": "'ValueError: unknown model: 42' (core/shared.py line 154); 'ValueError: unknown model: None'; \"ValueError: unknown model: <class 'sklearn.linear_model._ridge.Ridge'>\"",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F16-predict-019",
+   "severity": "style",
+   "title": "Dead `args = []` in predict(); AutoRegressor's inner-estimator kwarg named 'model' collides with predict()'s model= so the inner regressor cannot be chosen at top level",
+   "description": "predict.py line 102 sets `args = []`, never appends, and later calls resolved(*args, **kwargs) -- dead code. Relatedly, AutoRegressor's estimator-choosing kwarg is also named 'model', which collides with predict()'s own model= parameter: hyp.predict(X, model='AutoRegressor', t=2, model='Ridge') is a SyntaxError (keyword repeated), so choosing the inner regressor requires the dict spec form (model={'model': 'AutoRegressor', 'kwargs': {'model': 'Ridge', ...}}) -- verified working, but the naming forces it. Renaming the inner kwarg (e.g. `estimator=`) would allow the natural top-level call.",
+   "repro": "# grep -n 'args = \\[\\]' hypertools/predict/predict.py  -> line 102 (never populated)\nimport numpy as np, hypertools as hyp\nfc = hyp.predict(np.random.randn(60, 1), model={'model': 'AutoRegressor', 'kwargs': {'model': 'RandomForestRegressor', 'n_estimators': 10, 'random_state': 0}}, t=3)  # required form",
+   "expected": "No dead locals; inner estimator selectable without the nested-dict contortion.",
+   "actual": "args=[] never mutated (predict.py lines 102, 122); top-level model= collision confirmed (SyntaxError: keyword argument repeated: model); dict form works: shape (3, 1)",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/predict/autoreg.py"
+   ]
+  },
+  {
+   "id": "F16-predict-020",
+   "severity": "enhancement",
+   "title": "tz-aware DatetimeIndex with a tz-naive datetime horizon raises a raw pandas TypeError instead of localizing or explaining",
+   "description": "hyp.predict(df_tz_aware, t='2024-04-20') raises 'TypeError: Cannot compare tz-naive and tz-aware timestamps' from inside pandas timestamp comparison. The message at least names the mismatch, but resolve_t could localize the naive target to the index's tz (the unambiguous intent) or raise a message that mentions `t` and suggests passing a tz-aware timestamp.",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\ndf = pd.DataFrame({'a': np.random.randn(100)}, index=pd.date_range('2024-01-01', periods=100, freq='D', tz='US/Eastern'))\nhyp.predict(df, model='GaussianProcess', t='2024-04-20')",
+   "expected": "Naive t localized to the index tz, or a hypertools-level error naming t and the fix.",
+   "actual": "TypeError: Cannot compare tz-naive and tz-aware timestamps (pandas _Timestamp.__richcmp__)",
+   "evidence": [],
+   "docs_impact": []
+  }
+ ]
 }

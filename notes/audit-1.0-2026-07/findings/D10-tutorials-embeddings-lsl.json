@@ -1,0 +1,261 @@
+{
+  "unit": "D10-tutorials-embeddings-lsl",
+  "target": "docs/tutorials/hugging_face_embeddings.ipynb, docs/tutorials/wikipedia_embeddings.ipynb, docs/tutorials/lsl_streaming.ipynb (tutorials batch 4/4) + hypertools/io/lsl.py lsl_stream() and the plot streaming/animation paths they exercise",
+  "brainstormed_edge_cases": [
+    "HF model ids (sentence-transformers/all-MiniLM-L6-v2, BAAI/bge-small-en-v1.5) dead or auth-required -- TESTED via real loads (both resolve and encode)",
+    "HF dataset id fancyzhx/ag_news with split='train[:2000]' downloads and slices -- TESTED (real load, 400-row sample)",
+    "HF notebook numeric claims: 400 headlines x 384 dims -- TESTED ((400, 384) reproduced)",
+    "hue->legend color mapping could be silently permuted (wrong science conclusions) -- TESTED with controlled 3-group synthetic data",
+    "n_clusters=4 passed as TOP-LEVEL kwarg with cluster='GaussianMixture' silently ignored -- TESTED (k=2 vs k=4 produce different colorings; k honored)",
+    "reduce='UMAP' + ndims=2 with hue+legend -- TESTED (notebook cell 10 end-to-end)",
+    "animate='spin' duration/rotations/frame_rate numeric claims (900 frames = 30 s at 30 fps; wiki 300 frames = 10 s) -- TESTED via PIL frame counts and per-frame durations",
+    "HF markdown claim 'MP4, GIF, and animated SVG are all supported' -- TESTED (all three save_path extensions produce nonempty files)",
+    "hyp.load('wiki') structure claim ('a list containing one array of documents') -- TESTED (list len 1, ndarray (3136,1) of str)",
+    "wikipediaapi live fetch: keyword with no page / redirect (e.g. 'Soccer') -- TESTED via real network fetch (20/20 pages fetched, skip branch not triggered)",
+    "density=True with only 5 points per hue group in 3D (KDE stability) -- TESTED (runs; but see finding 003: red group glow can vanish when UMAP merges groups)",
+    "UMAP unseeded across consecutive cells: density plot layout inconsistent with previous plot -- TESTED (unseeded identical: False; seeded identical: True)",
+    "lsl_stream with no matching stream (no hardware): error message quality -- TESTED",
+    "lsl_stream timeout=0 and timeout=-1 -- TESTED (immediate clean HypertoolsIOError)",
+    "lsl_stream bogus **resolve_kwargs -- TESTED (pylsl TypeError passthrough; documented forwarding)",
+    "lsl_stream with neither name= nor type= (resolve any stream) -- TESTED",
+    "lsl_stream generator .close() releases inlet -- TESTED (clean)",
+    "outlet stops while stream open (notebook cleanup order): consumer must not hang -- TESTED (HypertoolsIOError 'stopped delivering' after ~timeout)",
+    "cluster=/align= on streaming input -- TESTED (clear ValueErrors)",
+    "stream_window comet mode + gif save on LSL input -- TESTED",
+    "docstring exception path claim hypertools.core.exceptions.HypertoolsIOError vs code's _shared.exceptions import -- TESTED (same class object)",
+    "no ffmpeg on PATH: gif-conversion cells' failure mode -- TESTED (silent skip + FileNotFoundError at Image display time)",
+    "Colab install cell: does branch dev-1.0-refactor exist on ContextLab/hypertools -- TESTED (git ls-remote: e0f4e33e)",
+    "umap-learn missing from the install cell's dependency set (tutorials would crash on Colab) -- TESTED (umap-learn>=0.5.5 is a BASE dependency in pyproject.toml)",
+    "hue length mismatch (n-1 labels) error message quality -- TESTED",
+    "legend list shorter than number of hue groups -- TESTED (works but message names 'label=' not 'legend=')",
+    "'2,000 characters (roughly 512 tokens)' claim -- TESTED (mean 372 tokens over 100 articles; max 447)",
+    "Next-steps suggestions actually work: hyp.align on two models' embeddings, reduce='TSNE', backend='plotly', explore=True -- TESTED (all four)",
+    "running the notebooks on actual Google Colab (fresh env, %pip cell) -- UNTESTED (no Colab access from audit sandbox; branch existence + base-dep coverage verified instead)",
+    "hue passed as 2D matrix instead of labels list -- UNTESTED (out of tutorial scope; covered by plot-unit audits)",
+    "spin rotation completeness (first vs last frame view equality) -- UNTESTED (visual mid-frame sanity only)",
+    "stream_init larger than samples deliverable within pull timeout window -- UNTESTED",
+    "plotly backend for the LSL streaming plot -- UNTESTED (streaming path is matplotlib-only per plot docs; static plotly tested)"
+  ],
+  "tested": [
+    {
+      "case": "lsl_streaming.ipynb full end-to-end execution in real jupyter kernel (synthetic pylsl outlet on background thread, %pip cell skipped per audit rules)",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg .venv/bin/python run_notebook.py docs/tutorials/lsl_streaming.ipynb run_lsl <evidence> lsl  # nbclient, kernel=hypertools-dev-venv, timeout 900s/cell",
+      "output_excerpt": "DONE lsl: 15.3s, 0 cells with errors, files=['lsl_stream.gif'] | cell 6 stdout: '(600, (600, 3))' == shipped stored output; gif: 21 frames 640x480 (1 init + 20 chunks of 20 samples: (600-200)/20)",
+      "evidence": ["lsl_gif_frame_first.png", "lsl_gif_frame_last.png", "lsl_stream_produced.gif"]
+    },
+    {
+      "case": "hugging_face_embeddings.ipynb full end-to-end execution (real AG News download/cache, real MiniLM encoding, PCA/GMM/UMAP plots, 900-frame spin mp4 + ffmpeg gif)",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg .venv/bin/python run_notebook.py docs/tutorials/hugging_face_embeddings.ipynb run_hf <evidence> hf",
+      "output_excerpt": "DONE hf: 30.4s, 0 cells with errors | cell 4: (400, 384) | cell 13: 'gif: 11.0 MB' | produced gif: 900 frames, 30 ms/frame, 420x315 (shipped gif identical: 900 frames, 10.9 MB) -- '30 seconds at 30 fps' claim reproduces",
+      "evidence": ["hf_cell06_1.png", "hf_cell08_2.png", "hf_cell10_3.png", "hf_spin_frame_first.png", "hf_spin_frame_mid.png"]
+    },
+    {
+      "case": "wikipedia_embeddings.ipynb full end-to-end execution (cached corpus, real BGE encoding of 3136 articles, UMAP+GMM map, 300-frame spin, LIVE wikipedia-api fetch of 20 articles, density overlay)",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg .venv/bin/python run_notebook.py docs/tutorials/wikipedia_embeddings.ipynb run_wiki <evidence> wiki",
+      "output_excerpt": "DONE wiki: 95.7s, 0 cells with errors BUT cell 17 emitted THREE images (own plot, STALE untitled spin figure from cell 10, own plot again) and cell 19 emitted TWO (duplicate). fetched 20 live articles across 4 categories. corpus stats reproduce shipped output exactly ('number of articles: 3136 / average article length: 18048 characters'). wiki gif: 300 frames = 10 s at 30 fps as claimed.",
+      "evidence": ["wiki_cell08_1.png", "wiki_cell17_2.png", "wiki_cell17_3.png", "wiki_cell17_4.png", "wiki_cell19_5.png", "wiki_cell19_6.png"]
+    },
+    {
+      "case": "shipped stored outputs vs fresh runs (drift check): hf cell 4/6/8/10/13, wiki cell 4/17/19, lsl cell 6/9",
+      "result": "fail",
+      "command": "python -c \"json.load(open('docs/tutorials/*.ipynb')) ...inspect outputs\"",
+      "output_excerpt": "shipped wiki cell 17 -> [execute_result png, display_data png, display_data png] (stale spin figure IS in the published outputs, shipped_wiki_cell17_out1.png); shipped cell 19 -> 2 pngs (duplicate). shipped lsl cell 9 stored output contains liblsl 'ERR| Stream transmission broke off (Input stream error.); re-connecting...'. hf shipped outputs clean (all plot cells assign fig=).",
+      "evidence": ["shipped_wiki_cell17_out0.png", "shipped_wiki_cell17_out1.png", "shipped_wiki_cell17_out2.png", "shipped_wiki_cell19_out0.png", "shipped_wiki_cell19_out1.png"]
+    },
+    {
+      "case": "LSL edge battery: nonexistent name, timeout=0, timeout=-1, bogus resolve kwarg, any-stream resolve, .close(), docstring example (type='EEG' + plot), stream_window+gif, cluster/align on stream, stalled source",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg .venv/bin/python lsl_edge_cases.py  # 12 cases, real pylsl outlets, no mocks",
+      "output_excerpt": "hypertools.core.exceptions.HypertoolsIOError :: no LSL stream found (name='audit-no-such-stream-xyz') within timeout=0.5s. Make sure the source application/device is running... | core is shared: True | docstring-example plot: n_samples = 40 truncated = True | ValueError :: cluster is not yet supported for streaming data | HypertoolsIOError after 2.0s :: LSL stream (any stream) stopped delivering samples",
+      "evidence": []
+    },
+    {
+      "case": "hue->legend color mapping with controlled 3-group synthetic data (silent permutation would corrupt scientific interpretation)",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg .venv/bin/python plot_semantics_cases.py  # case c_hue_legend_mapping",
+      "output_excerpt": "legend colors: {'alpha': [0.86, 0.371, 0.34, 1.0], ...}; artist n=30 mean=[-0.86 -0.86 -0.27] color=[0.86 0.371 0.34 1.] -- group centroids match legend entry colors 1:1",
+      "evidence": ["synth_hue_legend.png"]
+    },
+    {
+      "case": "n_clusters top-level kwarg propagation (HF cell 8 pattern) with k=2 vs k=4 on 3 separated groups",
+      "result": "pass",
+      "command": "plot_semantics_cases.py  # case c_ncluster_prop",
+      "output_excerpt": "n_clusters=2: collection colors=2; n_clusters=4: collection colors=12 (soft blends) -- k honored, visually 4 clusters split the middle group",
+      "evidence": ["synth_gmm_k2.png", "synth_gmm_k4.png"]
+    },
+    {
+      "case": "misuse: hue length mismatch (89 labels / 90 rows); cluster dict model typo; reduce string typo; legend list too short",
+      "result": "fail",
+      "command": "plot_semantics_cases.py  # cases c_hue_len_mismatch, c_bad_cluster_model, c_bad_reduce, c_legend_len_mismatch",
+      "output_excerpt": "hue: 'hue has 89 entries but the data has 90 observations...' (excellent); cluster typo: \"unknown cluster model 'GaussainMixture'; supported names: ...\" (excellent); reduce typo: stale URL + whitespace runs (finding 008); legend: message names 'label=' though user passed legend= (finding 007)",
+      "evidence": []
+    },
+    {
+      "case": "claim 'MP4, GIF, and animated SVG are all supported' (HF cell 11 markdown): animate='spin' saved to .gif/.svg/.mp4",
+      "result": "pass",
+      "command": "plot_semantics_cases.py  # case c_animate_gif_svg",
+      "output_excerpt": "gif: returned HyperAnimation of len 2; file exists=True size=287884 | svg: ...size=77056 | mp4: ...size=191020",
+      "evidence": []
+    },
+    {
+      "case": "figure-registration inconsistency: static show=False vs animate+save_path show=False",
+      "result": "fail",
+      "command": "python -c \"hyp.plot(X,'o',show=False); Gcf.get_all_fig_managers() ... hyp.plot(X,'o',animate='spin',save_path=...,show=False)\"",
+      "output_excerpt": "static show=False: open figs = 0 | animated show=False+save: open figs = 1 | returned fig registered: True",
+      "evidence": []
+    },
+    {
+      "case": "UMAP determinism through hyp.plot: unseeded twice vs reduce={'model':'UMAP','kwargs':{'random_state':42}} twice (20x384 synthetic, mimics live-keywords scale)",
+      "result": "pass",
+      "command": "python -c \"...coords(hyp.plot(X,'o',reduce='UMAP'))... np.allclose\"",
+      "output_excerpt": "unseeded identical: False | seeded identical: True  (verified fix pathway for finding 003)",
+      "evidence": []
+    },
+    {
+      "case": "no-ffmpeg failure mode of HF cell 13 / wiki cell 11 (PATH without ffmpeg, fresh cwd)",
+      "result": "fail",
+      "command": "env PATH=/usr/bin:/bin python -c \"shutil.which('ffmpeg'); Image('hf_embeddings_spin.gif') ... DisplayFormatter().format(img)\"",
+      "output_excerpt": "ffmpeg found: None; constructed ok; repr mimebundle raised: FileNotFoundError :: No such file or directory: 'hf_embeddings_spin.gif'; format() -> ['text/plain']",
+      "evidence": []
+    },
+    {
+      "case": "numeric claims: bge max_seq_length=512, both models 384-dim, '2,000 characters (roughly 512 tokens)'",
+      "result": "fail",
+      "command": "python -c \"SentenceTransformer('BAAI/bge-small-en-v1.5').max_seq_length; tokenizer counts over 100 wiki articles\"",
+      "output_excerpt": "bge max_seq_length: 512 (claim OK); bge/minilm output dim: 384/384 (claims OK); token counts for first-2000-chars over 100 articles: mean=372 median=374 min=137 max=447 (claim 'roughly 512' does not reproduce -> finding 006)",
+      "evidence": []
+    },
+    {
+      "case": "wiki load structure claim + corpus stats reproduction",
+      "result": "pass",
+      "command": "python -c \"wiki = hyp.load('wiki'); type/len/shape\"",
+      "output_excerpt": "wiki type: list len: 1 | wiki[0] type: ndarray (3136, 1) | dtype sample: str -- matches 'a list containing one array of documents'; printed stats identical to shipped output",
+      "evidence": []
+    },
+    {
+      "case": "next-steps workflows (realistic scientist follow-ons named by the notebooks): W5 hyp.align([minilm_emb, bge_emb]) on same 50 headlines; W6 reduce='TSNE'; W7 backend='plotly' + write_html; W8 explore=True",
+      "result": "pass",
+      "command": "python -c \"...hyp.align([e1,e2])... hyp.plot(e1,'o',reduce='TSNE')... backend='plotly'... explore=True\"",
+      "output_excerpt": "W5 align ok: list 2 (50, 384); alignment corr (flattened): after=0.854 | W6 TSNE plot ok | W7 plotly ok: <class 'plotly.graph_objs._figure.Figure'>; write_html ok | W8 explore=True ok: Figure",
+      "evidence": ["nextsteps_tsne.png"]
+    },
+    {
+      "case": "install-cell integrity: branch dev-1.0-refactor exists on ContextLab/hypertools; [interactive]/[lsl] extras exist; umap-learn in base deps; notebooks listed in docs/tutorials.rst toctree",
+      "result": "pass",
+      "command": "git ls-remote --heads https://github.com/ContextLab/hypertools.git dev-1.0-refactor; grep pyproject.toml; grep docs/tutorials.rst",
+      "output_excerpt": "e0f4e33e4f75ae16d3291386b82b0a9cc1af4cbb refs/heads/dev-1.0-refactor | interactive = [\"plotly>=6.1.1\", \"kaleido>=1.0\"] | lsl = [\"pylsl>=1.16\"] | base deps include 'umap-learn>=0.5.5' | tutorials.rst lines 70/86/110 include all three notebooks",
+      "evidence": []
+    },
+    {
+      "case": "lsl notebook claim 'the exact pattern used by hypertools' own test suite (tests/test_lsl_streaming.py)'",
+      "result": "pass",
+      "command": "Read tests/test_lsl_streaming.py",
+      "output_excerpt": "test file's _start_outlet(name, stream_type='EEG', ..., push_interval=0.01) + background daemon thread matches the notebook's start_synthetic_outlet pattern",
+      "evidence": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "D10-tutorials-embeddings-lsl-001",
+      "severity": "major",
+      "title": "wikipedia_embeddings.ipynb cells 17/19: published outputs show a stale unrelated figure plus duplicate plots (reproduced on fresh execution)",
+      "description": "Cells 17 and 19 are the only plot cells that do not assign hyp.plot()'s return value, so each renders TWICE (execute_result of the returned Figure + the shown figure). Worse, cell 17 additionally displays the LEFTOVER animation figure from cell 10 (hyp.plot(..., animate='spin', save_path=..., show=False) leaves its figure pyplot-registered; see finding 002): an untitled 3,136-point cluster map appears sandwiched between the two copies of the 20-point live-keywords plot. This is baked into the SHIPPED notebook's stored outputs (cell 17 has 3 image outputs, cell 19 has 2), so the published tutorial page renders a confusing stray figure mid-narrative. Fresh end-to-end execution reproduces it exactly. Fix: assign (fig = hyp.plot(...)) or add trailing ';' in cells 17/19, and close the cell-10 figure after saving (import matplotlib.pyplot as plt; plt.close(fig)) -- or fix the show=False animation leak in code (finding 002).",
+      "repro": "cd $(mktemp -d) && MPLBACKEND=Agg python - <<'EOF'\nimport nbformat\nfrom nbclient import NotebookClient\nnb = nbformat.read('/Users/jmanning/hypertools/docs/tutorials/wikipedia_embeddings.ipynb', as_version=4)\nfor c in nb.cells:\n    if c.cell_type == 'code' and '%pip install' in c.source:\n        c.source = 'pass'\nNotebookClient(nb, timeout=900, kernel_name='hypertools-dev-venv').execute()\nprint([len([o for o in c.get('outputs', []) if 'image/png' in o.get('data', {})]) for c in nb.cells if c.cell_type == 'code'])\nEOF",
+      "expected": "each plot cell displays exactly one figure; cell 17 shows only the live-keywords plot",
+      "actual": "fresh run: cell 17 stdout -> '[image saved: wiki_cell17_2.png]<Figure size 661.978x480...>[image saved: wiki_cell17_3.png]<Figure size 640x480...>[image saved: wiki_cell17_4.png]...' (3 figures; _3 is the untitled 3136-point spin figure). Shipped notebook: cell 17 -> [('execute_result', ['image/png',...]), ('display_data', ['image/png',...]), ('display_data', ['image/png',...])], cell 19 -> 2 pngs.",
+      "evidence": ["wiki_cell17_2.png", "wiki_cell17_3.png", "wiki_cell17_4.png", "shipped_wiki_cell17_out1.png", "shipped_wiki_cell19_out0.png", "shipped_wiki_cell19_out1.png"],
+      "docs_impact": ["docs/tutorials/wikipedia_embeddings.ipynb"]
+    },
+    {
+      "id": "D10-tutorials-embeddings-lsl-002",
+      "severity": "minor",
+      "title": "hyp.plot(show=False) closes/deregisters the figure for static plots but leaks it for animate=...+save_path",
+      "description": "With show=False, the static path leaves 0 figures registered in pyplot, but the animated-save path leaves the figure registered. In Jupyter (%matplotlib inline) the leaked figure is flushed into the output of a LATER cell that draws (root cause of finding 001, third image). Inconsistent cleanup semantics between the two paths of the same function/flag.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport matplotlib._pylab_helpers as ph\nimport hypertools as hyp\nX = np.random.default_rng(0).normal(size=(30, 3))\nhyp.plot(X, 'o', show=False)\nprint('static:', len(ph.Gcf.get_all_fig_managers()))\nout = hyp.plot(X, 'o', animate='spin', duration=1, frame_rate=5, save_path='/tmp/leak.mp4', show=False)\nmgrs = ph.Gcf.get_all_fig_managers()\nprint('animated:', len(mgrs), any(m.canvas.figure is out[0] for m in mgrs))\"",
+      "expected": "both paths leave the same registration state (0 open figures) when show=False",
+      "actual": "static show=False: open figs = 0\nanimated show=False+save: open figs = 1 | returned fig registered: True",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "D10-tutorials-embeddings-lsl-003",
+      "severity": "minor",
+      "title": "wikipedia tutorial: unseeded UMAP re-fit per plot call makes the density-overlay cell a DIFFERENT map than the preceding cell; with n=20 a category's glow can vanish entirely",
+      "description": "Cells 17 and 19 each call hyp.plot(live_embeddings, ..., reduce='UMAP') so UMAP is re-fit unseeded; the 'volumetric density overlay' plot has a completely different layout than the plot it narratively extends ('adds a translucent volumetric KDE glow around each colored group'). In our real run the second UMAP fit merged the 5 'neuroscience' points into the 'music' cluster: the red group has NO visible glow and its points are buried under cyan (wiki_cell19_5.png vs the clean shipped_wiki_cell19_out0.png). The shipped stored outputs also show two different layouts between cells 17 and 19. Verified fix: pass reduce={'model': 'UMAP', 'kwargs': {'random_state': 42}} in both cells (seeded runs produce identical layouts; unseeded runs do not).",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nrng = np.random.default_rng(7)\nX = np.vstack([rng.normal(loc=m, scale=1.0, size=(5, 384)) for m in (0, 3, 6, 9)])\ndef coords(fig):\n    import numpy as np\n    return np.vstack([np.array(ln.get_data_3d()).T for ln in fig.axes[0].lines if len(ln.get_data()[0])])\nf1 = hyp.plot(X, 'o', reduce='UMAP', show=False); f2 = hyp.plot(X, 'o', reduce='UMAP', show=False)\nprint('unseeded identical:', np.allclose(coords(f1), coords(f2)))\nspec = {'model': 'UMAP', 'kwargs': {'random_state': 42}}\nf3 = hyp.plot(X, 'o', reduce=spec, show=False); f4 = hyp.plot(X, 'o', reduce=spec, show=False)\nprint('seeded identical:', np.allclose(coords(f3), coords(f4)))\"",
+      "expected": "the density-overlay plot shows the same layout as the preceding plot, with a visible glow for every category",
+      "actual": "unseeded identical: False / seeded identical: True. Fresh notebook run: cell 19 plot shows only green/cyan/purple glows; the 5 red 'neuroscience' points are inside the cyan cluster with no red glow (wiki_cell19_5.png), while cell 17's layout (wiki_cell17_2.png) had them separated.",
+      "evidence": ["wiki_cell17_2.png", "wiki_cell19_5.png", "shipped_wiki_cell17_out0.png", "shipped_wiki_cell19_out0.png"],
+      "docs_impact": ["docs/tutorials/wikipedia_embeddings.ipynb"]
+    },
+    {
+      "id": "D10-tutorials-embeddings-lsl-004",
+      "severity": "minor",
+      "title": "lsl_streaming.ipynb cleanup cell prints an alarming liblsl 'ERR| Stream transmission broke off' line (present in shipped outputs too) because the inlet is never closed",
+      "description": "Cell 9 stops the outlet thread but never closes the stream generator opened in cell 6, so the still-open pylsl inlet detects the broken connection and liblsl logs 'ERR| Stream transmission broke off (Input stream error.); re-connecting...' into the cell's output. The shipped notebook's stored cell-9 output contains this line verbatim, so the published tutorial's 'Cleaning up' section ends on an unexplained error message. Adding stream.close() before stopping the outlet closes the inlet cleanly (verified: generator .close() runs inlet.close_stream() without error), or a one-line narrative note would defuse it.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport threading, time, gc\nimport pylsl, hypertools as hyp\ninfo = pylsl.StreamInfo('AuditErrRepro', 'EEG', 4, 100.0, 'float32', 'audit-err')\noutlet = pylsl.StreamOutlet(info); stop = threading.Event()\ndef push():\n    i = 0\n    while not stop.is_set(): outlet.push_sample([float(i)] * 4); i += 1; time.sleep(0.01)\nth = threading.Thread(target=push, daemon=True); th.start()\nstream = hyp.io.lsl_stream(name='AuditErrRepro', timeout=5.0)\nnext(stream)\nstop.set(); th.join(); del outlet; gc.collect()\ntime.sleep(3)  # liblsl prints ERR| Stream transmission broke off ... to stderr\"",
+      "expected": "cleanup cell output: 'outlet thread stopped: True' only",
+      "actual": "shipped cell 9 stored output: 'outlet thread stopped: True\\n2026-07-07 17:56:52.527 (  12.167s) [R_HypertoolsTu  ]      data_receiver.cpp:344    ERR| Stream transmission broke off (Input stream error.); re-connecting...\\n' (fresh run identical modulo timestamp)",
+      "evidence": [],
+      "docs_impact": ["docs/tutorials/lsl_streaming.ipynb"]
+    },
+    {
+      "id": "D10-tutorials-embeddings-lsl-005",
+      "severity": "minor",
+      "title": "gif-conversion cells fail cryptically on machines without ffmpeg (silent skip, then FileNotFoundError at Image display; mp4 orphaned)",
+      "description": "HF cell 13 and wiki cell 11 guard the ffmpeg conversion with 'if shutil.which(\"ffmpeg\"):' but the trailing Image('<name>.gif') sits OUTSIDE the guard. Without ffmpeg (common on local machines; markdown mentions ffmpeg only in passing), the cell silently skips conversion, then the Image display fails at render time with FileNotFoundError -- IPython's formatter logs a traceback and degrades the output to text/plain, and the exported .mp4 is left behind un-displayed (HF deletes it only inside the ffmpeg branch). An else-branch (e.g. print('ffmpeg not found -- animation left as hf_embeddings_spin.mp4')) plus moving Image() into the guarded branch would fail gracefully.",
+      "repro": "mkdir -p /tmp/noff && cd /tmp/noff && env PATH=/usr/bin:/bin /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport shutil\nprint('ffmpeg found:', shutil.which('ffmpeg'))\nfrom IPython.display import Image\nfrom IPython.core.formatters import DisplayFormatter\nimg = Image('hf_embeddings_spin.gif')\ntry:\n    img._repr_mimebundle_()\nexcept Exception as e:\n    print(type(e).__name__, '::', e)\nprint('formatter degrades to:', list(DisplayFormatter().format(img)[0]))\"",
+      "expected": "clear message that ffmpeg is missing and where the mp4 was saved",
+      "actual": "ffmpeg found: None; FileNotFoundError :: No such file or directory: 'hf_embeddings_spin.gif'; formatter output degrades to ['text/plain'] with FileNotFoundError traceback logged by IPython's catch_format_error",
+      "evidence": [],
+      "docs_impact": ["docs/tutorials/hugging_face_embeddings.ipynb", "docs/tutorials/wikipedia_embeddings.ipynb"]
+    },
+    {
+      "id": "D10-tutorials-embeddings-lsl-006",
+      "severity": "doc",
+      "title": "wikipedia tutorial claim '2,000 characters (roughly 512 tokens)' does not reproduce: measured ~372 tokens (max 447 over 100 articles)",
+      "description": "Cell 5 markdown: 'we truncate each article to its first 2,000 characters (roughly 512 tokens)'. Tokenizing the first 2,000 characters of 100 corpus articles with the tutorial's own model (BAAI/bge-small-en-v1.5) gives mean 372 / median 374 / max 447 tokens -- no article comes near 512. The engineering rationale (stay within the model's 512-token window) is sound; the parenthetical number is wrong by ~27%. Suggest '(comfortably within the model's 512-token limit)' or '(roughly 370-450 tokens)'.",
+      "repro": "/Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, warnings; warnings.filterwarnings('ignore')\nfrom sentence_transformers import SentenceTransformer\nimport hypertools as hyp\nm = SentenceTransformer('BAAI/bge-small-en-v1.5')\nwiki = hyp.load('wiki')\ncounts = [len(m.tokenizer(str(d)[:2000])['input_ids']) for d in wiki[0].ravel()[:100]]\nprint('mean=%.0f median=%.0f min=%d max=%d' % (np.mean(counts), np.median(counts), min(counts), max(counts)))\"",
+      "expected": "~512 tokens per truncated article, per the markdown",
+      "actual": "token counts for first-2000-chars over 100 articles: mean=372 median=374 min=137 max=447",
+      "evidence": [],
+      "docs_impact": ["docs/tutorials/wikipedia_embeddings.ipynb"]
+    },
+    {
+      "id": "D10-tutorials-embeddings-lsl-007",
+      "severity": "minor",
+      "title": "legend-length mismatch error message names 'label=' although the user passed legend=, and calls hue groups 'dataset(s)'",
+      "description": "hyp.plot(X, 'o', hue=<3 groups>, legend=['only-one']) raises: \"label= was given as a list/tuple of length 1, but there are 3 dataset(s) to plot...\". The user never passed label= (they passed legend=, per the tutorials' own usage in hugging_face_embeddings cell 6), and their single dataset was split into 3 hue groups internally -- both terms in the message refer to internals, not to what the user typed. The length rule itself is correct and enforced; only the wording misleads.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nrng = np.random.default_rng(0)\nX = np.vstack([rng.normal(loc=(0,0,0), size=(30,3)), rng.normal(loc=(8,0,0), size=(30,3)), rng.normal(loc=(0,8,0), size=(30,3))])\nlabels = ['alpha']*30 + ['beta']*30 + ['gamma']*30\nhyp.plot(X, 'o', hue=labels, legend=['only-one'], reduce=None, show=False)\"",
+      "expected": "error message that references legend= and hue groups, e.g. 'legend= has 1 entry but hue defines 3 groups'",
+      "actual": "ValueError :: label= was given as a list/tuple of length 1, but there are 3 dataset(s) to plot; pass either a single value (broadcast to every dataset) or a list/tuple of length 3.",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "D10-tutorials-embeddings-lsl-008",
+      "severity": "style",
+      "title": "reduce-model typo error message contains literal whitespace runs and points to the legacy 0.x docs URL",
+      "description": "hyp.plot(X, 'o', reduce='UMPA') (plausible typo of the tutorials' reduce='UMAP') raises a ValueError whose text embeds source-indentation whitespace ('fit_transform          methods') and cites http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html -- the 0.8-era API page (currently redirects 301->200, but it is the legacy page layout that the 1.0 docs restructure replaces). Compare the cluster-typo message, which is exemplary ('unknown cluster model ...; supported names: ...').",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nhyp.plot(np.random.rand(20, 5), 'o', reduce='UMPA', show=False)\"",
+      "expected": "single-spaced message, ideally listing supported reducer names like the cluster error does, without hardcoded legacy URL",
+      "actual": "ValueError :: reduce must be one of the supported options or support n_components and fit_transform          methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce          for supported models",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "D10-tutorials-embeddings-lsl-009",
+      "severity": "style",
+      "title": "spin GIFs shipped twice: as tracked .gif files AND base64-embedded in notebook stored outputs (~25 MB combined for two tutorials)",
+      "description": "hugging_face_embeddings.ipynb is 14.77 MB and wikipedia_embeddings.ipynb is 9.3 MB because each embeds its spin GIF (10.9 MB / 6 MB) base64 in the stored Image() output -- while the identical GIFs are ALSO tracked as standalone files (docs/tutorials/hf_embeddings_spin.gif, wikipedia_embeddings_spin.gif) for use elsewhere. Every clone/docs build carries both copies. Consider Image(url=...) / markdown image reference to the shipped gif, stripping the embedded output, or reducing frame count (900 frames at 420px for HF).",
+      "repro": "ls -la /Users/jmanning/hypertools/docs/tutorials/*.ipynb /Users/jmanning/hypertools/docs/tutorials/*spin.gif",
+      "expected": "tutorial sources a few hundred KB; large binaries stored once",
+      "actual": "hugging_face_embeddings.ipynb 14.77 MB; wikipedia_embeddings.ipynb 9.3 MB; plus hf_embeddings_spin.gif 10.9 MB and wikipedia_embeddings_spin.gif 6.0 MB tracked separately (shipped cell 13 output: ('stream', ('gif: 10.9 MB',)), ('execute_result', ['image/gif', ...]))",
+      "evidence": [],
+      "docs_impact": ["docs/tutorials/hugging_face_embeddings.ipynb", "docs/tutorials/wikipedia_embeddings.ipynb"]
+    }
+  ]
+}

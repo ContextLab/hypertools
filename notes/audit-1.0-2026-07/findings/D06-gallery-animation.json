@@ -1,0 +1,331 @@
+{
+  "unit": "D06-gallery-animation",
+  "target": "Gallery examples batch 4/4 (animation/saving): examples/animate.py, animate_MDS.py, animate_plotly.py, animate_spin.py, animate_surface_morph.py, animate_trails_mix.py, chemtrails.py, precog.py, save_image.py, save_movie.py -- executed verbatim on branch audit/release-1.0-2026-07 with /Users/jmanning/hypertools/.venv/bin/python, MPLBACKEND=Agg (exec of unmodified source with __name__=='__main__'; plotly Figure.show patched to a no-op HTML capture as environment control). Plus the animation API surface they exercise (hyp.plot animate/duration/frame_rate/rotations/tail_duration/chemtrails/precog/bullettime/focused/morph_samples/save_path, HyperAnimation).",
+  "brainstormed_edge_cases": [
+    "Verbatim run of each of the 10 examples under Agg incl. runtimes (tested)",
+    "Animated plot return contract: HyperAnimation is a (fig, ani) tuple, unpacks, has .figure/.animation (tested)",
+    "save_movie.py mp4 actually written + valid: ffprobe frame count/fps/duration, extract a frame (tested)",
+    "save_image.py pdf actually written + valid: %PDF header, render to PNG via sips and inspect (tested)",
+    "save_movie.py group split data[:17]/data[18:] drops subject index 17 out of 36 (tested)",
+    "animate_plotly.py 900-frame kaleido gif export: completes? runtime? (tested -- killed at 420s; 5-frame probe tested separately)",
+    "animate_plotly.py relative save_path='spin.gif' pollutes cwd / repo has committed 6.8MB examples/spin.gif (tested via git ls-files)",
+    "Extract first/middle/last frames of every matplotlib animation as PNG; judge trails, legend, camera rotation, cube frame (tested)",
+    "chemtrails past-trail content at frames 0/30/58/59/60/120 -- should be empty at frame 0 (tested -- BUG found)",
+    "precog future-trail at frame 0 (full) and last frame (empty) (tested -- correct)",
+    "animate_trails_mix per-dataset styles distinct at mid-frame; identical-at-frame-0 artifact (tested)",
+    "Cross-backend parity: same data/params chemtrails trail length per frame, matplotlib vs plotly (tested -- diverge)",
+    "Frame-count parity claim 'exactly frame_rate * duration frames' both backends (tested -- mpl 901/61/31 vs plotly 900/30)",
+    "animate_surface_morph numeric claims: 360 total frames, 60/15 hold/transition split, constant deg/frame (tested -- exact)",
+    "animate_surface_morph '~20ms/frame (smoothing=2) vs ~100ms+ (default 3)' timing claim (tested -- 91ms vs 370ms measured)",
+    "save_path formats via plot(): .gif/.png(apng)/.svg/.mp4 validity, frame counts, playback duration (tested)",
+    "GIF playback duration vs requested duration (centisecond quantization at 30fps) (tested -- 27.0s for a 30s animation)",
+    "save_path with unsupported extension (.xyz) -- error message quality (tested -- cryptic ffmpeg CalledProcessError)",
+    "save_path into nonexistent directory, animated and static -- error message quality (tested -- bare FileNotFoundError)",
+    "HyperAnimation.save('.gif'/'.svg'/'.png') method dispatch incl. QC-2026-07 svg/png fix (tested)",
+    "hyper_animation.py module docstring example verbatim (anim.to_html5_video / anim.save / anim.figure) (tested)",
+    "Misuse: rotations list with non-morph animate; animate dict missing 'style'/unknown key/conflicting flat kwarg; animate='bogus'; animate list with 'spin' entry; chemtrails list wrong length; morph with 1 dataset; focused=-1; duration=0/negative; frame_rate=0 (tested -- all excellent errors)",
+    "animate='spin' + chemtrails -> documented UserWarning naming mode/flag/datasets (tested)",
+    "2-D data animate=True default and with rotations=2 (documented ignored-warning) (tested)",
+    "Degenerate data: single-row and two-row animate=True (tested -- no crash)",
+    "tail_duration=0 with chemtrails (window_frames=1 branch avoids the negative-slice bug) (tested)",
+    "animate='window' and 'serial' construction sanity + frame counts (tested)",
+    "sklearn MDS FutureWarnings leak from animate_MDS.py into gallery output (tested)",
+    "Unused numpy imports in precog.py / save_image.py (tested by inspection)",
+    "HyperAnimation.save(fps=...) override (untested)",
+    "save_path .mov/.avi and uppercase .GIF extensions (untested; .mp4 tested, lowercasing verified by code inspection only)",
+    "save_path .apng rename path (untested; .png APNG path tested)",
+    "surface-morph docstring '99% containment' hull-rescale claim (untested -- needs mesh-level instrumentation)",
+    "zoom= visual effect and elev/azim interplay in animations (untested)",
+    "interactive=True + animate under a GUI backend (untested -- headless environment)",
+    "plotly .mp4 animation export (untested -- same kaleido-per-frame path as gif, cost prohibitive)"
+  ],
+  "tested": [
+    {
+      "case": "examples/animate.py verbatim (workflow 1: animated fMRI trajectory with legend)",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg .venv/bin/python run_example.py examples/animate.py <evidence> <scratch>",
+      "output_excerpt": "[runner] status=ok exec_seconds=1.88 / n_frames=901 interval_ms=33.33 / avg_draw_seconds_per_frame=0.012",
+      "evidence": ["animate_frame0000.png", "animate_frame0450.png", "animate_frame0900.png", "animate_legend_zoom.png"]
+    },
+    {
+      "case": "examples/animate_MDS.py verbatim",
+      "result": "pass",
+      "command": "run_example.py examples/animate_MDS.py",
+      "output_excerpt": "status=ok exec_seconds=2.24 n_frames=901; sklearn FutureWarning x2 (MDS n_init, init) printed to stderr",
+      "evidence": ["animate_MDS_frame0000.png", "animate_MDS_frame0450.png", "animate_MDS_frame0900.png"]
+    },
+    {
+      "case": "examples/animate_spin.py verbatim",
+      "result": "pass",
+      "command": "run_example.py examples/animate_spin.py",
+      "output_excerpt": "status=ok exec_seconds=2.03 n_frames=900 (spin uses frame_rate*duration exactly); camera visibly rotated between frames 0/450/899",
+      "evidence": ["animate_spin_frame0000.png", "animate_spin_frame0450.png", "animate_spin_frame0899.png"]
+    },
+    {
+      "case": "examples/animate_surface_morph.py verbatim",
+      "result": "pass",
+      "command": "run_example.py examples/animate_surface_morph.py",
+      "output_excerpt": "status=ok exec_seconds=2.56 n_frames=360; lit blue-teal hull renders, bunny-hold vs sphere-hold shapes differ, trailing set_alpha(0.25) line runs",
+      "evidence": ["animate_surface_morph_frame0000.png", "animate_surface_morph_frame0180.png", "animate_surface_morph_frame0359.png"]
+    },
+    {
+      "case": "examples/animate_trails_mix.py verbatim",
+      "result": "pass",
+      "command": "run_example.py examples/animate_trails_mix.py",
+      "output_excerpt": "status=ok exec_seconds=2.09 n_frames=900 (40 timepoints interpolated to frame_rate*duration); mid-frame shows 3 distinct trail styles (past/future/full); frame 0 shows all three trails full (see finding 001)",
+      "evidence": ["animate_trails_mix_frame0000.png", "animate_trails_mix_frame0450.png", "animate_trails_mix_frame0899.png"]
+    },
+    {
+      "case": "examples/chemtrails.py verbatim",
+      "result": "fail",
+      "command": "run_example.py examples/chemtrails.py",
+      "output_excerpt": "status=ok exec_seconds=2.16 n_frames=901 -- but frame 0 already shows a near-complete faded trail (chemtrails = PAST trail; no past exists at frame 0). See finding 001.",
+      "evidence": ["chemtrails_frame0000.png", "chemtrails_frame0450.png", "chemtrails_frame0900.png"]
+    },
+    {
+      "case": "chemtrails trail point counts at frames 0/30/58/59/60/120 (verbatim example data)",
+      "result": "fail",
+      "command": ".venv/bin/python chemtrails_snap_evidence.py <evidence>",
+      "output_excerpt": "frame 0: [842, 842]; frame 30: [872, 872]; frame 58: [900, 900]; frame 59: [0, 0]; frame 60: [1, 1]; frame 120: [61, 61] (n_frames=901, window=60)",
+      "evidence": ["chemtrails_snap_frame0000.png", "chemtrails_snap_frame0030.png", "chemtrails_snap_frame0058.png", "chemtrails_snap_frame0059.png", "chemtrails_snap_frame0060.png", "chemtrails_snap_frame0120.png"]
+    },
+    {
+      "case": "examples/precog.py verbatim + endpoint semantics",
+      "result": "pass",
+      "command": "run_example.py examples/precog.py; edge_cases_a.py::precog_endpoints",
+      "output_excerpt": "status=ok exec_seconds=2.12 n_frames=901; precog trail frame0=[60] (full future) last=[0] (empty) -- correct",
+      "evidence": ["precog_frame0000.png", "precog_frame0450.png", "precog_frame0900.png"]
+    },
+    {
+      "case": "examples/save_image.py verbatim (workflow 2: save publication figure to PDF)",
+      "result": "pass",
+      "command": "run_example.py examples/save_image.py",
+      "output_excerpt": "status=ok exec_seconds=2.02; example_save_path=.../test-image.pdf exists=True size=16490; header '%PDF-1.4'; sips renders a correct 3-cluster scatter",
+      "evidence": ["save_image_pdf_rendered.png"]
+    },
+    {
+      "case": "examples/save_movie.py verbatim (workflow 3: hyperalign 36 subjects, export group-average mp4)",
+      "result": "pass",
+      "command": "run_example.py examples/save_movie.py (background)",
+      "output_excerpt": "status=ok exec_seconds=7.34; animation.mp4 exists=True size=6302986; ffprobe: nb_frames=901 avg_frame_rate=30/1 duration=30.033 1280x960",
+      "evidence": ["save_movie_frame0450.png", "save_movie_mp4_extracted_frame450.png"]
+    },
+    {
+      "case": "save_movie.py subject split recomputation",
+      "result": "fail",
+      "command": "edge_cases_a.py::save_movie_subject_split",
+      "output_excerpt": "n_subjects=36, group1+group2 covers 35 -> subject index 17 dropped: True",
+      "evidence": []
+    },
+    {
+      "case": "examples/animate_plotly.py verbatim (workflow 4: interactive plotly animation + gif export)",
+      "result": "fail",
+      "command": "run_example.py examples/animate_plotly.py & hard-kill wrapper 420s (background)",
+      "output_excerpt": "first call ok: 'plotly show() captured ... (n_frames=900)'; second call (save_path='spin.gif', 900-frame kaleido export): 'TIMEOUT after 420s - killing 88109'; no spin.gif produced",
+      "evidence": ["animate_plotly_interactive_initial.png", "animate_plotly_interactive_playing.png"]
+    },
+    {
+      "case": "plotly gif export tiny probe (5 frames, duration=1 frame_rate=5, hard timeout 180s)",
+      "result": "pass",
+      "command": "kaleido_probe.py (background with kill wrapper)",
+      "output_excerpt": "probe done in 14.4s; probe_spin.gif 31341 bytes; PIL: n_frames=5 playback_ms=1000 size=(640,480) -- kaleido functional here, ~1.5-2 s/frame after startup",
+      "evidence": ["plotly_probe_spin_5frames.gif"]
+    },
+    {
+      "case": "plotly interactive animation visual check (Playwright on captured HTML, click Play)",
+      "result": "pass",
+      "command": "python -m http.server 8347 + browser_navigate + click 'Play' + screenshot after 6s",
+      "output_excerpt": "initial frame: cube + short red window + Play/Pause buttons; after Play: window advanced along trajectory, camera rotated; console clean (only favicon 404 from audit http server)",
+      "evidence": ["animate_plotly_interactive_initial.png", "animate_plotly_interactive_playing.png"]
+    },
+    {
+      "case": "misuse battery: rotations list w/ non-morph; animate dict missing style/unknown key/conflict; morph 1 dataset; focused=-1; duration 0/-5; frame_rate 0; chemtrails list wrong length; animate list 'spin' entry; animate='bogus'",
+      "result": "pass",
+      "command": "edge_cases_a.py (10 misuse cases)",
+      "output_excerpt": "all raise ValueError with high-quality messages naming both problem and fix, e.g. \"rotations as a list is only supported with animate='morph' (got animate=True); pass a scalar rotations= for this animate mode.\" and \"unknown animate style 'bogus'; valid styles are 'parallel', 'spin', 'serial', 'morph', 'window' (or True/False). The trail effects ... are boolean kwargs, not styles\"",
+      "evidence": []
+    },
+    {
+      "case": "documented warnings: spin+chemtrails ignored-trail warning; 2-D rotations ignored warning",
+      "result": "pass",
+      "command": "edge_cases_a.py::spin_plus_chemtrails_warns, ::anim_2d_rotations_warn",
+      "output_excerpt": "UserWarning: animate='spin' does not support trail styles; ignoring chemtrails for datasets [0] / UserWarning: rotations= controls 3-D camera spin and has no effect on 2-D animations",
+      "evidence": []
+    },
+    {
+      "case": "degenerate inputs: 2-D animate (61 frames), single-row animate, two-row animate, tail_duration=0 chemtrails (frame0 trail=0, no bug)",
+      "result": "pass",
+      "command": "edge_cases_a.py cases 12-15, 19",
+      "output_excerpt": "2D anim ok n_frames=61; single/two-row return HyperAnimation without crash; tail_duration=0: trail counts frame0=[0] mid=[30]",
+      "evidence": []
+    },
+    {
+      "case": "HyperAnimation contract + export methods (tuple, .figure/.animation, .save gif/svg/png, to_html5_video)",
+      "result": "pass",
+      "command": "edge_cases_a.py::hyperanimation_contract; edge_cases_b.py cases 8-10",
+      "output_excerpt": "contract ok: HyperAnimation(figure=<Figure size 1280x960 with 1 Axes>, animation=FuncAnimation); method .save gif n_frames=15; svg size=66422; png is_animated=True n=15; docstring example verbatim: to_html5_video len=2890364, trajectory.gif n_frames=900 playback_s=27.0",
+      "evidence": []
+    },
+    {
+      "case": "save_path formats via plot() (workflow 5: export own synthetic data as gif/apng/svg/mp4)",
+      "result": "pass",
+      "command": "edge_cases_b.py cases 1-4 (duration=1, frame_rate=15)",
+      "output_excerpt": "gif n_frames=16 playback_s=0.96; png is_animated=True n_frames=16; svg valid; mp4 size=153850",
+      "evidence": []
+    },
+    {
+      "case": "save_path error quality: unsupported extension .xyz; nonexistent directory (animated + static)",
+      "result": "fail",
+      "command": "edge_cases_b.py cases 5-7",
+      "output_excerpt": ".xyz -> CalledProcessError with raw ffmpeg argv dump (exit 234) after ffmpeg stderr 'Unable to choose an output format ... use a standard extension'; nonexistent dir -> bare FileNotFoundError",
+      "evidence": []
+    },
+    {
+      "case": "morph per-frame draw timing without savefig (smoothing=2 vs smoothing=3) vs docstring claim",
+      "result": "fail",
+      "command": "edge_cases_b.py::morph_frame_timing + smoothing=3 rerun",
+      "output_excerpt": "smoothing=2: transition=81ms, hold=91ms per frame; smoothing=3: hold=370ms per frame (docstring claims 'roughly 20ms/frame instead of ~100ms+')",
+      "evidence": []
+    },
+    {
+      "case": "morph schedule numeric claims (360 frames; 60-frame holds, 15-frame transitions)",
+      "result": "pass",
+      "command": "python -c \"from hypertools.plot import morph; print(morph.morph_schedule(5,360,[1,0.25]*4+[1],0))\"",
+      "output_excerpt": "frame_counts: [60, 15, 60, 15, 60, 15, 60, 15, 60] sum: 360 -- matches the example docstring exactly",
+      "evidence": []
+    },
+    {
+      "case": "cross-backend chemtrails parity (identical data, duration=2 frame_rate=15)",
+      "result": "fail",
+      "command": "inline script (see finding 001 repro)",
+      "output_excerpt": "plotly frames 0/5/15/29: trail=2/7/17/31 pts (monotone growth, correct); mpl frames 0/5/15/29/30: trail=2/7/17/0/1 (same then SNAP to 0 at frame window-1); mpl n_frames=31 vs plotly 30",
+      "evidence": []
+    },
+    {
+      "case": "animate='window' and animate='serial' construction sanity",
+      "result": "pass",
+      "command": "edge_cases_b.py cases 12-13",
+      "output_excerpt": "window ok n_frames=61; serial ok n_frames=60",
+      "evidence": []
+    },
+    {
+      "case": "examples/spin.gif repo pollution check",
+      "result": "fail",
+      "command": "git ls-files examples/ | grep -v .py; ls -la examples/spin.gif",
+      "output_excerpt": "examples/spin.gif is git-tracked, 6792550 bytes (Jul 6 15:52) -- generated artifact of animate_plotly.py's relative save_path committed into the repo",
+      "evidence": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "D06-gallery-animation-001",
+      "severity": "major",
+      "title": "chemtrails 'past' trail shows ~the whole trajectory for the first tail_duration seconds, then snaps to empty (matplotlib 2D+3D)",
+      "description": "In update_lines_parallel (hypertools/plot/matplotlib_backend.py:992-993) and update_lines_parallel_2d (:1697-1698) the past trail is set with `data[0 : num - tail_duration + 1]` where `tail_duration` is window_frames (frame_rate * tail_duration seconds, 60 at gallery defaults). For num < window_frames - 1 the slice stop is NEGATIVE, so Python wraps it: the 'past' trail renders the FIRST n - window + num + 1 points. On the verbatim chemtrails.py example (901 frames, window 60) frame 0 draws 842/901 points (93% of the trajectory, most of it FUTURE data) as the faded 'past' trail, growing to 900 points at frame 58, snapping to 0 at frame 59, then regrowing correctly. Every matplotlib chemtrails animation therefore opens with a full-trajectory 'spoiler' that abruptly vanishes ~2s in. Also degrades animate_trails_mix.py: at frame 0 all three per-dataset styles look identical (all full trails), defeating the example's point. The plotly backend clamps its equivalent slice (plotly_backend.py:2142 `arr[:start + 1]`) and behaves correctly, so the two backends visibly diverge for identical inputs, contradicting the mirror-the-matplotlib-renderer parity notes. Fix: clamp the stop, e.g. `data[0 : max(0, num - tail_duration + 1)]` in both functions.",
+      "repro": "import matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\ndata = hyp.load('weights_avg')\nfig, ani = hyp.plot(data, animate=True, chemtrails=True)\nseq = list(ani.new_frame_seq()); ani._init_draw()\ntrails = [ln for ln in fig.axes[0].get_lines() if abs((ln.get_alpha() or 1) - 0.3) < 1e-6]\nfor i in [0, 30, 58, 59, 60, 120]:\n    ani._draw_frame(seq[i])\n    print(i, [len(t.get_data_3d()[0]) for t in trails])",
+      "expected": "Past trail empty (0 points) at frame 0, growing smoothly as frames advance (as the plotly backend does: 2/7/17/31 points at frames 0/5/15/29 with duration=2, frame_rate=15).",
+      "actual": "frame    0: trail point counts per dataset = [842, 842]\nframe   30: trail point counts per dataset = [872, 872]\nframe   58: trail point counts per dataset = [900, 900]\nframe   59: trail point counts per dataset = [0, 0]\nframe   60: trail point counts per dataset = [1, 1]\nframe  120: trail point counts per dataset = [61, 61]",
+      "evidence": ["chemtrails_snap_frame0000.png", "chemtrails_snap_frame0030.png", "chemtrails_snap_frame0058.png", "chemtrails_snap_frame0059.png", "chemtrails_snap_frame0060.png", "chemtrails_snap_frame0120.png", "chemtrails_frame0000.png", "animate_trails_mix_frame0000.png"],
+      "docs_impact": ["examples/chemtrails.py", "examples/animate_trails_mix.py", "docs/_static/thumbnails (chemtrails gif thumbnail shows the artifact if regenerated)"]
+    },
+    {
+      "id": "D06-gallery-animation-002",
+      "severity": "major",
+      "title": "animate_plotly.py cannot finish in reasonable time: 900-frame kaleido gif export killed at 420s (estimated 15-25 min)",
+      "description": "The example's second call (`hyp.plot(data, animate='spin', duration=30, backend='plotly', save_path='spin.gif', show=False)`) exports via _export_animation_file (hypertools/plot/plotly_backend.py:1046), which renders EVERY one of the 900 frames to PNG through kaleido/Chromium one snapshot at a time. Run verbatim it was still running at 420s and was hard-killed with no spin.gif produced. A sanctioned 5-frame probe (duration=1, frame_rate=5) completed in 14.4s including ~5s kaleido startup, i.e. ~1.5-2s/frame, extrapolating to ~15-25 minutes for the verbatim 900 frames -- two orders of magnitude slower than the matplotlib exporter (save_movie.py wrote a 901-frame mp4 in 7.3s total). Any docs build or user copy-paste of this example stalls for tens of minutes with no progress feedback. Partly infra-flavored: kaleido subprocesses are also known to wedge entirely (pyproject.toml cites a 6h hang on Windows CI), so the export may never finish at all on some machines. Suggested fixes: drastically reduce the exported animation in the example (e.g. duration=3, frame_rate=10 => 30 frames ~= 1 min), and/or batch frames through a persistent kaleido session, and/or emit a progress/cost warning in _export_animation_file for large frame counts.",
+      "repro": "cd /tmp && MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /Users/jmanning/hypertools/examples/animate_plotly.py  # second plot() call; killed after 420s in this audit",
+      "expected": "Example completes in well under 3 minutes (audit budget) and writes spin.gif.",
+      "actual": "started pid=88109\nTIMEOUT after 420s - killing 88109\n(no spin.gif produced; first call had completed: 'plotly show() captured ... (n_frames=900)'). Probe: 'probe done in 14.4s' for 5 frames.",
+      "evidence": ["plotly_probe_spin_5frames.gif", "animate_plotly_interactive_initial.png", "animate_plotly_interactive_playing.png"],
+      "docs_impact": ["examples/animate_plotly.py", "docs gallery build time if this example is executed"]
+    },
+    {
+      "id": "D06-gallery-animation-003",
+      "severity": "minor",
+      "title": "animate_plotly.py writes spin.gif into the CWD and the 6.8MB generated artifact is committed to the repo",
+      "description": "animate_plotly.py uses a bare relative `save_path='spin.gif'`, unlike save_image.py and save_movie.py which both write into `tempfile.mkdtemp()`. sphinx-gallery executes examples with the example dir as CWD, so building the docs (or a user running the script) drops a multi-MB gif wherever they happen to be -- and indeed `examples/spin.gif` (6,792,550 bytes, git-tracked, dated Jul 6 15:52) is a committed build artifact of this example, bloating the repo and guaranteeing a dirty tree on every docs rebuild. Fix: use the same tempfile pattern as the other save examples, and remove examples/spin.gif from version control (docs thumbnails live under docs/_static/thumbnails).",
+      "repro": "cd /Users/jmanning/hypertools && git ls-files examples/ | grep -v '\\.py$' && ls -la examples/spin.gif",
+      "expected": "No generated artifacts tracked in examples/; example writes to a temp dir like its siblings.",
+      "actual": "examples/README.txt\nexamples/spin.gif\n-rw-r--r--@ 1 jmanning  staff  6792550 Jul  6 15:52 examples/spin.gif",
+      "evidence": [],
+      "docs_impact": ["examples/animate_plotly.py", "examples/spin.gif"]
+    },
+    {
+      "id": "D06-gallery-animation-004",
+      "severity": "doc",
+      "title": "save_movie.py silently drops subject 17: data[:17] + data[18:] covers 35 of 36 subjects",
+      "description": "save_movie.py computes `group1 = np.mean(data[:17], 0)` (subjects 0-16) and `group2 = np.mean(data[18:], 0)` (subjects 18-35). hyp.load('weights') returns 36 subjects, so subject index 17 belongs to neither group -- an off-by-one a reader will copy into real analyses. An even 18/18 split is `data[:18]` / `data[18:]`. (Legacy-hypertools heritage; still wrong.) The example otherwise works: the mp4 is written and valid.",
+      "repro": "import hypertools as hyp\ndata = hyp.load('weights', align='hyper')\nprint(len(data), len(data[:17]) + len(data[18:]))",
+      "expected": "36 36 (both groups together cover all subjects)",
+      "actual": "n_subjects=36, group1+group2 covers 35 -> subject index 17 dropped: True",
+      "evidence": ["save_movie_mp4_extracted_frame450.png"],
+      "docs_impact": ["examples/save_movie.py", "docs/auto_examples/save_movie.*"]
+    },
+    {
+      "id": "D06-gallery-animation-005",
+      "severity": "doc",
+      "title": "Docstring parity claim 'Both backends generate exactly frame_rate * duration frames' is off by one for matplotlib animate=True/'parallel'/'window'",
+      "description": "hypertools/plot/plot.py's frame_rate docstring states 'Both backends generate exactly frame_rate * duration frames, so matplotlib and plotly animations play at identical speed, duration, and framerate.' Measured: matplotlib animate=True produces duration*frame_rate + 1 frames (901 at defaults; 61 at duration=2; 31 at duration=2/frame_rate=15 -- the FuncAnimation frame count is the interpolated data length x[0].shape[0], matplotlib_backend.py:1605-1608), while plotly produces exactly duration*frame_rate (900/30 measured) and matplotlib spin/serial also produce exactly 900/60. The exported save_movie mp4 accordingly has nb_frames=901, duration 30.033s. Harmless in practice but the documented 'exactly'/'identical' parity is false for the most common animate mode; either trim the interpolated array by one or soften the claim.",
+      "repro": "import matplotlib; matplotlib.use('Agg')\nimport numpy as np, hypertools as hyp\nd = np.cumsum(np.random.default_rng(7).standard_normal((40, 3)), axis=0)\nfigm, ani = hyp.plot(d, animate=True, duration=2, frame_rate=15)\npfig = hyp.plot(d, animate=True, duration=2, frame_rate=15, backend='plotly', show=False)\nprint(len(list(ani.new_frame_seq())), len(pfig.frames))",
+      "expected": "30 30 (per the docstring's 'exactly frame_rate * duration ... identical')",
+      "actual": "31 30  (and at gallery defaults: mpl 901 vs plotly 900; ffprobe on save_movie output: nb_frames=901, duration=30.033008)",
+      "evidence": [],
+      "docs_impact": ["hypertools/plot/plot.py (frame_rate docstring)", "hypertools/plot/plotly_backend.py parity comments"]
+    },
+    {
+      "id": "D06-gallery-animation-006",
+      "severity": "doc",
+      "title": "animate_surface_morph.py per-frame timing claim ('roughly 20ms/frame instead of ~100ms+') does not reproduce (measured 91ms vs 370ms)",
+      "description": "The example docstring claims the smoothing=2 cap gives 'roughly 20ms/frame instead of ~100ms+ (measured on this machine)' vs the library-default 3 rounds. Measured on this machine (Apple silicon, Agg, timing ani._draw_frame + canvas.draw over 20 consecutive frames, no savefig): smoothing=2 hold = 91ms/frame, transition = 81ms/frame; smoothing=3 hold = 370ms/frame. The direction and the ~4x ratio are right, but both absolute numbers are ~4x higher than documented, so the '20ms' figure is not reproducible as written (it may describe only the smooth_hull_3d step rather than the per-frame cost the sentence implies). The example's other numeric claims all verified exactly: 360 total frames, morph_schedule [60,15,60,15,60,15,60,15,60].",
+      "repro": "# build the example's clouds (see examples/animate_surface_morph.py), then:\nseq = list(ani.new_frame_seq()); ani._init_draw()\nimport time; t0 = time.time()\nfor i in range(10, 30):\n    ani._draw_frame(seq[i]); fig.canvas.draw()\nprint((time.time() - t0) / 20 * 1000, 'ms/frame')",
+      "expected": "~20 ms/frame with smoothing=2 per the docstring",
+      "actual": "smoothing=2: 'per-frame draw ms: transition=81, hold=91'; smoothing=3: 'smoothing=3 hold per-frame ms: 370'",
+      "evidence": ["animate_surface_morph_frame0000.png", "animate_surface_morph_frame0180.png"],
+      "docs_impact": ["examples/animate_surface_morph.py (module docstring)"]
+    },
+    {
+      "id": "D06-gallery-animation-007",
+      "severity": "minor",
+      "title": "Exported GIFs play ~10% faster than the requested duration at the default frame_rate=30 (33.33ms rounds to 30ms centiseconds)",
+      "description": "GIF frame delays are stored in centiseconds. Both exporters request 1000/frame_rate ms per frame (PillowWriter fps in hypertools/plot/animate.py:32; frame_ms in plotly_backend.py:1116), so at the default frame_rate=30 the 33.33ms delay is stored as 30ms and a '30-second' animation plays in 27.0s (measured: hyper_animation docstring example trajectory.gif, 900 frames, playback 27.0s; small gif at frame_rate=15: 66.7 -> 60ms, 0.96s for a 1s animation). The animate.py comment block (lines 22-27) promises 'an exported file plays in real time ... total ~= duration seconds'. Consider snapping exported-gif delays to a centisecond-representable rate (e.g. distribute 33/34ms alternately, or document the quantization). MP4 export is exact (30.033s for 901 frames).",
+      "repro": "import matplotlib; matplotlib.use('Agg')\nimport numpy as np, hypertools as hyp\nfrom PIL import Image\nd = np.cumsum(np.random.default_rng(1).standard_normal((40, 3)), axis=0)\nanim = hyp.plot(d, animate='spin')\nanim.save('/tmp/traj.gif')\nim = Image.open('/tmp/traj.gif'); n = ms = 0\ntry:\n    while True: ms += im.info.get('duration', 0); n += 1; im.seek(im.tell() + 1)\nexcept EOFError: pass\nprint(n, ms / 1000.0)",
+      "expected": "~30.0s playback for the default 30s/30fps animation",
+      "actual": "gif n_frames=900 playback_s=27.0 (and 16-frame 1s gif: playback_s=0.96)",
+      "evidence": [],
+      "docs_impact": ["hypertools/plot/animate.py (real-time playback comment)", "hypertools/plot/plotly_backend.py (frame_ms comment)"]
+    },
+    {
+      "id": "D06-gallery-animation-008",
+      "severity": "minor",
+      "title": "save_path failure modes are cryptic: unsupported extension yields a raw ffmpeg CalledProcessError after rendering all frames; nonexistent directory a bare FileNotFoundError",
+      "description": "In stark contrast to the excellent animate-kwarg validation errors, save_path is never validated up front. (a) `save_path='anim.xyz'` falls through _save_animation's else-branch to the ffmpeg writer, renders every frame, then dies with `subprocess.CalledProcessError: Command '['ffmpeg', '-f', 'rawvideo', ...]' returned non-zero exit status 234.` plus raw ffmpeg stderr ('Unable to choose an output format') -- leaked internals, no mention of the supported extensions (gif/png/apng/svg/mp4/mov/avi). (b) `save_path='<missing-dir>/a.gif'` raises bare `FileNotFoundError: [Errno 2] No such file or directory: '<missing-dir>'` naming only the directory, with no 'create the directory or fix save_path' guidance (static save_path behaves the same via savefig). Suggest validating extension and parent-directory existence before the animation pipeline runs, mirroring the quality of the animate= errors.",
+      "repro": "import matplotlib; matplotlib.use('Agg')\nimport numpy as np, hypertools as hyp\nd = np.cumsum(np.random.default_rng(1).standard_normal((40, 3)), axis=0)\nhyp.plot(d, animate=True, duration=1, frame_rate=15, save_path='/tmp/anim_small.xyz')",
+      "expected": "Immediate ValueError such as: \"save_path extension '.xyz' is not supported; use .gif, .png/.apng, .svg, or an ffmpeg video format (.mp4/.mov/.avi)\"",
+      "actual": "EXC [CalledProcessError]: Command '['ffmpeg', '-f', 'rawvideo', '-vcodec', 'rawvideo', '-s', '1280x960', '-pix_fmt', 'rgba', '-framerate', '15', '-loglevel', 'error', '-i', 'pipe:', '-vcodec', 'h264', ..., '/.../anim_small.xyz']' returned non-zero exit status 234.  (preceded by ffmpeg stderr: \"Unable to choose an output format for '...anim_small.xyz'; use a standard extension\")",
+      "evidence": [],
+      "docs_impact": ["hypertools/plot/animate.py", "hypertools/plot/plot.py (save_path docstring)"]
+    },
+    {
+      "id": "D06-gallery-animation-009",
+      "severity": "minor",
+      "title": "animate_MDS.py emits two sklearn FutureWarnings on every run (MDS n_init and init defaults changing)",
+      "description": "Running animate_MDS.py verbatim prints: 'FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9' and 'FutureWarning: The default value of `init` will change from 'random' to 'classical_mds' in 1.10' from sklearn/manifold/_mds.py. These leak into gallery output and every user's console for reduce='MDS', and when sklearn flips the defaults the example's rendered trajectory will silently change. hypertools' MDS wrapper should pin n_init/init explicitly (or the example should pass them via reduce params).",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /Users/jmanning/hypertools/examples/animate_MDS.py",
+      "expected": "No warnings; MDS parameters pinned so results are stable across sklearn releases.",
+      "actual": "/Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/sklearn/manifold/_mds.py:744: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9. ... /_mds.py:754: FutureWarning: The default value of `init` will change from 'random' to 'classical_mds' in 1.10.",
+      "evidence": ["animate_MDS_frame0450.png"],
+      "docs_impact": ["examples/animate_MDS.py", "hypertools/reduce/ (MDS default params)"]
+    },
+    {
+      "id": "D06-gallery-animation-010",
+      "severity": "style",
+      "title": "Unused `import numpy as np` in precog.py and save_image.py",
+      "description": "examples/precog.py line 20 and examples/save_image.py line 18 both import numpy but never use it (copy-paste heritage; chemtrails.py, the sibling example, correctly omits it). Trivial, but these files are shipped as teaching material.",
+      "repro": "grep -n 'np\\.' /Users/jmanning/hypertools/examples/precog.py /Users/jmanning/hypertools/examples/save_image.py; grep -n 'import numpy' /Users/jmanning/hypertools/examples/precog.py /Users/jmanning/hypertools/examples/save_image.py",
+      "expected": "No unused imports in gallery examples.",
+      "actual": "grep 'np\\.' returns nothing for either file; both contain 'import numpy as np'",
+      "evidence": [],
+      "docs_impact": ["examples/precog.py", "examples/save_image.py"]
+    }
+  ]
+}

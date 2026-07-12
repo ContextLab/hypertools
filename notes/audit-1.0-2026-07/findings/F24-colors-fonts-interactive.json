@@ -1,0 +1,496 @@
+{
+  "unit": "F24-colors-fonts-interactive",
+  "target": "hypertools/plot/colors.py (mat2colors, colors2groups, get_palette_colors, continuous_colormap, re-exported vals2colors/vals2bins), hypertools/plot/fonts.py (find_covering_font, resolve_font), hypertools/plot/interactive.py (shim over plotly_backend: detect_environment, resolve_backend, plotly_draw, _parse_fmt, _camera_eye), hypertools/plot/multiindex.py (expand_multiindex, build_multiindex_styles). Branch audit/release-1.0-2026-07; python .venv (3.12), MPLBACKEND=Agg; all runs real.",
+  "brainstormed_edge_cases": [
+    "mat2colors [0.5,0.5] proportion row must be exact midpoint of the 2 palette colors (QC regression) -- TESTED",
+    "mat2colors signed 2-column matrix: per-row min-shift means every row collapses to a pure vertex color or uniform -- TESTED",
+    "mat2colors mixed-sign matrix: one negative row triggers per-row shift for ALL rows, changing colors of valid non-negative proportion rows -- TESTED",
+    "mat2colors all-zero row -> uniform weights -- TESTED",
+    "mat2colors 1D with NaN present (min/max become NaN -> binning collapse?) -- TESTED",
+    "mat2colors 2D row of NaN -- TESTED",
+    "mat2colors constant 1D values (min==max, degenerate edges) -- TESTED",
+    "mat2colors empty list / scalar / generator / 3D array inputs -- TESTED",
+    "mat2colors bool list & bool ndarray (should be categorical, not numeric) -- TESTED",
+    "mat2colors mixed hashable labels ['a',1,'a',2] -- TESTED",
+    "palette given as list of hex strings (most common custom-palette spelling) on both categorical and 2D blend paths -- TESTED",
+    "palette given as RGBA 4-tuples: output width consistency (categorical vs 2D path) -- TESTED",
+    "palette list shorter than needed / invalid seaborn palette name / palette=None -- TESTED",
+    "n_bins edge values 1, 0, -5, 2.5 -- TESTED",
+    "vals2colors/vals2bins legacy linspace(min, max+1) binning: color coverage depends on absolute data range -- TESTED",
+    "colors2groups res=1 (res-1==0 division) and RGBA (n,4) input; 216-group cap claim -- TESTED",
+    "get_palette_colors n_colors=0 -- TESTED",
+    "resolve_font with hyphenated family names incl. the generic 'sans-serif' (fontconfig-pattern parsing trap) -- TESTED",
+    "resolve_font pointing at an existing NON-font file (README.md) -- deferred failure at render time? -- TESTED",
+    "find_covering_font with emoji (color/bitmap fonts unloadable by FT2Font) and with a codepoint no font covers (warning quality, full-scan time) -- TESTED",
+    "find_covering_font headless + offline: uses only matplotlib's local font cache, no network modules imported (verified by module inspection + Agg runs; true air-gapped run NOT performed) -- PARTIALLY TESTED",
+    "CJK auto-font weight choice: per-family filename sort picks Hiragino Sans W0 (ultra-light) -> hairline text -- TESTED (visual)",
+    "expand_multiindex with NaN as an index level value (NaN != NaN dedupe trap) -- TESTED",
+    "build_multiindex_styles unequal-length members: exactly ONE aggregated warning; means over min length -- TESTED",
+    "MultiIndex linestyles= end-to-end: matplotlib redundant-linestyle warning per trace -- TESTED",
+    "4-level MultiIndex frame -- UNTESTED (2- and 3-level tested; formula generalizes but not executed)",
+    "mat2colors 2D with ~100 columns (blend over 100 palette colors) -- UNTESTED",
+    "categorical labels containing None entries (['a', None, 'b']) at the mat2colors level -- UNTESTED (plot()-level hue None handling is F02's unit)",
+    "plotly_draw show=True with the real 'browser' renderer in a terminal (would open a browser window; tested instead with renderer stubbed to 'json') -- UNTESTED by design",
+    "CJK text rendered through the plotly backend's font-family fallback chain in an actual browser -- UNTESTED visually",
+    "Windows/Linux font auto-detect behavior (only macOS host available) -- UNTESTED",
+    "expand_multiindex on a Series with a MultiIndex (function documented for DataFrames) -- UNTESTED"
+  ],
+  "tested": [
+    {
+      "case": "blend semantics regression: [[1,0],[0,1],[0.5,0.5]] with default hls palette; [2,2] row; [0.75,0.25] row",
+      "result": "pass",
+      "command": "t1_colors.py C1: mat2colors(np.array([[1.,0.],[0.,1.],[0.5,0.5]]))",
+      "output_excerpt": "row [1,0]  -> [0.86, 0.3712, 0.34] match pure0: True | row [0,1]  -> [0.34, 0.8288, 0.86] match pure1: True | row [.5,.5]-> [0.6, 0.6, 0.6] match midpoint: True | row [2,2] == midpoint: True | row [.75,.25] == 0.75*c0+0.25*c1: True",
+      "evidence": ["colors_swatches.png"]
+    },
+    {
+      "case": "signed matrix per-row shift: [[-1,1],[1,-1],[0,0],[-2,-2]]",
+      "result": "pass",
+      "command": "t1_colors.py C2",
+      "output_excerpt": "row [-1,1] -> shifted [0,2] -> pure c1: True | row [1,-1] -> pure c0: True | row [0,0] -> uniform (midpoint): True | row [-2,-2] -> shift-> [0,0] -> uniform: True | all finite and in [0,1]: True  (NOTE: every signed 2-col row can only be a pure vertex color or uniform -- see finding -007)",
+      "evidence": []
+    },
+    {
+      "case": "1D continuous mapping: min->palette[0], max->palette[99], (n,1) column == 1D",
+      "result": "pass",
+      "command": "t1_colors.py C3: mat2colors(np.linspace(0,1,11), palette='viridis')",
+      "output_excerpt": "first val color == palette[0]: True | last val color == palette[99]: True | ranks used: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 99] | (n,1) column == 1D result: True",
+      "evidence": ["colors_swatches.png"]
+    },
+    {
+      "case": "1D constant values (min==max)",
+      "result": "pass",
+      "command": "t1_colors.py C4: mat2colors([3.,3.,3.])",
+      "output_excerpt": "[[0.86, 0.34, 0.34], [0.86, 0.34, 0.34], [0.86, 0.34, 0.34]] (no crash, single color)",
+      "evidence": []
+    },
+    {
+      "case": "NaN in 1D continuous input",
+      "result": "fail",
+      "command": "t1_colors.py C5: mat2colors([0.0, np.nan, 1.0])",
+      "output_excerpt": "out: [[0.86, 0.34, 0.34], [0.86, 0.3712, 0.34], [0.86, 0.34, 0.34]] -- values 0.0 and 1.0 (the min and max!) received IDENTICAL colors; whole mapping silently collapsed",
+      "evidence": []
+    },
+    {
+      "case": "NaN row in 2D input",
+      "result": "fail",
+      "command": "t1_colors.py C6: mat2colors(np.array([[0.5,0.5],[np.nan,0.5]]))",
+      "output_excerpt": "out: [[0.6, 0.6, 0.6], [0.6, 0.6, 0.6]] -- NaN row silently became the uniform blend, indistinguishable from a real [0.5,0.5] row",
+      "evidence": []
+    },
+    {
+      "case": "degenerate inputs: empty list, scalar, 3D array, generator",
+      "result": "fail",
+      "command": "t1_colors.py C7-C9 + probe: mat2colors([]) / mat2colors(5) / mat2colors(np.zeros((2,2,2))) / mat2colors(iter(['a','b','a']))",
+      "output_excerpt": "[] -> ValueError: zero-size array to reduction operation minimum which has no identity | 5 -> TypeError: 'int' object is not iterable | 3D -> ValueError: mat2colors requires 1D or 2D input; got 3D (GOOD) | generator -> TypeError: float() argument must be a string or a real number, not 'list_iterator'",
+      "evidence": []
+    },
+    {
+      "case": "categorical labels: first-appearance ordering, repeat consistency, mixed hashables, bools (list and ndarray)",
+      "result": "pass",
+      "command": "t1_colors.py C10/C10b/C10c/C10d",
+      "output_excerpt": "dog==pal0: True cat==pal1: True bird==pal2: True | repeat consistency: True | bool list [[0.86,0.3712,0.34],[0.34,0.8288,0.86],[0.86,0.3712,0.34]] (categorical, correct)",
+      "evidence": ["colors_swatches.png"]
+    },
+    {
+      "case": "palette variants: RGB-tuple list ok; hex-string list and RGBA list break the documented return contract",
+      "result": "fail",
+      "command": "t1_colors.py C11-C11e",
+      "output_excerpt": "list-of-RGB-tuples midpoint == [0.5,0,0.5]: True | hex list 2D path -> EXC IndexError: too many indices for array: array is 1-dimensional, but 2 were indexed | hex list categorical -> ['#ff0000' '#0000ff'] (array of STRINGS, not (n,3) floats) | RGBA categorical shape: (2, 4) vs RGBA 2D shape: (1, 3)",
+      "evidence": []
+    },
+    {
+      "case": "invalid palette name / palette too short / palette=None",
+      "result": "pass",
+      "command": "t1_colors.py C12,C13 + probe palette=None",
+      "output_excerpt": "ValueError: 'notapalette' is not a valid palette name (seaborn, acceptable) | ValueError: palette supplies 2 colors but 3 are required (GOOD) | palette=None -> TypeError: 'NoneType' object is not iterable (cryptic)",
+      "evidence": []
+    },
+    {
+      "case": "n_bins edge values 1 / 0 / -5 / 2.5",
+      "result": "fail",
+      "command": "t1_colors.py C14a-d",
+      "output_excerpt": "n_bins=1 ok (single color) | n_bins=0 -> IndexError: list index out of range | n_bins=-5 -> ValueError: Number of samples, -4, must be non-negative. | n_bins=2.5 -> TypeError: 'float' object cannot be interpreted as an integer",
+      "evidence": []
+    },
+    {
+      "case": "DataFrame and Series inputs (numeric + categorical)",
+      "result": "pass",
+      "command": "t1_colors.py C15",
+      "output_excerpt": "DataFrame 2col: [[0.444, 0.7373, 0.756], [0.756, 0.4627, 0.444]] | Series numeric ok | Series categorical ok",
+      "evidence": []
+    },
+    {
+      "case": "colors2groups: quantization grouping, mean-of-members, 216 cap (6**3) with 500 random colors, res=1, RGBA",
+      "result": "pass",
+      "command": "t1_colors.py C16/C16b",
+      "output_excerpt": "first two share group: True | 500 random colors -> n groups: 182 (<=216: True) | group mean matches: True | res=1 -> group ids all (nan,nan,nan) silently (finding -011)",
+      "evidence": []
+    },
+    {
+      "case": "vals2colors/vals2bins legacy binning vs mat2colors (recomputed numeric behavior)",
+      "result": "fail",
+      "command": "t1_colors.py C17: vals2colors(linspace(0,1,5)) vs vals2colors(linspace(0,100,5)) vs mat2colors",
+      "output_excerpt": "vals in [0,1]  -> ranks: [0, 12, 25, 37, 50] | vals in [0,100]-> ranks: [0, 24, 49, 74, 99] | mat2colors same [0,1] vals ranks: [0, 25, 50, 75, 99] -- vals2colors color coverage depends on the absolute data range",
+      "evidence": ["colors_swatches.png"]
+    },
+    {
+      "case": "continuous_colormap parity with mat2colors (colorbar-correctness invariant)",
+      "result": "pass",
+      "command": "t1_colors.py C18",
+      "output_excerpt": "max |mat2colors - cmap(norm)| over 7 vals: 0.0 | N of cmap: 100",
+      "evidence": []
+    },
+    {
+      "case": "get_palette_colors: RGBA alpha stripped, n=0 edge",
+      "result": "pass",
+      "command": "t1_colors.py C18b + get_palette_colors checks",
+      "output_excerpt": "n=0 -> EXC: IndexError: too many indices for array (cryptic edge, grouped in finding -010)",
+      "evidence": []
+    },
+    {
+      "case": "fonts: default font for ASCII-only text (no override)",
+      "result": "pass",
+      "command": "t2_fonts.py F1",
+      "output_excerpt": "resolve_font(None, 'hello world') -> None | matplotlib default family: ['sans-serif'] -> .../matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf (hypertools default = DejaVu Sans)",
+      "evidence": []
+    },
+    {
+      "case": "fonts: CJK auto-detect headless, cache behavior, resolved family",
+      "result": "pass",
+      "command": "t2_fonts.py F2: find_covering_font('日本語のラベル')",
+      "output_excerpt": "cold lookup took 0.002s -> file=/System/Library/Fonts/ヒラギノ角ゴシック W0.ttc | resolved name: Hiragino Sans | cached lookup took 0.000003s; same object: True (NOTE: W0 = ultra-light weight -- finding -008)",
+      "evidence": ["w3_cjk_labels.png"]
+    },
+    {
+      "case": "fonts: greek/cyrillic/korean/chinese/hebrew/arabic coverage",
+      "result": "pass",
+      "command": "t2_fonts.py F3",
+      "output_excerpt": "greek -> Arial Unicode MS | cyrillic -> Hiragino Sans | korean -> Arial Unicode MS | chinese-simplified -> Arial Unicode MS | hebrew -> Arial Unicode MS | arabic -> Arial Unicode MS",
+      "evidence": []
+    },
+    {
+      "case": "fonts: emoji -> no covering font, single actionable warning; impossible codepoint full-scan 0.039s + warning",
+      "result": "pass",
+      "command": "t2_fonts.py F4/F6",
+      "output_excerpt": "WARNING: hypertools: no installed font covers the character(s) '🎉🚀' ... Pass font=<family name or path to a .ttf/.otf/.ttc file> to hyp.plot(...), or install a pan-Unicode font such as 'Noto Sans CJK' (good message; returns None -> default font)",
+      "evidence": []
+    },
+    {
+      "case": "fonts: nested list/tuple/ndarray text containers",
+      "result": "pass",
+      "command": "t2_fonts.py F5",
+      "output_excerpt": "codepoints: [21015, 26085, 26412, 37197] -> Hiragino Sans",
+      "evidence": []
+    },
+    {
+      "case": "resolve_font family names: 'Arial', 'DejaVu Sans', lowercase 'arial'",
+      "result": "pass",
+      "command": "t2_fonts.py F7a-c",
+      "output_excerpt": "'Arial' -> /System/Library/Fonts/Supplemental/Arial.ttf | 'DejaVu Sans' ok | lowercase 'arial' resolves too",
+      "evidence": []
+    },
+    {
+      "case": "resolve_font('sans-serif') and any hyphenated family name",
+      "result": "fail",
+      "command": "python -c \"from hypertools.plot.fonts import resolve_font; resolve_font('sans-serif','x')\"  AND end-to-end hyp.plot(np.random.randn(10,3), font='sans-serif', reduce=None, show=False)",
+      "output_excerpt": "ValueError: \\nsans-serif\\n    ^\\nParseException: Expected end of text, found '-'  (at char 4), (line:1, col:5)  [raised from matplotlib/_fontconfig_pattern.py line 88, uncaught by fonts.py's try block]",
+      "evidence": []
+    },
+    {
+      "case": "resolve_font file path (real .ttf), FontProperties passthrough, error messages for bad path / bad type / empty string / unknown unhyphenated family",
+      "result": "pass",
+      "command": "t2_fonts.py F8, F9b-d, F10 + probe resolve_font('nosuchfontxyz','x')",
+      "output_excerpt": "real .ttf path -> FontProperties(fname=...) OK | '/no/such/file.ttf' -> ValueError: font='/no/such/file.ttf' looks like a font file path (based on its extension) but no such file exists. (GOOD) | 123 -> ValueError: font= must be None, a string ... (GOOD) | '' -> ValueError ... listing what was tried (GOOD) | 'nosuchfontxyz' -> ValueError: font='nosuchfontxyz' is not a recognized installed font family and not an existing file path. Tried: ... (GOOD)",
+      "evidence": []
+    },
+    {
+      "case": "resolve_font with an existing NON-font file (README.md), plus downstream render",
+      "result": "fail",
+      "command": "t2_fonts.py F9e + t5_workflows.py W7: hyp.plot(data, labels=[...], font='/Users/jmanning/hypertools/README.md', save_path=...)",
+      "output_excerpt": "resolve_font returns FontProperties(...file=/Users/jmanning/hypertools/README.md...) with NO error; at savefig time: RuntimeError: Can not load face (unknown file format; error code 0x2)",
+      "evidence": []
+    },
+    {
+      "case": "fonts: noncharacter probes (placeholder-font exclusion) + corrupt font file caching",
+      "result": "pass",
+      "command": "t2_fonts.py F11/F12",
+      "output_excerpt": "DejaVu covers 'e'/e-acute: True | DejaVu claims noncharacters: False | _font_covers(corrupt fake.ttf) -> False (cached, no raise)",
+      "evidence": []
+    },
+    {
+      "case": "multiindex 2-level: expand + styles reproduce every docstring number",
+      "result": "pass",
+      "command": "t3_multiindex.py M1",
+      "output_excerpt": "n leaves: 6 | n arrays out: 8 | linewidths: [1.0 x6, 2.0 x2] | alphas: [0.7 x6, 1.0 x2] | labels: ['_nolegend_' x6, 'A', 'B'] | colors per top group ok: True | cond-A mean correct: True",
+      "evidence": ["w2_multiindex.png"]
+    },
+    {
+      "case": "multiindex 3-level: docstring numbers 1/3+0.2=0.5333, 0.7, 1.0 and lw 1/2/3; ordering deepest->top",
+      "result": "pass",
+      "command": "t3_multiindex.py M2",
+      "output_excerpt": "leaf alpha: 0.5333333333333333 | mid-level mean alpha: 0.7 | top mean alpha: 1.0 | leaf lw: 1.0 mid lw: 2.0 top lw: 3.0 | last 2 arrays are top-level means: True",
+      "evidence": []
+    },
+    {
+      "case": "multiindex unequal-length members: ONE aggregated warning, means over min length",
+      "result": "pass",
+      "command": "t3_multiindex.py M3",
+      "output_excerpt": "n warnings: 1 (expect 1 aggregated) | WARNING: MultiIndex group(s) with unequal-length members: ('g1', 'c1') has members of unequal length ([5, 3]), averaged over the overlapping prefix of 3 row(s); 'g1' has members of unequal length ([5, 3, 5]) ...",
+      "evidence": []
+    },
+    {
+      "case": "multiindex error paths: 1-level index, wrong leaf count, linestyles length mismatch, column-MultiIndex",
+      "result": "pass",
+      "command": "t3_multiindex.py M4a-c, M10",
+      "output_excerpt": "ValueError: expand_multiindex requires a row MultiIndex with 2 or more levels; got 1 level(s). | ValueError: build_multiindex_styles got 1 leaf array(s) but expected 6 ... | ValueError: linestyle(s) has 3 entries but there are 2 unique top-level MultiIndex value(s) (['A', 'B']); pass exactly one linestyle per top-level group. (ALL messages excellent)",
+      "evidence": []
+    },
+    {
+      "case": "multiindex linestyles: per-top-group application, scalar passthrough, linestyle= alias",
+      "result": "pass",
+      "command": "t3_multiindex.py M5",
+      "output_excerpt": "linestyles out: ['-','-','-','--','--','--','-','--'] | scalar linestyle -> linestyles field: None | linestyle=list also accepted",
+      "evidence": ["w8_multiindex_linestyles.png"]
+    },
+    {
+      "case": "multiindex: interleaved rows keep original order; numeric level values -> str labels; NaN index level; DataFrame leaf arrays",
+      "result": "pass",
+      "command": "t3_multiindex.py M6-M9",
+      "output_excerpt": "A-leaf values: [[0,1],[4,5],[8,9]] (rows 0,2,4 preserved) | labels: [..., '1', '2'] | NaN level: n leaves: 2 leaf keys: [('A', nan), ('B', 's1')] (dedupe worked via identity) | DataFrame leaves -> mean type ndarray",
+      "evidence": []
+    },
+    {
+      "case": "interactive.py shim parity + detect_environment (plain/kaggle) + resolve_backend all values, case-insensitivity, errors",
+      "result": "pass",
+      "command": "t4_backend.py B1-B3g",
+      "output_excerpt": "shim functions identical to plotly_backend: True | plain script: other; KAGGLE env: kaggle | 'auto'->matplotlib, 'PLOTLY'->plotly, 'Auto'->matplotlib | 'bokeh' -> ValueError: backend must be one of ('auto', 'matplotlib', 'plotly'); got 'bokeh' | None/3 -> same clear ValueError",
+      "evidence": []
+    },
+    {
+      "case": "resolve_backend('auto') honors set_interactive_backend render preference (plotly then matplotlib round-trip) and kaggle env",
+      "result": "pass",
+      "command": "t4_backend.py B3h + follow-up probe",
+      "output_excerpt": "pref plotly, auto -> plotly | pref matplotlib, auto -> matplotlib | kaggle-env 'auto' -> plotly",
+      "evidence": []
+    },
+    {
+      "case": "_camera_eye/_parse_fmt sanity",
+      "result": "pass",
+      "command": "t4_backend.py B4",
+      "output_excerpt": "_camera_eye(10, -60): {'x': 0.960..., 'y': -1.663..., 'z': 0.3386...} | _parse_fmt('ro-') -> ('lines+markers', 'circle', 'solid') | _parse_fmt('') -> ('lines', 'circle', 'solid')",
+      "evidence": []
+    },
+    {
+      "case": "plotly_draw headless: 3D two-trace + legend + title -> html; 2D markers; show=True plain-script path exercised with renderer='json' (no browser)",
+      "result": "pass",
+      "command": "t4_backend.py B5/B6",
+      "output_excerpt": "returned plotly.graph_objs._figure.Figure | html written: True 4863324 bytes | n traces: 3 (2 data + cube) | _in_interactive_shell(): False | show=True emitted figure JSON via renderer and returned fig (in a real terminal the 'browser' renderer would open a browser -- intended per code comment)",
+      "evidence": ["w6_plotly_screenshot.png"]
+    },
+    {
+      "case": "plotly_draw misuse: 4-column data, fmt/kwargs_list mismatch, empty data list",
+      "result": "fail",
+      "command": "t4_backend.py B7a-c + follow-up",
+      "output_excerpt": "4-col (5,4) data: silently drew scatter3d (no error, 4th column dropped) | mismatch -> EXC: IndexError: list index out of range | empty list -> EXC: IndexError: list index out of range",
+      "evidence": []
+    },
+    {
+      "case": "W1 workflow: GaussianMixture predict_proba (360x3 soft assignments) as hue",
+      "result": "pass",
+      "command": "t5_workflows.py W1: hyp.plot(pts, '.', hue=probs, reduce=None, ndims=3, save_path=...)",
+      "output_excerpt": "returned: Figure | PNG shows 3 cluster colors with blended tones at cluster boundaries (posteriors near-one-hot in cores, as expected)",
+      "evidence": ["w1_mixture_hue.png"]
+    },
+    {
+      "case": "W2 workflow: MultiIndex (cond x subj) DataFrame end-to-end through hyp.plot",
+      "result": "pass",
+      "command": "t5_workflows.py W2: hyp.plot(dfm, save_path=...)",
+      "output_excerpt": "legend labels: ['A', 'B'] | distinct linewidths on axes: [1.0, 2.0] | visual: thin translucent leaves + thick opaque per-cond means, one color per cond -- correct",
+      "evidence": ["w2_multiindex.png"]
+    },
+    {
+      "case": "W3 workflow: CJK labels + title with auto-detected font; explicit font='Hiragino Sans'",
+      "result": "pass",
+      "command": "t5_workflows.py W3: hyp.plot(data, labels=['開始',...,'終わり'], title='日本語ラベルのテスト', ...)",
+      "output_excerpt": "glyph-missing warnings: NONE (good) | PNG shows real CJK glyphs, no tofu -- but strokes are hairline-thin (Hiragino W0; finding -008)",
+      "evidence": ["w3_cjk_labels.png", "w3b_cjk_explicit_font.png"]
+    },
+    {
+      "case": "W4 workflow: continuous hue + colorbar parity",
+      "result": "pass",
+      "command": "t5_workflows.py W4: hyp.plot(helix, hue=t, palette='viridis', colorbar=True, ...)",
+      "output_excerpt": "n axes (expect 2: main + colorbar): 2 | colorbar spans 0..~12.57 matching t=0..4pi; line colors match colorbar colors (continuous_colormap parity confirmed numerically in C18: max diff 0.0)",
+      "evidence": ["w4_continuous_hue_colorbar.png"]
+    },
+    {
+      "case": "W5 workflow: categorical string hue + legend",
+      "result": "pass",
+      "command": "t5_workflows.py W5",
+      "output_excerpt": "legend labels: ['early', 'middle', 'late'] | visual: three clean segments in first-appearance palette order",
+      "evidence": ["w5_categorical_hue.png"]
+    },
+    {
+      "case": "W6 workflow: backend='plotly' end-to-end + browser screenshot (Playwright over localhost; file:// blocked; NO kaleido used)",
+      "result": "pass",
+      "command": "t5_workflows.py W6 + python -m http.server + browser_navigate/browser_take_screenshot",
+      "output_excerpt": "returned plotly.graph_objs._figure.Figure | screenshot: two helices red/cyan, wireframe cube, legend 'outer'/'inner', title, axes hidden -- matplotlib-parity aesthetic confirmed",
+      "evidence": ["w6_plotly_screenshot.png"]
+    },
+    {
+      "case": "W8 workflow: MultiIndex + linestyles=['-','--'] end-to-end (visual + warning count)",
+      "result": "fail",
+      "command": "t5_workflows.py W8 + isolation probe",
+      "output_excerpt": "visual correct (solid A / dashed B, legend shows styles) BUT emits 6x 'linestyle is redundantly defined by the ''linestyle'' keyword argument and the fmt string \"-\"' UserWarnings (one per trace); plain hyp.plot(dfm) emits none",
+      "evidence": ["w8_multiindex_linestyles.png"]
+    },
+    {
+      "case": "import spelling: import hypertools.plot.interactive as x (and any plot submodule)",
+      "result": "fail",
+      "command": "python -c \"import hypertools; import hypertools.plot.interactive as i\"",
+      "output_excerpt": "ImportError: cannot import name 'interactive' from 'plot' (unknown location) -- hypertools.plot attribute is the plot() FUNCTION (type <class 'function'>), shadowing the subpackage; 'from hypertools.plot import interactive' works",
+      "evidence": []
+    },
+    {
+      "case": "docstring examples verbatim: none of the 4 modules contain >>> examples (grep verified); all numeric docstring claims recomputed instead (216=6**3 cap, alphas 0.7/0.5333/1.0, linewidths 1/2/3, n_bins=100 default parity)",
+      "result": "pass",
+      "command": "grep -rn '>>>' hypertools/plot/{colors,fonts,multiindex,interactive}.py",
+      "output_excerpt": "(no matches) | all numeric claims reproduced exactly -- see M1/M2/C16/C18 excerpts",
+      "evidence": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "F24-colors-fonts-interactive-001",
+      "severity": "major",
+      "title": "font='sans-serif' (or any hyphenated family name) crashes hyp.plot with a cryptic fontconfig ParseException instead of the documented helpful error",
+      "description": "fonts.py resolve_font() line 222 calls FontProperties(family=font) with a single bare string. When family is the ONLY argument and the string contains '-', matplotlib treats it as a fontconfig pattern and its parser raises ValueError wrapping a pyparsing ParseException -- OUTSIDE resolve_font's try block (which only wraps findfont), so the crafted 'not a recognized installed font family... Pass a valid installed family name...' message documented in the docstring is never produced. 'sans-serif' is matplotlib's canonical generic family (rcParams default) and the most obvious value a user would pass; 'Sans-Serif' fails identically. Non-hyphenated unknown names (e.g. 'nosuchfontxyz') correctly produce the good ValueError. Verified fix: pass the family as a list -- FontProperties(family=[font]) resolves 'sans-serif' fine (findfont then succeeds).",
+      "repro": "cd /tmp && env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nhyp.plot(np.random.default_rng(0).normal(size=(10,3)), font='sans-serif', reduce=None, show=False)\n\"",
+      "expected": "Either the font resolves (matplotlib accepts 'sans-serif' everywhere else, e.g. FontProperties(family=['sans-serif'])) or the documented ValueError: \"font='sans-serif' is not a recognized installed font family... Pass a valid installed family name, a path to a .ttf/.otf/.ttc file, or a ... FontProperties instance.\"",
+      "actual": "ValueError: \nsans-serif\n    ^\nParseException: Expected end of text, found '-'  (at char 4), (line:1, col:5)\n  [raised from matplotlib/_fontconfig_pattern.py:88 parse_fontconfig_pattern, via FontProperties(family=font) at hypertools/plot/fonts.py:222]",
+      "evidence": [],
+      "docs_impact": ["hypertools/plot/fonts.py (resolve_font docstring promises ValueError 'listing what was tried')", "hypertools/plot/plot.py (font= parameter docs)"]
+    },
+    {
+      "id": "F24-colors-fonts-interactive-002",
+      "severity": "minor",
+      "title": "`import hypertools.plot.colors` / `.fonts` / `.interactive` / `.multiindex` as-import fails: plot() function shadows the plot subpackage, with a cryptic ImportError",
+      "description": "hypertools/__init__.py binds the plot() FUNCTION to the attribute hypertools.plot (type(hypertools.plot) is function, __name__='plot'), shadowing the hypertools.plot subpackage attribute. Consequently the natural spelling `import hypertools.plot.interactive as interactive` fails with \"ImportError: cannot import name 'interactive' from 'plot' (unknown location)\" -- a message that names neither hypertools nor the real cause. `from hypertools.plot import interactive` works (Python's from-import falls back to sys.modules). Affects every public helper module in this unit. Longstanding hypertools design (hyp.plot() is the API), but the error deserves a mention in docs and the from-import spelling should be the documented one.",
+      "repro": "/Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools; import hypertools.plot.interactive as i\"",
+      "expected": "Either the import works, or documentation states that plot submodules must be imported via `from hypertools.plot import <mod>`.",
+      "actual": "ImportError: cannot import name 'interactive' from 'plot' (unknown location)   [also: print(type(hypertools.plot)) -> <class 'function'>; sys.modules['hypertools.plot'] is the real module]",
+      "evidence": [],
+      "docs_impact": ["docs (any page telling users to import plot submodules)"]
+    },
+    {
+      "id": "F24-colors-fonts-interactive-003",
+      "severity": "minor",
+      "title": "resolve_font accepts any existing file as a font; failure surfaces later as cryptic 'RuntimeError: Can not load face' at draw time",
+      "description": "resolve_font treats any string for which os.path.exists() is True as a font file path (fonts.py line 213) and returns FontProperties(fname=path) without validating that the file is an actual font. hyp.plot(..., font='/path/to/README.md') therefore passes argument resolution silently and the failure only appears at savefig/draw time as an FT2Font RuntimeError that never mentions the font= argument. fonts.py already has the tool to validate cheaply: FT2Font(path) (used in _font_covers) would reject non-font files at resolve time with a clear 'font=... is not a loadable font file' ValueError.",
+      "repro": "cd /tmp && env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nhyp.plot(np.random.default_rng(0).normal(size=(40,3)), labels=['start']+[None]*39, font='/Users/jmanning/hypertools/README.md', reduce=None, show=False, save_path='/tmp/w7_badfont.png')\n\"",
+      "expected": "ValueError at resolve time naming font= and the file, e.g. \"font='/Users/jmanning/hypertools/README.md' exists but is not a loadable font file\".",
+      "actual": "resolve_font returns FontProperties(...file=/Users/jmanning/hypertools/README.md...) silently; then at save time: RuntimeError: Can not load face (unknown file format; error code 0x2)",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "F24-colors-fonts-interactive-004",
+      "severity": "minor",
+      "title": "mat2colors: a single NaN silently collapses the entire 1D continuous color mapping (min and max get identical colors); NaN rows in 2D silently become uniform blends",
+      "description": "1D path: edges = np.linspace(np.min(vals), np.max(vals), n_bins+1) becomes all-NaN when any value is NaN, so np.digitize puts every finite value in bin 0 -- ALL points get (nearly) the same color with no warning or error. Demonstrated: mat2colors([0.0, np.nan, 1.0]) colors 0.0 and 1.0 identically. 2D path: a NaN row's sum is NaN, the row_sums>0 test is False, and the row silently receives uniform weights -- indistinguishable from a genuine [0.5,0.5] mixture row. NaNs are routine in scientific data (dropped trials, missing observations); a silent total collapse of the hue mapping is wrong-results behavior, mitigated only by the fact that plot(hue=...) users would usually notice a monochrome plot. Suggest nanmin/nanmax + a UserWarning (or an explicit error) when NaNs are present.",
+      "repro": "/Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np\nfrom hypertools.plot.colors import mat2colors\nprint(np.round(mat2colors([0.0, np.nan, 1.0]), 4).tolist())\nprint(np.round(mat2colors(np.array([[0.5,0.5],[np.nan,0.5]])), 4).tolist())\n\"",
+      "expected": "Finite values keep their full-range mapping (nanmin/nanmax) with NaN entries flagged (warning + sentinel color), or a clear error naming the NaN.",
+      "actual": "[[0.86, 0.34, 0.34], [0.86, 0.3712, 0.34], [0.86, 0.34, 0.34]]  (0.0 and 1.0 identical) | [[0.6, 0.6, 0.6], [0.6, 0.6, 0.6]]  (NaN row == uniform blend, silent)",
+      "evidence": [],
+      "docs_impact": ["hypertools/plot/colors.py docstring (no NaN behavior documented)"]
+    },
+    {
+      "id": "F24-colors-fonts-interactive-005",
+      "severity": "minor",
+      "title": "vals2colors/vals2bins (legacy, re-exported as part of the public coloring surface): color coverage depends on the ABSOLUTE data range; small-range data collapses to a single color",
+      "description": "Both helpers bin with np.linspace(np.min(vals), np.max(vals)+1, res+1) -- the '+1' makes the covered fraction of the colormap equal range/(range+1). Data in [0,1] uses only ranks 0..50 of a 100-color map; data in [0,0.001] maps everything to rank 0 (one color); data in [0,100] spans 0..99. mat2colors' continuous path (full span regardless of scale) and vals2colors therefore produce visibly different colorings for the same values, despite colors.py's comment calling this module 'the single coloring surface'. This is faithful legacy hypertools-0.x behavior, but for 1.0 either the semantics should be documented on the docstring ('coverage depends on data range') or the binning fixed to match mat2colors.",
+      "repro": "/Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, seaborn as sns\nfrom hypertools.plot.colors import vals2colors, vals2bins\npal = np.array(sns.color_palette('viridis', 100))\nfor lo, hi in [(0,1),(0,0.001),(0,100)]:\n    cols = vals2colors(list(np.linspace(lo,hi,5)), cmap='viridis')\n    print((lo,hi), [int(np.argmin(np.linalg.norm(pal-np.array(c),axis=1))) for c in cols])\n\"",
+      "expected": "Same relative values -> same relative colors regardless of absolute scale (as mat2colors does: ranks [0,25,50,75,99]).",
+      "actual": "vals in [0,1] -> ranks [0, 12, 25, 37, 50]; vals in [0,0.001] -> all rank 0; vals in [0,100] -> ranks [0, 24, 49, 74, 99]",
+      "evidence": ["colors_swatches.png"],
+      "docs_impact": ["hypertools/_shared/helpers.py vals2colors/vals2bins docstrings"]
+    },
+    {
+      "id": "F24-colors-fonts-interactive-006",
+      "severity": "minor",
+      "title": "mat2colors with list palettes violates its documented return contract: hex-string palettes return strings (categorical) or crash with IndexError (2D blend); RGBA palettes return (n,4) categorical vs (n,3) 2D",
+      "description": "Docstring: 'Returns colors : numpy.ndarray (n_samples, 3) array of RGB values in [0, 1]' and 'palette : str or list ... (or list of RGB tuples)'. A list of hex strings -- the most common way users write custom palettes, and one seaborn itself accepts -- yields np.asarray of hex STRINGS on the categorical path (dtype '<U7', not floats), and on the 2D blend path crashes at colors.py line 83 (np.asarray(palette)[:, :3] on a 1D string array). RGBA 4-tuples give a (n,4) result on the categorical path but (n,3) on the 2D path. Fix: normalize list palettes through matplotlib.colors.to_rgb (or seaborn.color_palette(list)) in _get_palette.",
+      "repro": "/Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np\nfrom hypertools.plot.colors import mat2colors\nprint(repr(mat2colors(['a','b'], palette=['#ff0000', '#0000ff'])))\nprint(mat2colors(['a','b'], palette=[(1,0,0,1),(0,0,1,1)]).shape)\nmat2colors(np.array([[0.5,0.5]]), palette=['#ff0000', '#0000ff'])\n\"",
+      "expected": "(n, 3) float RGB array in [0,1] for every documented palette form, on both paths.",
+      "actual": "array(['#ff0000', '#0000ff'], dtype='<U7') | (2, 4) | IndexError: too many indices for array: array is 1-dimensional, but 2 were indexed",
+      "evidence": [],
+      "docs_impact": ["hypertools/plot/colors.py mat2colors docstring"]
+    },
+    {
+      "id": "F24-colors-fonts-interactive-007",
+      "severity": "doc",
+      "title": "mat2colors docstring omits the signed-matrix per-row-shift semantics and their consequences (2-column signed rows can only be pure vertex colors; one negative row changes the colors of valid non-negative rows)",
+      "description": "The signed-input handling (per-row min-shift when the GLOBAL min is negative) is documented only in an inline comment, not in the docstring a user sees via help(). Consequences verified by real runs: (a) every signed 2-column row shifts to [0,x] or [x,0], so it maps to a PURE component color or the uniform blend -- never an intermediate blend; rows [-1,1] and [-100,100] get identical colors (within-row pattern only, cross-row magnitude discarded); (b) because the trigger is the global min but the shift is per-row, adding one signed row changes the color of an unrelated valid proportion row: [0.25,0.75] alone -> 0.25*c0+0.75*c1 blend, but [[-1,1],[0.25,0.75]] -> the [0.25,0.75] row becomes [0,0.5] -> PURE c1. These may be acceptable design choices for arbitrary embeddings (colors reflect within-row direction), but they are invisible to users reading the docstring, which only describes the non-negative mixture-proportion case.",
+      "repro": "/Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np\nfrom hypertools.plot.colors import mat2colors\nprint(mat2colors(np.array([[0.25, 0.75]])))\nprint(mat2colors(np.array([[-1.0, 1.0], [0.25, 0.75]]))[1])\nprint(mat2colors(np.array([[-1.0, 1.0], [-100.0, 100.0]])))\n\"",
+      "expected": "Docstring documents: negative inputs are per-row min-shifted before normalizing; mixing signed and non-negative rows changes the non-negative rows' colors; signed k=2 matrices yield only vertex/uniform colors.",
+      "actual": "[0.25,0.75] alone -> [0.47  0.714 0.73] (correct blend); with a signed row present -> [0.34 0.8288 0.86] (pure c1); [[-1,1],[-100,100]] -> identical rows [[0.34 0.8288 0.86],[0.34 0.8288 0.86]]. Docstring says only: 'Rows are normalized to sum to 1 and each sample's color is the proportion-weighted blend'.",
+      "evidence": [],
+      "docs_impact": ["hypertools/plot/colors.py mat2colors docstring", "hypertools/plot/plot.py hue= docs (2D matrix case)"]
+    },
+    {
+      "id": "F24-colors-fonts-interactive-008",
+      "severity": "minor",
+      "title": "CJK auto-font picks Hiragino Sans W0 (ultra-light weight) on macOS -- Japanese text renders hairline-thin next to regular-weight ASCII",
+      "description": "_ordered_font_entries() sorts each preferred family's files 'by filename for determinism' (fonts.py line 132). On macOS the Hiragino Sans family ships as ~10 .ttc files whose names sort W0 < W1 < ... < W9, so the FIRST covering candidate is /System/Library/Fonts/ヒラギノ角ゴシック W0.ttc -- the ultra-light weight. In w3_cjk_labels.png the title and point labels are real glyphs (no tofu -- the feature works) but visibly hairline compared to the DejaVu-rendered ASCII of other plots (compare w2_multiindex.png's title). Deterministic but weight-naive. Suggest preferring a regular weight (e.g. sort key that ranks 'W3'/'W4'/'Regular' first, or resolve the FAMILY name via findfont and let matplotlib pick the normal weight).",
+      "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nfrom hypertools.plot.fonts import find_covering_font\nfp = find_covering_font('日本語のラベル')\nprint(fp.get_file())\n\"",
+      "expected": "A regular-weight covering font (e.g. Hiragino Sans W3/W4, the macOS UI defaults) so CJK text visually matches the weight of the default DejaVu Sans.",
+      "actual": "/System/Library/Fonts/ヒラギノ角ゴシック W0.ttc  (W0 = thinnest weight; see hairline strokes in w3_cjk_labels.png vs w2_multiindex.png)",
+      "evidence": ["w3_cjk_labels.png", "w3b_cjk_explicit_font.png", "w2_multiindex.png"],
+      "docs_impact": []
+    },
+    {
+      "id": "F24-colors-fonts-interactive-009",
+      "severity": "minor",
+      "title": "hyp.plot(MultiIndex df, linestyles=[...]) emits one matplotlib 'linestyle is redundantly defined' UserWarning per trace",
+      "description": "The MultiIndex linestyles feature passes both a fmt string ('-') and a linestyle= kwarg to ax.plot for every trace, so matplotlib warns 'linestyle is redundantly defined by the linestyle keyword argument and the fmt string \"-\" (-> linestyle=\"-\"). The keyword argument will take precedence.' once per trace (6 warnings for a 6-leaf frame; large frames produce dozens). The rendered output is correct (kwarg wins, which is what multiindex intends; w8_multiindex_linestyles.png shows solid A / dashed B properly). Plain hyp.plot(dfm) without linestyles= emits no warnings. Fix: drop the linestyle character from fmt (or don't pass fmt) when a per-trace linestyle kwarg is set.",
+      "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport warnings, numpy as np, pandas as pd, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nrng = np.random.default_rng(7)\nrows, idx = [], []\nfor c in ['A','B']:\n    for s in ['s1','s2']:\n        for t in range(10):\n            rows.append(rng.normal(size=4)); idx.append((c,s))\ndfm = pd.DataFrame(np.asarray(rows), index=pd.MultiIndex.from_tuples(idx, names=['cond','subj']))\nwith warnings.catch_warnings(record=True) as w:\n    warnings.simplefilter('always')\n    hyp.plot(dfm, linestyles=['-','--'], show=False)\n    print(len(w), 'warnings:', str(w[0].message)[:90] if w else '')\n\"",
+      "expected": "No warnings on a documented feature (0 warnings, like plain hyp.plot(dfm)).",
+      "actual": "6 warnings: \"linestyle is redundantly defined by the 'linestyle' keyword argument and the fmt string \\\"-\\\" (-> linestyle='-'). The keyword argument will take precedence.\" (matplotlib_backend.py:465 ax.plot call)",
+      "evidence": ["w8_multiindex_linestyles.png"],
+      "docs_impact": []
+    },
+    {
+      "id": "F24-colors-fonts-interactive-010",
+      "severity": "minor",
+      "title": "colors helpers give cryptic internal tracebacks for common misuse: empty input, scalar, generator, palette=None, n_bins<=0/float, get_palette_colors(n=0)",
+      "description": "None of these name the offending argument or how to fix it: mat2colors([]) -> 'zero-size array to reduction operation minimum which has no identity'; mat2colors(5) -> TypeError \"'int' object is not iterable\"; mat2colors(iter([...])) -> TypeError 'float() argument must be a string or a real number, not list_iterator'; mat2colors(..., palette=None) -> TypeError \"'NoneType' object is not iterable\"; n_bins=0 -> IndexError 'list index out of range'; n_bins=-5 -> numpy ValueError 'Number of samples, -4, must be non-negative.' (off-by-one -4 vs the user's -5 makes it extra confusing); n_bins=2.5 -> TypeError; get_palette_colors('hls', 0) -> IndexError 'too many indices for array'. By contrast the same module's palette-too-short error is exemplary ('palette supplies 2 colors but 3 are required'). Cheap guards at the top of mat2colors/_get_palette (non-empty, array-like, palette not None, n_bins >= 1 integer) would fix all of them.",
+      "repro": "/Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np\nfrom hypertools.plot.colors import mat2colors, get_palette_colors\nfor thunk in [lambda: mat2colors([]), lambda: mat2colors(5), lambda: mat2colors(['a'], palette=None), lambda: mat2colors([0.,1.], n_bins=0), lambda: mat2colors([0.,1.], n_bins=-5), lambda: get_palette_colors('hls', 0)]:\n    try: thunk()\n    except Exception as e: print(type(e).__name__, '|', e)\n\"",
+      "expected": "Each raises ValueError/TypeError naming the argument, e.g. 'mat2colors requires a non-empty 1D or 2D array-like' / 'n_bins must be a positive integer; got 0'.",
+      "actual": "ValueError | zero-size array to reduction operation minimum which has no identity; TypeError | 'int' object is not iterable; TypeError | 'NoneType' object is not iterable; IndexError | list index out of range; ValueError | Number of samples, -4, must be non-negative.; IndexError | too many indices for array: array is 1-dimensional, but 2 were indexed",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "F24-colors-fonts-interactive-011",
+      "severity": "style",
+      "title": "colors2groups(res=1) silently returns NaN group ids (division by res-1 == 0)",
+      "description": "colors2groups quantizes with np.round(colors * (res - 1)) / (res - 1); res=1 divides by zero and every group id becomes (nan, nan, nan) with no error or warning -- downstream grouping would lump all observations into one NaN group. res is undocumented beyond the default 6; a res >= 2 guard (or documenting the constraint) would close this. Purely defensive: no in-repo caller passes res.",
+      "repro": "/Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np\nfrom hypertools.plot.colors import colors2groups\nprint(colors2groups(np.array([[0.5, 0.5, 0.5]]), res=1))\n\"",
+      "expected": "ValueError ('res must be >= 2') or documented minimum.",
+      "actual": "([(nan, nan, nan)], {(nan, nan, nan): (0.5, 0.5, 0.5)})  [RuntimeWarning-free NaN propagation]",
+      "evidence": [],
+      "docs_impact": ["hypertools/plot/colors.py colors2groups docstring"]
+    },
+    {
+      "id": "F24-colors-fonts-interactive-012",
+      "severity": "style",
+      "title": "plotly_draw (re-exported publicly via the interactive shim) silently draws 4-column data as 3D and raises bare IndexError on empty/mismatched inputs",
+      "description": "interactive.py re-exports plotly_draw as a public name, but it enforces none of its documented input contract ('data is a list of (n_i, d) arrays with d in (1, 2, 3)'): a (5,4) array is silently rendered as a scatter3d (4th column dropped, no warning); an empty data list and a fmt/kwargs_list shorter than data both raise bare 'IndexError: list index out of range'. hyp.plot() guards these upstream, so real users only hit this if they call the low-level function directly -- but since the shim exposes it, a lightweight length/dimension check with a clear message (or an explicit statement that plotly_draw is internal) would be appropriate.",
+      "repro": "/Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np\nfrom hypertools.plot import interactive\nfig = interactive.plotly_draw([np.random.default_rng(0).normal(size=(5,4))], fmt=['-'], kwargs_list=[{'color':(0.5,0.5,0.5)}], show=False)\nprint('4-col ->', len(fig.data), fig.data[0].type)\ninteractive.plotly_draw([], fmt=[], kwargs_list=[], show=False)\n\"",
+      "expected": "ValueError naming the contract ('plotly_draw requires (n, d) arrays with d in (1,2,3); got d=4' / 'data must be non-empty').",
+      "actual": "4-col data: n traces 2, trace type scatter3d (silent) | empty list / mismatched lists: IndexError: list index out of range",
+      "evidence": [],
+      "docs_impact": []
+    }
+  ]
+}
