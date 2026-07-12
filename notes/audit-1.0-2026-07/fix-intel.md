@@ -37,6 +37,26 @@ Leaning (a) for 1.0 stability + file (b) as tracked enhancement, but let the ver
 ### F12-001: trim_and_pad silently scrambles row order (non-RangeIndex)
 `align/common.py` ~L41: `rows = list(set(index_values))` + `.loc[rows]` → hash-order rows for DatetimeIndex/string/shuffled-int indices; silent because align returns bare arrays. Consistent across datasets so dispersion metrics look fine — pure silent data corruption for timeseries users. Fix: preserve first-dataset index order: `common = set.intersection(*[set(d.index) for d in data]); rows = [r for r in data[0].index if r in common]` (order-preserving, deterministic); regression test with DatetimeIndex + identifiable rows (col0==i) asserting exact order preservation.
 
+## Newer criticals (waves 2-3) — root causes + fix sketches
+
+### F14-001 == D01-001: Smooth leaks data across dataset boundaries
+`manip/smooth.py:95` — `_transform_stacked` decorated `@dw.decorate.apply_stacked`: a LIST is vertically stacked BEFORE the savgol/gaussian/boxcar filter, so subject i's edges contaminate subject i+1 (~kernel_width/2 samples per side, every boundary). Contradicts manip.py docstring ("per-dataset manipulation"), docs/pipeline_order.rst, and README lines 80-86. Resample does it correctly (`resample.py:110` dw.unstack + per-dataset). Fix: per-dataset application for Smooth (mirror resample's pattern). Regression: A=zeros(30,3), B=ones(30,3) → sm[0][-1]==[0,0,0] and sm[1][0]==[1,1,1] exactly. Audit the other manipulators for the same decorator misuse.
+
+### F16-001: predict Kalman never learns dynamics (flat forecasts)
+`predict/kalman.py` — `KalmanFilter(...).em(x, n_iter)` without `em_vars`; pykalman's default fits ONLY covariances+initial state, never transition/observation matrices → A stays identity → forecast = last state repeated. Verified: sine fit leaves transition==[[1.]], all forecast rows identical. Fix: pass em_vars including 'transition_matrices' (+observation_matrices); regression: sine forecast correlates with held-out truth (r>0.5) and transition != I.
+
+### D05-001: impute Kalman zero-fills ALL missing values on wide data (D>=50)
+`impute/kalman.py` — same em() default + n_dim_state=d full-dim state + 5 EM iters: smoothed means collapse to the zero prior for wide data. Sweep: D=5 r=0.948, D=20 r=0.645, D>=50 exactly 0.0 fills (incl. plot_impute.py's own (100,100) data — the example's "from neighboring timepoints" claim is false today). Fix: em_vars fix first, re-sweep; if wide-D still degenerate, low-rank state (n_dim_state=min(d,k)) or documented guard + warning on degenerate fills (std==0 vs observed). Fix plot_impute example claims to match verified behavior.
+
+### F16-002: hyp.predict(1-D series) destroyed by row-vector wrangling
+(200,) → (1,200) DataFrame via the dw funnel: default Kalman crashes deep in pykalman; ARIMA/Laplace/Chronos return (30,200) silent nonsense (input echoed). Fix: predict's input funnel treats 1-D as univariate series (n,1) — document; regression: predict(sine, t=30).shape==(30,1) + correlation check; list [1.0, 2.0, ...] scalar-list case too.
+
+### F19-001: single-column .csv/.txt silently corrupted by delimiter sniffing
+`io/sources.py:744-745` (and :774 extensionless): sep=None + engine='python' → csv.Sniffer picks an in-word character for single-column files → mangled multi-column DataFrame, no warning; empty .csv raises raw _csv.Error (F19-005). Fix: .csv defaults sep=','; sniff only as fallback (and validate sniff result); single-column .txt guard; friendly empty-file error. Regression: single-col csv/txt round-trips exactly; multi-delim files still sniff right.
+
+### D07-001: plot.ipynb tutorial crashes on fresh Run-All
+Cells 26/29 build hue as 5×int(8124/5)=8120 labels vs 8124 rows → the (correct) QC hue-length validation now raises; everything after cell 26 dead; committed outputs are stale (still show figures). Fix: build hue with np.array_split sizing (handles remainder), re-execute the notebook fresh end-to-end, commit updated outputs. Sweep other tutorials for the same 'int(n/k)*k' pattern.
+
 ## Phase-4 design refinement (verification wave)
 
 Per-UNIT verifier agents (~46) rather than per-finding (~450): each verifier gets its unit's findings as {id, title, repro, expected, actual, evidence paths} ONLY (no auditor reasoning), re-runs every repro against the audit branch, examines evidence PNGs directly (agents read images), returns per-finding verdicts {CONFIRMED|REFUTED|CANNOT-REPRO, severity_adjust, notes}. Controller pre-pass before dispatch: dedup obvious cross-unit clusters ([infra] stale-venv ×10 → env-resolved, skip; plot-shadows-subpackage ×4 → one finding; docstring-no-examples ×3 → one; fmt-list-length ×2; etc.).
