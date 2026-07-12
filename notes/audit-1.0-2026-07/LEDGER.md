@@ -7,8 +7,8 @@ Working truth for the release audit. Update after every phase transition, wave c
 | Phase | Status | Notes |
 |-|-|-|
 | 0 setup | done | branch `audit/release-1.0-2026-07` @ e0f4e33e; tree cleaned |
-| 1-3 red-team waves (46 units) | wave 1 done: 16/46 units, 224 findings | 14 completed + 2 orphan-valid (F15, F16 — re-running); 30 units hit monthly spend cap, 1 (F13) server error → RESUMED as wave 2 |
-| 4 verification | not started | |
+| 1-3 red-team waves (46 units) | **DONE 46/46 — 708 findings** (16 crit, 98 major, 142 doc, 306 minor, 118 style, 28 enh) | 4 waves (3 spend-cap resumes); ~13.1M subagent tokens, ~4650 tool uses total |
+| 4 verification | RUNNING — run `wf_592422d1-611` | 46 blind adversarial verifiers (effort=high), verdicts → verdicts/*.json; first launch failed (args passed as JSON-string → script now hardcodes units) |
 | 5 fixes | not started | |
 | 6 re-audit | not started | |
 | 7 merge + CI | not started | |
