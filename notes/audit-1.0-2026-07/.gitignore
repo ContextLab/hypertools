@@ -3,3 +3,4 @@
 # curated evidence for the PR report goes to a separate orphan branch
 # (audit-evidence-2026-07) with SHA-pinned raw links.
 evidence/
+findings-verify/

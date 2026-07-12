@@ -33,7 +33,8 @@
     "plot_datasets_tour with network down / rate-limited (untested -- all four sources succeeded live; skip path exercised only indirectly via its try/except)",
     "explore hover labels in a real interactive GUI backend (untested -- needs a display; headless degradation tested instead)",
     "plotly backend versions of these examples (untested here -- covered by other audit units)",
-    "predict model='Chronos' (untested -- requires HF model download, out of scope for this unit)"
+    "predict model='Chronos' (untested -- requires HF model download, out of scope for this unit)",
+    "own-stage kwarg naming consistency across hyp.manip/impute/predict/align/reduce/cluster (tested: two colliding conventions, finding -020)"
   ],
   "tested": [
     {"case": "examples/plot_corpus.py end-to-end", "result": "pass", "command": "MPLBACKEND=Agg .venv/bin/python run_example.py examples/plot_corpus.py <evidence>", "output_excerpt": "=== plot_corpus: status=pass elapsed=1.5s figures=1 saved=1", "evidence": ["plot_corpus_fig0.png"]},
@@ -67,7 +68,9 @@
     {"case": "misuse battery E1-E22 (bad names/slugs/types/values across load/plot/predict/density/surface/explore/impute/missing_inds)", "result": "pass", "command": ".venv/bin/python edge_battery.py", "output_excerpt": "excellent errors: load sources-tried list, 538/kaggle format errors, hue count mismatch, predict model list, t>=1, density alpha/keys; rough: corpus int -> AttributeError .lower; explore 2D -> AssertionError; mixed text+numeric -> concat ValueError; surface smoothing=-1 silently accepted", "evidence": ["edge_density_3pts.png"]},
     {"case": "hyp.predict(..., return_model=True) reuse claim from plot_predict docstring", "result": "pass", "command": "python: fc, model = hyp.predict(d0, model='Kalman', t=10, return_model=True); hyp.predict(d1, model=model, t=10)", "output_excerpt": "tuple (DataFrame, Kalman); forecast shape (10, 5); reuse on new data OK, shape (10, 5)", "evidence": []},
     {"case": "plot_density default-vs-dict figures actually differ", "result": "pass", "command": "python PIL pixel diff fig0 vs fig2", "output_excerpt": "max diff 34.0, mean 0.89, 31.18% pixels differ (alpha 0.2->0.4, levels 3->5 applied; deliberately subtle)", "evidence": ["plot_density_fig0.png", "plot_density_fig2.png"]},
-    {"case": "shipped gallery images match my runs (plot_text, plot_geo, story montage)", "result": "pass", "command": "visual comparison vs docs/auto_examples/images/sphx_glr_*", "output_excerpt": "identical degenerate 2-dot text figure, identical spiral zigzag, identical clipped story titles -- published docs show the same defects", "evidence": []}
+    {"case": "shipped gallery images match my runs (plot_text, plot_geo, story montage)", "result": "pass", "command": "visual comparison vs docs/auto_examples/images/sphx_glr_*", "output_excerpt": "identical degenerate 2-dot text figure, identical spiral zigzag, identical clipped story titles -- published docs show the same defects", "evidence": []},
+    {"case": "independent re-verification of the three highest-severity claims (fresh session, fresh runs)", "result": "pass", "command": "MPLBACKEND=Agg .venv/bin/python <heredoc>: re-run -001 Kalman knockout, -002 plot_text xform uniqueness, -004 aligned-then-reduced dispersion", "output_excerpt": "KALMAN-001: n=972 std=0.0 unique=1 first5=[0. 0. 0. 0. 0.] | TEXT-002: total rows=7 unique rows=2 | DISPERSION aligned-then-reduced: mean=0.5109 rms=0.5204 (docstring claims ~0.47); all three reproduce exactly", "evidence": ["plot_text_fig0.png", "plot_impute_fig0.png"]},
+    {"case": "own-stage kwarg naming across sibling APIs (model= vs function-named kwarg)", "result": "fail", "command": "python: inspect.signature over manip/impute/predict/reduce/align/cluster; probe reduce(model=), cluster(model=), align(model= vs align=)", "output_excerpt": "manip/impute/predict/align take model=; reduce/cluster/normalize take reduce=/cluster=/normalize=; align accepts BOTH model= and align= (allclose True); reduce(model=) -> TypeError: reduce() got an unexpected keyword argument 'model'; cluster(model=) -> same", "evidence": []}
   ],
   "findings": [
     {
@@ -278,6 +281,17 @@
       "actual": "all three titles half-clipped at the top edge (see plot_story_trajectories_fig0.png and the committed sphx_glr image)",
       "evidence": ["plot_story_trajectories_fig0.png"],
       "docs_impact": ["examples/plot_story_trajectories.py", "docs/auto_examples/images/sphx_glr_plot_story_trajectories_001.png"]
+    },
+    {
+      "id": "D05-gallery-data-text-020",
+      "severity": "style",
+      "title": "Own-stage kwarg naming is inconsistent across sibling top-level APIs: manip/impute/predict/align take model=, but reduce/cluster/normalize require reduce=/cluster=/normalize= and reject model= with a bare TypeError",
+      "description": "hyp.manip(data, model=...), hyp.impute(data, model=...), hyp.predict(data, model=...) and hyp.align(data, model=...) all name their own-stage spec 'model' (align additionally accepts align= as an undocumented equivalent alias -- verified numerically identical results). hyp.reduce/hyp.cluster/hyp.normalize instead name the spec after the function (reduce=, cluster=, normalize=) and do NOT accept model=: hyp.reduce(x, model='PCA', ndims=3) raises TypeError: reduce() got an unexpected keyword argument 'model' with no hint that the kwarg is spelled reduce=. The story-trajectories example's documented code block uses hyp.manip(data, model=manip_spec) and hyp.align(manip_data, align={...}) on adjacent lines, actively teaching both conventions at once; a user (or this auditor, first try) who then writes hyp.reduce(aligned, model='IncrementalPCA', ndims=3) crashes. Either accept model= everywhere (as align already quietly does for both spellings) or emit an actionable error naming the correct kwarg.",
+      "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(0)\nd = [rng.standard_normal((40, 8)), rng.standard_normal((40, 8))]\na1 = hyp.align(d, model={'model': 'HyperAlign', 'kwargs': {'n_iter': 2}})\na2 = hyp.align(d, align={'model': 'HyperAlign', 'kwargs': {'n_iter': 2}})\nprint(all(np.allclose(np.asarray(x), np.asarray(y)) for x, y in zip(a1, a2)))  # True\nhyp.reduce(d[0], model='PCA', ndims=3)  # TypeError",
+      "expected": "one consistent own-stage kwarg convention across the sibling APIs (or cross-accepted aliases everywhere), and misuse errors that name the correct spelling",
+      "actual": "align model= vs align= allclose: True | reduce(model=) TypeError: reduce() got an unexpected keyword argument 'model' | cluster(model=) TypeError: cluster() got an unexpected keyword argument 'model'",
+      "evidence": [],
+      "docs_impact": ["hypertools/reduce/reduce.py", "hypertools/cluster/cluster.py", "hypertools/align/align.py", "examples/plot_story_trajectories.py"]
     }
   ]
 }

@@ -1,0 +1,248 @@
+{
+  "unit": "X5-packaging",
+  "target": "wheel/sdist build, artifact contents, metadata, extras, fresh-venv install verification (pyproject.toml; python -m build 1.4.0 / setuptools 83 isolated env; fresh python3.12 venv; branch audit/release-1.0-2026-07, version 1.0.0.dev0)",
+  "brainstormed_edge_cases": [
+    "Non-.py package data (hypertools/core/config.ini) omitted from wheel/sdist because there is no MANIFEST.in and no [tool.setuptools.package-data] -- TESTED (fail, finding 002)",
+    "Local directories matching the packages.find glob 'hypertools*' (the hypertools-dev/ virtualenv at repo root) leak into wheel+sdist via implicit namespaces=true -- TESTED (fail, finding 001)",
+    "Wheel ships tests/docs/notes/examples junk -- TESTED (pass: wheel clean; sdist ships tests/ which is conventional)",
+    "LICENSE file missing from wheel dist-info -- TESTED (pass: dist-info/licenses/LICENSE, 1118 bytes)",
+    "Wheel METADATA disagrees with pyproject (name/version/requires-python/deps/extras) -- TESTED (pass: exact match, all 12 Provides-Extra)",
+    "Fresh-venv wheel install crashes on import due to missing dependency -- TESTED (pass: clean import, no warnings, 1.69 s)",
+    "Base-install smoke: plot/reduce/cluster/align/analyze/describe/predict without any extras -- TESTED (pass)",
+    "Friendly ImportError contract for absent extras (reduce='Autoencoder' without torch; load('kaggle/...') without kagglehub) -- TESTED (pass, both messages name the missing package and the exact pip command)",
+    "Every optional-dependency package name resolvable on PyPI at the declared floor -- TESTED (pass: all 11 runtime-extra + 7 dev-only packages found with satisfying versions)",
+    "Extras-bracket install syntax against the local wheel file resolves -- TESTED (pass: hypertools[interactive,io,density3d,predict] 'Would install' plotly/kaleido/openpyxl/scikit-image/skaters)",
+    "sdist round-trip: pip install from the tar.gz (PEP 517 build) works and matches wheel contents -- TESTED (pass install; reproduces findings 001+002 identically per RECORD)",
+    "requires-python >=3.10 floor vs code reality: scan for 3.11+/3.12+ syntax (except*, tomllib, typing.Self/StrEnum, PEP 695, itertools.batched) -- TESTED (pass: none found; no match statements either)",
+    "Python 3.14 (above the 3.13 classifier ceiling; requires-python has no upper bound) dependency resolution -- TESTED (pass: full resolve incl numba 0.66.0/llvmlite for cp314)",
+    "twine check on both artifacts (readme.md rendering for PyPI) -- TESTED (pass both)",
+    "python -m build leaves droppings in the repo (egg-info regeneration, build/ dir) -- TESTED (pass: no new droppings; pre-existing stale dist/0.8.2 + stale hypertools.egg-info reported, finding 005)",
+    "pip check dependency-consistency in the fresh venv -- TESTED (pass: No broken requirements found)",
+    "__version__ consistency with pyproject version -- TESTED (pass: importlib.metadata-based, reports 1.0.0.dev0)",
+    "Build-time deprecation warnings -- TESTED (fail: SetuptoolsDeprecationWarning for project.license TOML table, finding 004)",
+    "Wheel purity/platform tag (py3-none-any, Root-Is-Purelib) -- TESTED (pass)",
+    "Editable install (pip install -e) into a pristine venv -- UNTESTED (repo .venv is a working dev install; time-boxed out)",
+    "Actual install on Python 3.10 (the declared floor) -- UNTESTED, tagged infra: only 3.11/3.12/3.13/3.14 interpreters exist on this machine; syntax scan covers the floor statically",
+    "Windows install (HOME/USERPROFILE guard in configurator, path handling) -- UNTESTED, tagged infra: no Windows machine in this environment",
+    "Install via alternative frontends (uv, poetry) -- UNTESTED",
+    "Offline/no-network pip install behavior -- UNTESTED",
+    "readme claim 'small, fast-importing base install' -- TESTED qualitatively (import hypertools = 1.69 s in fresh venv; no hard number claimed in docs, not filed)"
+  ],
+  "tested": [
+    {
+      "case": "build wheel+sdist with python -m build (isolated env, setuptools 83)",
+      "result": "pass",
+      "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -m build --outdir <scratch>/dist /Users/jmanning/hypertools",
+      "output_excerpt": "Successfully built hypertools-1.0.0.dev0.tar.gz and hypertools-1.0.0.dev0-py3-none-any.whl (exit 0)",
+      "evidence": []
+    },
+    {
+      "case": "post-build git status + droppings check",
+      "result": "pass",
+      "command": "git status --porcelain (before/after diff); md5 hypertools.egg-info/*",
+      "output_excerpt": "No new build droppings: repo-root hypertools.egg-info/* md5s unchanged by the build, no build/ dir created, dist/ untouched (still only stale 0.8.2 artifacts). git-status delta contained only other audit units' files (.playwright-mcp logs, D12 findings).",
+      "evidence": []
+    },
+    {
+      "case": "wheel completeness: all 13 subpackages, 89/89 .py modules present (parity with repo tree), no tests/docs/notes junk",
+      "result": "pass",
+      "command": "unzip -l dist/hypertools-1.0.0.dev0-py3-none-any.whl; find hypertools -name '*.py' ! -path '*__pycache__*' | wc -l",
+      "output_excerpt": "repo .py count: 89 / wheel hypertools/ .py count: 89; subpackages _externals,_shared,align,cluster,core,external,impute,io,manip,plot,predict,reduce,tools all present; grep tests/|docs/|notes/|examples/ -> no junk",
+      "evidence": []
+    },
+    {
+      "case": "wheel ships developer virtualenv file hypertools-dev/bin/activate_this.py",
+      "result": "fail",
+      "command": "unzip -l dist/hypertools-1.0.0.dev0-py3-none-any.whl | grep hypertools-dev; unzip -p ... top_level.txt",
+      "output_excerpt": "2383  07-02-2026 12:30   hypertools-dev/bin/activate_this.py | top_level.txt: 'hypertools\\nhypertools-dev'",
+      "evidence": []
+    },
+    {
+      "case": "config.ini present in artifacts",
+      "result": "fail",
+      "command": "unzip -l ...whl | grep -i .ini; tar tzf ...tar.gz | grep -i .ini",
+      "output_excerpt": "NO .ini IN WHEEL / NO .ini IN SDIST (repo has hypertools/core/config.ini with [plot][reduce][align][cluster] defaults)",
+      "evidence": []
+    },
+    {
+      "case": "LICENSE + metadata match pyproject",
+      "result": "pass",
+      "command": "unzip -p ...whl hypertools-1.0.0.dev0.dist-info/METADATA",
+      "output_excerpt": "Name: hypertools / Version: 1.0.0.dev0 / Requires-Python: >=3.10 / License: MIT / License-File: LICENSE / all 13 Requires-Dist base deps and 12 Provides-Extra blocks byte-match pyproject; Description-Content-Type: text/markdown",
+      "evidence": []
+    },
+    {
+      "case": "fresh python3.12 venv: pip install built wheel (all deps from PyPI: numpy 2.4.6, pandas 3.0.3, matplotlib 3.11.0, scikit-learn 1.9.0, umap-learn 0.5.12...)",
+      "result": "pass",
+      "command": "/opt/homebrew/bin/python3.12 -m venv fresh312 && fresh312/bin/pip install dist/hypertools-1.0.0.dev0-py3-none-any.whl",
+      "output_excerpt": "Successfully installed ... hypertools-1.0.0.dev0 ... INSTALL EXIT: 0; import hypertools -> version 1.0.0.dev0, IMPORT WARNINGS: none",
+      "evidence": []
+    },
+    {
+      "case": "fresh-venv smoke: hyp.plot 100x5 array and 3-group list (MPLBACKEND=Agg, PNGs saved)",
+      "result": "pass",
+      "command": "smoke_test.py steps plot-2d-smoke / plot-list-hue-smoke",
+      "output_excerpt": "[PASS] plot-2d-smoke: saved fresh_plot_2d5col.png / [PASS] plot-list-hue-smoke: saved fresh_plot_3groups.png; visuals verified: 3-D trajectory line plots with expected hypertools styling",
+      "evidence": ["fresh_plot_2d5col.png", "fresh_plot_3groups.png"]
+    },
+    {
+      "case": "fresh-venv reduce: default passthrough shape parity with repo venv; UMAP ndims=2 works",
+      "result": "pass",
+      "command": "hyp.reduce(randn(60,10)) [both venvs]; hyp.reduce(randn(80,12), 'UMAP', ndims=2) [fresh]",
+      "output_excerpt": "reduce default shape (60, 10) in BOTH repo and fresh venv (no divergence); UMAP reduce shape: (80, 2)",
+      "evidence": []
+    },
+    {
+      "case": "fresh-venv realistic workflows: align two rotated sessions + plot; analyze(normalize='across', reduce='PCA', ndims=3); cluster; describe; predict(model='Kalman') on base install; load('spiral') hosted dataset + plot",
+      "result": "pass",
+      "command": "see smoke_test.py + follow-up one-liners (cwd=/tmp to avoid repo-tree shadowing)",
+      "output_excerpt": "align ok: 2 (80, 6); analyze ok: (120, 3); n_clusters=3; describe <class 'dict'>; forecast type DataFrame; spiral loaded+plotted",
+      "evidence": ["fresh_align_plot.png", "fresh_spiral.png"]
+    },
+    {
+      "case": "hosted 'spiral' dataset render parity between pip-installed wheel and repo dev tree",
+      "result": "pass",
+      "command": "hyp.plot(hyp.load('spiral'), save_path=...) in fresh venv and repo venv",
+      "output_excerpt": "Visually identical output in both installs (packaging parity). NOTE for plot/dataset units: both render the two (1000,3) spirals as short edge-on zigzags at the default 3-D camera angle rather than visible spirals -- environment-independent, so not a packaging defect; flagging for cross-unit review.",
+      "evidence": ["fresh_spiral.png", "repo_spiral.png"]
+    },
+    {
+      "case": "friendly ImportError contract without extras (torch, kaggle)",
+      "result": "pass",
+      "command": "hyp.reduce(x, 'Autoencoder'); hyp.load('kaggle/rtatman/188-million-us-wildfires') in fresh venv",
+      "output_excerpt": "ImportError: Autoencoder requires torch, which is not installed; install it with pip install \"hypertools[torch]\" | ImportError: '...' looks like a Kaggle dataset id, but the `kagglehub` package is not installed. Install it with `pip install hypertools[kaggle]`.",
+      "evidence": []
+    },
+    {
+      "case": "config.ini runtime-impact isolation (same fresh venv, with/without the file, cwd=/tmp, module path asserted)",
+      "result": "pass",
+      "command": "plot same seed with config.ini absent, cp config.ini into site-packages, plot again, PIL pixel diff",
+      "output_excerpt": "plot section now: {'style': '.', ..., 'cmap': 'mako'} (populated once file restored; {} without it); max pixel diff: 0 | pct differing: 0.0 -- file absence does NOT change plot output; grep confirms zero internal callers of get_default_options/apply_defaults",
+      "evidence": ["iso_noconfig.png", "iso_withconfig.png"]
+    },
+    {
+      "case": "extras PyPI existence + floor satisfiability (all 18 distinct optional packages)",
+      "result": "pass",
+      "command": "pip index versions <pkg> for plotly kaleido pydata-wrangler skaters chronos-forecasting openpyxl scikit-image torch kagglehub pylsl gensim pytest pytest-cov nbformat nbclient ipykernel datasets pytest-timeout",
+      "output_excerpt": "plotly 6.9.0>=6.1.1, kaleido 1.3.0>=1.0, pydata-wrangler 0.5.1>=0.5.1, skaters 0.12.1>=0.11, chronos-forecasting 2.3.1>=2.0, openpyxl 3.1.5, scikit-image 0.26.0, torch 2.13.0, kagglehub 1.0.2, pylsl 1.18.2>=1.16, gensim 4.4.0>=4.3 (+7 dev-only all found)",
+      "evidence": []
+    },
+    {
+      "case": "extras-bracket resolution against local wheel",
+      "result": "pass",
+      "command": "pip install --dry-run 'hypertools[interactive,io,density3d,predict] @ file://...whl'",
+      "output_excerpt": "Would install ImageIO-2.37.3 ... kaleido-1.3.0 ... openpyxl-3.1.5 ... plotly-6.9.0 scikit-image-0.26.0 ... skaters-0.12.1 ...",
+      "evidence": []
+    },
+    {
+      "case": "pip install from sdist (PEP 517 round-trip) + RECORD audit",
+      "result": "pass",
+      "command": "pip install --force-reinstall --no-deps dist/hypertools-1.0.0.dev0.tar.gz; grep RECORD",
+      "output_excerpt": "Successfully installed hypertools-1.0.0.dev0; RECORD (188 lines) again contains hypertools-dev/bin/activate_this.py and no config.ini -- both defects reproduce through the sdist path",
+      "evidence": []
+    },
+    {
+      "case": "pip check + twine check",
+      "result": "pass",
+      "command": "fresh312/bin/pip check; twine check dist/*",
+      "output_excerpt": "No broken requirements found. | wheel: PASSED / tar.gz: PASSED",
+      "evidence": []
+    },
+    {
+      "case": "requires-python floor: static scan for >3.10 syntax",
+      "result": "pass",
+      "command": "grep -rE 'except\\s*\\*|tomllib|typing\\.Self|StrEnum|^\\s*type [A-Za-z_]+ *=|batched|^\\s*match .+:' hypertools --include='*.py'",
+      "output_excerpt": "no hits for any 3.11+/3.12+ feature (and no match statements); floor >=3.10 is safe statically. Actual 3.10 interpreter unavailable on this machine (infra: only 3.11-3.14 installed), so no live 3.10 install test.",
+      "evidence": []
+    },
+    {
+      "case": "Python 3.14 resolver (above classifier ceiling, no requires-python upper bound)",
+      "result": "pass",
+      "command": "python3.14 -m venv v314; v314/bin/pip install --dry-run <wheel>",
+      "output_excerpt": "Would install ... llvmlite-0.48.0 ... numba-0.66.0 numpy-2.4.6 ... (full resolution succeeds on cp314)",
+      "evidence": []
+    },
+    {
+      "case": "deliberate misuse: reduce(n_components=...) wrong kwarg; analyze(normalize='zscore') invalid value",
+      "result": "fail",
+      "command": "hyp.reduce(randn(80,12), 'UMAP', n_components=2); hyp.analyze(randn(120,15), normalize='zscore', reduce='PCA', ndims=3)",
+      "output_excerpt": "TypeError: reduce() got an unexpected keyword argument 'n_components' (acceptable: names the bad kwarg) | AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer. (poor: bare assert, and 'scale_type' is not the user-facing parameter name 'normalize' -> finding 006)",
+      "evidence": []
+    },
+    {
+      "case": "build-time warnings",
+      "result": "fail",
+      "command": "grep -iE 'warning|error' build.log",
+      "output_excerpt": "SetuptoolsDeprecationWarning: `project.license` as a TOML table is deprecated (raised 4x by setuptools 83 in both sdist and wheel build envs) -> finding 004",
+      "evidence": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "X5-packaging-001",
+      "severity": "major",
+      "title": "Developer's local virtualenv (hypertools-dev/) ships inside the wheel and sdist and installs into every user's site-packages",
+      "description": "The repo root contains an untracked local virtualenv directory 'hypertools-dev/' (pyvenv.cfg, bin/, lib/...). Because pyproject.toml uses [tool.setuptools.packages.find] include=[\"hypertools*\"] and the pyproject path enables namespace-package discovery by default (no __init__.py needed, no identifier check applied here), setuptools discovers 'hypertools-dev' as a top-level package. The built wheel therefore contains hypertools-dev/bin/activate_this.py (2383 bytes, virtualenv-project code: '# Copyright (c) 2020-202x The virtualenv developers'), the sdist contains hypertools-1.0.0.dev0/hypertools-dev/bin/activate_this.py, and dist-info/top_level.txt advertises two top-level packages: 'hypertools' and 'hypertools-dev'. pip install of the wheel then creates site-packages/hypertools-dev/bin/activate_this.py plus its compiled __pycache__/activate_this.cpython-312.pyc on every user machine (verified in the fresh venv; both files are listed in RECORD, so pip uninstall does clean them). Beyond shipping unrelated third-party code, this makes release artifact contents depend on whatever junk matches 'hypertools*' in the maintainer's working tree at build time. Fix: use the standard idiom include = [\"hypertools\", \"hypertools.*\"] (and/or set namespaces = false), and add hypertools-dev/ to .gitignore (see finding 005).",
+      "repro": "cd /Users/jmanning/hypertools && /Users/jmanning/hypertools/.venv/bin/python -m build --outdir /tmp/x5dist . && unzip -l /tmp/x5dist/hypertools-1.0.0.dev0-py3-none-any.whl | grep hypertools-dev && unzip -p /tmp/x5dist/hypertools-1.0.0.dev0-py3-none-any.whl hypertools-1.0.0.dev0.dist-info/top_level.txt",
+      "expected": "Wheel and sdist contain only the 'hypertools' package; top_level.txt lists only 'hypertools'; nothing outside the package installs into site-packages.",
+      "actual": "unzip -l: '2383  07-02-2026 12:30   hypertools-dev/bin/activate_this.py'; top_level.txt: 'hypertools\\nhypertools-dev'; after pip install, site-packages RECORD contains 'hypertools-dev/bin/activate_this.py,sha256=wbmDks7G77k1IU4bsfJLDfUziWm0QB08gpfuVxxtRbQ,2383' and 'hypertools-dev/bin/__pycache__/activate_this.cpython-312.pyc,,'; os.listdir(site-packages) -> ['hypertools', 'hypertools-1.0.0.dev0.dist-info', 'hypertools-dev']",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X5-packaging-002",
+      "severity": "major",
+      "title": "hypertools/core/config.ini is missing from wheel and sdist, so hypertools.core.get_default_options()/apply_defaults() silently return empty defaults on every pip install",
+      "description": "hypertools/core/config.ini is the package's only non-.py data file ([plot] style/linestyle/linewidth/markersize/bigmarkersize/opacity/cmap=mako, [reduce] ndims=3 algorithm=IncrementalPCA, [align] algorithm=hyper, [cluster] n_clusters=3 verbose=False). There is no MANIFEST.in and no [tool.setuptools.package-data]/include-package-data configuration, so the file is absent from both the wheel and the sdist (verified: no .ini entry in either artifact; also absent from the previous build's SOURCES.txt). configurator.get_default_options() reads it via os.path.join(os.path.dirname(__file__), 'config.ini'); with the file missing, datawrangler's configparser path silently yields nothing, so every hypertools section comes back {} on a pip-installed copy while a git checkout returns populated sections -- a silent dev-vs-installed API divergence with no warning. Empirically the blast radius today is limited to that exported API: grep shows zero internal callers of get_default_options/apply_defaults (hypertools/plot/backend.py:918 'bound_args.apply_defaults()' is inspect.BoundArguments, unrelated), and a controlled experiment in the same fresh venv (plot with vs without the file restored, cwd=/tmp, module path asserted) produced pixel-identical PNGs (max diff 0). Fix: add [tool.setuptools.package-data] 'hypertools.core' = ['config.ini'] (or a MANIFEST.in include + include-package-data), or remove the vestigial config machinery entirely (finding 003).",
+      "repro": "unzip -l /tmp/x5dist/hypertools-1.0.0.dev0-py3-none-any.whl | grep -i '\\.ini' ; # then in a fresh venv with the wheel installed, cwd outside the repo:\npython -c \"from hypertools.core import get_default_options; print(dict(get_default_options()['plot']))\"",
+      "expected": "config.ini ships with the package; get_default_options()['plot'] returns {'style': '.', 'linestyle': '-', 'linewidth': '1', 'markersize': '4', 'bigmarkersize': '6', 'opacity': '0.7', 'cmap': 'mako'} as it does from the repo tree.",
+      "actual": "wheel/sdist contain no .ini file; fresh venv: \"plot section: {}\" and \"AssertionError: plot defaults lost: {}\" in the smoke test; os.path.exists(<site-packages>/hypertools/core/config.ini) -> False. Repo venv same call returns the populated dict. Pixel-diff of plots with/without the file: 'max pixel diff: 0 | pct differing: 0.0' (no visual impact today).",
+      "evidence": ["iso_noconfig.png", "iso_withconfig.png"],
+      "docs_impact": []
+    },
+    {
+      "id": "X5-packaging-003",
+      "severity": "style",
+      "title": "config.ini / configurator machinery is vestigial: no code path consumes it, and its values duplicate hardcoded signature defaults",
+      "description": "configurator.py's docstring calls config.ini the 'Central default options for hypertools ... single source of truth', and hypertools/core/__init__.py exports get_default_options/apply_defaults -- but no module in the package calls either function (verified by grep; the only 'apply_defaults' hit is inspect's BoundArguments.apply_defaults in plot/backend.py:918). The behaviors config.ini claims to control actually come from hardcoded defaults (e.g. reduce() signature is 'reduce=\\'IncrementalPCA\\', ndims=None'; cluster's n_clusters=3 outcome reproduces with the config absent), which is why finding 002 has no visual impact. Either wire the config into the dispatchers or delete config.ini+configurator to stop advertising a configuration mechanism that does nothing. Related dead-code nit: hypertools/config.py retains a 'Fallback for Python < 3.8' importlib_metadata branch despite requires-python >=3.10.",
+      "repro": "grep -rn 'apply_defaults\\|get_default_options' /Users/jmanning/hypertools/hypertools --include='*.py' | grep -v 'core/configurator.py\\|core/__init__'",
+      "expected": "A module described as central defaults should have at least one internal consumer (or not exist).",
+      "actual": "Only hit: 'hypertools/plot/backend.py:918:    bound_args.apply_defaults()' (inspect API, unrelated). Fresh venv without config.ini: cluster n_clusters=3 and reduce passthrough behavior identical to repo venv; plots pixel-identical.",
+      "evidence": [],
+      "docs_impact": ["hypertools/core/configurator.py"]
+    },
+    {
+      "id": "X5-packaging-004",
+      "severity": "minor",
+      "title": "Build emits SetuptoolsDeprecationWarning: `project.license` as a TOML table is deprecated (future setuptools will fail the build)",
+      "description": "pyproject.toml declares license = { text = \"MIT\" }. setuptools 83 (resolved fresh in the isolated build env, so this is what any contributor gets) warns 4x during python -m build: 'SetuptoolsDeprecationWarning: `project.license` as a TOML table is deprecated -- Please use a simple string containing a SPDX expression'. When setuptools removes the deprecated path, release builds will start failing. Fix: license = \"MIT\" plus license-files = [\"LICENSE\"] per PEP 639; note SPDX license strings require setuptools>=77.0.3, so raise [build-system] requires from 'setuptools>=64' accordingly.",
+      "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -m build --outdir /tmp/x5dist /Users/jmanning/hypertools 2>&1 | grep -i 'license.*deprecated'",
+      "expected": "Clean build with no deprecation warnings from project metadata.",
+      "actual": "SetuptoolsDeprecationWarning: `project.license` as a TOML table is deprecated (emitted in both the sdist and wheel build environments)",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X5-packaging-005",
+      "severity": "minor",
+      "title": "Repo hygiene enabling 001: hypertools-dev/ is untracked but NOT gitignored; stale dist/ (0.8.2 artifacts) and stale hypertools.egg-info sit in the repo root",
+      "description": "git check-ignore hypertools-dev -> not ignored; git ls-files hypertools-dev -> not tracked. Because it is not ignored, nothing flags it as junk and it silently feeds finding 001 on every build from this tree. Pre-existing build droppings (reported, not created by this audit's build, which left the tree untouched -- egg-info md5s unchanged, no build/ dir): (a) dist/ contains hypertools-0.8.2-py3-none-any.whl and hypertools-0.8.2.tar.gz dated Jan 29 -- stale artifacts two major versions old that could be uploaded by accident with a glob like 'twine upload dist/*'; (b) hypertools.egg-info/ (regenerated Jul 11 06:59 by an earlier build) whose top_level.txt already records the 'hypertools-dev' contamination. Fix: add hypertools-dev/ (or a general venv pattern) to .gitignore and clear stale dist/ artifacts before any release upload.",
+      "repro": "cd /Users/jmanning/hypertools && git check-ignore -v hypertools-dev; ls dist/; cat hypertools.egg-info/top_level.txt",
+      "expected": "Local venvs ignored by git; dist/ empty or containing only current-release artifacts.",
+      "actual": "check-ignore: no output (not ignored); dist/: hypertools-0.8.2-py3-none-any.whl, hypertools-0.8.2.tar.gz; top_level.txt: 'hypertools\\nhypertools-dev'",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
+      "id": "X5-packaging-006",
+      "severity": "minor",
+      "title": "Invalid normalize= value fails with a bare AssertionError that names a non-existent parameter ('scale_type')",
+      "description": "Hit during a realistic fresh-install workflow: hyp.analyze(data, normalize='zscore', reduce='PCA', ndims=3) -- plausible misuse since 'ZScore' is a hypertools manip model name -- raises from hypertools/tools/normalize.py:240 'AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.' Two problems: (1) the user-facing parameter is called 'normalize' (both in analyze() and normalize()), not 'scale_type', so the message points at a parameter the user never typed; (2) it is a bare assert, which produces AssertionError instead of ValueError/TypeError and is stripped under python -O, silently disabling the validation. The list of allowed values itself is helpful. Cross-unit note: normalize/analyze behavior units may also have caught this; filed here because it surfaced in the packaging fresh-install workflow.",
+      "repro": "python -c \"import numpy as np, hypertools as hyp; hyp.analyze(np.random.randn(120,15), normalize='zscore', reduce='PCA', ndims=3)\"",
+      "expected": "ValueError naming the 'normalize' parameter, e.g.: ValueError: normalize must be one of 'across', 'within', 'row', None/False, or a fitted Normalizer (got 'zscore').",
+      "actual": "File \"...site-packages/hypertools/tools/normalize.py\", line 240, in normalize\n    assert (normalize in ['across', 'within', 'row', False, None]\nAssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.",
+      "evidence": [],
+      "docs_impact": []
+    }
+  ]
+}

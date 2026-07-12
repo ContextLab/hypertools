@@ -1,201 +1,609 @@
 {
-  "unit": "F20-save",
-  "target": "hypertools/io/save.py (hyp.save / hyp.io.save) -- pickle-based object serialization and its round-trip through hyp.load. Enumerated surface: save(obj, fname, **kwargs); function docstring is a single line ('Pickle `obj` to `fname`.'); module docstring documents the pickle trust model, states figure/animation export is NOT handled here ('lands in Plan 6 (plot)'; 'A figure passed here is pickled like any other object; the format-aware exporter comes later'), and that there is no geo special-casing. No parameters beyond obj/fname are documented; **kwargs is accepted but never used. No docstring examples exist (verified via pydoc + rendered docs/_build/html_qc/hypertools.save.html), so 'run every docstring example verbatim' is vacuously complete; no numeric claims exist in the module. THIS REPORT MERGES TWO EXECUTED AUDIT PASSES of this unit on 2026-07-11 (pass 1 ~01:30-01:56, pass 2 ~07:00-07:40, same venv /Users/jmanning/hypertools/.venv, MPLBACKEND=Agg, branch audit/release-1.0-2026-07). Every pass-1 behavior re-examined in pass 2 reproduced verbatim (truncate-on-fail data loss, extension masquerade, name shadowing, tilde/envvar asymmetry, kwargs swallowing, HyperAnimation AttributeError, one-line docs); pass 2 additionally discovered the fitted-Pipeline save failure (F20-save-011) and the cross-unit load-doc inaccuracies (F20-save-012).",
-  "brainstormed_edge_cases": [
-    "numpy arrays of exotic dtypes (float64 w/ nan+inf, float16, int32, bool, datetime64, structured, object, fortran-order, masked, empty (0,3), 1-D, 3-D) -- exact value+dtype round-trip [tested]",
-    "DataFrame with NaN, int32, categorical column, named/Datetime index; nullable Int64 + NaT + None mix -- exact round-trip incl dtypes/index [tested]",
-    "MultiIndex rows AND columns DataFrame -- index/column names preserved [tested]",
-    "named pd.Series round-trip [tested]",
-    "list of arrays (multi-subject fMRI-style); empty list; dict of arrays + nested dict; tuple; None; str; int; float scalar [tested]",
-    "fitted sklearn model round-trip with identical transform output [tested]",
-    "fitted hypertools Reducer (reduce return_model=True) round-trip + identical transform on new data [tested]",
-    "fitted hypertools.Pipeline and full hyp.plot(return_model=True) dict -- the documented 'fitted model' save path [tested]",
-    "hyp.reduce output round-trip [tested]",
-    "every extension (.pkl/.pickle/.p/.geo/.npy/.npz/.csv/.tsv/.txt/.json/.parquet/.mat/.xlsx/.xls/.html/.weirdext/none): does hyp.load round-trip AND is the file valid in its nominal format [tested]",
-    "no-extension bare filename colliding with sklearn ('iris'), seaborn ('penguins'), and built-in ('weights') dataset names -- load shadowing breaks round-trip [tested]",
-    "nested nonexistent directory -- error quality [tested]",
-    "overwrite existing file -- silent truncation semantics [tested]",
-    "failed pickle (lambda/lock/generator/open handle/dict-containing-lambda) AFTER open('wb') destroys pre-existing file at that path; 0-byte stub left for new paths [tested]",
-    "path with spaces; unicode/emoji filename; relative path [tested]",
-    "pathlib.Path fname; bytes fname; int fname (Python fd semantics); file-handle fname; list fname [tested]",
-    "~ and $ENVVAR not expanded by save although load expands both [tested]",
-    "fname is a directory / None / empty string / missing / swapped args / >255-char filename -- error message quality [tested]",
-    "**kwargs silently swallowed: protocol=0, compression='gzip', format='csv', fmt='npy', typo kwargs (fnme=, overwrite=False) [tested]",
-    "matplotlib Figure (hyp.plot return) pickle round-trip, pixel-identical re-render (md5-identical PNGs) [tested]",
-    "hyp.save(fig, 'figure.png') -- pickle masquerading as PNG [tested]",
-    "HyperAnimation (hyp.plot(animate=True) return) picklability [tested]",
-    "plotly Figure (backend='plotly') round-trip, semantic JSON equality [tested, re-verified in pass 2]",
-    "read-only destination directory and read-only file -- PermissionError quality [tested]",
-    "hosted dataset workflows (weights_sample analyze->save->reload->plot; iris cluster dict; spiral align archive) [tested]",
-    "10k-deep nested list (RecursionError) and 8 MB array [tested]",
-    "load(..., legacy=True) on a 1.0-saved pickle -- misdiagnosis message [tested]",
-    "shipped unit tests tests/io/test_save.py [tested: 2 passed]",
-    "cross-Python/pickle-protocol portability of saved files (needs a second interpreter version) [untested]",
-    "two processes saving to the same path concurrently (race; no atomic write) [untested]",
-    "int fname when that file descriptor IS open (would hijack the fd) [untested]",
-    "multi-GB object save (memory/disk pressure); disk-full ENOSPC [untested]",
-    "save to /dev/null or a symlink target; np.matrix / memory-mapped payloads [untested]"
-  ],
-  "tested": [
-    {"case": "PASS-2 Batch A: 24 exact round-trips via hyp.save -> hyp.load with dtype+shape+index/columns asserts (float64 nan/inf, float16, int32, bool, object, datetime64, structured, fortran-order, masked, scalar float, DatetimeIndex df, MultiIndex df, nullable Int64/Categorical/NaT df, Series, list-of-arrays, dict, tuple, None, str, empty (0,3), empty list, 1-D, 3-D)", "result": "pass", "command": "env MPLBACKEND=Agg .venv/bin/python scratchpad/audit/F20-save/batch_a_roundtrips.py", "output_excerpt": "PASS float16: reloaded as ndarray ... PASS df_multiindex: reloaded as DataFrame ... PASS df_mixed_nullable: reloaded as DataFrame ... BATCH A: 24/24 passed", "evidence": []},
-    {"case": "PASS-1 workflows A-E: list of 3 float64 arrays; DataFrame w/ NaN+int32+categorical+named index; fitted sklearn PCA (transform + components_ identical after reload); hyp.reduce output; dict of arrays + nested dict -- 19 checks", "result": "pass", "command": "env MPLBACKEND=Agg .venv/bin/python t01_roundtrip_core.py (pass-1 scratch)", "output_excerpt": "PASS  workflow A ... PASS  workflow E ... 19 checks, 0 failures", "evidence": []},
-    {"case": "PASS-2 Batch B: 15 extensions incl. .xyz_unknown + no-ext -- every file begins b'\\x80\\x04' (pickle); all reload exactly via hyp.load's content sniff", "result": "pass", "command": "env MPLBACKEND=Agg .venv/bin/python scratchpad/audit/F20-save/batch_b_extensions.py", "output_excerpt": ".csv: bytes=b'\\x80\\x04' load->ndarray exact=True | .npy: ... exact=True | .xyz_unknown: ... exact=True | (no ext): ... exact=True", "evidence": []},
-    {"case": "BOTH PASSES: native readers reject save()-produced files (extension masquerade)", "result": "fail", "command": "np.load('native.npy'); pd.read_csv('native.csv'); json.load('native.json'); pd.read_excel('native.xlsx'); scipy.io.loadmat('data.mat') [pass 1]", "output_excerpt": "np.load: ValueError: This file contains pickled (object) data... | pd.read_csv: UnicodeDecodeError: 'utf-8' codec can't decode byte 0x80 in position 0 | json.load: UnicodeDecodeError | pd.read_excel: ValueError: Excel file format cannot be determined | loadmat: ValueError: Unknown mat file type, version 95, 117", "evidence": []},
-    {"case": "BOTH PASSES: bare-name shadowing -- save(arr,'penguins')/load('penguins') returns seaborn penguins (344,7) [pass 2]; save(arr,'iris')/load('iris') returns sklearn iris; save(arr,'weights')/load('weights') returns hosted 36-subject dataset [pass 1]; './' prefix recovers the file in all cases", "result": "fail", "command": "hyp.save(arr, 'penguins'); hyp.load('penguins'); hyp.load('./penguins')", "output_excerpt": "hyp.load('penguins') -> DataFrame shape=(344, 7); got my file back: False; hyp.load('./penguins') -> ndarray; got my file back: True | SHADOWED: load('iris') returned DataFrame (cols ['sepal length (cm)', ...]) | SHADOWED: load('weights') returned the hosted dataset (list of 36 arrays)", "evidence": []},
-    {"case": "PASS-2: .geo extension DataFrame round-trip; load(legacy=True) on a 1.0-saved pickle", "result": "fail", "command": "see batch_b_extensions.py", "output_excerpt": "save/load .geo DataFrame: PASS | legacy=True on 1.0 pickle: HypertoolsIOError: This looks like a legacy (<1.0) deepdish/HDF5-format dataset...", "evidence": []},
-    {"case": "BOTH PASSES: working paths -- spaces in dir+file, unicode (données_μ.pkl) and emoji (résumé_数据_🧠.pkl) names, pathlib.Path, bytes fname, relative path: all save+reload exactly", "result": "pass", "command": "env MPLBACKEND=Agg .venv/bin/python scratchpad/audit/F20-save/batch_c_paths_misuse.py; t03_paths.py (pass 1)", "output_excerpt": "path with spaces: OK True | unicode+emoji filename: OK True | pathlib.Path fname: OK True | bytes fname: OK | relative path: OK True", "evidence": []},
-    {"case": "BOTH PASSES: tilde/envvar asymmetry with load()", "result": "fail", "command": "hyp.save(arr, '~/f20save_tilde_test.pkl'); hyp.save(arr, '$TMPDIR/f20save_env.pkl')", "output_excerpt": "tilde path save: FileNotFoundError: [Errno 2] No such file or directory: '~/f20save_tilde_test.pkl' | envvar path save: FileNotFoundError ... '$TMPDIR/f20save_env.pkl' (load() expands both, load.py:292)", "evidence": []},
-    {"case": "BOTH PASSES: misuse errors -- nested nonexistent dirs (FileNotFoundError), empty-string fname, None (TypeError names NoneType), int fname (OSError EBADF -- fd semantics), file-handle fname (TypeError ... not BufferedWriter, pass 1), list fname, directory (IsADirectoryError), read-only dir+file (PermissionError), >255-char name (OSError ENAMETOOLONG), swapped args (TypeError ... not ndarray), missing fname (clear TypeError). All bare builtins, no hypertools context/remedy", "result": "fail", "command": "see batch_c_paths_misuse.py + t03_paths.py", "output_excerpt": "nested nonexistent dirs: FileNotFoundError: [Errno 2] | int fname: OSError: [Errno 9] Bad file descriptor | directory: IsADirectoryError | read-only: PermissionError | name >255 chars: OSError: [Errno 63] File name too long | swapped args: TypeError: expected str, bytes or os.PathLike object, not ndarray", "evidence": []},
-    {"case": "BOTH PASSES: **kwargs silently swallowed (protocol=0 -> byte-identical protocol-4 file; compression='gzip' -> magic b'\\x80\\x04' not b'\\x1f\\x8b'; format='csv'/fmt='npy'/fnme=/overwrite=False accepted silently)", "result": "fail", "command": "hyp.save(arr, p, protocol=0); hyp.save(arr, p, compression='gzip', format='csv', fmt='npy')", "output_excerpt": "kwargs ignored: default=b'\\x80\\x04' protocol=0->b'\\x80\\x04' (same bytes: True); compression/format/fmt accepted silently: b'\\x80\\x04'", "evidence": []},
-    {"case": "BOTH PASSES: overwrite semantics -- silent truncate, new content wins (80162 -> 172 bytes in pass 1)", "result": "pass", "command": "env MPLBACKEND=Agg .venv/bin/python scratchpad/audit/F20-save/batch_d_overwrite_failure.py", "output_excerpt": "overwrite silently, new content wins: True | OK: silently overwritten (80162 -> 172 bytes), new content loads", "evidence": []},
-    {"case": "BOTH PASSES: failed save DESTROYS pre-existing good file (pass 1: lambda, 8152B -> 0B; pass 2: generator, 246B -> 0B) and leaves 0-byte stub on new paths; destroyed file reload raises bare EOFError", "result": "fail", "command": "hyp.save(arr, 'good.pkl'); hyp.save((i for i in range(3)), 'good.pkl')", "output_excerpt": "saving generator raised: TypeError: cannot pickle 'generator' object | pre-existing good file: 246B before failed save, 0B after (DESTROYED: True) | reloading the file after failed save: EOFError: Ran out of input | failed save to new path leaves stray file: True (0B)", "evidence": []},
-    {"case": "BOTH PASSES: unpicklable payload error messages (lambda -> PicklingError, generator/TextIOWrapper/_thread.lock -> TypeError, dict-containing-lambda -> PicklingError); 10k-deep list -> RecursionError; 8MB array exact reload", "result": "pass", "command": "see batch_d_overwrite_failure.py + t04_failure_modes.py", "output_excerpt": "lambda: PicklingError: Can't pickle <function <lambda> ...> | open file handle: TypeError: cannot pickle 'TextIOWrapper' instances | 10k-deep nested list: RecursionError | 8MB array: saved 8000164B, exact reload: True", "evidence": []},
-    {"case": "PASS-2 W1: hyp.load('weights_sample') -> analyze(reduce='PCA', ndims=3, align='hyper') -> save -> load -> exact 3x(300,3) equality -> plot reloaded data (PNG evidence)", "result": "pass", "command": "env MPLBACKEND=Agg .venv/bin/python scratchpad/audit/F20-save/batch_e_workflows.py", "output_excerpt": "analyzed list: 3 x (300, 3), exact reload: True", "evidence": ["evidence/F20-save/w1_reloaded_weights_plot.png"]},
-    {"case": "PASS-2 W2: iris + hyp.cluster labels + params saved as dict -> reload -> assert_frame_equal + label equality", "result": "pass", "command": "see batch_e_workflows.py", "output_excerpt": "dict round-trip: keys=['cluster_labels', 'data', 'params'], labels exact: True, params: True", "evidence": []},
-    {"case": "PASS-2 W3: fitted hypertools Reducer (hyp.reduce return_model=True tuple element) save -> reload -> transforms new data identically to the original", "result": "pass", "command": "see batch_e_workflows.py", "output_excerpt": "return_model model element: <class 'hypertools.reduce.common.Reducer'> | reloaded fitted model reproduces transform exactly: True", "evidence": []},
-    {"case": "BOTH PASSES W4: save the return of hyp.plot (matplotlib Figure) -> reload -> re-render; pass 1: pixel-identical RGBA buffers; pass 2: before/after PNGs byte-identical (md5 332f209ca0f1c9d472e1225935d6bf92 both)", "result": "pass", "command": "see batch_e_workflows.py; md5 -q w4_fig_before_save.png w4_fig_after_reload.png", "output_excerpt": "hyp.plot returned: <class 'matplotlib.figure.Figure'> | reloaded figure type: <class 'matplotlib.figure.Figure'> | md5 identical", "evidence": ["evidence/F20-save/w4_fig_before_save.png", "evidence/F20-save/w4_fig_after_reload.png", "evidence/F20-save/fig_before_save.png", "evidence/F20-save/fig_after_roundtrip.png"]},
-    {"case": "BOTH PASSES W4b: save the return of hyp.plot(animate=True) (HyperAnimation)", "result": "fail", "command": "ret = hyp.plot(w[0][:30], animate=True); hyp.save(ret, 'anim.pkl')", "output_excerpt": "animate=True returned: <class 'hypertools.plot.hyper_animation.HyperAnimation'> | animation save FAILED: AttributeError: Can't get local object '_draw.<locals>.update_lines_parallel'", "evidence": []},
-    {"case": "PASS-1: hyp.save(fig, 'figure.png') -- pickle masquerading as PNG; plt.imread rejects it", "result": "fail", "command": "t05_figures.py (pass 1)", "output_excerpt": "file magic=b'\\x80\\x04\\x95>\\x06\\x01\\x00\\x00', real PNG=False; plt.imread fails: SyntaxError: not a PNG file", "evidence": []},
-    {"case": "BOTH PASSES: plotly figure (backend='plotly') pickle round-trip -- semantic JSON equality (re-executed in pass 2)", "result": "pass", "command": "env MPLBACKEND=Agg .venv/bin/python - <<'EOF' (hyp.set_interactive_backend('plotly'); fig=hyp.plot(rand(30,3)); hyp.save; hyp.load; to_dict compare) EOF", "output_excerpt": "plotly fig type: <class 'plotly.graph_objs._figure.Figure'> | reloaded type: <class 'plotly.graph_objs._figure.Figure'> | data identical: True | layout identical: True", "evidence": []},
-    {"case": "PASS-2 W5: two-session hyperalignment archive saved into user-created nested dir with spaces -> exact reload", "result": "pass", "command": "see batch_e_workflows.py", "output_excerpt": "aligned list reload exact: True", "evidence": []},
-    {"case": "PASS-2 W6 (NEW): save the full hyp.plot(return_model=True) dict, then per-key isolation -- only 'pipeline' fails", "result": "fail", "command": "out = hyp.plot(w, reduce='PCA', ndims=3, return_model=True); hyp.save(out, p); then hyp.save(out[k], ...) for each key", "output_excerpt": "return_model dict save FAILED: AttributeError: Can't get local object '_make_stage_step.<locals>.<lambda>' | isolation: animation(None) OK, fig(Figure) OK, models(dict) OK, predict(None) OK, xform_data(list) OK, pipeline(Pipeline) AttributeError: Can't get local object '_make_stage_step.<locals>.<lambda>'", "evidence": []},
-    {"case": "BOTH PASSES: docstring surface -- help(hyp.save) is one line; rendered Sphinx page body is '<dd><p>Pickle <cite>obj</cite> to <cite>fname</cite>.</p></dd>'; zero examples exist to run verbatim", "result": "fail", "command": "sed -n 355,375p docs/_build/html_qc/hypertools.save.html; pydoc.render_doc(hyp.save)", "output_excerpt": "<dd><p>Pickle <cite>obj</cite> to <cite>fname</cite>.</p></dd>", "evidence": []},
-    {"case": "PASS-2: shipped unit tests", "result": "pass", "command": "env MPLBACKEND=Agg .venv/bin/pytest tests/io/test_save.py -q", "output_excerpt": "2 passed in 1.97s", "evidence": []},
-    {"case": "PASS-2: signature/return checks -- save returns None; missing-arg TypeError is clear", "result": "pass", "command": ".venv/bin/python -c \"import hypertools as hyp, inspect; print(inspect.signature(hyp.save)); hyp.save(1)\"", "output_excerpt": "signature: (obj, fname, **kwargs) | returns: None | missing fname: save() missing 1 required positional argument: 'fname'", "evidence": []},
-    {"case": "PASS-2 (cross-unit observation): hyp.load('spiral') returns a list of two (1000,3) arrays although load's docstring says 'numpy array'; np.asarray(spiral) is 3-D and crashes PCA", "result": "fail", "command": ".venv/bin/python -c \"import hypertools as hyp, numpy as np; s=hyp.load('spiral'); print(type(s), [np.asarray(x).shape for x in s])\"", "output_excerpt": "<class 'list'> 2 / [(1000, 3), (1000, 3)]; downstream: ValueError: Found array with dim 3, while dim <= 2 is required by PCA.", "evidence": []}
-  ],
-  "findings": [
-    {
-      "id": "F20-save-001",
-      "severity": "major",
-      "title": "A failed save destroys the pre-existing file at the target path (truncate-before-pickle, non-atomic write)",
-      "description": "save() opens fname with mode 'wb' (truncating any existing file to 0 bytes) BEFORE pickle.dump runs. If pickling then fails -- e.g. the object contains a lambda, generator, open file handle, thread lock, a HyperAnimation (F20-save-004), or a fitted Pipeline (F20-save-011) -- the user's previously saved good data at that path is irreversibly destroyed and a 0-byte corrupt stub is left behind. Verified in both passes: an 8152-byte good pickle went to 0 bytes (lambda payload), and a 246-byte good pickle went to 0 bytes (generator payload); reload then raises a bare 'EOFError: Ran out of input'. Realistic trigger: a scientist re-saves an updated results dict that accidentally acquired an unpicklable member. Standard fix is an atomic write (dump to a temp file in the same directory, then os.replace), which also removes the corrupt-stub-on-new-path behavior.",
-      "repro": "import numpy as np, hypertools as hyp\np = '/tmp/precious.pkl'\nhyp.save(np.arange(1000.0), p)          # good file on disk\ntry:\n    hyp.save(lambda x: x, p)            # fails mid-save\nexcept Exception as e:\n    print('save failed:', e)\nimport os; print('bytes left:', os.path.getsize(p))  # 0\nhyp.load(p)                              # EOFError -- original data gone",
-      "expected": "A failed save leaves the previous file contents untouched (atomic write), or at minimum documents that the target is truncated before serialization.",
-      "actual": "pass 2: saving generator raised: TypeError: cannot pickle 'generator' object | pre-existing good file: 246B before failed save, 0B after (DESTROYED: True) | reloading the file after failed save: EOFError: Ran out of input || pass 1: file size 8152 -> 0 bytes; file NO LONGER LOADS: EOFError: Ran out of input",
-      "evidence": [],
-      "docs_impact": ["hypertools/io/save.py"]
-    },
-    {
-      "id": "F20-save-002",
-      "severity": "minor",
-      "title": "save() silently ignores the file extension: data.csv/.npy/.mat/.xlsx/fig.png are all pickles, invalid in their nominal formats",
-      "description": "save() always writes a pickle regardless of extension, with no warning. hyp.load round-trips every such file EXACTLY (its b'\\x80' byte-sniff rescues them), but the files are lies to every other tool: data.npy fails np.load ('ValueError: This file contains pickled (object) data'), data.csv fails pd.read_csv and data.json fails json.load ('UnicodeDecodeError: ... byte 0x80 in position 0'), data.mat fails scipy.io.loadmat ('ValueError: Unknown mat file type, version 95, 117'), data.xlsx fails pd.read_excel, and hyp.save(fig, 'figure.png') produces a 'PNG' that plt.imread rejects ('SyntaxError: not a PNG file') -- even though the real figure exporter hyp.plot(..., save_path='fig.png') exists. This is asymmetric with hyp.load, which genuinely parses .npy/.npz/.csv/.tsv/.txt/.json/.parquet/.mat/.xlsx/.xls. A warning (or format dispatch, see F20-save-009) on recognized non-pickle extensions would prevent silently misleading files that scientists then hand to collaborators, Excel, or MATLAB. Unpickling such a mislabeled file also requires pickle's arbitrary-code-execution trust model.",
-      "repro": "import pandas as pd, numpy as np, hypertools as hyp\ndf = pd.DataFrame({'a': [1.0, 2.0], 'b': [3.0, 4.0]})\nhyp.save(df, '/tmp/data.csv')      # no warning\npd.read_csv('/tmp/data.csv')       # UnicodeDecodeError\nhyp.save(df, '/tmp/data.npy')\nnp.load('/tmp/data.npy', allow_pickle=False)  # ValueError",
-      "expected": "Either format-aware writing keyed on extension (mirroring load), or a UserWarning that a pickle is being written under a non-pickle extension.",
-      "actual": "data.npy magic=b'\\x80\\x04\\x95e' ... INVALID as .npy: ValueError: This file contains pickled (object) data. | data.csv ... UnicodeDecodeError: 'utf-8' codec can't decode byte 0x80 in position 0 | data.mat ... ValueError: Unknown mat file type, version 95, 117 | figure.png: real PNG=False; plt.imread fails: SyntaxError: not a PNG file. All 17 files written as pickle bytes: True (pass 2: all 15 re-tested extensions begin b'\\x80\\x04')",
-      "evidence": [],
-      "docs_impact": ["hypertools/io/save.py", "docs/hypertools.save.rst"]
-    },
-    {
-      "id": "F20-save-003",
-      "severity": "minor",
-      "title": "Round-trip silently returns the WRONG dataset when the saved filename collides with a dataset name (save(x,'iris') -> load('iris') = sklearn iris)",
-      "description": "save() writes to any bare filename, but load()'s resolution chain checks built-in example names and sklearn/seaborn dataset names BEFORE local files. Verified across both passes with three resolver families: after hyp.save(arr, 'iris'), hyp.load('iris') silently returns scikit-learn's iris DataFrame; after hyp.save(arr, 'penguins'), hyp.load('penguins') returns seaborn's penguins (344, 7); after hyp.save(arr, 'weights'), hyp.load('weights') returns the hosted 36-subject fMRI dataset -- never the user's saved data. No error, no warning: silently wrong data. The shadowing is documented in load()'s docstring (and load('./name') recovers the file, verified), but save()'s one-line docstring gives no hint, and save() could easily warn when fname (no path separator, no extension) matches a shadowing dataset name.",
-      "repro": "import numpy as np, os, tempfile, hypertools as hyp\nos.chdir(tempfile.mkdtemp())\narr = np.arange(12.0).reshape(4, 3)\nhyp.save(arr, 'penguins')\nout = hyp.load('penguins')\nprint(type(out), getattr(out, 'shape', None))  # DataFrame (344, 7) -- not arr\nprint(np.array_equal(hyp.load('./penguins'), arr))  # True -- workaround",
-      "expected": "Round-tripping a file you just saved returns your data, or save()/load() warns about the name collision.",
-      "actual": "hyp.load('penguins') -> DataFrame shape=(344, 7); got my file back: False | SHADOWED: load('iris') returned DataFrame (cols ['sepal length (cm)', ...]) instead of the saved array | SHADOWED: load('weights') returned the hosted dataset (list of 36 arrays) | load('./penguins') -> ndarray; got my file back: True",
-      "evidence": [],
-      "docs_impact": ["hypertools/io/save.py"]
-    },
-    {
-      "id": "F20-save-004",
-      "severity": "minor",
-      "title": "hyp.save crashes on the return of hyp.plot(animate=True) (HyperAnimation) with a cryptic internals-leaking error",
-      "description": "hyp.plot(..., animate=True) returns a HyperAnimation, and the io/save.py module docstring says a figure passed to save 'is pickled like any other object' -- but a HyperAnimation is not picklable: hyp.save(anim, 'anim.pkl') raises AttributeError naming the internal local function '_draw.<locals>.update_lines_parallel', with no hint that the supported export path is HyperAnimation.save('anim.gif') (hypertools/plot/hyper_animation.py:59) or hyp.plot(..., save_path=...). Combined with F20-save-001, if the target file already existed it is also destroyed by the failed attempt. A type check with a friendly redirect (or making the error name the fix) would resolve this. Static-figure saves are fine: the pickled hyp.plot Figure round-trips with pixel-identical re-render (md5-identical PNGs in evidence), and plotly figures round-trip with semantically identical JSON.",
-      "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nw = hyp.load('weights_sample')\nret = hyp.plot(w[0][:30], animate=True)\nhyp.save(ret, '/tmp/anim.pkl')  # AttributeError",
-      "expected": "Either a picklable animation handle, or a clear error: 'HyperAnimation objects cannot be pickled; use anim.save(\"file.gif\"/\"file.mp4\") or hyp.plot(..., save_path=...) to export.'",
-      "actual": "animate=True returned: <class 'hypertools.plot.hyper_animation.HyperAnimation'> | animation save FAILED: AttributeError: Can't get local object '_draw.<locals>.update_lines_parallel' (identical in both passes)",
-      "evidence": ["evidence/F20-save/w4_fig_before_save.png", "evidence/F20-save/w4_fig_after_reload.png"],
-      "docs_impact": ["hypertools/io/save.py"]
-    },
-    {
-      "id": "F20-save-005",
-      "severity": "minor",
-      "title": "save() accepts **kwargs but silently ignores all of them (protocol=, compression=, typos)",
-      "description": "save(obj, fname, **kwargs) swallows every keyword argument without effect or warning. Verified: hyp.save(arr, f, protocol=0) still writes a protocol-4 pickle (file byte-identical to the default; a protocol-0 pickle would be ASCII); compression='gzip' writes an uncompressed pickle (magic b'\\x80\\x04', not gzip's b'\\x1f\\x8b'); format='csv', fmt='npy', and typo kwargs (fnme='oops.pkl', overwrite=False) are accepted silently. A user who explicitly requests protocol=2 for compatibility with an older Python silently gets protocol-4/5 files that their target environment may not read. Either forward kwargs to pickle.dump (protocol/fix_imports/buffer_callback are the natural ones) or drop **kwargs so typos raise TypeError.",
-      "repro": "import numpy as np, hypertools as hyp\nhyp.save(np.arange(5), '/tmp/p0.pkl', protocol=0)\nprint(open('/tmp/p0.pkl', 'rb').read(2))  # b'\\x80\\x04' -- protocol arg ignored\nhyp.save(np.arange(5), '/tmp/gz.pkl', compression='gzip', fnme='typo')  # no error",
-      "expected": "protocol= forwarded to pickle.dump (file starts with protocol-0 ASCII opcodes); unknown kwargs raise TypeError.",
-      "actual": "kwargs ignored: default=b'\\x80\\x04' protocol=0->b'\\x80\\x04' (same bytes: True); compression/format/fmt accepted silently: b'\\x80\\x04' | pass 1: typo kwargs fnme= and overwrite=False accepted silently, no error",
-      "evidence": [],
-      "docs_impact": ["hypertools/io/save.py"]
-    },
-    {
-      "id": "F20-save-006",
-      "severity": "minor",
-      "title": "save() does not expand '~' or environment variables although load() does (asymmetric path handling)",
-      "description": "load() applies expanduser(expandvars(...)) to paths (load.py:292), but save() passes fname straight to open(). Verified in both passes: hyp.save(arr, '~/f.pkl') raises FileNotFoundError: [Errno 2] No such file or directory: '~/...' and hyp.save(arr, '$TMPDIR/f20save_env.pkl') likewise -- while hyp.load resolves both forms. So the natural pair save(x, '~/data.pkl') / load('~/data.pkl') fails on the save half. (If a literal '~' directory existed in cwd, the file would even be written there, diverging from where load looks.) One-line fix: open(os.path.expanduser(os.path.expandvars(fname)), 'wb') for str/bytes fnames.",
-      "repro": "import numpy as np, hypertools as hyp\nhyp.save(np.arange(3), '~/f20_tilde.pkl')  # FileNotFoundError; hyp.load('~/f20_tilde.pkl') would have expanded",
-      "expected": "save() resolves '~' and '$VARS' exactly like load() so save/load pairs are symmetric.",
-      "actual": "tilde path save: FileNotFoundError: [Errno 2] No such file or directory: '~/f20save_tilde_test.pkl' | envvar path save: FileNotFoundError: [Errno 2] No such file or directory: '$TMPDIR/f20save_env.pkl'",
-      "evidence": [],
-      "docs_impact": ["hypertools/io/save.py"]
-    },
-    {
-      "id": "F20-save-007",
-      "severity": "doc",
-      "title": "save() docstring is a single line: no Parameters/Returns/Examples, **kwargs undocumented, and the Sphinx API page inherits the bare line",
-      "description": "help(hyp.save) renders in full as: \"save(obj, fname, **kwargs)\\n    Pickle `obj` to `fname`.\" -- no numpydoc sections, no statement of accepted obj types, no overwrite/truncation semantics, no round-trip example, no pointer to hyp.load or to plot(save_path=)/HyperAnimation.save for figure export, and no mention of what **kwargs does (nothing -- F20-save-005). Every sibling public API function (load, plot, reduce, align...) carries a full numpydoc docstring; docs/hypertools.save.rst autofunctions save, so the rendered API page (verified in docs/_build/html_qc/hypertools.save.html) shows only '<dd><p>Pickle <cite>obj</cite> to <cite>fname</cite>.</p></dd>'. The important pickle-security caveat lives only in the module docstring, which autofunction does not render -- shipped docs never warn users that saved files are pickles with pickle's trust model. There are no docstring examples to execute (verified), so the release docs ship a public function with effectively no documentation.",
-      "repro": "import hypertools as hyp, pydoc\nprint(pydoc.render_doc(hyp.save, renderer=pydoc.plaintext))\n# and: sed -n '355,375p' docs/_build/html_qc/hypertools.save.html",
-      "expected": "Numpydoc docstring with Parameters (obj, fname), Returns (None), overwrite/truncate semantics, security note, a save->load example, and a See Also pointing at load / plot(save_path=).",
-      "actual": "Python Library Documentation: function save in module hypertools.io.save\\n\\nsave(obj, fname, **kwargs)\\n    Pickle `obj` to `fname`. || rendered page body: <dd><p>Pickle <cite>obj</cite> to <cite>fname</cite>.</p></dd>",
-      "evidence": [],
-      "docs_impact": ["hypertools/io/save.py", "docs/hypertools.save.rst", "docs/api.rst"]
-    },
-    {
-      "id": "F20-save-008",
-      "severity": "doc",
-      "title": "Stale module-docstring NOTE: says the format-aware figure exporter 'comes later' / 'lands in Plan 6', but it has already landed",
-      "description": "hypertools/io/save.py's module docstring states: 'NOTE: figure/animation export (png/pdf/svg/html/gif/mp4) is NOT handled here -- it depends on the plot backends and lands in Plan 6 (plot). A figure passed here is pickled like any other object; the format-aware exporter comes later.' The exporter now exists: hyp.plot has save_path= in its signature (plot.py:173), and HyperAnimation.save (hyper_animation.py:59) chooses a writer by file extension. The forward-looking planning language ('Plan 6', 'comes later') is stale for a 1.0 release and should instead point users at the existing export paths. Also 'pickled like any other object' is false for animations (F20-save-004).",
-      "repro": "sed -n '7,9p' /Users/jmanning/hypertools/hypertools/io/save.py; grep -n 'save_path' /Users/jmanning/hypertools/hypertools/plot/plot.py | head -1; grep -n 'def save' /Users/jmanning/hypertools/hypertools/plot/hyper_animation.py",
-      "expected": "Module note reads e.g.: 'figure/animation export is handled by hyp.plot(..., save_path=...) and HyperAnimation.save(); a figure passed here is pickled instead.'",
-      "actual": "save.py lines 7-9: 'it depends on the plot backends and lands in Plan 6 (plot). A figure passed here is pickled like any other object; the format-aware exporter comes later.' -- while plot.py line 173 already has 'save_path=None' and hyper_animation.py:59 implements extension-driven save().",
-      "evidence": [],
-      "docs_impact": ["hypertools/io/save.py"]
-    },
-    {
-      "id": "F20-save-009",
-      "severity": "enhancement",
-      "title": "No format-aware saving despite format-rich load: save cannot write CSV/npy/parquet/etc., and does not create missing parent directories",
-      "description": "hyp.load parses .npy/.npz/.csv/.tsv/.txt/.json/.parquet/.mat/.xlsx/.xls plus pickles, but hyp.save can only pickle -- there is no extension dispatch, so users must fall back to pandas/numpy for interoperable outputs, and any extension they pass is misleading (F20-save-002). Additionally, saving into a nonexistent nested directory raises a bare FileNotFoundError ('[Errno 2] No such file or directory: .../a/b/c/out.pkl') rather than creating parents; other misuse errors are bare builtins too, most cryptically int fname -> 'OSError: [Errno 9] Bad file descriptor' (open() treats ints as OS file descriptors). Suggested 1.x enhancement: extension-driven writers mirroring load's readers, parent-directory creation (or an opt-in mkdir=True) or a HypertoolsIOError naming the missing directory, a TypeError for int fname, and atomic writes (F20-save-001).",
-      "repro": "import numpy as np, hypertools as hyp\nhyp.save(np.arange(3), '/tmp/f20_new_dir/a/b/x.pkl')  # FileNotFoundError, no mkdir\nhyp.save(np.arange(3), 987)  # OSError: [Errno 9] Bad file descriptor\n# and no way to produce a real CSV: hyp.save(df, 'x.csv') pickles (see F20-save-002)",
-      "expected": "save(df, 'x.csv') writes real CSV (etc., mirroring load); parent directories created or clearly diagnosed; non-path fname types rejected with TypeError.",
-      "actual": "nested nonexistent dirs: FileNotFoundError: [Errno 2] No such file or directory: '.../a/b/c/out.pkl' | int fname (fd semantics!): OSError: [Errno 9] Bad file descriptor | all extensions produce pickle bytes (magic b'\\x80\\x04')",
-      "evidence": [],
-      "docs_impact": ["hypertools/io/save.py", "docs/hypertools.save.rst"]
-    },
-    {
-      "id": "F20-save-010",
-      "severity": "style",
-      "title": "Shipped test suite never round-trips hyp.save through hyp.load",
-      "description": "tests/io/test_save.py contains only two tests: one saves an array and reloads it with raw pickle.load (not hyp.load), the other only checks hyp.save is callable and the file exists (re-run in pass 2: '2 passed in 1.97s'). No shipped test covers the save->hyp.load round-trip, DataFrame/index/dtype fidelity, list-of-arrays, fitted-model persistence, or any failure path -- the pairing where the shadowing (F20-save-003), data-loss (F20-save-001), and Pipeline (F20-save-011) behaviors live is untested. Not a runtime defect; filed for release-hardening visibility.",
-      "repro": "cat /Users/jmanning/hypertools/tests/io/test_save.py",
-      "expected": "At least one test asserting hyp.load(hyp.save(...)) returns the exact object (values, dtype, index/columns), plus a fitted-model round-trip test.",
-      "actual": "test_save_roundtrips_array uses 'with open(fname, \"rb\") as f: loaded = pickle.load(f)' and 'np.allclose' only; test_hyp_save_and_io_exposed only asserts os.path.exists(fname).",
-      "evidence": [],
-      "docs_impact": []
-    },
-    {
-      "id": "F20-save-011",
-      "severity": "major",
-      "title": "hyp.save cannot save a fitted hypertools.Pipeline (or any plot/analyze return_model result containing one) -- lambdas in _make_stage_step make every Pipeline unpicklable",
-      "description": "save.py's module docstring says save() 'pickles a hypertools result (array / DataFrame / list / fitted model)', and hyp.plot's docstring advertises the return_model=True dict's 'pipeline' as 'reusable via hyp.plot(new_data, pipeline=...)'. But hypertools.core.pipeline._make_stage_step (pipeline.py:420-448) builds every stage step as a _DispatchStep wrapping a module-local lambda (e.g. `lambda data, m: _reduce(data, reduce=m, ndims=ndims, ...)`), so pickling ANY Pipeline -- and therefore the entire return_model dict -- raises `AttributeError: Can't get local object '_make_stage_step.<locals>.<lambda>'`. A scientist who fits a pipeline on session-1 data cannot persist it for session 2; the cross-session reuse story breaks exactly at the save step, with a cryptic internals-leaking error (and, per F20-save-001, destruction of any existing file at the target path). Per-key isolation proved every other return_model component pickles fine (fig: Figure OK, models: dict OK, xform_data: list OK, animation/predict: None OK); only 'pipeline' fails. The standalone fitted Reducer DOES pickle and reproduces transforms on new data exactly (verified), so this is specific to the Pipeline stage wrappers. Fix: replace the lambdas with module-level functions or functools.partial over module-level callables (or implement __reduce__ on _DispatchStep).",
-      "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nw = hyp.load('weights_sample')\nout = hyp.plot(w, reduce='PCA', ndims=3, return_model=True)\nhyp.save(out['pipeline'], '/tmp/pipe.pkl')  # AttributeError\n# hyp.save(out, '/tmp/model.pkl')  # same failure via the dict",
-      "expected": "Pipeline (and the whole return_model dict) saves and reloads, so `hyp.plot(new_data, pipeline=hyp.load('/tmp/pipe.pkl'))` works across sessions, matching the 'fitted model' claim in save.py's docstring.",
-      "actual": "return_model dict save FAILED: AttributeError: Can't get local object '_make_stage_step.<locals>.<lambda>' | isolation: save(out['pipeline']) type=Pipeline: AttributeError: Can't get local object '_make_stage_step.<locals>.<lambda>'; all five other keys saved OK",
-      "evidence": [],
-      "docs_impact": ["hypertools/io/save.py", "hypertools/core/pipeline.py", "hypertools/plot/plot.py"]
-    },
-    {
-      "id": "F20-save-012",
-      "severity": "doc",
-      "title": "Cross-unit (load) doc inaccuracies hit during save round-trips: 'spiral' is a list of two arrays (docstring says 'numpy array'); legacy=True on a 1.0-saved pickle misdiagnoses it as 'deepdish/HDF5-format'",
-      "description": "(1) load()'s docstring: '`spiral` is numpy array containing data for a 3D spiral' -- actually hyp.load('spiral') returns a list of 2 arrays, each (1000, 3); np.asarray on it is 3-D and crashes downstream reducers ('ValueError: Found array with dim 3, while dim <= 2 is required by PCA'). (2) hyp.load(path, legacy=True) on a pickle that hyp.save just wrote raises HypertoolsIOError asserting 'This looks like a legacy (<1.0) deepdish/HDF5-format dataset' without any content check -- a misleading diagnosis for a modern pickle (the flag forces the legacy path unconditionally). Both verified by real runs during this audit; primary ownership belongs to the F-load unit but recorded here since they surfaced in save round-trip flows.",
-      "repro": "import numpy as np, hypertools as hyp\ns = hyp.load('spiral'); print(type(s), [np.asarray(x).shape for x in s])\nhyp.save(np.eye(3), '/tmp/modern.pkl')\nhyp.load('/tmp/modern.pkl', legacy=True)  # HypertoolsIOError about deepdish/HDF5",
-      "expected": "(1) docstring: 'a list of two (1000, 3) arrays'; (2) legacy loader sniffs for an actual HDF5/deepdish payload (or the message hedges) before asserting the file's format.",
-      "actual": "<class 'list'> 2 / [(1000, 3), (1000, 3)] | legacy=True on 1.0 pickle: HypertoolsIOError: This looks like a legacy (<1.0) deepdish/HDF5-format dataset. Reading it needs the `deepdish` package...",
-      "evidence": [],
-      "docs_impact": ["hypertools/io/load.py"]
-    }
-  ]
+ "unit": "F20-save",
+ "target": "hypertools.save / hypertools/io/save.py (round-trips with hypertools.load, hypertools/io/load.py local-file path) @ branch audit/release-1.0-2026-07",
+ "brainstormed_edge_cases": [
+  "array round-trip exact values+dtype (float64) [tested]",
+  "dtype preservation: float32/int8/uint16/complex128/bool/datetime64/object [tested]",
+  "DataFrame mixed dtypes (int/float32/category/datetime/NaN) + named index exact [tested]",
+  "MultiIndex DataFrame with named row/column indexes [tested]",
+  "list of arrays round-trip [tested]",
+  "dict bundle of heterogeneous results (arrays/lists/dict/DataFrame) [tested]",
+  "every load-supported extension: .pkl .pickle .p .geo .npy .npz .csv .tsv .txt .json .parquet .mat .xlsx + unknown .xyz + no extension [tested]",
+  "external-tool interop of extension-masquerading files (np.load on .npy, pd.read_csv on .csv) [tested]",
+  "extension-driven format inference on save (none exists: always pickle) [tested]",
+  "round-trip relies on pickle magic-byte sniffing, not extension [tested]",
+  "nested nonexistent directories (no auto-mkdir) [tested]",
+  "overwrite semantics (silent replace) [tested]",
+  "failed save over an existing good file (truncate-on-open data loss) [tested]",
+  "partial/corrupt file left behind by failed save (0-byte and mid-dump 65KB cases) [tested]",
+  "path with spaces and unicode filename [tested]",
+  "pathlib.Path and bytes fname [tested]",
+  "relative path round-trip [tested]",
+  "~ (expanduser) and $VAR (expandvars) asymmetry between save and load [tested]",
+  "fname=None / directory-as-fname / read-only dir / swapped args error quality [tested]",
+  "unpicklable objects: lambda, open file handle [tested]",
+  "**kwargs silently ignored: protocol=0, compress=True, format='npy', typo kwargs [tested]",
+  "matplotlib Figure round-trip incl. hue/legend/title with pixel comparison [tested]",
+  "return of hyp.plot() saved and reloaded [tested]",
+  "HyperAnimation (hyp.plot animate=True return) save [tested]",
+  "plotly go.Figure round-trip semantic equality [tested]",
+  "fitted sklearn PCA and fitted hyp.Pipeline round-trip -> identical transforms [tested]",
+  "hyp.cluster labels round-trip then reuse as hue in new plot [tested]",
+  "hosted-dataset workflow: weights_sample -> analyze(PCA+hyperalign) -> save -> load -> plot [tested]",
+  "objects exposing get_data() mangled by load (matplotlib Line2D) [tested]",
+  "empty array / empty DataFrame / [] / {} / None / scalar / str round-trip [tested]",
+  "structured array, masked array, scipy.sparse csr round-trip [tested]",
+  "~10 MB array round-trip [tested]",
+  "truncated/corrupted .pkl load error-message quality (garbage-after-header and 0-byte) [tested]",
+  "saving to a bare filename that shadows a sklearn/seaborn dataset name ('iris') then loading by name [tested]",
+  "pickle protocol default used by save (observed protocol 4 on py3.12) [tested]",
+  ">4 GB object (pickle protocol-4 large-frame path) [untested: too large for audit machine]",
+  "concurrent saves to the same path from two processes [untested]",
+  "saving a streaming IterableDataset from hyp.load(streaming=True) [untested]",
+  "integer file-descriptor as fname (open(int) semantics) [untested: obscure]",
+  "cross-version round-trip (load this pickle under older numpy/pandas env) [untested: no second env]"
+ ],
+ "tested": [
+  {
+   "case": "W1-reduce-save-reload",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case W1-reduce-save-reload",
+   "output_excerpt": "list of 3 x ndarray exact round-trip",
+   "evidence": []
+  },
+  {
+   "case": "W2-dataframe-exact",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case W2-dataframe-exact",
+   "output_excerpt": "mixed-dtype DataFrame exact (dtypes=['int64', 'float32', 'category', 'datetime64[us]', 'float64'])",
+   "evidence": []
+  },
+  {
+   "case": "W3-fitted-model",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case W3-fitted-model",
+   "output_excerpt": "fitted PCA model: identical transform after round-trip",
+   "evidence": []
+  },
+  {
+   "case": "W4-hyp-plot-figure",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case W4-hyp-plot-figure",
+   "output_excerpt": "hyp.plot Figure round-trip; pixel diff frac=0.000000",
+   "evidence": [
+    "w4_fig_before.png",
+    "w4_fig_after.png"
+   ]
+  },
+  {
+   "case": "W5-dict-bundle",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case W5-dict-bundle",
+   "output_excerpt": "dict bundle (list/array/dict/DataFrame) exact",
+   "evidence": []
+  },
+  {
+   "case": "W6-cluster-labels",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case W6-cluster-labels",
+   "output_excerpt": "cluster labels (list) round-trip + replot ok",
+   "evidence": [
+    "w6_replot_with_loaded_labels.png"
+   ]
+  },
+  {
+   "case": "E-ext-.pkl",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-ext-.pkl",
+   "output_excerpt": "round-trip exact; file magic=b'\\x80\\x04' (pickle, not .pkl format)",
+   "evidence": []
+  },
+  {
+   "case": "E-ext-.pickle",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-ext-.pickle",
+   "output_excerpt": "round-trip exact; file magic=b'\\x80\\x04' (pickle, not .pickle format)",
+   "evidence": []
+  },
+  {
+   "case": "E-ext-.p",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-ext-.p",
+   "output_excerpt": "round-trip exact; file magic=b'\\x80\\x04' (pickle, not .p format)",
+   "evidence": []
+  },
+  {
+   "case": "E-ext-.geo",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-ext-.geo",
+   "output_excerpt": "round-trip exact; file magic=b'\\x80\\x04' (pickle, not .geo format)",
+   "evidence": []
+  },
+  {
+   "case": "E-ext-.npy",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-ext-.npy",
+   "output_excerpt": "round-trip exact; file magic=b'\\x80\\x04' (pickle, not .npy format)",
+   "evidence": []
+  },
+  {
+   "case": "E-ext-.npz",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-ext-.npz",
+   "output_excerpt": "round-trip exact; file magic=b'\\x80\\x04' (pickle, not .npz format)",
+   "evidence": []
+  },
+  {
+   "case": "E-ext-.csv",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-ext-.csv",
+   "output_excerpt": "round-trip exact; file magic=b'\\x80\\x04' (pickle, not .csv format)",
+   "evidence": []
+  },
+  {
+   "case": "E-ext-.tsv",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-ext-.tsv",
+   "output_excerpt": "round-trip exact; file magic=b'\\x80\\x04' (pickle, not .tsv format)",
+   "evidence": []
+  },
+  {
+   "case": "E-ext-.txt",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-ext-.txt",
+   "output_excerpt": "round-trip exact; file magic=b'\\x80\\x04' (pickle, not .txt format)",
+   "evidence": []
+  },
+  {
+   "case": "E-ext-.json",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-ext-.json",
+   "output_excerpt": "round-trip exact; file magic=b'\\x80\\x04' (pickle, not .json format)",
+   "evidence": []
+  },
+  {
+   "case": "E-ext-.parquet",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-ext-.parquet",
+   "output_excerpt": "round-trip exact; file magic=b'\\x80\\x04' (pickle, not .parquet format)",
+   "evidence": []
+  },
+  {
+   "case": "E-ext-.mat",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-ext-.mat",
+   "output_excerpt": "round-trip exact; file magic=b'\\x80\\x04' (pickle, not .mat format)",
+   "evidence": []
+  },
+  {
+   "case": "E-ext-.xlsx",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-ext-.xlsx",
+   "output_excerpt": "round-trip exact; file magic=b'\\x80\\x04' (pickle, not .xlsx format)",
+   "evidence": []
+  },
+  {
+   "case": "E-ext-.xyz",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-ext-.xyz",
+   "output_excerpt": "round-trip exact; file magic=b'\\x80\\x04' (pickle, not .xyz format)",
+   "evidence": []
+  },
+  {
+   "case": "E-ext-none",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-ext-none",
+   "output_excerpt": "round-trip exact; file magic=b'\\x80\\x04' (pickle, not no-ext format)",
+   "evidence": []
+  },
+  {
+   "case": "E-npy-external-numpy",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-npy-external-numpy",
+   "output_excerpt": "[demonstrates F20-save-002] Traceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/run_audit.py\", line 154, in e_npy_external\n    np.load(fname)\n  File \"/Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/numpy/lib/_npyio_impl.py\", line 489, in load\n    raise ValueError(\nValueError: This file contains pickled (object) data. If you trust the file you can load it unsafely using the `allow_pickle=` keyword argument or `pickle.load()`.\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4c",
+   "evidence": []
+  },
+  {
+   "case": "E-csv-external-pandas",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case E-csv-external-pandas",
+   "output_excerpt": "[demonstrates F20-save-002] Traceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/run_audit.py\", line 163, in e_csv_external\n    df = pd.read_csv(fname)\n         ^^^^^^^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/pandas/io/parsers/readers.py\", line 873, in read_csv\n    return _read(filepath_or_buffer, kwds)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/pandas/io/parsers/readers.py\", line 300, in _read\n    parser = TextFileReader(filepath_or_buffer, **kwds)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  F",
+   "evidence": []
+  },
+  {
+   "case": "D-dtypes",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case D-dtypes",
+   "output_excerpt": "dtypes exact: ['float32', 'int8', 'uint16', 'complex128', 'bool', 'datetime64[D]', 'object']",
+   "evidence": []
+  },
+  {
+   "case": "D-structured-masked-sparse",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case D-structured-masked-sparse",
+   "output_excerpt": "structured + masked + csr sparse exact",
+   "evidence": []
+  },
+  {
+   "case": "D-multiindex",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case D-multiindex",
+   "output_excerpt": "MultiIndex DataFrame exact (index+column names preserved)",
+   "evidence": []
+  },
+  {
+   "case": "D-empty-and-scalars",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case D-empty-and-scalars",
+   "output_excerpt": "empty arr/df/list/dict + None + scalar + str exact",
+   "evidence": []
+  },
+  {
+   "case": "X-nested-missing-dirs",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case X-nested-missing-dirs",
+   "output_excerpt": "raises raw FileNotFoundError (no auto-mkdir, unbranded): [Errno 2] No such file or directory: '/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/files/no/such/dir/data.pkl'",
+   "evidence": []
+  },
+  {
+   "case": "X-overwrite",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case X-overwrite",
+   "output_excerpt": "silently overwrites (size 172->8152); no warning/backup",
+   "evidence": []
+  },
+  {
+   "case": "X-spaces-unicode",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case X-spaces-unicode",
+   "output_excerpt": "paths with spaces + unicode filename round-trip",
+   "evidence": []
+  },
+  {
+   "case": "X-pathlib",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case X-pathlib",
+   "output_excerpt": "pathlib.Path fname works for save and load",
+   "evidence": []
+  },
+  {
+   "case": "X-relative-path",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case X-relative-path",
+   "output_excerpt": "relative path round-trip from cwd",
+   "evidence": []
+  },
+  {
+   "case": "X-name-shadowing-iris",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case X-name-shadowing-iris",
+   "output_excerpt": "hyp.load('iris') returns sklearn iris DataFrame, NOT the file just saved as 'iris' (documented shadowing; absolute path recovers it)",
+   "evidence": []
+  },
+  {
+   "case": "X-dir-as-fname",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case X-dir-as-fname",
+   "output_excerpt": "raw IsADirectoryError: [Errno 21] Is a directory: '/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/files'",
+   "evidence": []
+  },
+  {
+   "case": "X-none-fname",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case X-none-fname",
+   "output_excerpt": "raw TypeError: expected str, bytes or os.PathLike object, not NoneType",
+   "evidence": []
+  },
+  {
+   "case": "X-readonly-dir",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case X-readonly-dir",
+   "output_excerpt": "raw PermissionError: [Errno 13] Permission denied: '/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/files/readonly_dir/f.pkl'",
+   "evidence": []
+  },
+  {
+   "case": "K-kwargs-silently-ignored",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case K-kwargs-silently-ignored",
+   "output_excerpt": "ALL kwargs silently ignored: protocol=0/compress/format='npy'/banana=42 produce byte-identical pickle; no error, no warning",
+   "evidence": []
+  },
+  {
+   "case": "K-unpicklable-lambda",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case K-unpicklable-lambda",
+   "output_excerpt": "AttributeError: Can't get local object 'k_unpicklable.<locals>.<lambda>'",
+   "evidence": []
+  },
+  {
+   "case": "K-unpicklable-filehandle",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case K-unpicklable-filehandle",
+   "output_excerpt": "TypeError: cannot pickle 'BufferedReader' instances",
+   "evidence": []
+  },
+  {
+   "case": "K-swapped-args",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case K-swapped-args",
+   "output_excerpt": "TypeError: expected str, bytes or os.PathLike object, not ndarray",
+   "evidence": []
+  },
+  {
+   "case": "G-getdata-mangling",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case G-getdata-mangling",
+   "output_excerpt": "[demonstrates F20-save-004] Traceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/run_audit.py\", line 21, in case\n    detail = fn()\n             ^^^^\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/run_audit.py\", line 366, in g_getdata\n    raise AssertionError(\nAssertionError: saved Line2D, load returned tuple: (array([1, 2, 3]), array([4, 5, 6])) (load calls .get_data() on ANY object exposing it)\n",
+   "evidence": []
+  },
+  {
+   "case": "F-animation-save",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case F-animation-save",
+   "output_excerpt": "[demonstrates F20-save-003] Traceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/run_audit.py\", line 378, in f_hyper_animation\n    hyp.save(res, P(\"anim.pkl\"))\n  File \"/Users/jmanning/hypertools/hypertools/io/save.py\", line 22, in save\n    pickle.dump(obj, f)\nAttributeError: Can't get local object '_draw.<locals>.update_lines_parallel'\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/run_audit.py\", line 21, in case\n    detail = fn()\n         ",
+   "evidence": []
+  },
+  {
+   "case": "F-plotly-figure",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case F-plotly-figure",
+   "output_excerpt": "[string-order false alarm; resolved as NO DEFECT by F-plotly-semantic (pass)] Traceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/run_audit.py\", line 21, in case\n    detail = fn()\n             ^^^^\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/run_audit.py\", line 393, in f_plotly_fig\n    assert out.to_json() == fig.to_json()\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n",
+   "evidence": []
+  },
+  {
+   "case": "F-figure-legend-visual",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case F-figure-legend-visual",
+   "output_excerpt": "hue+legend+title Figure round-trip pixel-identical (frac=0.000000)",
+   "evidence": [
+    "f_legend_before.png",
+    "f_legend_after.png"
+   ]
+  },
+  {
+   "case": "L-pickle-protocol",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case L-pickle-protocol",
+   "output_excerpt": "pickle header bytes=b'\\x80\\x04' (protocol 4)",
+   "evidence": []
+  },
+  {
+   "case": "L-10MB-array",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit.py  # case L-10MB-array",
+   "output_excerpt": "~10MB array exact (10000164 bytes)",
+   "evidence": []
+  },
+  {
+   "case": "F-plotly-semantic",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit2.py  # case F-plotly-semantic",
+   "output_excerpt": "plotly Figure round-trip semantically identical (to_json dicts equal; raw to_json string differs only in layout.template key order)",
+   "evidence": []
+  },
+  {
+   "case": "DOC-docstring-content",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit2.py  # case DOC-docstring-content",
+   "output_excerpt": "hyp.save.__doc__ = 'Pickle `obj` to `fname`.' -- NO examples, NO Parameters/Returns sections",
+   "evidence": []
+  },
+  {
+   "case": "X-save-tilde-no-expansion",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit2.py  # case X-save-tilde-no-expansion",
+   "output_excerpt": "save does NOT expanduser: FileNotFoundError: [Errno 2] No such file or directory: '~/f20_audit_should_not_exist.pkl'",
+   "evidence": []
+  },
+  {
+   "case": "X-envvar-asymmetry",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit2.py  # case X-envvar-asymmetry",
+   "output_excerpt": "ASYMMETRY: hyp.load('$VAR/f.pkl') expands and loads fine, but hyp.save(obj, '$VAR/f.pkl') -> FileNotFoundError: [Errno 2] No such file or directory: '$F20AUD/envvar2.pkl'",
+   "evidence": []
+  },
+  {
+   "case": "X-truncated-pickle-load-message",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit2.py  # case X-truncated-pickle-load-message",
+   "output_excerpt": "HypertoolsIOError: Failed to load DataGeometry object from /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/files/truncated.pkl. If truncated.pkl was created with hypertools<0.8.0, pass legacy=True to load it.",
+   "evidence": []
+  },
+  {
+   "case": "X-halfwritten-pickle-load-message",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit2.py  # case X-halfwritten-pickle-load-message",
+   "output_excerpt": "HypertoolsIOError: Failed to load DataGeometry object from /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/files/halfwritten.pkl. If halfwritten.pkl was created with hypertools<0.8.0, pass legacy=True to load it.",
+   "evidence": []
+  },
+  {
+   "case": "X-load-nonexistent-pkl-message",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit2.py  # case X-load-nonexistent-pkl-message",
+   "output_excerpt": "HypertoolsIOError: could not load '/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/files/no_such_file_xyz.pkl'. Tried, in order:\n  - scikit-learn bundled dataset: not one of ['breast_cancer', 'diabetes', 'digits', 'iris', 'linnerud', 'wine']\n  - seaborn dataset: not found via seaborn.get_dataset_names() (or that lookup failed, e.g. no network access)\n  - local file: not found at /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/files/no_such_file_xyz.pkl",
+   "evidence": []
+  },
+  {
+   "case": "W7-hosted-analyze-save-reload",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit2.py  # case W7-hosted-analyze-save-reload",
+   "output_excerpt": "weights_sample -> analyze(PCA+hyper) -> save -> load exact (3 x ndarray); replot saved",
+   "evidence": [
+    "w7_weights_analyzed_reloaded.png"
+   ]
+  },
+  {
+   "case": "W8-pipeline-roundtrip",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit2.py  # case W8-pipeline-roundtrip",
+   "output_excerpt": "fitted hyp.Pipeline round-trip; transform outputs match (Pipeline)",
+   "evidence": []
+  },
+  {
+   "case": "X-bytes-fname",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit2.py  # case X-bytes-fname",
+   "output_excerpt": "bytes fname accepted by save (open() semantics)",
+   "evidence": []
+  },
+  {
+   "case": "K-return-value",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit2.py  # case K-return-value",
+   "output_excerpt": "save returns None (undocumented; docstring has no Returns section)",
+   "evidence": []
+  },
+  {
+   "case": "X-failed-save-destroys-existing-file",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit3.py  # case X-failed-save-destroys-existing-file",
+   "output_excerpt": "[demonstrates F20-save-001] Traceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/run_audit3.py\", line 16, in case\n    detail = fn()\n             ^^^^\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/run_audit3.py\", line 52, in destructive_overwrite\n    raise AssertionError(\"DATA LOSS: \" + detail)\nAssertionError: DATA LOSS: save raised [TypeError: cannot pickle 'BufferedReader' instances]; file size 8152 -> 0; old file NO LONGER LOADABLE: EOFError: Ran out of input\n",
+   "evidence": []
+  },
+  {
+   "case": "X-failed-save-partial-file",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit3.py  # case X-failed-save-partial-file",
+   "output_excerpt": "[demonstrates F20-save-001] Traceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/run_audit3.py\", line 16, in case\n    detail = fn()\n             ^^^^\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/run_audit3.py\", line 67, in partial_file_left\n    raise AssertionError(\nAssertionError: failed save leaves partial file behind: /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/files/brand_new.pkl exists, 0 bytes (later hyp.load of it would fail or return garbage)\n",
+   "evidence": []
+  },
+  {
+   "case": "X-partial-file-load-attempt",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit3.py  # case X-partial-file-load-attempt",
+   "output_excerpt": "[demonstrates F20-save-001/007] Traceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/run_audit3.py\", line 78, in partial_file_loadable\n    out = hyp.load(f)\n          ^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/io/load.py\", line 297, in load\n    geo_data = _load_local(dataset_path)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/io/load.py\", line 345, in _load_local\n    geo_data = pickle.loads(raw)\n               ^^^^^^^^^^^^^^^^^\nEOFError: Ran out of input\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"",
+   "evidence": []
+  },
+  {
+   "case": "X-failed-anim-save-partial",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python run_audit3.py  # case X-failed-anim-save-partial",
+   "output_excerpt": "[demonstrates F20-save-001] Traceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/run_audit3.py\", line 16, in case\n    detail = fn()\n             ^^^^\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F20-save/run_audit3.py\", line 100, in anim_partial\n    raise AssertionError(f\"failed animation save leaves {size}-byte partial file\")\nAssertionError: failed animation save leaves 65549-byte partial file\n",
+   "evidence": []
+  }
+ ],
+ "findings": [
+  {
+   "id": "F20-save-001",
+   "severity": "major",
+   "title": "Failed save destroys the pre-existing file at that path (truncate-on-open, no atomic write)",
+   "description": "save() opens fname with open(fname, 'wb') BEFORE pickling, so the target file is truncated to 0 bytes first. If pickle.dump then fails (any unpicklable member: open file handle, lambda, locally-defined function, HyperAnimation...), the user's previous good file at that path is destroyed. Verified: an 8152-byte file previously written by hyp.save was truncated to 0 bytes by a failed re-save and became unloadable (EOFError: Ran out of input). Failed saves to new paths also leave corrupt partial files behind (0 bytes for early failures; 65549 bytes for a HyperAnimation that failed mid-dump), which later hyp.load calls trip over. Realistic scenario: a scientist re-saves an updated results dict over yesterday's results file; one member is unpicklable; the exception also silently destroys yesterday's results. Standard fix: pickle to a temp file (or pickle.dumps to bytes) first, then atomically rename/write.",
+   "repro": "import numpy as np, os, hypertools as hyp\nf = '/tmp/precious_results.pkl'\nhyp.save(np.arange(1000, dtype=float), f)   # yesterday's good results\nprint(os.path.getsize(f))                    # 8152\nbad = {'results': np.arange(1000.), 'log': open('/etc/hosts', 'rb')}\ntry:\n    hyp.save(bad, f)                         # raises TypeError\nexcept Exception as e:\n    print(type(e).__name__, e)\nprint(os.path.getsize(f))                    # 0  <- old file destroyed\nhyp.load(f)                                  # EOFError: Ran out of input",
+   "expected": "A failed save leaves the previous file contents intact (write-to-temp + rename), or at minimum documents that the target is truncated before serialization.",
+   "actual": "CASE X-failed-save-destroys-existing-file: save raised [TypeError: cannot pickle 'BufferedReader' instances]; file size 8152 -> 0; old file NO LONGER LOADABLE: EOFError: Ran out of input | CASE X-failed-anim-save-partial: failed animation save leaves 65549-byte partial file",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F20-save-002",
+   "severity": "minor",
+   "title": "save() writes pickle bytes regardless of extension: .npy/.csv/.json/.xlsx/... files are unreadable by their nominal tools, with no warning",
+   "description": "hyp.save(obj, 'data.npy'|'data.csv'|'data.json'|'data.xlsx'|'data.mat'|'data.parquet'|...) silently writes a pickle. The sibling hyp.load() parses those same extensions properly when reading genuine files, and only round-trips hyp.save output because _load_local sniffs the pickle magic byte (b'\\x80'). External tools fail on the masquerading files: np.load('data.npy') -> ValueError ('This file contains pickled (object) data...'), pd.read_csv('data.csv') -> UnicodeDecodeError ('0x80 in position 0'). A scientist who saves 'results.csv' to share with a collaborator (or Excel/R) gets an unreadable file and no warning. All 15 tested extensions round-trip through hyp.load, so within-hypertools behavior is consistent, but the load/save format asymmetry is a trap. Suggest: warn (or raise) when fname has a known non-pickle data extension, or implement format-aware writing (see F20-save-010).",
+   "repro": "import numpy as np, hypertools as hyp\narr = np.arange(12, dtype=float).reshape(4, 3)\nhyp.save(arr, '/tmp/data.npy')\nprint(open('/tmp/data.npy','rb').read(2))   # b'\\x80\\x04' -- a pickle, not npy\nnp.load('/tmp/data.npy')                     # ValueError\nhyp.save(arr, '/tmp/data.csv')\nimport pandas as pd; pd.read_csv('/tmp/data.csv')  # UnicodeDecodeError",
+   "expected": "Either the file format matches the extension, or save warns/raises for recognized data-format extensions it does not honor.",
+   "actual": "np.load: 'ValueError: This file contains pickled (object) data. If you trust the file you can load it unsafely using the `allow_pickle=` keyword argument or `pickle.load()`.' | pd.read_csv: \"UnicodeDecodeError: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte\" | hyp.load round-trips all 15 extensions exactly (magic=b'\\x80\\x04' each)",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/io/save.py",
+    "docs/hypertools.save.rst"
+   ]
+  },
+  {
+   "id": "F20-save-003",
+   "severity": "minor",
+   "title": "hyp.save of hyp.plot(animate=True) result (HyperAnimation) fails with a cryptic AttributeError and no guidance",
+   "description": "hyp.plot(data, animate=True) returns a HyperAnimation, hypertools' own flagship animated-plot result. Passing it to hyp.save raises AttributeError: \"Can't get local object '_draw.<locals>.update_lines_parallel'\" -- a leaked internal closure name, no mention of the actual problem (animations hold unpicklable callbacks) nor the fix (hyp.plot(..., save_path='anim.gif'/'anim.mp4') works and is the supported path). save.py's module docstring says a figure passed here 'is pickled like any other object' -- true for static Figures (verified pixel-identical round-trip) but the animated result object cannot be saved at all. Also leaves a partial file behind (see F20-save-001).",
+   "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\ndata = np.random.default_rng(5).standard_normal((30, 3)).cumsum(axis=0)\nres = hyp.plot(data, animate=True)   # HyperAnimation\nhyp.save(res, '/tmp/anim.pkl')",
+   "expected": "Either HyperAnimation supports pickling, or hyp.save raises a friendly error naming the object type and pointing at hyp.plot(..., save_path='...gif/.mp4') / HyperAnimation.save().",
+   "actual": "File \"/Users/jmanning/hypertools/hypertools/io/save.py\", line 22, in save\n    pickle.dump(obj, f)\nAttributeError: Can't get local object '_draw.<locals>.update_lines_parallel'",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/io/save.py"
+   ]
+  },
+  {
+   "id": "F20-save-004",
+   "severity": "minor",
+   "title": "Round-trip silently returns a different object for anything exposing .get_data(): saved Line2D comes back as a tuple of arrays",
+   "description": "load() ends with 'return geo_data.get_data() if hasattr(geo_data, \"get_data\") else geo_data' (hypertools/io/load.py line 332), intended for legacy DataGeometry unpickling. But it fires for ANY unpickled object with a get_data attribute. Verified: hyp.save(matplotlib Line2D) then hyp.load returns tuple (array([1,2,3]), array([4,5,6])) instead of the Line2D. Any user class with a get_data() method is likewise silently transformed. This breaks the save/load identity contract with no error or warning. Suggested fix: isinstance(geo_data, DataGeometry) check instead of duck-typed hasattr.",
+   "repro": "import matplotlib; matplotlib.use('Agg')\nimport matplotlib.pyplot as plt, hypertools as hyp\nln, = plt.plot([1, 2, 3], [4, 5, 6])\nhyp.save(ln, '/tmp/line2d.pkl')\nout = hyp.load('/tmp/line2d.pkl')\nprint(type(out))   # <class 'tuple'> -- not Line2D",
+   "expected": "hyp.load returns the same type that was saved (Line2D), or documents which types are transformed.",
+   "actual": "saved Line2D, load returned tuple: (array([1, 2, 3]), array([4, 5, 6]))",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F20-save-005",
+   "severity": "minor",
+   "title": "save() accepts and silently ignores ALL keyword arguments (protocol=, compress=, format=, typos)",
+   "description": "The signature is save(obj, fname, **kwargs) but kwargs are never used. hyp.save(arr, f, protocol=0), compress=True, format='npy', and banana=42 all produce byte-identical default-protocol pickles with no error or warning. A user who requests protocol=0 (or 5, or compression, or a format) believes it took effect. Silent-swallow also hides typos of would-be options. Should either honor protocol (pass through to pickle.dump) or drop **kwargs so unexpected kwargs raise TypeError.",
+   "repro": "import numpy as np, hypertools as hyp\narr = np.arange(12.).reshape(4, 3)\nhyp.save(arr, '/tmp/kw1.pkl')\nhyp.save(arr, '/tmp/kw2.pkl', protocol=0, compress=True, format='npy', banana=42)\nprint(open('/tmp/kw1.pkl','rb').read() == open('/tmp/kw2.pkl','rb').read())  # True",
+   "expected": "Unknown kwargs raise TypeError; protocol= (at least) is honored.",
+   "actual": "CASE K-kwargs-silently-ignored: PASS -- ALL kwargs silently ignored: protocol=0/compress/format='npy'/banana=42 produce byte-identical pickle; no error, no warning",
+   "evidence": [],
+   "docs_impact": [
+    "docs/hypertools.save.rst"
+   ]
+  },
+  {
+   "id": "F20-save-006",
+   "severity": "minor",
+   "title": "save() does not expand ~ or $VARs but load() does: hyp.save(x, '~/results.pkl') fails while hyp.load('~/results.pkl') works",
+   "description": "load() applies expanduser(expandvars(dataset)) (io/load.py line 292); save() passes fname straight to open(). So the natural round-trip pair hyp.save(obj, '~/results.pkl') / hyp.load('~/results.pkl') is asymmetric: the save raises FileNotFoundError on the literal '~' path. Same for $VAR paths (verified both directions with a real env var).",
+   "repro": "import numpy as np, hypertools as hyp\nhyp.save(np.arange(3), '~/f20_audit.pkl')   # FileNotFoundError: '~/f20_audit.pkl'\n# while: hyp.load('~/anything.pkl') expands ~ before resolving",
+   "expected": "save() expands ~ and env vars the same way load() does.",
+   "actual": "CASE X-save-tilde-no-expansion: FileNotFoundError: [Errno 2] No such file or directory: '~/f20_audit_should_not_exist.pkl' | CASE X-envvar-asymmetry: hyp.load('$VAR/f.pkl') expands and loads fine, but hyp.save(obj, '$VAR/f.pkl') -> FileNotFoundError",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F20-save-007",
+   "severity": "minor",
+   "title": "Corrupt/truncated pickle written by hyp.save produces misleading ('DataGeometry ... pass legacy=True') or bare (EOFError) load errors",
+   "description": "Two failure shapes for the save->load round-trip when the file is damaged (interrupted write, disk full -- which save itself can cause, see F20-save-001): (a) a pickle with garbage after the header raises HypertoolsIOError 'Failed to load DataGeometry object from <path>. If <name> was created with hypertools<0.8.0, pass legacy=True to load it.' -- DataGeometry is a pre-1.0 internal concept and legacy=True would not help a 1.0 hyp.save file; the message sends users down a dead end. (b) a 0-byte file raises bare 'EOFError: Ran out of input' with no filename or hypertools context, because io/load.py line 346 only catches pickle.UnpicklingError and EOFError is not a subclass. Suggested: catch Exception around pickle.loads and emit one message naming the path and stating the file appears truncated/corrupted.",
+   "repro": "import hypertools as hyp\nopen('/tmp/trunc.pkl','wb').write(b'\\x80\\x04TRUNC')\nhyp.load('/tmp/trunc.pkl')   # HypertoolsIOError about DataGeometry/legacy=True\nopen('/tmp/empty.pkl','wb').close()\nhyp.load('/tmp/empty.pkl')   # bare EOFError: Ran out of input",
+   "expected": "A single clear error: file appears truncated or corrupted, with the path, and no misleading legacy=True suggestion for files that were never DataGeometry pickles.",
+   "actual": "HypertoolsIOError: Failed to load DataGeometry object from .../truncated.pkl. If truncated.pkl was created with hypertools<0.8.0, pass legacy=True to load it. | EOFError: Ran out of input (0-byte file, no path in message)",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F20-save-008",
+   "severity": "doc",
+   "title": "1.0 public API docs for hypertools.save are a single sentence; kwargs, return value, pickle format, and security warning all undocumented",
+   "description": "hyp.save.__doc__ == 'Pickle `obj` to `fname`.' -- no Parameters, Returns, or Examples sections, unlike every other public hypertools function. docs/hypertools.save.rst is '.. autofunction:: save', so the rendered 1.0 docs page shows only that sentence. Not documented: (a) the accepted obj types (module docstring lists 'array / DataFrame / list / fitted model' but autofunction does not render module docstrings); (b) that **kwargs are accepted-and-ignored (F20-save-005); (c) that the format is always pickle regardless of extension (F20-save-002) and which extensions hyp.load will round-trip; (d) the do-not-unpickle-untrusted-files security note (present only in the module docstring; hyp.load's docstring DOES carry a pickle warning); (e) return value (None). Also the module docstring NOTE says the format-aware exporter 'lands in Plan 6 (plot)' and 'comes later' -- plot(save_path=...) has since landed (plot.py lines 2713-2718), so the internal note is stale for the 1.0 release.",
+   "repro": "/Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp; print(repr(hyp.save.__doc__))\"",
+   "expected": "A numpydoc docstring with Parameters/Returns/Examples, a pickle-security note, and cross-references to hyp.load round-trip behavior and plot(save_path=...) for figures.",
+   "actual": "'Pickle `obj` to `fname`.'",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/io/save.py",
+    "docs/hypertools.save.rst"
+   ]
+  },
+  {
+   "id": "F20-save-009",
+   "severity": "style",
+   "title": "save() surfaces raw unbranded OS/pickle errors while load() wraps failures in HypertoolsIOError; no auto-mkdir for nested paths",
+   "description": "Every save failure mode is a bare builtin exception with no hypertools context or remedy: missing parent dirs -> FileNotFoundError (no auto-mkdir and no hint to create them); directory as fname -> IsADirectoryError; read-only dir -> PermissionError; fname=None or swapped args -> TypeError 'expected str, bytes or os.PathLike object, not ndarray'; unpicklable obj -> AttributeError/TypeError from pickle internals. The sibling load() wraps its failures in HypertoolsIOError with attempted-resolution digests. Inconsistent error-surface for the two halves of the same round-trip API.",
+   "repro": "import numpy as np, hypertools as hyp\nhyp.save(np.arange(3), '/tmp/no/such/dir/f.pkl')   # FileNotFoundError\nhyp.save('/tmp/f.pkl', np.arange(3))                # TypeError (swapped args)",
+   "expected": "HypertoolsIOError (or at least messages) naming the problem and the fix, consistent with load().",
+   "actual": "FileNotFoundError: [Errno 2] No such file or directory: '.../no/such/dir/data.pkl' | IsADirectoryError: [Errno 21] | PermissionError: [Errno 13] | TypeError: expected str, bytes or os.PathLike object, not ndarray | AttributeError: Can't get local object 'k_unpicklable.<locals>.<lambda>'",
+   "evidence": [],
+   "docs_impact": []
+  },
+  {
+   "id": "F20-save-010",
+   "severity": "enhancement",
+   "title": "No format-aware export: load() reads 12+ formats, save() writes exactly one (pickle)",
+   "description": "hyp.load parses .npy/.npz/.csv/.tsv/.txt/.json/.parquet/.mat/.xlsx/.xls plus pickles, URLs, and hosted datasets, but hyp.save can only emit pickle. Scientists routinely need to hand results to R/MATLAB/Excel collaborators; today they must bypass hypertools (df.to_csv, np.save, ...). An extension-driven writer (mirroring load's extension table) for arrays/DataFrames would close the loop, and is a natural companion to fixing F20-save-002. Also missing: protocol=/compression options.",
+   "repro": "import numpy as np, hypertools as hyp\nhyp.save(np.eye(3), '/tmp/m.csv')  # writes a pickle named .csv; no way to write real csv",
+   "expected": "save(obj, 'x.csv') writes CSV (etc.), or a format= parameter exists.",
+   "actual": "All extensions produce pickle bytes (magic b'\\x80\\x04'); see F20-save-002 verbatim outputs.",
+   "evidence": [],
+   "docs_impact": [
+    "docs/hypertools.save.rst"
+   ]
+  }
+ ]
 }

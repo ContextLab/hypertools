@@ -10,6 +10,7 @@
     "reduce='UMAP' + ndims=2 with hue+legend -- TESTED (notebook cell 10 end-to-end)",
     "animate='spin' duration/rotations/frame_rate numeric claims (900 frames = 30 s at 30 fps; wiki 300 frames = 10 s) -- TESTED via PIL frame counts and per-frame durations",
     "HF markdown claim 'MP4, GIF, and animated SVG are all supported' -- TESTED (all three save_path extensions produce nonempty files)",
+    "HF markdown claim 'incremental PCA by default' -- TESTED (plot.py:161 reduce='IncrementalPCA' signature default + docstring)",
     "hyp.load('wiki') structure claim ('a list containing one array of documents') -- TESTED (list len 1, ndarray (3136,1) of str)",
     "wikipediaapi live fetch: keyword with no page / redirect (e.g. 'Soccer') -- TESTED via real network fetch (20/20 pages fetched, skip branch not triggered)",
     "density=True with only 5 points per hue group in 3D (KDE stability) -- TESTED (runs; but see finding 003: red group glow can vanish when UMAP merges groups)",
@@ -30,11 +31,19 @@
     "legend list shorter than number of hue groups -- TESTED (works but message names 'label=' not 'legend=')",
     "'2,000 characters (roughly 512 tokens)' claim -- TESTED (mean 372 tokens over 100 articles; max 447)",
     "Next-steps suggestions actually work: hyp.align on two models' embeddings, reduce='TSNE', backend='plotly', explore=True -- TESTED (all four)",
+    "1-channel LSL stream (single-sensor device: EDA/PPG/respiration) through hyp.plot streaming -- TESTED (CRASH, finding 010)",
+    "2-channel and 3-channel LSL streams (at/below ndims; reduction skipped) -- TESTED (both work; 3-ch reduce_model=None)",
+    "static hyp.plot on (60,1) array vs streaming 1-channel (parity check) -- TESTED (static works, streaming crashes -> finding 010)",
+    "stream_max smaller than stream_init (documented 'stop streaming after this many samples') -- TESTED (silently consumes stream_init samples, finding 011)",
+    "lsl_stream(name=..., type=...) both given: name documented to take precedence -- TESTED (named outlet resolved, 3-ch not 7-ch)",
+    "resolve_kwargs minimum=2 with only one matching outlet -- TESTED (waits full timeout, proceeds with 1; pylsl semantics passthrough)",
+    "source stalls BEFORE stream_init is satisfied (hyp.plot mid-head) -- TESTED (clean HypertoolsIOError after ~timeout)",
+    "lsl_stream(name=123) non-string name -- TESTED (cryptic pylsl-internal TypeError, finding 012)",
+    "two outlets with the SAME name -- TESTED (silently resolves 'the first resolved stream' as documented; no warning)",
+    "backend='plotly' on a streaming input (docstring promises plotly Figure return) -- TESTED (silently returns matplotlib Figure, finding 013)",
+    "spin rotation completeness (first vs last frame view equality) -- TESTED (hf gif |f0-f899|=3.429 == noise floor |f0-f1|=3.435 -> returns to start; wiki gif noise-dominated but consistent)",
     "running the notebooks on actual Google Colab (fresh env, %pip cell) -- UNTESTED (no Colab access from audit sandbox; branch existence + base-dep coverage verified instead)",
-    "hue passed as 2D matrix instead of labels list -- UNTESTED (out of tutorial scope; covered by plot-unit audits)",
-    "spin rotation completeness (first vs last frame view equality) -- UNTESTED (visual mid-frame sanity only)",
-    "stream_init larger than samples deliverable within pull timeout window -- UNTESTED",
-    "plotly backend for the LSL streaming plot -- UNTESTED (streaming path is matplotlib-only per plot docs; static plotly tested)"
+    "hue passed as 2D matrix instead of labels list -- UNTESTED (out of tutorial scope; covered by plot-unit audits)"
   ],
   "tested": [
     {
@@ -43,6 +52,13 @@
       "command": "MPLBACKEND=Agg .venv/bin/python run_notebook.py docs/tutorials/lsl_streaming.ipynb run_lsl <evidence> lsl  # nbclient, kernel=hypertools-dev-venv, timeout 900s/cell",
       "output_excerpt": "DONE lsl: 15.3s, 0 cells with errors, files=['lsl_stream.gif'] | cell 6 stdout: '(600, (600, 3))' == shipped stored output; gif: 21 frames 640x480 (1 init + 20 chunks of 20 samples: (600-200)/20)",
       "evidence": ["lsl_gif_frame_first.png", "lsl_gif_frame_last.png", "lsl_stream_produced.gif"]
+    },
+    {
+      "case": "lsl_streaming.ipynb SECOND independent end-to-end rerun (verbatim cells as plain script, fresh session): stream_info tuple, gif frames, truncated flag, cleanup",
+      "result": "pass",
+      "command": "cd run_lsl && MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python ../lsl_run.py",
+      "output_excerpt": "stream_info tuple: (600, (600, 3)) | gif ffprobe: nb_read_frames=21 | truncated flag: True | raw data shape: (600, 6) | outlet thread stopped: True | liblsl 'ERR| Stream transmission broke off (Input stream error.); re-connecting...' reproduced in stderr",
+      "evidence": ["lsl_final_frame.png"]
     },
     {
       "case": "hugging_face_embeddings.ipynb full end-to-end execution (real AG News download/cache, real MiniLM encoding, PCA/GMM/UMAP plots, 900-frame spin mp4 + ffmpeg gif)",
@@ -59,10 +75,10 @@
       "evidence": ["wiki_cell08_1.png", "wiki_cell17_2.png", "wiki_cell17_3.png", "wiki_cell17_4.png", "wiki_cell19_5.png", "wiki_cell19_6.png"]
     },
     {
-      "case": "shipped stored outputs vs fresh runs (drift check): hf cell 4/6/8/10/13, wiki cell 4/17/19, lsl cell 6/9",
+      "case": "shipped stored outputs vs fresh runs (drift check): hf cell 4/6/8/10/13, wiki cell 4/17/19, lsl cell 6/9 -- re-verified this session directly from tracked .ipynb JSON",
       "result": "fail",
-      "command": "python -c \"json.load(open('docs/tutorials/*.ipynb')) ...inspect outputs\"",
-      "output_excerpt": "shipped wiki cell 17 -> [execute_result png, display_data png, display_data png] (stale spin figure IS in the published outputs, shipped_wiki_cell17_out1.png); shipped cell 19 -> 2 pngs (duplicate). shipped lsl cell 9 stored output contains liblsl 'ERR| Stream transmission broke off (Input stream error.); re-connecting...'. hf shipped outputs clean (all plot cells assign fig=).",
+      "command": "python -c \"json.load(open('docs/tutorials/wikipedia_embeddings.ipynb')) ...count image/png outputs per code cell\"",
+      "output_excerpt": "shipped wiki code-cell 10 (live-hue plot): 3 png outputs; code-cell 11 (density plot): 2 png outputs (stale spin figure IS in the published outputs, shipped_wiki_cell17_out1.png = untitled 640x480 full-corpus figure sandwiched between two 661.978x480 copies). shipped lsl cleanup cell stored output contains liblsl 'ERR| Stream transmission broke off (Input stream error.); re-connecting...'. hf shipped outputs clean (all plot cells assign fig=).",
       "evidence": ["shipped_wiki_cell17_out0.png", "shipped_wiki_cell17_out1.png", "shipped_wiki_cell17_out2.png", "shipped_wiki_cell19_out0.png", "shipped_wiki_cell19_out1.png"]
     },
     {
@@ -70,6 +86,20 @@
       "result": "pass",
       "command": "MPLBACKEND=Agg .venv/bin/python lsl_edge_cases.py  # 12 cases, real pylsl outlets, no mocks",
       "output_excerpt": "hypertools.core.exceptions.HypertoolsIOError :: no LSL stream found (name='audit-no-such-stream-xyz') within timeout=0.5s. Make sure the source application/device is running... | core is shared: True | docstring-example plot: n_samples = 40 truncated = True | ValueError :: cluster is not yet supported for streaming data | HypertoolsIOError after 2.0s :: LSL stream (any stream) stopped delivering samples",
+      "evidence": []
+    },
+    {
+      "case": "LSL edge battery 2 (channel counts + resolution semantics, real outlets): 1/2/3-channel streams, stream_max<stream_init, name-vs-type precedence, minimum=2, stall-before-init, name=123, duplicate names, backend='plotly' on stream",
+      "result": "fail",
+      "command": "cd run_lsl && MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python ../lsl_edge2.py",
+      "output_excerpt": "E1 1-channel: RAISED builtins.IndexError :: index 1 is out of bounds for axis 1 with size 1 | E2 2-channel OK: 60 (60, 2) | E3 3-channel OK: 60 (60, 3) reduce_model: None | E4 stream_max=20 < stream_init=50 -> n_samples = 50 | truncated = True | E5 resolved sample has 3 channels (name won as documented) | E6 resolved with minimum=2 after 2.0s | E7 after 2.0s RAISED HypertoolsIOError :: LSL stream (name='AuditStallEarly') stopped delivering samples: nothing received for ~2.0s. | E8 RAISED builtins.TypeError :: descriptor 'encode' for 'str' objects doesn't apply to a 'int' object | E9 duplicate names: silently resolved one with 2 channels (no warning) | E10 plotly+stream returned: <class 'matplotlib.figure.Figure'>",
+      "evidence": ["edge_lsl_2chan.png"]
+    },
+    {
+      "case": "static-vs-streaming parity for 1-column data: hyp.plot on a (60,1) ndarray (static) vs 1-channel LSL stream",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; f = hyp.plot(np.cumsum(np.random.default_rng(0).normal(size=(60,1)),axis=0), show=False); print([np.array(l.get_data()).shape for l in f.axes[0].lines if len(l.get_data()[0])])\"",
+      "output_excerpt": "static (60,1) plot OK; n artists: 1 | xy shapes: [(2, 900)]  -- static path handles 1-column input fine; the streaming path crashes on the same shape (finding 010)",
       "evidence": []
     },
     {
@@ -87,10 +117,10 @@
       "evidence": ["synth_gmm_k2.png", "synth_gmm_k4.png"]
     },
     {
-      "case": "misuse: hue length mismatch (89 labels / 90 rows); cluster dict model typo; reduce string typo; legend list too short",
+      "case": "misuse: hue length mismatch (89 labels / 90 rows); cluster dict model typo; reduce string typo; legend list too short (legend msg re-verified fresh this session)",
       "result": "fail",
       "command": "plot_semantics_cases.py  # cases c_hue_len_mismatch, c_bad_cluster_model, c_bad_reduce, c_legend_len_mismatch",
-      "output_excerpt": "hue: 'hue has 89 entries but the data has 90 observations...' (excellent); cluster typo: \"unknown cluster model 'GaussainMixture'; supported names: ...\" (excellent); reduce typo: stale URL + whitespace runs (finding 008); legend: message names 'label=' though user passed legend= (finding 007)",
+      "output_excerpt": "hue: 'hue has 89 entries but the data has 90 observations...' (excellent); cluster typo: \"unknown cluster model 'GaussainMixture'; supported names: ...\" (excellent); reduce typo: stale URL + whitespace runs (finding 008); legend: 'ValueError :: label= was given as a list/tuple of length 1, but there are 3 dataset(s) to plot...' (finding 007, reproduced verbatim on rerun)",
       "evidence": []
     },
     {
@@ -101,10 +131,10 @@
       "evidence": []
     },
     {
-      "case": "figure-registration inconsistency: static show=False vs animate+save_path show=False",
+      "case": "figure-registration inconsistency: static show=False vs animate+save_path show=False (re-verified fresh this session)",
       "result": "fail",
       "command": "python -c \"hyp.plot(X,'o',show=False); Gcf.get_all_fig_managers() ... hyp.plot(X,'o',animate='spin',save_path=...,show=False)\"",
-      "output_excerpt": "static show=False: open figs = 0 | animated show=False+save: open figs = 1 | returned fig registered: True",
+      "output_excerpt": "static show=False open figs: 0 | animated show=False+save open figs: 1 | returned fig registered: True (reproduced identically on rerun)",
       "evidence": []
     },
     {
@@ -122,10 +152,17 @@
       "evidence": []
     },
     {
-      "case": "numeric claims: bge max_seq_length=512, both models 384-dim, '2,000 characters (roughly 512 tokens)'",
+      "case": "numeric claims: bge max_seq_length=512, both models 384-dim, '2,000 characters (roughly 512 tokens)', 'incremental PCA by default'",
       "result": "fail",
-      "command": "python -c \"SentenceTransformer('BAAI/bge-small-en-v1.5').max_seq_length; tokenizer counts over 100 wiki articles\"",
-      "output_excerpt": "bge max_seq_length: 512 (claim OK); bge/minilm output dim: 384/384 (claims OK); token counts for first-2000-chars over 100 articles: mean=372 median=374 min=137 max=447 (claim 'roughly 512' does not reproduce -> finding 006)",
+      "command": "python -c \"SentenceTransformer('BAAI/bge-small-en-v1.5').max_seq_length; tokenizer counts over 100 wiki articles\"; grep -n 'reduce=' hypertools/plot/plot.py",
+      "output_excerpt": "bge max_seq_length: 512 (claim OK); bge/minilm output dim: 384/384 (claims OK); plot.py:161 reduce=\"IncrementalPCA\" default (claim OK); token counts for first-2000-chars over 100 articles: mean=372 median=374 min=137 max=447 (claim 'roughly 512' does not reproduce -> finding 006)",
+      "evidence": []
+    },
+    {
+      "case": "spin gif frame counts + rotation completeness on SHIPPED gifs: 900/300 frames; per-frame gray diff of frame 0 vs 1/quarter/mid/last",
+      "result": "pass",
+      "command": "python -c \"PIL Image.open('docs/tutorials/hf_embeddings_spin.gif') ... np.abs(f0-fr(j)).mean() for j in [1, n//4, n//2, 3n//4, n-1]\"",
+      "output_excerpt": "hf: 900 frames; |f0-f1|=3.435 (dither noise floor), |f0-f450|=7.227, |f0-f899|=3.429 -> last frame returns to start view (full 360-degree rotation confirmed). wiki: 300 frames; all diffs 6.1-9.1 = noise-dominated (3136-point dither), consistent with one rotation",
       "evidence": []
     },
     {
@@ -170,10 +207,21 @@
       "docs_impact": ["docs/tutorials/wikipedia_embeddings.ipynb"]
     },
     {
+      "id": "D10-tutorials-embeddings-lsl-010",
+      "severity": "major",
+      "title": "1-channel streaming input (e.g. single-sensor LSL device: EDA/PPG/respiration) crashes hyp.plot with a bare IndexError; static path handles the same shape fine",
+      "description": "hyp.plot(hyp.io.lsl_stream(...)) on a 1-channel outlet crashes at the first redraw with 'IndexError: index 1 is out of bounds for axis 1 with size 1' from hypertools/io/streaming.py:264 (artist.set_data(full[:, 0], full[:, 1]) assumes >=2 columns whenever is3d is False). Single-channel LSL sources are common in psychophysiology (EDA, PPG, respiration, temperature), and lsl_stream()'s docstring advertises 'an EEG amplifier, eye tracker, or any other application publishing via a pylsl.StreamOutlet'. The STATIC path is fine with the same shape -- hyp.plot(np.ndarray (60,1)) works (interpolated 900-point line) -- so this is a streaming-only regression of otherwise-supported input. 2-channel and 3-channel streams work ((60,2) and (60,3) verified). Fix sketch: when head_red has 1 column, plot against sample index (pad a column) as the static path effectively does, or raise a clear ValueError naming the limitation.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport threading, time\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport pylsl, hypertools as hyp\ninfo = pylsl.StreamInfo('Audit1ChanTB', 'EDA', 1, 200.0, 'float32', 'audit-1chan-tb')\nout = pylsl.StreamOutlet(info); stop = threading.Event()\ndef push():\n    i = 0\n    while not stop.is_set(): out.push_sample([float(np.sin(0.05*i))]); i += 1; time.sleep(0.005)\nth = threading.Thread(target=push, daemon=True); th.start()\ns = hyp.io.lsl_stream(name='Audit1ChanTB', timeout=5.0)\ntry:\n    hyp.plot(s, stream_init=30, stream_chunk=10, stream_max=60, show=False)\nfinally:\n    stop.set(); th.join()\"",
+      "expected": "a 1-channel stream plots (as the static path does for (N,1) input: a line over sample index), or a clear error naming the 1-channel limitation and the fix",
+      "actual": "Traceback ... File \"/Users/jmanning/hypertools/hypertools/io/streaming.py\", line 290, in plot_stream\\n    _redraw()\\n  File \"/Users/jmanning/hypertools/hypertools/io/streaming.py\", line 264, in _redraw\\n    artist.set_data(full[:, 0], full[:, 1])\\nIndexError: index 1 is out of bounds for axis 1 with size 1  [static comparison: 'static (60,1) plot OK; n artists: 1 | xy shapes: [(2, 900)]']",
+      "evidence": [],
+      "docs_impact": ["docs/tutorials/lsl_streaming.ipynb"]
+    },
+    {
       "id": "D10-tutorials-embeddings-lsl-002",
       "severity": "minor",
       "title": "hyp.plot(show=False) closes/deregisters the figure for static plots but leaks it for animate=...+save_path",
-      "description": "With show=False, the static path leaves 0 figures registered in pyplot, but the animated-save path leaves the figure registered. In Jupyter (%matplotlib inline) the leaked figure is flushed into the output of a LATER cell that draws (root cause of finding 001, third image). Inconsistent cleanup semantics between the two paths of the same function/flag.",
+      "description": "With show=False, the static path leaves 0 figures registered in pyplot, but the animated-save path leaves the figure registered. In Jupyter (%matplotlib inline) the leaked figure is flushed into the output of a LATER cell that draws (root cause of finding 001, third image). Inconsistent cleanup semantics between the two paths of the same function/flag. Reproduced identically in two independent sessions.",
       "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport matplotlib._pylab_helpers as ph\nimport hypertools as hyp\nX = np.random.default_rng(0).normal(size=(30, 3))\nhyp.plot(X, 'o', show=False)\nprint('static:', len(ph.Gcf.get_all_fig_managers()))\nout = hyp.plot(X, 'o', animate='spin', duration=1, frame_rate=5, save_path='/tmp/leak.mp4', show=False)\nmgrs = ph.Gcf.get_all_fig_managers()\nprint('animated:', len(mgrs), any(m.canvas.figure is out[0] for m in mgrs))\"",
       "expected": "both paths leave the same registration state (0 open figures) when show=False",
       "actual": "static show=False: open figs = 0\nanimated show=False+save: open figs = 1 | returned fig registered: True",
@@ -195,10 +243,10 @@
       "id": "D10-tutorials-embeddings-lsl-004",
       "severity": "minor",
       "title": "lsl_streaming.ipynb cleanup cell prints an alarming liblsl 'ERR| Stream transmission broke off' line (present in shipped outputs too) because the inlet is never closed",
-      "description": "Cell 9 stops the outlet thread but never closes the stream generator opened in cell 6, so the still-open pylsl inlet detects the broken connection and liblsl logs 'ERR| Stream transmission broke off (Input stream error.); re-connecting...' into the cell's output. The shipped notebook's stored cell-9 output contains this line verbatim, so the published tutorial's 'Cleaning up' section ends on an unexplained error message. Adding stream.close() before stopping the outlet closes the inlet cleanly (verified: generator .close() runs inlet.close_stream() without error), or a one-line narrative note would defuse it.",
+      "description": "Cell 9 stops the outlet thread but never closes the stream generator opened in cell 6, so the still-open pylsl inlet detects the broken connection and liblsl logs 'ERR| Stream transmission broke off (Input stream error.); re-connecting...' into the cell's output. The shipped notebook's stored cell-9 output contains this line verbatim, so the published tutorial's 'Cleaning up' section ends on an unexplained error message. Reproduced in both fresh end-to-end runs this audit. Adding stream.close() before stopping the outlet closes the inlet cleanly (verified: generator .close() runs inlet.close_stream() without error), or a one-line narrative note would defuse it.",
       "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport threading, time, gc\nimport pylsl, hypertools as hyp\ninfo = pylsl.StreamInfo('AuditErrRepro', 'EEG', 4, 100.0, 'float32', 'audit-err')\noutlet = pylsl.StreamOutlet(info); stop = threading.Event()\ndef push():\n    i = 0\n    while not stop.is_set(): outlet.push_sample([float(i)] * 4); i += 1; time.sleep(0.01)\nth = threading.Thread(target=push, daemon=True); th.start()\nstream = hyp.io.lsl_stream(name='AuditErrRepro', timeout=5.0)\nnext(stream)\nstop.set(); th.join(); del outlet; gc.collect()\ntime.sleep(3)  # liblsl prints ERR| Stream transmission broke off ... to stderr\"",
       "expected": "cleanup cell output: 'outlet thread stopped: True' only",
-      "actual": "shipped cell 9 stored output: 'outlet thread stopped: True\\n2026-07-07 17:56:52.527 (  12.167s) [R_HypertoolsTu  ]      data_receiver.cpp:344    ERR| Stream transmission broke off (Input stream error.); re-connecting...\\n' (fresh run identical modulo timestamp)",
+      "actual": "shipped cell 9 stored output: 'outlet thread stopped: True\\n2026-07-07 17:56:52.527 (  12.167s) [R_HypertoolsTu  ]      data_receiver.cpp:344    ERR| Stream transmission broke off (Input stream error.); re-connecting...\\n' (fresh runs identical modulo timestamp)",
       "evidence": [],
       "docs_impact": ["docs/tutorials/lsl_streaming.ipynb"]
     },
@@ -212,6 +260,28 @@
       "actual": "ffmpeg found: None; FileNotFoundError :: No such file or directory: 'hf_embeddings_spin.gif'; formatter output degrades to ['text/plain'] with FileNotFoundError traceback logged by IPython's catch_format_error",
       "evidence": [],
       "docs_impact": ["docs/tutorials/hugging_face_embeddings.ipynb", "docs/tutorials/wikipedia_embeddings.ipynb"]
+    },
+    {
+      "id": "D10-tutorials-embeddings-lsl-011",
+      "severity": "minor",
+      "title": "stream_max is silently exceeded when smaller than stream_init: the head is fully consumed first (default stream_init=10000 -> hyp.plot(stream, stream_max=500) consumes 10000 samples)",
+      "description": "plot()'s docstring for stream_max says 'stop streaming after this many samples', but plot_stream() consumes the full stream_init head BEFORE the stream_max check runs: with stream_init=50 and stream_max=20, 50 samples are consumed and plotted (stream_info['n_samples']=50). With the DEFAULTS (stream_init=10000), a user who writes hyp.plot(stream, stream_max=500) to cap consumption of a rate-limited/expensive stream actually pulls 10,000 samples. No warning is emitted. Fix sketch: clamp the head to min(stream_init, stream_max) (models then fit on stream_max samples) or document the interaction and warn when stream_max < stream_init.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport itertools, numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\ndef gen():\n    i = 0\n    while True:\n        yield [np.sin(0.05*i*(c+1)) for c in range(4)]; i += 1\nfig = hyp.plot(gen(), stream_init=50, stream_chunk=10, stream_max=20, show=False)\nprint('n_samples =', fig.stream_info['n_samples'], '| truncated =', fig.stream_info['truncated'])\"",
+      "expected": "at most stream_max=20 samples consumed, or a warning/error that stream_max < stream_init cannot be honored",
+      "actual": "stream_max=20 < stream_init=50 -> n_samples = 50 | truncated = True  (verified through a real 4-channel LSL outlet as well)",
+      "evidence": [],
+      "docs_impact": ["docs/tutorials/lsl_streaming.ipynb"]
+    },
+    {
+      "id": "D10-tutorials-embeddings-lsl-012",
+      "severity": "minor",
+      "title": "backend='plotly' is silently ignored for streaming inputs: returns a matplotlib Figure despite the backend docstring promising 'With the plotly backend, the return value is a plotly Figure'",
+      "description": "hyp.plot(stream, ..., backend='plotly') runs the matplotlib streaming path and returns matplotlib.figure.Figure with no warning or error. The backend parameter's docstring states unconditionally that with the plotly backend the return value is a plotly Figure; the streaming docs never carve out an exception. A user on Colab (where backend='auto' resolves to plotly) reading the LSL tutorial cannot tell which contract wins. Should either raise ('streaming is matplotlib-only') or warn and document the fallback.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\ndef gen():\n    i = 0\n    while True:\n        yield [np.sin(0.05*i*(c+1)) for c in range(4)]; i += 1\nfig = hyp.plot(gen(), stream_init=20, stream_chunk=10, stream_max=40, backend='plotly', show=False)\nprint(type(fig))\"",
+      "expected": "plotly Figure, or a clear error/warning that streaming supports only the matplotlib backend",
+      "actual": "plotly+stream returned: <class 'matplotlib.figure.Figure'>  (silently; verified through a real 4-channel LSL outlet)",
+      "evidence": [],
+      "docs_impact": ["docs/tutorials/lsl_streaming.ipynb"]
     },
     {
       "id": "D10-tutorials-embeddings-lsl-006",
@@ -247,13 +317,24 @@
       "docs_impact": []
     },
     {
+      "id": "D10-tutorials-embeddings-lsl-013",
+      "severity": "style",
+      "title": "lsl_stream(name=123) raises a cryptic pylsl-internal TypeError that never names the offending parameter",
+      "description": "Passing a non-string name (e.g. an int, a plausible slip when stream ids are numeric) surfaces pylsl's internal string-encoding failure: \"descriptor 'encode' for 'str' objects doesn't apply to a 'int' object\" -- no mention of lsl_stream, name=, or the fix. A one-line isinstance check in lsl_stream() (mirroring the excellent no-stream-found HypertoolsIOError) would name the problem. Same passthrough style as the documented **resolve_kwargs forwarding (which is fine for kwargs), but name/type are lsl_stream's OWN parameters.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport hypertools as hyp\nhyp.io.lsl_stream(name=123, timeout=0.5)\"",
+      "expected": "TypeError/ValueError naming the parameter, e.g. 'name= must be a string (the LSL name property), got int'",
+      "actual": "RAISED builtins.TypeError :: descriptor 'encode' for 'str' objects doesn't apply to a 'int' object",
+      "evidence": [],
+      "docs_impact": []
+    },
+    {
       "id": "D10-tutorials-embeddings-lsl-009",
       "severity": "style",
       "title": "spin GIFs shipped twice: as tracked .gif files AND base64-embedded in notebook stored outputs (~25 MB combined for two tutorials)",
       "description": "hugging_face_embeddings.ipynb is 14.77 MB and wikipedia_embeddings.ipynb is 9.3 MB because each embeds its spin GIF (10.9 MB / 6 MB) base64 in the stored Image() output -- while the identical GIFs are ALSO tracked as standalone files (docs/tutorials/hf_embeddings_spin.gif, wikipedia_embeddings_spin.gif) for use elsewhere. Every clone/docs build carries both copies. Consider Image(url=...) / markdown image reference to the shipped gif, stripping the embedded output, or reducing frame count (900 frames at 420px for HF).",
       "repro": "ls -la /Users/jmanning/hypertools/docs/tutorials/*.ipynb /Users/jmanning/hypertools/docs/tutorials/*spin.gif",
       "expected": "tutorial sources a few hundred KB; large binaries stored once",
-      "actual": "hugging_face_embeddings.ipynb 14.77 MB; wikipedia_embeddings.ipynb 9.3 MB; plus hf_embeddings_spin.gif 10.9 MB and wikipedia_embeddings_spin.gif 6.0 MB tracked separately (shipped cell 13 output: ('stream', ('gif: 10.9 MB',)), ('execute_result', ['image/gif', ...]))",
+      "actual": "hugging_face_embeddings.ipynb 14.77 MB; wikipedia_embeddings.ipynb 9.3 MB; plus hf_embeddings_spin.gif 10.94 MB and wikipedia_embeddings_spin.gif 6.56 MB tracked separately (shipped cell 13 output: ('stream', ('gif: 10.9 MB',)), ('execute_result', ['image/gif', ...]))",
       "evidence": [],
       "docs_impact": ["docs/tutorials/hugging_face_embeddings.ipynb", "docs/tutorials/wikipedia_embeddings.ipynb"]
     }

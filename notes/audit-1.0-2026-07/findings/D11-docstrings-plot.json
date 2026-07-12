@@ -1,0 +1,1540 @@
+{
+ "unit": "D11-docstrings-plot",
+ "target": "hypertools/plot package docstrings: examples + parameter accuracy (plot.py, backend.py, colors.py, density.py, surface.py, trails.py, morph.py, multiindex.py, meshutil.py, fonts.py, hyper_animation.py, plotly_backend.py, matplotlib_backend.py, animate.py, draw.py, interactive.py) on branch audit/release-1.0-2026-07",
+ "brainstormed_edge_cases": [
+  "single-row (1-point) dataset -- TESTED (pass)",
+  "two-point dataset -- TESTED (pass)",
+  "surface=True with exactly 3 points in 3-D -> documented UserWarning skip -- TESTED (pass)",
+  "NaN data through default PPCA impute and impute='KNNImputer' -- TESTED (pass)",
+  "empty list x=[] -- TESTED (clear ValueError 'input has no observations (0 rows)')",
+  "mixed list [ndarray, DataFrame] -- TESTED (pass)",
+  "hue categorical with None entries -- TESTED (pass)",
+  "nested per-dataset hue with mismatched lengths -- TESTED (clear ValueError)",
+  "labels= shorter than data -- TESTED (silently accepted -> finding -010)",
+  "exactly duplicated points + density=True -> promised UserWarning -- TESTED (value-dependent -> finding -009)",
+  "ndims=5 (plot 3-D, return 5-dim data) -- TESTED (pass)",
+  "ndims=1 -- TESTED (pass, renders 1-D strip)",
+  "2-D animation for every style + spin ValueError -- TESTED (pass)",
+  "focused=-1 -> ValueError -- TESTED (pass)",
+  "zoom=2 -- TESTED (pass); zoom=0/negative -- UNTESTED",
+  "elev=90 gimbal-ish extreme view -- UNTESTED (elev=45/azim=120 tested)",
+  "size=[4,4] figure resize -- TESTED (pass)",
+  "legend= list wrong length -- TESTED (clear ValueError)",
+  "save_path with unknown extension .xyz -- TESTED (clear ValueError listing supported formats)",
+  "x= single bare string (text path) -- TESTED (pass)",
+  "x= scalar int (hyp.plot(5)) -- TESTED (silently plots -> finding -014)",
+  "DataFrame with datetime index -- UNTESTED",
+  "explore=True on plotly backend (docstring says 3D-static-only) -- UNTESTED (GUI/hover-dependent)",
+  "interactive=True with a real GUI backend (TkAgg/MacOSX) -- UNTESTED (headless Agg session; mpl_backend='disable' path tested)",
+  "infinite stream + stream_window comet mode -- UNTESTED (finite generator with stream_max=200 tested)",
+  "font=None with characters NO installed font covers -> documented tofu UserWarning -- UNTESTED (needs a glyph set absent from macOS fonts)",
+  "animated save_path=.mp4 via ffmpeg -- UNTESTED directly (to_html5_video exercised the ffmpeg/mp4 pipeline; .gif save tested)",
+  "mixed-shape datasets [n x 3, m x 5] in one list -- UNTESTED",
+  "colorbar location 'left'/'bottom' -- UNTESTED ('right' default and 'top' tested)",
+  "morph with 4+ datasets and per-segment rotations list -- UNTESTED (2-3 datasets tested)"
+ ],
+ "tested": [
+  {
+   "case": "returns: static mpl -> matplotlib Figure",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery1_*.py  # case: returns: static mpl -> matplotlib Figure",
+   "output_excerpt": "type=matplotlib.figure.Figure",
+   "evidence": [
+    "ret_static.png"
+   ]
+  },
+  {
+   "case": "returns: animated mpl -> HyperAnimation tuple (fig, anim)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery1_*.py  # case: returns: animated mpl -> HyperAnimation tuple (fig, anim)",
+   "output_excerpt": "type=HyperAnimation; is_tuple=True; len=2",
+   "evidence": []
+  },
+  {
+   "case": "returns: return_model=True dict keys match docstring",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery1_*.py  # case: returns: return_model=True dict keys match docstring",
+   "output_excerpt": "type=dict; keys=['animation', 'fig', 'models', 'pipeline', 'predict', 'xform_data'] | WARNINGS: UserWarning: Animation was deleted without rendering anything. This is most likely not intended. To prevent deletion, assign the Animation to a variable, e.g. `anim`, that exists until you output the Animation using `plt.show()` or `anim.save()`.",
+   "evidence": []
+  },
+  {
+   "case": "returns: backend='plotly' -> plotly Figure",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery1_*.py  # case: returns: backend='plotly' -> plotly Figure",
+   "output_excerpt": "type=plotly.graph_objs._figure.Figure",
+   "evidence": []
+  },
+  {
+   "case": "returns: ndims=5 plots 3D but returns 5-dim data (docstring claim)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery1_*.py  # case: returns: ndims=5 plots 3D but returns 5-dim data (docstring ",
+   "output_excerpt": "xform shapes=[(100, 5)]",
+   "evidence": [
+    "ret_ndims5.png"
+   ]
+  },
+  {
+   "case": "workflow1: fMRI weights_sample + align='hyper' + legend + title",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery1_*.py  # case: workflow1: fMRI weights_sample + align='hyper' + legend + ti",
+   "output_excerpt": "load type=list, n=3; ",
+   "evidence": [
+    "wf1_weights_align.png"
+   ]
+  },
+  {
+   "case": "workflow2: mushrooms DataFrame ndims=2 n_clusters=10",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery1_*.py  # case: workflow2: mushrooms DataFrame ndims=2 n_clusters=10",
+   "output_excerpt": "mushrooms type=DataFrame shape=(8124, 22);  | WARNINGS: Pandas4Warning: For backward compatibility, 'str' dtypes are included by select_dtypes when 'object' dtype is specified. This behavior is deprecated and will be removed in a future version. Explicitly pass 'str' to `include` to select them, or to `exclude` to remove them and silence this warning.\nSe",
+   "evidence": [
+    "wf2_mushrooms_2d_clusters.png"
+   ]
+  },
+  {
+   "case": "workflow3: continuous hue + colorbar=True (multicolored line)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery1_*.py  # case: workflow3: continuous hue + colorbar=True (multicolored line",
+   "output_excerpt": "",
+   "evidence": [
+    "wf3_hue_colorbar.png"
+   ]
+  },
+  {
+   "case": "workflow4: spiral trajectory static",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery1_*.py  # case: workflow4: spiral trajectory static",
+   "output_excerpt": "spiral type=list",
+   "evidence": [
+    "wf4_spiral.png"
+   ]
+  },
+  {
+   "case": "workflow5: 3 datasets + names= legend + reduce='PCA' + normalize='within'",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery1_*.py  # case: workflow5: 3 datasets + names= legend + reduce='PCA' + norma",
+   "output_excerpt": "",
+   "evidence": [
+    "wf5_names_legend.png"
+   ]
+  },
+  {
+   "case": "workflow6: predict='Kalman' t=15 dashed alpha-0.6 overlay per dataset",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery1_*.py  # case: workflow6: predict='Kalman' t=15 dashed alpha-0.6 overlay pe",
+   "output_excerpt": "n_lines=4; dashed_alpha0.6=2",
+   "evidence": [
+    "wf6_predict_kalman.png"
+   ]
+  },
+  {
+   "case": "workflow7: surface=True + density=True two blobs 3D",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery1_*.py  # case: workflow7: surface=True + density=True two blobs 3D",
+   "output_excerpt": "",
+   "evidence": [
+    "wf7_surface_density.png"
+   ]
+  },
+  {
+   "case": "workflow8: MultiIndex df (2 levels) lw/alpha/legend claims",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery1_*.py  # case: workflow8: MultiIndex df (2 levels) lw/alpha/legend claims",
+   "output_excerpt": "lines(lw, alpha, label)=[(1.0, 0.7, '_nolegend_'), (1.0, 0.7, '_nolegend_'), (1.0, 0.7, '_nolegend_'), (1.0, 0.7, '_nolegend_'), (1.0, 0.7, '_nolegend_'), (1.0, 0.7, '_nolegend_'), (2.0, 1.0, 'ctrl'), (2.0, 1.0, 'treat')]",
+   "evidence": [
+    "wf8_multiindex.png"
+   ]
+  },
+  {
+   "case": "misuse: colors list len 3 for 2 datasets -> ValueError names kwarg+lens",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: misuse: colors list len 3 for 2 datasets -> ValueError names",
+   "output_excerpt": "ValueError: color= was given as a list/tuple of length 3, but there are 2 dataset(s) to plot; pass either a single value (broadcast to every dataset) or a list/tuple of length 2.",
+   "evidence": []
+  },
+  {
+   "case": "misuse: linestyles len 1 for 2 datasets",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: misuse: linestyles len 1 for 2 datasets",
+   "output_excerpt": "ValueError: linestyle= was given as a list/tuple of length 1, but there are 2 dataset(s) to plot; pass either a single value (broadcast to every dataset) or a list/tuple of length 2.",
+   "evidence": []
+  },
+  {
+   "case": "misuse: markers len 5 for 1 dataset",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: misuse: markers len 5 for 1 dataset",
+   "output_excerpt": "ValueError: marker= was given as a list/tuple of length 5, but there are 1 dataset(s) to plot; pass either a single value (broadcast to every dataset) or a list/tuple of length 1.",
+   "evidence": []
+  },
+  {
+   "case": "doc: rotations list + animate='spin' -> ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: rotations list + animate='spin' -> ValueError",
+   "output_excerpt": "ValueError: rotations as a list is only supported with animate='morph' (got animate='spin'); pass a scalar rotations= for this animate mode.",
+   "evidence": []
+  },
+  {
+   "case": "doc: zlabel + ndims=2 -> ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: zlabel + ndims=2 -> ValueError",
+   "output_excerpt": "ValueError: zlabel= is not supported for 2-D data (no z-axis in a 2-D or 1-D plot); pass ndims=3 (the default) to use zlabel=, or use xlabel=/ylabel= for 2-D data.",
+   "evidence": []
+  },
+  {
+   "case": "doc: surface={'bogus': 1} -> ValueError unrecognized key",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: surface={'bogus': 1} -> ValueError unrecognized key",
+   "output_excerpt": "ValueError: surface dict got unknown key(s) ['bogus']; valid keys are ['alpha', 'color', 'keep_points', 'lighting', 'pre_inflate', 'smoothing'].",
+   "evidence": []
+  },
+  {
+   "case": "doc: surface lighting {'roughness': .5} -> ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: surface lighting {'roughness': .5} -> ValueError",
+   "output_excerpt": "ValueError: surface['lighting'] got unknown key(s) ['roughness']; valid keys are ['ambient', 'diffuse', 'fill', 'lightdir', 'shininess', 'specular'].",
+   "evidence": []
+  },
+  {
+   "case": "doc: density={'nope': 2} -> ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: density={'nope': 2} -> ValueError",
+   "output_excerpt": "ValueError: density dict got unknown key(s) ['nope']; valid keys are ['alpha', 'grid', 'levels', 'per_group'].",
+   "evidence": []
+  },
+  {
+   "case": "doc: density=True on 1D data -> ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: density=True on 1D data -> ValueError",
+   "output_excerpt": "ValueError: density= is not supported for 1D data (no 2D/3D density grid concept in a single dimension).",
+   "evidence": []
+  },
+  {
+   "case": "doc: label_alpha=1.5 -> ValueError in [0,1]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: label_alpha=1.5 -> ValueError in [0,1]",
+   "output_excerpt": "ValueError: label_alpha= must be a number in [0, 1], or None (default: 0.5); got 1.5.",
+   "evidence": []
+  },
+  {
+   "case": "doc: colorbar=True single dataset no hue -> ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: colorbar=True single dataset no hue -> ValueError",
+   "output_excerpt": "ValueError: colorbar=True requires a color mapping (hue=, cluster=, or n_clusters=): a single, ungrouped dataset renders in one color, so there is nothing to map on a colorbar.",
+   "evidence": []
+  },
+  {
+   "case": "doc: animate={'rotations': 2} missing 'style' -> ValueError w/ example",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: animate={'rotations': 2} missing 'style' -> ValueError ",
+   "output_excerpt": "ValueError: animate= dict form requires a 'style' key naming the animation style (e.g. animate={'style': 'spin', 'rotations': 2, 'duration': 15}); got a dict with keys ['rotations'].",
+   "evidence": []
+  },
+  {
+   "case": "doc: animate={'style':'spin','bogus':1} -> ValueError lists valid keys",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: animate={'style':'spin','bogus':1} -> ValueError lists ",
+   "output_excerpt": "ValueError: animate= dict got unknown key(s) ['bogus']; valid keys are 'style' plus ['bullettime', 'chemtrails', 'duration', 'focused', 'frame_rate', 'morph_samples', 'precog', 'rotations', 'tail_duration', 'zoom'].",
+   "evidence": []
+  },
+  {
+   "case": "doc: animate dict rotations=2 vs flat rotations=3 conflict -> ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: animate dict rotations=2 vs flat rotations=3 conflict -",
+   "output_excerpt": "ValueError: animate= dict specifies rotations=2 but rotations=3 was also passed explicitly as a flat kwarg with a different value; pass rotations= in only one place (either inside animate= or as its own kwarg).",
+   "evidence": []
+  },
+  {
+   "case": "doc: animate='spin' + ndims=2 -> ValueError naming other styles",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: animate='spin' + ndims=2 -> ValueError naming other sty",
+   "output_excerpt": "ValueError: animate='spin' rotates the 3-D camera and has no meaning for 2-D data (2-D animations use a fixed, non-rotating viewport). Use 'parallel'/True, 'serial', 'window', 'chemtrails', 'precog', 'bullettime', or 'morph' instead.",
+   "evidence": []
+  },
+  {
+   "case": "doc: animate='morph' with 1 dataset -> ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: animate='morph' with 1 dataset -> ValueError",
+   "output_excerpt": "ValueError: animate='morph' requires at least 2 datasets to morph between; got 1.",
+   "evidence": []
+  },
+  {
+   "case": "doc: animate=['spin','morph'] list w/ non-morph tag -> ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: animate=['spin','morph'] list w/ non-morph tag -> Value",
+   "output_excerpt": "ValueError: animate list entries must be 'morph' or None/False (per-dataset animate lists only support tagging datasets for animate='morph'); got 'spin'.",
+   "evidence": []
+  },
+  {
+   "case": "doc: animate=['morph', None] only 1 tagged -> ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: animate=['morph', None] only 1 tagged -> ValueError",
+   "output_excerpt": "ValueError: animate='morph' (per-dataset list form) requires at least 2 datasets tagged 'morph'; got 1.",
+   "evidence": []
+  },
+  {
+   "case": "doc: resample=1 -> ValueError >=2",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: resample=1 -> ValueError >=2",
+   "output_excerpt": "ValueError: resample= must be an integer >= 2 (the target sample count per dataset) or False/None to disable resampling; got 1.",
+   "evidence": []
+  },
+  {
+   "case": "doc: pipeline= + reduce= -> ValueError naming kwarg",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: pipeline= + reduce= -> ValueError naming kwarg",
+   "output_excerpt": "ValueError: pipeline= is mutually exclusive with the stage kwarg(s) reduce (a fitted Pipeline already encodes which stages run and their fitted parameters); pass pipeline= alone (resample= is still applied first, as sugar -- see pipeline='s docstring).",
+   "evidence": []
+  },
+  {
+   "case": "doc: predict + animate -> NotImplementedError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: predict + animate -> NotImplementedError",
+   "output_excerpt": "NotImplementedError: predict= is not yet supported with animate: forecast traces are static-plot only in this release. Pass animate=False (the default) to use predict=, or omit predict= for an animated plot.",
+   "evidence": []
+  },
+  {
+   "case": "doc: focused=-1 -> ValueError non-negative",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: focused=-1 -> ValueError non-negative",
+   "output_excerpt": "ValueError: focused= must be a non-negative number, or None (default: tail_duration's value, 2); got -1.",
+   "evidence": []
+  },
+  {
+   "case": "doc: chemtrails=[True] for 2 datasets -> ValueError both counts",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: chemtrails=[True] for 2 datasets -> ValueError both cou",
+   "output_excerpt": "ValueError: chemtrails list has 1 entries but there are 2 datasets to plot; pass a single bool to apply it to every dataset, or a list matching the dataset count.",
+   "evidence": []
+  },
+  {
+   "case": "doc: font='DefinitelyNotAFont123' -> ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: font='DefinitelyNotAFont123' -> ValueError",
+   "output_excerpt": "ValueError: font='DefinitelyNotAFont123' is not a recognized installed font family and not an existing file path. Tried: matplotlib family lookup (Failed to find font DefinitelyNotAFont123:style=normal:variant=normal:weight=normal:stretch=normal:size=10.0, and fallback to the default font was disabled); os.path.exists('DefinitelyNotAFont123') -> False. Pass a valid installed family name, a path to a .ttf/.otf/.ttc file, or a matplotlib.font_manager.FontProperties instance.",
+   "evidence": []
+  },
+  {
+   "case": "doc: bogus kwarg zwibble=3 -> matplotlib AttributeError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: bogus kwarg zwibble=3 -> matplotlib AttributeError",
+   "output_excerpt": "AttributeError: Line2D.set() got an unexpected keyword argument 'zwibble'",
+   "evidence": []
+  },
+  {
+   "case": "doc: MultiIndex + cluster -> ValueError suggests reset_index",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: MultiIndex + cluster -> ValueError suggests reset_index",
+   "output_excerpt": "ValueError: cluster=/n_clusters= is not compatible with a row-MultiIndex DataFrame (GH #95): MultiIndex grouping already assigns colors by the top-level index and would conflict with cluster-based grouping. Reset the index (df.reset_index(drop=True)) before clustering, or drop cluster=/n_clusters= to use the MultiIndex grouping.",
+   "evidence": []
+  },
+  {
+   "case": "doc: MultiIndex + predict -> ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: MultiIndex + predict -> ValueError",
+   "output_excerpt": "ValueError: predict= is not supported with MultiIndex expansion in this release: forecasts are computed one-per-leaf before the per-level mean traces are appended, so the leaf count no longer matches the final trace count. Reset the index (df.reset_index(drop=True)) before using predict=, or drop predict= to use the MultiIndex grouping.",
+   "evidence": []
+  },
+  {
+   "case": "doc: MultiIndex + hue -> UserWarning superseded",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: MultiIndex + hue -> UserWarning superseded",
+   "output_excerpt": "x has a row MultiIndex (GH #95): MultiIndex grouping (leaf traces + per-level averages) takes precedence over hue=; ignoring hue.",
+   "evidence": []
+  },
+  {
+   "case": "doc: MultiIndex + color kwarg ignored w/ UserWarning",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: MultiIndex + color kwarg ignored w/ UserWarning",
+   "output_excerpt": "x has a row MultiIndex (GH #95): MultiIndex grouping assigns color by the top-level index; ignoring color/colors.",
+   "evidence": []
+  },
+  {
+   "case": "doc: list containing MultiIndex df -> UserWarning naming position",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: list containing MultiIndex df -> UserWarning naming pos",
+   "output_excerpt": "MultiIndex grouping is only applied when a single DataFrame is passed; the MultiIndex on dataset 0 is being treated as a flat index.",
+   "evidence": []
+  },
+  {
+   "case": "doc: MultiIndex linestyles len!=n top-level values -> ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: MultiIndex linestyles len!=n top-level values -> ValueE",
+   "output_excerpt": "ValueError: linestyle(s) has 3 entries but there are 2 unique top-level MultiIndex value(s) (['A', 'B']); pass exactly one linestyle per top-level group.",
+   "evidence": []
+  },
+  {
+   "case": "doc: animate='spin' + chemtrails -> UserWarning naming mode/flag/datasets",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: animate='spin' + chemtrails -> UserWarning naming mode/",
+   "output_excerpt": "animate='spin' does not support trail styles; ignoring chemtrails for datasets [0, 1]",
+   "evidence": []
+  },
+  {
+   "case": "doc: animate='window' + precog ignored -> UserWarning",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: animate='window' + precog ignored -> UserWarning",
+   "output_excerpt": "animate='window' does not support trail styles; ignoring precog for datasets [0, 1] | Animation was deleted without rendering anything. This is most likely not intended. To prevent deletion, assign the Animation to a variable, e.g. `anim`, that exists until you output the Animation using `plt.show()` or `anim.save()`.",
+   "evidence": []
+  },
+  {
+   "case": "doc: 2D animate + rotations=2 -> UserWarning ignored",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: 2D animate + rotations=2 -> UserWarning ignored",
+   "output_excerpt": "rotations= controls 3-D camera spin and has no effect on 2-D animations, which use a fixed (non-rotating) viewport; ignoring. | Animation was deleted without rendering anything. This is most likely not intended. To prevent deletion, assign the Animation to a variable, e.g. `anim`, that exists until you output the Animation using `plt.show()` or `anim.save()`.",
+   "evidence": []
+  },
+  {
+   "case": "doc: surface=True with 3 points in 3D -> UserWarning skip",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: surface=True with 3 points in 3D -> UserWarning skip",
+   "output_excerpt": "Animation was deleted without rendering anything. This is most likely not intended. To prevent deletion, assign the Animation to a variable, e.g. `anim`, that exists until you output the Animation using `plt.show()` or `anim.save()`. | surface: dataset 0 has fewer than 4 points (need >= 4 for a 3-D hull); skipping its surface.",
+   "evidence": []
+  },
+  {
+   "case": "doc: density=True with duplicated points -> UserWarning skip",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: density=True with duplicated points -> UserWarning skip",
+   "output_excerpt": "NO WARNINGS",
+   "evidence": []
+  },
+  {
+   "case": "doc: names= + legend=list -> mutually exclusive error",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: doc: names= + legend=list -> mutually exclusive error",
+   "output_excerpt": "ValueError: pass dataset names via names= OR a legend= list, not both",
+   "evidence": []
+  },
+  {
+   "case": "misuse: names len 3 for 2 datasets -> clear error",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: misuse: names len 3 for 2 datasets -> clear error",
+   "output_excerpt": "ValueError: names must have one entry per dataset (2); got 3",
+   "evidence": []
+  },
+  {
+   "case": "misuse: hyp.plot([]) empty list -> clear error",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: misuse: hyp.plot([]) empty list -> clear error",
+   "output_excerpt": "ValueError: input has no observations (0 rows); there is nothing to plot or analyze.",
+   "evidence": []
+  },
+  {
+   "case": "misuse: animate='wobble' -> clear error naming valid styles",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: misuse: animate='wobble' -> clear error naming valid styles",
+   "output_excerpt": "ValueError: unknown animate style 'wobble'; valid styles are 'parallel', 'spin', 'serial', 'morph', 'window' (or True/False). The trail effects 'chemtrails'/'precog'/'bullettime' are boolean kwargs, not styles -- e.g. animate='parallel', chemtrails=True.",
+   "evidence": []
+  },
+  {
+   "case": "misuse: nested hue lengths mismatch data -> clear error",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: misuse: nested hue lengths mismatch data -> clear error",
+   "output_excerpt": "ValueError: hue has 2 entries but the data has 120 observations; hue must have exactly one value (or one row, for a matrix hue) per observation.",
+   "evidence": []
+  },
+  {
+   "case": "misuse: labels len 3 for 60 points -> clear error",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery2_*.py  # case: misuse: labels len 3 for 60 points -> clear error",
+   "output_excerpt": "NO ERROR RAISED (expected Exception)",
+   "evidence": []
+  },
+  {
+   "case": "numeric: frames == frame_rate*duration (5*2=10) mpl",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: numeric: frames == frame_rate*duration (5*2=10) mpl",
+   "output_excerpt": "save_count=10 (expect 10)",
+   "evidence": []
+  },
+  {
+   "case": "numeric: plotly frames == frame_rate*duration",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: numeric: plotly frames == frame_rate*duration",
+   "output_excerpt": "plotly n_frames=10 (expect 10)",
+   "evidence": []
+  },
+  {
+   "case": "animate=True mpl runs and returns HyperAnimation",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: animate=True mpl runs and returns HyperAnimation",
+   "output_excerpt": "type=HyperAnimation",
+   "evidence": []
+  },
+  {
+   "case": "animate='parallel' mpl runs and returns HyperAnimation",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: animate='parallel' mpl runs and returns HyperAnimation",
+   "output_excerpt": "type=HyperAnimation",
+   "evidence": []
+  },
+  {
+   "case": "animate='spin' mpl runs and returns HyperAnimation",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: animate='spin' mpl runs and returns HyperAnimation",
+   "output_excerpt": "type=HyperAnimation",
+   "evidence": []
+  },
+  {
+   "case": "animate='serial' mpl runs and returns HyperAnimation",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: animate='serial' mpl runs and returns HyperAnimation",
+   "output_excerpt": "type=HyperAnimation",
+   "evidence": []
+  },
+  {
+   "case": "animate='window' mpl runs and returns HyperAnimation",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: animate='window' mpl runs and returns HyperAnimation",
+   "output_excerpt": "type=HyperAnimation",
+   "evidence": []
+  },
+  {
+   "case": "animate='morph' 2 clouds + 2N-1 segments claim",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: animate='morph' 2 clouds + 2N-1 segments claim",
+   "output_excerpt": "morph ok; segment_frame_counts(2 ds, 6 frames)=[2, 2, 2] (expect 2N-1=3 segments)",
+   "evidence": []
+  },
+  {
+   "case": "animate='morph' 2-D supported (docstring round17 #9)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: animate='morph' 2-D supported (docstring round17 #9)",
+   "output_excerpt": "2-D morph ok type=HyperAnimation",
+   "evidence": []
+  },
+  {
+   "case": "animate dict {'style':'spin','rotations':2,'duration':1} == flat kwargs",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: animate dict {'style':'spin','rotations':2,'duration':1} == ",
+   "output_excerpt": "dict form ok HyperAnimation",
+   "evidence": []
+  },
+  {
+   "case": "animate=['morph',None,'morph'] per-dataset tagging",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: animate=['morph',None,'morph'] per-dataset tagging",
+   "output_excerpt": "list form ok (ds1 static backdrop)",
+   "evidence": []
+  },
+  {
+   "case": "hyper_animation module docstring example: spin + to_html5_video + save gif + .figure",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: hyper_animation module docstring example: spin + to_html5_vi",
+   "output_excerpt": "to_html5_video len=56662; saved gif 158KB; figure=Figure",
+   "evidence": [
+    "anim_spiral_spin.gif"
+   ]
+  },
+  {
+   "case": "HyperAnimation.to_jshtml works (no FFmpeg needed)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: HyperAnimation.to_jshtml works (no FFmpeg needed)",
+   "output_excerpt": "to_jshtml len=195372",
+   "evidence": []
+  },
+  {
+   "case": "save_path=.gif + per-dataset chemtrails=[True,False]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: save_path=.gif + per-dataset chemtrails=[True,False]",
+   "output_excerpt": "saved 127KB; per-dataset chemtrails list ok",
+   "evidence": [
+    "anim_save_path.gif"
+   ]
+  },
+  {
+   "case": "docstring: mixed per-dataset chemtrails/precog/bullettime lists",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: docstring: mixed per-dataset chemtrails/precog/bullettime li",
+   "output_excerpt": "mixed per-dataset trails ok",
+   "evidence": []
+  },
+  {
+   "case": "focused= decouples opaque window from tail_duration",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: focused= decouples opaque window from tail_duration",
+   "output_excerpt": "focused=0.5 decoupled from tail_duration ok",
+   "evidence": []
+  },
+  {
+   "case": "rotations list len 2N-1 with morph",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: rotations list len 2N-1 with morph",
+   "output_excerpt": "rotations=[1,0.25,1] (2N-1=3 entries) ok",
+   "evidence": []
+  },
+  {
+   "case": "rotations list wrong length -> ValueError naming expected 2N-1",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: rotations list wrong length -> ValueError naming expected 2N",
+   "output_excerpt": "rotations list has 2 entries but animate='morph' with 2 morphing datasets needs exactly 3 (2 * n_datasets - 1: [hold_1, morph_1->2, hold_2, ..., hold_N])",
+   "evidence": []
+  },
+  {
+   "case": "2-D animate=True (docstring: every style except spin works in 2-D)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: 2-D animate=True (docstring: every style except spin works i",
+   "output_excerpt": "2-D animate ok HyperAnimation",
+   "evidence": []
+  },
+  {
+   "case": "labels + animate documented known-limitation path runs",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: labels + animate documented known-limitation path runs",
+   "output_excerpt": "animated labels drawn (documented limitation: persist across frames)",
+   "evidence": []
+  },
+  {
+   "case": "surface=True + animate='spin' (per-frame shading only)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: surface=True + animate='spin' (per-frame shading only)",
+   "output_excerpt": "surface + spin ok",
+   "evidence": []
+  },
+  {
+   "case": "surface= + 2-D animate -> silent no-op (docstring claim)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: surface= + 2-D animate -> silent no-op (docstring claim)",
+   "output_excerpt": "2-D animated surface silently no-op per docstring",
+   "evidence": []
+  },
+  {
+   "case": "zoom=2 animation",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery3_*.py  # case: zoom=2 animation",
+   "output_excerpt": "zoom=2 ok",
+   "evidence": []
+  },
+  {
+   "case": "NUMERIC CLAIM: plotly 3-D density Volume opacity (doc says 0.6, code 0.4)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: NUMERIC CLAIM: plotly 3-D density Volume opacity (doc says 0",
+   "output_excerpt": "go.Volume opacity=0.4 surface_count=15 isomin=0.05 (docstring claims opacity=min(3*0.2,0.6)=0.6)",
+   "evidence": []
+  },
+  {
+   "case": "NUMERIC CLAIM: plotly 2-D density ramp to 1.5*alpha",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: NUMERIC CLAIM: plotly 2-D density ramp to 1.5*alpha",
+   "output_excerpt": "contour colorscale last stop=(1, 'rgba(219,95,87,0.30000000000000004)') (docstring: ramp to 1.5*alpha=0.3)",
+   "evidence": []
+  },
+  {
+   "case": "doc: plotly ignores unmapped extra kwargs with UserWarning naming them",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: doc: plotly ignores unmapped extra kwargs with UserWarning n",
+   "output_excerpt": "expected UserWarning naming zorder/dashes | WARNINGS: backend='plotly' cannot map the following extra kwarg(s) to a trace property and will ignore them: ['dashes', ",
+   "evidence": []
+  },
+  {
+   "case": "doc GH#206: **kwargs passthrough verbatim (zorder/alpha/markeredgecolor) mpl",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: doc GH#206: **kwargs passthrough verbatim (zorder/alpha/mark",
+   "output_excerpt": "zorder=3 alpha=0.5 mec=k",
+   "evidence": []
+  },
+  {
+   "case": "NUMERIC CLAIM: label_alpha default 0.5 both backends",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: NUMERIC CLAIM: label_alpha default 0.5 both backends",
+   "output_excerpt": "mpl bbox alpha=0.5 (claim 0.5); plotly bgcolor=rgba(255,255,255,0.5) (claim rgba(...,0.5))",
+   "evidence": []
+  },
+  {
+   "case": "label_alpha=0.9 override honored",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: label_alpha=0.9 override honored",
+   "output_excerpt": "alpha=0.9",
+   "evidence": []
+  },
+  {
+   "case": "doc: fmt 'o-' static mpl -> 2 artists, markers at true points, line interpolated",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: doc: fmt 'o-' static mpl -> 2 artists, markers at true point",
+   "output_excerpt": "artists=[('-', 'None', 901), ('None', 'o', 20)] (docstring: 2 artists -- smoothed line + markers at TRUE points)",
+   "evidence": []
+  },
+  {
+   "case": "elev=45/azim=120 work but are undocumented",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: elev=45/azim=120 work but are undocumented",
+   "output_excerpt": "ax.elev=45 ax.azim=120 (params UNDOCUMENTED in plot() docstring)",
+   "evidence": []
+  },
+  {
+   "case": "xlabel/ylabel/zlabel mpl 3-D",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: xlabel/ylabel/zlabel mpl 3-D",
+   "output_excerpt": "mpl labels=('PC1', 'PC2', 'PC3')",
+   "evidence": [
+    "axis_labels_3d.png"
+   ]
+  },
+  {
+   "case": "xlabel/ylabel plotly 2-D",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: xlabel/ylabel plotly 2-D",
+   "output_excerpt": "plotly 2-D titles=(dim1,dim2)",
+   "evidence": []
+  },
+  {
+   "case": "colorbar dict {'label','location':'top'}",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: colorbar dict {'label','location':'top'}",
+   "output_excerpt": "n_axes=2 (main + colorbar)",
+   "evidence": [
+    "colorbar_top.png"
+   ]
+  },
+  {
+   "case": "frame_kwargs 3-D (plot_wireframe) and 2-D (Rectangle)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: frame_kwargs 3-D (plot_wireframe) and 2-D (Rectangle)",
+   "output_excerpt": "3-D wireframe + 2-D Rectangle frame_kwargs ok",
+   "evidence": [
+    "frame_kwargs_red.png"
+   ]
+  },
+  {
+   "case": "ax= existing 3-D axis handle",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: ax= existing 3-D axis handle",
+   "output_excerpt": "returned fig is caller fig: True",
+   "evidence": []
+  },
+  {
+   "case": "transform= bypasses transformations",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: transform= bypasses transformations",
+   "output_excerpt": "transform= bypass ok (x=None)",
+   "evidence": []
+  },
+  {
+   "case": "hue categorical with None entries (docstring example form)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: hue categorical with None entries (docstring example form)",
+   "output_excerpt": "",
+   "evidence": [
+    "hue_none_entries.png"
+   ]
+  },
+  {
+   "case": "hue 2-D matrix (3 cols) palette blend",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: hue 2-D matrix (3 cols) palette blend",
+   "output_excerpt": "3-col matrix hue palette-blend path ok",
+   "evidence": []
+  },
+  {
+   "case": "hue matrix >3 cols -> color_reduce RGB path (+explicit color_reduce)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: hue matrix >3 cols -> color_reduce RGB path (+explicit color",
+   "output_excerpt": ">3-col matrix auto-reduced to RGB; explicit color_reduce on 3-col ok",
+   "evidence": []
+  },
+  {
+   "case": "hue nested list mirroring dataset nesting (docstring)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: hue nested list mirroring dataset nesting (docstring)",
+   "output_excerpt": "nested per-dataset hue ok",
+   "evidence": []
+  },
+  {
+   "case": "palette= list of RGB tuples (mat2colors doc: 'str or list')",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: palette= list of RGB tuples (mat2colors doc: 'str or list')",
+   "output_excerpt": "palette as list of RGB tuples ok",
+   "evidence": []
+  },
+  {
+   "case": "save_path=.pdf static",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: save_path=.pdf static",
+   "output_excerpt": "pdf 4KB",
+   "evidence": []
+  },
+  {
+   "case": "legend=True implicit labels",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: legend=True implicit labels",
+   "output_excerpt": "implicit legend labels=['1', '2', '3']",
+   "evidence": []
+  },
+  {
+   "case": "markersize=12 linewidth=4 honored",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: markersize=12 linewidth=4 honored",
+   "output_excerpt": "ms=12.0 lw=4.0",
+   "evidence": []
+  },
+  {
+   "case": "explore=True 3-D static (experimental feature)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: explore=True 3-D static (experimental feature)",
+   "output_excerpt": "explore=True static 3-D ok (experimental)",
+   "evidence": []
+  },
+  {
+   "case": "random_state threading (TSNE repeatable embedding)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: random_state threading (TSNE repeatable embedding)",
+   "output_excerpt": "TSNE random_state=0 repeatable: True",
+   "evidence": []
+  },
+  {
+   "case": "cluster= GaussianMixture dict spec (soft clustering)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: cluster= GaussianMixture dict spec (soft clustering)",
+   "output_excerpt": "",
+   "evidence": [
+    "cluster_gmm.png"
+   ]
+  },
+  {
+   "case": "docstring example: manip=[Smooth, Resample] chain",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: docstring example: manip=[Smooth, Resample] chain",
+   "output_excerpt": "manip chain from docstring example ok | WARNINGS: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas sinc",
+   "evidence": []
+  },
+  {
+   "case": "NUMERIC CLAIM: resample=500 -> exactly 500 rows",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: NUMERIC CLAIM: resample=500 -> exactly 500 rows",
+   "output_excerpt": "rows after resample=500: 500",
+   "evidence": []
+  },
+  {
+   "case": "docstring example: pipeline= reuse from analyze(return_model=True)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: docstring example: pipeline= reuse from analyze(return_model",
+   "output_excerpt": "docstring pipeline reuse example ok | WARNINGS: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas sinc ; The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas sinc",
+   "evidence": []
+  },
+  {
+   "case": "impute default PPCA + override KNNImputer on NaN data",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: impute default PPCA + override KNNImputer on NaN data",
+   "output_excerpt": "NaN data: default PPCA + impute='KNNImputer' both ok | WARNINGS: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)",
+   "evidence": []
+  },
+  {
+   "case": "normalize= 'across'/'within'/'row'/False/None",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: normalize= 'across'/'within'/'row'/False/None",
+   "output_excerpt": "all documented normalize modes ok",
+   "evidence": []
+  },
+  {
+   "case": "align= documented forms",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: align= documented forms",
+   "output_excerpt": "ValueError: unknown model: False",
+   "evidence": []
+  },
+  {
+   "case": "size=[4,4] resizes figure",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: size=[4,4] resizes figure",
+   "output_excerpt": "figsize=(np.float64(4.0), np.float64(4.0))",
+   "evidence": []
+  },
+  {
+   "case": "title + font='DejaVu Sans' (installed family)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: title + font='DejaVu Sans' (installed family)",
+   "output_excerpt": "title='My Title' with font family ok",
+   "evidence": []
+  },
+  {
+   "case": "font= .ttf file path accepted",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery4_*.py  # case: font= .ttf file path accepted",
+   "output_excerpt": "font as file path ok (DejaVuSans.ttf)",
+   "evidence": []
+  },
+  {
+   "case": "x= list-of-lists of strings, corpus='wiki' pretrained model",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: x= list-of-lists of strings, corpus='wiki' pretrained model",
+   "output_excerpt": "text plot with corpus='wiki' pretrained ok",
+   "evidence": [
+    "text_wiki.png"
+   ]
+  },
+  {
+   "case": "x= text corpus='nips' (nips_model file is byte-identical to sotus data!)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: x= text corpus='nips' (nips_model file is byte-identical to ",
+   "output_excerpt": "corpus='nips' worked?!",
+   "evidence": []
+  },
+  {
+   "case": "x= text corpus='sotus' pretrained model",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: x= text corpus='sotus' pretrained model",
+   "output_excerpt": "corpus='sotus' pretrained ok",
+   "evidence": []
+  },
+  {
+   "case": "x= single bare string (docstring: 'String')",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: x= single bare string (docstring: 'String')",
+   "output_excerpt": "single bare string ok | WARNINGS: Cannot reduce the dimensionality of a single row of data. Return zeros length of ndims",
+   "evidence": []
+  },
+  {
+   "case": "corpus= custom list of text samples",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: corpus= custom list of text samples",
+   "output_excerpt": "custom list corpus ok | WARNINGS: Cannot reduce the dimensionality of a single row of data. Return zeros length of ndims",
+   "evidence": []
+  },
+  {
+   "case": "docstring-verbatim: vectorizer/semantic dict with 'params' key",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: docstring-verbatim: vectorizer/semantic dict with 'params' k",
+   "output_excerpt": "docstring 'params'-key dicts for semantic/vectorizer accepted",
+   "evidence": []
+  },
+  {
+   "case": "docstring: x accepts 'Geo' -- real DataGeometry input",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: docstring: x accepts 'Geo' -- real DataGeometry input",
+   "output_excerpt": "AttributeError: 'DataGeometry' object has no attribute 'ndim'",
+   "evidence": []
+  },
+  {
+   "case": "x= mixed list [ndarray, DataFrame]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: x= mixed list [ndarray, DataFrame]",
+   "output_excerpt": "mixed [array, DataFrame] ok",
+   "evidence": []
+  },
+  {
+   "case": "x= pandas Series (1-D)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: x= pandas Series (1-D)",
+   "output_excerpt": "pandas Series ok",
+   "evidence": []
+  },
+  {
+   "case": "edge: single observation (1 row)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: edge: single observation (1 row)",
+   "output_excerpt": "single point ok",
+   "evidence": []
+  },
+  {
+   "case": "edge: two observations line",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: edge: two observations line",
+   "output_excerpt": "two points ok",
+   "evidence": []
+  },
+  {
+   "case": "edge: ndims=1 (docstring doesn't forbid)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: edge: ndims=1 (docstring doesn't forbid)",
+   "output_excerpt": "ndims=1 ok",
+   "evidence": [
+    "ndims1.png"
+   ]
+  },
+  {
+   "case": "edge: legend= list len 1 for 2 datasets (error quality?)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: edge: legend= list len 1 for 2 datasets (error quality?)",
+   "output_excerpt": "ValueError: label= was given as a list/tuple of length 1, but there are 2 dataset(s) to plot; pass either a single value (broadcast to every dataset) or a list/tuple of length 2.",
+   "evidence": []
+  },
+  {
+   "case": "edge: save_path unknown extension .xyz (error quality?)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: edge: save_path unknown extension .xyz (error quality?)",
+   "output_excerpt": "ValueError: Format 'xyz' is not supported (supported formats: eps, jpeg, jpg, pdf, pgf, png, ps, raw, rgba, svg, svgz, tif, tiff, webp)",
+   "evidence": []
+  },
+  {
+   "case": "set_interactive_backend: context-manager + function forms (Agg)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: set_interactive_backend: context-manager + function forms (A",
+   "output_excerpt": "backend before=Agg after-ctx=Agg; both forms ran",
+   "evidence": []
+  },
+  {
+   "case": "interactive=True + mpl_backend='disable' (docstring: uses current backend)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: interactive=True + mpl_backend='disable' (docstring: uses cu",
+   "output_excerpt": "interactive=True with mpl_backend='disable' under Agg ok",
+   "evidence": []
+  },
+  {
+   "case": "docstring-verbatim: reduce dict example",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: docstring-verbatim: reduce dict example",
+   "output_excerpt": "reduce={'model':'PCA','kwargs':{'whiten':True}} (verbatim docstring) ok",
+   "evidence": []
+  },
+  {
+   "case": "docstring-verbatim: cluster dict example",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: docstring-verbatim: cluster dict example",
+   "output_excerpt": "cluster={'model':'KMeans','kwargs':{'max_iter':100}} (verbatim) ok",
+   "evidence": []
+  },
+  {
+   "case": "docstring-verbatim: align dict example",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: docstring-verbatim: align dict example",
+   "output_excerpt": "align={'model':'HyperAlign','kwargs':{'n_iter':10}} (verbatim) ok",
+   "evidence": []
+  },
+  {
+   "case": "vectorizer='TfidfVectorizer'",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: vectorizer='TfidfVectorizer'",
+   "output_excerpt": "TfidfVectorizer ok",
+   "evidence": []
+  },
+  {
+   "case": "streaming: generator input stream_init=100 chunk=50 max=200",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: streaming: generator input stream_init=100 chunk=50 max=200",
+   "output_excerpt": "stream ok type=Figure",
+   "evidence": []
+  },
+  {
+   "case": "misuse: hyp.plot() no args -> TypeError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: misuse: hyp.plot() no args -> TypeError",
+   "output_excerpt": "TypeError: missing a required argument: 'x'",
+   "evidence": []
+  },
+  {
+   "case": "misuse: hyp.plot(5) scalar (error quality?)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery5_*.py  # case: misuse: hyp.plot(5) scalar (error quality?)",
+   "output_excerpt": "no error?!",
+   "evidence": []
+  },
+  {
+   "case": "colors.mat2colors: 3 documented input kinds -> (n,3) RGB in [0,1]",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: colors.mat2colors: 3 documented input kinds -> (n,3) RGB in ",
+   "output_excerpt": "shapes: labels=(4, 3) 1D=(50, 3) 2D=(20, 3); in[0,1]=True",
+   "evidence": []
+  },
+  {
+   "case": "colors.colors2groups Returns: (list of tuples, dict)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: colors.colors2groups Returns: (list of tuples, dict)",
+   "output_excerpt": "ids type=list len=40; dict=True; n_groups=12",
+   "evidence": []
+  },
+  {
+   "case": "colors.get_palette_colors + continuous_colormap (n_bins=100 default)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: colors.get_palette_colors + continuous_colormap (n_bins=100 ",
+   "output_excerpt": "palette n=5; cmap type=ListedColormap N=100",
+   "evidence": []
+  },
+  {
+   "case": "trails.broadcast_trail_flag documented behavior + ValueError",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: trails.broadcast_trail_flag documented behavior + ValueError",
+   "output_excerpt": "[True, True, True] / [True, False] | ValueError: bullettime list has 1 entries but there are 3 datasets to plot; pass a single bool to apply it to ev",
+   "evidence": []
+  },
+  {
+   "case": "surface.normalize_surface_arg Returns (None/dict/list)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: surface.normalize_surface_arg Returns (None/dict/list)",
+   "output_excerpt": "None->None; True->dict; list->['dict', 'dict', 'NoneType']",
+   "evidence": []
+  },
+  {
+   "case": "multiindex.expand_multiindex runs on 2-level df",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: multiindex.expand_multiindex runs on 2-level df",
+   "output_excerpt": "type=tuple; len=4",
+   "evidence": []
+  },
+  {
+   "case": "morph.sample_and_match_clouds equalizes cloud sizes (pad-not-drop claim)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: morph.sample_and_match_clouds equalizes cloud sizes (pad-not",
+   "output_excerpt": "out type=tuple; shapes=[(50, 3), (50, 3)]",
+   "evidence": []
+  },
+  {
+   "case": "morph.segment_frame_counts ZERO_ROTATION_FLOOR claim (0-rot segment gets frames)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: morph.segment_frame_counts ZERO_ROTATION_FLOOR claim (0-rot ",
+   "output_excerpt": "counts=[24, 2, 48, 2, 24] sum=100 (0-rotation segments still visible: True)",
+   "evidence": []
+  },
+  {
+   "case": "meshutil.points_enclosed on smooth_hull_3d output",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: meshutil.points_enclosed on smooth_hull_3d output",
+   "output_excerpt": "TypeError: unsupported format string passed to numpy.ndarray.__format__",
+   "evidence": []
+  },
+  {
+   "case": "meshutil.backface_cull removes away-facing faces",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: meshutil.backface_cull removes away-facing faces",
+   "output_excerpt": "AssertionError: ",
+   "evidence": []
+  },
+  {
+   "case": "VISUAL CLAIM: mpl 2-D density is imshow layer",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: VISUAL CLAIM: mpl 2-D density is imshow layer",
+   "output_excerpt": "n_images=1 (docstring: alpha-ramped imshow, not contourf)",
+   "evidence": [
+    "density_2d_imshow.png"
+   ]
+  },
+  {
+   "case": "doc: density levels= is a documented no-op for 2-D",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: doc: density levels= is a documented no-op for 2-D",
+   "output_excerpt": "levels key silently ignored for 2-D (documented no-op)",
+   "evidence": []
+  },
+  {
+   "case": "doc: density per_group=False -> single pooled gray layer",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: doc: density per_group=False -> single pooled gray layer",
+   "output_excerpt": "per_group=False pooled neutral-gray layer drawn",
+   "evidence": [
+    "density_pooled_gray.png"
+   ]
+  },
+  {
+   "case": "doc: surface keep_points=False hides dataset's own markers",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: doc: surface keep_points=False hides dataset's own markers",
+   "output_excerpt": "visible line artists=0 (expect 0: keep_points=False hides data)",
+   "evidence": [
+    "surface_keep_points_false.png"
+   ]
+  },
+  {
+   "case": "NUMERIC CLAIM: animation default linewidth 1",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: NUMERIC CLAIM: animation default linewidth 1",
+   "output_excerpt": "animation line lws=[1.0] (docstring: default 1 for animations)",
+   "evidence": []
+  },
+  {
+   "case": "doc: font=None auto-detects covering font for CJK labels",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: doc: font=None auto-detects covering font for CJK labels",
+   "output_excerpt": "CJK labels rendered (font=None auto-detect)",
+   "evidence": [
+    "cjk_labels_autofont.png"
+   ]
+  },
+  {
+   "case": "doc: segmented colorbar for discrete groups (n_clusters)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: doc: segmented colorbar for discrete groups (n_clusters)",
+   "output_excerpt": "n_axes=2",
+   "evidence": [
+    "colorbar_segmented.png"
+   ]
+  },
+  {
+   "case": "edge: hyp.plot(5) scalar silently plots (rough edge?)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: edge: hyp.plot(5) scalar silently plots (rough edge?)",
+   "output_excerpt": "hyp.plot(5) silently returns Figure; (lines, collections)=(1, 0)",
+   "evidence": []
+  },
+  {
+   "case": "2-D animate='serial' gif evidence",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/battery6_*.py  # case: 2-D animate='serial' gif evidence",
+   "output_excerpt": "2-D serial gif 56KB",
+   "evidence": [
+    "anim_serial_2d.gif"
+   ]
+  },
+  {
+   "case": "meshutil doctests VERBATIM (smooth_hull_3d + smooth_hull_2d Examples)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -m doctest -v hypertools/plot/meshutil.py",
+   "output_excerpt": "10 tests in 20 items. 10 passed and 0 failed. Test passed.",
+   "evidence": []
+  },
+  {
+   "case": "drift table: plot() docstring Parameters vs signature",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/drift_check.py",
+   "output_excerpt": "plot.py :: plot -- MISSING FROM DOC: ['elev', 'azim']; all other plot-package public objects OK (blinn_phong_vertex_colors grouped-entry and plotly_draw prose-style noted separately)",
+   "evidence": []
+  },
+  {
+   "case": "isolate: hyp.plot(xs, align=False) -- documented value",
+   "result": "fail",
+   "command": "/Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp, numpy as np; hyp.plot([np.random.randn(50,6),np.random.randn(50,6)], align=False, show=False)\"",
+   "output_excerpt": "ValueError: unknown model: False  (hypertools/core/shared.py:154 unpack_model); align=None -> OK",
+   "evidence": []
+  },
+  {
+   "case": "isolate: hyp.plot(xs, cluster=False) -- documented value",
+   "result": "fail",
+   "command": "/Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp, numpy as np; hyp.plot(np.random.randn(50,6), cluster=False, show=False)\"",
+   "output_excerpt": "ValueError: Invalid cluster model specified; should be string or dictionary!  (plot.py ~line 1905); cluster=None -> OK",
+   "evidence": []
+  },
+  {
+   "case": "cross-check: hyp.analyze(xs, align=False) / analyze(xs, cluster=False)",
+   "result": "fail",
+   "command": "/Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp, numpy as np; hyp.analyze([np.random.randn(50,6)]*2, align=False)\"",
+   "output_excerpt": "analyze align=False -> ValueError: unknown model: False; analyze cluster=False -> AttributeError: 'bool' object has no attribute 'fit'",
+   "evidence": []
+  },
+  {
+   "case": "md5 compare: ~/hypertools_data/nips_model vs sotus (Drive-ID duplication in io/load.py EXAMPLE_DATA)",
+   "result": "fail",
+   "command": "md5 ~/hypertools_data/nips_model ~/hypertools_data/sotus",
+   "output_excerpt": "MD5(nips_model) = 6a350ab8d85db34e7b924ac8a7f2a19b == MD5(sotus); EXAMPLE_DATA['sotus'] and ['nips_model'] both '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm'",
+   "evidence": []
+  },
+  {
+   "case": "hyp.load('sotus') returns fitted sklearn Pipeline instead of speeches text",
+   "result": "fail",
+   "command": "/Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp; print(type(hyp.load('sotus')))\"",
+   "output_excerpt": "sotus -> Pipeline ['cv', 'lda']; nips -> list (1, 7241, 1); wiki -> list (1, 3136, 1)",
+   "evidence": []
+  },
+  {
+   "case": "documented path: plot(texts, corpus='sotus', semantic='NMF') (non-default model => corpus text fit)",
+   "result": "fail",
+   "command": "/Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp; hyp.plot([['a brain'],['a market']], fmt='o', corpus='sotus', semantic='NMF', show=False)\"",
+   "output_excerpt": "AttributeError: 'CountVectorizer' object has no attribute 'lower' (text2mat vectorizes the Pipeline's steps as if they were documents)",
+   "evidence": []
+  },
+  {
+   "case": "corpus='nips' vs 'sotus' vs 'wiki' embeddings differ (models load; provenance of nips_model unverifiable)",
+   "result": "pass",
+   "command": "/Users/jmanning/hypertools/.venv/bin/python -c \"... hyp.plot(texts, corpus='nips', return_model=True) ...\"",
+   "output_excerpt": "nips==sotus embeddings: False; nips==wiki: False; all three '<corpus>_model' files unpickle to Pipeline(cv, lda) with sklearn InconsistentVersionWarning (pickled by sklearn 1.0.2, running 1.8.0)",
+   "evidence": []
+  },
+  {
+   "case": "degenerate density value-dependence: tile([1,2,3]) warns+skips; tile([-1.265,-0.623,0.041]) NO warning",
+   "result": "fail",
+   "command": "/Users/jmanning/hypertools/.venv/bin/python -c \"from hypertools.plot.density import fit_kde; import numpy as np; fit_kde(np.tile([[1.,2.,3.]],(30,1))); fit_kde(np.tile([[-1.26542147,-0.62327446,0.04132598]],(30,1)))\"",
+   "output_excerpt": "A -> None ['density: dataset A is degenerate (...); skipping its density.']; B -> <scipy.stats._kde.gaussian_kde object> [] -- kde covariance ~1e-32, kde peak 3.99e+71, evaluation grid all zeros (empty layer, no warning)",
+   "evidence": []
+  },
+  {
+   "case": "numeric: resolve_plotly_volume_params(0.2, 3, 1.0) vs plot() docstring claim",
+   "result": "fail",
+   "command": "/Users/jmanning/hypertools/.venv/bin/python -c \"from hypertools.plot.density import resolve_plotly_volume_params; print(resolve_plotly_volume_params(0.2, 3, 1.0))\"",
+   "output_excerpt": "(0.15, 0.05, [[0, 0], [0.3, 0.27], [1, 0.53]], 0.4, 15) -- opacity 0.4 = min(2*alpha, 0.4); plot() docstring still claims opacity=min(3.0*alpha, 0.6)",
+   "evidence": []
+  },
+  {
+   "case": "numeric: resolve_iso_fracs_alphas(3) == hand-tuned (0.10, 0.35, 0.65)/(0.03, 0.05, 0.07)",
+   "result": "pass",
+   "command": "/Users/jmanning/hypertools/.venv/bin/python -c \"from hypertools.plot.density import resolve_iso_fracs_alphas; print(resolve_iso_fracs_alphas(3))\"",
+   "output_excerpt": "((0.1, 0.35, 0.65), (0.03, 0.05, 0.07)) -- matches docstring exactly (incl. the 0.35-not-0.375 middle shell)",
+   "evidence": []
+  },
+  {
+   "case": "numeric: 3-level MultiIndex lw/alpha == docstring formulas (leaves 1/0.533, mid 2/0.7, top 3/1.0)",
+   "result": "pass",
+   "command": "/Users/jmanning/hypertools/.venv/bin/python -c \"... 3-level MultiIndex df -> distinct (lw, alpha) ...\"",
+   "output_excerpt": "distinct (lw, alpha): [(1.0, 0.5333), (2.0, 0.7), (3.0, 1.0)] | match: True",
+   "evidence": [
+    "multiindex_3level.png"
+   ]
+  },
+  {
+   "case": "docstring: x accepts 'Geo' -- real DataGeometry (unpickled hosted spiral file) into plot()",
+   "result": "fail",
+   "command": "/Users/jmanning/hypertools/.venv/bin/python -c \"import pickle, hypertools as hyp; geo=pickle.load(open('~/hypertools_data/spiral','rb')); hyp.plot(geo, show=False)\"",
+   "output_excerpt": "AttributeError: 'DataGeometry' object has no attribute 'ndim' (tools/format_data.py:190)",
+   "evidence": []
+  },
+  {
+   "case": "meshutil.points_enclosed + backface_cull Returns match docstrings (bool masks)",
+   "result": "pass",
+   "command": "/Users/jmanning/hypertools/.venv/bin/python -c \"... smooth_hull_3d -> points_enclosed mask all True; backface_cull kept 1430 of 2944 ...\"",
+   "output_excerpt": "points_enclosed: bool mask (100,) all enclosed: True; backface_cull: bool mask kept 1430 of 2944 (49%)",
+   "evidence": []
+  },
+  {
+   "case": "visual: plotly 3-D density html screenshot (Playwright, localhost -- kaleido avoided per rules)",
+   "result": "pass",
+   "command": "python -m http.server 8763 + browser_navigate + browser_take_screenshot",
+   "output_excerpt": "subtle volumetric glow behind markers, matches retuned airy look; only console error = favicon 404 from ad-hoc server",
+   "evidence": [
+    "plotly_density3d_screenshot.png"
+   ]
+  },
+  {
+   "case": "visual: CJK auto-font labels render real glyphs (no tofu)",
+   "result": "pass",
+   "command": "battery6 t_cjk_font_auto + manual PNG inspection",
+   "output_excerpt": "labels '\u3044\u3061'/'\u306b' render with real glyphs via auto-detected covering font",
+   "evidence": [
+    "cjk_labels_autofont.png"
+   ]
+  },
+  {
+   "case": "visual: continuous hue colorbar endpoints identical color (cyclic 'hls' default)",
+   "result": "fail",
+   "command": "battery1 workflow3 + manual PNG inspection",
+   "output_excerpt": "hue=linspace(0,1): both trajectory ends and both colorbar ends are the same red -- min/max indistinguishable with default palette",
+   "evidence": [
+    "wf3_hue_colorbar.png"
+   ]
+  }
+ ],
+ "findings": [
+  {
+   "id": "D11-docstrings-plot-001",
+   "severity": "major",
+   "title": "plot(align=False) crashes with 'unknown model: False' though docstring documents False as valid",
+   "description": "plot()'s align docstring reads: \"align : str, dict, False, or None ... If False or None, no alignment is applied (default: None).\" align=None works, but align=False is forwarded into the model resolver and crashes. Same failure in hyp.analyze(data, align=False) (the shared pipeline dispatcher), so the falsy-check bug is upstream of plot. normalize=False works correctly, making the align/cluster behavior inconsistent with the documented and sibling-kwarg contract.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; xs=[np.cumsum(np.random.default_rng(s).normal(size=(50,6)),axis=0) for s in (1,2,3)]; hyp.plot(xs, align=False, show=False)\"",
+   "expected": "No alignment applied (identical to align=None), per docstring.",
+   "actual": "ValueError: unknown model: False\n  File \"/Users/jmanning/hypertools/hypertools/core/shared.py\", line 154, in unpack_model",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py",
+    "hypertools/core/shared.py",
+    "hypertools/tools/analyze.py"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-002",
+   "severity": "major",
+   "title": "plot(cluster=False) crashes though docstring documents 'cluster : str, dict, False, or None'",
+   "description": "The cluster docstring's type line explicitly lists False. cluster=None works; cluster=False raises plot.py's own type check error. Via hyp.analyze(data, cluster=False) the same value fails even less gracefully (AttributeError: 'bool' object has no attribute 'fit'). Either False should be treated as None (as documented, and as normalize= does) or the docs must drop False.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; hyp.plot(np.random.default_rng(0).normal(size=(60,5)), cluster=False, show=False)\"",
+   "expected": "No clustering applied (identical to cluster=None), per docstring.",
+   "actual": "ValueError: Invalid cluster model specified; should be string or dictionary!  (raised from hypertools/plot/plot.py, cluster-resolution block ~line 1905); analyze path: AttributeError: 'bool' object has no attribute 'fit'",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py",
+    "hypertools/tools/analyze.py"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-003",
+   "severity": "major",
+   "title": "corpus='sotus' documented path broken: EXAMPLE_DATA['sotus'] Drive ID duplicates 'nips_model', so load('sotus') returns a fitted Pipeline instead of the speeches",
+   "description": "plot()'s corpus docstring: \"If set to 'wiki', 'nips' or 'sotus' and the default semantic and vectorizer models are used, a pretrained model will be loaded\" -- implying that with NON-default models the named corpus TEXT is fetched and fit on (text2mat.py:269 does np.array(load(corpus))). But io/load.py EXAMPLE_DATA has 'sotus': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm' -- the SAME Google Drive ID as 'nips_model' (cached files byte-identical, md5 6a350ab8d85db34e7b924ac8a7f2a19b). That file unpickles to a fitted sklearn Pipeline(cv, lda), so (a) hyp.load('sotus') returns a MODEL object instead of the State-of-the-Union text data, and (b) the documented plot(texts, corpus='sotus', semantic='NMF') crashes trying to vectorize Pipeline steps as documents. 'nips' and 'wiki' data entries load correctly as text lists. Side observations: whether the shared '1J0M' Pipeline is genuinely the NIPS-trained model is unverifiable from the vocabularies (generic terms), so corpus='nips' (default models) may silently use a mislabeled model; all three *_model pickles also emit sklearn InconsistentVersionWarning (pickled under sklearn 1.0.2, loaded under 1.8.0). Root cause is io/load.py (cross-unit) but it breaks plot()'s documented corpus= contract.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import matplotlib; matplotlib.use('Agg'); import hypertools as hyp; print(type(hyp.load('sotus'))); hyp.plot([['the brain encodes memories'],['stock markets rallied']], fmt='o', corpus='sotus', semantic='NMF', show=False)\"",
+   "expected": "load('sotus') returns the SOTUS speeches (list/array of text); corpus='sotus' with a non-default semantic model fits that model on the speeches and plots.",
+   "actual": "sotus -> Pipeline ['cv', 'lda']\ncorpus=sotus + semantic=NMF -> AttributeError : 'CountVectorizer' object has no attribute 'lower'",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py",
+    "hypertools/io/load.py",
+    "hypertools/tools/text2mat.py"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-004",
+   "severity": "doc",
+   "title": "plot() docstring omits elev and azim from its Parameters section",
+   "description": "elev=10 and azim=-60 are in plot()'s signature (plot.py:158-159) and work (verified: elev=45/azim=120 change ax.elev/ax.azim), but the ~1000-line Parameters section never documents them. They are the only signature parameters missing from the docs (checked programmatically against every documented entry). A new user cannot discover the initial-camera controls, which also interact with documented features (surface lighting derives the key light from the camera view).",
+   "repro": "grep -n 'elev' hypertools/plot/plot.py | head -3  # signature only, no 'elev :' Parameters entry; env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import matplotlib; matplotlib.use('Agg'); import numpy as np, hypertools as hyp; f=hyp.plot(np.random.randn(50,3), elev=45, azim=120, show=False); print(f.axes[0].elev, f.axes[0].azim)\"",
+   "expected": "Every signature parameter documented in Parameters.",
+   "actual": "drift_check.py: 'plot.py :: plot -- MISSING FROM DOC: [\\'elev\\', \\'azim\\']'; runtime: '45 120' (both functional).",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py",
+    "docs/reference (sphinx-rendered plot API page)"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-005",
+   "severity": "doc",
+   "title": "plot() -- the library's primary entry point -- has no Examples section (no runnable example anywhere in its 57.9k-char docstring)",
+   "description": "The main docstring contains rich Parameters/Returns text and a few inline code fragments buried inside parameter prose (e.g. the manip chain, animate dict), but there is no numpydoc Examples section and not a single '>>>' a new user could paste. Across the whole hypertools/plot package only meshutil.smooth_hull_3d/smooth_hull_2d (internal helpers) have doctests (both pass verbatim). The audit brief's bar -- 'working examples a new user could paste' -- is unmet for plot() itself. Organization is otherwise complete but heavy: several entries (fmt, x/MultiIndex, animate) read as changelog/design-history (GH-issue numbers, 'QC 2026-07', maintainer-request dates) rather than user documentation.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp; d=hyp.plot.__doc__ or ''; print('>>>' in d, 'Examples' in d, len(d))\"",
+   "expected": "An Examples section with a handful of copy-pasteable snippets (static plot, list of datasets, hue, animate, backend='plotly').",
+   "actual": "False False 57877  (no '>>>', no Examples section)",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-006",
+   "severity": "doc",
+   "title": "plot() docstring claims x accepts 'Geo', but a real DataGeometry crashes format_data",
+   "description": "Line 215: \"x : Numpy array, DataFrame, String, Geo or mixed list\". In 1.0 DataGeometry is an internal unpickle-only legacy shell (per its own docstring and CLAUDE.md) and plot.py has no Geo-handling code path ('Geo' appears only in that docstring line). Passing the actual DataGeometry unpickled from the hosted spiral example file crashes deep in format_data with an attribute error -- neither supported nor cleanly rejected.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import pickle, os, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; geo=pickle.load(open(os.path.expanduser('~/hypertools_data/spiral'),'rb')); print(type(geo).__name__); hyp.plot(geo, show=False)\"",
+   "expected": "Either Geo removed from the documented input types, or a clear error ('DataGeometry is not supported in 1.0; pass geo.get_data() / hyp.load(...) raw data instead').",
+   "actual": "DataGeometry\nAttributeError: 'DataGeometry' object has no attribute 'ndim'\n  File \"hypertools/tools/format_data.py\", line 190, in format_data\n    if any([i.ndim <= 1 for i in processed_x]):",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-007",
+   "severity": "doc",
+   "title": "vectorizer/semantic docstrings reference nonexistent kwargs 'vectorizer_params' and 'text_params'",
+   "description": "plot()'s vectorizer entry ends: \"If a class, pass any parameters as a dictionary to vectorizer_params. If a class instance, no parameters can be passed.\" and the semantic entry: \"If a class, pass any parameters as a dictionary to text_params.\" Neither vectorizer_params nor text_params exists in plot()'s signature (or text2mat's) -- stale hypertools-0.x text. The dict forms shown ({'model': ..., 'params': {...}}) DO work (verified live for both CountVectorizer/max_features and NMF/n_components), so only these two sentences are wrong. Note the 'params' dict key here also differs from the 'kwargs' key every other model-spec dict in 1.0 uses (reduce/cluster/align/manip) -- worth a harmonization note in the docs even though both grammars work in their own domains.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import inspect, hypertools as hyp; sig=inspect.signature(hyp.plot); print('vectorizer_params' in sig.parameters, 'text_params' in sig.parameters)\"",
+   "expected": "Docstring points class users at the dict spec form (or an actually-existing kwarg).",
+   "actual": "False False -- no such parameters exist; sentences reference kwargs removed before 1.0.",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py",
+    "hypertools/tools/text2mat.py"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-008",
+   "severity": "doc",
+   "title": "plot() density docstring still documents the pre-retune plotly Volume constants (opacity=min(3.0*alpha, 0.6))",
+   "description": "plot()'s density entry says plotly's 3-D layer uses \"`opacity=min(3.0 * alpha, 0.6)`\". The R2 retune (documented inside density.resolve_plotly_volume_params itself: constants \"were lowered from the original opacity=min(3*alpha, 0.6)\") changed this to min(2*alpha, 0.4) plus a different opacityscale ([[0,0],[0.3,0.27],[1,0.53]] vs the docstring's implied older ramp). Verified live: a default-alpha (0.2) plotly 3-D density trace has opacity=0.4, not 0.6. The neighboring claims in the same sentence (isomin=0.05, surface_count=5*levels) are still correct, as are the mpl iso-shell constants (fracs (0.10,0.35,0.65), alphas (0.03,0.05,0.07)) and the 2-D 1.5*alpha ramp (verified 0.30000000000000004 colorscale peak).",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; f=hyp.plot(np.random.default_rng(3).normal(size=(150,3)), fmt='o', density=True, backend='plotly', show=False); v=[t for t in f.data if t.type=='volume'][0]; print(v.opacity, v.surface.count, v.isomin)\"",
+   "expected": "0.6 per the plot() docstring claim min(3.0*0.2, 0.6).",
+   "actual": "0.4 15 0.05  -- actual opacity=min(2*alpha, 0.4)=0.4; resolve_plotly_volume_params(0.2, 3, 1.0) -> (0.15, 0.05, [[0, 0], [0.3, 0.27], [1, 0.53]], 0.4, 15)",
+   "evidence": [
+    "plotly_density3d_screenshot.png"
+   ],
+   "docs_impact": [
+    "hypertools/plot/plot.py"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-009",
+   "severity": "minor",
+   "title": "Degenerate-data density warning is value-dependent: exactly duplicated points can silently produce an empty density layer with no UserWarning",
+   "description": "The density docstring promises: \"A dataset with too few points (< 3) or degenerate (singular covariance -- e.g. exactly duplicated/collinear/coplanar points) has its density silently skipped with a UserWarning (never a crash).\" fit_kde only warns when scipy.stats.gaussian_kde RAISES; for some duplicated-point coordinate values floating-point noise leaves a ~1e-32 covariance that gaussian_kde ACCEPTS, returning a spike KDE (peak ~4e71) whose evaluation grid is all zeros -- an empty layer drawn with no warning at all. 30 copies of [1,2,3] warn and skip; 30 copies of [-1.26542147,-0.62327446,0.04132598] don't. Never crashes (that half of the promise holds).",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import warnings, numpy as np; from hypertools.plot.density import fit_kde;\nfor v in ([1.,2.,3.], [-1.26542147,-0.62327446,0.04132598]):\n    with warnings.catch_warnings(record=True) as w:\n        warnings.simplefilter('always'); k = fit_kde(np.tile([v],(30,1)))\n        print(v, '->', type(k).__name__, [str(x.message)[:60] for x in w])\"",
+   "expected": "UserWarning + skip for BOTH exactly-duplicated point sets, per docstring.",
+   "actual": "[1.0, 2.0, 3.0] -> NoneType ['density: dataset is degenerate (...); skipping its density.']\n[-1.26542147, -0.62327446, 0.04132598] -> gaussian_kde []   (no warning; covariance ~7.7e-32; grid D min 0.0 max 0.0)",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py",
+    "hypertools/plot/density.py"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-010",
+   "severity": "minor",
+   "title": "labels= length mismatch silently accepted despite docstring 'Must be dimensionality of data (x)' (and 'dimensionality' should read 'length')",
+   "description": "hyp.plot(x60, labels=['a','b','c']) draws call-outs on the first 3 points and raises/warns nothing, while every other per-point/per-dataset kwarg got GH#206-style length validation with excellent messages (color/marker/linestyle/legend/chemtrails/hue all name the kwarg and both counts -- verified). Also the phrase 'Must be dimensionality of data' means 'must have one entry per row'; as written it suggests the feature count.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; hyp.plot(np.cumsum(np.random.default_rng(0).normal(size=(60,4)),axis=0), labels=['a','b','c'], show=False); print('no error raised')\"",
+   "expected": "ValueError naming labels=, the given length (3), and the required observation count (60) -- matching the hue= message style.",
+   "actual": "no error raised   (first 3 points annotated, remaining 57 unlabeled)",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-011",
+   "severity": "doc",
+   "title": "set_interactive_backend docstring: internal dev-notes leaked into public 1.0 docs + grammar slip",
+   "description": "Notes item 4 is maintainer-facing commentary naming a private global: \"whether it's being called inside the ... context manager by checking the value of a global variable (`IN_SET_CONTEXT`) ... This definitely isn't an ideal setup and could probably be refactored out in the v1.0 overhaul, but for now the alternatives are ... So for now, the current setup is probably good enough.\" -- reads as pre-1.0 TODO text shipped in the 1.0 release. Also intro grammar: \"is useful for doing so for multiple (or all) interactive plots at once, and can be in two different ways:\" (missing 'used'). The examples use hyp.load('weights_avg') (valid registered dataset -- verified cached) and TkAgg (mechanics verified headless with 'Agg' in both function and context-manager forms).",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp; d=hyp.set_interactive_backend.__doc__; print('IN_SET_CONTEXT' in d, 'v1.0 overhaul' in d, 'can be in two different ways' in d)\"",
+   "expected": "Public docstring without internal refactor musings; 'can be used in two different ways'.",
+   "actual": "True True True",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/backend.py"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-012",
+   "severity": "doc",
+   "title": "plot() Returns section still says '(fig, animation) tuple' -- HyperAnimation and its export methods are undocumented at the call site",
+   "description": "Animated matplotlib plots actually return hypertools.plot.hyper_animation.HyperAnimation (verified; a tuple subclass, so the docstring isn't strictly false), whose whole point is the discoverable .save()/.to_html5_video()/.to_jshtml()/.figure API (module docstring: 'the object an animated hyp.plot(...) returns'). A plot() docstring reader never learns these methods exist. All methods verified working (gif 158KB, html5 video via ffmpeg, jshtml).",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; out=hyp.plot(np.random.randn(30,3), animate=True, duration=1, frame_rate=4, show=False); print(type(out).__name__, isinstance(out, tuple))\"",
+   "expected": "Returns section names HyperAnimation and its export helpers.",
+   "actual": "HyperAnimation True  -- plot() Returns text: 'For animated matplotlib plots a ``(fig, animation)`` tuple is returned instead'",
+   "evidence": [
+    "anim_spiral_spin.gif"
+   ],
+   "docs_impact": [
+    "hypertools/plot/plot.py",
+    "hypertools/plot/hyper_animation.py"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-013",
+   "severity": "style",
+   "title": "plotly_draw is public-named but its 37-parameter signature is documented only by partial prose",
+   "description": "hypertools/plot/plotly_backend.py:plotly_draw has no leading underscore yet is an internal renderer. Its docstring documents ~8 params in prose paragraphs; the other ~29 (elev, azim, zoom, density, density_colors, morph_*, surface_*, etc.) have no entries. Every OTHER public object in the package has proper numpydoc Parameters (drift-checked). Either rename with an underscore (matching matplotlib_backend._draw, its documented mirror) or complete the section.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D11-docstrings-plot/drift_check.py",
+   "expected": "Underscore-private name, or complete Parameters entries.",
+   "actual": "drift report: 'plotly_backend.py :: plotly_draw -- MISSING FROM DOC: [data, fmt, kwargs_list, ... 36 entries]' (prose mentions a subset only)",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plotly_backend.py"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-014",
+   "severity": "minor",
+   "title": "hyp.plot(5) silently plots a bare scalar as a single point",
+   "description": "A scalar int is not a documented input type (x: 'Numpy array, DataFrame, String, Geo or mixed list') yet plot(5) returns a Figure with one line artist and no warning -- a likely-user-error (e.g. passing an index instead of data) sails through. hyp.plot() with no args does raise a clean TypeError (\"missing a required argument: 'x'\"), and hyp.plot([]) raises \"ValueError: input has no observations (0 rows); there is nothing to plot or analyze.\" -- so the scalar hole is the odd one out.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import matplotlib; matplotlib.use('Agg'); import hypertools as hyp; f=hyp.plot(5, show=False); print(type(f).__name__, len(f.axes[0].get_lines()))\"",
+   "expected": "A clear error (or at least a UserWarning) for scalar input.",
+   "actual": "Figure 1   (silently plotted)",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py",
+    "hypertools/tools/format_data.py"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-015",
+   "severity": "style",
+   "title": "Continuous hue with the default 'hls' palette maps min and max to the SAME color (cyclic palette on linear data)",
+   "description": "hue=np.linspace(0,1,n) with the documented default palette 'hls' colors both trajectory endpoints identical red, and the colorbar's 0.0 and 1.0 ends are indistinguishable (evidence PNG). Everything matches the docs ('mapped through the palette', colorbar 'spanning the ACTUAL hue value range' -- verified 0..1 ticks), but a cyclic wheel is a scientifically-misleading default for ordered/continuous values. Suggest either a perceptually-ordered default for the continuous-hue path (e.g. viridis) or a docstring warning under hue=/colorbar= recommending a sequential palette for continuous data.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; f=hyp.plot(np.cumsum(np.random.default_rng(1).normal(size=(200,6)),axis=0), hue=np.linspace(0,1,200), colorbar=True, show=False); f.savefig('/tmp/hue_cyclic.png')\"",
+   "expected": "Distinguishable endpoint colors for a monotone hue ramp (or documented guidance).",
+   "actual": "wf3_hue_colorbar.png: trajectory start and end both red; colorbar top (1.0) and bottom (0.0) both red.",
+   "evidence": [
+    "wf3_hue_colorbar.png"
+   ],
+   "docs_impact": [
+    "hypertools/plot/plot.py",
+    "hypertools/plot/colors.py"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-016",
+   "severity": "style",
+   "title": "explore docstring grammar: 'Displays user defined labels will appear on hover'",
+   "description": "Broken sentence in a public docstring (should be e.g. 'User-defined labels appear on hover.'). Feature itself runs without error on a 3-D static plot under a non-interactive backend (hover behavior untestable headless; documented as experimental).",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp; print('Displays user defined labels will appear on hover' in hyp.plot.__doc__)\"",
+   "expected": "Grammatical sentence.",
+   "actual": "True",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py"
+   ]
+  },
+  {
+   "id": "D11-docstrings-plot-017",
+   "severity": "doc",
+   "title": "palette documented as 'str' only, but list-of-RGB-tuples is accepted and functional",
+   "description": "plot() docs: \"palette : str -- A matplotlib or seaborn color palette\". Passing palette=[(1,0,0),(0,0,1)] works (verified -- datasets colored red/blue), and the package's own colors.mat2colors documents its palette parameter as \"str or list -- Seaborn palette name (or list of RGB tuples)\". plot()'s type line under-documents a supported, useful form.",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; hyp.plot([np.random.randn(30,3), np.random.randn(30,3)], palette=[(1,0,0),(0,0,1)], show=False); print('ok')\"",
+   "expected": "palette : str or list (matching mat2colors).",
+   "actual": "ok  -- list palette accepted; plot() docstring type says str only.",
+   "evidence": [],
+   "docs_impact": [
+    "hypertools/plot/plot.py"
+   ]
+  }
+ ]
+}

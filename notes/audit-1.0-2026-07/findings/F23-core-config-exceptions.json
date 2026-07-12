@@ -1,244 +1,425 @@
 {
   "unit": "F23-core-config-exceptions",
-  "target": "hypertools.config (module: version only) + hypertools/core/{configurator.py,config.ini,exceptions.py,shared.py} + hypertools/_shared/exceptions.py shim, on branch audit/release-1.0-2026-07 (python .venv, dw 0.5.1, hypertools 1.0.0.dev0)",
+  "target": "hypertools/config.py (hypertools.config module) + hypertools/core/{configurator.py, exceptions.py, shared.py, config.ini} + hypertools/_shared/exceptions.py shim; audited on branch audit/release-1.0-2026-07, hypertools 1.0.0.dev0, datawrangler 0.5.1, Python 3.12.10",
   "brainstormed_edge_cases": [
-    "config.ini values parsed as strings not typed values ('3','False','0.7') — TESTED",
-    "get_default_options() unknown section returns {} via RobustDict — TESTED",
-    "inner section dict is a plain dict: unknown option raises bare KeyError — TESTED",
-    "RobustDict returns THE SAME mutable default object for every missing key (aliasing) — TESTED",
-    "RobustDict.get() returns None while [] returns default_value (inconsistent) — TESTED",
-    "RobustDict with no __default_value__ defaults to None — TESTED",
-    "copy.copy(RobustDict) keeps default_value? — TESTED (kept)",
-    "pickle roundtrip of RobustDict preserves default_value — UNTESTED",
-    "apply_defaults('unknown_func') returns {} — TESTED",
-    "apply_defaults kwargs=None vs {} equivalent — TESTED",
-    "apply_defaults override does not persist into later calls (mutation isolation) — TESTED",
-    "get_default_options(nonexistent fname) silently returns dw-only defaults — TESTED",
-    "get_default_options(custom fname) drops hypertools config.ini sections (replaces, not merges) — TESTED",
-    "malformed ini leaks raw configparser.MissingSectionHeaderError — TESTED",
-    "ini %-interpolation syntax in values — UNTESTED",
-    "duplicate section headers in custom ini — UNTESTED",
-    "non-UTF8/unicode config file encoding — UNTESTED",
-    "thread-safety of get_default_options (re-parses file per call) — UNTESTED",
-    "HOME env var deleted before import (Windows-crash guard) — TESTED via subprocess",
-    "Windows USERPROFILE-only environment — UNTESTED (no Windows host)",
-    "datawrangler 0.5.0 (pre-fix) import path — UNTESTED (0.5.1 installed)",
-    "env-var override mechanism for config options — TESTED (none exists; dw parser consults no env vars)",
-    "runtime effect of editing [plot]/[reduce] config options — TESTED (none: no consumer code path)",
-    "every exception subclasses HypertoolsError and is catchable via base class — TESTED with real raises",
-    "HypertoolsIOError also subclasses OSError; plain 'except OSError' catches it — TESTED",
-    "exceptions importable from hypertools top level — TESTED (NOT available)",
-    "hypertools.core.exceptions vs hypertools._shared.exceptions shim identity — TESTED (same classes)",
-    "pickle roundtrip of all three exceptions (multiprocessing safety) — TESTED",
-    "HypertoolsBackendError()/HypertoolsIOError() zero-arg and two-arg construction vs base — TESTED (inconsistent arity)",
-    "HypertoolsIOError errno/strerror/filename OSError fields — TESTED (all None)",
-    "HypertoolsBackendError(None) non-string message — TESTED (accepted, str()='None')",
-    "real HypertoolsBackendError via bogus backend in set_interactive_backend context manager — TESTED",
-    "set_interactive_backend('bogus') direct call validates nothing at set time — TESTED",
-    "switch_backend module-global called with raw str crashes AttributeError before documented HypertoolsBackendError — TESTED",
-    "unpack_model string typo silently passed through (documented registry behavior) — TESTED",
-    "unpack_model legacy {'model','params'} DeprecationWarning + translation — TESTED",
-    "unpack_model dict with BOTH 'params' and 'kwargs': params kept as inert key, silently ignored downstream — TESTED (real hyp.reduce)",
-    "unpack_model(None) passthrough vs ValueError with parent_class — TESTED",
-    "unpack_model(True/other instance) with parent_class raises ValueError — TESTED",
-    "unpack_model dict without 'model' key passed through unchanged — TESTED",
-    "unpack_model list of mixed specs mapped element-wise — TESTED",
-    "get() out-of-range and negative index return the whole list — TESTED",
-    "is_reused_pipeline with real fitted Pipeline from hyp.cluster(return_model=True) + redundant-stage warning — TESTED",
-    "is_reused_pipeline with unfitted pipeline / non-pipeline — TESTED",
-    "exceptions raised inside multiprocessing Pool workers — UNTESTED (pickle roundtrip tested standalone)",
-    "HypertoolsBackendError notebook (_switch_backend_notebook) path — UNTESTED (no jupyter frontend in audit env)"
+    "RobustDict missing key returns default; nested section dicts are plain dicts (inner lookup raises KeyError) [tested]",
+    "RobustDict shared mutable default aliasing: mutating rd['missing'] pollutes all future missing lookups [tested]",
+    "RobustDict.get('missing') returns None instead of __default_value__ ([] vs .get inconsistency) [tested]",
+    "RobustDict.copy()/dict(rd) drop default behavior; copy.copy() and pickle preserve it [tested]",
+    "RobustDict init forms: empty, pairs list, kwargs; '__default_value__' never stored as a real key [tested]",
+    "get_default_options(fname='/nonexistent') silently ignored by configparser.read [tested]",
+    "get_default_options with malformed ini raises raw MissingSectionHeaderError [tested]",
+    "get_default_options output contains 'DEFAULT' configparser artifact section [tested]",
+    "config.ini values stay raw strings ('3','False','0.7','mako'); bool('False') is True [tested]",
+    "config.ini is dead config: no consumer anywhere; changing options has zero runtime effect (verified via divergences: reduce ndims, plot linewidth, align algorithm, cluster path) [tested]",
+    "config.ini [reduce] key named 'algorithm' matches no actual kwarg (reduce()/model=) [tested via source + real default runs]",
+    "apply_defaults('nonexistent')/apply_defaults(None) return {} (forgiving) [tested]",
+    "apply_defaults does not mutate caller kwargs; accepts list-of-pairs; kwargs=3 raises TypeError [tested]",
+    "import hypertools with HOME env var unset (Windows guard in configurator) [tested]",
+    "exception hierarchy: both concrete exceptions subclass HypertoolsError; HypertoolsIOError also OSError [tested]",
+    "exception pickle round-trip and multiprocessing process-boundary crossing (spawn) [tested]",
+    "HypertoolsIOError raised via real misuse (hyp.load bad name); message quality [tested]",
+    "HypertoolsBackendError raised via real misuse (bogus backend); deferred to first interactive plot [tested]",
+    "exceptions importable from hypertools.core.exceptions and _shared shim (same objects); NOT from top-level hypertools [tested]",
+    "hypertools.config module contents: only __version__ (+ leaked importlib 'version' function); py<3.8 importlib_metadata fallback dead for requires-python>=3.10 [tested]",
+    "hypertools.config PackageNotFoundError on uninstalled source checkout (no literal fallback, unlike dw) [untested: would require uninstalling hypertools from the repo venv, which is forbidden]",
+    "unpack_model string hit / miss-passthrough / case-sensitivity ('pca' vs 'PCA') [tested]",
+    "unpack_model class-vs-instance asymmetry: bare class without parent_class raises ValueError; instance passes through [tested]",
+    "unpack_model legacy {'model','params'} DeprecationWarning + translation; warning surfaces at user call site through hyp.reduce [tested]",
+    "unpack_model dict with BOTH 'params' and 'kwargs': params silently ignored, no warning [tested]",
+    "unpack_model dict without 'model' key (typo) passes through unchanged [tested]",
+    "unpack_model duplicate __name__ classes in valid: first silently wins [tested]",
+    "unpack_model list mapped elementwise; empty list; nested legacy dict inside canonical dict [tested]",
+    "shared.get() out-of-range index returns WHOLE list; negative index returns WHOLE list; scalar/string passthrough [tested]",
+    "is_reused_pipeline: fitted Pipeline reuse via cluster= with redundant reduce= warns and reuses [tested]",
+    "custom fname wholesale-replaces sections (no deep merge): dw [impute] loses 'model' key; hypertools [plot]/[reduce]/[align]/[cluster] vanish entirely [tested]",
+    "dw config dialect incompatibility: eval-ing hypertools [plot] via update_dict(from_config=True) raises SyntaxError [tested]",
+    "Sphinx :class: cross-reference resolution of the ~hypertools._shared.exceptions path in sources.py [untested: needs full doc build, covered by docs audit unit]",
+    "thread-safety of concurrent get_default_options calls (re-parses ini every call, no caching) [untested]",
+    "behavior on Windows (USERPROFILE vs HOME guard) [untested: no Windows host available]",
+    "guard effectiveness for environments stuck on datawrangler 0.5.0 [untested: cannot downgrade packages in the repo venv]"
   ],
   "tested": [
-    {"case": "hypertools.config identity: module exposing only version/__version__ (1.0.0.dev0); no options, no get/set API", "result": "pass", "command": "t1_config.py::config-module-identity", "output_excerpt": "type: <class 'module'> | public attrs: ['version'] | hypertools.__version__: 1.0.0.dev0", "evidence": []},
-    {"case": "hypertools.core exports exceptions + configurator + shared helpers", "result": "pass", "command": "t1_config.py::core-exports", "output_excerpt": "['CANONICAL_ORDER', 'HypertoolsBackendError', 'HypertoolsError', 'HypertoolsIOError', 'Pipeline', 'RobustDict', 'apply_defaults', ... 'unpack_model']", "evidence": []},
-    {"case": "get_default_options() parses config.ini; ALL values are raw strings", "result": "fail", "command": "t1_config.py::get_default_options-full-dump-and-types", "output_excerpt": "plot {'style': ('.', 'str'), 'linewidth': ('1', 'str'), 'opacity': ('0.7', 'str'), ...} cluster {'n_clusters': ('3', 'str'), 'verbose': ('False', 'str')}", "evidence": []},
-    {"case": "unknown section returns {} instead of KeyError (documented RobustDict behavior)", "result": "pass", "command": "t1_config.py::unknown-section-returns-empty", "output_excerpt": "opts['no_such_section'] -> {}", "evidence": []},
-    {"case": "inner section dict NOT robust: unknown option raises bare KeyError", "result": "fail", "command": "t1_config.py::inner-dict-not-robust", "output_excerpt": "KeyError: 'no_such_option'", "evidence": []},
-    {"case": "RobustDict shared-mutable-default aliasing: mutation of one missing-key result visible in all later missing-key lookups", "result": "fail", "command": "t1_config.py::robustdict-shared-mutable-default-aliasing", "output_excerpt": "o2['missing_b'] -> {'injected': 123} ... o2['missing_a'] is o2['missing_b']: True", "evidence": []},
-    {"case": "RobustDict.get('missing') returns None while rd['missing'] returns {}", "result": "fail", "command": "t1_config.py::robustdict-get-vs-getitem-inconsistency", "output_excerpt": "rd['missing'] -> {} | rd.get('missing') -> None | 'missing' in rd -> False", "evidence": []},
-    {"case": "RobustDict without __default_value__ returns None for missing keys", "result": "pass", "command": "t1_config.py::robustdict-no-default", "output_excerpt": "rd2['missing'] -> None", "evidence": []},
-    {"case": "copy.copy(RobustDict) preserves type and default", "result": "pass", "command": "t1_config.py::robustdict-copy-loses-default", "output_excerpt": "type(copy.copy(rd)): RobustDict | copy['missing'] -> {}", "evidence": []},
-    {"case": "apply_defaults('reduce', {'ndims': 5}) merges override but non-overridden values stay strings", "result": "fail", "command": "t1_config.py::apply_defaults-basic-and-types", "output_excerpt": "{'ndims': 5, 'algorithm': 'IncrementalPCA'} types: {'ndims': 'int', 'algorithm': 'str'}", "evidence": []},
-    {"case": "apply_defaults unknown function returns {}", "result": "pass", "command": "t1_config.py::apply_defaults-unknown-func", "output_excerpt": "apply_defaults('no_such_func') -> {}", "evidence": []},
-    {"case": "apply_defaults kwargs=None and {} behave identically; cluster defaults stringly-typed ('verbose': 'False' is truthy)", "result": "fail", "command": "t1_config.py::apply_defaults-kwargs-None-vs-empty", "output_excerpt": "None: {'n_clusters': '3', 'verbose': 'False'}", "evidence": []},
-    {"case": "get_default_options(nonexistent path) silently returns dw-only defaults (no error, hypertools sections gone)", "result": "fail", "command": "t1_config.py::get_default_options-nonexistent-fname", "output_excerpt": "sections: [... 'backend', 'data', 'impute', ...] -> silently empty? False (no 'plot'/'reduce'/'align'/'cluster')", "evidence": []},
-    {"case": "get_default_options(custom fname) merges with dw defaults but REPLACES hypertools config.ini (plot/align/cluster sections vanish)", "result": "fail", "command": "t1_config.py::get_default_options-custom-fname-override", "output_excerpt": "reduce: {'ndims': '7'} ... plot section survives merge: False", "evidence": []},
-    {"case": "malformed ini leaks raw configparser exception (not a HypertoolsError)", "result": "fail", "command": "t1_config.py::get_default_options-malformed-ini", "output_excerpt": "raised: MissingSectionHeaderError File contains no section headers. file: '.../bad_config.ini', line: 1", "evidence": []},
-    {"case": "mutating one get_default_options() result does not leak into later calls (file re-parsed)", "result": "pass", "command": "t1_config.py::mutation-isolation-between-calls", "output_excerpt": "second call sees mutation: .", "evidence": []},
-    {"case": "HOME-unset guard: import hypertools with HOME deleted succeeds and restores HOME (Windows dw-0.5.0 crash guard)", "result": "pass", "command": "t1_config.py::HOME-env-guard (subprocess)", "output_excerpt": "rc: 0 | HOME after import: /Users/jmanning", "evidence": []},
-    {"case": "env-var overrides for config options: none exist (dw get_default_options is a plain ConfigParser read)", "result": "pass", "command": "inspect.getsource(dw.core.get_default_options)", "output_excerpt": "config = ConfigParser(); config.read(fname) — no os.environ access", "evidence": []},
-    {"case": "hierarchy: both subclasses derive from HypertoolsError; HypertoolsIOError also OSError; shim classes identical to core classes", "result": "pass", "command": "t2_exceptions.py::hierarchy-and-identity", "output_excerpt": "BackendError subclasses HypertoolsError: True | IOError subclasses OSError: True | shim classes identical: True True True", "evidence": []},
-    {"case": "top-level import path: hypertools.HypertoolsError / .HypertoolsIOError / .exceptions all absent", "result": "fail", "command": "t2_exceptions.py::top-level-import-path", "output_excerpt": "hypertools.HypertoolsError: False | hypertools.HypertoolsBackendError: False | hypertools.HypertoolsIOError: False | hypertools.exceptions: False", "evidence": []},
-    {"case": "real raise HypertoolsIOError via hyp.load('weightz') typo; message lists tried sources but omits built-in example datasets", "result": "fail", "command": "t2_exceptions.py::real-raise-HypertoolsIOError-load-typo", "output_excerpt": "could not load 'weightz'. Tried, in order: - scikit-learn bundled dataset: not one of [...] - seaborn dataset: ... - local file: not found at weightz", "evidence": []},
-    {"case": "real raise HypertoolsIOError via bad file path", "result": "pass", "command": "t2_exceptions.py::real-raise-HypertoolsIOError-bad-path", "output_excerpt": "type: HypertoolsIOError | could not load '/no/such/file.npy'. Tried, in order: ...", "evidence": []},
-    {"case": "set_interactive_backend('definitely_not_a_backend') accepted silently at set time (validation deferred to first interactive plot)", "result": "fail", "command": "t2_exceptions.py + t2b_exceptions.py::bogus-backend-direct-call", "output_excerpt": "NO RAISE at set time ... plot raised: HypertoolsBackendError Failed to switch the plotting backend to definitely_not_a_backend", "evidence": []},
-    {"case": "module-global switch_backend called with raw str crashes AttributeError before the docstring-promised HypertoolsBackendError", "result": "fail", "command": "t2_exceptions.py::real-raise-HypertoolsBackendError-via-switch", "output_excerpt": "AttributeError: 'str' object has no attribute 'as_python' (backend.py:713 _switch_backend_regular)", "evidence": []},
-    {"case": "real raise HypertoolsBackendError via 'with hyp.set_interactive_backend('definitely_not_a_backend'): hyp.plot(x)'; good message + chained cause", "result": "pass", "command": "t2b_exceptions.py::real-raise-HypertoolsBackendError-context-manager", "output_excerpt": "type: HypertoolsBackendError | is HypertoolsError: True | Failed to switch the plotting backend to definitely_not_a_backend. You may be missing required dependencies... | cause type: ModuleNotFoundError", "evidence": []},
-    {"case": "blanket 'except HypertoolsError' catches HypertoolsIOError from load typo (scientist recovery workflow)", "result": "pass", "command": "t2b_exceptions.py::blanket-except-HypertoolsError-workflow", "output_excerpt": "caught via base class: ['HypertoolsIOError']", "evidence": []},
-    {"case": "pickle roundtrip of all three exceptions preserves type, str, and .message", "result": "pass", "command": "t2b_exceptions.py::pickle-roundtrip", "output_excerpt": "HypertoolsError -> HypertoolsError | str equal: True ... HypertoolsIOError -> HypertoolsIOError | str equal: True | .message: io msg", "evidence": []},
-    {"case": "constructor arity: base accepts 0..n args; subclasses require exactly 1 (message)", "result": "fail", "command": "t2b_exceptions.py::constructor-arity-inconsistency", "output_excerpt": "HypertoolsError() ok (0 args) | HypertoolsBackendError() TypeError: missing 1 required positional argument: 'message' | HypertoolsIOError 2-arg TypeError: takes 2 positional arguments but 3 were given", "evidence": []},
-    {"case": "HypertoolsIOError OSError fields errno/strerror/filename are None; str() is the message", "result": "pass", "command": "t2b_exceptions.py::IOError-errno-semantics", "output_excerpt": "errno: None | strerror: None | filename: None | str(): some io problem", "evidence": []},
-    {"case": "HypertoolsBackendError(None) accepted; str() == 'None'", "result": "pass", "command": "t2b_exceptions.py::non-str-message", "output_excerpt": "message=None ok; str(): 'None' | .message: None", "evidence": []},
-    {"case": "plain 'except OSError' catches HypertoolsIOError (mixin works for users who never import hypertools exceptions)", "result": "pass", "command": "t2b_exceptions.py::catching-oserror-only-workflow", "output_excerpt": "plain 'except OSError' caught: HypertoolsIOError", "evidence": []},
-    {"case": "docstring exception paths: hyp.load docstring has NO Raises section (never mentions HypertoolsIOError); lsl_stream cites hypertools.core.exceptions while io/sources.py docstrings cite hypertools._shared.exceptions", "result": "fail", "command": "t2b_exceptions.py::docstring-exception-paths + grep io/sources.py", "output_excerpt": "hyp.load docstring mentions 'HypertoolsIOError': False | lsl_stream docstring mentions 'core.exceptions': True; sources.py:254 ':class:`~hypertools._shared.exceptions.HypertoolsIOError`'", "evidence": []},
-    {"case": "unpack_model('PCA', valid=[PCA, IncrementalPCA]) resolves class eval-free", "result": "pass", "command": "t3_shared.py::unpack-str-match", "output_excerpt": "<class 'sklearn.decomposition._pca.PCA'> True", "evidence": []},
-    {"case": "unpack_model typo string silently passed through for registry (documented)", "result": "pass", "command": "t3_shared.py::unpack-str-nomatch-silent-passthrough", "output_excerpt": "'PCAA' (typo silently returned unchanged)", "evidence": []},
-    {"case": "unpack_model class/instance via parent_class pass through", "result": "pass", "command": "t3_shared.py::unpack-class-via-parent / unpack-instance-via-parent", "output_excerpt": "<class 'sklearn...PCA'> / True", "evidence": []},
-    {"case": "unpack_model unmatched class or instance with parent_class raises ValueError('unknown model: ...')", "result": "pass", "command": "t3_shared.py::unpack-unmatched-class-raises / unpack-unmatched-instance-with-parent-raises / unpack-bool-with-parent", "output_excerpt": "ValueError: unknown model: <class 'int'> / unknown model: 3.14 / unknown model: True", "evidence": []},
-    {"case": "unpack_model(None) passthrough when parent_class=None; ValueError when parent_class given", "result": "pass", "command": "t3_shared.py::unpack-None / unpack-None-with-parent", "output_excerpt": "None -> None / raised: ValueError unknown model: None", "evidence": []},
-    {"case": "unpack_model canonical dict + bare {'model': ...} fill args/kwargs defaults", "result": "pass", "command": "t3_shared.py::unpack-dict-canonical / unpack-dict-bare-model", "output_excerpt": "{'model': <class ...PCA>, 'kwargs': {'n_components': 2}, 'args': []}", "evidence": []},
-    {"case": "legacy {'model','params'} dict emits DeprecationWarning and translates params->kwargs", "result": "pass", "command": "t3_shared.py::unpack-dict-legacy-params-deprecation", "output_excerpt": "{'model': <class ...PCA>, 'args': [], 'kwargs': {'n_components': 2}} warnings: [('DeprecationWarning', ...)]", "evidence": []},
-    {"case": "dict with BOTH 'params' and 'kwargs': no deprecation, params kept as inert key", "result": "fail", "command": "t3_shared.py::unpack-dict-params-AND-kwargs-mixed", "output_excerpt": "{'model': <class ...PCA>, 'params': {'n_components': 2}, 'kwargs': {}, 'args': []} warnings: []", "evidence": []},
-    {"case": "REAL hyp.reduce with mixed params+kwargs dict: n_components silently ignored, data NOT reduced (40x10 in, 40x10 out, no warning)", "result": "fail", "command": "t3_shared.py::real-reduce-params-honored-or-dropped", "output_excerpt": "legacy params only -> shape: (40, 2) | params+kwargs mixed -> shape: (40, 10)", "evidence": []},
-    {"case": "unpack_model dict without 'model' key passed through unchanged; list of specs mapped element-wise", "result": "pass", "command": "t3_shared.py::unpack-dict-no-model-key / unpack-list-mixed", "output_excerpt": "{'algorithm': 'PCA'} / [<class ...PCA>, {'model': <class ...IncrementalPCA>, ...}]", "evidence": []},
-    {"case": "get() helper: in-range index works; out-of-range AND negative index return the whole list; scalars returned as-is", "result": "fail", "command": "t3_shared.py::get-helper-semantics", "output_excerpt": "get([1,2,3], 5) -> [1, 2, 3] | get([1,2,3], -1) -> [1, 2, 3]", "evidence": []},
-    {"case": "is_reused_pipeline: real fitted Pipeline from hyp.cluster(..., return_model=True) detected True + redundant-stage warning; unfitted pipeline and plain string -> False", "result": "pass", "command": "t3_shared.py::is_reused_pipeline-*", "output_excerpt": "returned model type: Pipeline | fitted: True | is_reused_pipeline -> True | warnings: ['cluster= is an already-fitted Pipeline ... ignoring redundant reduce= ...'] / False / False", "evidence": []},
-    {"case": "W1 runtime divergence: default hyp.plot artist props (linestyle '-', linewidth 1.5, marker None, markersize 6.0, alpha None) vs config.ini [plot] (style '.', linewidth 1, markersize 4, opacity 0.7) — config values not applied", "result": "fail", "command": "t4_workflows.py::W1-config-plot-values-vs-actual-plot-defaults", "output_excerpt": "actual first-artist props: {'linestyle': '-', 'linewidth': 1.5, 'marker': 'None', 'markersize': 6.0, 'alpha': None}", "evidence": ["w1_default_plot.png"]},
-    {"case": "W2 config [reduce] ndims=3 not consumed: hyp.reduce(50x10) default returns (50, 10) unreduced", "result": "fail", "command": "t4_workflows.py::W2-config-reduce-ndims-not-consumed", "output_excerpt": "hyp.reduce(50x10) default output shape: (50, 10) | config.ini [reduce] ndims=3", "evidence": []},
-    {"case": "W2b config [cluster] verbose=False stale: cluster() has no verbose parameter; W2c [align] algorithm=hyper vs actual signature default model='HyperAlign'", "result": "fail", "command": "t4_workflows.py::W2b/W2c", "output_excerpt": "'verbose' in cluster signature: False | align default model: HyperAlign | config.ini [align] algorithm=hyper", "evidence": []},
-    {"case": "W3 hosted dataset 'weights' loads from cache (list of 36 arrays)", "result": "pass", "command": "t4_workflows.py::W3-load-hosted-weights-works", "output_excerpt": "weights loaded: list 36", "evidence": []},
-    {"case": "W4 reduce typo error quality: vague ValueError with hardcoded pre-1.0 http docs URL and no supported-name list", "result": "fail", "command": "t4_workflows.py::W4-reduce-typo-error-quality", "output_excerpt": "reduce must be one of the supported options or support n_components and fit_transform methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce ...", "evidence": []},
-    {"case": "W5 cluster typo error quality: excellent — names the bad value and lists all supported models", "result": "pass", "command": "t4_workflows.py::W5-cluster-typo-error-quality", "output_excerpt": "unknown cluster model 'KMeanz'; supported names: AffinityPropagation, ..., SpectralClustering (or pass a scikit-learn style instance directly)", "evidence": []},
-    {"case": "W6 scientist blanket-catch workflow around load typo", "result": "pass", "command": "t4_workflows.py::W6-analyze-blanket-catch-workflow", "output_excerpt": "scientist recovers from typo; caught HypertoolsIOError | first line: could not load 'weightz'. Tried, in order:", "evidence": []},
-    {"case": "W7 multi-dataset reduce->plot pipeline renders 3 colored 3D trajectories correctly", "result": "pass", "command": "t4_workflows.py::W7-plot-after-reduce-pipeline-png", "output_excerpt": "saved w7_pipeline_plot.png; axes: 1 (visual check: 3 colored trajectories, correct 3D pane)", "evidence": ["w7_pipeline_plot.png"]},
-    {"case": "dead-config grep proof: zero consumers of get_default_options/apply_defaults outside configurator + core/__init__ (backend.py:918 is inspect.BoundArguments.apply_defaults, unrelated)", "result": "fail", "command": "t4_workflows.py::dead-config-grep-proof", "output_excerpt": "total refs: 7 | consumers outside configurator/core-init: ['/Users/jmanning/hypertools/hypertools/plot/backend.py:918:    bound_args.apply_defaults()']", "evidence": []},
-    {"case": "stale docs URL in reduce error message currently redirects to 0.x docs (301 http->https, final 200 serving pre-1.0 page hypertools.tools.reduce.html, which the 1.0 doc tree no longer generates)", "result": "fail", "command": "curl -sI http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html", "output_excerpt": "301 -> https://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html; final:200 (old docs); docs/ contains hypertools.reduce.rst, no hypertools.tools.reduce.rst", "evidence": []},
-    {"case": "docstring examples verbatim: configurator.py, exceptions.py, shared.py, config.py contain zero '>>>' examples (nothing to execute)", "result": "pass", "command": "grep -rn '>>>' hypertools/core/{configurator,exceptions,shared}.py hypertools/config.py", "output_excerpt": "exit=1 (no matches)", "evidence": []},
-    {"case": "user-facing docs coverage: docs/api.rst never documents exceptions, get_default_options, apply_defaults, or any config mechanism (only prose word 'core'); no tutorial covers config", "result": "fail", "command": "grep -n 'exceptions|config|core' docs/api.rst; grep -rln config docs/tutorials", "output_excerpt": "api.rst:14 'model-application core, I/O helpers, ...' (prose only); only tutorials hit is lsl_streaming.ipynb (unrelated 'config' string)", "evidence": []}
+    {
+      "case": "hypertools.config identity: module with only __version__; matches importlib.metadata and hyp.__version__",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe1_config_shared.py (S1)",
+      "output_excerpt": "type: <class 'module'> | public attrs: ['version'] | __version__: 1.0.0.dev0 | hyp.__version__: 1.0.0.dev0 | metadata version: 1.0.0.dev0",
+      "evidence": []
+    },
+    {
+      "case": "get_default_options parses hypertools config.ini merged over dw defaults; returns RobustDict",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe1_config_shared.py (S2)",
+      "output_excerpt": "[plot]: {'style': '.', 'linestyle': '-', 'linewidth': '1', 'markersize': '4', 'bigmarkersize': '6', 'opacity': '0.7', 'cmap': 'mako'} ... value types in [cluster]: {'n_clusters': 'str', 'verbose': 'str'} | 'DEFAULT' artifact present: True | truthiness of verbose='False': True",
+      "evidence": []
+    },
+    {
+      "case": "RobustDict semantics: default for missing sections; inner dicts plain; aliasing; .get() bypass; copy() loses default",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe1_config_shared.py (S3) + probe2 (U7)",
+      "output_excerpt": "missing section: {} | inner missing option -> KeyError: 'no_such_option' | aliasing: rd['missing2'] -> {'polluted': True} (same object: True) | rd2['zzz'] -> DEFAULT | rd2.get('zzz') -> None | copy() type: dict | copy()['zzz'] -> KeyError (default lost)",
+      "evidence": []
+    },
+    {
+      "case": "apply_defaults: returns raw-string defaults; forgiving unknown section; no kwargs mutation; TypeError on non-iterable kwargs",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe1_config_shared.py (S4)",
+      "output_excerpt": "apply_defaults('cluster'): {'n_clusters': '3', 'verbose': 'False'} types: {'n_clusters': 'str', 'verbose': 'str'} | apply_defaults('nonexistent'): {} | caller kwargs unmutated: True | kwargs=3 -> TypeError : 'int' object is not iterable",
+      "evidence": []
+    },
+    {
+      "case": "get_default_options(fname=...): nonexistent path silently ignored; custom file REPLACES hypertools defaults; malformed ini raises MissingSectionHeaderError",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe1_config_shared.py (S5)",
+      "output_excerpt": "nonexistent fname: silently returned sections: [...] (no error raised) | hypertools [plot] survives with custom fname: GONE (only dw defaults + custom file merged) | malformed ini -> MissingSectionHeaderError",
+      "evidence": []
+    },
+    {
+      "case": "config.ini consumption probe: actual defaults diverge from config.ini claims (reduce full-rank not ndims=3; cluster 3 from signature)",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe1_config_shared.py (S6) + grep -rn 'get_default_options|apply_defaults' hypertools/ (no consumers outside core)",
+      "output_excerpt": "hyp.cluster(X) default cluster count: 3 | hyp.reduce(X) default output shape: (180, 4) | config.ini says ndims=3; grep: zero call sites outside hypertools/core",
+      "evidence": []
+    },
+    {
+      "case": "exception hierarchy + stable import paths + attributes",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe1_config_shared.py (S7)",
+      "output_excerpt": "shim identity: True | HypertoolsBackendError -> HypertoolsError: True | HypertoolsIOError -> HypertoolsError: True | HypertoolsIOError -> OSError: True | top-level importable: False False | str: disk exploded | .message: disk exploded | pickle round-trip: HypertoolsIOError disk exploded",
+      "evidence": []
+    },
+    {
+      "case": "real HypertoolsIOError via hyp.load('definitely-not-a-dataset-xyz'): caught at hypertools.core.exceptions path; message lists every resolver tried",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe1_config_shared.py (S8)",
+      "output_excerpt": "could not load 'definitely-not-a-dataset-xyz'. Tried, in order:\\n  - scikit-learn bundled dataset: not one of ['breast_cancer', 'diabetes', 'digits', 'iris', 'linnerud', 'wine']\\n  - seaborn dataset: not found ... - local file: not found ... - Google Drive ...: HTTPError: 404",
+      "evidence": []
+    },
+    {
+      "case": "unpack_model string resolution: hit returns class; miss and lowercase pass through unchanged",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe2_unpack_misuse.py (U1)",
+      "output_excerpt": "hit: <class 'sklearn.decomposition._pca.PCA'> | miss passthrough: 'UMAP' | case-sensitive miss: 'pca'",
+      "evidence": []
+    },
+    {
+      "case": "unpack_model class/instance asymmetry and error-message quality on invalid specs",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe2_unpack_misuse.py (U2)",
+      "output_excerpt": "instance, no parent_class: PCA(n_components=2) | class, no parent_class -> ValueError : unknown model: <class 'sklearn.decomposition._pca.PCA'> | wrong-parent instance -> ValueError : unknown model: <__main__.NotAModel object at 0x100647d10> | None with parent_class -> ValueError : unknown model: None",
+      "evidence": []
+    },
+    {
+      "case": "unpack_model dict specs: legacy params warns + translates; params+kwargs both silently keeps/ignores params with NO warning; typo'd key passes through",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe2_unpack_misuse.py (U3)",
+      "output_excerpt": "legacy params: {...'kwargs': {'n_components': 4}} warning count: 1 DeprecationWarning | params+kwargs both: {'model': ..., 'params': {'n_components': 4}, 'kwargs': {'n_components': 9}, 'args': []} warned? NO WARNING | typo'd key dict passthrough: {'mdoel': 'PCA'}",
+      "evidence": []
+    },
+    {
+      "case": "unpack_model duplicate __name__ in valid: first silently wins",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe2_unpack_misuse.py (U4)",
+      "output_excerpt": "first-wins: <class '__main__.PCA2'> (is sklearn PCA: False)",
+      "evidence": []
+    },
+    {
+      "case": "shared.get(): in-range works; out-of-range AND negative index return the whole list; scalar/string passthrough",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe2_unpack_misuse.py (U5)",
+      "output_excerpt": "in range: 20 | out of range returns WHOLE list: [10, 20, 30] | negative index returns WHOLE list: [10, 20, 30] | string passthrough (not indexed): abc",
+      "evidence": []
+    },
+    {
+      "case": "HypertoolsBackendError raised for real on backend switch failure; chains __cause__; set_interactive_backend accepts bogus name silently",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe2_unpack_misuse.py (U6) + probe3 (WF2)",
+      "output_excerpt": "set_interactive_backend('bogus_backend_xyz'): NO ERROR (deferred?) | _switch_backend_regular -> HypertoolsBackendError : Failed to switch the plotting backend to NotARealBackend. You may be missing required dependencies, or this backend may not be available for your system | is HypertoolsError: True | __cause__: ModuleNotFoundError; later interactive plot -> HypertoolsBackendError (same message, NotARealBackendXYZ)",
+      "evidence": []
+    },
+    {
+      "case": "WF3 scientist default plot: hyp.plot returns Figure; actual linewidth 1.5 and no marker contradict config.ini [plot] linewidth=1/style='.'",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe3_workflows.py (WF3)",
+      "output_excerpt": "returned: Figure | n lines: 1 | actual linewidth: 1.5 | config.ini [plot] claims linewidth=1 | marker: None | config claims style='.'",
+      "evidence": [
+        "wf3_default_plot.png"
+      ]
+    },
+    {
+      "case": "WF4 deprecated {'model','params'} spec through public hyp.reduce: works, DeprecationWarning attributed to the USER'S call site",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe3_workflows.py (WF4)",
+      "output_excerpt": "reduce result shape: (120, 2) | DeprecationWarnings surfaced: 1 | reported at: probe3_workflows.py:49",
+      "evidence": []
+    },
+    {
+      "case": "WF5 shared.is_reused_pipeline: fitted Pipeline passed back as cluster= reused via .transform; exactly one warning naming the redundant kwarg; labels reproducible",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe3_workflows.py (WF5)",
+      "output_excerpt": "cluster= is an already-fitted Pipeline that encodes its own stages; ignoring redundant reduce= (the fitted Pipeline is reused as-is via .transform). | labels reproducible: True",
+      "evidence": []
+    },
+    {
+      "case": "WF6 HypertoolsIOError crosses a spawn multiprocessing process boundary intact with .message preserved",
+      "result": "pass",
+      "command": "cd /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions && MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python probe4_mp_exception.py",
+      "output_excerpt": "PASS: HypertoolsIOError crossed process boundary intact: could not load 'no-such-dataset-abc'. Tried, in order: ... | .message attr present: True",
+      "evidence": []
+    },
+    {
+      "case": "RobustDict pickle round-trip preserves default value",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe3_workflows.py (WF7)",
+      "output_excerpt": "type: RobustDict | default preserved: True | data: {'a': 1}",
+      "evidence": []
+    },
+    {
+      "case": "WF8 apply_defaults values fed to sklearn as the design intends: KMeans rejects string n_clusters",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe3_workflows.py (WF8)",
+      "output_excerpt": "KMeans(n_clusters='3') -> InvalidParameterError : The 'n_clusters' parameter of KMeans must be an int in the range [1, inf). Got '3' instead.",
+      "evidence": []
+    },
+    {
+      "case": "import hypertools with HOME unset (configurator Windows guard): import succeeds, HOME repopulated, config parses",
+      "result": "pass",
+      "command": "env -u HOME MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import os; assert 'HOME' not in os.environ; import hypertools ...\"",
+      "output_excerpt": "import with HOME unset: OK, version 1.0.0.dev0 | HOME after import: /Users/jmanning | config sections still parse: ['CountVectorizer', 'DEFAULT', 'DictionaryLearning'] ...",
+      "evidence": []
+    },
+    {
+      "case": "default n_clusters divergence between entry points: hyp.cluster -> 3, hyp.plot(cluster='KMeans') -> 5 on identical 6-blob data",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe5_default_divergence.py",
+      "output_excerpt": "hyp.cluster(X) unique labels: 3 | hyp.plot(X, '.', cluster='KMeans') distinct colors: 5 | hyp.cluster(X, cluster='KMeans') unique labels: 3",
+      "evidence": [
+        "probe5_plot_cluster_default.png"
+      ]
+    },
+    {
+      "case": "core export surface: get/RobustDict/unpack_model importable from hypertools.core; is_reused_pipeline is not (only from core.shared)",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"from hypertools.core import is_reused_pipeline\"",
+      "output_excerpt": "ImportError -> cannot import name 'is_reused_pipeline' from 'hypertools.core' (/Users/jmanning/hypertools/hypertools/core/__init__.py)",
+      "evidence": []
+    },
+    {
+      "case": "config dialect incompatibility: dw's update_dict(from_config=True) on hypertools [plot] raises SyntaxError; [cluster] happens to eval; custom-file section override wholesale-replaces dw's [impute] (loses 'model')",
+      "result": "fail",
+      "command": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"dw.core.update_dict(dict(opts['plot']), {}, from_config=True)\" (see transcript)",
+      "output_excerpt": "from_config eval of [plot] -> SyntaxError : invalid syntax (<string>, line 1) | from_config eval of [cluster] worked: {'n_clusters': 3, 'verbose': False} | after custom-file [impute]: {'extra_opt': '1'} (model key kept? False)",
+      "evidence": []
+    },
+    {
+      "case": "docs surface: no user-facing documentation of config machinery or exceptions (grep across docs/*.rst)",
+      "result": "fail",
+      "command": "grep -rln 'get_default_options|apply_defaults|HypertoolsError|HypertoolsBackendError|HypertoolsIOError|config.ini' docs (excluding auto_examples); grep -rln 'hypertools.core|exceptions' docs/*.rst",
+      "output_excerpt": "(no matches)",
+      "evidence": []
+    },
+    {
+      "case": "numeric/version claims: configurator comment 'we require >=0.5.1' matches pyproject 'pydata-wrangler>=0.5.1'; installed dw 0.5.1",
+      "result": "pass",
+      "command": "grep -n wrangler pyproject.toml; python -c \"import datawrangler as dw; print(dw.__version__)\"",
+      "output_excerpt": "pyproject.toml:52: \"pydata-wrangler>=0.5.1\" | dw version: 0.5.1",
+      "evidence": []
+    },
+    {
+      "case": "existing targeted unit tests for core still pass on audit branch",
+      "result": "pass",
+      "command": "MPLBACKEND=Agg .venv/bin/python -m pytest tests/core/ -q --no-header",
+      "output_excerpt": "39 passed, 2 warnings in 11.32s",
+      "evidence": []
+    },
+    {
+      "case": "docstring examples in unit files: none exist (0 '>>>' occurrences in configurator.py/exceptions.py/shared.py/config.py), so nothing to run verbatim",
+      "result": "pass",
+      "command": "grep -c '>>>' hypertools/core/configurator.py hypertools/core/exceptions.py hypertools/core/shared.py hypertools/config.py",
+      "output_excerpt": "all four files: 0",
+      "evidence": []
+    }
   ],
   "findings": [
     {
       "id": "F23-core-config-exceptions-001",
       "severity": "major",
-      "title": "Dict model spec mixing legacy 'params' with 'args'/'kwargs' silently drops params — hyp.reduce returns UNREDUCED data with no warning",
-      "description": "unpack_model's legacy-dict detection (hypertools/core/shared.py:121) only translates {'model','params'} when NEITHER 'args' NOR 'kwargs' is present. A spec like {'model': 'PCA', 'params': {'n_components': 2}, 'kwargs': {}} — the natural result of a user half-migrating an old script or merging dicts — is treated as canonical: 'params' is copied through as an inert key (shared.py:133 'resolved = dict(m)') and never applied. No DeprecationWarning, no error. Real effect: hyp.reduce(40x10 data) returns 40x10 (PCA fit with default n_components, i.e. no reduction) instead of 40x2. Every downstream consumer of unpack_model (reduce/cluster/align/apply_model/Pipeline) inherits the silent drop. The pure-legacy form {'model','params'} works correctly (returns 40x2 + DeprecationWarning), which makes the mixed form's silent failure especially surprising.",
-      "repro": "import numpy as np, hypertools as hyp\ndata = np.random.default_rng(1).normal(size=(40, 10))\nr1 = hyp.reduce(data, reduce={'model': 'PCA', 'params': {'n_components': 2}})\nprint(np.asarray(r1).shape)  # (40, 2) + DeprecationWarning — correct\nr2 = hyp.reduce(data, reduce={'model': 'PCA', 'params': {'n_components': 2}, 'kwargs': {}})\nprint(np.asarray(r2).shape)  # (40, 10) — params silently ignored, no warning",
-      "expected": "(40, 2) for both, or a loud error/warning that 'params' cannot be combined with 'args'/'kwargs'",
-      "actual": "legacy params only -> shape: (40, 2)\nparams+kwargs mixed -> shape: (40, 10) (if not (40,2), params silently ignored)\n[unpack_model output: {'model': <class 'sklearn.decomposition._pca.PCA'>, 'params': {'n_components': 2}, 'kwargs': {}, 'args': []} warnings: []]",
-      "evidence": [],
-      "docs_impact": ["hypertools/core/shared.py (unpack_model docstring)", "hypertools/reduce/reduce.py"]
+      "title": "Central config (core/config.ini + get_default_options/apply_defaults) is dead: no consumer, and its values contradict the real defaults",
+      "description": "configurator.py presents itself as 'Central default options for hypertools' and a 'single source of truth' shared with datawrangler, and get_default_options/apply_defaults are exported from hypertools.core. But grep finds ZERO call sites outside hypertools/core itself, so editing core/config.ini changes nothing at runtime. Real runs confirm the values are stale fiction: [reduce] ndims=3 vs actual default full-rank (hyp.reduce on 180x4 data returned shape (180, 4)); [plot] linewidth=1 and style='.' vs actual matplotlib line linewidth 1.5 with no marker; [align] algorithm='hyper' vs actual signature default model='HyperAlign' with 'hyper' explicitly deprecated in align.py; [reduce] key is named 'algorithm' although the real kwarg is reduce=/model=; [cluster] n_clusters=3 merely coincides with the hardcoded signature default in cluster.py:135. Maintainers or advanced users editing config.ini get a silent no-op; the module docstring's claims are false in practice. Note: user-facing docs never mention this machinery, so end-user exposure is low, but the exported feature is broken as documented.",
+      "repro": "cd /Users/jmanning/hypertools && grep -rn 'get_default_options\\|apply_defaults' hypertools/ --include='*.py' | grep -v __pycache__ | grep -v 'core/configurator\\|core/__init__\\|bound_args'  # -> no consumers\nMPLBACKEND=Agg .venv/bin/python -c \"\nimport numpy as np, hypertools as hyp\nnp.random.seed(0); X = np.random.randn(180, 4)\nprint('reduce default shape:', np.asarray(hyp.reduce(X)).shape)  # config.ini says ndims=3\nimport matplotlib; matplotlib.use('Agg')\nfig = hyp.plot(np.cumsum(np.random.randn(120, 8), axis=0))\nprint('linewidth:', fig.gca().get_lines()[0].get_linewidth())  # config.ini says 1\n\"",
+      "expected": "Either config.ini values drive the actual defaults (reduce -> 3 dims, linewidth 1), or the module/config should not claim to be the central defaults mechanism",
+      "actual": "reduce default shape: (180, 4)  [not 3 dims]; actual linewidth: 1.5 | config.ini [plot] claims linewidth=1; marker: None | config claims style='.'; grep shows zero consumers",
+      "evidence": [
+        "wf3_default_plot.png"
+      ],
+      "docs_impact": [
+        "hypertools/core/configurator.py",
+        "hypertools/core/config.ini"
+      ]
     },
     {
       "id": "F23-core-config-exceptions-002",
       "severity": "minor",
-      "title": "core/config.ini is dead configuration: zero consumers, and every [plot] value plus [cluster] verbose and [align] algorithm diverge from real runtime defaults",
-      "description": "configurator.py's module docstring calls itself 'Central default options for hypertools' and a 'single source of truth', but no hypertools code path ever calls get_default_options()/apply_defaults() (grep: the only reference outside core/configurator.py and core/__init__.py is plot/backend.py:918 'bound_args.apply_defaults()', which is inspect.BoundArguments.apply_defaults, unrelated). Editing core/config.ini therefore has NO runtime effect — verified for real: config claims [plot] style='.', linewidth=1, markersize=4, opacity=0.7, cmap=mako, but a default hyp.plot() line artist has linestyle='-', linewidth=1.5, marker=None, markersize=6.0, alpha=None; config claims [reduce] ndims=3, but hyp.reduce(50x10) returns (50,10); [cluster] verbose has no matching cluster() parameter; [align] algorithm='hyper' vs actual signature default model='HyperAlign'. Real defaults are hard-coded in function signatures. A contributor or power user editing config.ini (as the docstring invites) would be silently ignored.",
-      "repro": "cd /Users/jmanning/hypertools && grep -rn --include='*.py' -e get_default_options -e 'apply_defaults(' hypertools | grep -v __pycache__\n# then:\nimport numpy as np, hypertools as hyp\nfrom hypertools.core.configurator import get_default_options\nprint(dict(get_default_options()['plot']))\nfig = hyp.plot(np.cumsum(np.random.default_rng(0).normal(size=(60,5)),axis=0))\nln = fig.axes[0].get_lines()[0]\nprint(ln.get_linestyle(), ln.get_linewidth(), ln.get_marker(), ln.get_markersize(), ln.get_alpha())\nprint(np.asarray(hyp.reduce(np.random.default_rng(2).normal(size=(50,10)))).shape)",
-      "expected": "config.ini values either consumed at runtime or the file/docstring updated to say it is inert/legacy; stale keys (cluster.verbose, align.algorithm spelling, all [plot] values) removed or corrected",
-      "actual": "config.ini [plot]: {'style': '.', 'linestyle': '-', 'linewidth': '1', 'markersize': '4', 'bigmarkersize': '6', 'opacity': '0.7', 'cmap': 'mako'}\nactual first-artist props: {'linestyle': '-', 'linewidth': 1.5, 'marker': 'None', 'markersize': 6.0, 'alpha': None}\nhyp.reduce(50x10) default output shape: (50, 10) | config.ini [reduce] ndims=3\n'verbose' in cluster signature: False | align default model: HyperAlign\nconsumers outside configurator/core-init: ['hypertools/plot/backend.py:918:    bound_args.apply_defaults()']",
-      "evidence": ["w1_default_plot.png"],
-      "docs_impact": ["hypertools/core/configurator.py", "hypertools/core/config.ini"]
+      "title": "Config values are returned as raw strings ('3', 'False', '0.7') that are unusable as kwargs and truthy-dangerous",
+      "description": "hypertools' configurator calls dw.core.update_dict WITHOUT from_config=True, so no value is ever eval'd: apply_defaults('cluster') returns {'n_clusters': '3', 'verbose': 'False'} (all str). Feeding these to the intended targets fails (sklearn KMeans rejects n_clusters='3'), and bool('False') is True, so any truthiness check on verbose would invert the intent. Worse, the two config dialects are incompatible: dw's config.ini stores Python literals ('pandas' quoted, True, np.nan) designed for eval, while hypertools' config.ini stores bare tokens (mako, ., -, hyper), so passing hypertools sections through dw's from_config=True eval raises SyntaxError ([plot]) or NameError. If config.ini is ever wired up (see -001), every consumer would need per-value type coercion.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nfrom hypertools.core import apply_defaults\nimport numpy as np\nfrom sklearn.cluster import KMeans\nd = apply_defaults('cluster'); print(d, {k: type(v).__name__ for k, v in d.items()})\nprint('bool(verbose):', bool(d['verbose']))\nKMeans(n_clusters=d['n_clusters']).fit(np.random.randn(50, 3))\n\"",
+      "expected": "Typed values (int 3, bool False, float 0.7) or documented string-only semantics with coercion helpers",
+      "actual": "{'n_clusters': '3', 'verbose': 'False'} {'n_clusters': 'str', 'verbose': 'str'}; bool(verbose): True; KMeans(n_clusters='3') -> InvalidParameterError : The 'n_clusters' parameter of KMeans must be an int in the range [1, inf). Got '3' instead. Also: dw.core.update_dict(dict(opts['plot']), {}, from_config=True) -> SyntaxError : invalid syntax (<string>, line 1)",
+      "evidence": [],
+      "docs_impact": [
+        "hypertools/core/configurator.py",
+        "hypertools/core/config.ini"
+      ]
     },
     {
       "id": "F23-core-config-exceptions-003",
       "severity": "minor",
-      "title": "Exceptions have no stable documented public import path; internal docstrings disagree (_shared vs core) and hyp.load never documents HypertoolsIOError",
-      "description": "HypertoolsError/HypertoolsBackendError/HypertoolsIOError are not importable from the hypertools top level (hypertools.HypertoolsError etc. are all AttributeError) and appear nowhere in docs/api.rst or any tutorial. The only import paths are hypertools.core.exceptions (undocumented) and hypertools._shared.exceptions (underscore-private shim). Internal docstrings disagree about the canonical path: io/lsl.py:72 says 'hypertools.core.exceptions.HypertoolsIOError' while io/sources.py:254,388 say ':class:`~hypertools._shared.exceptions.HypertoolsIOError`' (a private path rendered into user-facing API docs). hyp.load's own docstring has no Raises section at all, so a scientist has no documented way to discover what to catch. (Catching OSError does work for IO errors thanks to the mixin — verified — but that is undocumented too.)",
-      "repro": "import hypertools\nprint(hasattr(hypertools, 'HypertoolsError'), hasattr(hypertools, 'exceptions'))\nimport inspect; print('Raises' in (inspect.getdoc(hypertools.load) or ''))\n# grep -n 'exceptions' docs/api.rst  -> no exception classes documented",
-      "expected": "One documented public path (e.g. hypertools.exceptions or top-level re-export), consistent references in all docstrings, and a Raises section in hyp.load",
-      "actual": "hypertools.HypertoolsError: False\nhypertools.HypertoolsBackendError: False\nhypertools.HypertoolsIOError: False\nhypertools.exceptions: False\nhyp.load docstring mentions 'HypertoolsIOError': False\nlsl_stream docstring mentions 'core.exceptions': True; io/sources.py:254 references hypertools._shared.exceptions.HypertoolsIOError",
+      "title": "get_default_options(fname=) footguns: custom file silently REPLACES all hypertools defaults, nonexistent paths are silently ignored, sections are wholesale-replaced",
+      "description": "Passing fname merges dw's defaults with ONLY the given file -- hypertools' own config.ini is dropped entirely (after a custom fname, opts['plot'] is {}), so the documented way to load a custom config silently discards every [plot]/[reduce]/[align]/[cluster] default. A typo'd/nonexistent fname is silently ignored (configparser.read semantics) and returns dw-only defaults with no warning. Merging is a top-level section replacement, not a deep merge: a custom file's [impute] section with one key erases dw's 'model' key from that section. The returned dict also carries a 'DEFAULT' configparser artifact section and uneval'd dw expression strings such as \\\"os.path.join(os.path.expanduser('~'), '.datawrangler', 'data', '')\\\".",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nfrom hypertools.core import get_default_options\nimport tempfile, os\np = os.path.join(tempfile.mkdtemp(), 'c.ini'); open(p, 'w').write('[impute]\\\\nextra_opt = 1\\\\n')\nprint('missing file:', sorted(get_default_options(fname='/nonexistent/x.ini').keys())[:3], '(no error)')\nc = get_default_options(fname=p)\nprint('[plot] after custom fname:', c['plot'])\nprint('[impute] after custom fname:', c['impute'])\n\"",
+      "expected": "Custom file layered ON TOP of hypertools+dw defaults (or a documented replacement contract); FileNotFoundError (or warning) for a missing fname; deep per-option merge",
+      "actual": "hypertools [plot] survives with custom fname: GONE (only dw defaults + custom file merged); nonexistent fname: silently returned sections ... (no error raised); dw default [impute]: {'model': \\\"'IterativeImputer'\\\"} -> after custom-file [impute]: {'extra_opt': '1'} (model key kept? False)",
       "evidence": [],
-      "docs_impact": ["docs/api.rst", "hypertools/io/load.py", "hypertools/io/sources.py", "hypertools/io/lsl.py"]
+      "docs_impact": [
+        "hypertools/core/configurator.py"
+      ]
     },
     {
       "id": "F23-core-config-exceptions-004",
       "severity": "minor",
-      "title": "RobustDict returns one shared mutable default object for every missing key (cross-key aliasing), and .get() bypasses the default",
-      "description": "RobustDict.__getitem__/__missing__ return self.default_value itself, not a copy (hypertools/core/shared.py:63-70). With the configurator's __default_value__={} this means every missing-section lookup aliases ONE dict: mutating the result of opts['typo_a'] makes the mutation appear under every other missing key. Also inconsistent lookup semantics: rd['missing'] returns {} while rd.get('missing') returns None and 'missing' in rd is False, so code switching between [] and .get() sees different values. Low blast radius today (apply_defaults copies immediately), but RobustDict is exported from hypertools.core as public API.",
-      "repro": "from hypertools.core.configurator import get_default_options\no = get_default_options()\na = o['missing_a']; a['injected'] = 123\nprint(o['missing_b'])            # {'injected': 123}\nprint(o['missing_a'] is o['missing_b'])  # True\nfrom hypertools.core.shared import RobustDict\nrd = RobustDict({'x': 1}, __default_value__={})\nprint(rd['missing'], rd.get('missing'))  # {} None",
-      "expected": "each missing lookup returns a fresh copy of the default (defaultdict-style factory), and .get() consistent with []",
-      "actual": "o2['missing_b'] -> {'injected': 123} (expected {} if safe; {'injected':123} = aliasing)\no2['missing_a'] is o2['missing_b']: True\nrd['missing'] -> {} | rd.get('missing') -> None",
+      "title": "RobustDict semantics are internally inconsistent: .get() bypasses the default, .copy() silently drops it, and the mutable default is aliased across lookups",
+      "description": "rd['missing'] returns __default_value__ but rd.get('missing') returns None -- the two standard lookup idioms disagree. rd.copy() (dict.copy) returns a PLAIN dict that raises KeyError on missing keys, while copy.copy(rd) and pickle preserve RobustDict-ness -- so robustness silently disappears depending on which copy idiom is used. Because the same default object is returned for every missing key, mutating one result pollutes all future missing lookups (demonstrated: rd['missing1']['polluted']=True makes rd['missing2'] == {'polluted': True}); get_default_options() returns exactly this shape (__default_value__={}), so opts['nosection'].update(...) anywhere would corrupt later lookups on that opts object. Also asymmetric: the outer dict is forgiving but nested section dicts are plain (opts['plot']['nope'] raises KeyError).",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nfrom hypertools.core.shared import RobustDict\nrd = RobustDict({'a': 1}, __default_value__={})\nrd['missing1']['polluted'] = True\nprint(rd['missing2'], rd['missing1'] is rd['missing2'])\nrd2 = RobustDict({'a': 1}, __default_value__='DV')\nprint(rd2['zzz'], rd2.get('zzz'))\nprint(type(rd2.copy()).__name__)\nrd2.copy()['zzz']\n\"",
+      "expected": ".get() honors the default; .copy() returns a RobustDict; a fresh default (e.g. copy) per missing lookup, or a documented immutability requirement",
+      "actual": "{'polluted': True} True | rd2['zzz'] -> DEFAULT ; rd2.get('zzz') -> None | copy() type: dict, then KeyError: 'zzz'",
       "evidence": [],
-      "docs_impact": ["hypertools/core/shared.py"]
+      "docs_impact": [
+        "hypertools/core/shared.py"
+      ]
     },
     {
       "id": "F23-core-config-exceptions-005",
-      "severity": "minor",
-      "title": "get_default_options/apply_defaults return raw strings for every config value ('3', 'False', '0.7') — 'False' is truthy",
-      "description": "The dw ConfigParser backend performs no type coercion, so the exported hypertools.core.apply_defaults('cluster') returns {'n_clusters': '3', 'verbose': 'False'} — bool('False') is True and '3' is not an int. Any consumer following the docstring contract ('Return the config defaults for func_name overridden by kwargs') would pass stringly-typed values into sklearn constructors (e.g. KMeans(n_clusters='3') raises; verbose='False' enables verbose). Harmless only because nothing currently consumes it (see -002), but it is exported public API on hypertools.core.",
-      "repro": "from hypertools.core.configurator import apply_defaults\nd = apply_defaults('cluster')\nprint(d, {k: type(v).__name__ for k, v in d.items()})\nprint(bool(d['verbose']))  # True — despite 'False' in config.ini",
-      "expected": "typed values (int/float/bool) or explicit documentation that values are raw strings",
-      "actual": "None: {'n_clusters': '3', 'verbose': 'False'}\ntypes: {'ndims': 'int', 'algorithm': 'str'} (only the caller-supplied override is typed)",
+      "severity": "enhancement",
+      "title": "Custom exceptions are not importable from the top-level hypertools namespace and are undocumented user-facing",
+      "description": "A scientist wanting `except hypertools.HypertoolsIOError:` cannot: hasattr(hyp, 'HypertoolsError') and hasattr(hyp, 'HypertoolsIOError') are both False, and no docs/*.rst mentions any of the three exceptions (grep found zero matches). The only working paths are hypertools.core.exceptions (undocumented) and the hypertools._shared.exceptions shim (private-by-convention, and its own comment says it was 'Moved to hypertools.core.exceptions'). For a library whose loaders/backends deliberately raise these types, catching them precisely requires reading the source. Exporting the three exceptions from hypertools/__init__.py (and listing them in docs/api.rst) would make robust error handling discoverable.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport hypertools as hyp\nprint(hasattr(hyp, 'HypertoolsError'), hasattr(hyp, 'HypertoolsIOError'), hasattr(hyp, 'HypertoolsBackendError'))\nfrom hypertools import HypertoolsIOError\n\"",
+      "expected": "from hypertools import HypertoolsIOError works and is documented",
+      "actual": "False False False; ImportError: cannot import name 'HypertoolsIOError' from 'hypertools'",
       "evidence": [],
-      "docs_impact": ["hypertools/core/configurator.py"]
+      "docs_impact": [
+        "hypertools/__init__.py",
+        "docs/api.rst"
+      ]
     },
     {
       "id": "F23-core-config-exceptions-006",
-      "severity": "minor",
-      "title": "configurator fname edge cases: nonexistent path silently ignored, custom fname REPLACES hypertools defaults, malformed ini leaks raw configparser exception",
-      "description": "(a) get_default_options('/nonexistent/path/config.ini') raises nothing and silently returns only datawrangler's defaults — the hypertools plot/reduce/align/cluster sections vanish, so a typo'd path yields wrong defaults with no signal. (b) A valid custom fname is merged with dw's defaults but NOT with hypertools' own config.ini, so passing a small override file drops all hypertools sections ('plot section survives merge: False') — surprising given the module docstring frames the mechanism as merged central defaults. (c) A malformed ini file propagates a raw configparser.MissingSectionHeaderError rather than a HypertoolsError with guidance.",
-      "repro": "from hypertools.core.configurator import get_default_options\nr = get_default_options('/nonexistent/path/config.ini')\nprint('plot' in r)  # False, no error\nopen('/tmp/custom.ini','w').write('[reduce]\\nndims = 7\\n')\nr2 = get_default_options('/tmp/custom.ini')\nprint('plot' in r2)  # False — hypertools sections dropped\nopen('/tmp/bad.ini','w').write('not ini\\n')\nget_default_options('/tmp/bad.ini')  # MissingSectionHeaderError",
-      "expected": "missing file raises or warns; custom file layers on top of hypertools defaults (or docs say otherwise); parse errors wrapped in a hypertools exception naming the file and fix",
-      "actual": "sections: [...dw sections only...] -> silently empty? False\nplot section survives merge: False\nraised: MissingSectionHeaderError File contains no section headers.\nfile: '.../bad_config.ini', line: 1",
+      "severity": "doc",
+      "title": "Docstrings reference two different canonical exception paths; sources.py points at the deprecated _shared shim",
+      "description": "hypertools/io/lsl.py:72 documents 'hypertools.core.exceptions.HypertoolsIOError' while hypertools/io/sources.py:254 documents ':class:`~hypertools._shared.exceptions.HypertoolsIOError`' (and again at sources.py:388). _shared/exceptions.py itself says 'Moved to hypertools.core.exceptions (HyperTools 1.0 refactor). Kept as a shim'. User-facing API docs should reference one stable path -- the shim path leaks a private module into rendered Sphinx docs.",
+      "repro": "sed -n 70,74p /Users/jmanning/hypertools/hypertools/io/lsl.py; sed -n 252,256p /Users/jmanning/hypertools/hypertools/io/sources.py; head -3 /Users/jmanning/hypertools/hypertools/_shared/exceptions.py",
+      "expected": "All docstrings reference the same public path (hypertools.core.exceptions.* or a new top-level export)",
+      "actual": "lsl.py: 'hypertools.core.exceptions.HypertoolsIOError / If no matching stream is found'; sources.py: 'raises :class:`~hypertools._shared.exceptions.HypertoolsIOError`'; shim header: 'Moved to hypertools.core.exceptions (HyperTools 1.0 refactor). Kept as a shim'",
       "evidence": [],
-      "docs_impact": ["hypertools/core/configurator.py"]
+      "docs_impact": [
+        "hypertools/io/sources.py",
+        "hypertools/io/lsl.py"
+      ]
     },
     {
       "id": "F23-core-config-exceptions-007",
-      "severity": "doc",
-      "title": "reduce typo error message hardcodes pre-1.0 http docs URL (hypertools.tools.reduce.html) that the 1.0 doc tree no longer generates, and lists no supported names",
-      "description": "hyp.reduce(data, reduce='PCAA') raises ValueError: 'reduce must be one of the supported options or support n_components and fit_transform methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce for supported models' (with embedded runs of spaces from a continuation string). The URL is http (redirects 301 to https) and currently resolves only because readthedocs still serves the OLD 0.8.x docs; the 1.0 docs tree builds hypertools.reduce.rst — there is no hypertools.tools.reduce page — so the link will 404 once 1.0 docs deploy, and today it points users at pre-1.0 API docs. Contrast with cluster's exemplary message ('unknown cluster model KMeanz; supported names: AffinityPropagation, ..., SpectralClustering (or pass a scikit-learn style instance directly)'). Overlaps unit F-reduce; filed here because error-message quality audit surfaced it.",
-      "repro": "import numpy as np, hypertools as hyp\nhyp.reduce(np.random.default_rng(2).normal(size=(50,10)), reduce='PCAA')\n# and: curl -sI http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html\n# and: ls docs/hypertools.reduce.rst docs/hypertools.tools.reduce.rst",
-      "expected": "message lists supported reducer names (like cluster's) and either omits the URL or uses the current https 1.0 docs path",
-      "actual": "ValueError: reduce must be one of the supported options or support n_components and fit_transform          methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce          for supported models\ncurl: 301 -> https://.../hypertools.tools.reduce.html; final:200 (0.x page); docs/ has hypertools.reduce.rst only",
+      "severity": "minor",
+      "title": "unpack_model silently ignores 'params' when both 'params' and 'kwargs' are present in a dict spec",
+      "description": "The legacy-dict translation only fires when 'args'/'kwargs' are absent. A user migrating from the legacy form who passes {'model': 'PCA', 'params': {'n_components': 4}, 'kwargs': {'n_components': 9}} gets NO DeprecationWarning and no error: 'params' is retained inertly in the resolved spec and ignored downstream while 'kwargs' wins -- their n_components=4 is silently dropped. Similarly, a dict without a 'model' key (e.g. the typo {'mdoel': 'PCA'}) passes through unchanged for downstream code to trip over, instead of failing fast with a clear message.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -W error::DeprecationWarning -c \"\nfrom hypertools.core.shared import unpack_model\nfrom sklearn.decomposition import PCA\nprint(unpack_model({'model': 'PCA', 'params': {'n_components': 4}, 'kwargs': {'n_components': 9}}, valid=[PCA]))\nprint(unpack_model({'mdoel': 'PCA'}, valid=[PCA]))\n\"",
+      "expected": "A warning (or error) that 'params' conflicts with 'kwargs' and is being ignored; a clear error for dicts lacking a 'model' key",
+      "actual": "{'model': <class 'sklearn.decomposition._pca.PCA'>, 'params': {'n_components': 4}, 'kwargs': {'n_components': 9}, 'args': []} with no warning raised (-W error did not trip); {'mdoel': 'PCA'} passed through unchanged",
       "evidence": [],
-      "docs_impact": ["hypertools/reduce/reduce.py"]
+      "docs_impact": [
+        "hypertools/core/shared.py"
+      ]
     },
     {
       "id": "F23-core-config-exceptions-008",
       "severity": "minor",
-      "title": "hyp.load 'could not load' message omits the built-in example datasets from its 'Tried, in order' list — a typo'd hosted name (weightz) gets no hint that 'weights' exists",
-      "description": "load checks EXAMPLE_DATA first (io/load.py:257) but the fallthrough HypertoolsIOError only lists 'scikit-learn bundled dataset', 'seaborn dataset', and 'local file' as tried sources. A scientist typo-ing a hypertools example dataset ('weightz' for 'weights') is never told hypertools example datasets were considered, nor shown their names — even though the message helpfully lists the sklearn names. hyp.load('weights') works (verified: list of 36 arrays), so the omission actively hides the most likely fix. Overlaps unit F-io; filed from the exception-message-quality audit.",
-      "repro": "import hypertools as hyp\ntry:\n    hyp.load('weightz')\nexcept Exception as e:\n    print(str(e))",
-      "expected": "'Tried, in order' includes the built-in example-dataset source with its valid names (or a did-you-mean suggestion)",
-      "actual": "could not load 'weightz'. Tried, in order:\n  - scikit-learn bundled dataset: not one of ['breast_cancer', 'diabetes', 'digits', 'iris', 'linnerud', 'wine']\n  - seaborn dataset: not found via seaborn.get_dataset_names() (or that lookup failed, e.g. no network access)\n  - local file: not found at weightz",
+      "title": "unpack_model error messages leak raw reprs (memory addresses) and give no guidance; class-vs-instance validation is asymmetric",
+      "description": "Invalid specs raise ValueError('unknown model: <__main__.NotAModel object at 0x100647d10>') -- a leaked default repr with a memory address, naming neither what kinds of spec are accepted nor (when valid= was provided) which names would have matched. Asymmetries make the contract hard to predict: unpack_model(PCA) (a class) with no parent_class raises ValueError, while the string 'PCA' and the instance PCA() both pass through unchanged in the same situation; unpack_model(None, parent_class=...) raises 'unknown model: None'.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nfrom hypertools.core.shared import unpack_model\nfrom sklearn.decomposition import PCA\nfrom sklearn.base import BaseEstimator\nclass NotAModel: pass\ntry: unpack_model(NotAModel(), parent_class=BaseEstimator)\nexcept ValueError as e: print('1:', e)\ntry: unpack_model(PCA)\nexcept ValueError as e: print('2:', e)\nprint('3:', repr(unpack_model('PCA')), repr(unpack_model(PCA())))\n\"",
+      "expected": "Error names the offending spec, the accepted spec forms (string among valid names / class or instance of parent_class / dict with 'model'), e.g. 'NotAModel instance is not a BaseEstimator; pass a class/instance of ... or one of [...]'",
+      "actual": "1: unknown model: <__main__.NotAModel object at 0x100647d10> | 2: unknown model: <class 'sklearn.decomposition._pca.PCA'> | 3: 'PCA' PCA()  (string and instance pass through where the class raised)",
       "evidence": [],
-      "docs_impact": ["hypertools/io/load.py"]
+      "docs_impact": [
+        "hypertools/core/shared.py"
+      ]
     },
     {
       "id": "F23-core-config-exceptions-009",
       "severity": "style",
-      "title": "Exception constructor signatures inconsistent: subclasses require exactly one 'message' arg and define .message; base HypertoolsError accepts any args and has no .message",
-      "description": "HypertoolsBackendError() with no args raises TypeError (missing 1 required positional argument: 'message'), and two args also TypeError, while HypertoolsError() and HypertoolsError('a','b') both work; only the subclasses carry a .message attribute. Anyone raising/handling the family generically (or subclassing) hits the asymmetry. The explicit __init__ overrides add nothing beyond .message (pickle works either way — verified).",
-      "repro": "from hypertools.core.exceptions import HypertoolsError, HypertoolsBackendError\nHypertoolsError()          # ok\nHypertoolsBackendError()   # TypeError: missing 1 required positional argument: 'message'\nHypertoolsError('a','b')   # ok\nHypertoolsBackendError('a','b')  # TypeError",
-      "expected": "uniform constructor contract across the hierarchy (drop the overrides or add them to the base)",
-      "actual": "HypertoolsError() ok (0 args)\nHypertoolsBackendError() TypeError: HypertoolsBackendError.__init__() missing 1 required positional argument: 'message'\nHypertoolsBackendError 2-arg TypeError: HypertoolsBackendError.__init__() takes 2 positional arguments but 3 were given",
+      "title": "hypertools.config is a misnomer holding only __version__, leaks importlib's 'version' function, and carries dead Python<3.8 fallback code",
+      "description": "The module named 'config' contains no configuration -- only __version__ -- while the actual config machinery lives in hypertools/core/configurator.py + config.ini; hypertools.config.version is the leaked importlib.metadata.version FUNCTION (prints as '<function version at 0x...>'), an attractive trap next to __version__. Its try/except falls back to 'from importlib_metadata import version' for 'Python < 3.8', but pyproject.toml requires-python >=3.10 and importlib_metadata is not a declared dependency, so the fallback is dead code that would ImportError anyway. Also, unlike dw's equivalent, there is no PackageNotFoundError fallback for running from an uninstalled source checkout (untested here; would require uninstalling hypertools).",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport hypertools.config as c\nprint([a for a in dir(c) if not a.startswith('_')])\nprint(c.version)\nprint(c.__version__)\n\"",
+      "expected": "Module exposes only __version__ (del version after use, or use 'from importlib.metadata import version as _version'); no <3.8 fallback in a >=3.10 package",
+      "actual": "['version']; <function version at 0x10797e8e0>; 1.0.0.dev0",
       "evidence": [],
-      "docs_impact": ["hypertools/core/exceptions.py"]
+      "docs_impact": [
+        "hypertools/config.py"
+      ]
     },
     {
       "id": "F23-core-config-exceptions-010",
       "severity": "minor",
-      "title": "set_interactive_backend accepts a nonexistent backend name silently; failure surfaces only at the next interactive plot (and module-global switch_backend crashes AttributeError on raw strings)",
-      "description": "hyp.set_interactive_backend('definitely_not_a_backend') returns without any validation (documented as deferred, but nothing checks the name against matplotlib's known backends), so the user's typo is reported much later — hyp.plot(x, interactive=True) then raises HypertoolsBackendError (good message, chained ModuleNotFoundError). Additionally the module-global hypertools.plot.backend.switch_backend, whose docstring promises 'Raises HypertoolsBackendError if switching the backend fails', crashes with AttributeError: 'str' object has no attribute 'as_python' when handed a plain string (it requires the internal HypertoolsBackend wrapper) — an internal function, but its docstring contract does not hold for the obvious input.",
-      "repro": "import numpy as np, hypertools as hyp\nhyp.set_interactive_backend('definitely_not_a_backend')  # no error\nhyp.plot(np.random.default_rng(0).normal(size=(20,4)), interactive=True)  # HypertoolsBackendError here\n# internal: from hypertools.plot.backend import switch_backend; switch_backend('nope')  # AttributeError",
-      "expected": "early validation (raise/warn at set time for unknown backend names); switch_backend either coerces str or documents the HypertoolsBackend requirement",
-      "actual": "set_interactive_backend accepted bogus name silently\nplot raised: HypertoolsBackendError Failed to switch the plotting backend to definitely_not_a_backend. You may be missing required dependencies, or this backend may not be available for your system\nAttributeError: 'str' object has no attribute 'as_python' (backend.py:713, in _switch_backend_regular)",
-      "evidence": [],
-      "docs_impact": ["hypertools/plot/backend.py"]
+      "title": "Default n_clusters differs by entry point: hyp.cluster() -> 3 but hyp.plot(cluster='KMeans') -> 5 (three competing default sources)",
+      "description": "Defaults for the same conceptual operation live in three places that disagree: cluster() signature n_clusters=3 (cluster/cluster.py:135), _shared/params.py parameters['KMeans'] n_clusters=5 (consumed by plot.py's cluster= path and text2mat), and the dead core/config.ini [cluster] n_clusters=3. Real run on identical 6-blob data: hyp.cluster(X, cluster='KMeans') yields 3 unique labels while hyp.plot(X, '.', cluster='KMeans') colors 5 clusters. A scientist cross-checking their plot against hyp.cluster labels gets different partitions without any parameter change. ('defaults sane' mandate; root cause is core-level default duplication, though the fix likely touches plot.py/params.py.)",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F23-core-config-exceptions/probe5_default_divergence.py",
+      "expected": "Same default k for the same spec on both entry points",
+      "actual": "hyp.cluster(X) unique labels: 3 | hyp.plot(X, '.', cluster='KMeans') distinct colors: 5 | hyp.cluster(X, cluster='KMeans') unique labels: 3",
+      "evidence": [
+        "probe5_plot_cluster_default.png"
+      ],
+      "docs_impact": [
+        "hypertools/_shared/params.py",
+        "hypertools/cluster/cluster.py",
+        "hypertools/core/config.ini"
+      ]
     },
     {
       "id": "F23-core-config-exceptions-011",
       "severity": "style",
-      "title": "shared.get() returns the WHOLE list for out-of-range and negative indices instead of raising or clamping",
-      "description": "hypertools/core/shared.py get(value, i) returns value[i] only when 0 <= i < len(value); get([1,2,3], 5) and get([1,2,3], -1) both return [1, 2, 3]. For its intended use (per-dataset parameter lists) an out-of-range dataset index silently hands the manipulator the entire list as the parameter value rather than failing loudly — a shape/typo there produces confusing downstream errors instead of 'parameter list shorter than number of datasets'.",
-      "repro": "from hypertools.core.shared import get\nprint(get([1,2,3], 5), get([1,2,3], -1))",
-      "expected": "raise IndexError (or document + warn) when a per-dataset list is shorter than the dataset index",
-      "actual": "get([1,2,3], 5) -> [1, 2, 3] (out of range returns whole list)\nget([1,2,3], -1) -> [1, 2, 3] (negative index returns whole list)",
+      "title": "set_interactive_backend accepts an invalid backend name silently; HypertoolsBackendError only surfaces at the first interactive plot",
+      "description": "hyp.set_interactive_backend('bogus_backend_xyz') returns without complaint; the HypertoolsBackendError ('Failed to switch the plotting backend to ... You may be missing required dependencies, or this backend may not be available for your system', chained from ModuleNotFoundError) only appears when the first interactive/animated plot runs -- typically far from the misconfiguration site in a script. The deferred message itself is clear and correctly typed (isinstance HypertoolsError True). Fail-fast validation (or a warning) at set time would localize the mistake. (Overlaps the plot-backend unit; recorded here because this is the primary raiser of the core HypertoolsBackendError.)",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, hypertools as hyp\nhyp.set_interactive_backend('bogus_backend_xyz')  # no error here\nprint('set silently OK')\nhyp.plot(np.random.randn(30, 3), interactive=True)\n\"",
+      "expected": "Immediate error/warning naming the unknown backend at set time",
+      "actual": "set silently OK; then on plot: HypertoolsBackendError : Failed to switch the plotting backend to bogus_backend_xyz. You may be missing required dependencies, or this backend may not be available for your system",
       "evidence": [],
-      "docs_impact": ["hypertools/core/shared.py"]
+      "docs_impact": [
+        "hypertools/plot/backend.py"
+      ]
     },
     {
       "id": "F23-core-config-exceptions-012",
-      "severity": "enhancement",
-      "title": "No user-facing configuration API or docs: hypertools.config is only __version__, and no documented way exists to change library-wide defaults",
-      "description": "The mandate question 'is config get/set documented anywhere user-facing?' — answer: no. hypertools.config exposes exactly __version__/version. get_default_options/apply_defaults exist on hypertools.core but appear in no docs page (docs/api.rst has no config entry; no tutorial mentions configuration). Users who want persistent defaults (e.g. always cmap='viridis', always ndims=2) must pass kwargs on every call. Given config.ini/configurator already exist (currently dead, see -002), 1.0 could either wire them up and document a supported set-defaults API, or delete the machinery to avoid implying configurability.",
-      "repro": "import hypertools, hypertools.config as c\nprint([a for a in dir(c) if not a.startswith('_')])  # ['version']\n# grep -rn 'get_default_options' docs/*.rst  -> no hits",
-      "expected": "documented hypertools-level default-setting mechanism, or removal of the inert config machinery",
-      "actual": "public attrs: ['version']\ndocs/api.rst contains no config/exceptions entries (only prose word 'core' at line 14)",
+      "severity": "style",
+      "title": "shared.get() returns the ENTIRE list for out-of-range and negative indices",
+      "description": "get([10,20,30], 5) and get([10,20,30], -1) both return [10, 20, 30]. The out-of-range fallback is documented ('if in range, else value itself') and supports the one-shared-parameter idiom, but it means a per-dataset parameter list that is shorter than the dataset count silently hands LATER datasets the whole list as their parameter instead of erroring, and a negative index -- valid on every other Python sequence -- silently returns the list too. A length mismatch warning (or supporting negative indices) would prevent silent parameter misassignment in manipulators.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nfrom hypertools.core.shared import get\nprint(get([10, 20, 30], 5), get([10, 20, 30], -1))\n\"",
+      "expected": "Error/warning on out-of-range per-dataset parameter lists; Python-conventional negative indexing (or an explicit error)",
+      "actual": "[10, 20, 30] [10, 20, 30]",
       "evidence": [],
-      "docs_impact": ["docs/api.rst", "hypertools/config.py", "hypertools/core/configurator.py"]
+      "docs_impact": [
+        "hypertools/core/shared.py"
+      ]
+    },
+    {
+      "id": "F23-core-config-exceptions-013",
+      "severity": "style",
+      "title": "hypertools.core export surface is inconsistent: shared helpers RobustDict/unpack_model/get exported but is_reused_pipeline is not; bare 'get' is a collision-prone name",
+      "description": "hypertools/core/__init__.py re-exports RobustDict, unpack_model and the very generically named 'get' from core.shared, but not is_reused_pipeline (ImportError: cannot import name 'is_reused_pipeline' from 'hypertools.core'), which dispatchers import from core.shared directly. Either all shared helpers are internal (export none) or the surface should be complete; exporting a function named simply 'get' invites shadowing bugs in 'from hypertools.core import *'-style usage.",
+      "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nfrom hypertools.core import get, RobustDict, unpack_model  # OK\nfrom hypertools.core import is_reused_pipeline  # ImportError\n\"",
+      "expected": "Consistent, deliberate export list (and a more specific name than 'get' if it stays public)",
+      "actual": "ImportError: cannot import name 'is_reused_pipeline' from 'hypertools.core' (/Users/jmanning/hypertools/hypertools/core/__init__.py)",
+      "evidence": [],
+      "docs_impact": [
+        "hypertools/core/__init__.py"
+      ]
     }
   ]
 }

@@ -141,7 +141,7 @@
    "case": "normalize=\"across\" math matches manual z-score (ddof=0)",
    "result": "fail",
    "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_streaming_core.py  # case: 'normalize=\"across\" math matches manual z-score (ddof=0)'",
-   "output_excerpt": "  File \"/Users/jmanning/hypertools/hypertools/plot/plot.py\", line 1546, in plot\n    return plot_stream(\n           ^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/io/streaming.py\", line 216, in plot_stream\n    fig = hyp_plot(head_red, fmt, reduce=None, normalize=None, ndims=ndims,\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/plot/backend.py\", line 1182, in plot_wrapper\n    return plot_func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/plot/plot.py\", lin [TEST-SCRIPT ARTIFACT: used unplottable ndims=4; classified by V5. Math itself verified correct by V4/V4b.]",
+   "output_excerpt": "  File \"/Users/jmanning/hypertools/hypertools/plot/plot.py\", line 1546, in plot\n    return plot_stream(\n           ^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/io/streaming.py\", line 216, in plot_stream\n    fig = hyp_plot(head_red, fmt, reduce=None, normalize=None, ndims=ndims,\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/plot/backend.py\", line 1182, in plot_wrapper\n    return plot_func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/plot/plot.py\", lin [TEST-SCRIPT ARTIFACT: used unplottable ndims=4; classified by V5. Math itself verified correct by V4/V4b.]\n[TEST ARTIFACT, resolved 2026-07-11: this test passed ndims=4/reduce=None so it crashed on the finding-008 TypeError before reaching the math check. Math re-verified with 3-feature streams in cases N1/N2/N3b below -> all pass exactly.]",
    "evidence": []
   },
   {
@@ -478,7 +478,7 @@
    "case": "L6 silent (stalled) stream aborts after ~timeout s",
    "result": "fail",
    "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py  # case: 'L6 silent (stalled) stream aborts after ~timeout s'",
-   "output_excerpt": "Traceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py\", line 33, in record\n    out = fn()\n          ^^^^\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py\", line 151, in l6\n    got = [next(stream) for _ in range(50)]\n           ^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/io/lsl.py\", line 121, in _samples\n    raise HypertoolsIOError(\nhypertools.core.exceptions.Hy [HARNESS RACE: outlet finished pushing before inlet connected (LSL delivers only post-connection samples); superseded by t07 L6r which PASSES: 81 samples then clean abort after 2.0s silence.]",
+   "output_excerpt": "Traceback (most recent call last):\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py\", line 33, in record\n    out = fn()\n          ^^^^\n  File \"/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t04_lsl.py\", line 151, in l6\n    got = [next(stream) for _ in range(50)]\n           ^^^^^^^^^^^^\n  File \"/Users/jmanning/hypertools/hypertools/io/lsl.py\", line 121, in _samples\n    raise HypertoolsIOError(\nhypertools.core.exceptions.Hy [HARNESS RACE: outlet finished pushing before inlet connected (LSL delivers only post-connection samples); superseded by t07 L6r which PASSES: 81 samples then clean abort after 2.0s silence.]\n[HARNESS ARTIFACT: intended HypertoolsIOError WAS raised (that is the documented behavior) but the harness recorded it as fail; superseded by passing case L6r with timing measurement.]",
    "evidence": []
   },
   {
@@ -653,6 +653,62 @@
    "result": "pass",
    "command": "/Users/jmanning/hypertools/.venv/bin/python -c \"import pylsl; print(pylsl.__version__, pylsl.library_version())\"",
    "output_excerpt": "pylsl 1.18.2, liblsl 117 (v1.17.7 per liblsl log) -- native library loads; all LSL tests are real",
+   "evidence": []
+  },
+  {
+   "case": "T01-recheck (2026-07-11 session 2): REAL LSL round-trip re-verification: outlet subprocess 4ch@100Hz -> lsl_stream(name=): exact values, contiguity, live rate, is_stream, name/type/precedence/minimum kwarg, clean close",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t01_lsl_roundtrip.py",
+   "output_excerpt": "T01a is_stream(lsl_stream(...)): True | T01c consecutive (no drops/reorder): True | T01c all channel values match pushed exactly: True | T01d consumed 200 samples in 2.00s (nominal at 100 Hz: 2.0s) -> effective rate 100 Hz | T01e generator closed without error | T01f resolve by type=EEG works | T01g name precedence over type: got sample | T01h resolve_kwargs minimum=1 forwarded OK",
+   "evidence": []
+  },
+  {
+   "case": "N1 normalize='across' math == manual z-score of head (ddof=0), 3-feature stream, reduce=None",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t08_norm_math.py",
+   "output_excerpt": "across == manual z-score (ddof=0), max|diff|=0.00e+00",
+   "evidence": []
+  },
+  {
+   "case": "N2 'across' head stats (first 60 of 120 samples) reused verbatim for post-head chunks (issue #101 fitted-transform semantics)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t08_norm_math.py",
+   "output_excerpt": "post-head chunks z-scored with HEAD stats (not their own): max|diff|=0.00e+00 over 120 samples",
+   "evidence": []
+  },
+  {
+   "case": "N3b normalize='row' math == per-row z-score (3-feature stream, reduce=None)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"...80x3 randn stream, stream_init=40, normalize='row', reduce=None; assert_allclose vs (v-mean(1))/std(1)\"",
+   "output_excerpt": "N3b PASS row-normalize math exact, shape (80, 3) max|diff| 0.0",
+   "evidence": []
+  },
+  {
+   "case": "N4 zero-variance channel with normalize=across: _safe_std guard (no NaN/inf, constant col -> 0)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t08_norm_math.py",
+   "output_excerpt": "constant channel: all finite=True (std=0 -> guarded to 1.0), ch1 col unique=[0.]",
+   "evidence": []
+  },
+  {
+   "case": "N3 normalize='row' with 4-feature stream and reduce=None (crashes: finding 008 family, reduce=None + >3 features)",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t08_norm_math.py",
+   "output_excerpt": "matplotlib_backend.py line 2028, in _draw: fig, ax, data = dispatch_static(x, ax) -> TypeError: cannot unpack non-iterable NoneType object  [same crash as finding F22-io-streaming-lsl-008: reduce=None with 4+ features at default ndims=3 -- independent confirmation of the \"(or reduce=None with 4+ features)\" trigger already documented in that finding]",
+   "evidence": []
+  },
+  {
+   "case": "R1 independent re-repro of finding 001 (2026-07-11 session 2): generator of scalars",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t08_norm_math.py",
+   "output_excerpt": "REPRODUCED finding 001: IndexError: index 1 is out of bounds for axis 1 with size 1",
+   "evidence": []
+  },
+  {
+   "case": "R2 independent re-repro of finding 003 (2026-07-11 session 2): source raises OSError mid-stream during save_path GIF",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F22-io-streaming-lsl/t08_norm_math.py",
+   "output_excerpt": "REPRODUCED finding 003: OSError 'device disconnected' propagated; no Figure returned (200 consumed samples lost); gif exists=False size=0; leaked open figs=0 [note: PillowWriter.setup() without finish() leaves NO file at all -- the animation is entirely lost, not even a partial file]",
    "evidence": []
   }
  ],

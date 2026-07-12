@@ -678,6 +678,73 @@
    "command": "curl -sL http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html",
    "output_excerpt": "200 (redirects to https). The URL embedded in the unknown-reduce error message resolves.",
    "evidence": []
+  },
+  {
+   "case": "reverify-block1-plot-animate-verbatim (2nd independent session)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg .venv/bin/python block1_plot.py",
+   "output_excerpt": "RETURN TYPE: <class 'hypertools.plot.hyper_animation.HyperAnimation'> / GIF SAVED OK (30 frames, 480x360)",
+   "evidence": [
+    "block1_plot_animate.gif"
+   ]
+  },
+  {
+   "case": "reverify-block2-align-hyper-verbatim (2nd independent session)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg .venv/bin/python block2_align.py",
+   "output_excerpt": "RETURN TYPE: <class 'matplotlib.figure.Figure'> / PNGs SAVED OK; 3 rotated noisy trajectories visually overlap after align='hyper'",
+   "evidence": [
+    "block2_align_after.png",
+    "block2_align_before.png"
+   ]
+  },
+  {
+   "case": "reverify-block3-cluster-GaussianMixture-verbatim (2nd independent session)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg .venv/bin/python block3_cluster.py",
+   "output_excerpt": "RETURN TYPE: <class 'matplotlib.figure.Figure'>; 3 blobs colored red/blue/green",
+   "evidence": [
+    "block3_cluster.png"
+   ]
+  },
+  {
+   "case": "reverify-block4-surface-verbatim (2nd independent session)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg .venv/bin/python block4_surface.py",
+   "output_excerpt": "RETURN TYPE: <class 'matplotlib.figure.Figure'>; two lit hull surfaces over point blobs",
+   "evidence": [
+    "block4_surface.png"
+   ]
+  },
+  {
+   "case": "reverify-block5-describe-verbatim (2nd independent session)",
+   "result": "pass",
+   "command": "env MPLBACKEND=Agg .venv/bin/python block5_describe.py",
+   "output_excerpt": "RETURN TYPE: <class 'dict'> KEYS: ['average', 'individual']; plot x-axis ends at 13 for max_dims=14 (visual confirmation of finding 006 exclusivity)",
+   "evidence": [
+    "block5_describe.png"
+   ]
+  },
+  {
+   "case": "reverify-findings-001+002-smooth-zscore-cross-dataset (constant-dataset probe)",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg .venv/bin/python spotcheck.py (SPOT-1/2/6)",
+   "output_excerpt": "hyp.manip([zeros, 100s], model='Smooth', kernel_width=5): dataset A end rows [0. 0. 25.71428571], dataset B start rows [74.28571429 100. 100.] -> CROSS-DATASET LEAK: True; ZScore on [~10s, ~-10s] gives means +0.987/-0.987 (stacked stats). Same leak via chained dict spec {'model': 'Smooth', 'kwargs': {'kernel_width': 5}}.",
+   "evidence": []
+  },
+  {
+   "case": "reverify-findings-003+005-retired-args+mat2colors-path",
+   "result": "fail",
+   "command": "env MPLBACKEND=Agg .venv/bin/python spotcheck.py (SPOT-3/4)",
+   "output_excerpt": "hyp.plot(x, group=...): AttributeError: Line2D.set() got an unexpected keyword argument 'group'; model= likewise. hyp.plot.colors.mat2colors -> AttributeError: 'function' object has no attribute 'colors'; from hypertools.plot.colors import mat2colors works.",
+   "evidence": []
+  },
+  {
+   "case": "reverify-finding-004-cluster-ndims-accepted-and-ignored (deterministic)",
+   "result": "fail",
+   "command": ".venv/bin/python -c \"hyp.cluster(blobs, cluster='KMeans', n_clusters=2, random_state=0, ndims=2)\" vs ndims=4 vs none",
+   "output_excerpt": "inspect.signature: (x, cluster='KMeans', n_clusters=3, ..., ndims=None, ...); no-ndims vs ndims=2 identical: True; no-ndims vs ndims=4 identical: True (silently ignored without reduce=)",
+   "evidence": []
   }
  ],
  "findings": [
