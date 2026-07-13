@@ -9,7 +9,7 @@ Working truth for the release audit. Update after every phase transition, wave c
 | 0 setup | done | branch `audit/release-1.0-2026-07` @ e0f4e33e; tree cleaned |
 | 1-3 red-team waves (46 units) | **DONE 46/46 — 708 findings** (16 crit, 98 major, 142 doc, 306 minor, 118 style, 28 enh) | 4 waves (3 spend-cap resumes); ~13.1M subagent tokens, ~4650 tool uses total |
 | 4 verification | RUNNING — run `wf_592422d1-611` | 46 blind adversarial verifiers (effort=high), verdicts → verdicts/*.json; first launch failed (args passed as JSON-string → script now hardcodes units) |
-| 5 fixes | not started | |
+| 5 fixes | RUNNING | 5A `wf_76a828b2-710`: 8 parallel implementers, disjoint ownership (io / manip+normalize / align / predict+impute / plot-backend.py / core+_shared+packaging / cluster+reduce / tools-analyze). 5B `wf_87ffe0b7-a93`: SEQUENTIAL pipeline over plot pkg minus backend.py (B1 static/inputs/kwargs → B2 hue/colors → B3 animation/save → B4 density/surface). Agents do NOT git; controller reviews diffs, runs full suite, commits per batch. Then 5C docs/examples/tutorials (needs fixed code), 5D leftovers (X1/X4/X6/X7/X8 minors+style, D13 links, D14 drift). |
 | 6 re-audit | not started | |
 | 7 merge + CI | not started | |
 | 8 PR report | not started | |
