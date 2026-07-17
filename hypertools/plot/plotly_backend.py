@@ -22,7 +22,6 @@ palette assignment per trace.
 import itertools
 import os
 import sys
-import warnings
 
 import numpy as np
 
@@ -203,8 +202,8 @@ def _has_plotly():
 
 def _zoom_r(zoom):
     """Camera distance for a given matplotlib-style zoom: mpl image scale is
-    ~10/(9 - zoom) (see draw.py's set_box_aspect conversion), so relative to
-    zoom=1 the plotly camera moves in by (9 - zoom)/8."""
+    ~10/(9 - zoom) (see matplotlib_backend's set_box_aspect conversion), so
+    relative to zoom=1 the plotly camera moves in by (9 - zoom)/8."""
     return max(0.2, 1.95 * (9.0 - float(zoom)) / 8.0)
 
 
@@ -1075,7 +1074,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        morph_samples=morph_samples,
                        morph_trace_start=morph_trace_start_3d,
                        morph_mesh_trace_start=morph_mesh_trace_start_3d,
-                       morph_surface_spec=morph_surface_spec_3d)
+                       morph_surface_spec=morph_surface_spec_3d,
+                       morph_sampled=sampled0, morph_dup_masks=dup_masks0)
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
@@ -1267,7 +1267,8 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
 def _cube_trace(go, scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT):
     """hypertools' signature black wireframe cube as a single 3D trace.
 
-    Mirrors draw.py's plot_cube: 12 edges at +/-scale, black, 1pt lines.
+    Mirrors matplotlib_backend's plot_cube: 12 edges at +/-scale, black,
+    1pt lines.
     Edges are chained with None separators so one trace draws them all.
     """
     s = scale
@@ -1294,7 +1295,8 @@ def _cube_trace(go, scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT):
 
 
 def _square_shape(scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT):
-    """hypertools' 2D black square frame (mirrors draw.py's plot_square)."""
+    """hypertools' 2D black square frame (mirrors matplotlib_backend's
+    plot_square)."""
     return dict(type='rect', x0=-scale, y0=-scale, x1=scale, y1=scale,
                 line=dict(color='black', width=linewidth_pt * PT_TO_PX),
                 fillcolor='rgba(0,0,0,0)', layer='below')
@@ -1873,7 +1875,7 @@ def _colorbar_trace(go, colorbar_info, ndims, legend_present):
 
     cb = dict(x=x, xanchor=xanchor, y=y, yanchor=yanchor,
              orientation=orientation, len=0.75,
-             thickness=15 if orientation == 'v' else 15)
+             thickness=15)
     if colorbar_info.get('label'):
         cb['title'] = dict(text=colorbar_info['label'])
 
@@ -2006,7 +2008,8 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    surface_dataset_indices=None, data_trace_start=0,
                    morph_tags=None, morph_colors=None, morph_samples=None,
                    morph_trace_start=None, morph_mesh_trace_start=None,
-                   morph_surface_spec=None, surface_point_colors=None):
+                   morph_surface_spec=None, surface_point_colors=None,
+                   morph_sampled=None, morph_dup_masks=None):
     """Attach frames + play controls: 'spin' rotates the camera; True /
     'parallel' reveals trajectories through a sliding time window; 'morph'
     eases the single traveling point-cloud trace (+ mesh, if surfaced)
@@ -2208,8 +2211,15 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
         _morph_ncols = 3 if ndims >= 3 else 2
         clouds = [np.atleast_2d(np.asarray(data[i], dtype=np.float64))[:, :_morph_ncols]
                  for i in morph_indices]
-        sampled, dup_masks = _morph.sample_and_match_clouds(
-            clouds, morph_samples=morph_samples)
+        if morph_sampled is not None and morph_dup_masks is not None:
+            # reuse the sampled/matched clouds `plotly_draw` already
+            # computed for the static setup (same clouds, same
+            # morph_samples) rather than re-running the O(n^3) Hungarian
+            # matching a second time per figure (X6-code-org-plot-005)
+            sampled, dup_masks = morph_sampled, morph_dup_masks
+        else:
+            sampled, dup_masks = _morph.sample_and_match_clouds(
+                clouds, morph_samples=morph_samples)
         ds_colors = [
             tuple(morph_colors[i]) if morph_colors is not None
             else (0.2, 0.4, 0.8)
@@ -2407,8 +2417,8 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                                 traces=list(trace_indices))
             if ndims >= 3:
                 # matplotlib's sliding-window animation rotates the camera
-                # while the window advances (draw.py update_lines_parallel);
-                # mirror that here
+                # while the window advances (matplotlib_backend's
+                # update_lines_parallel); mirror that here
                 angle = azim + 360.0 * rotations * k / n_frames
                 frame_kwargs['layout'] = dict(
                     scene_camera=dict(eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))

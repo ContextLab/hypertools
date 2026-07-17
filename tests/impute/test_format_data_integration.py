@@ -19,7 +19,9 @@ def test_format_data_missing_data_unchanged_behavior():
 def test_format_data_warns_on_missing_data():
     data = np.random.rand(100, 10)
     data[0][0] = np.nan
-    with pytest.warns(UserWarning, match='Inexact solution'):
+    # F17-006: the old 'Inexact solution' text was stale -- PPCA preserves
+    # observed values exactly and only reconstructs the NaN entries
+    with pytest.warns(UserWarning, match='filling missing values'):
         format_data(data)
 
 

@@ -1,21 +1,30 @@
 #!/usr/bin/env python
+"""hyp.plot: the main HyperTools visualization entry point.
+
+Contains the `plot()` dispatcher (input normalization, the
+manip/normalize/reduce/align/cluster analysis pipeline, hue/cluster/
+MultiIndex regrouping, color/legend/colorbar resolution, streaming
+dispatch, and save/return handling) plus its private helpers. Low-level
+drawing lives in `matplotlib_backend` and `plotly_backend`.
+"""
 import copy
+import inspect
 import os
 import warnings
-import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import pandas as pd
 from .._shared.helpers import *
 from .._shared.params import default_params
 from ..tools.analyze import analyze
-from ..cluster.cluster import cluster as clusterer, mixture_models
+from ..cluster.cluster import cluster as clusterer, mixture_models, \
+    models as hard_cluster_models
 from .colors import mat2colors, colors2groups, get_palette_colors, continuous_colormap
 from ..reduce.reduce import reduce as reducer
 from ..tools.format_data import format_data
 from .matplotlib_backend import _draw
 from .backend import manage_backend
 from .plotly_backend import resolve_backend
-from .animate import _save_animation, _SVGFrameCollector, _save_animated_svg
+from .animate import _save_animation
 from .surface import broadcast_surface, normalize_surface_arg
 from .density import broadcast_density, normalize_density_arg
 from .trails import broadcast_trail_flag
@@ -666,12 +675,19 @@ def plot(
         slot (the named categories keep the first palette colors, in
         first-appearance order).
 
-        The categorical-vs-continuous choice is made by DTYPE: a 1-D hue
-        of numeric values (ints included -- e.g. integer group ids) always
-        takes the CONTINUOUS path (per-point palette-mapped colors, no
-        legend); string labels take the CATEGORICAL path (one trace per
-        category, legend-able). To group by integer ids categorically,
-        pass them as strings (e.g. ``hue=[str(g) for g in ids]``).
+        The categorical-vs-continuous choice: string labels always take
+        the CATEGORICAL path (one trace per category, legend-able,
+        categories in first-appearance order). A 1-D numeric hue takes
+        the CONTINUOUS path (per-point palette-mapped colors, no
+        legend), EXCEPT that integer (or boolean) values with at most 12
+        unique values -- and fewer unique values than observations --
+        are treated as categorical group ids (e.g. the cluster labels
+        ``hyp.cluster`` returns): one trace per id, palette-colored and
+        legend-labeled in sorted numeric order. Float-valued or
+        higher-cardinality integer hues are always continuous. To force
+        grouping, pass the ids as strings (``hue=[str(g) for g in
+        ids]``); to force a continuous mapping, cast to float
+        (``hue=np.asarray(ids, dtype=float)``).
 
         When the data is a list of datasets, `hue` may mirror that nesting --
         one hue sub-sequence per dataset, each matching that dataset's length
@@ -930,7 +946,7 @@ def plot(
         class, or sklearn-API model instance -- an instance's own
         parameters are used, so `n_clusters=` is ignored, with a warning,
         alongside one). Supported algorithms are: KMeans,
-        MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
+        MiniBatchKMeans, AgglomerativeClustering, Birch,
         SpectralClustering, MeanShift, DBSCAN, OPTICS, AffinityPropagation and
         HDBSCAN, plus the mixture (soft-clustering) models GaussianMixture,
         BayesianGaussianMixture, LatentDirichletAllocation and NMF. Can be
@@ -938,12 +954,34 @@ def plot(
         dictionary, e.g. cluster={'model': 'KMeans', 'kwargs': {'max_iter':
         100}}. See scikit-learn specific model docs for details on parameters
         supported for each model. If no parameters are specified a default set
-        of parameters will be used (default: None).
+        of parameters will be used: 3 clusters/components for most models
+        (the same default as `hyp.cluster`), 20 components for
+        LatentDirichletAllocation and NMF (default: None). Clustering runs
+        on the REDUCED (post `normalize=`/`reduce=`/`align=`) scores, not
+        the raw input -- so LatentDirichletAllocation and NMF, which
+        require non-negative data, fail here even when the raw data is
+        non-negative (the reduced scores are signed); run `hyp.cluster`
+        on the raw data instead to use those models. FeatureAgglomeration
+        raises a ``ValueError``: it clusters features (columns), not
+        observations, so its labels cannot group the plotted rows -- use
+        `hyp.cluster(data, cluster='FeatureAgglomeration')` directly.
+        Cluster labels are drawn as one trace per cluster (palette
+        colors, legend entries in sorted label order).
 
     n_clusters : int
-        If n_clusters is passed, HyperTools will perform k-means clustering
-        with the k parameter set to n_clusters. The resulting clusters will
-        be plotted in different colors according to the color palette.
+        If n_clusters is passed, HyperTools will perform clustering with
+        the cluster count set to n_clusters, using k-means unless
+        `cluster=` selects another model. The resulting clusters are
+        plotted in different colors according to the color palette.
+        Default None: each model's default count is used (3, matching
+        `hyp.cluster`; 20 components for LatentDirichletAllocation/NMF).
+        Ignored, with a ``UserWarning``, for models that discover the
+        number of clusters themselves (HDBSCAN, MeanShift, DBSCAN,
+        OPTICS, AffinityPropagation). If the `cluster=` spec itself
+        carries a cluster count (an instance's own setting, or
+        `n_clusters`/`n_components` in a dict spec's kwargs), the spec's
+        value wins and a ``UserWarning`` notes the conflict -- the same
+        precedence `hyp.cluster` applies.
 
     random_state : int, RandomState, or None
         Seed for reproducibility, threaded to the reduce/cluster stages: it is
@@ -956,8 +994,10 @@ def plot(
     impute : str or dict or class or class instance or None
         Overrides the default PPCA fill for missing (NaN) values with a
         different `hypertools.impute` model, e.g. 'Kalman', 'KNNImputer'
-        (default: None, i.e. PPCA -- byte-compatible with pre-1.0 behavior).
-        See `hypertools.impute.impute` for accepted forms.
+        (default: None, i.e. PPCA -- observed values are preserved
+        exactly and only the NaN entries are reconstructed; see
+        `hypertools.impute.ppca`). See `hypertools.impute.impute` for
+        accepted forms.
 
     resample : int or False/None
         If set to an integer `N` (GH #94), each input dataset is
@@ -1342,6 +1382,14 @@ def plot(
         initial samples used to estimate the normalization and reduction
         parameters (default: 10000). Those fitted models are then *applied*
         to all future samples, which are added to the plot dynamically.
+        Only a subset of `plot`'s parameters applies to streaming inputs:
+        `fmt`, the four `stream_*` parameters, `ndims`, `reduce`,
+        `normalize`, `align`/`cluster`/`n_clusters` (rejected with a
+        ``ValueError`` -- not yet supported for streams -- but accepted at
+        their defaults), `save_path`, `show`, `frame_rate`, `markersize`,
+        `linewidth`, `color`, `palette`, `title`, `size`, `elev`, `azim`,
+        and `ax`. Any other parameter explicitly set alongside a
+        streaming input is ignored, with a ``UserWarning`` naming it.
 
     stream_chunk : int
         Streaming data only: number of new samples fetched from the stream
@@ -1360,7 +1408,8 @@ def plot(
     stream_window : int or None
         Streaming data only: if set, only the most recent `stream_window`
         samples are displayed (comet style) while older samples scroll off;
-        all consumed samples are still retained on the returned geometry.
+        all consumed samples are still retained on the returned figure's
+        ``stream_info`` dict (its ``'data'``/``'xform_data'`` entries).
         Default None displays the full accumulated trajectory.
 
     surface : bool, dict, or list of bool/dict, or None
@@ -2089,6 +2138,44 @@ def plot(
     # consumed, or the user interrupts.
     from ..io.streaming import is_stream, plot_stream
     if is_stream(x):
+        # only the parameters forwarded below have a streaming
+        # implementation. Any OTHER parameter the caller explicitly set is
+        # named in a UserWarning instead of being silently dropped
+        # (F22-004) -- detected by comparing each plot() parameter's
+        # current value against its signature default (`cluster=False`
+        # etc. were already normalized to their None defaults above, so
+        # documented no-op spellings do not warn).
+        _stream_forwarded = {
+            'x', 'fmt', 'stream_init', 'stream_chunk', 'stream_max',
+            'stream_window', 'ndims', 'reduce', 'normalize', 'align',
+            'cluster', 'n_clusters', 'save_path', 'show', 'frame_rate',
+            'markersize', 'linewidth', 'color', 'palette', 'title',
+            'size', 'elev', 'azim', 'ax'}
+        _local_vals = locals()
+        _stream_dropped = []
+        for _pname, _param in inspect.signature(plot).parameters.items():
+            if (_pname in _stream_forwarded
+                    or _param.kind is inspect.Parameter.VAR_KEYWORD):
+                continue
+            _val = _local_vals.get(_pname, _param.default)
+            try:
+                _diff = not (_val is _param.default
+                             or _val == _param.default)
+            except Exception:
+                _diff = True
+            if _diff:
+                _stream_dropped.append(_pname)
+        _stream_dropped.extend(kwargs)
+        if _stream_dropped:
+            warnings.warn(
+                "streaming input: the following plot() parameter(s) have "
+                "no streaming implementation and will be ignored: "
+                f"{', '.join(sorted(_stream_dropped))}. Parameters "
+                "honored for streams: fmt, stream_init, stream_chunk, "
+                "stream_max, stream_window, ndims, reduce, normalize, "
+                "save_path, show, frame_rate, markersize, linewidth, "
+                "color, palette, title, size, elev, azim, ax (see the "
+                "stream_init docstring).", UserWarning)
         return plot_stream(
             x, fmt, stream_init=stream_init, stream_chunk=stream_chunk,
             stream_max=stream_max, stream_window=stream_window,
@@ -2458,6 +2545,11 @@ def plot(
     # data by category -- names= (one name per INPUT dataset) cannot apply
     # after that regrouping (F02-009).
     _hue_regrouped_counts = None
+    # unfitted Clusterer built from the SAME resolved spec the figure's
+    # cluster stage used (set in the cluster branch below), so the
+    # return_model bundle's pipeline encodes the parameters the figure
+    # was actually drawn with (F13-004)
+    _bundle_cluster_stage = None
 
     # MultiIndex DataFrames (GH #95): xform currently holds the TRANSFORMED
     # leaf trajectories (post normalize/reduce/align), in the same order as
@@ -2490,15 +2582,37 @@ def plot(
         mpl_kwargs["label"] = _mi_style["labels"]
         legend = _mi_style["labels"]
 
-    # find cluster and reshape if n_clusters
-    elif cluster is not None:
+    # find cluster and reshape if cluster=/n_clusters= was given
+    # (n_clusters= alone defaults to KMeans, matching the docstring)
+    elif cluster is not None or n_clusters is not None:
         if hue is not None:
-            warnings.warn("cluster overrides hue, ignoring hue.")
+            warnings.warn(
+                ("cluster" if cluster is not None else "n_clusters")
+                + " overrides hue, ignoring hue.")
+            hue = None
+        if cluster is None:
+            cluster = "KMeans"
+        if isinstance(cluster, bytes):
+            cluster = cluster.decode("utf-8")
+
+        from ..cluster.cluster import _resolve_cluster_spec
+        _n_clusters_explicit = n_clusters is not None
         _cluster_instance = None
-        if isinstance(cluster, (str, bytes)):
+        _spec_kwargs = {}
+        _spec_top_n = None
+        if isinstance(cluster, str):
             model = cluster
             params = default_params(model) or {}
         elif isinstance(cluster, dict):
+            if "model" not in cluster:
+                # the same instructive error hyp.cluster raises for a
+                # model-less dict spec, instead of a bare KeyError
+                # (F13-010)
+                raise ValueError(
+                    "If passing a dictionary, pass the model as the "
+                    "value of the 'model' key and a dictionary of custom "
+                    "parameters as the value of the 'kwargs' key (the "
+                    "legacy 'params' key is also accepted).")
             model = cluster["model"]
             model_key = model if isinstance(model, str) \
                 else getattr(model, "__name__", str(model))
@@ -2511,8 +2625,8 @@ def plot(
             # read cluster.get('params', {}), silently DROPPING a
             # canonical {'model', 'kwargs'} dict's kwargs). The spec below
             # is always rebuilt in the canonical {'model', 'kwargs'} form
-            # before being handed to `clusterer()` further down, so that
-            # call never re-triggers this same warning -- do NOT
+            # before being handed to `_resolve_cluster_spec` further down,
+            # so that call never re-triggers this same warning -- do NOT
             # double-warn.
             if "args" in cluster or "kwargs" in cluster:
                 _spec_kwargs = dict(cluster.get("kwargs", {}))
@@ -2522,13 +2636,14 @@ def plot(
                     "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
                     DeprecationWarning, stacklevel=2)
                 _spec_kwargs = dict(cluster["params"])
-            else:
-                _spec_kwargs = {}
             params = default_params(model_key, _spec_kwargs) or {}
-            if "n_clusters" in cluster and n_clusters is None:
+            if "n_clusters" in cluster:
                 # top-level convenience:
-                # cluster={'model': ..., 'n_clusters': k}
-                n_clusters = cluster["n_clusters"]
+                # cluster={'model': ..., 'n_clusters': k} -- handed to
+                # _resolve_cluster_spec below, which applies hyp.cluster's
+                # documented precedence (the spec's value wins over
+                # n_clusters=, with a UserWarning on explicit conflicts)
+                _spec_top_n = cluster["n_clusters"]
         elif isinstance(cluster, type) or hasattr(cluster, "fit_predict") \
                 or hasattr(cluster, "fit_transform"):
             # a class or (sklearn-API) model instance: hyp.cluster accepts
@@ -2545,30 +2660,88 @@ def plot(
                     "KMeans(n_clusters=...)) or pass the model by name "
                     "(e.g. cluster='KMeans').")
                 n_clusters = None
+                _n_clusters_explicit = False
         else:
             raise ValueError(
                 "invalid cluster model: expected a string, dict spec, "
                 "class, or (sklearn-API) model instance; got "
                 f"{cluster!r}.")
 
-        if n_clusters is not None:
-            if _mixture_name(model) == "HDBSCAN":
-                warnings.warn(
-                    "n_clusters is not a valid parameter for "
-                    "HDBSCAN clustering and will be ignored."
-                )
-            elif _mixture_name(model) in mixture_models:
-                params["n_components"] = n_clusters
-            else:
-                params["n_clusters"] = n_clusters
+        # FeatureAgglomeration clusters FEATURES (columns), not
+        # observations: it yields one label per COLUMN, so there is no
+        # per-observation grouping to color/reshape the plot with --
+        # regrouping by its labels silently drew n_features "points"
+        # where the data's rows should be, or crashed downstream
+        # (F13-001).
+        if _mixture_name(model) == "FeatureAgglomeration":
+            raise ValueError(
+                "cluster='FeatureAgglomeration' is not supported by "
+                "hyp.plot: FeatureAgglomeration clusters features "
+                "(columns), not observations, so its labels (one per "
+                "column) cannot color or group the plotted rows. Use "
+                "hyp.cluster(data, cluster='FeatureAgglomeration') to "
+                "get per-column labels directly.")
 
-        # canonical dict spec (not the legacy {'model','params'} form) so
-        # this internal call doesn't trigger cluster()'s DeprecationWarning;
-        # a model INSTANCE is passed through as-is (its own parameters win)
-        cluster_labels = clusterer(
-            xform,
-            cluster=(_cluster_instance if _cluster_instance is not None
-                     else {"model": model, "kwargs": params}))
+        # n_clusters= exemption for models that discover their own
+        # cluster count (HDBSCAN, DBSCAN, MeanShift, OPTICS,
+        # AffinityPropagation): warn-and-ignore instead of crashing in
+        # the sklearn constructor, using the same signature-based check
+        # as hyp.cluster's _resolve_cluster_spec (F13-002; generalizes
+        # the old HDBSCAN-only special case).
+        _model_cls = None
+        if isinstance(model, str):
+            _model_cls = (hard_cluster_models.get(model)
+                          or mixture_models.get(model))
+        elif isinstance(model, type):
+            _model_cls = model
+        if (_n_clusters_explicit and _model_cls is not None
+                and _mixture_name(model) not in mixture_models
+                and "n_clusters"
+                not in inspect.signature(_model_cls).parameters):
+            warnings.warn(
+                f"n_clusters is not a valid parameter for "
+                f"{_mixture_name(model)} clustering and will be ignored.")
+            n_clusters = None
+            _n_clusters_explicit = False
+
+        # default_params() pre-fills a DEFAULT cluster count (KMeans
+        # n_clusters=3, LDA/NMF n_components=20, ...). When the caller
+        # supplied a count (n_clusters= or the dict's top-level
+        # 'n_clusters'), drop that default -- it is not a user-typed
+        # spec kwarg, so it must not win the resolver's spec-kwargs-
+        # take-precedence rule (F13-009) or trigger a bogus conflict
+        # warning.
+        if _n_clusters_explicit or _spec_top_n is not None:
+            for _count_key in ("n_clusters", "n_components"):
+                if _count_key in params and _count_key not in _spec_kwargs:
+                    del params[_count_key]
+
+        # resolve the spec ONCE with hyp.cluster's own resolver -- same
+        # grammar, same precedence (spec kwargs beat n_clusters=, with a
+        # UserWarning on explicit conflicts), same signature-based
+        # n_clusters exemption, and random_state= injection
+        # (F13-002/-003/-009/-020) -- and build the return_model
+        # bundle's cluster stage from the IDENTICAL resolved spec so the
+        # bundled pipeline encodes the same parameters the figure was
+        # drawn with (F13-004).
+        if _cluster_instance is not None:
+            _resolve_spec = _cluster_instance
+        else:
+            _resolve_spec = {"model": model, "kwargs": params}
+            if _spec_top_n is not None:
+                _resolve_spec["n_clusters"] = _spec_top_n
+        _cluster_stage = _resolve_cluster_spec(
+            _resolve_spec, n_clusters if n_clusters is not None else 3,
+            random_state=random_state,
+            n_clusters_explicit=_n_clusters_explicit)
+        # a second, unfitted resolution of the same spec for the bundle
+        # (n_clusters_explicit=False: any conflict was already warned
+        # about just above -- values resolve identically either way)
+        _bundle_cluster_stage = _resolve_cluster_spec(
+            _resolve_spec, n_clusters if n_clusters is not None else 3,
+            random_state=random_state)
+
+        cluster_labels = clusterer(xform, cluster=_cluster_stage)
 
         if _mixture_name(model) in mixture_models:
             # soft assignments: color each observation by the proportion-
@@ -2598,14 +2771,21 @@ def plot(
                 hue = group_ids
         else:
             xform, labels = reshape_data(xform, cluster_labels, labels)
+            # reshape_data returns groups in first-appearance order;
+            # reorder the drawn groups (and their legend/colorbar
+            # labels) into sorted label order so a legend reads
+            # '0, 1, 2' rather than e.g. '1, 0, 2' (F13-022)
+            _cats = list(sorted(set(cluster_labels),
+                                key=list(cluster_labels).index))
+            try:
+                _order = sorted(range(len(_cats)), key=lambda i: _cats[i])
+            except TypeError:
+                _order = list(range(len(_cats)))
+            xform = [xform[i] for i in _order]
+            labels = [labels[i] for i in _order]
             hue = cluster_labels
-
-    elif n_clusters is not None:
-        # If cluster was None default to KMeans
-        cluster_labels = clusterer(xform, cluster="KMeans", n_clusters=n_clusters)
-        xform, labels = reshape_data(xform, cluster_labels, labels)
-        if hue is not None:
-            warnings.warn("n_clusters overrides hue, ignoring hue.")
+            hue_group_labels = [str(_cats[i]) for i in _order]
+            hue_category_names = list(hue_group_labels)
 
     # group data if there is a grouping var
     elif hue is not None:
@@ -2671,9 +2851,24 @@ def plot(
         hue_is_matrix = (hue_array is not None and hue_array.ndim == 2
                          and np.issubdtype(hue_array.dtype, np.number)
                          and hue_array.shape[0] == n_obs)
+        # small-cardinality integer (or boolean) hue -- e.g. the cluster
+        # labels hyp.cluster returns -- is CATEGORICAL, not continuous: on
+        # the continuous path, adjacent integer labels (0 and 1) map to
+        # visually indistinguishable neighboring palette samples
+        # (F13-005). Rule (documented in the hue docstring): integer/bool
+        # dtype, at most 12 unique values, and fewer unique values than
+        # observations; anything else numeric stays continuous.
+        _hue_int_categorical = (
+            hue_array is not None and hue_array.ndim == 1
+            and (np.issubdtype(hue_array.dtype, np.integer)
+                 or np.issubdtype(hue_array.dtype, np.bool_))
+            and hue_array.shape[0] == n_obs
+            and len(np.unique(hue_array)) <= 12
+            and len(np.unique(hue_array)) < n_obs)
         hue_is_continuous = (hue_array is not None and hue_array.ndim == 1
                              and np.issubdtype(hue_array.dtype, np.number)
-                             and hue_array.shape[0] == n_obs)
+                             and hue_array.shape[0] == n_obs
+                             and not _hue_int_categorical)
 
         # arbitrary matrix hue -> RGB: when the hue matrix has MORE than 3
         # columns, or color_reduce= is explicitly given, reduce it to 3 columns
@@ -2723,6 +2918,11 @@ def plot(
             hue_array = _rgb
             multicolor_hue_is_rgb = True
 
+        # set when a categorical INTEGER/boolean hue needs its groups
+        # reordered from first-appearance to sorted numeric order after
+        # reshape_data below (F13-005/F13-022)
+        _hue_sort_numeric = False
+
         # morph animations tag/reshape datasets specially, so continuous/matrix
         # hue there keeps the grouped path below; every other animation (spin,
         # window, parallel, serial, True) uses the SAME exact-per-point-color
@@ -2770,8 +2970,20 @@ def plot(
 
             # if all of the elements are numbers, map them to colors
             if not isinstance(hue[0], tuple):
-                if all(isinstance(el, (int, float, np.integer, np.floating))
-                       and not isinstance(el, bool) for el in hue):
+                if _hue_int_categorical:
+                    # categorical integer/boolean group ids (F13-005):
+                    # grouped and palette-colored like string labels, with
+                    # groups (and legend/colorbar labels) in sorted
+                    # numeric order -- see the hue docstring's
+                    # categorical-vs-continuous rule
+                    _int_cats = sorted(set(hue_array.tolist()))
+                    hue_category_names = [str(c) for c in _int_cats]
+                    hue_group_labels = list(hue_category_names)
+                    hue = hue_array.tolist()
+                    _hue_sort_numeric = True
+                elif all(isinstance(el, (int, float, np.integer,
+                                         np.floating))
+                         and not isinstance(el, bool) for el in hue):
                     hue = vals2bins(hue)
                 elif all(isinstance(el, str) for el in hue):
                     hue_category_names = list(
@@ -2823,6 +3035,16 @@ def plot(
             if n_clusters is None:
                 _n_datasets_before_hue = len(xform)
                 xform, labels = reshape_data(xform, hue, labels)
+                if _hue_sort_numeric:
+                    # categorical integer hue: reshape_data grouped in
+                    # first-appearance order; reorder the drawn groups to
+                    # the sorted numeric order hue_group_labels (set
+                    # above) already uses (F13-005)
+                    _appear = list(sorted(set(hue), key=list(hue).index))
+                    _order = sorted(range(len(_appear)),
+                                    key=lambda i: _appear[i])
+                    xform = [xform[i] for i in _order]
+                    labels = [labels[i] for i in _order]
                 _hue_regrouped_counts = (_n_datasets_before_hue, len(xform))
             # interpolate lines if they are grouped
             if is_line(fmt):
@@ -3355,7 +3577,11 @@ def plot(
         if not isinstance(fmt, list):
             draw_fmt = [fmt for i in xform]
         else:
-            draw_fmt = fmt
+            # COPY the caller's list: the matplotlib backend rewrites
+            # single-point line entries to '.' in place, which must not
+            # leak back into the user's own fmt list
+            # (X6-code-org-plot-008)
+            draw_fmt = list(fmt)
     else:
         # sized from the FINAL trace count -- `x` is the ORIGINAL input,
         # whose length differs after hue=/cluster= regrouping (F01-005:
@@ -3689,20 +3915,15 @@ def plot(
             bundle_pipeline = pipeline
         elif raw is not None:
             from ..core.pipeline import build_pipeline
-            from ..cluster.cluster import _resolve_cluster_spec
-            # mirror hypertools.cluster.cluster.cluster()'s own cross-kwarg
-            # pattern (round17 Task 6 HIGH fix): build_pipeline's cluster
-            # stage has no n_clusters= kwarg of its own, so the raw
-            # cluster= spec must be pre-resolved here with THIS call's
-            # n_clusters= baked in -- otherwise the cluster stage falls
-            # back to cluster.cluster()'s own hardcoded n_clusters=3
-            # default, silently mismatching a figure plotted with a
-            # different n_clusters=. cluster.cluster()'s own signature
-            # default (3) is used when n_clusters= was not given here
-            # either, matching this bundle's previous (implicit) behavior.
-            cluster_spec = (_resolve_cluster_spec(
-                cluster, n_clusters if n_clusters is not None else 3)
-                if cluster is not None else None)
+            # the cluster stage reuses the EXACT resolved spec the
+            # figure's own cluster stage was built from (set in the
+            # cluster branch above; None when no clustering ran) --
+            # previously this path re-resolved the raw cluster= spec with
+            # cluster.cluster()'s n_clusters=3 default, so the bundled
+            # pipeline could encode a different cluster count/parameters
+            # than the published figure (F13-004), and the n_clusters=-
+            # only KMeans path was omitted from the pipeline entirely.
+            cluster_spec = _bundle_cluster_stage
             # LOW (accepted tradeoff): this refits manip/normalize/reduce/
             # align/cluster a second time on `raw`, duplicating the work
             # already done above to produce `xform_data` for the figure --

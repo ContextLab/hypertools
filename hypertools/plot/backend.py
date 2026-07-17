@@ -1,7 +1,7 @@
 """
 Module that deals with managing the matplotlib backend for interactive
-and/or animated plots created via `hypertools.plot` and
-`hypertools.DataGeometry.plot`.  Main functionality is contained in
+and/or animated plots created via `hypertools.plot`.  Main
+functionality is contained in
 `set_interactive_backend` (sole front-end function) and `manage_backend`
 (decorator for `hypertools.plot`).
 
@@ -485,7 +485,9 @@ def _get_jupyter_frontend():
     # that doesn't depend on the base notebook app. In either case,
     # the frontend being used is ambiguous, but our "best guess"
     # depends on whether or not JupyterLab is installed.
-    with redirect_stdout(StringIO()) as lab_version_stdout:
+    # stdout is redirected only to swallow the version banner; the
+    # captured text itself is never needed (only the return code is)
+    with redirect_stdout(StringIO()):
         retcode = IPython.utils.process.system("jupyter lab --version")
     if retcode == 0:
         # JupyterLab is installed in the server environment, possibly
@@ -546,7 +548,6 @@ def _init_backend():
             "Qt4Agg",
             "GTK4Agg",
             "GTK3Agg",
-            "TkAgg",
             "WXAgg",
         )
         if sys.platform == "darwin":

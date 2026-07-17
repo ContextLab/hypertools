@@ -259,7 +259,13 @@ def format_data(x, vectorizer='CountVectorizer',
                 if impute is not None:
                     num_data = fill_missing(num_data, model=impute)
                 else:
-                    warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
+                    warnings.warn('Missing data: filling missing values '
+                                  'with PPCA (observed values are '
+                                  'preserved exactly; only the NaN '
+                                  'entries are reconstructed). Pass '
+                                  'impute= to choose a different '
+                                  'imputation model -- see '
+                                  'hypertools.impute.')
                     num_data = fill_missing(num_data)
                 x_temp = []
                 for dtype in dtypes:
@@ -290,9 +296,11 @@ def fill_missing(x, model='PPCA'):
 
     Wraps a fit/transform sequence (stack -> fit -> transform -> split back
     into a list) via the `hypertools.impute` dispatcher. With the default
-    `model='PPCA'`, this is kept byte-compatible with the pre-1.0 behavior;
-    passing a different `model` (str/dict/class/instance) routes through
-    that imputer instead (see `format_data`'s `impute` argument).
+    `model='PPCA'`, missing entries are filled with the PPCA
+    reconstruction while every observed (non-NaN) value is preserved
+    exactly (see `hypertools.impute.ppca`); passing a different `model`
+    (str/dict/class/instance) routes through that imputer instead (see
+    `format_data`'s `impute` argument).
     """
     from ..impute.impute import impute as imputer
 

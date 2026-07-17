@@ -156,7 +156,6 @@ class _SVGFrameCollector(animation.AbstractMovieWriter):
 
     def finish(self):
         """Combine all captured SVG frames into one SMIL-animated SVG and write it to `self.outfile`."""
-        from .._shared.animated_svg import combine_frames_svg
         duration = max(1.0, len(self.frames) * self._stride / self.fps)
         with open(self.outfile, 'w') as f:
             f.write(combine_frames_svg(self.frames, duration))

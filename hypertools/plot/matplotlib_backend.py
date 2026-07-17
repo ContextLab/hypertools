@@ -1,10 +1,16 @@
 #!/usr/bin/env python
+"""Low-level matplotlib drawing for `hypertools.plot` (static and
+animated figures, explore mode, trails, and morphs).
 
+The sole entry point is `_draw`, called by `hypertools.plot.plot` after
+it has resolved data, formats, colors, and animation settings; everything
+else here is private helpers. This module was renamed from ``draw.py`` in
+HyperTools 1.0 (``draw.py`` remains as a compatibility shim).
+"""
 import functools
 import itertools
 import warnings
 
-import matplotlib
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import proj3d
@@ -817,12 +823,10 @@ def _draw(
                 fig.canvas.mpl_connect(
                     "motion_notify_event", lambda event: onMouseMotion(event, X, labels)
                 )  # on mouse motion
-                # fig.canvas.mpl_connect('button_press_event', lambda event: onMouseClick(event, X, labels))  # on mouse click
             else:
                 fig.canvas.mpl_connect(
                     "motion_notify_event", lambda event: onMouseMotion(event, X)
                 )  # on mouse motion
-                # fig.canvas.mpl_connect('button_press_event', lambda event: onMouseClick(event, X, labels))  # on mouse click
 
         elif labels is not None:
             X = np.vstack(x)
@@ -942,10 +946,13 @@ def _draw(
         if closestIndex != onMouseMotion.closestIndex_prev:
             if isinstance(labels, list):
                 annotate_plot_explore(X, closestIndex, labels)
-                closestIndex_prev = closestIndex
             else:
                 annotate_plot_explore(X, closestIndex)
-                closestIndex_prev = closestIndex
+            # update the FUNCTION ATTRIBUTE (the state actually read
+            # above) -- this used to assign a dead local, so the
+            # previous-index tracking never advanced past the first
+            # closest point (X6-code-org-plot-007)
+            onMouseMotion.closestIndex_prev = closestIndex
 
     def plot_cube(scale, **cube_kwargs):
         """Draw a wireframe cube of half-width `scale` (centered at the origin) on `ax`.
@@ -1445,6 +1452,17 @@ def _draw(
                 return False
             return chemtrails[idx] or precog[idx] or bullettime[idx]
 
+        # pop linewidth ONCE per dataset (it must not also ride along in
+        # **kwargs_list[idx]) and share it between each head line and its
+        # trail -- popping inside each comprehension left nothing for the
+        # trail's pop, so trails silently ignored the user's linewidth=
+        # (X6-code-org-plot-009)
+        linewidths = [
+            kwargs_list[idx].pop("linewidth", 1)
+            if isinstance(kwargs_list[idx], dict) else 1
+            for idx in range(len(x))
+        ]
+
         trail = []
         if fmt is not None:
             lines = [
@@ -1453,7 +1471,7 @@ def _draw(
                     dat[0:1, 1],
                     dat[0:1, 2],
                     fmt[idx],
-                    linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
+                    linewidth=linewidths[idx],
                     **kwargs_list[idx]
                 )[0]
                 for idx, dat in enumerate(x)
@@ -1466,7 +1484,7 @@ def _draw(
                         dat[0:1, 2],
                         fmt[idx],
                         alpha=0.3,
-                        linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
+                        linewidth=linewidths[idx],
                         **kwargs_list[idx]
                     )[0] if _wants_trail(idx) else None
                     for idx, dat in enumerate(x)
@@ -1477,7 +1495,7 @@ def _draw(
                     dat[0:1, 0],
                     dat[0:1, 1],
                     dat[0:1, 2],
-                    linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
+                    linewidth=linewidths[idx],
                     **kwargs_list[idx]
                 )[0]
                 for idx, dat in enumerate(x)
@@ -1489,7 +1507,7 @@ def _draw(
                         dat[0:1, 1],
                         dat[0:1, 2],
                         alpha=0.3,
-                        linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
+                        linewidth=linewidths[idx],
                         **kwargs_list[idx]
                     )[0] if _wants_trail(idx) else None
                     for idx, dat in enumerate(x)
@@ -1979,6 +1997,14 @@ def _draw(
                 return False
             return chemtrails[idx] or precog[idx] or bullettime[idx]
 
+        # see animate_plot3D: pop linewidth once per dataset so head lines
+        # and trails share the user's linewidth= (X6-code-org-plot-009)
+        linewidths = [
+            kwargs_list[idx].pop("linewidth", 1)
+            if isinstance(kwargs_list[idx], dict) else 1
+            for idx in range(len(x))
+        ]
+
         trail = []
         if fmt is not None:
             lines = [
@@ -1986,7 +2012,7 @@ def _draw(
                     dat[0:1, 0],
                     dat[0:1, 1],
                     fmt[idx],
-                    linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
+                    linewidth=linewidths[idx],
                     **kwargs_list[idx]
                 )[0]
                 for idx, dat in enumerate(x)
@@ -1998,7 +2024,7 @@ def _draw(
                         dat[0:1, 1],
                         fmt[idx],
                         alpha=0.3,
-                        linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
+                        linewidth=linewidths[idx],
                         **kwargs_list[idx]
                     )[0] if _wants_trail(idx) else None
                     for idx, dat in enumerate(x)
@@ -2008,7 +2034,7 @@ def _draw(
                 ax.plot(
                     dat[0:1, 0],
                     dat[0:1, 1],
-                    linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
+                    linewidth=linewidths[idx],
                     **kwargs_list[idx]
                 )[0]
                 for idx, dat in enumerate(x)
@@ -2019,7 +2045,7 @@ def _draw(
                         dat[0:1, 0],
                         dat[0:1, 1],
                         alpha=0.3,
-                        linewidth=kwargs_list[idx].pop("linewidth", 1) if isinstance(kwargs_list[idx], dict) else 1,
+                        linewidth=linewidths[idx],
                         **kwargs_list[idx]
                     )[0] if _wants_trail(idx) else None
                     for idx, dat in enumerate(x)
