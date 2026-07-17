@@ -104,9 +104,19 @@ From A7: F13-001/002/003/004/005/007/009/010/016/020/021/022 (plot.py cluster in
 - `e8e8b9ae` B5 escalations (16 items: cluster-spec unification via _resolve_cluster_spec, int-hue categorical palette, stream kwarg warnings, stale PPCA text, X6 leftovers). Full suite 2088 passed.
 - Note: B5 caught + fixed stale test_helpers expectations from MY controller commit — cross-checking worked as designed.
 
-## Wave 5C RUNNING (`wf_097bff96-269`, 5 agents)
+## Wave 5C COMPLETE + COMMITTED (100 fixed, 68 verified already-fixed)
 
-C1 README/CHANGELOG/root-docs · C2 all examples (incl. plot_sotus RESTORATION to real speeches demo) · C3 core tutorials (8 nbs, fresh in-place re-execution) · C4 heavy tutorials (7 nbs) · C5 docstring residuals. All D-unit confirmed findings + queued escalations distributed.
+- `dc063dc6` C5 docstring residuals (13 fixed, 29 already-fixed verified).
+- `cc0ccf3f` C1-C4: README all-blocks-verbatim + CHANGELOG.md created; 32 examples fixed / 40 executed with judged evidence (plot_sotus RESTORED to real 29-address demo); ALL 15 tutorials re-executed fresh in place, 0 error cells (D07-001 critical fixed; real pylsl outlet; live yfinance + cached fallback CSVs).
+- `78bd7212` cleanup: 20 stale tracked docs/modules/generated + orphaned spin.gif removed.
+
+## Wave 5D RUNNING (`wf_e2894081-f6c`, 2 agents)
+
+D1 code residue: NEW streaming-ndims regression (our own fix tripped a new warning in tutorial outputs — fix + re-execute 3 notebooks), streaming save/.mp4 + peek + plotly-backend + lsl validation, reduce/describe warnings, predict/impute polish, plot leftovers verification, 32 docstring underlines, 11 http links. D2 docs infra: CONTRIBUTING modernization, doc_requirements, Makefile, post_build, gallery CSS, favicon, analyze.ipynb link; release-time pin swap list → needs_controller.
+
+## Phase 6 plan (after 5D commits)
+
+1. FULL suite gate. 2. `make clean && make html` FULL docs rebuild (regenerates all 54 gallery examples against fixed code — catches example breakage, refreshes auto_examples + thumbnails; commit regenerated artifacts; resolves D02-002/003/004). 3. Independent re-audit: ~8 fresh adversarial agents over the fixed areas (try to BREAK the fixes + hunt regressions). 4. Whole-branch independent review (quality/security/simplicity) over dev-1.0-refactor..HEAD. 5. Final reconciliation (5C/5D merged + dedup-cluster inheritance). Then Phase 7 merge + CI.
 
 ## Controller integration queue (verify/do after waves land)
 
