@@ -72,6 +72,20 @@ Partial edits from spend-capped agents (A1/A4/A6/A7/B1) were REVERTED before the
 
 New: A1-io 40 (sotus speeches restored via dw corpus — verified 29 docs; CSV sep fix; format-aware atomic save(); repair-on-load for stale model pickles), A4-predict-impute 37 (Kalman em_vars: impute sweep r=0.997/0.996/0.997/0.996 vs pre-fix 0.995/0.777/0/0; predict sine r=0.984; PPCA default r 0.125→0.977), A6-core-packaging 26 (config.ini IN wheel — real build verified; no venv droppings; np.seterr side effect gone), A7-cluster-reduce 21 fixed + 18 plot.py-side escalations.
 
+## Wave-5B COMPLETE (4/4, 127 findings fixed; full-suite gate running)
+
+B1 62 fixed (data-faithful static lines incl. X3-002; ro- fmt colors; list-of-lists ONE dataset; kwarg did-you-mean validation; plot() Examples doctests; cyclic-palette 5/6-trim for continuous hue). B2 24 (NaN-hue neutral color, Series index, singleton category, palette lists/cliff, colorbar names). B3 34 (chemtrails future-leak fixed; hue+animate animates on mpl; per-dataset frame grid to longest; figure-leak fixed; apng clobber fixed; pathlib; ffmpeg errors wrapped). B4 7 (plotly surface shows enclosed points — Playwright-verified; degenerate-density warnings; kwarg validation).
+
+**MAINTAINER SIGN-OFF FLAG for PR report:** continuous-hue cyclic palettes (hls/husl default) now sample 5/6 of the hue circle so endpoints are distinguishable (was: both ends red, dist 0.03→0.6). CHANGES DEFAULT LOOK of continuous-hue plots. Implemented + tested + documented; Jeremy should confirm he likes it.
+
+## New controller/5C items from 5B escalations
+
+- CLAUDE.md Data Flow order: swap Alignment/Reduction (canonical: manip→normalize→reduce→align→cluster) — controller, trivial.
+- _shared/helpers.py:118/:133 vals2colors linspace(min, max+1) → (min, max) (F24-005) — controller + test.
+- Verify set_interactive_backend('bogus') raises after A5 (F24-015 claim overlap).
+- __init__.py: exceptions re-export, supported_models export, shadowing-imports doc note (accumulate F23-005, F21-005, F24-002, F07-007, F11-014, F16-017).
+- 5C: examples/plot_hue.py int() numpy fix (F02-012), examples/save_movie.py data[:18] (F09-011), docs/api.rst HyperAnimation entry (F04-008), examples/plot_describe.py covariance→distance prose (F11-009), examples/plot_clusters3.py params→kwargs (F13-018), plot_apply_model params→kwargs (F21-014), plot_pipelines_return_model trim note (F21-015), tutorials cluster.ipynb/analyze.ipynb cell fixes (F13-017, F15-007/008), plot.ipynb hue 8120 fix (D07-001).
+
 ## Post-5B plot.py escalation batch (B5) — dispatch after B4 lands
 
 From A7: F13-001/002/003/004/005/007/009/010/016/020/021/022 (plot.py cluster integration: FeatureAgglomeration guard, n_clusters exemption grammar, random_state threading, bundle k mismatch, small-int-hue categorical palette, cluster=False, spec-kwargs precedence + dict KeyError, LDA/NMF caveat, class/instance specs, k-default docs, legend numeric sort). From A1: F22-004 (stream kwarg whitelist warn), F22-010 (plot.py:1003 stale geometry ref). From A4: F17-006 remainder (format_data.py:262 + plot.py stale PPCA comments).
@@ -82,6 +96,17 @@ From A7: F13-001/002/003/004/005/007/009/010/016/020/021/022 (plot.py cluster in
 - hypertools/config.py: importlib.metadata version + drop py<3.8 fallback (F23-009).
 - hypertools/io/sources.py:254,388: exception cross-ref path canonicalization (F23-006) [A1's file — trivial, post-wave].
 - pyproject.toml: numba>=0.59 floor INSIDE the umap extra (X5-003 proposal adjusted — not a core dep).
+
+## Wave 5B/B5/controller COMMITTED
+
+- `82dc8cd0` wave 5B (127 findings, plot package; full suite 2049 green + docstring-gate fix).
+- `5ddbbf3b` controller batch (exports, vals2colors coverage, config version, numba floor, CLAUDE.md order, api.rst HyperAnimation/supported_models/Exceptions).
+- `e8e8b9ae` B5 escalations (16 items: cluster-spec unification via _resolve_cluster_spec, int-hue categorical palette, stream kwarg warnings, stale PPCA text, X6 leftovers). Full suite 2088 passed.
+- Note: B5 caught + fixed stale test_helpers expectations from MY controller commit — cross-checking worked as designed.
+
+## Wave 5C RUNNING (`wf_097bff96-269`, 5 agents)
+
+C1 README/CHANGELOG/root-docs · C2 all examples (incl. plot_sotus RESTORATION to real speeches demo) · C3 core tutorials (8 nbs, fresh in-place re-execution) · C4 heavy tutorials (7 nbs) · C5 docstring residuals. All D-unit confirmed findings + queued escalations distributed.
 
 ## Controller integration queue (verify/do after waves land)
 
