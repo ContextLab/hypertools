@@ -558,42 +558,54 @@ def _init_backend():
         # check for configurable environment variable (documented in the
         # `set_interactive_backend` and `hypertools.plot` docstrings)
         env_backend = os.getenv("HYPERTOOLS_BACKEND")
-        if env_backend is not None:
-            # prefer user-specified backend, if set. If it's already in
-            # the candidate list, remove the existing entry
-            # (case-insensitively) so it isn't tried twice.
-            # NB: compare against the LOCAL `env_backend` -- the module
-            # global HYPERTOOLS_BACKEND is still None at this point, and
-            # looking it up here crashed `import hypertools` whenever
-            # $HYPERTOOLS_BACKEND named a candidate backend (QC audit
-            # 2026-07, F06-001)
-            backends_lower = tuple(map(str.lower, backends))
-            if env_backend.lower() in backends_lower:
-                env_ix = backends_lower.index(env_backend.lower())
-                backends = (*backends[:env_ix], *backends[env_ix + 1 :])
-
-            backends = (env_backend, *backends)
-
-        for b in backends:
-            try:
-                mpl.use(b)
-                working_backend = b
-                break
-
-            except (ImportError, NameError, ValueError):
-                # ImportError/NameError:
-                #     raised if backend's dependencies aren't installed
-                # ValueError:
-                #     raised if named backed isn't supported by
-                #     installed matplotlib version
-                continue
-
+        # matplotlib's own explicit backend selection (MPLBACKEND). If the
+        # user configured a backend there -- e.g. MPLBACKEND=Agg for a
+        # headless run -- and did NOT override it with hypertools' own
+        # HYPERTOOLS_BACKEND, respect it: do NOT force a GUI backend on top
+        # of an explicit, deliberate choice. Before the 2026-07 release
+        # audit, hypertools unconditionally preferred MacOSX on macOS and
+        # the animate path then switched to it, producing an uncatchable
+        # native abort on genuinely headless Macs even under MPLBACKEND=Agg.
+        mpl_env_backend = os.getenv("MPLBACKEND")
+        if env_backend is None and mpl_env_backend:
+            working_backend = mpl.get_backend()
         else:
-            BACKEND_WARNING = (
-                "Failed to switch to any interactive backend "
-                f"({', '.join(backends)}). Falling back to 'Agg'."
-            )
-            working_backend = "Agg"
+            if env_backend is not None:
+                # prefer user-specified backend, if set. If it's already in
+                # the candidate list, remove the existing entry
+                # (case-insensitively) so it isn't tried twice.
+                # NB: compare against the LOCAL `env_backend` -- the module
+                # global HYPERTOOLS_BACKEND is still None at this point, and
+                # looking it up here crashed `import hypertools` whenever
+                # $HYPERTOOLS_BACKEND named a candidate backend (QC audit
+                # 2026-07, F06-001)
+                backends_lower = tuple(map(str.lower, backends))
+                if env_backend.lower() in backends_lower:
+                    env_ix = backends_lower.index(env_backend.lower())
+                    backends = (*backends[:env_ix], *backends[env_ix + 1 :])
+
+                backends = (env_backend, *backends)
+
+            for b in backends:
+                try:
+                    mpl.use(b)
+                    working_backend = b
+                    break
+
+                except (ImportError, NameError, ValueError):
+                    # ImportError/NameError:
+                    #     raised if backend's dependencies aren't installed
+                    # ValueError:
+                    #     raised if named backed isn't supported by
+                    #     installed matplotlib version
+                    continue
+
+            else:
+                BACKEND_WARNING = (
+                    "Failed to switch to any interactive backend "
+                    f"({', '.join(backends)}). Falling back to 'Agg'."
+                )
+                working_backend = "Agg"
 
         if env_backend is not None and working_backend.lower() != env_backend.lower():
             # The only time a plotting-related warning should be issued
@@ -1302,7 +1314,18 @@ def manage_backend(plot_func):
 
         if not IN_SET_CONTEXT:
             plot_kwargs = _get_runtime_args(plot_func, *args, **kwargs)
-            if plot_kwargs.get("animate") or plot_kwargs.get("interactive"):
+            want_interactive = (plot_kwargs.get("animate")
+                                or plot_kwargs.get("interactive"))
+            # A GUI/interactive matplotlib backend is only needed to DISPLAY
+            # a live figure. Rendering an animation to a file (save_path=) or
+            # with show=False works on any non-interactive backend (Agg
+            # included), so switching to a GUI backend in those cases is
+            # unnecessary -- and aborts uncatchably on headless systems
+            # (release audit 2026-07). Only switch when the figure will
+            # actually be shown interactively.
+            will_display = (plot_kwargs.get("show", True)
+                            and not plot_kwargs.get("save_path"))
+            if want_interactive and will_display:
                 # Only matplotlib-rendered plots need an interactive/animation-
                 # capable matplotlib backend. When the plot renders with plotly
                 # (the frames are embedded in the plotly Figure), skip the

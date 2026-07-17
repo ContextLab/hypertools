@@ -173,19 +173,28 @@ def test_failed_context_switch_restores_state():
 
 def test_failed_switch_during_plot_keeps_raising_not_silently_succeeding():
     # direct-call form: the user set a valid-looking backend that cannot be
-    # switched to on this machine. Every animated plot must raise the SAME
-    # clear error -- the first failure must not corrupt IN_SET_CONTEXT and
-    # make later plots silently render on the wrong backend.
+    # switched to on this machine. An animated plot that WILL BE DISPLAYED
+    # (show=True, no save_path -> genuinely needs the interactive backend)
+    # must raise the SAME clear error every time -- the first failure must
+    # not corrupt IN_SET_CONTEXT and make later plots silently render on the
+    # wrong backend.
+    #
+    # NB: this deliberately uses show=True (not save_path=). Since the
+    # 2026-07 release review (headless-backend fix), hypertools only switches
+    # to an interactive backend when a live figure is actually displayed --
+    # rendering an animation to a FILE needs no GUI backend and must NOT
+    # attempt (or fail on) the switch. That no-switch-on-file-export contract
+    # is covered by tests/test_backend_headless.py.
     hyp.set_interactive_backend(UNSWITCHABLE_BACKEND)
     data = _traj()
     with pytest.raises(HypertoolsBackendError):
-        hyp.plot(data, animate=True, duration=1, frame_rate=5, show=False)
+        hyp.plot(data, animate=True, duration=1, frame_rate=5, show=True)
     assert B.IN_SET_CONTEXT is False, (
         "IN_SET_CONTEXT leaked True after a failed backend switch"
     )
     # the failure must repeat, not be masked by the corrupted state
     with pytest.raises(HypertoolsBackendError):
-        hyp.plot(data, animate=True, duration=1, frame_rate=5, show=False)
+        hyp.plot(data, animate=True, duration=1, frame_rate=5, show=True)
 
 
 # ---------------------------------------------------------------------------
