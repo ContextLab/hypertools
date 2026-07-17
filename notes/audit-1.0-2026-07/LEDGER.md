@@ -114,6 +114,15 @@ From A7: F13-001/002/003/004/005/007/009/010/016/020/021/022 (plot.py cluster in
 
 D1 code residue: NEW streaming-ndims regression (our own fix tripped a new warning in tutorial outputs — fix + re-execute 3 notebooks), streaming save/.mp4 + peek + plotly-backend + lsl validation, reduce/describe warnings, predict/impute polish, plot leftovers verification, 32 docstring underlines, 11 http links. D2 docs infra: CONTRIBUTING modernization, doc_requirements, Makefile, post_build, gallery CSS, favicon, analyze.ipynb link; release-time pin swap list → needs_controller.
 
+## Phase 6a results (2026-07-17)
+
+- Docs gate CLOSED: full forced-regeneration build succeeded; 22 title-overline warnings fixed in example sources; second build ZERO warnings. Gallery committed `c7adf48b`.
+- Full suite: **2113 passed, 1 failed** — `test_default_options_load_path_independently`. ROOT CAUSE: site-packages again holds a REAL hypertools snapshot (old configurator, no config.ini) — the editable install was clobbered DURING Phase 6b, almost certainly by the R8 packaging re-auditor pip-installing a wheel into the shared venv (my re-audit prompt omitted the no-pip-install ban the fix-wave prompts had). Repo-cwd tests unaffected (import repo tree); only the cwd-independent subprocess test sees the snapshot. FIX AFTER 6b LANDS: pip uninstall hypertools + `pip install -e . --no-deps`; re-run the test; verify /tmp import; confirm from R8's report.
+
+## Reconciliation state (post-5D, cluster inheritance applied)
+
+516 fixed/already-fixed · 54 skipped (cross-referrals) · 18 escalated (handled) · 12 env-resolved · 5 dropped (refuted) · 5 deferred (structural, justified) · **98 UNRESOLVED — all X-unit re-findings needing code-state verification** (incl. 2 majors: X3-002 static-line ~ fixed as F01-001 but title dodged the cluster regex; X8-001 mixed multi-row+1-row pchip crash — verify). Plan: after 6b + venv restore, one verification agent checks all 98 against current code → true residue gets a final fix round.
+
 ## Phase 6 plan (after 5D commits)
 
 1. FULL suite gate. 2. `make clean && make html` FULL docs rebuild (regenerates all 54 gallery examples against fixed code — catches example breakage, refreshes auto_examples + thumbnails; commit regenerated artifacts; resolves D02-002/003/004). 3. Independent re-audit: ~8 fresh adversarial agents over the fixed areas (try to BREAK the fixes + hunt regressions). 4. Whole-branch independent review (quality/security/simplicity) over dev-1.0-refactor..HEAD. 5. Final reconciliation (5C/5D merged + dedup-cluster inheritance). Then Phase 7 merge + CI.

@@ -1,11 +1,12 @@
 {
  "summary": {
-  "fixed": 347,
-  "UNRESOLVED": 302,
+  "fixed": 465,
+  "already_fixed": 51,
+  "skipped": 54,
+  "escalated": 18,
   "dropped": 5,
-  "skipped": 21,
   "env_resolved": 12,
-  "escalated": 16,
+  "UNRESOLVED": 98,
   "deferred": 5
  },
  "findings": [
@@ -20,435 +21,435 @@
    "id": "D01-readme-002",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: Shared-stats behavior is by design (manip docstring documents it); README manip bullet + docs/pipeline_order.rst caveat now say ZScore/Norma"
   },
   {
    "id": "D01-readme-003",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: Verified live: group= raises \"renamed to hue= in hypertools 1.0 -- pass hue= instead\"; model=/model_params= raise clear TypeErrors; align=Tr"
   },
   {
    "id": "D01-readme-004",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: Code now warns when ndims= passed without reduce= (verified live); README reworded: ndims is a passthrough to reduce=, no longer listed as r"
   },
   {
    "id": "D01-readme-005",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: README now shows the working form 'from hypertools.plot.colors import mat2colors' (verified import works; attribute path is still shadowed b"
   },
   {
    "id": "D01-readme-006",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: describe docstring now documents max_dims as EXCLUSIVE (range-like); README describe block rewritten with 20-col data and runs verbatim; ren"
   },
   {
    "id": "D01-readme-007",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: Code now fails fast (verified: \"surface['alpha'] must be a real number in (0, 1]\"); README bullet reworded: dict = scalar options for all su"
   },
   {
    "id": "D01-readme-008",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: README Requirements now lists pydata-wrangler>=0.5.1, pykalman>=0.11, statsmodels>=0.14, dill, numba>=0.59, mirroring pyproject [project].de"
   },
   {
    "id": "D01-readme-009",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: BibTeX key added: @ARTICLE{heusser2018hypertools,."
   },
   {
    "id": "D01-readme-010",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: All 5 README blocks now define their data via short numpy preambles; each runs verbatim (5/5 OK twice) and renders correctly (evidence PNGs/"
   },
   {
    "id": "D01-readme-011",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: Verified live: discrete colorbar yticklabels are now ['A','B','C'] (user labels preserved). README colorbar claim is accurate."
   },
   {
    "id": "D01-readme-012",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: Verified: mat2colors(arange(200)) endpoints now distinct (RGB distance 0.516, red vs magenta) after the plot-wave int-hue palette fix."
   },
   {
    "id": "D01-readme-013",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D1-code-residue: Single-row warning rewritten: 'Cannot reduce a single observation (row)... returning a zero vector of length ndims... values do NOT reflect "
   },
   {
    "id": "D01-readme-014",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: README gensim bullet now warns that non-default vectorizers train on default corpus='wiki' (minutes even for tiny inputs) and shows the corp"
   },
   {
    "id": "D02-sphinx-build-001",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D2-docs-infra: custom.css un-floats .sphinx-contrib-video-container.align-left/right (float:none; clear:both). Playwright on served build: animate_MDS code"
   },
   {
    "id": "D02-sphinx-build-002",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C1-readme-rootdocs: examples (committed auto_examples plotly artifact)."
   },
   {
    "id": "D02-sphinx-build-003",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C1-readme-rootdocs: gallery (committed auto_examples notebooks pin dev-1.0-refactor)."
   },
   {
    "id": "D02-sphinx-build-004",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C1-readme-rootdocs: examples (verified: 22 generated auto_examples rst files still have short '=' overlines; regenerate from examples/*.py)."
   },
   {
    "id": "D02-sphinx-build-005",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: conf.py scipy reference_url changed to docs root https://docs.scipy.org/doc/scipy/ (verifier showed _static/documentation_options.js resolve"
   },
   {
    "id": "D02-sphinx-build-006",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: conf.py adds suppress_warnings=['config.cache'] with an explanatory comment (sphinx_gallery_conf holds function objects sphinx cannot cache-"
   },
   {
    "id": "D02-sphinx-build-007",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C1-readme-rootdocs: code-owners (verified: 32 mis-length Returns underlines remain across hypertools/*.py docstrings)."
   },
   {
    "id": "D02-sphinx-build-008",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: api.rst now lists HyperAnimation and io.lsl_stream; the empty hypertools.io module docstring is code-side (io owner)."
   },
   {
    "id": "D02-sphinx-build-009",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D2-docs-infra: Badges skip pages without docs/auto_examples/<stem>.ipynb (what the Colab URL targets). Real run: 53 badged, sg_execution_times 0. Also fixe"
   },
   {
    "id": "D02-sphinx-build-010",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: Removed the dead :ref:`modindex` entry from docs/index.rst (py-modindex.html is never generated by this autosummary-only build)."
   },
   {
    "id": "D02-sphinx-build-011",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C1-readme-rootdocs: tutorials (notebook cell ids)."
   },
   {
    "id": "D02-sphinx-build-012",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: Verified live: hyp.save docstring is now multi-paragraph and documents extension-aware export."
   },
   {
    "id": "D02-sphinx-build-013",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: grep: 'Geo or mixed list' is gone from hypertools/plot/plot.py."
   },
   {
    "id": "D02-sphinx-build-014",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: conf.py copyright updated to '2017-2026, Contextual Dynamics Laboratory'."
   },
   {
    "id": "D02-sphinx-build-015",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: Removed the dead extlinks config from conf.py (sphinx.ext.extlinks never loaded; :github: role unused in docs)."
   },
   {
    "id": "D02-sphinx-build-016",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "escalated",
+   "note": "C1-readme-rootdocs: 20 tracked docs/modules/generated leftovers need `git rm`; git write commands are forbidden for this agent."
   },
   {
    "id": "D02-sphinx-build-017",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: index.rst image alt text is now descriptive; intro paragraph mentions the plotly interactive backend."
   },
   {
    "id": "D02-sphinx-build-018",
    "verdict": "CONFIRMED",
    "severity": "enhancement",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D2-docs-infra: Generated docs/_static/favicon.ico from images/hypercube.png (PIL, 16/32/48/64 ICO); html_favicon wired in conf.py (ast-parse OK). Takes eff"
   },
   {
    "id": "D02-sphinx-build-019",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C1-readme-rootdocs: examples (plot_basic.py prose)."
   },
   {
    "id": "D02-sphinx-build-020",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D2-docs-infra: docs/Makefile: PYTHON ?= python3; html runs $(PYTHON) post_build.py. make -n html -> 'python3 post_build.py'; PYTHON=<venv> override verifie"
   },
   {
    "id": "D03-gallery-basics-001",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C2-examples: plot-code owner; verified: NaN hue now warns and draws NaN points neutral gray, 60 distinct colors kept (plot.py:4421 UserWarning)."
   },
   {
    "id": "D03-gallery-basics-002",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: F02-012: int(np.random.randint(1000)) + np.random.seed(123); re-run 0 warnings; -W error::DeprecationWarning passes; evidence plot_hue_fig1."
   },
   {
    "id": "D03-gallery-basics-003",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C2-examples: tools owner (df2mat); no Pandas4Warning in any re-run (fixed by wave 04985a4a df2mat pandas-3)."
   },
   {
    "id": "D03-gallery-basics-004",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: plot_basic.py docstring now says all three arrays plotted with '.'; matches code."
   },
   {
    "id": "D03-gallery-basics-005",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: plot-code owner (labels= validation in matplotlib_backend)."
   },
   {
    "id": "D03-gallery-basics-006",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: plot-code owner (continuous-hue default palette); affected examples re-run green with evidence PNGs."
   },
   {
    "id": "D03-gallery-basics-007",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: plot-code owner (morph_samples validation)."
   },
   {
    "id": "D03-gallery-basics-008",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: plt.show() removed from plot_datasaurus.py and plot_shapes_zoo.py; both re-run with 0 warnings under Agg."
   },
   {
    "id": "D03-gallery-basics-009",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: plot-code owner (legend= error naming)."
   },
   {
    "id": "D03-gallery-basics-010",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: plot_dataframe.py now references top-level pandas.get_dummies; df2mat.py docstring half = tools owner."
   },
   {
    "id": "D03-gallery-basics-011",
    "verdict": "CONFIRMED",
    "severity": "enhancement",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: plot_dataframe.py plots mushrooms as points ('.') with prose explaining why; evidence shows structured cloud, not line tangle."
   },
   {
    "id": "D04-gallery-models-001",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C2-examples: F13-005 confirmed: int cluster labels take categorical palette (e8e8b9ae); k=2 red/cyan, k=3 three distinct colors; evidence plot_clusters2_"
   },
   {
    "id": "D04-gallery-models-002",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: VAE now uses epochs=100, kl_weight=0.001 (posterior-collapse note added): span 7.2x17.6 vs 0.03 before, spearman .67/.30; evidence plot_auto"
   },
   {
    "id": "D04-gallery-models-003",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: plot_align.py data[:18]/data[18:] \u2014 all 36 subjects in two equal groups."
   },
   {
    "id": "D04-gallery-models-004",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: plot_align.py uses model='hyper'; re-run has 0 DeprecationWarnings."
   },
   {
    "id": "D04-gallery-models-005",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: F13-018+F21-014: plot_clusters3.py and plot_apply_model.py use {'model','kwargs'} and prose updated; 0 warnings."
   },
   {
    "id": "D04-gallery-models-006",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: F21-015: equal 200-row train/test + explicit trim note; no align warning; prints output shapes (200,3)x2."
   },
   {
    "id": "D04-gallery-models-007",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: GaussianMixture seeded via dict spec (random_state=0) reused for both plots; figures now color-identical (evidence fig1/fig2)."
   },
   {
    "id": "D04-gallery-models-008",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: reduce owner (ndims>=n_features passthrough)."
   },
   {
    "id": "D04-gallery-models-009",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: manip owner (normalize AssertionError)."
   },
   {
    "id": "D04-gallery-models-010",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: reduce owner (autoencoder hyperparameter validation)."
   },
   {
    "id": "D04-gallery-models-011",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: core owner (subpackage name shadowing)."
   },
   {
    "id": "D04-gallery-models-012",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: F11-009: plot_describe prose now describes pairwise-distance correlation, matching current describe(); figure has legend+colors (code-side);"
   },
   {
    "id": "D04-gallery-models-013",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: Seeded plot_normalize/plot_clusters2/plot_PPCA (np.random.seed(123)); plot_PPCA choice(replace=False) so exactly 10% removed; GMM seeded."
   },
   {
    "id": "D04-gallery-models-014",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: Unused imports removed in plot_procrustes/plot_normalize/plot_clusters2/plot_clusters3; 'procustes' spelling fixed."
   },
   {
    "id": "D04-gallery-models-015",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C2-examples: plot-code owner; plot_PPCA re-run shows no linestyle-redundancy warning (only expected PPCA info notice)."
   },
   {
    "id": "D04-gallery-models-016",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: plot_clusters and plot_clusters3 now use '.' point fmt; clusters3 prose mentions HDBSCAN noise label -1; evidence PNGs show point clouds."
   },
   {
    "id": "D04-gallery-models-017",
    "verdict": "CONFIRMED",
    "severity": "enhancement",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: legend=True added to plot_TSNE and plot_UMAP; evidence shows class legends 0-5."
   },
   {
    "id": "D04-gallery-models-018",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C2-examples: tools owner (df2mat); no Pandas4Warning in any mushrooms re-run."
   },
   {
    "id": "D05-gallery-data-text-001",
@@ -461,246 +462,246 @@
    "id": "D05-gallery-data-text-002",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: plot_text.py rewritten with paragraph-length cat/dog/finance docs: 7/7 unique embeddings, 3 colors visible (evidence plot_text_fig1.png); sh"
   },
   {
    "id": "D05-gallery-data-text-003",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C2-examples: io fix 462fe6ee verified: hyp.load('sotus') returns list of 29 speech strings; plot_sotus.py restored to the real demo (this batch)."
   },
   {
    "id": "D05-gallery-data-text-004",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: Dispersion recomputed vs current code: 0.52 aligned-then-reduced vs 0.71/0.84/0.88; metric spelled out; runtime 'well under a minute' (measu"
   },
   {
    "id": "D05-gallery-data-text-005",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: plot_predict docstring: '(used here)' moved to GaussianProcess."
   },
   {
    "id": "D05-gallery-data-text-006",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: '# of topics = 50' in plot_text and plot_corpus (verified wiki model outputs 50-dim); 't0' typo fixed."
   },
   {
    "id": "D05-gallery-data-text-007",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: plot_missing_data: missing=.05 matches '5%' comment, seeded, replace=False; evidence shows dense star markers."
   },
   {
    "id": "D05-gallery-data-text-008",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C2-examples: impute owner; PPCA now recovers r=0.846 on the example's data with no nan-convergence warning; residual 'divide by zero in log' RuntimeWarni"
   },
   {
    "id": "D05-gallery-data-text-009",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D1-code-residue: 2-D KDE imshow clipped to the [-1,1] frame square (data-coords Rectangle -> clipbox). PNG verified: glow stops exactly at the frame; regress"
   },
   {
    "id": "D05-gallery-data-text-010",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C2-examples: tools owner (df2mat); no Pandas4Warning in datasets-tour re-run."
   },
   {
    "id": "D05-gallery-data-text-011",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: io owner (hosted sklearn-1.0.2 model pickles)."
   },
   {
    "id": "D05-gallery-data-text-012",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D1-code-residue: Residual fixed: explore=True on Agg/pdf/svg/ps emits a UserWarning that hover labels need an interactive backend (+docstring). 2-D ValueErro"
   },
   {
    "id": "D05-gallery-data-text-013",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: tools owner (text misuse errors)."
   },
   {
    "id": "D05-gallery-data-text-014",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: plot_geo docstring lists all six bundle keys incl. pipeline/predict; example prints sorted(out.keys()) \u2014 verified in re-run."
   },
   {
    "id": "D05-gallery-data-text-015",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "D1-code-residue: surface={'smoothing': -1} raises \"surface['smoothing'] must be an int in [0, 6]...\" (wave 5B, parity with density)."
   },
   {
    "id": "D05-gallery-data-text-016",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: Story example's code block now recommends kernel_width=41 with odd-width note; garbled single-row reduce warning text = reduce owner."
   },
   {
    "id": "D05-gallery-data-text-017",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: tools owner (missing_inds None return)."
   },
   {
    "id": "D05-gallery-data-text-018",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: plot_datasets_tour draws all panels as points ('.') with prose; plot_sotus rebuilt (no overlapping labels in new figure)."
   },
   {
    "id": "D05-gallery-data-text-019",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: Story montage uses layout='constrained'; all three titles fully visible (evidence plot_story_trajectories_fig1.png)."
   },
   {
    "id": "D05-gallery-data-text-020",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: core owner (own-stage kwarg naming)."
   },
   {
    "id": "D06-gallery-animation-001",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C2-examples: plot-code clamp (matplotlib_backend.py:354-355) verified: chemtrails trail lengths 0/0/0/0/1/61 at frames 0-120, no future leak; evidence ch"
   },
   {
    "id": "D06-gallery-animation-002",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: animate_plotly exports 60-frame interactive spin.html (no kaleido) to a temp dir; prose documents per-frame kaleido cost for rasterized form"
   },
   {
    "id": "D06-gallery-animation-003",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: Example writes to tempfile.mkdtemp(); stale tracked examples/spin.gif (6.8MB) is outside my file ownership \u2014 recommend controller delete it."
   },
   {
    "id": "D06-gallery-animation-004",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: F09-011: save_movie data[:18]/data[18:] (18+18 of 36); ffmpeg note softened (mp4 needs ffmpeg; gif/apng use Pillow); mp4 written in re-run."
   },
   {
    "id": "D06-gallery-animation-005",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: plot-code owner (frame-count parity docstring)."
   },
   {
    "id": "D06-gallery-animation-006",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: Timing claim replaced with 'roughly a 4x per-frame speedup'; measured this session: 58.8 vs 224.1 ms/frame (smoothing 2 vs 3) = 3.8x."
   },
   {
    "id": "D06-gallery-animation-007",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: animate/plotly-export owner (GIF centisecond quantization)."
   },
   {
    "id": "D06-gallery-animation-008",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: animate owner (save_path validation)."
   },
   {
    "id": "D06-gallery-animation-009",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C2-examples: reduce owner pinned MDS defaults; animate_MDS re-run emits 0 FutureWarnings."
   },
   {
    "id": "D06-gallery-animation-010",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: Unused numpy imports removed from precog.py and save_image.py."
   },
   {
    "id": "D06-gallery-animation-011",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C2-examples: plot-code owner (trails ndarray broadcast)."
   },
   {
    "id": "D06-gallery-animation-012",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C2-examples: Fade now targets the VISIBLE morph artist (filtered get_lines()); verified alpha=0.25 on the 400-pt visible line; evidence animate_surface_m"
   },
   {
    "id": "D07-tutorials-core-001",
    "verdict": "CONFIRMED",
    "severity": "critical",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: plot.ipynb cells 26/29 rebuilt with np.array_split sizing (labels always == n rows); both cells render on fresh Run-All (evidence plot_cell2"
   },
   {
    "id": "D07-tutorials-core-002",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: analyze cell-6 comment now '# 100 timepoints and 100 components' (F15-007) and cell-7 prose '(100,100)'; fresh output prints (100, 100) twic"
   },
   {
    "id": "D07-tutorials-core-003",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: align cell-6 rewritten: 36 arrays, one per subject, 300 timepoints x 100 components; cell-9 now describes averaging into two groups of 18."
   },
   {
    "id": "D07-tutorials-core-004",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: plot cell-48 reworded to 'small list of sample sentences written in the style of State of the Union addresses' pointing to the text tutorial"
   },
   {
    "id": "D07-tutorials-core-005",
@@ -713,330 +714,330 @@
    "id": "D07-tutorials-core-006",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: align cells 10/13/16: data[:17]/aligned_data[:17] -> [:18]; both groups now cover all 36 subjects."
   },
   {
    "id": "D07-tutorials-core-007",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: UMAP appended to reduce cell-24 and analyze cell-15 supported-model lists; now consistent with reduce cell-2 and plot cell-19."
   },
   {
    "id": "D07-tutorials-core-008",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: Fresh in-place re-execution: plot cell-51 now has a single display_data output and zero warnings (stale sklearn InconsistentVersionWarnings "
   },
   {
    "id": "D08-tutorials-analysis-001",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C4-tutorials-heavy: Replaced dead wikipedia pkg with requests+MediaWiki API+descriptive UA; fallback now prints a notice. Live fetch verified in fresh run: Dog "
   },
   {
    "id": "D08-tutorials-analysis-002",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C4-tutorials-heavy: NIPS/wiki/SOTUS sections now load the REAL hosted datasets (hyp.load 'nips' 7241 papers sampled 1000; 'wiki' 3136 via TSNE+HDBSCAN; 'sotus' "
   },
   {
    "id": "D08-tutorials-analysis-003",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C4-tutorials-heavy: Cells 19/21 now assign fig=; verified fresh run has exactly 1 image output per plot cell."
   },
   {
    "id": "D08-tutorials-analysis-004",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C3-tutorials-core: Code wave pinned HDBSCAN: probe hyp.cluster(randn(100,3),'HDBSCAN') emits 0 warnings; fresh cluster.ipynb cell-20 output clean."
   },
   {
    "id": "D08-tutorials-analysis-005",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: All 5 items: arrray->array, 2x 'have note'->'have not', HCBSCAN->HDBSCAN, n_clusters(10) claim rewritten, cell-2 lists all 15 registry model"
   },
   {
    "id": "D08-tutorials-analysis-006",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: Tutorial side: cell-2 caveat added (FeatureAgglomeration clusters features/columns, not observations). Code side (cluster.py/plot behavior) "
   },
   {
    "id": "D08-tutorials-analysis-007",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: normalize c2 grammar fixed; c11 now opens with default-usage sentence (no dangling 'Or'); c7 seeded (np.random.seed(123)) so shipped figures"
   },
   {
    "id": "D08-tutorials-analysis-008",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C3-tutorials-core: Probe: invalid mode now raises ValueError naming the real kwarg: \"normalize must be one of 'across','within','row',False/None...; got 'blah'"
   },
   {
    "id": "D08-tutorials-analysis-009",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: Tutorial prose now documents single-array unwrap; code docstring already fixed by code wave ('a single-element list returns a bare array'). "
   },
   {
    "id": "D08-tutorials-analysis-010",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C4-tutorials-heavy: All cells stamped with ids via nbformat.normalize; re-read emits zero MissingIDFieldWarning (verified for all 7 owned notebooks)."
   },
   {
    "id": "D08-tutorials-analysis-011",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C4-tutorials-heavy: text.ipynb half fixed: corpus='nips' now really used and matches prose. Code half (text2mat silent bogus-corpus, reprobed still silent) rema"
   },
   {
    "id": "D08-tutorials-analysis-012",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C4-tutorials-heavy: format_data.py \u2014 code-owner."
   },
   {
    "id": "D08-tutorials-analysis-013",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C4-tutorials-heavy: Code wave replaced cyclic hls: ramp probe hue angles now 0.01->0.835 (no wrap); modern cell-10 figure shows distinguishable start/end. No pr"
   },
   {
    "id": "D08-tutorials-analysis-014",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C4-tutorials-heavy: Cell 13 now has an else branch printing 'ffmpeg not found -- saved as lorenz_trajectory.mp4'; blind Image() display replaced by a markdown i"
   },
   {
    "id": "D08-tutorials-analysis-015",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C4-tutorials-heavy: reduce/reduce.py warning wording \u2014 code-owner."
   },
   {
    "id": "D08-tutorials-analysis-016",
    "verdict": "CONFIRMED",
    "severity": "enhancement",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C4-tutorials-heavy: API docstring Examples \u2014 code-owner."
   },
   {
    "id": "D08-tutorials-analysis-017",
    "verdict": "CONFIRMED",
    "severity": "enhancement",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: cluster c21: legend=True with string-cast hue ('cluster N'); int hue is treated as continuous (legend ignored), strings give a clean 10-entr"
   },
   {
    "id": "D09-tutorials-applied-001",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C4-tutorials-heavy: Static+animated plots now use '.-' fmt with markersize=5; single-window utterances render as visible dots (blue mattgrum dot confirmed in ev"
   },
   {
    "id": "D09-tutorials-applied-002",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: Title split onto two lines; fresh embedded output PNG shows full 'Kalman-forecast jump shot in raw (x, y, z) space / (solid=observed, dashed"
   },
   {
    "id": "D09-tutorials-applied-003",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C4-tutorials-heavy: Cell 12 refits/plots trailing 60 days with 10-day-smoothed log-volume; dashed tails now span up to ~11% of axis and are clearly visible in e"
   },
   {
    "id": "D09-tutorials-applied-004",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: projectile_kalman cell-1 now installs 'hypertools[predict] @ git+...@dev-1.0-refactor' (same pattern as streaming/conversation) + conditiona"
   },
   {
    "id": "D09-tutorials-applied-005",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C3-tutorials-core: Probe: stream_init=500 with stream_max=300 now consumes/reports n_samples=300 (clamped)."
   },
   {
    "id": "D09-tutorials-applied-006",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: Doc part: streaming_data practical-notes now documents the +1 truncation peek. Code still pulls stream_max+1 (verified 1201/1200) \u2014 non-cons"
   },
   {
    "id": "D09-tutorials-applied-007",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C3-tutorials-core: Probes: stream_init=-5 -> 'stream_init must be a positive integer; got -5'; stream_window=0 -> 'stream_window must be a positive integer or "
   },
   {
    "id": "D09-tutorials-applied-008",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C3-tutorials-core: Probe: scalar stream now raises clear ValueError 'streamed samples have a single feature/channel; streaming requires >= 2 features...'."
   },
   {
    "id": "D09-tutorials-applied-009",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D1-code-residue: streaming save_path routed by extension like animate: Pillow for gif/png/apng, ffmpeg for mp4/mov/avi/m4v/mkv; unknown ext raises named Valu"
   },
   {
    "id": "D09-tutorials-applied-010",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "D1-code-residue: kalman.py raises 'Kalman imputation needs at least 2 rows (timepoints)...' with model suggestions; nearby comment documents the old crash ac"
   },
   {
    "id": "D09-tutorials-applied-011",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "D1-code-residue: Reuse mismatch is a branded ValueError naming the fitted forecaster's expected columns; short-train raises ValueError (not AssertionError) w"
   },
   {
    "id": "D09-tutorials-applied-012",
    "verdict": "CONFIRMED",
    "severity": "enhancement",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D1-code-residue: impute dispatcher warns (pooled view) when columns have zero observed values: names the columns and says filled values are uninformed (0.0 f"
   },
   {
    "id": "D09-tutorials-applied-013",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C3-tutorials-core: streaming_data: kernelspec python3 added + missing cell id stamped (validated: 0 missing ids, nbformat.validate clean). conversation half: o"
   },
   {
    "id": "D09-tutorials-applied-014",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D1-code-residue: predict + impute resolve string names case-insensitively ('kalman'/'ppca'/'KALMAN' work, aliases too); unknown names keep the rich error. Do"
   },
   {
    "id": "D10-tutorials-embeddings-lsl-001",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C4-tutorials-heavy: Cells 17/19 (now 18/20) assign fig=; leak fix in code removes the stray spin figure. Fresh run: exactly 1 image per plot cell, verified prog"
   },
   {
    "id": "D10-tutorials-embeddings-lsl-010",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C4-tutorials-heavy: 1-channel stream now raises clear ValueError naming the >=2-feature requirement (probe verified); no notebook prose change needed (tutorial "
   },
   {
    "id": "D10-tutorials-embeddings-lsl-002",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C4-tutorials-heavy: Code wave: probe shows 0 registered figures after animate='spin'+save_path+show=False (was 1)."
   },
   {
    "id": "D10-tutorials-embeddings-lsl-003",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C4-tutorials-heavy: All four UMAP calls now pass random_state=42 via dict reduce=; prose explains seeding. Density-overlay layout matches the preceding plot; al"
   },
   {
    "id": "D10-tutorials-embeddings-lsl-004",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C4-tutorials-heavy: Cleanup cell calls stream.close() before stopping the outlet; prose explains the order. Fresh run cleanup output is exactly 'outlet thread s"
   },
   {
    "id": "D10-tutorials-embeddings-lsl-005",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C4-tutorials-heavy: hf cell 13 + wiki cell 11 (and modern/conversation, same pattern) now print an explicit else-branch notice naming the orphaned mp4; uncondit"
   },
   {
    "id": "D10-tutorials-embeddings-lsl-011",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C4-tutorials-heavy: stream_max now caps the head (probe n_samples=300 for init=500/max=300); streaming.py docstring documents the cap."
   },
   {
    "id": "D10-tutorials-embeddings-lsl-012",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C4-tutorials-heavy: backend='plotly' on streams still silently returns matplotlib Figure (reprobed) \u2014 streaming code-owner."
   },
   {
    "id": "D10-tutorials-embeddings-lsl-006",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C4-tutorials-heavy: Claim now reads 'typically about 350-450 tokens, comfortably within the limit' \u2014 matches measured mean 372 / max 447."
   },
   {
    "id": "D10-tutorials-embeddings-lsl-007",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C4-tutorials-heavy: legend/label error wording \u2014 plot code-owner."
   },
   {
    "id": "D10-tutorials-embeddings-lsl-008",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C4-tutorials-heavy: reduce-typo error message \u2014 code-owner."
   },
   {
    "id": "D10-tutorials-embeddings-lsl-013",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C4-tutorials-heavy: lsl_stream(name=123) still raises cryptic pylsl TypeError (reprobed) \u2014 io/lsl.py code-owner."
   },
   {
    "id": "D10-tutorials-embeddings-lsl-009",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C4-tutorials-heavy: Spin gifs no longer base64-embedded: markdown refs to tracked gifs instead. hf 14.8MB->187KB, wiki 9.3MB->299KB, conversation 11.8MB->79KB, "
   },
   {
    "id": "D11-docstrings-plot-001",
@@ -1056,8 +1057,8 @@
    "id": "D11-docstrings-plot-003",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "skipped",
-   "note": "B1-static-inputs-kwargs: hyp.load('sotus') returns Pipeline: io/load.py 'sotus' and 'nips_model' share Drive ID 1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm - io/ owned by othe"
+   "status": "already_fixed",
+   "note": "C5-docstring-residuals: load('sotus') returns 29 SOTU strings via datawrangler zoo (ran it); dup Drive id removed from registry"
   },
   {
    "id": "D11-docstrings-plot-004",
@@ -1112,8 +1113,8 @@
    "id": "D11-docstrings-plot-011",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "skipped",
-   "note": "B1-static-inputs-kwargs: set_interactive_backend internal dev notes are in plot/backend.py - owned by another concurrent agent (remove IN_SET_CONTEXT/'v1.0 overhaul'"
+   "status": "fixed",
+   "note": "C5-docstring-residuals: backend.py set_interactive_backend Notes pt-4 rewritten: removed 'definitely isn't ideal / v1.0 overhaul / probably good enough' dev comment"
   },
   {
    "id": "D11-docstrings-plot-012",
@@ -1161,127 +1162,127 @@
    "id": "D12-docstrings-rest-001",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C5-docstring-residuals: sotus loads as 29-doc corpus via zoo (ran it); registry comment documents the dead dup Drive id"
   },
   {
    "id": "D12-docstrings-rest-002",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C5-docstring-residuals: sotus_model has new Drive id 16_n9r82...; loads AND prints as sklearn Pipeline under 1.8 (ran it)"
   },
   {
    "id": "D12-docstrings-rest-003",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C5-docstring-residuals: align(single array) now returns bare (50,5) ndarray matching Returns doc (ran it)"
   },
   {
    "id": "D12-docstrings-rest-004",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C5-docstring-residuals: format_data: replaced phantom 'pass parameters to vectorizer_params/text_params' sentences with dict-form guidance (opening para was already"
   },
   {
    "id": "D12-docstrings-rest-005",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C5-docstring-residuals: load doc now says spiral is a list of two (1000,3) arrays"
   },
   {
    "id": "D12-docstrings-rest-006",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C5-docstring-residuals: analyze.py + load.py: removed stale '(default)' after 'across' (actual default None) and fixed 'with with' typo; same typo fixed in tools/no"
   },
   {
    "id": "D12-docstrings-rest-007",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C5-docstring-residuals: analyze.py cluster entry: hyp.cluster returns FLAT labels for list input (re-verified: len 110); replaced false 'per-dataset labels' claim w"
   },
   {
    "id": "D12-docstrings-rest-008",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C5-docstring-residuals: added normalize 'internal :', manip cross-module kwargs + ndims entries, df2mat 'return_labels :'; analyze/cluster random_state were already"
   },
   {
    "id": "D12-docstrings-rest-009",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C5-docstring-residuals: now real ValueError naming 'normalize' (ran it)"
   },
   {
    "id": "D12-docstrings-rest-010",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C5-docstring-residuals: smooth.py raises ValueError('Must specify axis'); assert gone"
   },
   {
    "id": "D12-docstrings-rest-011",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C5-docstring-residuals: reduce error now lists supported model names, no whitespace run-on, no stale URL (ran it)"
   },
   {
    "id": "D12-docstrings-rest-012",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C5-docstring-residuals: reduce dict error now recommends canonical 'kwargs' form (ran it)"
   },
   {
    "id": "D12-docstrings-rest-013",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C5-docstring-residuals: added runnable Examples to analyze, reduce, describe, align, cluster, predict, impute (7 modules) + repaired load's Examples (missing import"
   },
   {
    "id": "D12-docstrings-rest-014",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C5-docstring-residuals: save docstring now comprehensive; save(bogus=1) raises TypeError (ran it; **kwargs removed from signature)"
   },
   {
    "id": "D12-docstrings-rest-015",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C5-docstring-residuals: corrupt pickle now raises HypertoolsIOError wrapping the ValueError (ran it)"
   },
   {
    "id": "D12-docstrings-rest-016",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C5-docstring-residuals: describe warning now conditional (>1000 rows/1M elements); summary line rewritten; 'fig' in Returns"
   },
   {
    "id": "D12-docstrings-rest-017",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C5-docstring-residuals: smooth doc now says 'rounded to the nearest integer, even values incremented by 1, each with a warning'"
   },
   {
    "id": "D12-docstrings-rest-018",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C5-docstring-residuals: missing_inds Returns rewritten: 1-D ndarray or None per dataset; None sentinel for clean data; single input returns single entry"
   },
   {
    "id": "D12-docstrings-rest-019",
@@ -1294,211 +1295,211 @@
    "id": "D12-docstrings-rest-020",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C5-docstring-residuals: design-level: mode='auto' preference order is accurately documented in core/model.py; KMeans->transform is by-design"
   },
   {
    "id": "D13-links-001",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: grep: the dead Homebrew/install link is gone from hypertools/plot/plot.py."
   },
   {
    "id": "D13-links-002",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D2-docs-infra: PR link -> docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests (curl 200)."
   },
   {
    "id": "D13-links-003",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D2-docs-infra: Dead egghead.io series -> https://opensource.guide/how-to-contribute/ (curl 200)."
   },
   {
    "id": "D13-links-004",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D2-docs-infra: analyze.ipynb (my scope): haxbylab PDF -> https://doi.org/10.1016/j.neuron.2011.08.026 (curl 200), byte-level markdown edit; JSON valid, 29 "
   },
   {
    "id": "D13-links-005",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: grep: tools.reduce.html URL removed from hypertools/reduce/reduce.py."
   },
   {
    "id": "D13-links-006",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: grep: classes.html#module-sklearn anchors gone from hypertools/."
   },
   {
    "id": "D13-links-007",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: grep: working-with-threads matplotlib-FAQ reference gone from hypertools/."
   },
   {
    "id": "D13-links-008",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D2-docs-infra: Retired guides.github.com anchor link -> docs.github.com/en/get-started/exploring-projects-on-github/contributing-to-a-project (curl 200); f"
   },
   {
    "id": "D13-links-009",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C5-docstring-residuals: http->https for wikipedia (procrustes.py x3), brainiak.org, data_transforms; all curl-verified 200. Remaining http:// are scheme-detection c"
   },
   {
    "id": "D13-links-010",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: grep: IntelPNI/brainiak link gone from hypertools/."
   },
   {
    "id": "D13-links-011",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: grep: legacy dx.doi.org links gone from hypertools/."
   },
   {
    "id": "D13-links-012",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D2-docs-infra: Milestone/5 and gitter both replaced with the ContextLab issue tracker (GH Discussions not enabled: 404). Mistune render of final file: 0 st"
   },
   {
    "id": "D13-links-013",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "escalated",
+   "note": "D2-docs-infra: At release switch first install cell to '%pip install -q \"hypertools[interactive]\"' in the 15 notebooks matching: grep -l dev-1.0-refactor d"
   },
   {
    "id": "D14-docs-drift-001",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: docs/api.rst already lists HyperAnimation under Plot (autosummary_generate=True builds the stub page)."
   },
   {
    "id": "D14-docs-drift-002",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: Same fix as D01-readme-008: README Requirements now includes all four omitted core deps."
   },
   {
    "id": "D14-docs-drift-003",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: README extras bullet now: predict = skaters Laplace only, with Kalman/GaussianProcess/AutoRegressor/ARIMA noted as base-install (matches pyp"
   },
   {
    "id": "D14-docs-drift-004",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D2-docs-infra: deepdish dropped (only lazy guarded import in hypertools/io/load.py; nothing in docs/ imports it). Also removed dead PPCA (vendored) and hdb"
   },
   {
    "id": "D14-docs-drift-005",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D2-docs-infra: Added plotly>=6.1.1 + kaleido>=1.0 (matches pyproject [interactive]) with comment; ffmpeg note added; root .readthedocs.yaml gains build.apt"
   },
   {
    "id": "D14-docs-drift-006",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: grep: the hardcoded tools.reduce.html URL is gone from hypertools/reduce/reduce.py."
   },
   {
    "id": "D14-docs-drift-007",
    "verdict": "CONFIRMED",
    "severity": "enhancement",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: Created CHANGELOG.md: 1.0.0 architecture/features/removed-behavior sections plus a Release-audit section (46 units, 708 findings, criticals)"
   },
   {
    "id": "D14-docs-drift-008",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C1-readme-rootdocs: controller (CLAUDE.md not in this batch's ownership)."
   },
   {
    "id": "D14-docs-drift-009",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C1-readme-rootdocs: reduce (default-ndims no-op + None model are code-side)."
   },
   {
    "id": "D14-docs-drift-010",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C1-readme-rootdocs: code-owners (undocumented Parameters entries live in module docstrings)."
   },
   {
    "id": "D14-docs-drift-011",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "already_fixed",
+   "note": "C1-readme-rootdocs: Verified live: save() signature is now (obj, fname, protocol=None) and unknown kwarg banana= raises TypeError."
   },
   {
    "id": "D14-docs-drift-012",
    "verdict": "CONFIRMED",
    "severity": "doc",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C1-readme-rootdocs: reduce (autoencoder subclass docstrings)."
   },
   {
    "id": "D14-docs-drift-013",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: api.rst Pipeline blurb now distinguishes standalone dispatchers (single fitted wrapper when one stage ran) from plot's return_model bundle ("
   },
   {
    "id": "D14-docs-drift-014",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "C1-readme-rootdocs: docs/index.rst intro now names matplotlib+plotly; key-features list rewritten around 1.0 (canonical pipeline, interactive backend, predict/i"
   },
   {
    "id": "D14-docs-drift-015",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "skipped",
+   "note": "C1-readme-rootdocs: reduce (verified live: describe still evaluates dims beyond n_features with no warning -- len(average)=12 on 6-col data; docstring exclusivi"
   },
   {
    "id": "D14-docs-drift-016",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "D2-docs-infra: CONTRIBUTING.md 'What we're working on' now points at github.com/ContextLab/hypertools/issues (curl 200); mozsprint milestone/5 and stray-sp"
   },
   {
    "id": "F01-plot-static-core-001",
@@ -3982,8 +3983,8 @@
    "id": "X1-api-consistency-001",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "inherited from cluster sotus-registry (anchor D11-docstrings-plot-003)"
   },
   {
    "id": "X1-api-consistency-002",
@@ -4017,8 +4018,8 @@
    "id": "X1-api-consistency-006",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "inherited from cluster assert-not-valueerror (anchor F16-predict-008)"
   },
   {
    "id": "X1-api-consistency-007",
@@ -4171,8 +4172,8 @@
    "id": "X2-error-quality-006",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "inherited from cluster sotus-registry (anchor D11-docstrings-plot-003)"
   },
   {
    "id": "X2-error-quality-007",
@@ -4185,8 +4186,8 @@
    "id": "X2-error-quality-008",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "inherited from cluster assert-not-valueerror (anchor F16-predict-008)"
   },
   {
    "id": "X2-error-quality-009",
@@ -4220,8 +4221,8 @@
    "id": "X2-error-quality-013",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "inherited from cluster fmt-list-length (anchor F10-plot-kwargs-sweep-003)"
   },
   {
    "id": "X2-error-quality-014",
@@ -4318,15 +4319,15 @@
    "id": "X2-error-quality-027",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "inherited from cluster vstack-mixed-widths (anchor F03-plot-pipeline-integration-008)"
   },
   {
    "id": "X3-performance-001",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "inherited from cluster sotus-registry (anchor D11-docstrings-plot-003)"
   },
   {
    "id": "X3-performance-002",
@@ -4507,8 +4508,8 @@
    "id": "X4-warnings-018",
    "verdict": "CONFIRMED",
    "severity": "style",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "inherited from cluster plot-shadows-subpackage (anchor F16-predict-017)"
   },
   {
    "id": "X5-packaging-001",
@@ -4724,8 +4725,8 @@
    "id": "X7-code-org-rest-001",
    "verdict": "CONFIRMED",
    "severity": "critical",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "inherited from cluster sotus-registry (anchor D11-docstrings-plot-003)"
   },
   {
    "id": "X7-code-org-rest-002",
@@ -4738,8 +4739,8 @@
    "id": "X7-code-org-rest-003",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "inherited from cluster align-false-crash (anchor F03-plot-pipeline-integration-003)"
   },
   {
    "id": "X7-code-org-rest-004",
@@ -4752,8 +4753,8 @@
    "id": "X7-code-org-rest-005",
    "verdict": "CONFIRMED",
    "severity": "major",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "inherited from cluster model-pickles-sklearn102 (anchor D12-docstrings-rest-002)"
   },
   {
    "id": "X7-code-org-rest-006",
@@ -4927,8 +4928,8 @@
    "id": "X8-issue-tracker-004",
    "verdict": "CONFIRMED",
    "severity": "minor",
-   "status": "UNRESOLVED",
-   "note": ""
+   "status": "fixed",
+   "note": "inherited from cluster model-pickles-sklearn102 (anchor D12-docstrings-rest-002)"
   },
   {
    "id": "X8-issue-tracker-005",
