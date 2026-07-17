@@ -335,7 +335,10 @@ def test_names_without_hue_still_works():
 
 def test_unhashable_hue_raises_clear_typeerror():
     np.random.seed(3)
-    with pytest.raises(TypeError, match='hue'):
+    # the scalar (dict) hue provokes the one-group broadcast notice before
+    # its unhashability raises the TypeError -- assert both
+    with pytest.warns(UserWarning, match='single scalar value'), \
+         pytest.raises(TypeError, match='hue'):
         hyp.plot(np.random.randn(20, 4), fmt='.', hue={'a': 1}, ndims=2,
                  show=False)
 

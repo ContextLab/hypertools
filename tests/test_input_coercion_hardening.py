@@ -76,7 +76,9 @@ def test_scalar_hue_broadcasts_to_one_group(hue):
     """A single string/number hue means 'one group for all observations'; it
     must not be mis-measured as len('red')==3 characters (red-team of 7d71975b)."""
     x = _rng().normal(size=(20, 3))
-    assert hyp.plot(x, 'o', hue=hue, show=False) is not None
+    # a scalar hue deliberately provokes the one-group broadcast notice
+    with pytest.warns(UserWarning, match='single scalar value'):
+        assert hyp.plot(x, 'o', hue=hue, show=False) is not None
 
 
 def test_zero_dim_ndarray_is_accepted():
@@ -118,4 +120,7 @@ def test_all_nan_input_clear_error():
 def test_scattered_nan_still_imputes():
     x = _rng().normal(size=(30, 4))
     x[_rng().random((30, 4)) < 0.1] = np.nan
-    assert np.asarray(reducer(x, reduce='PCA', ndims=2)).shape == (30, 2)
+    # the NaNs deliberately provoke the missing-data notice
+    with pytest.warns(UserWarning, match='filling missing values'):
+        out = reducer(x, reduce='PCA', ndims=2)
+    assert np.asarray(out).shape == (30, 2)

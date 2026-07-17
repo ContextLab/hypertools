@@ -177,10 +177,15 @@ def test_staged_order_normalize_then_reduce_then_align():
     data = _two(seed=2)
     combo = analyze(data, normalize='across', reduce='PCA', ndims=3,
                     align='hyper')
-    staged = hyp.align(
-        hyp.reduce(hyp.normalize(data, normalize='across'),
-                   reduce='PCA', ndims=3),
-        model='hyper')
+    # the staged hyp.align call passes the legacy 'hyper' alias to model=
+    # directly, deliberately provoking its deprecation notice (the analyze()
+    # stage-kwarg path above resolves the alias without warning)
+    with pytest.warns(DeprecationWarning,
+                      match="'hyper' is a deprecated alias"):
+        staged = hyp.align(
+            hyp.reduce(hyp.normalize(data, normalize='across'),
+                       reduce='PCA', ndims=3),
+            model='hyper')
     assert _allclose_lists(combo, staged)
 
 

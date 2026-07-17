@@ -10,6 +10,8 @@ check, the subclass fails the identity check, gets double-wrapped in another
 list, and then crashes trying to call `.index.values` on the subclass itself
 instead of on a DataFrame.
 """
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -58,7 +60,15 @@ def test_align_hyper_accepts_list_subclass_of_arrays():
     a2 = a1 @ rot
 
     sub = ListSubclass([a1, a2])
-    result = hyp.align(sub, align='hyper')
+    # one call deliberately provokes TWO deprecation notices (legacy align=
+    # kwarg AND the 'hyper' alias), so record and assert both explicitly
+    with warnings.catch_warnings(record=True) as rec:
+        warnings.simplefilter('always')
+        result = hyp.align(sub, align='hyper')
+    msgs = [str(w.message) for w in rec
+            if issubclass(w.category, DeprecationWarning)]
+    assert any('align= is deprecated' in m for m in msgs), msgs
+    assert any("'hyper' is a deprecated alias" in m for m in msgs), msgs
     assert len(result) == 2
     assert np.allclose(result[0], result[1], rtol=1)
 
@@ -71,7 +81,10 @@ def test_cluster_accepts_ordereddict_spec():
 
     data = np.random.RandomState(0).randn(50, 5)
     spec = OrderedDict([('model', 'KMeans'), ('params', {'n_clusters': 3})])
-    labels = hyp.cluster(data, cluster=spec)
+    # the 'params' dict form is the deliberately-exercised legacy spec;
+    # assert its deprecation notice fires
+    with pytest.warns(DeprecationWarning, match=r"'params'.*deprecated"):
+        labels = hyp.cluster(data, cluster=spec)
     assert len(labels) == 50
     assert len(set(labels)) == 3
 

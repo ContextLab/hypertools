@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from hypertools.io.load import load
 
@@ -81,9 +82,12 @@ def test_load_reduce_dict_form(tmp_path):
     path = tmp_path / "local_array.npy"
     np.save(path, arr)
 
-    data = load(str(path),
-               reduce={'model': 'PCA', 'params': {'whiten': True}},
-               ndims=3)
+    # legacy 'params' dict spec exercised deliberately; assert the
+    # deprecation notice fires
+    with pytest.warns(DeprecationWarning, match=r"'params'.*deprecated"):
+        data = load(str(path),
+                    reduce={'model': 'PCA', 'params': {'whiten': True}},
+                    ndims=3)
     assert np.asarray(data).shape == (50, 3)
 
 

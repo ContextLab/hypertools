@@ -110,6 +110,14 @@ def _line_pts(line, ndims):
     return np.column_stack([line.get_xdata(), line.get_ydata()])
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures,
+# and its lbfgs optimizer can stop early on the same contrived data (only
+# the GaussianProcess parameter case emits either)
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
+@pytest.mark.filterwarnings(
+    'ignore:lbfgs failed to converge:sklearn.exceptions.ConvergenceWarning')
 @pytest.mark.parametrize('ndims,model', [(2, 'ARIMA'), (3, 'GaussianProcess')])
 def test_forecast_vertices_stay_inside_frame(ndims, model):
     if model == 'ARIMA':

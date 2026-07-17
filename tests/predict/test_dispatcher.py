@@ -17,6 +17,10 @@ def _make_df(n=60, ncols=2, index=None):
     return df
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_gp_short_alias_resolves_to_gaussian_process():
     # QC 2026-07: hyp.predict(x, model='GP') used to raise "unknown predict
     # model 'GP'"; only the full 'GaussianProcess' name was registered.
@@ -38,6 +42,11 @@ def test_gp_short_alias_resolves_to_gaussian_process():
     ('Laplace', 'skaters'),
     ('Chronos', 'chronos'),
 ])
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+# (only the GaussianProcess parameter case emits it)
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_all_forecaster_names_resolve(name, extra):
     if extra is not None:
         pytest.importorskip(extra)
@@ -54,6 +63,10 @@ def test_forecaster_names_match_registry():
 
 # --- dict (both forms) / class / instance resolution -----------------------
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_dict_params_form():
     df = _make_df(n=60)
     with pytest.warns(DeprecationWarning, match="'params'"):
@@ -61,18 +74,30 @@ def test_dict_params_form():
     assert out.shape == (4, 2)
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_dict_args_kwargs_form():
     df = _make_df(n=60)
     out = predict(df, model={'model': 'GaussianProcess', 'args': [], 'kwargs': {'alpha': 1e-6}}, t=4)
     assert out.shape == (4, 2)
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_class_form():
     df = _make_df(n=60)
     out = predict(df, model=GaussianProcess, t=4, alpha=1e-6)
     assert out.shape == (4, 2)
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_instance_form():
     df = _make_df(n=60)
     out = predict(df, model=GaussianProcess(alpha=1e-6), t=4)
@@ -81,12 +106,20 @@ def test_instance_form():
 
 # --- t: int and datetime horizons ------------------------------------------
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_t_int_horizon():
     df = _make_df(n=60)
     out = predict(df, model='GaussianProcess', t=5)
     assert list(out.index) == list(range(60, 65))
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_t_datetime_horizon():
     idx = pd.date_range('2026-01-01', periods=60, freq='D')
     df = _make_df(n=60, index=idx)
@@ -98,6 +131,10 @@ def test_t_datetime_horizon():
 
 # --- list-in / list-out ------------------------------------------------------
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_list_in_list_out():
     dfs = [_make_df(n=50), _make_df(n=70)]
     out = predict(dfs, model='GaussianProcess', t=3)

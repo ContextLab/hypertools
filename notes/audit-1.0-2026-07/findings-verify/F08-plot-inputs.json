@@ -1,0 +1,169 @@
+{
+ "unit": "F08-plot-inputs",
+ "findings": [
+  {
+   "id": "F08-plot-inputs-001",
+   "severity": "critical",
+   "title": "hyp.plot() crashes on a plain python list-of-lists numeric matrix with a nonsensical internal 'color=' ValueError",
+   "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import matplotlib; matplotlib.use('Agg'); import hypertools as hyp; hyp.plot([[1.,2.],[3.,4.]])\"",
+   "expected": "The matrix plots as a single (or per-row) dataset -- exactly what format_data([[1.,2.],[3.,4.]]) already produces -- or at minimum a clear error about the input format.",
+   "actual": "ValueError: color= was given as a list/tuple of length 4, but there are 1 dataset(s) to plot; pass either a single value (broadcast to every dataset) or a list/tuple of length 1.  (raised from plot.py:2425 parse_kwargs(xform, mpl_kwargs))",
+   "evidence": []
+  },
+  {
+   "id": "F08-plot-inputs-002",
+   "severity": "major",
+   "title": "Datasets with different column counts crash hyp.plot with a raw numpy vstack error -- even with align='hyper', the case format_data's own comment calls canonical",
+   "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; hyp.plot([np.random.randn(30,4), np.random.randn(30,6)], align='hyper')\"",
+   "expected": "Either mixed-width datasets are aligned first (align='hyper' pads them, as hyp.align proves), or a clear error: 'datasets have 4 and 6 features; hyp.plot requires equal column counts -- pre-align with hyp.align(...)'.",
+   "actual": "ValueError: all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 4 and the array at index 1 has size 6  (from reduce.py:274 stacked_x = np.vstack([...]); hyp.align([a4,a6],align='hyper') alone returns [(30,6),(30,6)])",
+   "evidence": []
+  },
+  {
+   "id": "F08-plot-inputs-003",
+   "severity": "major",
+   "title": "DataFrame with a pandas Categorical column crashes with cryptic 'could not convert string to float' -- identical data as object dtype works",
+   "repro": "PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"import pandas as pd; from hypertools.tools.format_data import format_data; format_data(pd.DataFrame({'v':[1.,2.,3.,4.], 'c':pd.Categorical(['a','b','a','b'])}))\"",
+   "expected": "Categorical columns dummy-coded exactly like object-dtype string columns (pd.get_dummies handles Categorical natively).",
+   "actual": "ValueError: could not convert string to float: 'a'  (from format_data.py finite-check _num = np.asarray(_arr, dtype=float))",
+   "evidence": [
+    "evidence/F08-plot-inputs/w4_df_text_col.png"
+   ]
+  },
+  {
+   "id": "F08-plot-inputs-004",
+   "severity": "doc",
+   "title": "plot() docstring still advertises 'Geo' as an accepted x type; passing a DataGeometry crashes with AttributeError",
+   "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; from hypertools.datageometry import DataGeometry; hyp.plot(DataGeometry(data=[np.random.randn(10,3)]))\"",
+   "expected": "Docstring matches behavior: either Geo works or is not listed and yields a clear error.",
+   "actual": "AttributeError: 'DataGeometry' object has no attribute 'ndim'",
+   "evidence": []
+  },
+  {
+   "id": "F08-plot-inputs-005",
+   "severity": "doc",
+   "title": "format_data's docstring describes missing_inds, not format_data",
+   "repro": "sed -n '11,18p' /Users/jmanning/hypertools/hypertools/tools/format_data.py",
+   "expected": "A description of what format_data does (wraps input into a list of 2-D float arrays, converts DataFrames/text, PPCA-imputes NaNs, aligns mixed text+num data).",
+   "actual": "\"This function is useful to identify rows of your array that contain missing data or nans.  The returned indices can be used to remove the rows with missing data...\"",
+   "evidence": []
+  },
+  {
+   "id": "F08-plot-inputs-006",
+   "severity": "minor",
+   "title": "DataFrame with a datetime64 column crashes with leaked 'float() argument ... not Timestamp' error",
+   "repro": "PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"import pandas as pd; from hypertools.tools.format_data import format_data; format_data(pd.DataFrame({'t': pd.date_range('2020', periods=4), 'v': [1.,2.,3.,4.]}))\"",
+   "expected": "Clear error naming the datetime column and suggesting dropping/converting it (or automatic conversion to numeric).",
+   "actual": "TypeError: float() argument must be a string or a real number, not 'Timestamp'  (from format_data.py _num = np.asarray(_arr, dtype=float))",
+   "evidence": []
+  },
+  {
+   "id": "F08-plot-inputs-007",
+   "severity": "minor",
+   "title": "Every DataFrame-with-text-column plot emits a pandas deprecation warning from df2mat's select_dtypes('object'); breaks under future pandas string dtype",
+   "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -W always -c \"import numpy as np, pandas as pd, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; hyp.plot(pd.DataFrame({'a': np.random.randn(30), 'species': np.random.choice(['cat','dog'], 30)}), '.')\"",
+   "expected": "No deprecation warnings; dtype selection that also matches 'str'/'category' extension dtypes.",
+   "actual": "WARN: For backward compatibility, 'str' dtypes are included by select_dtypes when 'object' dtype is specified. This behavior is deprecated and will be removed in a future version. Explicitly pass 'str' to ...",
+   "evidence": [
+    "evidence/F08-plot-inputs/w4_df_text_col.png"
+   ]
+  },
+  {
+   "id": "F08-plot-inputs-008",
+   "severity": "minor",
+   "title": "Unsupported-type TypeError never names the received type or the offending list element, and its supported-types list is stale",
+   "repro": "PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"from hypertools.tools.format_data import format_data; import numpy as np; format_data([np.random.randn(3,2), None])\"",
+   "expected": "e.g. 'dataset 1 has unsupported type NoneType; supported per-dataset types: numpy array, DataFrame, Series, str, list of strings, list of numbers'.",
+   "actual": "TypeError: Unsupported data type passed. Supported types: Numpy Array, Pandas DataFrame, String, List of strings, List of numbers",
+   "evidence": []
+  },
+  {
+   "id": "F08-plot-inputs-009",
+   "severity": "major",
+   "title": "numpy masked arrays: the mask is silently ignored -- masked (invalid) entries are plotted as real data with no warning",
+   "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; from hypertools.tools.format_data import format_data; base=np.arange(12,dtype=float).reshape(4,3); m=np.ma.masked_array(base, mask=[[0,1,0],[0,0,0],[1,0,0],[0,0,0]]); print(format_data(m)[0]); hyp.plot(m,'o',ndims=2); print('no warning raised')\"",
+   "expected": "Masked entries treated as missing (NaN -> PPCA imputation, with the standard missing-data warning) or a clear error.",
+   "actual": "format_data returns the MaskedArray itself (row0 prints '[0.0 -- 2.0]'); hyp.plot succeeds with no warnings, masked cells (values 1.0 and 6.0) enter the reduction as ordinary data",
+   "evidence": []
+  },
+  {
+   "id": "F08-plot-inputs-010",
+   "severity": "minor",
+   "title": "format_data crashes with AttributeError on a nested list of arrays -- the exact input get_type classifies as 'list_arr'",
+   "repro": "PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np; from hypertools.tools.format_data import format_data; format_data([[np.random.randn(3,2), np.random.randn(3,2)]])\"",
+   "expected": "Either flatten/convert the nested list (matching plot()/analyze() behavior) or raise a clear 'nested lists of arrays are not supported by format_data; pass a flat list' error.",
+   "actual": "AttributeError: 'list' object has no attribute 'ndim'  (at format_data.py:190 'if any([i.ndim <= 1 for i in processed_x]):')",
+   "evidence": []
+  },
+  {
+   "id": "F08-plot-inputs-011",
+   "severity": "minor",
+   "title": "A typo'd vectorizer=/semantic= name surfaces a raw HuggingFace RepositoryNotFoundError (401, request IDs) instead of naming the unknown model",
+   "repro": "PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"from hypertools.tools.format_data import format_data; format_data(['some text here','more text'], vectorizer='NotARealModel123', corpus=None)\"",
+   "expected": "Error like: \"vectorizer='NotARealModel123' is not a built-in (CountVectorizer, TfidfVectorizer), a gensim model (Word2Vec, Doc2Vec, FastText), or a resolvable HuggingFace sentence-transformers id\".",
+   "actual": "RepositoryNotFoundError: 401 Client Error. (Request ID: Root=1-6a51d319-...) Repository Not Found for url: https://huggingface.co/sentence-transformers/NotARealModel123/resolve/main/modules.json.",
+   "evidence": []
+  },
+  {
+   "id": "F08-plot-inputs-012",
+   "severity": "minor",
+   "title": "3-D array input passes format_data untouched and dies later in sklearn with a leaked IncrementalPCA error",
+   "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; hyp.plot(np.random.randn(4,10,3))\"",
+   "expected": "Clear error: 'x has 3 dimensions; hypertools expects 2-D (samples x features) datasets -- pass a list of 2-D arrays (e.g. list(x)) instead', or automatic list(x) conversion.",
+   "actual": "ValueError: Found array with dim 3, while dim <= 2 is required by IncrementalPCA.",
+   "evidence": []
+  },
+  {
+   "id": "F08-plot-inputs-013",
+   "severity": "minor",
+   "title": "A python list of booleans is rejected as unsupported, while the equivalent numpy bool array plots fine",
+   "repro": "PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"from hypertools.tools.format_data import format_data; format_data([True, False, True])\"",
+   "expected": "Treated as a 1-D 0/1 dataset like np.array([True,False,True]) is, or an error that explains bools specifically.",
+   "actual": "TypeError: Unsupported data type passed. Supported types: Numpy Array, Pandas DataFrame, String, List of strings, List of numbers",
+   "evidence": []
+  },
+  {
+   "id": "F08-plot-inputs-014",
+   "severity": "style",
+   "title": "MultiIndex linestyles= (documented per-top-group styling) emits one matplotlib 'linestyle is redundantly defined' warning per trace",
+   "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -W always -c \"import numpy as np, pandas as pd, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; idx=pd.MultiIndex.from_tuples([('a','s0')]*10+[('a','s1')]*10+[('b','s0')]*10+[('b','s1')]*10); hyp.plot(pd.DataFrame(np.random.randn(40,3), index=idx), linestyles=['-','--'])\"",
+   "expected": "Clean render, zero warnings.",
+   "actual": "8x: linestyle is redundantly defined by the 'linestyle' keyword argument and the fmt string \"-\" (-> linestyle='-'). The keyword argument will take precedence.",
+   "evidence": [
+    "evidence/F08-plot-inputs/m6b_mi_linestyles_ok.png"
+   ]
+  },
+  {
+   "id": "F08-plot-inputs-015",
+   "severity": "style",
+   "title": "Single-row reduction warning is ungrammatical: 'Return zeros length of ndims'",
+   "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -W always -c \"import numpy as np, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; hyp.plot(np.random.randn(1,4), 'o')\"",
+   "expected": "Grammatical warning explaining the origin placement.",
+   "actual": "UserWarning: Cannot reduce the dimensionality of a single row of data. Return zeros length of ndims",
+   "evidence": [
+    "evidence/F08-plot-inputs/p1_single_row.png"
+   ]
+  },
+  {
+   "id": "F08-plot-inputs-016",
+   "severity": "enhancement",
+   "title": "DataFrame column names are never used as axis labels, even when plotting 2-3 column DataFrames with no real reduction",
+   "repro": "PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, pandas as pd, matplotlib; matplotlib.use('Agg'); import hypertools as hyp; fig=hyp.plot(pd.DataFrame({'temperature': np.random.randn(50), 'pressure': np.random.randn(50)}), '.', ndims=2); print(repr(fig.axes[0].get_xlabel()), repr(fig.axes[0].get_ylabel()))\"",
+   "expected": "xlabel='temperature', ylabel='pressure' (or a documented statement that labels are never inferred).",
+   "actual": "xlabel='' ylabel=''",
+   "evidence": [
+    "evidence/F08-plot-inputs/w2_df_2col_labels.png"
+   ]
+  },
+  {
+   "id": "F08-plot-inputs-017",
+   "severity": "minor",
+   "title": "infra: venv site-packages contains a stale non-editable hypertools build that shadows the repo whenever Python runs from a cwd outside the repo",
+   "repro": "cd /tmp && /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools; print(hypertools.__file__)\"  # -> .venv/lib/python3.12/site-packages/hypertools/__init__.py (stale); prepend PYTHONPATH=/Users/jmanning/hypertools -> repo tree",
+   "expected": "The audit venv always imports the repo working tree.",
+   "actual": "From non-repo cwd: /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/hypertools/__init__.py; under it, hyp.plot(pd.Series(...)) raised 'TypeError: Unsupported data type passed...' even though the repo tree handles Series.",
+   "evidence": [],
+   "skip_verification": "environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run."
+  }
+ ]
+}

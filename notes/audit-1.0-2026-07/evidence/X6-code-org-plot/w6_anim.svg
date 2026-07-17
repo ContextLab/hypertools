@@ -1,0 +1,657 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="460.8pt" height="345.6pt"><g display="none"><animate attributeName="display" values="inline;none" keyTimes="0;0.200000" dur="1.0s" calcMode="discrete" repeatCount="indefinite"/><svg xmlns:xlink="http://www.w3.org/1999/xlink" width="460.8pt" height="345.6pt" viewBox="0 0 460.8 345.6" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-07-12T14:50:30.908656</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.10.8, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="f0-figure_1">
+  <g id="f0-patch_1">
+   <path d="M 0 345.6 
+L 460.8 345.6 
+L 460.8 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="f0-patch_2">
+   <path d="M 57.6 345.6 
+L 403.2 345.6 
+L 403.2 0 
+L 57.6 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="f0-axes_1">
+   <g id="f0-Line3DCollection_1">
+    <path d="M 118.665472 233.893509 
+L 351.475069 233.893509 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 116.745001 60.18703 
+L 353.39554 60.18703 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 118.665472 233.893509 
+L 116.745001 60.18703 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 351.475069 233.893509 
+L 353.39554 60.18703 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f0-line2d_1">
+    <path d="M 186.477368 175.789468 
+L 190.662284 223.134992 
+L 245.99194 128.432781 
+L 244.535967 175.886416 
+L 218.201609 187.914838 
+" style="fill: none; stroke: #db5f57; stroke-linecap: round"/>
+   </g>
+   <g id="f0-Line3DCollection_2">
+    <path d="M 118.665472 233.893509 
+L 102.380468 289.176532 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 351.475069 233.893509 
+L 367.760073 289.176532 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 118.665472 233.893509 
+L 351.475069 233.893509 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 102.380468 289.176532 
+L 367.760073 289.176532 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f0-Line3DCollection_3">
+    <path d="M 116.745001 60.18703 
+L 99.879289 91.752552 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 353.39554 60.18703 
+L 370.261252 91.752552 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 116.745001 60.18703 
+L 353.39554 60.18703 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 99.879289 91.752552 
+L 370.261252 91.752552 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f0-Line3DCollection_4">
+    <path d="M 102.380468 289.176532 
+L 367.760073 289.176532 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 99.879289 91.752552 
+L 370.261252 91.752552 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 102.380468 289.176532 
+L 99.879289 91.752552 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 367.760073 289.176532 
+L 370.261252 91.752552 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f0-Line3DCollection_5">
+    <path d="M 118.665472 233.893509 
+L 102.380468 289.176532 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 116.745001 60.18703 
+L 99.879289 91.752552 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 118.665472 233.893509 
+L 116.745001 60.18703 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 102.380468 289.176532 
+L 99.879289 91.752552 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f0-Line3DCollection_6">
+    <path d="M 351.475069 233.893509 
+L 367.760073 289.176532 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 353.39554 60.18703 
+L 370.261252 91.752552 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 351.475069 233.893509 
+L 353.39554 60.18703 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 367.760073 289.176532 
+L 370.261252 91.752552 
+" style="fill: none; stroke: #000000"/>
+   </g>
+  </g>
+ </g>
+</svg>
+</g><g display="none"><animate attributeName="display" values="none;inline;none" keyTimes="0;0.200000;0.400000" dur="1.0s" calcMode="discrete" repeatCount="indefinite"/><svg xmlns:xlink="http://www.w3.org/1999/xlink" width="460.8pt" height="345.6pt" viewBox="0 0 460.8 345.6" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-07-12T14:50:30.911373</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.10.8, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="f1-figure_1">
+  <g id="f1-patch_1">
+   <path d="M 0 345.6 
+L 460.8 345.6 
+L 460.8 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="f1-patch_2">
+   <path d="M 57.6 345.6 
+L 403.2 345.6 
+L 403.2 0 
+L 57.6 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="f1-axes_1">
+   <g id="f1-Line3DCollection_1">
+    <path d="M 308.632739 227.686036 
+L 85.097328 242.768673 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 309.827014 56.651781 
+L 82.566533 65.244752 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 308.632739 227.686036 
+L 309.827014 56.651781 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 85.097328 242.768673 
+L 82.566533 65.244752 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f1-line2d_1">
+    <path d="M 164.856512 160.732179 
+L 103.672774 197.683975 
+L 260.472997 132.480211 
+L 352.289876 192.305281 
+L 344.793403 200.25354 
+" style="fill: none; stroke: #db5f57; stroke-linecap: round"/>
+   </g>
+   <g id="f1-Line3DCollection_2">
+    <path d="M 308.632739 227.686036 
+L 398.1849 278.17323 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 309.827014 56.651781 
+L 401.183094 85.458246 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 308.632739 227.686036 
+L 309.827014 56.651781 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 398.1849 278.17323 
+L 401.183094 85.458246 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f1-Line3DCollection_3">
+    <path d="M 308.632739 227.686036 
+L 85.097328 242.768673 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 398.1849 278.17323 
+L 148.299632 297.52291 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 308.632739 227.686036 
+L 398.1849 278.17323 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 85.097328 242.768673 
+L 148.299632 297.52291 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f1-Line3DCollection_4">
+    <path d="M 309.827014 56.651781 
+L 82.566533 65.244752 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 401.183094 85.458246 
+L 146.633132 96.530864 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 309.827014 56.651781 
+L 401.183094 85.458246 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 82.566533 65.244752 
+L 146.633132 96.530864 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f1-Line3DCollection_5">
+    <path d="M 85.097328 242.768673 
+L 148.299632 297.52291 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 82.566533 65.244752 
+L 146.633132 96.530864 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 85.097328 242.768673 
+L 82.566533 65.244752 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 148.299632 297.52291 
+L 146.633132 96.530864 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f1-Line3DCollection_6">
+    <path d="M 398.1849 278.17323 
+L 148.299632 297.52291 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 401.183094 85.458246 
+L 146.633132 96.530864 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 398.1849 278.17323 
+L 401.183094 85.458246 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 148.299632 297.52291 
+L 146.633132 96.530864 
+" style="fill: none; stroke: #000000"/>
+   </g>
+  </g>
+ </g>
+</svg>
+</g><g display="none"><animate attributeName="display" values="none;inline;none" keyTimes="0;0.400000;0.600000" dur="1.0s" calcMode="discrete" repeatCount="indefinite"/><svg xmlns:xlink="http://www.w3.org/1999/xlink" width="460.8pt" height="345.6pt" viewBox="0 0 460.8 345.6" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-07-12T14:50:30.913988</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.10.8, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="f2-figure_1">
+  <g id="f2-patch_1">
+   <path d="M 0 345.6 
+L 460.8 345.6 
+L 460.8 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="f2-patch_2">
+   <path d="M 57.6 345.6 
+L 403.2 345.6 
+L 403.2 0 
+L 57.6 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="f2-axes_1">
+   <g id="f2-Line3DCollection_1">
+    <path d="M 260.210547 224.500149 
+L 64.315579 253.725678 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 260.615299 54.838082 
+L 61.354594 71.494035 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 260.210547 224.500149 
+L 260.615299 54.838082 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 64.315579 253.725678 
+L 61.354594 71.494035 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f2-line2d_1">
+    <path d="M 238.02195 152.654026 
+L 197.774565 175.602899 
+L 239.749578 135.897953 
+L 302.211426 218.445431 
+L 327.230842 229.433989 
+" style="fill: none; stroke: #db5f57; stroke-linecap: round"/>
+   </g>
+   <g id="f2-Line3DCollection_2">
+    <path d="M 410.836845 265.906311 
+L 260.210547 224.500149 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 413.975796 78.44793 
+L 260.615299 54.838082 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 410.836845 265.906311 
+L 413.975796 78.44793 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 260.210547 224.500149 
+L 260.615299 54.838082 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f2-Line3DCollection_3">
+    <path d="M 410.836845 265.906311 
+L 260.210547 224.500149 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 204.877022 302.036131 
+L 64.315579 253.725678 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 410.836845 265.906311 
+L 204.877022 302.036131 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 260.210547 224.500149 
+L 64.315579 253.725678 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f2-Line3DCollection_4">
+    <path d="M 413.975796 78.44793 
+L 260.615299 54.838082 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 204.291322 99.11608 
+L 61.354594 71.494035 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 413.975796 78.44793 
+L 204.291322 99.11608 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 260.615299 54.838082 
+L 61.354594 71.494035 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f2-Line3DCollection_5">
+    <path d="M 410.836845 265.906311 
+L 204.877022 302.036131 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 413.975796 78.44793 
+L 204.291322 99.11608 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 410.836845 265.906311 
+L 413.975796 78.44793 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 204.877022 302.036131 
+L 204.291322 99.11608 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f2-Line3DCollection_6">
+    <path d="M 204.877022 302.036131 
+L 64.315579 253.725678 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 204.291322 99.11608 
+L 61.354594 71.494035 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 204.877022 302.036131 
+L 204.291322 99.11608 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 64.315579 253.725678 
+L 61.354594 71.494035 
+" style="fill: none; stroke: #000000"/>
+   </g>
+  </g>
+ </g>
+</svg>
+</g><g display="none"><animate attributeName="display" values="none;inline;none" keyTimes="0;0.600000;0.800000" dur="1.0s" calcMode="discrete" repeatCount="indefinite"/><svg xmlns:xlink="http://www.w3.org/1999/xlink" width="460.8pt" height="345.6pt" viewBox="0 0 460.8 345.6" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-07-12T14:50:30.916551</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.10.8, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="f3-figure_1">
+  <g id="f3-patch_1">
+   <path d="M 0 345.6 
+L 460.8 345.6 
+L 460.8 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="f3-patch_2">
+   <path d="M 57.6 345.6 
+L 403.2 345.6 
+L 403.2 0 
+L 57.6 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="f3-axes_1">
+   <g id="f3-Line3DCollection_1">
+    <path d="M 405.824962 253.725678 
+L 209.929993 224.500149 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 408.785947 71.494035 
+L 209.525242 54.838082 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 405.824962 253.725678 
+L 408.785947 71.494035 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 209.929993 224.500149 
+L 209.525242 54.838082 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f3-line2d_1">
+    <path d="M 307.37472 161.712721 
+L 337.812697 183.928244 
+L 212.421205 133.849005 
+L 151.233854 215.953281 
+L 172.719823 234.058087 
+" style="fill: none; stroke: #db5f57; stroke-linecap: round"/>
+   </g>
+   <g id="f3-Line3DCollection_2">
+    <path d="M 59.303696 265.906311 
+L 209.929993 224.500149 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 56.164745 78.44793 
+L 209.525242 54.838082 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 59.303696 265.906311 
+L 56.164745 78.44793 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 209.929993 224.500149 
+L 209.525242 54.838082 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f3-Line3DCollection_3">
+    <path d="M 265.263518 302.036131 
+L 405.824962 253.725678 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 59.303696 265.906311 
+L 209.929993 224.500149 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 265.263518 302.036131 
+L 59.303696 265.906311 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 405.824962 253.725678 
+L 209.929993 224.500149 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f3-Line3DCollection_4">
+    <path d="M 265.849219 99.11608 
+L 408.785947 71.494035 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 56.164745 78.44793 
+L 209.525242 54.838082 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 265.849219 99.11608 
+L 56.164745 78.44793 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 408.785947 71.494035 
+L 209.525242 54.838082 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f3-Line3DCollection_5">
+    <path d="M 265.263518 302.036131 
+L 59.303696 265.906311 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 265.849219 99.11608 
+L 56.164745 78.44793 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 265.263518 302.036131 
+L 265.849219 99.11608 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 59.303696 265.906311 
+L 56.164745 78.44793 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f3-Line3DCollection_6">
+    <path d="M 265.263518 302.036131 
+L 405.824962 253.725678 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 265.849219 99.11608 
+L 408.785947 71.494035 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 265.263518 302.036131 
+L 265.849219 99.11608 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 405.824962 253.725678 
+L 408.785947 71.494035 
+" style="fill: none; stroke: #000000"/>
+   </g>
+  </g>
+ </g>
+</svg>
+</g><g display="none"><animate attributeName="display" values="none;inline;none" keyTimes="0;0.800000;1.000000" dur="1.0s" calcMode="discrete" repeatCount="indefinite"/><svg xmlns:xlink="http://www.w3.org/1999/xlink" width="460.8pt" height="345.6pt" viewBox="0 0 460.8 345.6" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-07-12T14:50:30.919090</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.10.8, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="f4-figure_1">
+  <g id="f4-patch_1">
+   <path d="M 0 345.6 
+L 460.8 345.6 
+L 460.8 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="f4-patch_2">
+   <path d="M 57.6 345.6 
+L 403.2 345.6 
+L 403.2 0 
+L 57.6 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="f4-axes_1">
+   <g id="f4-Line3DCollection_1">
+    <path d="M 161.507802 227.686036 
+L 385.043212 242.768673 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 160.313527 56.651781 
+L 387.574008 65.244752 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 161.507802 227.686036 
+L 160.313527 56.651781 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 385.043212 242.768673 
+L 387.574008 65.244752 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f4-line2d_1">
+    <path d="M 278.620814 176.452764 
+L 345.428079 213.257166 
+L 216.715631 129.254096 
+L 125.080495 188.820568 
+L 112.40517 206.697532 
+" style="fill: none; stroke: #db5f57; stroke-linecap: round"/>
+   </g>
+   <g id="f4-Line3DCollection_2">
+    <path d="M 71.95564 278.17323 
+L 161.507802 227.686036 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 68.957446 85.458246 
+L 160.313527 56.651781 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 71.95564 278.17323 
+L 68.957446 85.458246 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 161.507802 227.686036 
+L 160.313527 56.651781 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f4-Line3DCollection_3">
+    <path d="M 71.95564 278.17323 
+L 321.840909 297.52291 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 161.507802 227.686036 
+L 385.043212 242.768673 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 71.95564 278.17323 
+L 161.507802 227.686036 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 321.840909 297.52291 
+L 385.043212 242.768673 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f4-Line3DCollection_4">
+    <path d="M 68.957446 85.458246 
+L 323.507408 96.530864 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 160.313527 56.651781 
+L 387.574008 65.244752 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 68.957446 85.458246 
+L 160.313527 56.651781 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 323.507408 96.530864 
+L 387.574008 65.244752 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f4-Line3DCollection_5">
+    <path d="M 321.840909 297.52291 
+L 385.043212 242.768673 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 323.507408 96.530864 
+L 387.574008 65.244752 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 321.840909 297.52291 
+L 323.507408 96.530864 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 385.043212 242.768673 
+L 387.574008 65.244752 
+" style="fill: none; stroke: #000000"/>
+   </g>
+   <g id="f4-Line3DCollection_6">
+    <path d="M 71.95564 278.17323 
+L 321.840909 297.52291 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 68.957446 85.458246 
+L 323.507408 96.530864 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 71.95564 278.17323 
+L 68.957446 85.458246 
+" style="fill: none; stroke: #000000"/>
+    <path d="M 321.840909 297.52291 
+L 323.507408 96.530864 
+" style="fill: none; stroke: #000000"/>
+   </g>
+  </g>
+ </g>
+</svg>
+</g></svg>

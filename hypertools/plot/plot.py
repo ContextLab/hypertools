@@ -4095,6 +4095,16 @@ def plot(
                     if (not show and not _user_supplied_ax
                             and isinstance(fig, plt.Figure)):
                         plt.close(fig)
+                    # the exception propagates before the HyperAnimation
+                    # wrapper is ever constructed, so its __del__ silencing
+                    # (X4-warnings-012) can never run for this abandoned,
+                    # never-rendered FuncAnimation -- without this it warned
+                    # "Animation was deleted without rendering anything" at
+                    # the next cyclic-gc pass, misattributed to whatever code
+                    # ran later (release-1.0 audit, zero-warnings sweep).
+                    if animate and line_ani is not None:
+                        from .hyper_animation import mark_draw_started
+                        mark_draw_started(line_ani)
                     raise
 
     # Return shape (Jeremy decision #2):
@@ -4196,6 +4206,15 @@ def plot(
                 bundle_pipeline.fit_transform(raw)
         else:
             bundle_pipeline = None
+        # the bundle hands back the RAW FuncAnimation (never a
+        # HyperAnimation), so the X4-warnings-012 __del__ silencing never
+        # applies to it; without this, discarding the bundle leaked
+        # matplotlib's "Animation was deleted without rendering anything"
+        # UserWarning at the next cyclic-gc pass (release-1.0 audit,
+        # zero-warnings sweep; see hyper_animation.mark_draw_started).
+        if line_ani is not None:
+            from .hyper_animation import mark_draw_started
+            mark_draw_started(line_ani)
         return {
             "fig": fig,
             "xform_data": xform_data,

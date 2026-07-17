@@ -1,0 +1,126 @@
+{
+ "unit": "F19-load-external",
+ "findings": [
+  {
+   "id": "F19-load-external-001",
+   "severity": "critical",
+   "title": "Single-column CSV/TXT files load silently corrupted (delimiter sniffing splits words into columns)",
+   "repro": "import pandas as pd, hypertools as hyp\npd.DataFrame({'solo': [1, 2, 3]}).to_csv('single_col.csv', index=False)\nprint(hyp.load('single_col.csv'))  # WRONG: 3 columns\nprint(pd.read_csv('single_col.csv'))  # correct: 1 column 'solo'",
+   "expected": "DataFrame with shape (3, 1), single column 'solo' containing [1, 2, 3]",
+   "actual": "   s   l  Unnamed: 2\n0  1 NaN         NaN\n1  2 NaN         NaN\n2  3 NaN         NaN\nshape: (3, 3) columns: ['s', 'l', 'Unnamed: 2']   (sniffer chose the letter 'o' in the header 'solo' as delimiter)",
+   "evidence": [
+    "single_column_csv_corruption.png"
+   ]
+  },
+  {
+   "id": "F19-load-external-002",
+   "severity": "critical",
+   "title": "load('sotus') returns a sklearn Pipeline, not the documented State of the Union speeches (duplicate Google Drive id with nips_model)",
+   "repro": "import hypertools as hyp\nd = hyp.load('sotus')\nprint(type(d))  # sklearn.pipeline.Pipeline, not text data\nimport hashlib, pathlib\nh = lambda p: hashlib.md5(pathlib.Path(p).expanduser().read_bytes()).hexdigest()\nprint(h('~/hypertools_data/sotus'), h('~/hypertools_data/nips_model'))",
+   "expected": "A collection of State of the Union speech texts (1989-2018), per the load() docstring",
+   "actual": "sotus -> <class 'sklearn.pipeline.Pipeline'>; md5(sotus) == md5(nips_model) == 6a350ab8d85db34e7b924ac8a7f2a19b; EXAMPLE_DATA['sotus'] == EXAMPLE_DATA['nips_model'] == '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm'",
+   "evidence": []
+  },
+  {
+   "id": "F19-load-external-003",
+   "severity": "minor",
+   "title": "Unauthenticated 538 CSV download bypasses the transient-5xx retry helper",
+   "repro": "# code inspection: hypertools/io/sources.py:370\n#   raw, _ = _fetch_bytes(f'{_538_RAW}/{slug}/{csv_name}')  # no retry\n# vs listing (line 281) and authenticated fetch (line 367) which use _github_get_with_retry.\n# Retry helper itself verified for real:\nfrom hypertools.io.sources import _github_get_with_retry\n# (real ThreadingHTTPServer returning 502 twice then 200 -- see phase2_network.py)\n# -> ('recovered', 3)",
+   "expected": "All three 538 HTTP calls (listing, authenticated CSV fetch, anonymous raw CSV fetch) retry transient 502/503/504",
+   "actual": "Anonymous CSV fetch is a single-shot requests.get inside _fetch_bytes; a transient 502 there raises through pd.read_csv wrapping into the load failure",
+   "evidence": []
+  },
+  {
+   "id": "F19-load-external-004",
+   "severity": "minor",
+   "title": "repr() of every hosted *_model pipeline crashes under the shipped sklearn (notebook display raises AttributeError)",
+   "repro": "import hypertools as hyp\nm = hyp.load('wiki_model')\nprint(m)  # AttributeError",
+   "expected": "Pipeline repr prints (as any sklearn estimator); no crash on display",
+   "actual": "AttributeError: 'Pipeline' object has no attribute 'transform_input'\n(raised from sklearn/utils/_pprint.py -> pipeline.get_params during repr; transform() itself works: output shape (1, 50))",
+   "evidence": []
+  },
+  {
+   "id": "F19-load-external-005",
+   "severity": "minor",
+   "title": "Local-file parse failures escape as cryptic internal errors (empty CSV, unknown binary, gzipped CSV)",
+   "repro": "import gzip, pandas as pd, hypertools as hyp\nopen('empty.csv', 'w').close()\nwith gzip.open('t.csv.gz', 'wt') as f:\n    f.write('a,b\\n1,2\\n')\nwith open('binary.garbage', 'wb') as f:\n    f.write(bytes(range(256)))\nfor p in ['empty.csv', 't.csv.gz', 'binary.garbage']:\n    try: hyp.load(p)\n    except Exception as e: print(p, '->', type(e).__name__, e)",
+   "expected": "HypertoolsIOError naming the file and the formats attempted, with a hint (e.g. 'file is empty', 'looks gzip-compressed -- decompress first')",
+   "actual": "empty.csv -> Error Could not determine delimiter\nt.csv.gz -> UnpicklingError invalid load key, '\\x1f'.\nbinary.garbage -> UnpicklingError invalid load key, '\\x00'.",
+   "evidence": []
+  },
+  {
+   "id": "F19-load-external-006",
+   "severity": "minor",
+   "title": "A mistyped bare filename triggers a real DNS lookup (any 'word.word' string is treated as a URL)",
+   "repro": "import hypertools as hyp\nhyp.load('f19_missing_xyz.csv')",
+   "expected": "Fast failure: 'local file not found' digest without a network attempt for an obvious filename",
+   "actual": "HypertoolsIOError: could not load 'f19_missing_xyz.csv'. Tried, in order:\n  - ...\n  - local file: not found at f19_missing_xyz.csv\n  - URL (https://f19_missing_xyz.csv): ConnectionError: HTTPSConnectionPool(host='f19_missing_xyz.csv', port=443): Max retries exceeded with url: / (Caused by NameResolutionError(...Failed to resolve 'f19_missing_xyz.csv'...))",
+   "evidence": []
+  },
+  {
+   "id": "F19-load-external-007",
+   "severity": "doc",
+   "title": "load() docstring dataset descriptions wrong: 'spiral is numpy array' (it is a list of 2 arrays); 'mushroomm' typo",
+   "repro": "import hypertools as hyp, numpy as np\ns = hyp.load('spiral')\nprint(type(s), len(s), np.asarray(s).shape)",
+   "expected": "docstring: 'spiral is a list of two (1000, 3) numpy arrays...'; 'mushroom samples'",
+   "actual": "<class 'list'> 2 (2, 1000, 3)",
+   "evidence": [
+    "spiral_builtin_loaded.png"
+   ]
+  },
+  {
+   "id": "F19-load-external-008",
+   "severity": "doc",
+   "title": "Stale step numbering and stale module references in sources.py/load.py comments",
+   "repro": "grep -n 'steps 4-9\\|# 4. local file\\|# 9. any URL\\|tools.load\\|tools.sources' hypertools/io/sources.py hypertools/io/load.py",
+   "expected": "Comments numbered 6-11 to match the documented chain; module refs io.load/io.sources",
+   "actual": "sources.py:498 'steps 4-9 of the chain'; sources.py:517 '# 4. local file' ... sources.py:580 '# 9. any URL'; sources.py:6 'tools.load'; load.py:265 'tools.sources'",
+   "evidence": []
+  },
+  {
+   "id": "F19-load-external-009",
+   "severity": "doc",
+   "title": "Docstring claims the 538/kaggle prefixes 'never collide with another resolver', but they shadow existing local files",
+   "repro": "import os, pandas as pd, hypertools as hyp\nos.makedirs('fivethirtyeight', exist_ok=True)\npd.DataFrame({'local': [1]}).to_csv('fivethirtyeight/bechdel', index=False)\nprint(hyp.load('fivethirtyeight/bechdel').columns[:3].tolist())",
+   "expected": "Either the local file wins, or the docstring notes that the prefixes shadow same-named relative paths and that './' forces local resolution",
+   "actual": "['year', 'imdb', 'title']  (remote 538 data; local file ignored)",
+   "evidence": []
+  },
+  {
+   "id": "F19-load-external-010",
+   "severity": "style",
+   "title": "Non-string dataset arguments raise raw internal TypeErrors (expandvars / dict-hash) instead of a friendly message",
+   "repro": "import hypertools as hyp\nfor bad in (123, None, 3.14, {'a': 1}):\n    try: hyp.load(bad)\n    except TypeError as e: print(type(bad).__name__, '->', e)",
+   "expected": "TypeError like: hypertools.load() expects a dataset name/path string or a list of strings; got int",
+   "actual": "int -> expected str, bytes or os.PathLike object, not int\nNoneType -> expected str, bytes or os.PathLike object, not NoneType\nfloat -> expected str, bytes or os.PathLike object, not float\ndict -> unhashable type: 'dict'",
+   "evidence": []
+  },
+  {
+   "id": "F19-load-external-011",
+   "severity": "minor",
+   "title": "A stale/invalid GITHUB_TOKEN env var breaks 538 loads with a 401 that never mentions the token",
+   "repro": "GITHUB_TOKEN=ghp_invalid_token_for_audit python -c \"import hypertools as hyp; hyp.load('fivethirtyeight/bechdel')\"",
+   "expected": "Error mentions the environment token as the likely cause and the fix (unset/refresh)",
+   "actual": "HypertoolsIOError: GitHub API request for fivethirtyeight/data/bechdel failed with HTTP 401 Unauthorized.",
+   "evidence": []
+  },
+  {
+   "id": "F19-load-external-012",
+   "severity": "enhancement",
+   "title": "hyp.save() ignores the file extension -- save(df, 'data.csv') writes pickle bytes into a .csv",
+   "repro": "import pandas as pd, hypertools as hyp\ndf = pd.DataFrame({'a': [1, 2]})\nhyp.save(df, 'lie.csv')\nprint(open('lie.csv', 'rb').read(2))  # b'\\x80\\x04'\npd.read_csv('lie.csv')  # UnicodeDecodeError",
+   "expected": "save(df, '*.csv') writes real CSV (or at minimum warns that a pickle is being written with a non-pickle extension)",
+   "actual": "b'\\x80\\x04'\nUnicodeDecodeError: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte  (from pd.read_csv; hyp.load('lie.csv') round-trips only via pickle sniffing)",
+   "evidence": []
+  },
+  {
+   "id": "F19-load-external-013",
+   "severity": "style",
+   "title": "'Tried, in order' digest rough edges: URL inputs listed as local-file attempts with collapsed slashes; directories reported 'not found'; host:port schemeless URLs get no URL attempt",
+   "repro": "import hypertools as hyp\nfor s in ['https://raw.githubusercontent.com/fivethirtyeight/data/master/zz-no-file-xyz.csv', '/tmp', '127.0.0.1:8000/t.csv']:\n    try: hyp.load(s)\n    except Exception as e: print('---', s, '\\n', str(e)[:400])",
+   "expected": "Digest skips (or rephrases) the local-file line for URL-shaped input; says 'is a directory' when it is; suggests adding http:// for host:port strings",
+   "actual": "\"- local file: not found at https:/raw.githubusercontent.com/...\" ; \"- local file: not found at /tmp/...data\" (an existing directory); '127.0.0.1:61871/t.csv' digest ends at the local-file line with no URL attempt",
+   "evidence": []
+  }
+ ]
+}

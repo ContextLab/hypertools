@@ -1,0 +1,98 @@
+{
+ "unit": "X5-packaging",
+ "findings": [
+  {
+   "id": "X5-packaging-001",
+   "severity": "major",
+   "title": "Wheel and sdist ship a local virtualenv file: hypertools-dev/bin/activate_this.py installs into every user's site-packages",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -m build --outdir /tmp/x5dist /Users/jmanning/hypertools && unzip -l /tmp/x5dist/hypertools-1.0.0.dev0-py3-none-any.whl | grep hypertools-dev && unzip -p /tmp/x5dist/hypertools-1.0.0.dev0-py3-none-any.whl hypertools-1.0.0.dev0.dist-info/top_level.txt",
+   "expected": "Wheel/sdist contain only the hypertools package; top_level.txt lists only 'hypertools'",
+   "actual": "build log: \"adding 'hypertools-dev/bin/activate_this.py'\"; wheel entry: \"2383  07-02-2026 12:30   hypertools-dev/bin/activate_this.py\"; top_level.txt: \"hypertools\\nhypertools-dev\"; after install: site-packages/hypertools-dev/bin/{__pycache__,activate_this.py}",
+   "evidence": []
+  },
+  {
+   "id": "X5-packaging-002",
+   "severity": "major",
+   "title": "hypertools/core/config.ini missing from wheel AND sdist: core.get_default_options()/apply_defaults() silently return empty defaults in every pip install",
+   "repro": "python3.13 -m venv /tmp/x5v && /tmp/x5v/bin/pip install /tmp/x5dist/hypertools-1.0.0.dev0-py3-none-any.whl && cd /tmp && /tmp/x5v/bin/python -c \"from hypertools.core.configurator import get_default_options, apply_defaults; print(dict(get_default_options()['reduce'])); m = apply_defaults('reduce', {'ndims': 5}); print(m); print(m['algorithm'])\"",
+   "expected": "{'ndims': '3', 'algorithm': 'IncrementalPCA'} and merged dict retaining 'algorithm': 'IncrementalPCA' (source-tree behavior)",
+   "actual": "config.ini exists at install: False; defaults[plot]={} defaults[reduce]={} defaults[align]={} defaults[cluster]={}; merged: {'ndims': 5}; then: KeyError: 'algorithm'",
+   "evidence": [
+    "smoke_fresh313_wheel.png",
+    "smoke_repo_reference.png"
+   ]
+  },
+  {
+   "id": "X5-packaging-003",
+   "severity": "major",
+   "title": "uv pip install of hypertools 1.0 fails on CPython 3.12/3.13/3.14: resolver picks numba==0.53.1 + llvmlite==0.36.0 (unbuildable)",
+   "repro": "uv venv --python 3.13 /tmp/x5uv && uv pip install --python /tmp/x5uv/bin/python /tmp/x5dist/hypertools-1.0.0.dev0-py3-none-any.whl",
+   "expected": "Installs with a modern numba (pip installs numba 0.66.0 + llvmlite 0.48.0 on the same interpreter) and hypertools imports",
+   "actual": "\" + llvmlite==0.36.0 / + numba==0.53.1\" then build failure: \"help: `llvmlite` (v0.36.0) was included because `hypertools` (v1.0.0.dev0) depends on `umap-learn` (v0.5.12) which depends on `numba` (v0.53.1) which depends on `llvmlite`\"; subsequent import: ModuleNotFoundError: No module named 'hypertools'",
+   "evidence": []
+  },
+  {
+   "id": "X5-packaging-004",
+   "severity": "minor",
+   "title": "sdist ships an incomplete, non-runnable subset of the test suite",
+   "repro": "tar -tzf /tmp/x5dist/hypertools-1.0.0.dev0.tar.gz | grep -E 'tests/' | grep -vE 'tests/test_[a-z0-9_]+\\.py$'",
+   "expected": "Either no tests/ in the sdist, or the complete runnable suite (subdirs, data/, context.py, matplotlibrc, __init__.py)",
+   "actual": "Only 'hypertools-1.0.0.dev0/tests/' + flat test_*.py entries; tests/core/, tests/data/, tests/context.py, tests/matplotlibrc all absent from the archive",
+   "evidence": []
+  },
+  {
+   "id": "X5-packaging-005",
+   "severity": "doc",
+   "title": "readme.md uses 8 repo-relative image paths that render as broken images on the PyPI project page",
+   "repro": "unzip -p /tmp/x5dist/hypertools-1.0.0.dev0-py3-none-any.whl hypertools-1.0.0.dev0.dist-info/METADATA | grep -n '](images/'",
+   "expected": "Absolute image URLs that resolve from pypi.org",
+   "actual": "METADATA long_description begins: \"![Hypertools logo](images/hypercube.png)\" ... \"![Hypertools example](images/hypertools.gif)\" (+6 more relative refs)",
+   "evidence": []
+  },
+  {
+   "id": "X5-packaging-006",
+   "severity": "minor",
+   "title": "Release-hygiene hazards at repo root: stale 0.8.2 artifacts in dist/, un-ignored hypertools-dev venv, build refreshes in-tree egg-info",
+   "repro": "ls -la /Users/jmanning/hypertools/dist/; git -C /Users/jmanning/hypertools check-ignore -v hypertools-dev; echo exit=$?; cat /Users/jmanning/hypertools/hypertools.egg-info/top_level.txt",
+   "expected": "dist/ empty or 1.0-only at release time; hypertools-dev git-ignored (or absent); egg-info listing only 'hypertools'",
+   "actual": "dist/: hypertools-0.8.2-py3-none-any.whl + hypertools-0.8.2.tar.gz (Jan 29 01:12); check-ignore: no output, exit 1 (not ignored); egg-info/top_level.txt: \"hypertools\\nhypertools-dev\"",
+   "evidence": []
+  },
+  {
+   "id": "X5-packaging-007",
+   "severity": "style",
+   "title": "hyp.save(obj, fname) argument order is the reverse of the np.save(file, arr) analogy its docstring invokes; swapped args give a bare TypeError; **kwargs silently ignored",
+   "repro": "fresh313/bin/python -c \"import numpy as np, hypertools as hyp; hyp.save('/tmp/f.hyp', np.zeros((3,3)))\"",
+   "expected": "Friendly error naming the signature, e.g. 'save(obj, fname): fname must be a str/path (did you swap the arguments?)'",
+   "actual": "File \".../hypertools/io/save.py\", line 21, in save\n    with open(fname, \"wb\") as f:\nTypeError: expected str, bytes or os.PathLike object, not ndarray",
+   "evidence": []
+  },
+  {
+   "id": "X5-packaging-008",
+   "severity": "style",
+   "title": "hypertools/config.py carries a dead Python<3.8 importlib_metadata fallback under requires-python >=3.10",
+   "repro": "cat /Users/jmanning/hypertools/hypertools/config.py",
+   "expected": "Direct `from importlib.metadata import version`",
+   "actual": "try:\n    from importlib.metadata import version\nexcept ImportError:\n    # Fallback for Python < 3.8\n    from importlib_metadata import version",
+   "evidence": []
+  },
+  {
+   "id": "X5-packaging-009",
+   "severity": "enhancement",
+   "title": "No Python 3.14 classifier although the dependency set resolves on 3.14 (and this machine's default python3 IS 3.14)",
+   "repro": "uv venv --python 3.14 /tmp/x5p314 && uv pip install --python /tmp/x5p314/bin/python --dry-run /tmp/x5dist/hypertools-1.0.0.dev0-py3-none-any.whl",
+   "expected": "Explicit signal about 3.14 support (classifier once CI-covered, or documented ceiling)",
+   "actual": "Dry-run resolution on 3.14 exits 0 (resolves umap-learn 0.5.12 etc.); pyproject classifiers list only 3.10/3.11/3.12/3.13",
+   "evidence": []
+  },
+  {
+   "id": "X5-packaging-010",
+   "severity": "doc",
+   "title": "Build emits SetuptoolsDeprecationWarning: `project.license` as a TOML table is deprecated (removal deadline 2027-Feb-18)",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -m build --outdir /tmp/x5dist /Users/jmanning/hypertools 2>&1 | grep -A2 'project.license'",
+   "expected": "Warning-free build using the SPDX string form",
+   "actual": "setuptools/config/_apply_pyprojecttoml.py:82: SetuptoolsDeprecationWarning: `project.license` as a TOML table is deprecated ... By 2027-Feb-18, you need to update your project and remove deprecated calls",
+   "evidence": []
+  }
+ ]
+}

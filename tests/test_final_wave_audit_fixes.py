@@ -50,8 +50,16 @@ def test_align_duplicate_datetimeindex_labels_same_lengths():
     a = pd.DataFrame(rng.standard_normal((5, 3)), index=dup_idx)
     b = pd.DataFrame(rng.standard_normal((5, 3)),
                      index=pd.date_range('2024-01-01', periods=5))
-    with pytest.warns(UserWarning, match='duplicated row-index'):
+    # two expected warnings from one call: the duplicated row-index notice
+    # AND the row-trim notice (4 unique labels < 5 rows), so record both
+    # explicitly instead of pytest.warns (which would re-emit the unmatched
+    # one as a leaked warning)
+    with warnings.catch_warnings(record=True) as rec:
+        warnings.simplefilter('always')
         out = hyp.align([a, b])
+    msgs = [str(w.message) for w in rec]
+    assert any('duplicated row-index' in m for m in msgs), msgs
+    assert any('common to all datasets' in m for m in msgs), msgs
     # 4 unique common labels; EVERY dataset must come back with exactly them
     assert [o.shape for o in out] == [(4, 3), (4, 3)]
 
@@ -377,6 +385,10 @@ def test_impute_all_nan_still_reported_as_entirely_missing():
 
 # --- item 14: datetime horizon before the first observation --------------------
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_predict_datetime_before_first_observation_raises():
     df = pd.DataFrame({'a': np.arange(30.0)},
                       index=pd.date_range('2024-06-01', periods=30))
@@ -384,6 +396,10 @@ def test_predict_datetime_before_first_observation_raises():
         hyp.predict(df, model='GaussianProcess', t=pd.Timestamp('2024-01-01'))
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_predict_datetime_truncation_and_forecast_still_work():
     df = pd.DataFrame({'a': np.arange(30.0)},
                       index=pd.date_range('2024-06-01', periods=30))

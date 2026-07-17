@@ -61,6 +61,9 @@ def test_smooth_list_per_dataset_with_default_bounds():
     assert np.all(np.asarray(out[1], dtype=float)[0] == 1.0)
 
 
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+@pytest.mark.filterwarnings(
+    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
 def test_smooth_multiindex_stacked_input_is_per_dataset():
     # pipelines pass stacked (multiindex) frames between stages; Smooth must
     # unstack and smooth each dataset independently
@@ -244,6 +247,9 @@ def test_fitted_axis1_normalize_refuses_new_data():
         hyp.manip(pd.DataFrame(rng.normal(size=(30, 5))), model=m)
 
 
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+@pytest.mark.filterwarnings(
+    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
 def test_fitted_axis1_zscore_refuses_new_data_but_replays_fit_data():
     rng = np.random.default_rng(10)
     df = pd.DataFrame(rng.normal(size=(20, 4)))

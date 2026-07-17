@@ -1,0 +1,144 @@
+{
+ "unit": "F17-impute",
+ "findings": [
+  {
+   "id": "F17-impute-001",
+   "severity": "major",
+   "title": "List datasets with mismatched columns are silently widened to the column union and filled with invented data",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nrng = np.random.RandomState(3)\nla = pd.DataFrame(rng.randn(12, 4) + 5, columns=list('wxyz')); la.iloc[3, 1] = np.nan\nc = pd.DataFrame(rng.randn(10, 3) - 5, columns=list('wxy')); c.iloc[2, 0] = np.nan\nres = hyp.impute([la, c], model='SimpleImputer')\nprint([r.shape for r in res])          # [(12, 4), (10, 4)] -- second dataset widened\nprint(np.asarray(res[1])[:4, -1])      # constant 4.556... = mean of la['z']\nres2 = hyp.impute([rng.randn(10, 3), rng.randn(10, 4)], model='SimpleImputer')\nprint([r.shape for r in res2])         # [(10, 4), (10, 4)]",
+   "expected": "Either a clear ValueError ('datasets in a list must share columns; got ...') or per-dataset handling; output list shapes must match input shapes.",
+   "actual": "A: DataFrames wxyz + wxy -> [(12, 4), (10, 4)]\n   ds1 z-column (never existed) values[:4]: [4.556 4.556 4.556 4.556]\n   -> invented column filled with ds0-only stats: True\nB: arrays (10,3)+(10,4) -> [(10, 4), (10, 4)]\nF: plot mixed-width NaN datasets -> OK Figure (silent)",
+   "evidence": [
+    "evidence/F17-impute/plot_mixed_width_nan.png"
+   ]
+  },
+  {
+   "id": "F17-impute-002",
+   "severity": "major",
+   "title": "Default PPCA (d=None -> full rank) imputation degenerates to ~column-mean fill; recovery r=0.13 where d=3 gives r=0.98",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.RandomState(0)\nn, d, r = 120, 8, 3\ntruth = rng.randn(n, r) @ rng.randn(r, d) + 0.05 * rng.randn(n, d)\nholes = rng.rand(n, d) < 0.10\nfor i in range(n):\n    if holes[i].all(): holes[i, rng.randint(d)] = False\nx = truth.copy(); x[holes] = np.nan\nmean_fill = np.broadcast_to(np.nanmean(x, axis=0), x.shape)\nout = np.asarray(hyp.impute(x.copy(), model='PPCA'))\nprint(np.max(np.abs(out[holes] - mean_fill[holes])))   # ~2e-4\nprint(np.corrcoef(out[holes], truth[holes])[0, 1])     # ~0.13\nout3 = np.asarray(hyp.impute(x.copy(), model='PPCA', d=3))\nprint(np.corrcoef(out3[holes], truth[holes])[0, 1])    # ~0.98",
+   "expected": "Default PPCA should recover low-rank structure (r >> mean fill), or the default d should be chosen < n_columns (e.g. via variance criterion), or docs should state that d must be set for meaningful reconstruction.",
+   "actual": "(a) PPCA default d=None, 10% missing: 0/91 imputed entries EXACTLY equal column mean; max|imputed-mean|=2.185e-04\n(b) PPCA d=3: r=+0.9764 rmse=0.3750\nt01 10%: PPCA r=+0.1251 rmse=1.4992 == SimpleImputer r=+0.1251 rmse=1.4992",
+   "evidence": []
+  },
+  {
+   "id": "F17-impute-003",
+   "severity": "minor",
+   "title": "PPCA imputation is nondeterministic (unseeded np.random.randn init) and random_state= is silently ignored",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.RandomState(0)\ntruth = rng.randn(120, 3) @ rng.randn(3, 8) + 0.05 * rng.randn(120, 8)\nholes = rng.rand(120, 8) < 0.10\nx = truth.copy(); x[holes] = np.nan\na = np.asarray(hyp.impute(x.copy(), model='PPCA'))\nb = np.asarray(hyp.impute(x.copy(), model='PPCA'))\nprint(np.array_equal(a, b))  # False\nc = hyp.impute(x.copy(), model='PPCA', random_state=0)  # accepted, silently ignored",
+   "expected": "PPCA accepts and honors a random_state/seed parameter (or seeds deterministically); unknown kwargs are rejected or warned about.",
+   "actual": "default d: identical = False  max diff at imputed = 0.0003840091728770645\nd=3      : identical = False  max diff at imputed = 5.930465746617486e-05\nwith np.random.seed(123) before each call: identical = True\nrandom_state kwarg: accepted (no error)",
+   "evidence": []
+  },
+  {
+   "id": "F17-impute-004",
+   "severity": "minor",
+   "title": "Full-rank PPCA EM routinely hits the 500-iteration bound and warns 'did not converge (relative change nan)' -- including in the shipped gallery example; a zero-variance column collapses the whole reconstruction to mean-fill",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.RandomState(1)\nbase = rng.randn(40, 4) * 2 + 1\ncst = base.copy(); cst[:, 3] = 7.0; cst[4, 3] = np.nan; cst[6, 0] = np.nan\nout = hyp.impute(cst, model='PPCA')  # warns 'last relative change nan'; [6,0] == column mean\n# and: MPLBACKEND=Agg python examples/plot_impute.py  (same warning, 'relative change nan')",
+   "expected": "No scary non-convergence warning on ordinary data; zero-variance columns handled (epsilon-guard or drop) without poisoning the EM objective for all columns.",
+   "actual": "[constant col / PPCA] warn: PPCA EM did not converge within 500 iterations (last relative change nan, tol 0.0001); [4,3] -> 7.0; [6,0] -> 0.828 (== column mean, same as SimpleImputer)\nt07 gallery example verbatim: 'PPCA EM did not converge within 500 iterations (last relative change nan, tol 0.0001); returning the current e...'",
+   "evidence": [
+    "evidence/F17-impute/example_plot_impute_verbatim.png"
+   ]
+  },
+  {
+   "id": "F17-impute-005",
+   "severity": "minor",
+   "title": "Reusing a fitted PPCA imputer on data with a different column count raises a cryptic IndexError; the documented ValueError is unreachable",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.RandomState(2)\ntrain = rng.randn(60, 4) * 3 + 10; train[rng.rand(60, 4) < 0.1] = np.nan\n_, mp = hyp.impute(train, model='PPCA', d=2, return_model=True)\nhyp.impute(rng.randn(10, 7), model=mp)  # IndexError, not the documented ValueError",
+   "expected": "ValueError: 'PPCA.transform on new data requires the same columns the imputer was fit on ...' (per hypertools/impute/ppca.py docstring)",
+   "actual": "[PPCA reuse wrong n_cols] IndexError: boolean index did not match indexed array along axis 1; size of axis is 7 but size of corresponding boolean axis is 4",
+   "evidence": []
+  },
+  {
+   "id": "F17-impute-006",
+   "severity": "doc",
+   "title": "ppca.py module docstring contradicts the implementation: it claims non-missing entries are NOT preserved, but the splice preserves them byte-identically; format_data's 'Inexact solution' warning is equally stale",
+   "repro": "MPLBACKEND=Agg .venv/bin/python t01_models_mcar.py  # PPCA observed_exact=True max_obs_diff=0.00e+00 at 10% and 40%",
+   "expected": "Module docstring describes the actual splice behavior; format_data warning and plot.py docstring updated to match.",
+   "actual": "Docstring: 'non-missing entries are NOT guaranteed to be preserved exactly'; measured: PPCA observed_exact=True max_obs_diff=0.00e+00 (both missingness levels); plot warning verbatim: 'Missing data: Inexact solution computed with PPCA (see https://github.'",
+   "evidence": []
+  },
+  {
+   "id": "F17-impute-007",
+   "severity": "minor",
+   "title": "kwargs handling is inconsistent across model-spec forms, and unknown/typo'd kwargs are always silently swallowed",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.RandomState(2); x = rng.randn(40, 4); x[5, 2] = np.nan\nr3 = hyp.impute(x.copy(), model={'model': 'SimpleImputer', 'kwargs': {}}, strategy='constant', fill_value=-99.0)\nprint(np.asarray(r3)[5, 2])  # NOT -99.0 (outer kwargs dropped)\nr4 = hyp.impute(x.copy(), model={'model': 'SimpleImputer', 'params': {}}, strategy='constant', fill_value=-99.0)\nprint(np.asarray(r4)[5, 2])  # -99.0 (merged)\nr8 = hyp.impute(x.copy(), model='SimpleImputer', strateggy='median')  # typo: silently mean",
+   "expected": "Consistent kwargs merging across spec forms; unknown constructor kwargs raise TypeError or warn.",
+   "actual": "outer kwargs w/ kwargs-form dict: imputed=-0.071 (constant applied: False)\nouter kwargs w/ params-form dict: imputed=-99.000 (constant applied: True)\ninstance + kwargs: kwargs ignored: True (no warning)\ntypo kwarg strateggy=median: no error, imputed=-0.07062 (mean=-0.07062 median=-0.16396)",
+   "evidence": []
+  },
+  {
+   "id": "F17-impute-008",
+   "severity": "minor",
+   "title": "Degenerate inputs produce cryptic or bizarre errors: None/empty -> sklearn internals, [] -> loads the 'minipedia' text corpus, all-NaN + PPCA -> 'zero-size array to reduction'; Imputer.fit uses assert (AssertionError instead of documented ValueError)",
+   "repro": "import numpy as np, hypertools as hyp\nhyp.impute([])                                        # minipedia corpus + LDA error\nhyp.impute(None)                                       # sklearn 0-sample error\nhyp.impute(np.full((10, 3), np.nan), model='PPCA')     # zero-size reduction error\nfrom hypertools.impute import SimpleImputer\nSimpleImputer().fit(None)                              # AssertionError, docstring says ValueError",
+   "expected": "Clear hypertools-level messages ('input has no observations', 'input is entirely missing', 'cannot impute an empty dataset' as a real ValueError).",
+   "actual": "[empty list] loading corpus: minipedia...done! ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation.\n[None] ValueError: Found array with 0 sample(s) (shape=(0, 0)) while a minimum of 1 is required by SimpleImputer.\n[all-NaN dataset / PPCA] ValueError: zero-size array to reduction operation maximum which has no identity\nfit(None) raises: AssertionError | cannot impute an empty dataset",
+   "evidence": []
+  },
+  {
+   "id": "F17-impute-009",
+   "severity": "minor",
+   "title": "Kalman imputer crashes on single-row input with a raw pykalman broadcast error",
+   "repro": "import numpy as np, hypertools as hyp\nhyp.impute(np.array([[1.0, np.nan, 3.0]]), model='Kalman')",
+   "expected": "Friendly error, e.g. 'Kalman imputation needs at least 2 rows (timepoints); use SimpleImputer for single-row data.'",
+   "actual": "[single row / Kalman] RAISED ValueError: could not broadcast input array from shape (3,3) into shape (3,1)\n    last frame:     kalman_gains[t],",
+   "evidence": []
+  },
+  {
+   "id": "F17-impute-010",
+   "severity": "minor",
+   "title": "1D input is treated as a single ROW (1 x n) and its NaN is filled with 0.0 -- inconsistent with format_data/plot's 1D -> (n, 1) convention",
+   "repro": "import numpy as np, hypertools as hyp\nout = hyp.impute(np.array([1.0, np.nan, 3.0, 4.0]), model='SimpleImputer')\nprint(np.asarray(out))  # [[1. 0. 3. 4.]], shape (1, 4)",
+   "expected": "1D input treated as (n, 1) like format_data (NaN -> mean of observed series = 2.67), or an explicit error asking for 2D input.",
+   "actual": "1D input -> shape (1, 4), values [1. 0. 3. 4.]",
+   "evidence": []
+  },
+  {
+   "id": "F17-impute-012",
+   "severity": "minor",
+   "title": "List-of-DataFrames input loses each DataFrame's index (reset to RangeIndex); single-DataFrame input preserves it",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nrng = np.random.RandomState(2)\nla = pd.DataFrame(rng.randn(30, 4), columns=list('wxyz'), index=range(100, 130)); la.iloc[3, 1] = np.nan\nlb = pd.DataFrame(rng.randn(25, 4), columns=list('wxyz'), index=range(500, 525)); lb.iloc[10, 2] = np.nan\nres = hyp.impute([la, lb], model='SimpleImputer')\nprint(list(res[0].index)[:4])  # [0, 1, 2, 3] -- original 100..129 lost",
+   "expected": "Per-dataset indexes restored on split (record them in _stack).",
+   "actual": "ds0 index preserved: False (got [0, 1, 2, 3]...); ds0 columns preserved: True",
+   "evidence": []
+  },
+  {
+   "id": "F17-impute-011",
+   "severity": "style",
+   "title": "Error message and docstring steer users toward the DEPRECATED {'model','params'} dict form; non-string invalid specs get terse 'unknown model: X' with no supported-forms hint",
+   "repro": "import numpy as np, hypertools as hyp, sklearn.impute as ski\nrng = np.random.RandomState(2); x = rng.randn(40, 4); x[5, 2] = np.nan\ntry: hyp.impute(x, model='banana')\nexcept ValueError as e: print(e)   # recommends deprecated params form\ntry: hyp.impute(x, model=ski.SimpleImputer)\nexcept ValueError as e: print(e)   # unknown model: <class 'sklearn.impute._base.SimpleImputer'>\ntry: hyp.impute(x, model={'params': {}})\nexcept KeyError as e: print('KeyError:', e)",
+   "expected": "Error text recommends the canonical args/kwargs dict form; class/instance rejections mention Imputer subclass requirement and the hypertools wrapper of the same name; dict-without-model raises a descriptive ValueError.",
+   "actual": "[invalid name banana] ValueError: unknown impute model 'banana'; supported names: PPCA, SimpleImputer, KNNImputer, IterativeImputer, Kalman (or pass a dict {'model': ..., 'params': {...}}, an Imputer subclass, or an Imputer instance directly)\n[raw sklearn SimpleImputer CLASS] ValueError: unknown model: <class 'sklearn.impute._base.SimpleImputer'>\n[dict missing model key] KeyError: 'model'\ndict params form: OK, DeprecationWarning=[\"{'model': ..., 'params': {...}} is deprecated; use {'model': ..., 'args': [...], 'kwargs':\"]",
+   "evidence": []
+  },
+  {
+   "id": "F17-impute-013",
+   "severity": "style",
+   "title": "dtype not preserved: int64/float32 inputs come back float64 even on the no-NaN passthrough",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nrng = np.random.RandomState(1)\nf32 = pd.DataFrame(rng.randn(15, 3).astype(np.float32)); f32.iloc[1, 1] = np.nan\nprint(hyp.impute(f32, model='SimpleImputer').dtypes.iloc[0])  # float64\nidf = pd.DataFrame(rng.randint(0, 9, (12, 3)))\nprint(hyp.impute(idf, model='SimpleImputer').dtypes.iloc[0])  # float64 (was int64)",
+   "expected": "Preserve input floating dtype where possible (or document the float64 upcast).",
+   "actual": "dtypes in: [dtype('int64')] out: [dtype('float64')]; dtype in: float32 out: float64",
+   "evidence": []
+  },
+  {
+   "id": "F17-impute-014",
+   "severity": "style",
+   "title": "PPCA d larger than the number of columns is silently accepted",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.RandomState(2); x = rng.randn(40, 4); x[5, 2] = np.nan\nhyp.impute(x, model='PPCA', d=999)  # no error",
+   "expected": "ValueError like 'd must be <= number of columns (4); got 999'.",
+   "actual": "[PPCA d=999 (> n_cols)] NO ERROR -> DataFrame",
+   "evidence": []
+  },
+  {
+   "id": "F17-impute-015",
+   "severity": "enhancement",
+   "title": "Standalone impute lacks format_data's friendly pre-checks (inf, empty, all-NaN) -- inconsistent robustness between the plot path and the direct API",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.RandomState(1)\ninfd = rng.randn(40, 4); infd[0, 0] = np.inf; infd[1, 1] = np.nan\nhyp.impute(infd.copy(), model='SimpleImputer')  # sklearn: Input X contains infinity...\nout = hyp.impute(infd.copy(), model='PPCA')      # runs; inf preserved",
+   "expected": "hyp.impute raises the same friendly messages format_data does, for the same degenerate inputs.",
+   "actual": "[inf+nan / SimpleImputer] RAISED ValueError: Input X contains infinity or a value too large for dtype('float64').\n[inf+nan / PPCA] OK -> DataFrame; inf preserved=True",
+   "evidence": []
+  }
+ ]
+}

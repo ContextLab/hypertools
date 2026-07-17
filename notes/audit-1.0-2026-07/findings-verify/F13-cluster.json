@@ -1,0 +1,217 @@
+{
+ "unit": "F13-cluster",
+ "findings": [
+  {
+   "id": "F13-cluster-001",
+   "severity": "major",
+   "title": "FeatureAgglomeration is registered as a hard clusterer but clusters FEATURES: wrong-length labels from cluster(), cryptic crash or silent 3-point plot from plot(), and a broken reuse path",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(0)\nX = np.vstack([rng.standard_normal((100, 5)) + 8.0 * i for i in range(3)])\nprint(len(hyp.cluster(X, cluster='FeatureAgglomeration', n_clusters=3)))  # 5, not 300\nimport matplotlib; matplotlib.use('Agg')\nhyp.plot(X[:, :4], '.', cluster={'model': 'FeatureAgglomeration', 'n_clusters': 2}, show=False)  # 3-point figure\nhyp.plot(X[:, :4], '.', cluster='FeatureAgglomeration', show=False)  # ValueError",
+   "expected": "Per-observation labels (docstring: 'a list of cluster labels (one per observation)'), or a clear error/warning explaining FeatureAgglomeration clusters features",
+   "actual": "\"FeatureAgglomeration\": {\"type\": \"list\", \"len\": 5} on (300,5) input; plot dict k=2: 'total plotted points: 3 of 300 input rows; per-artist: [1, 2]' with no warning; plot default: 'ValueError: Cannot extract more clusters than samples: 5 clusters were given for a tree with 3 leaves.'; reuse on same data: 'NotImplementedError: FeatureAgglomeration has no out-of-sample prediction ... on new data (a different number of rows than it was fit on)'",
+   "evidence": [
+    "plot_featureagglomeration_k2_silent_drop.png"
+   ]
+  },
+  {
+   "id": "F13-cluster-002",
+   "severity": "major",
+   "title": "plot(cluster='DBSCAN'|'MeanShift'|'OPTICS'|'AffinityPropagation', n_clusters=k) crashes with a cryptic constructor TypeError; only HDBSCAN gets the friendly warn-and-ignore",
+   "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nrng = np.random.default_rng(3)\ndata = np.vstack([rng.standard_normal((100, 4)) + 7 * i for i in range(3)])\nhyp.plot(data, '.', cluster='DBSCAN', n_clusters=3, show=False)",
+   "expected": "n_clusters ignored (with at most a warning), matching hyp.cluster()'s documented behavior ('Not used for models that discover the number of clusters automatically (HDBSCAN, MeanShift, DBSCAN, OPTICS, AffinityPropagation)') and plot's own HDBSCAN handling",
+   "actual": "TypeError: DBSCAN.__init__() got an unexpected keyword argument 'n_clusters' (identical crashes for MeanShift, OPTICS, AffinityPropagation)",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-003",
+   "severity": "major",
+   "title": "plot(random_state=) is NOT threaded to the cluster stage, contradicting the docstring; seeded cluster plots are non-reproducible",
+   "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nnoise = np.random.default_rng(3).standard_normal((120, 10))\nf1 = hyp.plot(noise, '.', cluster='KMeans', n_clusters=6, random_state=0, show=False)\nf2 = hyp.plot(noise, '.', cluster='KMeans', n_clusters=6, random_state=0, show=False)\n# compare per-artist point sets -> differ",
+   "expected": "Identical cluster groupings across the two seeded calls (docstring: injected into KMeans/GaussianMixture etc.)",
+   "actual": "same groups across 2 seeded runs: False  -> plot(random_state=) NOT threaded to cluster= stage (docstring says it is)",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-004",
+   "severity": "major",
+   "title": "plot(cluster=..., return_model=True) without n_clusters: figure clusters with k=5 but the returned pipeline encodes k=3 -- the bundled 'exact fitted parameters' mismatch the figure",
+   "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nrng = np.random.default_rng(3)\ndata = np.vstack([rng.standard_normal((100, 4)) + 7 * i for i in range(3)])\nres = hyp.plot(data, '.', cluster='KMeans', return_model=True, show=False)\nprint(len(set(map(int, res['pipeline'].transform(data)))))  # 3, but the figure shows 5 groups",
+   "expected": "The returned pipeline's cluster stage uses the SAME k the figure was drawn with (5, from default_params), so pipeline.transform reproduces the plotted grouping",
+   "actual": "figure groups (point-artists): 5 sizes: [35, 32, 33, 100, 100]; bundle pipeline labels unique k: 3 | GaussianMixture: bundle pipeline proportions shape: (300, 3) (figure used default_params n_components=5)",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-005",
+   "severity": "major",
+   "title": "Integer cluster labels passed as hue= render clusters 0 and 1 in visually identical reds -- the shipped plot_clusters2.py example produces a single-color plot",
+   "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nrng = np.random.default_rng(0)\ndata = np.vstack([rng.standard_normal((100, 3)), rng.standard_normal((100, 3)) + 3])\nlabels = hyp.cluster(data, n_clusters=2, random_state=0)\nfig = hyp.plot(data, '.', hue=list(labels), show=False)\nfc = [c for c in fig.axes[0].collections if getattr(c, '_offsets3d', None) is not None][0].get_facecolor()\nprint(sorted({tuple(np.round(x, 3)) for x in fc}))  # two near-identical reds",
+   "expected": "Visually distinct colors per cluster (the example's stated purpose: 'color our points by cluster'); string labels already behave this way",
+   "actual": "distinct colors: [(0.86, 0.34, 0.34, 1.0), (0.86, 0.371, 0.34, 1.0)] -- delta 0.031 in one channel; verbatim plot_clusters2.py output is a uniform red point cloud (see evidence)",
+   "evidence": [
+    "verbatim_plot_clusters2.png",
+    "hue_int_labels_k3_collision.png",
+    "hue_str_labels_k3_ok.png",
+    "workflow_weights_cluster_hue.png",
+    "workflow_spiral_spectral.png"
+   ]
+  },
+  {
+   "id": "F13-cluster-006",
+   "severity": "major",
+   "title": "Reusing a fitted no-predict clusterer on DIFFERENT data with the SAME row count silently returns the stale fit-time labels",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(5)\nA = np.vstack([rng.standard_normal((30, 4)) + 6 * i for i in range(2)])\nlabels_A, model = hyp.cluster(A, cluster='AgglomerativeClustering', n_clusters=2, return_model=True)\nB = rng.standard_normal((60, 4)) * 50 + 100  # unrelated data, same row count\nlabels_B = hyp.cluster(B, cluster=model)\nprint(list(labels_B) == list(labels_A))  # True, silently",
+   "expected": "An error (like the different-row-count case) or an explicit warning that fit-time labels are being returned and B was never actually clustered",
+   "actual": "labels_B == labels_A (stale fit-time labels returned for unrelated data): True; any warning raised: none (silent)",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-007",
+   "severity": "minor",
+   "title": "plot(cluster=False) raises ValueError although plot's docstring documents the type as 'str, dict, False, or None'",
+   "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nhyp.plot(np.random.randn(50, 4), '.', cluster=False, show=False)",
+   "expected": "No clustering applied (documented False behaves like None), or a docstring that does not list False",
+   "actual": "ValueError: Invalid cluster model specified; should be string or dictionary!",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-008",
+   "severity": "minor",
+   "title": "Silent conflict resolution in cluster specs: an instance beats n_clusters= with no warning, and a dict carrying BOTH 'params' and 'kwargs' silently ignores 'params'",
+   "repro": "import numpy as np, hypertools as hyp\nfrom sklearn.cluster import KMeans\ndata = np.random.default_rng(1).standard_normal((150, 4))\nprint(len(set(map(int, hyp.cluster(data, cluster=KMeans(n_clusters=5, random_state=0), n_clusters=3)))))  # 5, no warning\nprint(len(set(map(int, hyp.cluster(data, cluster={'model': 'KMeans', 'params': {'n_clusters': 2}, 'kwargs': {'n_clusters': 4}})))))  # 4, no warning",
+   "expected": "A UserWarning naming the ignored setting in both cases",
+   "actual": "n_uniq: 5 (5 => instance wins silently) / dict with BOTH params and kwargs ... n_uniq: 4 (no warning emitted in either run)",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-009",
+   "severity": "minor",
+   "title": "n_clusters precedence is inconsistent between hyp.cluster and hyp.plot: spec kwargs win in cluster(), explicit n_clusters= wins in plot()",
+   "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nrng = np.random.default_rng(3)\ndata = np.vstack([rng.standard_normal((100, 4)) + 7 * i for i in range(3)])\nspec = {'model': 'KMeans', 'kwargs': {'n_clusters': 2, 'random_state': 0}}\nprint(len(set(map(int, hyp.cluster(data, cluster=spec, n_clusters=4)))))  # 2\nfig = hyp.plot(data, '.', cluster=spec, n_clusters=4, show=False)  # 4 groups",
+   "expected": "One consistent precedence rule (and ideally a conflict warning) across cluster() and plot()",
+   "actual": "hyp.cluster -> k = 2 (kwargs wins) / hyp.plot -> figure groups = 4 (explicit n_clusters wins)",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-010",
+   "severity": "minor",
+   "title": "plot cluster dict without a 'model' key raises a bare KeyError; hyp.cluster gives a helpful ValueError for the same input",
+   "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nhyp.plot(np.random.randn(60, 4), '.', cluster={'kwargs': {'n_clusters': 3}}, show=False)",
+   "expected": "The same instructive ValueError hyp.cluster raises",
+   "actual": "KeyError: 'model'",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-011",
+   "severity": "minor",
+   "title": "Invalid instance specs fail with cryptic AttributeErrors: cluster=42 -> \"'int' object has no attribute 'fit'\"; an sklearn Pipeline fits fine then dies on '.labels_'",
+   "repro": "import numpy as np, hypertools as hyp\nfrom sklearn.pipeline import Pipeline\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.cluster import KMeans\nX = np.random.default_rng(0).standard_normal((60, 3))\nhyp.cluster(X, cluster=42)  # AttributeError: 'int' object has no attribute 'fit'\nhyp.cluster(X, cluster=Pipeline([('s', StandardScaler()), ('k', KMeans(n_clusters=2, n_init=10))]))",
+   "expected": "A ValueError naming the accepted spec forms; ideally support fit_predict-only estimators such as sklearn Pipelines",
+   "actual": "RAISED AttributeError: 'int' object has no attribute 'fit' / RAISED AttributeError: 'Pipeline' object has no attribute 'labels_'",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-012",
+   "severity": "minor",
+   "title": "List of datasets with mismatched column counts fails with a raw np.vstack error that never mentions datasets or columns",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(1)\nhyp.cluster([rng.standard_normal((50, 4)), rng.standard_normal((50, 3))], n_clusters=2)",
+   "expected": "An error naming the mismatched datasets/column counts and suggesting reduce= (or padding) first",
+   "actual": "ValueError: all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 4 and the array at index 1 has size 3",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-013",
+   "severity": "minor",
+   "title": "cluster(..., normalize='zscore') raises AssertionError (wrong exception type) from the normalize stage; the manip vocabulary ('ZScore') is not accepted by normalize=",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(2)\ndata = np.vstack([rng.standard_normal((60, 4)) + 6 * i for i in range(3)])\nhyp.cluster(data, normalize='zscore', n_clusters=5, random_state=0)",
+   "expected": "ValueError listing valid values (and ideally recognizing the near-miss 'zscore' -> \"did you mean manip='ZScore' or normalize='across'?\")",
+   "actual": "AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-014",
+   "severity": "minor",
+   "title": "Every default HDBSCAN run emits sklearn's FutureWarning about the 'copy' parameter",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.random.default_rng(0).standard_normal((200, 5))\nhyp.cluster(X, cluster='HDBSCAN')  # FutureWarning from sklearn",
+   "expected": "No warning on default use",
+   "actual": "sklearn/cluster/_hdbscan/hdbscan.py:722: FutureWarning: The default value of `copy` will change from False to True in 1.10. Explicitly set a value for `copy` to silence this warning.",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-015",
+   "severity": "doc",
+   "title": "cluster() docstring omits the random_state parameter entirely",
+   "repro": "python -c \"import hypertools; import inspect; print('random_state' in inspect.signature(hypertools.cluster).parameters, 'random_state :' in hypertools.cluster.__doc__)\"",
+   "expected": "random_state documented like plot()'s docstring documents its own",
+   "actual": "Signature contains random_state=None; the docstring Parameters section (cluster.py lines 140-193) has no random_state entry",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-016",
+   "severity": "doc",
+   "title": "plot() docstring lists LatentDirichletAllocation and NMF as supported cluster= values, but plot clusters the PCA-reduced (signed) scores so they crash even on non-negative input data",
+   "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nhyp.plot(np.abs(np.random.default_rng(0).standard_normal((90, 4))), 'o', cluster='NMF', show=False)",
+   "expected": "Docstring caveat (or a targeted error explaining that clustering runs on reduced scores and suggesting hyp.cluster on the raw data instead)",
+   "actual": "ValueError: Negative values in data passed to NMF initialization. (and ...to LatentDirichletAllocation.fit. for LDA on standard data)",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-017",
+   "severity": "doc",
+   "title": "Tutorial cluster.ipynb: false claim that n_clusters is specified for HDBSCAN, a 'HCBSCAN' title typo, and an incomplete supported-models list",
+   "repro": "python3 - <<'EOF'\nimport json\nnb = json.load(open('docs/tutorials/cluster.ipynb'))\nfor i in (2, 19, 20, 21):\n    print(i, ''.join(nb['cells'][i]['source'])[:200])\nEOF",
+   "expected": "Tutorial text matches its code and the 1.0 model registry; correct spelling",
+   "actual": "cell 19: 'we specify both the clustering model (HDBSCAN) and the number of clusters (10).'; cell 20: hyp.cluster(mushrooms, cluster='HDBSCAN'); cell 21: title='HCBSCAN clustering'; cell 2 model list omits 8 supported models",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-018",
+   "severity": "doc",
+   "title": "Shipped gallery example plot_clusters3.py uses the deprecated legacy {'model','params'} spec and emits a DeprecationWarning when run",
+   "repro": "MPLBACKEND=Agg python -W always::DeprecationWarning examples/plot_clusters3.py",
+   "expected": "Official examples demonstrate the canonical (non-deprecated) spec",
+   "actual": "WARN DeprecationWarning: {'model': ..., 'params': {...}} is deprecated; use {'model': ..., 'args': [...], 'kwargs': {...}} instead (verbatim run)",
+   "evidence": [
+    "verbatim_plot_clusters3_hdbscan.png"
+   ]
+  },
+  {
+   "id": "F13-cluster-019",
+   "severity": "minor",
+   "title": "README says 'cluster(ndims=...) arguments were removed' but cluster() still accepts ndims= -- and silently no-ops it unless reduce= is also given",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.random.default_rng(0).standard_normal((100, 10))\na = hyp.cluster(X, n_clusters=3, ndims=2, random_state=0)\nb = hyp.cluster(X, n_clusters=3, random_state=0)\nprint(list(a) == list(b))  # True -- ndims silently ignored",
+   "expected": "A warning ('ndims= has no effect without reduce=') or README/docstring accuracy about the repurposed argument",
+   "actual": "cluster.py line 219 gates the pipeline path on (manip, normalize, reduce, align) only; ndims-only calls take the single-stage path unchanged. README.md: 'and `cluster(ndims=...)` arguments were removed.'",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-020",
+   "severity": "style",
+   "title": "plot(cluster=) accepts only str/dict while hyp.cluster accepts strings, bare classes, instances, and fitted Clusterers -- an API asymmetry",
+   "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nfrom sklearn.cluster import KMeans\nhyp.plot(np.random.randn(60, 4), '.', cluster=KMeans(n_clusters=3, n_init=10), show=False)",
+   "expected": "plot accepts the same spec grammar as hyp.cluster (it could delegate to _resolve_cluster_spec)",
+   "actual": "ValueError: Invalid cluster model specified; should be string or dictionary!",
+   "evidence": []
+  },
+  {
+   "id": "F13-cluster-021",
+   "severity": "style",
+   "title": "Divergent default k: hyp.cluster defaults n_clusters=3, plot's cluster='KMeans' defaults to 5 via _shared/params.py (and LDA/NMF to 20) -- none of it documented",
+   "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nrng = np.random.default_rng(3)\ndata = np.vstack([rng.standard_normal((100, 4)) + 7 * i for i in range(3)])\nprint(len(set(map(int, hyp.cluster(data)))))  # 3\nfig = hyp.plot(data, '.', cluster='KMeans', show=False)  # 5 groups",
+   "expected": "Same default k across entry points, or explicit documentation of each default",
+   "actual": "hyp.cluster default -> 3 unique labels; plot(cluster='KMeans') -> n point-artists (groups): 5",
+   "evidence": [
+    "plot_kmeans_default_k.png"
+   ]
+  },
+  {
+   "id": "F13-cluster-022",
+   "severity": "style",
+   "title": "Cluster legend entries are unsorted label strings (['1', '0', '2'])",
+   "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nrng = np.random.default_rng(3)\ndata = np.vstack([rng.standard_normal((100, 4)) + 7 * i for i in range(3)])\nfig = hyp.plot(data, '.', cluster='KMeans', n_clusters=3, legend=True, show=False)\nprint([t.get_text() for t in fig.axes[0].get_legend().get_texts()])",
+   "expected": "Sorted legend entries ['0', '1', '2'] (ideally 'cluster 0', ...)",
+   "actual": "legend entries: ['1', '0', '2']",
+   "evidence": [
+    "plot_kmeans_k3_legend.png"
+   ]
+  }
+ ]
+}

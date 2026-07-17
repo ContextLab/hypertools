@@ -6,6 +6,7 @@ split on `Aligner` (GH #227 shape validation, never-refit reuse), and
 `return_model`/cross-module kwargs. All data is real (small) numeric
 arrays/DataFrames -- no mocks.
 """
+import contextlib
 import warnings
 
 import numpy as np
@@ -68,14 +69,27 @@ def test_basic_alignment_by_name():
 ])
 def test_legacy_string_aliases_resolve_correctly(legacy_name, canonical):
     d1, d2 = _rotated_pair()
-    out, model = hyp.align([d1, d2], model=legacy_name, return_model=True)
+    # only 'hyper' is a DEPRECATED alias (it warns); 'SRM' is a supported
+    # short name and must stay silent
+    if legacy_name == 'hyper':
+        ctx = pytest.warns(DeprecationWarning,
+                           match="'hyper' is a deprecated alias")
+    else:
+        ctx = contextlib.nullcontext()
+    with ctx:
+        out, model = hyp.align([d1, d2], model=legacy_name, return_model=True)
     assert type(model).__name__ == canonical
     assert isinstance(out, list) and len(out) == 2
 
 
 def test_legacy_n_iter_passthrough_to_hyperalign():
     d1, d2 = _rotated_pair()
-    out, model = hyp.align([d1, d2], model='hyper', n_iter=3, return_model=True)
+    # the legacy 'hyper' alias is exercised deliberately; assert its
+    # deprecation notice fires
+    with pytest.warns(DeprecationWarning,
+                      match="'hyper' is a deprecated alias"):
+        out, model = hyp.align([d1, d2], model='hyper', n_iter=3,
+                               return_model=True)
     assert model.kwargs['n_iter'] == 3
 
 

@@ -129,7 +129,11 @@ def test_masked_entries_become_nan_with_warning_ppca_false():
 
 def test_masked_entries_flow_into_ppca_impute_path():
     base, m = _masked_dataset()
-    with pytest.warns(UserWarning, match='masked'):
+    # one call provokes TWO deliberate notices: the masked-entries notice and
+    # the PPCA missing-data notice (nested pytest.warns asserts both; the
+    # inner block re-emits whichever the outer one matches)
+    with pytest.warns(UserWarning, match='masked'), \
+         pytest.warns(UserWarning, match='filling missing values'):
         out = format_data(m)[0]
     # imputed: no NaNs remain, observed values preserved exactly, and the
     # masked cells were NOT taken from the raw underlying values

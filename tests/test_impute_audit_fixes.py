@@ -77,7 +77,10 @@ def test_kalman_fills_fully_missing_rows_from_neighbors():
 
 def test_kalman_single_row_clear_error():
     pytest.importorskip('pykalman')
-    with pytest.raises(ValueError, match='at least 2 rows'):
+    # the single row also makes column 1 fully unobserved, deliberately
+    # provoking the no-observed-values notice before the ValueError
+    with pytest.warns(UserWarning, match='no observed values at all'), \
+         pytest.raises(ValueError, match='at least 2 rows'):
         impute(np.array([[1.0, np.nan, 3.0]]), model='Kalman')
 
 
@@ -149,6 +152,11 @@ def test_ppca_reuse_wrong_column_count_raises_valueerror():
 
 # --- F17-impute-006 (doc fix): observed values ARE preserved exactly ---------
 
+# upstream: sklearn's IterativeImputer hits max_iter on this contrived
+# low-rank benchmark before its early-stopping tolerance is reached
+@pytest.mark.filterwarnings(
+    r'ignore:\[IterativeImputer\] Early stopping criterion not reached'
+    r':sklearn.exceptions.ConvergenceWarning')
 @pytest.mark.parametrize('model', ['PPCA', 'SimpleImputer', 'KNNImputer',
                                    'IterativeImputer', 'Kalman'])
 def test_every_model_preserves_observed_entries_exactly(model):

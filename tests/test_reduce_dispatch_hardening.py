@@ -10,6 +10,7 @@
 
 Real data, sklearn cross-check, no mocks.
 """
+import contextlib
 import warnings
 
 import numpy as np
@@ -38,7 +39,14 @@ def test_user_supplied_n_components_in_kwargs_is_not_overridden():
 @pytest.mark.parametrize('ndims', [3, None, 20])
 def test_single_array_returns_bare_array_for_any_ndims(ndims):
     x = np.random.default_rng(0).normal(size=(40, 6))
-    out = reducer(x, reduce='PCA', ndims=ndims)
+    if ndims == 20:
+        # ndims beyond the 6 features deliberately provokes the
+        # no-reduction-performed notice
+        ctx = pytest.warns(UserWarning, match='no reduction was performed')
+    else:
+        ctx = contextlib.nullcontext()
+    with ctx:
+        out = reducer(x, reduce='PCA', ndims=ndims)
     assert not isinstance(out, list)
     assert np.asarray(out).ndim == 2
 
@@ -58,7 +66,10 @@ def test_invalid_ndims_raises_clear_error(bad):
 
 def test_describe_max_dims_gt_features_does_not_crash():
     x = np.random.default_rng(0).normal(size=(30, 4))
-    result = hyp.describe(x, reduce='PCA', max_dims=8, show=False)
+    # max_dims beyond the 4 features deliberately provokes the
+    # capped-evaluation notice
+    with pytest.warns(UserWarning, match='exceeds the data dimensionality'):
+        result = hyp.describe(x, reduce='PCA', max_dims=8, show=False)
     # 'fig' added by the 2026-07 release audit (F11-reduce-describe-015)
     assert set(result.keys()) == {'average', 'individual', 'fig'}
 

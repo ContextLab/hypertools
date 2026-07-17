@@ -45,20 +45,27 @@ def test_str():
 
 
 def test_mixed_list():
+    import pytest
     mat = np.random.rand(3,20)
     df = pd.DataFrame(np.random.rand(3,20))
     text = ['here is some test text', 'and a little more', 'and more']
     string = 'a string'
-    res = format_data([mat, df, text, string])
+    # mismatched text/numeric sample counts deliberately provoke the
+    # cannot-auto-align notice
+    with pytest.warns(UserWarning, match='cannot be auto-aligned'):
+        res = format_data([mat, df, text, string])
     assert isinstance(res, list)
     assert all(map(lambda x: isinstance(x, np.ndarray), res))
 
 
 def test_missing_data():
-    # format_data fills missing values via PPCA (no geo round-trip in 1.0)
+    import pytest
+    # format_data fills missing values via PPCA (no geo round-trip in 1.0);
+    # the NaN deliberately provokes the missing-data notice
     data = np.random.rand(100,10)
     data[0][0]=np.nan
-    res = format_data(data)
+    with pytest.warns(UserWarning, match='filling missing values'):
+        res = format_data(data)
     assert isinstance(res, list)
     assert isinstance(res[0], np.ndarray)
     # the whole point of this path is that the NaN gets filled in, and the
@@ -68,10 +75,14 @@ def test_missing_data():
 
 
 def test_force_align():
+    import pytest
     mat = np.random.rand(4, 3)
     df = pd.DataFrame(np.random.rand(4, 3))
     text = ['here is some test text', 'and a little more', 'and more', 'just a bit more']
-    res = format_data([mat, df, text])
+    # matched text/numeric sample counts deliberately provoke the
+    # aligning-to-common-space notice
+    with pytest.warns(UserWarning, match='Aligning data to a common space'):
+        res = format_data([mat, df, text])
     assert isinstance(res, list)
     assert all(map(lambda x: isinstance(x, np.ndarray), res))
     assert all(map(lambda x: x.shape[1] == 50, res))

@@ -1,0 +1,87 @@
+{
+ "unit": "D07-tutorials-core",
+ "findings": [
+  {
+   "id": "D07-tutorials-core-001",
+   "severity": "critical",
+   "title": "plot.ipynb 'Coloring by hue' (cell 26) and 'Adding a legend' (cell 29) crash on fresh execution: hue length 8120 != 8124 rows",
+   "repro": "cd /Users/jmanning/hypertools && MPLBACKEND=Agg .venv/bin/python -c \"import matplotlib;matplotlib.use('Agg');import hypertools as hyp;m=hyp.load('mushrooms');split=int(m.shape[0]/5);hue=[1]*split+['two']*split+[3.0]*split+[None]*split+['four']*split;print('len(hue)=',len(hue),'rows=',m.shape[0]);hyp.plot(m,'.',hue=hue)\"",
+   "expected": "Tutorial cell colors the mushrooms scatter into 5 equal groups and renders a figure (as the committed output depicts).",
+   "actual": "ValueError: hue has 8120 entries but the data has 8124 observations; hue must have exactly one value (or one row, for a matrix hue) per observation.",
+   "evidence": [
+    "notes/audit-1.0-2026-07/evidence/D07-tutorials-core/plot_cell44_fig11.png"
+   ]
+  },
+  {
+   "id": "D07-tutorials-core-002",
+   "severity": "doc",
+   "title": "analyze.ipynb states weights elements are '(300,100)' / '300 TRs' but actual (and committed) shape is (100,100)",
+   "repro": "cd /Users/jmanning/hypertools && .venv/bin/python -c \"import hypertools as hyp,numpy as np;w=hyp.load('weights_avg');print(len(w),np.asarray(w[0]).shape)\"  # -> 2 (100, 100)",
+   "expected": "Comment/markdown match the data and committed output: elements are (100,100).",
+   "actual": "cell 6 comment '# 300 TRs and 100 components'; cell 7 markdown 'each have the dimensions (300,100)'; actual/committed shape (100, 100).",
+   "evidence": [
+    "notes/audit-1.0-2026-07/evidence/D07-tutorials-core/analyze_cell08_fig1.png"
+   ]
+  },
+  {
+   "id": "D07-tutorials-core-003",
+   "severity": "doc",
+   "title": "align.ipynb describes its dataset as 'a list of 2 numpy arrays ... from 18 subjects' but hyp.load('weights') returns 36 arrays of (300,100)",
+   "repro": "cd /Users/jmanning/hypertools && .venv/bin/python -c \"import hypertools as hyp,numpy as np;d=hyp.load('weights');print(len(d),np.asarray(d[0]).shape)\"  # -> 36 (300, 100)",
+   "expected": "Description matches loaded data: 36 subject arrays of shape (300,100).",
+   "actual": "markdown: 'a list of 2 numpy arrays, each ... from 18 subjects'; actual: 36 arrays of (300,100).",
+   "evidence": [
+    "notes/audit-1.0-2026-07/evidence/D07-tutorials-core/align_cell10_fig1.png"
+   ]
+  },
+  {
+   "id": "D07-tutorials-core-004",
+   "severity": "doc",
+   "title": "plot.ipynb text section claims to load 'all State of the Union Addresses from 1989-2017' but the code uses 4 hard-coded sample sentences",
+   "repro": "grep -n 'all State of the Union' docs/tutorials/plot.ipynb ; grep -n 'sample_sotus_speeches' docs/tutorials/plot.ipynb",
+   "expected": "Prose matches code -- either load the real sotus dataset, or reword to say 'a few example sentences'.",
+   "actual": "markdown promises 'all State of the Union Addresses from 1989-2017'; code defines a 4-element list of demo sentences.",
+   "evidence": [
+    "notes/audit-1.0-2026-07/evidence/D07-tutorials-core/plot_cell51_fig13.png"
+   ]
+  },
+  {
+   "id": "D07-tutorials-core-005",
+   "severity": "doc",
+   "title": "Tutorials teach the deprecated reduce syntax {'model':...,'params':{...}}; reduce.ipynb emits a fresh DeprecationWarning (plot/analyze silently swallow it)",
+   "repro": "cd /Users/jmanning/hypertools && MPLBACKEND=Agg .venv/bin/python -W always -c \"import hypertools as hyp;w=hyp.load('weights_avg');hyp.reduce(w, reduce={'model':'PCA','params':{'whiten':True}}, ndims=3)\" 2>&1 | grep -i deprecat",
+   "expected": "Tutorials use the current, non-deprecated reduce parameter syntax (model + kwargs), and all three entry points (reduce/plot/analyze) agree on whether 'params' is deprecated.",
+   "actual": "DeprecationWarning: {'model': ..., 'params': {...}} is deprecated; use {'model': ..., 'args': [...], 'kwargs': {...}} instead  (fires only via hyp.reduce; plot/analyze emit nothing)",
+   "evidence": []
+  },
+  {
+   "id": "D07-tutorials-core-006",
+   "severity": "minor",
+   "title": "align.ipynb group split drops subject index 17 (np.mean(data[:17]) + np.mean(data[18:]) over 36 subjects)",
+   "repro": "cd /Users/jmanning/hypertools && .venv/bin/python -c \"import hypertools as hyp;d=hyp.load('weights');print('n=',len(d),'group1 uses',len(d[:17]),'group2 uses',len(d[18:]),'-> index 17 dropped')\"",
+   "expected": "Both groups together cover all 36 subjects (e.g. data[:18] and data[18:]).",
+   "actual": "group1 uses 17 subjects (0-16), group2 uses 18 (18-35); subject index 17 excluded.",
+   "evidence": []
+  },
+  {
+   "id": "D07-tutorials-core-007",
+   "severity": "doc",
+   "title": "Inconsistent 'supported models' lists: UMAP listed in reduce cell 2 & plot cell 19 but omitted in reduce cell 24 & analyze cell 15 (UMAP is supported)",
+   "repro": "cd /Users/jmanning/hypertools && .venv/bin/python -c \"import hypertools as hyp,numpy as np;w=hyp.load('weights_avg');r=hyp.reduce(w,reduce='UMAP',ndims=3);print(np.asarray(r[0]).shape,np.asarray(r[1]).shape)\"  # -> (100,3) (100,3)",
+   "expected": "All supported-model lists match and include UMAP (or consistently exclude it if unsupported).",
+   "actual": "reduce cell2/plot cell19 include UMAP; reduce cell24/analyze cell15 omit it; UMAP works.",
+   "evidence": []
+  },
+  {
+   "id": "D07-tutorials-core-008",
+   "severity": "doc",
+   "title": "plot.ipynb text cell committed output shows 3 sklearn InconsistentVersionWarning (unpickle 1.0.2 under 1.8.0) that do not reproduce on fresh execution (stale output)",
+   "repro": "cd /Users/jmanning/hypertools && MPLBACKEND=Agg .venv/bin/python -c \"import warnings,matplotlib;matplotlib.use('Agg')\\nwith warnings.catch_warnings(record=True) as w:\\n    warnings.simplefilter('always')\\n    import hypertools as hyp\\n    hyp.plot(['Tonight I can report to the nation that America is stronger.','We gather tonight knowing this generation has been tested.','As we work together to advance interests, we must recognize threats.','Education is the great equalizer for all our children.'])\\nprint('warnings:',len(w))\"",
+   "expected": "Committed notebook outputs match a fresh run (same warnings / none).",
+   "actual": "committed cell 51 shows 3 InconsistentVersionWarning; fresh run captures 0 warnings.",
+   "evidence": [
+    "notes/audit-1.0-2026-07/evidence/D07-tutorials-core/plot_cell51_fig13.png"
+   ]
+  }
+ ]
+}

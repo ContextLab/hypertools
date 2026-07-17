@@ -60,6 +60,10 @@ def test_mixture_gaussian_returns_proportions_summing_to_one(name):
     assert (out >= 0).all()
 
 
+# upstream: sklearn NMF hits its default max_iter=200 on this tiny fixture
+@pytest.mark.filterwarnings(
+    'ignore:Maximum number of iterations 200 reached'
+    ':sklearn.exceptions.ConvergenceWarning')
 @pytest.mark.parametrize('name', ['LatentDirichletAllocation', 'NMF'])
 def test_mixture_lda_nmf_returns_normalized_proportions(name):
     x = np.abs(_rng().rand(30, 5))  # LDA/NMF require non-negative data

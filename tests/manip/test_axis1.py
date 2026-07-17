@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from hypertools.manip import ZScore, Normalize, Smooth
 
@@ -8,6 +9,9 @@ def _make_df():
     return pd.DataFrame(np.random.RandomState(2).rand(5, 30))
 
 
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+@pytest.mark.filterwarnings(
+    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
 def test_zscore_axis1_zero_mean_unit_std_per_row():
     df = _make_df()
     out = ZScore(axis=1).fit_transform(df)
@@ -17,6 +21,9 @@ def test_zscore_axis1_zero_mean_unit_std_per_row():
     assert np.allclose(out.std(axis=1, ddof=1).to_numpy(), 1.0, atol=1e-6)
 
 
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+@pytest.mark.filterwarnings(
+    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
 def test_normalize_axis1_scales_each_row_to_unit_range():
     df = _make_df()
     out = Normalize(min=0, max=1, axis=1).fit_transform(df)

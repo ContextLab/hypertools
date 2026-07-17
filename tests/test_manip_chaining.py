@@ -380,6 +380,9 @@ def test_manip_kwargs_only_dict_applies_kwargs():
 from hypertools.manip.normalize import Normalize
 
 
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+@pytest.mark.filterwarnings(
+    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
 def test_zscore_inverse_transform_round_trip():
     rng = np.random.default_rng(3)
     X = rng.normal(loc=5, scale=3, size=(40, 4))
@@ -389,6 +392,9 @@ def test_zscore_inverse_transform_round_trip():
     assert np.allclose(back, X, atol=1e-8)
 
 
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+@pytest.mark.filterwarnings(
+    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
 def test_normalize_manip_inverse_transform_round_trip():
     rng = np.random.default_rng(4)
     X = rng.normal(size=(30, 3))
@@ -398,6 +404,9 @@ def test_normalize_manip_inverse_transform_round_trip():
     assert np.allclose(back, X, atol=1e-8)
 
 
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+@pytest.mark.filterwarnings(
+    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
 def test_pipeline_inverse_transform_through_zscore():
     rng = np.random.default_rng(5)
     X = rng.normal(size=(40, 4))

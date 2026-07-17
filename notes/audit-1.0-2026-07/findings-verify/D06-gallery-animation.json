@@ -1,0 +1,128 @@
+{
+ "unit": "D06-gallery-animation",
+ "findings": [
+  {
+   "id": "D06-gallery-animation-001",
+   "severity": "major",
+   "title": "chemtrails 'past' trail shows ~the whole trajectory (future included) for the first tail_duration seconds, then snaps to empty (matplotlib 3-D AND 2-D; plotly is correct, so the backends diverge)",
+   "repro": "import matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\ndata = hyp.load('weights_avg')\nfig, ani = hyp.plot(data, animate=True, chemtrails=True, show=False)\nani._init_draw()\nax = fig.axes[0]\ntrail = [ln for ln in ax.get_lines() if ln.get_alpha() == 0.3][0]\nfor f in [0, 30, 58, 59, 60, 120]:\n    ani._draw_frame(f)\n    print(f, len(trail.get_xdata()))\n",
+   "expected": "Past trail length grows 0/1 -> 60 over the first window and never exceeds the elapsed frames (plotly: frame 0 -> 1 pt, frame 120 -> 63 pts).",
+   "actual": "frame 0: chemtrail_len= 842 head_len=1; frame 30: 872; frame 58: 900; frame 59: 0; frame 60: 1; frame 120: 61 (2-D run identical: 842/872/900/0/2/61). plotly same call: frame 0 traces [2, 2, 1, 1]; frame 120 [60, 60, 63, 63].",
+   "evidence": [
+    "chemtrails_bugcheck_f0000.png",
+    "chemtrails_bugcheck_f0030.png",
+    "chemtrails_bugcheck_f0059.png",
+    "chemtrails_bugcheck_f0061.png"
+   ]
+  },
+  {
+   "id": "D06-gallery-animation-002",
+   "severity": "major",
+   "title": "animate_plotly.py cannot finish in reasonable time: the spin.gif export renders 900 frames through kaleido (~25-40 min measured/extrapolated; killed at 600s with no output)",
+   "repro": "cd /tmp && MPLBACKEND=Agg BROWSER=/usr/bin/true /Users/jmanning/hypertools/.venv/bin/python -c \"import runpy; runpy.run_path('/Users/jmanning/hypertools/examples/animate_plotly.py', run_name='__main__')\"",
+   "expected": "Example completes in well under 3 minutes (gallery examples run in docs builds and are copied verbatim by users).",
+   "actual": "Still running after 14+ minutes (22:10:44 start; alive at 22:25:03) with empty stdout/stderr, no spin.gif in CWD, 10 Chromium/kaleido helper processes. Probe: 'starting kaleido gif export (10 frames)... done in 28.0s; exists=True bytes=64634; gif n_frames: 10 size: (640, 480)'.",
+   "evidence": [
+    "edge_plotly_tiny_spin.gif"
+   ]
+  },
+  {
+   "id": "D06-gallery-animation-003",
+   "severity": "minor",
+   "title": "animate_plotly.py writes spin.gif into the CWD via a relative path, and the 6.8MB generated artifact is committed to the repo (examples/spin.gif)",
+   "repro": "cd /Users/jmanning/hypertools && git ls-files examples/ | grep gif && ls -la examples/spin.gif && git log --oneline -3 -- examples/spin.gif",
+   "expected": "Examples write outputs to a temp dir (like save_image.py/save_movie.py); no multi-MB generated binaries tracked in the source tree.",
+   "actual": "examples/spin.gif tracked; -rw-r--r--@ 1 jmanning staff 6792550 Jul 6 15:52; git log: 4f686898 docs: refresh spin.gif build artifact from gallery re-execution / fa8a6436 docs: regenerate animated gallery ...",
+   "evidence": []
+  },
+  {
+   "id": "D06-gallery-animation-004",
+   "severity": "doc",
+   "title": "save_movie.py silently drops subject 17: data[:17] + data[18:] covers 35 of the 36 weights subjects",
+   "repro": "/Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp; d = hyp.load('weights'); print(len(d), len(d[:17]), len(d[18:]))\"",
+   "expected": "The two groups partition all 36 subjects (18 + 18).",
+   "actual": "36 17 18  -- subject 17 excluded from both groups.",
+   "evidence": [
+    "save_movie_f0450.png"
+   ]
+  },
+  {
+   "id": "D06-gallery-animation-005",
+   "severity": "doc",
+   "title": "Docstring claim 'Both backends generate exactly frame_rate * duration frames' is off by one for matplotlib animate=True on some input lengths (901 vs plotly's 900 for weights_avg)",
+   "repro": "import matplotlib; matplotlib.use('Agg')\nimport numpy as np, hypertools as hyp\nd300 = hyp.load('weights_avg')\n_, ani = hyp.plot(d300, animate=True, show=False)\nprint('mpl 300-row:', len(list(ani.new_frame_seq())))   # 901\nd200 = np.cumsum(np.random.default_rng(42).standard_normal((200, 8)), axis=0)\n_, ani2 = hyp.plot(d200, animate=True, show=False)\nprint('mpl 200-row:', len(list(ani2.new_frame_seq())))  # 900\nfigp = hyp.plot(d300, animate=True, backend='plotly', show=False)\nprint('plotly:', len(figp.frames))                       # 900\n",
+   "expected": "Exactly 900 frames on both backends for duration=30, frame_rate=30, per the docstring.",
+   "actual": "matplotlib: 901 frames for 300-row input (ffprobe of saved mp4: nb_frames=901 duration=30.033008), 900 for 200-row input; plotly: 900 in all cases.",
+   "evidence": []
+  },
+  {
+   "id": "D06-gallery-animation-006",
+   "severity": "doc",
+   "title": "animate_surface_morph.py per-frame timing claim ('roughly 20ms/frame instead of ~100ms+, measured on this machine') does not reproduce under either plausible reading",
+   "repro": "import time, numpy as np\nfrom hypertools.plot.meshutil import smooth_hull_3d\npts = np.random.default_rng(42).standard_normal((400, 3)); pts /= np.abs(pts).max()\nfor rounds in (2, 3):\n    smooth_hull_3d(pts, rounds=rounds)\n    t0 = time.monotonic()\n    for _ in range(10): smooth_hull_3d(pts, rounds=rounds)\n    print(rounds, (time.monotonic()-t0)*100, 'ms/call')\n",
+   "expected": "~20 ms/frame at 2 smoothing rounds and ~100 ms+ at 3, per the example docstring.",
+   "actual": "rounds=2: 9.1 ms per smooth_hull_3d call; rounds=3: 35.5 ms per smooth_hull_3d call (prior session, full _draw_frame: ~91 ms vs ~370 ms).",
+   "evidence": []
+  },
+  {
+   "id": "D06-gallery-animation-007",
+   "severity": "minor",
+   "title": "Exported GIFs play ~10% fast at the default frame_rate=30: the 33.33ms delay quantizes to 30ms (GIF centiseconds), so a 30s animation plays in 27s",
+   "repro": "/Users/jmanning/hypertools/.venv/bin/python -c \"from PIL import Image; im = Image.open('/Users/jmanning/hypertools/examples/spin.gif'); print(im.n_frames, im.info.get('duration'))\"",
+   "expected": "~33ms effective per-frame delay (900 frames ~= 30s playback), or a documented caveat.",
+   "actual": "committed spin.gif: frames= 900 size= (640, 480) per-frame ms= 30 (=> 27.0s); E01 gif at 10 fps: dur_ms=100 (exact).",
+   "evidence": [
+    "edge_E01_tiny.gif"
+   ]
+  },
+  {
+   "id": "D06-gallery-animation-008",
+   "severity": "minor",
+   "title": "save_path failure modes are cryptic: unsupported extension surfaces as a raw ffmpeg CalledProcessError only AFTER rendering all frames; nonexistent directory as a bare FileNotFoundError",
+   "repro": "import matplotlib; matplotlib.use('Agg')\nimport numpy as np, hypertools as hyp\nd = np.cumsum(np.random.default_rng(0).standard_normal((30, 4)), axis=0)\nhyp.plot([d, d + 1], animate=True, duration=1, frame_rate=5, save_path='out.xyz', show=False)\n",
+   "expected": "Fast ValueError before rendering: \"save_path extension '.xyz' is not supported; use .gif/.png/.apng/.svg/.mp4/.mov/.avi\" (and similarly a clear error naming save_path for a missing directory).",
+   "actual": "raised CalledProcessError: Command '['ffmpeg', '-f', 'rawvideo', '-vcodec', 'rawvideo', '-s', '1280x960', '-pix_fmt', 'rgba', '-framerate', '5', ...]' ; MovieWriter stderr: Unable to choose an output format for '...edge_E04.xyz'; use a standard extension for the filename ... / raised FileNotFoundError: [Errno 2] No such file or directory: '/nonexistent_dir_d06'",
+   "evidence": []
+  },
+  {
+   "id": "D06-gallery-animation-009",
+   "severity": "minor",
+   "title": "animate_MDS.py emits two sklearn FutureWarnings on every run (MDS init/n_init defaults changing in sklearn 1.9/1.10)",
+   "repro": "MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -W always::FutureWarning /Users/jmanning/hypertools/examples/animate_MDS.py",
+   "expected": "No deprecation warnings from a gallery example; stable output across sklearn upgrades.",
+   "actual": "FutureWarning: The default value of `init` will change from 'random' to 'classical_mds' in 1.10. To suppress this warning, provide some value of `init`. / FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9. To suppress this warning, provide some value of `n_init`.",
+   "evidence": []
+  },
+  {
+   "id": "D06-gallery-animation-010",
+   "severity": "style",
+   "title": "Unused `import numpy as np` in precog.py and save_image.py",
+   "repro": "grep -n 'import numpy' /Users/jmanning/hypertools/examples/precog.py /Users/jmanning/hypertools/examples/save_image.py && grep -c 'np\\.' /Users/jmanning/hypertools/examples/precog.py /Users/jmanning/hypertools/examples/save_image.py",
+   "expected": "No unused imports in gallery code.",
+   "actual": "precog.py:20:import numpy as np / save_image.py:18:import numpy as np ; grep -c 'np.' -> 0 uses in each.",
+   "evidence": []
+  },
+  {
+   "id": "D06-gallery-animation-011",
+   "severity": "minor",
+   "title": "chemtrails/precog/bullettime reject a numpy bool array with a cryptic numpy ValueError that names neither the kwarg nor the fix",
+   "repro": "import matplotlib; matplotlib.use('Agg')\nimport numpy as np, hypertools as hyp\nt = np.linspace(0, 12.5, 40)\na = np.column_stack([np.cos(t), np.sin(t), t / 4])\nb = a + [3, 0, 0]\nhyp.plot([a, b], animate=True, chemtrails=np.array([True, False]), duration=1, frame_rate=5, show=False)\n",
+   "expected": "Either per-dataset behavior identical to chemtrails=[True, False], or a clear error naming chemtrails and the accepted types (the length-mismatch path already sets that standard: 'chemtrails list has 1 entries but there are 2 datasets...').",
+   "actual": "File \"/Users/jmanning/hypertools/hypertools/plot/trails.py\", line 49, in broadcast_trail_flag: return [bool(value)] * n -> ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()",
+   "evidence": []
+  },
+  {
+   "id": "D06-gallery-animation-012",
+   "severity": "minor",
+   "title": "animate_surface_morph.py's final 'fade the point layer' line is a silent no-op: it sets alpha on a hidden artist, so the visible point texture stays fully opaque",
+   "repro": "import matplotlib; matplotlib.use('Agg')\nimport runpy\ng = runpy.run_path('/Users/jmanning/hypertools/examples/animate_surface_morph.py', run_name='__main__')\nfig = g['fig']\nprint([(i, ln.get_visible(), ln.get_alpha(), len(ln.get_xdata())) for i, ln in enumerate(fig.axes[0].get_lines())])\n",
+   "expected": "The visible traveling point cloud renders at alpha 0.25 (faint texture under the hull).",
+   "actual": "lines: [(0, False, 0.25, 1), (1, False, None, 1), (2, False, None, 1), (3, False, None, 1), (4, False, None, 1), (5, True, None, 400)] -- alpha applied to a hidden artist; visible points fully opaque.",
+   "evidence": [
+    "edge_E22_asis_f300.png",
+    "edge_E22_intended_f300.png",
+    "animate_surface_morph_f0359.png"
+   ]
+  }
+ ]
+}

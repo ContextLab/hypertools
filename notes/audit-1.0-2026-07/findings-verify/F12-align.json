@@ -1,0 +1,98 @@
+{
+ "unit": "F12-align",
+ "findings": [
+  {
+   "id": "F12-align-001",
+   "severity": "critical",
+   "title": "trim_and_pad silently SCRAMBLES row (observation/time) order for any non-RangeIndex index",
+   "repro": "import warnings, numpy as np, pandas as pd, hypertools as hyp\nn,k=10,3\nbase=np.zeros((n,k)); base[:,0]=np.arange(n)   # row i is identifiable: col0==i\ntidx=pd.date_range('2020-01-01', periods=n, freq='s')\nd0=pd.DataFrame(base, index=tidx); d1=pd.DataFrame(base.copy(), index=tidx)\nwith warnings.catch_warnings():\n    warnings.simplefilter('ignore')\n    out=hyp.align([d0,d1], model='NullAlign')  # NullAlign: no math, pure trim_and_pad order\nprint(list(np.asarray(out[0])[:,0].astype(int)))  # expect 0..9",
+   "expected": "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9] (output rows in input/time order)",
+   "actual": "[7, 4, 5, 0, 2, 6, 1, 3, 9, 8]  (public hyp.align, DatetimeIndex). Also: string idx t00..t11 -> ['t06','t10','t00','t07','t01','t05','t02','t04','t03','t08','t11','t09']; DatetimeIndex ORDER PRESERVED=False; RangeIndex 0..n-1 -> preserved (bug hides).",
+   "evidence": [
+    "evidence/F12-align/roworder_scramble_trajectory.png"
+   ]
+  },
+  {
+   "id": "F12-align-002",
+   "severity": "doc",
+   "title": "SRM/DetSRM/RSRM `features` default documented as 'minimum number of columns' but is actually the MAX (padded common width)",
+   "repro": "import warnings, numpy as np, hypertools as hyp\nds=[np.random.randn(30,6), np.random.randn(30,4), np.random.randn(30,8)]\nwith warnings.catch_warnings():\n    warnings.simplefilter('ignore')\n    out,m=hyp.align(ds, model='SRM', return_model=True)\nprint('features=',m.features,'out cols=',np.asarray(out[0]).shape[1])",
+   "expected": "doc 'minimum number of columns' => features=4",
+   "actual": "features= 8 out cols= 8",
+   "evidence": []
+  },
+  {
+   "id": "F12-align-003",
+   "severity": "minor",
+   "title": "Data-loss ('keeps only N rows') warning is emitted twice for a single hyp.align() call",
+   "repro": "import warnings, numpy as np, hypertools as hyp\nds=[np.random.randn(40,5), np.random.randn(30,5)]\nwith warnings.catch_warnings(record=True) as w:\n    warnings.simplefilter('always')\n    hyp.align(ds, model='NullAlign')\nprint(sum('keeps only' in str(x.message) for x in w))",
+   "expected": "1",
+   "actual": "2",
+   "evidence": []
+  },
+  {
+   "id": "F12-align-004",
+   "severity": "style",
+   "title": "hyp.align(single non-list array) returns a list-of-one, inconsistent with hyp.reduce (bare array) and its own docstring",
+   "repro": "import numpy as np, hypertools as hyp\nX=np.random.randn(30,5)\nprint(type(hyp.align(X, model='NullAlign')).__name__, '<- align')\nprint(type(hyp.reduce(X, reduce={'model':'PCA','args':[],'kwargs':{'n_components':3}})).__name__, '<- reduce')",
+   "expected": "align single-array -> bare ndarray (to match reduce and the docstring)",
+   "actual": "align(single array) -> list[len1]; reduce(single array)-> ndarray shape(30,3)",
+   "evidence": []
+  },
+  {
+   "id": "F12-align-005",
+   "severity": "enhancement",
+   "title": "Aligner classes (HyperAlign, Procrustes, SRM...) are not importable via hypertools.align.* nor exposed at top level, though the docstring says you may pass an instance",
+   "repro": "import hypertools as hyp\nprint(type(hyp.align).__name__)          # function\nimport hypertools.align as A\nprint(type(A).__name__)                  # function (subpackage shadowed)\nprint(hasattr(hyp,'HyperAlign'))         # False",
+   "expected": "a discoverable public path to HyperAlign/Procrustes/SharedResponseModel/... classes",
+   "actual": "hyp.align is a function; `import hypertools.align as A` -> function; hasattr(hyp,'HyperAlign') False",
+   "evidence": []
+  },
+  {
+   "id": "F12-align-006",
+   "severity": "minor",
+   "title": "hyp.align([]) (empty list) loads the minipedia text corpus and dies with a cryptic LatentDirichletAllocation error",
+   "repro": "import hypertools as hyp\nhyp.align([], model='HyperAlign')",
+   "expected": "clear error e.g. 'cannot align an empty list of datasets'",
+   "actual": "loading corpus: minipedia...done!  ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation.",
+   "evidence": []
+  },
+  {
+   "id": "F12-align-007",
+   "severity": "minor",
+   "title": "HyperAlign n_iter validation uses assert (stripped under python -O); float n_iter silently truncated",
+   "repro": "import numpy as np, hypertools as hyp\nds=[np.random.randn(20,4) for _ in range(3)]\nhyp.align(ds, model='HyperAlign', n_iter=-1)   # AssertionError, not ValueError\nhyp.align(ds, model='HyperAlign', n_iter=2.5)  # runs, int()->2 silently",
+   "expected": "ValueError('n_iter must be a non-negative integer') robust under -O",
+   "actual": "AssertionError: n_iter must be non-negative ; n_iter=2.5 runs with silent truncation",
+   "evidence": []
+  },
+  {
+   "id": "F12-align-008",
+   "severity": "minor",
+   "title": "Procrustes error messages: giant embedded whitespace + jargony 'invariant in time datasets'",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nsrc=pd.DataFrame(np.random.randn(20,8)); tgt=pd.DataFrame(np.random.randn(20,3))\nhyp.align([src], model='Procrustes', target=tgt, reduction=False)\nhyp.align([np.zeros((20,4)), np.random.randn(20,4)], model='Procrustes')",
+   "expected": "single-spaced, user-facing wording",
+   "actual": "'reduction=False, so mapping from                               higher dimensionality ...' ; 'For now do not handle invariant in time datasets'",
+   "evidence": []
+  },
+  {
+   "id": "F12-align-009",
+   "severity": "minor",
+   "title": "Datasets with zero index overlap yield silent empty (0, k) arrays",
+   "repro": "import warnings, numpy as np, pandas as pd, hypertools as hyp\na=pd.DataFrame(np.random.randn(4,4), index=[0,1,2,3])\nb=pd.DataFrame(np.random.randn(4,4), index=[10,11,12,13])\nwith warnings.catch_warnings():\n    warnings.simplefilter('ignore')\n    print([np.asarray(o).shape for o in hyp.align([a,b], model='HyperAlign')])",
+   "expected": "clear error about no common observations",
+   "actual": "[(0, 4), (0, 4)]",
+   "evidence": []
+  },
+  {
+   "id": "F12-align-010",
+   "severity": "minor",
+   "title": "[infra] .venv ships a STALE non-editable hypertools that lacks release-branch fixes",
+   "repro": "cd /tmp && /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools; print(hypertools.__file__)\"  # -> site-packages stale copy\ngrep -c _reject_unknown_aligner /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/hypertools/align/align.py  # -> 0\ngrep -c _reject_unknown_aligner /Users/jmanning/hypertools/hypertools/align/align.py  # -> 3",
+   "expected": "installed hypertools == repo source (editable install)",
+   "actual": "site-packages copy is stale (0 guard occurrences) vs repo source (3); different line numbers/behavior",
+   "evidence": [],
+   "skip_verification": "environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run."
+  }
+ ]
+}

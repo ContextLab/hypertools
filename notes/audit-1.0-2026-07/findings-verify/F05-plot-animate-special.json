@@ -1,0 +1,155 @@
+{
+ "unit": "F05-plot-animate-special",
+ "findings": [
+  {
+   "id": "F05-plot-animate-special-001",
+   "severity": "major",
+   "title": "chemtrails draws nearly the whole FUTURE trajectory as a 'past' trail for the first tail_duration seconds, then blinks empty (negative-slice bug)",
+   "repro": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nt = np.linspace(0, 4*np.pi, 40)\nd = np.column_stack([np.cos(t), np.sin(t), np.linspace(0,1,40)])\nr = hyp.plot([d], animate=True, chemtrails=True, duration=4, tail_duration=1, frame_rate=12, show=False)\nfig, ani = r\nax = fig.axes[0]\nfor num in [0, 5, 10, 11, 12]:\n    ani._draw_frame(num)\n    trail = [l for l in ax.lines if l.get_alpha() == 0.3][0]\n    print(num, len(trail.get_data_3d()[0]))\n\"",
+   "expected": "Trail point counts 0,0,0,0,1 for frames 0,5,10,11,12 (nothing has left the 12-frame head window before frame 11).",
+   "actual": "0 37\\n5 42\\n10 47\\n11 0\\n12 1  -- frame 10 shows 47/48 points as faint trail (evidence PNG shows the full spiral faint with the head at the bottom), frame 11 blinks to nothing.",
+   "evidence": [
+    "evidence/F05-plot-animate-special/ctshort_frame010.png",
+    "evidence/F05-plot-animate-special/ctshort_frame011.png",
+    "evidence/F05-plot-animate-special/ctshort_frame012.png",
+    "evidence/F05-plot-animate-special/chemtrails_shortwindow.gif"
+   ]
+  },
+  {
+   "id": "F05-plot-animate-special-002",
+   "severity": "major",
+   "title": "animate + continuous/matrix hue silently renders static content on matplotlib: no reveal, no chemtrails/precog/bullettime; 2-D case saves a 1-frame GIF; plotly disagrees",
+   "repro": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nfrom PIL import Image\nt = np.linspace(0, 4*np.pi, 40)\nd = np.column_stack([np.cos(t), np.sin(t), np.linspace(0,1,40)])\nhyp.plot(d, ndims=2, animate=True, hue=np.linspace(0,1,40), duration=2, frame_rate=12, show=False, save_path='/tmp/hue2d.gif')\nprint('gif frames:', Image.open('/tmp/hue2d.gif').n_frames)\n\"",
+   "expected": "A 24-frame gif in which the multicolored 2-D trajectory is progressively revealed (like the no-hue control, which produces 24 distinct frames).",
+   "actual": "gif frames: 1  -- all 24 rendered frames are pixel-identical so Pillow merges them; the 'animation' is a static image. 3-D precog+hue evidence: s7_chue_precog_f04.png shows the full trajectory opaque at frame 4 vs s7_nohue_precog_f04.png showing the correct opaque-head + faint-future rendering. Plotly control: frame point counts [2,1]/[7,1]/[21,1] at frames 0/6/20.",
+   "evidence": [
+    "evidence/F05-plot-animate-special/s8_2d_hue_parallel.gif",
+    "evidence/F05-plot-animate-special/s8_2d_hue_parallel_f00.png",
+    "evidence/F05-plot-animate-special/s7_chue_precog_f04.png",
+    "evidence/F05-plot-animate-special/s7_nohue_precog_f04.png",
+    "evidence/F05-plot-animate-special/w1_hue_ct_f06.png",
+    "evidence/F05-plot-animate-special/s6_precog_hue_f06.png"
+   ]
+  },
+  {
+   "id": "F05-plot-animate-special-012",
+   "severity": "major",
+   "title": "A 1-point dataset alongside a trajectory crashes plot() with a raw scipy error ([multi,single]) or silently yields a 1-frame animation ([single,multi])",
+   "repro": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nt = np.linspace(0, 4*np.pi, 40)\nd = np.column_stack([np.cos(t), np.sin(t), np.linspace(0,1,40)])\npt = d[:1]\ntry:\n    hyp.plot([d, pt], animate=True, duration=2, frame_rate=12, show=False)\nexcept Exception as e:\n    print('crash:', e)\nr = hyp.plot([pt, d], animate=True, duration=2, frame_rate=12, show=False)\nprint('frames when single point first:', r.animation._save_count)\n\"",
+   "expected": "Both orders render a 24-frame animation (single point drawn as a marker), or a clear error explaining single-point datasets and the fmt workaround.",
+   "actual": "crash: `x` must contain at least 2 elements.\\nframes when single point first: 1",
+   "evidence": []
+  },
+  {
+   "id": "F05-plot-animate-special-003",
+   "severity": "minor",
+   "title": "animate='spin'/'parallel'/True/'window' ignore the azim= kwarg (camera always starts at azimuth 0); 'serial'/'morph' honor it",
+   "repro": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nd = np.random.RandomState(0).randn(30, 3)\nr = hyp.plot(d, animate='spin', azim=45, duration=1, frame_rate=6, show=False)\nr.animation._draw_frame(0)\nprint('frame-0 azim:', r.figure.axes[0].azim)\n\"",
+   "expected": "frame-0 azim: 45.0 (as passed), matching how 'serial'/'morph' treat azim.",
+   "actual": "frame-0 azim: 0.0",
+   "evidence": [
+    "evidence/F05-plot-animate-special/spin_azim45_frame000.png"
+   ]
+  },
+  {
+   "id": "F05-plot-animate-special-004",
+   "severity": "minor",
+   "title": "Non-bool/non-string truthy animate values (e.g. animate=2) silently produce a STATIC plot",
+   "repro": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp, warnings\nd = np.random.RandomState(0).randn(30, 3)\nwith warnings.catch_warnings(record=True) as w:\n    warnings.simplefilter('always')\n    r = hyp.plot(d, animate=2, duration=1, frame_rate=6, show=False)\nprint(type(r).__name__, [str(x.message) for x in w])\n\"",
+   "expected": "ValueError like the one for unknown string styles ('unknown animate style 2; valid styles are ...'), or an animated plot.",
+   "actual": "Figure []  -- silent static figure, zero warnings.",
+   "evidence": []
+  },
+  {
+   "id": "F05-plot-animate-special-005",
+   "severity": "minor",
+   "title": "Trail flags as np.ndarray crash with a cryptic numpy message; str/dict values are silently coerced to True",
+   "repro": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nd = [np.random.RandomState(0).randn(30, 3), np.random.RandomState(1).randn(30, 3)]\nhyp.plot(d, animate=True, chemtrails=np.array([True, False]), duration=1, frame_rate=6, show=False)\n\"",
+   "expected": "Either per-dataset behavior identical to chemtrails=[True, False], or 'ValueError: chemtrails must be a bool or list/tuple of bool (got numpy.ndarray); e.g. chemtrails=list(arr)'.",
+   "actual": "ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()",
+   "evidence": []
+  },
+  {
+   "id": "F05-plot-animate-special-006",
+   "severity": "minor",
+   "title": "animate='chemtrails' sugar silently overrides an explicit chemtrails=False (dict form raises on the same kind of conflict)",
+   "repro": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nd = [np.random.RandomState(0).randn(30, 3)]\nr = hyp.plot(d, animate='chemtrails', chemtrails=False, duration=1, frame_rate=6, show=False)\nr.animation._draw_frame(3)\nprint('trail artists:', len([l for l in r.figure.axes[0].lines if l.get_alpha() == 0.3]))\n\"",
+   "expected": "ValueError naming the conflict (matching the dict-form precedent), or at minimum a UserWarning.",
+   "actual": "trail artists: 1 (chemtrails silently forced True; no warning)",
+   "evidence": []
+  },
+  {
+   "id": "F05-plot-animate-special-008",
+   "severity": "minor",
+   "title": "precog leaves a one-segment gap between the opaque head and the faint future trail",
+   "repro": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nt = np.linspace(0, 4*np.pi, 40)\nd = np.column_stack([np.cos(t), np.sin(t), np.linspace(0,1,40)])\nr = hyp.plot([d], animate=True, precog=True, duration=4, tail_duration=1, frame_rate=12, show=False)\nr.animation._draw_frame(20)\nax = r.figure.axes[0]\nhead = ax.lines[0].get_data_3d(); trail = [l for l in ax.lines if l.get_alpha() == 0.3][0].get_data_3d()\nprint('head last:', [round(float(v[-1]), 4) for v in head]); print('trail first:', [round(float(v[0]), 4) for v in trail])\n\"",
+   "expected": "trail first point == head last point (shared vertex, continuous line).",
+   "actual": "head last: [0.4991, -0.8696, -0.0738] / trail first: [0.7064, -0.709, -0.0529] -- one full interpolation step apart; the joining segment is never rendered.",
+   "evidence": []
+  },
+  {
+   "id": "F05-plot-animate-special-009",
+   "severity": "minor",
+   "title": "Negative tail_duration is accepted silently and suppresses the opaque head entirely",
+   "repro": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nt = np.linspace(0, 4*np.pi, 40)\nd = np.column_stack([np.cos(t), np.sin(t), np.linspace(0,1,40)])\nr = hyp.plot([d], animate=True, chemtrails=True, tail_duration=-1, duration=2, frame_rate=12, show=False)\nr.animation._draw_frame(12)\nprint('head pts:', len(r.figure.axes[0].lines[0].get_data_3d()[0]))\n\"",
+   "expected": "ValueError: tail_duration must be a non-negative number of seconds (mirroring focused='s validation).",
+   "actual": "head pts: 0  -- silent animation with no opaque trajectory at any frame.",
+   "evidence": []
+  },
+  {
+   "id": "F05-plot-animate-special-010",
+   "severity": "minor",
+   "title": "duration=/frame_rate= are not honored for marker-only parallel animations (frame count = raw row count)",
+   "repro": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nd = [np.random.RandomState(0).randn(40, 3)]\nr = hyp.plot(d, fmt='.', animate=True, duration=2, frame_rate=12, show=False)\nprint('frames:', r.animation._save_count, 'expected:', 2 * 12)\n\"",
+   "expected": "frames: 24 (duration * frame_rate), matching the documented contract.",
+   "actual": "frames: 40 expected: 24",
+   "evidence": []
+  },
+  {
+   "id": "F05-plot-animate-special-011",
+   "severity": "minor",
+   "title": "Rows that are entirely NaN crash line plots (animated and static) with a raw scipy error instead of a hypertools message",
+   "repro": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nt = np.linspace(0, 4*np.pi, 40)\nd = np.column_stack([np.cos(t), np.sin(t), np.linspace(0,1,40)])\nd[10:13, :] = np.nan\nhyp.plot([d], animate='bullettime', duration=2, frame_rate=12, show=False)\n\"",
+   "expected": "Either the rows are dropped/imputed with a warning, or a hypertools-level error: 'data contains rows with all values missing; drop them or pass impute=...'.",
+   "actual": "ValueError: `y` must contain only finite values.  (raised from hypertools/_shared/helpers.py:140 interp_array -> scipy pchip; identical for the static plot)",
+   "evidence": []
+  },
+  {
+   "id": "F05-plot-animate-special-013",
+   "severity": "minor",
+   "title": "save_path with an unrecognized extension leaks a raw ffmpeg CalledProcessError instead of naming supported formats",
+   "repro": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nd = [np.random.RandomState(0).randn(30, 3)]\nhyp.plot(d, animate='spin', duration=1, frame_rate=6, show=False, save_path='/tmp/anim.xyz')\n\"",
+   "expected": "ValueError: unsupported animation extension '.xyz'; use .gif, .png/.apng, .svg, or an ffmpeg video format (.mp4/.mov/.avi).",
+   "actual": "subprocess.CalledProcessError: Command '['ffmpeg', '-f', 'rawvideo', '-vcodec', 'rawvideo', '-s', '600x600', '-pix_fmt', 'rgba', '-framerate', '12', '-loglevel', 'error', '-i', 'pipe:', '-vcodec', 'h264', ...]' returned non-zero exit status 1.",
+   "evidence": []
+  },
+  {
+   "id": "F05-plot-animate-special-007",
+   "severity": "style",
+   "title": "Trail flags on a static plot are silently ignored, while spin/serial/morph/window warn",
+   "repro": "env MPLBACKEND=Agg PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp, warnings\nd = [np.random.RandomState(0).randn(30, 3)]\nwith warnings.catch_warnings(record=True) as w:\n    warnings.simplefilter('always')\n    hyp.plot(d, chemtrails=True, show=False)\nprint([str(x.message) for x in w])\n\"",
+   "expected": "A UserWarning like the spin one: \"chemtrails has no effect without animate=; pass animate=True/'parallel'\".",
+   "actual": "[] (no warning)",
+   "evidence": []
+  },
+  {
+   "id": "F05-plot-animate-special-014",
+   "severity": "minor",
+   "title": "infra: repo .venv contains a stale NON-editable hypertools build; code imported from any non-repo cwd is not the release candidate",
+   "repro": "cd /tmp && /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools; print(hypertools.__file__); import hypertools.plot.hyper_animation\"",
+   "expected": "hypertools resolves to /Users/jmanning/hypertools/hypertools/__init__.py (editable install) and hyper_animation imports.",
+   "actual": "hypertools resolves to .venv/lib/python3.12/site-packages/hypertools/__init__.py and raises ModuleNotFoundError: No module named 'hypertools.plot.hyper_animation'; animated hyp.plot(...) there returned type 'tuple' (no .save/.figure/.to_jshtml).",
+   "evidence": [],
+   "skip_verification": "environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run."
+  },
+  {
+   "id": "F05-plot-animate-special-015",
+   "severity": "enhancement",
+   "title": "Trail opacity is hardcoded (alpha=0.3) with no kwarg to tune it",
+   "repro": "grep -n 'alpha=0.3' /Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py",
+   "expected": "A documented way to set trail opacity.",
+   "actual": "1315:                        alpha=0.3,\\n1338:                        alpha=0.3,  (hardcoded; no kwarg reaches these)",
+   "evidence": []
+  }
+ ]
+}

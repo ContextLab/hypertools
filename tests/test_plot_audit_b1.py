@@ -234,8 +234,12 @@ class TestReduceEdgeCases:
     def test_reduce_instance_with_more_than_3_components_plots_3d(self):
         from sklearn.decomposition import PCA
         rng = np.random.default_rng(0)
-        fig = hyp.plot(rng.standard_normal((30, 10)),
-                       reduce=PCA(n_components=5), show=False)
+        # the 5-component instance deliberately conflicts with the default
+        # ndims, provoking the dims/n_components notice
+        with pytest.warns(UserWarning,
+                          match='Unequal values passed to dims'):
+            fig = hyp.plot(rng.standard_normal((30, 10)),
+                           reduce=PCA(n_components=5), show=False)
         assert fig.axes[0].name == "3d"
         plt.close("all")
 

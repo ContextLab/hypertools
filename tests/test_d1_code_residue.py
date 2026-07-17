@@ -66,8 +66,11 @@ def test_stream_save_path_mp4_routes_to_ffmpeg(tmp_path):
     """D09-tutorials-applied-009: streaming save_path='...mp4' must write a
     video via the ffmpeg writer instead of crashing inside PIL."""
     out = tmp_path / 'stream.mp4'
-    hyp.plot(_walk(200), stream_init=50, stream_chunk=50, stream_max=200,
-             save_path=str(out), show=False)
+    # the random walk deliberately drifts past the head-fitted display box,
+    # provoking the clamped-samples notice
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        hyp.plot(_walk(200), stream_init=50, stream_chunk=50, stream_max=200,
+                 save_path=str(out), show=False)
     assert out.exists() and out.stat().st_size > 0
 
 

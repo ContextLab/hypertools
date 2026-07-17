@@ -140,6 +140,9 @@ def test_reuse_fitted_pipeline_on_differently_labeled_dataframe():
     assert len(np.asarray(labels)) == 40
 
 
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+@pytest.mark.filterwarnings(
+    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
 def test_zscore_reuse_is_column_label_invariant():
     # positional keying: reusing a fitted ZScore on the SAME values with
     # different column labels gives IDENTICAL output.

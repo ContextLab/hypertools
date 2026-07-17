@@ -1,0 +1,120 @@
+{
+ "unit": "F06-plot-backends",
+ "findings": [
+  {
+   "id": "F06-plot-backends-001",
+   "severity": "critical",
+   "title": "Setting documented $HYPERTOOLS_BACKEND env var to any built-in backend name crashes `import hypertools` (UnboundLocalError masking ValueError)",
+   "repro": "env MPLBACKEND=Agg HYPERTOOLS_BACKEND=TkAgg /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools\"  # run from repo root so the working tree is imported",
+   "expected": "hypertools imports; interactive/animated plots later use the TkAgg backend (or a clear warning if unavailable), per the plot() docstring's description of $HYPERTOOLS_BACKEND",
+   "actual": "Traceback ... File \"hypertools/plot/backend.py\", line 552, in _init_backend\\n    backends[: backends.index(HYPERTOOLS_BACKEND)],\\nValueError: tuple.index(x): x not in tuple\\n\\nDuring handling of the above exception, another exception occurred: ... File \"hypertools/plot/backend.py\", line 691, in _init_backend\\n    HYPERTOOLS_BACKEND = HypertoolsBackend(working_backend).normalize()\\nUnboundLocalError: cannot access local variable 'working_backend' where it is not associated with a value",
+   "evidence": []
+  },
+  {
+   "id": "F06-plot-backends-002",
+   "severity": "major",
+   "title": "A single failed backend switch permanently corrupts backend-management state (IN_SET_CONTEXT stuck True; HYPERTOOLS_BACKEND left at the bad value; BACKEND_WARNING cleared)",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python - <<'EOF'\nimport sys; sys.path.insert(0, '/Users/jmanning/hypertools')\nimport numpy as np, hypertools as hyp\nfrom hypertools.plot import backend as B\ndata = [np.random.default_rng(1).standard_normal((30, 4))]\nhyp.set_interactive_backend('bogus')          # accepted silently (see 003)\ntry:\n    hyp.plot(data, animate=True, duration=1, frame_rate=5, show=False)\nexcept Exception as e:\n    print(type(e).__name__, e)\nprint('IN_SET_CONTEXT =', B.IN_SET_CONTEXT)   # True -- leaked forever\nprint('HYPERTOOLS_BACKEND =', repr(B.HYPERTOOLS_BACKEND))  # 'bogus'\nfig = hyp.plot(data, animate=True, duration=1, frame_rate=5, show=False)\nprint('silently succeeded on current backend:', type(fig).__name__)\nEOF",
+   "expected": "The failed switch raises, and hypertools' state is restored: IN_SET_CONTEXT back to False, HYPERTOOLS_BACKEND back to its previous (working) value, so later plots behave normally (or keep raising the SAME clear error)",
+   "actual": "HypertoolsBackendError: Failed to switch the plotting backend to bogus. You may be missing required dependencies, or this backend may not be available for your system\\nIN_SET_CONTEXT = True\\nHYPERTOOLS_BACKEND = 'bogus'\\nsilently succeeded on current backend: HyperAnimation  -- and t06 (docstring examples verbatim, Tk-less machine): post-example-1 state: IN_SET_CONTEXT = True | HYPERTOOLS_BACKEND = 'TkAgg'",
+   "evidence": []
+  },
+  {
+   "id": "F06-plot-backends-003",
+   "severity": "minor",
+   "title": "set_interactive_backend performs no validation: 'bogus', None, 42, lists, bytes are all silently accepted and coerced to garbage backend strings",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python - <<'EOF'\nimport sys; sys.path.insert(0, '/Users/jmanning/hypertools')\nimport hypertools as hyp\nfrom hypertools.plot import backend as B\nfor bad in ('bogus', None, 42, ['plotly'], b'plotly'):\n    hyp.set_interactive_backend(bad)\n    print(repr(bad), '->', repr(B.HYPERTOOLS_BACKEND))\nEOF",
+   "expected": "Unknown backend names raise (or at least warn) at set time, naming valid options; None either resets to auto-detection or raises TypeError",
+   "actual": "'bogus' -> 'bogus'\\nNone -> 'None'\\n42 -> '42'\\n['plotly'] -> \"['plotly']\"\\nb'plotly' -> \"b'plotly'\"  (all silent; failure deferred to plot time)",
+   "evidence": []
+  },
+  {
+   "id": "F06-plot-backends-004",
+   "severity": "minor",
+   "title": "Nested set_interactive_backend contexts: inner __exit__ resets IN_SET_CONTEXT to False while the outer context is still active",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python - <<'EOF'\nimport sys; sys.path.insert(0, '/Users/jmanning/hypertools')\nimport hypertools as hyp\nfrom hypertools.plot import backend as B\nwith hyp.set_interactive_backend('plotly'):\n    with hyp.set_interactive_backend('matplotlib'):\n        pass\n    print('inside outer context, IN_SET_CONTEXT =', B.IN_SET_CONTEXT)\nEOF",
+   "expected": "inside outer context, IN_SET_CONTEXT = True",
+   "actual": "inside outer context, IN_SET_CONTEXT = False",
+   "evidence": []
+  },
+  {
+   "id": "F06-plot-backends-005",
+   "severity": "doc",
+   "title": "The render-backend form set_interactive_backend('plotly'|'matplotlib') -- the only global way to prefer plotly -- is completely undocumented in the user-facing docstring/API docs",
+   "repro": "grep -n \"plotly\" /Users/jmanning/hypertools/hypertools/plot/backend.py | awk -F: '$1 > 922 && $1 < 1014'   # no hits inside the docstring; and: env MPLBACKEND=Agg HYPERTOOLS_BACKEND=plotly .venv/bin/python -W always -c 'import hypertools'",
+   "expected": "The docstring documents both accepted forms (matplotlib GUI backend keys AND the 'plotly'/'matplotlib' render preference), and the env-var/docstring cross-references say which form each mechanism accepts",
+   "actual": "Docstring text covers only 'TkAgg'-style matplotlib keys; UserWarning: failed to set matplotlib backend to backend specified in environment ('plotly'). Falling back to 'MacOSX'",
+   "evidence": []
+  },
+  {
+   "id": "F06-plot-backends-006",
+   "severity": "doc",
+   "title": "save_path='.html' (plotly interactive export) works but is undocumented; save-format support is asymmetric across backends and the save_path docstring only describes the matplotlib/FFMPEG story",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python - <<'EOF'\nimport sys; sys.path.insert(0, '/Users/jmanning/hypertools')\nimport hypertools as hyp\nspiral = hyp.load('spiral')\nhyp.plot(spiral, show=False, backend='plotly', save_path='/tmp/x.html')   # works\nhyp.plot(spiral, show=False, backend='matplotlib', save_path='/tmp/y.html')  # raises\nEOF",
+   "expected": "save_path docs state which extensions each backend supports (html = plotly only; png/pdf/... via matplotlib directly or via kaleido on plotly; gif/mp4 per backend animation exporters)",
+   "actual": "plotly: /tmp/x.html written (verified rendering in Chromium, play controls work); matplotlib: ValueError: Format 'html' is not supported (supported formats: eps, jpeg, jpg, pdf, pgf, png, ps, raw, rgba, svg, svgz, tif, tiff, webp)",
+   "evidence": [
+    "a1_frame0_plotly.png",
+    "a1_midplay_plotly.png"
+   ]
+  },
+  {
+   "id": "F06-plot-backends-007",
+   "severity": "enhancement",
+   "title": "No public way to reset the render preference to auto-detection once set",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python - <<'EOF'\nimport sys; sys.path.insert(0, '/Users/jmanning/hypertools')\nimport hypertools as hyp\nfrom hypertools.plot import backend as B\nhyp.set_interactive_backend('plotly')\nhyp.set_interactive_backend(None)  # intuitive 'reset' attempt\nprint('PREFERRED_RENDER_BACKEND =', repr(B.PREFERRED_RENDER_BACKEND))\nprint('HYPERTOOLS_BACKEND =', repr(B.HYPERTOOLS_BACKEND))\nEOF",
+   "expected": "Some documented call restores the default auto-detect state",
+   "actual": "PREFERRED_RENDER_BACKEND = 'plotly'\\nHYPERTOOLS_BACKEND = 'None'  (preference stuck; mpl-backend state corrupted)",
+   "evidence": []
+  },
+  {
+   "id": "F06-plot-backends-008",
+   "severity": "minor",
+   "title": "set_interactive_backend('plotly') is silently ignored when plotly is not installed (auto falls back to matplotlib with no warning), while plot(backend='plotly') raises a helpful ImportError",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F06-plot-backends/t07_env_detect.py noplotly",
+   "expected": "A warning (at set or first-plot time) that the plotly preference cannot be honored because plotly is not installed",
+   "actual": "after set_interactive_backend('plotly') without plotly, auto returns: matplotlib.figure.Figure  (no warning, no error)",
+   "evidence": []
+  },
+  {
+   "id": "F06-plot-backends-009",
+   "severity": "minor",
+   "title": "`import hypertools.plot.backend as B` fails with a confusing error because the plot() function shadows the plot subpackage attribute; the plot() docstring references this exact module path",
+   "repro": "cd /Users/jmanning/hypertools && .venv/bin/python -c \"import hypertools.plot.backend as B\"",
+   "expected": "Module imports (or the docstring points at an importable path)",
+   "actual": "ImportError: cannot import name 'backend' from 'plot' (unknown location)",
+   "evidence": []
+  },
+  {
+   "id": "F06-plot-backends-010",
+   "severity": "style",
+   "title": "plotly title-size comment '12pt = 16px' uses the CSS 96-dpi conversion the same module explicitly rejects for markers/lines (100 dpi -> 12pt = 16.67px)",
+   "repro": "grep -n '12pt = 16px' /Users/jmanning/hypertools/hypertools/plot/plotly_backend.py; python3 -c \"print(12*100/72, 12*96/72)\"",
+   "expected": "16.666... px per the module's own 100-dpi rule (or a comment acknowledging the deliberate rounding)",
+   "actual": "font size=16 with comment '12pt = 16px'; 12*100/72 = 16.666666666666668",
+   "evidence": []
+  },
+  {
+   "id": "F06-plot-backends-011",
+   "severity": "minor",
+   "title": "[infra] plotly static/animated image export (kaleido) untestable on this machine -- save_path='.png/.gif/.mp4/.svg' on the plotly backend and the animate_plotly.py docs example remain unverified",
+   "repro": "NOT RUN (banned): hyp.plot(data, animate='spin', backend='plotly', save_path='spin.gif', show=False)",
+   "expected": "n/a -- coverage gap record",
+   "actual": "n/a -- not executed; matplotlib-side comparison evidence: a4_parallel_mpl.gif (0.34 MB) saved successfully",
+   "evidence": [
+    "a4_parallel_mpl.gif"
+   ],
+   "skip_verification": "environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run."
+  },
+  {
+   "id": "F06-plot-backends-012",
+   "severity": "minor",
+   "title": "[infra] .venv contains a STALE non-editable hypertools install; imports from outside the repo root silently get pre-QC code",
+   "repro": "/Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/F06-plot-backends/t01_switching.py  # with the sys.path.insert line removed; or: grep -c PREFERRED_RENDER_BACKEND /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/hypertools/plot/backend.py",
+   "expected": "site-packages hypertools matches the working tree (editable install)",
+   "actual": "grep count = 0 (stale snapshot); original failure: AttributeError: module 'hypertools.plot.backend' has no attribute 'PREFERRED_RENDER_BACKEND'",
+   "evidence": [],
+   "skip_verification": "environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run."
+  }
+ ]
+}

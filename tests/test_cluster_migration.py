@@ -263,11 +263,14 @@ def test_apply_model_list_return_model_gives_pipeline_not_list():
     # reachable via named_steps/steps
     d1 = np.cumsum(np.random.RandomState(0).standard_normal((60, 8)), axis=0)
     d2 = np.cumsum(np.random.RandomState(1).standard_normal((60, 8)), axis=0)
-    result, fitted = apply_model(
-        [d1, d2],
-        [{'model': 'PCA', 'params': {'n_components': 5}},
-         {'model': 'PCA', 'params': {'n_components': 2}}],
-        return_model=True)
+    # two legacy 'params' dict specs exercised deliberately; assert the
+    # deprecation notice fires
+    with pytest.warns(DeprecationWarning, match=r"'params'.*deprecated"):
+        result, fitted = apply_model(
+            [d1, d2],
+            [{'model': 'PCA', 'params': {'n_components': 5}},
+             {'model': 'PCA', 'params': {'n_components': 2}}],
+            return_model=True)
     assert isinstance(fitted, hyp.Pipeline)
     assert len(fitted.steps) == 2
     held_out = fitted.transform(np.asarray(d2, dtype=np.float64))

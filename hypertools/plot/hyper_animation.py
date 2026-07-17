@@ -20,6 +20,28 @@ returned object itself.
 """
 
 
+def mark_draw_started(animation):
+    """Silence matplotlib's 'Animation was deleted without rendering anything'
+    UserWarning for ``animation`` (release-1.0 audit, X4-warnings-012).
+
+    The warning fires from ``Animation.__del__`` when the private
+    ``_draw_was_started`` flag is still False; matplotlib only reads the flag
+    there (and itself force-sets it True in ``Animation.save``), so marking it
+    True has no effect on rendering -- saving/display still work exactly as
+    before. Used by ``HyperAnimation.__del__`` when a wrapper is discarded,
+    and by ``plot.py`` when handing the RAW ``FuncAnimation`` back in a
+    ``return_model=True`` bundle (that path never constructs a
+    ``HyperAnimation``, so without this the animation -- kept in a reference
+    cycle by its own canvas callbacks -- warned at the next cyclic-gc pass,
+    misattributed to whatever code ran later)."""
+    try:
+        if getattr(animation, '_draw_was_started', None) is False:
+            animation._draw_was_started = True
+    except Exception:
+        # never let cleanup raise during interpreter shutdown/GC
+        pass
+
+
 class HyperAnimation(tuple):
     """A ``(figure, animation)`` tuple with animation export/display helpers.
 
@@ -112,11 +134,10 @@ class HyperAnimation(tuple):
         as this wrapper is collected, keeps matplotlib quiet without
         affecting rendering (nothing is drawn or closed -- saving/display
         still work exactly as before if the inner animation object
-        outlives the wrapper)."""
+        outlives the wrapper). Delegates to ``mark_draw_started`` (also
+        used by the ``return_model=True`` bundle path in ``plot.py``)."""
         try:
-            anim = self[1]
-            if getattr(anim, '_draw_was_started', None) is False:
-                anim._draw_was_started = True
+            mark_draw_started(self[1])
         except Exception:
             # never let cleanup raise during interpreter shutdown/GC
             pass

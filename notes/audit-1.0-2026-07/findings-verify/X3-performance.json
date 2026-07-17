@@ -1,0 +1,93 @@
+{
+ "unit": "X3-performance",
+ "findings": [
+  {
+   "id": "X3-performance-001",
+   "severity": "major",
+   "title": "load('sotus') returns the nips_model sklearn Pipeline instead of the documented SOTU speeches; hyp.plot(hyp.load('sotus')) crashes",
+   "repro": "import hypertools as hyp\nsotus = hyp.load('sotus')\nprint(type(sotus))  # <class 'sklearn.pipeline.Pipeline'>\nhyp.plot(sotus)     # TypeError\n# registry check:\n# grep -n \"'sotus'\\|'nips_model'\" hypertools/io/load.py\n# md5 ~/hypertools_data/sotus ~/hypertools_data/nips_model",
+   "expected": "load('sotus') returns the 1989-2018 State of the Union speech texts (list of strings / DataFrame) as documented, and hyp.plot(hyp.load('sotus')) renders the classic text-embedding plot.",
+   "actual": "sotus type: <class 'sklearn.pipeline.Pipeline'>\nTypeError: Unsupported data type passed. Supported types: Numpy Array, Pandas DataFrame, String, List of strings, List of numbers\nMD5 (/Users/jmanning/hypertools_data/sotus) = 6a350ab8d85db34e7b924ac8a7f2a19b\nMD5 (/Users/jmanning/hypertools_data/nips_model) = 6a350ab8d85db34e7b924ac8a7f2a19b",
+   "evidence": []
+  },
+  {
+   "id": "X3-performance-002",
+   "severity": "major",
+   "title": "Static line plots silently resample every trajectory to ~frame_rate*duration (~900) vertices: a 50-sigma single-sample spike in 10,000-sample data is completely absent from the default plot, and the final ~0.1% of samples are never drawn (both backends)",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(5)\nd = np.cumsum(rng.standard_normal((10000,3)), axis=0)*0.05\nd[5001] += np.array([50.,50.,50.])\nfig = hyp.plot(d, reduce=None, show=False)\nX,Y,Z = fig.axes[0].lines[0].get_data_3d()\nprint(X.shape)  # (900,) not (10000,)\n# compare fig.savefig(...) against plain ax.plot(d[:,0],d[:,1],d[:,2])",
+   "expected": "A static line plot of N samples draws all N samples (or documents/warns about lossy resampling); genuine extreme samples are visible; the trajectory endpoint is drawn.",
+   "actual": "vertices: 900\ntrue max coord: 53.88  drawn max coord: 1.0\n[spike_hypertools.png: no spike visible; spike_groundtruth.png: needle to (50,50,50) dominates]\nplotly trace0: scatter3d n points: 900\n10000-sample, +500 on LAST sample: 99th pct of |drawn| coords = 0.920 (endpoint excluded); last interp grid point = index 9987.9 of 9999",
+   "evidence": [
+    "evidence/X3-performance/spike_hypertools.png",
+    "evidence/X3-performance/spike_groundtruth.png",
+    "evidence/X3-performance/spike_markers.png",
+    "evidence/X3-performance/endpoint_truncation.png"
+   ]
+  },
+  {
+   "id": "X3-performance-003",
+   "severity": "minor",
+   "title": "duration= and frame_rate= are documented '(animation only)' but silently reshape STATIC plots -- duration=1, frame_rate=2 draws a 10,000-sample trajectory as a single 2-vertex segment",
+   "repro": "import numpy as np, hypertools as hyp\nd = np.cumsum(np.random.default_rng(5).standard_normal((10000,3)), axis=0)\nfor dur, fr in [(30,30),(60,30),(1,2)]:\n    fig = hyp.plot(d, reduce=None, duration=dur, frame_rate=fr, show=False)\n    print(dur, fr, fig.axes[0].lines[0].get_data_3d()[0].shape)",
+   "expected": "Parameters documented '(animation only)' have no effect on a non-animated plot.",
+   "actual": "static plot duration=30 frame_rate=30 -> 900 vertices\nstatic plot duration=60 frame_rate=30 -> 1800 vertices\nstatic plot duration=1 frame_rate=2 -> 2 vertices",
+   "evidence": []
+  },
+  {
+   "id": "X3-performance-004",
+   "severity": "minor",
+   "title": "align() silently accepts 3D arrays, flattening them into (n_slices, time*channels); on realistic sizes this grinds for ~1 minute and returns meaningless output instead of raising a shape error",
+   "repro": "import numpy as np, hypertools as hyp\nbad = [np.random.default_rng(0).standard_normal((2,100,3)) for _ in range(2)]\nout = hyp.align(bad)\nprint(np.asarray(out[0]).shape)  # (2, 300) -- no error, no warning\n# slow variant: bad = [np.random.standard_normal((2,1000,3))]*2 -> ~59 s",
+   "expected": "ValueError naming the offending dataset's ndim/shape and stating that align expects 2D (samples x features) datasets.",
+   "actual": "align 3D arrays: ACCEPTED, 0.073s, out[0] shape (2, 300)\n[workflow log] W3b align [spiral(2,1000,3) misshaped, rotated]: 58.703s",
+   "evidence": []
+  },
+  {
+   "id": "X3-performance-005",
+   "severity": "minor",
+   "title": "reduce() unknown-model error message embeds raw multi-line-string whitespace, points to a stale http:// readthedocs URL, and (unlike align's) does not list the supported model names",
+   "repro": "import numpy as np, hypertools as hyp\nhyp.reduce(np.random.standard_normal((100,10)), reduce='NotAModel', ndims=2)",
+   "expected": "ValueError naming the unknown model and listing supported names (like hyp.align's), without embedded whitespace artifacts or a stale URL.",
+   "actual": "ValueError: reduce must be one of the supported options or support n_components and fit_transform          methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce          for supported models",
+   "evidence": []
+  },
+  {
+   "id": "X3-performance-006",
+   "severity": "doc",
+   "title": "animate.py's 'plays in real time / total ~= duration seconds' claim is 10% off at the default frame_rate=30: PillowWriter emits 30 ms frames, so a 2 s animation plays in 1.80 s",
+   "repro": "import numpy as np, hypertools as hyp\nfrom PIL import Image\nd = np.cumsum(np.random.default_rng(7).standard_normal((300,10)), axis=0)\nhyp.plot(d, animate='window', duration=2, frame_rate=30, save_path='w.gif', show=False)\nim = Image.open('w.gif'); im.seek(0)\nprint(im.n_frames, im.info['duration'])  # 60, 30 -> 1.80 s total",
+   "expected": "60 frames x 33.33 ms ~= 2.0 s playback, per the comment.",
+   "actual": "gif frames=60 first_delay=30ms total=1.80s size=1.55MB",
+   "evidence": [
+    "evidence/X3-performance/anim_window_300x10_60frames.gif"
+   ]
+  },
+  {
+   "id": "X3-performance-007",
+   "severity": "enhancement",
+   "title": "Default animation export (duration=30 x frame_rate=30 = 900 frames) costs 46 s and a 19.7 MB gif for a tiny 300x10 dataset, with no documentation of the cost",
+   "repro": "import numpy as np, hypertools as hyp, time\nd = np.cumsum(np.random.default_rng(7).standard_normal((300,10)), axis=0)\nt0=time.time(); hyp.plot(d, animate=True, save_path='default.gif', show=False); print(time.time()-t0)",
+   "expected": "Default-parameter animation export is either fast/small or its cost is documented where save_path/duration are described.",
+   "actual": "animate=True DEFAULT (900 frames) gif save: 46.10s wall, size=19.70MB",
+   "evidence": []
+  },
+  {
+   "id": "X3-performance-008",
+   "severity": "doc",
+   "title": "plot() ndims docstring still says 'If ndims > 3, will plot in 3 dimensions but return the higher dimensional data' -- stale in 1.0, where plot() returns a matplotlib Figure",
+   "repro": "import numpy as np, hypertools as hyp\nfig = hyp.plot(np.random.default_rng(1).standard_normal((100,10)), ndims=7, show=False)\nprint(type(fig))  # matplotlib Figure; no 'higher dimensional data' is returned",
+   "expected": "Docstring matches the 1.0 return type (e.g. '...will plot the first 3 dimensions of the ndims-dimensional reduction').",
+   "actual": "ndims=7 axes name: 3d | n lines: 1\ndrawn dims: (3, 901)\nreturn value: matplotlib.figure.Figure",
+   "evidence": []
+  },
+  {
+   "id": "X3-performance-009",
+   "severity": "style",
+   "title": "Misspelled/unknown **kwargs to plot() only fail deep inside matplotlib (AttributeError from Line2D.set) after the full reduce/align pipeline has already run",
+   "repro": "import numpy as np, hypertools as hyp\nhyp.plot(np.random.standard_normal((100,10)), bananas=7, show=False)",
+   "expected": "Fast, hypertools-level error (or warning) naming the unknown kwarg before the pipeline runs, mirroring the plotly backend's upfront unmapped-kwargs warning.",
+   "actual": "AttributeError: Line2D.set() got an unexpected keyword argument 'bananas' (raised after format/reduce ran)",
+   "evidence": []
+  }
+ ]
+}

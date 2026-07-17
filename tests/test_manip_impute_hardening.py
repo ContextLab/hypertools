@@ -29,7 +29,10 @@ def _rng():
 def test_impute_all_missing_column_no_crash(model):
     df = pd.DataFrame(_rng().normal(size=(40, 4)), columns=list('abcd'))
     df['b'] = np.nan
-    out = np.asarray(hyp.impute(df, model=model))
+    # the all-missing column deliberately provokes the no-observed-values
+    # notice
+    with pytest.warns(UserWarning, match='no observed values at all'):
+        out = np.asarray(hyp.impute(df, model=model))
     assert out.shape == (40, 4)
     assert np.isnan(out).sum() == 0
     assert np.allclose(out[:, 1], 0.0)  # all-missing column filled with 0
@@ -96,7 +99,10 @@ def test_ppca_impute_single_column_clear_error():
     """A single (or sub-2) valid column can't support PPCA's cross-column model;
     it used to crash with a cryptic LinAlgError ('0-dimensional array')."""
     df = pd.DataFrame({'a': ([1.0, 2.0, np.nan, 4.0, 5.0] * 4)})
-    with pytest.raises(ValueError, match='at least 2 columns'):
+    # the NaN cells sit in single-column rows with nothing else observed,
+    # deliberately provoking the cannot-fill notice before the ValueError
+    with pytest.warns(UserWarning, match='cannot fill'), \
+         pytest.raises(ValueError, match='at least 2 columns'):
         hyp.impute(df, model='PPCA')
 
 
@@ -116,7 +122,10 @@ def test_manip_accepts_cross_module_stage_kwargs():
 
 def test_smooth_kernel_width_too_large_clear_error():
     x = np.cumsum(_rng().normal(size=(60, 3)), axis=0)
-    with pytest.raises(ValueError, match='larger than the number of samples'):
+    # the even kernel_width deliberately provokes the must-be-odd notice
+    # before the too-large ValueError
+    with pytest.warns(UserWarning, match='Increasing smoothing kernel width'), \
+         pytest.raises(ValueError, match='larger than the number of samples'):
         manipulate(x, model='Smooth', kernel_width=200)
 
 

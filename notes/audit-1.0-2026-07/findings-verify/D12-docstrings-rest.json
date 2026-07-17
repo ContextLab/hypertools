@@ -1,0 +1,189 @@
+{
+ "unit": "D12-docstrings-rest",
+ "findings": [
+  {
+   "id": "D12-docstrings-rest-001",
+   "severity": "major",
+   "title": "load('sotus') serves the nips_model pickle (stale sklearn text model), not the documented SOTU speeches -- duplicate Drive id in EXAMPLE_DATA",
+   "repro": "cd /Users/jmanning/hypertools && env MPLBACKEND=Agg .venv/bin/python -c \"import hypertools as hyp; s = hyp.load('sotus'); print(type(s)); print(s)\"",
+   "expected": "A collection of State of the Union speeches (text data) per the load() docstring",
+   "actual": "type -> <class 'sklearn.pipeline.Pipeline'> (len 2: CountVectorizer -> LatentDirichletAllocation); print(s) -> AttributeError: 'Pipeline' object has no attribute 'transform_input'; MD5(~/hypertools_data/sotus) == MD5(~/hypertools_data/nips_model) == 6a350ab8d85db34e7b924ac8a7f2a19b",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-002",
+   "severity": "major",
+   "title": "Hosted *_model pickles are sklearn 1.0.2 artifacts: under the pinned sklearn 1.8, loading warns InconsistentVersionWarning and repr() of the returned model raises AttributeError",
+   "repro": "cd /Users/jmanning/hypertools && env MPLBACKEND=Agg .venv/bin/python -c \"import hypertools as hyp; m = hyp.load('sotus_model'); print(m)\"",
+   "expected": "A usable, printable fitted text-processing model (docstring: 'It can be used to transform text to topic vectors.')",
+   "actual": "InconsistentVersionWarning: Trying to unpickle estimator CountVectorizer from version 1.0.2 when using version 1.8.0 ... then RAISED AttributeError: 'Pipeline' object has no attribute 'transform_input'",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-003",
+   "severity": "minor",
+   "title": "hyp.align on a single (non-list) dataset returns a 1-element list, contradicting its documented single-item return and the reduce/normalize convention",
+   "repro": "cd /Users/jmanning/hypertools && env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; r = hyp.align(np.random.randn(50, 5)); print(type(r), len(r), type(r[0]))\"",
+   "expected": "A single numpy array (same single-item shape as the input), per the docstring",
+   "actual": "<class 'list'> 1 <class 'numpy.ndarray'> -- align(single) exact type -> ('list', ['ndarray'])",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-004",
+   "severity": "doc",
+   "title": "format_data docstring's summary paragraph describes missing_inds, and references nonexistent vectorizer_params/text_params kwargs",
+   "repro": "cd /Users/jmanning/hypertools && .venv/bin/python -c \"from hypertools.tools.format_data import format_data; print(format_data.__doc__[:400]); import inspect; print(inspect.signature(format_data))\"",
+   "expected": "A summary describing formatting; parameter docs matching the actual signature",
+   "actual": "'This function is useful to identify rows of your array that contain missing data or nans. The returned indices can be used to remove the rows with missing data...' ; signature is (x, vectorizer='CountVectorizer', semantic='LatentDirichletAllocation', corpus='wiki', ppca=True, text_align='hyper', impute=None) -- no vectorizer_params/text_params",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-005",
+   "severity": "doc",
+   "title": "load() docstring: 'spiral is numpy array' -- it is actually a list of two (1000, 3) arrays",
+   "repro": "cd /Users/jmanning/hypertools && env MPLBACKEND=Agg .venv/bin/python -c \"import hypertools as hyp; s = hyp.load('spiral'); print(type(s), [x.shape for x in s]); s.shape\"",
+   "expected": "docstring describing a list of two (1000, 3) arrays",
+   "actual": "<class 'list'> [(1000, 3), (1000, 3)] then AttributeError: 'list' object has no attribute 'shape'",
+   "evidence": [
+    "align_spiral_before_after.png"
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-006",
+   "severity": "doc",
+   "title": "analyze()/load() normalize param text says \"z-scored across lists (default)\" but their actual default is None (no normalization)",
+   "repro": "cd /Users/jmanning/hypertools && .venv/bin/python -c \"import inspect; from hypertools.tools.analyze import analyze; print(inspect.signature(analyze)); import re; print([l for l in analyze.__doc__.splitlines() if 'across lists' in l])\"",
+   "expected": "Param text stating the analyze/load default is None (no normalization)",
+   "actual": "(data, manip=None, normalize=None, reduce=None, ...) vs doc line \"If set to 'across', the columns of the input data will be z-scored across lists (default).\"",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-007",
+   "severity": "doc",
+   "title": "analyze() docstring claims cluster() 'returns per-dataset labels alongside the transformed data in one call' -- cluster() actually returns one flat label list and no transformed data",
+   "repro": "cd /Users/jmanning/hypertools && env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; r = hyp.cluster([np.random.randn(60, 8), np.random.randn(50, 8)], n_clusters=3, random_state=0); print(type(r), len(r))\"",
+   "expected": "Per the analyze() docstring: per-dataset labels alongside transformed data",
+   "actual": "<class 'list'> 110 -- one flat label sequence over the stacked rows; nothing per-dataset, no transformed data",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-008",
+   "severity": "doc",
+   "title": "Signature/docstring parameter drift: analyze(random_state), cluster(random_state), normalize(internal), manip's five cross-module kwargs, df2mat(return_labels) all undocumented; load() documents params out of signature order",
+   "repro": "cd /Users/jmanning/hypertools && .venv/bin/python -c \"import inspect; import hypertools as hyp; from hypertools.tools.analyze import analyze; from hypertools.cluster.cluster import cluster; from hypertools.tools.normalize import normalize; from hypertools.manip.manip import manip; print(inspect.signature(analyze)); print('random_state' in analyze.__doc__); print(inspect.signature(cluster)); print('random_state' in cluster.__doc__); print('internal' in normalize.__doc__.split('Returns')[0].split('Parameters')[1]); print(inspect.signature(manip)); print('align :' in manip.__doc__)\"",
+   "expected": "Every signature parameter documented in its Parameters section",
+   "actual": "analyze: random_state in signature, 'random_state' not in docstring -> False; cluster: same -> False; normalize Parameters section lacks internal; manip docstring Parameters = data/model/return_model/**kwargs only",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-009",
+   "severity": "minor",
+   "title": "normalize() invalid-mode error is an AssertionError naming a nonexistent parameter 'scale_type'",
+   "repro": "cd /Users/jmanning/hypertools && env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.normalize(np.random.randn(10, 3), normalize='bogus')\"",
+   "expected": "ValueError: normalize must be 'across', 'within', 'row', False, None, or a fitted Normalizer; got 'bogus'",
+   "actual": "AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-010",
+   "severity": "minor",
+   "title": "assert-based validation raises AssertionError where docstrings promise ValueError (manip transformers, Manipulator.fit, Forecaster.fit) and is stripped under python -O",
+   "repro": "cd /Users/jmanning/hypertools && env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, pandas as pd; from hypertools.manip.smooth import transformer; transformer(pd.DataFrame(np.random.randn(20, 3)))\"",
+   "expected": "ValueError (as documented in the transformer docstrings), robust under -O",
+   "actual": "AssertionError: Must specify axis",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-011",
+   "severity": "minor",
+   "title": "reduce() unknown-model error omits the supported-model list, embeds raw indentation whitespace, and points at the pre-1.0 legacy docs URL",
+   "repro": "cd /Users/jmanning/hypertools && env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.reduce(np.random.randn(20, 5), reduce='NotAModel', ndims=2)\"",
+   "expected": "ValueError listing supported reducer names (like cluster()/impute()/predict() do), no stale URL, clean whitespace",
+   "actual": "ValueError: reduce must be one of the supported options or support n_components and fit_transform          methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce          for supported models",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-012",
+   "severity": "style",
+   "title": "Error messages steer users toward the DEPRECATED {'model','params'} dict form",
+   "repro": "cd /Users/jmanning/hypertools && env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.reduce(np.random.randn(20, 5), reduce={}, ndims=2)\"",
+   "expected": "Errors recommending the canonical {'model': ..., 'args': [...], 'kwargs': {...}} spec",
+   "actual": "ValueError: If passing a dictionary, pass the model as the value of the \"model\" key and a                 dictionary of custom params as the value of the \"params\" key. ; manip: \"(or pass a dict {'model': ..., 'params': {...}}, a Manipulator subclass, ...)\"",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-013",
+   "severity": "doc",
+   "title": "No runnable Examples on any primary public function outside plot/ except load()/Pipeline/lsl_stream",
+   "repro": "cd /Users/jmanning/hypertools && grep -rln '>>>' hypertools/ --include='*.py' | grep -v plot | grep -v _externals | grep -v external/",
+   "expected": "Runnable Examples on every primary public function",
+   "actual": "hypertools/core/pipeline.py\nhypertools/io/load.py\nhypertools/io/lsl.py  (3 files total)",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-014",
+   "severity": "minor",
+   "title": "save() silently swallows **kwargs (protocol=, compression=, typos) and has a one-line docstring with no Parameters/Returns",
+   "repro": "cd /Users/jmanning/hypertools && .venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.save(np.eye(3), '/tmp/x.pkl', protocol=5, compression='gzip', bogus=1); print('accepted silently')\"",
+   "expected": "TypeError on unknown kwargs (or honored protocol=), and a real docstring",
+   "actual": "accepted silently -- kwargs ignored; save.__doc__ == 'Pickle `obj` to `fname`.'",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-015",
+   "severity": "minor",
+   "title": "load() of a corrupt local pickle leaks raw 'ValueError: unsupported pickle protocol' -- the friendly HypertoolsIOError/legacy hint only catches pickle.UnpicklingError",
+   "repro": "cd /Users/jmanning/hypertools && .venv/bin/python -c \"import hypertools as hyp, pathlib; p = pathlib.Path('/tmp/corrupt_audit.pkl'); p.write_bytes(b'\\x80hello-not-valid'); hyp.load(str(p))\"",
+   "expected": "HypertoolsIOError: Failed to load DataGeometry object from ... pass legacy=True ...",
+   "actual": "ValueError: unsupported pickle protocol: 104",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-016",
+   "severity": "doc",
+   "title": "describe(): garbled summary line, unconditional 'large data' warning on any input size, and show=True displays via plt.show() without returning the figure",
+   "repro": "cd /Users/jmanning/hypertools && env MPLBACKEND=Agg .venv/bin/python -W always -c \"import numpy as np, hypertools as hyp; hyp.describe(np.random.randn(20, 4), show=False)\"",
+   "expected": "Accurate summary; a size-gated (or removed) warning; a way to obtain the figure",
+   "actual": "UserWarning: When input data is large, this computation can take a long time. (on 20x4 data); with show=True under Agg: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown",
+   "evidence": [
+    "describe_pca.png"
+   ]
+  },
+  {
+   "id": "D12-docstrings-rest-017",
+   "severity": "doc",
+   "title": "Smooth docstring says non-integer kernel_width is 'rounded up'; actual behavior rounds to NEAREST integer (then bumps evens by 1)",
+   "repro": "cd /Users/jmanning/hypertools && env MPLBACKEND=Agg .venv/bin/python -W always -c \"import numpy as np, hypertools as hyp; hyp.manip(np.random.randn(80, 4), model='Smooth', kernel_width=10.4)\"",
+   "expected": "Docstring matching the round-to-nearest-then-odd behavior",
+   "actual": "UserWarning: Rounding smoothing kernel width to the nearest integer + UserWarning: Increasing smoothing kernel width by 1 (must be odd)",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-018",
+   "severity": "doc",
+   "title": "missing_inds() Returns omits the None sentinel (clean single array returns None, clean list entries are None)",
+   "repro": "cd /Users/jmanning/hypertools && .venv/bin/python -c \"import numpy as np; from hypertools.tools.missing_inds import missing_inds; A = np.random.randn(60, 6); B = A.copy(); B[2, 3] = np.nan; print(missing_inds(A)); print(missing_inds([B, A]))\"",
+   "expected": "Documented None sentinel / ndarray return types",
+   "actual": "None ; [array([2]), None]",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-019",
+   "severity": "style",
+   "title": "procrustes() leaks numpy PendingDeprecationWarning (np.matrix) on every call",
+   "repro": "cd /Users/jmanning/hypertools && env MPLBACKEND=Agg .venv/bin/python -W always -c \"import hypertools as hyp; from hypertools.align.procrustes import procrustes; s = hyp.load('spiral'); procrustes(s[0], s[1])\"",
+   "expected": "No deprecation noise; ndarray-based implementation",
+   "actual": "PendingDeprecationWarning: the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://... )",
+   "evidence": []
+  },
+  {
+   "id": "D12-docstrings-rest-020",
+   "severity": "style",
+   "title": "apply_model('KMeans') in default mode='auto' returns cluster-distance space, not labels -- documented but surprising next to hyp.cluster",
+   "repro": "cd /Users/jmanning/hypertools && env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; A = np.random.randn(60, 8); print(np.asarray(hyp.apply_model(A, 'KMeans')).shape); print(len(hyp.cluster(A)))\"",
+   "expected": "Labels, or an explicit docstring warning for clusterers under mode='auto'",
+   "actual": "(60, 8) cluster-distance matrix from apply_model vs 60 labels from hyp.cluster",
+   "evidence": []
+  }
+ ]
+}

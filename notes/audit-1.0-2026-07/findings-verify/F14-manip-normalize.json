@@ -1,0 +1,178 @@
+{
+ "unit": "F14-manip-normalize",
+ "findings": [
+  {
+   "id": "F14-manip-normalize-001",
+   "severity": "critical",
+   "title": "Smooth on a list of datasets smooths ACROSS dataset boundaries, silently mixing subjects' data",
+   "repro": "import numpy as np, hypertools as hyp\na = np.zeros((30, 2)); b = np.ones((30, 2))\nsm = hyp.manip([a, b], model='Smooth', kernel_width=11, maintain_bounds=False)\nprint(np.asarray(sm[0], dtype=float)[-3:, 0])  # expected [0. 0. 0.]\nprint(np.asarray(sm[1], dtype=float)[:3, 0])   # expected [1. 1. 1.]",
+   "expected": "Each dataset smoothed independently: sm[0] stays all zeros, sm[1] stays all ones (a constant signal is invariant under smoothing).",
+   "actual": "ds0 unchanged (all 0): False  ds0 tail: [0.03962704 0.2004662  0.3962704 ]\nds1 unchanged (all 1): False  ds1 head: [0.6037296  0.7995338  0.96037296]\ngaussian ds0 all 0: False ds1 all 1: False",
+   "evidence": [
+    "f_smooth_boundary_bleed.png"
+   ]
+  },
+  {
+   "id": "F14-manip-normalize-002",
+   "severity": "major",
+   "title": "Resample axis=1 crashes with DTypePromotionError on any DataFrame with string column names",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\ndf = pd.DataFrame(np.random.randn(30, 3), columns=list('abc'))\nhyp.manip(df, model='Resample', axis=1, n_samples=9)",
+   "expected": "Either resample each row over column positions (documented behavior), or a clear error explaining that axis=1 requires numeric column labels.",
+   "actual": "DTypePromotionError: The DType <class 'numpy.dtypes._PyFloatDType'> could not be promoted by <class 'numpy.dtypes.StrDType'>. This means that no common DType exists for the given inputs. For example they cannot be stored in a single array un...",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-003",
+   "severity": "major",
+   "title": "Fitted Smooth cannot be reused on data with different column labels: bare KeyError (ZScore/Normalize got the positional-keying fix, Smooth did not)",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nX = np.random.randn(40, 3)\n_, ms = hyp.manip(X, model='Smooth', kernel_width=11, return_model=True)\nnewdf = pd.DataFrame(np.random.randn(40, 3), columns=['roi1', 'roi2', 'roi3'])\nhyp.manip(newdf, model=ms)",
+   "expected": "Smoothed (40,3) output, matching ZScore's behavior in the identical scenario ('ZScore fit-on-array->reuse-on-nameddf: OK (40, 3)').",
+   "actual": "KeyError: 'roi1'   (with 3 differently-named cols)\nKeyError: 'w'      (with 4 cols; no count guard)",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-004",
+   "severity": "major",
+   "title": "Fitted Smooth reuse replays FIT-TIME min/max bounds onto new data, silently clipping it to the old range",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nrng = np.random.default_rng(7)\ndf = pd.DataFrame(rng.normal(size=(40, 3)), columns=list('abc'))\n_, ms = hyp.manip(df, model='Smooth', kernel_width=11, return_model=True)\nnew = pd.DataFrame(rng.normal(loc=100.0, size=(30, 3)), columns=list('abc'))\nout = hyp.manip(new, model=ms)\nprint(np.asarray(out, dtype=float).min(), np.asarray(out, dtype=float).max())",
+   "expected": "Smoothed values near 100 (clipping, if any, relative to the transformed data's own pre-smoothing range).",
+   "actual": "out range=[1.05,2.24] on input centered at 100 -- every output value equals its column's fit-time maximum.",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-005",
+   "severity": "major",
+   "title": "pandas Series input to manip() is wrangled to an EMPTY (0,0) DataFrame, then fails with nonsense errors",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\ns = pd.Series(np.sin(np.linspace(0, 6, 40)), name='sig')\nhyp.manip(s, model='ZScore')",
+   "expected": "Treat the Series as a (40,1) dataset (as hyp.normalize does), or raise a clear 'unsupported type' error naming Series and the fix.",
+   "actual": "dw.wrangle(Series) -> DataFrame (0, 0)\nmanip(Series, ZScore) -> IndexError: list index out of range\nmanip(Series, Smooth) -> ValueError: kernel_width (11) is larger than the number of samples (0); use a kernel_width <= 0.",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-006",
+   "severity": "minor",
+   "title": "manip ZScore returns all-NaN for single-row (and 1-D) input; hyp.normalize returns zeros for the same input",
+   "repro": "import numpy as np, hypertools as hyp\nprint(hyp.manip(np.array([1., 2., 3., 4.]), model='ZScore'))\nprint(hyp.normalize(np.array([1., 2., 3., 4.])))",
+   "expected": "Either zeros (matching hyp.normalize/sklearn convention) or a clear error; not silent NaN. 1-D orientation consistent between the two APIs.",
+   "actual": "E5.manip-1d -> (1, 4) [nan nan nan nan]\nE5.normalize-1d -> (4, 1) [-1.34164079 -0.4472136   0.4472136   1.34164079]\nE3.manip-zscore-single-row values=[[nan nan nan]]",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-007",
+   "severity": "minor",
+   "title": "manip() empty/None input errors are cryptic; empty LIST takes the text path and loads a topic-model corpus",
+   "repro": "import pandas as pd, hypertools as hyp\nhyp.manip(pd.DataFrame(), model='ZScore')   # IndexError\n# hyp.manip([], model='ZScore')             # corpus load + LDA ValueError\n# hyp.manip(None, model='ZScore')           # IndexError",
+   "expected": "A clear 'input has no observations' / 'unsupported input' error like hyp.normalize's, without loading text corpora.",
+   "actual": "IndexError: list index out of range\nloading corpus: minipedia...done! ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation.",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-008",
+   "severity": "minor",
+   "title": "Smooth's non-integer kernel_width warning says 'Rounding ... to the nearest integer' but the code truncates",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nfrom scipy.signal import savgol_filter\nlong = pd.DataFrame({'y': np.arange(50.)})\nr = hyp.manip(long, model='Smooth', kernel_width=11.7, maintain_bounds=False)\nprint(np.allclose(np.asarray(r['y'], dtype=float), savgol_filter(np.arange(50.), 11, 3)))  # True -> truncated",
+   "expected": "Behavior matches the warning: 11.7 -> 12 -> (odd bump) 13; or the warning says 'Truncating'.",
+   "actual": "warnings: ['Rounding smoothing kernel width to the nearest integer']; effective width used: 11",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-009",
+   "severity": "minor",
+   "title": "Documented ValueError cases actually raise AssertionError (stripped under python -O), and normalize's message names a nonexistent 'scale_type' parameter",
+   "repro": "import numpy as np, hypertools as hyp\ntry:\n    hyp.manip(np.random.randn(10, 2), model='Normalize', min=2, max=1)\nexcept Exception as e:\n    print(type(e).__name__, e)\ntry:\n    hyp.normalize(np.random.randn(10, 2), normalize='banana')\nexcept Exception as e:\n    print(type(e).__name__, e)",
+   "expected": "ValueError (as documented), raised unconditionally, with the message naming the actual parameter ('normalize').",
+   "actual": "AssertionError minimum must be strictly less than maximum\nAssertionError scale_type must be across, within, row, none, or a fitted Normalizer.",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-010",
+   "severity": "minor",
+   "title": "Dict spec with an unknown model name leaks 'AttributeError: 'str' object has no attribute 'fit_transform''",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nhyp.manip(pd.DataFrame(np.random.randn(30, 3)), model={'model': 'Bar', 'kwargs': {}})",
+   "expected": "The same clear ValueError as the bare-string path: \"unknown manip model 'Bar'; supported names: Normalize, ZScore, Smooth, Resample ...\"",
+   "actual": "AttributeError: 'str' object has no attribute 'fit_transform'",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-011",
+   "severity": "minor",
+   "title": "Invalid legacy mode= value is silently accepted (falls back to savgol); kernel= validates but mode= does not",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nr = hyp.manip(pd.DataFrame(np.random.randn(30, 3)), model='Smooth', mode='hann')\nprint(type(r))  # DataFrame -- no error, silently savgol",
+   "expected": "ValueError (or at least a warning) for mode values outside {'savgol', 'gaussian'}.",
+   "actual": "M11.smooth-invalid-mode -> NO ERROR: DataFrame (30, 3)",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-012",
+   "severity": "minor",
+   "title": "Row-wise (axis=1) fitted ZScore/Normalize silently transform NEW data using fit-time per-row statistics",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\ndf = pd.DataFrame(np.random.randn(30, 3), columns=list('abc'))\n_, m = hyp.manip(df, model='Normalize', axis=1, return_model=True)\nout = hyp.manip(pd.DataFrame(np.random.randn(30, 5)), model=m)\nprint(out.shape)  # (30, 5), silently used fit-time per-row baseline/peak",
+   "expected": "Error or per-row re-derivation; not silent reuse of fit-time row statistics on unrelated rows.",
+   "actual": "M17.normalize-axis1-reuse-diffshape -> NO ERROR: DataFrame (30, 5)",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-013",
+   "severity": "doc",
+   "title": "manip is described as 'per-dataset' but ZScore/Normalize/Smooth fit ONE shared set of statistics across a list of datasets",
+   "repro": "import numpy as np, hypertools as hyp\nz = hyp.manip([np.zeros((30, 2)), np.ones((30, 2))], model='ZScore')\nprint(np.asarray(z[0], dtype=float)[:2, 0])",
+   "expected": "Docs matching behavior: per-dataset wording implies each dataset z-scored by its own stats (0s here).",
+   "actual": "ZScore list: ds0 values (shared stats -> approx -1): [-0.99163165 -0.99163165]",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-014",
+   "severity": "doc",
+   "title": "normalize() docstring says 'If the input was a list, a list is returned' -- false for single-element lists",
+   "repro": "import numpy as np, hypertools as hyp\nprint(type(hyp.normalize([np.random.randn(10, 3)])))",
+   "expected": "list (per docstring), or a docstring documenting the single-element unwrap.",
+   "actual": "normalize([A]) -> ndarray; manip([A]) -> list",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-015",
+   "severity": "style",
+   "title": "hyp.manip('ZScore') and hyp.normalize() z-score with DIFFERENT std conventions (ddof=1 vs ddof=0) -- same data, different numbers",
+   "repro": "import numpy as np, hypertools as hyp\nH = np.array([[1., 0.], [2., 10.], [3., 20.], [4., 30.]])\nprint(np.asarray(hyp.manip(H, model='ZScore'), dtype=float).std(0, ddof=0))  # [0.866 0.866]\nprint(hyp.normalize(H, normalize='within').std(0, ddof=0))                   # [1. 1.]",
+   "expected": "One documented convention (or an explicit ddof parameter); docstrings stating which std is used.",
+   "actual": "manip ZScore axis=0: popstd=[0.8660254 0.8660254], sampstd=[1. 1.]; consistency manip-ZScore vs normalize-within: allclose = False",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-016",
+   "severity": "style",
+   "title": "Cross-API inconsistencies between manip() and normalize(): return types, DataFrame metadata, NaN handling, 1-D orientation",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\ndf = pd.DataFrame(np.random.randn(10, 3), columns=list('abc'))\nprint(type(hyp.manip(df, model='ZScore')))   # DataFrame, metadata kept\nprint(type(hyp.normalize(df)))               # ndarray, metadata lost",
+   "expected": "Consistent (or explicitly documented) conventions across the two functions.",
+   "actual": "manip -> DataFrame (index/columns preserved, NaN propagated); normalize -> ndarray (metadata lost, NaN imputed)",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-017",
+   "severity": "style",
+   "title": "The 'unknown manip model' error recommends the DEPRECATED dict form",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nhyp.manip(pd.DataFrame(np.random.randn(5, 2)), model='Foo')",
+   "expected": "Error text recommending the canonical dict form.",
+   "actual": "ValueError: unknown manip model 'Foo'; supported names: Normalize, ZScore, Smooth, Resample (or pass a dict {'model': ..., 'params': {...}}, a Manipulator subclass, or a Manipulator instance directly)",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-018",
+   "severity": "minor",
+   "title": "Several common data problems surface as raw scipy/numpy internals with no hypertools context",
+   "repro": "import pandas as pd, hypertools as hyp\ndup = pd.DataFrame({'y': [1., 2., 3., 4.]}, index=[0, 1, 1, 2])\nhyp.manip(dup, model='Resample', n_samples=8)",
+   "expected": "Errors naming the offending hypertools parameter/data property and how to fix it.",
+   "actual": "ValueError: `x` must be strictly increasing sequence.",
+   "evidence": []
+  },
+  {
+   "id": "F14-manip-normalize-019",
+   "severity": "enhancement",
+   "title": "No runnable Examples section in any manip/normalize public docstring",
+   "repro": "grep -rn '>>>' /Users/jmanning/hypertools/hypertools/manip/ /Users/jmanning/hypertools/hypertools/tools/normalize.py  # no output",
+   "expected": "At least one runnable example per public function/class, doctest-checked.",
+   "actual": "grep returns no matches (verified during source review).",
+   "evidence": []
+  }
+ ]
+}

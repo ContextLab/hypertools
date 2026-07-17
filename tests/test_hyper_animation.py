@@ -79,6 +79,51 @@ def test_return_model_bundle_animation_is_raw_animation():
     assert isinstance(bundle['animation'], matplotlib.animation.Animation)
 
 
+def test_return_model_bundle_animation_gc_does_not_warn():
+    # release-1.0 audit follow-up to X4-warnings-012: the return_model bundle
+    # hands back the RAW FuncAnimation (asserted raw by the test above), so
+    # HyperAnimation.__del__'s silencing never applied to it. The animation is
+    # kept in a reference cycle by its own canvas callbacks, so discarding the
+    # bundle leaked matplotlib's "Animation was deleted without rendering
+    # anything" UserWarning at the NEXT cyclic-gc pass -- attributed to
+    # whatever test happened to be running then (29 scattered instances in the
+    # full suite). plot.py now marks the bundled animation via
+    # hyper_animation.mark_draw_started() at hand-off, exactly like the
+    # wrapper's __del__ does.
+    import gc
+    import warnings
+    bundle = hyp.plot(_traj(), ndims=3, animate='spin', duration=2,
+                      return_model=True, show=False)
+    del bundle
+    with warnings.catch_warnings(record=True) as rec:
+        warnings.simplefilter('always')
+        gc.collect()
+    leaked = [w for w in rec
+              if 'deleted without rendering' in str(w.message)]
+    assert not leaked, f"unrendered-animation warning leaked at gc: {leaked}"
+
+
+def test_failed_save_path_animation_gc_does_not_warn(tmp_path):
+    # release-1.0 audit follow-up to X4-warnings-012 (second gap): when
+    # plot(..., save_path=...) raises (e.g. unsupported extension), the
+    # FuncAnimation already exists but the HyperAnimation wrapper is never
+    # constructed, so the abandoned animation leaked the same "deleted
+    # without rendering" warning at the next cyclic-gc pass. plot.py's
+    # save-failure cleanup now marks it via mark_draw_started() before
+    # re-raising.
+    import gc
+    import warnings
+    with pytest.raises(ValueError, match='unsupported animation save'):
+        hyp.plot(_traj(), ndims=3, animate='spin', duration=2, show=False,
+                 save_path=str(tmp_path / 'x.html'))
+    with warnings.catch_warnings(record=True) as rec:
+        warnings.simplefilter('always')
+        gc.collect()
+    leaked = [w for w in rec
+              if 'deleted without rendering' in str(w.message)]
+    assert not leaked, f"unrendered-animation warning leaked at gc: {leaked}"
+
+
 # --- chemtrails/precog/bullettime as animate values ----------------------
 
 @pytest.mark.parametrize('style', ['chemtrails', 'precog', 'bullettime'])

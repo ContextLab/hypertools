@@ -59,6 +59,10 @@ def test_1d_array_is_univariate_series():
     assert np.corrcoef(np.asarray(fc).ravel(), truth)[0, 1] > 0.5
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_flat_scalar_list_is_one_series_not_many_datasets():
     values = [float(v) for v in np.sin(np.arange(60) / 5.0)]
     fc = predict(values, model='GaussianProcess', t=3)
@@ -67,6 +71,10 @@ def test_flat_scalar_list_is_one_series_not_many_datasets():
     assert np.asarray(fc).shape == (3, 1)
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_1d_datasets_inside_a_list_are_columns():
     out = predict([np.sin(np.arange(60) / 5.0), np.cos(np.arange(80) / 5.0)],
                   model='GaussianProcess', t=3)
@@ -76,12 +84,20 @@ def test_1d_datasets_inside_a_list_are_columns():
 
 # --- F16-predict-003: pandas Series input -----------------------------------
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_series_input_forecasts_instead_of_silently_vanishing():
     s = pd.Series(np.arange(50, dtype=float))
     fc = predict(s, model='GaussianProcess', t=3)
     assert np.asarray(fc).shape == (3, 1)
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_series_with_datetimeindex_keeps_time_semantics():
     idx = pd.date_range('2024-01-01', periods=40, freq='D')
     s = pd.Series(np.arange(40, dtype=float), index=idx)
@@ -92,6 +108,11 @@ def test_series_with_datetimeindex_keeps_time_semantics():
 
 # --- F16-predict-004: datetime horizon at/near the last observation --------
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+# (only the GaussianProcess parameter case emits it)
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 @pytest.mark.parametrize('model,extra', [('GaussianProcess', None),
                                          ('Kalman', 'pykalman'),
                                          ('ARIMA', 'statsmodels')])
@@ -105,6 +126,10 @@ def test_datetime_t_at_last_timestamp_truncates_consistently(model, extra):
     pd.testing.assert_frame_equal(out, df)
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_datetime_t_half_step_ahead_forecasts_one_step():
     idx = pd.date_range('2024-01-01', periods=40, freq='D')
     df = pd.DataFrame({'a': np.arange(40, dtype=float)}, index=idx)
@@ -151,6 +176,10 @@ def test_autoregressor_too_few_observations_raises_valueerror():
         predict(np.random.RandomState(0).randn(3, 2), model='AutoRegressor', t=2)
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_all_duplicate_timestamps_raise_valueerror():
     df = pd.DataFrame({'a': np.ones(5)},
                       index=pd.DatetimeIndex(['2024-01-01'] * 5))
@@ -328,6 +357,10 @@ def test_autoregressor_inner_estimator_via_dict_spec():
 
 # --- F16-predict-020: tz-aware index with naive t ----------------------------
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_tz_aware_index_localizes_naive_t():
     idx = pd.date_range('2024-01-01', periods=100, freq='D', tz='US/Eastern')
     df = pd.DataFrame({'a': np.arange(100, dtype=float)}, index=idx)
@@ -336,6 +369,10 @@ def test_tz_aware_index_localizes_naive_t():
     assert out.index.tz is not None
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_tz_aware_t_on_naive_index_clear_error():
     df = pd.DataFrame({'a': np.arange(50, dtype=float)},
                       index=pd.date_range('2024-01-01', periods=50, freq='D'))

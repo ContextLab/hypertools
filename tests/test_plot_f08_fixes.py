@@ -121,10 +121,13 @@ def test_reduce_instance_return_model_warns_once():
             if 'Unequal values passed to dims and n_components'
             in str(x.message)]
     assert len(msgs) == 1
-    # the bundle pipeline is still fitted and reusable
+    # the bundle pipeline is still fitted and reusable; replaying it
+    # re-resolves the same conflicting spec, so the notice fires once more
+    # (asserted -- this reuse call is a separate plot())
     assert res['pipeline'] is not None
-    out = hyp.plot(rng.randn(20, 5), '.', pipeline=res['pipeline'],
-                   show=False)
+    with pytest.warns(UserWarning, match='Unequal values passed to dims'):
+        out = hyp.plot(rng.randn(20, 5), '.', pipeline=res['pipeline'],
+                       show=False)
     assert out is not None
 
 

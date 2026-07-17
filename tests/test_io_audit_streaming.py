@@ -62,7 +62,11 @@ def test_midstream_error_returns_partial_results(tmp_path):
                 raise RuntimeError('sensor unplugged')
             yield [float(i), float(np.sin(i / 5.)), float(np.cos(i / 3.))]
 
-    with pytest.warns(RuntimeWarning, match='streaming stopped early'):
+    # two expected RuntimeWarnings from one call: the mid-stream failure
+    # notice AND the clamped-samples notice (the sin/cos walk drifts past
+    # the head-fitted display box); nested pytest.warns asserts both
+    with pytest.warns(RuntimeWarning, match='streaming stopped early'), \
+         pytest.warns(RuntimeWarning, match='outside the display box'):
         fig = hyp.plot(dying(), stream_init=50, stream_chunk=25,
                        save_path=str(out), show=False)
     assert fig is not None
@@ -201,8 +205,11 @@ def test_no_clamp_warning_for_stationary_stream():
 
 def test_head_frame_drawn_raw_not_interpolated(tmp_path):
     out = tmp_path / 'consistent.gif'
-    fig = hyp.plot(walk_gen(60, seed=11), stream_init=30, stream_chunk=30,
-                   save_path=str(out), show=False)
+    # the seeded walk deliberately drifts past the head-fitted display box,
+    # provoking the clamped-samples notice
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        fig = hyp.plot(walk_gen(60, seed=11), stream_init=30,
+                       stream_chunk=30, save_path=str(out), show=False)
     fig.canvas.draw()
     line = next(ln for ln in fig.axes[0].lines
                 if len(ln.get_data_3d()[0]))
