@@ -1,4 +1,20 @@
 {
+ "hyp.load": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "hypertools",
+   "module_short": "hypertools",
+   "name": "load"
+  }
+ ],
  "hyp.plot": [
   {
    "is_class": false,
@@ -15,16 +31,7 @@
    "name": "plot"
   }
  ],
- "labels": [
-  {
-   "is_class": false,
-   "is_explicit": false,
-   "module": "builtins",
-   "module_short": "builtins",
-   "name": "list"
-  }
- ],
- "sample_speeches": [
+ "speeches": [
   {
    "is_class": false,
    "is_explicit": false,

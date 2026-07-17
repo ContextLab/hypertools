@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from hypertools.predict.gp import GaussianProcess
 
@@ -14,6 +15,10 @@ def _make_df(n=70, index=None):
     return df
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_forecast_shape_and_rangeindex_continuation():
     df = _make_df(n=70)
     out = GaussianProcess().fit_predict(df, t=10)
@@ -24,6 +29,10 @@ def test_forecast_shape_and_rangeindex_continuation():
     assert list(out.index) == list(range(70, 80))
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_forecast_datetimeindex_continuation():
     idx = pd.date_range('2026-01-01', periods=70, freq='D')
     df = _make_df(n=70, index=idx)
@@ -34,6 +43,10 @@ def test_forecast_datetimeindex_continuation():
     assert list(out.index) == list(expected)
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_trend_direction_sanity():
     df = _make_df(n=70)
     out = GaussianProcess().fit_predict(df, t=15)
@@ -41,6 +54,10 @@ def test_trend_direction_sanity():
     assert out['a'].mean() > df['a'].iloc[:35].mean()
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_list_in_list_out():
     dfs = [_make_df(n=60), _make_df(n=80)]
     out = GaussianProcess().fit_predict(dfs, t=6)
@@ -52,6 +69,10 @@ def test_list_in_list_out():
         assert list(fc.index) == list(range(len(src), len(src) + 6))
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_kernel_and_alpha_kwargs_pass_through():
     from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 
@@ -66,6 +87,13 @@ def test_kernel_and_alpha_kwargs_pass_through():
     assert fitted_gp.normalize_y is False
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures,
+# and its lbfgs optimizer can stop early on the same contrived data
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
+@pytest.mark.filterwarnings(
+    'ignore:lbfgs failed to converge:sklearn.exceptions.ConvergenceWarning')
 def test_default_kernel_extrapolates_trends():
     # Regression (PR feedback: "helix predictions are going in the wrong
     # axis"): the old RBF-only default kernel is stationary, so forecasts

@@ -1,0 +1,128 @@
+{
+ "unit": "D13-links",
+ "findings": [
+  {
+   "id": "D13-links-001",
+   "severity": "doc",
+   "title": "Dead link in plot() docstring: Homebrew install script (master/install -> 404)",
+   "repro": "curl -sIL --max-time 20 -o /dev/null -w '%{http_code}\\n' https://raw.githubusercontent.com/Homebrew/install/master/install  # -> 404\ncurl -sIL --max-time 20 -o /dev/null -w '%{http_code}\\n' https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh  # -> 200",
+   "expected": "A resolvable Homebrew install URL (200).",
+   "actual": "404 for .../Homebrew/install/master/install (HEAD and GET).",
+   "evidence": []
+  },
+  {
+   "id": "D13-links-002",
+   "severity": "doc",
+   "title": "Dead link in CONTRIBUTING.md: help.github.com 'proposing-changes...' -> 404",
+   "repro": "curl -sIL --max-time 20 -o /dev/null -w '%{http_code}\\n' https://help.github.com/articles/proposing-changes-to-a-project-with-pull-requests/  # final 404",
+   "expected": "200 (or redirect to a live page).",
+   "actual": "chain 301 301 404; final URL docs.github.com/articles/proposing-changes-to-a-project-with-pull-requests -> 404.",
+   "evidence": []
+  },
+  {
+   "id": "D13-links-003",
+   "severity": "doc",
+   "title": "Dead link in CONTRIBUTING.md: egghead.io 'How to Contribute' series -> 404",
+   "repro": "curl -sIL --max-time 20 -o /dev/null -w '%{http_code}\\n' https://egghead.io/series/how-to-contribute-to-an-open-source-project-on-github  # -> 404",
+   "expected": "200.",
+   "actual": "404.",
+   "evidence": []
+  },
+  {
+   "id": "D13-links-004",
+   "severity": "doc",
+   "title": "Paper PDF link redirects away to lab homepage (haxbylab HGC+11.pdf)",
+   "repro": "curl -sIL --max-time 20 http://haxbylab.dartmouth.edu/publications/HGC+11.pdf -o /dev/null -w '%{http_code} %{url_effective}\\n'  # 200 but url_effective = https://sites.dartmouth.edu/haxbylab/",
+   "expected": "The Haxby et al. 2011 PDF (a %PDF payload).",
+   "actual": "302 to https://sites.dartmouth.edu/haxbylab/ (HTML homepage); PDF body not served.",
+   "evidence": [
+    "notes/audit-1.0-2026-07/evidence/D13-links/haxbylab_pdf_redirects_to_homepage.png"
+   ]
+  },
+  {
+   "id": "D13-links-005",
+   "severity": "doc",
+   "title": "reduce() error-message link points to stale 0.8.1 doc page (and uses http)",
+   "repro": "python -c \"import hypertools as hy, numpy as np; hy.reduce(np.random.rand(10,5), reduce='NotAModel')\"  # message cites .../hypertools.tools.reduce.html\n# Evidence: RTD /en/latest/hypertools.tools.reduce.html browser title = 'hypertools 0.8.1 documentation'",
+   "expected": "https link to the 1.0 reduce docs page (hypertools.reduce.html), stable across the release rebuild.",
+   "actual": "http link to the 0.8.1-only page name hypertools.tools.reduce.html; will 404 after /latest/ rebuilds for 1.0.",
+   "evidence": [
+    "notes/audit-1.0-2026-07/evidence/D13-links/rtd_latest_tools_reduce_0.8.1.png"
+   ]
+  },
+  {
+   "id": "D13-links-006",
+   "severity": "doc",
+   "title": "Stale sklearn anchors in docstrings: classes.html#module-* no longer exists",
+   "repro": "curl -s http://scikit-learn.org/stable/modules/classes.html | grep -c 'id=\"module-sklearn.decomposition\"'  # -> 0 (title is homepage; page is a redirect stub)\n# Playwright: navigating classes.html lands on /api/index.html without the anchor",
+   "expected": "A page whose HTML contains id='module-sklearn.decomposition' (or an updated /api/... link).",
+   "actual": "classes.html redirects to /api/index.html; anchor id absent.",
+   "evidence": [
+    "notes/audit-1.0-2026-07/evidence/D13-links/sklearn_classes_js_redirect_anchor_lost.png"
+   ]
+  },
+  {
+   "id": "D13-links-007",
+   "severity": "doc",
+   "title": "Stale matplotlib anchor in backend.py comment (#working-with-threads gone)",
+   "repro": "curl -sL https://matplotlib.org/faq/howto_faq.html | grep -c 'working-with-threads'  # -> 0",
+   "expected": "Anchor 'working-with-threads' present on the FAQ page.",
+   "actual": "301 to /stable/faq/howto_faq.html; anchor id not found.",
+   "evidence": []
+  },
+  {
+   "id": "D13-links-008",
+   "severity": "doc",
+   "title": "CONTRIBUTING.md uses retired guides.github.com link with dead anchor",
+   "repro": "curl -sIL --max-time 20 https://guides.github.com/activities/forking/ -o /dev/null -w '%{url_effective}\\n'  # docs.github.com/.../contributing-to-a-project",
+   "expected": "A live page whose HTML contains the 'making-changes' anchor.",
+   "actual": "Redirects to docs.github.com contributing page; anchor 'making-changes' not found.",
+   "evidence": []
+  },
+  {
+   "id": "D13-links-009",
+   "severity": "style",
+   "title": "Numerous http:// doc links 301-redirect to https:// (should use https)",
+   "repro": "for u in http://scikit-learn.org/ http://matplotlib.org/ http://brainiak.org http://en.wikipedia.org/wiki/Procrustes_transformation; do curl -sIL --max-time 20 $u -o /dev/null -w '%{http_code} %{url_effective}\\n'; done  # each 301 -> https",
+   "expected": "https:// scheme for external documentation links.",
+   "actual": "http:// with 301 redirect to https:// (e.g. http://brainiak.org -> https://brainiak.org/).",
+   "evidence": []
+  },
+  {
+   "id": "D13-links-010",
+   "severity": "doc",
+   "title": "Outdated GitHub repo link: IntelPNI/brainiak (moved to brainiak/brainiak)",
+   "repro": "curl -sIL --max-time 20 https://github.com/IntelPNI/brainiak -o /dev/null -w '%{http_code} %{url_effective}\\n'  # 301 -> https://github.com/brainiak/brainiak",
+   "expected": "Canonical https://github.com/brainiak/brainiak.",
+   "actual": "301 redirect from IntelPNI/brainiak.",
+   "evidence": []
+  },
+  {
+   "id": "D13-links-011",
+   "severity": "style",
+   "title": "Legacy dx.doi.org resolver with %2F-encoded slash in procrustes.py",
+   "repro": "curl -sIL --max-time 20 http://dx.doi.org/10.1007%2FBF02289451 -o /dev/null -w '%{http_code} %{url_effective}\\n'  # resolves via redirects to cambridge.org",
+   "expected": "https://doi.org/10.1007/BF02289451",
+   "actual": "http://dx.doi.org/10.1007%2FBF02289451 (legacy resolver + encoded slash).",
+   "evidence": []
+  },
+  {
+   "id": "D13-links-012",
+   "severity": "doc",
+   "title": "CONTRIBUTING.md points to a stale 2017 'mozsprint' milestone and abandoned Gitter",
+   "repro": "curl -s https://api.github.com/repos/ContextLab/hypertools/milestones/5 | python -c 'import sys,json;print(json.load(sys.stdin)[\"title\"])'  # -> mozsprint",
+   "expected": "A current roadmap/milestone and an active support channel.",
+   "actual": "milestone 5 = 'mozsprint' (2017); gitter room redirects to app.gitter.im SPA.",
+   "evidence": []
+  },
+  {
+   "id": "D13-links-013",
+   "severity": "doc",
+   "title": "All tutorials + docs/conf.py pip-install hypertools from the dev-1.0-refactor branch",
+   "repro": "grep -rl 'hypertools.git@dev-1.0-refactor' docs/tutorials/*.ipynb docs/conf.py | wc -l  # 14 files\ncurl -s https://api.github.com/repos/ContextLab/hypertools/branches/dev-1.0-refactor | python -c 'import sys,json;print(json.load(sys.stdin)[\"name\"])'  # dev-1.0-refactor (exists now)",
+   "expected": "Tutorials/docs pin the released version (@v1.0.0) or install from PyPI for a 1.0 release.",
+   "actual": "All install from the mutable dev-1.0-refactor branch.",
+   "evidence": []
+  }
+ ]
+}

@@ -1,0 +1,174 @@
+{
+ "unit": "F10-plot-kwargs-sweep",
+ "findings": [
+  {
+   "id": "F10-plot-kwargs-sweep-001",
+   "severity": "major",
+   "title": "labels= silently dropped (partially or entirely) in animations whenever frame_rate*duration < sample count",
+   "repro": "import numpy as np, hypertools as hyp\nfrom hypertools.plot import matplotlib_backend as mb\nA = np.cumsum(np.random.RandomState(50).randn(30,5), axis=0)\nlabels = [None]*30; labels[0], labels[15] = 'L0', 'L15'\nfig, ani = hyp.plot(A, animate=True, duration=1.0, frame_rate=5, labels=labels, show=False)\nprint(len(mb.labels_and_points))  # 0 -- both labels silently gone",
+   "expected": "Both labels drawn once and visible across frames (docstring), or at minimum a UserWarning that labels were dropped.",
+   "actual": "labels_and_points exists: True | len: 0; returned fig annotations: [] -- and with frame_rate=20: len 1 (one label silently lost). Unit-level: _expand_labels(labels,[30],[5]) -> non-None labels=[]",
+   "evidence": [
+    "t06_labels_animate.gif",
+    "t06_labels_animate2.gif"
+   ]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-002",
+   "severity": "doc",
+   "title": "elev= and azim= are accepted, fully functional camera kwargs but have NO entry in the plot() docstring",
+   "repro": "python - <<'EOF'\nimport inspect, hypertools as hyp\nsrc = inspect.getdoc(hyp.plot)\nprint('elev' in src, 'azim :' in src)  # False False\nEOF",
+   "expected": "Documented parameter entries for elev/azim (camera elevation/azimuth in degrees, defaults 10/-60, both backends).",
+   "actual": "grep of docstring lines 210-1224 for '^    elev'/'^    azim' -> no matches; runtime behavior verified working: default (elev,azim)=(10, -60); custom -> (90, 0); pixels differ (aae3d209 vs 17cb34b9)",
+   "evidence": [
+    "t04_view_default.png",
+    "t04_view_elev90.png"
+   ]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-003",
+   "severity": "minor",
+   "title": "fmt list length is never validated: too short crashes with bare IndexError, too long is silently ignored",
+   "repro": "import numpy as np, hypertools as hyp\nA = np.cumsum(np.random.RandomState(1).randn(30,5),axis=0); B = np.cumsum(np.random.RandomState(2).randn(30,5),axis=0)\nhyp.plot([A,B], ['-'], show=False)   # IndexError\nhyp.plot([A,B], ['-','o',':'], show=False)  # silent",
+   "expected": "ValueError naming fmt=, the given length, and the required dataset count (matching parse_kwargs' message for color/marker/linestyle).",
+   "actual": "IndexError: list index out of range  (File hypertools/plot/plot.py, line 2333, in plot: if has_line_component(fmt[idx])) ; long list: no error/warning, extras ignored",
+   "evidence": []
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-004",
+   "severity": "minor",
+   "title": "A single RGB(A) tuple as color= is always misinterpreted as a per-dataset list (rejected or split into float 'colors')",
+   "repro": "import numpy as np, hypertools as hyp\nA = np.cumsum(np.random.RandomState(1).randn(30,5),axis=0)\nhyp.plot(A, color=(0.2,0.4,0.6), show=False)  # ValueError length 3 vs 1 dataset\nB,C = A+1, A+2\nhyp.plot([A,B,C], color=(0.9,0.4,0.1), show=False)  # ValueError: 0.9 is not a valid value for color",
+   "expected": "A bare RGB(A) tuple treated as one color broadcast to every dataset, or an error that names the list-wrapping workaround.",
+   "actual": "ValueError: color= was given as a list/tuple of length 3, but there are 1 dataset(s) to plot; pass either a single value (broadcast to every dataset) or a list/tuple of length 1.  |  3 datasets: ValueError: 0.9 is not a valid value for color: supported inputs are (r, g, b) and (r, g, b, a) 0-1 float tuples; ...",
+   "evidence": []
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-005",
+   "severity": "minor",
+   "title": "zlabel= text collides with the legend on matplotlib 3-D plots (both occupy the right margin)",
+   "repro": "import numpy as np, hypertools as hyp\nd = lambda s: np.cumsum(np.random.RandomState(s).randn(60,8),axis=0)\nhyp.plot([d(1), d(2)], names=['subject 1','subject 2'], xlabel='PC1', ylabel='PC2', zlabel='PC3', save_path='collide.png', show=False)",
+   "expected": "zlabel and legend both readable without overlapping text.",
+   "actual": "Rendered PNG shows 'PC3' overlapping the legend's first entry (see w1_neuro_names_title_axes.png, right edge ~y=235-275); zlabel-only and legend-only control images have no overlap.",
+   "evidence": [
+    "w1_neuro_names_title_axes.png",
+    "probe_zlabel_no_legend.png",
+    "probe_legend_no_zlabel.png",
+    "plotly_annotated_screenshot.png"
+   ]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-006",
+   "severity": "doc",
+   "title": "show= docstring still claims 'the figure, axis and data objects will still be returned' (0.x return signature)",
+   "repro": "import numpy as np, hypertools as hyp\nA = np.cumsum(np.random.RandomState(1).randn(30,5),axis=0)\nout = hyp.plot(A, show=False)\nprint(type(out))  # <class 'matplotlib.figure.Figure'> -- no axis/data objects returned",
+   "expected": "show= docstring matching the 1.0 return shape ('the Figure is still returned').",
+   "actual": "Docstring line: 'If set to False, the figure will not be displayed, but the figure, axis and data objects will still be returned (default: True).' Runtime: returns a bare matplotlib Figure.",
+   "evidence": [
+    "t04_show_false_savable.png"
+   ]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-007",
+   "severity": "minor",
+   "title": "hue= + color= warning still says 'Using group, color keyword will be ignored' (stale kwarg name, garbled grammar)",
+   "repro": "import numpy as np, warnings, hypertools as hyp\nx = np.cumsum(np.random.RandomState(1).randn(60,5),axis=0)\nwith warnings.catch_warnings(record=True) as w:\n    warnings.simplefilter('always')\n    hyp.plot(x, '.', hue=['a']*30+['b']*30, color='red', show=False)\nprint([str(m.message) for m in w])",
+   "expected": "Warning naming the actual kwargs: hue= and color=.",
+   "actual": "warnings=['Using group, color keyword will be ignored.']",
+   "evidence": []
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-008",
+   "severity": "style",
+   "title": "All three alias warnings (color/colors, linestyle/linestyles, marker/markers) contain literal ~30-space runs",
+   "repro": "import numpy as np, warnings, hypertools as hyp\nA = np.cumsum(np.random.RandomState(1).randn(30,5),axis=0); B = A+1\nwith warnings.catch_warnings(record=True) as w:\n    warnings.simplefilter('always')\n    hyp.plot([A,B], marker='o', markers=['s','^'], show=False)\nprint(repr(str(w[0].message)))",
+   "expected": "Single-spaced warning text.",
+   "actual": "'Both marker and markers defined: marker will be                               ignored in favor of markers.'",
+   "evidence": []
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-009",
+   "severity": "minor",
+   "title": "names= accepts a bare string and silently splits it into characters",
+   "repro": "import numpy as np, hypertools as hyp\nA = np.cumsum(np.random.RandomState(1).randn(30,5),axis=0); B = A+1\nfig = hyp.plot([A,B], names='ab', show=False)\nprint([t.get_text() for t in fig.axes[0].get_legend().get_texts()])  # ['a','b']",
+   "expected": "TypeError/ValueError explaining names= takes a list of per-dataset names.",
+   "actual": "names='ab' (bare str, 2 datasets) -> legend ['a', 'b'] (silently split into chars)",
+   "evidence": []
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-010",
+   "severity": "minor",
+   "title": "legend= accepts a bare string (undocumented) and broadcasts it into N identical legend entries",
+   "repro": "import numpy as np, hypertools as hyp\nA = np.cumsum(np.random.RandomState(1).randn(30,5),axis=0); B = A+1\nfig = hyp.plot([A,B], legend='groups', show=False)\nprint([t.get_text() for t in fig.axes[0].get_legend().get_texts()])  # ['groups','groups']",
+   "expected": "Error, deduplication, or documented behavior for a scalar-string legend; wrong-length error should say legend= not label=.",
+   "actual": "legend='groups' -> legend entries ['groups', 'groups'] ; wrong length -> ValueError: label= was given as a list/tuple of length 1, but there are 2 dataset(s) to plot; ...",
+   "evidence": [
+    "t06_legend_bare_string_dup.png"
+   ]
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-011",
+   "severity": "minor",
+   "title": "labels= length mismatch is silently accepted despite docstring 'Must be dimensionality of data (x)'",
+   "repro": "import numpy as np, hypertools as hyp\nA = np.cumsum(np.random.RandomState(1).randn(30,5),axis=0)\nhyp.plot(A, labels=['only-one-label'], show=False)  # no error, 1 annotation\nhyp.plot(A, labels=['L%d'%i for i in range(50)], show=False)  # no error, 30 annotations",
+   "expected": "ValueError mirroring hue='s: 'labels has 1 entry but the data has 30 observations...'",
+   "actual": "labels len 1 vs 30 points: NO error; 1 annotations drawn: ['only-one-label'] | labels len 50 vs 30 points: NO error; 30 annotations drawn",
+   "evidence": []
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-012",
+   "severity": "minor",
+   "title": "size= is not validated up front: malformed values crash after the full pipeline with errors that never name size=",
+   "repro": "import numpy as np, hypertools as hyp\nA = np.cumsum(np.random.RandomState(1).randn(30,5),axis=0)\nhyp.plot(A, size='big', show=False)   # ValueError: too many values to unpack (expected 2)\nhyp.plot(A, size=[8], show=False)     # ValueError: not enough values to unpack (expected 2, got 1)",
+   "expected": "Fail-fast ValueError naming size= ('size= must be a [width, height] pair in inches; got ...') before the pipeline runs.",
+   "actual": "ValueError: too many values to unpack (expected 2)  /  ValueError: not enough values to unpack (expected 2, got 1)  (from matplotlib figure.py:3139 via matplotlib_backend.py:2176 fig.set_size_inches(size))",
+   "evidence": []
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-013",
+   "severity": "minor",
+   "title": "explore= (and animation dimensionality) misuse raises AssertionError instead of ValueError",
+   "repro": "import numpy as np, hypertools as hyp\nA = np.cumsum(np.random.RandomState(1).randn(30,5),axis=0)\nhyp.plot(A, ndims=2, explore=True, show=False)",
+   "expected": "ValueError('explore=True is only supported for 3-D static plots; pass ndims=3 ...').",
+   "actual": "AssertionError: Explore mode is currently only supported for 3D plots.",
+   "evidence": []
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-014",
+   "severity": "minor",
+   "title": "Non-numeric elev=/azim= accepted silently; crash deferred to draw/save time with a cryptic numpy error",
+   "repro": "import numpy as np, hypertools as hyp\nA = np.cumsum(np.random.RandomState(1).randn(30,5),axis=0)\nfig = hyp.plot(A, elev='up', show=False)  # no error here\nfig.savefig('/tmp/x.png')  # TypeError: ufunc 'deg2rad' not supported...",
+   "expected": "Fail-fast ValueError naming elev=/azim= as numbers in degrees.",
+   "actual": "plot() succeeds; savefig raises: TypeError: ufunc 'deg2rad' not supported for the input types, and the inputs could not be safely coerced to any supported types according to the casting rule ''safe''",
+   "evidence": []
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-015",
+   "severity": "minor",
+   "title": "ax= given a non-Axes object fails with cryptic AttributeError ('str' object has no attribute 'name')",
+   "repro": "import numpy as np, hypertools as hyp\nA = np.cumsum(np.random.RandomState(1).randn(30,5),axis=0)\nhyp.plot(A, ax='not-an-axes', show=False)",
+   "expected": "TypeError('ax= must be a matplotlib Axes (3-D for ndims=3); got str').",
+   "actual": "AttributeError: 'str' object has no attribute 'name'",
+   "evidence": []
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-016",
+   "severity": "style",
+   "title": "plot() docstring has no Examples section (and its 'Geo' input mention is a 0.x leftover)",
+   "repro": "python -c \"import inspect, hypertools as hyp; d=inspect.getdoc(hyp.plot); print('Examples' in d, 'Geo' in d)\"  # False True",
+   "expected": "An Examples section with 2-3 copy-pasteable calls; x= description matching 1.0's actual accepted inputs.",
+   "actual": "'Examples' absent from the docstring; 'Geo' present in the x= description.",
+   "evidence": []
+  },
+  {
+   "id": "F10-plot-kwargs-sweep-017",
+   "severity": "minor",
+   "title": "[infra] repo .venv contains a stale non-editable hypertools build that shadows the branch source outside the repo cwd",
+   "repro": "cd /tmp && PYTHONPATH= MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools; print(hypertools.__file__)\"  # site-packages, not the repo",
+   "expected": "Editable install so the venv always exercises the checked-out branch.",
+   "actual": "pip show: hypertools 1.0.0.dev0 (non-editable); md5(plot.py) site-packages != repo; stale build crashed on hyp.plot([a,b], names=..., zlabel=...) at matplotlib_backend.py:494 while the branch source passes.",
+   "evidence": [],
+   "skip_verification": "environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run."
+  }
+ ]
+}

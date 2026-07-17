@@ -35,8 +35,11 @@ def test_apply_model_stack_false_fits_per_dataset():
 
 
 def test_apply_model_dict_spec():
-    result = apply_model(data1, {'model': 'PCA',
-                                 'params': {'n_components': 2}})
+    # legacy 'params' dict spec is exercised deliberately; assert the
+    # deprecation notice fires
+    with pytest.warns(DeprecationWarning, match=r"'params'.*deprecated"):
+        result = apply_model(data1, {'model': 'PCA',
+                                     'params': {'n_components': 2}})
     assert result.shape == (60, 2)
 
 
@@ -49,26 +52,34 @@ def test_apply_model_instance():
 def test_apply_model_cluster_labels():
     labels = apply_model(clusters, 'KMeans', mode='fit_predict',
                          ndims=None, format_data=True)
-    # KMeans wants n_clusters, not n_components
-    labels = apply_model(clusters, {'model': 'KMeans',
-                                    'params': {'n_clusters': 2}},
-                         mode='fit_predict')
+    # KMeans wants n_clusters, not n_components (legacy 'params' dict spec
+    # exercised deliberately; assert the deprecation notice fires)
+    with pytest.warns(DeprecationWarning, match=r"'params'.*deprecated"):
+        labels = apply_model(clusters, {'model': 'KMeans',
+                                        'params': {'n_clusters': 2}},
+                             mode='fit_predict')
     assert len(np.unique(labels)) == 2
 
 
 def test_apply_model_mixture_proportions_auto():
-    props = apply_model(clusters, {'model': 'GaussianMixture',
-                                   'params': {'n_components': 2}})
+    # legacy 'params' dict spec exercised deliberately; assert the
+    # deprecation notice fires
+    with pytest.warns(DeprecationWarning, match=r"'params'.*deprecated"):
+        props = apply_model(clusters, {'model': 'GaussianMixture',
+                                       'params': {'n_components': 2}})
     assert props.shape == (80, 2)
     assert np.allclose(props.sum(axis=1), 1)
 
 
 def test_apply_model_pipeline():
-    result, fitted = apply_model(
-        [data1, data2],
-        [{'model': 'PCA', 'params': {'n_components': 5}},
-         {'model': 'PCA', 'params': {'n_components': 2}}],
-        return_model=True)
+    # two legacy 'params' dict specs exercised deliberately (the deprecation
+    # notice fires once per spec); assert it fires
+    with pytest.warns(DeprecationWarning, match=r"'params'.*deprecated"):
+        result, fitted = apply_model(
+            [data1, data2],
+            [{'model': 'PCA', 'params': {'n_components': 5}},
+             {'model': 'PCA', 'params': {'n_components': 2}}],
+            return_model=True)
     assert all(r.shape == (60, 2) for r in result)
     # list-of-specs now returns a fitted hyp.Pipeline (not a plain list of
     # fitted models) so the same fitted stages can be reused via

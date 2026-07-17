@@ -19,7 +19,7 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="Here is a basic example where we load in some data (a list of arrays - samples by features), take the first two arrays in the list and plot them as points with the &#x27;o&#x27;.  Hypertools can handle all format strings supported by matplotlib.">
+    <div class="sphx-glr-thumbcontainer" tooltip="Here is a basic example where we load in some data (a list of arrays - samples by features) and plot all three arrays as points using the &#x27;.&#x27; format string. Hypertools can handle all format strings supported by matplotlib.">
 
 .. only:: html
 
@@ -53,7 +53,7 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The n_clusters kwarg can be used to discover clusters in your dataset.  It relies on scikit-learn&#x27;s implementation of k-mean clustering to find clusters, and then labels the points accordingly. You must set the number of clusters yourself.">
+    <div class="sphx-glr-thumbcontainer" tooltip="The n_clusters kwarg can be used to discover clusters in your dataset.  It relies on scikit-learn&#x27;s implementation of k-means clustering to find clusters, and then labels the points accordingly. You must set the number of clusters yourself. Because the rows of the mushrooms dataset are unordered samples, we plot them as points (the &#x27;.&#x27; format string) rather than as a connected line.">
 
 .. only:: html
 
@@ -70,24 +70,7 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="Hypertools supports single-index Pandas Dataframes as input. In this example, we plot the mushrooms dataset from the kaggle database.  This is a dataset of text features describing different attributes of a mushroom. Dataframes that contain columns with text are converted into binary feature vectors representing the presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_dataframe_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/plot_dataframe`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Plotting a Pandas Dataframe</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="The downside to using dimensionality reduction to visualize your data is that some variance will likely be removed. To help get a sense for the integrity of your low dimensional visualizations, we built the describe function, which computes the covariance (samples by samples) of both the raw and reduced datasets, and plots their correlation.">
+    <div class="sphx-glr-thumbcontainer" tooltip="The downside to using dimensionality reduction to visualize your data is that some variance will likely be removed. To help get a sense for the integrity of your low dimensional visualizations, we built the describe function. For each candidate number of dimensions, it reduces the data and correlates the pairwise Euclidean distances between observations in the reduced data with the pairwise distances in the raw (full-dimensional) data, then plots that correlation as a function of the number of dimensions.">
 
 .. only:: html
 
@@ -121,6 +104,23 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="Hypertools supports single-index Pandas Dataframes as input. In this example, we plot the mushrooms dataset from the kaggle database.  This is a dataset of text features describing different attributes of a mushroom. Dataframes that contain columns with text are converted into binary feature vectors representing the presence or absences of the feature (see the top-level pandas.get_dummies function for more). Because the rows of this dataset have no meaningful order, we plot them as points (the &#x27;.&#x27; format string) rather than as a connected line.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_dataframe_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_dataframe`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Plotting a Pandas Dataframe</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="This example loads in some data from the scikit-learn digits dataset and plots it.">
 
 .. only:: html
@@ -138,7 +138,7 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="This example loads in some data from the scikit-learn digits dataset and plots it using t-SNE.">
+    <div class="sphx-glr-thumbcontainer" tooltip="This example loads in some data from the scikit-learn digits dataset and plots it using t-SNE, with one color per digit class and a legend mapping colors to digits.">
 
 .. only:: html
 
@@ -172,7 +172,24 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="This example loads in some data from the scikit-learn digits dataset and plots it using UMAP.">
+    <div class="sphx-glr-thumbcontainer" tooltip="The future trajectory of an animated plot can be visualized with the precog argument.  This displays a low opacity version of the trace ahead of the current points being plotted.  This can be used in conjunction with the chemtrails argument to plot a low-opacity trace of the entire timeseries.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_precog_thumb.gif
+    :alt:
+
+  :doc:`/auto_examples/precog`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Precognition</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="This example loads in some data from the scikit-learn digits dataset and plots it using UMAP, with one color per digit class and a legend mapping colors to digits.">
 
 .. only:: html
 
@@ -193,7 +210,7 @@ Gallery of Examples
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_chemtrails_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_chemtrails_thumb.gif
     :alt:
 
   :doc:`/auto_examples/chemtrails`
@@ -210,7 +227,7 @@ Gallery of Examples
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_animate_MDS_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_animate_MDS_thumb.gif
     :alt:
 
   :doc:`/auto_examples/animate_MDS`
@@ -227,7 +244,7 @@ Gallery of Examples
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_animate_spin_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_animate_spin_thumb.gif
     :alt:
 
   :doc:`/auto_examples/animate_spin`
@@ -244,7 +261,7 @@ Gallery of Examples
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_animate_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_animate_thumb.gif
     :alt:
 
   :doc:`/auto_examples/animate`
@@ -257,18 +274,35 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The future trajectory of an animated plot can be visualized with the precog argument.  This displays a low opacity version of the trace ahead of the current points being plotted.  This can be used in conjunction with the chemtrails argument to plot a low-opacity trace of the entire timeseries.">
+    <div class="sphx-glr-thumbcontainer" tooltip="To make use of HDBSCAN as the clustering algorithm used to discover clusters, you must specify it as the cluster argument. If you wish to specify HDBSCAN parameters you will need the dictionary form, which includes both the model name and its keyword arguments (under the &#x27;kwargs&#x27; key). Since HDBSCAN does not require the number of clusters, n_clusters does not need to be set. Note that HDBSCAN can also label some observations as noise (label -1); those points are colored as their own group. Because the rows of the mushrooms dataset are unordered samples, we plot them as points (&#x27;.&#x27;).">
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_precog_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_clusters3_thumb.png
     :alt:
 
-  :doc:`/auto_examples/precog`
+  :doc:`/auto_examples/plot_clusters3`
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Precognition</div>
+      <div class="sphx-glr-thumbnail-title">Discovering clusters using HDBSCAN</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="hyp.load(&#x27;sotus&#x27;) returns the full text of the 29 State of the Union addresses delivered between 1989 and 2018, in chronological order. Passing the raw speech texts straight to hyp.plot runs hypertools&#x27; default text pipeline: each address is converted to a vector of word counts, modeled with a 50-topic Latent Dirichlet Allocation model fit to a large sample of wikipedia pages, and reduced to 3 dimensions. Because the addresses are plotted in chronological order, the connected line traces a &quot;text trajectory&quot; through semantic space: addresses that emphasize similar themes land near one another, and the trajectory shows how the topics presidents discuss have drifted over three decades.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_sotus_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_sotus`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Plotting State of the Union Addresses</div>
     </div>
 
 
@@ -291,18 +325,18 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="To make use of HDBSCAN as the clustering algorithm used to discover clusters, you must specify it as the cluster argument. If you wish to specify HDBSCAN parameters you will need the dictionary form which includes both the model and the params. Since HDBSCAN does not require the number of clusters, n_clusters does not need to be set.">
+    <div class="sphx-glr-thumbcontainer" tooltip="To save a plot, simply use the save_path kwarg, and specify where you want the image to be saved, including the file extension (e.g. pdf)">
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_clusters3_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_save_image_thumb.png
     :alt:
 
-  :doc:`/auto_examples/plot_clusters3`
+  :doc:`/auto_examples/save_image`
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Discovering clusters using HDBSCAN</div>
+      <div class="sphx-glr-thumbnail-title">Saving a plot</div>
     </div>
 
 
@@ -325,7 +359,7 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="By default, the text samples will be transformed into a vector of word counts and then modeled using Latent Dirichlet Allocation (# of topics = 100) using a model fit to a large sample of wikipedia pages.  However, you can optionally pass your own text to fit the semantic model. To do this define corpus as a list of documents (strings). A topic model will be fit on the fly and the text will be plotted.">
+    <div class="sphx-glr-thumbcontainer" tooltip="By default, the text samples will be transformed into a vector of word counts and then modeled using Latent Dirichlet Allocation (# of topics = 50) using a model fit to a large sample of wikipedia pages.  However, you can optionally pass your own text to fit the semantic model. To do this define corpus as a list of documents (strings). A topic model will be fit on the fly and the text will be plotted.">
 
 .. only:: html
 
@@ -342,35 +376,18 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="To save a plot, simply use the save_path kwarg, and specify where you want the image to be saved, including the file extension (e.g. pdf)">
+    <div class="sphx-glr-thumbcontainer" tooltip="In this example, we load in some synthetic data, rotate it, and then use the procrustes function to get the datasets back in alignment.  The procrustes function uses linear transformations to project a source matrix into the space of a target matrix.">
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_save_image_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_procrustes_thumb.png
     :alt:
 
-  :doc:`/auto_examples/save_image`
+  :doc:`/auto_examples/plot_procrustes`
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Saving a plot</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="When plotting, its useful to have a way to color points by some category or variable.  Hypertools does this using the hue kwarg, which takes a list of string category labels or numerical values.  If text labels are passed, the data is restructured according to those labels and plotted in different colors according to your color palette.  If numerical values are passed, the values are binned (default resolution: 100) and plotted according to your color palette.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_hue_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/plot_hue`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Grouping data by category</div>
+      <div class="sphx-glr-thumbnail-title">Aligning two matrices with the procrustes function</div>
     </div>
 
 
@@ -410,18 +427,18 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="In this example, we load in some synthetic data, rotate it, and then use the procustes function to get the datasets back in alignment.  The procrustes function uses linear transformations to project a source matrix into the space of a target matrix.">
+    <div class="sphx-glr-thumbcontainer" tooltip="When plotting, its useful to have a way to color points by some category or variable.  Hypertools does this using the hue kwarg, which takes a list of string category labels or numerical values.  If text labels are passed, the data is restructured according to those labels and plotted in different colors according to your color palette.  If numerical values are passed, the values are binned (default resolution: 100) and plotted according to your color palette.">
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_procrustes_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_hue_thumb.png
     :alt:
 
-  :doc:`/auto_examples/plot_procrustes`
+  :doc:`/auto_examples/plot_hue`
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Aligning two matrices with the procrustes function</div>
+      <div class="sphx-glr-thumbnail-title">Grouping data by category</div>
     </div>
 
 
@@ -439,40 +456,6 @@ Gallery of Examples
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Labeling your datapoints</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="To save an animation, simply add the save_path kwarg and specify the path where you want to save the movie, including the extension.  NOTE: this depends on having ffmpeg installed on your computer.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_save_movie_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/save_movie`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Saving an animation</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="To plot text, simply pass the text data to the plot function.  By default, the text samples will be transformed into a vector of word counts and then modeled using Latent Dirichlet Allocation (# of topics = 100) using a model fit to a large sample of wikipedia pages.  If you specify semantic=None, the word count vectors will be plotted. To convert the text t0 a matrix (or list of matrices), we also expose the format_data function.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_text_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/plot_text`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Plotting text</div>
     </div>
 
 
@@ -512,18 +495,18 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="Animations work on the plotly backend too: animate=True reveals trajectories through a sliding time window and animate=&#x27;spin&#x27; rotates the camera, each with interactive play/pause controls in notebooks. Animations on either backend export to gif, animated png, or mp4 -- the file extension picks the format.">
+    <div class="sphx-glr-thumbcontainer" tooltip="To save an animation, simply add the save_path kwarg and specify the path where you want to save the movie, including the extension.  NOTE: saving to mp4 (or mov/`.avi`) uses matplotlib&#x27;s ffmpeg writer, so ffmpeg must be installed and on your PATH for those formats; gif and animated png exports are written with Pillow and need no external tools.">
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_animate_plotly_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_save_movie_thumb.gif
     :alt:
 
-  :doc:`/auto_examples/animate_plotly`
+  :doc:`/auto_examples/save_movie`
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Animated interactive plots (plotly backend)</div>
+      <div class="sphx-glr-thumbnail-title">Saving an animation</div>
     </div>
 
 
@@ -580,23 +563,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="When you pass a matrix with with missing data, hypertools will attempt to fill in the values using probabalistic principal components analysis (PPCA). Here is an example where we generate some synthetic data, remove some of the values, and then use PPCA to interpolate those missing values. Then, we plot both the original and data with missing values together to see how it performed.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_PPCA_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/plot_PPCA`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Interpolating missing data with probabalistic PCA</div>
-    </div>
-
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="chemtrails, precog, and bullettime each accept a per-dataset list of bools instead of a single bool, so different datasets in the same animation can show different trail styles (GH #127): a low-opacity trace of the past (chemtrails), of the future (precog), or of the entire timeseries at once (bullettime -- equivalent to chemtrails AND precog together).">
 
 .. only:: html
@@ -631,18 +597,18 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="In addition to hard clustering (KMeans, HDBSCAN, ...), hypertools 1.0 supports mixture models: GaussianMixture, BayesianGaussianMixture, LatentDirichletAllocation, and NMF. hyp.cluster returns an (n_samples, n_components) matrix of membership proportions instead of discrete labels, and hyp.plot colors each observation by blending the component colors according to its mixture weights -- observations between clusters render with intermediate colors.">
+    <div class="sphx-glr-thumbcontainer" tooltip="When you pass a matrix with with missing data, hypertools will attempt to fill in the values using probabalistic principal components analysis (PPCA). Here is an example where we generate some synthetic data, remove some of the values, and then use PPCA to interpolate those missing values. Then, we plot both the original and data with missing values together to see how it performed.">
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_mixture_models_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_PPCA_thumb.png
     :alt:
 
-  :doc:`/auto_examples/plot_mixture_models`
+  :doc:`/auto_examples/plot_PPCA`
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Soft clustering with mixture models</div>
+      <div class="sphx-glr-thumbnail-title">Interpolating missing data with probabalistic PCA</div>
     </div>
 
 
@@ -682,18 +648,18 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="hyp.plot returns a plain matplotlib (or plotly) Figure -- there is no special container object to learn. Anything you can do with a Figure (``fig.savefig(...)``, grabbing fig.axes[0] to tweak the plot, embedding it in a larger layout, etc.) just works.">
+    <div class="sphx-glr-thumbcontainer" tooltip="Animations work on the plotly backend too: animate=True reveals trajectories through a sliding time window and animate=&#x27;spin&#x27; rotates the camera, each with interactive play/pause controls in notebooks. Animations export via the save_path kwarg -- the file extension picks the format. On the plotly backend, interactive html exports are fast (no rasterization, no extra dependencies). Rasterized exports (`.gif`, animated png, mp4) are also supported, but they render every frame through kaleido/Chromium at roughly a few seconds per frame -- keep duration and frame_rate small for those, or use the matplotlib backend for long rasterized animations.">
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_geo_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_animate_plotly_thumb.png
     :alt:
 
-  :doc:`/auto_examples/plot_geo`
+  :doc:`/auto_examples/animate_plotly`
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Working with plot outputs (figures & fitted models)</div>
+      <div class="sphx-glr-thumbnail-title">Animated interactive plots (plotly backend)</div>
     </div>
 
 
@@ -716,6 +682,23 @@ Gallery of Examples
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="hyp.plot returns a plain matplotlib (or plotly) Figure -- there is no special container object to learn. Anything you can do with a Figure (``fig.savefig(...)``, grabbing fig.axes[0] to tweak the plot, embedding it in a larger layout, etc.) just works.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_geo_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_geo`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Working with plot outputs (figures & fitted models)</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="If you have data with missing values, Hypertools will try to interpolate them using PPCA.  To visualize how well its doing, you can use the missing_inds function and then highlight the values that were interpolated.  Here, we generated some synthetic data, removed some values, and then plotted the original data, data with missing values and highlighted the missing datapoints with stars.">
 
 .. only:: html
@@ -733,7 +716,7 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The predict kwarg overlays a forecast on top of your plotted data: a dashed, same-color tail extending t steps past the end of each dataset. Under the hood this calls hypertools.predict, which supports several forecasting models -- &#x27;Kalman&#x27; (a linear-Gaussian state-space filter, used here), &#x27;GaussianProcess&#x27;, &#x27;AutoRegressor&#x27; (any sklearn regressor run recursively), &#x27;ARIMA&#x27;, &#x27;Laplace&#x27;, and &#x27;Chronos&#x27; (a HuggingFace time-series foundation model) -- selected via model= when calling hypertools.predict directly. Calling hyp.predict(data, model=..., t=..., return_model=True) also returns the fitted forecaster alongside the forecast, so the same fitted model can be reused (without re-estimating) on new data.">
+    <div class="sphx-glr-thumbcontainer" tooltip="The predict kwarg overlays a forecast on top of your plotted data: a dashed, same-color tail extending t steps past the end of each dataset. Under the hood this calls hypertools.predict, which supports several forecasting models -- &#x27;Kalman&#x27; (a linear-Gaussian state-space filter), &#x27;GaussianProcess&#x27; (used here), &#x27;AutoRegressor&#x27; (any sklearn regressor run recursively), &#x27;ARIMA&#x27;, &#x27;Laplace&#x27;, and &#x27;Chronos&#x27; (a HuggingFace time-series foundation model) -- selected via model= when calling hypertools.predict directly. Calling hyp.predict(data, model=..., t=..., return_model=True) also returns the fitted forecaster alongside the forecast, so the same fitted model can be reused (without re-estimating) on new data.">
 
 .. only:: html
 
@@ -745,6 +728,23 @@ Gallery of Examples
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">Forecasting timeseries with predict</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="In addition to hard clustering (KMeans, HDBSCAN, ...), hypertools 1.0 supports mixture models: GaussianMixture, BayesianGaussianMixture, LatentDirichletAllocation, and NMF. hyp.cluster returns an (n_samples, n_components) matrix of membership proportions instead of discrete labels, and hyp.plot colors each observation by blending the component colors according to its mixture weights -- observations between clusters render with intermediate colors.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_mixture_models_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_mixture_models`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Soft clustering with mixture models</div>
     </div>
 
 
@@ -784,23 +784,6 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="hyp.reduce supports six torch-backed autoencoder reducers (GH #162): Autoencoder (shallow), SparseAutoencoder, DeepAutoencoder, ConvolutionalAutoencoder, SequenceAutoencoder, and VariationalAutoencoder. They are used exactly like any other reduce= model -- by name, with parameters passed via the dict spec -- and require the optional torch dependency (``pip install &quot;hypertools[torch]&quot;``). This example fits a shallow Autoencoder and a VariationalAutoencoder on the same data and compares them against PCA.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_autoencoders_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/plot_autoencoders`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Autoencoder reducers</div>
-    </div>
-
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="Hypertools fills missing (NaN) values via hypertools.impute before reducing/plotting. This compares two imputers on the weights_avg dataset after randomly knocking out 10% of its entries -- plus three CONSECUTIVE rows where every feature is missing. That fully-missing-row case is the motivating example for GH #169: PPCA reconstructs a row from its own observed features, so a row with NO observed features at all cannot be recovered, so PPCA warns and leaves those rows NaN (they are dropped below purely so the PPCA panel has something plottable). The Kalman imputer instead smooths across time, so it can fill a fully-missing row from the neighboring (observed) timepoints, at the cost of assuming the data are a reasonably smooth timeseries -- its panel keeps every row.">
 
 .. only:: html
@@ -818,11 +801,79 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="This example walks through the &quot;story trajectories&quot; demo (GH #275): an animated, hyperaligned point cloud that shows how each subject&#x27;s whole-brain activity pattern moves through a shared, low-dimensional space over the course of a spoken story.">
+    <div class="sphx-glr-thumbcontainer" tooltip="hyp.reduce supports six torch-backed autoencoder reducers (GH #162): Autoencoder (shallow), SparseAutoencoder, DeepAutoencoder, ConvolutionalAutoencoder, SequenceAutoencoder, and VariationalAutoencoder. They are used exactly like any other reduce= model -- by name, with parameters passed via the dict spec -- and require the optional torch dependency (``pip install &quot;hypertools[torch]&quot;``). This example fits a shallow Autoencoder and a VariationalAutoencoder on the same data and compares them against PCA.">
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_story_trajectories_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_autoencoders_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_autoencoders`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Autoencoder reducers</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="HyperTools&#x27; &quot;shapes zoo&quot; (bunny, cube, dragon, sphere, teapot, vase, biplane -- see the A zoo of 3D shapes example) can be morphed smoothly from one point cloud to the next with the animate=&#x27;morph&#x27; hyp.plot style (PR #272, maintainer request 2026-07-06 -- see the animate/ rotations/`morph_samples` entries of the hyp.plot docstring for the full spec). Under the hood, every shape keeps its own full point count by default (smaller shapes are padded up to the largest shape&#x27;s count by duplicating random points of their own) -- but the zoo&#x27;s shapes range up to ~90,000 points (the biplane), and the Hungarian assignment used to match consecutive shapes point-for-point is roughly O(n^3), so morph_samples=1000 below first downsamples every shape to a tractable 1000 points (build-time: the full, uncapped 90k-point target would make the matching step infeasible for a gallery build). Consecutive shapes are matched point-for-point with the Hungarian algorithm (`scipy.optimize.linear_sum_assignment`) so that each point travels the shortest total distance to its partner in the next shape, and the coordinates are eased between shapes frame by frame while the camera spins around the scene -- exactly the hand-rolled recipe this example used to implement itself before animate=&#x27;morph&#x27; existed, now built into the library behind a single hyp.plot call. rotations also accepts a per-segment list for finer camera control: below, holds spin a slow, easy-to-watch full rotation while each transition only spins a brisk quarter-turn, so the camera visibly &quot;steps&quot; forward every time one shape morphs into the next. Camera speed (degrees/frame) is always CONSTANT across the whole animation -- a segment&#x27;s rotations entry sets how much SCREEN TIME it gets, not how fast it spins, so the full-rotation holds below play roughly 4x longer than the quarter-turn transitions (1 / 0.25), never faster.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_shape_morph_thumb.gif
+    :alt:
+
+  :doc:`/auto_examples/plot_shape_morph`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Morphing through the shapes zoo</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="To plot text, simply pass the text data to the plot function.  By default, the text samples will be transformed into a vector of word counts and then modeled using Latent Dirichlet Allocation (# of topics = 50) using a model fit to a large sample of wikipedia pages.  If you specify semantic=None, the word count vectors will be plotted. To convert the text to a matrix (or list of matrices), we also expose the format_data function. Note: the wikipedia topic model works best on sentence- or paragraph-length documents with common dictionary words; very short or slang-heavy snippets can land on nearly identical topic vectors.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_text_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_text`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Plotting text</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="hyp.tools.text2mat resolves vectorizer=/``semantic=`` string specs in three tiers (GH #198): scikit-learn&#x27;s built-ins, then gensim&#x27;s models -- &#x27;Word2Vec&#x27;, &#x27;Doc2Vec&#x27;, &#x27;FastText&#x27; (vectorizer tier), and &#x27;LdaModel&#x27;, &#x27;LsiModel&#x27;, &#x27;HdpModel&#x27; (semantic tier) -- then HuggingFace sentence-transformers. gensim is an optional dependency (``pip install &quot;hypertools[gensim]&quot;``). This example embeds a small multi-topic corpus with gensim&#x27;s Word2Vec (averaged word vectors, no semantic-stage model) and separately with CountVectorizer + gensim&#x27;s LDA, then plots both.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_gensim_text_thumb.png
+    :alt:
+
+  :doc:`/auto_examples/plot_gensim_text`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Gensim text models</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="This example walks through the &quot;story trajectories&quot; demo (GH #275): an animated cloud of hyperaligned trajectories showing how all 36 subjects&#x27; whole-brain activity traces out a shared path through a low-dimensional space while they listen to the same spoken story.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_story_trajectories_thumb.gif
     :alt:
 
   :doc:`/auto_examples/plot_story_trajectories`
@@ -852,62 +903,11 @@ Gallery of Examples
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="HyperTools&#x27; &quot;shapes zoo&quot; (bunny, cube, dragon, sphere, teapot, vase, biplane -- see the A zoo of 3D shapes example) can be morphed smoothly from one point cloud to the next with the animate=&#x27;morph&#x27; hyp.plot style (PR #272, maintainer request 2026-07-06 -- see the animate/ rotations/`morph_samples` entries of the hyp.plot docstring for the full spec). Under the hood, every shape keeps its own full point count by default (smaller shapes are padded up to the largest shape&#x27;s count by duplicating random points of their own) -- but the zoo&#x27;s shapes range up to ~90,000 points (the biplane), and the Hungarian assignment used to match consecutive shapes point-for-point is roughly O(n^3), so morph_samples=1000 below first downsamples every shape to a tractable 1000 points (build-time: the full, uncapped 90k-point target would make the matching step infeasible for a gallery build). Consecutive shapes are matched point-for-point with the Hungarian algorithm (`scipy.optimize.linear_sum_assignment`) so that each point travels the shortest total distance to its partner in the next shape, and the coordinates are eased between shapes frame by frame while the camera spins around the scene -- exactly the hand-rolled recipe this example used to implement itself before animate=&#x27;morph&#x27; existed, now built into the library behind a single hyp.plot call. rotations also accepts a per-segment list for finer camera control: below, holds spin a slow, easy-to-watch full rotation while each transition only spins a brisk quarter-turn, so the camera visibly &quot;steps&quot; forward every time one shape morphs into the next. Camera speed (degrees/frame) is always CONSTANT across the whole animation -- a segment&#x27;s rotations entry sets how much SCREEN TIME it gets, not how fast it spins, so the full-rotation holds below play roughly 4x longer than the quarter-turn transitions (1 / 0.25), never faster.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_shape_morph_thumb.gif
-    :alt:
-
-  :doc:`/auto_examples/plot_shape_morph`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Morphing through the shapes zoo</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="hyp.tools.text2mat resolves vectorizer=/``semantic=`` string specs in three tiers (GH #198): scikit-learn&#x27;s built-ins, then gensim&#x27;s models -- &#x27;Word2Vec&#x27;, &#x27;Doc2Vec&#x27;, &#x27;FastText&#x27; (vectorizer tier), and &#x27;LdaModel&#x27;, &#x27;LsiModel&#x27;, &#x27;HdpModel&#x27; (semantic tier) -- then HuggingFace sentence-transformers. gensim is an optional dependency (``pip install &quot;hypertools[gensim]&quot;``). This example embeds a small multi-topic corpus with gensim&#x27;s Word2Vec (averaged word vectors, no semantic-stage model) and separately with CountVectorizer + gensim&#x27;s LDA, then plots both.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_gensim_text_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/plot_gensim_text`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Gensim text models</div>
-    </div>
-
-
-.. raw:: html
-
-    <div class="sphx-glr-thumbcontainer" tooltip="This example demonstrates how to plot text data using hypertools. We create sample State of the Union address excerpts covering different political themes and visualize them in a reduced dimensional space. By default, hypertools  transforms the text data using a topic model to capture semantic relationships  between different speech segments.">
-
-.. only:: html
-
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_sotus_thumb.png
-    :alt:
-
-  :doc:`/auto_examples/plot_sotus`
-
-.. raw:: html
-
-      <div class="sphx-glr-thumbnail-title">Plotting State of the Union Addresses with Text Analysis</div>
-    </div>
-
-
-.. raw:: html
-
     <div class="sphx-glr-thumbcontainer" tooltip="Building on the Morphing through the shapes zoo example, HyperTools can also render a smooth, lit convex-hull SURFACE around a moving point cloud (the surface= hyp.plot kwarg -- see hypertools.plot.meshutil and hypertools.plot.surface, GH #109) instead of just the raw points. Combining surface= with animate=&#x27;morph&#x27; (PR #272, maintainer request 2026-07-06) recomputes the moving cloud&#x27;s smoothed hull mesh from scratch on every frame, shaded with a two-light Blinn-Phong model and backface-culled for the current camera angle -- so the &quot;blob&quot; skin flows continuously as the underlying points rearrange themselves, all from one hyp.plot call. Camera rotation speed (degrees/frame) is always constant across the whole animation, so a per-segment rotations list (below) controls how much SCREEN TIME each hold/transition gets, never how fast it spins. Since a convex hull cannot reproduce concave features, holds on concave shapes like the bunny necessarily render as a smooth, rounded blob; that loss of concavity is an expected trade-off of the hull-surface approach, not a bug. Hulls hug the data tightly BY CONSTRUCTION (each smoothing round pulls stray vertices back onto the original hull surface, see hypertools.plot.meshutil.smooth_hull_3d) rather than via any fixed overshoot allowance, so the axes box never needs a hand-computed fudge factor to contain the surface. A final, bounded, grow-only rescale then guarantees at least 99% containment of the actual points; for ordinary, reasonably-sampled clouds this rescale rarely does more than nudge the mesh a few percent, and only grows large for very sparse clouds (rule of thumb: fewer than ~10 points), where a coarse, few-vertex hull loses proportionally more to smoothing and needs more correction to recover that same 99% guarantee.">
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_animate_surface_morph_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_animate_surface_morph_thumb.gif
     :alt:
 
   :doc:`/auto_examples/animate_surface_morph`
@@ -931,55 +931,55 @@ Gallery of Examples
    /auto_examples/plot_basic
    /auto_examples/plot_2D
    /auto_examples/plot_clusters
-   /auto_examples/plot_dataframe
    /auto_examples/plot_describe
    /auto_examples/plot_legend
+   /auto_examples/plot_dataframe
    /auto_examples/plot_digits
    /auto_examples/plot_TSNE
    /auto_examples/explore
+   /auto_examples/precog
    /auto_examples/plot_UMAP
    /auto_examples/chemtrails
    /auto_examples/animate_MDS
    /auto_examples/animate_spin
    /auto_examples/animate
-   /auto_examples/precog
-   /auto_examples/plot_align
    /auto_examples/plot_clusters3
+   /auto_examples/plot_sotus
+   /auto_examples/plot_align
+   /auto_examples/save_image
    /auto_examples/analyze
    /auto_examples/plot_corpus
-   /auto_examples/save_image
-   /auto_examples/plot_hue
+   /auto_examples/plot_procrustes
    /auto_examples/plot_nested_lists
    /auto_examples/plot_colorbar
-   /auto_examples/plot_procrustes
+   /auto_examples/plot_hue
    /auto_examples/plot_labels
-   /auto_examples/save_movie
-   /auto_examples/plot_text
    /auto_examples/plot_interactive_backend
    /auto_examples/plot_clusters2
-   /auto_examples/animate_plotly
+   /auto_examples/save_movie
    /auto_examples/plot_multicolored_lines
    /auto_examples/plot_density
    /auto_examples/plot_surface
-   /auto_examples/plot_PPCA
    /auto_examples/animate_trails_mix
    /auto_examples/plot_normalize
-   /auto_examples/plot_mixture_models
+   /auto_examples/plot_PPCA
    /auto_examples/plot_datasaurus
    /auto_examples/plot_shapes_zoo
-   /auto_examples/plot_geo
+   /auto_examples/animate_plotly
    /auto_examples/plot_apply_model
+   /auto_examples/plot_geo
    /auto_examples/plot_missing_data
    /auto_examples/plot_predict
+   /auto_examples/plot_mixture_models
    /auto_examples/plot_multiindex
    /auto_examples/plot_pipelines_return_model
-   /auto_examples/plot_autoencoders
    /auto_examples/plot_impute
+   /auto_examples/plot_autoencoders
+   /auto_examples/plot_shape_morph
+   /auto_examples/plot_text
+   /auto_examples/plot_gensim_text
    /auto_examples/plot_story_trajectories
    /auto_examples/plot_datasets_tour
-   /auto_examples/plot_shape_morph
-   /auto_examples/plot_gensim_text
-   /auto_examples/plot_sotus
    /auto_examples/animate_surface_morph
 
 

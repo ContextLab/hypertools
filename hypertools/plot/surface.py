@@ -40,6 +40,11 @@ SURFACE_DEFAULTS = {
     "pre_inflate": 1.0,
     "keep_points": True,
 }
+# Upper bound for `smoothing`: the mesh face count scales as
+# ``4 ** smoothing`` relative to the raw hull, so smoothing=6 already means
+# ~4096x the hull's face count -- values beyond that are a memory/time
+# footgun with no visible smoothness gain (release-1.0 audit, F07-006).
+MAX_SMOOTHING = 6
 
 # Task R3 (2026-07-06, maintainer request: "confirm we can control
 # coloring, lighting, and shading via parameters passed to plot"): both
@@ -124,7 +129,51 @@ def _validate_surface_dict(d):
     merged = dict(SURFACE_DEFAULTS)
     merged.update(d)
     merged["lighting"] = lighting
+    _validate_surface_values(merged)
     return merged
+
+
+def _validate_surface_values(spec):
+    """Validate the (already-defaulted) values in a merged surface spec
+    dict, raising a clear ``ValueError`` naming the key, the constraint,
+    and the received value for anything out of range -- mirroring
+    ``density``'s ``_validate_density_values`` exactly (release-1.0 audit,
+    F07-006: previously a bad ``alpha`` only crashed LATE, deep inside
+    matplotlib, ``pre_inflate=0`` leaked a raw scipy ``QhullError``, and
+    ``pre_inflate<0`` silently built an inside-out mesh). Runs on every
+    call (including the all-defaults case) so a bad default would be
+    caught too. ``color`` is deliberately not validated here: any
+    matplotlib color spec is legal, and matplotlib's own conversion error
+    already names the bad value clearly."""
+    alpha = spec["alpha"]
+    if isinstance(alpha, bool) or not isinstance(alpha, (int, float)) \
+            or not (0 < alpha <= 1):
+        raise ValueError(
+            f"surface['alpha'] must be a real number in (0, 1]; got {alpha!r}"
+        )
+
+    smoothing = spec["smoothing"]
+    if isinstance(smoothing, bool) or not isinstance(smoothing, (int, np.integer)) \
+            or not (0 <= smoothing <= MAX_SMOOTHING):
+        raise ValueError(
+            f"surface['smoothing'] must be an int in [0, {MAX_SMOOTHING}] "
+            f"(the mesh face count grows as 4**smoothing); got {smoothing!r}"
+        )
+
+    pre_inflate = spec["pre_inflate"]
+    if isinstance(pre_inflate, bool) \
+            or not isinstance(pre_inflate, (int, float, np.integer, np.floating)) \
+            or not np.isfinite(pre_inflate) or pre_inflate <= 0:
+        raise ValueError(
+            f"surface['pre_inflate'] must be a positive, finite real number "
+            f"(a scale factor > 0); got {pre_inflate!r}"
+        )
+
+    keep_points = spec["keep_points"]
+    if not isinstance(keep_points, (bool, np.bool_)):
+        raise ValueError(
+            f"surface['keep_points'] must be a bool; got {keep_points!r}"
+        )
 
 
 def normalize_surface_arg(surface):
@@ -147,9 +196,19 @@ def normalize_surface_arg(surface):
     Raises
     ------
     ValueError
-        `surface` (or any dict/lighting-dict inside it) has an unknown key,
+        `surface` (or any dict/lighting-dict inside it) has an unknown key
+        or an out-of-range value (see :func:`_validate_surface_values`),
         or `surface` is not one of the accepted forms.
+
+    Notes
+    -----
+    numpy bools (``np.True_``/``np.False_``) are accepted anywhere a
+    Python bool is -- both at the top level and as list entries --
+    matching the tolerance of the dict values (release-1.0 audit,
+    F07-008).
     """
+    if isinstance(surface, np.bool_):
+        surface = bool(surface)
     if surface is None or surface is False:
         return None
     if surface is True:
@@ -159,6 +218,8 @@ def normalize_surface_arg(surface):
     if isinstance(surface, (list, tuple)):
         out = []
         for item in surface:
+            if isinstance(item, np.bool_):
+                item = bool(item)
             if item is None or item is False:
                 out.append(None)
             elif item is True:

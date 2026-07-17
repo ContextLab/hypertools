@@ -18,9 +18,9 @@
 .. _sphx_glr_auto_examples_plot_nested_lists.py:
 
 
-=============================
+===================================
 Nested lists and multilevel styling
-=============================
+===================================
 
 hypertools 1.0 accepts arbitrarily nested lists of datasets. Every dataset
 under the same outermost group shares that group's color, and each
@@ -77,7 +77,7 @@ summary-to-detail visual hierarchy. For example, `[[a, b], [c]]` colors
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.123 seconds)
+   **Total running time of the script:** (0 minutes 0.039 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_nested_lists.py:

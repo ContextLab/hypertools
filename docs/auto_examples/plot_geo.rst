@@ -18,9 +18,9 @@
 .. _sphx_glr_auto_examples_plot_geo.py:
 
 
-=============================
+===================================================
 Working with plot outputs (figures & fitted models)
-=============================
+===================================================
 
 `hyp.plot` returns a plain matplotlib (or plotly) Figure -- there is no
 special container object to learn. Anything you can do with a Figure
@@ -29,17 +29,21 @@ embedding it in a larger layout, etc.) just works.
 
 If you also want access to the analyzed data and the fitted
 reduce/align/cluster models, pass ``return_model=True``. Instead of the
-bare figure, `hyp.plot` then returns a dict bundle:
-``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...}``, where
-``xform_data`` is the normalized/reduced/aligned data that was actually
-plotted, ``animation`` is the ``matplotlib.animation.Animation`` handle when
-``animate=True`` (``None`` otherwise, and for plotly figures), and ``models``
-records the reduce/align/cluster specs used to produce it.
+bare figure, `hyp.plot` then returns a dict bundle with six keys:
+``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...,
+'pipeline': ..., 'predict': ...}``, where ``xform_data`` is the
+normalized/reduced/aligned data that was actually plotted, ``animation`` is
+the ``matplotlib.animation.Animation`` handle when ``animate=True``
+(``None`` otherwise, and for plotly figures), ``models`` records the
+reduce/align/cluster specs used to produce it, ``pipeline`` is the fitted
+`hyp.Pipeline` (feed it back in via ``pipeline=`` to replay the exact
+fitted stages on new data), and ``predict`` holds the fitted forecaster
+and forecasts when ``predict=`` was used (``None`` otherwise).
 
 Note that `hyp.load` returns raw data directly (e.g. a list of arrays) --
 there is nothing further to unpack.
 
-.. GENERATED FROM PYTHON SOURCE LINES 24-55
+.. GENERATED FROM PYTHON SOURCE LINES 28-60
 
 
 
@@ -66,6 +70,7 @@ there is nothing further to unpack.
  .. code-block:: none
 
     axes type: Axes3D
+    bundle keys: ['animation', 'fig', 'models', 'pipeline', 'predict', 'xform_data']
     number of arrays returned: 2
     reduced shape (first array): (1000, 3)
     reduce model spec: {'model': 'PCA', 'params': {'n_components': 3}}
@@ -107,6 +112,7 @@ there is nothing further to unpack.
     xform_data = out['xform_data']
     models = out['models']
 
+    print(f"bundle keys: {sorted(out.keys())}")
     print(f"number of arrays returned: {len(xform_data)}")
     print(f"reduced shape (first array): {xform_data[0].shape}")
     print(f"reduce model spec: {models['reduce']}")
@@ -114,7 +120,7 @@ there is nothing further to unpack.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.042 seconds)
+   **Total running time of the script:** (0 minutes 0.039 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_geo.py:

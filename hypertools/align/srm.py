@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.exceptions import NotFittedError
 
-from .common import Aligner
+from .common import Aligner, reject_unknown_kwargs
 
 from ..external.brainiak import SRM, DetSRM, RSRM
 
@@ -18,14 +18,19 @@ def fitter(data, align_type, **kwargs):
     ----------
     data : DataFrame or list of DataFrame
         Dataset(s) to fit the shared response model on (coerced to a
-        list if a single DataFrame is given).
+        list if a single DataFrame is given). By the time this runs,
+        `Aligner.fit` has already trimmed/zero-padded every dataset to a
+        common width (see `hypertools.align.common.trim_and_pad`), so all
+        entries have the same column count.
     align_type : type
         The vendored brainiak model class to instantiate (`SRM`,
         `DetSRM`, or `RSRM`).
     **kwargs
         `features` : int, optional number of shared features (default:
-        the minimum column count across `data`). Remaining kwargs are
-        ignored by this function.
+        the shared column count of the already-padded datasets, i.e. the
+        MAXIMUM column count across the original datasets). Must be a
+        positive integer; anything else raises a `ValueError` naming the
+        kwarg.
 
     Returns
     -------
@@ -39,6 +44,16 @@ def fitter(data, align_type, **kwargs):
     features = kwargs.pop('features', None)
     if features is None:
         features = np.min([d.shape[1] for d in data])
+    elif (isinstance(features, bool)
+          or not isinstance(features, (int, np.integer)) or features < 1):
+        # a bad features= used to leak numpy's "negative dimensions are not
+        # allowed" from deep inside the SRM's random-state internals,
+        # never naming the kwarg (release-1.0 audit, X2-error-quality-019)
+        raise ValueError(
+            f'features must be a positive integer (the number of shared '
+            f'SRM features) or None (default: the shared column count of '
+            f'the preprocessed datasets); got {features!r}.')
+    features = int(features)
 
     model = align_type(features=features)
     model.fit([d.values.T for d in data])
@@ -97,34 +112,45 @@ def rsrm_fitter(data, **kwargs):
 class SharedResponseModel(Aligner):
     """Shared Response Model (Chen et al., 2015).
 
-    :param features: number of shared features (default: minimum number of
-        columns across datasets).
+    :param features: number of shared features (default: the common column
+        count after preprocessing -- datasets are zero-padded to the width
+        of the widest dataset before fitting, so this is the maximum number
+        of columns across datasets).
     """
     def __init__(self, features=None, **kwargs):
+        reject_unknown_kwargs('SharedResponseModel', kwargs, ['features'])
         super().__init__(required=['model', 'features', 'indices'],
                          fitter=srm_fitter, transformer=transformer,
-                         data=None, features=features, **kwargs)
+                         data=None, features=features)
 
 
 class DeterministicSharedResponseModel(Aligner):
     """Deterministic Shared Response Model (Chen et al., 2015).
 
-    :param features: number of shared features (default: minimum number of
-        columns across datasets).
+    :param features: number of shared features (default: the common column
+        count after preprocessing -- datasets are zero-padded to the width
+        of the widest dataset before fitting, so this is the maximum number
+        of columns across datasets).
     """
     def __init__(self, features=None, **kwargs):
+        reject_unknown_kwargs('DeterministicSharedResponseModel', kwargs,
+                              ['features'])
         super().__init__(required=['model', 'features', 'indices'],
                          fitter=detsrm_fitter, transformer=transformer,
-                         data=None, features=features, **kwargs)
+                         data=None, features=features)
 
 
 class RobustSharedResponseModel(Aligner):
     """Robust Shared Response Model (Turek et al., 2017).
 
-    :param features: number of shared features (default: minimum number of
-        columns across datasets).
+    :param features: number of shared features (default: the common column
+        count after preprocessing -- datasets are zero-padded to the width
+        of the widest dataset before fitting, so this is the maximum number
+        of columns across datasets).
     """
     def __init__(self, features=None, **kwargs):
+        reject_unknown_kwargs('RobustSharedResponseModel', kwargs,
+                              ['features'])
         super().__init__(required=['model', 'features', 'indices'],
                          fitter=rsrm_fitter, transformer=transformer,
-                         data=None, features=features, **kwargs)
+                         data=None, features=features)

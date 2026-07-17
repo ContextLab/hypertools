@@ -59,9 +59,13 @@ def test_cluster_lda_nonnegative_proportions():
 
 
 def test_cluster_nmf_custom_params():
-    props = cluster(np.abs(data),
-                    cluster={'model': 'NMF',
-                             'params': {'n_components': 2, 'max_iter': 500}})
+    # legacy 'params' dict spec exercised deliberately; assert the
+    # deprecation notice fires
+    with pytest.warns(DeprecationWarning, match=r"'params'.*deprecated"):
+        props = cluster(np.abs(data),
+                        cluster={'model': 'NMF',
+                                 'params': {'n_components': 2,
+                                            'max_iter': 500}})
     assert props.shape == (200, 2)
     assert props.min() >= 0
 

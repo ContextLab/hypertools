@@ -1,0 +1,127 @@
+{
+ "unit": "F04-plot-animate-window",
+ "findings": [
+  {
+   "id": "F04-plot-animate-window-001",
+   "severity": "major",
+   "title": "animate=True/'window' with continuous (per-observation) hue silently loses the animation: full trajectory drawn statically, window/trails never shown",
+   "repro": "import numpy as np, hypertools as hyp\nnp.random.seed(2)\nc = np.cumsum(np.random.randn(200, 6), axis=0)\nha = hyp.plot(c, animate='window', duration=4, frame_rate=10, focused=1, hue=np.arange(200.0), show=False)\nax = ha.figure.axes[0]\nprint(len(ax.lines))  # 0 -- animated window artists removed\nprint([len(getattr(a, '_segments3d', [])) for a in ax.collections])  # [39] full trajectory\nha.animation._func(30, *ha.animation._args)\nprint([len(getattr(a, '_segments3d', [])) for a in ax.collections])  # still 39 full segments\nha.save('hue_window.gif')  # every frame shows the whole rainbow trajectory",
+   "expected": "The 1-second opaque window slides along the trajectory (11 of 40 interpolated points visible per frame), colored by the hue gradient; nothing outside the window drawn.",
+   "actual": "window_frames: 10\nlines fargs: ['Line3D']\ncollection: Line3DCollection nsegs: 39\nafter frame30 collection nsegs: 39\n(ax.lines empty; extracted gif frames f010 and f030 both show the ENTIRE rainbow trajectory, camera rotation only)\nanimate=True + continuous hue: ax.lines=0",
+   "evidence": [
+    "evidence/F04-plot-animate-window/window_hue_continuous.gif",
+    "evidence/F04-plot-animate-window/window_huecont_f010.png",
+    "evidence/F04-plot-animate-window/window_huecont_f030.png"
+   ]
+  },
+  {
+   "id": "F04-plot-animate-window-002",
+   "severity": "major",
+   "title": "animate + legend + any trail flag (chemtrails/precog/bullettime) triples the canvas width; plot squashed into the left third",
+   "repro": "import numpy as np, hypertools as hyp\nnp.random.seed(2)\nb1 = np.cumsum(np.random.randn(150, 8), axis=0)\nb2 = np.cumsum(np.random.randn(150, 8), axis=0)\nha = hyp.plot([b1, b2], animate=True, duration=2, frame_rate=5, chemtrails=True, legend=['groupA', 'groupB'], show=False)\nprint(ha.figure.get_size_inches())  # [19.2 4.8] -- 3x cap\nha2 = hyp.plot([b1, b2], animate=True, duration=2, frame_rate=5, legend=['groupA', 'groupB'], show=False)\nprint(ha2.figure.get_size_inches())  # [7.48975 4.8] -- correct without trails",
+   "expected": "Figure widened just enough for the legend (about 7.5in, as in the no-trail case); plot centered with the legend beside it.",
+   "actual": "{'chemtrails': True} -> fig inches: [19.2  4.8]\n{} -> fig inches: [7.48975 4.8    ]\n{'bullettime': True} -> fig inches: [19.2  4.8]\n{'precog': True} -> fig inches: [19.2  4.8]\nfig tightbbox x1 (in): 7.33975 (on the 19.2in canvas); saved gif dims (3840, 960)",
+   "evidence": [
+    "evidence/F04-plot-animate-window/parallel_unequal_native_f005.png",
+    "evidence/F04-plot-animate-window/parallel_unequal_native_f039.png"
+   ]
+  },
+  {
+   "id": "F04-plot-animate-window-003",
+   "severity": "major",
+   "title": "Multi-dataset animations: frame count driven ONLY by the first dataset -- later datasets that are longer are silently truncated (67% never shown in a 3:1 case)",
+   "repro": "import numpy as np, hypertools as hyp\nnp.random.seed(2)\nb1 = np.cumsum(np.random.randn(300, 8), axis=0)\nb2 = np.cumsum(np.random.randn(100, 8), axis=0)\nha = hyp.plot([b2, b1], animate=True, duration=4, frame_rate=10, show=False)\nprint(ha.animation._save_count)                      # 40\nprint([d.shape[0] for d in ha.animation._args[0]])   # [40, 121] -- only first 40 of 121 ever rendered",
+   "expected": "The animation covers every dataset's full trajectory (e.g. frames = max over datasets, or a documented truncation warning).",
+   "actual": "order [100,300]: frames = 40 | interp lengths = [40, 121]\n-> longer dataset has 121 interp pts but only 40 frames are shown: fraction shown = 0.33\n(order [300,100]: interpolated lengths [40, 14]; final pts per line: [21, 0] -- shorter dataset vanishes for the last two-thirds of the animation)",
+   "evidence": [
+    "evidence/F04-plot-animate-window/parallel_unequal.gif",
+    "evidence/F04-plot-animate-window/parallel_unequal_f005.png",
+    "evidence/F04-plot-animate-window/parallel_unequal_f035.png"
+   ]
+  },
+  {
+   "id": "F04-plot-animate-window-004",
+   "severity": "minor",
+   "title": "Frame count off by one vs the docstring's 'exactly frame_rate * duration frames' (901/41 instead of 900/40 for some N)",
+   "repro": "import numpy as np\nfor N, fr, dur in [(300, 30, 30), (10, 10, 4), (50, 10, 4), (300, 10, 4)]:\n    iv = fr * dur / (N - 1)\n    print(N, fr, dur, np.arange(0, N - 1, 1 / iv).size, 'target', fr * dur)\n# hypertools-level: hyp.plot(np.cumsum(np.random.randn(300,10),axis=0), animate=True, show=False).animation._save_count == 901",
+   "expected": "Exactly frame_rate * duration frames for every N (900, 40, 40, 40).",
+   "actual": "N=300 fr=30 dur=30: arange size=901 target=900\nN=10 fr=10 dur=4: arange size=41 target=40\nN=50 fr=10 dur=4: arange size=41 target=40\nN=300 fr=10 dur=4: arange size=40 target=40",
+   "evidence": []
+  },
+  {
+   "id": "F04-plot-animate-window-005",
+   "severity": "minor",
+   "title": "Marker-only animations (fmt without a line, e.g. '.') ignore duration/frame_rate pacing: frames = raw row count",
+   "repro": "import numpy as np, hypertools as hyp\nnp.random.seed(1)\nwalk = np.cumsum(np.random.randn(300, 10), axis=0)\nha = hyp.plot(walk, '.', animate=True, duration=4, frame_rate=10, show=False)\nprint(ha.animation._save_count)  # 300, not 40 -> saved gif plays 30s, not 4s",
+   "expected": "40 frames (4 s at 10 fps), or a documented exception for marker-only animations.",
+   "actual": "fmt='.': frames=300 (docstring says frame_rate*duration=40; N=300)",
+   "evidence": []
+  },
+  {
+   "id": "F04-plot-animate-window-006",
+   "severity": "minor",
+   "title": "animate=2 (truthy non-bool, non-string) silently produces a static plot; with save_path= it crashes with AttributeError on None",
+   "repro": "import numpy as np, hypertools as hyp\nw = np.cumsum(np.random.randn(60, 5), axis=0)\nprint(type(hyp.plot(w, animate=2, show=False)))  # Figure -- silently static\nhyp.plot(w, animate=2, save_path='/tmp/an2.gif', show=False)  # AttributeError",
+   "expected": "ValueError naming valid animate values (like the one raised for animate='bogus').",
+   "actual": "animate=2: type=Figure <- silently static (no error, no warning)\nanimate=2 + save_path: RAISED AttributeError: 'NoneType' object has no attribute 'save'",
+   "evidence": []
+  },
+  {
+   "id": "F04-plot-animate-window-007",
+   "severity": "minor",
+   "title": "duration=None passes validation then crashes with a cryptic TypeError in the frame-count math",
+   "repro": "import numpy as np, hypertools as hyp\nw = np.cumsum(np.random.randn(60, 5), axis=0)\nhyp.plot(w, animate=True, duration=None, show=False)",
+   "expected": "ValueError: duration must be a positive number of seconds for an animation; got None. (matching the duration=0 message)",
+   "actual": "RAISED TypeError: unsupported operand type(s) for *: 'int' and 'NoneType'",
+   "evidence": []
+  },
+  {
+   "id": "F04-plot-animate-window-008",
+   "severity": "doc",
+   "title": "HyperAnimation is exported at top level but absent from the API reference; plot()'s Returns section still describes a bare (fig, animation) tuple",
+   "repro": "grep -rn HyperAnimation /Users/jmanning/hypertools/docs --include='*.rst'   # no matches\ngrep -n 'tuple is returned' /Users/jmanning/hypertools/hypertools/plot/plot.py",
+   "expected": "api.rst Plot section lists HyperAnimation (autosummary/autoclass); plot() Returns section names HyperAnimation and its export methods.",
+   "actual": "grep over docs/*.rst returns no HyperAnimation entries; plot.py:1213-1214: 'For animated matplotlib plots a ``(fig, animation)`` tuple is returned instead'",
+   "evidence": []
+  },
+  {
+   "id": "F04-plot-animate-window-009",
+   "severity": "minor",
+   "title": "[infra] Stale non-editable hypertools snapshot in .venv site-packages shadows the repo for any script run outside the repo root",
+   "repro": "cd /tmp && cat > /tmp/which_hyp.py <<'EOF'\nimport hypertools as hyp\nprint(hyp.__file__)\nEOF\n/Users/jmanning/hypertools/.venv/bin/python /tmp/which_hyp.py   # site-packages path\nls /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/hypertools/plot/hyper_animation.py  # No such file",
+   "expected": "The venv resolves hypertools to the repo working tree (editable install) everywhere.",
+   "actual": "hyp.__file__: /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/hypertools/__init__.py\nls: .../site-packages/hypertools/plot/hyper_animation.py: No such file or directory\n(and from a script file: type(hyp.plot(walk, animate=True, show=False)) == tuple, AttributeError: 'tuple' object has no attribute 'figure')",
+   "evidence": [],
+   "skip_verification": "environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run."
+  },
+  {
+   "id": "F04-plot-animate-window-010",
+   "severity": "minor",
+   "title": "GIF exports at the default frame_rate=30 play ~10% fast (27.0s for a requested 30s): 33ms delay rounds to GIF's 30ms centisecond grid",
+   "repro": "import numpy as np, hypertools as hyp\nfrom PIL import Image, ImageSequence\nw = np.cumsum(np.random.randn(300, 10), axis=0)\nha = hyp.plot(w, animate='window', duration=1, frame_rate=30, focused=0.2, show=False)\nha.save('/tmp/d1fr30.gif')\nim = Image.open('/tmp/d1fr30.gif')\ndurs = [f.info.get('duration') for f in ImageSequence.Iterator(im)]\nprint(len(durs), durs[0], sum(durs) / 1000.0)  # 30 frames, 30ms, 0.9s",
+   "expected": "Wall-clock metadata ~= requested duration (1.0s / 30s).",
+   "actual": "[E] window_d1_fr30.gif: n_frames=30, per-frame ms=[30, 30, 30], wall-clock=0.900s\ntrajectory.gif (spin, defaults): n_frames= 900  per-frame ms= 30  wall-clock s= 27.0",
+   "evidence": []
+  },
+  {
+   "id": "F04-plot-animate-window-011",
+   "severity": "minor",
+   "title": "Saving to an unknown/missing extension raises a raw ffmpeg CalledProcessError (leaked command line) instead of naming supported formats",
+   "repro": "import numpy as np, hypertools as hyp\nw = np.cumsum(np.random.randn(60, 5), axis=0)\nha = hyp.plot(w, animate='window', duration=1, frame_rate=5, show=False)\nha.save('/tmp/anim.xyz')",
+   "expected": "ValueError naming the unsupported extension and the supported ones.",
+   "actual": "RAISED CalledProcessError: Command '['ffmpeg', '-f', 'rawvideo', '-vcodec', 'rawvideo', '-s', '1280x960', '-pix_fmt', 'rgba', '-framerate', '5', '-loglevel', 'error', '-i', 'pipe:', '-vcodec', 'h264', ...]' (MovieWriter stderr: Unable to choose an output format for '.../anim.xyz'; use a standard extension for the filename or specify the format manually.)",
+   "evidence": []
+  },
+  {
+   "id": "F04-plot-animate-window-012",
+   "severity": "style",
+   "title": "1-D + animate rejects via bare `assert` (AssertionError) instead of the ValueError used by every sibling animate validation; first window/parallel frame is an empty cube",
+   "repro": "import numpy as np, hypertools as hyp\nw = np.cumsum(np.random.randn(60, 5), axis=0)\nhyp.plot(w, ndims=1, animate=True, show=False)  # AssertionError, not ValueError",
+   "expected": "ValueError for consistency (and -O safety); first exported frame shows a visible (>= 2-point) window segment.",
+   "actual": "RAISED AssertionError: Animations are only supported for 2-D or 3-D plots (got 1-D data); pass ndims=2 or ndims=3 (the default).\n(window3d_frame000.png: empty cube, no trajectory pixels)",
+   "evidence": [
+    "evidence/F04-plot-animate-window/window3d_frame000.png"
+   ]
+  }
+ ]
+}

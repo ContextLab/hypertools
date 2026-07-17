@@ -18,9 +18,9 @@
 .. _sphx_glr_auto_examples_plot_impute.py:
 
 
-=============================
+===============================================
 Imputing missing data: PPCA vs Kalman smoothing
-=============================
+===============================================
 
 Hypertools fills missing (NaN) values via `hypertools.impute` before
 reducing/plotting. This compares two imputers on the `weights_avg` dataset
@@ -48,8 +48,10 @@ reasonably smooth timeseries -- its panel keeps every row.
 
  .. code-block:: none
 
-    /Users/jmanning/hypertools/hypertools/impute/ppca.py:36: UserWarning: PPCA cannot fill 3 row(s) with no observed features at all; those rows will remain NaN. Use model='Kalman' (hypertools.impute.kalman.Kalman) to fill fully-missing rows too (see GH #169).
+    /Users/jmanning/hypertools/hypertools/impute/ppca.py:84: UserWarning: PPCA cannot fill 3 row(s) with no observed features at all; those rows will remain NaN. Use model='Kalman' (hypertools.impute.kalman.Kalman) to fill fully-missing rows too (see GH #169).
       warnings.warn(
+    /Users/jmanning/hypertools/hypertools/external/ppca.py:137: RuntimeWarning: divide by zero encountered in log
+      det = np.log(np.linalg.det(Sx))
 
 
 
@@ -104,7 +106,7 @@ reasonably smooth timeseries -- its panel keeps every row.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.839 seconds)
+   **Total running time of the script:** (0 minutes 6.096 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_impute.py:

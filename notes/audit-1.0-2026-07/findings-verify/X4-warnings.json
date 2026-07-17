@@ -1,0 +1,171 @@
+{
+ "unit": "X4-warnings",
+ "findings": [
+  {
+   "id": "X4-warnings-001",
+   "severity": "major",
+   "title": "df2mat uses deprecated select_dtypes(include=['object']): Pandas4Warning on every categorical-DataFrame plot (e.g. mushrooms demo)",
+   "repro": "env MPLBACKEND=Agg PYTHONWARNINGS=always /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp; m = hyp.load('mushrooms'); fig = hyp.plot(m, '.')\"",
+   "expected": "No deprecation warnings from hypertools code on a documented example dataset; select_dtypes call future-proofed (e.g. include=['object','str'] or dtype-kind based selection).",
+   "actual": "/Users/jmanning/hypertools/hypertools/tools/df2mat.py:32: Pandas4Warning: For backward compatibility, 'str' dtypes are included by select_dtypes when 'object' dtype is specified. This behavior is deprecated and will be removed in a future version. Explicitly pass 'str' to `include` to select them, or to `exclude` to remove them and silence this warning.",
+   "evidence": [
+    "w27_mushrooms.png"
+   ]
+  },
+  {
+   "id": "X4-warnings-002",
+   "severity": "major",
+   "title": "Core dependency pydata-wrangler passes deprecated copy= to pd.concat: Pandas4Warning on multi-dataset manip/normalize, future hard break",
+   "repro": "env MPLBACKEND=Agg PYTHONWARNINGS=always /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np; import hypertools as hyp; a=np.random.randn(30,4); b=np.random.randn(30,4); hyp.manip([a,b],'ZScore')\"",
+   "expected": "No deprecation warnings from the core data-wrangling path.",
+   "actual": "/Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/datawrangler/decorate/decorate.py:421: Pandas4Warning: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas since 3.0 which utilizes a lazy copy mechanism that defers copies until necessary. Use .copy() to make an eager copy if necessary.",
+   "evidence": []
+  },
+  {
+   "id": "X4-warnings-003",
+   "severity": "major",
+   "title": "reduce 'MDS' emits two sklearn FutureWarnings on every default use; results will silently change at sklearn 1.9/1.10",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -W error::FutureWarning -c \"import numpy as np; import hypertools as hyp; hyp.reduce(np.random.randn(60,10), 'MDS', ndims=3)\"",
+   "expected": "Clean console on default use; stable results across sklearn releases.",
+   "actual": "FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9. To suppress this warning, provide some value of `n_init`. [raised as error from sklearn/manifold/_mds.py:744 inside model.fit_transform called by hypertools reduce]; second warning at _mds.py:754: The default value of `init` will change from 'random' to 'classical_mds' in 1.10.",
+   "evidence": []
+  },
+  {
+   "id": "X4-warnings-004",
+   "severity": "minor",
+   "title": "cluster 'HDBSCAN' emits sklearn FutureWarning (copy default False->True in 1.10) on every use",
+   "repro": "env MPLBACKEND=Agg PYTHONWARNINGS=always /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np; import hypertools as hyp; d=np.vstack([np.random.randn(40,5)+i*4 for i in range(3)]); hyp.cluster(d, cluster='HDBSCAN')\"",
+   "expected": "No FutureWarning on default HDBSCAN use.",
+   "actual": "/Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/sklearn/cluster/_hdbscan/hdbscan.py:722: FutureWarning: The default value of `copy` will change from False to True in 1.10. Explicitly set a value for `copy` to silence this warning.",
+   "evidence": []
+  },
+  {
+   "id": "X4-warnings-005",
+   "severity": "minor",
+   "title": "describe() warns 'When input data is large...' unconditionally, even for a 30x5 matrix",
+   "repro": "env MPLBACKEND=Agg PYTHONWARNINGS=always /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np; import hypertools as hyp; hyp.describe(np.random.randn(30,5), show=False)\"",
+   "expected": "No warning for small inputs.",
+   "actual": "/Users/jmanning/hypertools/hypertools/reduce/describe.py:71: UserWarning: When input data is large, this computation can take a long time.",
+   "evidence": []
+  },
+  {
+   "id": "X4-warnings-006",
+   "severity": "minor",
+   "title": "describe(show=True default) calls plt.show() internally: 'FigureCanvasAgg is non-interactive' warning in headless use, inconsistent with plot()",
+   "repro": "env MPLBACKEND=Agg PYTHONWARNINGS=always /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np; import hypertools as hyp; hyp.describe(np.random.randn(30,5), show=True)\"",
+   "expected": "No warning; consistent display behavior with plot().",
+   "actual": "/Users/jmanning/hypertools/hypertools/reduce/describe.py:169: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown",
+   "evidence": [
+    "e19_describe.png"
+   ]
+  },
+  {
+   "id": "X4-warnings-007",
+   "severity": "minor",
+   "title": "load('sotus') emits 3x sklearn InconsistentVersionWarning (payload pickled with sklearn 1.0.2, running 1.8.0)",
+   "repro": "env MPLBACKEND=Agg PYTHONWARNINGS=always /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp; s = hyp.load('sotus'); print(type(s).__name__)\"",
+   "expected": "Hosted example data loads with a clean console.",
+   "actual": "/Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/sklearn/base.py:463: InconsistentVersionWarning: Trying to unpickle estimator CountVectorizer from version 1.0.2 when using version 1.8.0. This might lead to breaking code or invalid results. Use at your own risk. [...] (also LatentDirichletAllocation, Pipeline); printed type: Pipeline",
+   "evidence": []
+  },
+  {
+   "id": "X4-warnings-008",
+   "severity": "minor",
+   "title": "Legacy {'params'} cluster/reduce dict DeprecationWarning is invisible on the plot()/analyze() paths (stacklevel lands in library frames)",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np; import hypertools as hyp; d=np.vstack([np.random.randn(30,5)+i*3 for i in range(2)]); hyp.plot(d, cluster={'model':'KMeans','params':{'n_clusters':2}})\"  # no warning printed; add PYTHONWARNINGS=always to see it attributed to backend.py:1182",
+   "expected": "Deprecation attributed to the user's call site (visible under default filters) on every public entry point.",
+   "actual": "Default filters: stderr empty. With -W always: '/Users/jmanning/hypertools/hypertools/plot/backend.py:1182: DeprecationWarning: {'model': ..., 'params': {...}} is deprecated; use {'model': ..., 'args': [...], 'kwargs': {...}} instead'",
+   "evidence": []
+  },
+  {
+   "id": "X4-warnings-009",
+   "severity": "style",
+   "title": "44/59 warnings.warn calls set no stacklevel and no category (bare UserWarning pointing at library internals); 15 do - inconsistent",
+   "repro": "/Users/jmanning/hypertools/.venv/bin/python - <<'EOF'\nimport ast, pathlib\ntot=sl=cat=0\nfor p in pathlib.Path('/Users/jmanning/hypertools/hypertools').rglob('*.py'):\n    if '_externals' in str(p): continue\n    for n in ast.walk(ast.parse(p.read_text())):\n        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr=='warn' and isinstance(n.func.value, ast.Name) and n.func.value.id in ('warnings','_warnings'):\n            tot+=1; kws={k.arg for k in n.keywords}\n            sl+='stacklevel' in kws; cat+=(len(n.args)>=2 or 'category' in kws)\nprint(tot, sl, cat)\nEOF",
+   "expected": "Consistent stacklevel pointing at user code and a hypertools warning category (or at least uniform practice).",
+   "actual": "total warn calls: 59; with stacklevel: 15; with explicit category: 15",
+   "evidence": []
+  },
+  {
+   "id": "X4-warnings-010",
+   "severity": "minor",
+   "title": "plotly backend auto-show in plain scripts leaks a socket (ResourceWarning) and launches a browser; show=False is clean",
+   "repro": "env MPLBACKEND=Agg PYTHONWARNINGS=always /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np; import hypertools as hyp; hyp.set_interactive_backend('plotly'); fig = hyp.plot(np.random.randn(80,6))\"",
+   "expected": "No leaked sockets/ResourceWarning from a plot call; headless-friendly display behavior.",
+   "actual": "/Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/plotly/io/_base_renderers.py:717: ResourceWarning: unclosed <socket.socket fd=3, family=2, type=1, proto=0, laddr=('127.0.0.1', 63824)>\\n  open_html_in_browser(html, self.using, self.new, self.autoraise)",
+   "evidence": []
+  },
+  {
+   "id": "X4-warnings-011",
+   "severity": "minor",
+   "title": "First UMAP use surfaces umap-learn's ImportWarning 'Tensorflow not installed; ParametricUMAP will be unavailable'",
+   "repro": "env MPLBACKEND=Agg PYTHONWARNINGS=always /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np; import hypertools as hyp; hyp.reduce(np.random.randn(120,15), 'UMAP', ndims=2)\"",
+   "expected": "Clean console for a standard UMAP reduction.",
+   "actual": "/Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/umap/__init__.py:9: ImportWarning: Tensorflow not installed; ParametricUMAP will be unavailable",
+   "evidence": []
+  },
+  {
+   "id": "X4-warnings-012",
+   "severity": "minor",
+   "title": "Discarded/rebound animate results trigger matplotlib 'Animation was deleted without rendering anything' - 41 occurrences in hypertools's own animation test files",
+   "repro": "env MPLBACKEND=Agg PYTHONWARNINGS=always /Users/jmanning/hypertools/.venv/bin/python -c \"import gc, numpy as np; import hypertools as hyp; d=np.cumsum(np.random.randn(60,4),axis=0); ani=hyp.plot(d, animate=True, duration=1, frame_rate=8); del ani; gc.collect()\"",
+   "expected": "Either no warning or a hypertools-idiomatic message (mention save_path=/HyperAnimation.save); test suite should not emit 41 of these.",
+   "actual": "/Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/matplotlib/animation.py:908: UserWarning: Animation was deleted without rendering anything. This is most likely not intended. To prevent deletion, assign the Animation to a variable, e.g. `anim`, that exists until you output the Animation using `plt.show()` or `anim.save()`.",
+   "evidence": []
+  },
+  {
+   "id": "X4-warnings-013",
+   "severity": "style",
+   "title": "Ungrammatical warning text in reduce single-row path: 'Return zeros length of ndims'",
+   "repro": "env MPLBACKEND=Agg PYTHONWARNINGS=always /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np; import hypertools as hyp; hyp.reduce(np.random.randn(1,10), 'PCA', ndims=3)\"",
+   "expected": "Grammatical, behavior-accurate message.",
+   "actual": "/Users/jmanning/hypertools/hypertools/reduce/reduce.py:277: UserWarning: Cannot reduce the dimensionality of a single row of data. Return zeros length of ndims",
+   "evidence": []
+  },
+  {
+   "id": "X4-warnings-014",
+   "severity": "style",
+   "title": "Model-selection parameter naming inconsistent across the API: align(data, model=) vs reduce(x, reduce=) vs cluster(x, cluster=) vs predict(data, model=)",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np; import hypertools as hyp; hyp.cluster(np.random.randn(40,5), model='HDBSCAN')\"",
+   "expected": "Uniform (or aliased) model-selection kwarg across public functions.",
+   "actual": "TypeError: cluster() got an unexpected keyword argument 'model' (signatures: align(data, model='HyperAlign', ...); reduce(x, reduce='IncrementalPCA', ...); cluster(x, cluster='KMeans', ...))",
+   "evidence": []
+  },
+  {
+   "id": "X4-warnings-015",
+   "severity": "enhancement",
+   "title": "ARIMA fitter suppresses ALL statsmodels UserWarnings and ConvergenceWarnings - fit-quality problems become invisible",
+   "repro": "sed -n '70,78p' /Users/jmanning/hypertools/hypertools/predict/arima.py  # and: hyp.predict(ts, model='ARIMA', t=5) runs warning-free even when statsmodels would warn",
+   "expected": "Fit-quality warnings surfaced in some inspectable form.",
+   "actual": "arima.py:72-74: 'with warnings.catch_warnings(): warnings.simplefilter('ignore', category=UserWarning); warnings.simplefilter('ignore', category=convergence_warning)' - predict ARIMA runs report 0 warnings.",
+   "evidence": []
+  },
+  {
+   "id": "X4-warnings-016",
+   "severity": "minor",
+   "title": "Library-internal plt.figure() use accumulates figures in the pyplot registry: 'More than 20 figures have been opened' RuntimeWarning",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python -m pytest tests/test_window_animation.py -W always -q  # RuntimeWarning attributed to hypertools/plot/matplotlib_backend.py:1258",
+   "expected": "No resource warnings from library-created figures, or documented figure-lifecycle guidance.",
+   "actual": "/Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py:1258: RuntimeWarning: More than 20 figures have been opened. Figures created through the pyplot interface (`matplotlib.pyplot.figure`) are retained until explicitly closed and may consume too much memory. (To control this warning, see the rcParam `figure.max_open_warning`). Consider using `matplotlib.pyplot.close()`.",
+   "evidence": []
+  },
+  {
+   "id": "X4-warnings-017",
+   "severity": "doc",
+   "title": "Warning-classification table for release notes: upstream import-time warning-filter mutations are NOT hypertools's doing (documented here as proof of triage)",
+   "repro": "See tested cases 'global state' and 'filters bisect': python -c \"import warnings; b=list(warnings.filters); import sklearn; print([f for f in warnings.filters if f not in b])\"",
+   "expected": "n/a (documentation of triage)",
+   "actual": "hypertools adds 0 filters; scipy 4, sklearn 2, requests/urllib3 4, IPython 1 (on first plot).",
+   "evidence": []
+  },
+  {
+   "id": "X4-warnings-018",
+   "severity": "style",
+   "title": "Public functions shadow their subpackages: 'import hypertools.plot.backend as B' fails with cryptic ImportError \"cannot import name 'backend' from 'plot' (unknown location)\"",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools.plot.backend as B\"",
+   "expected": "Either the import works, or the error explains that hypertools.plot is the plot() function and suggests 'from hypertools.plot import backend'.",
+   "actual": "ImportError: cannot import name 'backend' from 'plot' (unknown location)  [verified same session: 'import hypertools.plot.backend' -> OK; 'from hypertools.plot import backend' -> OK, BACKEND_WARNING=None; type(hypertools.plot) is function]",
+   "evidence": []
+  }
+ ]
+}

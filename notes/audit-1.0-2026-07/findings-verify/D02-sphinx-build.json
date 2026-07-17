@@ -1,0 +1,202 @@
+{
+ "unit": "D02-sphinx-build",
+ "findings": [
+  {
+   "id": "D02-sphinx-build-001",
+   "severity": "major",
+   "title": "All 10 animated-example pages render the source code block as an unreadable 64px sliver (furo float + sphinxcontrib-video)",
+   "repro": "cd /Users/jmanning/hypertools/docs && env MPLBACKEND=Agg PATH=/Users/jmanning/hypertools/.venv/bin:$PATH make html SPHINXBUILD=/Users/jmanning/hypertools/.venv/bin/sphinx-build && /Users/jmanning/hypertools/.venv/bin/python -m http.server 8642 -d _build/html & open http://127.0.0.1:8642/auto_examples/animate_MDS.html and run document.querySelector('.highlight-Python').getBoundingClientRect()",
+   "expected": "Video renders full-width followed by a normal full-width code block, as on non-animated pages (e.g. plot_basic.html)",
+   "actual": ".highlight-Python x=1024 w=64 inside SECTION.sphx-glr-example-title x=352 w=736; video container class 'sphinx-contrib-video-container align-left'; matched CSS rule 'article .align-left { clear: left; float: left; margin: 0px 1rem 1rem; }' (styles/furo.css); all 10 listed pages contain exactly this container",
+   "evidence": [
+    "example-animate-MDS.png",
+    "example-animate-MDS-full.png",
+    "example-chemtrails-full.png",
+    "example-plot-basic-healthy.png"
+   ]
+  },
+  {
+   "id": "D02-sphinx-build-002",
+   "severity": "major",
+   "title": "'A basic example' page embeds a leaked plotly animation its code cannot produce (stale committed gallery artifact)",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python - <<'EOF'\nimport matplotlib; matplotlib.use('Agg')\nimport matplotlib.pyplot as plt\nimport plotly.graph_objects as go\ncreated=[]; orig=go.Figure.__init__\ndef spy(self,*a,**k): created.append(1); return orig(self,*a,**k)\ngo.Figure.__init__=spy\nexec(compile(open('/Users/jmanning/hypertools/examples/plot_basic.py').read(),'plot_basic.py','exec'),{'__name__':'__main__'})\nprint('mpl figures:',len(plt.get_fignums()),'| plotly figures created:',len(created))\nEOF\ngrep -n 'raw:: html' /Users/jmanning/hypertools/docs/auto_examples/plot_basic.rst",
+   "expected": "plot_basic page shows exactly one output: the static scatter (sphx_glr_plot_basic_001.png)",
+   "actual": "run prints 'mpl figures: 1 | plotly figures created: 0' while the page embeds sphx_glr_plot_basic_002.html beginning '<script>window.PlotlyConfig = {MathJaxConfig: 'local'};</script> <script charset=\"utf-8\" src=\"https://cdn.plot.ly/plotly-3.6.0.min.js\"...' containing 'updatemenus', rendered as an animated red-line Play/Pause widget below the scatter",
+   "evidence": [
+    "example-plot-basic-healthy.png"
+   ]
+  },
+  {
+   "id": "D02-sphinx-build-003",
+   "severity": "major",
+   "title": "50 of 53 committed gallery notebooks pin their Colab install cell to dev-1.0-refactor; md5 caching means a release build will NOT refresh them",
+   "repro": "grep -l 'dev-1.0-refactor' /Users/jmanning/hypertools/docs/auto_examples/*.ipynb | wc -l; grep -h 'pip install' /Users/jmanning/hypertools/docs/auto_examples/plot_basic.ipynb | head -1",
+   "expected": "Release-built notebooks install the released package: '%pip install -q \"hypertools[interactive]\"'",
+   "actual": "50 notebooks contain: \"# Install hypertools (dev-1.0-refactor preview) -- run this first on Colab.\\n# On release this becomes: %pip install hypertools\\n%pip install -q \\\"hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@dev-1.0-refactor\\\"\"",
+   "evidence": []
+  },
+  {
+   "id": "D02-sphinx-build-004",
+   "severity": "doc",
+   "title": "22 sphinx warnings 'Title overline too short': gallery example docstring title bars (29 '=') shorter than their titles",
+   "repro": "cd /Users/jmanning/hypertools/docs && env MPLBACKEND=Agg PATH=/Users/jmanning/hypertools/.venv/bin:$PATH make html SPHINXBUILD=/Users/jmanning/hypertools/.venv/bin/sphinx-build 2>&1 | grep 'Title overline'",
+   "expected": "0 warnings",
+   "actual": "/Users/jmanning/hypertools/docs/auto_examples/animate_MDS.rst:21: WARNING: Title overline too short. (x22 files; 'build succeeded, 24 warnings.')",
+   "evidence": []
+  },
+  {
+   "id": "D02-sphinx-build-005",
+   "severity": "doc",
+   "title": "sphinx_gallery_conf reference_url for scipy 404s (double slash); scipy cross-links silently dropped",
+   "repro": "curl -s -o /dev/null -w '%{http_code}\\n' 'https://docs.scipy.org/doc/scipy/reference//_static/documentation_options.js' 'https://docs.scipy.org/doc/scipy/_static/documentation_options.js'",
+   "expected": "reference_url endpoints resolve (200) so scipy names in examples are hyperlinked",
+   "actual": "build log: 'WARNING: The following HTTPError has occurred fetching https://docs.scipy.org/doc/scipy/reference//_static/documentation_options.js: 404 (Not Found)'; curl: 404 for conf URL, 200 for corrected URL",
+   "evidence": []
+  },
+  {
+   "id": "D02-sphinx-build-006",
+   "severity": "minor",
+   "title": "Warning on every build: 'cannot cache unpickleable configuration value: sphinx_gallery_conf'",
+   "repro": "cd /Users/jmanning/hypertools/docs && env MPLBACKEND=Agg PATH=/Users/jmanning/hypertools/.venv/bin:$PATH make html SPHINXBUILD=/Users/jmanning/hypertools/.venv/bin/sphinx-build 2>&1 | grep 'config.cache'",
+   "expected": "0 warnings",
+   "actual": "pickling environment... WARNING: cannot cache unpickleable configuration value: 'sphinx_gallery_conf' (because it contains a function, class, or module object) [config.cache]",
+   "evidence": []
+  },
+  {
+   "id": "D02-sphinx-build-007",
+   "severity": "doc",
+   "title": "37 numpydoc warnings: 'Returns' section underlined with 10 dashes in 13 hypertools docstrings",
+   "repro": "cd /Users/jmanning/hypertools/docs && env MPLBACKEND=Agg PATH=/Users/jmanning/hypertools/.venv/bin:$PATH make html SPHINXBUILD=/Users/jmanning/hypertools/.venv/bin/sphinx-build 2>&1 | grep -c 'potentially wrong underline'; sed -n '242,243p' /Users/jmanning/hypertools/hypertools/io/load.py",
+   "expected": "Section underlines match heading length ('Returns' + '-------'); no numpydoc warnings",
+   "actual": "37 matches; load.py 242-243:\n    Returns\n    ----------\nlog: 'UserWarning: potentially wrong underline length... Returns ---------- in Load data from a built-in example dataset... in the docstring of load in /Users/jmanning/hypertools/hypertools/io/load.py.'",
+   "evidence": []
+  },
+  {
+   "id": "D02-sphinx-build-008",
+   "severity": "doc",
+   "title": "HyperAnimation is a public export with no API page; api.rst claims to list 'every public entry point'; hypertools.io has no docstring or page",
+   "repro": "grep -rn HyperAnimation /Users/jmanning/hypertools/docs/*.rst; ls /Users/jmanning/hypertools/docs/_build/html/hypertools.HyperAnimation.html; /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools; print(repr(hypertools.io.__doc__))\"",
+   "expected": "autosummary entry for HyperAnimation (and an io module page or documented decision) so the api.rst coverage claim holds",
+   "actual": "grep: no matches in any docs/*.rst; ls: No such file or directory (33 other hypertools.*.html pages exist); hypertools.io.__doc__ prints None",
+   "evidence": []
+  },
+  {
+   "id": "D02-sphinx-build-009",
+   "severity": "minor",
+   "title": "post_build.py injects a Colab badge into sg_execution_times.html pointing at a nonexistent notebook",
+   "repro": "grep -c hypertools-colab-badge /Users/jmanning/hypertools/docs/_build/html/auto_examples/sg_execution_times.html; ls /Users/jmanning/hypertools/docs/_build/html/auto_examples/sg_execution_times.ipynb",
+   "expected": "No badge on non-example pages",
+   "actual": "1 badge present; 'ls: ...sg_execution_times.ipynb: No such file or directory'; badge href 'colab.research.google.com/github/ContextLab/hypertools/blob/audit/release-1.0-2026-07/docs/auto_examples/sg_execution_times.ipynb'",
+   "evidence": []
+  },
+  {
+   "id": "D02-sphinx-build-010",
+   "severity": "minor",
+   "title": "Landing page 'Module Index' link is dead: py-modindex.html is never generated",
+   "repro": "grep -o 'href=\"[^\"]*modindex[^\"]*\"' /Users/jmanning/hypertools/docs/_build/html/index.html; ls /Users/jmanning/hypertools/docs/_build/html/py-modindex.html",
+   "expected": "All landing-page index links resolve",
+   "actual": "href=\"py-modindex.html\" present in index.html; 'ls: ...py-modindex.html: No such file or directory'",
+   "evidence": [
+    "landing-page.png"
+   ]
+  },
+  {
+   "id": "D02-sphinx-build-011",
+   "severity": "minor",
+   "title": "4 tutorial notebooks trigger nbformat MissingIDFieldWarning (future hard error)",
+   "repro": "cd /Users/jmanning/hypertools/docs && env MPLBACKEND=Agg PATH=/Users/jmanning/hypertools/.venv/bin:$PATH make html SPHINXBUILD=/Users/jmanning/hypertools/.venv/bin/sphinx-build 2>&1 | grep -B3 MissingIDFieldWarning | grep 'reading sources'",
+   "expected": "No nbformat validation warnings",
+   "actual": "warnings fire while reading tutorials/conversation_trajectories, hugging_face_embeddings, modern_sklearn_dynamics, streaming_data: 'MissingIDFieldWarning: Cell is missing an id field, this will become a hard error in future nbformat versions.'",
+   "evidence": []
+  },
+  {
+   "id": "D02-sphinx-build-012",
+   "severity": "doc",
+   "title": "hypertools.save API page documents nothing: docstring is the single line 'Pickle obj to fname.'",
+   "repro": "python - <<'EOF'\nimport re; t=open('/Users/jmanning/hypertools/docs/_build/html/hypertools.save.html').read()\nm=re.search(r'<dl[^>]*py function.*?</dl>', t, re.S); print(re.sub(r'<[^>]+>','',m.group(0))[:200])\nEOF",
+   "expected": "numpydoc docstring with Parameters (obj, fname, kwargs), Returns, See Also load, and the pickle security note",
+   "actual": "'hypertools.save(obj, fname, **kwargs)[source]. Pickle obj to fname.' \u2014 nothing else; source: def save(obj, fname, **kwargs): \"\"\"Pickle `obj` to `fname`.\"\"\"",
+   "evidence": []
+  },
+  {
+   "id": "D02-sphinx-build-013",
+   "severity": "doc",
+   "title": "plot() docstring (rendered on the API page) still lists removed 'Geo' as an accepted input type",
+   "repro": "grep -n 'Geo or mixed' /Users/jmanning/hypertools/hypertools/plot/plot.py; open docs/_build/html/hypertools.plot.html and read the 'x' parameter",
+   "expected": "Accepted-types list matches 1.0 inputs (array, DataFrame, str/text, mixed list)",
+   "actual": "plot.py:215: '    x : Numpy array, DataFrame, String, Geo or mixed list' \u2014 rendered verbatim under PARAMETERS on hypertools.plot.html",
+   "evidence": [
+    "api-hypertools-plot.png"
+   ]
+  },
+  {
+   "id": "D02-sphinx-build-014",
+   "severity": "style",
+   "title": "Every page footer says 'Copyright \u00a9 2017, Contextual Dynamics Laboratory'",
+   "repro": "grep -n 'copyright' /Users/jmanning/hypertools/docs/conf.py; grep -o 'Copyright \u00a9[^<]*' /Users/jmanning/hypertools/docs/_build/html/index.html",
+   "expected": "Current year (range) in the footer",
+   "actual": "conf.py: copyright = u'2017, Contextual Dynamics Laboratory'; rendered footer: 'Copyright \u00a9 2017, Contextual Dynamics Laboratory'",
+   "evidence": [
+    "example-chemtrails-full.png"
+   ]
+  },
+  {
+   "id": "D02-sphinx-build-015",
+   "severity": "style",
+   "title": "Dead extlinks config: sphinx.ext.extlinks not loaded; value uses the pre-Sphinx-4 string form; role never used",
+   "repro": "grep -n \"extlinks\\|'sphinx.ext\" /Users/jmanning/hypertools/docs/conf.py; grep -rn ':github:' /Users/jmanning/hypertools/docs/*.rst",
+   "expected": "No dead/invalid config in conf.py",
+   "actual": "extensions: autodoc/numpydoc/autosummary/viewcode/sphinx_gallery/sphinxcontrib.video/nbsphinx only; extlinks = {'github': 'https://github.com/ContextLab/hypertools'} defined; :github: role appears in no rst",
+   "evidence": []
+  },
+  {
+   "id": "D02-sphinx-build-016",
+   "severity": "style",
+   "title": "Stale pre-1.0 build leftovers tracked under docs/modules/generated/",
+   "repro": "git -C /Users/jmanning/hypertools ls-files docs/modules | head; grep -rn 'modules/generated' /Users/jmanning/hypertools/docs/conf.py /Users/jmanning/hypertools/docs/*.rst",
+   "expected": "Only currently-used sources tracked under docs/",
+   "actual": "git ls-files lists docs/modules/generated/hypertools.align.examples (+16 siblings); zero references in conf.py or any rst",
+   "evidence": []
+  },
+  {
+   "id": "D02-sphinx-build-017",
+   "severity": "style",
+   "title": "Landing-page polish: hero image alt text is 'wow! text'; intro omits the plotly interactive backend",
+   "repro": "sed -n '9,18p' /Users/jmanning/hypertools/docs/index.rst; grep -o '<img alt=\"wow! text\"[^>]*>' /Users/jmanning/hypertools/docs/_build/html/index.html",
+   "expected": "Descriptive alt text; feature list mentions the interactive plotly backend",
+   "actual": "'<img alt=\"wow! text\" class=\"align-center\" src=\"_images/hypertools.gif\" />' rendered on the landing page; intro names only matplotlib/seaborn/scikit-learn",
+   "evidence": [
+    "landing-page.png"
+   ]
+  },
+  {
+   "id": "D02-sphinx-build-018",
+   "severity": "enhancement",
+   "title": "No html_favicon configured \u2014 every docs page load 404s on favicon.ico",
+   "repro": "grep -n html_favicon /Users/jmanning/hypertools/docs/conf.py; serve _build/html and open any page with the console open",
+   "expected": "Favicon served; clean console",
+   "actual": "no html_favicon in conf.py; console: '[ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8642/favicon.ico:0'",
+   "evidence": []
+  },
+  {
+   "id": "D02-sphinx-build-019",
+   "severity": "doc",
+   "title": "plot_basic example prose contradicts its code ('first two arrays', 'o' vs fmt='.')",
+   "repro": "sed -n '1,22p' /Users/jmanning/hypertools/examples/plot_basic.py",
+   "expected": "Description matches the executed code and its output",
+   "actual": "docstring: 'take the first two arrays in the list and plot them as points with the 'o'.' vs code: 'data = hyp.load('weights_sample')' then 'hyp.plot(data, fmt='.')' (no subsetting; '.' marker; 3 groups drawn)",
+   "evidence": [
+    "example-plot-basic-healthy.png"
+   ]
+  },
+  {
+   "id": "D02-sphinx-build-020",
+   "severity": "minor",
+   "title": "Makefile html target invokes bare `python post_build.py` \u2014 breaks on python3-only systems",
+   "repro": "grep -n post_build /Users/jmanning/hypertools/docs/Makefile; env -i PATH=/usr/bin:/bin make -n html 2>&1 | tail -2",
+   "expected": "post-build step uses an interpreter guaranteed to exist (and ideally the docs venv's)",
+   "actual": "Makefile:50: 'python post_build.py' (bare `python`; succeeded here only because /Users/jmanning/hypertools/.venv/bin was prepended to PATH)",
+   "evidence": []
+  }
+ ]
+}

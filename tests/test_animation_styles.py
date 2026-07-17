@@ -79,12 +79,15 @@ def test_mpl_mixed_trail_styles_per_dataset():
     np.testing.assert_allclose(xs0[-1], d0[num - tail_duration_frames, 0])
     np.testing.assert_allclose(xs0[0], d0[0, 0])
 
-    # dataset 1 (precog): future window only -- trail starts AFTER the
-    # current frame index and runs to the end of the trajectory.
-    expected1 = d1[num + 1:]
+    # dataset 1 (precog): future window only -- trail starts AT the current
+    # frame index (sharing the opaque head's last vertex, so head and trail
+    # form one continuous line -- release-1.0 audit F05-008: the historical
+    # `d1[num + 1:]` slice left a one-segment gap between them) and runs to
+    # the end of the trajectory.
+    expected1 = d1[num:]
     assert len(xs1) == len(expected1)
     np.testing.assert_allclose(xs1, expected1[:, 0])
-    np.testing.assert_allclose(xs1[0], d1[num + 1, 0])
+    np.testing.assert_allclose(xs1[0], d1[num, 0])
     np.testing.assert_allclose(xs1[-1], d1[-1, 0])
 
     # dataset 2 (bullettime): full trail, start to finish.

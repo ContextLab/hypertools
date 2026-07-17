@@ -1,0 +1,153 @@
+{
+ "unit": "D14-docs-drift",
+ "findings": [
+  {
+   "id": "D14-docs-drift-001",
+   "severity": "doc",
+   "title": "Public export HyperAnimation missing from api.rst and has no docs page, despite api.rst claiming to list every public entry point",
+   "repro": "cd /Users/jmanning/hypertools && grep -n HyperAnimation docs/api.rst; ls docs/hypertools.HyperAnimation.rst; env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; print(type(hyp.plot([np.random.randn(60,8)], animate=True, show=False)))\"",
+   "expected": "api.rst entry + autosummary stub page for HyperAnimation; plot() Returns section naming the class",
+   "actual": "grep: no matches in api.rst; ls: No such file or directory; return type printed: <class 'hypertools.plot.hyper_animation.HyperAnimation'>; sig_audit: 'export HyperAnimation kind=class in_api.rst=False has_rst_stub=False'",
+   "evidence": [
+    "w1_readme_plot_animate_frame.png"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-002",
+   "severity": "doc",
+   "title": "README Requirements section omits 4 of 13 core dependencies, including pydata-wrangler (the 1.0 data-wrangling core)",
+   "repro": "diff <(grep -A14 '^## Requirements' /Users/jmanning/hypertools/readme.md) <(sed -n '/^dependencies = \\[/,/^\\]/p' /Users/jmanning/hypertools/pyproject.toml)",
+   "expected": "README Requirements matches pyproject [project.dependencies] (or defers to it without a partial list)",
+   "actual": "readme.md lines 172-183 contain no mention of dill, pykalman, statsmodels, or pydata-wrangler; pyproject.toml lines 28-53 declare all four",
+   "evidence": []
+  },
+  {
+   "id": "D14-docs-drift-003",
+   "severity": "doc",
+   "title": "README `predict` extra bullet is stale: claims the extra provides Kalman and ARIMA, which moved to core deps (extra = skaters only)",
+   "repro": "grep -n 'predict --' /Users/jmanning/hypertools/readme.md; sed -n '67,72p' /Users/jmanning/hypertools/pyproject.toml",
+   "expected": "extras bullet: 'predict -- the skaters Laplace ensemble forecaster (Kalman/ARIMA are in the base install)'",
+   "actual": "readme.md line 193-194: '+ `predict` -- `hyp.predict`/`hyp.impute` forecasters/imputers (Kalman,\\n  ARIMA, and the skaters Laplace ensemble)'; pyproject.toml line 72: 'predict = [\"skaters>=0.11\"]'",
+   "evidence": []
+  },
+  {
+   "id": "D14-docs-drift-004",
+   "severity": "minor",
+   "title": "doc_requirements.txt carries dead/stale entries: deepdish (cannot import under the numpy>=2 pinned 12 lines later), PPCA (vendored), hdbscan (sklearn now provides HDBSCAN)",
+   "repro": "python3 -m venv /tmp/dd; /tmp/dd/bin/pip install 'numpy>=2' deepdish; /tmp/dd/bin/python -c 'import deepdish'  # AND: env MPLBACKEND=Agg .venv/bin/python -c \"import sys; sys.modules['hdbscan']=None; import numpy as np, hypertools as hyp; print(hyp.cluster(np.random.randn(60,5), cluster='HDBSCAN')[:5])\"",
+   "expected": "doc_requirements.txt contains only packages the docs build actually imports",
+   "actual": "pip exit: 0 / import exit: 1 / 'AttributeError: module \\'numpy\\' has no attribute \\'ComplexWarning\\'' (numpy 2.5.1); 'HDBSCAN OK via sklearn; labels shape/uniq: (60,) [-1  0  1]' with hdbscan blocked",
+   "evidence": []
+  },
+  {
+   "id": "D14-docs-drift-005",
+   "severity": "minor",
+   "title": "doc_requirements.txt omits plotly/kaleido (needed by conf.py's gallery scraper and 4 plotly examples) and .readthedocs.yaml installs no ffmpeg (needed for mp4 gallery animations) -- latent RTD gallery breakage masked by committed auto_examples artifacts",
+   "repro": "grep -n 'plotly\\|kaleido\\|ffmpeg' /Users/jmanning/hypertools/docs/doc_requirements.txt /Users/jmanning/hypertools/.readthedocs.yaml; env MPLBACKEND=Agg .venv/bin/python -c \"import sys; sys.modules['plotly']=None; import numpy as np, hypertools as hyp; hyp.plot(np.random.randn(30,4), backend='plotly', show=False)\"",
+   "expected": "doc_requirements.txt lists plotly>=6.1.1 + kaleido>=1.0 (matching the [interactive] pin) and .readthedocs.yaml adds build.apt_packages: [ffmpeg]",
+   "actual": "grep: no plotly/kaleido/ffmpeg matches in either file; blocked-import run: 'ImportError : The plotly backend requires plotly. Install it with:\\n    pip install hypertools[interactive]'",
+   "evidence": []
+  },
+  {
+   "id": "D14-docs-drift-006",
+   "severity": "doc",
+   "title": "reduce() error message points users to the 0.x docs URL hypertools.tools.reduce.html, which no 1.0 docs source produces",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.reduce(np.random.randn(30,4), 'NotAModel')\"; ls /Users/jmanning/hypertools/docs | grep 'tools.reduce'",
+   "expected": "error message references https://hypertools.readthedocs.io/en/latest/hypertools.reduce.html",
+   "actual": "ValueError : reduce must be one of the supported options or support n_components and fit_transform          methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce          for supported models -- and ls shows no tools.reduce rst in docs/",
+   "evidence": []
+  },
+  {
+   "id": "D14-docs-drift-007",
+   "severity": "enhancement",
+   "title": "No CHANGELOG or 1.0 release notes -- the newest release notes in the repo are RELEASE_NOTES_0.8.1.md",
+   "repro": "ls /Users/jmanning/hypertools/CHANGELOG* /Users/jmanning/hypertools/RELEASE_NOTES*",
+   "expected": "CHANGELOG.md or RELEASE_NOTES_1.0.0.md describing 1.0 changes and breaking changes",
+   "actual": "(eval):1: no matches found: /Users/jmanning/hypertools/CHANGELOG* ; only RELEASE_NOTES_0.8.1.md exists",
+   "evidence": []
+  },
+  {
+   "id": "D14-docs-drift-008",
+   "severity": "doc",
+   "title": "CLAUDE.md drift: Data Flow lists Alignment before Reduction (contradicts the canonical pipeline order and the fitted Pipeline's actual step order), Plot Module omits hyper_animation.py, and 'plot() returns a matplotlib Figure' is unqualified",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; d=[np.random.randn(40,8) for _ in range(3)]; _, m = hyp.analyze(d, reduce='PCA', ndims=3, align='hyper', normalize='across', return_model=True); print([s[0] for s in m.steps])\"; ls /Users/jmanning/hypertools/hypertools/plot/hyper_animation.py; grep -n 'Alignment' /Users/jmanning/hypertools/CLAUDE.md",
+   "expected": "CLAUDE.md Data Flow order normalize -> reduce -> align -> cluster; hyper_animation.py listed; plot() return contract qualified",
+   "actual": "PIPELINE STEP ORDER printed: ['normalize', 'reduce', 'align']; CLAUDE.md Data Flow: '3. **Alignment**: Optional cross-dataset alignment via `align()` 4. **Dimensionality Reduction**: Data is reduced via `reduce()`'; grep hyper_animation CLAUDE.md -> no match",
+   "evidence": []
+  },
+  {
+   "id": "D14-docs-drift-009",
+   "severity": "minor",
+   "title": "hyp.reduce with default ndims=None silently no-ops and returns model=None, while the docstring promises the fitted Reducer for return_model=True",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; x=np.random.randn(50,8); r,m=hyp.reduce(x,'PCA',return_model=True); print(np.asarray(r).shape, np.allclose(np.asarray(r),x), type(m))\"",
+   "expected": "either documented ('ndims=None performs no reduction; the model slot is None') or a warning / a sensible default reduction",
+   "actual": "no-ndims reduced shape: (50, 8) | identical to input: True; PCA -> tuple len 2 | [1]: <class 'NoneType'> (also IncrementalPCA, UMAP); PCA ndims=3 -> [1]: <class 'hypertools.reduce.common.Reducer'>",
+   "evidence": []
+  },
+  {
+   "id": "D14-docs-drift-010",
+   "severity": "doc",
+   "title": "Docstring Parameters coverage gaps across public API: plot() elev/azim undocumented; manip()'s five cross-stage kwargs, cluster()/analyze() random_state, procrustes() format_data, df2mat() return_labels undocumented",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D14-docs-drift/sig_audit.py",
+   "expected": "every non-internal signature parameter appears in the numpydoc Parameters section",
+   "actual": "sig_audit output: 'hypertools.plot ... UNDOC:[... elev ... azim ...]' with follow-up probe 'elev : False' (substring absent from entire docstring); 'hypertools.manip ... UNDOC:[align, cluster, ndims, normalize, reduce]'; 'hypertools.cluster ... UNDOC:[random_state]'; 'hypertools.analyze ... UNDOC:[random_state]'; 'hypertools.align.procrustes ... UNDOC:[format_data]'; 'hypertools.tools.df2mat ... UNDOC:[return_labels]'",
+   "evidence": []
+  },
+  {
+   "id": "D14-docs-drift-011",
+   "severity": "doc",
+   "title": "hypertools.save docs page is a single sentence with no Parameters/Returns, and its **kwargs are silently discarded (protocol=5 ignored)",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python -c \"import hypertools as hyp, tempfile, os; f=os.path.join(tempfile.gettempdir(),'t.pkl'); hyp.save({'a':1}, f, protocol=5, banana='x'); print('no error raised')\"",
+   "expected": "numpydoc Parameters/Returns on save(); kwargs forwarded to pickle.dump (or **kwargs removed / unknown kwargs rejected)",
+   "actual": "'save() accepted protocol=5 AND banana=... with NO error/warning'; source: def save(obj, fname, **kwargs): \"\"\"Pickle `obj` to `fname`.\"\"\" ... pickle.dump(obj, f)",
+   "evidence": []
+  },
+  {
+   "id": "D14-docs-drift-012",
+   "severity": "doc",
+   "title": "Autoencoder subclass docs pages omit all inherited constructor parameters (epochs, batch_size, lr, device, random_state, verbose; hidden_dims for SparseAutoencoder)",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/D14-docs-drift/sig_audit.py  # see DeepAutoencoder et al. UNDOC lines",
+   "expected": "each class page documents (or explicitly inherits documentation for) every constructor parameter",
+   "actual": "sig_audit: 'hypertools.reduce.autoencoders.DeepAutoencoder ... UNDOC:[batch_size, device, epochs, lr, random_state, verbose]' (same for Convolutional/Sequence/Variational; SparseAutoencoder additionally hidden_dims)",
+   "evidence": []
+  },
+  {
+   "id": "D14-docs-drift-013",
+   "severity": "style",
+   "title": "api.rst Pipeline blurb says the fitted Pipeline is returned 'when more than one pipeline stage runs' -- a single-stage plot also returns a Pipeline",
+   "repro": "env MPLBACKED=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; b=hyp.plot(np.random.randn(50,8), reduce='PCA', return_model=True, show=False); print(type(b['pipeline']))\"",
+   "expected": "wording that matches both plot (always Pipeline in bundle) and standalone dispatchers (bare model when only one stage ran)",
+   "actual": "plot single-stage bundle pipeline type: <class 'hypertools.core.pipeline.Pipeline'>",
+   "evidence": []
+  },
+  {
+   "id": "D14-docs-drift-014",
+   "severity": "style",
+   "title": "Docs landing page (index.rst) still describes the 0.x-era feature set -- no mention of any flagship 1.0 feature",
+   "repro": "head -30 /Users/jmanning/hypertools/docs/index.rst",
+   "expected": "landing page feature list refreshed for 1.0 (or pointing at the README What's-new)",
+   "actual": "index.rst lines 21-27: '1. Functions for plotting high-dimensional datasets in 2/3D ... 4. Set of powerful data manipulation tools including hyperalignment, k-means clustering, normalizing and more ...' (no plotly/predict/impute/surfaces/mixture content)",
+   "evidence": []
+  },
+  {
+   "id": "D14-docs-drift-015",
+   "severity": "minor",
+   "title": "describe(max_dims=14) on 8-feature data silently plots components 2-13 with correlations flatlined at 1.0 past the true dimensionality",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python -c \"import numpy as np, hypertools as hyp; d=[np.random.randn(60,8)+i for i in range(3)]; hyp.describe(d, reduce='PCA', max_dims=14, show=False)\"",
+   "expected": "x-axis capped at data dimensionality, or a UserWarning that max_dims > n_features",
+   "actual": "evidence PNG shows x-axis 2..13 for 8-feature data, correlation pinned at 1.00 from 8 onward; only warning emitted is the generic 'When input data is large, this computation can take a long time.'",
+   "evidence": [
+    "w5_readme_describe.png"
+   ]
+  },
+  {
+   "id": "D14-docs-drift-016",
+   "severity": "style",
+   "title": "CONTRIBUTING.md 'What we're working on' still points contributors at the 2017 Mozilla Global Sprint milestone",
+   "repro": "grep -n mozsprint /Users/jmanning/hypertools/CONTRIBUTING.md; curl -sL -o /dev/null -w '%{http_code}' https://github.com/ContextLab/hypertools/milestone/5",
+   "expected": "points at the current issue tracker / 1.0 backlog",
+   "actual": "CONTRIBUTING.md line 25: 'Take a look at the issues in our [ milestone](https://github.com/ContextLab/hypertools/milestone/5) for the mozsprint!' (curl: 200)",
+   "evidence": []
+  }
+ ]
+}

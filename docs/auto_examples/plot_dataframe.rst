@@ -26,9 +26,11 @@ Hypertools supports single-index Pandas Dataframes as input. In this example, we
 plot the mushrooms dataset from the kaggle database.  This is a dataset of text
 features describing different attributes of a mushroom. Dataframes that contain
 columns with text are converted into binary feature vectors representing the
-presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
+presence or absences of the feature (see the top-level `pandas.get_dummies`
+function for more). Because the rows of this dataset have no meaningful order,
+we plot them as points (the '.' format string) rather than as a connected line.
 
-.. GENERATED FROM PYTHON SOURCE LINES 13-27
+.. GENERATED FROM PYTHON SOURCE LINES 15-29
 
 
 
@@ -72,13 +74,13 @@ presence or absences of the feature (see Pandas.Dataframe.get_dummies for more).
 
     print(data.head())
 
-    # plot
-    hyp.plot(data)
+    # plot (as points -- the rows are unordered samples, not a trajectory)
+    hyp.plot(data, '.')
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.116 seconds)
+   **Total running time of the script:** (0 minutes 0.106 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_dataframe.py:

@@ -42,15 +42,36 @@ class Manipulator(BaseEstimator):
 
     def fit(self, data):
         """Fit this manipulator's parameters on `data`; stores them as
-        attributes (named by `self.required`)."""
-        assert data is not None, ValueError("cannot manipulate an empty dataset")
+        attributes (named by `self.required`).
+
+        Raises
+        ------
+        ValueError
+            If `data` is `None`, if the fitter does not return a dict, or
+            if any name in `self.required` is missing from the returned
+            dict. (Real raises -- these used to be ``assert cond,
+            ValueError(...)``, which raised `AssertionError` and was
+            stripped entirely under ``python -O``; 2026-07 release audit,
+            final wave item 8.)
+        """
+        if data is None:
+            from ..core.shared import no_observations_message
+            raise ValueError(
+                no_observations_message('manipulate', 'data is None'))
         self.data = data
         if self.fitter is None:
             return
         params = self.fitter(data, **self.kwargs)
-        assert isinstance(params, dict), ValueError("fit function must return a dictionary")
-        assert all(r in params for r in self.required), \
-            ValueError("one or more required fields not returned")
+        if not isinstance(params, dict):
+            raise ValueError(
+                f'{type(self).__name__} fit function must return a '
+                f'dictionary of fitted parameters; got '
+                f'{type(params).__name__}')
+        missing = [r for r in self.required if r not in params]
+        if missing:
+            raise ValueError(
+                f'{type(self).__name__} fit function did not return '
+                f"required field(s): {', '.join(missing)}")
         for k, v in params.items():
             setattr(self, k, v)
 
@@ -74,12 +95,35 @@ class Manipulator(BaseEstimator):
         sklearn.exceptions.NotFittedError
             If `fit`/`fit_transform` has not been called yet, or a
             required fitted attribute is missing.
+        NotImplementedError
+            If this manipulator was fit row-wise (``axis=1``) and
+            `new_data` is different data than it was fit on: the fitted
+            statistics are per-ROW of the FIT-time data, so applying them
+            positionally to unrelated rows is ill-defined (mirroring the
+            `inverse_transform` restriction; audit F14-012).
         """
         if self.data is None:
             raise NotFittedError("must fit manipulator before transforming data")
         for r in self.required:
             if not hasattr(self, r):
                 raise NotFittedError(f"missing fitted attribute: {r}")
+        # refuse to replay row-wise (axis=1) fit-time statistics onto NEW data
+        # (audit F14-012): a fitted axis=1 ZScore/Normalize stores one
+        # statistic per fit-time ROW, and silently broadcasting those onto a
+        # different dataset's rows corrupts it without warning. Manipulators
+        # whose transform re-derives everything from the data being
+        # transformed (e.g. Resample) set `_stateless_transform = True` and
+        # are exempt. Replaying the fit-time data itself (new_data=None, or
+        # fit_transform's internal call) is always fine.
+        if (new_data is not None and new_data is not self.data
+                and getattr(self, 'transpose', False)
+                and not getattr(self, '_stateless_transform', False)):
+            raise NotImplementedError(
+                f"applying a fitted row-wise (axis=1) {type(self).__name__} "
+                "to new data is ill-defined: its fitted statistics are "
+                "per-row of the fit-time data. Re-fit on the new data "
+                f"instead, e.g. hyp.manip(new_data, "
+                f"model='{type(self).__name__}', axis=1).")
         data_to_use = self.data if new_data is None else new_data
         if self.transformer is None:
             return data_to_use

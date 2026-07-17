@@ -71,7 +71,11 @@ def test_predict_return_model_bundle():
     forecasts = bundle['predict']['forecasts']
     assert len(forecasts) == 2
     for fc in forecasts:
-        assert np.asarray(fc).shape == (t + 1, 3)
+        # exactly t forecast rows, matching hyp.predict (X1-api-016: the
+        # bundle used to include the drawn overlay's prepended seam row,
+        # an off-by-one vs. hyp.predict; the DRAWN trace still has t + 1
+        # vertices -- see test_predict_overlay_traces above)
+        assert np.asarray(fc).shape == (t, 3)
     assert bundle['models']['impute'] is None
 
 
@@ -106,6 +110,14 @@ def _line_pts(line, ndims):
     return np.column_stack([line.get_xdata(), line.get_ydata()])
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures,
+# and its lbfgs optimizer can stop early on the same contrived data (only
+# the GaussianProcess parameter case emits either)
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
+@pytest.mark.filterwarnings(
+    'ignore:lbfgs failed to converge:sklearn.exceptions.ConvergenceWarning')
 @pytest.mark.parametrize('ndims,model', [(2, 'ARIMA'), (3, 'GaussianProcess')])
 def test_forecast_vertices_stay_inside_frame(ndims, model):
     if model == 'ARIMA':

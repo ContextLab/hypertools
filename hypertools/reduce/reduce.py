@@ -3,8 +3,9 @@
 import inspect
 import warnings
 import numpy as np
-from .common import Reducer, models, REDUCERS, resolve_reducer
-from .._shared.helpers import *
+from .common import (Reducer, models, REDUCERS, AUTOENCODER_NAMES,
+                     resolve_reducer)
+from ..core.model import external_stacklevel
 from ..tools.format_data import format_data as formatter
 
 
@@ -18,22 +19,50 @@ def _resolve_model(model_name):
     triggers numba JIT compilation that adds seconds to `import hypertools`
     even when UMAP is never used.
     """
-    return resolve_reducer(model_name)
+    with warnings.catch_warnings():
+        # umap-learn emits an ImportWarning about its OPTIONAL tensorflow/
+        # ParametricUMAP extra at import time -- noise for standard UMAP
+        # use (release-1.0 audit, X4-warnings-011; same pattern as the
+        # gensim filter in tools/text2mat).
+        warnings.filterwarnings('ignore', message='Tensorflow not installed')
+        return resolve_reducer(model_name)
+
+
+def _raise_unknown_reduce_model(model_name):
+    """Raise the standard unknown-reduce-model ValueError, naming the
+    offending value, a did-you-mean hint for case near-misses, and the
+    supported names (F11-reduce-describe-005; shared by the bare-string
+    and dict-spec paths -- the dict path used to leak a bare KeyError,
+    release-1.0 audit X7 residue)."""
+    supported_names = sorted(list(REDUCERS) + ['UMAP']
+                             + list(AUTOENCODER_NAMES))
+    match = next((name for name in supported_names
+                  if name.lower() == str(model_name).lower()), None)
+    hint = f" (did you mean {match!r}?)" if match else ""
+    raise ValueError(
+        f"unknown reduce model {model_name!r}{hint}; supported "
+        f"names: {', '.join(supported_names)}. A scikit-learn style "
+        f"class or instance can also be passed directly.") from None
 
 
 # main function
 def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
            manip=None, normalize=None, align=None, cluster=None,
-           internal=False, format_data=True, random_state=None):
+           internal=False, format_data=True, random_state=None,
+           model=None):
     """
     Reduces dimensionality of an array, or list of arrays
 
     Parameters
     ----------
-    x : Numpy array or list of arrays
-        Dimensionality reduction using PCA is performed on this array.
+    x : Numpy array, Pandas DataFrame, text (list of strings), or
+        list/tuple of arrays/DataFrames
+        The data to reduce. Lists (and tuples, treated identically) are
+        stacked and reduced in one SHARED space (a single model fit on the
+        row-concatenated data), so all datasets in a list must have the
+        same number of columns. `None` raises a `TypeError`.
 
-    reduce : str, dict, class, instance, or fitted Reducer
+    reduce : str, dict, class, instance, fitted Reducer, False, or None
         Decomposition/manifold learning model to use.  Models supported: PCA,
         IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
         FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
@@ -51,22 +80,41 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         `ImportError`. Can be passed as a
         string, a bare (uninstantiated) scikit-learn-style class, an
         already-constructed instance, the canonical dict spec
-        `{'model': ..., 'args': [...], 'kwargs': {...}}`, or the LEGACY
+        `{'model': ..., 'args': [...], 'kwargs': {...}}` (both `'args'`
+        and `'kwargs'` are OPTIONAL, so the minimal `{'model': 'PCA'}`
+        works too; passing the legacy `'params'` key alongside them warns
+        and ignores `'params'`), or the LEGACY
         dict spec `{'model' : 'PCA', 'params' : {'whiten' : True}}`
         (accepted for backward compatibility, but emits a
         `DeprecationWarning`). A previously-fitted `Reducer` (as returned
         by `return_model=True`) is applied via `.transform` instead of
-        being refit. See scikit-learn specific model docs for details on
-        parameters supported for each model.
+        being refit; models without an out-of-sample transform (TSNE, MDS,
+        SpectralEmbedding) cannot embed new data this way, so reusing their
+        fitted `Reducer` raises `NotImplementedError` explaining the refit.
+        `None` or `False` skips the reduction entirely and returns the
+        input unchanged. See scikit-learn specific model docs for details
+        on parameters supported for each model.
 
-    ndims : int
-        Number of dimensions to reduce
+    ndims : int or None
+        Number of dimensions to reduce to. If None (the default), or if
+        every dataset already has <= ndims columns, no model is fit and
+        the (formatted) input is returned unchanged -- reduce() never
+        expands or rotates data at full dimensionality. Requesting MORE
+        dimensions than the data has features also skips the reduction,
+        with a `UserWarning` (the input comes back unchanged). NOTE: when
+        no reduction runs, there is no fitted model, so
+        `return_model=True` pairs the unchanged data with `None` (see
+        `return_model` below) -- pass an explicit `ndims` (e.g. `ndims=3`)
+        to actually fit a model.
 
     return_model : bool
         If True, also return the fitted model: the fitted `Reducer` wrapper
         when only the `reduce` stage ran, or a fitted `hypertools.Pipeline`
         when `manip=`/`normalize=`/`align=`/`cluster=` made multiple stages
-        run (default: False).
+        run (default: False). When NO reduction ran (`ndims=None` -- the
+        default -- with data at/below the requested dimensionality, or
+        `reduce=None`/`False`), the model slot of the returned
+        `(data, model)` tuple is `None`.
 
     manip, normalize, align, cluster : model spec or None
         Cross-module stage kwargs (GH #138): when any of these is given,
@@ -93,14 +141,53 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         `random_state` in a dict spec's `kwargs` takes precedence
         (default: None).
 
+    model : same forms as `reduce`, or None
+        Alias for `reduce=`, so the own-stage model spec can be spelled
+        `model=` here exactly as in `hyp.manip`/`hyp.impute`/`hyp.predict`/
+        `hyp.align` (release-1.0 audit: the sibling APIs used two different
+        kwarg conventions). Pass only one of `reduce=`/`model=`; passing
+        both (with different values) raises `ValueError` (default: None).
+
     Returns
-    ----------
+    -------
     x_reduced : Numpy array or list of arrays
-        The reduced data with ndims dimensionality is returned.  If the input
-        is a list, a list is returned. If `return_model=True`, an
+        The reduced data with ndims dimensionality is returned. A list is
+        returned when the input is a list of two or more datasets (or when
+        `internal=True`); a single dataset -- even inside a one-element
+        list -- comes back as a bare array. If `return_model=True`, an
         `(x_reduced, model)` tuple is returned instead.
 
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import hypertools as hyp
+    >>> x = np.cumsum(np.random.default_rng(0).standard_normal((40, 5)),
+    ...               axis=0)
+    >>> reduced = hyp.reduce(x, reduce='PCA', ndims=3)
+    >>> reduced.shape
+    (40, 3)
+
     """
+    from ..core.shared import require_data
+    # None always raises the unified dispatcher TypeError, and a tuple of
+    # datasets is accepted exactly like a list (2026-07 release audit,
+    # final wave items 9/15)
+    require_data(x, 'reduce')
+    if isinstance(x, tuple):
+        x = list(x)
+
+    # model= is an alias for reduce= (release-1.0 audit,
+    # D05-gallery-data-text-020: manip/impute/predict/align spell their
+    # own-stage spec `model=`, and hyp.reduce(x, model='PCA') used to die
+    # with a bare TypeError naming neither kwarg).
+    if model is not None:
+        if reduce != 'IncrementalPCA' and reduce is not model:
+            raise ValueError(
+                "cannot pass both reduce= and model=; they are aliases "
+                "for the same model spec -- pass just one (e.g. "
+                "reduce='PCA' or model='PCA').")
+        reduce = model
+
     # validate ndims up front (QC 2026-07): a non-int silently hit a
     # `TypeError: '<=' not supported between int and str`, and ndims<=0
     # silently reduced to 0/negative columns. bool is an int subclass but is
@@ -111,6 +198,16 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
                 f"ndims must be a positive integer or None; got {ndims!r}")
         if ndims < 1:
             raise ValueError(f"ndims must be >= 1; got {ndims}")
+
+    # False is an explicit "skip this stage", for every stage kwarg, exactly
+    # like None (release-audit contract) -- normalize it up front so
+    # plot()/analyze() can thread reduce=False (and friends) through
+    if reduce is False:
+        reduce = None
+    manip = None if manip is False else manip
+    normalize = None if normalize is False else normalize
+    align = None if align is False else align
+    cluster = None if cluster is False else cluster
 
     # a whole already-fitted Pipeline handed back as reduce= (e.g. the model
     # from an earlier cross-module return_model=True call) is reused as-is via
@@ -135,40 +232,78 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         result = pipeline.fit_transform(x)
         return (result, pipeline) if return_model else result
 
-    # if model is None, just return data
+    # if model is None (or False, normalized above), just return data
     if reduce is None:
         return (x, None) if return_model else x
+
+    # set by the canonical dict-spec branch below when a TSNE instance is
+    # constructed without a user-supplied perplexity (see the small-dataset
+    # clamp further down, F11-reduce-describe-002)
+    tsne_perplexity_unset = False
 
     # an already-fitted Reducer (returned from an earlier
     # return_model=True call) is reused via `transform`, never refit
     if isinstance(reduce, Reducer) and reduce.is_fitted:
         fitted_n_components = getattr(reduce.model_, 'n_components', None)
         if (ndims is not None) and (fitted_n_components is not None) and (ndims != fitted_n_components):
-            warnings.warn('Unequal values passed to dims and n_components. Using the already-fitted model.')
+            warnings.warn('Unequal values passed to dims and n_components. Using the already-fitted model.', stacklevel=external_stacklevel())
         if format_data:
             x = formatter(x, ppca=True)
         x_reduced, fitted = reduce_list(x, None, reuse=reduce)
         result = x_reduced if (internal or len(x_reduced) > 1) else x_reduced[0]
         return (result, fitted) if return_model else result
 
-    elif isinstance(reduce, str):  # Remove np.string_ check as it's deprecated in NumPy 2.0
+    elif isinstance(reduce, str):
         model_name = reduce
         model_params = {
             'n_components': ndims
         }
 
     elif isinstance(reduce, dict):
-        if 'args' in reduce or 'kwargs' in reduce:
-            # canonical 1.0 dict spec: {'model': ..., 'args': [...], 'kwargs': {...}}
-            try:
-                c_model = reduce['model']
-            except KeyError:
-                raise ValueError('If passing a dictionary, pass the model as the value of the "model" key and a \
-                dictionary of custom params as the value of the "params" key.')
+        if 'model' not in reduce:
+            raise ValueError(
+                "invalid reduce dict spec: pass the model as the value "
+                "of the 'model' key, with optional constructor arguments "
+                "under 'args' (positional) and 'kwargs' (keyword), e.g. "
+                "{'model': 'PCA', 'kwargs': {'whiten': True}} (the "
+                "legacy 'params' key is also accepted).")
+        if 'args' in reduce or 'kwargs' in reduce or 'params' not in reduce:
+            # canonical 1.0 dict spec: {'model': ..., 'args': [...],
+            # 'kwargs': {...}} -- BOTH 'args' and 'kwargs' are optional, so
+            # the minimal {'model': 'PCA'} works too (2026-07 release audit,
+            # final wave item 2: it used to crash with the invalid-dict-spec
+            # error even though the docs called args/kwargs optional)
+            if 'params' in reduce:
+                # both the canonical and the legacy parameter keys were
+                # given: the canonical 'args'/'kwargs' win, but say so
+                # instead of silently dropping 'params' (final wave item 5,
+                # matching hyp.cluster's warning)
+                warnings.warn(
+                    "reduce spec contains both the canonical "
+                    "'args'/'kwargs' keys and the legacy 'params' key; "
+                    "ignoring 'params' and using 'args'/'kwargs'",
+                    UserWarning, stacklevel=2)
+            c_model = reduce['model']
             c_args = list(reduce.get('args', []))
             c_kwargs = dict(reduce.get('kwargs', {}))
+            # remember whether the user left TSNE's perplexity at its
+            # sklearn default: reduce() clamps it for small datasets below
+            # (F11-reduce-describe-002), but must never touch a value the
+            # user set themselves
+            tsne_perplexity_unset = (
+                (c_model == 'TSNE'
+                 or getattr(c_model, '__name__', None) == 'TSNE'
+                 or type(c_model).__name__ == 'TSNE')
+                and 'perplexity' not in c_kwargs)
             if isinstance(c_model, str):
-                c_model = _resolve_model(c_model)
+                try:
+                    c_model = _resolve_model(c_model)
+                except KeyError:
+                    # an unknown name inside the DICT form used to leak a
+                    # bare KeyError ('Bogus') instead of the unknown-model
+                    # error the bare-string path raises (release-1.0
+                    # audit, X7-008 residue)
+                    _raise_unknown_reduce_model(c_model)
             # inject n_components=ndims when the model accepts it and the user
             # did not set it themselves. Without this, the canonical dict form
             # pre-built the instance with n_components=None (its default) and
@@ -188,25 +323,37 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
                 c_kwargs['random_state'] = random_state
             # construct immediately; the resulting instance flows through
             # the same already-constructed-instance handling below as a
-            # bare instance passed directly as `reduce=`
-            model_name = c_model(*c_args, **c_kwargs)
+            # bare instance passed directly as `reduce=`. An ALREADY-
+            # CONSTRUCTED instance inside the dict spec is used as-is --
+            # its 'args'/'kwargs' entries cannot be applied, so a
+            # UserWarning says so instead of crashing/silently dropping
+            # them (final wave item 4 parity with hyp.cluster).
+            if inspect.isclass(c_model):
+                model_name = c_model(*c_args, **c_kwargs)
+            else:
+                if c_args or c_kwargs:
+                    warnings.warn(
+                        f"the reduce spec's 'model' is an already-"
+                        f"constructed {type(c_model).__name__} instance "
+                        "(used as-is), so the spec's 'args'/'kwargs' "
+                        "entries are ignored; configure the instance "
+                        "directly, or pass the class (or its name) to "
+                        "apply constructor parameters",
+                        UserWarning, stacklevel=2)
+                model_name = c_model
             model_params = {
                 'n_components': ndims
             }
         else:
-            try:
-                model_name = reduce['model']
-                model_params = reduce['params']
-            except KeyError:
-                raise ValueError('If passing a dictionary, pass the model as the value of the "model" key and a \
-                dictionary of custom params as the value of the "params" key.')
+            model_name = reduce['model']
+            model_params = reduce['params']
             # LEGACY form (dev-1.0/fork): accepted for backward
             # compatibility, but deprecated in favor of the canonical
             # {'model', 'args', 'kwargs'} triple above.
             warnings.warn(
                 "{'model': ..., 'params': {...}} is deprecated; use "
                 "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
-                DeprecationWarning, stacklevel=2)
+                DeprecationWarning, stacklevel=external_stacklevel())
 
     else:
         # handle other possibilities below: a bare (uninstantiated) custom
@@ -216,27 +363,40 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
             'n_components': ndims
         }
 
-    try:
-        # if the model passed is a string, make sure it's one of the supported options
-        if isinstance(model_name, str):  # Remove np.string_ check as it's deprecated in NumPy 2.0
+    supported_names = sorted(list(REDUCERS) + ['UMAP'] + list(AUTOENCODER_NAMES))
+    # if the model passed is a string, make sure it's one of the supported options
+    if isinstance(model_name, str):
+        try:
             model = _resolve_model(model_name)
-        # otherwise check any custom object for necessary methods
-        else:
-            model = model_name
-            if not hasattr(model, 'fit_transform'):
+        except KeyError:
+            # name the offending value and, for near-misses like 'umap',
+            # suggest the correctly-cased registry name
+            # (F11-reduce-describe-005)
+            _raise_unknown_reduce_model(model_name)
+    # otherwise check any custom object for necessary methods
+    else:
+        model = model_name
+        if not (hasattr(model, 'fit_transform')
                 # mixture-style estimators (GaussianMixture, etc.) have no
                 # fit_transform; fit + predict_proba is an equally valid
                 # reducer-like interface (GH #174)
-                if not (hasattr(model, 'fit') and hasattr(model, 'predict_proba')):
-                    raise AttributeError
-            # a bare class won't have n_components until it's constructed;
-            # only already-constructed instances are expected to have it
-            if not inspect.isclass(model):
-                getattr(model, 'n_components')
-    except (KeyError, AttributeError):
-        raise ValueError('reduce must be one of the supported options or support n_components and fit_transform \
-         methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce \
-         for supported models')
+                or (hasattr(model, 'fit') and hasattr(model, 'predict_proba'))):
+            raise ValueError(
+                f"invalid reduce model {model!r} (type "
+                f"{type(model).__name__}): a reduce spec must be a supported "
+                f"model name, a dict spec, a fitted Reducer, or a "
+                f"scikit-learn style class/instance with fit_transform (or "
+                f"fit + predict_proba) and n_components. Supported names: "
+                f"{', '.join(supported_names)}.")
+        # a bare class won't have n_components until it's constructed;
+        # only already-constructed instances are expected to have it
+        if not inspect.isclass(model) and not hasattr(model, 'n_components'):
+            raise ValueError(
+                f"invalid reduce model {model!r} (type "
+                f"{type(model).__name__}): the instance has no n_components "
+                f"attribute; construct it with an n_components (e.g. "
+                f"PCA(n_components=3)) or pass the bare class together with "
+                f"ndims=.")
 
     # an already-constructed instance is used as-is: it's already configured,
     # so we must not re-construct it or clobber its params below
@@ -246,13 +406,13 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
     if model_is_instance:
         instance_n_components = getattr(model, 'n_components', None)
         if (ndims is not None) and (instance_n_components is not None) and (ndims != instance_n_components):
-            warnings.warn('Unequal values passed to dims and n_components. Using the already-configured model instance.')
+            warnings.warn('Unequal values passed to dims and n_components. Using the already-configured model instance.', stacklevel=external_stacklevel())
         model_params['n_components'] = instance_n_components if instance_n_components is not None else ndims
     elif 'n_components' in model_params:
         if (ndims is None) or (ndims == model_params['n_components']):
             pass
         else:
-            warnings.warn('Unequal values passed to dims and n_components. Using ndims parameter.')
+            warnings.warn('Unequal values passed to dims and n_components. Using ndims parameter.', stacklevel=external_stacklevel())
             model_params['n_components'] = ndims
     else:
         model_params['n_components'] = ndims
@@ -267,22 +427,43 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
     # return used to hand back a 1-element LIST for a single array, so the return
     # type flipped between ndarray and list depending on ndims).
     if model_params['n_components'] is None or all([i.shape[1] <= model_params['n_components'] for i in x]):
+        # requesting MORE dimensions than the data has used to skip the
+        # reduction silently -- even for explicitly-requested nonlinear
+        # embeddings, whose k-D output is not the same thing as k-D raw
+        # data (release-1.0 audit, D04-gallery-models-008). Internal
+        # display-path calls (which legitimately no-op on already-low-D
+        # data) stay silent.
+        if (not internal and model_params['n_components'] is not None
+                and any(i.shape[1] < model_params['n_components']
+                        for i in x)):
+            warnings.warn(
+                f"ndims/n_components was set to "
+                f"{model_params['n_components']} but the data only has "
+                f"{max(i.shape[1] for i in x)} feature(s), so no reduction "
+                "was performed -- the input is returned unchanged. Request "
+                "at most as many dimensions as the data has features to "
+                "compute an actual embedding.", UserWarning, stacklevel=external_stacklevel())
         result = x if (internal or len(x) > 1) else x[0]
         return (result, None) if return_model else result
 
     # Handle empty arrays and type conversion
+    if isinstance(x, list):
+        _require_equal_columns(x)
     stacked_x = np.vstack([np.asarray(arr, dtype=np.float64) for arr in x])
 
     if stacked_x.shape[0] == 1:
-        warnings.warn('Cannot reduce the dimensionality of a single row of'
-                      ' data. Return zeros length of ndims')
+        warnings.warn('Cannot reduce a single observation (row) of data; '
+                      'returning a zero vector of length ndims instead. '
+                      'The plotted/returned values do NOT reflect the '
+                      'input -- pass at least 2 observations to compute a '
+                      'real embedding.', stacklevel=external_stacklevel())
         result = [np.zeros((1, model_params['n_components']), dtype=np.float64)]
         result = result if (internal or len(x) > 1) else result[0]
         return (result, None) if return_model else result
 
     elif stacked_x.shape[0] < model_params['n_components']:
             warnings.warn('The number of rows in your data is less than ndims.'
-                          ' The data will be reduced to the number of rows.')
+                          ' The data will be reduced to the number of rows.', stacklevel=external_stacklevel())
             model_params['n_components'] = stacked_x.shape[0]
             if model_is_instance:
                 model.n_components = stacked_x.shape[0]
@@ -296,6 +477,43 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
             and 'random_state' not in model_params
             and 'random_state' in inspect.signature(model).parameters):
         model_params['random_state'] = random_state
+
+    # sklearn TSNE's default perplexity (30) requires n_samples > 30, so
+    # small datasets crashed on a parameter the user never set
+    # (F11-reduce-describe-002). When hypertools constructed (or is about to
+    # construct) the TSNE itself and the user left perplexity unset, clamp
+    # it to a workable value; user-supplied perplexities are never touched.
+    n_rows = stacked_x.shape[0]
+    if n_rows <= 30:
+        clamped_perplexity = max(1.0, (n_rows - 1) / 3.0)
+        tsne_warning = (
+            f"TSNE's default perplexity (30) must be less than the number "
+            f"of observations ({n_rows}); using "
+            f"perplexity={clamped_perplexity:g} instead. Set it yourself "
+            "with reduce={'model': 'TSNE', 'kwargs': {'perplexity': ...}}.")
+        if (not model_is_instance
+                and getattr(model, '__name__', None) == 'TSNE'
+                and 'perplexity' not in model_params):
+            warnings.warn(tsne_warning, UserWarning, stacklevel=external_stacklevel())
+            model_params['perplexity'] = clamped_perplexity
+        elif (model_is_instance and tsne_perplexity_unset
+              and type(model).__name__ == 'TSNE'
+              and getattr(model, 'perplexity', 0) >= n_rows):
+            # the canonical dict spec constructed this instance above,
+            # before the data size was known
+            warnings.warn(tsne_warning, UserWarning, stacklevel=external_stacklevel())
+            model.perplexity = clamped_perplexity
+
+    # pin MDS's changing sklearn defaults (n_init: 4 -> 1 in sklearn 1.9;
+    # init: 'random' -> 'classical_mds' in 1.10) to today's values so
+    # default MDS results stay stable across sklearn upgrades and default
+    # use is FutureWarning-free (F11-reduce-describe-016)
+    if not model_is_instance and getattr(model, '__name__', None) == 'MDS':
+        mds_params = inspect.signature(model).parameters
+        if 'n_init' in mds_params:
+            model_params.setdefault('n_init', 4)
+        if 'init' in mds_params:
+            model_params.setdefault('init', 'random')
 
     # initialize model: bare classes are constructed with model_params;
     # already-configured instances are used as-is
@@ -314,6 +532,25 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
 
 
 # sub functions
+def _require_equal_columns(x):
+    """Raise a hypertools-level error for ragged dataset lists.
+
+    The stack-once-fit-once recipe (`reduce_list`) row-concatenates every
+    dataset and fits ONE model, which requires a shared feature space;
+    without this check, ragged lists died inside `numpy.vstack` with a raw
+    concatenation error that never mentioned datasets or columns
+    (F11-reduce-describe-007).
+    """
+    widths = [np.atleast_2d(np.asarray(xi)).shape[1] for xi in x]
+    if len(set(widths)) > 1:
+        raise ValueError(
+            f"cannot reduce a list of datasets with different numbers of "
+            f"columns (got column counts {widths}): the datasets are "
+            f"stacked and fit in one SHARED space, which requires the same "
+            f"columns in every dataset. Bring them to a common set of "
+            f"columns first (e.g. hyp.align, or pad/trim the features).")
+
+
 def reduce_list(x, model, reuse=None):
     """Helper function to reduce a list of arrays.
 
@@ -344,12 +581,13 @@ def reduce_list(x, model, reuse=None):
     """
     # Ensure all arrays are float64 for consistent handling
     x = [np.asarray(arr, dtype=np.float64) for arr in x]
+    _require_equal_columns(x)
     split = np.cumsum([len(xi) for xi in x])[:-1]
     stacked = np.vstack(x)
 
     # Handle potential NaN values
     if np.any(np.isnan(stacked)):
-        warnings.warn('NaN values detected in input data. These may affect the reduction results.')
+        warnings.warn('NaN values detected in input data. These may affect the reduction results.', stacklevel=external_stacklevel())
 
     if reuse is not None:
         fitted = reuse

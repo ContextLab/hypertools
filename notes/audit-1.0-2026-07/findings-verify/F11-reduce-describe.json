@@ -1,0 +1,171 @@
+{
+ "unit": "F11-reduce-describe",
+ "findings": [
+  {
+   "id": "F11-reduce-describe-001",
+   "severity": "major",
+   "title": "describe(reduce='TSNE') crashes with default max_dims (documented model unusable in describe)",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; x = np.random.default_rng(3).normal(size=(50, 15)); hyp.describe(x, reduce='TSNE', show=False)\"",
+   "expected": "A correlation-by-components result for TSNE (docstring: 'Models supported: ... TSNE ...'), or a clear hypertools error saying TSNE only supports up to 3 components in describe.",
+   "actual": "ValueError: 'n_components' should be inferior to 4 for the barnes_hut algorithm as it relies on quad-tree or oct-tree.",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-002",
+   "severity": "minor",
+   "title": "reduce(x, 'TSNE') crashes on datasets with <= 30 rows (sklearn default perplexity passed through)",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.reduce(np.random.default_rng(2).normal(size=(30, 8)), 'TSNE', ndims=2)\"",
+   "expected": "A 2D TSNE embedding, or a hypertools-level message explaining how to lower perplexity via the dict spec.",
+   "actual": "ValueError: perplexity (30.0) must be less than n_samples (30)",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-003",
+   "severity": "doc",
+   "title": "reduce docstring 'If the input is a list, a list is returned' is false for single-element lists",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; r = hyp.reduce([np.random.rand(40, 12)], 'PCA', ndims=3); print(type(r))\"",
+   "expected": "<class 'list'> per the docstring (or a corrected docstring).",
+   "actual": "<class 'numpy.ndarray'>",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-004",
+   "severity": "minor",
+   "title": "ndims=None (the default) and ndims >= n_features silently return the input unchanged - no reduction, no warning",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; x = np.random.default_rng(2).normal(size=(30, 8)); print(hyp.reduce(x, 'PCA').shape); print(np.array_equal(hyp.reduce(x, 'PCA', ndims=8), x))\"",
+   "expected": "Documented behavior; ideally a UserWarning that the reduction was skipped, or the actual PCA rotation when the user explicitly named a model.",
+   "actual": "(30, 8) and True - input returned verbatim with no warning.",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-005",
+   "severity": "minor",
+   "title": "Invalid reduce= spec error: never names the offending value, contains run-on whitespace, and links to hypertools 0.8 docs",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.reduce(np.random.rand(30, 8), 'umap', ndims=2)\"  # then: curl -sIL http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html",
+   "expected": "Something like: ValueError: unrecognized reduce model 'umap'; did you mean 'UMAP'? Supported: PCA, IncrementalPCA, ... (see <current 1.0 docs URL>).",
+   "actual": "ValueError: reduce must be one of the supported options or support n_components and fit_transform          methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce          for supported models  [curl: 200, <title>hypertools.tools.reduce &#8212; hypertools 0.8]",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-006",
+   "severity": "minor",
+   "title": "Canonical dict-spec error message instructs users to use the DEPRECATED 'params' key",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.reduce(np.random.rand(30, 8), {'kwargs': {'whiten': True}}, ndims=3)\"",
+   "expected": "Error text describing the canonical {'model': ..., 'args': [...], 'kwargs': {...}} form.",
+   "actual": "ValueError: If passing a dictionary, pass the model as the value of the \"model\" key and a                 dictionary of custom params as the value of the \"params\" key.",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-007",
+   "severity": "minor",
+   "title": "Ragged dataset lists (unequal column counts) fail with a raw numpy vstack error",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.reduce([np.random.rand(30, 8), np.random.rand(30, 5)], 'PCA', ndims=3)\"",
+   "expected": "ValueError from hypertools: 'all datasets must have the same number of columns to share one reduction (got 8 and 5)...'",
+   "actual": "ValueError: all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 8 and the array at index 1 has size 5",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-008",
+   "severity": "minor",
+   "title": "Fitted-Reducer reuse crashes with raw AttributeError for TSNE/MDS/SpectralEmbedding (models without .transform)",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; rng = np.random.default_rng(2); _, m = hyp.reduce(rng.normal(size=(40, 8)), 'TSNE', ndims=2, return_model=True, random_state=0); hyp.reduce(rng.normal(size=(5, 8)), reduce=m)\"",
+   "expected": "A hypertools error naming the limitation and the fix, e.g. 'fitted TSNE models cannot embed new data; call reduce() on the combined data instead' - plus a docstring caveat.",
+   "actual": "AttributeError: 'TSNE' object has no attribute 'transform'  (same for 'MDS' and 'SpectralEmbedding')",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-009",
+   "severity": "doc",
+   "title": "describe() docs say it correlates 'covariance'; it actually correlates pairwise Euclidean DISTANCE matrices (and the summary line is ungrammatical)",
+   "repro": "grep -n 'covariance' /Users/jmanning/hypertools/hypertools/reduce/describe.py /Users/jmanning/hypertools/examples/plot_describe.py; env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import inspect; from hypertools.reduce import describe as d; import hypertools.reduce.describe as m; print(inspect.getsource(m.get_cdist))\"",
+   "expected": "Docstring/example text describing correlation of pairwise Euclidean distance matrices.",
+   "actual": "describe.py:15 'Create plot describing covariance with as a function of number of dimensions'; plot_describe.py:9-11 'computes the covariance (samples by samples)'; code: return cdist(x, x)",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-010",
+   "severity": "doc",
+   "title": "describe max_dims is an EXCLUSIVE bound: 'Maximum number of dimensions to consider' is off by one",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; r = hyp.describe(np.random.rand(50, 15), max_dims=5, show=False); print(len(r['average']))\"",
+   "expected": "4 values (dims 2..5) per the docstring wording, or a docstring stating the bound is exclusive.",
+   "actual": "3 (dims 2, 3, 4 - max considered is 4, not 5)",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-011",
+   "severity": "minor",
+   "title": "describe() emits the 'When input data is large...' UserWarning unconditionally on every call",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -W always -c \"import numpy as np, hypertools as hyp; hyp.describe(np.random.rand(20, 8), max_dims=5, show=False)\"",
+   "expected": "No warning for tiny inputs.",
+   "actual": "UserWarning: When input data is large, this computation can take a long time. (fires for a 20x8 array)",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-012",
+   "severity": "minor",
+   "title": "Multi-dataset describe figure (matplotlib): indistinguishable same-color unlabeled traces, no legend, and the 'average' curve is never plotted; plotly backend differs",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, matplotlib.pyplot as plt, hypertools as hyp; rng = np.random.default_rng(3); hyp.describe([rng.normal(size=(9, 15)), rng.normal(size=(9, 15))], show=True); plt.gcf().savefig('/tmp/describe_traces.png')\"",
+   "expected": "Distinguishable per-dataset colors + legend (like the plotly backend), and ideally the average curve overlaid.",
+   "actual": "Two identical-color unlabeled lines; no legend; no average curve (see evidence PNGs).",
+   "evidence": [
+    "describe_unequal_traces.png",
+    "describe_default_2datasets.png",
+    "gallery_plot_describe_verbatim.png"
+   ]
+  },
+  {
+   "id": "F11-reduce-describe-013",
+   "severity": "style",
+   "title": "get_corr is called with its arguments in the opposite order of its parameter names",
+   "repro": "grep -n 'get_corr' /Users/jmanning/hypertools/hypertools/reduce/describe.py",
+   "expected": "Call-site argument order matching the parameter names.",
+   "actual": "describe.py:112 'corrs.append(get_corr(alldims, reduced))' vs describe.py:173 'def get_corr(reduced, alldims):'",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-014",
+   "severity": "style",
+   "title": "`import hypertools.reduce.reduce as m` fails because the top-level function shadows the subpackage",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools.reduce.reduce as m\"",
+   "expected": "Either a working import or documentation of the supported import forms.",
+   "actual": "ImportError: cannot import name 'reduce' from 'reduce' (unknown location)",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-015",
+   "severity": "enhancement",
+   "title": "describe() gives no handle on its figure (show-only): cannot save, style, or embed it",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; r = hyp.describe(np.random.rand(40, 10), show=True); print(sorted(r.keys()))\"",
+   "expected": "Some way to obtain the rendered figure (return value or parameter).",
+   "actual": "['average', 'individual'] - no figure reference; matplotlib prints 'FigureCanvasAgg is non-interactive, and thus cannot be shown' under Agg.",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-016",
+   "severity": "style",
+   "title": "Dependency warnings leak through every MDS/UMAP reduce call (sklearn 1.8 FutureWarnings, umap UserWarning)",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -W always -c \"import numpy as np, hypertools as hyp; hyp.reduce(np.random.rand(60, 20), 'MDS', ndims=2, random_state=0)\"",
+   "expected": "No FutureWarnings on default usage (pin n_init/init explicitly), keeping MDS results stable across sklearn upgrades.",
+   "actual": "FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9. ... | FutureWarning: The default value of `init` will change from 'random' to 'classical_mds' in 1.10. ...",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-017",
+   "severity": "minor",
+   "title": "Cross-module normalize= with a wrong value fails with an AssertionError that never names the offending value",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.reduce(np.random.rand(40, 12), reduce='PCA', ndims=3, normalize='zscore')\"",
+   "expected": "ValueError: normalize='zscore' is not recognized; use 'across', 'within', 'row', 'none', or a fitted Normalizer.",
+   "actual": "AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.",
+   "evidence": []
+  },
+  {
+   "id": "F11-reduce-describe-018",
+   "severity": "minor",
+   "title": "[infra/release-hygiene] repo .venv contains a stale non-editable hypertools 1.0.0.dev0 whose reduce() still has the fixed dict-spec/ndims bug",
+   "repro": "cd /Users/jmanning/hypertools && .venv/bin/pip show hypertools | head -3 && env MPLBACKEND=Agg .venv/bin/python -c \"import hypertools as hyp, numpy as np; rng = np.random.default_rng(0); a = rng.normal(size=(40, 12)); b = rng.normal(size=(25, 12)); print([r.shape for r in hyp.reduce([a, b], reduce={'model': 'PCA', 'kwargs': {'whiten': True}}, ndims=3)])\"",
+   "expected": "[(40, 3), (25, 3)] (what the repo source on audit/release-1.0-2026-07 produces).",
+   "actual": "Version: 1.0.0.dev0 (non-editable); output [(40, 12), (25, 12)] - ndims silently ignored by the stale installed copy; traceback paths point at .venv/lib/python3.12/site-packages/hypertools/.",
+   "evidence": []
+  }
+ ]
+}

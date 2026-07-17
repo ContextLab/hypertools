@@ -1,0 +1,140 @@
+{
+ "unit": "D09-tutorials-applied",
+ "findings": [
+  {
+   "id": "D09-tutorials-applied-001",
+   "severity": "minor",
+   "title": "conversation_trajectories: 2 of 5 speakers are invisible in the plot (zero-length duplicated-point strokes) while still getting legend entries; markdown wrongly calls the duplicated row 'a drawable line'",
+   "repro": "cd /tmp && MPLBACKEND=Agg python - <<'EOF'\nimport random, re\nfrom convokit import Corpus, download\ncorpus = Corpus(filename=download('reddit-corpus-small'))\nSW=3\nusable=lambda c:[u for u in c.get_chronological_utterance_list() if u.text and u.text.strip() and u.text.strip() not in ('[deleted]','[removed]')]\nsplit=lambda t:[s for s in (x.strip() for x in re.split(r'(?<=[.!?])\\s+', t)) if s]\ncw=lambda t:(max(1,len(split(t))-SW+1) if len(split(t))>=SW else 1)\ndef substantial(c):\n    u=usable(c)\n    if not 10<=len(u)<=40 or len(set(x.speaker.id for x in u))<2: return False\n    return sum(1 for x in u if cw(x.text.strip())>=2)/len(u)>=0.6\ncand=[c for c in corpus.iter_conversations() if substantial(c)]\nrandom.seed(25); conv=random.choice(cand)\nper={}\nfor u in usable(conv): per.setdefault(u.speaker.id,[]).append(cw(u.text.strip()))\nfor s,w in per.items(): print(s,w,'ALL-INVISIBLE' if all(x==1 for x in w) else '')\nEOF",
+   "expected": "Every legend entry corresponds to at least one visible stroke, or the text explains that single-window utterances are invisible/point-like.",
+   "actual": "speaker 'implode573': windows=[1] -> ALL-INVISIBLE=True\nspeaker 'mattgrum': windows=[1] -> ALL-INVISIBLE=True\n(visual: conv_cell11_out0.png shows no yellow-green or blue strokes despite legend entries)",
+   "evidence": [
+    "conv_cell11_out0.png"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-002",
+   "severity": "minor",
+   "title": "projectile_kalman cell 17: figure title is truncated at both edges in the notebook's rendered output (reader-visible in built docs)",
+   "repro": "python - <<'EOF'\nimport nbformat, base64, io\nfrom PIL import Image\nnb = nbformat.read('/Users/jmanning/hypertools/docs/tutorials/projectile_kalman.ipynb', as_version=4)\npng = nb.cells[17]['outputs'][0]['data']['image/png']\nIm = Image.open(io.BytesIO(base64.b64decode(png)))\nIm.save('/tmp/cell17_reader_view.png'); print(Im.size)\nEOF\n# open /tmp/cell17_reader_view.png: title reads 'man-forecast jump shot in raw (x, y, z) space (solid=observed, dashed=forec'",
+   "expected": "Full title visible: 'Kalman-forecast jump shot in raw (x, y, z) space (solid=observed, dashed=forecast)'",
+   "actual": "Embedded 634x470 output PNG shows: 'man-forecast jump shot in raw (x, y, z) space (solid=observed, dashed=forec' (both ends cut; same in this session's fresh nbclient run)",
+   "evidence": [
+    "proj_cell17_out0.png",
+    "proj_cell17_fresh_default_bbox.png"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-003",
+   "severity": "minor",
+   "title": "stock_forecasting cell 12: the promised 'Kalman forecasts (dashed)' are invisible at the plotted scale",
+   "repro": "MPLBACKEND=Agg python - <<'EOF'\nimport warnings; warnings.filterwarnings('ignore')\nimport numpy as np, pandas as pd, yfinance as yf, hypertools as hyp\ntickers=['AAPL','MSFT','NVDA','JPM']; HOLD=30\nraw=yf.download(tickers, period='2y', interval='1d', progress=False, auto_adjust=True)\ncloses, volumes = raw['Close'], raw['Volume']\ntrain=[]\nfor tk in tickers:\n    lc=np.log(closes[tk].dropna()); lv=np.log(volumes[tk].reindex(lc.index).replace(0,np.nan)).ffill()\n    train.append(pd.DataFrame({'log_close':lc.values,'log_volume':lv.values}).iloc[:-HOLD].reset_index(drop=True))\nfig=hyp.plot(train, predict='Kalman', t=HOLD, legend=tickers, ndims=2, linewidth=2)\nax=fig.axes[0]\nfor l in ax.lines:\n    if l.get_linestyle()=='--':\n        x,y=np.asarray(l.get_xdata()),np.asarray(l.get_ydata())\n        print('tail span', round(x.max()-x.min(),3), round(y.max()-y.min(),3), 'axes', ax.get_xlim(), ax.get_ylim())\nEOF",
+   "expected": "Dashed forecast tails visibly distinguishable in the figure the tutorial titles 'Kalman forecasts (dashed)'.",
+   "actual": "tail spans: xspan 0.001-0.003, yspan 0.002-0.062 within xlim/ylim (-1.1, 1.1) -- invisible at default scale (full view stock_cell12_fresh.png shows no discernible dashes; stock_cell12_tail_zoom.png proves the tails exist)",
+   "evidence": [
+    "stock_cell12_fresh.png",
+    "stock_cell12_tail_zoom.png",
+    "stock_cell12_out0.png"
+   ]
+  },
+  {
+   "id": "D09-tutorials-applied-004",
+   "severity": "minor",
+   "title": "Install-cell inconsistency: projectile_kalman and stock_forecasting have no hypertools dev-preview install cell, so their conditional '%pip install hypertools[predict]' installs PyPI 0.8.2 (no hyp.impute/hyp.predict) on Colab until 1.0 ships",
+   "repro": "pip index versions hypertools  # -> hypertools (0.8.2)\npython - <<'EOF'\nimport json\nfor n in ['projectile_kalman','stock_forecasting','conversation_trajectories','streaming_data']:\n    c0 = ''.join(json.load(open(f'/Users/jmanning/hypertools/docs/tutorials/{n}.ipynb'))['cells'][0]['source'])\n    print(n, '->', 'DEV-PREVIEW INSTALL' if 'dev-1.0-refactor' in c0 else 'NO hypertools install cell')\nEOF",
+   "expected": "All four applied tutorials install a hypertools version that actually provides the APIs they teach, using the same pattern.",
+   "actual": "projectile_kalman -> NO hypertools install cell\nstock_forecasting -> NO hypertools install cell\nconversation_trajectories -> DEV-PREVIEW INSTALL\nstreaming_data -> DEV-PREVIEW INSTALL\npip index: hypertools (0.8.2) is the newest PyPI release today",
+   "evidence": []
+  },
+  {
+   "id": "D09-tutorials-applied-005",
+   "severity": "minor",
+   "title": "Streaming: stream_max is not honored when smaller than stream_init (consumes and reports stream_init samples)",
+   "repro": "MPLBACKEND=Agg python - <<'EOF'\nimport numpy as np, hypertools as hyp\ndef inf(dim=10, seed=1):\n    rng=np.random.default_rng(seed)\n    while True: yield rng.standard_normal(dim)\nf=hyp.plot(inf(), stream_init=500, stream_chunk=100, stream_max=300, show=False)\nprint(f.stream_info['n_samples'])  # 500, not <=300\nEOF",
+   "expected": "At most 300 samples consumed/reported (or a ValueError explaining stream_max < stream_init).",
+   "actual": "OK -> (500, True) -- n_samples=500 with stream_max=300",
+   "evidence": []
+  },
+  {
+   "id": "D09-tutorials-applied-006",
+   "severity": "minor",
+   "title": "Streaming: one sample beyond stream_max is silently consumed from the underlying stream by the truncation peek",
+   "repro": "MPLBACKEND=Agg python - <<'EOF'\nimport numpy as np, hypertools as hyp\npulls=[0]\ndef gen():\n    rng=np.random.default_rng(0)\n    while True:\n        pulls[0]+=1\n        yield rng.standard_normal(10)\nhyp.plot(gen(), stream_init=200, stream_chunk=100, stream_max=1200, show=False)\nprint('pulled:', pulls[0])  # 1201\nEOF",
+   "expected": "Exactly stream_max samples consumed, or the +1 peek documented in the stream_max docstring.",
+   "actual": "samples pulled: 1201 (stream_max=1200); stream_info['n_samples']=1200",
+   "evidence": []
+  },
+  {
+   "id": "D09-tutorials-applied-007",
+   "severity": "minor",
+   "title": "Streaming parameter validation is thin: negative stream_init leaks an itertools error; stream_window=0 is silently ignored",
+   "repro": "MPLBACKEND=Agg python - <<'EOF'\nimport numpy as np, hypertools as hyp\ndef inf():\n    rng=np.random.default_rng(1)\n    while True: yield rng.standard_normal(10)\ntry:\n    hyp.plot(inf(), stream_init=-5, stream_chunk=100, stream_max=300, show=False)\nexcept ValueError as e:\n    print('init=-5 ->', e)\nf=hyp.plot(inf(), stream_init=100, stream_chunk=100, stream_max=300, stream_window=0, show=False)\nprint('window=0 displayed points:', len(f.axes[0].lines[0].get_data_3d()[0]))\nEOF",
+   "expected": "Clear errors naming stream_init/stream_window and their valid ranges.",
+   "actual": "RAISED ValueError: Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize.\nwindow=0: displayed points: 300 consumed: 300 (window ignored)",
+   "evidence": []
+  },
+  {
+   "id": "D09-tutorials-applied-008",
+   "severity": "minor",
+   "title": "Single-feature (scalar-yield) streams crash with a cryptic IndexError",
+   "repro": "MPLBACKEND=Agg python - <<'EOF'\nimport numpy as np, hypertools as hyp\ndef scalars():\n    rng=np.random.default_rng(3)\n    for _ in range(400): yield float(rng.standard_normal())\nhyp.plot(scalars(), stream_init=100, stream_chunk=100, stream_max=400, show=False)\nEOF",
+   "expected": "Either a 1-D/2-D plot of the streamed series, or 'ValueError: streaming data must have at least N features; got 1'.",
+   "actual": "RAISED IndexError: index 1 is out of bounds for axis 1 with size 1",
+   "evidence": []
+  },
+  {
+   "id": "D09-tutorials-applied-009",
+   "severity": "minor",
+   "title": "Streaming save_path='...mp4' fails with a leaked PIL error although non-streaming animations support .mp4",
+   "repro": "MPLBACKEND=Agg python - <<'EOF'\nimport numpy as np, hypertools as hyp\ndef inf():\n    rng=np.random.default_rng(1)\n    while True: yield rng.standard_normal(10)\nhyp.plot(inf(), stream_init=100, stream_chunk=100, stream_max=400, save_path='stream.mp4', show=False)\nEOF",
+   "expected": "Either mp4 streaming export (parity with animate), or 'ValueError: streaming animations can only be saved as .gif; got .mp4 (mp4 is supported for non-streaming animate=...)'.",
+   "actual": "RAISED ValueError: unknown file extension: .mp4",
+   "evidence": []
+  },
+  {
+   "id": "D09-tutorials-applied-010",
+   "severity": "minor",
+   "title": "hyp.impute(model='Kalman') on a single-row frame crashes with a cryptic broadcast error",
+   "repro": "python - <<'EOF'\nimport numpy as np, pandas as pd, hypertools as hyp\nprint(hyp.impute(pd.DataFrame({'a': [1.0], 'b': [np.nan]}), model='Kalman'))\nEOF",
+   "expected": "'ValueError: Kalman imputation requires at least 2 rows (got 1)' or graceful column-mean fallback.",
+   "actual": "RAISED ValueError: could not broadcast input array from shape (2,2) into shape (2,1)",
+   "evidence": []
+  },
+  {
+   "id": "D09-tutorials-applied-011",
+   "severity": "style",
+   "title": "predict error-type/message polish: fitted-model reuse mismatch leaks sklearn internals; AutoRegressor short-train check raises AssertionError",
+   "repro": "python - <<'EOF'\nimport numpy as np, pandas as pd, hypertools as hyp\nd3 = pd.DataFrame(np.random.default_rng(0).standard_normal((40, 3)), columns=list('abc'))\n_, fitted = hyp.predict(d3, model='AutoRegressor', t=3, return_model=True)\ntry:\n    hyp.predict(pd.DataFrame({'q': np.arange(25.)}), model=fitted, t=3)\nexcept ValueError as e:\n    print('reuse mismatch ->', e)\ntry:\n    hyp.predict(d3.iloc[:3], model='AutoRegressor', t=5)\nexcept BaseException as e:\n    print(type(e).__name__, '->', e)\nEOF",
+   "expected": "Hypertools-branded ValueError naming the fitted forecaster's expected columns; ValueError (not AssertionError) for the short-train case.",
+   "actual": "RAISED ValueError: X has 10 features, but Ridge is expecting 30 features as input.\nRAISED AssertionError: AutoRegressor needs more than lags=10 observations to fit; got 3",
+   "evidence": []
+  },
+  {
+   "id": "D09-tutorials-applied-012",
+   "severity": "enhancement",
+   "title": "impute silently fills never-observed (all-NaN) columns with 0.0 without any warning",
+   "repro": "python - <<'EOF'\nimport numpy as np, pandas as pd, hypertools as hyp\ndf = pd.DataFrame(np.random.default_rng(0).standard_normal((50, 3)), columns=list('abc'))\ndf['c'] = np.nan\nout = hyp.impute(df, model='Kalman')\nprint(out['c'].abs().max())  # 0.0, no warning emitted\nEOF",
+   "expected": "UserWarning: column 'c' has no observed values; imputed values are uninformed (filled with 0.0).",
+   "actual": "Column returned as all 0.0 with no warning (both model='Kalman' and model='PPCA').",
+   "evidence": []
+  },
+  {
+   "id": "D09-tutorials-applied-013",
+   "severity": "doc",
+   "title": "Notebook metadata hygiene: streaming_data.ipynb has no kernelspec; conversation_trajectories and streaming_data each have a cell missing the nbformat-4.5 id",
+   "repro": "python - <<'EOF'\nimport json\nfor n in ['conversation_trajectories','projectile_kalman','stock_forecasting','streaming_data']:\n    raw = json.load(open(f'/Users/jmanning/hypertools/docs/tutorials/{n}.ipynb'))\n    ks = raw.get('metadata', {}).get('kernelspec')\n    noid = sum(1 for c in raw['cells'] if 'id' not in c)\n    print(n, 'kernelspec=', 'MISSING' if ks is None else ks.get('name'), 'cells_missing_id=', noid)\nEOF",
+   "expected": "All four tutorials declare a python3 kernelspec and every cell has an id (nbformat 4.5).",
+   "actual": "conversation_trajectories kernelspec= python3 cells_missing_id= 1\nprojectile_kalman kernelspec= python3 cells_missing_id= 0\nstock_forecasting kernelspec= python3 cells_missing_id= 0\nstreaming_data kernelspec= MISSING cells_missing_id= 1",
+   "evidence": []
+  },
+  {
+   "id": "D09-tutorials-applied-014",
+   "severity": "style",
+   "title": "predict/impute model-name matching is case-sensitive ('kalman' rejected)",
+   "repro": "python -c \"import pandas as pd, numpy as np, hypertools as hyp; hyp.predict(pd.DataFrame({'a': np.arange(30.)}), model='kalman', t=2)\"",
+   "expected": "'kalman' resolves to Kalman (case-insensitive lookup), or the docs state that names are case-sensitive.",
+   "actual": "ValueError: unknown predict model 'kalman'; supported names: Kalman, GaussianProcess, AutoRegressor, ARIMA, Laplace, Chronos (or pass a dict {'model': ..., 'params': {...}}, a Forecaster subclass, or a Forecaster instance directly)",
+   "evidence": []
+  }
+ ]
+}

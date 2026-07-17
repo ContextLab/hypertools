@@ -23,12 +23,13 @@ import numpy as np
 # load example data
 data = hyp.load('weights_sample')
 
-# simulate random groups
+# simulate random groups (seeded so the figure is reproducible)
+np.random.seed(123)
 hue=[]
 for idx,i in enumerate(data):
     tmp=[]
     for iidx,ii in enumerate(i):
-            tmp.append(int(np.random.randint(1000, size=1)))
+            tmp.append(int(np.random.randint(1000)))
     hue.append(tmp)
 
 # plot

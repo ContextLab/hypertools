@@ -1,0 +1,185 @@
+{
+ "unit": "X6-code-org-plot",
+ "findings": [
+  {
+   "id": "X6-code-org-plot-001",
+   "severity": "critical",
+   "title": "Setting HYPERTOOLS_BACKEND env var to any supported backend makes `import hypertools` crash",
+   "repro": "env MPLBACKEND=Agg HYPERTOOLS_BACKEND=TkAgg /Users/jmanning/hypertools/.venv/bin/python -c 'import hypertools'",
+   "expected": "hypertools imports and prefers the user-specified backend (falling back with a warning if it cannot be used), per the mpl_backend docstring.",
+   "actual": "File \"hypertools/plot/backend.py\", line 552, in _init_backend\n    backends[: backends.index(HYPERTOOLS_BACKEND)],\nValueError: tuple.index(x): x not in tuple\n...\n  File \"hypertools/plot/backend.py\", line 691, in _init_backend\n    HYPERTOOLS_BACKEND = HypertoolsBackend(working_backend).normalize()\nUnboundLocalError: cannot access local variable 'working_backend' where it is not associated with a value",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-002",
+   "severity": "style",
+   "title": "plot() is a single 2,690-line function with ~70 parameters",
+   "repro": "python - <<'EOF'\nimport ast\nsrc = open('/Users/jmanning/hypertools/hypertools/plot/plot.py').read()\nf = [n for n in ast.parse(src).body if getattr(n, 'name', '') == 'plot'][0]\nprint(f.end_lineno - f.lineno + 1, 'lines,', len(f.args.args) + len(f.args.kwonlyargs), 'params')\nEOF",
+   "expected": "Cohesive stages factored into module-level helpers (as _build_colorbar_info/_resolve_animate_mode already are), keeping plot() an orchestrator.",
+   "actual": "2690 lines, 70 params",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-003",
+   "severity": "style",
+   "title": "matplotlib_backend._draw is an 1,841-line function containing ~24 nested closures",
+   "repro": "python - <<'EOF'\nimport ast\nsrc = open('/Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py').read()\nf = [n for n in ast.parse(src).body if getattr(n, 'name', '') == '_draw'][0]\nnested = [n.name for n in ast.walk(f) if isinstance(n, ast.FunctionDef) and n.name != '_draw']\nprint(f.end_lineno - f.lineno + 1, 'lines;', len(nested), 'nested defs')\nEOF",
+   "expected": "Frame-update callbacks and the explore/label helpers as module-level functions taking explicit state (as the newer surface/density helpers _draw_density_2d/_shade_and_cull_3d already are).",
+   "actual": "1841 lines; 26 nested defs",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-004",
+   "severity": "style",
+   "title": "Large duplicated logic blocks: 3-D vs 2-D animation paths and cross-backend morph setup",
+   "repro": "grep -n '0.2, 0.4, 0.8' /Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py /Users/jmanning/hypertools/hypertools/plot/plotly_backend.py",
+   "expected": "One shared artist-construction/morph-setup helper parameterized by dimensionality; the default morph color as a named module constant.",
+   "actual": "matplotlib_backend.py:1381, matplotlib_backend.py:1880, plotly_backend.py:676, plotly_backend.py:1977 all contain the literal fallback color (0.2, 0.4, 0.8)",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-005",
+   "severity": "minor",
+   "title": "Animated plotly morph runs the O(n^3) Hungarian matching twice per figure",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python - <<'EOF'\nimport numpy as np, hypertools.plot.morph as m\ncalls = []\norig = m.sample_and_match_clouds\nm.sample_and_match_clouds = lambda *a, **k: (calls.append(1), orig(*a, **k))[1]\nfrom hypertools.plot.plotly_backend import plotly_draw\nrng = np.random.default_rng(0)\nplotly_draw([rng.normal(size=(30,3)), rng.normal(3,1,(30,3))], fmt=['.','.'],\n            kwargs_list=[{},{}], animate='morph', duration=1, frame_rate=5, show=False)\nprint('sample_and_match_clouds calls:', len(calls))\nEOF",
+   "expected": "1 call per figure (plotly_draw passes sampled0/dup_masks0 into _add_animation).",
+   "actual": "2 calls per animated morph figure (code-read: plotly_backend.py:672 and plotly_backend.py:1973; the comment at 652-656 asserts reuse that does not happen)",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-006",
+   "severity": "minor",
+   "title": "Commented-out code referencing a function that does not exist (onMouseClick)",
+   "repro": "grep -rn 'onMouseClick' /Users/jmanning/hypertools/hypertools /Users/jmanning/hypertools/tests",
+   "expected": "No commented-out calls to nonexistent functions.",
+   "actual": "hypertools/plot/matplotlib_backend.py:707 and :712 contain the commented-out mpl_connect('button_press_event', ... onMouseClick ...) line; no definition of onMouseClick exists in the repo",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-007",
+   "severity": "minor",
+   "title": "explore mode: onMouseMotion never updates its previous-index state (dead local assignment)",
+   "repro": "/Users/jmanning/hypertools/.venv/bin/python -m pyflakes /Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py | grep closestIndex",
+   "expected": "onMouseMotion.closestIndex_prev = closestIndex (attribute update), so the hover label re-renders exactly when the closest point changes.",
+   "actual": "hypertools/plot/matplotlib_backend.py:835:17: local variable 'closestIndex_prev' is assigned to but never used (same dead assignment at line 832)",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-008",
+   "severity": "minor",
+   "title": "plot() mutates the caller's fmt list in place (single-point line fmt rewritten to '.')",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python - <<'EOF'\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nuser_fmt = ['-', '-']\nhyp.plot([np.array([[0.5, 0.5, 0.5]]), np.cumsum(np.random.default_rng(5).normal(size=(10, 3)), axis=0)], user_fmt, show=False)\nprint(user_fmt)\nEOF",
+   "expected": "['-', '-'] (user input unmodified; the '.'-substitution applied to an internal copy)",
+   "actual": "['.', '-']",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-009",
+   "severity": "minor",
+   "title": "Animated trail artists ignore the user's linewidth= (destructive dict.pop in artist-creation comprehensions)",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python - <<'EOF'\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\ntraj = np.cumsum(np.random.default_rng(6).normal(size=(30, 3)), axis=0)\nfig, ani = hyp.plot(traj, animate=True, chemtrails=True, linewidth=5, duration=1, frame_rate=5, show=False)\nprint([l.get_linewidth() for l in fig.axes[0].lines])\nEOF",
+   "expected": "[5.0, 5.0] (trail mirrors the head's linewidth, differing only in alpha=0.3)",
+   "actual": "[5.0, 1.0]",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-010",
+   "severity": "minor",
+   "title": "azim= starting angle ignored by animate='parallel'/'spin' but honored by 'serial'/'morph' and by every plotly style",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python - <<'EOF'\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\ntraj = np.cumsum(np.random.default_rng(7).normal(size=(30, 3)), axis=0)\nfor style in ('parallel', 'spin', 'serial'):\n    fig, ani = hyp.plot(traj, animate=style, duration=1, frame_rate=5, azim=-60, show=False)\n    ani._init_draw(); ani._draw_frame(0)\n    print(style, fig.axes[0].azim)\nEOF",
+   "expected": "All styles (and both backends) start the camera at the requested azim (-60), as 'serial'/'morph'/plotly already do.",
+   "actual": "parallel 0.0 / spin 0.0 / serial -60.0",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-011",
+   "severity": "doc",
+   "title": "plot() density docstring documents plotly Volume constants two retunes out of date",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python -c \"from hypertools.plot.density import resolve_plotly_volume_params; print(resolve_plotly_volume_params(0.2, 3, 1.0))\"",
+   "expected": "Docstring matches code: opacity=min(2*alpha, 0.4) at boost=1, boost-scaled opacityscale, MAX_VOLUME_OPACITY=0.75 ceiling.",
+   "actual": "(0.15, 0.05, [[0, 0], [0.3, 0.27], [1, 0.53]], 0.4, 15) -- docstring claims opacity would be min(3*0.2, 0.6)=0.6",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-012",
+   "severity": "doc",
+   "title": "plot() surface docstring says containment rescale 'grow at most 10%'; the code cap is 3.0x",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python -c \"from hypertools.plot import meshutil; print(meshutil._RESCALE_CAP)\"; grep -n 'grow at most 10%' /Users/jmanning/hypertools/hypertools/plot/plot.py",
+   "expected": "plot.py describes the actual grow-only cap (3.0x, generous for sparse hulls; ~1.15-1.25x typical for well-sampled data).",
+   "actual": "3.0\nplot.py:1083:          most 10%) post-hoc rescale targeting the actual input points, so",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-013",
+   "severity": "doc",
+   "title": "Stale pre-1.0 references: four comments cite 'draw.py' for code now in matplotlib_backend.py; backend.py docstring cites removed DataGeometry.plot and misnames functions",
+   "repro": "grep -n \"draw.py\" /Users/jmanning/hypertools/hypertools/plot/plotly_backend.py; grep -n 'DataGeometry.plot\\|manage_backed\\|_switch_notebook_backend' /Users/jmanning/hypertools/hypertools/plot/backend.py; grep -n 'def plot' /Users/jmanning/hypertools/hypertools/datageometry.py",
+   "expected": "Comments name the module/function that actually holds the code; backend.py docstring reflects the 1.0 API (no DataGeometry.plot) and the real function names.",
+   "actual": "plotly_backend.py:206,1141,1168,2162 reference draw.py; backend.py:4 references hypertools.DataGeometry.plot (grep for 'def plot' in datageometry.py returns nothing); backend.py:51 'manage_backed'; backend.py:68 '_switch_notebook_backend'",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-014",
+   "severity": "doc",
+   "title": "set_interactive_backend docstring examples hardcode 'TkAgg' and crash on Pythons built without tkinter (infra-sensitive example)",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python /private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-066a-4ce2-b1f6-7c07c5e87b15/scratchpad/audit/X6-code-org-plot/backend_docstring_example.py",
+   "expected": "Docstring examples run on a stock install of the package's own dev venv.",
+   "actual": "hypertools.core.exceptions.HypertoolsBackendError: Failed to switch the plotting backend to TkAgg. You may be missing required dependencies, or this backend may not be available for your system  (root cause: ModuleNotFoundError: No module named '_tkinter')",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-015",
+   "severity": "style",
+   "title": "Unused imports and dead locals (pyflakes-confirmed) across 6 modules",
+   "repro": "/Users/jmanning/hypertools/.venv/bin/python -m pyflakes /Users/jmanning/hypertools/hypertools/plot/*.py | grep -v 'star imports\\|unable to detect'",
+   "expected": "No unused imports/locals, or a noqa with a reason where a re-export is intentional.",
+   "actual": "__init__.py:2:1 'warnings' imported but unused; __init__.py:3:1 'matplotlib as mpl' imported but unused; animate.py:11:1 '.._shared.animated_svg.combine_frames_svg' imported but unused; animate.py:88:9 redefinition of unused 'combine_frames_svg'; backend.py:480:41 local variable 'lab_version_stdout' is assigned to but never used; colors.py:167 vals2colors/vals2bins re-export never consumed; matplotlib_backend.py:7:1 'matplotlib' imported but unused; plot.py:4:1 'matplotlib.animation' imported but unused; plot.py:17 '_SVGFrameCollector'/'_save_animated_svg' imported but unused",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-016",
+   "severity": "style",
+   "title": "Star imports make load-bearing names invisible in the two biggest modules",
+   "repro": "/Users/jmanning/hypertools/.venv/bin/python -m pyflakes /Users/jmanning/hypertools/hypertools/plot/plot.py /Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py | grep -c 'star imports'",
+   "expected": "Explicit imports (import numpy as np, import itertools, from .._shared.helpers import reshape_data, ...), as plotly_backend.py already does.",
+   "actual": "60 'may be undefined, or defined from star imports' pyflakes lines across the two files",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-017",
+   "severity": "style",
+   "title": "Naming inconsistencies: camelCase explore helpers, a 'tail_duration' parameter that receives frame counts, and '_3d' names reused for 2-D",
+   "repro": "grep -n 'def calcClosestDatapoint\\|def onMouseMotion\\|def update_lines_parallel(\\|morph_trace_start_3d' /Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py /Users/jmanning/hypertools/hypertools/plot/plotly_backend.py",
+   "expected": "snake_case throughout; the frame-count parameter named window_frames; dimension-neutral names for dimension-neutral values.",
+   "actual": "matplotlib_backend.py:746 def calcClosestDatapoint; :811 def onMouseMotion; :932 def update_lines_parallel( with tail_duration=2 receiving window_frames; plotly_backend.py:756 morph_trace_start_3d used for 2-D too",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-018",
+   "severity": "doc",
+   "title": "Missing module docstrings in the package's two largest files and __init__.py",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python - <<'EOF'\nimport ast\nfor f in ('plot.py', 'matplotlib_backend.py', '__init__.py'):\n    src = open(f'/Users/jmanning/hypertools/hypertools/plot/{f}').read()\n    print(f, ast.get_docstring(ast.parse(src)) is not None)\nEOF",
+   "expected": "Module docstrings present (matching the standard set by plotly_backend.py's).",
+   "actual": "plot.py False / matplotlib_backend.py False / __init__.py False",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-019",
+   "severity": "style",
+   "title": "Vestigial code fragments: dead conditional in _colorbar_trace and a duplicated TkAgg fallback entry",
+   "repro": "grep -n \"thickness=15 if\" /Users/jmanning/hypertools/hypertools/plot/plotly_backend.py; sed -n '530,540p' /Users/jmanning/hypertools/hypertools/plot/backend.py",
+   "expected": "A plain thickness=15; each backend listed once.",
+   "actual": "plotly_backend.py:1694: thickness=15 if orientation == 'v' else 15; backend.py backends tuple contains 'TkAgg' at positions 0 and 6",
+   "evidence": []
+  },
+  {
+   "id": "X6-code-org-plot-020",
+   "severity": "doc",
+   "title": "plot() Returns section omits HyperAnimation and retains 0.x 'geometry' language for streaming",
+   "repro": "env MPLBACKEND=Agg .venv/bin/python - <<'EOF'\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nout = hyp.plot(np.random.default_rng(3).normal(size=(20, 3)).cumsum(0), animate='spin', duration=1, frame_rate=5, show=False)\nprint(type(out).__name__, isinstance(out, tuple))\nEOF",
+   "expected": "Returns section names HyperAnimation (noting tuple compatibility); streaming bullet reworded without 'geometry'.",
+   "actual": "HyperAnimation True -- while plot.py:1213-1216 documents only 'a (fig, animation) tuple' and plot.py:1003 says 'retained on the returned geometry'",
+   "evidence": []
+  }
+ ]
+}

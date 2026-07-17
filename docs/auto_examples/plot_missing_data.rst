@@ -18,9 +18,9 @@
 .. _sphx_glr_auto_examples_plot_missing_data.py:
 
 
-=============================
+============================================================
 Using the missing_inds function to label interpolated values
-=============================
+============================================================
 
 If you have data with missing values, Hypertools will try to interpolate them
 using PPCA.  To visualize how well its doing, you can use the missing_inds
@@ -29,7 +29,7 @@ generated some synthetic data, removed some values, and then plotted the
 original data, data with missing values and highlighted the missing datapoints
 with stars.
 
-.. GENERATED FROM PYTHON SOURCE LINES 14-46
+.. GENERATED FROM PYTHON SOURCE LINES 14-47
 
 
 
@@ -43,8 +43,8 @@ with stars.
 
  .. code-block:: none
 
-    /Users/jmanning/hypertools/hypertools/tools/format_data.py:131: UserWarning: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)
-      warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
+    /Users/jmanning/hypertools/hypertools/tools/format_data.py:264: UserWarning: Missing data: filling missing values with PPCA (observed values are preserved exactly; only the NaN entries are reconstructed). Pass impute= to choose a different imputation model -- see hypertools.impute.
+      warnings.warn('Missing data: filling missing values '
 
 
 
@@ -65,15 +65,16 @@ with stars.
     from copy import copy
     import hypertools as hyp
 
-    # simulate data
+    # simulate data (seeded so the figure is reproducible)
+    np.random.seed(123)
     K = 10 - toeplitz(np.arange(10))
     data1 = np.cumsum(np.random.multivariate_normal(np.zeros(10), K, 250), axis=0)
     data2 = copy(data1)
 
     # randomly remove 5% of the data
-    missing = .01
+    missing = .05
     inds = [(i,j) for i in range(data1.shape[0]) for j in range(data1.shape[1])]
-    missing_data = [inds[i] for i in np.random.choice(int(len(inds)), int(len(inds)*missing))]
+    missing_data = [inds[i] for i in np.random.choice(len(inds), int(len(inds)*missing), replace=False)]
     for i,j in missing_data:
         data2[i,j]=np.nan
 
@@ -91,7 +92,7 @@ with stars.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.057 seconds)
+   **Total running time of the script:** (0 minutes 0.046 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_missing_data.py:

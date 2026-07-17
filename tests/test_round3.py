@@ -3,6 +3,7 @@
 n_iter, shapes-zoo datasets, and download-cache hygiene."""
 
 import os
+import warnings
 
 import numpy as np
 import pytest
@@ -81,9 +82,20 @@ def test_hyperalign_n_iter_flag():
                         for i in range(a.shape[1])])
 
     assert mean_corr(ten) >= mean_corr(one) - 1e-6
-    # dict form threads n_iter and returns aligned data (not None)
-    via_dict = hyp.align([d1, d2],
-                         align={'model': 'hyper', 'params': {'n_iter': 3}})
+    # dict form threads n_iter and returns aligned data (not None). The call
+    # deliberately provokes THREE deprecation notices (legacy align= kwarg,
+    # legacy 'params' dict spec, and the 'hyper' alias) -- record and assert
+    # all of them explicitly
+    with warnings.catch_warnings(record=True) as rec:
+        warnings.simplefilter('always')
+        via_dict = hyp.align([d1, d2],
+                             align={'model': 'hyper',
+                                    'params': {'n_iter': 3}})
+    msgs = [str(w.message) for w in rec
+            if issubclass(w.category, DeprecationWarning)]
+    assert any('align= is deprecated' in m for m in msgs), msgs
+    assert any("'params'" in m and 'deprecated' in m for m in msgs), msgs
+    assert any("'hyper' is a deprecated alias" in m for m in msgs), msgs
     assert via_dict is not None and len(via_dict) == 2
 
 

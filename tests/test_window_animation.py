@@ -194,8 +194,11 @@ def test_plotly_window_exact_bounds_mid_animation():
 def test_plotly_window_ignores_trail_flags():
     pytest.importorskip('plotly')
     data = _walks(n=60)
-    fig = hyp.plot(data, animate='window', duration=1, tail_duration=1,
-                   chemtrails=True, backend='plotly', show=False)
+    # chemtrails with animate='window' deliberately provokes the
+    # trail-styles-ignored notice
+    with pytest.warns(UserWarning, match='does not support trail styles'):
+        fig = hyp.plot(data, animate='window', duration=1, tail_duration=1,
+                       chemtrails=True, backend='plotly', show=False)
     # 2 data + cube, no trail traces ever created for 'window'
     assert len(fig.data) == 3
 

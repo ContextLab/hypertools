@@ -18,9 +18,9 @@
 .. _sphx_glr_auto_examples_plot_align.py:
 
 
-=============================
+===================================
 Aligning matrices to a common space
-=============================
+===================================
 
 In this example, we plot the trajectory of multivariate brain activity for
 two groups of subjects that have been hyperaligned (Haxby et al, 2011).  First,
@@ -52,10 +52,10 @@ Then we average the data into two groups, and plot.
 
     # load example data
     data = hyp.load('weights')
-    data = hyp.align(data, align='hyper')
+    data = hyp.align(data, model='hyper')
 
-    # average into two groups
-    group1 = np.mean(data[:17], 0)
+    # average into two equal groups (18 subjects each)
+    group1 = np.mean(data[:18], 0)
     group2 = np.mean(data[18:], 0)
 
     # plot
@@ -64,7 +64,7 @@ Then we average the data into two groups, and plot.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.325 seconds)
+   **Total running time of the script:** (0 minutes 1.343 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_align.py:

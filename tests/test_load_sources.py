@@ -125,7 +125,10 @@ def test_load_huggingface_streaming_flows_to_plot():
     assert is_stream(ds)
     ds = ds.select_columns(['SepalLengthCm', 'SepalWidthCm',
                             'PetalLengthCm', 'PetalWidthCm'])
-    fig = hyp.plot(ds, '.', show=False, stream_init=50, stream_chunk=50)
+    # iris' later rows fall outside the display box fitted on the first 50,
+    # provoking the clamped-samples notice
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        fig = hyp.plot(ds, '.', show=False, stream_init=50, stream_chunk=50)
     assert fig.stream_info['n_samples'] == 150
     plt.close('all')
 
@@ -138,19 +141,27 @@ def test_load_streaming_rejects_load_time_transforms():
 
 def test_load_google_drive_id_and_url():
     # the hosted 'spiral' pickle unpickles internally; load() returns its
-    # raw data (a list of arrays), never a DataGeometry
-    data = hyp.load(DRIVE_SPIRAL_ID)
-    assert isinstance(data, list)
-    url = ('https://drive.google.com/uc?export=download&id='
-           + DRIVE_SPIRAL_ID)
-    data2 = hyp.load(url)
+    # raw data (a list of arrays), never a DataGeometry. Unpickling a
+    # remote payload without trust=True deliberately provokes the
+    # trust notice (sources._PICKLE_TRUST_WARNING) on every load
+    with pytest.warns(UserWarning,
+                      match='unpickling data from a remote source'):
+        data = hyp.load(DRIVE_SPIRAL_ID)
+        assert isinstance(data, list)
+        url = ('https://drive.google.com/uc?export=download&id='
+               + DRIVE_SPIRAL_ID)
+        data2 = hyp.load(url)
     assert isinstance(data2, list)
 
 
 def test_load_dropbox_url_forms():
-    a = hyp.load(DROPBOX_BUNNY)                       # dl=0 -> normalized
-    b = hyp.load('www.dropbox.com/s/7d9vo9idqk1hn31/bunny.pkl')
-    c = hyp.load('s/7d9vo9idqk1hn31/bunny.pkl')       # shared-link path
+    # unpickling remote payloads without trust=True deliberately provokes
+    # the trust notice (sources._PICKLE_TRUST_WARNING) on every load
+    with pytest.warns(UserWarning,
+                      match='unpickling data from a remote source'):
+        a = hyp.load(DROPBOX_BUNNY)                   # dl=0 -> normalized
+        b = hyp.load('www.dropbox.com/s/7d9vo9idqk1hn31/bunny.pkl')
+        c = hyp.load('s/7d9vo9idqk1hn31/bunny.pkl')   # shared-link path
     for o in (a, b, c):
         assert np.asarray(o).shape[1] == 3            # x, y, z point cloud
 
@@ -173,8 +184,13 @@ def test_load_list_of_strings(tmp_path):
 
 def test_plot_accepts_source_strings():
     # plot() auto-loads a source-string as its data (the old geo.plot()
-    # replay method is gone in 2.0; plot() returns a Figure)
-    fig = hyp.plot(IRIS_CSV, show=False)
+    # replay method is gone in 2.0; plot() returns a Figure). Auto-loading
+    # this mixed numeric/text CSV yields a single-observation component
+    # internally, provoking the cannot-reduce-a-single-observation notice
+    # (verified: the only warning this call emits)
+    with pytest.warns(UserWarning,
+                      match='Cannot reduce a single observation'):
+        fig = hyp.plot(IRIS_CSV, show=False)
     assert type(fig).__module__.startswith('matplotlib')
     plt.close('all')
 

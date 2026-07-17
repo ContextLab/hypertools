@@ -21,34 +21,47 @@ each and plotting it.
 import matplotlib.pyplot as plt
 import hypertools as hyp
 
-# 1. scikit-learn's bundled 'iris' dataset -- returned as a DataFrame with
-# the target appended as a 'target' column
-iris = hyp.load('iris')
-print(f"iris (sklearn): {iris.shape}, columns={list(iris.columns)}")
+# Three of these four sources (seaborn, FiveThirtyEight, Kaggle) fetch over
+# the network at run time. So that a transient outage doesn't abort the whole
+# documentation-gallery build, each load is attempted independently and a
+# source that can't be reached is simply skipped (with a printed note); the
+# grid is drawn from whichever sources succeeded. In normal interactive use
+# you would just call ``hyp.load(name)`` directly, as the first line of each
+# block below shows.
+sources = [
+    # (title, loader, optional numeric-only cleanup for plotting)
+    ('sklearn: iris', lambda: hyp.load('iris'), None),
+    ('seaborn: penguins', lambda: hyp.load('penguins'),
+     lambda df: df.select_dtypes('number').dropna()),
+    ('fivethirtyeight: bechdel', lambda: hyp.load('fivethirtyeight/bechdel'),
+     lambda df: df.select_dtypes('number').dropna()),
+    ('kaggle: uciml/iris', lambda: hyp.load('kaggle/uciml/iris'), None),
+]
 
-# 2. seaborn's 'penguins' dataset -- fetched from the seaborn-data repo and
-# returned unchanged
-penguins = hyp.load('penguins')
-print(f"penguins (seaborn): {penguins.shape}, "
-      f"columns={list(penguins.columns)}")
+loaded = []
+for title, loader, clean in sources:
+    try:
+        data = loader()
+    except Exception as e:  # network/rate-limit/optional-dep hiccup
+        print(f"{title}: skipped ({type(e).__name__}: {e})")
+        continue
+    print(f"{title}: {getattr(data, 'shape', 'loaded')}")
+    loaded.append((title, data if clean is None else clean(data)))
 
-# 3. a FiveThirtyEight dataset -- explicit 'fivethirtyeight/<slug>' prefix
-bechdel = hyp.load('fivethirtyeight/bechdel')
-print(f"bechdel (fivethirtyeight): {bechdel.shape}")
-
-# 4. a Kaggle dataset -- explicit 'kaggle/<owner>/<dataset>' prefix,
-# downloaded anonymously via kagglehub
-kaggle_iris = hyp.load('kaggle/uciml/iris')
-print(f"iris (kaggle): {kaggle_iris.shape}")
-
-# plot each source side by side, colored/reduced automatically by hyp.plot
-fig, axes = plt.subplots(2, 2, subplot_kw={'projection': '3d'},
-                          figsize=(10, 10))
-hyp.plot(iris, ax=axes[0, 0], title='sklearn: iris')
-hyp.plot(penguins.select_dtypes('number').dropna(), ax=axes[0, 1],
-         title='seaborn: penguins')
-hyp.plot(bechdel.select_dtypes('number').dropna(), ax=axes[1, 0],
-         title='fivethirtyeight: bechdel')
-hyp.plot(kaggle_iris, ax=axes[1, 1], title='kaggle: uciml/iris')
+# plot each successfully loaded source side by side, colored/reduced
+# automatically by hyp.plot. The rows of these tabular datasets are
+# unordered samples, so each is drawn as points ('.') rather than as a
+# connected line.
+n = max(len(loaded), 1)
+ncols = 2 if n > 1 else 1
+nrows = (n + ncols - 1) // ncols
+fig, axes = plt.subplots(nrows, ncols,
+                         subplot_kw={'projection': '3d'},
+                         figsize=(5 * ncols, 5 * nrows),
+                         squeeze=False)
+for ax in axes.flat:
+    ax.set_axis_off()  # hide any unused panels
+for (title, data), ax in zip(loaded, axes.flat):
+    ax.set_axis_on()
+    hyp.plot(data, '.', ax=ax, title=title)
 plt.tight_layout()
-plt.show()

@@ -4,7 +4,9 @@
 specs, or nested pipelines -- the grammar in `unpack_model`) the same way
 scikit-learn's `Pipeline` chains estimators: `fit`/`fit_transform` re-fits
 every step from scratch; `transform` re-applies steps that were already
-fit(-transformed), never refitting them.
+fit(-transformed) without refitting them (except steps whose ONLY
+application method is `fit_predict` -- e.g. DBSCAN -- which necessarily
+re-fit on the new data and warn about it; see `Pipeline.transform`).
 
 `build_pipeline` is the helper every dispatcher (manip/normalize/reduce/
 align/cluster) uses to assemble the cross-module stage kwargs (`manip=`,
@@ -27,6 +29,8 @@ every `.transform()` -- e.g. a `reduce='PCA'` stage would fit a brand
 NEW PCA basis on whatever data `.transform` was given, rather than
 reusing the basis fit the first time).
 """
+import warnings
+
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 
@@ -73,8 +77,8 @@ def _resolve_ref(ref):
 
 def _resolve_step(spec):
     """Turn a bare model spec (str/class/instance/dict) into a fit/transform
-    -capable object. Fitted instances, callables, and nested Pipelines pass
-    through unchanged."""
+    -capable object. Fitted instances and nested Pipelines pass through
+    unchanged."""
     if isinstance(spec, Pipeline):
         return spec
 
@@ -120,15 +124,48 @@ def _step_fit_transform(model, data):
     return model.transform(data) if hasattr(model, 'transform') else data
 
 
-def _step_transform(model, data):
+def _step_transform(model, data, name=None):
     """Apply one already-fitted pipeline step, falling back to ``predict``
-    (then ``fit_predict``) for label-producing models with no ``transform``."""
+    for label-producing models with no ``transform``.
+
+    Models with ONLY ``fit_predict`` (density/agglomerative clusterers such
+    as DBSCAN or OPTICS, which have no out-of-sample method) are re-fit on
+    the new data via ``fit_predict``, with a UserWarning making the re-fit
+    explicit (2026-07 audit F21-008: this used to happen silently, despite
+    ``Pipeline.transform``'s no-refit contract). Models with none of the
+    three methods (e.g. TSNE) raise a clear TypeError instead of a raw
+    AttributeError (F21-009)."""
+    label = f"step {name!r} ({type(model).__name__})" if name is not None \
+        else f"{type(model).__name__} step"
     if hasattr(model, 'transform'):
         return model.transform(data)
     import numpy as np
     if hasattr(model, 'predict'):
         return np.asarray(model.predict(data))
-    return np.asarray(model.fit_predict(data))
+    if hasattr(model, 'fit_predict'):
+        warnings.warn(
+            f"{label} has no transform/predict method; falling back to "
+            "fit_predict, which RE-FITS the model on the new data (the "
+            "returned labels come from a fresh fit, not the original one).",
+            stacklevel=3)
+        return np.asarray(model.fit_predict(data))
+    raise TypeError(
+        f"{label} cannot be applied to new data: it has no transform, "
+        "predict, or fit_predict method. Non-parametric embeddings (e.g. "
+        "TSNE, MDS, SpectralEmbedding) cannot embed held-out data -- refit "
+        "on the new data with fit_transform, or use a parametric reducer "
+        "such as PCA or UMAP.")
+
+
+def _accepts_list_input(model):
+    """Whether a resolved step can legitimately consume a LIST of datasets
+    (hypertools' own stage wrappers and dispatcher steps do; raw
+    scikit-learn estimators do not)."""
+    if isinstance(model, (Pipeline, _DispatchStep)):
+        return True
+    from ..align.common import Aligner
+    from ..manip.common import Manipulator
+    return isinstance(model, (Aligner, Manipulator))
 
 
 def _base_name(model):
@@ -142,8 +179,22 @@ def _base_name(model):
 def _name_steps(entries):
     """entries: list of (explicit_name_or_None, model). Fills in auto names
     for entries without one, resolving collisions with a numeric suffix
-    (e.g. two unnamed HyperAlign steps become 'hyperalign', 'hyperalign-1')."""
-    used = {name for name, _ in entries if name is not None}
+    (e.g. two unnamed HyperAlign steps become 'hyperalign', 'hyperalign-1').
+
+    EXPLICIT duplicate names raise a `ValueError` (like scikit-learn's
+    Pipeline): `named_steps` is a dict keyed by name, so a duplicate used
+    to silently shadow every earlier step of that name (2026-07 release
+    audit, final wave item 11).
+    """
+    explicit = [name for name, _ in entries if name is not None]
+    dupes = sorted({n for n in explicit if explicit.count(n) > 1})
+    if dupes:
+        raise ValueError(
+            f"pipeline step names must be unique; got duplicate name(s) "
+            f"{', '.join(repr(d) for d in dupes)}. Rename the conflicting "
+            "steps (e.g. ('zscore-1', ...), ('zscore-2', ...)), or omit "
+            "the names to have unique ones auto-generated.")
+    used = set(explicit)
     counts = {}
     named = []
     for name, model in entries:
@@ -275,7 +326,10 @@ class Pipeline(BaseEstimator):
         legacy `{'model': ..., 'params': {...}}`), or a nested `Pipeline`.
         Bare specs are auto-named after their resolved class (lowercased),
         with a numeric suffix on collision (`'hyperalign'`, then
-        `'hyperalign-1'`).
+        `'hyperalign-1'`). Explicit names must be UNIQUE: duplicates raise
+        a `ValueError` (like scikit-learn's Pipeline), since `named_steps`
+        is keyed by name and a duplicate would silently shadow earlier
+        steps.
 
     Attributes
     ----------
@@ -291,6 +345,17 @@ class Pipeline(BaseEstimator):
     `set_params` to round-trip the exact constructor arguments -- so
     `sklearn.base.clone(pipe)` compatibility is not guaranteed.
 
+    Steps receive the running output AS-IS (no stacking/unstacking), so raw
+    scikit-learn steps operate on a single array/DataFrame; only
+    hypertools' own stage wrappers (aligners, manipulators, dispatcher
+    steps from `build_pipeline`) handle multi-dataset lists. For lists of
+    datasets, prefer `hyp.apply_model(..., stack=True)` or the dispatcher
+    kwargs. Raw steps are also applied via their own preferred method
+    (fit_transform, then fit_predict), which can differ in KIND from
+    `apply_model`'s 'auto' mode for the same model -- e.g. a raw
+    GaussianMixture step yields hard labels here but membership
+    probabilities (predict_proba) through `apply_model`.
+
     Examples
     --------
     >>> from hypertools import Pipeline
@@ -300,13 +365,38 @@ class Pipeline(BaseEstimator):
     """
 
     def __init__(self, steps):
+        # up-front validation (2026-07 audit F21-010): a non-list `steps`
+        # (e.g. Pipeline('PCA')) used to iterate the string character by
+        # character, and malformed tuple steps were stored silently only to
+        # crash at fit time with cryptic AttributeErrors
+        if isinstance(steps, (str, bytes)) or not hasattr(steps, '__iter__'):
+            raise TypeError(
+                f"steps must be a list of step specs, got "
+                f"{type(steps).__name__} ({steps!r}); e.g. "
+                "Pipeline(['ZScore', 'PCA']) or "
+                "Pipeline([('name', spec), ...])")
         entries = []
         for step in steps:
-            if isinstance(step, tuple) and len(step) == 2 and isinstance(step[0], str):
+            if isinstance(step, tuple):
+                if not (len(step) == 2 and isinstance(step[0], str)):
+                    raise TypeError(
+                        f"tuple steps must be ('name', spec) 2-tuples with a "
+                        f"string name; got {step!r}")
                 name, spec = step
             else:
                 name, spec = None, step
-            entries.append((name, _resolve_step(spec)))
+            model = _resolve_step(spec)
+            if not (isinstance(model, Pipeline) or
+                    any(hasattr(model, method) for method in
+                        ('fit', 'fit_transform', 'transform', 'fit_predict'))):
+                raise TypeError(
+                    f"pipeline step {spec!r} resolved to a "
+                    f"{type(model).__name__}, which has no fit/fit_transform/"
+                    "transform/fit_predict method; pass a registry name, a "
+                    "class or instance following the scikit-learn convention, "
+                    "a dict spec {'model': ..., 'kwargs': {...}}, or a "
+                    "nested Pipeline")
+            entries.append((name, model))
         self.steps = _name_steps(entries)
         self._is_fitted = False
 
@@ -327,22 +417,67 @@ class Pipeline(BaseEstimator):
 
     def fit_transform(self, data):
         """Fit and apply every step in order, feeding each step's output to
-        the next. Refits every step, even if some were already fitted."""
+        the next. Refits every step, even if some were already fitted.
+
+        Each step receives the running output AS-IS (no stacking): raw
+        scikit-learn steps therefore operate on a single array/DataFrame.
+        For multi-dataset (list) inputs, use `hyp.apply_model(...,
+        stack=True)` or the dispatcher kwargs (`reduce=`, `align=`, ...) --
+        a raw step fed a list raises a TypeError explaining this."""
         out = data
-        for _, model in self.steps:
-            out = _step_fit_transform(model, out)
+        for name, model in self.steps:
+            step_input = out
+            try:
+                out = _step_fit_transform(model, step_input)
+            except Exception as err:
+                self._reraise_with_list_hint(name, model, step_input, err)
         self._is_fitted = True
         return out
 
     def transform(self, data):
-        """Apply the already-fitted steps (in order) to `data` without
-        refitting them."""
+        """Apply the already-fitted steps (in order) to `data`.
+
+        Steps with a `transform` (or `predict`) method are applied without
+        refitting. Steps with ONLY `fit_predict` (e.g. DBSCAN/OPTICS, which
+        have no out-of-sample method) are RE-FIT on `data` via
+        `fit_predict`, with a UserWarning making the re-fit explicit; steps
+        with none of the three methods (e.g. TSNE) raise a TypeError, since
+        they cannot be applied to held-out data at all."""
         if not self._is_fitted:
             raise NotFittedError('Pipeline must be fit before transform')
         out = data
-        for _, model in self.steps:
-            out = _step_transform(model, out)
+        for name, model in self.steps:
+            step_input = out
+            try:
+                out = _step_transform(model, step_input, name=name)
+            except Exception as err:
+                self._reraise_with_list_hint(name, model, step_input, err)
         return out
+
+    @staticmethod
+    def _reraise_with_list_hint(name, model, step_input, err):
+        """Re-raise a step failure, converting cryptic numpy/datawrangler
+        errors on list inputs into a clear TypeError (2026-07 audit
+        F21-012); anything else propagates unchanged."""
+        if isinstance(step_input, list):
+            if not _accepts_list_input(model):
+                raise TypeError(
+                    f"pipeline step {name!r} ({type(model).__name__}) does "
+                    "not accept a list of datasets: hyp.Pipeline applies "
+                    "each step to the running output as-is, without "
+                    "stacking. Pass a single array/DataFrame, or use "
+                    "hyp.apply_model(data, [...], stack=True) / the "
+                    "dispatcher kwargs (reduce=, align=, cluster=, ...) for "
+                    "multi-dataset lists.") from err
+            if 'Unsupported datatype' in str(err):
+                raise TypeError(
+                    f"pipeline step {name!r} ({type(model).__name__}) needs "
+                    "a list of pandas DataFrames (or a stacked MultiIndex "
+                    "DataFrame); wrap numpy arrays with "
+                    "pandas.DataFrame(...) first, or call the dispatcher "
+                    "(e.g. hyp.align(...)), which formats inputs "
+                    "automatically.") from err
+        raise
 
     def inverse_transform(self, data):
         """Best-effort reverse pass through steps that implement
@@ -417,32 +552,51 @@ def build_pipeline(manip=None, normalize=None, reduce=None, ndims=None,
     return Pipeline(steps)
 
 
+class _StageCall:
+    """Picklable `(data, spec_or_fitted_model) -> (result, fitted_model)`
+    callable for `_DispatchStep`: stores only the stage name (plus
+    `ndims`/`random_state`) and lazily imports its dispatcher at call time.
+
+    2026-07 audit F21-002: these used to be lambdas defined inside
+    `_make_stage_step`, which made every dispatcher-built Pipeline (any
+    multi-stage `return_model=True` result, including hyp.plot's
+    bundle['pipeline']) unpicklable -- pickle.dumps/hyp.save raised
+    "Can't get local object '_make_stage_step.<locals>.<lambda>'", breaking
+    the documented fit-once/save/reuse-later workflow.
+    """
+
+    def __init__(self, stage, ndims=None, random_state=None):
+        self.stage = stage
+        self.ndims = ndims
+        self.random_state = random_state
+
+    def __call__(self, data, m):
+        if self.stage == 'manip':
+            from ..manip.manip import manip as _manip
+            return _manip(data, model=m, return_model=True)
+        if self.stage == 'normalize':
+            from ..tools.normalize import normalize as _normalize
+            return _normalize(data, normalize=m, return_model=True)
+        if self.stage == 'reduce':
+            from ..reduce.reduce import reduce as _reduce
+            return _reduce(data, reduce=m, ndims=self.ndims,
+                           random_state=self.random_state, return_model=True)
+        if self.stage == 'align':
+            from ..align.align import align as _align
+            return _align(data, model=m, return_model=True)
+        if self.stage == 'cluster':
+            from ..cluster.cluster import cluster as _cluster
+            return _cluster(data, cluster=m, random_state=self.random_state,
+                            return_model=True)
+        raise ValueError(f"unknown pipeline stage {self.stage!r}; expected "
+                         f"one of {CANONICAL_ORDER}")
+
+    def __repr__(self):
+        return f"_StageCall({self.stage!r})"
+
+
 def _make_stage_step(stage, spec, ndims, random_state=None):
-    if stage == 'manip':
-        from ..manip.manip import manip as _manip
-        return _DispatchStep(
-            'manip', spec,
-            lambda data, m: _manip(data, model=m, return_model=True))
-    if stage == 'normalize':
-        from ..tools.normalize import normalize as _normalize
-        return _DispatchStep(
-            'normalize', spec,
-            lambda data, m: _normalize(data, normalize=m, return_model=True))
-    if stage == 'reduce':
-        from ..reduce.reduce import reduce as _reduce
-        return _DispatchStep(
-            'reduce', spec,
-            lambda data, m: _reduce(data, reduce=m, ndims=ndims,
-                                    random_state=random_state, return_model=True))
-    if stage == 'align':
-        from ..align.align import align as _align
-        return _DispatchStep(
-            'align', spec,
-            lambda data, m: _align(data, model=m, return_model=True))
-    if stage == 'cluster':
-        from ..cluster.cluster import cluster as _cluster
-        return _DispatchStep(
-            'cluster', spec,
-            lambda data, m: _cluster(data, cluster=m,
-                                     random_state=random_state, return_model=True))
-    raise ValueError(f"unknown pipeline stage {stage!r}; expected one of {CANONICAL_ORDER}")
+    if stage not in CANONICAL_ORDER:
+        raise ValueError(f"unknown pipeline stage {stage!r}; expected one of {CANONICAL_ORDER}")
+    return _DispatchStep(stage, spec,
+                         _StageCall(stage, ndims=ndims, random_state=random_state))

@@ -1,0 +1,87 @@
+{
+ "unit": "F18-load-hosted",
+ "findings": [
+  {
+   "id": "F18-load-hosted-001",
+   "severity": "critical",
+   "title": "load('sotus') returns a broken sklearn Pipeline instead of the documented SOTU speeches (Drive id duplicated with nips_model)",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport hypertools as hyp\nd = hyp.load('sotus')\nprint(type(d))          # <class 'sklearn.pipeline.Pipeline'>\nprint(repr(d))          # AttributeError\n\"",
+   "expected": "A collection of State of the Union speeches (text data, per the load() docstring), or at minimum an object of a data type (list/DataFrame/array)",
+   "actual": "type(d) == <class 'sklearn.pipeline.Pipeline'>; repr(d) raises: AttributeError: 'Pipeline' object has no attribute 'transform_input'. shasum: sotus == nips_model == 4f93308a48002730866659bda7ef393f5451dc8360b9e3c91c9cf5d77f73a762",
+   "evidence": []
+  },
+  {
+   "id": "F18-load-hosted-002",
+   "severity": "major",
+   "title": "Hosted *_model pipelines are sklearn-1.0.2 pickles: InconsistentVersionWarning on load, repr()/display crashes with AttributeError under sklearn 1.8",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport hypertools as hyp\nm = hyp.load('wiki_model')   # InconsistentVersionWarning x3\nprint(m.transform(['the quick brown fox']).shape)  # (1, 50) -- works\nprint(repr(m))               # AttributeError\n\"",
+   "expected": "A model object that loads without version warnings and supports the standard sklearn surface (repr/get_params/clone/transform)",
+   "actual": "sklearn/base.py:463: InconsistentVersionWarning: Trying to unpickle estimator CountVectorizer from version 1.0.2 when using version 1.8.0 ... ; repr(m) -> AttributeError: 'Pipeline' object has no attribute 'transform_input'; m.transform() -> (1, 50) OK",
+   "evidence": []
+  },
+  {
+   "id": "F18-load-hosted-003",
+   "severity": "doc",
+   "title": "load() docstring dataset descriptions wrong: spiral type, mushrooms type + 'mushroomm' typo, weights_avg derivation, wiki structure undescribed",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport hypertools as hyp\nprint(type(hyp.load('spiral')), len(hyp.load('spiral')))\nprint(type(hyp.load('mushrooms')), hyp.load('mushrooms').shape)\nprint([a.shape for a in hyp.load('weights_avg')], [a.shape for a in hyp.load('weights')][:1])\nw = hyp.load('wiki'); print(type(w), len(w), w[0].shape, w[0].dtype)\n\"",
+   "expected": "Docstring descriptions match returned types/shapes: spiral 'list of two (1000, 3) arrays', mushrooms 'DataFrame', weights_avg description consistent with its (100, 100) arrays, wiki structure documented, 'mushroom' spelled correctly",
+   "actual": "<class 'list'> 2 | <class 'pandas...DataFrame'> (8124, 22) | [(100, 100), (100, 100)] vs [(300, 100)] | <class 'list'> 1 (3136, 1) object",
+   "evidence": []
+  },
+  {
+   "id": "F18-load-hosted-004",
+   "severity": "doc",
+   "title": "Hosted datasets nips, nips_model, and sotus_model are loadable but absent from the load() docstring's dataset list",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport hypertools as hyp\nfrom hypertools.io.load import EXAMPLE_DATA\ndoc = hyp.load.__doc__\nprint([n for n in EXAMPLE_DATA if n not in doc])\n\"",
+   "expected": "[] (every registered hosted name documented)",
+   "actual": "['nips', 'nips_model', 'sotus_model']",
+   "evidence": []
+  },
+  {
+   "id": "F18-load-hosted-005",
+   "severity": "minor",
+   "title": "Non-string dataset arguments crash with cryptic low-level TypeErrors instead of a clear contract message",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport hypertools as hyp\nfor bad in (123, None, 3.14, b'weights', {'a': 1}):\n    try: hyp.load(bad)\n    except Exception as e: print(type(e).__name__, ':', e)\n\"",
+   "expected": "A hypertools-branded TypeError such as: 'dataset must be a string (dataset name, path, or URL) or a list of strings; got int'",
+   "actual": "TypeError: expected str, bytes or os.PathLike object, not int | ... not NoneType | ... not float | TypeError: argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'bytes' | TypeError: unhashable type: 'dict'",
+   "evidence": []
+  },
+  {
+   "id": "F18-load-hosted-006",
+   "severity": "minor",
+   "title": "Cache-directory creation failures surface as raw OS errors with no hypertools guidance",
+   "repro": "S=$(mktemp -d); touch $S/hypertools_data; env HOME=$S PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp; hyp.load('spiral')\"",
+   "expected": "HypertoolsIOError explaining that ~/hypertools_data exists but is not a directory and must be removed/renamed before hosted datasets can be cached",
+   "actual": "FileExistsError: [Errno 17] File exists: '/.../hypertools_data'",
+   "evidence": []
+  },
+  {
+   "id": "F18-load-hosted-007",
+   "severity": "enhancement",
+   "title": "Unknown-name error digest never lists the built-in dataset names and offers no near-miss suggestion; Drive-id-shaped typos trigger live network requests",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport hypertools as hyp\ntry: hyp.load('Weights')\nexcept Exception as e: print(e)\n\"",
+   "expected": "Digest mentions built-in example dataset names and/or suggests: did you mean 'weights'?",
+   "actual": "HypertoolsIOError: could not load 'Weights'. Tried, in order:\\n  - scikit-learn bundled dataset: not one of ['breast_cancer', 'diabetes', 'digits', 'iris', 'linnerud', 'wine']\\n  - seaborn dataset: not found via seaborn.get_dataset_names() ...\\n  - local file: not found at Weights  (no mention of builtin names; no suggestion)",
+   "evidence": []
+  },
+  {
+   "id": "F18-load-hosted-008",
+   "severity": "style",
+   "title": "Invalid normalize= value surfaces as AssertionError (assert-based input validation) through load()",
+   "repro": "env PYTHONPATH=/Users/jmanning/hypertools MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"\nimport hypertools as hyp\nhyp.load('spiral', normalize='bogus')\n\"",
+   "expected": "ValueError with the same message",
+   "actual": "AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.",
+   "evidence": []
+  },
+  {
+   "id": "F18-load-hosted-009",
+   "severity": "minor",
+   "title": "infra: repo .venv contains a stale NON-editable hypertools snapshot that silently shadows the working tree when cwd is not the repo root",
+   "repro": "cd /tmp && /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools, sys; print(sys.modules['hypertools'].__file__)\"  # -> .venv/.../site-packages/hypertools/__init__.py (stale)\ncd /Users/jmanning/hypertools && .venv/bin/python -c \"import hypertools, sys; print(sys.modules['hypertools'].__file__)\"  # -> working tree",
+   "expected": "The venv resolves hypertools to the working tree regardless of cwd (editable install), so tests and audits exercise the release candidate",
+   "actual": "pip show: 'Location: /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages' (no Editable project location); diff -rq lists ~30 differing files incl. io/load.py, io/sources.py, plot/plot.py; 'Only in /Users/jmanning/hypertools/hypertools/plot: hyper_animation.py'",
+   "evidence": [],
+   "skip_verification": "environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run."
+  }
+ ]
+}

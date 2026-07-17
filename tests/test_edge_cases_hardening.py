@@ -46,6 +46,10 @@ def test_predict_float_t_clear_error():
         hyp.predict(df, model='GaussianProcess', t=2.5)
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_predict_datetime_horizon_still_works():
     idx = pd.date_range('2026-01-01', periods=40, freq='D')
     df = pd.DataFrame({'a': np.arange(40.0)}, index=idx)
@@ -53,6 +57,10 @@ def test_predict_datetime_horizon_still_works():
     assert len(out) == 3
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_predict_positive_int_t_works():
     df = pd.DataFrame({'a': np.arange(40.0)})
     assert np.asarray(hyp.predict(df, model='GaussianProcess', t=5)).shape == (5, 1)
@@ -66,6 +74,11 @@ def test_predict_numpy_bool_t_clear_error():
         hyp.predict(df, model='GaussianProcess', t=np.True_)
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+# (only the valid-t parameter case actually fits a model)
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 @pytest.mark.parametrize('t,ok', [(np.array(5), True), (np.array(0), False),
                                   (np.array(2.5), False)])
 def test_predict_zero_dim_array_t(t, ok):

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
+import pytest
 
 from hypertools.reduce.reduce import reduce as reducer
 
@@ -70,6 +71,9 @@ def test_reduce_KernelPCA():
     assert reduced_data_3d[0].shape==(10,3)
 
 
+# upstream: sklearn FastICA rarely converges on this tiny 10-sample fixture
+@pytest.mark.filterwarnings(
+    'ignore:FastICA did not converge:sklearn.exceptions.ConvergenceWarning')
 def test_reduce_FastICA():
     reduced_data_3d = reducer(data, reduce='FastICA', ndims=3)
     assert reduced_data_3d[0].shape==(10,3)
@@ -96,7 +100,12 @@ def test_reduce_MiniBatchDictionaryLearning():
 
 
 def test_reduce_TSNE():
-    reduced_data_3d = reducer(data, reduce={'model': 'TSNE', 'params': {'perplexity': 5}}, ndims=3)
+    # legacy 'params' dict spec exercised deliberately; assert the
+    # deprecation notice fires
+    with pytest.warns(DeprecationWarning, match=r"'params'.*deprecated"):
+        reduced_data_3d = reducer(
+            data, reduce={'model': 'TSNE', 'params': {'perplexity': 5}},
+            ndims=3)
     assert reduced_data_3d[0].shape==(10,3)
 
 
@@ -105,6 +114,9 @@ def test_reduce_Isomap():
     assert reduced_data_3d[0].shape==(10,3)
 
 
+# upstream: sklearn warns the 10-sample affinity graph may be disconnected
+@pytest.mark.filterwarnings(
+    'ignore:Graph is not fully connected:UserWarning')
 def test_reduce_SpectralEmbedding():
     reduced_data_3d = reducer(data, reduce='SpectralEmbedding', ndims=3)
     assert reduced_data_3d[0].shape==(10,3)
@@ -125,12 +137,21 @@ def test_reduce_UMAP():
     assert reduced_data_3d[0].shape==(10,3)
 
 
+# upstream: umap warns that random_state forces n_jobs=1 (fires from both
+# the hypertools-wrapped fit and the direct UMAP fit below)
+@pytest.mark.filterwarnings(
+    'ignore:n_jobs value 1 overridden to 1 by setting random_state:UserWarning')
 def test_reduce_params_UMAP():
     from umap import UMAP
     data1 = np.random.rand(20, 10)
     params = {'n_neighbors': 5, 'n_components': 2, 'metric': 'correlation', 'random_state': 1234}
-    # testing override of n_dims by n_components. Should raise UserWarning due to conflict
-    hyp_data = reducer(data1, reduce={'model': 'UMAP', 'params': params}, ndims=3)
+    # testing override of n_dims by n_components. Should raise UserWarning due
+    # to conflict; the legacy 'params' dict spec is exercised deliberately, so
+    # assert BOTH the conflict warning and the deprecation notice
+    with pytest.warns(DeprecationWarning, match=r"'params'.*deprecated"), \
+         pytest.warns(UserWarning, match='Unequal values passed to dims'):
+        hyp_data = reducer(data1, reduce={'model': 'UMAP', 'params': params},
+                           ndims=3)
     umap_data = UMAP(**params).fit_transform(data1)
     np.testing.assert_array_equal(hyp_data, umap_data)
 

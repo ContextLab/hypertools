@@ -1,4 +1,4 @@
-from .common import Aligner
+from .common import Aligner, reject_unknown_kwargs
 
 
 def fitter(*args, **kwargs):
@@ -12,7 +12,8 @@ def transformer(data, **kwargs):
 
 
 class NullAlign(Aligner):
-    """Returns the (trimmed + padded) dataset unchanged."""
+    """Returns the (trimmed + padded) dataset unchanged. Takes no parameters."""
     def __init__(self, **kwargs):
+        reject_unknown_kwargs('NullAlign', kwargs, [])
         super().__init__(required=[], fitter=fitter, transformer=transformer,
-                         data=None, **kwargs)
+                         data=None)

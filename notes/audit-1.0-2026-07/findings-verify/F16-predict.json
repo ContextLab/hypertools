@@ -1,0 +1,199 @@
+{
+ "unit": "F16-predict",
+ "findings": [
+  {
+   "id": "F16-predict-001",
+   "severity": "critical",
+   "title": "Default 'Kalman' forecaster can NEVER learn dynamics -- every forecast is a constant flat line (pykalman em() never fits the transition matrix)",
+   "repro": "import numpy as np, hypertools as hyp\nx = np.sin(2*np.pi*np.arange(200)/40.0).reshape(-1,1)\nfc, m = hyp.predict(x, model='Kalman', t=10, return_model=True)\nprint(np.asarray(m.models_[0]['kf'].transition_matrices))  # [[1.]] -- identity, never fit\nprint(np.asarray(fc).ravel())  # constant vector\nprint(float(np.std(np.asarray(fc))))  # 0.0",
+   "expected": "EM-fit state-space dynamics whose forecast continues the sine oscillation (audit bar: corr with held-out truth > 0.5); docstring says transition/observation matrices are fit.",
+   "actual": "transition_matrices after em: [[1.]] | forecast values: [-0.2037 -0.2037 ... x10] | grid2d: Kalman corr_with_truth='flat forecast (std=0)' on sine/trend/walk; Kalman/sincos2d corr 'flat'; W4 reused-Kalman corr 0.0",
+   "evidence": [
+    "grid_Kalman_sine.png",
+    "grid_Kalman_trend.png",
+    "grid_Kalman_walk.png",
+    "grid_Kalman_sincos2d.png",
+    "w4_reuse_predict_new.png"
+   ]
+  },
+  {
+   "id": "F16-predict-002",
+   "severity": "critical",
+   "title": "1-D array input is wrangled to ONE observation x n features: default model crashes with a cryptic pykalman error; other models silently return (t x n) nonsense",
+   "repro": "import numpy as np, hypertools as hyp\nx = np.sin(2*np.pi*np.arange(200)/40.0)  # shape (200,)\nhyp.predict(x, t=30)  # default Kalman -> cryptic pykalman broadcast crash\nfc = hyp.predict(x, model='ARIMA', t=30); print(fc.shape)  # (30, 200) silent nonsense\nout = hyp.predict([1.0, 2.0, 3.0, 4.0, 5.0]*10, model='GaussianProcess', t=3)\nprint(type(out), len(out))  # list of 50 single-column constant 'forecasts'",
+   "expected": "Either a (30, 1) forecast continuing the series, or a clear error explaining that data must be shaped (n_samples, n_features).",
+   "actual": "Kalman: 'ValueError: could not broadcast input array from shape (200,200) into shape (200,1)'; ARIMA: shape [30, 200], forecast_std == hist_std (input echoed); AutoRegressor: 'AssertionError: AutoRegressor needs more than lags=10 observations to fit; got 1'; flat list -> list of 50 constant 1x1-series forecasts",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-003",
+   "severity": "major",
+   "title": "pandas Series input is wrangled to an EMPTY (0, 0) DataFrame -- silent data loss surfacing as a cryptic sklearn crash",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp, datawrangler as dw\nprint(dw.wrangle(pd.Series(np.arange(5, dtype=float))).shape)  # (0, 0) -- data gone\nhyp.predict(pd.Series(np.arange(50, dtype=float)), model='GaussianProcess', t=3)  # cryptic crash",
+   "expected": "A (3, 1) forecast (or a clear 'convert your Series to a DataFrame/column array' error).",
+   "actual": "dw_series_wrangle: (0, 0); predict: 'ValueError: Found array with 0 sample(s) (shape=(0, 1)) while a minimum of 1 is required by GaussianProcessRegressor.'",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-004",
+   "severity": "major",
+   "title": "Datetime horizon at (or within one step past) the last observation is broken: Kalman silently returns an all-NaN frame; GP/ARIMA crash with cryptic library errors",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\ndf = pd.DataFrame({'a': np.random.randn(40)}, index=pd.date_range('2024-01-01', periods=40, freq='D'))\nout = hyp.predict(df, model='Kalman', t=str(df.index[-1]), n_iter=2)\nprint(out.shape, out.isna().all().all())  # (40, 1) True -- silent all-NaN\nhyp.predict(df, model='GaussianProcess', t=str(df.index[-1]))  # cryptic sklearn crash\nhyp.predict(df, model='ARIMA', t=str(df.index[-1]))  # statsmodels crash",
+   "expected": "Consistent, defined behavior: e.g. return the truncated history (as for t < last) or an empty forecast, or raise a clear 'horizon is not after the last observation' error.",
+   "actual": "Kalman: shape (40, 1), all NaN? True; GP: 'ValueError: Found array with 0 sample(s) (shape=(0, 1))...'; ARIMA: 'ValueError: Prediction must have `end` after `start`.'",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-005",
+   "severity": "major",
+   "title": "Default configurations fail the sine-plausibility bar: ARIMA(1,1,1) anti-correlates (corr -0.43) and flatlines on a linear trend; Laplace anti-correlates (corr -0.70)",
+   "repro": "import numpy as np, hypertools as hyp\nfull = np.sin(2*np.pi*np.arange(230)/40.0)\nhist = (full[:200] + 0.1*np.random.default_rng(42).standard_normal(200)).reshape(-1, 1)\nfor spec in ['ARIMA', 'Laplace', {'model': 'ARIMA', 'kwargs': {'order': (4, 0, 0)}}]:\n    fc = hyp.predict(hist, model=spec, t=30)\n    print(spec, np.corrcoef(np.asarray(fc).ravel(), full[200:])[0, 1])",
+   "expected": "corr > 0.5 with the held-out sine for deterministic models, or documented guidance that the defaults only suit drift/random-walk-like signals.",
+   "actual": "grid2d: ARIMA/sine corr -0.428 (forecast_std 0.1962); Laplace/sine corr -0.696; ARIMA/trend corr -0.269 forecast_std 0.0041 (flat); ARIMA/sincos2d corr (-0.538, -0.904); with order=(4,0,0): corr 0.931",
+   "evidence": [
+    "grid_ARIMA_sine.png",
+    "grid_Laplace_sine.png",
+    "grid_ARIMA_trend.png",
+    "grid_ARIMA_sincos2d.png",
+    "grid_GaussianProcess_sine.png",
+    "grid_AutoRegressor_sine.png",
+    "grid_Chronos_sine.png"
+   ]
+  },
+  {
+   "id": "F16-predict-006",
+   "severity": "minor",
+   "title": "AutoRegressor(model_kwargs={...}) -- the parameter its own fitter docstring documents -- crashes with a TypeError deep in sklearn",
+   "repro": "import numpy as np, pandas as pd\nfrom hypertools.predict import AutoRegressor\nX = pd.DataFrame(np.random.randn(50, 1))\nAutoRegressor(model='SVR', model_kwargs={'C': 2.0}).fit_predict(X, 3)  # TypeError\nAutoRegressor(model='SVR', C=2.0).fit_predict(X, 3)  # works",
+   "expected": "model_kwargs={...} accepted (merged with direct kwargs), matching the fitter docstring and the self.model_kwargs attribute.",
+   "actual": "TypeError: SVR.__init__() got an unexpected keyword argument 'model_kwargs' (raised from _resolve_estimator)",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-007",
+   "severity": "minor",
+   "title": "GaussianProcess predict_new ignores the new data's values entirely -- reuse on ANY new dataset returns the original fit's forecast",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(5)\nA = (0.1*np.arange(100) + rng.standard_normal(100)*0.1).reshape(-1, 1)\nB = (-0.1*np.arange(100) + rng.standard_normal(100)*0.1).reshape(-1, 1)\nfcA, m = hyp.predict(A, model='GaussianProcess', t=5, return_model=True)\nfcB = hyp.predict(B, model=m, t=5)\nprint(np.allclose(np.asarray(fcA), np.asarray(fcB)))  # True",
+   "expected": "Reuse semantics consistent with the other forecasters (condition on the new series), or a loud docstring warning on predict()/GaussianProcess itself.",
+   "actual": "GP fcA: [ 9.97 10.07 10.17 10.27 10.37]; GP fcB (new falling data): [ 9.97 10.07 10.17 10.27 10.37]; identical to fcA? True",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-008",
+   "severity": "minor",
+   "title": "`assert cond, ValueError(...)` pattern raises AssertionError (wrong type, ugly message, stripped under python -O) in autoreg, _infer_step, Forecaster.fit, _resolve_estimator",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nhyp.predict(np.random.randn(3, 2), model='AutoRegressor', t=2)  # AssertionError, not ValueError\ndf = pd.DataFrame({'a': np.ones(5)}, index=pd.DatetimeIndex(['2024-01-01']*5))\nhyp.predict(df, model='GaussianProcess', t=3)  # AssertionError from _infer_step",
+   "expected": "ValueError with the same message, raised unconditionally (as resolve_t already does).",
+   "actual": "'AssertionError: AutoRegressor needs more than lags=10 observations to fit; got 3'; 'AssertionError: cannot infer a timestep: all observations share one timestamp'; \"AssertionError: unknown model: 'MegaBoost'; supported string names are [...]\"",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-009",
+   "severity": "minor",
+   "title": "Hyperparameter kwargs are silently ignored by Kalman/GaussianProcess/Chronos (typos included), while ARIMA/AutoRegressor raise -- and Chronos accepts num_samples but never forwards it",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.random.randn(60, 2)\nprint(hyp.predict(X, model='Kalman', t=2, n_itr=99).shape)      # (2, 2), typo ignored\nprint(hyp.predict(X, model='GaussianProcess', t=2, kernal='x').shape)  # (2, 2), typo ignored\nx = np.sin(np.arange(120)/6).reshape(-1, 1)\na = hyp.predict(x, model='Chronos', t=5); b = hyp.predict(x, model='Chronos', t=5)\nprint(np.allclose(a, b))  # False -- and num_samples=... is accepted but unused",
+   "expected": "Unknown constructor/fitter kwargs rejected (or warned about) consistently across models; Chronos sampling controls exposed and its nondeterminism documented.",
+   "actual": "kalman_typo_kwarg: ok (2, 2); gp_typo_kwarg: ok (2, 2); arima_bad_kwarg: TypeError '...unexpected keyword argument bogus_flag'; chronos_num_samples_kwarg: ok [4, 1]; grid2d Chronos deterministic=false (sine/trend/walk)",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-010",
+   "severity": "minor",
+   "title": "Fork-style dict spec silently drops outer **kwargs (n_iter=1 ignored), while the DEPRECATED params-dict form honors them",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.random.randn(40, 2)\n_, m1 = hyp.predict(X, model={'model': 'Kalman', 'kwargs': {}}, t=2, n_iter=1, return_model=True)\n_, m2 = hyp.predict(X, model={'model': 'Kalman', 'params': {}}, t=2, n_iter=1, return_model=True)\nprint(m1.n_iter, m2.n_iter)  # 5 1",
+   "expected": "Outer kwargs merged for both dict forms (or a loud error/warning about the conflict).",
+   "actual": "fork-dict outer n_iter=1 -> stored n_iter: 5 | params-dict outer n_iter=1 -> stored n_iter: 1",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-011",
+   "severity": "minor",
+   "title": "t=None produces misleading errors: 'a datetime-like t requires a DatetimeIndex' on numeric-indexed data, 'cannot convert float NaN to integer' on time-indexed data",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nhyp.predict(np.random.randn(30, 2), model='GaussianProcess', t=None)   # misleading DatetimeIndex message\ndf = pd.DataFrame({'a': np.random.randn(30)}, index=pd.date_range('2024-01-01', periods=30))\nhyp.predict(df, model='GaussianProcess', t=None)  # 'cannot convert float NaN to integer'",
+   "expected": "'t (forecast horizon) must be a positive integer or a target datetime; got None' (matching the bool/float validation).",
+   "actual": "RangeIndex: 'ValueError: a datetime-like t requires a time-indexed (DatetimeIndex) dataset'; DatetimeIndex: 'ValueError: cannot convert float NaN to integer' (from n_steps = int(np.round((target - last) / step)))",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-012",
+   "severity": "minor",
+   "title": "predict_new with a different feature count than the fitted model crashes with cryptic pandas/numpy internals -- no validation",
+   "repro": "import numpy as np, hypertools as hyp\n_, m = hyp.predict(np.random.randn(40, 2), model='Kalman', t=3, n_iter=2, return_model=True)\nhyp.predict(np.random.randn(40, 5), model=m, t=3)  # cryptic broadcast error",
+   "expected": "ValueError like 'fitted forecaster expects 2 features but the new dataset has 5'.",
+   "actual": "GP: 'ValueError: Shape of passed values is (3, 2), indices imply (3, 5)'; Kalman: 'ValueError: operands could not be broadcast together with shapes (5,) (2,)'",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-013",
+   "severity": "minor",
+   "title": "Empty inputs crash with baffling messages: empty DataFrame hits raw sklearn; empty LIST is routed into the TEXT pipeline and dies in LatentDirichletAllocation",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nhyp.predict(pd.DataFrame(np.empty((0, 2))), model='GaussianProcess', t=3)\nhyp.predict([], model='GaussianProcess', t=3)",
+   "expected": "'cannot forecast an empty dataset' for both.",
+   "actual": "empty df: 'ValueError: Found array with 0 sample(s) (shape=(0, 1)) while a minimum of 1 is required by GaussianProcessRegressor.'; []: 'ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation.'",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-014",
+   "severity": "minor",
+   "title": "NaN tolerance is undocumented and wildly inconsistent: Kalman/ARIMA/Chronos accept NaN, GP/AutoRegressor raise raw sklearn errors, Laplace dies with a BARE AssertionError",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.column_stack([np.sin(np.arange(100)/6), np.cos(np.arange(100)/6)])\nX[10:14, 0] = np.nan\nhyp.predict(X, model='Laplace', t=3)  # bare AssertionError from skaters",
+   "expected": "Consistent, documented NaN policy per model; Laplace should raise a clear ValueError naming NaN as the problem.",
+   "actual": "nan_laplace: 'AssertionError:' (empty message; tb: assert w_total > 0); nan_gp/nan_autoreg: 'ValueError: Input y contains NaN.'; nan_kalman/nan_arima/chronos ok",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-015",
+   "severity": "minor",
+   "title": "Laplace is extremely slow: 77 s for a t=200 forecast of a single 200-observation column (vs ~0.02 s for ARIMA); ~4 s at t=30",
+   "repro": "import numpy as np, time, hypertools as hyp\nx = np.sin(np.arange(200)/6.0).reshape(-1, 1)\nt0 = time.time(); hyp.predict(x, model='Laplace', t=200); print(time.time() - t0)  # ~77 s",
+   "expected": "Seconds at most for a 200-point univariate forecast, or a documented performance caveat.",
+   "actual": "Laplace t=200 seconds: 77.1 shape (200, 1); grid2d Laplace seconds: 4.01 (sine), 3.92 (trend), 4.12 (walk) at t=30",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-016",
+   "severity": "minor",
+   "title": "Descending (newest-first) DatetimeIndex is accepted silently and the \"forecast\" lands INSIDE the observed date range",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\nidx = pd.date_range('2024-01-01', periods=60, freq='D')[::-1]\ndf = pd.DataFrame({'p': 100 + 0.5*np.arange(60)}, index=idx)\nprint(hyp.predict(df, model='ARIMA', t=5).index)  # dates inside the observed range, no warning",
+   "expected": "A warning (or error) for non-monotonic time indexes, or auto-sorting with a notice.",
+   "actual": "desc-index forecast index: ['2024-01-02'...'2024-01-06']; data range: 2024-01-01 -> 2024-02-29 | warnings: []",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-017",
+   "severity": "minor",
+   "title": "`import hypertools.predict.kalman` fails with a baffling ImportError -- the predict() function shadows the hypertools.predict subpackage",
+   "repro": "import hypertools.predict as hp; print(hp)          # <function predict ...>\nimport hypertools.predict.kalman as k               # ImportError: cannot import name 'kalman' from 'predict' (unknown location)",
+   "expected": "Submodule imports work, or a documented convention pointing at from-import style.",
+   "actual": "predict module file: <function predict at 0x1201aefc0>; import hypertools.predict.kalman FAILED: ImportError | cannot import name 'kalman' from 'predict' (unknown location)",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-018",
+   "severity": "style",
+   "title": "Unknown-model error quality is inconsistent: helpful for unknown strings, terse 'unknown model: 42' / 'unknown model: None' / 'unknown model: <class Ridge>' for everything else",
+   "repro": "import numpy as np, hypertools as hyp\nhyp.predict(np.random.randn(30, 2), model=42, t=3)      # ValueError: unknown model: 42\nfrom sklearn.linear_model import Ridge\nhyp.predict(np.random.randn(30, 2), model=Ridge, t=3)   # ValueError: unknown model: <class '...Ridge'>",
+   "expected": "The same rich message (supported names + accepted spec forms) for every unmatched spec type; a hint toward AutoRegressor for sklearn regressors.",
+   "actual": "'ValueError: unknown model: 42' (core/shared.py line 154); 'ValueError: unknown model: None'; \"ValueError: unknown model: <class 'sklearn.linear_model._ridge.Ridge'>\"",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-019",
+   "severity": "style",
+   "title": "Dead `args = []` in predict(); AutoRegressor's inner-estimator kwarg named 'model' collides with predict()'s model= so the inner regressor cannot be chosen at top level",
+   "repro": "# grep -n 'args = \\[\\]' hypertools/predict/predict.py  -> line 102 (never populated)\nimport numpy as np, hypertools as hyp\nfc = hyp.predict(np.random.randn(60, 1), model={'model': 'AutoRegressor', 'kwargs': {'model': 'RandomForestRegressor', 'n_estimators': 10, 'random_state': 0}}, t=3)  # required form",
+   "expected": "No dead locals; inner estimator selectable without the nested-dict contortion.",
+   "actual": "args=[] never mutated (predict.py lines 102, 122); top-level model= collision confirmed (SyntaxError: keyword argument repeated: model); dict form works: shape (3, 1)",
+   "evidence": []
+  },
+  {
+   "id": "F16-predict-020",
+   "severity": "enhancement",
+   "title": "tz-aware DatetimeIndex with a tz-naive datetime horizon raises a raw pandas TypeError instead of localizing or explaining",
+   "repro": "import numpy as np, pandas as pd, hypertools as hyp\ndf = pd.DataFrame({'a': np.random.randn(100)}, index=pd.date_range('2024-01-01', periods=100, freq='D', tz='US/Eastern'))\nhyp.predict(df, model='GaussianProcess', t='2024-04-20')",
+   "expected": "Naive t localized to the index tz, or a hypertools-level error naming t and the fix.",
+   "actual": "TypeError: Cannot compare tz-naive and tz-aware timestamps (pandas _Timestamp.__richcmp__)",
+   "evidence": []
+  }
+ ]
+}

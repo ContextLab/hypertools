@@ -15,7 +15,6 @@ the image to be saved, including the file extension (e.g. pdf)
 
 # import
 import hypertools as hyp
-import numpy as np
 
 # load example data
 data = hyp.load('weights_sample')

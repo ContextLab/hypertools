@@ -40,4 +40,3 @@ for ax in axes[len(shapes):]:
     ax.set_visible(False)
 
 plt.tight_layout()
-plt.show()

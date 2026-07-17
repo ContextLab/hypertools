@@ -18,16 +18,16 @@
 .. _sphx_glr_auto_examples_plot_procrustes.py:
 
 
-=============================
+==================================================
 Aligning two matrices with the procrustes function
-=============================
+==================================================
 
 In this example, we load in some synthetic data, rotate it, and then use the
-procustes function to get the datasets back in alignment.  The procrustes
+procrustes function to get the datasets back in alignment.  The procrustes
 function uses linear transformations to project a source matrix into the
 space of a target matrix.
 
-.. GENERATED FROM PYTHON SOURCE LINES 12-32
+.. GENERATED FROM PYTHON SOURCE LINES 12-30
 
 
 
@@ -60,15 +60,13 @@ space of a target matrix.
 
     # import
     import hypertools as hyp
-    import numpy as np
-    import scipy
     from hypertools.align.procrustes import procrustes
 
     # load example data
     data = hyp.load('spiral')
     hyp.plot(data, title='Before Alignment')
 
-    # use procrusted to align the data
+    # use procrustes to align the data
     source, target = data
     aligned = [procrustes(source, target), target]
 
@@ -78,7 +76,7 @@ space of a target matrix.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.043 seconds)
+   **Total running time of the script:** (0 minutes 0.042 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_procrustes.py:

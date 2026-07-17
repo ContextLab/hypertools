@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from hypertools.align.srm import RobustSharedResponseModel
 
@@ -19,5 +20,8 @@ def test_rsrm_aligns_to_shared_space():
 
 def test_rsrm_via_dispatcher():
     import hypertools as hyp
-    out = hyp.align(_rotated_pair(1), align='RSRM')
+    # align= is the deliberately-exercised legacy model-spec kwarg; assert
+    # its deprecation notice fires alongside the result
+    with pytest.warns(DeprecationWarning, match='align= is deprecated'):
+        out = hyp.align(_rotated_pair(1), align='RSRM')
     assert isinstance(out, list) and len(out) == 2

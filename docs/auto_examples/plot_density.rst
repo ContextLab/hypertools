@@ -115,7 +115,7 @@ so the actual data points remain the dominant visual element.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.863 seconds)
+   **Total running time of the script:** (0 minutes 1.883 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_density.py:

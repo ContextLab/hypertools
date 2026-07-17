@@ -7,9 +7,12 @@ stack-once-fit-once recipe: `fit_transform`/`transform` operate on an
 already-stacked 2D array (row-concatenated across datasets), not a list.
 
 Hard-clustering models (KMeans, MiniBatchKMeans, AgglomerativeClustering,
-Birch, FeatureAgglomeration, SpectralClustering, HDBSCAN, MeanShift, DBSCAN,
-OPTICS, AffinityPropagation) return a list of per-observation cluster
-labels. Mixture / soft-clustering models (GaussianMixture,
+Birch, SpectralClustering, HDBSCAN, MeanShift, DBSCAN, OPTICS,
+AffinityPropagation) return a list of per-observation cluster labels.
+FeatureAgglomeration is the one exception: it transposes the clustering
+problem and groups FEATURES (columns), so it returns one label per column
+of the input, not one per row (a `UserWarning` says so whenever it is fit
+-- see F13-cluster-001). Mixture / soft-clustering models (GaussianMixture,
 BayesianGaussianMixture, LatentDirichletAllocation, NMF) return an
 `(n_samples, n_components)` membership-proportion matrix instead -- this is
 the exact logic `hypertools.reduce.common.Reducer` reuses (via
@@ -19,6 +22,7 @@ the exact logic `hypertools.reduce.common.Reducer` reuses (via
 the SAME code path (GH #174).
 """
 import inspect
+import warnings
 
 import numpy as np
 from sklearn.base import BaseEstimator
@@ -189,17 +193,94 @@ class Clusterer(BaseEstimator):
         -------
         list or numpy.ndarray
             A list of per-observation cluster labels for hard-clustering
-            models, or -- for mixture models (GH #174) -- an
-            `(n_samples, n_components)` array of membership proportions.
+            models (per-FEATURE labels for FeatureAgglomeration, which
+            clusters columns -- a `UserWarning` is emitted), or -- for
+            mixture models (GH #174) -- an `(n_samples, n_components)`
+            array of membership proportions.
+
+        Raises
+        ------
+        ValueError
+            If the wrapped model is not a scikit-learn-style clusterer
+            (no `fit`/`fit_predict`, or no way to extract labels).
         """
         model = self.model(**(self.params or {})) if inspect.isclass(self.model) else self.model
+        if not (hasattr(model, 'fit') or hasattr(model, 'fit_predict')):
+            raise ValueError(
+                f"invalid cluster model {model!r} (type "
+                f"{type(model).__name__}): it has no fit or fit_predict "
+                f"method. Pass one of the supported model names "
+                f"({', '.join(sorted(list(CLUSTERERS) + list(MIXTURES)))}), a "
+                f"scikit-learn style clusterer class or instance, or a dict "
+                f"spec like {{'model': 'KMeans', 'kwargs': {{...}}}}.")
         if self._is_mixture(model):
             result = mixture_proportions(type(model).__name__, model, stacked)
-        else:
+        elif isinstance(model, FeatureAgglomeration):
+            # FeatureAgglomeration transposes the clustering problem: it
+            # groups COLUMNS, so labels_ has one entry per feature, not one
+            # per observation (F13-cluster-001) -- warn so the wrong-length
+            # label list is never a silent surprise.
+            warnings.warn(
+                "FeatureAgglomeration clusters features (columns), not "
+                "observations: the result has one label per column of the "
+                f"input ({np.asarray(stacked).shape[1]} labels), not one per "
+                "row. To cluster observations, use e.g. cluster='KMeans'.",
+                UserWarning)
             model.fit(stacked)
             result = list(model.labels_)
+        elif hasattr(model, 'fit_predict'):
+            # covers every sklearn clusterer (ClusterMixin.fit_predict is
+            # fit(X).labels_) plus fit_predict-only estimators such as an
+            # sklearn Pipeline ending in a clusterer, which fits fine but
+            # never exposes labels_ (F13-cluster-011)
+            result = list(model.fit_predict(stacked))
+        else:
+            model.fit(stacked)
+            labels = getattr(model, 'labels_', None)
+            if labels is None:
+                raise ValueError(
+                    f"cluster model {type(model).__name__} was fit "
+                    f"successfully but exposes neither a labels_ attribute "
+                    f"nor a fit_predict method, so no cluster labels can be "
+                    f"extracted; pass a scikit-learn style clusterer instead.")
+            result = list(labels)
+        # fingerprint the fit-time data (shape plus per-column moments) so
+        # `transform`'s label-recovery fallback can tell "the same data the
+        # model was fit on" apart from unrelated data that merely has the
+        # same number of rows (F13-cluster-006)
+        arr = np.asarray(stacked)
+        self._fit_shape = tuple(arr.shape)
+        if arr.ndim == 2 and arr.size:
+            self._fit_col_means = arr.mean(axis=0)
+            self._fit_col_stds = arr.std(axis=0)
+        else:
+            self._fit_col_means = None
+            self._fit_col_stds = None
         self.model_ = model
         return result
+
+    def _matches_fit_data(self, arr):
+        """Best-effort check that `arr` is the data `fit_transform` saw.
+
+        Compares the fit-time fingerprint (shape plus per-column means and
+        standard deviations, recorded by `fit_transform`) against `arr`.
+        Small floating-point jitter (e.g. an upstream `PCA.transform` vs
+        `fit_transform` round-trip) passes; genuinely different data with
+        the same shape does not. Returns True when no fingerprint was
+        recorded (e.g. a `Clusterer` unpickled from an older hypertools).
+        """
+        fit_shape = getattr(self, '_fit_shape', None)
+        if fit_shape is None:
+            return True
+        arr = np.asarray(arr)
+        if tuple(arr.shape) != fit_shape:
+            return False
+        if self._fit_col_means is None:
+            return True
+        return (np.allclose(arr.mean(axis=0), self._fit_col_means,
+                            rtol=1e-5, atol=1e-8, equal_nan=True)
+                and np.allclose(arr.std(axis=0), self._fit_col_stds,
+                                rtol=1e-5, atol=1e-8, equal_nan=True))
 
     def transform(self, stacked):
         """Apply the already-fitted model to new (already-stacked) data,
@@ -224,7 +305,17 @@ class Clusterer(BaseEstimator):
             If the fitted model is a hard-clustering model with no
             out-of-sample `predict` (e.g. `AgglomerativeClustering`,
             `SpectralClustering`, `DBSCAN`, `OPTICS`, `HDBSCAN` -- these
-            only support `fit_predict` on the data they were fit on).
+            only support `fit_predict` on the data they were fit on) and
+            the input's row count differs from the fit-time row count
+            (column count, for `FeatureAgglomeration`).
+
+        Warns
+        -----
+        UserWarning
+            When a no-predict model's stored fit-time labels are returned
+            for data that has the fit-time row count but does not match the
+            fit-time data fingerprint (F13-cluster-006): the input was NOT
+            re-clustered, and the warning says so.
         """
         if self.model_ is None:
             raise NotFittedError('must fit clusterer before transforming data')
@@ -239,17 +330,52 @@ class Clusterer(BaseEstimator):
         # Hard clusterers (AgglomerativeClustering, SpectralClustering, DBSCAN,
         # OPTICS, HDBSCAN) have no out-of-sample predict. The documented
         # analyze(cluster=...) label-RECOVERY path re-applies this fitted step to
-        # the SAME data it was fit on -- so when `stacked` has the same number of
-        # rows as the fit-time labels, return those stored labels (QC 2026-07
-        # red-team: this used to raise NotImplementedError, so the documented
+        # the SAME data it was fit on -- so when `stacked` matches the fit-time
+        # labels, return those stored labels (QC 2026-07 red-team: this used to
+        # raise NotImplementedError, so the documented
         # `named_steps['cluster'].transform(data)` recovery broke for 3 of the 5
         # hard clusterers). Genuinely NEW data (a different row count) still
-        # cannot be labeled without refitting, so that case still raises.
+        # cannot be labeled without refitting, so that case still raises; data
+        # with the SAME row count that does not match the fit-time fingerprint
+        # gets the stored labels back WITH a UserWarning (F13-cluster-006).
+        arr = np.asarray(stacked)
+        name = type(model).__name__
         labels = getattr(model, 'labels_', None)
-        if labels is not None and np.asarray(stacked).shape[0] == len(labels):
+        if labels is not None and isinstance(model, FeatureAgglomeration):
+            # per-FEATURE labels (F13-cluster-001): the stored labels apply
+            # to the fit-time COLUMNS, so match on the column count, not rows
+            if arr.ndim == 2 and arr.shape[1] == len(labels):
+                if not self._matches_fit_data(arr):
+                    warnings.warn(
+                        "returning the fit-time per-feature cluster labels: "
+                        "FeatureAgglomeration has no out-of-sample "
+                        "prediction, so the data passed here (which does not "
+                        "match the data the model was fit on) was NOT "
+                        "re-clustered. If this is genuinely new data, refit "
+                        "instead (e.g. hypertools.cluster(x, "
+                        "cluster='FeatureAgglomeration')).", UserWarning)
+                return list(labels)
+            raise NotImplementedError(
+                f"FeatureAgglomeration clusters features (columns), not "
+                f"observations, and has no out-of-sample prediction: a "
+                f"fitted FeatureAgglomeration can only return its fit-time "
+                f"labels for data with the same {len(labels)} columns it was "
+                f"fit on (got "
+                f"{arr.shape[1] if arr.ndim == 2 else 'a non-2D input'}). "
+                f"Refit on the new data instead.")
+        if labels is not None and arr.shape[0] == len(labels):
+            if not self._matches_fit_data(arr):
+                warnings.warn(
+                    f"returning the fit-time cluster labels: {name} has no "
+                    f"out-of-sample prediction (no predict method), so the "
+                    f"data passed here (which does not match the data the "
+                    f"model was fit on) was NOT re-clustered. If this is "
+                    f"genuinely new data, refit instead (e.g. "
+                    f"hypertools.cluster(x, cluster='{name}')).", UserWarning)
             return list(labels)
         raise NotImplementedError(
-            f"{type(model).__name__} has no out-of-sample prediction (no "
-            f"predict method); cannot reuse a fitted {type(model).__name__} "
-            f"clusterer on new data (a different number of rows than it was fit "
-            f"on) without refitting")
+            f"{name} has no out-of-sample prediction (no predict method); "
+            f"cannot reuse a fitted {name} clusterer on new data (got "
+            f"{arr.shape[0]} rows vs "
+            f"{len(labels) if labels is not None else 'an unknown number of'} "
+            f"fit-time observations) without refitting")

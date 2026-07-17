@@ -40,7 +40,13 @@ def fitter(data, axis=0, min=0, max=1):
     ValueError
         If `min >= max`, or `axis` is not 0 or 1.
     """
-    assert min < max, ValueError('minimum must be strictly less than maximum')
+    # a real ValueError (as documented in Raises), not "assert cond,
+    # ValueError(...)" -- the assert idiom raised AssertionError and was
+    # silently stripped under `python -O` (audit F14-009)
+    if min >= max:
+        raise ValueError(
+            f'minimum must be strictly less than maximum; got min={min!r}, '
+            f'max={max!r}')
 
     if isinstance(data, list):
         data = pd.concat(data, axis=0, ignore_index=True)
@@ -115,7 +121,14 @@ def transformer(data, **kwargs):
         `transpose`) is not 0.
     """
     transpose = kwargs.pop('transpose', False)
-    assert 'axis' in kwargs.keys(), ValueError('Must specify axis')
+    # real raises (not `assert ..., ValueError(...)`, which raised
+    # AssertionError and was stripped under `python -O`) -- 2026-07 release
+    # audit, final wave item 8
+    if 'axis' not in kwargs:
+        raise ValueError(
+            "Normalize's transformer requires an axis= parameter; pass "
+            'axis=0 (normalize each column, the default) or axis=1 '
+            '(normalize each row).')
 
     if transpose:
         # NOTE: recurse into the (undecorated) *transformer* itself, not into
@@ -131,7 +144,11 @@ def transformer(data, **kwargs):
         # base case, where it is harmless.
         return transformer(data.T, **dw.core.update_dict(kwargs, {'axis': int(not kwargs['axis'])})).T
 
-    assert kwargs['axis'] == 0, ValueError('invalid transformation')
+    if kwargs['axis'] != 0:
+        raise ValueError(
+            f"invalid Normalize axis {kwargs['axis']!r}; axis must be 0 "
+            '(normalize each column, the default) or 1 (normalize each '
+            'row).')
     return _transform_stacked(data, **kwargs)
 
 
@@ -168,6 +185,27 @@ class Normalize(Manipulator):
     axis : int, optional
         0 to normalize each column independently (default), 1 to
         normalize each row independently.
+
+    Notes
+    -----
+    For a LIST of datasets, ONE shared baseline/peak is fit across all of
+    them (like ``normalize='across'``); constant (zero-range) columns
+    normalize to `min` rather than NaN.
+
+    Raises
+    ------
+    ValueError
+        If `min >= max`.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from hypertools.manip import Normalize
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({'a': [1., 2., 3.], 'b': [10., 20., 30.]})
+    >>> out = Normalize().fit_transform(df)
+    >>> float(out['a'].min()), float(out['a'].max())
+    (0.0, 1.0)
     """
     # noinspection PyShadowingBuiltins
     def __init__(self, min=0, max=1, axis=0):

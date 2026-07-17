@@ -39,8 +39,19 @@ along with the PCA coordinate.
    :class: sphx-glr-single-img
 
 
+.. rst-class:: sphx-glr-script-out
+
+ .. code-block:: none
+
+    /Users/jmanning/hypertools/hypertools/plot/plot.py:3491: UserWarning: explore=True shows labels on hover, which needs an interactive matplotlib backend; the current backend ('agg') is non-interactive, so the figure will be drawn as a static plot without hover labels. Run in an interactive session (or switch backends, e.g. matplotlib.use('QtAgg')) to use explore mode.
+      warnings.warn(
 
 
+
+
+
+
+|
 
 .. code-block:: Python
 
@@ -62,7 +73,7 @@ along with the PCA coordinate.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.024 seconds)
+   **Total running time of the script:** (0 minutes 0.026 seconds)
 
 
 .. _sphx_glr_download_auto_examples_explore.py:

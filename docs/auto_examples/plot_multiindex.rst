@@ -81,7 +81,7 @@ carries the legend label.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.052 seconds)
+   **Total running time of the script:** (0 minutes 0.045 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_multiindex.py:

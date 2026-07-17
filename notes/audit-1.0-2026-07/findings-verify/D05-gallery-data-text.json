@@ -1,0 +1,210 @@
+{
+ "unit": "D05-gallery-data-text",
+ "findings": [
+  {
+   "id": "D05-gallery-data-text-001",
+   "severity": "critical",
+   "title": "Kalman imputer silently fills ALL missing values with exactly 0.0 on wide data (>= ~50 columns), including the plot_impute example's own dataset",
+   "repro": "import numpy as np, hypertools as hyp\nnp.random.seed(42)\ndata = hyp.load('weights_avg')[0]\nmissing = data.copy()\nn_rows, n_cols = missing.shape\nflat = np.random.choice(n_rows*n_cols, size=int(0.1*n_rows*n_cols), replace=False)\nr, c = np.unravel_index(flat, (n_rows, n_cols))\nmissing[r, c] = np.nan\nmissing[40:43, :] = np.nan\nkal = np.asarray(hyp.impute(missing, model='Kalman'))\nmask = np.isnan(missing); mask[40:43, :] = False\nest = kal[mask]\nprint(est.std(), len(np.unique(est)), est[:5])  # 0.0, 1, [0. 0. 0. 0. 0.]",
+   "expected": "Kalman-smoothed estimates correlated with the true (knocked-out) values, or at minimum a warning that the state-space EM was degenerate for this shape",
+   "actual": "est stats: n 972 std 0.0 min 0.0 max 0.0 | unique count: 1 | first 10 est: [0. 0. 0. 0. 0. 0. 0. 0. 0. 0.] vs true [ 0.02291 0.00979 0.01608 ...] | rows 40:43 imputed sample: [0. 0. 0. 0. 0. 0. 0. 0. 0.] | no Kalman-related warning raised. Sweep: D=  5: corr 0.9478 | D= 20: corr 0.6453 | D= 50: est std 0.0000 unique 1 corr nan | D=100: est std 0.0000 unique 1 corr nan",
+   "evidence": [
+    "plot_impute_fig0.png"
+   ]
+  },
+  {
+   "id": "D05-gallery-data-text-002",
+   "severity": "major",
+   "title": "Flagship 'Plotting text' example renders degenerate: 6 of 7 documents embed to the IDENTICAL point under the default wiki-LDA pipeline (published gallery figure shows 2 dots)",
+   "repro": "import numpy as np, hypertools as hyp\ndata = [['i like cats alot', 'cats r pretty cool', 'cats are better than dogs'],\n        ['dogs rule the haus', 'dogs are my jam', 'dogs are a mans best friend'],\n        'i haz a cheezeburger?']\nout = hyp.plot(data, 'o', return_model=True)\nX = np.vstack([np.asarray(a) for a in out['xform_data']])\nprint(len(np.unique(np.round(X, 8), axis=0)))  # 2\nfrom hypertools.tools.text2mat import text2mat\nprint(np.asarray(text2mat([sum([d if isinstance(d, list) else [d] for d in data], [])], semantic=None)[0]).sum(axis=1))",
+   "expected": "7 documents in 3 visibly separated / at least distinguishable groups (3 colors)",
+   "actual": "xform_data rows: 6 of 7 identical [-0.071 0. -0.]; only 'dogs rule the haus' differs [0.424 0. 0.]; figure shows exactly 2 visible dots (blue, green; third color fully occluded); count row sums [3 3 5 4 4 5 0] with the last doc all-OOV and silent",
+   "evidence": [
+    "plot_text_fig0.png"
+   ]
+  },
+  {
+   "id": "D05-gallery-data-text-003",
+   "severity": "major",
+   "title": "hyp.load('sotus') returns the NIPS topic model, not the documented State of the Union speeches (Drive-id map collision)",
+   "repro": "import hypertools as hyp\ns = hyp.load('sotus')\nprint(type(s))  # <class 'sklearn.pipeline.Pipeline'>\n# md5 ~/hypertools_data/sotus == md5 ~/hypertools_data/nips_model",
+   "expected": "A collection of State of the Union speeches (text data), per the load() docstring",
+   "actual": "type: <class 'sklearn.pipeline.Pipeline'>; transform works, shape: (1, 50); MD5 (sotus) = MD5 (nips_model) = 6a350ab8d85db34e7b924ac8a7f2a19b",
+   "evidence": []
+  },
+  {
+   "id": "D05-gallery-data-text-004",
+   "severity": "doc",
+   "title": "Story-trajectories dispersion numbers (~0.64 -> ~0.47) do not reproduce; the 'canonical' computation is not in the repo; 'couple of minutes' runtime claim is ~20x off",
+   "repro": "MPLBACKEND=Agg .venv/bin/python <scratch>/dispersion_sweep.py  # loads weights, manip, HyperAlign(n_iter=10), IncrementalPCA, computes 6 metric variants x 5 pipeline variants",
+   "expected": "~0.47 (align-in-hub-then-reduce) and ~0.64 (reduce-then-align) under the metric described in the docstring, reproducible from repo code",
+   "actual": "align-hub->reduce3 (claim 0.47): mean 0.5109 rms 0.5204 median 0.4978 | reduce10->align->r3 (claim 0.64): 0.7159 0.7134 0.7081 | reduce3->align (claim 0.75): 0.8525 0.8367 0.8670 | unaligned (claim 0.78): 0.8851 0.8968 0.8645 | verbatim pipeline block done in 6.9s, mp4 270 frames",
+   "evidence": [
+    "story_audit_frame_early.png",
+    "story_audit_frame_mid.png",
+    "story_audit_frame_late.png"
+   ]
+  },
+  {
+   "id": "D05-gallery-data-text-005",
+   "severity": "doc",
+   "title": "plot_predict docstring says the Kalman model is 'used here', but the example uses GaussianProcess",
+   "repro": "grep -n \"used here\\|predict='GaussianProcess'\" examples/plot_predict.py",
+   "expected": "docstring annotates GaussianProcess as the model used in this example",
+   "actual": "line 11: \"`'Kalman'` (a linear-Gaussian state-space filter, used here)\"; line 47: hyp.plot(data, predict='GaussianProcess', t=30, ...)",
+   "evidence": [
+    "plot_predict_fig0.png"
+   ]
+  },
+  {
+   "id": "D05-gallery-data-text-006",
+   "severity": "doc",
+   "title": "plot_text/plot_corpus docstrings claim '# of topics = 100'; the wiki model actually produces 50 topics (plus 't0' typo)",
+   "repro": "python -c \"from hypertools.tools.text2mat import text2mat; import numpy as np; print(np.asarray(text2mat([['a cat document','dogs are pets']], corpus='wiki')[0]).shape)\"",
+   "expected": "(2, 100) if the docstrings were right",
+   "actual": "wiki topic vec shape: (7, 50); wiki_model transform shape (1, 50)",
+   "evidence": []
+  },
+  {
+   "id": "D05-gallery-data-text-007",
+   "severity": "doc",
+   "title": "plot_missing_data says 'randomly remove 5% of the data' but the code removes 1% (and is unseeded, with replacement)",
+   "repro": "grep -n 'missing = ' examples/plot_missing_data.py  # missing = .01 under the comment 'randomly remove 5%'",
+   "expected": "comment and code agree (5% removed, or comment says 1%); seeded RNG for a reproducible gallery figure",
+   "actual": "missing = .01; ~25 interpolated points highlighted in the figure (2500 entries * 1%)",
+   "evidence": [
+    "plot_missing_data_fig0.png"
+   ]
+  },
+  {
+   "id": "D05-gallery-data-text-008",
+   "severity": "minor",
+   "title": "plot_impute's own example data defeats both imputers: PPCA EM ends with 'last relative change nan' warning and recovers knocked-out values at r=0.13 (no better than mean-fill)",
+   "repro": "import numpy as np, hypertools as hyp\nnp.random.seed(42)\ndata = hyp.load('weights_avg')[0]\nmissing = data.copy()\nflat = np.random.choice(data.size, size=int(0.1*data.size), replace=False)\nr, c = np.unravel_index(flat, data.shape)\nmissing[r, c] = np.nan\nmissing[40:43, :] = np.nan\nppca = np.asarray(hyp.impute(missing, model='PPCA'))\nmask = np.isnan(missing); mask[40:43, :] = False\nok = ~np.isnan(ppca[mask])\nprint(np.corrcoef(data[mask][ok], ppca[mask][ok])[0, 1])",
+   "expected": "convergent EM on the example's own data and meaningfully-better-than-chance recovery (or an example dataset chosen so the demo demonstrates recovery)",
+   "actual": "WARN: PPCA EM did not converge within 500 iterations (last relative change nan, tol 0.0001); PPCA: corr(true,imputed)=0.133 rmse=0.006 data_std=0.006 n=972",
+   "evidence": [
+    "plot_impute_fig0.png"
+   ]
+  },
+  {
+   "id": "D05-gallery-data-text-009",
+   "severity": "minor",
+   "title": "2D density overlay escapes the drawn frame box (small datasets flood the whole canvas with KDE glow)",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(7)\nfig = hyp.plot(rng.standard_normal((3, 2)), '.', density=True)\nfig.savefig('density_3pts.png', dpi=80)",
+   "expected": "density glow clipped to the drawn frame box (the plot's visual data region)",
+   "actual": "pink KDE haze fills the entire canvas including outside the black frame rectangle; 2 of 3 points lie exactly on the frame boundary (see edge_density_3pts.png)",
+   "evidence": [
+    "edge_density_3pts.png"
+   ]
+  },
+  {
+   "id": "D05-gallery-data-text-010",
+   "severity": "minor",
+   "title": "df2mat triggers Pandas4Warning (select_dtypes 'object' vs 'str'); under pandas 4 string columns will silently stop being dummified",
+   "repro": "MPLBACKEND=Agg .venv/bin/python -W error::FutureWarning -c \"import warnings, hypertools as hyp; warnings.simplefilter('error'); hyp.plot(hyp.load('penguins').dropna())\"  # or just run examples/plot_datasets_tour.py and observe the Pandas4Warning from df2mat.py:32",
+   "expected": "dtype-future-proof selection (include=['object', 'str'] / a string-dtype-aware check) with no deprecation warning",
+   "actual": "WARNING[Pandas4Warning] For backward compatibility, 'str' dtypes are included by select_dtypes when 'object' dtype is specified. This behavior is deprecated and will be removed in a future version. ... (df2mat.py:32)",
+   "evidence": []
+  },
+  {
+   "id": "D05-gallery-data-text-011",
+   "severity": "minor",
+   "title": "Hosted text-model pickles are sklearn 1.0.2: under sklearn 1.8, repr()/get_params()/clone crash with AttributeError 'transform_input' (transform still works)",
+   "repro": "import hypertools as hyp\nw = hyp.load('wiki_model')\nprint(w.transform(['some text']).shape)  # (1, 50) -- works\nrepr(w)  # AttributeError: 'Pipeline' object has no attribute 'transform_input'",
+   "expected": "loaded model objects that print and introspect cleanly under the supported sklearn",
+   "actual": "InconsistentVersionWarning: Trying to unpickle estimator Pipeline from version 1.0.2 when using version 1.8.0 ...; repr FAILS: AttributeError 'Pipeline' object has no attribute 'transform_input'; get_params FAILS (same)",
+   "evidence": []
+  },
+  {
+   "id": "D05-gallery-data-text-012",
+   "severity": "minor",
+   "title": "explore mode rough edges: bare AssertionError on 2D data, silent no-op on non-interactive backends, garbled docstring sentence",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(7)\nhyp.plot(rng.standard_normal((30, 5)), '.', ndims=2, explore=True)  # AssertionError\nhyp.plot(rng.standard_normal((30, 5)), '.', explore=True)  # Agg: silent no-op",
+   "expected": "ValueError with guidance for 2D; a UserWarning under non-interactive backends; readable docstring",
+   "actual": "AssertionError: Explore mode is currently only supported for 3D plots. | headless: fig returned, zero warnings | docstring: 'Displays user defined labels will appear on hover.'",
+   "evidence": [
+    "explore_fig0.png"
+   ]
+  },
+  {
+   "id": "D05-gallery-data-text-013",
+   "severity": "minor",
+   "title": "Bad error messages for text-input misuse: corpus=<int> leaks 'numpy.int64 has no attribute lower'; mixed text+numeric datasets raise a cryptic concatenation ValueError",
+   "repro": "import numpy as np, hypertools as hyp\ntry: hyp.plot(['some text', 'more text'], 'o', corpus=12345)\nexcept Exception as e: print(type(e).__name__, e)\ntry: hyp.plot([['doc one text', 'doc two text'], np.random.randn(5, 4)], 'o')\nexcept Exception as e: print(type(e).__name__, e)",
+   "expected": "ValueError naming the offending argument and how to fix it",
+   "actual": "AttributeError: 'numpy.int64' object has no attribute 'lower' | ValueError: all the input array dimensions except for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 50 and the array at index 1 has size 4",
+   "evidence": []
+  },
+  {
+   "id": "D05-gallery-data-text-014",
+   "severity": "doc",
+   "title": "plot_geo documents the return_model bundle as 4 keys; the actual dict has 6 ('pipeline' and 'predict' undocumented)",
+   "repro": "import numpy as np, hypertools as hyp\nout = hyp.plot(np.random.randn(30, 4), return_model=True)\nprint(sorted(out.keys()))",
+   "expected": "docstring lists all keys of the returned bundle",
+   "actual": "keys: ['animation', 'fig', 'models', 'pipeline', 'predict', 'xform_data']; animation is None: True",
+   "evidence": [
+    "plot_geo_fig0.png"
+   ]
+  },
+  {
+   "id": "D05-gallery-data-text-015",
+   "severity": "style",
+   "title": "surface dict values are unvalidated (smoothing=-1 silently accepted) while the sibling density dict validates keys and ranges",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(7)\nhyp.plot(rng.standard_normal((50, 3)), '.', surface={'smoothing': -1})  # no error, no warning",
+   "expected": "ValueError like density's ('surface[smoothing] must be a non-negative int; got -1')",
+   "actual": "silently accepted; plot renders",
+   "evidence": []
+  },
+  {
+   "id": "D05-gallery-data-text-016",
+   "severity": "style",
+   "title": "Gallery/manip warning hygiene: story manip spec (kernel_width=40) warns every run; single-row reduce warning text is garbled",
+   "repro": "import warnings, numpy as np, hypertools as hyp\nwith warnings.catch_warnings(record=True) as w:\n    warnings.simplefilter('always')\n    hyp.manip(np.random.randn(50, 4), model=[{'model': 'Smooth', 'kwargs': {'kernel_width': 40}}])\n    hyp.plot(['just one document here'], 'o')\nprint([str(x.message) for x in w])",
+   "expected": "docs recommend an odd kernel width; warning messages read as clear English",
+   "actual": "UserWarning: Increasing smoothing kernel width by 1 (must be odd) | UserWarning: Cannot reduce the dimensionality of a single row of data. Return zeros length of ndims",
+   "evidence": []
+  },
+  {
+   "id": "D05-gallery-data-text-017",
+   "severity": "style",
+   "title": "missing_inds returns None (not an empty index array) when nothing is missing -- the example's own indexing pattern then silently produces a wrong-shaped array",
+   "repro": "import numpy as np, hypertools as hyp\nX = np.random.randn(40, 6)\ninds = hyp.tools.missing_inds(X)\nprint(inds)  # None\nprint(X[inds, :].shape)  # (1, 40, 6) -- silent newaxis, not an error",
+   "expected": "empty integer array (shape (0,)) so downstream fancy indexing yields an empty selection",
+   "actual": "missing_inds returned: None; X[None, :] silently broadcasts to (1, 40, 6)",
+   "evidence": []
+  },
+  {
+   "id": "D05-gallery-data-text-018",
+   "severity": "style",
+   "title": "datasets_tour and sotus examples draw tabular/text rows as connected lines (default fmt '-'); penguins renders as a straight line; sotus labels overlap illegibly",
+   "repro": "MPLBACKEND=Agg .venv/bin/python run_example.py examples/plot_datasets_tour.py <evidence>  # then inspect the four panels",
+   "expected": "scatter markers for unordered tabular/text rows; legible labels",
+   "actual": "all four tour panels and the sotus figure draw connected line trajectories; penguins is a straight line; sotus labels overlap (see PNGs)",
+   "evidence": [
+    "plot_datasets_tour_fig0.png",
+    "plot_sotus_fig0.png"
+   ]
+  },
+  {
+   "id": "D05-gallery-data-text-019",
+   "severity": "minor",
+   "title": "Story example montage's axis titles are clipped at the top of the figure (also in the shipped gallery image)",
+   "repro": "MPLBACKEND=Agg .venv/bin/python run_example.py examples/plot_story_trajectories.py <evidence>  # inspect saved figure top edge",
+   "expected": "fully visible subplot titles",
+   "actual": "all three titles half-clipped at the top edge (see plot_story_trajectories_fig0.png and the committed sphx_glr image)",
+   "evidence": [
+    "plot_story_trajectories_fig0.png"
+   ]
+  },
+  {
+   "id": "D05-gallery-data-text-020",
+   "severity": "style",
+   "title": "Own-stage kwarg naming is inconsistent across sibling top-level APIs: manip/impute/predict/align take model=, but reduce/cluster/normalize require reduce=/cluster=/normalize= and reject model= with a bare TypeError",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(0)\nd = [rng.standard_normal((40, 8)), rng.standard_normal((40, 8))]\na1 = hyp.align(d, model={'model': 'HyperAlign', 'kwargs': {'n_iter': 2}})\na2 = hyp.align(d, align={'model': 'HyperAlign', 'kwargs': {'n_iter': 2}})\nprint(all(np.allclose(np.asarray(x), np.asarray(y)) for x, y in zip(a1, a2)))  # True\nhyp.reduce(d[0], model='PCA', ndims=3)  # TypeError",
+   "expected": "one consistent own-stage kwarg convention across the sibling APIs (or cross-accepted aliases everywhere), and misuse errors that name the correct spelling",
+   "actual": "align model= vs align= allclose: True | reduce(model=) TypeError: reduce() got an unexpected keyword argument 'model' | cluster(model=) TypeError: cluster() got an unexpected keyword argument 'model'",
+   "evidence": []
+  }
+ ]
+}

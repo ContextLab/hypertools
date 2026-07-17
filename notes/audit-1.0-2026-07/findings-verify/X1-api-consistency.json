@@ -1,0 +1,211 @@
+{
+ "unit": "X1-api-consistency",
+ "findings": [
+  {
+   "id": "X1-api-consistency-001",
+   "severity": "major",
+   "title": "load('sotus') returns a fitted CountVectorizer->LDA model, not the documented SOTU speeches (Drive id collides with 'nips_model')",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp; s = hyp.load('sotus'); print(type(s)); print(s)\"",
+   "expected": "A collection of State of the Union speeches (text data), per the load() docstring",
+   "actual": "type: <class 'sklearn.pipeline.Pipeline'> | steps: [0] CountVectorizer(max_df=0.25, min_df=0.1, stop_words=[...]) [1] LatentDirichletAllocation(n_components=50, n_jobs=1)",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-002",
+   "severity": "doc",
+   "title": "align() Returns docstring wrong twice: single array in -> list out (not 'same shape as data'), and claims manip 'ha[s] always returned arrays' (manip returns DataFrames)",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; A=np.random.randn(30,5); out=hyp.align(A); print(type(out), len(out), type(out[0])); print(type(hyp.manip(A)))\"",
+   "expected": "align(single array) -> single array per docstring; manip described accurately",
+   "actual": "align(single_array) -> list[1] of ndarray shapes=[(30, 5)]; manip(single_array) -> DataFrame shape=(30, 5)",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-003",
+   "severity": "style",
+   "title": "List-of-1 convention inconsistent: reduce/normalize collapse [A] to a bare array while align/manip/impute preserve the list",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; A=np.random.randn(30,5); print(type(hyp.reduce([A], ndims=2)), type(hyp.normalize([A])), type(hyp.align([A])), type(hyp.manip([A])))\"",
+   "expected": "Consistent list-in -> list-out (or consistent collapse) across all data functions",
+   "actual": "reduce([A]) -> ndarray (30,2); normalize([A]) -> ndarray (30,5); align([A]) -> list[1]; manip([A]) -> list[1] of DataFrame",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-004",
+   "severity": "style",
+   "title": "Return dtype split: reduce/normalize/align/analyze/apply_model return ndarrays; manip/impute/predict return DataFrames -- even for ndarray input",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; A=np.random.randn(30,5); print(type(hyp.manip(A)).__name__, type(hyp.impute(A)).__name__, type(hyp.predict(A, t=3)).__name__, type(hyp.reduce(A, ndims=2)).__name__, type(hyp.normalize(A)).__name__)\"",
+   "expected": "One consistent output container convention (or type-preserving: array in -> array out)",
+   "actual": "DataFrame DataFrame DataFrame ndarray ndarray",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-005",
+   "severity": "style",
+   "title": "Data-arg named x in half the API and data in the other half; spec kwarg named after the function (reduce=/cluster=/normalize=) vs model= elsewhere",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; A=np.random.randn(20,4)\\nfor f,kw in [(hyp.plot,'data'),(hyp.reduce,'data'),(hyp.manip,'x'),(hyp.cluster,'data')]:\\n    try: f(**{kw: A})\\n    except TypeError as e: print(f.__name__, '->', e)\"",
+   "expected": "One data-arg name and one spec-arg name across the 1.0 API",
+   "actual": "x: plot/reduce/normalize/cluster/describe; data: analyze/align/manip/predict/impute/apply_model; model=: align/manip/predict/impute/apply_model vs function-named specs elsewhere",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-006",
+   "severity": "minor",
+   "title": "normalize() validation raises AssertionError whose message lists 'none' as a valid value while the string 'none' is rejected; siblings raise ValueError",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; hyp.normalize(np.random.randn(10,3), normalize='none')\"",
+   "expected": "Either accept 'none' or do not name it as valid; raise ValueError naming the actual parameter and accepted values",
+   "actual": "AssertionError: scale_type must be across, within, row, none, or a fitted Normalizer.",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-007",
+   "severity": "minor",
+   "title": "reduce()/plot() unknown-model error is a legacy message with embedded run-of-spaces and a pre-1.0 http:// docs URL, unlike the modern message its 6 siblings emit",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp\\ntry: hyp.reduce(np.random.randn(10,3), reduce='NotAModel', ndims=2)\\nexcept ValueError as e: print(repr(str(e)))\"",
+   "expected": "\"unknown reduce model 'NotAModel'; supported names: ...\" matching the sibling functions, with a live 1.0 docs link (or none)",
+   "actual": "ValueError: reduce must be one of the supported options or support n_components and fit_transform          methods. See http://hypertools.readthedocs.io/en/latest/hypertools.tools.reduce.html#hypertools.tools.reduce          for supported options.",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-008",
+   "severity": "minor",
+   "title": "Empty-list input: three different behaviors -- clean error (reduce/plot/cluster/normalize), text-corpus load + cryptic LDA crash (align/manip/predict/impute), silent empty return (analyze)",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp\\nfor f in (hyp.reduce, hyp.align, hyp.analyze):\\n    try: print(f.__name__, '->', f([]))\\n    except Exception as e: print(f.__name__, '->', type(e).__name__, str(e)[:90])\"",
+   "expected": "All entry points reject an empty list with the same 'input has no observations (0 rows)' message, without loading any text corpus",
+   "actual": "reduce -> ValueError: input has no observations (0 rows)...; align -> [stdout: loading corpus: minipedia...done!] ValueError: Found array with 0 sample(s) (shape=(0, 1220)) while a minimum of 1 is required by LatentDirichletAllocation.; analyze -> [] (no error)",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-009",
+   "severity": "minor",
+   "title": "align/predict/impute silently swallow unknown **kwargs (typos and random_state= are accepted and ignored); manip raises TypeError correctly",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; X=np.random.randn(40,6); Y=np.random.randn(40,6)\\nprint(type(hyp.align([X,Y], model='SRM', totally_bogus_kwarg=123)))\\na0=hyp.align([X,Y], model='SRM', random_state=0); a1=hyp.align([X,Y], model='SRM', random_state=1)\\nprint('differ:', not all(np.array_equal(p,q) for p,q in zip(a0,a1)))\"",
+   "expected": "Unknown constructor kwargs raise TypeError naming the bad key (as manip does)",
+   "actual": "align bogus kwarg: NO ERROR; predict bogus kwarg: NO ERROR; impute PPCA bogus kwarg: NO ERROR; SRM random_state 0 vs 1 differ: False",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-010",
+   "severity": "style",
+   "title": "random_state parameter exists only on plot/analyze/reduce/cluster; align/manip/predict/impute/apply_model have no seed path",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import inspect, hypertools as hyp; print({f.__name__: 'random_state' in inspect.signature(f).parameters for f in [hyp.plot, hyp.analyze, hyp.reduce, hyp.cluster, hyp.align, hyp.manip, hyp.predict, hyp.impute, hyp.apply_model]})\"",
+   "expected": "random_state supported (or explicitly documented as unsupported) uniformly",
+   "actual": "{'plot': True, 'analyze': True, 'reduce': True, 'cluster': True, 'align': False, 'manip': False, 'predict': False, 'impute': False, 'apply_model': False}",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-011",
+   "severity": "minor",
+   "title": "save(obj, fname, **kwargs) accepts arbitrary kwargs and silently drops them; docstring is a bare one-liner",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp, tempfile, os; p=os.path.join(tempfile.gettempdir(),'x1.pkl'); hyp.save(np.eye(3), p, protocol=999, bogus=1); print('no error; kwargs dropped'); os.remove(p)\"",
+   "expected": "TypeError on unknown kwargs (protocol=999 is invalid and should fail), or kwargs forwarded to pickle.dump; a real docstring",
+   "actual": "no error; kwargs dropped (pickle.dump called without them; source: 'def save(obj, fname, **kwargs): ... pickle.dump(obj, f)')",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-012",
+   "severity": "doc",
+   "title": "describe(): max_dims is an exclusive bound starting at 2 (max_dims=6 tests dims 2-5); 'average' key is the stacked-data curve, not the average of 'individual'; unconditional slow-warning",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; D=[np.random.default_rng(i).standard_normal((50,8)) for i in (1,2)]; r=hyp.describe(D, show=False, max_dims=6); print(len(r['average'])); import numpy as np; print(np.allclose(np.asarray(r['average']), np.mean(np.stack([np.asarray(v) for v in r['individual']]), axis=0)))\"",
+   "expected": "max_dims=6 -> correlations for up to 6 dims; 'average' = average of individual curves (or renamed/documented as 'stacked')",
+   "actual": "len(result['average']) == 4 for max_dims=6; average == mean(individual) -> False",
+   "evidence": [
+    "W6_describe.png"
+   ]
+  },
+  {
+   "id": "X1-api-consistency-013",
+   "severity": "doc",
+   "title": "load() docstring: 'spiral is numpy array' -- actually a list of two (1000, 3) arrays",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools as hyp; s=hyp.load('spiral'); print(type(s), [e.shape for e in s])\"",
+   "expected": "docstring describing a list of two arrays",
+   "actual": "<class 'list'> [(1000, 3), (1000, 3)]",
+   "evidence": [
+    "W3a_spiral_unaligned.png"
+   ]
+  },
+  {
+   "id": "X1-api-consistency-014",
+   "severity": "style",
+   "title": "Census: no __all__; star-import and dir() expose internal modules -- datageometry (self-described INTERNAL), external (vendored), tools (legacy), config (leaks importlib.metadata.version), core (un-underscored internals)",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"ns={}; exec('from hypertools import *', ns); print(sorted(k for k in ns if not k.startswith('_')))\\nimport hypertools.datageometry as dg; print(dg.__doc__.strip()[:60])\\nimport hypertools.config as c; print(c.version)\"",
+   "expected": "Star-import exposes only the supported API; internal modules underscored or documented",
+   "actual": "star-import names include 'config','core','datageometry','external','tools'; datageometry doc: 'INTERNAL -- not part of the public API.'; config.version: <function version at 0x...> (importlib.metadata.version)",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-015",
+   "severity": "minor",
+   "title": "apply_model's list-pipeline cannot resolve manip/align/predict/impute names that hypertools.Pipeline resolves ('ZScore' works in Pipeline, fails in apply_model); Pipeline(str) iterates characters",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; A=np.random.randn(30,5)\\nprint(hyp.Pipeline(['ZScore','PCA']).fit_transform(A).shape)\\ntry: hyp.apply_model(A, ['ZScore', {'model':'PCA','kwargs':{'n_components':2}}])\\nexcept ValueError as e: print('apply_model:', str(e)[:80])\\ntry: hyp.Pipeline('ZScore')\\nexcept ValueError as e: print('Pipeline(str):', str(e)[:60])\"",
+   "expected": "apply_model list pipelines resolve the same registry names as hypertools.Pipeline; Pipeline(str) says 'steps must be a list'",
+   "actual": "(30, 5); apply_model: unknown model 'ZScore'; supported names: AffinityPropagation, Agglomerati...; Pipeline(str): unknown pipeline step 'Z'; supported names: ...",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-016",
+   "severity": "minor",
+   "title": "plot(..., predict=..., t=25, return_model=True) bundle forecasts have t+1 rows (26) while hyp.predict(x, t=25) returns t rows (25)",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; tt=np.linspace(0,6*np.pi,150); traj=np.column_stack([np.sin(tt),np.cos(tt),tt/10]); print(hyp.predict(traj, model='Kalman', t=25).shape); b=hyp.plot(traj, predict='Kalman', t=25, show=False, return_model=True); print(b['predict']['forecasts'][0].shape, b['predict']['params'])\"",
+   "expected": "(25, 3) from both, per 'forecasts t new rows'",
+   "actual": "predict(t=25) shape: (25, 3); plot bundle forecast shape: (26, 3) | params: {'t': 25}",
+   "evidence": [
+    "W5_predict_overlay.png"
+   ]
+  },
+  {
+   "id": "X1-api-consistency-017",
+   "severity": "minor",
+   "title": "reduce(A, ndims=10) on 5-feature data silently returns 5 dims -- requested dimensionality capped with no warning",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; print(hyp.reduce(np.random.randn(30,5), ndims=10).shape)\"",
+   "expected": "(30, 10) or a warning/error naming the cap",
+   "actual": "(30, 5) silently",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-018",
+   "severity": "minor",
+   "title": "Dependency deprecation leakage: every default MDS run emits two sklearn FutureWarnings; every manip/ZScore call exercises a deprecated pandas 'copy' keyword inside datawrangler",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -W default -c \"import warnings, numpy as np, hypertools as hyp\\nwith warnings.catch_warnings(record=True) as w:\\n    warnings.simplefilter('always'); hyp.manip(np.random.randn(20,4))\\nprint([f'{x.category.__name__}@{x.filename.split(chr(47))[-1]}:{x.lineno}' for x in w])\\nhyp.reduce(np.random.randn(20,4), reduce='MDS', ndims=2)\"",
+   "expected": "No dependency deprecation warnings on plain default usage",
+   "actual": "['DeprecationWarning@decorate.py:421'] (The copy keyword is deprecated...); FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9 (sklearn _mds.py:744) + init FutureWarning (:754)",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-019",
+   "severity": "style",
+   "title": "describe() figure inconsistent across backends: matplotlib draws all datasets in one color with no legend; plotly names and colors each dataset; neither draws the 'average' curve",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, matplotlib.pyplot as plt, hypertools as hyp; w=hyp.load('weights_sample'); r=hyp.describe([a[:80] for a in w], show=True, max_dims=8, backend='matplotlib'); plt.gcf().savefig('describe_check.png')\"",
+   "expected": "Same visual encoding (per-dataset color + legend) on both backends; ideally the average overlaid",
+   "actual": "matplotlib: 3 same-color unlabeled lines (evidence W6_describe.png); plotly source adds name=f'dataset {i}' + legend (describe.py:143-151)",
+   "evidence": [
+    "W6_describe.png"
+   ]
+  },
+  {
+   "id": "X1-api-consistency-020",
+   "severity": "style",
+   "title": "align model='hyper' is documented as a deprecated alias but emits no DeprecationWarning (unlike align='s kwarg alias and legacy dicts, which do warn)",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import warnings, numpy as np, hypertools as hyp; X=np.random.randn(30,5); Y=np.random.randn(30,5)\\nwith warnings.catch_warnings(record=True) as w:\\n    warnings.simplefilter('always'); hyp.align([X,Y], model='hyper')\\nprint([str(x.message)[:60] for x in w if issubclass(x.category, DeprecationWarning)])\"",
+   "expected": "One DeprecationWarning naming 'HyperAlign' as the canonical spelling",
+   "actual": "[] (no DeprecationWarning recorded)",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-021",
+   "severity": "minor",
+   "title": "Rough error surfaces on wrong input kinds: 3D array -> leaked sklearn message; tuple container handled by reduce but misparsed by align; load(12345) -> raw os.fspath TypeError; pipeline='str' -> AttributeError",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; A=np.random.randn(30,5); B=np.random.randn(30,5)\\nfor lbl, fn in [('3d', lambda: hyp.reduce(np.stack([A,B]), ndims=2)), ('tuple-align', lambda: hyp.align((A,B))), ('load-int', lambda: hyp.load(12345)), ('pipe-str', lambda: hyp.analyze(A, pipeline='x'))]:\\n    try: fn(); print(lbl, 'no error')\\n    except Exception as e: print(lbl, '->', type(e).__name__, str(e)[:80])\"",
+   "expected": "hypertools-level messages naming the offending argument and the correct form",
+   "actual": "3d -> ValueError Found array with dim 3, while dim <= 2 is required by IncrementalPCA.; tuple-align -> ValueError input has no observations (0 rows)...; load-int -> TypeError expected str, bytes or os.PathLike object, not int; pipe-str -> AttributeError 'str' object has no attribute 'transform'",
+   "evidence": []
+  },
+  {
+   "id": "X1-api-consistency-022",
+   "severity": "style",
+   "title": "cluster() returns a Python list of numpy int32 scalars (flat across stacked datasets); every sibling returns arrays -- and set_interactive_backend accepts bogus backend names without validation",
+   "repro": "env MPLBACKEND=Agg /Users/jmanning/hypertools/.venv/bin/python -c \"import numpy as np, hypertools as hyp; A=np.random.randn(30,5); lab=hyp.cluster(A); print(type(lab), type(lab[0]), getattr(lab, 'shape', 'no shape')); hyp.set_interactive_backend('NotABackend'); print('bogus backend accepted silently')\"",
+   "expected": "ndarray of labels (or documented consistently); ValueError at set_interactive_backend call time for unknown backends",
+   "actual": "<class 'list'> <class 'numpy.int32'> no shape; bogus backend accepted silently",
+   "evidence": []
+  }
+ ]
+}

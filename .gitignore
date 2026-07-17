@@ -22,3 +22,7 @@ tests/screenshots/
 docs/auto_examples/animation.mp4
 docs/auto_examples/searchindex.db
 docs/auto_examples/test-image.pdf
+
+# stray local virtualenvs / build outputs (audit X5-001/X5-006)
+hypertools-dev/
+dist/

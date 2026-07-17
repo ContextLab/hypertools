@@ -30,7 +30,7 @@ according to your color palette.  If numerical values are passed, the values
 are binned (default resolution: 100) and plotted according to your color
 palette.
 
-.. GENERATED FROM PYTHON SOURCE LINES 15-36
+.. GENERATED FROM PYTHON SOURCE LINES 15-37
 
 
 
@@ -40,19 +40,8 @@ palette.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-    /Users/jmanning/hypertools/examples/plot_hue.py:31: DeprecationWarning: Conversion of an array with ndim > 0 to a scalar is deprecated, and will error in future. Ensure you extract a single element from your array before performing this operation. (Deprecated NumPy 1.25.)
-      tmp.append(int(np.random.randint(1000, size=1)))
 
 
-
-
-
-
-|
 
 .. code-block:: Python
 
@@ -67,12 +56,13 @@ palette.
     # load example data
     data = hyp.load('weights_sample')
 
-    # simulate random groups
+    # simulate random groups (seeded so the figure is reproducible)
+    np.random.seed(123)
     hue=[]
     for idx,i in enumerate(data):
         tmp=[]
         for iidx,ii in enumerate(i):
-                tmp.append(int(np.random.randint(1000, size=1)))
+                tmp.append(int(np.random.randint(1000)))
         hue.append(tmp)
 
     # plot
@@ -81,7 +71,7 @@ palette.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.081 seconds)
+   **Total running time of the script:** (0 minutes 0.035 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_hue.py:

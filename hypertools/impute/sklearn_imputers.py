@@ -12,6 +12,10 @@ opting in via `from sklearn.experimental import enable_iterative_imputer`
 before `IterativeImputer` becomes importable from `sklearn.impute`; done
 lazily inside `_iterative_fitter` so importing `hypertools.impute` never
 triggers sklearn's experimental-API warning unless this imputer is used.
+
+Unknown keyword arguments raise `TypeError` (misspelled parameters, e.g.
+``strateggy='median'``, used to be swallowed silently, running with the
+defaults instead -- QC 2026-07 red-team F17-impute-007/X2-error-quality-003).
 """
 import numpy as np
 import pandas as pd
@@ -107,10 +111,10 @@ class SimpleImputer(Imputer):
         Used when `strategy='constant'` (default: None).
     """
 
-    def __init__(self, strategy='mean', fill_value=None, **kwargs):
+    def __init__(self, strategy='mean', fill_value=None):
         required = ['imputer']
         super().__init__(strategy=strategy, fill_value=fill_value, fitter=_simple_fitter,
-                          transformer=transformer, data=None, required=required, **kwargs)
+                          transformer=transformer, data=None, required=required)
         self.strategy = strategy
         self.fill_value = fill_value
         self.fitter = _simple_fitter
@@ -132,10 +136,10 @@ class KNNImputer(Imputer):
         'uniform' or 'distance' (default: 'uniform').
     """
 
-    def __init__(self, n_neighbors=5, weights='uniform', **kwargs):
+    def __init__(self, n_neighbors=5, weights='uniform'):
         required = ['imputer']
         super().__init__(n_neighbors=n_neighbors, weights=weights, fitter=_knn_fitter,
-                          transformer=transformer, data=None, required=required, **kwargs)
+                          transformer=transformer, data=None, required=required)
         self.n_neighbors = n_neighbors
         self.weights = weights
         self.fitter = _knn_fitter
@@ -158,10 +162,10 @@ class IterativeImputer(Imputer):
         Seed for reproducibility (default: None).
     """
 
-    def __init__(self, max_iter=10, random_state=None, **kwargs):
+    def __init__(self, max_iter=10, random_state=None):
         required = ['imputer']
         super().__init__(max_iter=max_iter, random_state=random_state, fitter=_iterative_fitter,
-                          transformer=transformer, data=None, required=required, **kwargs)
+                          transformer=transformer, data=None, required=required)
         self.max_iter = max_iter
         self.random_state = random_state
         self.fitter = _iterative_fitter

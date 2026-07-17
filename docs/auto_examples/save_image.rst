@@ -25,7 +25,7 @@ Saving a plot
 To save a plot, simply use the `save_path` kwarg, and specify where you want
 the image to be saved, including the file extension (e.g. pdf)
 
-.. GENERATED FROM PYTHON SOURCE LINES 10-27
+.. GENERATED FROM PYTHON SOURCE LINES 10-26
 
 
 
@@ -48,7 +48,6 @@ the image to be saved, including the file extension (e.g. pdf)
 
     # import
     import hypertools as hyp
-    import numpy as np
 
     # load example data
     data = hyp.load('weights_sample')
@@ -61,7 +60,7 @@ the image to be saved, including the file extension (e.g. pdf)
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.112 seconds)
+   **Total running time of the script:** (0 minutes 0.131 seconds)
 
 
 .. _sphx_glr_download_auto_examples_save_image.py:

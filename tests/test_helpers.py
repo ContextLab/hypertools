@@ -16,16 +16,29 @@ def test_group_by_category_str():
     assert helpers.group_by_category(['a', 'a', 'c', 'b'])==[0, 0, 1, 2]
 
 
+# vals2colors/vals2bins expected values updated for the release-1.0 audit
+# fix (commit 5ddbbf3b): bin edges now span [vmin, vmax] exactly so the
+# FULL palette range is used -- the old expected values encoded the stray
+# max+1 edge that left the top third of the colormap unused (see the
+# comments in hypertools/_shared/helpers.py). min -> first palette slot,
+# max -> last palette slot, midpoint -> middle slot.
+_GNBU_LO = (0.9629680891964629, 0.9860207612456747, 0.9360092272202999)
+_GNBU_MID = (0.4740484429065744, 0.7953863898500577, 0.7713956170703576)
+_GNBU_HI = (0.03137254901960784, 0.2608227604767397, 0.5164628988850442)
+
+
 def test_vals2colors_list():
-    assert np.allclose(helpers.vals2colors([0, .5, 1]),[(0.9629680891964629, 0.9860207612456747, 0.9360092272202999), (0.7944636678200693, 0.9194156093810073, 0.7700884275278739), (0.4740484429065744, 0.7953863898500577, 0.7713956170703576)])
+    assert np.allclose(helpers.vals2colors([0, .5, 1]),
+                       [_GNBU_LO, _GNBU_MID, _GNBU_HI])
 
 
 def test_vals2colors_list_of_lists():
-    assert np.allclose(helpers.vals2colors([[0],[.5],[1]]),[(0.9629680891964629, 0.9860207612456747, 0.9360092272202999), (0.7944636678200693, 0.9194156093810073, 0.7700884275278739), (0.4740484429065744, 0.7953863898500577, 0.7713956170703576)])
+    assert np.allclose(helpers.vals2colors([[0], [.5], [1]]),
+                       [_GNBU_LO, _GNBU_MID, _GNBU_HI])
 
 
 def test_vals2bins():
-    assert helpers.vals2bins([0,1,2])==[0, 33, 66]
+    assert helpers.vals2bins([0,1,2])==[0, 50, 99]
 
 
 def test_interp_array():
@@ -62,18 +75,6 @@ def test_interp_array_list_interpval():
 # def test_check_data_str():
 #     with pytest.raises(Exception) as e_info:
 #         helpers.check_data(str(1))
-
-
-def test_parse_args_array():
-    x = [np.random.random((3,3))]
-    args=('o',)
-    assert helpers.parse_args(x, args)==[('o',)]
-
-
-def test_parse_args_list():
-    x = [np.random.random((3,3))]*2
-    args=('o',)
-    assert helpers.parse_args(x, args)==[('o',),('o',)]
 
 
 def test_parse_kwargs_array():

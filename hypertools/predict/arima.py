@@ -5,6 +5,17 @@ each column (ARIMA has no native multivariate support), then forecasts `t`
 steps ahead per column via `.forecast(steps=t)`. Default order `(1, 1, 1)`;
 `order` and any other `ARIMA` constructor kwargs pass through.
 
+IMPORTANT -- the default order only suits drift/random-walk-like signals:
+with d=1 differencing and no trend term, an ARIMA(1, 1, 1) forecast damps
+toward a constant within a few steps, so it cannot continue oscillatory
+(seasonal) signals or extrapolate a linear trend (QC 2026-07 red-team
+F16-predict-005: on a strong noisy sine the default's 30-step forecast
+anti-correlated with the held-out truth, while ``order=(4, 0, 0)`` tracked
+it at r~0.93). For oscillatory or strongly-trending data, pass a suitable
+``order=`` (and/or ``trend=``), or use ``model='AutoRegressor'``,
+``'GaussianProcess'``, or ``'Kalman'``, which handle those signals with
+their defaults.
+
 `statsmodels` is a core hypertools dependency, so the `ARIMA` forecaster works
 out of the box. It is still imported lazily (inside the fitter) so
 `hypertools.predict` stays importable even where the core deps were stripped,
@@ -13,7 +24,11 @@ raising a friendly `ImportError` only then.
 Convergence warnings (non-invertible starting MA parameters, failure to
 fully converge on small/synthetic series, etc.) are common and harmless for
 short forecasts; they are suppressed narrowly around the `fit()` call only
-(not globally), so genuine warnings elsewhere in the process are unaffected.
+(not globally) and only for statsmodels' OWN routine fit-time noise (its
+ConvergenceWarning/ValueWarning categories plus the two specific
+starting-parameter UserWarnings -- see `_import_statsmodels_warnings`), so
+genuine warnings, including unrelated UserWarnings raised during the fit,
+are unaffected.
 """
 import warnings
 
@@ -35,16 +50,29 @@ def _import_arima():
     return SMArima
 
 
-def _import_convergence_warning():
-    from statsmodels.tools.sm_exceptions import ConvergenceWarning
-    return ConvergenceWarning
+def _import_statsmodels_warnings():
+    """The statsmodels warning categories (plus specific UserWarning message
+    prefixes) that the fitter suppresses around each column's `.fit()` --
+    kept NARROW so genuine, unrelated warnings still propagate (release-1.0
+    audit, X4-warnings-015: the fitter used to blanket-suppress ALL
+    UserWarnings during fit)."""
+    from statsmodels.tools.sm_exceptions import (ConvergenceWarning,
+                                                 ValueWarning)
+    # statsmodels raises these fit-time diagnostics as plain UserWarnings
+    # (module statsmodels.tsa.statespace.sarimax); they are routine for
+    # short/synthetic series and harmless for short forecasts.
+    messages = ('Non-invertible starting MA parameters found',
+                'Non-stationary starting autoregressive parameters found')
+    return (ConvergenceWarning, ValueWarning), messages
 
 
 def fitter(data, **kwargs):
     """Fit an independent `statsmodels` ARIMA model per column of `data`.
 
-    Convergence/user warnings raised during each column's `.fit()` are
-    suppressed (narrowly, only around the fit call).
+    statsmodels' routine fit-time warnings (ConvergenceWarning,
+    ValueWarning, and the specific starting-parameter UserWarnings) raised
+    during each column's `.fit()` are suppressed -- narrowly, only around
+    the fit call, and only those; other warnings propagate.
 
     Parameters
     ----------
@@ -62,7 +90,7 @@ def fitter(data, **kwargs):
         entry per column of `data`, in column order.
     """
     sm_arima = _import_arima()
-    convergence_warning = _import_convergence_warning()
+    sm_categories, sm_messages = _import_statsmodels_warnings()
     order = kwargs.get('order', (1, 1, 1))
     arima_kwargs = {k: v for k, v in kwargs.items() if k not in ('order', 'n_iter')}
 
@@ -70,8 +98,16 @@ def fitter(data, **kwargs):
     for col in data.columns:
         x = data[col].to_numpy(dtype=float)
         with warnings.catch_warnings():
-            warnings.simplefilter('ignore', category=UserWarning)
-            warnings.simplefilter('ignore', category=convergence_warning)
+            # NARROW suppression (release-1.0 audit, X4-warnings-015):
+            # only statsmodels' own routine fit-time noise is silenced --
+            # its ConvergenceWarning/ValueWarning categories and the two
+            # specific starting-parameter UserWarnings -- so any OTHER
+            # UserWarning raised during the fit still reaches the caller.
+            for category in sm_categories:
+                warnings.filterwarnings('ignore', category=category)
+            for message in sm_messages:
+                warnings.filterwarnings('ignore', message=message,
+                                        category=UserWarning)
             fit_result = sm_arima(x, order=order, **arima_kwargs).fit()
         results.append(fit_result)
 
@@ -116,7 +152,7 @@ def applier(fitted_params, new_data, t):
 
     results = fitted_params['results']
     n_steps, future_index = resolve_t(new_data, t)
-    if n_steps < 0:
+    if n_steps <= 0:
         return new_data.loc[future_index]
 
     columns = {}
@@ -134,9 +170,13 @@ class ARIMA(Forecaster):
     Parameters
     ----------
     order : tuple of (p, d, q)
-        ARIMA order (default: ``(1, 1, 1)``).
+        ARIMA order (default: ``(1, 1, 1)``). The default suits
+        drift/random-walk-like signals only -- it damps to a near-constant
+        forecast within a few steps and cannot continue oscillations or
+        extrapolate trends (see the module docstring for alternatives).
     **kwargs
-        Passed through to ``statsmodels.tsa.arima.model.ARIMA``.
+        Passed through to ``statsmodels.tsa.arima.model.ARIMA`` (unknown
+        keyword arguments therefore raise ``TypeError`` from statsmodels).
     """
 
     def __init__(self, order=(1, 1, 1), **kwargs):

@@ -5,7 +5,6 @@ Helper functions
 """
 
 ##PACKAGES##
-import sys
 import numpy as np
 import itertools
 import pandas as pd
@@ -13,7 +12,13 @@ from matplotlib.lines import Line2D
 
 # NOTE: seaborn and scipy.interpolate are imported lazily inside the functions
 # that use them -- together they added ~1s to `import hypertools`.
-np.seterr(divide='ignore', invalid='ignore')
+#
+# 2026-07 audit (X7-code-org-rest-002): this module used to call
+# np.seterr(divide='ignore', invalid='ignore') at import time, permanently
+# silencing numpy divide/invalid warnings PROCESS-WIDE for anyone who
+# imported hypertools -- masking real numerical errors in users' own
+# analysis code. Suppression is now scoped locally (np.errstate) at the
+# specific call sites that intentionally divide by possibly-zero ranges.
 
 
 def center(x):
@@ -55,7 +60,17 @@ def scale(x):
     x_stacked = np.vstack(x)
     m1 = np.min(x_stacked)
     m2 = np.max(x_stacked - m1)
-    f = lambda x: 2*(np.divide(x - m1, m2)) - 1
+
+    def f(a):
+        """Rescale one array into [-1, 1] using the pooled min/range.
+
+        Constant data has zero range (m2 == 0): 0/0 is intentionally
+        allowed to produce NaN/inf here without warning -- suppression is
+        scoped to this division only (never process-wide; see note above).
+        """
+        with np.errstate(divide='ignore', invalid='ignore'):
+            return 2 * (np.divide(a - m1, m2)) - 1
+
     return [f(i) for i in x]
 
 
@@ -99,7 +114,14 @@ def vals2colors(vals, cmap='GnBu',res=100):
     # get palette from seaborn
     import seaborn as sns
     palette = np.array(sns.color_palette(cmap, res))
-    ranks = np.digitize(vals, np.linspace(np.min(vals), np.max(vals)+1, res+1)) - 1
+    vmin, vmax = np.min(vals), np.max(vals)
+    if vmax == vmin:
+        return [tuple(palette[0])] * len(vals)
+    # bin edges span [vmin, vmax] exactly so the palette's full range is
+    # used (a stray max+1 edge previously left the top of the map unused);
+    # clip keeps vals == vmax inside the last palette slot
+    edges = np.linspace(vmin, vmax, res + 1)
+    ranks = np.clip(np.digitize(vals, edges) - 1, 0, res - 1)
     return [tuple(i) for i in palette[ranks, :]]
 
 
@@ -114,7 +136,11 @@ def vals2bins(vals,res=100):
     # flatten if list of lists
     if any(isinstance(el, list) for el in vals):
         vals = list(itertools.chain(*vals))
-    return list(np.digitize(vals, np.linspace(np.min(vals), np.max(vals)+1, res+1)) - 1)
+    vmin, vmax = np.min(vals), np.max(vals)
+    if vmax == vmin:
+        return [0] * len(vals)
+    edges = np.linspace(vmin, vmax, res + 1)
+    return list(np.clip(np.digitize(vals, edges) - 1, 0, res - 1))
 
 
 def interp_array(arr, interp_val=10):
@@ -162,44 +188,6 @@ def interp_array_list(arr_list, interp_val=10):
     for idx,arr in enumerate(arr_list):
         smoothed[idx] = interp_array(arr,interp_val)
     return smoothed
-
-
-def parse_args(x, args):
-    """Broadcast positional plotting args across each dataset in `x`.
-
-    For each argument in `args`: if it is a list/tuple whose length
-    matches `len(x)`, one entry is assigned per dataset; otherwise the
-    same value is repeated for every dataset. Exits the process (via
-    `sys.exit(1)`) if a list/tuple argument's length does not match
-    `len(x)`.
-
-    Parameters
-    ----------
-    x : list
-        The datasets being plotted; only its length is used, to
-        determine how many per-dataset argument tuples to produce.
-    args : sequence
-        Positional arguments to distribute across the datasets.
-
-    Returns
-    -------
-    list of tuple
-        One tuple of arguments per dataset in `x`.
-    """
-    args_list = []
-    for i,item in enumerate(x):
-        tmp = []
-        for ii, arg in enumerate(args):
-            if isinstance(arg, (tuple, list)):
-                if len(arg) == len(x):
-                    tmp.append(arg[i])
-                else:
-                    print('Error: arguments must be a list of the same length as x')
-                    sys.exit(1)
-            else:
-                tmp.append(arg)
-        args_list.append(tuple(tmp))
-    return args_list
 
 
 def parse_kwargs(x, kwargs):
@@ -379,14 +367,27 @@ def get_type(data):
             return 'list_num'  # empty list -> empty numeric dataset
         if isinstance(data[0], (str, bytes)):
             return 'list_str'
-        elif isinstance(data[0], (int, float, np.number)) and not isinstance(data[0], bool):
+        # bools count as numbers (release-1.0 audit, F08-plot-inputs-013):
+        # a python list of bools is the same data as np.array([True, ...]),
+        # which has always been accepted (dtype kind 'b' -> 'arr_num').
+        # np.bool_ is listed explicitly because it is NOT an np.number
+        # subclass (and, under numpy >= 2, not a python bool either).
+        elif isinstance(data[0], (bool, int, float, np.number, np.bool_)):
             return 'list_num'
         elif isinstance(data[0], np.ndarray):
             return 'list_arr'
         else:
-            raise TypeError('Unsupported data type passed. Supported types: '
-                            'Numpy Array, Pandas DataFrame, String, List of strings'
-                            ', List of numbers')
+            # name the offending element type (release-1.0 audit,
+            # F08-plot-inputs-008); keep the 'Unsupported data type' prefix
+            # (existing callers/tests match on it).
+            raise TypeError(
+                f"Unsupported data type: list containing "
+                f"'{type(data[0]).__name__}' elements. A list dataset may "
+                "hold strings (text data), numbers/bools (a single 1-D "
+                "dataset), or numpy arrays (multiple datasets). Supported "
+                "per-dataset types: numpy array, pandas DataFrame, pandas "
+                "Series, str, list of strings, list of numbers, or a "
+                "(possibly nested) list/tuple of arrays/DataFrames.")
     elif isinstance(data, np.ndarray):
         # classify by dtype rather than indexing data[0][0] -- the latter
         # crashed on 1-D arrays (data[0] is a scalar, so data[0][0] raised
@@ -406,9 +407,15 @@ def get_type(data):
     elif isinstance(data, DataGeometry):
         return 'geo'
     else:
-        raise TypeError('Unsupported data type passed. Supported types: '
-                        'Numpy Array, Pandas DataFrame, String, List of strings'
-                        ', List of numbers')
+        # name the received type (release-1.0 audit, F08-plot-inputs-008);
+        # keep the 'Unsupported data type' prefix (existing callers/tests
+        # match on it). pandas Series and tuples are accepted by
+        # `format_data` (which converts them before calling get_type).
+        raise TypeError(
+            f"Unsupported data type '{type(data).__name__}'. Supported "
+            "types: numpy array, pandas DataFrame, pandas Series, str, "
+            "list of strings, list of numbers, or a (possibly nested) "
+            "list/tuple of arrays/DataFrames.")
 
 
 def convert_text(data):

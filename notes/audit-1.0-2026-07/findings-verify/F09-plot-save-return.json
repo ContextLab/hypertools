@@ -1,0 +1,147 @@
+{
+ "unit": "F09-plot-save-return",
+ "findings": [
+  {
+   "id": "F09-plot-save-return-001",
+   "severity": "major",
+   "title": "save_path= with user-supplied ax= saves whatever figure is pyplot-current, not the plotted figure",
+   "repro": "import numpy as np, matplotlib.pyplot as plt, hypertools as hyp\nplt.switch_backend('Agg')\ndata = np.random.randn(60, 4).cumsum(axis=0)\nuserfig = plt.figure(figsize=(4, 4))\nuserax = userfig.add_subplot(111, projection='3d')\ndecoy = plt.figure(figsize=(2, 2)); plt.plot([0, 1], [0, 1])  # decoy is now current\nfig = hyp.plot(data, ax=userax, save_path='out.png', show=False)\nfrom PIL import Image; print(Image.open('out.png').size)  # -> (200, 200): the decoy",
+   "expected": "out.png contains the hypertools plot drawn on userax (400x400 px)",
+   "actual": "saved pixels=(200, 200) -- PNG shows the decoy diagonal-line figure; returned fig is user fig: True",
+   "evidence": [
+    "user_ax_save.png",
+    "user_ax_save_expected.png"
+   ]
+  },
+  {
+   "id": "F09-plot-save-return-002",
+   "severity": "major",
+   "title": "Saving an animation as .apng silently destroys a pre-existing sibling .png file",
+   "repro": "import os, numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\nopen('movie.png', 'w').write('PRECIOUS USER DATA')\ndata = np.random.randn(30, 4).cumsum(axis=0)\nhyp.plot(data, animate=True, save_path='movie.apng', duration=2, frame_rate=10, show=False)\nprint(os.path.exists('movie.png'))  # -> False: user file destroyed",
+   "expected": "movie.apng written; unrelated pre-existing movie.png untouched",
+   "actual": "apng ok=True; sibling movie.png survived=False, content_intact=False, now=b''",
+   "evidence": []
+  },
+  {
+   "id": "F09-plot-save-return-003",
+   "severity": "major",
+   "title": "Animated plots leak a registered pyplot figure per call even with show=False (unbounded growth in export loops)",
+   "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport matplotlib.pyplot as plt, hypertools as hyp\ndata = np.random.randn(50, 4).cumsum(axis=0)\nfor i in range(12):\n    hyp.plot(data, animate=True, duration=1, frame_rate=5, show=False)  # result discarded\n    print(len(plt.get_fignums()))  # 1, 2, 3, ... 12",
+   "expected": "show=False leaves no figure registered (matches static behavior and the show= docstring)",
+   "actual": "fignums progression=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]; RSS 332.1->393.2MB (refs kept); discarded-results variant identical fignums growth",
+   "evidence": []
+  },
+  {
+   "id": "F09-plot-save-return-004",
+   "severity": "minor",
+   "title": "pathlib.Path save_path crashes animated matplotlib saves and ALL plotly saves (works for static matplotlib)",
+   "repro": "from pathlib import Path\nimport numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\ndata = np.random.randn(30, 4).cumsum(axis=0)\nhyp.plot(data, animate=True, save_path=Path('anim.gif'), duration=1, frame_rate=5, show=False)",
+   "expected": "anim.gif written (like static save_path=Path('x.png'), which works)",
+   "actual": "AttributeError: 'PosixPath' object has no attribute 'lower' (also raised for backend='plotly' with Path('x.html'))",
+   "evidence": []
+  },
+  {
+   "id": "F09-plot-save-return-005",
+   "severity": "minor",
+   "title": "Animated exports render at 2x the requested pixel size on retina Macs (backend force-switched to macosx even for save-only, MPLBACKEND=Agg runs)",
+   "repro": "MPLBACKEND=Agg python -c \"\nimport numpy as np, hypertools as hyp\nfrom PIL import Image\ndata = np.random.randn(30, 4).cumsum(axis=0)\nhyp.plot(data, animate=True, save_path='a.gif', duration=1, frame_rate=5, show=False, size=[4,3])\nhyp.plot(data, save_path='s.png', show=False, size=[4,3])\nprint(Image.open('a.gif').size, Image.open('s.png').size)\"",
+   "expected": "both 400x300 (4x3 inches at the nominal dpi=100), identical across machines",
+   "actual": "gif pixels=(800, 600) vs static png (400, 300); animated fig.dpi: 200.0, canvas: FigureCanvasMac, while 'backend before/after: Agg'",
+   "evidence": []
+  },
+  {
+   "id": "F09-plot-save-return-006",
+   "severity": "minor",
+   "title": "A failing save_path leaks the figure even with show=False (cleanup not exception-safe)",
+   "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport matplotlib.pyplot as plt, hypertools as hyp\ndata = np.random.randn(20, 3)\nfor _ in range(2):\n    try: hyp.plot(data, save_path='/nonexistent_dir_xyz/f.png', show=False)\n    except FileNotFoundError: pass\nprint(plt.get_fignums())  # [1, 2]",
+   "expected": "figure closed on the way out of a failed show=False call; fignums stays []",
+   "actual": "fignums after failed save with show=False: [1]; after second failed save: [1, 2]",
+   "evidence": []
+  },
+  {
+   "id": "F09-plot-save-return-007",
+   "severity": "minor",
+   "title": "save_path misuse produces cryptic or silent failures (no up-front validation)",
+   "repro": "import numpy as np, matplotlib; matplotlib.use('Agg')\nimport hypertools as hyp\ndata = np.random.randn(20, 3)\nhyp.plot(data, save_path=123, show=False)          # AttributeError: 'int' object has no attribute 'write'\nhyp.plot(data, save_path='', show=False)           # silently writes hidden file '.png'\nhyp.plot(data, save_path='~/f.png', show=False)    # FileNotFoundError: '~/f.png'\nhyp.plot(data, animate=True, save_path='x.html', duration=1, frame_rate=5, show=False)  # CalledProcessError (ffmpeg dump)",
+   "expected": "each case raises ValueError/TypeError naming save_path, the problem, and the fix (e.g. list supported animation extensions: gif, png, apng, svg, mp4, mov, avi)",
+   "actual": "AttributeError: 'int' object has no attribute 'write' | no error + hidden '.png' file created | FileNotFoundError: [Errno 2] No such file or directory: '~/hypertools_f09_tilde_test.png' | CalledProcessError: Command '['ffmpeg', '-f', 'rawvideo', ... '-y', '.../anim.html']' + MovieWriter stderr: Unable to choose an output format",
+   "evidence": []
+  },
+  {
+   "id": "F09-plot-save-return-008",
+   "severity": "doc",
+   "title": "show= docstring is stale: promises 'figure, axis and data objects will still be returned'",
+   "repro": "grep -n 'axis and data objects' /Users/jmanning/hypertools/hypertools/plot/plot.py",
+   "expected": "docstring describes the actual return (a Figure; HyperAnimation when animated; dict when return_model=True)",
+   "actual": "932:    show : bool\\n933:        If set to False, the figure will not be displayed, but the figure,\\n934:        axis and data objects will still be returned (default: True).",
+   "evidence": []
+  },
+  {
+   "id": "F09-plot-save-return-009",
+   "severity": "doc",
+   "title": "Returns docstring never mentions HyperAnimation, the actual (and headline) animated return type",
+   "repro": "MPLBACKEND=Agg python -c \"import numpy as np, hypertools as hyp; print(type(hyp.plot(np.random.randn(20,3), animate=True, duration=1, frame_rate=5, show=False)))\"",
+   "expected": "Returns section documents HyperAnimation (tuple-compatible) for animated matplotlib plots",
+   "actual": "<class 'hypertools.plot.hyper_animation.HyperAnimation'> returned; docstring says only ``(fig, animation)`` tuple",
+   "evidence": []
+  },
+  {
+   "id": "F09-plot-save-return-010",
+   "severity": "doc",
+   "title": "save_path docstring: FFMPEG requirement overclaimed, dead Homebrew URL, supported formats never listed",
+   "repro": "curl -sI https://raw.githubusercontent.com/Homebrew/install/master/install | head -1",
+   "expected": "docstring: ffmpeg needed only for video formats; live install instructions; explicit list of supported extensions per backend/mode",
+   "actual": "HTTP/2 404 ; gif/apng/svg animated saves succeeded with PillowWriter/SVG collector (no ffmpeg involvement), contradicting the NOTE",
+   "evidence": []
+  },
+  {
+   "id": "F09-plot-save-return-011",
+   "severity": "doc",
+   "title": "examples/save_movie.py group split silently drops subject 17 (data[:17] + data[18:])",
+   "repro": "python -c \"import hypertools as hyp; d = hyp.load('weights', align='hyper'); print(len(d), len(d[:17]), len(d[18:]))\"  # 36 17 18",
+   "expected": "group1 = np.mean(data[:18], 0); group2 = np.mean(data[18:], 0)  (all 36 subjects used)",
+   "actual": "n datasets loaded=36; NOTE group1=data[:17], group2=data[18:] -> dataset 17 used in neither group (example otherwise runs: mp4 bytes=6302986)",
+   "evidence": []
+  },
+  {
+   "id": "F09-plot-save-return-012",
+   "severity": "style",
+   "title": "show=True semantics differ by backend in plain scripts: plotly displays, matplotlib silently does nothing (and accumulates figures)",
+   "repro": "MPLBACKEND=Agg python -c \"\nimport numpy as np, matplotlib.pyplot as plt, hypertools as hyp\ndata = np.random.randn(50, 4).cumsum(axis=0)\nfor _ in range(25): hyp.plot(data, show=True)\nprint(len(plt.get_fignums()))\"  # 25 + RuntimeWarning; nothing was ever displayed",
+   "expected": "consistent show= semantics across backends (either both display in scripts, or matplotlib documents that display only happens in notebooks)",
+   "actual": "fignums 0->25; RSS 238.2->314.6MB; mpl warning: 'More than 20 figures have been opened. Figures created through the pyplot interface (`matplotlib.pyplot.figure`) are ret...'; no window/display ever produced by the matplotlib path",
+   "evidence": []
+  },
+  {
+   "id": "F09-plot-save-return-013",
+   "severity": "minor",
+   "title": "[infra] venv carries a STALE non-editable hypertools 1.0.0.dev0 that silently shadows the repo except when cwd is the repo root",
+   "repro": "cd /tmp && /Users/jmanning/hypertools/.venv/bin/python -c \"import hypertools; print(hypertools.__file__)\"  # site-packages, not the repo\n/Users/jmanning/hypertools/.venv/bin/pip show hypertools | grep -E 'Version|Location'",
+   "expected": "editable install: hypertools.__file__ under /Users/jmanning/hypertools/hypertools regardless of cwd",
+   "actual": "hyp file: /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/hypertools/__init__.py; Version: 1.0.0.dev0; grep -c HyperAnimation site-packages plot.py -> 0; diff vs repo -> DIFFERENT",
+   "evidence": [],
+   "skip_verification": "environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run."
+  },
+  {
+   "id": "F09-plot-save-return-014",
+   "severity": "minor",
+   "title": "[infra] plotly raster/vector exports (kaleido) unverified: static .png/.svg/.pdf and animated .gif/.mp4 paths untested on this machine",
+   "repro": "N/A -- deliberately not run (kaleido deadlock ban). Code paths: hypertools/plot/plotly_backend.py lines 961-970, 1046-1135.",
+   "expected": "coverage of plotly image export on a machine where kaleido works (CI)",
+   "actual": "not executed on this machine (infra constraint); .html paths verified instead",
+   "evidence": [
+    "plotly_static_screenshot.png"
+   ],
+   "skip_verification": "environment issue, controller-resolved: stale venv fixed via editable reinstall 2026-07-11; kaleido locally banned (CI covers). Do not re-run."
+  },
+  {
+   "id": "F09-plot-save-return-015",
+   "severity": "enhancement",
+   "title": "No way to control export resolution/dpi through plot(); savefig kwargs not exposed",
+   "repro": "N/A (missing functionality; verified absent: grep -n 'dpi' hypertools/plot/plot.py -> only two docstring hits, neither a kwarg)",
+   "expected": "hyp.plot(data, save_path='fig.png', dpi=300) or save_kwargs={'dpi': 300}",
+   "actual": "no such parameter; plt.savefig(save_path) hardcoded at plot.py:2718",
+   "evidence": []
+  }
+ ]
+}

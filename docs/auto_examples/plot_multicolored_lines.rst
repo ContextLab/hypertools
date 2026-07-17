@@ -76,7 +76,7 @@ the matplotlib and plotly backends.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.113 seconds)
+   **Total running time of the script:** (0 minutes 0.136 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_multicolored_lines.py:

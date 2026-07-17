@@ -1,0 +1,13 @@
+# sdist manifest (2026-07 audit X5-packaging-001/-002/-004):
+# - hypertools/core/config.ini must ship (get_default_options() reads it;
+#   also declared as package-data in pyproject.toml for the wheel)
+# - the FULL tests tree must ship so `pytest` runs from an unpacked sdist
+#   (X5-004: only the flat tests/test_*.py files shipped before, dropping
+#   tests/{align,cluster,core,...}/, tests/data/, tests/matplotlibrc, and
+#   the impute conftest -- a non-runnable suite)
+# - local virtualenvs / build junk must never leak into the sdist
+include hypertools/core/config.ini
+graft tests
+prune tests/.pytest_cache
+prune hypertools-dev
+global-exclude *.py[cod] __pycache__ .DS_Store

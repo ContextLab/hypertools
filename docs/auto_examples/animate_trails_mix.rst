@@ -18,9 +18,9 @@
 .. _sphx_glr_auto_examples_animate_trails_mix.py:
 
 
-=============================
+===============================
 Mixing trail styles per dataset
-=============================
+===============================
 
 `chemtrails`, `precog`, and `bullettime` each accept a per-dataset list of
 bools instead of a single bool, so different datasets in the same animation
@@ -75,7 +75,7 @@ can show different trail styles (GH #127): a low-opacity trace of the past
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 6.351 seconds)
+   **Total running time of the script:** (0 minutes 6.520 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate_trails_mix.py:

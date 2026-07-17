@@ -5,8 +5,8 @@ A basic example
 =============================
 
 Here is a basic example where we load in some data (a list of arrays - samples
-by features), take the first two arrays in the list and plot them as points
-with the 'o'.  Hypertools can handle all format strings supported by matplotlib.
+by features) and plot all three arrays as points using the '.' format string.
+Hypertools can handle all format strings supported by matplotlib.
 """
 
 # Code source: Andrew Heusser

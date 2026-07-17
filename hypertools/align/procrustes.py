@@ -5,7 +5,7 @@ import datawrangler as dw
 import numpy as np
 import pandas as pd
 
-from .common import Aligner
+from .common import Aligner, reject_unknown_kwargs
 from ..tools.format_data import format_data as formatter
 
 
@@ -18,7 +18,7 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
     The implementation of this function was based on the ProcrusteanMapper in
     pyMVPA: https://github.com/PyMVPA/PyMVPA
 
-    See also: http://en.wikipedia.org/wiki/Procrustes_transformation
+    See also: https://en.wikipedia.org/wiki/Procrustes_transformation
 
     Parameters
     ----------
@@ -53,146 +53,19 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
         information.
 
     Returns
-    ----------
+    -------
     aligned_source : Numpy array
         The array source is aligned to target and returned
 
     """
-
-    def fit(source, target):
-        """Compute the Procrustes projection matrix mapping `source` onto `target`.
-
-        Normalizes both arrays by their Frobenius norm, pads the
-        lower-dimensional one with zero columns (or raises if
-        `reduction=False` and `target` has fewer columns than
-        `source`), solves for the optimal linear map (SVD-based
-        orthogonal solution, or a least-squares oblique solution if
-        `oblique=True`), and rescales by the norm ratio if `scaling=True`.
-
-        Returns
-        -------
-        numpy.ndarray
-            The projection matrix `proj` such that `source @ proj`
-            approximates `target`.
-        """
-        datas = (source, target)
-        sn, sm = source.shape
-        tn, tm = target.shape
-
-        # Check the sizes
-        if sn != tn:
-            raise ValueError("Data for both spaces should have the same " \
-                  "number of samples. Got %d in template and %d in target space" \
-                  % (sn, tn))
-
-        # Sums of squares
-        ssqs = [np.sum(d**2, axis=0) for d in datas]
-
-        # XXX check for being invariant?
-        #     needs to be tuned up properly and not raise but handle
-        for i in range(2):
-            if np.all(ssqs[i] <= np.abs((np.finfo(datas[i].dtype).eps
-                                       * sn )**2)):
-                raise ValueError("For now do not handle invariant in time datasets")
-
-        norms = [ np.sqrt(np.sum(ssq)) for ssq in ssqs ]
-        normed = [ data/norm for (data, norm) in zip(datas, norms) ]
-
-        # add new blank dimensions to template space if needed
-        if sm < tm:
-            normed[0] = np.hstack( (normed[0], np.zeros((sn, tm-sm))) )
-
-        if sm > tm:
-            if reduction:
-                normed[1] = np.hstack( (normed[1], np.zeros((sn, sm-tm))) )
-            else:
-                raise ValueError("reduction=False, so mapping from " \
-                      "higher dimensionality " \
-                      "template space is not supported. template space had %d " \
-                      "while target %d dimensions (features)" % (sm, tm))
-
-        source, target = normed
-        if oblique:
-            # Just do silly linear system of equations ;) or naive
-            # inverse problem
-            if sn == sm and tm == 1:
-                T = np.linalg.solve(source, target)
-            else:
-                T = np.linalg.lstsq(source, target, rcond=oblique_rcond)[0]
-            ss = 1.0
-        else:
-            # Orthogonal transformation
-            # figure out optimal rotation
-            U, s, Vh = np.linalg.svd(np.dot(target.T, source),
-                                     full_matrices=False)
-            T = np.dot(Vh.T, U.T)
-
-            if not reflection:
-                # then we need to assure that it is only rotation
-                # "recipe" from
-                # http://en.wikipedia.org/wiki/Orthogonal_Procrustes_problem
-                # for more and info and original references, see
-                # http://dx.doi.org/10.1007%2FBF02289451
-                nsv = len(s)
-                s[:-1] = 1
-                s[-1] = np.linalg.det(T)
-                T = np.dot(U[:, :nsv] * s, Vh)
-
-            # figure out scale and final translation
-            # XXX with reflection False -- not sure if here or there or anywhere...
-            ss = sum(s)
-
-        # if we were to collect standardized distance
-        # std_d = 1 - sD**2
-
-        # select out only relevant dimensions
-        if sm != tm:
-            T = T[:sm, :tm]
-
-        # Assign projection
-        if scaling:
-            scale = ss * norms[1] / norms[0]
-            proj = scale * T
-        else:
-            proj = T
-        return proj
-
-    def transform(data, proj):
-        """Apply a fitted Procrustes projection matrix to `data`.
-
-        Parameters
-        ----------
-        data : array-like
-            Data to project.
-        proj : numpy.ndarray or None
-            Projection matrix returned by `fit`.
-
-        Returns
-        -------
-        numpy.ndarray
-            `data @ proj`.
-
-        Raises
-        ------
-        RuntimeError
-            If `proj` is `None` (mapper has not been fit).
-        """
-        if proj is None:
-            raise RuntimeError("Mapper needs to be trained before use.")
-
-        d = np.asmatrix(data)
-
-        # Do projection
-        res = (d * proj).A
-
-        return res
-
     if format_data:
         source, target = formatter([source, target])
 
-    # fit and transform
-    proj = fit(source, target)
-    return transform(source, proj)
+    # fit (single shared implementation: `align`, below) and transform
+    proj = align(source, target, scaling=scaling, reflection=reflection,
+                 reduction=reduction, oblique=oblique,
+                 oblique_rcond=oblique_rcond)
+    return np.asarray(source) @ np.asarray(proj)
 
 
 def align(source, target, scaling=True, reflection=True, reduction=False, oblique=False, oblique_rcond=-1):
@@ -255,18 +128,21 @@ def align(source, target, scaling=True, reflection=True, reduction=False, obliqu
 
     # Check the sizes
     if sn != tn:
-        raise ValueError("Data for both spaces should have the same number of samples. \
-                          Got %d in template and %d in target space" % (sn, tn))
+        raise ValueError(
+            "source and target must have the same number of rows (samples); "
+            "got %d (source) vs %d (target). Trim or resample the datasets "
+            "to matching lengths before aligning." % (sn, tn))
 
     # Sums of squares
     ssqs = [np.sum(d ** 2, axis=0) for d in datas]
 
-    # TODO: check for being invariant?
-    #       needs to be tuned up properly and not raise but handle
-    for i in range(2):
+    for i, which in enumerate(('source', 'target')):
         if np.all(ssqs[i] <= np.abs((np.finfo(datas[i].dtype).eps
                                      * sn) ** 2)):
-            raise ValueError("For now do not handle invariant in time datasets")
+            raise ValueError(
+                "cannot align a dataset with (near-)zero variance: the %s "
+                "dataset is constant/invariant across rows. Remove constant "
+                "datasets or add variability before aligning." % which)
 
     norms = [np.sqrt(np.sum(ssq)) for ssq in ssqs]
     normed = [data / norm for (data, norm) in zip(datas, norms)]
@@ -279,10 +155,12 @@ def align(source, target, scaling=True, reflection=True, reduction=False, obliqu
         if reduction:
             normed[1] = np.hstack((normed[1], np.zeros((sn, sm - tm))))
         else:
-            raise ValueError("reduction=False, so mapping from \
-                              higher dimensionality \
-                              template space is not supported. template space had %d \
-                              while target %d dimensions (features)" % (sm, tm))
+            raise ValueError(
+                "the source dataset has more columns (%d) than the target "
+                "(%d), and reduction=False disallows mapping into a "
+                "lower-dimensional space. Pass reduction=True to allow it, "
+                "or choose a target with at least as many columns as the "
+                "source." % (sm, tm))
 
     source, target = normed
     if oblique:
@@ -303,16 +181,15 @@ def align(source, target, scaling=True, reflection=True, reduction=False, obliqu
         if not reflection:
             # then we need to assure that it is only rotation
             # "recipe" from
-            # http://en.wikipedia.org/wiki/Orthogonal_Procrustes_problem
+            # https://en.wikipedia.org/wiki/Orthogonal_Procrustes_problem
             # for more and info and original references, see
-            # http://dx.doi.org/10.1007%2FBF02289451
+            # https://doi.org/10.1007/BF02289451
             nsv = len(s)
             s[:-1] = 1
             s[-1] = np.linalg.det(t)
             t = np.dot(u[:, :nsv] * s, vh)
 
         # figure out scale and final translation
-        # XXX with reflection False -- not sure if here or there or anywhere...
         ss = sum(s)
 
     # if we were to collect standardized distance
@@ -366,14 +243,16 @@ def fitter(data, **kwargs):
     ----------
     data : DataFrame or list of DataFrame
         Dataset(s) to align. If a list, each is aligned to a common
-        `target` (or to `data[index]`/`data[0]` if `target` is None).
+        `target` (or, when `target` is None, to `data[index]` --
+        `data[0]` by default).
     **kwargs
         `target` : DataFrame or None, optional dataset to align to.
-        `index` : int, default 0, index used to select the default
-        target within `data` when `target` is None and `data` is a list
-        of length 0 (kept for downstream lookups). Remaining kwargs
-        (`scaling`, `reflection`, `reduction`, `oblique`,
-        `oblique_rcond`) are forwarded to `align`.
+        `index` : int, default 0. When `target` is None and `data` is a
+        (non-empty) list, `data[index]` is used as the alignment target
+        (negative indices follow the usual Python convention). Also
+        stored for transformer-side lookups (see `transformer`).
+        Remaining kwargs (`scaling`, `reflection`, `reduction`,
+        `oblique`, `oblique_rcond`) are forwarded to `align`.
 
     Returns
     -------
@@ -381,16 +260,37 @@ def fitter(data, **kwargs):
         `{'index': index, 'proj': proj, ...other kwargs}`, where `proj`
         is a single projection matrix (if `data` is a single dataset) or
         a list of projection matrices (one per dataset in `data`).
+
+    Raises
+    ------
+    TypeError
+        If `index` is not an integer.
+    IndexError
+        If `index` is out of range for the datasets in `data` (when it
+        is used to select the default target).
     """
     target = kwargs.pop('target', None)
     index = kwargs.pop('index', 0)
+
+    if not isinstance(index, (int, np.integer)) or isinstance(index, bool):
+        raise TypeError(
+            f'index= must be an integer dataset index; got {index!r} '
+            f'({type(index).__name__}). Pass the (0-based) position of the '
+            'dataset to align the others to, or pass target= explicitly.')
 
     if isinstance(data, list):
         if len(data) == 0:
             proj = []
         else:
             if target is None:
-                target = data[0]
+                if not -len(data) <= index < len(data):
+                    raise IndexError(
+                        f'index={index} is out of range for {len(data)} '
+                        f'dataset(s); pass an index between 0 and '
+                        f'{len(data) - 1} (negative indices also work) to '
+                        'choose the default alignment target, or pass '
+                        'target= explicitly.')
+                target = data[index]
             proj = [align(d, target, **kwargs) for d in data]
     elif target is not None:
         proj = align(data, target, **kwargs)
@@ -421,26 +321,39 @@ def transformer(data, **kwargs):
 
     Raises
     ------
-    AssertionError
-        If `proj` is `None`, or if `data` and `proj` are both lists of
-        mismatched length.
+    RuntimeError
+        If `proj` is `None` (the model has not been fit).
+    ValueError
+        If `data` and `proj` are both lists of mismatched length.
     IndexError
         If `index` is outside the range of `proj` (when `proj` is a
         list and `data` is a single dataset).
     """
     proj = kwargs.pop('proj', None)
-    assert proj is not None, 'Need to fit model before transforming data'
+    if proj is None:
+        raise RuntimeError('Need to fit model before transforming data: no '
+                           'fitted Procrustes projection found. Call fit '
+                           '(or fit_transform) first.')
 
     if isinstance(proj, list):
         if len(proj) == 0:
             return data
         if isinstance(data, list):
-            assert len(proj) == len(data), "Data must either be passed in as an individual matrix, or must be of the" \
-                                           "same length as the fitted list of projections"
+            if len(proj) != len(data):
+                raise ValueError(
+                    f'cannot transform {len(data)} dataset(s) with '
+                    f'{len(proj)} fitted projection(s). Data must either '
+                    'be passed in as an individual matrix, or must be of '
+                    'the same length as the fitted list of projections.')
             return [xform(d, p) for d, p in zip(data, proj)]
         else:
             index = kwargs.pop('index', 0)
-            assert index < len(proj), IndexError(f'Index {index} is outside the range of list length ({len(proj)}')
+            if not -len(proj) <= index < len(proj):
+                raise IndexError(
+                    f'index={index} is outside the range of the fitted '
+                    f'projection list (length {len(proj)}); pass an index '
+                    f'between 0 and {len(proj) - 1} to select which fitted '
+                    'projection to apply.')
             return xform(data, proj[index])
     if isinstance(data, list):
         return [xform(d, proj) for d in data]
@@ -457,12 +370,17 @@ class Procrustes(Aligner):
     :param reduction: True or False (default: False)
     :param oblique: Are oblique transformations allowed?  (default: False)
     :param target: Optional argument for specifying a target dataset to align data to.  If not specified, data are
-      aligned to the first DataFrame in the given list.
+      aligned to ``data[index]`` (the first DataFrame in the given list by default).
+    :param index: Position (0-based) of the dataset used as the default alignment target when ``target`` is not
+      given (default: 0). Negative indices follow the usual Python convention.
     """
     def __init__(self, target=None, scaling=True, reflection=True,
                  reduction=False, oblique=False, oblique_rcond=-1, index=0, **kwargs):
+        reject_unknown_kwargs('Procrustes', kwargs,
+                              ['target', 'scaling', 'reflection', 'reduction',
+                               'oblique', 'oblique_rcond', 'index'])
         required = ['proj', 'index']
         super().__init__(required=required, fitter=fitter, transformer=transformer,
                          data=None, target=target, scaling=scaling, reflection=reflection,
                          reduction=reduction, oblique=oblique, oblique_rcond=oblique_rcond,
-                         index=index, **kwargs)
+                         index=index)

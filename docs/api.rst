@@ -112,6 +112,7 @@ Plot
   :toctree:
 
   plot
+  HyperAnimation
 
 Set interactive backend
 ------------------------
@@ -136,14 +137,20 @@ Apply model
   :toctree:
 
   apply_model
+  supported_models
 
 Pipeline
 ------------------
 
-`hypertools.Pipeline` is the fitted-model object returned by
-``return_model=True`` when more than one pipeline stage runs (GH #227
-#161); it can be applied to new data via ``.transform()`` and passed back in
-via ``pipeline=`` to `hypertools.plot`/`hypertools.analyze`.
+`hypertools.Pipeline` chains fitted pipeline stages for reuse (GH #227
+#161). Standalone dispatchers (`hypertools.reduce`, `hypertools.manip`,
+...) called with ``return_model=True`` return a `hypertools.Pipeline` when
+more than one stage ran (and the single fitted wrapper when only one stage
+ran); `hypertools.plot`'s ``return_model=True`` bundle always carries a
+`hypertools.Pipeline` under its ``'pipeline'`` key, even for a single
+stage. A `hypertools.Pipeline` can be applied to new data via
+``.transform()`` and passed back in via ``pipeline=`` to
+`hypertools.plot`/`hypertools.analyze`.
 
 .. autosummary::
   :toctree:
@@ -187,6 +194,18 @@ I/O
   :toctree:
 
   io.lsl_stream
+
+Exceptions
+------------------
+
+All hypertools-raised errors derive from `hypertools.HypertoolsError`:
+
+.. autosummary::
+  :toctree:
+
+  HypertoolsError
+  HypertoolsBackendError
+  HypertoolsIOError
 
 Tools
 ------------------

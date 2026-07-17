@@ -52,7 +52,7 @@ def _gensim_model_for(name, kind):
         Which family of gensim wrappers is eligible for `name`.
 
     Returns
-    ----------
+    -------
 
     cls : class or None
         The matching wrapper class from `hypertools.tools.gensim_models`
@@ -60,7 +60,7 @@ def _gensim_model_for(name, kind):
         `name` is not a recognized gensim model name for `kind`.
 
     Raises
-    ----------
+    ------
 
     ImportError
         If `name` is a recognized gensim model name but the optional
@@ -90,7 +90,7 @@ def _hf_fallback_model(name):
         'all-MiniLM-L6-v2'.
 
     Returns
-    ----------
+    -------
 
     cls : class
         A fit/transform/fit_transform class (fit is a no-op -- Hugging
@@ -130,7 +130,7 @@ def _spec_model_name(x):
         A vectorizer=/semantic= spec.
 
     Returns
-    ----------
+    -------
 
     name : str or None
         `x` itself if it is a string; `x['model']` if `x` is a dict with a
@@ -196,12 +196,13 @@ def text2mat(data, vectorizer='CountVectorizer',
         change default parameters, set to a dictionary e.g.
         {'model' : 'CountVectorizer', 'kwargs' : {'max_features' : 10}}
         (the legacy {'model', 'params'} form is also still accepted). See
-        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.feature_extraction.text
+        https://scikit-learn.org/stable/api/sklearn.feature_extraction.html
         for scikit-learn details. You can also specify your own vectorizer
         model as a class, or class instance.  With either option, the class
-        must have a fit_transform method (see here: http://scikit-learn.org/stable/data_transforms.html).
-        If a class, pass any parameters as a dictionary to vectorizer_params. If
-        a class instance, no parameters can be passed.
+        must have a fit_transform method (see
+        https://scikit-learn.org/stable/data_transforms.html).
+        To set parameters, use the dict form (or a configured class
+        instance); a bare class is instantiated with its defaults.
 
     semantic : str, dict, class or class instance
         Text model to use to transform text data. Built-in options are
@@ -212,13 +213,13 @@ def text2mat(data, vectorizer='CountVectorizer',
         parameters, set to a dictionary e.g. {'model' : 'NMF', 'kwargs' :
         {'n_components' : 10}} (the legacy {'model', 'params'} form is also
         still accepted). See
-        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
+        https://scikit-learn.org/stable/api/sklearn.decomposition.html
         for details on the two scikit-learn model options. You can also
         specify your own text model as a class, or class instance.  With
         either option, the class must have a fit_transform method (see
-        here: http://scikit-learn.org/stable/data_transforms.html).
-        If a class, pass any parameters as a dictionary to text_params. If
-        a class instance, no parameters can be passed.
+        https://scikit-learn.org/stable/data_transforms.html).
+        To set parameters, use the dict form (or a configured class
+        instance); a bare class is instantiated with its defaults.
 
     corpus : list (or list of lists) of text samples or 'wiki', 'nips', 'sotus'.
          Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
@@ -226,7 +227,7 @@ def text2mat(data, vectorizer='CountVectorizer',
          pretrained model will be loaded which can save a lot of time.
 
     Returns
-    ----------
+    -------
 
     transformed data : list of numpy arrays
         The transformed text data
@@ -242,7 +243,39 @@ def text2mat(data, vectorizer='CountVectorizer',
     if vectorizer is None:
         vectorizer = 'CountVectorizer'
     model_is_fit=False
+    if corpus is not None and not isinstance(corpus, str):
+        # corpus= must be TEXT: a list (or list of lists) of strings, or a
+        # hosted corpus name. A non-string scalar (e.g. corpus=12345) used
+        # to leak "'numpy.int64' object has no attribute 'lower'" from deep
+        # inside the vectorizer, naming neither the argument nor the fix
+        # (release-1.0 audit, D05-gallery-data-text-013).
+        def _all_text(c):
+            if isinstance(c, str):
+                return True
+            if isinstance(c, (list, tuple, np.ndarray)):
+                return len(c) > 0 and all(_all_text(ci) for ci in c)
+            return False
+        if not _all_text(corpus):
+            raise ValueError(
+                f'corpus= must be a (non-empty) list of text samples (or '
+                f'list of lists of them), or one of the hosted corpus '
+                f"names 'wiki'/'nips'/'sotus'; got "
+                f'{type(corpus).__name__}: {corpus!r}.')
     if corpus is not None:
+        if isinstance(corpus, str) and \
+                corpus not in ('wiki', 'nips', 'sotus'):
+            # a plain string is almost never a meaningful training corpus:
+            # it is fit as ONE literal document, so a typo'd hosted-corpus
+            # name silently produced confidently-wrong topic vectors
+            # (release-1.0 audit, D08-tutorials-analysis-011).
+            warnings.warn(
+                f"corpus={corpus!r} is not one of the hosted corpora "
+                "('wiki', 'nips', 'sotus'), so it is being treated as a "
+                "LITERAL one-document training corpus -- the resulting "
+                "embeddings will reflect that single string, not a real "
+                "corpus. If you meant a hosted corpus, check the spelling; "
+                "to train on your own corpus, pass a list of text "
+                "samples.", UserWarning)
         if corpus in ('wiki', 'nips', 'sotus',):
             if semantic == 'LatentDirichletAllocation' and vectorizer == 'CountVectorizer':
                 # The hosted pretrained topic model was pickled with an older
@@ -298,7 +331,7 @@ def text2mat(data, vectorizer='CountVectorizer',
             raise RuntimeError('Error: Vectorizer model must have fit_transform '
                                'method following the scikit-learn API. See here '
                                'for more details: '
-                               'http://scikit-learn.org/stable/data_transforms.html')
+                               'https://scikit-learn.org/stable/data_transforms.html')
     # GH #198 (QC P1-2): embedding vectorizers (gensim Word2Vec/Doc2Vec/
     # FastText) emit continuous, often-negative document vectors, which the
     # default topic-model semantic stage (LatentDirichletAllocation / NMF)
@@ -333,7 +366,7 @@ def text2mat(data, vectorizer='CountVectorizer',
             raise RuntimeError('Text model must have fit_transform '
                                'method following the scikit-learn API. See here '
                                'for more details: '
-                               'http://scikit-learn.org/stable/data_transforms.html')
+                               'https://scikit-learn.org/stable/data_transforms.html')
     if vectorizer:
         if vtype in ('str', 'dict'):
             vmodel = vectorizer_models[vectorizer](**vectorizer_params)

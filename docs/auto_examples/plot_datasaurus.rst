@@ -30,7 +30,7 @@ pandas DataFrames; here we plot *all thirteen* side by side as 2D
 scatter plots of small black dots (the ``.`` point marker) to show why
 it always pays to visualize your data.
 
-.. GENERATED FROM PYTHON SOURCE LINES 15-45
+.. GENERATED FROM PYTHON SOURCE LINES 15-44
 
 
 
@@ -96,12 +96,11 @@ it always pays to visualize your data.
         ax.set_visible(False)
 
     plt.tight_layout()
-    plt.show()
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.753 seconds)
+   **Total running time of the script:** (0 minutes 0.763 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_datasaurus.py:

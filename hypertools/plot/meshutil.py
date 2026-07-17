@@ -487,7 +487,19 @@ def _rescale_for_containment(
     # Halfspace (facet normal/offset) representation of the mesh's own
     # convex hull, centered on `centroid`: this is exactly the convex body
     # `points_enclosed` tests membership against (via Delaunay(verts)).
-    mesh_hull = ConvexHull(verts)
+    # Raise the documented ValueError (not a raw QhullError internals dump)
+    # if the smoothed mesh itself has collapsed to a point/plane -- e.g. a
+    # direct smooth_hull_3d(pre_inflate=0) call -- so callers' degenerate-
+    # skip paths (build_mesh_3d catches ValueError) still engage
+    # (release-1.0 audit, F07-006).
+    try:
+        mesh_hull = ConvexHull(verts)
+    except QhullError as exc:
+        raise ValueError(
+            "could not compute the convex hull of the smoothed mesh's own "
+            "vertices -- the mesh appears to be degenerate (e.g. collapsed "
+            "to a point or plane, as with pre_inflate <= 0)"
+        ) from exc
     exit_dist = _ray_exit_distance(mesh_hull.equations, centroid, unit_pts)
 
     needed_scale = np.ones(len(points))
@@ -906,7 +918,11 @@ def points_enclosed(points, verts):
     first, wherever the other mesh's volume encloses it. In both cases the
     enclosed geometry (marker points; the other mesh's overlapping faces)
     is simply not drawn there instead, since it would be hidden by an
-    opaque enclosing surface anyway.
+    opaque enclosing surface anyway. The marker-point hiding (1) only
+    applies to a FULLY-OPAQUE surface (``alpha >= 0.999``); a translucent
+    plotly surface renders with real Mesh3d opacity and keeps every
+    enclosed point visible, matching the matplotlib backend (release-1.0
+    audit, F07-001).
 
     Parameters
     ----------

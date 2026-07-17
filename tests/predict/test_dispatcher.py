@@ -17,6 +17,10 @@ def _make_df(n=60, ncols=2, index=None):
     return df
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_gp_short_alias_resolves_to_gaussian_process():
     # QC 2026-07: hyp.predict(x, model='GP') used to raise "unknown predict
     # model 'GP'"; only the full 'GaussianProcess' name was registered.
@@ -38,6 +42,11 @@ def test_gp_short_alias_resolves_to_gaussian_process():
     ('Laplace', 'skaters'),
     ('Chronos', 'chronos'),
 ])
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+# (only the GaussianProcess parameter case emits it)
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_all_forecaster_names_resolve(name, extra):
     if extra is not None:
         pytest.importorskip(extra)
@@ -54,6 +63,10 @@ def test_forecaster_names_match_registry():
 
 # --- dict (both forms) / class / instance resolution -----------------------
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_dict_params_form():
     df = _make_df(n=60)
     with pytest.warns(DeprecationWarning, match="'params'"):
@@ -61,18 +74,30 @@ def test_dict_params_form():
     assert out.shape == (4, 2)
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_dict_args_kwargs_form():
     df = _make_df(n=60)
     out = predict(df, model={'model': 'GaussianProcess', 'args': [], 'kwargs': {'alpha': 1e-6}}, t=4)
     assert out.shape == (4, 2)
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_class_form():
     df = _make_df(n=60)
     out = predict(df, model=GaussianProcess, t=4, alpha=1e-6)
     assert out.shape == (4, 2)
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_instance_form():
     df = _make_df(n=60)
     out = predict(df, model=GaussianProcess(alpha=1e-6), t=4)
@@ -81,12 +106,20 @@ def test_instance_form():
 
 # --- t: int and datetime horizons ------------------------------------------
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_t_int_horizon():
     df = _make_df(n=60)
     out = predict(df, model='GaussianProcess', t=5)
     assert list(out.index) == list(range(60, 65))
 
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_t_datetime_horizon():
     idx = pd.date_range('2026-01-01', periods=60, freq='D')
     df = _make_df(n=60, index=idx)
@@ -98,6 +131,10 @@ def test_t_datetime_horizon():
 
 # --- list-in / list-out ------------------------------------------------------
 
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+@pytest.mark.filterwarnings(
+    'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
 def test_list_in_list_out():
     dfs = [_make_df(n=50), _make_df(n=70)]
     out = predict(dfs, model='GaussianProcess', t=3)
@@ -146,24 +183,39 @@ def test_return_model_roundtrip_kalman_no_reestimation(monkeypatch):
     assert fitted.models_[0]['kf'] is original_kf
 
 
-def test_return_model_roundtrip_gp_no_reestimation(monkeypatch):
+def test_return_model_roundtrip_gp_conditions_on_new_data_no_reoptimization(monkeypatch):
+    # QC 2026-07 red-team F16-predict-007: GP reuse used to ignore the new
+    # data's values entirely and replay the original fit's forecast for ANY
+    # new dataset. Reuse now CONDITIONS the learned kernel on the new series
+    # -- without re-OPTIMIZING the kernel hyperparameters (the learned
+    # parameters that make the round-trip a genuine reuse).
     from sklearn.gaussian_process import GaussianProcessRegressor
 
-    a = _make_df(n=70)
-    fc_a, fitted = predict(a, model='GaussianProcess', t=5, return_model=True)
+    rng = np.random.default_rng(5)
+    rising = pd.DataFrame((0.1 * np.arange(100) + 0.1 * rng.standard_normal(100)).reshape(-1, 1))
+    falling = pd.DataFrame((-0.1 * np.arange(100) + 0.1 * rng.standard_normal(100)).reshape(-1, 1))
+
+    fc_a, fitted = predict(rising, model='GaussianProcess', t=5, return_model=True)
     original_gp = fitted.models_[0]['gp']
+    learned_theta = original_gp.kernel_.theta.copy()
 
     def _boom(self, *args, **kwargs):
-        raise AssertionError('fit() must not be called during predict_new (no re-estimation)')
+        raise AssertionError('kernel hyperparameters must not be re-optimized '
+                             'during predict_new (no re-estimation)')
 
-    monkeypatch.setattr(GaussianProcessRegressor, 'fit', _boom)
+    monkeypatch.setattr(GaussianProcessRegressor, '_constrained_optimization', _boom)
 
-    b = _make_df(n=40)
-    fc_b = predict(b, model=fitted, t=5)
+    fc_b = predict(falling, model=fitted, t=5)
 
-    assert fc_b.shape == (5, b.shape[1])
-    assert list(fc_b.index) == list(range(40, 45))
+    assert fc_b.shape == (5, falling.shape[1])
+    assert list(fc_b.index) == list(range(100, 105))
+    # the learned model object is untouched, and its hyperparameters were reused
     assert fitted.models_[0]['gp'] is original_gp
+    assert np.allclose(original_gp.kernel_.theta, learned_theta)
+    # the forecast reflects the NEW (falling) data, not a replay of the
+    # original (rising) fit's forecast
+    assert not np.allclose(np.asarray(fc_a), np.asarray(fc_b))
+    assert np.asarray(fc_b).ravel()[-1] < np.asarray(fc_b).ravel()[0]
 
 
 def test_return_model_roundtrip_autoregressor_no_reestimation(monkeypatch):

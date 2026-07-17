@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+================================
 Applying models with apply_model
-=============================
+================================
 
 `hyp.apply_model` is hypertools 1.0's unified model-application core:
 datasets are stacked, the model is fit ONCE across all of them, and the
@@ -29,8 +29,8 @@ hyp.plot(embedded, 'o')
 
 # pipelines: PCA to denoise, then TSNE to embed
 embedded = hyp.apply_model([data1, data2],
-                           [{'model': 'PCA', 'params': {'n_components': 5}},
-                            {'model': 'TSNE', 'params': {'n_components': 2}}])
+                           [{'model': 'PCA', 'kwargs': {'n_components': 5}},
+                            {'model': 'TSNE', 'kwargs': {'n_components': 2}}])
 hyp.plot(embedded, 'o')
 
 # reuse a fitted model on held-out data

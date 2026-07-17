@@ -3,6 +3,8 @@
 pipeline dispatcher (GH #138 cross-module kwargs, GH #227 `pipeline=` reuse).
 """
 
+import warnings
+
 from ..reduce.reduce import reduce as reducer
 from .align import align as aligner
 from .normalize import normalize as normalizer
@@ -11,36 +13,59 @@ from .normalize import normalize as normalizer
 _STAGE_KWARG_NAMES = ('manip', 'normalize', 'reduce', 'align', 'cluster')
 
 
+def _impute_format(data, impute):
+    """Run `format_data` with the user's `impute=` override BEFORE any stage
+    runs, so the chosen imputer (rather than the PPCA default buried inside
+    each stage's own `format_data` pass) fills any missing values. Preserves
+    the caller's single-dataset vs list-of-datasets shape."""
+    from .format_data import format_data as formatter
+
+    formatted = formatter(data, ppca=True, impute=impute)
+    if isinstance(data, (list, tuple)):
+        return formatted
+    return formatted[0]
+
+
 def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=None,
            cluster=None, pipeline=None, return_model=False, internal=False, impute=None,
            random_state=None):
     """
     Wrapper function for manip -> normalize -> reduce -> align -> cluster
-    transformations (the canonical 1.0 pipeline order, GH #153).
+    transformations (the canonical 1.0 pipeline order, GH #153): each
+    requested stage is applied to the previous stage's output, in that
+    order (e.g. `normalize=` output feeds `reduce=`, whose output feeds
+    `align=`).
 
     Parameters
     ----------
-    data : numpy array, pandas df, or list of arrays/dfs
-        The data to analyze
+    data : numpy array, pandas df, or list/tuple of arrays/dfs
+        The data to analyze. Each dataset must be 2-D (observations x
+        features); 1-D vectors are treated as single-feature columns. A
+        tuple of datasets is treated exactly like a list. `None` raises a
+        `TypeError` and an empty list raises a `ValueError` (matching
+        every other dispatcher), even when no stage kwargs are given.
 
-    manip : model spec or None
+    manip : model spec, False, or None
         Cross-module stage kwarg (GH #138): a `hypertools.manip` spec (a
         registry name, dict spec, class/instance, or a `list` chaining
         several -- see `hypertools.manip.manip.manip`), applied FIRST (the
         `manip` stage runs before `normalize`/`reduce`/`align`/`cluster` in
-        the canonical order). `None` (default) skips this stage.
+        the canonical order). `False` or `None` (default) skips this stage.
 
     normalize : str or False or None
         If set to 'across', the columns of the input data will be z-scored
-        across lists (default). That is, the z-scores will be computed with
-        with respect to column n across all arrays passed in the list. If set
+        across lists. That is, the z-scores will be computed with
+        respect to column n across all arrays passed in the list. If set
         to 'within', the columns will be z-scored within each list that is
         passed. If set to 'row', each row of the input data will be z-scored.
-        If set to False, the input data will be returned with no z-scoring.
+        If set to False or None (default), the input data will be returned
+        with no z-scoring.
 
-    reduce : str, dict, class, instance, or fitted Reducer
-        Decomposition/manifold learning model to use (default:
-        'IncrementalPCA'). Models supported: PCA, IncrementalPCA, SparsePCA,
+    reduce : str, dict, class, instance, fitted Reducer, False, or None
+        Decomposition/manifold learning model to use, or `False`/`None`
+        (default) to SKIP dimensionality reduction entirely (in which case
+        `ndims=` has no effect -- see `ndims` below). Models supported:
+        PCA, IncrementalPCA, SparsePCA,
         MiniBatchSparsePCA, KernelPCA, FastICA, FactorAnalysis, TruncatedSVD,
         DictionaryLearning, MiniBatchDictionaryLearning, TSNE, Isomap,
         SpectralEmbedding, LocallyLinearEmbedding, MDS, and UMAP; the mixture
@@ -54,7 +79,10 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
         model docs for details on parameters supported for each model.
 
     ndims : int
-        Number of dimensions to reduce
+        Number of dimensions to reduce to. Only takes effect when `reduce=`
+        is also given: if `reduce` is left at its default of `None` (or is
+        `False`), no reduction runs and `ndims=` is ignored (a `UserWarning`
+        is emitted so the request does not silently no-op).
 
     align : str, dict, False, or None
         Alignment model to bring a list of datasets into a shared space. If
@@ -64,7 +92,7 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
         align={'model': 'HyperAlign', 'kwargs': {'n_iter': 10}}. If False or
         None, no alignment is applied (default: None).
 
-    cluster : model spec or None
+    cluster : model spec, False, or None
         Cross-module stage kwarg (GH #138): a `hypertools.cluster` spec (a
         registry name, dict spec, or class/instance -- see
         `hypertools.cluster.cluster.cluster`), applied LAST (after `align`,
@@ -78,10 +106,12 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
         DBSCAN / AgglomerativeClustering that have no out-of-sample
         `predict`). For a list of datasets, `.transform` returns one flat
         label sequence over the row-concatenated data; to get labels split
-        PER dataset, call
-        `hypertools.cluster.cluster.cluster` directly (it returns per-dataset
-        labels alongside the transformed data in one call). `None` (default)
-        skips this stage.
+        PER dataset, split that flat sequence by each dataset's row count,
+        e.g. ``np.split(labels, np.cumsum([len(d) for d in data])[:-1])``
+        (`hypertools.cluster` likewise returns one flat label sequence for
+        a list input, because the datasets are row-stacked before
+        clustering). `False` or
+        `None` (default) skips this stage.
 
     pipeline : hypertools.Pipeline or None
         A previously-FITTED `Pipeline` (e.g. from an earlier
@@ -90,9 +120,18 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
         re-fitting them (GH #227). Mutually exclusive with
         `manip=`/`normalize=`/`reduce=`/`align=`/`cluster=` (all must be
         left at their default of `None`) -- passing both raises
-        `ValueError` naming the conflicting kwarg(s). `ndims=`/`internal=`/
-        `impute=` are still honored (`internal=True` still guarantees a
-        list is returned, even for a single-dataset `data`) (default: None).
+        `ValueError` naming the conflicting kwarg(s). `internal=`/`impute=`
+        are still honored (`internal=True` still guarantees a list is
+        returned, even for a single-dataset `data`; `impute=` overrides the
+        PPCA missing-data fill exactly as on the fitting paths). `ndims=`
+        is IGNORED on this path (with a `UserWarning`): a fitted Pipeline
+        applies its `reduce` stage exactly as fitted -- re-fit with
+        `analyze(..., reduce=..., ndims=..., return_model=True)` to change
+        the dimensionality. Reusing a pipeline whose last step is
+        `'cluster'` returns the TRANSFORMED DATA (matching the `cluster=`
+        contract above, not the labels); recover the labels via
+        `pipeline.named_steps['cluster'].transform(returned_data)`
+        (default: None).
 
     return_model : bool
         If True, also return the fitted model: a fitted `hypertools.Pipeline`
@@ -114,21 +153,65 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
 
     impute : str, dict, class, class instance or None
         Overrides the default PPCA missing-data fill (applied at the
-        `format_data` stage, when normalization triggers it) with a
-        different `hypertools.impute` model, e.g. 'Kalman', 'KNNImputer'
-        (default: None, i.e. PPCA -- byte-compatible with pre-1.0 behavior).
+        `format_data` stage, before any pipeline stage runs) with a
+        different `hypertools.impute` model, e.g. 'Kalman', 'KNNImputer'.
+        Honored on every path -- with or without `normalize=`, and with
+        `pipeline=` (default: None, i.e. PPCA -- byte-compatible with
+        pre-1.0 behavior).
+
+    random_state : int, numpy.random RandomState/Generator, or None
+        Seed (or seeded generator) threaded through to the `reduce=` and
+        `cluster=` stages so stochastic models (e.g. TSNE, MDS, KMeans)
+        give reproducible results across calls (default: None).
 
     Returns
-    ----------
-    analyzed_data : list of numpy arrays
-        The processed data. If `return_model=True`, an `(analyzed_data,
-        model)` tuple is returned instead.
+    -------
+    analyzed_data : list of numpy arrays (or a single array)
+        The processed data: for a LIST of datasets, a list with one entry
+        per dataset. For a SINGLE dataset, `normalize=`/`reduce=`-only
+        calls return a single array, while combinations that include
+        `align=` return a list of length 1 (alignment always operates on --
+        and returns -- a list); `manip=`-only calls return the
+        manipulator's own output type (typically pandas DataFrames). Pass
+        `internal=True` to guarantee a list regardless of input shape. If
+        `return_model=True`, an `(analyzed_data, model)` tuple is returned
+        instead.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import hypertools as hyp
+    >>> x = np.cumsum(np.random.default_rng(0).standard_normal((40, 5)),
+    ...               axis=0)
+    >>> analyzed = hyp.analyze(x, normalize='within', reduce='PCA', ndims=3)
+    >>> analyzed.shape
+    (40, 3)
 
     """
+    from ..core.shared import require_data, no_observations_message
+    # None-input and empty-input always RAISE, like every sibling dispatcher
+    # (2026-07 release audit, final wave item 9: analyze(None)/analyze([])
+    # with no stage kwargs used to silently return the input unchanged);
+    # a tuple of datasets is accepted exactly like a list (item 15).
+    require_data(data, 'analyze')
+    if isinstance(data, tuple):
+        data = list(data)
+    if isinstance(data, list) and len(data) == 0:
+        raise ValueError(
+            no_observations_message('analyze', 'got an empty list'))
+
     stage_kwargs = {'manip': manip, 'normalize': normalize, 'reduce': reduce,
                      'align': align, 'cluster': cluster}
 
     if pipeline is not None:
+        if not hasattr(pipeline, 'transform'):
+            raise TypeError(
+                "pipeline= expects a fitted hypertools.Pipeline (e.g. the "
+                "model returned by analyze(..., return_model=True)); got "
+                f"{type(pipeline).__name__}: {pipeline!r}. To specify "
+                "pipeline stages by name, use the manip=/normalize=/reduce=/"
+                "align=/cluster= kwargs instead."
+            )
         conflicting = sorted(name for name, value in stage_kwargs.items()
                              if value is not None)
         if conflicting:
@@ -138,10 +221,71 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
                 "encodes which stages run and their fitted parameters); "
                 "pass pipeline= alone."
             )
-        result = pipeline.transform(data)
+        if ndims is not None:
+            from ..core.model import external_stacklevel
+            warnings.warn(
+                f"ndims={ndims!r} is ignored when pipeline= is given: a "
+                "fitted Pipeline applies its reduce stage exactly as fitted. "
+                "Re-fit with analyze(..., reduce=..., ndims=..., "
+                "return_model=True) to change the dimensionality.",
+                stacklevel=external_stacklevel()
+            )
+        if impute is not None:
+            # honor impute= on the reuse path too (it was previously
+            # silently ignored here, falling back to PPCA -- QC 2026-07)
+            data = _impute_format(data, impute)
+        steps = getattr(pipeline, 'steps', None)
+        if steps and steps[-1][0] == 'cluster' and getattr(pipeline, 'is_fitted', False):
+            # `analyze` returns the TRANSFORMED DATA, never cluster labels
+            # (see the cluster=/pipeline= docs above) -- but a cluster-bearing
+            # Pipeline's own .transform ends AT the cluster step and would
+            # hand back the labels (QC 2026-07: the fit-then-reuse workflow
+            # silently flipped from (n, ndims) data to a 1-D label sequence).
+            # Apply the fitted non-cluster steps only; the labels stay
+            # recoverable via pipeline.named_steps['cluster'].transform(...).
+            from ..core.pipeline import _step_transform
+            result = data
+            for _name, step in steps[:-1]:
+                result = _step_transform(step, result)
+        else:
+            result = pipeline.transform(data)
         if internal and not isinstance(result, list):
             result = [result]
         return (result, pipeline) if return_model else result
+
+    # False disables a stage, exactly like None (the documented contract for
+    # align= -- 'If False or None, no alignment is applied' -- and how
+    # normalize=False has always behaved; QC 2026-07: align=False previously
+    # crashed with 'unknown model: False'). align=True (the retired pre-1.0
+    # boolean) gets the curated removal message on EVERY path, not just the
+    # legacy chain.
+    if align is True:
+        raise ValueError("align=True was removed in hypertools 1.0; specify the "
+                         "algorithm instead, e.g. align='hyper' or align='SRM'.")
+    if manip is False:
+        manip = None
+    if reduce is False:
+        reduce = None
+    if align is False:
+        align = None
+    if cluster is False:
+        cluster = None
+
+    if ndims is not None and reduce is None:
+        from ..core.model import external_stacklevel
+        warnings.warn(
+            f"ndims={ndims!r} was passed but reduce= is None/False, so NO "
+            "dimensionality reduction will be performed; also pass e.g. "
+            f"reduce='IncrementalPCA' to reduce to {ndims!r} dimensions.",
+            stacklevel=external_stacklevel()
+        )
+
+    if impute is not None:
+        # honor impute= wherever format_data imputes (QC 2026-07: it was
+        # previously threaded only through the normalize stage, so
+        # reduce-only calls silently fell back to PPCA): fill missing values
+        # with the requested model up front, before any stage runs.
+        data = _impute_format(data, impute)
 
     if return_model or manip is not None or cluster is not None:
         # return_model=True (any combination), or the NEW manip=/cluster=
@@ -150,37 +294,32 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
         # return_model=True hands back a genuinely fit-once-reusable
         # Pipeline (see hypertools.core.pipeline._DispatchStep).
         from ..core.pipeline import build_pipeline
-        if impute is not None and normalize not in (False, None):
-            # thread impute= through the same way the legacy chain below
-            # does (impute at format time, BEFORE any pipeline stage runs):
-            # build_pipeline's normalize stage calls
-            # hypertools.tools.normalize.normalize() with no impute=, so
-            # without this it always falls back to PPCA regardless of what
-            # impute= was passed here. Gated on `normalize not in (False,
-            # None)` to match normalize()'s own legacy gating -- format_data
-            # (and therefore impute=) only runs there when normalization is
-            # actually requested.
-            from .format_data import format_data as formatter
-            data = formatter(data, ppca=True, impute=impute)
         pipe = build_pipeline(manip=manip, normalize=normalize, reduce=reduce,
                               ndims=ndims, align=align, cluster=cluster,
                               random_state=random_state)
-        result = pipe.fit_transform(data)
-        if cluster is not None:
-            # analyze returns the TRANSFORMED DATA, not cluster labels, even when
-            # cluster= is given -- the labels live in the fitted 'cluster' step
-            # of the returned Pipeline (see this function's docstring). The
-            # fit_transform above ran the whole chain (including cluster) to fit
-            # it, so its return value is the cluster labels; recover the
-            # pre-cluster transformed data by re-applying the fitted non-cluster
-            # steps (QC 2026-07: analyze previously returned the raw labels,
-            # contradicting its documented contract).
-            from ..core.pipeline import _step_transform
+        if cluster is None:
+            result = pipe.fit_transform(data)
+        else:
+            # analyze returns the TRANSFORMED DATA, not cluster labels, even
+            # when cluster= is given -- the labels live in the fitted
+            # 'cluster' step of the returned Pipeline (see this function's
+            # docstring). Fit the steps one at a time (exactly what
+            # Pipeline.fit_transform does), CAPTURING the pre-cluster data
+            # along the way: re-deriving it afterwards via .transform breaks
+            # for embedding models with no transform method (TSNE / MDS /
+            # SpectralEmbedding -- QC 2026-07: these crashed with
+            # "'TSNE' object has no attribute 'transform'" after all the
+            # fitting work was done).
             result = data
             for name, step in pipe.steps:
                 if name == 'cluster':
-                    break
-                result = _step_transform(step, result)
+                    step.fit(result)
+                else:
+                    result = step.fit_transform(result)
+            # every step is now fitted; mark the Pipeline itself fitted the
+            # same way Pipeline.fit_transform does, so it is reusable via
+            # .transform / pipeline= (there is no public "mark fitted" API)
+            pipe._is_fitted = True
         if internal and not isinstance(result, list):
             result = [result]
         return (result, pipe) if return_model else result

@@ -6,6 +6,7 @@ split on `Aligner` (GH #227 shape validation, never-refit reuse), and
 `return_model`/cross-module kwargs. All data is real (small) numeric
 arrays/DataFrames -- no mocks.
 """
+import contextlib
 import warnings
 
 import numpy as np
@@ -68,14 +69,27 @@ def test_basic_alignment_by_name():
 ])
 def test_legacy_string_aliases_resolve_correctly(legacy_name, canonical):
     d1, d2 = _rotated_pair()
-    out, model = hyp.align([d1, d2], model=legacy_name, return_model=True)
+    # only 'hyper' is a DEPRECATED alias (it warns); 'SRM' is a supported
+    # short name and must stay silent
+    if legacy_name == 'hyper':
+        ctx = pytest.warns(DeprecationWarning,
+                           match="'hyper' is a deprecated alias")
+    else:
+        ctx = contextlib.nullcontext()
+    with ctx:
+        out, model = hyp.align([d1, d2], model=legacy_name, return_model=True)
     assert type(model).__name__ == canonical
     assert isinstance(out, list) and len(out) == 2
 
 
 def test_legacy_n_iter_passthrough_to_hyperalign():
     d1, d2 = _rotated_pair()
-    out, model = hyp.align([d1, d2], model='hyper', n_iter=3, return_model=True)
+    # the legacy 'hyper' alias is exercised deliberately; assert its
+    # deprecation notice fires
+    with pytest.warns(DeprecationWarning,
+                      match="'hyper' is a deprecated alias"):
+        out, model = hyp.align([d1, d2], model='hyper', n_iter=3,
+                               return_model=True)
     assert model.kwargs['n_iter'] == 3
 
 
@@ -246,13 +260,12 @@ def test_srm_family_transform_preserves_new_data_custom_index(cls):
     model.fit(train)
     aligned_held_out = model.transform(held_out)
 
-    # NB: `Aligner.transform`'s internal `trim_and_pad` selects rows via a
-    # `set` intersection (order not guaranteed), so compare index MEMBERSHIP
-    # rather than exact order -- the regression this guards against is the
-    # index being the fit-time `indices` (train's default RangeIndex(0, 40),
-    # disjoint from `custom_index`), not row reordering.
+    # `trim_and_pad` preserves the first dataset's index ORDER (F12-align-001
+    # fix), so the output index must equal `custom_index` exactly -- both in
+    # membership (the GH #227 regression: fit-time indices being reused) and
+    # in order.
     for a in aligned_held_out:
-        assert set(a.index) == set(custom_index)
+        assert list(a.index) == list(custom_index)
 
 
 def test_aligner_transform_before_fit_raises_not_fitted():
@@ -345,9 +358,16 @@ def test_return_model_single_stage_returns_fitted_aligner():
 
 
 def test_return_model_cross_kwargs_returns_pipeline():
+    # NB: cluster-stage parameters must be passed via the cluster stage's
+    # dict spec. This test previously passed a bare `n_clusters=2`, which
+    # was silently swallowed by HyperAlign's constructor and NEVER reached
+    # KMeans (verified: the fitted cluster step used the default); unknown
+    # align-model kwargs now raise TypeError (X2-error-quality-003).
     d1, d2 = _rotated_pair()
-    out, model = hyp.align([d1, d2], model='HyperAlign', cluster='KMeans',
-                            n_clusters=2, return_model=True)
+    out, model = hyp.align([d1, d2], model='HyperAlign',
+                            cluster={'model': 'KMeans',
+                                     'kwargs': {'n_clusters': 2}},
+                            return_model=True)
     assert isinstance(model, Pipeline)
 
 

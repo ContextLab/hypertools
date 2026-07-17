@@ -32,12 +32,18 @@ data = manifold @ projection + 0.05 * rng.standard_normal((300, 10))
 # a small, fast training budget -- plenty for a gallery example on 10D data
 ae_kwargs = {'epochs': 30, 'batch_size': 32, 'random_state': 0}
 
+# the VAE needs a longer budget and a small KL weight: with the default
+# kl_weight=1.0 the KL term dominates on a tiny dataset and the latent
+# space collapses to a point (a classic VAE failure mode)
+vae_kwargs = {'epochs': 100, 'batch_size': 32, 'random_state': 0,
+              'kl_weight': 0.001}
+
 pca_out = hyp.reduce(data, reduce='PCA', ndims=2)
 ae_out = hyp.reduce(
     data, reduce={'model': 'Autoencoder', 'kwargs': ae_kwargs}, ndims=2)
 vae_out = hyp.reduce(
     data,
-    reduce={'model': 'VariationalAutoencoder', 'kwargs': ae_kwargs},
+    reduce={'model': 'VariationalAutoencoder', 'kwargs': vae_kwargs},
     ndims=2)
 
 fig, axes = plt.subplots(1, 3, figsize=(15, 5))
@@ -47,4 +53,3 @@ for ax, (name, out) in zip(
     ax.scatter(out[:, 0], out[:, 1], c=t, cmap='viridis', s=10)
     ax.set_title(name)
 plt.tight_layout()
-plt.show()

@@ -20,6 +20,28 @@ returned object itself.
 """
 
 
+def mark_draw_started(animation):
+    """Silence matplotlib's 'Animation was deleted without rendering anything'
+    UserWarning for ``animation`` (release-1.0 audit, X4-warnings-012).
+
+    The warning fires from ``Animation.__del__`` when the private
+    ``_draw_was_started`` flag is still False; matplotlib only reads the flag
+    there (and itself force-sets it True in ``Animation.save``), so marking it
+    True has no effect on rendering -- saving/display still work exactly as
+    before. Used by ``HyperAnimation.__del__`` when a wrapper is discarded,
+    and by ``plot.py`` when handing the RAW ``FuncAnimation`` back in a
+    ``return_model=True`` bundle (that path never constructs a
+    ``HyperAnimation``, so without this the animation -- kept in a reference
+    cycle by its own canvas callbacks -- warned at the next cyclic-gc pass,
+    misattributed to whatever code ran later)."""
+    try:
+        if getattr(animation, '_draw_was_started', None) is False:
+            animation._draw_was_started = True
+    except Exception:
+        # never let cleanup raise during interpreter shutdown/GC
+        pass
+
+
 class HyperAnimation(tuple):
     """A ``(figure, animation)`` tuple with animation export/display helpers.
 
@@ -58,10 +80,13 @@ class HyperAnimation(tuple):
 
     def save(self, filename, *args, **kwargs):
         """Save the animation to a file. The writer is chosen by file extension
-        -- gif and png/apng (animated PNG) via Pillow, .svg as a frame-capped
-        vector animation, .mp4/.mov/.avi via ffmpeg -- matching what
-        ``hyp.plot(..., save_path=...)`` supports. Passing an explicit ``writer``
-        (or positional args) delegates straight to
+        -- .gif and .png/.apng (animated PNG) via Pillow, .svg as a
+        frame-capped vector animation, .mp4/.mov/.avi/.m4v/.mkv via ffmpeg
+        (only the video formats need ffmpeg) -- matching what
+        ``hyp.plot(..., save_path=...)`` supports; any other extension raises
+        ``ValueError`` naming the supported formats. ``filename`` may be a
+        str or any path-like (e.g. ``pathlib.Path``). Passing an explicit
+        ``writer`` (or positional args) delegates straight to
         ``matplotlib.animation.Animation.save`` instead.
 
         QC 2026-07: ``.save('x.svg')`` / ``.save('x.png')`` used to crash (raw
@@ -96,3 +121,23 @@ class HyperAnimation(tuple):
     def __repr__(self):
         return (f"HyperAnimation(figure={self.figure!r}, "
                 f"animation={type(self.animation).__name__})")
+
+    def __del__(self):
+        """Silence matplotlib's 'Animation was deleted without rendering
+        anything' UserWarning when a HyperAnimation is discarded/rebound
+        without ever being saved or displayed (release-1.0 audit,
+        X4-warnings-012: a common exploratory pattern -- ``hyp.plot(...,
+        animate=True)`` in a loop, or an unbound call -- scolded users at
+        garbage collection for hypertools' own object lifecycle). The
+        warning fires from ``Animation.__del__`` when its private
+        ``_draw_was_started`` flag is still False; marking the flag here,
+        as this wrapper is collected, keeps matplotlib quiet without
+        affecting rendering (nothing is drawn or closed -- saving/display
+        still work exactly as before if the inner animation object
+        outlives the wrapper). Delegates to ``mark_draw_started`` (also
+        used by the ``return_model=True`` bundle path in ``plot.py``)."""
+        try:
+            mark_draw_started(self[1])
+        except Exception:
+            # never let cleanup raise during interpreter shutdown/GC
+            pass

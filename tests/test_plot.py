@@ -66,9 +66,12 @@ def test_plot_reduce1d():
 
 
 def test_plot_reduce_align5d():
-    # should return 5d data since ndims=5
-    result = plot.plot(weights, ndims=5, align='hyper', show=False,
-                       return_model=True)
+    # should return 5d data since ndims=5; the legacy 'hyper' alias is
+    # exercised deliberately -- assert its deprecation notice fires
+    with pytest.warns(DeprecationWarning,
+                      match="'hyper' is a deprecated alias"):
+        result = plot.plot(weights, ndims=5, align='hyper', show=False,
+                           return_model=True)
     assert all([i.shape[1] == 5 for i in result['xform_data']])
 
 
@@ -79,7 +82,12 @@ def test_plot_reduce10d():
 
 
 def test_plot_model_dict():
-    fig = plot.plot(weights, reduce={'model' : 'PCA', 'params' : {'whiten' : True}}, show=False)
+    # legacy 'params' dict spec exercised deliberately; assert the
+    # deprecation notice fires
+    with pytest.warns(DeprecationWarning, match=r"'params'.*deprecated"):
+        fig = plot.plot(weights,
+                        reduce={'model': 'PCA', 'params': {'whiten': True}},
+                        show=False)
     assert isinstance(fig, mpl.figure.Figure)
 
 
@@ -89,7 +97,13 @@ def test_plot_cluster_str():
 
 
 def test_plot_cluster_dict():
-    fig = plot.plot(weights, cluster={'model' : 'KMeans', 'params' : {'n_clusters' : 3}}, show=False)
+    # legacy 'params' dict spec exercised deliberately; assert the
+    # deprecation notice fires
+    with pytest.warns(DeprecationWarning, match=r"'params'.*deprecated"):
+        fig = plot.plot(weights,
+                        cluster={'model': 'KMeans',
+                                 'params': {'n_clusters': 3}},
+                        show=False)
     assert isinstance(fig, mpl.figure.Figure)
 
 

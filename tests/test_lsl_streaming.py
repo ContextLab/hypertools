@@ -205,8 +205,12 @@ def test_timeout_raises_hypertools_io_error():
 @requires_pylsl
 def test_plot_stream_end_to_end(outlet_stream):
     stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
-    fig = hyp.plot(stream, show=False, stream_init=20, stream_chunk=10,
-                   stream_max=50)
+    # _sample_for_index is a monotonically increasing ramp, so every
+    # post-head sample is guaranteed outside the display box fitted on the
+    # first stream_init samples -- the clamped-samples notice must fire
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        fig = hyp.plot(stream, show=False, stream_init=20, stream_chunk=10,
+                       stream_max=50)
     assert fig is not None
     assert fig.stream_info['n_samples'] >= 50
     assert not fig.stream_info['truncated'] or \

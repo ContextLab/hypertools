@@ -45,7 +45,11 @@ def test_2d_labeled_plot_button_release_callback_runs_without_error():
     # labeled plots after any button_release_event
     data = [np.random.multivariate_normal(np.zeros(4), np.eye(4), size=5)]
     data2d = reducer(data, ndims=2)
-    labels = [[f"p{i}" for i in range(data2d[0].shape[0])]]
+    # one label per OBSERVATION (release-1.0 audit: plot() now validates the
+    # labels= count; `data2d` is a bare (5, 2) array, so `data2d[0]` is a ROW
+    # -- the old expression accidentally made 2 labels for 5 points, which
+    # used to be silently accepted)
+    labels = [[f"p{i}" for i in range(len(data2d))]]
 
     fig = plot.plot(data2d, labels=labels, show=False)
     ax = fig.axes[0]
@@ -61,7 +65,7 @@ def test_3d_labeled_plot_button_release_callback_still_works():
     # 3D labeled plots must keep working after the 2D fix
     data = [np.random.multivariate_normal(np.zeros(4), np.eye(4), size=5)]
     data3d = reducer(data, ndims=3)
-    labels = [[f"p{i}" for i in range(data3d[0].shape[0])]]
+    labels = [[f"p{i}" for i in range(len(data3d))]]
 
     fig = plot.plot(data3d, labels=labels, show=False)
     ax = fig.axes[0]

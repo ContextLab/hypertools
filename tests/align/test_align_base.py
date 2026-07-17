@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 from hypertools.align.common import Aligner, pad, trim_and_pad
 
 
@@ -14,7 +15,9 @@ def test_pad_widens_to_c_columns():
 def test_trim_and_pad_aligns_shapes():
     a = pd.DataFrame(np.random.RandomState(0).rand(5, 3))
     b = pd.DataFrame(np.random.RandomState(1).rand(4, 2))
-    out = trim_and_pad([a, b])
+    # unequal row counts deliberately provoke the row-trim notice
+    with pytest.warns(UserWarning, match='common to all datasets'):
+        out = trim_and_pad([a, b])
     assert out[0].shape[1] == out[1].shape[1] == 3
     assert out[0].shape[0] == out[1].shape[0] == 4  # common rows
 

@@ -18,8 +18,12 @@ def df2mat(data, return_labels=False):
         The df that you want to convert.  Note that this currently only works
         with single-level (not Multi-level indices).
 
+    return_labels : bool
+        If True, also return a list of column labels for the transformed
+        array (default: False).
+
     Returns
-    ----------
+    -------
     plot_data : Numpy array
         A Numpy array where text columns are turned into binary vectors.
 
@@ -29,8 +33,18 @@ def df2mat(data, return_labels=False):
 
     """
 
-    df_str = data.select_dtypes(include=['object'])
-    df_num = data.select_dtypes(exclude=['object'])
+    # pandas >= 3 stores text columns as the dedicated 'str' dtype;
+    # select_dtypes(include=['object']) only matches them via deprecated
+    # back-compat (Pandas4Warning, slated for removal -- after which text
+    # columns would silently stay in df_num as an object array that
+    # np.isnan/reducers cannot handle). Select both kinds explicitly;
+    # pandas < 3 rejects 'str' with a TypeError, so fall back there.
+    try:
+        df_str = data.select_dtypes(include=['object', 'str'])
+        df_num = data.select_dtypes(exclude=['object', 'str'])
+    except TypeError:  # pandas < 3: no dedicated 'str' dtype
+        df_str = data.select_dtypes(include=['object'])
+        df_num = data.select_dtypes(exclude=['object'])
 
     for colname in df_str.columns:
         # dtype=float: pandas >= 2.0 defaults get_dummies to bool, and

@@ -73,7 +73,7 @@ The dev-1.0 refactor moved several tools into their own top-level subpackages (e
 - `backend.py` - Backend selection (`set_interactive_backend()`)
 - `matplotlib_backend.py` - Low-level matplotlib drawing (`draw.py` is now a 3-line compatibility shim over this)
 - `plotly_backend.py` - Low-level plotly drawing (interactive backend)
-- `interactive.py` - Interactive-mode helpers
+- `interactive.py` - 4-line rename shim over `plotly_backend.py` (preserves the pre-1.0 `hypertools.plot.interactive` import path)
 - `animate.py` - Animation support
 - `colors.py` - Color handling
 - `density.py` / `surface.py` - Density and iso-surface rendering
@@ -82,18 +82,21 @@ The dev-1.0 refactor moved several tools into their own top-level subpackages (e
 - `multiindex.py` - Pandas MultiIndex handling
 - `fonts.py` - Font handling
 
-**External Dependencies** (`hypertools/_externals/`)
-- `ppca.py` - Probabilistic Principal Component Analysis
-- `srm.py` - Shared Response Model
+**Vendored Third-Party Code** (`hypertools/external/`)
+- `ppca.py` - Probabilistic Principal Component Analysis (vendored from pca-magic, Apache-2.0)
+- `brainiak.py` - Shared Response Model family (vendored from brainiak, Apache-2.0)
+- `hypertools/_externals/` contains only 3-line re-export shims (`ppca.py`, `srm.py`) that preserve the pre-1.0 import paths; the real implementations live in `hypertools/external/`
 
 ### Data Flow
 
 1. **Input Processing**: Data is formatted and validated through `format_data()`
 2. **Normalization**: Optional data normalization via `normalize()`
-3. **Alignment**: Optional cross-dataset alignment via `align()`
-4. **Dimensionality Reduction**: Data is reduced via `reduce()`
+3. **Dimensionality Reduction**: Data is reduced via `reduce()`
+4. **Alignment**: Optional cross-dataset alignment via `align()`
 5. **Clustering**: Optional clustering via `cluster()`
 6. **Visualization**: Final plotting through `plot()`
+
+(Verified canonical order — audit F03-011: normalize → reduce → align → cluster; figure coordinates match this staged order exactly.)
 
 ### Key Design Patterns
 

@@ -28,7 +28,7 @@ loads *every* shape in the zoo and displays each in its own panel,
 plotted as small black dots (the ``,`` pixel marker) by passing
 pre-created 3D axes to `hyp.plot` via the `ax` keyword.
 
-.. GENERATED FROM PYTHON SOURCE LINES 13-44
+.. GENERATED FROM PYTHON SOURCE LINES 13-43
 
 
 
@@ -73,12 +73,11 @@ pre-created 3D axes to `hyp.plot` via the `ax` keyword.
         ax.set_visible(False)
 
     plt.tight_layout()
-    plt.show()
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.226 seconds)
+   **Total running time of the script:** (0 minutes 0.234 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_shapes_zoo.py:

@@ -288,11 +288,13 @@ class TestStaticPlotly3D:
             assert np.all(faces >= 0) and np.all(faces < len(m.x))
 
     def test_enclosed_marker_points_are_hidden_not_removed(self):
-        """Regression: points a dataset's own surface encloses are hidden
-        (NaN'd) from its marker trace -- plotly cannot reliably depth-
-        composite Scatter3d points enclosed by an opaque Mesh3d surface --
-        while the trace itself keeps its full original point count (NaN
-        entries, not a shorter array)."""
+        """Regression: points a dataset's own FULLY-OPAQUE (alpha=1.0)
+        surface encloses are hidden (NaN'd) from its marker trace --
+        plotly cannot reliably depth-composite Scatter3d points enclosed
+        by an opaque Mesh3d surface -- while the trace itself keeps its
+        full original point count (NaN entries, not a shorter array).
+        Translucent surfaces keep every point visible instead (release-1.0
+        audit F07-001; see tests/test_plot_audit_b4.py)."""
         data = _two_datasets_3d()
         fig = hyp.plot(data, '.', surface={'alpha': 1.0}, backend='plotly',
                        show=False)
@@ -347,19 +349,36 @@ class TestKnobControlBothBackends:
 
     def test_alpha_honored_both_backends(self):
         """mpl: `alpha` is the collection's own RGBA alpha channel (real
-        compositing). plotly: `alpha` is baked into the base color via
-        alpha-compositing towards white BEFORE shading (see
-        `plotly_backend._blend_toward_white`) -- a lower alpha therefore
-        makes the precomputed vertex colors lighter (higher mean channel
-        value), not more see-through."""
+        compositing). plotly (updated for release-1.0 audit F07-001 --
+        this test previously pinned the buggy toward-white color-baking
+        for ALL alphas, which hid every enclosed data point regardless of
+        translucency): a translucent (< 0.999) surface now carries REAL
+        Mesh3d opacity (per-layer ``1 - sqrt(1 - alpha)`` over the doubled
+        winding, compositing to exactly ``alpha`` total) with the
+        UNwhitened base color -- matching matplotlib's real-compositing
+        semantics -- so the enclosed data points stay visible through it.
+        Only a fully-opaque (>= 0.999) surface still bakes its alpha into
+        the color (`plotly_backend._blend_toward_white`) and renders at
+        trace opacity 1.0."""
         opaque_mpl = _mpl_facecolors(self._mpl({'alpha': 1.0}))
         translucent_mpl = _mpl_facecolors(self._mpl({'alpha': 0.3}))
         assert np.allclose(opaque_mpl[:, 3], 1.0)
         assert np.allclose(translucent_mpl[:, 3], 0.3)
 
-        opaque_pl = _plotly_vertexcolors(self._plotly({'alpha': 1.0}))
-        translucent_pl = _plotly_vertexcolors(self._plotly({'alpha': 0.3}))
-        assert translucent_pl.mean() > opaque_pl.mean()
+        fig_opaque = self._plotly({'alpha': 1.0})
+        fig_translucent = self._plotly({'alpha': 0.3})
+        mesh_opaque = [t for t in fig_opaque.data if t.type == 'mesh3d'][0]
+        mesh_translucent = [t for t in fig_translucent.data
+                            if t.type == 'mesh3d'][0]
+        assert mesh_opaque.opacity == 1.0
+        assert mesh_translucent.opacity == pytest.approx(
+            1.0 - np.sqrt(1.0 - 0.3))
+        # the translucent mesh shades the TRUE base color (real compositing
+        # handles the lightening), so its vertexcolor matches the opaque
+        # trace's exactly instead of being pre-whitened
+        opaque_pl = _plotly_vertexcolors(fig_opaque)
+        translucent_pl = _plotly_vertexcolors(fig_translucent)
+        assert np.allclose(opaque_pl, translucent_pl, atol=1.0)
 
     def test_ambient_raises_darkest_face_both_backends(self):
         low = _mpl_facecolors(self._mpl({'lighting': {'ambient': 0.1}}))

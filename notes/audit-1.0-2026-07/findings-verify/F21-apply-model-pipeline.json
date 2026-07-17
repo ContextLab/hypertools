@@ -1,0 +1,151 @@
+{
+ "unit": "F21-apply-model-pipeline",
+ "findings": [
+  {
+   "id": "F21-apply-model-pipeline-001",
+   "severity": "major",
+   "title": "apply_model silently ignores the documented 'args' key of dict model specs",
+   "repro": "import numpy as np, hypertools as hyp\nd = np.cumsum(np.random.default_rng(1).standard_normal((80, 8)), axis=0)\nprint(np.asarray(hyp.apply_model(d, {'model': 'PCA', 'args': [3]})).shape)  # (80, 8), expected (80, 3)\nfrom hypertools import Pipeline\nprint(np.asarray(Pipeline([{'model': 'PCA', 'args': [3]}]).fit_transform(d)).shape)  # (90->80, 3): Pipeline honors args",
+   "expected": "(80, 3) -- positional args passed to the model constructor as documented, or at minimum a loud error that 'args' is unsupported here",
+   "actual": "OK: (80, 8)  [t03 case 3: '!!! ARGS SILENTLY IGNORED: got shape (80, 8), expected (80, 3)']; Pipeline form: OK: (90, 3)",
+   "evidence": []
+  },
+  {
+   "id": "F21-apply-model-pipeline-002",
+   "severity": "major",
+   "title": "Dispatcher-built Pipelines (multi-stage return_model, plot bundle['pipeline']) cannot be pickled or hyp.save'd",
+   "repro": "import numpy as np, pickle, hypertools as hyp\ntrain = np.cumsum(np.random.default_rng(4).standard_normal((100, 8)), axis=0)\nred, bp = hyp.reduce(train, reduce='PCA', ndims=3, normalize='across', return_model=True)\npickle.dumps(bp)  # AttributeError\n# equivalently: hyp.save(bp, '/tmp/bp.pkl')\n# and: bundle = hyp.plot([train], normalize='across', reduce='PCA', ndims=3, show=False, return_model=True); pickle.dumps(bundle['pipeline'])",
+   "expected": "Fitted Pipeline round-trips through pickle/hyp.save and reproduces .transform exactly (as the user-constructed Pipeline does: verified match=True)",
+   "actual": "AttributeError: Can't get local object '_make_stage_step.<locals>.<lambda>' (raised for pickle.dumps(bp), hyp.save(bp, ...), and pickle.dumps(bundle['pipeline']))",
+   "evidence": []
+  },
+  {
+   "id": "F21-apply-model-pipeline-003",
+   "severity": "major",
+   "title": "apply_model(list-of-stages, stack=False, return_model=True) returns a broken Pipeline whose transform crashes",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(5)\nd1 = np.cumsum(rng.standard_normal((70, 6)), axis=0); d2 = np.cumsum(rng.standard_normal((50, 6)), axis=0)\nres, pipe = hyp.apply_model([d1, d2], [{'model': 'PCA', 'kwargs': {'n_components': 4}}, {'model': 'PCA', 'kwargs': {'n_components': 2}}], stack=False, return_model=True)\nprint(repr(pipe))\npipe.transform(np.asarray(d1, float))  # AttributeError",
+   "expected": "Either a usable per-dataset model structure (e.g. list of Pipelines, one per dataset) or a clear error that stack=False + list + return_model is unsupported",
+   "actual": "Pipeline([list=[PCA(n_components=4), PCA(n_components=4)], list-1=[PCA(n_components=2), PCA(n_components=2)]]); pipe.transform(d1): RAISED AttributeError: 'list' object has no attribute 'fit_predict'",
+   "evidence": []
+  },
+  {
+   "id": "F21-apply-model-pipeline-004",
+   "severity": "minor",
+   "title": "mode= applies to EVERY stage of a list pipeline, so reduce->cluster pipelines cannot produce labels; mode/method mismatches raise raw AttributeErrors",
+   "repro": "import numpy as np, hypertools as hyp\nd1 = np.cumsum(np.random.default_rng(0).standard_normal((100, 10)), axis=0)\nhyp.apply_model([d1, d1], ['PCA', 'KMeans'], mode='fit_predict')  # AttributeError on PCA\n# also: hyp.apply_model(d1, 'PCA', mode='predict_proba'); hyp.apply_model(d1, 'DBSCAN', mode='fit_transform')",
+   "expected": "Either mode applies to the final stage only (stages before it auto), or a clear ValueError like \"stage 'PCA' does not support mode='fit_predict'; ...\"",
+   "actual": "RAISED AttributeError: 'PCA' object has no attribute 'predict' | AttributeError: 'PCA' object has no attribute 'predict_proba' | AttributeError: 'DBSCAN' object has no attribute 'transform'",
+   "evidence": []
+  },
+  {
+   "id": "F21-apply-model-pipeline-005",
+   "severity": "minor",
+   "title": "supported_models() referenced by the apply_model docstring is not exported from the top-level hypertools namespace",
+   "repro": "import hypertools as hyp\nhyp.supported_models()",
+   "expected": "hyp.supported_models() returns the 31 registered names (as the docstring implies), or the docstring gives the importable path",
+   "actual": "AttributeError: module 'hypertools' has no attribute 'supported_models'  (hypertools.core.supported_models() works: 31 names)",
+   "evidence": []
+  },
+  {
+   "id": "F21-apply-model-pipeline-006",
+   "severity": "style",
+   "title": "apply_model and Pipeline resolve string names against different registries (31 vs 41 names)",
+   "repro": "import numpy as np, hypertools as hyp\nd = np.random.standard_normal((30, 4))\nhyp.apply_model(d, 'ZScore')  # ValueError: unknown model 'ZScore'\nhyp.Pipeline(['ZScore']).fit_transform(d)  # works",
+   "expected": "One shared registry (or documented rationale for the difference in both docstrings)",
+   "actual": "apply_model: ValueError: unknown model 'ZScore'; supported names: [31 names]. Pipeline(['ZScore']).fit_transform(d): OK (80, 8). Pipeline error lists 41 names.",
+   "evidence": []
+  },
+  {
+   "id": "F21-apply-model-pipeline-007",
+   "severity": "minor",
+   "title": "Bare class specs rejected by apply_model, and dict-with-class rejected everywhere, with the unhelpful message \"unknown model: <class ...>\"",
+   "repro": "import numpy as np, hypertools as hyp\nfrom sklearn.decomposition import PCA\nd = np.random.standard_normal((30, 4))\nhyp.apply_model(d, PCA)  # ValueError: unknown model: <class ...>\nhyp.apply_model(d, {'model': PCA, 'kwargs': {'n_components': 3}})  # same\nhyp.Pipeline([{'model': PCA, 'kwargs': {'n_components': 3}}])  # same\nhyp.Pipeline([PCA]).fit_transform(d)  # works",
+   "expected": "Classes accepted uniformly (instantiated with args/kwargs), or a message like \"pass an instance (e.g. PCA()) or a registered name\"",
+   "actual": "RAISED ValueError: unknown model: <class 'sklearn.decomposition._pca.PCA'> (all three failing forms); Pipeline([PCA]) OK: (90, 6)",
+   "evidence": []
+  },
+  {
+   "id": "F21-apply-model-pipeline-008",
+   "severity": "doc",
+   "title": "Pipeline.transform promises \"without refitting\" but silently REFITS steps that lack transform/predict (DBSCAN, OPTICS, ...)",
+   "repro": "import numpy as np\nfrom hypertools import Pipeline\ntrain = np.cumsum(np.random.default_rng(3).standard_normal((120, 8)), axis=0)\ntest = np.cumsum(np.random.default_rng(4).standard_normal((50, 8)), axis=0)\np = Pipeline(['DBSCAN']); p.fit_transform(train)\nprint(p.transform(test).shape)  # (50,) -- labels from a NEW DBSCAN fit on test",
+   "expected": "Documented behavior: either raise (cannot transform without refit) or warn that fit_predict re-runs on the new data",
+   "actual": "DBSCAN fit_transform -> (120,) ; transform(test) -> (50,) with no warning (silent refit via fit_predict)",
+   "evidence": []
+  },
+  {
+   "id": "F21-apply-model-pipeline-009",
+   "severity": "minor",
+   "title": "Fitted pipelines containing TSNE (the flagship gallery pipeline) cannot honor the documented .transform() reuse; raw AttributeError",
+   "repro": "import numpy as np, hypertools as hyp\nrng = np.random.default_rng(42)\nd1 = np.cumsum(rng.standard_normal((100, 10)), axis=0)\nres, p = hyp.apply_model(d1, [{'model': 'PCA', 'kwargs': {'n_components': 5}}, {'model': 'TSNE', 'kwargs': {'n_components': 2}}], return_model=True)\np.transform(np.cumsum(np.random.default_rng(1).standard_normal((30, 10)), axis=0))",
+   "expected": "A clear error (\"TSNE cannot transform held-out data; refit or use a parametric reducer\") and a docstring caveat on return_model",
+   "actual": "RAISED AttributeError: 'TSNE' object has no attribute 'fit_predict'",
+   "evidence": []
+  },
+  {
+   "id": "F21-apply-model-pipeline-010",
+   "severity": "style",
+   "title": "Pipeline constructor silently accepts unusable steps (non-list steps arg, wrong-arity tuples), failing later with cryptic errors",
+   "repro": "from hypertools import Pipeline\nimport numpy as np\nPipeline('PCA')  # ValueError: unknown pipeline step 'P'\np = Pipeline([('a', 'PCA', 'extra')])  # constructs\np.fit_transform(np.random.standard_normal((20, 4)))  # AttributeError: 'tuple' object has no attribute 'fit'",
+   "expected": "Constructor-time TypeError naming the bad step and the accepted forms ((name, spec) tuple or bare spec)",
+   "actual": "ValueError: unknown pipeline step 'P'; supported names: ... | Pipeline([tuple=('a', 'PCA', 'extra')]) then RAISED AttributeError: 'tuple' object has no attribute 'fit'",
+   "evidence": []
+  },
+  {
+   "id": "F21-apply-model-pipeline-011",
+   "severity": "style",
+   "title": "stack=True fits the caller's model instance in place while stack=False clones it; stack=False return_model returns a list even for single input (undocumented)",
+   "repro": "import numpy as np, hypertools as hyp\nfrom sklearn.decomposition import PCA\nd1 = np.random.standard_normal((70, 6)); d2 = np.random.standard_normal((50, 6))\ninst = PCA(n_components=2); hyp.apply_model([d1, d2], inst, stack=True); print(hasattr(inst, 'components_'))  # True\ninst2 = PCA(n_components=2); hyp.apply_model([d1, d2], inst2, stack=False); print(hasattr(inst2, 'components_'))  # False\nres, fitted = hyp.apply_model(d1, 'PCA', ndims=2, stack=False, return_model=True); print(type(fitted))  # list ['PCA']",
+   "expected": "Consistent instance handling (clone in both paths, or document mutation) and docstring coverage of the stack=False return shape",
+   "actual": "stack=True passed instance now fitted: True; stack=False original fitted: False; single-input stack=False fitted type: <class 'list'> ['PCA']",
+   "evidence": []
+  },
+  {
+   "id": "F21-apply-model-pipeline-012",
+   "severity": "minor",
+   "title": "User-constructed Pipeline crashes cryptically on hypertools' canonical multi-dataset (list) input; bare aligner steps reject lists of ndarrays",
+   "repro": "import numpy as np, pandas as pd\nfrom hypertools import Pipeline\nx = np.cumsum(np.random.default_rng(2).standard_normal((90, 6)), axis=0); y = np.cumsum(np.random.default_rng(3).standard_normal((40, 6)), axis=0)\nPipeline(['ZScore', {'model': 'PCA', 'kwargs': {'n_components': 3}}]).fit_transform([x, y])  # numpy inhomogeneous-shape ValueError\nPipeline(['HyperAlign']).fit_transform([x[:40], y])  # Exception: Unsupported datatype: <class 'list'>\nPipeline(['HyperAlign']).fit_transform([pd.DataFrame(x[:40]), pd.DataFrame(y)])  # works",
+   "expected": "Either list inputs stacked/threaded per-step like apply_model, or an early hypertools error stating Pipeline steps operate on a single dataset (and aligners need DataFrames)",
+   "actual": "ValueError: setting an array element with a sequence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (2,) + inhomogeneous part. | Exception: Unsupported datatype: <class 'list'> | list of DataFrames: OK [(40, 6), (40, 6)]",
+   "evidence": []
+  },
+  {
+   "id": "F21-apply-model-pipeline-013",
+   "severity": "style",
+   "title": "Same model spec yields different result KINDS in apply_model vs Pipeline (GMM: probabilities vs labels; KMeans auto: distances, never labels)",
+   "repro": "import numpy as np, hypertools as hyp\nfrom sklearn.mixture import GaussianMixture\nfrom hypertools import Pipeline\nd1 = np.cumsum(np.random.default_rng(42).standard_normal((100, 10)), axis=0)\nprint(np.asarray(hyp.apply_model(d1, GaussianMixture(n_components=3, random_state=0))).shape)  # (100, 3)\nprint(np.asarray(Pipeline([GaussianMixture(n_components=3, random_state=0)]).fit_transform(d1)).shape)  # (100,)",
+   "expected": "The two chaining mechanisms produce the same result type for the same spec (or docstrings cross-reference the difference)",
+   "actual": "apply_model GMM -> (100, 3) (predict_proba); Pipeline GMM -> (100,) | same? False; t10: KMeans OK shape=(60, 8) [distances, not labels]",
+   "evidence": []
+  },
+  {
+   "id": "F21-apply-model-pipeline-014",
+   "severity": "doc",
+   "title": "Gallery example plot_apply_model.py teaches the deprecated {'model','params'} dict form (emits DeprecationWarnings when run)",
+   "repro": "MPLBACKEND=Agg python -W always::DeprecationWarning docs/auto_examples/plot_apply_model.py",
+   "expected": "The flagship apply_model example uses the canonical {'model': ..., 'kwargs': {...}} form with no warnings",
+   "actual": "DeprecationWarnings from gallery-example spec form: 2 [\"{'model': ..., 'params': {...}} is deprecated; use {'model': ..., 'args': [...], 'kwargs': {...}} instead\"]",
+   "evidence": [
+    "evidence/F21-apply-model-pipeline/plot_apply_model_fig1.png"
+   ]
+  },
+  {
+   "id": "F21-apply-model-pipeline-015",
+   "severity": "doc",
+   "title": "plot_pipelines_return_model.py example aligns 200-row train with 80-row test, triggering the trim warning and discarding 60% of the training data",
+   "repro": "MPLBACKEND=Agg python docs/auto_examples/plot_pipelines_return_model.py  # observe UserWarning from hypertools/align/common.py:47",
+   "expected": "Example data chosen so the align stage does not trim rows (or explicit discussion of the trim behavior)",
+   "actual": "UserWarning: alignment keeps only the 80 row(s) common to all datasets; datasets with more rows were trimmed. Align datasets with matching numbers of observations to avoid dropping data. (emitted twice per run)",
+   "evidence": []
+  },
+  {
+   "id": "F21-apply-model-pipeline-016",
+   "severity": "minor",
+   "title": "Malformed dict specs: missing 'model' key raises bare KeyError; 'params' silently ignored (no warning) when 'kwargs' is also present",
+   "repro": "import warnings, numpy as np, hypertools as hyp\nA = np.random.default_rng(42).normal(size=(30, 6))\n# (a) missing 'model' key -> bare KeyError\ntry:\n    hyp.apply_model(A, {'mode': 'PCA'})\nexcept KeyError as e:\n    print('KeyError:', e)\n# (b) 'params' + 'kwargs' both present -> params silently ignored, no warning\nwith warnings.catch_warnings(record=True) as w:\n    warnings.simplefilter('always')\n    out = hyp.apply_model(A, {'model': 'PCA', 'params': {'n_components': 2}, 'kwargs': {'n_components': 3}})\n    print(np.asarray(out).shape, [str(x.message)[:60] for x in w])",
+   "expected": "(a) A ValueError explaining that dict model specs require a 'model' key (like the helpful messages for unknown string names / invalid instances). (b) Either an error or at least the existing DeprecationWarning pointing out that 'params' is deprecated/ignored; silently applying only 'kwargs' hides a likely user mistake.",
+   "actual": "(a) KeyError: 'model' (bare, from _resolve_model). (b) shape: (30, 3) warnings: [] -- 'params' dropped with no DeprecationWarning and no error (verbatim from t1_apply_model_core.py cases DICT-missing-model-key / DICT-params-and-kwargs-both).",
+   "evidence": []
+  }
+ ]
+}
