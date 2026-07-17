@@ -1,0 +1,140 @@
+[
+  {
+    "file": "01-d05-003-sotus-example-before.png",
+    "finding_id": "D05-gallery-data-text-003",
+    "caption": "Before: hyp.load('sotus') returned the wrong hosted dataset (a NIPS topic model), so the State of the Union example rendered a degenerate triangle with stray topic-word labels instead of speeches.",
+    "phase": "before"
+  },
+  {
+    "file": "02-d05-003-sotus-example-after.png",
+    "finding_id": "D05-gallery-data-text-003",
+    "caption": "After: load('sotus') restored to the real 29 State of the Union addresses (1989-2018); the example now traces a genuine text trajectory through semantic space via the default text pipeline.",
+    "phase": "after"
+  },
+  {
+    "file": "03-f14-001-smooth-cross-dataset-leak-before.png",
+    "finding_id": "F14-manip-normalize-001",
+    "caption": "Before (critical): smoothing a list of datasets ran across the dataset boundary, so subject A (all 0) and subject B (all 1) silently contaminated each other at the seam.",
+    "phase": "before"
+  },
+  {
+    "file": "04-f14-001-smooth-cross-dataset-leak-after.png",
+    "finding_id": "F14-manip-normalize-001",
+    "caption": "After (regenerated on the fixed branch, same scenario): Smooth is applied per dataset, so A stays exactly 0 and B stays exactly 1 with no cross-subject bleed at the boundary.",
+    "phase": "after"
+  },
+  {
+    "file": "05-f01-001-line-end-truncation-before.png",
+    "finding_id": "F01-plot-static-core-001",
+    "caption": "Before: static line plots silently dropped the trajectory's final samples, so a huge 50-sigma spike at the end of a 901-point series is completely invisible (flat line).",
+    "phase": "before"
+  },
+  {
+    "file": "06-f01-001-line-end-truncation-after.png",
+    "finding_id": "F01-plot-static-core-001",
+    "caption": "After: the full series is drawn to its final sample and the terminal 50-sigma spike is clearly visible.",
+    "phase": "after"
+  },
+  {
+    "file": "07-f01-003-fmt-ro-color-before.png",
+    "finding_id": "F01-plot-static-core-003",
+    "caption": "Before: the color letter in a marker+line combo fmt was silently dropped, so fmt='ro-' rendered in the default palette's salmon instead of red.",
+    "phase": "before"
+  },
+  {
+    "file": "08-f01-003-fmt-ro-color-after.png",
+    "finding_id": "F01-plot-static-core-003",
+    "caption": "After: fmt='ro-' honors the requested color and draws pure red markers and lines, matching matplotlib semantics.",
+    "phase": "after"
+  },
+  {
+    "file": "09-f02-001-nan-hue-collapse-before.png",
+    "finding_id": "F02-plot-hue-001",
+    "caption": "Before (major): a single NaN in a continuous hue collapsed the entire color gradient, painting every point the same red.",
+    "phase": "before"
+  },
+  {
+    "file": "10-f02-001-nan-hue-collapse-after.png",
+    "finding_id": "F02-plot-hue-001",
+    "caption": "After: the gradient survives a NaN hue value; points get their proper colors and the NaN point is shown neutrally in gray.",
+    "phase": "after"
+  },
+  {
+    "file": "11-f24-013-hls-cyclic-endpoints-before.png",
+    "finding_id": "F24-colors-fonts-interactive-013",
+    "caption": "Before: the default hls palette is circular, so the minimum and maximum of a continuous hue (start and end of this spiral) were both red and visually indistinguishable.",
+    "phase": "before"
+  },
+  {
+    "file": "12-f24-013-hls-cyclic-endpoints-after.png",
+    "finding_id": "F24-colors-fonts-interactive-013",
+    "caption": "After: the cyclic palette is trimmed so the endpoints differ -- the spiral now runs red-orange (hue=0) to magenta (hue=max), with a colorbar confirming a monotonic gradient. (Maintainer sign-off item.)",
+    "phase": "after"
+  },
+  {
+    "file": "13-f05-001-chemtrails-future-leak-before.png",
+    "finding_id": "F05-plot-animate-special-001",
+    "caption": "Before (major): at frame 10 the chemtrails animation had already drawn nearly the whole FUTURE trajectory as faint 'past' trails, leaking data the animation had not reached yet.",
+    "phase": "before"
+  },
+  {
+    "file": "14-f05-001-chemtrails-future-leak-after.png",
+    "finding_id": "F05-plot-animate-special-001",
+    "caption": "After: the same frame 10 shows only the trail actually traversed so far; the future trajectory stays hidden until the head reaches it.",
+    "phase": "after"
+  },
+  {
+    "file": "15-f07-001-plotly-surface-nan-before.png",
+    "finding_id": "F07-plot-density-surface-001",
+    "caption": "Before (major): the plotly backend's surface= NaN'd out 299 of 300 data points enclosed by their own hulls -- opaque blobs with the scatter data silently deleted.",
+    "phase": "before"
+  },
+  {
+    "file": "16-f07-001-plotly-surface-nan-after.png",
+    "finding_id": "F07-plot-density-surface-001",
+    "caption": "After: all 300 points are kept and the hulls are genuinely translucent (alpha=0.2 shown), so the enclosed scatter data is clearly visible through the surfaces.",
+    "phase": "after"
+  },
+  {
+    "file": "17-f08-001-list-of-lists-crash-after.png",
+    "finding_id": "F08-plot-inputs-001",
+    "caption": "After (was a crash, so no before image exists): hyp.plot on a plain Python list-of-lists numeric matrix, which previously died with an internal \"color=\" ValueError, now just plots.",
+    "phase": "single"
+  },
+  {
+    "file": "18-f01-002-combo-fmt-color-pairing-before.png",
+    "finding_id": "F01-plot-static-core-002",
+    "caption": "Before (major): with a marker+line combo fmt on two datasets, markers took a different palette color than their own line -- every dataset showed cyan dots on red lines.",
+    "phase": "before"
+  },
+  {
+    "file": "19-f01-002-combo-fmt-color-pairing-after.png",
+    "finding_id": "F01-plot-static-core-002",
+    "caption": "After: markers and lines are paired per dataset -- dataset 1 is fully red, dataset 2 fully cyan, so the two trajectories are actually distinguishable.",
+    "phase": "after"
+  },
+  {
+    "file": "20-f05-002-animate-hue-static-before.png",
+    "finding_id": "F05-plot-animate-special-002",
+    "caption": "Before (major): combining animation with a continuous hue silently rendered a static plot -- at frame 10 the entire hue-colored trajectory was already fully drawn (no animation at all).",
+    "phase": "before"
+  },
+  {
+    "file": "21-f05-002-animate-hue-static-after.png",
+    "finding_id": "F05-plot-animate-special-002",
+    "caption": "After: the same frame 10 shows a real animation window -- only the beginning of the hue-colored trajectory has been revealed so far.",
+    "phase": "after"
+  },
+  {
+    "file": "22-f07-005-animated-hue-surface-before.png",
+    "finding_id": "F07-plot-density-surface-005",
+    "caption": "Before: animating a surface dropped its per-vertex hue coloring -- the hull around a rainbow-colored helix rendered as a flat near-gray shell.",
+    "phase": "before"
+  },
+  {
+    "file": "23-f07-005-animated-hue-surface-after.png",
+    "finding_id": "F07-plot-density-surface-005",
+    "caption": "After: animated surface frames keep the per-vertex hue tint (pink/green/red regions match the local helix colors), identical to the static rendering.",
+    "phase": "after"
+  }
+]
