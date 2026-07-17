@@ -1,4 +1,6 @@
+import os
 import pickle
+import warnings
 from os.path import expanduser, expandvars
 from pathlib import Path
 
@@ -21,7 +23,13 @@ EXAMPLE_DATA = {
     'spiral': '1nHAusn2VsQinJk35xvJSd7CtWPC1uOwK',
     'mushrooms': '12hmCIZp1tyUoPRHwpiAsm1GDBxiJS8ji',
     'wiki': '1NUqm3svfu2rrFH04xmLbOh0u5WyTe9mh',
-    'sotus': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm',
+    # 'sotus' is loaded via datawrangler's text zoo (see
+    # _load_sotus_corpus), NOT downloaded from this registry: the
+    # historical Drive id here had been duplicated with 'nips_model' (it
+    # served a pickled topic-model Pipeline instead of the documented
+    # speeches -- QC 2026-07, F18-load-hosted-001), and every older
+    # 'sotus' Drive id is dead.
+    'sotus': 'datawrangler-zoo:sotus',
     'nips': '1FV7xT2hVgZ1sXfMvAdP1jRsK_dWhp49I',
     'wiki_model': '1T-UAU-6KVGUBcUWqz7yG59vXnThu9T0H',
     'nips_model': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm',
@@ -88,7 +96,11 @@ def load(
        ``kagglehub`` dependency -- ``pip install hypertools[kaggle]``).
        Every CSV/TSV file in the dataset is loaded the same way as step 4
     6. a path to a local file (.geo/pickle, .npy/.npz, .csv/.tsv/.txt,
-       .json, .parquet, .mat, .xlsx/.xls)
+       .json, .parquet, .mat, .xlsx/.xls; gzip-compressed variants (.gz)
+       are decompressed transparently). Files with no extension are
+       parsed by content sniffing; files with any other extension raise
+       an error unless their content matches a recognized binary format
+       (pickle/npy/zip)
     7. a Hugging Face dataset id such as ``'scikit-learn/iris'``
        (pass ``streaming=True`` for a streaming dataset, which can be
        passed straight to :func:`hypertools.plot`)
@@ -114,11 +126,13 @@ def load(
         ``/``, to force local-file resolution.
 
         The ``'fivethirtyeight/'`` and ``'kaggle/'`` prefixes (steps 4-5)
-        are explicit and unambiguous, so they never collide with another
-        resolver -- but for the same reason, a name that starts with one
-        of these prefixes and then fails (unknown slug/dataset id, no
-        CSV/TSV files found, malformed id) raises immediately instead of
-        falling through to the remaining steps.
+        are explicit: a name starting with one of them is always treated
+        as that source, so a same-named relative local path (e.g. a local
+        file ``fivethirtyeight/bechdel``) is shadowed -- prepend ``'./'``
+        to force local-file resolution. For the same reason, a prefixed
+        name that then fails (unknown slug/dataset id, no CSV/TSV files
+        found, malformed id) raises immediately instead of falling
+        through to the remaining steps.
 
     Examples
     --------
@@ -144,33 +158,46 @@ def load(
 
     Parameters
     ----------
-    dataset : string or list of strings
-        The name of the example dataset.  Can be a `.geo` file, or one of a
-        number of example datasets listed below.
+    dataset : string, path-like, or list of strings
+        The name of a built-in example dataset (listed below), a dataset
+        name resolvable per the steps above, or a file path / URL.
 
-        `weights` is a list of numpy arrays, one PER SUBJECT (36 arrays),
-        containing brain activity (fMRI) from subjects listening to the same
-        story, fit using Hierarchical Topographic Factor Analysis (HTFA) with
-        100 nodes; each array's rows are timepoints and its columns are model
-        parameters. (`weights_avg` is the 2-array subject-averaged version.)
+        `weights` is a list of numpy arrays, one PER SUBJECT (36 arrays,
+        each 300 timepoints x 100 parameters, float32), containing brain
+        activity (fMRI) from subjects listening to the same story, fit
+        using Hierarchical Topographic Factor Analysis (HTFA) with 100
+        nodes; each array's rows are timepoints and its columns are model
+        parameters.
 
         `weights_sample` is a sample of 3 subjects from that dataset.
 
-        `weights_avg` is the dataset split in half and averaged into two groups.
+        `weights_avg` is a 2-array group-averaged variant of the same
+        experiment: a list of two (100, 100) arrays, one per group.
 
-        `spiral` is numpy array containing data for a 3D spiral, used to
-        highlight the `procrustes` function.
+        `spiral` is a list of two (1000, 3) numpy arrays containing 3D
+        spiral data, used to highlight the `procrustes` function.
 
-        `mushrooms` is a numpy array comprised of features (columns) of a
-        collection of 8,124 mushroomm samples (rows).
+        `mushrooms` is a pandas DataFrame of categorical features
+        (columns) describing 8,124 mushroom samples (rows).
 
-        `sotus` is a collection of State of the Union speeches from 1989-2018.
+        `sotus` is a list of 29 State of the Union addresses (1989-2018),
+        as strings (loaded via the ``datawrangler`` text zoo).
 
-        `wiki` is a collection of wikipedia pages used to fit `wiki_model`.
+        `wiki` is a list holding one (3136, 1) numpy object array of
+        wikipedia page texts, used to fit `wiki_model`.
 
-        `wiki_model` is a sklearn Pipeline (CountVectorizer->LatentDirichletAllocation)
-        trained on a sample of wikipedia articles. It can be used to transform
-        text to topic vectors.
+        `nips` is a list holding one (7241, 1) numpy object array of NIPS
+        conference paper texts (~181 MB download), used to fit
+        `nips_model`.
+
+        `wiki_model`, `nips_model`, and `sotus_model` are sklearn
+        Pipelines (CountVectorizer -> LatentDirichletAllocation, 50
+        topics) trained on the wiki, nips, and sotus corpora,
+        respectively; each transforms text into 50-dimensional topic
+        vectors. (The hosted files were pickled under an older
+        scikit-learn; hypertools backfills newer estimator attributes on
+        load so ``repr()``/``get_params()``/``transform()`` work under
+        the installed version.)
 
         The "shapes zoo" datasets -- `bunny`, `cube`, `dragon`, `sphere`,
         `teapot`, `vase`, and `biplane` -- are 3D point clouds of the
@@ -179,14 +206,6 @@ def load(
 
         `datasaurus` is the "Datasaurus Dozen": a list of 2D datasets with
         near-identical summary statistics but wildly different shapes.
-
-    normalize : str or False or None
-        If set to 'across', the columns of the input data will be z-scored
-        across lists (default). That is, the z-scores will be computed with
-        with respect to column n across all arrays passed in the list. If set
-        to 'within', the columns will be z-scored within each list that is
-        passed. If set to 'row', each row of the input data will be z-scored.
-        If set to False, the input data will be returned with no z-scoring.
 
     reduce : str, dict, class, instance, or fitted Reducer
         Decomposition/manifold learning model to use (default:
@@ -213,6 +232,14 @@ def load(
         the model and 'kwargs' holds its parameters, e.g.
         align={'model': 'HyperAlign', 'kwargs': {'n_iter': 10}}. If False or
         None, no alignment is applied (default: None).
+
+    normalize : str or False or None
+        If set to 'across', the columns of the input data will be z-scored
+        across lists (default). That is, the z-scores will be computed with
+        with respect to column n across all arrays passed in the list. If set
+        to 'within', the columns will be z-scored within each list that is
+        passed. If set to 'row', each row of the input data will be z-scored.
+        If set to False, the input data will be returned with no z-scoring.
 
     legacy : bool
         Pass legacy=True to load DataGeometry objects created with hypertools<0.8.0
@@ -254,6 +281,13 @@ def load(
                      streaming=streaming, trust=trust)
                 for d in dataset]
 
+    if not isinstance(dataset, (str, os.PathLike)):
+        raise TypeError(
+            'hypertools.load: dataset must be a string (a dataset name, '
+            'file path, or URL), a path-like object, or a list/tuple of '
+            f'strings; got {type(dataset).__name__}')
+    dataset = os.fspath(dataset)
+
     if dataset in EXAMPLE_DATA.keys():
         geo_data = _load_example_data(dataset)
         if dataset.endswith('_model'):
@@ -262,13 +296,15 @@ def load(
     else:
         # resolution chain, right after built-in names: scikit-learn's
         # small bundled datasets, then seaborn's named datasets (see
-        # tools.sources; scikit-learn wins over seaborn for names both
+        # io.sources; scikit-learn wins over seaborn for names both
         # define, e.g. 'iris'), before falling back to local file ->
         # Hugging Face -> Google Sheets -> Google Drive -> Dropbox ->
         # generic URL.
         from .sources import sklearn_dataset, seaborn_dataset, \
             fivethirtyeight_dataset, kaggle_dataset, SKLEARN_DATASETS
-        extra_attempts = []
+        extra_attempts = [
+            'built-in example dataset: not one of '
+            f'{sorted(EXAMPLE_DATA)}']
         geo_data = sklearn_dataset(dataset)
         if geo_data is None:
             extra_attempts.append(
@@ -317,7 +353,7 @@ def load(
         reduce = reduce or 'IncrementalPCA'
         # shapes-zoo/datasaurus entries are plain arrays/DataFrames/lists
         # rather than DataGeometry objects
-        raw = geo_data.get_data() if hasattr(geo_data, 'get_data') \
+        raw = geo_data.get_data() if isinstance(geo_data, DataGeometry) \
             else geo_data
         return analyze(raw,
                        reduce=reduce,
@@ -327,27 +363,41 @@ def load(
 
     # hypertools 1.0 users never receive a geo: extract the raw data (list
     # of arrays / DataFrame) from any DataGeometry unpickled from a hosted
-    # or legacy file. Non-geo sources (arrays, DataFrames, lists) pass
-    # through unchanged.
-    return geo_data.get_data() if hasattr(geo_data, 'get_data') else geo_data
+    # or legacy file. Everything else passes through unchanged -- checked
+    # by type, NOT by duck-typed hasattr('get_data'), so unrelated objects
+    # that happen to expose a get_data() method (e.g. a pickled matplotlib
+    # Line2D) round-trip intact (QC 2026-07, F20-save-004).
+    return geo_data.get_data() if isinstance(geo_data, DataGeometry) \
+        else geo_data
 
 
 def _load_local(dataset_path):
-    """Load a local file: pickled DataGeometry objects keep their historical
-    behavior (including the legacy=True hint); everything else goes through
-    the extension/sniff-based parser (npy/npz/csv/tsv/txt/json/parquet/mat).
+    """Load a local file: pickle-format files (by extension or magic byte)
+    are unpickled here, keeping the historical DataGeometry handling;
+    everything else goes through the extension-based parser
+    (npy/npz/csv/tsv/txt/json/parquet/mat/xlsx, gzip variants, and content
+    sniffing for extensionless files).
     """
     raw = dataset_path.read_bytes()
+    if not raw:
+        raise HypertoolsIOError(
+            f'{dataset_path} is empty (0 bytes) -- nothing to load. If a '
+            'save writing this file failed midway, re-run it.')
     looks_pickled = dataset_path.suffix.lower() in (
         '.geo', '.pkl', '.pickle', '.p') or raw[:1] == b'\x80'
     if looks_pickled:
         try:
             geo_data = pickle.loads(raw)
-        except pickle.UnpicklingError as e:
+        except Exception as e:
+            # covers pickle.UnpicklingError AND the bare EOFError a
+            # truncated/half-written pickle raises (QC 2026-07,
+            # F20-save-007)
             raise HypertoolsIOError(
-                "Failed to load DataGeometry object from "
-                f"{dataset_path}. If {dataset_path.name} was created "
-                "with hypertools<0.8.0, pass legacy=True to load it."
+                f'failed to unpickle {dataset_path} '
+                f'({type(e).__name__}: {e}). The file may be truncated '
+                'or corrupted (e.g. an interrupted download or save). '
+                f'If {dataset_path.name} was created with '
+                'hypertools<0.8.0, pass legacy=True to load it.'
             ) from e
         if isinstance(geo_data, DataGeometry) and \
                 isinstance(geo_data.data, dict):
@@ -384,11 +434,49 @@ def _load_legacy(dataset_path):
     return DataGeometry(**data_dict)
 
 
+def _load_sotus_corpus():
+    """The 'sotus' example dataset: 29 State of the Union addresses
+    (1989-2018), as a list of strings.
+
+    Loaded via datawrangler's text zoo (datawrangler is a core
+    dependency, and it caches the download locally) rather than the
+    legacy Google Drive registry: the historical Drive id for 'sotus'
+    had been duplicated with 'nips_model', so it served a pickled
+    topic-model Pipeline instead of the documented speeches, and every
+    older 'sotus' Drive id is dead (QC 2026-07, F18-load-hosted-001).
+    """
+    import contextlib
+    import io as _io
+
+    import datawrangler as dw
+
+    # get_corpus prints "loading corpus: sotus...done!" chatter; keep
+    # hypertools' own output clean
+    with contextlib.redirect_stdout(_io.StringIO()):
+        corpus = dw.zoo.text.get_corpus('sotus')
+    return [str(doc) for doc in np.asarray(corpus).ravel()]
+
+
 def _load_example_data(dataset):
+    if dataset == 'sotus':
+        return _load_sotus_corpus()
+
     dataset_path = DATA_DIR.joinpath(dataset)
     if not dataset_path.is_file():
         if not DATA_DIR.is_dir():
-            DATA_DIR.mkdir()
+            if DATA_DIR.exists():
+                raise HypertoolsIOError(
+                    f'{DATA_DIR} exists but is not a directory, so '
+                    'hypertools cannot cache example datasets there. '
+                    'Delete or rename it, then retry.')
+            try:
+                DATA_DIR.mkdir(parents=True)
+            except OSError as e:
+                raise HypertoolsIOError(
+                    f'could not create the example-dataset cache '
+                    f'directory {DATA_DIR} ({type(e).__name__}: {e}). '
+                    'Check the path and its permissions, then retry.'
+                ) from e
         _download_example_data(dataset_path)
 
     try:
@@ -412,7 +500,51 @@ def _load_example_data(dataset):
     if dataset == 'mushrooms':
         # format mushrooms dataset as a pandas DataFrame
         geo_data.data = pd.DataFrame(geo_data.data)
+    if dataset.endswith('_model'):
+        # hosted pipelines were pickled under an older scikit-learn (QC
+        # 2026-07, F18-load-hosted-002); restore the standard estimator
+        # surface (repr/get_params/clone) under the installed version
+        geo_data = _repair_unpickled_model(geo_data)
     return geo_data
+
+
+def _repair_unpickled_model(model):
+    """Backfill constructor attributes added by scikit-learn versions
+    newer than the one a hosted model was pickled under.
+
+    The hosted *_model pipelines were pickled with scikit-learn 1.0.2;
+    unpickling them under a newer scikit-learn leaves init attributes
+    introduced since then (e.g. ``Pipeline.transform_input``, added in
+    1.6) missing, which crashes ``repr()``/``get_params()``/``clone()``
+    with AttributeError even though ``transform()`` works (QC 2026-07,
+    F18-load-hosted-002). Filling each missing constructor parameter with
+    its current default restores the standard estimator surface without
+    touching the fitted state, so model outputs are unchanged.
+    """
+    import inspect
+
+    try:
+        from sklearn.base import BaseEstimator
+    except ImportError:  # pragma: no cover -- sklearn is a core dependency
+        return model
+
+    def _fill_defaults(est):
+        if not isinstance(est, BaseEstimator):
+            return
+        try:
+            sig = inspect.signature(type(est).__init__)
+        except (TypeError, ValueError):  # pragma: no cover
+            return
+        for pname, param in sig.parameters.items():
+            if param.default is inspect.Parameter.empty:
+                continue
+            if not hasattr(est, pname):
+                setattr(est, pname, param.default)
+
+    _fill_defaults(model)
+    for _, step in getattr(model, 'steps', None) or []:
+        _fill_defaults(step)
+    return model
 
 
 def _download_example_data(dataset_path, max_attempts=4):
@@ -491,15 +623,29 @@ def _unpickle_example(dataset_path):
     """Load a cached example dataset, tolerating the formats used across
     hypertools' history: standard pickles (DataGeometry objects), pickles
     created with old pandas versions (pd.read_pickle applies compatibility
-    shims), and dill-serialized arrays (the shapes-zoo datasets)."""
+    shims), and dill-serialized arrays (the shapes-zoo datasets).
+
+    scikit-learn's InconsistentVersionWarning is suppressed here: the
+    hosted files are hypertools' own artifacts (pickled under an older
+    scikit-learn), the version skew is known, and the estimator surface is
+    repaired after unpickling (see _repair_unpickled_model), so the
+    warning is pure noise for users (QC 2026-07, F18-load-hosted-002)."""
+    try:
+        from sklearn.exceptions import InconsistentVersionWarning
+    except ImportError:  # pragma: no cover -- sklearn is a core dependency
+        InconsistentVersionWarning = None
+
     raw = dataset_path.read_bytes()
-    try:
-        return pickle.loads(raw)
-    except Exception:
-        pass
-    try:
-        return pd.read_pickle(dataset_path)
-    except Exception:
-        pass
-    import dill
-    return dill.loads(raw)
+    with warnings.catch_warnings():
+        if InconsistentVersionWarning is not None:
+            warnings.simplefilter('ignore', InconsistentVersionWarning)
+        try:
+            return pickle.loads(raw)
+        except Exception:
+            pass
+        try:
+            return pd.read_pickle(dataset_path)
+        except Exception:
+            pass
+        import dill
+        return dill.loads(raw)

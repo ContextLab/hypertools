@@ -3,7 +3,7 @@
 
 A string may name (tried in this order):
 
-1. a built-in example dataset (``EXAMPLE_DATA`` in tools.load)
+1. a built-in example dataset (``EXAMPLE_DATA`` in ``hypertools.io.load``)
 2. a scikit-learn bundled dataset name (``sklearn_dataset``)
 3. a seaborn dataset name (``seaborn_dataset``)
 4. a fivethirtyeight/data dataset, explicit prefix ``'fivethirtyeight/<slug>'``
@@ -49,8 +49,16 @@ from .._shared.exceptions import HypertoolsIOError
 
 _DRIVE_ID_RE = re.compile(r'^[A-Za-z0-9_-]{25,}$')
 _DOMAIN_RE = re.compile(r'^[\w-]+(\.[\w-]+)+(/\S*)?$')
+_HOST_PORT_RE = re.compile(r'^[\w.-]+:\d+(/\S*)?$')
 _HF_ID_RE = re.compile(r'^[\w.-]+/[\w.-]+$')
 _UA = {'User-Agent': 'hypertools'}
+
+# every filename extension load_local_file/_parse_payload knows how to
+# parse; anything else is rejected (QC 2026-07, X2-error-quality-001)
+# unless the CONTENT unambiguously matches a known binary format
+_SUPPORTED_EXTENSIONS = (
+    '.pkl', '.pickle', '.p', '.geo', '.npy', '.npz', '.csv', '.tsv',
+    '.txt', '.json', '.parquet', '.mat', '.xlsx', '.xls', '.gz')
 
 
 def _github_api_headers():
@@ -75,6 +83,22 @@ def _github_api_headers():
     if token:
         headers['Authorization'] = f'Bearer {token}'
     return headers
+
+
+def _env_token_hint(status_code):
+    """Extra error-message sentence when an ambient GITHUB_TOKEN/GH_TOKEN
+    was sent and GitHub answered 401: the stale/invalid env token -- not
+    hypertools or the dataset -- is the likely cause, and unsetting it
+    (anonymous access) would work (QC 2026-07, F19-load-external-011)."""
+    if status_code != 401:
+        return ''
+    if not (os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN')):
+        return ''
+    return (
+        ' A GITHUB_TOKEN/GH_TOKEN environment variable was found and sent '
+        'with the request, and GitHub rejected it -- the token is likely '
+        'expired or invalid. Unset it (anonymous access works for these '
+        'requests) or refresh it.')
 
 
 # GitHub's REST API and raw host intermittently return transient gateway
@@ -309,6 +333,7 @@ def fivethirtyeight_dataset(name):
                     "limit (60 requests/hour) has been exhausted -- wait "
                     "for it to reset, or authenticate your requests to "
                     "raise the limit.")
+            message += _env_token_hint(resp.status_code)
             raise HypertoolsIOError(message)
         else:
             entries = resp.json()
@@ -365,10 +390,23 @@ def _fetch_538_csv(slug, csv_name):
                f'contents/{slug}/{csv_name}?ref=master')
         headers = {**headers, 'Accept': 'application/vnd.github.raw'}
         resp = _github_get_with_retry(url, headers, timeout=60)
+        if resp.status_code == 401:
+            raise HypertoolsIOError(
+                f'GitHub API request for fivethirtyeight/data/{slug}/'
+                f'{csv_name} failed with HTTP 401 Unauthorized.'
+                + _env_token_hint(resp.status_code))
         resp.raise_for_status()
         return resp.content
-    raw, _ = _fetch_bytes(f'{_538_RAW}/{slug}/{csv_name}')
-    return raw
+    # the anonymous raw fetch goes through the same transient-5xx retry
+    # helper as the listing call (QC 2026-07, F19-load-external-003: a
+    # single transient 502 here used to fail the whole load for every
+    # user without a token)
+    url = f'{_538_RAW}/{slug}/{csv_name}'
+    resp = _github_get_with_retry(url, dict(_UA), timeout=60)
+    resp.raise_for_status()
+    if not resp.content:
+        raise HypertoolsIOError(f'empty response from {url}')
+    return resp.content
 
 
 def kaggle_dataset(name):
@@ -495,8 +533,9 @@ def is_loadable_string(s):
 
 def load_source(source, split=None, streaming=False, trust=False,
                 extra_attempts=None):
-    """Resolve one non-builtin string source (steps 4-9 of the chain --
-    scikit-learn/seaborn dataset names, steps 2-3, are tried by
+    """Resolve one non-builtin string source (steps 6-11 of the chain --
+    built-in/scikit-learn/seaborn names and the explicit
+    fivethirtyeight/kaggle prefixes, steps 1-5, are tried by
     :func:`hypertools.load` before this function is called).
 
     Returns the loaded dataset (DataFrame, array, list, dict, or a
@@ -514,21 +553,29 @@ def load_source(source, split=None, streaming=False, trust=False,
     """
     attempts = list(extra_attempts) if extra_attempts else []
 
-    # 4. local file
-    path = Path(source).expanduser()
-    try:
-        is_file = path.is_file()
-    except OSError:
-        is_file = False
-    if is_file:
-        return load_local_file(path)
-    attempts.append(f'local file: not found at {path}')
-
     is_url_like = source.startswith(('http://', 'https://')) \
         or 'drive.google.com' in source or 'docs.google.com' in source \
         or 'dropbox.com' in source
 
-    # 5. Hugging Face dataset (skip for obvious URLs)
+    # 6. local file (skipped for explicit URLs, which are never local
+    # paths -- the digest used to list a slash-collapsed 'https:/...'
+    # local-file attempt for URL inputs, QC 2026-07 F19-013)
+    if not is_url_like:
+        path = Path(source).expanduser()
+        try:
+            is_file = path.is_file()
+            is_dir = path.is_dir()
+        except OSError:
+            is_file = is_dir = False
+        if is_file:
+            return load_local_file(path)
+        if is_dir:
+            attempts.append(
+                f'local file: {path} is a directory, not a file')
+        else:
+            attempts.append(f'local file: not found at {path}')
+
+    # 7. Hugging Face dataset (skip for obvious URLs)
     if not is_url_like and _HF_ID_RE.match(source):
         try:
             return _load_hf(source, split=split, streaming=streaming)
@@ -538,7 +585,7 @@ def load_source(source, split=None, streaming=False, trust=False,
             attempts.append(f'Hugging Face dataset: {type(e).__name__}: '
                             f'{str(e).splitlines()[0][:120]}')
 
-    # 6. Google Sheets URL -> CSV export (checked before generic Drive id
+    # 8. Google Sheets URL -> CSV export (checked before generic Drive id
     # extraction, since a Sheets URL also matches the '/d/<id>' pattern)
     sheet_url = _normalize_google_sheet(source)
     if sheet_url is not None:
@@ -551,7 +598,7 @@ def load_source(source, split=None, streaming=False, trust=False,
         except Exception as e:
             attempts.append(f'Google Sheets: {type(e).__name__}: {e}')
 
-    # 7. Google Drive URL or bare ID
+    # 9. Google Drive URL or bare ID
     drive_id = _extract_drive_id(source)
     if drive_id is not None:
         url = f'https://drive.google.com/uc?export=download&id={drive_id}'
@@ -565,7 +612,7 @@ def load_source(source, split=None, streaming=False, trust=False,
             attempts.append(f'Google Drive ({drive_id}): '
                             f'{type(e).__name__}: {e}')
 
-    # 8. Dropbox URL or shared-link path
+    # 10. Dropbox URL or shared-link path
     dropbox_url = _normalize_dropbox(source)
     if dropbox_url is not None:
         try:
@@ -577,12 +624,26 @@ def load_source(source, split=None, streaming=False, trust=False,
         except Exception as e:
             attempts.append(f'Dropbox: {type(e).__name__}: {e}')
 
-    # 9. any URL, with or without a scheme
+    # 11. any URL, with or without a scheme
     url = None
     if source.startswith(('http://', 'https://')):
         url = source
+    elif '/' not in source and \
+            Path(source).suffix.lower() in _SUPPORTED_EXTENSIONS:
+        # a bare data-file name (e.g. a typo'd local filename such as
+        # 'results.csv') used to be promoted to https://<filename> and
+        # trigger a real DNS lookup (QC 2026-07, F19-load-external-006)
+        attempts.append(
+            f'URL: not attempted -- {source!r} looks like a (missing) '
+            'local file name; pass an explicit http(s):// URL to load it '
+            'from the web')
     elif _DOMAIN_RE.match(source):
         url = 'https://' + source
+    elif _HOST_PORT_RE.match(source):
+        attempts.append(
+            f'URL: not attempted -- {source!r} looks like a host:port '
+            'address without a scheme; add an explicit http:// or '
+            'https:// prefix')
     if url is not None:
         try:
             raw, name_hint = _fetch_bytes(url)
@@ -595,14 +656,38 @@ def load_source(source, split=None, streaming=False, trust=False,
 
     tried = '\n  - '.join(attempts) if attempts else 'no interpretation ' \
         'matched (not a file, URL, Drive/Dropbox link, or dataset id)'
-    raise HypertoolsIOError(
-        f'could not load {source!r}. Tried, in order:\n  - {tried}')
+    message = f'could not load {source!r}. Tried, in order:\n  - {tried}'
+    suggestion = _closest_dataset_name(source)
+    if suggestion is not None:
+        message += f"\nDid you mean {suggestion!r}?"
+    raise HypertoolsIOError(message)
+
+
+def _closest_dataset_name(source):
+    """Near-miss suggestion for the could-not-load digest: the closest
+    built-in example / scikit-learn / (cached) seaborn dataset name to
+    ``source``, or None when nothing is close (QC 2026-07,
+    F18-load-hosted-007)."""
+    import difflib
+
+    from .load import EXAMPLE_DATA
+    if not isinstance(source, str):
+        return None
+    candidates = set(EXAMPLE_DATA) | set(SKLEARN_DATASETS)
+    if _seaborn_names_cache:
+        candidates |= set(_seaborn_names_cache)
+    matches = difflib.get_close_matches(
+        source.strip().lower(), sorted(candidates), n=1, cutoff=0.85)
+    return matches[0] if matches else None
 
 
 def load_local_file(path):
-    """Load a local data file by extension (with content sniffing as the
-    fallback). Supports pickle/.geo, .npy/.npz, .csv/.tsv/.txt, .json,
-    .parquet, .mat, and .xlsx/.xls."""
+    """Load a local data file by extension. Supports pickle/.geo,
+    .npy/.npz, .csv/.tsv/.txt, .json, .parquet, .mat, .xlsx/.xls, and
+    gzip-compressed variants (.gz). Files with no extension are parsed by
+    content sniffing; files with any OTHER extension raise
+    :class:`~hypertools._shared.exceptions.HypertoolsIOError` unless their
+    content matches a recognized binary format (pickle/npy/zip)."""
     path = Path(path)
     return _parse_payload(path.read_bytes(), path.name)
 
@@ -726,23 +811,49 @@ def _fetch_bytes(url, timeout=60):
 
 def _parse_payload(raw, name_hint='', trust=False, remote=False):
     """Parse downloaded/read bytes into a dataset, by filename extension
-    first and content sniffing second.
+    first and content sniffing second (extensionless payloads only).
 
     ``remote`` marks payloads fetched over the network (as opposed to a
     local file): unpickling a remote payload without ``trust=True`` emits
     a ``UserWarning``, and remote .npy/.npz use ``allow_pickle=False``
     unless ``trust=True``. Local files are never subject to this policy.
     """
-    ext = Path(str(name_hint)).suffix.lower()
+    label = str(name_hint) or 'payload'
+    if not raw:
+        raise HypertoolsIOError(
+            f'{label} is empty (0 bytes) -- nothing to load. If a save '
+            'writing this file failed midway, re-run it.')
+
+    # gzip-compressed payloads (e.g. data.csv.gz, a common scientific
+    # artifact) are decompressed transparently and re-dispatched on the
+    # inner name (QC 2026-07, F19-load-external-005)
+    if raw[:2] == b'\x1f\x8b':
+        import gzip
+        try:
+            inflated = gzip.decompress(raw)
+        except OSError as e:
+            raise HypertoolsIOError(
+                f'{label} looks gzip-compressed but could not be '
+                f'decompressed ({e}); the file may be corrupted.') from e
+        inner = Path(label)
+        inner_name = inner.stem if inner.suffix.lower() == '.gz' else label
+        return _parse_payload(inflated, inner_name, trust=trust,
+                              remote=remote)
+
+    ext = Path(label).suffix.lower()
     allow_pickle = trust or not remote
 
+    if ext == '.gz':
+        raise HypertoolsIOError(
+            f'{label} is named .gz but does not start with the gzip magic '
+            'bytes; the file may be corrupted or mis-named.')
     if ext == '.npy':
         return _npy_load(raw, allow_pickle)
     if ext == '.npz':
         return _unpack_npz(raw, trust=trust, remote=remote)
     if ext in ('.csv', '.tsv', '.txt'):
         sep = '\t' if ext == '.tsv' else None
-        return pd.read_csv(io.BytesIO(raw), sep=sep, engine='python')
+        return _read_delimited_text(raw, label, sep=sep)
     if ext == '.json':
         return pd.read_json(io.BytesIO(raw))
     if ext == '.parquet':
@@ -756,7 +867,29 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
     if ext in ('.pkl', '.pickle', '.geo', '.p'):
         return _unpickle_bytes(raw, trust=trust, remote=remote)
 
-    # no (useful) extension: sniff the content
+    if ext:
+        # unsupported extension: load recognized binary content by its
+        # signature (e.g. hyp.save pickles regardless of extension), but
+        # never fall through to a delimiter-sniffed CSV parse of arbitrary
+        # bytes -- that silently fabricated garbage DataFrames (QC 2026-07,
+        # X2-error-quality-001)
+        if raw[:6] == b'\x93NUMPY':
+            return _npy_load(raw, allow_pickle)
+        if raw[:1] == b'\x80':
+            return _unpickle_bytes(raw, trust=trust, remote=remote)
+        if raw[:2] == b'PK':
+            try:
+                return _unpack_npz(raw, trust=trust, remote=remote)
+            except Exception:
+                return pd.read_parquet(io.BytesIO(raw))
+        raise HypertoolsIOError(
+            f'cannot load {label!r}: unsupported file extension {ext!r}, '
+            "and the content doesn't match a known binary format. "
+            f"Supported extensions: {', '.join(_SUPPORTED_EXTENSIONS)}. "
+            'If this is a delimited text file, rename it with a '
+            '.csv/.tsv/.txt extension.')
+
+    # no extension: sniff the content
     if raw[:6] == b'\x93NUMPY':
         return _npy_load(raw, allow_pickle)
     if raw[:1] == b'\x80':
@@ -767,11 +900,79 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
         except Exception:
             return pd.read_parquet(io.BytesIO(raw))
     try:
-        text = raw.decode('utf-8')
+        raw.decode('utf-8')
     except UnicodeDecodeError:
         # last resort: pickle protocols < 2 have no magic prefix
-        return _unpickle_bytes(raw, trust=trust, remote=remote)
-    return pd.read_csv(io.StringIO(text), sep=None, engine='python')
+        try:
+            return _unpickle_bytes(raw, trust=trust, remote=remote)
+        except Exception as e:
+            raise HypertoolsIOError(
+                f'could not parse {label!r}: the content is not a numpy '
+                'array, pickle, zip/parquet payload, or UTF-8 text.'
+            ) from e
+    return _read_delimited_text(raw, label)
+
+
+def _read_delimited_text(raw, label, sep=None):
+    """Parse delimited-text bytes (.csv/.txt/extensionless text payloads).
+
+    Strategy (QC 2026-07, F19-load-external-001): parse with the comma
+    default first; only when that yields a single column, consult
+    ``csv.Sniffer`` restricted to common delimiter characters (never
+    letters or digits), and accept the sniffed delimiter only when it
+    appears in essentially every line and produces more columns. pandas'
+    unrestricted ``sep=None`` sniffing used to pick an in-word letter as
+    the delimiter for single-column files, silently corrupting them; a
+    genuinely single-column file now round-trips exactly, while
+    semicolon-/tab-/pipe-/whitespace-delimited files still parse.
+
+    ``sep`` forces a delimiter (used for .tsv) and skips the fallback.
+    """
+    import csv as _csv
+
+    if not raw.strip():
+        raise HypertoolsIOError(f'{label} is empty -- nothing to load.')
+    try:
+        text = raw.decode('utf-8')
+    except UnicodeDecodeError as e:
+        raise HypertoolsIOError(
+            f'{label} is not UTF-8 text, so it could not be parsed as a '
+            'delimited (CSV-style) file -- is it binary or compressed?'
+        ) from e
+
+    try:
+        if sep is not None:
+            return pd.read_csv(io.StringIO(text), sep=sep)
+        frame = pd.read_csv(io.StringIO(text), sep=',')
+    except HypertoolsIOError:
+        raise
+    except Exception as e:
+        raise HypertoolsIOError(
+            f'could not parse {label} as delimited text '
+            f'({type(e).__name__}: {e}).') from e
+    if frame.shape[1] > 1:
+        return frame
+
+    # single column under the comma default: validated sniff fallback
+    sample = text[:8192]
+    try:
+        dialect = _csv.Sniffer().sniff(sample, delimiters=',;\t| ')
+    except _csv.Error:
+        return frame
+    if dialect.delimiter == ',':
+        return frame
+    # the sniffed delimiter must look structural: present in (essentially)
+    # every non-empty line, not e.g. a space inside one quoted value
+    lines = [ln for ln in sample.splitlines() if ln.strip()]
+    hits = sum(dialect.delimiter in ln for ln in lines)
+    if hits < max(1, int(0.9 * len(lines))):
+        return frame
+    try:
+        sniffed = pd.read_csv(io.StringIO(text), sep=dialect.delimiter,
+                              engine='python')
+    except Exception:
+        return frame
+    return sniffed if sniffed.shape[1] > frame.shape[1] else frame
 
 
 def _npy_load(raw, allow_pickle):

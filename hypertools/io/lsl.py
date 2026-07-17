@@ -18,6 +18,8 @@ every LSL-speaking acquisition device/app
 "hypertools[lsl]"`.
 """
 
+import warnings
+
 
 def _import_pylsl():
     try:
@@ -45,15 +47,22 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
         ``pylsl.resolve_byprop('name', name, ...)``). Takes precedence
         over `type` when both are given.
     type : str, optional
-        Resolve the stream by its LSL ``type`` property (e.g. ``'EEG'``,
-        ``'Gaze'``, ``'Markers'``), via
-        ``pylsl.resolve_byprop('type', type, ...)``. Used only when `name`
-        is not given.
+        Resolve the stream by its LSL ``type`` property (e.g. ``'EEG'``
+        or ``'Gaze'``), via ``pylsl.resolve_byprop('type', type, ...)``.
+        Used only when `name` is not given. Only numeric channel formats
+        are supported: string-typed streams (e.g. marker streams with
+        ``channel_format='string'``) are rejected with a clear error,
+        since hypertools' streaming machinery consumes numeric vectors.
     timeout : float
         Seconds to wait for a matching stream to appear on the network
         before giving up (default: 10.0). When neither `name` nor `type`
         is given, this is also the wait time used to resolve ANY
-        available stream (``pylsl.resolve_streams``).
+        available stream (``pylsl.resolve_streams``). The same value also
+        bounds mid-stream silence: once samples are flowing, the returned
+        generator raises
+        :class:`~hypertools._shared.exceptions.HypertoolsIOError` if
+        nothing arrives for ~`timeout` consecutive seconds (e.g. the
+        source device disconnected).
     **resolve_kwargs
         Extra keyword arguments forwarded to the underlying pylsl resolve
         call (e.g. ``minimum=`` for `pylsl.resolve_byprop`).
@@ -63,14 +72,20 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
     stream : generator
         An infinite generator yielding one sample (a list of channel
         values) per call, pulled from a `pylsl.StreamInlet` opened on the
-        first resolved stream. Passes `hypertools.io.streaming.is_stream`.
+        first resolved stream (a ``RuntimeWarning`` names the chosen
+        stream when several match). Passes
+        `hypertools.io.streaming.is_stream`.
 
     Raises
     ------
     ImportError
         If `pylsl` is not installed.
     hypertools.core.exceptions.HypertoolsIOError
-        If no matching stream is found within `timeout` seconds.
+        If no matching stream is found within `timeout` seconds, if the
+        matched stream has a string (non-numeric) channel format, or --
+        raised from the returned generator's ``next()`` during iteration
+        -- if a stream that was delivering samples goes silent for
+        ~`timeout` consecutive seconds.
 
     Examples
     --------
@@ -101,6 +116,22 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
             f'publishing an LSL outlet on the local network, and that '
             f'name=/type= (if given) match its StreamInfo.'
         )
+
+    if len(infos) > 1:
+        matches = ', '.join(repr(i.name()) for i in infos[:5])
+        warnings.warn(
+            f'{len(infos)} LSL streams match ({criterion}); using the '
+            f'first one: {infos[0].name()!r}. Matching streams: '
+            f'{matches}. Pass name= to select a specific stream.',
+            RuntimeWarning, stacklevel=2)
+
+    if infos[0].channel_format() == pylsl.cf_string:
+        raise HypertoolsIOError(
+            f'the resolved LSL stream ({criterion}, '
+            f'name={infos[0].name()!r}) has string-typed channels '
+            "(channel_format='string', e.g. a Markers stream), but "
+            'hypertools can only stream numeric channel formats -- '
+            "resolve a numeric stream instead (e.g. type='EEG').")
 
     inlet = pylsl.StreamInlet(infos[0])
 

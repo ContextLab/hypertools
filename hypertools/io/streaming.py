@@ -19,6 +19,7 @@ in insertion order and concatenated, and non-numeric fields are ignored.
 
 import collections.abc
 import itertools
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -179,18 +180,37 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     not part of the public API.
 
     Streaming continues until the stream is exhausted, ``stream_max``
-    samples have been consumed, or the user interrupts (Ctrl-C) -- infinite
-    streams render continually, and any animation being saved is finalized
-    whenever streaming stops, including on interrupt. ``stream_window``
-    optionally limits the *display* to the most recent samples (comet
-    style); all consumed data is still retained on the returned figure's
-    ``stream_info``.
+    samples have been consumed (when ``stream_max < stream_init``, the
+    head itself is capped at ``stream_max``), the user interrupts
+    (Ctrl-C), or the stream raises -- infinite streams render continually,
+    and any animation being saved is finalized whenever streaming stops,
+    including on interrupt and on error. A mid-stream error (source
+    disconnect, bad sample, ...) does NOT discard the consumed data: a
+    ``RuntimeWarning`` is emitted and the figure is returned with
+    everything consumed so far, the exception stored under
+    ``stream_info['error']`` (QC 2026-07, F22-io-streaming-lsl-003).
+    ``stream_window`` optionally limits the *display* to the most recent
+    samples (comet style); all consumed data is still retained on the
+    returned figure's ``stream_info``.
+
+    The display box (axis limits and the data->box affine) is FROZEN from
+    the head samples; later samples that land outside it are drawn clamped
+    to the box surface, and a ``RuntimeWarning`` is emitted when a large
+    fraction of streamed samples is clamped (their true projected values
+    stay in ``stream_info['xform_data']``). Streamed trajectories are
+    drawn as raw polylines (one vertex per sample) from the first frame
+    on, without the interpolation/smoothing applied to static plots.
+
+    Streamed samples need >= 2 features to span a trajectory: a
+    single-channel stream raises ``ValueError`` (unless it ends within
+    the head, in which case it renders like a static 1-D plot).
 
     Returns a matplotlib Figure; ``fig.stream_info`` is a dict holding
     ``'data'`` (the raw consumed samples), ``'xform_data'`` (the projected
     trajectory), ``'n_samples'``, ``'reduce_model'`` (the fitted reduction
-    model, or None), and ``'truncated'`` (whether the stream was cut off
-    before exhaustion).
+    model, or None), ``'truncated'`` (whether the stream was cut off
+    before exhaustion), and ``'error'`` (the exception that ended
+    streaming early, or None).
     """
     import matplotlib
     import matplotlib.pyplot as plt
@@ -203,14 +223,66 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     if cluster is not None or n_clusters is not None:
         raise ValueError('cluster is not yet supported for streaming data')
 
+    # parameter validation, BEFORE any samples are consumed (QC 2026-07,
+    # F22-io-streaming-lsl-006/-008: invalid values used to surface as
+    # cryptic islice/unpacking errors, or silently change behavior)
+    stream_init = int(stream_init)
+    if stream_init < 1:
+        raise ValueError(
+            f'stream_init must be a positive integer; got {stream_init}')
+    stream_chunk = int(stream_chunk)
+    if stream_chunk < 1:
+        raise ValueError(
+            f'stream_chunk must be a positive integer; got {stream_chunk}')
+    if stream_max is not None:
+        stream_max = int(stream_max)
+        if stream_max < 1:
+            raise ValueError(
+                f'stream_max must be a positive integer or None; got '
+                f'{stream_max}')
+    if stream_window is not None:
+        stream_window = int(stream_window)
+        if stream_window < 1:
+            raise ValueError(
+                f'stream_window must be a positive integer or None; got '
+                f'{stream_window}')
+    if ndims is not None and ndims not in (1, 2, 3):
+        raise ValueError(
+            f'ndims must be 1, 2, or 3 for streaming plots; got {ndims} '
+            '(streamed samples are drawn in at most 3 dimensions)')
+
     it = iter(stream)
-    head_rows = list(itertools.islice(it, int(stream_init)))
+    # the head is capped by stream_max too, so the documented sample cap
+    # is never overshot (QC 2026-07, F22-io-streaming-lsl-007)
+    head_take = stream_init if stream_max is None \
+        else min(stream_init, stream_max)
+    head_rows = list(itertools.islice(it, head_take))
     if not head_rows:
         raise ValueError('stream produced no samples')
     head = np.vstack([row_to_vector(r) for r in head_rows])
 
+    if head.shape[1] < 2 and list(itertools.islice(it, 1)):
+        # fail fast (before the figure/writer exist) instead of crashing
+        # inside the first redraw (QC 2026-07, F22-io-streaming-lsl-001);
+        # a 1-channel stream that ENDED within the head falls through and
+        # renders like a static 1-D plot
+        raise ValueError(
+            'streamed samples have a single feature/channel; streaming '
+            'requires >= 2 features to draw a trajectory. Include a '
+            'time/index value in each sample (e.g. yield [t, value]), or '
+            'materialize the stream (e.g. np.array(list(stream))) and use '
+            'a static hyp.plot, which draws 1-D data against the sample '
+            'index.')
+
     head_red, project, model = _fit_stream_models(
         head, reduce, ndims, normalize)
+
+    if head_red.shape[1] > 3:
+        raise ValueError(
+            f'streamed samples span {head_red.shape[1]} dimensions after '
+            'the reduce step, but plots are at most 3-dimensional. Set '
+            "reduce/ndims so samples are projected to <= 3 dimensions "
+            "(e.g. reduce='IncrementalPCA', ndims=3).")
 
     # initial plot on the head (already normalized/reduced -> disable both)
     fig = hyp_plot(head_red, fmt, reduce=None, normalize=None, ndims=ndims,
@@ -249,14 +321,13 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     if save_path is not None:
         writer = animation.PillowWriter(fps=frame_rate)
         writer.setup(fig, save_path, dpi=fig.dpi)
-        writer.grab_frame()
 
     def _redraw():
         # fixed head-fitted transform + clamp: the space inside the cube is
         # stable for the whole stream (no per-chunk re-scaling "twitch")
         shown = np.vstack(accum)
         if stream_window is not None:
-            shown = shown[-int(stream_window):]
+            shown = shown[-stream_window:]
         full = to_box(shown)
         if is3d:
             artist.set_data_3d(full[:, 0], full[:, 1], full[:, 2])
@@ -268,31 +339,102 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
             fig.canvas.draw_idle()
             plt.pause(0.001)
 
-    # consume until the stream is exhausted, stream_max is reached, or the
-    # user interrupts -- an infinite stream renders continually, and the
-    # animation (if any) is finalized whenever streaming stops
+    # draw the head through the same raw-polyline path as every later
+    # chunk, so the first animation frame doesn't "snap" from a smoothed
+    # curve to a raw polyline on the first redraw (QC 2026-07,
+    # F22-io-streaming-lsl-005); 1-D head-only streams keep hyp.plot's
+    # static rendering (there is nothing to redraw)
+    if head_red.shape[1] >= 2:
+        _redraw()
+    elif writer is not None:
+        writer.grab_frame()
+
+    def _n_clamped(pts):
+        # how many of pts land outside the frozen display box (and are
+        # therefore drawn clamped to its surface)
+        t = 2.0 * ((pts - head_mu) - box_m1) / box_m2 - 1.0
+        return int(np.any((t < -1.0) | (t > 1.0), axis=1).sum())
+
+    # consume until the stream is exhausted, stream_max is reached, the
+    # user interrupts, or the stream errors out -- an infinite stream
+    # renders continually, and the animation (if any) is finalized
+    # whenever streaming stops
     truncated = False
+    stream_error = None
+    clamped = post_head = 0
+    clamp_warned = False
+
+    def _consume(rows):
+        # project + draw one (possibly partial) chunk of samples
+        nonlocal n_seen, clamped, post_head, clamp_warned
+        if not rows:
+            return
+        chunk = np.vstack([row_to_vector(r) for r in rows])
+        projected = project(chunk)
+        # append raw only after projection succeeds, so 'data' and
+        # 'xform_data' always describe the same samples
+        raw.append(chunk)
+        accum.append(projected)
+        n_seen += len(rows)
+        clamped += _n_clamped(projected)
+        post_head += len(projected)
+        if not clamp_warned and post_head >= 20 \
+                and clamped / post_head > 0.25:
+            # the stream has drifted out of the head-fitted display box:
+            # the plot is visibly distorted (QC 2026-07,
+            # F22-io-streaming-lsl-002)
+            clamp_warned = True
+            warnings.warn(
+                f'{clamped} of {post_head} streamed samples '
+                f'({100.0 * clamped / post_head:.0f}%) fall outside '
+                'the display box fitted on the first stream_init '
+                'samples and are drawn clamped to its surface, so '
+                'their displayed positions are distorted (the true '
+                "projected values are kept in "
+                "fig.stream_info['xform_data']). If the early "
+                'samples are not representative of the whole stream, '
+                'increase stream_init.', RuntimeWarning, stacklevel=2)
+        _redraw()
+
     try:
         while True:
-            if stream_max is not None and n_seen >= int(stream_max):
+            if stream_max is not None and n_seen >= stream_max:
                 truncated = any(True for _ in itertools.islice(it, 1))
                 break
-            take = int(stream_chunk)
+            take = stream_chunk
             if stream_max is not None:
-                take = min(take, int(stream_max) - n_seen)
-            rows = list(itertools.islice(it, take))
+                take = min(take, stream_max - n_seen)
+            rows = []
+            try:
+                for r in itertools.islice(it, take):
+                    rows.append(r)
+            except BaseException:
+                # the stream died mid-chunk: salvage the rows it yielded
+                # before dying, then let the outer handler finalize
+                try:
+                    _consume(rows)
+                except Exception:
+                    pass
+                raise
             if not rows:
                 break
-            chunk = np.vstack([row_to_vector(r) for r in rows])
-            raw.append(chunk)
-            accum.append(project(chunk))
-            n_seen += len(rows)
-            _redraw()
+            _consume(rows)
     except KeyboardInterrupt:
         truncated = True
-
-    if writer is not None:
-        writer.finish()
+    except Exception as e:  # noqa: BLE001 -- deliberately broad: a source
+        # error at minute 29 of a 30-minute acquisition must not destroy
+        # the figure, the consumed data, and the animation (QC 2026-07,
+        # F22-io-streaming-lsl-003)
+        truncated = True
+        stream_error = e
+        warnings.warn(
+            f'streaming stopped early: {type(e).__name__}: {e}. '
+            f'Returning the figure with the {n_seen} samples consumed so '
+            "far (see fig.stream_info; the exception is stored under "
+            "fig.stream_info['error']).", RuntimeWarning, stacklevel=2)
+    finally:
+        if writer is not None:
+            writer.finish()
 
     fig.stream_info = {
         'data': [np.vstack(raw)],
@@ -300,6 +442,7 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
         'n_samples': n_seen,
         'reduce_model': model,
         'truncated': truncated,
+        'error': stream_error,
     }
     if show:
         plt.show()
