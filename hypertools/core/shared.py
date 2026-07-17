@@ -13,6 +13,63 @@ import warnings
 _MISSING = object()
 
 
+def require_data(data, caller):
+    """Reject ``data=None`` with the ONE unified error every dispatcher uses.
+
+    2026-07 release audit (final wave, item 9): the dispatchers used to
+    disagree about `None` input -- `manip`/`impute`/`predict` raised
+    slightly different `TypeError`\\ s, `align` raised a misleading
+    ``ValueError: input has no observations (0 rows)`` from deep inside
+    `format_data`, and `analyze(None)` silently returned `None`. Every
+    dispatcher now calls this first, so `None` always raises the same
+    `TypeError` naming the entry point.
+
+    Parameters
+    ----------
+    data : object
+        The dispatcher's raw ``data`` argument.
+    caller : str
+        The public entry-point name (e.g. ``'align'``), for the message.
+
+    Raises
+    ------
+    TypeError
+        If `data` is `None`.
+    """
+    if data is None:
+        raise TypeError(
+            f'Unsupported data type passed to {caller}: None. Supported '
+            'types: Numpy Array, Pandas DataFrame/Series, String, List of '
+            'strings, List of numbers, or a list of datasets.')
+
+
+def no_observations_message(action, detail='0 rows'):
+    """The ONE unified empty-input message every dispatcher raises.
+
+    2026-07 release audit (final wave, item 10): empty inputs used to get
+    five different phrasings ('input has no observations (0 rows)...',
+    'cannot align an empty list...', 'cannot forecast an empty dataset...',
+    ...). Everything now uses this template -- the same shape as
+    `format_data`'s message, which several modules already matched.
+
+    Parameters
+    ----------
+    action : str
+        The verb for "there is nothing to <action>." (e.g. ``'align'``).
+    detail : str
+        What was actually received (e.g. ``'got an empty list'``,
+        ``'dataset 1 has shape (0, 2)'``; default: ``'0 rows'``).
+
+    Returns
+    -------
+    str
+        ``'input has no observations (<detail>); there is nothing to
+        <action>.'``
+    """
+    return (f'input has no observations ({detail}); there is nothing to '
+            f'{action}.')
+
+
 def is_reused_pipeline(spec, stage_kwargs, spec_label):
     """Whether `spec` is a whole already-fitted `hypertools.Pipeline` handed
     back as a dispatcher's model spec (e.g. the model returned by an earlier

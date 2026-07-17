@@ -101,6 +101,23 @@ def _smooth_dataset(data, **kwargs):
     """
     smoothed = data.copy()
     branch, use_legacy_var = _resolve_kernel(kwargs)
+    # NaN handling (2026-07 release audit, final wave item 16): missing
+    # values used to behave differently per kernel -- savgol propagated or
+    # crashed with a raw scipy error, while gaussian/boxcar silently SPREAD
+    # each NaN into its neighbors -- so all three kernels now raise the
+    # same clear error up front.
+    try:
+        all_values = data.to_numpy(dtype=float)
+    except (TypeError, ValueError):
+        all_values = None
+    if all_values is not None and np.isnan(all_values).any():
+        n_missing = int(np.isnan(all_values).sum())
+        raise ValueError(
+            f'Smooth cannot smooth data containing NaN ({n_missing} '
+            'missing value(s) found): the savgol, gaussian, and boxcar '
+            'kernels would either fail or silently spread missing values '
+            'into neighboring samples. Fill missing values first (e.g. '
+            'hyp.impute(data)).')
     # clear, actionable errors for kernel_width edge cases (QC 2026-07): scipy
     # otherwise raises opaque "window_length must be <= size of x" /
     # "polyorder must be less than window_length" from deep in savgol_filter.
@@ -154,7 +171,9 @@ def _transform(data, **kwargs):
     if axis == 1:
         return _transform(data.T, **dw.core.update_dict(kwargs, {'axis': 0})).T
     if axis != 0:
-        raise ValueError(f'Invalid smoothing axis: {axis}')
+        raise ValueError(
+            f'invalid Smooth axis {axis!r}; axis must be 0 (smooth down '
+            'each column, the default) or 1 (smooth across each row).')
     return _smooth_dataset(data, **kwargs)
 
 
@@ -190,10 +209,15 @@ def transformer(data, **kwargs):
     ------
     ValueError
         If `axis` is missing from `kwargs`, is not 0 or 1, or
-        `kernel_width` resolves to a non-positive value.
+        `kernel_width` resolves to a non-positive value; or if the data
+        contain NaN (fill missing values first, e.g. `hyp.impute(data)` --
+        identical behavior for all three kernels).
     """
     if 'axis' not in kwargs:
-        raise ValueError('Must specify axis')
+        raise ValueError(
+            "Smooth's transformer requires an axis= parameter; pass axis=0 "
+            '(smooth down each column, the default) or axis=1 (smooth '
+            'across each row).')
 
     # coerce kernel_width ONCE, up front, so warnings fire once per call even
     # for list input, and so the effective width matches the warning text
@@ -283,6 +307,11 @@ class Smooth(Manipulator):
     Smoothing is applied PER DATASET: each element of a list input is
     smoothed independently, so data never bleeds across dataset
     boundaries (audit F14-001/D01-001 fix).
+
+    Data containing NaN raises a `ValueError` (identical for all three
+    kernels): smoothing would either fail or silently spread missing
+    values into neighboring samples. Fill missing values first (e.g.
+    ``hyp.impute(data)``) -- 2026-07 release audit, final wave item 16.
 
     Examples
     --------

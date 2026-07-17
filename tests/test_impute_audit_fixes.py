@@ -238,7 +238,7 @@ def test_scalar_input_clear_error():
 
 def test_imputer_fit_none_raises_real_valueerror():
     from hypertools.impute import SimpleImputer
-    with pytest.raises(ValueError, match='empty dataset'):
+    with pytest.raises(ValueError, match='no observations'):
         SimpleImputer().fit(None)
 
 

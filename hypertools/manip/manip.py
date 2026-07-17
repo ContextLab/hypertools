@@ -25,7 +25,7 @@ from .normalize import Normalize
 from .zscore import ZScore
 from .smooth import Smooth
 from .resample import Resample
-from ..core.shared import unpack_model
+from ..core.shared import unpack_model, require_data, no_observations_message
 from ..core.pipeline import Pipeline
 
 
@@ -59,12 +59,12 @@ def _validate_manip_input(data):
       ``IndexError``\\ s -- or, for ``[]``, loaded a topic-model text corpus
       before failing inside sklearn's LDA; they now get a clear `ValueError`.
     """
-    no_observations = ('input has no observations (0 rows); there is '
-                       'nothing to manipulate.')
-    if data is None:
-        raise TypeError('Unsupported data type passed. Supported types: '
-                        'Numpy Array, Pandas DataFrame, String, List of '
-                        'strings, List of numbers')
+    no_observations = no_observations_message('manipulate')
+    require_data(data, 'manip')
+    if isinstance(data, tuple):
+        # a tuple of datasets is accepted exactly like a list (final wave
+        # item 15: it used to leak a raw IndexError from the funnel)
+        data = list(data)
     if isinstance(data, pd.Series):
         return data.to_frame()
     if isinstance(data, (pd.DataFrame, np.ndarray)) and data.shape[0] == 0:
@@ -126,9 +126,11 @@ def _funneled_manip(data, model="ZScore", return_model=False, normalize=None,
     if any(s is not None for s in (normalize, reduce, align, cluster)):
         from ..core.pipeline import build_pipeline
         # fold the manipulator's own constructor kwargs into a dict spec so they
-        # still reach the manip stage
+        # still reach the manip stage (model=None -- an explicitly skipped
+        # manip stage -- is passed through so build_pipeline omits the stage)
         manip_spec = ({'model': model, 'kwargs': dict(kwargs)}
-                      if (kwargs and not isinstance(model, (list, Pipeline)))
+                      if (kwargs and model is not None
+                          and not isinstance(model, (list, Pipeline)))
                       else model)
         pipe = build_pipeline(manip=manip_spec, normalize=normalize,
                               reduce=reduce, ndims=ndims, align=align,
@@ -170,12 +172,15 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
 
     Parameters
     ----------
-    data : DataFrame/array or list of these
+    data : DataFrame/array or list/tuple of these
         Dataset(s) to manipulate. A pandas `Series` is treated as a
-        single-column dataset.
+        single-column dataset; a tuple of datasets is treated exactly like
+        a list. `None` raises a `TypeError`.
 
-    model : str, dict, class, Manipulator instance, list, or Pipeline
-        Which manipulator(s) to apply (default: `'ZScore'`).
+    model : str, dict, class, instance, list, Pipeline, False, or None
+        Which manipulator(s) to apply (default: `'ZScore'`). `False` or
+        `None` skips the manipulation entirely and returns the input
+        unchanged (matching `align`/`cluster`/`reduce`'s skip contract).
 
         - A string is one of `MANIPULATORS`' names (Normalize, ZScore,
           Smooth, Resample).
@@ -204,13 +209,14 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
         `Manipulator` when `model` was a single spec, or a fitted
         `hypertools.Pipeline` when `model` was a list (default: False).
 
-    normalize, reduce, align, cluster : model spec or None
+    normalize, reduce, align, cluster : model spec, False, or None
         Cross-module stage kwargs (GH #138): when any of these is given,
         the other stages also run (via
         `hypertools.core.pipeline.build_pipeline`), in the canonical order
         `manip -> normalize -> reduce -> align -> cluster` (GH #153), with
         this function's own `model=` slotted in at the manip stage
-        (default: None for all four, i.e. only `manip` runs).
+        (default: None for all four, i.e. only `manip` runs). `False`
+        skips a stage, exactly like None.
 
     ndims : int or None
         Passed through to the `reduce` stage (as `ndims=`) when `reduce=`
@@ -254,6 +260,25 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
     (50, 2)
     """
     data = _validate_manip_input(data)
+
+    # False is an explicit "skip this stage", for the model spec and every
+    # stage kwarg, exactly like None -- the same contract align/cluster/
+    # reduce follow (2026-07 release audit, final wave item 7: manip(x,
+    # model=False) used to raise "unknown model spec: got a bool instance").
+    if model is False:
+        model = None
+    normalize = None if normalize is False else normalize
+    reduce = None if reduce is False else reduce
+    align = None if align is False else align
+    cluster = None if cluster is False else cluster
+
+    if model is None and all(s is None for s in (normalize, reduce, align,
+                                                 cluster)):
+        # nothing to do: hand the (validated) input back unchanged,
+        # matching reduce(reduce=None)/cluster(cluster=None)/align(
+        # model=None)
+        return (data, None) if return_model else data
+
     return _funneled_manip(data, model=model, return_model=return_model,
                            normalize=normalize, reduce=reduce, ndims=ndims,
                            align=align, cluster=cluster, **kwargs)

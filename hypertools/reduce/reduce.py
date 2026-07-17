@@ -32,11 +32,12 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
 
     Parameters
     ----------
-    x : Numpy array, Pandas DataFrame, text (list of strings), or list of
-        arrays/DataFrames
-        The data to reduce. Lists are stacked and reduced in one SHARED
-        space (a single model fit on the row-concatenated data), so all
-        datasets in a list must have the same number of columns.
+    x : Numpy array, Pandas DataFrame, text (list of strings), or
+        list/tuple of arrays/DataFrames
+        The data to reduce. Lists (and tuples, treated identically) are
+        stacked and reduced in one SHARED space (a single model fit on the
+        row-concatenated data), so all datasets in a list must have the
+        same number of columns. `None` raises a `TypeError`.
 
     reduce : str, dict, class, instance, fitted Reducer, False, or None
         Decomposition/manifold learning model to use.  Models supported: PCA,
@@ -56,7 +57,10 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         `ImportError`. Can be passed as a
         string, a bare (uninstantiated) scikit-learn-style class, an
         already-constructed instance, the canonical dict spec
-        `{'model': ..., 'args': [...], 'kwargs': {...}}`, or the LEGACY
+        `{'model': ..., 'args': [...], 'kwargs': {...}}` (both `'args'`
+        and `'kwargs'` are OPTIONAL, so the minimal `{'model': 'PCA'}`
+        works too; passing the legacy `'params'` key alongside them warns
+        and ignores `'params'`), or the LEGACY
         dict spec `{'model' : 'PCA', 'params' : {'whiten' : True}}`
         (accepted for backward compatibility, but emits a
         `DeprecationWarning`). A previously-fitted `Reducer` (as returned
@@ -141,6 +145,14 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
     (40, 3)
 
     """
+    from ..core.shared import require_data
+    # None always raises the unified dispatcher TypeError, and a tuple of
+    # datasets is accepted exactly like a list (2026-07 release audit,
+    # final wave items 9/15)
+    require_data(x, 'reduce')
+    if isinstance(x, tuple):
+        x = list(x)
+
     # model= is an alias for reduce= (release-1.0 audit,
     # D05-gallery-data-text-020: manip/impute/predict/align spell their
     # own-stage spec `model=`, and hyp.reduce(x, model='PCA') used to die
@@ -225,17 +237,30 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         }
 
     elif isinstance(reduce, dict):
-        if 'args' in reduce or 'kwargs' in reduce:
-            # canonical 1.0 dict spec: {'model': ..., 'args': [...], 'kwargs': {...}}
-            try:
-                c_model = reduce['model']
-            except KeyError:
-                raise ValueError(
-                    "invalid reduce dict spec: pass the model as the value "
-                    "of the 'model' key, with optional constructor arguments "
-                    "under 'args' (positional) and 'kwargs' (keyword), e.g. "
-                    "{'model': 'PCA', 'kwargs': {'whiten': True}} (the "
-                    "legacy 'params' key is also accepted).")
+        if 'model' not in reduce:
+            raise ValueError(
+                "invalid reduce dict spec: pass the model as the value "
+                "of the 'model' key, with optional constructor arguments "
+                "under 'args' (positional) and 'kwargs' (keyword), e.g. "
+                "{'model': 'PCA', 'kwargs': {'whiten': True}} (the "
+                "legacy 'params' key is also accepted).")
+        if 'args' in reduce or 'kwargs' in reduce or 'params' not in reduce:
+            # canonical 1.0 dict spec: {'model': ..., 'args': [...],
+            # 'kwargs': {...}} -- BOTH 'args' and 'kwargs' are optional, so
+            # the minimal {'model': 'PCA'} works too (2026-07 release audit,
+            # final wave item 2: it used to crash with the invalid-dict-spec
+            # error even though the docs called args/kwargs optional)
+            if 'params' in reduce:
+                # both the canonical and the legacy parameter keys were
+                # given: the canonical 'args'/'kwargs' win, but say so
+                # instead of silently dropping 'params' (final wave item 5,
+                # matching hyp.cluster's warning)
+                warnings.warn(
+                    "reduce spec contains both the canonical "
+                    "'args'/'kwargs' keys and the legacy 'params' key; "
+                    "ignoring 'params' and using 'args'/'kwargs'",
+                    UserWarning, stacklevel=2)
+            c_model = reduce['model']
             c_args = list(reduce.get('args', []))
             c_kwargs = dict(reduce.get('kwargs', {}))
             # remember whether the user left TSNE's perplexity at its
@@ -268,22 +293,30 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
                 c_kwargs['random_state'] = random_state
             # construct immediately; the resulting instance flows through
             # the same already-constructed-instance handling below as a
-            # bare instance passed directly as `reduce=`
-            model_name = c_model(*c_args, **c_kwargs)
+            # bare instance passed directly as `reduce=`. An ALREADY-
+            # CONSTRUCTED instance inside the dict spec is used as-is --
+            # its 'args'/'kwargs' entries cannot be applied, so a
+            # UserWarning says so instead of crashing/silently dropping
+            # them (final wave item 4 parity with hyp.cluster).
+            if inspect.isclass(c_model):
+                model_name = c_model(*c_args, **c_kwargs)
+            else:
+                if c_args or c_kwargs:
+                    warnings.warn(
+                        f"the reduce spec's 'model' is an already-"
+                        f"constructed {type(c_model).__name__} instance "
+                        "(used as-is), so the spec's 'args'/'kwargs' "
+                        "entries are ignored; configure the instance "
+                        "directly, or pass the class (or its name) to "
+                        "apply constructor parameters",
+                        UserWarning, stacklevel=2)
+                model_name = c_model
             model_params = {
                 'n_components': ndims
             }
         else:
-            try:
-                model_name = reduce['model']
-                model_params = reduce['params']
-            except KeyError:
-                raise ValueError(
-                    "invalid reduce dict spec: pass the model as the value "
-                    "of the 'model' key, with optional constructor arguments "
-                    "under 'args' (positional) and 'kwargs' (keyword), e.g. "
-                    "{'model': 'PCA', 'kwargs': {'whiten': True}} (the "
-                    "legacy 'params' key is also accepted).")
+            model_name = reduce['model']
+            model_params = reduce['params']
             # LEGACY form (dev-1.0/fork): accepted for backward
             # compatibility, but deprecated in favor of the canonical
             # {'model', 'args', 'kwargs'} triple above.

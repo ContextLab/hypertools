@@ -83,12 +83,23 @@ def fitter(data, **kwargs):
         return listify_dicts([fitter(d, **kwargs) for d in data])
 
     transpose = kwargs.pop('transpose', False)
-    assert 'axis' in kwargs.keys(), ValueError('Must specify axis')
+    # real raises (not `assert ..., ValueError(...)`, which raised
+    # AssertionError and was stripped under `python -O`) -- 2026-07 release
+    # audit, final wave item 8
+    if 'axis' not in kwargs:
+        raise ValueError(
+            "Resample's fitter requires an axis= parameter; pass axis=0 "
+            '(resample along rows, the default) or axis=1 (resample along '
+            'columns).')
 
     if kwargs['axis'] == 1:
         return fitter(data.T, **dw.core.update_dict(kwargs, {'axis': int(not kwargs['axis']), 'transpose': True}))
 
-    assert kwargs['axis'] == 0, ValueError('invalid transformation')
+    if kwargs['axis'] != 0:
+        raise ValueError(
+            f"invalid Resample axis {kwargs['axis']!r}; axis must be 0 "
+            '(resample along rows, the default) or 1 (resample along '
+            'columns).')
 
     x = _resampling_x(data)
 
@@ -150,12 +161,22 @@ def transformer(data, **kwargs):
 
     # noinspection DuplicatedCode
     transpose = kwargs.pop('transpose', False)
-    assert 'axis' in kwargs.keys(), ValueError('Must specify axis')
+    # real raises (see `fitter` above; 2026-07 release audit, final wave
+    # item 8)
+    if 'axis' not in kwargs:
+        raise ValueError(
+            "Resample's transformer requires an axis= parameter; pass "
+            'axis=0 (resample along rows, the default) or axis=1 (resample '
+            'along columns).')
 
     if transpose:
         return transformer(data.T, **dw.core.update_dict(kwargs, {'axis': int(not kwargs['axis'])})).T
 
-    assert kwargs['axis'] == 0, ValueError('invalid transformation')
+    if kwargs['axis'] != 0:
+        raise ValueError(
+            f"invalid Resample axis {kwargs['axis']!r}; axis must be 0 "
+            '(resample along rows, the default) or 1 (resample along '
+            'columns).')
 
     # Build the interpolators from THE DATA BEING TRANSFORMED, not from the
     # fit-time data: Resample's fitted state is only its `n_samples` target

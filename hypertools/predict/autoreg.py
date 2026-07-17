@@ -207,6 +207,9 @@ class AutoRegressor(Forecaster):
         regressor class or an already-constructed instance also works.
     lags : int
         Number of trailing observations used as predictors (default: 10).
+        Must be a positive integer: 0, negative, boolean, or non-integer
+        values (e.g. ``lags=2.5``) raise a `ValueError` at construction
+        (fitting also requires strictly more than `lags` observations).
     model_kwargs : dict or None
         Parameters passed to `model` when it is a string or class
         (default: None). Direct keyword arguments (e.g.
@@ -229,6 +232,17 @@ class AutoRegressor(Forecaster):
     """
 
     def __init__(self, model='Ridge', lags=10, model_kwargs=None, **kwargs):
+        # validate lags up front (2026-07 release audit, final wave item 12):
+        # lags=0 leaked sklearn's "Found array with 0 feature(s)", negative
+        # values built nonsense designs, and a float crashed with a raw
+        # "'float' object cannot be interpreted as an integer".
+        if (isinstance(lags, bool) or not isinstance(lags, (int, np.integer))
+                or lags < 1):
+            raise ValueError(
+                f'lags must be a positive integer (the number of trailing '
+                f'observations used as predictors); got {lags!r}. Pass e.g. '
+                'lags=10.')
+        lags = int(lags)
         # merge direct kwargs into model_kwargs (direct kwargs win); the
         # original object is kept when there is nothing to merge so sklearn's
         # clone() identity check still passes.

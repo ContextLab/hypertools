@@ -406,14 +406,27 @@ def get_type(data):
             return 'list_num'  # empty list -> empty numeric dataset
         if isinstance(data[0], (str, bytes)):
             return 'list_str'
-        elif isinstance(data[0], (int, float, np.number)) and not isinstance(data[0], bool):
+        # bools count as numbers (release-1.0 audit, F08-plot-inputs-013):
+        # a python list of bools is the same data as np.array([True, ...]),
+        # which has always been accepted (dtype kind 'b' -> 'arr_num').
+        # np.bool_ is listed explicitly because it is NOT an np.number
+        # subclass (and, under numpy >= 2, not a python bool either).
+        elif isinstance(data[0], (bool, int, float, np.number, np.bool_)):
             return 'list_num'
         elif isinstance(data[0], np.ndarray):
             return 'list_arr'
         else:
-            raise TypeError('Unsupported data type passed. Supported types: '
-                            'Numpy Array, Pandas DataFrame, String, List of strings'
-                            ', List of numbers')
+            # name the offending element type (release-1.0 audit,
+            # F08-plot-inputs-008); keep the 'Unsupported data type' prefix
+            # (existing callers/tests match on it).
+            raise TypeError(
+                f"Unsupported data type: list containing "
+                f"'{type(data[0]).__name__}' elements. A list dataset may "
+                "hold strings (text data), numbers/bools (a single 1-D "
+                "dataset), or numpy arrays (multiple datasets). Supported "
+                "per-dataset types: numpy array, pandas DataFrame, pandas "
+                "Series, str, list of strings, list of numbers, or a "
+                "(possibly nested) list/tuple of arrays/DataFrames.")
     elif isinstance(data, np.ndarray):
         # classify by dtype rather than indexing data[0][0] -- the latter
         # crashed on 1-D arrays (data[0] is a scalar, so data[0][0] raised
@@ -433,9 +446,15 @@ def get_type(data):
     elif isinstance(data, DataGeometry):
         return 'geo'
     else:
-        raise TypeError('Unsupported data type passed. Supported types: '
-                        'Numpy Array, Pandas DataFrame, String, List of strings'
-                        ', List of numbers')
+        # name the received type (release-1.0 audit, F08-plot-inputs-008);
+        # keep the 'Unsupported data type' prefix (existing callers/tests
+        # match on it). pandas Series and tuples are accepted by
+        # `format_data` (which converts them before calling get_type).
+        raise TypeError(
+            f"Unsupported data type '{type(data).__name__}'. Supported "
+            "types: numpy array, pandas DataFrame, pandas Series, str, "
+            "list of strings, list of numbers, or a (possibly nested) "
+            "list/tuple of arrays/DataFrames.")
 
 
 def convert_text(data):

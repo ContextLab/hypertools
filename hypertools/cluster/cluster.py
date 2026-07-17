@@ -32,9 +32,11 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None,
     Accepts the full model-spec grammar: a registry name (string), a bare
     (uninstantiated) scikit-learn-style class, an already-constructed
     instance, the canonical dict spec `{'model': ..., 'args': [...],
-    'kwargs': {...}}`, or the LEGACY dict spec `{'model': ..., 'params':
-    {...}}` (accepted for backward compatibility, but emits a
-    `DeprecationWarning`).
+    'kwargs': {...}}` (both keys optional; positional `'args'` are bound
+    to the constructor's parameters by position, with `'kwargs'` winning
+    on a conflict -- final wave item 3), or the LEGACY dict spec
+    `{'model': ..., 'params': {...}}` (accepted for backward
+    compatibility, but emits a `DeprecationWarning`).
 
     The `n_clusters=` convenience is preserved exactly as the pre-1.0 API
     behaved: it is injected into the constructor only when the resolved
@@ -95,6 +97,7 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None,
                     "ignoring 'params' and using 'args'/'kwargs'",
                     UserWarning, stacklevel=3)
             model_params = dict(cluster.get("kwargs", {}))
+            model_args = list(cluster.get("args", []))
         elif "params" in cluster:
             # LEGACY form (dev-1.0/fork): accepted for backward
             # compatibility, but deprecated in favor of the canonical
@@ -104,9 +107,11 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None,
                 "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
                 DeprecationWarning, stacklevel=3)
             model_params = dict(cluster["params"])
+            model_args = []
         else:
             # e.g. {'model': ..., 'n_clusters': k} with no params/kwargs at all
             model_params = {}
+            model_args = []
         if "n_clusters" in cluster:
             # top-level convenience: cluster={'model': ..., 'n_clusters': k}
             if n_clusters_explicit and cluster["n_clusters"] != n_clusters:
@@ -119,6 +124,7 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None,
     else:
         model_name = cluster
         model_params = {}
+        model_args = []
 
     # bare classes and already-constructed instances are accepted anywhere
     # a name string is
@@ -139,6 +145,20 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None,
                     f"a scikit-learn style clusterer class or instance, a "
                     f"dict spec like {{'model': 'KMeans', 'kwargs': "
                     f"{{...}}}}, or a fitted Clusterer.")
+            if model_params or model_args:
+                # an already-constructed instance inside a dict spec cannot
+                # absorb the spec's 'args'/'kwargs'; warn instead of
+                # silently dropping them (final wave item 4, matching the
+                # instance + top-level n_clusters warning below)
+                dropped = [k for k, v in (("'args'", model_args),
+                                          ("'kwargs'", model_params)) if v]
+                warnings.warn(
+                    f"the cluster spec's 'model' is an already-constructed "
+                    f"{type(model_name).__name__} instance (used as-is), so "
+                    f"the spec's {' and '.join(dropped)} entries are "
+                    "ignored; configure the instance directly, or pass the "
+                    "class (or its name) to apply constructor parameters",
+                    UserWarning, stacklevel=3)
             if n_clusters_explicit:
                 # the instance's own configuration always wins; say so when
                 # it visibly conflicts with n_clusters= (F13-cluster-008)
@@ -166,6 +186,37 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None,
             f"unknown cluster model {model_name!r}; supported names: "
             f"{', '.join(sorted(list(CLUSTERERS) + list(MIXTURES)))} (or "
             f"pass a scikit-learn style instance directly)")
+
+    if model_args:
+        # honor a dict spec's positional 'args' (final wave item 3: they
+        # used to be silently DISCARDED, so cluster={'model': 'KMeans',
+        # 'args': [5]} quietly clustered with the default n_clusters=3).
+        # Bind each positional value to its parameter NAME so it
+        # participates in the documented precedence rules below
+        # (spec kwargs win over 'args' on a conflict, and a spec-carried
+        # cluster count wins over the n_clusters= argument).
+        try:
+            positional = [
+                p for p in inspect.signature(model_cls).parameters.values()
+                if p.kind in (inspect.Parameter.POSITIONAL_ONLY,
+                              inspect.Parameter.POSITIONAL_OR_KEYWORD)]
+        except (TypeError, ValueError):
+            positional = []
+        if len(model_args) > len(positional):
+            raise TypeError(
+                f"the cluster spec's 'args' entry has {len(model_args)} "
+                f"value(s) ({model_args!r}) but {registry_name} accepts at "
+                f"most {len(positional)} positional argument(s); pass the "
+                "extra parameters by name in the spec's 'kwargs' instead.")
+        for value, p in zip(model_args, positional):
+            if p.name in model_params:
+                warnings.warn(
+                    f"the cluster spec sets {p.name!r} both positionally "
+                    f"(in 'args': {value!r}) and by name (in 'kwargs': "
+                    f"{model_params[p.name]!r}); using the 'kwargs' value",
+                    UserWarning, stacklevel=3)
+            else:
+                model_params[p.name] = value
 
     if registry_name in MIXTURES:
         if (n_clusters_explicit and "n_components" in model_params
@@ -215,13 +266,15 @@ def cluster(x, cluster="KMeans", n_clusters=None, return_model=False,
 
     Parameters
     ----------
-    x : A Numpy array, Pandas Dataframe or list of arrays/dfs
-        The data to be clustered.  You can pass a single array/df or a list.
+    x : A Numpy array, Pandas Dataframe or list/tuple of arrays/dfs
+        The data to be clustered.  You can pass a single array/df or a
+        list (a tuple of datasets is treated exactly like a list).
         If a list is passed, the arrays will be stacked and the clustering
         will be performed across all lists (i.e. not within each list).
         All datasets in a list must have the same number of columns (the
         stacked data shares one feature space); reduce or align them to a
-        common dimensionality first if they differ.
+        common dimensionality first if they differ. `None` raises a
+        `TypeError`.
 
     cluster : str, class, instance, dict, fitted Clusterer, False, or None
         Model to use to discover clusters.  Supported algorithms are: KMeans,
@@ -232,7 +285,12 @@ def cluster(x, cluster="KMeans", n_clusters=None, return_model=False,
         LatentDirichletAllocation and NMF. Can be passed as a string, a bare
         (uninstantiated) scikit-learn-style class, an already-constructed
         instance, the canonical dict spec `{'model': ..., 'args': [...],
-        'kwargs': {...}}`, or the LEGACY dict spec `{'model' : 'KMeans',
+        'kwargs': {...}}` (both `'args'` and `'kwargs'` are OPTIONAL;
+        positional `'args'` are bound to the model's constructor
+        parameters by position -- e.g. `{'model': 'KMeans', 'args': [5]}`
+        asks for 5 clusters -- with `'kwargs'` winning over `'args'` on a
+        conflict, and a spec-carried cluster count winning over
+        `n_clusters=`), or the LEGACY dict spec `{'model' : 'KMeans',
         'params' : {'max_iter' : 100}}` (accepted for backward
         compatibility, but emits a `DeprecationWarning`). A
         previously-fitted `Clusterer` (as returned by `return_model=True`)
@@ -318,6 +376,14 @@ def cluster(x, cluster="KMeans", n_clusters=None, return_model=False,
     (40, 2)
 
     """
+    from ..core.shared import require_data
+    # None always raises the unified dispatcher TypeError, and a tuple of
+    # datasets is accepted exactly like a list (2026-07 release audit,
+    # final wave items 9/15)
+    require_data(x, 'cluster')
+    if isinstance(x, tuple):
+        x = list(x)
+
     # model= is an alias for cluster= (release-1.0 audit,
     # D05-gallery-data-text-020: manip/impute/predict/align spell their
     # own-stage spec `model=`, and hyp.cluster(x, model='KMeans') used to

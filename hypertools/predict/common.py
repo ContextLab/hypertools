@@ -73,7 +73,10 @@ def resolve_t(data, t):
       non-positive count is returned, meaning "truncate" (no forecasting
       model is needed) -- callers should slice the data instead of
       forecasting. In that case ``future_index`` is the (past-inclusive)
-      index sliced up to ``t``, not an extension. A ``t`` strictly after
+      index sliced up to ``t``, not an extension. A ``t`` BEFORE the first
+      observation raises a `ValueError` (there is no data to truncate to
+      and nothing to forecast; it used to silently return an empty frame).
+      A ``t`` strictly after
       the last observation always forecasts at least one step (a target
       less than one full step ahead rounds up to a single step). A
       tz-naive ``t`` on tz-aware data is localized to the data's timezone.
@@ -141,6 +144,18 @@ def resolve_t(data, t):
             'timezone-aware; pass a tz-naive t (or localize the data index).')
     step = _infer_step(index)
     last = index[-1]
+
+    # a target BEFORE the first observation used to silently return an
+    # empty (0, n_features) frame (2026-07 release audit, final wave item
+    # 14): there is nothing to truncate to and nothing to forecast, so
+    # raise instead.
+    first = index.min()
+    if target < first:
+        raise ValueError(
+            f'the target time t={t!r} is before the first observation '
+            f'({first}): there is no data to truncate to and nothing to '
+            'forecast. Pass a t within the observed range (to truncate the '
+            f'history) or after the last observation ({last}) to forecast.')
 
     if target <= last:
         # t at (or before) the last observation: truncate. n_steps == 0
@@ -218,8 +233,10 @@ class Forecaster(BaseEstimator):
         """
         # real raises (not `assert ..., ValueError(...)`, which raises
         # AssertionError and is stripped under `python -O`) -- QC 2026-07.
+        from ..core.shared import no_observations_message
         if data is None:
-            raise ValueError('cannot forecast an empty dataset (data is None)')
+            raise ValueError(
+                no_observations_message('forecast', 'data is None'))
         single = not isinstance(data, list)
         datasets = [_as_dataframe(data)] if single else [_as_dataframe(d) for d in data]
 
@@ -232,9 +249,10 @@ class Forecaster(BaseEstimator):
             which = 'the dataset' if single else f'dataset {i}'
             if d.shape[0] == 0 or d.shape[1] == 0:
                 raise ValueError(
-                    f'cannot forecast an empty dataset: {which} has shape '
-                    f'{tuple(d.shape)} (no data). Pass at least 2 '
-                    'observations (rows) of at least 1 feature (column).')
+                    no_observations_message(
+                        'forecast', f'{which} has shape {tuple(d.shape)}')
+                    + ' Pass at least 2 observations (rows) of at least 1 '
+                    'feature (column).')
             if d.shape[0] < 2:
                 raise ValueError(
                     f'cannot forecast from a single observation: {which} has '
@@ -398,8 +416,9 @@ class Forecaster(BaseEstimator):
                     'reuse a fitted forecaster only on data with the same '
                     'columns it was fit on.')
             if d.shape[0] == 0:
-                raise ValueError(f'cannot forecast from an empty dataset: '
-                                 f'{which} has 0 rows.')
+                from ..core.shared import no_observations_message
+                raise ValueError(
+                    no_observations_message('forecast', f'{which} has 0 rows'))
 
         forecasts = []
         for d, params in zip(new_datasets, paired_models):

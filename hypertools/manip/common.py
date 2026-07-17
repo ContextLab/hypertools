@@ -42,15 +42,36 @@ class Manipulator(BaseEstimator):
 
     def fit(self, data):
         """Fit this manipulator's parameters on `data`; stores them as
-        attributes (named by `self.required`)."""
-        assert data is not None, ValueError("cannot manipulate an empty dataset")
+        attributes (named by `self.required`).
+
+        Raises
+        ------
+        ValueError
+            If `data` is `None`, if the fitter does not return a dict, or
+            if any name in `self.required` is missing from the returned
+            dict. (Real raises -- these used to be ``assert cond,
+            ValueError(...)``, which raised `AssertionError` and was
+            stripped entirely under ``python -O``; 2026-07 release audit,
+            final wave item 8.)
+        """
+        if data is None:
+            from ..core.shared import no_observations_message
+            raise ValueError(
+                no_observations_message('manipulate', 'data is None'))
         self.data = data
         if self.fitter is None:
             return
         params = self.fitter(data, **self.kwargs)
-        assert isinstance(params, dict), ValueError("fit function must return a dictionary")
-        assert all(r in params for r in self.required), \
-            ValueError("one or more required fields not returned")
+        if not isinstance(params, dict):
+            raise ValueError(
+                f'{type(self).__name__} fit function must return a '
+                f'dictionary of fitted parameters; got '
+                f'{type(params).__name__}')
+        missing = [r for r in self.required if r not in params]
+        if missing:
+            raise ValueError(
+                f'{type(self).__name__} fit function did not return '
+                f"required field(s): {', '.join(missing)}")
         for k, v in params.items():
             setattr(self, k, v)
 

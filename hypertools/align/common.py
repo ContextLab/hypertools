@@ -72,6 +72,12 @@ def trim_and_pad(data, warn=True):
     DatetimeIndex timeseries, string labels, shuffled integers
     (QC 2026-07, F12-align-001).
 
+    DUPLICATED index labels are deduplicated first (keeping the FIRST row
+    per label, with a UserWarning): ``.loc``-selecting a duplicated label
+    returns every row carrying it, which used to hand back datasets of
+    DIFFERENT lengths -- misaligned output -- while the trim warning
+    claimed otherwise (2026-07 release audit, final wave item 1).
+
     Parameters
     ----------
     data : DataFrame or list of DataFrames
@@ -91,6 +97,26 @@ def trim_and_pad(data, warn=True):
         return data
     if not isinstance(data, list):
         data = [data]
+    # duplicate row-index labels silently produced MISALIGNED output (2026-07
+    # release audit, final wave item 1): `d.loc[rows]` returns EVERY row
+    # carrying a duplicated label, so datasets came back with DIFFERENT
+    # lengths while the trim warning below claimed only the common rows were
+    # kept. Keep the FIRST row per duplicated label (matching how the
+    # common-row list itself dedupes), so rows match one-to-one.
+    deduped = []
+    for i, d in enumerate(data):
+        if d.index.has_duplicates:
+            n_dupes = int(d.index.duplicated().sum())
+            if warn:
+                warnings.warn(
+                    f'dataset {i} has {n_dupes} duplicated row-index '
+                    'label(s); alignment matches observations across '
+                    'datasets by index value, so only the FIRST row for '
+                    'each duplicated label is kept. Use unique row indices '
+                    '(e.g. df.reset_index(drop=True)) to keep every row.')
+            d = d[~d.index.duplicated(keep='first')]
+        deduped.append(d)
+    data = deduped
     common = set(data[0].index.values)
     for d in data[1:]:
         common = common.intersection(set(d.index.values))
@@ -213,9 +239,12 @@ class Aligner(BaseEstimator):
             missing from the returned dict.
         """
         if data is None or (isinstance(data, list) and len(data) == 0):
+            from ..core.shared import no_observations_message
             raise ValueError(
-                'cannot align an empty dataset: no data provided. Pass one '
-                'or more numeric arrays/DataFrames to fit the aligner on.')
+                no_observations_message(
+                    'align', 'data is None or an empty list')
+                + ' Pass one or more numeric arrays/DataFrames to fit the '
+                'aligner on.')
         self.data = data
         self._fit_shape = self._shape_of(data)
         if self.fitter is None:

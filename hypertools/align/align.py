@@ -284,11 +284,15 @@ def align(data, model='HyperAlign', return_model=False,
 
     Parameters
     ----------
-    data : numpy array, pandas/polars DataFrame, or list of these
+    data : numpy array, pandas/polars DataFrame, or list/tuple of these
         The datasets to align. Any input format is funneled into
-        DataFrame(s) before dispatch. Rows are matched across datasets by
-        index value and returned in the FIRST dataset's index order; an
-        empty list raises a `ValueError`.
+        DataFrame(s) before dispatch (a tuple of datasets is treated
+        exactly like a list). Rows are matched across datasets by index
+        value and returned in the FIRST dataset's index order; datasets
+        with DUPLICATED index labels keep only the first row per label
+        (with a `UserWarning`), so output rows always match one-to-one
+        across datasets. `None` raises a `TypeError`; an empty list raises
+        a `ValueError`.
 
     model : str, class, instance, dict, fitted Aligner, False, or None
         Alignment algorithm to use. Supported names: `'HyperAlign'`
@@ -361,8 +365,8 @@ def align(data, model='HyperAlign', return_model=False,
         share no common row-index values, or if `model` is an unknown
         name / `True`.
     TypeError
-        If a keyword argument is not accepted by the resolved model's
-        constructor (e.g. a misspelled parameter name).
+        If `data` is `None`, or a keyword argument is not accepted by the
+        resolved model's constructor (e.g. a misspelled parameter name).
 
     Examples
     --------
@@ -376,13 +380,24 @@ def align(data, model='HyperAlign', return_model=False,
     [(30, 4), (30, 4)]
 
     """
+    from ..core.shared import require_data, no_observations_message
+    # None always raises the unified dispatcher TypeError (it used to leak a
+    # misleading "input has no observations (0 rows)" from format_data --
+    # 2026-07 release audit, final wave item 9)
+    require_data(data, 'align')
+    if isinstance(data, tuple):
+        # a tuple of datasets is accepted exactly like a list (final wave
+        # item 15: it used to be funneled as one opaque object and die with
+        # the same misleading no-observations error)
+        data = list(data)
     if isinstance(data, list) and len(data) == 0:
         # an empty list used to fall through to the TEXT input funnel,
         # downloading the minipedia corpus and dying with a cryptic
         # LatentDirichletAllocation error (QC 2026-07, F12-align-006)
         raise ValueError(
-            'cannot align an empty list: `data` contains no datasets. Pass '
-            'a list of one or more numeric arrays/DataFrames to align.')
+            no_observations_message('align', 'got an empty list')
+            + ' Pass a list of one or more numeric arrays/DataFrames to '
+            'align.')
     if isinstance(data, list) and type(data) is not list:
         # GH #209: normalize a list SUBCLASS to a plain `list` before the
         # funnel-decorated `_align` runs -- see `_align`'s docstring.

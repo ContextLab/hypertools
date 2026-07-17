@@ -82,11 +82,13 @@ def _normalize_data(data):
     turning degenerate inputs into clear errors instead of cryptic library
     internals (QC 2026-07 red-team F17-impute-008/-010,
     X2-error-quality-004)."""
-    if data is None:
-        raise TypeError(
-            'Unsupported data type passed to impute: None. Supported types: '
-            'Numpy Array, Pandas DataFrame/Series, String, List of strings, '
-            'List of numbers, or a list of datasets.')
+    from ..core.shared import require_data, no_observations_message
+    require_data(data, 'impute')
+    if isinstance(data, tuple):
+        # a tuple of datasets is accepted exactly like a list (2026-07
+        # release audit, final wave item 15: it used to be funneled as one
+        # opaque object and die with a misleading all-NaN error)
+        data = list(data)
     if isinstance(data, (bool, np.bool_)) or isinstance(data, numbers.Number):
         raise ValueError(
             f'cannot impute a single scalar observation ({data!r}); pass a '
@@ -120,7 +122,16 @@ def _normalize_data(data):
             _check_finite_observed(data)
             return data
         data = [_coerce_dataset(d) for d in data]
-        for d in data:
+        for i, d in enumerate(data):
+            # an EMPTY dataset inside a list used to slip through and get
+            # the misleading "entirely missing (all values are NaN)" error
+            # -- or silently poison a mixed list (2026-07 release audit,
+            # final wave item 13). Empty and all-NaN are now distinguished.
+            shape = getattr(d, 'shape', None)
+            if shape is not None and len(shape) >= 1 and (
+                    shape[0] == 0 or (len(shape) > 1 and shape[1] == 0)):
+                raise ValueError(no_observations_message(
+                    'impute', f'dataset {i} has shape {tuple(shape)}'))
             _check_finite_observed(d)
         return data
     data = _coerce_dataset(data)
@@ -130,13 +141,16 @@ def _normalize_data(data):
 
 def _all_missing(data):
     """Whether every numeric value across `data` (a wrangled DataFrame or
-    list of them) is NaN."""
+    list of them) is NaN. Empty datasets do NOT count as all-missing
+    (``isnan(empty).all()`` is vacuously True, which used to mislabel a
+    0-row input as "entirely missing" -- 2026-07 release audit, final wave
+    item 13)."""
     datasets = data if isinstance(data, list) else [data]
     try:
         values = [np.asarray(d, dtype=float) for d in datasets]
     except (TypeError, ValueError):
         return False
-    return all(np.isnan(v).all() for v in values)
+    return all(v.size > 0 and np.isnan(v).all() for v in values)
 
 
 def _mismatched_columns(data):
@@ -286,17 +300,21 @@ def impute(data, model='PPCA', return_model=False, **kwargs):
 
     Parameters
     ----------
-    data : DataFrame/array or list of these
+    data : DataFrame/array or list/tuple of these
         Dataset(s) to impute. A 1-D array, a flat list of numbers, or a
         pandas Series is treated as a UNIVARIATE series -- n observations
         of 1 feature, i.e. an (n, 1) column -- matching
-        `hyp.plot`/`format_data`'s convention. A list of datasets SHARING
+        `hyp.plot`/`format_data`'s convention; a tuple of datasets is
+        treated exactly like a list. A list of datasets SHARING
         COLUMNS is stacked (row-wise) and imputed jointly, then split back
         into a list matching the input structure (each dataset keeps its
         own index); datasets that do NOT share columns cannot be pooled
         and are imputed independently instead (with a warning).
         Degenerate inputs (None, a scalar, empty or entirely-NaN data,
-        infinite values) raise a clear error.
+        infinite values) raise a clear error; empty and all-NaN datasets
+        are distinguished (an empty dataset -- alone or inside a list --
+        raises the no-observations error naming its shape, not the
+        all-NaN one).
 
     model : str, dict, class, or Imputer instance
         Which imputer to use (default: 'PPCA', matching the pre-1.0

@@ -952,7 +952,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
     fig = go.Figure(data=traces)
 
-    # match matplotlib: centered black title (12pt = 16px), default canvas
+    # match matplotlib: centered black title (12pt, converted via the
+    # module's shared PT_TO_PX = 100/72 rule and rounded to a whole pixel:
+    # round(12 * 100/72) = 17px), default canvas
     # 6.4 x 4.8 inches at 100 dpi, legend to the RIGHT of the plot and
     # vertically centered on the box (same as the matplotlib renderer).
     # When a colorbar is ALSO shown on the (default) right side, it is
@@ -993,14 +995,18 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         layout['font'] = dict(family=font_family)
     if title is not None:
         # centered over the plotting area (xref='paper'), like matplotlib
-        # centers its title over the axes; same 12pt sans-serif appearance.
+        # centers its title over the axes; same 12pt sans-serif appearance,
+        # converted with the module's PT_TO_PX (100/72) rule and rounded to
+        # a whole pixel (17px -- the old hardcoded 16 used the CSS 96/72
+        # factor this module abandoned; release-1.0 audit, F08 follow-up).
         # family: the resolved font (GH #205) when given/auto-detected,
         # else the historical hardcoded default (ASCII-only regression:
         # byte-identical to before this kwarg existed).
         layout['title'] = dict(text=title, x=0.5, xanchor='center',
                                xref='paper',
                                y=0.97, yanchor='top',
-                               font=dict(color='black', size=16,
+                               font=dict(color='black',
+                                         size=round(12 * PT_TO_PX),
                                          family=font_family if font_family
                                                 is not None else
                                                 'DejaVu Sans, Arial, '

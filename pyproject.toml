@@ -1,5 +1,6 @@
 [build-system]
-requires = ["setuptools>=64"]
+# >=77: PEP 639 SPDX `license = "MIT"` string + `license-files` support
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +8,10 @@ name = "hypertools"
 version = "1.0.0.dev0"
 description = "A python package for visualizing and manipulating high-dimensional data"
 readme = "readme.md"
-license = { text = "MIT" }
+# PEP 639 SPDX expression (the `license = { text = ... }` table form is
+# deprecated and made setuptools emit a build warning; audit X5-010)
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Contextual Dynamics Lab", email = "contextualdynamics@gmail.com" },
 ]
@@ -18,6 +22,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    # all runtime deps resolve on 3.14 (audit X5-009)
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Visualization",
     "Topic :: Multimedia :: Graphics",
     "Operating System :: POSIX",

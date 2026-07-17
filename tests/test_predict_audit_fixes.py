@@ -221,7 +221,7 @@ def test_predict_new_feature_count_mismatch_clear_error():
 # --- F16-predict-013 / X2-error-quality-002/-004: degenerate inputs ---------
 
 def test_empty_dataframe_clear_error():
-    with pytest.raises(ValueError, match='empty dataset'):
+    with pytest.raises(ValueError, match='no observations'):
         predict(pd.DataFrame(np.empty((0, 2))), model='GaussianProcess', t=3)
 
 
@@ -231,7 +231,7 @@ def test_empty_list_clear_error_never_reaches_text_pipeline():
 
 
 def test_empty_array_clear_error():
-    with pytest.raises(ValueError, match='empty dataset'):
+    with pytest.raises(ValueError, match='no observations'):
         predict(np.array([]), t=5)
 
 

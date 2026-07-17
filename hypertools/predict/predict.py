@@ -73,11 +73,13 @@ def _normalize_data(data):
     turning degenerate inputs into clear errors instead of silent nonsense
     forecasts or cryptic library internals (QC 2026-07 red-team
     F16-predict-002/-003/-013, X2-error-quality-002/-004)."""
-    if data is None:
-        raise TypeError(
-            'Unsupported data type passed to predict: None. Supported types: '
-            'Numpy Array, Pandas DataFrame/Series, String, List of strings, '
-            'List of numbers, or a list of datasets.')
+    from ..core.shared import require_data, no_observations_message
+    require_data(data, 'predict')
+    if isinstance(data, tuple):
+        # a tuple of datasets is accepted exactly like a list (2026-07
+        # release audit, final wave item 15: it used to be funneled as one
+        # opaque object and die with a misleading empty-dataset error)
+        data = list(data)
     if isinstance(data, (bool, np.bool_)) or (isinstance(data, numbers.Number)
                                               and not isinstance(data, bool)):
         raise ValueError(
@@ -91,15 +93,22 @@ def _normalize_data(data):
                 '(rows).')
         if data.size == 0:
             raise ValueError(
-                f'cannot forecast an empty dataset (got an array of shape '
-                f'{tuple(data.shape)}); pass at least 2 observations (rows).')
+                no_observations_message(
+                    'forecast', f'got an array of shape {tuple(data.shape)}')
+                + ' Pass at least 2 observations (rows).')
         return _coerce_dataset(data)
+    if isinstance(data, pd.DataFrame) and (data.shape[0] == 0
+                                           or data.shape[1] == 0):
+        raise ValueError(
+            no_observations_message(
+                'forecast', f'got a DataFrame of shape {tuple(data.shape)}')
+            + ' Pass at least 2 observations (rows).')
     if isinstance(data, list):
         if len(data) == 0:
             raise ValueError(
-                'cannot forecast an empty dataset (got an empty list); pass '
-                'a timeseries (or a list of timeseries) with at least 2 '
-                'observations (rows) each.')
+                no_observations_message('forecast', 'got an empty list')
+                + ' Pass a timeseries (or a list of timeseries) with at '
+                'least 2 observations (rows) each.')
         # a flat list of numbers is a single univariate series, NOT one
         # dataset per scalar (which returned a list of n constant 1x1
         # "forecasts" -- QC 2026-07 red-team F16-predict-002)
@@ -220,12 +229,13 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
 
     Parameters
     ----------
-    data : DataFrame/array or list of these
+    data : DataFrame/array or list/tuple of these
         Dataset(s) to forecast from, each shaped (n_observations,
         n_features) with at least 2 observations (rows). A 1-D array, a
         flat list of numbers, or a pandas Series is treated as a
         UNIVARIATE timeseries -- n observations of 1 feature, i.e. an
-        (n, 1) column -- matching `hyp.plot`/`format_data`'s convention.
+        (n, 1) column -- matching `hyp.plot`/`format_data`'s convention;
+        a tuple of datasets is treated exactly like a list.
         Degenerate inputs (None, a scalar, empty data, fewer than 2 rows)
         raise a clear error instead of returning meaningless forecasts.
 
@@ -255,7 +265,10 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     t : int or datetime-like
         Forecast horizon (see `hypertools.predict.common.resolve_t`). A
         datetime-like `t` at or before the data's last timestamp truncates
-        the history up to `t` instead of forecasting.
+        the history up to `t` instead of forecasting; a `t` BEFORE the
+        data's first timestamp raises a `ValueError` (there is no data to
+        truncate to and nothing to forecast -- it used to silently return
+        an empty frame).
 
     return_model : bool
         If True, also return the fitted (or reused) Forecaster instance, so

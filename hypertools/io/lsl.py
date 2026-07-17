@@ -60,7 +60,7 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
         available stream (``pylsl.resolve_streams``). The same value also
         bounds mid-stream silence: once samples are flowing, the returned
         generator raises
-        :class:`~hypertools._shared.exceptions.HypertoolsIOError` if
+        :class:`~hypertools.core.exceptions.HypertoolsIOError` if
         nothing arrives for ~`timeout` consecutive seconds (e.g. the
         source device disconnected).
     **resolve_kwargs
@@ -73,7 +73,14 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
         An infinite generator yielding one sample (a list of channel
         values) per call, pulled from a `pylsl.StreamInlet` opened on the
         first resolved stream (a ``RuntimeWarning`` names the chosen
-        stream when several match). Passes
+        stream when several match). NOTE that the multi-match check is
+        best-effort: LSL resolution returns as soon as at least one
+        stream matches, so a second matching outlet that announces
+        itself a moment later goes undetected and the first stream is
+        used silently. Pass ``name=`` to pin a specific stream, or force
+        ambiguity detection with ``minimum=2`` (forwarded to the pylsl
+        resolve call) at the cost of always waiting the full `timeout`
+        when only one matching stream exists. Passes
         `hypertools.io.streaming.is_stream`.
 
     Raises
@@ -147,7 +154,12 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
         warnings.warn(
             f'{len(infos)} LSL streams match ({criterion}); using the '
             f'first one: {infos[0].name()!r}. Matching streams: '
-            f'{matches}. Pass name= to select a specific stream.',
+            f'{matches}. Pass name= to select a specific stream. (This '
+            'check is best-effort: LSL resolution returns as soon as at '
+            'least one stream matches, so a matching outlet that '
+            'announces itself later is not detected -- pass minimum=2 to '
+            'force ambiguity detection, at the cost of waiting the full '
+            'timeout when only one stream exists.)',
             RuntimeWarning, stacklevel=2)
 
     if infos[0].channel_format() == pylsl.cf_string:

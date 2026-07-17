@@ -25,8 +25,12 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     Parameters
     ----------
 
-    x : Numpy array, DataFrame or list of arrays/dfs
-        A list of Numpy arrays or Pandas Dataframes
+    x : Numpy array, DataFrame or list/tuple of arrays/dfs
+        A list of Numpy arrays or Pandas Dataframes (a tuple of datasets
+        is treated exactly like a list). Datasets in a list are stacked
+        into one shared feature space, so they must all have the same
+        number of columns (ragged lists raise a `ValueError`); `None`
+        raises a `TypeError`.
 
     reduce : str, dict, class, instance, or fitted Reducer
         Decomposition/manifold learning model to use (default:
@@ -101,6 +105,13 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     ['average', 'fig', 'individual']
 
     """
+    from ..core.shared import require_data
+    # None always raises the unified dispatcher TypeError, and a tuple of
+    # datasets is accepted exactly like a list (2026-07 release audit,
+    # final wave items 9/15)
+    require_data(x, 'describe')
+    if isinstance(x, tuple):
+        x = list(x)
 
     # sklearn TSNE's default 'barnes_hut' method only supports
     # n_components <= 3, so the summary loop crashed at dims=4 for the
@@ -204,6 +215,20 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     # common format
     if format_data:
         x = formatter(x, ppca=True)
+
+    # give ragged lists a real error instead of numpy's raw vstack message
+    # (2026-07 release audit, final wave item 6, matching reduce/cluster):
+    # the summary loop stacks every dataset into one shared feature space
+    if isinstance(x, list) and len(x) > 1:
+        widths = [np.atleast_2d(np.asarray(xi)).shape[1] for xi in x]
+        if len(set(widths)) > 1:
+            raise ValueError(
+                f"cannot describe a list of datasets with different numbers "
+                f"of columns (got column counts {widths}): the datasets are "
+                f"stacked and reduced in one SHARED space, which requires "
+                f"the same columns in every dataset. Bring them to a common "
+                f"set of columns first (e.g. hyp.align, or pad/trim the "
+                f"features).")
 
     # only warn about runtime when the input is actually large: the summary
     # loop's pairwise-distance matrices grow with the square of the number

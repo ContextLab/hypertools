@@ -1,4 +1,4 @@
-![Hypertools logo](images/hypercube.png)
+![Hypertools logo](https://raw.githubusercontent.com/ContextLab/hypertools/master/images/hypercube.png)
 
 [![Tests](https://img.shields.io/github/actions/workflow/status/ContextLab/hypertools/test.yml?label=tests)](https://github.com/ContextLab/hypertools/actions/workflows/test.yml)
 [![Documentation Status](https://readthedocs.org/projects/hypertools/badge/?version=latest)](https://hypertools.readthedocs.io/en/latest/?badge=latest)
@@ -7,7 +7,7 @@
 "_To deal with hyper-planes in a 14 dimensional space, visualize a 3D space and say 'fourteen' very loudly.  Everyone does it._" - Geoff Hinton
 
 
-![Hypertools example](images/hypertools.gif)
+![Hypertools example](https://raw.githubusercontent.com/ContextLab/hypertools/master/images/hypertools.gif)
 
 ## Overview
 
@@ -276,7 +276,7 @@ list_of_labels = ['A'] * 300 + ['B'] * 300  # one label per observation
 hyp.plot(list_of_arrays, animate=True, hue=list_of_labels)
 ```
 
-![Plot example](images/plot.gif)
+![Plot example](https://raw.githubusercontent.com/ContextLab/hypertools/master/images/plot.gif)
 
 ## Align
 
@@ -295,11 +295,11 @@ hyp.plot(list_of_arrays, align='hyper')
 
 ### BEFORE
 
-![Align before example](images/align_before.gif)
+![Align before example](https://raw.githubusercontent.com/ContextLab/hypertools/master/images/align_before.gif)
 
 ### AFTER
 
-![Align after example](images/align_after.gif)
+![Align after example](https://raw.githubusercontent.com/ContextLab/hypertools/master/images/align_after.gif)
 
 
 ## Cluster
@@ -319,7 +319,7 @@ array = np.vstack([rng.standard_normal((100, 3)) + offset
 hyp.plot(array, 'o', cluster='GaussianMixture', n_clusters=3)
 ```
 
-![Cluster Example](images/cluster_example.png)
+![Cluster Example](https://raw.githubusercontent.com/ContextLab/hypertools/master/images/cluster_example.png)
 
 
 ## Surfaces
@@ -337,7 +337,10 @@ blob_b = rng.standard_normal((100, 3)) + [4, 0, 0]
 hyp.plot([blob_a, blob_b], '.', surface=True)
 ```
 
-![Surface Example](images/surface_example.png)
+<!-- surface_example.png is new in 1.0 and not on master yet; pinned to the
+     commit that added it (reachable from master once 1.0 merges). Switch to
+     .../hypertools/master/images/surface_example.png after the merge. -->
+![Surface Example](https://raw.githubusercontent.com/ContextLab/hypertools/777b58e53b02a59cc91e4532b2ae4d4a51e83c3b/images/surface_example.png)
 
 
 ## Describe
@@ -352,4 +355,4 @@ list_of_arrays = [np.cumsum(rng.standard_normal((200, 20)), axis=0)
 
 hyp.describe(list_of_arrays, reduce='PCA', max_dims=14)
 ```
-![Describe Example](images/describe_example.png)
+![Describe Example](https://raw.githubusercontent.com/ContextLab/hypertools/master/images/describe_example.png)

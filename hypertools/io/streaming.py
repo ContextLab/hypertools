@@ -27,8 +27,8 @@ import pandas as pd
 
 
 def _validate_stream_save_path(save_path):
-    """Validate a streaming ``save_path``'s extension BEFORE any samples are
-    consumed, returning ``(path, ext)``.
+    """Validate a streaming ``save_path`` BEFORE any samples are consumed,
+    returning ``(path, ext)``.
 
     Streams are rendered frame-by-frame as they arrive, so only
     frame-grabbing writers work: Pillow (.gif, .png/.apng) and -- with
@@ -36,6 +36,10 @@ def _validate_stream_save_path(save_path):
     extensions used to fall through to the Pillow writer and die at
     finalize time with PIL's raw 'unknown file extension' error, AFTER the
     whole stream had been consumed (release-1.0 audit,
+    D09-tutorials-applied-009). For the same reason, a video extension is
+    checked for FFmpeg availability here too: matplotlib only looks for
+    the ffmpeg binary when the writer is constructed, which happens after
+    the stream head has been consumed (release-1.0 audit: re-review of
     D09-tutorials-applied-009).
     """
     from ..plot.animate import _FFMPEG_EXTENSIONS
@@ -50,6 +54,19 @@ def _validate_stream_save_path(save_path):
             + '/'.join('.' + e for e in _FFMPEG_EXTENSIONS)
             + '. (.svg export is only available for non-streaming '
             'animate= plots.)')
+    if ext in _FFMPEG_EXTENSIONS:
+        from matplotlib import animation
+        if not animation.writers.is_available('ffmpeg'):
+            raise RuntimeError(
+                f'save_path={path!r} selects the .{ext} video format, '
+                'which requires FFmpeg, but matplotlib could not find an '
+                'ffmpeg binary (checked before consuming the stream, so '
+                'no samples were pulled). Install ffmpeg (e.g. `conda '
+                'install ffmpeg`, `brew install ffmpeg`, or `apt install '
+                'ffmpeg`) and make sure it is on the PATH (or point '
+                "matplotlib.rcParams['animation.ffmpeg_path'] at it), or "
+                'save to .gif/.png/.apng, which use Pillow and need no '
+                'FFmpeg.')
     return path, ext
 
 
@@ -216,12 +233,17 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     streaming stops, including on interrupt and on error. ``save_path``
     supports the frame-grabbing formats: .gif and .png/.apng via Pillow,
     plus (with FFmpeg installed) the video containers .mp4/.mov/.avi/
-    .m4v/.mkv; other extensions raise ``ValueError`` before any samples
-    are consumed. A mid-stream error (source
-    disconnect, bad sample, ...) does NOT discard the consumed data: a
-    ``RuntimeWarning`` is emitted and the figure is returned with
-    everything consumed so far, the exception stored under
-    ``stream_info['error']`` (QC 2026-07, F22-io-streaming-lsl-003).
+    .m4v/.mkv; other extensions raise ``ValueError``, and a video
+    extension with no FFmpeg available raises ``RuntimeError`` -- both
+    before any samples are consumed. A stream error at ANY point after
+    the first sample -- mid-stream OR while consuming the initial
+    ``stream_init`` head samples (source disconnect, bad sample, ...) --
+    does NOT discard the consumed data: a ``RuntimeWarning`` is emitted
+    and the figure is returned with everything consumed so far (models
+    fitted on the salvaged head when the error struck during the head
+    phase), the exception stored under ``stream_info['error']`` (QC
+    2026-07, F22-io-streaming-lsl-003; head-phase salvage added in the
+    release-1.0 audit re-review).
     ``stream_window`` optionally limits the *display* to the most recent
     samples (comet style); all consumed data is still retained on the
     returned figure's ``stream_info``.
@@ -297,12 +319,39 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     # is never overshot (QC 2026-07, F22-io-streaming-lsl-007)
     head_take = stream_init if stream_max is None \
         else min(stream_init, stream_max)
-    head_rows = list(itertools.islice(it, head_take))
+    # consume the head one sample at a time so a stream error DURING the
+    # head phase salvages the samples already received, exactly like the
+    # mid-stream salvage below -- an acquisition that dies at sample 9000
+    # of a 10000-sample head used to lose all data, the figure, and the
+    # save file (release-1.0 audit: re-review of
+    # F22-io-streaming-lsl-003)
+    head_error = None
+    head_rows = []
+    try:
+        for r in itertools.islice(it, head_take):
+            head_rows.append(r)
+    except BaseException as e:
+        if not head_rows:
+            raise  # nothing consumed yet -- nothing to salvage
+        head_error = e
     if not head_rows:
         raise ValueError('stream produced no samples')
-    head = np.vstack([row_to_vector(r) for r in head_rows])
+    # a malformed sample inside the head likewise salvages the good
+    # prefix (matching the mid-stream bad-sample behavior)
+    head_vecs = []
+    try:
+        for r in head_rows:
+            head_vecs.append(row_to_vector(r))
+    except Exception as e:
+        if not head_vecs:
+            raise
+        if head_error is None:
+            head_error = e
+        head_rows = head_rows[:len(head_vecs)]
+    head = np.vstack(head_vecs)
 
-    if head.shape[1] < 2 and list(itertools.islice(it, 1)):
+    if head_error is None and head.shape[1] < 2 \
+            and list(itertools.islice(it, 1)):
         # fail fast (before the figure/writer exist) instead of crashing
         # inside the first redraw (QC 2026-07, F22-io-streaming-lsl-001);
         # a 1-channel stream that ENDED within the head falls through and
@@ -465,7 +514,12 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
         _redraw()
 
     try:
-        while True:
+        # `while head_error is None` (never mutated inside the loop) gates
+        # the consume loop entirely when the stream already died during
+        # the head phase: the iterator is never touched again, and the
+        # salvaged head flows into the writer finalization / stream_info
+        # assembly below
+        while head_error is None:
             if stream_max is not None and n_seen >= stream_max:
                 # stream_max reached: stop WITHOUT touching the stream
                 # again. (An earlier version peeked one extra sample here
@@ -499,6 +553,19 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
             if not rows:
                 break
             _consume(rows)
+        if head_error is not None:
+            truncated = True
+            if not isinstance(head_error, KeyboardInterrupt):
+                stream_error = head_error
+                warnings.warn(
+                    f'streaming stopped early (while consuming the first '
+                    f'stream_init samples): {type(head_error).__name__}: '
+                    f'{head_error}. Models were fitted on the {n_seen} '
+                    'samples received before the error, and the figure '
+                    'is returned with those samples (see '
+                    'fig.stream_info; the exception is stored under '
+                    "fig.stream_info['error']).",
+                    RuntimeWarning, stacklevel=2)
     except KeyboardInterrupt:
         truncated = True
     except Exception as e:  # noqa: BLE001 -- deliberately broad: a source
@@ -517,6 +584,11 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
             try:
                 writer.finish()
                 if writer_tmp is not None:
+                    # mkstemp's private 0600 mode must not leak onto the
+                    # saved animation (release-1.0 audit: security
+                    # re-review; shared with hyp.save's atomic-write path)
+                    from .save import _transfer_file_mode
+                    _transfer_file_mode(writer_tmp, save_path)
                     os.replace(writer_tmp, save_path)
             finally:
                 if writer_tmp is not None and os.path.exists(writer_tmp):

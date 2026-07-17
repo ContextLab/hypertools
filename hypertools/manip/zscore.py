@@ -103,7 +103,14 @@ def transformer(data, **kwargs):
         `transpose`) is not 0.
     """
     transpose = kwargs.pop('transpose', False)
-    assert 'axis' in kwargs.keys(), ValueError('Must specify axis')
+    # real raises (not `assert ..., ValueError(...)`, which raised
+    # AssertionError and was stripped under `python -O`) -- 2026-07 release
+    # audit, final wave item 8
+    if 'axis' not in kwargs:
+        raise ValueError(
+            "ZScore's transformer requires an axis= parameter; pass axis=0 "
+            '(z-score each column, the default) or axis=1 (z-score each '
+            'row).')
 
     if transpose:
         # NOTE: this recurses into the (undecorated) *transformer* itself, not into
@@ -119,7 +126,10 @@ def transformer(data, **kwargs):
         # base case, where it is harmless.
         return transformer(data.T, **dw.core.update_dict(kwargs, {'axis': int(not kwargs['axis'])})).T
 
-    assert kwargs['axis'] == 0, ValueError('invalid transformation')
+    if kwargs['axis'] != 0:
+        raise ValueError(
+            f"invalid ZScore axis {kwargs['axis']!r}; axis must be 0 "
+            '(z-score each column, the default) or 1 (z-score each row).')
     return _transform_stacked(data, **kwargs)
 
 

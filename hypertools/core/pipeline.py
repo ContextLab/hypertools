@@ -179,8 +179,22 @@ def _base_name(model):
 def _name_steps(entries):
     """entries: list of (explicit_name_or_None, model). Fills in auto names
     for entries without one, resolving collisions with a numeric suffix
-    (e.g. two unnamed HyperAlign steps become 'hyperalign', 'hyperalign-1')."""
-    used = {name for name, _ in entries if name is not None}
+    (e.g. two unnamed HyperAlign steps become 'hyperalign', 'hyperalign-1').
+
+    EXPLICIT duplicate names raise a `ValueError` (like scikit-learn's
+    Pipeline): `named_steps` is a dict keyed by name, so a duplicate used
+    to silently shadow every earlier step of that name (2026-07 release
+    audit, final wave item 11).
+    """
+    explicit = [name for name, _ in entries if name is not None]
+    dupes = sorted({n for n in explicit if explicit.count(n) > 1})
+    if dupes:
+        raise ValueError(
+            f"pipeline step names must be unique; got duplicate name(s) "
+            f"{', '.join(repr(d) for d in dupes)}. Rename the conflicting "
+            "steps (e.g. ('zscore-1', ...), ('zscore-2', ...)), or omit "
+            "the names to have unique ones auto-generated.")
+    used = set(explicit)
     counts = {}
     named = []
     for name, model in entries:
@@ -312,7 +326,10 @@ class Pipeline(BaseEstimator):
         legacy `{'model': ..., 'params': {...}}`), or a nested `Pipeline`.
         Bare specs are auto-named after their resolved class (lowercased),
         with a numeric suffix on collision (`'hyperalign'`, then
-        `'hyperalign-1'`).
+        `'hyperalign-1'`). Explicit names must be UNIQUE: duplicates raise
+        a `ValueError` (like scikit-learn's Pipeline), since `named_steps`
+        is keyed by name and a duplicate would silently shadow earlier
+        steps.
 
     Attributes
     ----------

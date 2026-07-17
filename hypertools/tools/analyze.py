@@ -38,9 +38,12 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
 
     Parameters
     ----------
-    data : numpy array, pandas df, or list of arrays/dfs
+    data : numpy array, pandas df, or list/tuple of arrays/dfs
         The data to analyze. Each dataset must be 2-D (observations x
-        features); 1-D vectors are treated as single-feature columns.
+        features); 1-D vectors are treated as single-feature columns. A
+        tuple of datasets is treated exactly like a list. `None` raises a
+        `TypeError` and an empty list raises a `ValueError` (matching
+        every other dispatcher), even when no stage kwargs are given.
 
     manip : model spec, False, or None
         Cross-module stage kwarg (GH #138): a `hypertools.manip` spec (a
@@ -185,6 +188,18 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
     (40, 3)
 
     """
+    from ..core.shared import require_data, no_observations_message
+    # None-input and empty-input always RAISE, like every sibling dispatcher
+    # (2026-07 release audit, final wave item 9: analyze(None)/analyze([])
+    # with no stage kwargs used to silently return the input unchanged);
+    # a tuple of datasets is accepted exactly like a list (item 15).
+    require_data(data, 'analyze')
+    if isinstance(data, tuple):
+        data = list(data)
+    if isinstance(data, list) and len(data) == 0:
+        raise ValueError(
+            no_observations_message('analyze', 'got an empty list'))
+
     stage_kwargs = {'manip': manip, 'normalize': normalize, 'reduce': reduce,
                      'align': align, 'cluster': cluster}
 

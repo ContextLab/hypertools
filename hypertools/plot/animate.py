@@ -100,6 +100,12 @@ def _save_animation(line_ani, save_path, frame_rate):
             line_ani.save(tmp_path,
                           writer=_RealTimePillowWriter(fps=frame_rate,
                                                        grid_ms=1))
+            # mkstemp's private 0600 mode must not leak onto the saved
+            # animation: preserve an existing target's mode / honor the
+            # umask for new files (release-1.0 audit: security re-review
+            # of F09-002; shared with hyp.save's atomic-write path)
+            from ..io.save import _transfer_file_mode
+            _transfer_file_mode(tmp_path, save_path)
             os.replace(tmp_path, save_path)
         finally:
             if os.path.exists(tmp_path):

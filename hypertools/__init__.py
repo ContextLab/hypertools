@@ -12,9 +12,10 @@ also importable from here.
 Import-form note: several top-level functions share a name with the
 subpackage they live in, so attribute access like
 ``hypertools.plot.backend`` resolves against the ``plot`` *function* and
-fails. Import statements still work fine -- use
-``from hypertools.plot import backend`` (or
-``import hypertools.plot.backend as backend``) for submodule access.
+raises AttributeError. ``import hypertools.plot.backend as backend``
+fails the same way (the ``as``-binding is resolved via attribute access
+on the ``plot`` function) and raises ImportError. Use
+``from hypertools.plot import backend`` for submodule access.
 """
 
 from .config import __version__

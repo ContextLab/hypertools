@@ -77,7 +77,19 @@ def save(obj, fname, protocol=None):
 
     Writes are atomic: the data is serialized to a temporary file next to
     the target and moved into place only on success, so a failed save
-    never destroys an existing file at that path.
+    never destroys an existing file at that path. File permissions are
+    handled explicitly: overwriting an existing file preserves that
+    file's mode, and a brand-new file is created with the conventional
+    ``0o666 & ~umask`` permissions -- the private ``0600`` mode of the
+    intermediate temporary file never leaks onto the result.
+
+    .. versionchanged:: 1.0
+        The signature was narrowed from ``save(obj, fname, **kwargs)`` to
+        ``save(obj, fname, protocol=None)``: keyword arguments other than
+        ``protocol=`` -- which older versions accepted and silently
+        ignored -- now raise ``TypeError``. Update calls that passed
+        leftover kwargs (e.g. ``compression=``) rather than relying on
+        them being dropped.
 
     Parameters
     ----------
@@ -149,11 +161,23 @@ def save(obj, fname, protocol=None):
     # atomic write: serialize to a temp file in the target directory, then
     # move it into place -- a failed save never truncates an existing file
     # and never leaves a partial file behind (QC 2026-07, F20-save-001)
-    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent),
-                                    prefix=f'.{path.name}.', suffix='.tmp')
+    try:
+        fd, tmp_name = tempfile.mkstemp(dir=str(path.parent),
+                                        prefix=f'.{path.name}.',
+                                        suffix='.tmp')
+    except OSError as e:
+        # e.g. a write-protected parent directory -- keep the documented
+        # HypertoolsIOError contract instead of leaking a raw
+        # PermissionError (release-1.0 audit: re-review of F20-save-001)
+        raise HypertoolsIOError(
+            f'cannot save to {path}: could not create a temporary file in '
+            f'{path.parent} ({type(e).__name__}: {e}). Check that you '
+            'have write permission for that directory, or save to a '
+            'different location.') from e
     os.close(fd)
     try:
         _write_payload(obj, tmp_name, ext, protocol, target=path)
+        _transfer_file_mode(tmp_name, path)
         os.replace(tmp_name, path)
     except BaseException:
         try:
@@ -161,6 +185,29 @@ def save(obj, fname, protocol=None):
         except OSError:
             pass
         raise
+
+
+def _transfer_file_mode(tmp_name, target):
+    """Give the temp file the permissions the final file should have,
+    before ``os.replace`` moves it onto ``target``.
+
+    ``tempfile.mkstemp`` creates its file with mode ``0600`` (private to
+    the creating user) for its own security; if ``os.replace`` moved it
+    into place as-is, overwriting an existing (say) ``0644`` target would
+    silently demote the target's permissions to ``0600``, and brand-new
+    files would ignore the process umask (release-1.0 audit: security
+    re-review of the F20-save-001 atomic-write fix). An existing target
+    keeps its current mode; a new file gets the conventional
+    ``0o666 & ~umask``.
+    """
+    try:
+        mode = os.stat(target).st_mode & 0o7777
+    except OSError:
+        # brand-new file: honor the process umask, like plain open()
+        umask = os.umask(0)
+        os.umask(umask)
+        mode = 0o666 & ~umask
+    os.chmod(tmp_name, mode)
 
 
 def _write_payload(obj, tmp_name, ext, protocol, target):

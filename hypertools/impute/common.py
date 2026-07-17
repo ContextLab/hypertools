@@ -127,18 +127,22 @@ class Imputer(BaseEstimator):
         """
         # real raises (not `assert ..., ValueError(...)`, which raises
         # AssertionError and is stripped under `python -O`) -- QC 2026-07.
+        from ..core.shared import no_observations_message
         if data is None:
-            raise ValueError('cannot impute an empty dataset (data is None)')
+            raise ValueError(
+                no_observations_message('impute', 'data is None'))
         single = not isinstance(data, list)
         if not single and len(data) == 0:
-            raise ValueError('cannot impute an empty dataset (got an empty list)')
+            raise ValueError(
+                no_observations_message('impute', 'got an empty list'))
         datasets = [_as_dataframe(data)] if single else [_as_dataframe(d) for d in data]
         stacked, boundaries, indexes = _stack(datasets)
         if stacked.shape[0] == 0 or stacked.shape[1] == 0:
             raise ValueError(
-                f'cannot impute an empty dataset (got shape '
-                f'{tuple(stacked.shape)}); pass at least 1 observation (row) '
-                'of at least 1 feature (column).')
+                no_observations_message(
+                    'impute', f'got shape {tuple(stacked.shape)}')
+                + ' Pass at least 1 observation (row) of at least 1 '
+                'feature (column).')
 
         self._single = single
         self._boundaries = boundaries

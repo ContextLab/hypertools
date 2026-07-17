@@ -73,7 +73,7 @@ The dev-1.0 refactor moved several tools into their own top-level subpackages (e
 - `backend.py` - Backend selection (`set_interactive_backend()`)
 - `matplotlib_backend.py` - Low-level matplotlib drawing (`draw.py` is now a 3-line compatibility shim over this)
 - `plotly_backend.py` - Low-level plotly drawing (interactive backend)
-- `interactive.py` - Interactive-mode helpers
+- `interactive.py` - 4-line rename shim over `plotly_backend.py` (preserves the pre-1.0 `hypertools.plot.interactive` import path)
 - `animate.py` - Animation support
 - `colors.py` - Color handling
 - `density.py` / `surface.py` - Density and iso-surface rendering

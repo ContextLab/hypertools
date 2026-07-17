@@ -829,8 +829,15 @@ def plot(
 
     xlabel, ylabel, zlabel : str or None
         Axis labels, on BOTH backends, for STATIC and ANIMATED plots, in
-        2-D and 3-D (round17 #7). `None` (default): no label (byte-
-        identical to before these kwargs existed). matplotlib:
+        2-D and 3-D (round17 #7). `None` (default): no label, EXCEPT that
+        when a single DataFrame with named (non-default, non-duplicate)
+        columns is plotted and the drawn axes correspond 1:1 to its
+        (df2mat-transformed) columns -- a 2- or 3-column DataFrame drawn
+        with no real dimensionality reduction -- the column names become
+        the default axis labels (release-1.0 audit, F08-016). Explicitly
+        passed labels always win (pass e.g. ``xlabel=''`` to suppress an
+        inferred label), and nothing is inferred when `transform=` or
+        `pipeline=` replace the standard analysis pipeline. matplotlib:
         `ax.set_xlabel`/`ax.set_ylabel`/`ax.set_zlabel`; hypertools draws
         its own cube/square frame in place of matplotlib's default axes
         box (ticks/spines/panes are hidden), so whenever any of these
@@ -1312,7 +1319,8 @@ def plot(
         plots.  May be 'auto' (default), 'disable', or a backend key
         accepted by matplotlib. If 'auto', hypertools will use a backend
         determined automatically based on your environment
-        (`hypertools.plot.backend.HYPERTOOLS_BACKEND`). If 'disable',
+        (`from hypertools.plot.backend import HYPERTOOLS_BACKEND`). If
+        'disable',
         experimental backend-switching is disabled and the current global
         matplotlib backend (`matplotlib.get_backend()`) is used.
         Otherwise, try to use the backend specified. NOTES: *This
@@ -2314,6 +2322,36 @@ def plot(
             hue = None
         x, _multiindex_meta = expand_multiindex(x)
 
+    # default axis labels from DataFrame column names (release-1.0 audit,
+    # F08-plot-inputs-016): when a SINGLE DataFrame with named (non-default,
+    # non-duplicate) columns is passed, remember its df2mat-transformed
+    # column labels; they become the default xlabel/ylabel(/zlabel) below
+    # IF the drawn axes end up corresponding 1:1 to those columns (i.e. the
+    # transformed data is 2-D or 3-D, so no real dimensionality reduction
+    # mixes the columns). User-passed xlabel=/ylabel=/zlabel= always win,
+    # and nothing is inferred when transform=/pipeline= replace the
+    # standard analysis pipeline.
+    _df_axis_labels = None
+    if transform is None and pipeline is None:
+        _lbl_df = None
+        if isinstance(x, pd.DataFrame):
+            _lbl_df = x
+        elif (isinstance(x, (list, tuple)) and len(x) == 1
+              and isinstance(x[0], pd.DataFrame)):
+            _lbl_df = x[0]
+        if (_lbl_df is not None and _lbl_df.shape[1] <= 3
+                and _lbl_df.index.nlevels == 1
+                and not isinstance(_lbl_df.columns,
+                                   (pd.RangeIndex, pd.MultiIndex))
+                and not _lbl_df.columns.duplicated().any()):
+            try:
+                from ..tools.df2mat import df2mat as _df2mat
+                from ..tools.format_data import _prepare_df
+                _df_axis_labels = _df2mat(_prepare_df(_lbl_df, warn=False),
+                                          return_labels=True)[1]
+            except Exception:
+                _df_axis_labels = None  # never let label sugar break a plot
+
     # analyze the data
     raw = None
     if transform is None:
@@ -2538,6 +2576,21 @@ def plot(
     # zlabel= (round17 #7): no z-axis to label on a 2D (or 1D) plot -- fail
     # fast rather than silently ignoring the kwarg (mirrors surface=/
     # density= above), now that xform's FINAL dimensionality is known.
+    # apply the DataFrame-column default axis labels (F08-016), now that
+    # xform's FINAL dimensionality is known -- only when it matches the
+    # DataFrame's transformed column count exactly (2-D or 3-D), so each
+    # drawn axis IS one named column; user-passed labels take precedence
+    # (pass e.g. xlabel='' to suppress a single inferred label).
+    if (_df_axis_labels is not None
+            and len(_df_axis_labels) == xform[0].shape[1]
+            and len(_df_axis_labels) in (2, 3)):
+        if xlabel is None:
+            xlabel = str(_df_axis_labels[0])
+        if ylabel is None:
+            ylabel = str(_df_axis_labels[1])
+        if len(_df_axis_labels) == 3 and zlabel is None:
+            zlabel = str(_df_axis_labels[2])
+
     if zlabel is not None and xform[0].shape[1] < 3:
         raise ValueError(
             f"zlabel= is not supported for {xform[0].shape[1]}-D data (no "
@@ -4019,7 +4072,19 @@ def plot(
             bundle_pipeline = build_pipeline(manip=manip, normalize=normalize,
                                              reduce=reduce, ndims=ndims,
                                              align=align, cluster=cluster_spec)
-            bundle_pipeline.fit_transform(raw)
+            # this refit re-resolves the SAME reduce spec the figure was
+            # drawn with, so any spec-conflict warning it emits (e.g.
+            # "Unequal values passed to dims and n_components" when a
+            # pre-configured reduce instance's n_components differs from
+            # ndims) was ALREADY issued once by the analyze() call above --
+            # suppress the duplicate (release-1.0 audit, R1).
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    'ignore',
+                    message='Unequal values passed to dims and '
+                            'n_components',
+                    category=UserWarning)
+                bundle_pipeline.fit_transform(raw)
         else:
             bundle_pipeline = None
         return {

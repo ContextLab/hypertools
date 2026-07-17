@@ -809,6 +809,79 @@ def _fetch_bytes(url, timeout=60):
     return raw, _name_hint(resp, url)
 
 
+# Transparent gzip decompression is capped so a tiny payload that inflates
+# to an enormous buffer (a "gzip bomb", up to ~1000x expansion per layer)
+# cannot exhaust memory -- a few MB fetched from a remote URL could
+# otherwise balloon into many GB (release-1.0 audit: security re-review of
+# F19-load-external-005). 2 GiB is deliberately generous: far larger than
+# any dataset hypertools could sensibly materialize in memory from a
+# single file, while still bounding the damage.
+_MAX_GZIP_INFLATED_BYTES = 2 * 1024 ** 3  # 2 GiB
+
+
+def _complete_pickle_stream(raw):
+    """True when ``raw`` parses as one complete pickle stream (any
+    protocol), WITHOUT executing anything.
+
+    Protocol >= 2 pickles are recognized by their ``b'\\x80'`` magic byte,
+    but protocol-0 pickles are plain ASCII with no magic prefix, so an
+    extensionless protocol-0 pickle used to fall through to the
+    delimited-text parser and come back silently as a garbage DataFrame
+    (release-1.0 audit: re-review of X2-error-quality-001).
+    ``pickletools.genops`` only PARSES opcodes -- no unpickling happens
+    here -- and the STOP opcode is required to be the payload's FINAL
+    byte (modulo trailing whitespace), exactly where ``pickle.dumps``
+    puts it. Real text/CSV data would have to be a valid pickle program
+    for its ENTIRE length to false-positive: merely starting with
+    opcode-like bytes (e.g. ``'0.5,...'`` parses as POP + STOP) is not
+    enough."""
+    import pickletools
+
+    try:
+        for opcode, _arg, pos in pickletools.genops(raw):
+            if opcode.name == 'STOP':
+                return not raw[pos + 1:].strip()
+        return False
+    except Exception:
+        return False
+
+
+def _gunzip_capped(raw, label):
+    """Decompress gzip bytes, refusing (with ``HypertoolsIOError``) to
+    inflate past ``_MAX_GZIP_INFLATED_BYTES``. Reads in bounded chunks so
+    an oversized payload is rejected without ever materializing it."""
+    import gzip
+
+    chunks, total = [], 0
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(raw)) as gz:
+            while True:
+                chunk = gz.read(64 * 1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > _MAX_GZIP_INFLATED_BYTES:
+                    raise HypertoolsIOError(
+                        f'{label} decompresses to more than '
+                        f'{_MAX_GZIP_INFLATED_BYTES // 1024 ** 3} GiB, so '
+                        'hypertools refused to inflate it (transparent '
+                        'gzip decompression is capped to keep a small '
+                        'malicious "gzip bomb" payload from exhausting '
+                        'memory). If the file is genuinely this large, '
+                        'decompress it yourself (e.g. `gunzip`) and load '
+                        'the result in a memory-appropriate way.')
+                chunks.append(chunk)
+    except HypertoolsIOError:
+        # HypertoolsIOError subclasses OSError -- re-raise the cap error
+        # before the corruption handler below can swallow it
+        raise
+    except (OSError, EOFError) as e:
+        raise HypertoolsIOError(
+            f'{label} looks gzip-compressed but could not be '
+            f'decompressed ({e}); the file may be corrupted.') from e
+    return b''.join(chunks)
+
+
 def _parse_payload(raw, name_hint='', trust=False, remote=False):
     """Parse downloaded/read bytes into a dataset, by filename extension
     first and content sniffing second (extensionless payloads only).
@@ -825,16 +898,11 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
             'writing this file failed midway, re-run it.')
 
     # gzip-compressed payloads (e.g. data.csv.gz, a common scientific
-    # artifact) are decompressed transparently and re-dispatched on the
-    # inner name (QC 2026-07, F19-load-external-005)
+    # artifact) are decompressed transparently -- capped at
+    # _MAX_GZIP_INFLATED_BYTES to block gzip bombs -- and re-dispatched
+    # on the inner name (QC 2026-07, F19-load-external-005)
     if raw[:2] == b'\x1f\x8b':
-        import gzip
-        try:
-            inflated = gzip.decompress(raw)
-        except OSError as e:
-            raise HypertoolsIOError(
-                f'{label} looks gzip-compressed but could not be '
-                f'decompressed ({e}); the file may be corrupted.') from e
+        inflated = _gunzip_capped(raw, label)
         inner = Path(label)
         inner_name = inner.stem if inner.suffix.lower() == '.gz' else label
         return _parse_payload(inflated, inner_name, trust=trust,
@@ -882,6 +950,10 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
                 return _unpack_npz(raw, trust=trust, remote=remote)
             except Exception:
                 return pd.read_parquet(io.BytesIO(raw))
+        if _complete_pickle_stream(raw):
+            # protocol-0 (ASCII) pickles carry no magic prefix (e.g.
+            # hyp.save(..., protocol=0) to an arbitrary extension)
+            return _unpickle_bytes(raw, trust=trust, remote=remote)
         raise HypertoolsIOError(
             f'cannot load {label!r}: unsupported file extension {ext!r}, '
             "and the content doesn't match a known binary format. "
@@ -899,6 +971,19 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
             return _unpack_npz(raw, trust=trust, remote=remote)
         except Exception:
             return pd.read_parquet(io.BytesIO(raw))
+    if _complete_pickle_stream(raw):
+        # protocol-0 (ASCII) pickles carry no magic prefix and DO decode
+        # as UTF-8, so they must be sniffed BEFORE text parsing or they
+        # come back silently CSV-parsed into a garbage DataFrame
+        # (release-1.0 audit: re-review of X2-error-quality-001)
+        try:
+            return _unpickle_bytes(raw, trust=trust, remote=remote)
+        except Exception as e:
+            raise HypertoolsIOError(
+                f'{label!r} contains a pickle stream that could not be '
+                f'unpickled ({type(e).__name__}: {e}); the file may be '
+                'corrupted, or may need a package that is not installed.'
+            ) from e
     try:
         raw.decode('utf-8')
     except UnicodeDecodeError:
