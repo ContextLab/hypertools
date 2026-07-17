@@ -22,6 +22,17 @@ texts = {
     'NMF' : NMF,
 }
 
+# The built-in scikit-learn names, frozen at import time -- BEFORE
+# `_resolve_registry_name` ever mutates the live registries above (it
+# inserts every gensim/HF-resolved name it sees, so live-registry
+# membership is NOT "is this a built-in name": an unknown/typo'd name
+# joined `vectorizer_models`/`texts` on its first use and then dodged
+# `format_data`'s clear-ValueError rewrap on every later use in the same
+# process, re-raising the raw Hugging Face error instead (release-1.0 CI
+# fix, run 29582796739 follow-up).
+_SKLEARN_VECTORIZER_NAMES = frozenset(vectorizer_models)
+_SKLEARN_SEMANTIC_NAMES = frozenset(texts)
+
 # GH #198 name-resolution order for vectorizer=/semantic= string specs:
 # scikit-learn (above) -> gensim (below, lazily imported) -> Hugging Face
 # (data-wrangler fallback, see `_hf_fallback_model`). Keys match gensim's

@@ -4134,7 +4134,17 @@ def plot(
     # closing animated figures at all) -- so disconnect that hook explicitly;
     # Animation.save()/to_jshtml() never need it.
     if (not show and not _user_supplied_ax and isinstance(fig, plt.Figure)):
+        # matplotlib >= 3.11: plt.close() DETACHES the figure's real canvas,
+        # swapping in a bare FigureCanvasBase (draw() is a no-op and there is
+        # no buffer_rgba), so the returned figure could no longer render or
+        # re-save. Re-attach the original canvas after closing -- restoring
+        # matplotlib <= 3.10's close semantics (canvas kept, figure
+        # deregistered from pyplot), which is exactly the contract documented
+        # above: the returned Figure stays valid, savable, and renderable.
+        _live_canvas = fig.canvas
         plt.close(fig)
+        if fig.canvas is not _live_canvas:
+            fig.set_canvas(_live_canvas)
         if line_ani is not None:
             _first_draw_id = getattr(line_ani, '_first_draw_id', None)
             if _first_draw_id is not None:

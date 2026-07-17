@@ -13,12 +13,36 @@ Covers:
 - F08-013: python lists of bools are accepted like numpy bool arrays
 """
 
+import subprocess
+import sys
+import textwrap
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from hypertools.tools.format_data import format_data
 from hypertools._shared.helpers import get_type
+
+# The Hugging Face text-embedding tier (pydata-wrangler[hf], the `text`
+# extra) is optional and CI's dev install leaves it out. The typo'd
+# vectorizer=/semantic= rewrap must produce the SAME clear ValueError
+# either way (CI run 29582796739: the no-HF path raised datawrangler's raw
+# ModuleNotFoundError instead); only the *chained cause* differs by
+# environment, so cause-specific assertions live in the guarded and
+# subprocess tests below.
+try:
+    import sentence_transformers  # noqa: F401 -- availability probe only
+    HF_TEXT_AVAILABLE = True
+except ImportError:
+    HF_TEXT_AVAILABLE = False
+
+requires_hf_text = pytest.mark.skipif(
+    not HF_TEXT_AVAILABLE,
+    reason="pydata-wrangler[hf] (sentence-transformers) is not installed -- "
+           "install the `text` extra to exercise the real Hugging Face "
+           "download path",
+)
 
 
 # --- F08-003: Categorical columns --------------------------------------------
@@ -198,6 +222,88 @@ def test_typo_semantic_raises_clear_valueerror():
                              r".*LatentDirichletAllocation"):
         format_data(['some text here', 'more text here'],
                     semantic='NotARealHypertoolsModel123', corpus=None)
+
+
+@requires_hf_text
+def test_typo_vectorizer_chains_the_real_hf_network_error():
+    """With the HF tier installed, the unknown name reaches the REAL
+    Hugging Face download attempt, and the chained cause must be that
+    network-layer OSError (huggingface_hub's RepositoryNotFoundError for
+    an unknown model id)."""
+    with pytest.raises(ValueError,
+                       match=r"vectorizer='NotARealHypertoolsModel123'"
+                             r".*CountVectorizer") as excinfo:
+        format_data(['some text here', 'more text here'],
+                    vectorizer='NotARealHypertoolsModel123', corpus=None)
+    assert isinstance(excinfo.value.__cause__, OSError), \
+        repr(excinfo.value.__cause__)
+
+
+def test_typo_names_without_hf_tier_raise_same_clear_valueerror():
+    """Environment-independent no-HF-path check: a REAL import-blocking
+    sys.meta_path finder (not a mock) run in a subprocess -- mirroring
+    tests/test_gensim_text.py::test_import_error_without_gensim_names_the_extra
+    -- blocks sentence_transformers, so the exact CI failure path (dev
+    install without pydata-wrangler[hf]; run 29582796739) is exercised
+    even on machines where the tier IS installed. The rewrapped ValueError
+    must be identical to the HF-installed one, with datawrangler's
+    ImportError chained as the cause."""
+    script = textwrap.dedent("""
+        import sys
+        import importlib.abc, importlib.machinery
+
+        class BlockLoader(importlib.abc.Loader):
+            def create_module(self, spec):
+                return None
+            def exec_module(self, module):
+                raise ImportError("sentence_transformers blocked for test")
+
+        class Blocker(importlib.abc.MetaPathFinder):
+            def find_spec(self, name, path, target=None):
+                if (name == 'sentence_transformers'
+                        or name.startswith('sentence_transformers.')):
+                    return importlib.machinery.ModuleSpec(name, BlockLoader())
+                return None
+
+        sys.meta_path.insert(0, Blocker())
+
+        import matplotlib
+        matplotlib.use('Agg')
+        from hypertools.tools.format_data import format_data
+
+        docs = ['some text here', 'more text here']
+
+        try:
+            format_data(docs, vectorizer='NotARealHypertoolsModel123',
+                        corpus=None)
+        except ValueError as exc:
+            msg = str(exc)
+            assert "vectorizer='NotARealHypertoolsModel123'" in msg, msg
+            assert 'CountVectorizer' in msg, msg
+            assert isinstance(exc.__cause__, ImportError), repr(exc.__cause__)
+        else:
+            raise AssertionError('expected ValueError for vectorizer typo')
+
+        try:
+            format_data(docs, semantic='NotARealHypertoolsModel123',
+                        corpus=None)
+        except ValueError as exc:
+            msg = str(exc)
+            assert "semantic='NotARealHypertoolsModel123'" in msg, msg
+            assert 'LatentDirichletAllocation' in msg, msg
+            assert isinstance(exc.__cause__, ImportError), repr(exc.__cause__)
+        else:
+            raise AssertionError('expected ValueError for semantic typo')
+
+        print('SUBPROCESS_OK')
+    """)
+    result = subprocess.run(
+        [sys.executable, '-c', script],
+        capture_output=True, text=True, timeout=300,
+    )
+    assert result.returncode == 0, (
+        f"stdout={result.stdout}\nstderr={result.stderr}")
+    assert 'SUBPROCESS_OK' in result.stdout
 
 
 def test_builtin_vectorizer_names_still_work():

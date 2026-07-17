@@ -23,14 +23,16 @@ def test_static_svg_matplotlib(tmp_path):
     out = str(tmp_path / 'plot.svg')
     hyp.plot(walk, save_path=out, show=False)
     plt.close('all')
-    content = open(out).read()
+    with open(out) as f:
+        content = f.read()
     assert '<svg' in content and '<animate' not in content
 
 
 def test_static_svg_plotly(tmp_path):
     out = str(tmp_path / 'plot.svg')
     hyp.plot(walk, backend='plotly', save_path=out, show=False)
-    content = open(out).read()
+    with open(out) as f:
+        content = f.read()
     assert '<svg' in content and '<animate' not in content
 
 
@@ -39,7 +41,8 @@ def test_animated_svg_matplotlib(tmp_path):
     hyp.plot(walk, animate=True, duration=2, frame_rate=10,
              save_path=out, show=False)
     plt.close('all')
-    content = open(out).read()
+    with open(out) as f:
+        content = f.read()
     # SMIL animation with multiple distinct frames
     assert content.count('<animate ') > 5
     assert 'calcMode="discrete"' in content
@@ -50,7 +53,8 @@ def test_animated_svg_plotly(tmp_path):
     out = str(tmp_path / 'anim.svg')
     hyp.plot(walk, animate='spin', duration=2, backend='plotly',
              save_path=out, show=False)
-    content = open(out).read()
+    with open(out) as f:
+        content = f.read()
     assert content.count('<animate ') > 5
 
 

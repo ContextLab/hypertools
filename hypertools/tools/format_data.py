@@ -352,19 +352,27 @@ def format_data(x, vectorizer='CountVectorizer',
         # RepositoryNotFoundError with request IDs) into one that names the
         # offending kwarg and the built-in options (release-1.0 audit,
         # F08-plot-inputs-011).
-        from .text2mat import (_spec_model_name, vectorizer_models, texts,
+        from .text2mat import (_spec_model_name,
+                               _SKLEARN_VECTORIZER_NAMES,
+                               _SKLEARN_SEMANTIC_NAMES,
                                _GENSIM_VECTORIZER_NAMES,
                                _GENSIM_SEMANTIC_NAMES)
+        # membership is tested against the FROZEN built-in name sets, not
+        # the live vectorizer_models/texts registries: text2mat's name
+        # resolution inserts every unrecognized name into those registries
+        # on first use, so a live-registry test stopped flagging a typo'd
+        # name from its second use onward (and the raw HF error escaped
+        # unwrapped).
         _unrecognized = []
         _vname = _spec_model_name(vectorizer)
-        if (_vname is not None and _vname not in vectorizer_models
+        if (_vname is not None and _vname not in _SKLEARN_VECTORIZER_NAMES
                 and _vname not in _GENSIM_VECTORIZER_NAMES):
             _unrecognized.append(
                 ('vectorizer', _vname,
                  "'CountVectorizer', 'TfidfVectorizer' (scikit-learn); "
                  "'Word2Vec', 'Doc2Vec', 'FastText' (gensim)"))
         _sname = _spec_model_name(semantic)
-        if (_sname is not None and _sname not in texts
+        if (_sname is not None and _sname not in _SKLEARN_SEMANTIC_NAMES
                 and _sname not in _GENSIM_SEMANTIC_NAMES):
             _unrecognized.append(
                 ('semantic', _sname,
@@ -372,11 +380,17 @@ def format_data(x, vectorizer='CountVectorizer',
                  "'LdaModel', 'LsiModel', 'HdpModel' (gensim)"))
         try:
             text_data = text2mat(text_data, **text_args)
-        except OSError as e:
+        except (OSError, ImportError) as e:
             # RepositoryNotFoundError (unknown HF id) and offline
-            # connection errors are both OSError subclasses; only rewrap
-            # when a non-built-in string name was in play (a genuine
-            # sklearn/gensim failure re-raises untouched).
+            # connection errors are both OSError subclasses; when the HF
+            # tier itself is not installed (no pydata-wrangler[hf]),
+            # datawrangler instead raises ModuleNotFoundError (an
+            # ImportError) before any network call -- every one of these
+            # means "the unrecognized name fell through to the Hugging
+            # Face tier and failed there", so all are rewrapped into the
+            # same clear ValueError. Only rewrap when a non-built-in
+            # string name was in play (a genuine sklearn/gensim failure
+            # re-raises untouched).
             _blamed = ([u for u in _unrecognized if u[1] in str(e)]
                        or _unrecognized)
             if _blamed:

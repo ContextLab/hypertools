@@ -357,9 +357,14 @@ def test_autoregressor_inner_estimator_via_dict_spec():
 
 # --- F16-predict-020: tz-aware index with naive t ----------------------------
 
-# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures
+# upstream: sklearn GP pins the noise-level kernel bound on tiny fixtures,
+# and its lbfgs optimizer intermittently stops at the 20-iteration cap on
+# them too -- both are contrived-fixture noise, not hypertools behavior
 @pytest.mark.filterwarnings(
     'ignore:The optimal value found for dimension 0 of parameter'
+    ':sklearn.exceptions.ConvergenceWarning')
+@pytest.mark.filterwarnings(
+    'ignore:lbfgs failed to converge'
     ':sklearn.exceptions.ConvergenceWarning')
 def test_tz_aware_index_localizes_naive_t():
     idx = pd.date_range('2024-01-01', periods=100, freq='D', tz='US/Eastern')

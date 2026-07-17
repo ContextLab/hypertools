@@ -32,6 +32,14 @@ from pathlib import Path
 
 import pytest
 
+# the module-scoped fixture below shells out to `python -m build`; without
+# the `build` package that subprocess can only fail, which surfaced as 10
+# collection-time-looking ERRORs on CI (run 29582796739, where `build` was
+# not installed). It now ships in the dev extra (pyproject [dev]); this
+# guard makes an environment without it SKIP cleanly, per the suite's
+# absent-optional-dependency convention (cf. tests/test_autoencoders.py).
+pytest.importorskip('build')
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 

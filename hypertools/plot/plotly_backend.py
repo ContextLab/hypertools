@@ -22,6 +22,7 @@ palette assignment per trace.
 import itertools
 import os
 import sys
+import warnings
 
 import numpy as np
 
@@ -1168,6 +1169,61 @@ def _show_sphinx_gallery(fig):
                      auto_play=False)
 
 
+import contextlib
+
+
+@contextlib.contextmanager
+def _shared_kaleido_session():
+    """Keep ONE kaleido browser session alive for the duration of the block.
+
+    kaleido 1.x launches (and tears down) a full headless-Chrome process for
+    EVERY ``to_image`` call unless its global sync server is running. A
+    per-frame animation export makes one such call per frame, so a
+    60-frame export paid ~60 Chrome cold starts -- ~3s each on a fast
+    machine and far more on slow 2-core CI runners, where the plotly
+    animated-SVG export blew through pytest's 1200s per-test timeout and
+    killed the whole job (CI run 29582796739,
+    tests/test_round3.py::test_animated_svg_plotly). Sharing one session
+    across all frames removes every cold start after the first.
+
+    Degrades gracefully: a no-op if kaleido is missing or predates the
+    sync-server API (kaleido < 1.1, incl. 0.2.x, whose plotly integration
+    already keeps a persistent scope), and if a server is already running
+    (started by the caller) it is reused and NEVER stopped here. While a
+    server is in use, plotly warns on every call that per-call kaleido
+    launch options are ignored ("The kopts argument is ignored if using a
+    server") -- expected and harmless here (we pass none), so that one
+    specific message is suppressed rather than spamming once per frame.
+    """
+    try:
+        import kaleido
+        start = kaleido.start_sync_server
+        stop = kaleido.stop_sync_server
+        server = getattr(kaleido, '_global_server', None)
+    except (ImportError, AttributeError):
+        yield
+        return
+    started_here = False
+    try:
+        if server is None or not server.is_running():
+            start(silence_warnings=True)
+            started_here = True
+    except Exception:
+        # server startup is a pure optimization -- fall back to plotly's
+        # ordinary per-call rendering rather than failing the export
+        yield
+        return
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                'ignore', category=UserWarning,
+                message=r'The kopts argument is ignored')
+            yield
+    finally:
+        if started_here:
+            stop(silence_warnings=True)
+
+
 def _export_animation_file(fig, save_path, frame_rate, duration, size):
     """Export a plotly animation to .gif, .png/.apng, or .mp4/.mov/.avi.
 
@@ -1186,20 +1242,26 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
     width, height = int(size[0] * 100), int(size[1] * 100)
     ext = save_path.lower().rsplit('.', 1)[-1]
 
+    # ONE frameless, controls-hidden base copy, made once: copying `fig`
+    # inside the per-frame loop re-copied every embedded animation frame
+    # each iteration (O(n_frames^2) work that only ever got thrown away by
+    # `snapshot.frames = ()`)
+    base = go.Figure(fig)
+    base.frames = ()
+    # hide the interactive play/pause controls in exported frames
+    # (update_layout(updatemenus=[]) is a no-op; assign directly)
+    base.layout.updatemenus = ()
+
     def frame_snapshots():
         """Yield one static `go.Figure` snapshot per animation frame in `fig.frames`.
 
-        Each snapshot is a full copy of `fig` (frames cleared, play/pause
-        controls hidden) with that frame's layout/data updates applied,
-        suitable for rendering to a single static image (e.g. via
-        `to_image`) when assembling a GIF/video/SVG export.
+        Each snapshot is a copy of the pristine frameless `base` (frames
+        cleared, play/pause controls hidden) with that frame's layout/data
+        updates applied, suitable for rendering to a single static image
+        (e.g. via `to_image`) when assembling a GIF/video/SVG export.
         """
         for frame in fig.frames:
-            snapshot = go.Figure(fig)
-            snapshot.frames = ()
-            # hide the interactive play/pause controls in exported frames
-            # (update_layout(updatemenus=[]) is a no-op; assign directly)
-            snapshot.layout.updatemenus = ()
+            snapshot = go.Figure(base)
             if frame.layout:
                 snapshot.update_layout(frame.layout)
             if frame.data:
@@ -1211,12 +1273,14 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
 
     if ext == 'svg':
         # vector export: render each frame as SVG and stitch them into one
-        # SMIL-animated SVG
+        # SMIL-animated SVG (one shared kaleido browser session for all
+        # frames -- see _shared_kaleido_session)
         from .._shared.animated_svg import combine_frames_svg
-        frame_svgs = [
-            snapshot.to_image(format='svg', width=width,
-                              height=height).decode('utf-8')
-            for snapshot in frame_snapshots()]
+        with _shared_kaleido_session():
+            frame_svgs = [
+                snapshot.to_image(format='svg', width=width,
+                                  height=height).decode('utf-8')
+                for snapshot in frame_snapshots()]
         with open(save_path, 'w') as f:
             f.write(combine_frames_svg(frame_svgs, max(1.0, duration)))
         return
@@ -1227,9 +1291,10 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
     # it caps embedded-file size; an exported gif/png/mp4 must never be
     # subsampled or it would play back too fast.
     images = []
-    for snapshot in frame_snapshots():
-        png = snapshot.to_image(format='png', width=width, height=height)
-        images.append(Image.open(io.BytesIO(png)).convert('RGB'))
+    with _shared_kaleido_session():
+        for snapshot in frame_snapshots():
+            png = snapshot.to_image(format='png', width=width, height=height)
+            images.append(Image.open(io.BytesIO(png)).convert('RGB'))
 
     # per-frame delay is the TRUE inter-frame interval (1000 / frame_rate),
     # tied to the requested framerate -- NOT 1000*duration/n_frames. With the

@@ -9,6 +9,7 @@ import gzip
 import os
 import pickle
 import stat
+import sys
 import threading
 import time
 
@@ -147,7 +148,10 @@ def test_stream_apng_new_file_honors_umask(tmp_path):
 # save() into a write-protected directory must raise the documented
 # HypertoolsIOError, not a raw PermissionError from mkstemp.
 
-@pytest.mark.skipif(os.geteuid() == 0,
+@pytest.mark.skipif(sys.platform == 'win32',
+                    reason='chmod 0o500 does not restrict writes on Windows '
+                           '(and os.geteuid does not exist there)')
+@pytest.mark.skipif(hasattr(os, 'geteuid') and os.geteuid() == 0,
                     reason='root bypasses directory write protection')
 def test_save_write_protected_dir_raises_hypertools_ioerror(tmp_path):
     locked = tmp_path / 'locked'

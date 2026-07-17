@@ -141,6 +141,11 @@ dev = [
     "skaters>=0.11",
     # exercise hyp.load .xlsx support (tests/test_load_sources.py)
     "openpyxl>=3.1.0",
+    # tests/test_packaging_artifacts.py builds real wheel/sdist artifacts via
+    # `python -m build --no-isolation`; CI run 29582796739 errored all 10 of
+    # those tests because `build` was not installed (it was only ever present
+    # locally by happenstance)
+    "build>=1.2",
     # exercise the 3-D density= iso-surface path (tests/test_density.py);
     # the scikit-image-absent fallback is exercised separately, in a
     # subprocess with a real import-system blocker (see that test module)
