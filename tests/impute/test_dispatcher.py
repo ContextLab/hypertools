@@ -117,12 +117,18 @@ def test_return_model_roundtrip_ppca_reuse_no_refit():
 
 
 def test_return_model_roundtrip_kalman_no_reestimation(monkeypatch):
+    # QC 2026-07 (D05-gallery-data-text-001): the Kalman imputer now fits one
+    # univariate filter PER COLUMN (`models_['kfs']`) instead of a single
+    # joint filter (`models_['kf']`) -- the joint model silently zero-filled
+    # wide data. Reuse semantics are unchanged: the learned filters are
+    # applied to the new data without re-running EM.
     pytest.importorskip('pykalman')
     from pykalman import KalmanFilter
 
     _, missing, _ = make_df_with_nans(n=70, ncols=3, seed=7, n_missing=8)
     filled_a, fitted = impute(missing, model='Kalman', return_model=True, n_iter=3)
-    original_kf = fitted.models_['kf']
+    original_kfs = list(fitted.models_['kfs'])
+    assert len(original_kfs) == 3  # one fitted filter per column
 
     def _boom(self, *args, **kwargs):
         raise AssertionError('em() must not be called during transform-reuse (no re-estimation)')
@@ -135,4 +141,6 @@ def test_return_model_roundtrip_kalman_no_reestimation(monkeypatch):
     assert isinstance(filled_b, pd.DataFrame)
     assert filled_b.shape == missing_b.shape
     assert not filled_b.isna().any().any()
-    assert fitted.models_['kf'] is original_kf
+    # learned parameters are the SAME objects -- never rebuilt/re-fit
+    assert all(kf_now is kf_orig for kf_now, kf_orig
+               in zip(fitted.models_['kfs'], original_kfs))

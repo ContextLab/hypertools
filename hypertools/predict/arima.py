@@ -5,6 +5,17 @@ each column (ARIMA has no native multivariate support), then forecasts `t`
 steps ahead per column via `.forecast(steps=t)`. Default order `(1, 1, 1)`;
 `order` and any other `ARIMA` constructor kwargs pass through.
 
+IMPORTANT -- the default order only suits drift/random-walk-like signals:
+with d=1 differencing and no trend term, an ARIMA(1, 1, 1) forecast damps
+toward a constant within a few steps, so it cannot continue oscillatory
+(seasonal) signals or extrapolate a linear trend (QC 2026-07 red-team
+F16-predict-005: on a strong noisy sine the default's 30-step forecast
+anti-correlated with the held-out truth, while ``order=(4, 0, 0)`` tracked
+it at r~0.93). For oscillatory or strongly-trending data, pass a suitable
+``order=`` (and/or ``trend=``), or use ``model='AutoRegressor'``,
+``'GaussianProcess'``, or ``'Kalman'``, which handle those signals with
+their defaults.
+
 `statsmodels` is a core hypertools dependency, so the `ARIMA` forecaster works
 out of the box. It is still imported lazily (inside the fitter) so
 `hypertools.predict` stays importable even where the core deps were stripped,
@@ -116,7 +127,7 @@ def applier(fitted_params, new_data, t):
 
     results = fitted_params['results']
     n_steps, future_index = resolve_t(new_data, t)
-    if n_steps < 0:
+    if n_steps <= 0:
         return new_data.loc[future_index]
 
     columns = {}
@@ -134,9 +145,13 @@ class ARIMA(Forecaster):
     Parameters
     ----------
     order : tuple of (p, d, q)
-        ARIMA order (default: ``(1, 1, 1)``).
+        ARIMA order (default: ``(1, 1, 1)``). The default suits
+        drift/random-walk-like signals only -- it damps to a near-constant
+        forecast within a few steps and cannot continue oscillations or
+        extrapolate trends (see the module docstring for alternatives).
     **kwargs
-        Passed through to ``statsmodels.tsa.arima.model.ARIMA``.
+        Passed through to ``statsmodels.tsa.arima.model.ARIMA`` (unknown
+        keyword arguments therefore raise ``TypeError`` from statsmodels).
     """
 
     def __init__(self, order=(1, 1, 1), **kwargs):

@@ -15,6 +15,8 @@ callables plus their own defaults.
 ``applier(fitted_params, new_data, t)`` callable; ``applier=None`` falls back
 to conditioning on the new data directly (see `Forecaster.predict_new`).
 """
+import warnings
+
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
@@ -41,7 +43,11 @@ def _infer_step(index):
 
     if isinstance(index, pd.DatetimeIndex):
         nonzero = diffs[diffs != pd.Timedelta(0)]
-        assert len(nonzero) > 0, ValueError('cannot infer a timestep: all observations share one timestamp')
+        # a real raise (not `assert ..., ValueError(...)`, which raises
+        # AssertionError and is stripped under `python -O`) -- QC 2026-07.
+        if len(nonzero) == 0:
+            raise ValueError('cannot infer a timestep: all observations '
+                             'share one timestamp')
         return nonzero.min()
 
     diffs = np.asarray(diffs)
@@ -63,10 +69,14 @@ def resolve_t(data, t):
     - ``t`` a datetime-like value on time-indexed (``DatetimeIndex``) data:
       the number of steps (using the inferred step) from the last
       observation up to ``t``. If ``t`` is at or before the last
-      observation, ``t`` is IN THE PAST: a negative count is returned,
-      meaning "truncate" (no forecasting model is needed) -- callers should
-      slice the data instead of forecasting. In that case ``future_index``
-      is the (past-inclusive) index sliced up to ``t``, not an extension.
+      observation, ``t`` is IN THE PAST (or exactly AT the end): a
+      non-positive count is returned, meaning "truncate" (no forecasting
+      model is needed) -- callers should slice the data instead of
+      forecasting. In that case ``future_index`` is the (past-inclusive)
+      index sliced up to ``t``, not an extension. A ``t`` strictly after
+      the last observation always forecasts at least one step (a target
+      less than one full step ahead rounds up to a single step). A
+      tz-naive ``t`` on tz-aware data is localized to the data's timezone.
 
     Parameters
     ----------
@@ -78,11 +88,25 @@ def resolve_t(data, t):
     Returns
     -------
     n_steps : int
-        Number of steps to forecast; negative means "truncate" (see above).
+        Number of steps to forecast; zero or negative means "truncate"
+        (see above).
     future_index : pandas.Index
         The continued index (or, for truncation, the sliced index).
     """
     index = data.index
+
+    if t is None:
+        raise ValueError('t (forecast horizon) must be a positive integer '
+                         'or a target datetime; got None')
+
+    # a descending (e.g. newest-first CSV export) or otherwise unsorted index
+    # silently produced a "forecast" from the OLDEST observation, landing
+    # inside the observed range (QC 2026-07 red-team F16-predict-016).
+    if len(index) > 1 and not index.is_monotonic_increasing:
+        warnings.warn(
+            'the dataset index is not sorted in ascending order; forecasts '
+            'continue from the LAST row. If your data are newest-first, sort '
+            'them (e.g. df.sort_index()) before forecasting.')
 
     if isinstance(t, (int, np.integer)) and not isinstance(t, bool):
         n_steps = int(t)
@@ -98,20 +122,41 @@ def resolve_t(data, t):
     # a real raise (not `assert ..., ValueError(...)`, which raises
     # AssertionError and is stripped under `python -O`) -- QC 2026-07 red-team.
     if not isinstance(index, pd.DatetimeIndex):
-        raise ValueError('a datetime-like t requires a time-indexed '
-                         '(DatetimeIndex) dataset')
+        raise ValueError(f'a datetime-like t requires a time-indexed '
+                         f'(DatetimeIndex) dataset; got t={t!r} on a '
+                         f'{type(index).__name__}. For numerically-indexed '
+                         'data, pass t as a positive integer number of steps.')
 
     target = pd.Timestamp(t)
+    # tz-aware index + tz-naive t raised a raw pandas "Cannot compare
+    # tz-naive and tz-aware timestamps" (QC 2026-07 red-team
+    # F16-predict-020): localize the naive target to the data's timezone
+    # (the unambiguous intent); a tz-aware t on tz-naive data is ambiguous,
+    # so explain rather than guess.
+    if index.tz is not None and target.tz is None:
+        target = target.tz_localize(index.tz)
+    elif index.tz is None and target.tz is not None:
+        raise ValueError(
+            f'the dataset index is timezone-naive but t={t!r} is '
+            'timezone-aware; pass a tz-naive t (or localize the data index).')
     step = _infer_step(index)
     last = index[-1]
 
     if target <= last:
+        # t at (or before) the last observation: truncate. n_steps == 0
+        # (t exactly at the end) keeps the full history (QC 2026-07
+        # red-team F16-predict-004: this used to fall through to the model
+        # forecaster with n_steps=0, silently returning an all-NaN frame or
+        # crashing model-dependently).
         keep = index <= target
         n_steps = -(len(index) - int(keep.sum()))
         future_index = index[keep]
         return n_steps, future_index
 
-    n_steps = int(np.round((target - last) / step))
+    # target is strictly after the last observation: always forecast at
+    # least one step (a target within half a step of the end used to round
+    # to n_steps=0 and crash downstream -- QC 2026-07 red-team).
+    n_steps = max(1, int(np.round((target - last) / step)))
     future_index = pd.DatetimeIndex([last + step * (i + 1) for i in range(n_steps)])
     return n_steps, future_index
 
@@ -167,23 +212,43 @@ class Forecaster(BaseEstimator):
         Raises
         ------
         ValueError
-            If `data` is `None`, if `self.fitter` does not return a
-            dict, or if any name in `self.required` is missing from a
-            returned dict.
+            If `data` is `None`, empty, or has fewer than 2 observations
+            (rows); if `self.fitter` does not return a dict; or if any
+            name in `self.required` is missing from a returned dict.
         """
-        assert data is not None, ValueError('cannot forecast an empty dataset')
+        # real raises (not `assert ..., ValueError(...)`, which raises
+        # AssertionError and is stripped under `python -O`) -- QC 2026-07.
+        if data is None:
+            raise ValueError('cannot forecast an empty dataset (data is None)')
         single = not isinstance(data, list)
         datasets = [_as_dataframe(data)] if single else [_as_dataframe(d) for d in data]
 
         models = []
-        for d in datasets:
+        for i, d in enumerate(datasets):
+            # degenerate inputs used to fall through to model internals
+            # (raw sklearn/pykalman errors) or return silent constant
+            # "forecasts" (QC 2026-07 red-team F16-predict-013 /
+            # X2-error-quality-002).
+            which = 'the dataset' if single else f'dataset {i}'
+            if d.shape[0] == 0 or d.shape[1] == 0:
+                raise ValueError(
+                    f'cannot forecast an empty dataset: {which} has shape '
+                    f'{tuple(d.shape)} (no data). Pass at least 2 '
+                    'observations (rows) of at least 1 feature (column).')
+            if d.shape[0] < 2:
+                raise ValueError(
+                    f'cannot forecast from a single observation: {which} has '
+                    f'only {d.shape[0]} row. Forecasting needs at least 2 '
+                    'observations (rows) to estimate how the data change '
+                    'over time.')
             if self.fitter is None:
                 models.append({})
                 continue
             params = self.fitter(d, **self.kwargs)
-            assert isinstance(params, dict), ValueError('fit function must return a dictionary')
-            assert all(r in params for r in self.required), \
-                ValueError('one or more required fields not returned')
+            if not isinstance(params, dict):
+                raise ValueError('fit function must return a dictionary')
+            if not all(r in params for r in self.required):
+                raise ValueError('one or more required fields not returned')
             models.append(params)
 
         self.data = datasets[0] if single else datasets
@@ -198,7 +263,8 @@ class Forecaster(BaseEstimator):
         t : int or datetime-like
             Forecast horizon, resolved per-dataset via `resolve_t`. A
             `t` at or before a dataset's last observation truncates
-            that dataset's history up to `t` instead of forecasting.
+            that dataset's history up to `t` (inclusive) instead of
+            forecasting.
 
         Returns
         -------
@@ -225,8 +291,11 @@ class Forecaster(BaseEstimator):
 
             n_steps, future_index = resolve_t(d, t)
 
-            if n_steps < 0:
-                # t is in the past: truncate rather than forecast
+            if n_steps <= 0:
+                # t is at or before the last observation: truncate rather
+                # than forecast (n_steps == 0 used to fall through to the
+                # model with a zero-step horizon -- QC 2026-07 red-team
+                # F16-predict-004).
                 forecasts.append(d.loc[future_index])
                 continue
 
@@ -303,16 +372,34 @@ class Forecaster(BaseEstimator):
         single = not isinstance(data, list)
         new_datasets = [_as_dataframe(data)] if single else [_as_dataframe(d) for d in data]
 
+        fitted_datasets = [self.data] if not isinstance(self.data, list) else self.data
         if len(self.models_) == len(new_datasets):
             paired_models = self.models_
+            paired_fitted = fitted_datasets
         elif len(self.models_) == 1:
             paired_models = [self.models_[0]] * len(new_datasets)
+            paired_fitted = [fitted_datasets[0]] * len(new_datasets)
         else:
             raise ValueError(
                 f'predict_new got {len(new_datasets)} new dataset(s) but the '
                 f'fitted forecaster has {len(self.models_)} fitted model(s); '
                 'pass either a matching number of new datasets or reuse a '
                 'forecaster that was fit on a single dataset.')
+
+        # a feature-count mismatch used to surface as cryptic pandas/numpy
+        # broadcast errors deep inside the model (QC 2026-07 red-team
+        # F16-predict-012).
+        for i, (d, fitted_d) in enumerate(zip(new_datasets, paired_fitted)):
+            which = f'new dataset {i}' if len(new_datasets) > 1 else 'the new dataset'
+            if d.shape[1] != fitted_d.shape[1]:
+                raise ValueError(
+                    f'the fitted forecaster expects {fitted_d.shape[1]} '
+                    f'feature(s) (columns) but {which} has {d.shape[1]}; '
+                    'reuse a fitted forecaster only on data with the same '
+                    'columns it was fit on.')
+            if d.shape[0] == 0:
+                raise ValueError(f'cannot forecast from an empty dataset: '
+                                 f'{which} has 0 rows.')
 
         forecasts = []
         for d, params in zip(new_datasets, paired_models):
@@ -329,7 +416,7 @@ class Forecaster(BaseEstimator):
             # directly (re-derive fitted params from `d` via the same
             # fitter/hyperparameters, then forecast forward).
             n_steps, future_index = resolve_t(d, t)
-            if n_steps < 0:
+            if n_steps <= 0:
                 forecasts.append(d.loc[future_index])
                 continue
             if self.forecaster is None:

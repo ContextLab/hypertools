@@ -146,24 +146,39 @@ def test_return_model_roundtrip_kalman_no_reestimation(monkeypatch):
     assert fitted.models_[0]['kf'] is original_kf
 
 
-def test_return_model_roundtrip_gp_no_reestimation(monkeypatch):
+def test_return_model_roundtrip_gp_conditions_on_new_data_no_reoptimization(monkeypatch):
+    # QC 2026-07 red-team F16-predict-007: GP reuse used to ignore the new
+    # data's values entirely and replay the original fit's forecast for ANY
+    # new dataset. Reuse now CONDITIONS the learned kernel on the new series
+    # -- without re-OPTIMIZING the kernel hyperparameters (the learned
+    # parameters that make the round-trip a genuine reuse).
     from sklearn.gaussian_process import GaussianProcessRegressor
 
-    a = _make_df(n=70)
-    fc_a, fitted = predict(a, model='GaussianProcess', t=5, return_model=True)
+    rng = np.random.default_rng(5)
+    rising = pd.DataFrame((0.1 * np.arange(100) + 0.1 * rng.standard_normal(100)).reshape(-1, 1))
+    falling = pd.DataFrame((-0.1 * np.arange(100) + 0.1 * rng.standard_normal(100)).reshape(-1, 1))
+
+    fc_a, fitted = predict(rising, model='GaussianProcess', t=5, return_model=True)
     original_gp = fitted.models_[0]['gp']
+    learned_theta = original_gp.kernel_.theta.copy()
 
     def _boom(self, *args, **kwargs):
-        raise AssertionError('fit() must not be called during predict_new (no re-estimation)')
+        raise AssertionError('kernel hyperparameters must not be re-optimized '
+                             'during predict_new (no re-estimation)')
 
-    monkeypatch.setattr(GaussianProcessRegressor, 'fit', _boom)
+    monkeypatch.setattr(GaussianProcessRegressor, '_constrained_optimization', _boom)
 
-    b = _make_df(n=40)
-    fc_b = predict(b, model=fitted, t=5)
+    fc_b = predict(falling, model=fitted, t=5)
 
-    assert fc_b.shape == (5, b.shape[1])
-    assert list(fc_b.index) == list(range(40, 45))
+    assert fc_b.shape == (5, falling.shape[1])
+    assert list(fc_b.index) == list(range(100, 105))
+    # the learned model object is untouched, and its hyperparameters were reused
     assert fitted.models_[0]['gp'] is original_gp
+    assert np.allclose(original_gp.kernel_.theta, learned_theta)
+    # the forecast reflects the NEW (falling) data, not a replay of the
+    # original (rising) fit's forecast
+    assert not np.allclose(np.asarray(fc_a), np.asarray(fc_b))
+    assert np.asarray(fc_b).ravel()[-1] < np.asarray(fc_b).ravel()[0]
 
 
 def test_return_model_roundtrip_autoregressor_no_reestimation(monkeypatch):

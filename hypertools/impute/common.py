@@ -28,19 +28,41 @@ def _as_dataframe(data):
     return pd.DataFrame(np.asarray(data))
 
 
+def _shared_columns(datasets):
+    """Whether every dataset in `datasets` has the same columns (in order)."""
+    first = list(datasets[0].columns)
+    return all(list(d.columns) == first for d in datasets[1:])
+
+
 def _stack(datasets):
     if len(datasets) == 1:
-        return datasets[0], [len(datasets[0])]
+        return datasets[0], [len(datasets[0])], [datasets[0].index]
+    # joint imputation requires shared columns: pd.concat of mismatched
+    # columns silently WIDENED every dataset to the column union, "filling"
+    # the invented all-NaN blocks with the other datasets' statistics (QC
+    # 2026-07 red-team F17-impute-001). The `hypertools.impute.impute`
+    # dispatcher falls back to per-dataset imputation (with a warning)
+    # before reaching this point; direct Imputer use fails clearly instead.
+    if not _shared_columns(datasets):
+        raise ValueError(
+            'datasets in a list must share columns to be imputed jointly; '
+            f'got columns {[list(d.columns) for d in datasets]}. Impute '
+            'each dataset separately (or rename/align the columns first).')
     stacked = pd.concat(datasets, axis=0, ignore_index=True)
-    return stacked, [len(d) for d in datasets]
+    return stacked, [len(d) for d in datasets], [d.index for d in datasets]
 
 
-def _split(stacked, boundaries):
+def _split(stacked, boundaries, indexes=None):
     if len(boundaries) == 1:
         return [stacked]
     bounds = np.cumsum(boundaries[:-1])
     parts = np.split(stacked.to_numpy(), bounds, axis=0)
-    return [pd.DataFrame(p, columns=stacked.columns) for p in parts]
+    if indexes is None:
+        indexes = [None] * len(parts)
+    # restore each dataset's own index (it used to be reset to a RangeIndex
+    # on the list path only -- QC 2026-07 red-team F17-impute-012)
+    return [pd.DataFrame(p, columns=stacked.columns, index=idx)
+            for p, idx in zip(parts, indexes)]
 
 
 class Imputer(BaseEstimator):
@@ -53,8 +75,10 @@ class Imputer(BaseEstimator):
     params in `models_`. `transform(data=None)` applies those params to
     the original fitted data by default, or to new data passed in (the
     `return_model=True` reuse path). If `fit`/`transform` receives a
-    list, the per-dataset row boundaries are recorded and the result is
-    split back into a list matching the input structure.
+    list, the per-dataset row boundaries (and indexes) are recorded and
+    the result is split back into a list matching the input structure.
+    Output values are always float64 (imputation coerces to float
+    internally), even on a NaN-free passthrough.
 
     Parameters
     ----------
@@ -96,17 +120,29 @@ class Imputer(BaseEstimator):
         Raises
         ------
         ValueError
-            If `data` is `None`, if `self.fitter` does not return a
-            dict, or if any name in `self.required` is missing from the
+            If `data` is `None` or empty, if the datasets in a list do
+            not share columns, if `self.fitter` does not return a dict,
+            or if any name in `self.required` is missing from the
             returned dict.
         """
-        assert data is not None, ValueError('cannot impute an empty dataset')
+        # real raises (not `assert ..., ValueError(...)`, which raises
+        # AssertionError and is stripped under `python -O`) -- QC 2026-07.
+        if data is None:
+            raise ValueError('cannot impute an empty dataset (data is None)')
         single = not isinstance(data, list)
+        if not single and len(data) == 0:
+            raise ValueError('cannot impute an empty dataset (got an empty list)')
         datasets = [_as_dataframe(data)] if single else [_as_dataframe(d) for d in data]
-        stacked, boundaries = _stack(datasets)
+        stacked, boundaries, indexes = _stack(datasets)
+        if stacked.shape[0] == 0 or stacked.shape[1] == 0:
+            raise ValueError(
+                f'cannot impute an empty dataset (got shape '
+                f'{tuple(stacked.shape)}); pass at least 1 observation (row) '
+                'of at least 1 feature (column).')
 
         self._single = single
         self._boundaries = boundaries
+        self._indexes = indexes
         self.data = stacked
 
         if self.fitter is None:
@@ -114,9 +150,10 @@ class Imputer(BaseEstimator):
             return self
 
         params = self.fitter(stacked, **self.kwargs)
-        assert isinstance(params, dict), ValueError('fit function must return a dictionary')
-        assert all(r in params for r in self.required), \
-            ValueError('one or more required fields not returned')
+        if not isinstance(params, dict):
+            raise ValueError('fit function must return a dictionary')
+        if not all(r in params for r in self.required):
+            raise ValueError('one or more required fields not returned')
         self.models_ = params
         return self
 
@@ -150,10 +187,11 @@ class Imputer(BaseEstimator):
         is_original = data is None
         if is_original:
             stacked, boundaries, single = self.data, self._boundaries, self._single
+            indexes = getattr(self, '_indexes', None)
         else:
             single = not isinstance(data, list)
             datasets = [_as_dataframe(data)] if single else [_as_dataframe(d) for d in data]
-            stacked, boundaries = _stack(datasets)
+            stacked, boundaries, indexes = _stack(datasets)
 
         if self.transformer is None:
             result = stacked
@@ -170,7 +208,7 @@ class Imputer(BaseEstimator):
 
         if single:
             return result
-        return _split(result, boundaries)
+        return _split(result, boundaries, indexes)
 
     def fit_transform(self, data):
         """Fit the imputer on `data`, then immediately transform it.

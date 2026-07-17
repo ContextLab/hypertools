@@ -20,6 +20,22 @@ returns fewer than the requested horizon.
 (inside the fitter) so `hypertools.predict` stays importable without it, and
 a friendly `ImportError` is raised only when a `Laplace` forecaster is
 actually fit.
+
+Caveats (QC 2026-07 red-team F16-predict-005/-014/-015):
+
+- PERFORMANCE: the skaters online loop re-feeds the whole series through a
+  fresh ``laplace(k=t)`` closure whose per-observation cost grows with the
+  horizon, so long horizons are very slow (measured on a 200-point
+  univariate series: ~4 s at t=30 and ~77 s at t=200, vs fractions of a
+  second for ARIMA/GaussianProcess/AutoRegressor), multiplied by the number
+  of columns.
+- SUITABILITY: the default configuration tracks drifting/trending signals
+  well but cannot continue oscillatory (seasonal) signals -- on a strong
+  noisy sine its forecast anti-correlates with the held-out truth. Use
+  ``model='AutoRegressor'``, ``'GaussianProcess'``, or ``'Kalman'`` for
+  periodic data.
+- NaN: skaters is not NaN-tolerant (it used to die with a bare, empty
+  ``AssertionError``); a clear ``ValueError`` is raised instead.
 """
 import numpy as np
 import pandas as pd
@@ -84,10 +100,23 @@ def fitter(data, **kwargs):
     -------
     dict
         `{'series': {col: <float numpy array>, ...}}`.
+
+    Raises
+    ------
+    ValueError
+        If `data` contains NaN (skaters is not NaN-tolerant; it used to
+        fail later with a bare, empty ``AssertionError``).
     """
     # Nothing to pre-fit: skaters' laplace is a stateless-online estimator
     # that is driven by the (full) series at forecast time. Store the raw
     # per-column series so `forecaster` can feed them through the closure.
+    x = data.to_numpy(dtype=float)
+    if np.isnan(x).any():
+        raise ValueError(
+            f'Laplace cannot fit data containing NaN '
+            f'({int(np.isnan(x).sum())} missing value(s) found). Fill missing '
+            'values first (e.g. hyp.impute(data)), or use a NaN-tolerant '
+            "forecaster (model='Kalman' or model='ARIMA').")
     return {'series': {col: data[col].to_numpy(dtype=float) for col in data.columns}}
 
 
@@ -137,12 +166,17 @@ class Laplace(Forecaster):
     series through a fresh `laplace(k=t)` closure -- "reuse" means
     conditioning on the new series, not replaying anything learned from the
     original fit.
+
+    Laplace takes no parameters; see the module docstring for performance
+    and signal-suitability caveats. Unknown keyword arguments raise
+    `TypeError` (they were previously swallowed silently -- QC 2026-07
+    red-team F16-predict-009).
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self):
         required = ['series']
         super().__init__(fitter=fitter, forecaster=forecaster, data=None,
-                          required=required, **kwargs)
+                          required=required)
 
         self.fitter = fitter
         self.forecaster = forecaster

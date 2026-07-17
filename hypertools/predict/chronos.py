@@ -11,6 +11,14 @@ the point forecast.
 extra; imported lazily (inside the fitter) so `hypertools.predict` stays
 importable without them, and a friendly `ImportError` is raised only when a
 `Chronos` forecaster is actually fit.
+
+NOTE: Chronos forecasts are SAMPLED trajectories, so repeated identical
+calls return (slightly) different forecasts -- Chronos is the only
+hypertools forecaster that is nondeterministic run-to-run (QC 2026-07
+red-team F16-predict-009). The `num_samples`/`temperature`/`top_k`/`top_p`
+sampling controls are forwarded to `ChronosPipeline.predict` (they used to
+be accepted but silently dropped); increase `num_samples` to stabilize the
+median point forecast.
 """
 import numpy as np
 import pandas as pd
@@ -79,7 +87,11 @@ def forecaster(data, n_steps, future_index, **kwargs):
     future_index : pandas.Index
         Index to assign to the forecasted rows.
     **kwargs
-        `pipeline`, `series` : loaded pipeline and per-column series from `fitter`.
+        `pipeline`, `series` : loaded pipeline and per-column series from
+        `fitter`. `num_samples`, `temperature`, `top_k`, `top_p` :
+        optional sampling controls forwarded to `ChronosPipeline.predict`
+        (QC 2026-07 red-team F16-predict-009: `num_samples` used to be
+        accepted but silently dropped).
 
     Returns
     -------
@@ -89,11 +101,13 @@ def forecaster(data, n_steps, future_index, **kwargs):
     torch, _ = _import_chronos()
     pipeline = kwargs['pipeline']
     series = kwargs['series']
+    sampling = {k: kwargs[k] for k in ('num_samples', 'temperature', 'top_k', 'top_p')
+                if kwargs.get(k) is not None}
 
     columns = {}
     for col in data.columns:
         x = torch.tensor(series[col], dtype=torch.float32)
-        fc = pipeline.predict(x[None, :], prediction_length=n_steps)
+        fc = pipeline.predict(x[None, :], prediction_length=n_steps, **sampling)
         median = fc.quantile(0.5, dim=1)[0]  # (n_steps,)
         columns[col] = np.asarray(median)
 
@@ -114,6 +128,10 @@ class Chronos(Forecaster):
     means conditioning on the new series, not replaying anything learned
     from the original fit.
 
+    Forecasts are SAMPLED trajectories, so repeated identical calls return
+    (slightly) different point forecasts; increase `num_samples` to
+    stabilize the median (see the module docstring).
+
     Parameters
     ----------
     model_name : str
@@ -121,15 +139,31 @@ class Chronos(Forecaster):
         (default: 'amazon/chronos-t5-tiny').
     device_map : str
         Passed through to `ChronosPipeline.from_pretrained` (default: 'cpu').
+    num_samples : int or None
+        Number of forecast trajectories to sample per column; the point
+        forecast is their median (default: None, Chronos's own default).
+    temperature : float or None
+        Sampling temperature (default: None, Chronos's own default).
+    top_k : int or None
+        Top-k sampling cutoff (default: None, Chronos's own default).
+    top_p : float or None
+        Nucleus-sampling cutoff (default: None, Chronos's own default).
     """
 
-    def __init__(self, model_name='amazon/chronos-t5-tiny', device_map='cpu', **kwargs):
+    def __init__(self, model_name='amazon/chronos-t5-tiny', device_map='cpu',
+                 num_samples=None, temperature=None, top_k=None, top_p=None):
         required = ['pipeline', 'series']
-        super().__init__(model_name=model_name, device_map=device_map, fitter=fitter,
-                          forecaster=forecaster, data=None, required=required, **kwargs)
+        super().__init__(model_name=model_name, device_map=device_map,
+                          num_samples=num_samples, temperature=temperature,
+                          top_k=top_k, top_p=top_p, fitter=fitter,
+                          forecaster=forecaster, data=None, required=required)
 
         self.model_name = model_name
         self.device_map = device_map
+        self.num_samples = num_samples
+        self.temperature = temperature
+        self.top_k = top_k
+        self.top_p = top_p
         self.fitter = fitter
         self.forecaster = forecaster
         self.data = None
