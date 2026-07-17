@@ -18,7 +18,7 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
     The implementation of this function was based on the ProcrusteanMapper in
     pyMVPA: https://github.com/PyMVPA/PyMVPA
 
-    See also: http://en.wikipedia.org/wiki/Procrustes_transformation
+    See also: https://en.wikipedia.org/wiki/Procrustes_transformation
 
     Parameters
     ----------
@@ -136,9 +136,9 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
             if not reflection:
                 # then we need to assure that it is only rotation
                 # "recipe" from
-                # http://en.wikipedia.org/wiki/Orthogonal_Procrustes_problem
+                # https://en.wikipedia.org/wiki/Orthogonal_Procrustes_problem
                 # for more and info and original references, see
-                # http://dx.doi.org/10.1007%2FBF02289451
+                # https://doi.org/10.1007/BF02289451
                 nsv = len(s)
                 s[:-1] = 1
                 s[-1] = np.linalg.det(T)
@@ -314,9 +314,9 @@ def align(source, target, scaling=True, reflection=True, reduction=False, obliqu
         if not reflection:
             # then we need to assure that it is only rotation
             # "recipe" from
-            # http://en.wikipedia.org/wiki/Orthogonal_Procrustes_problem
+            # https://en.wikipedia.org/wiki/Orthogonal_Procrustes_problem
             # for more and info and original references, see
-            # http://dx.doi.org/10.1007%2FBF02289451
+            # https://doi.org/10.1007/BF02289451
             nsv = len(s)
             s[:-1] = 1
             s[-1] = np.linalg.det(t)

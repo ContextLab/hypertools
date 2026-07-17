@@ -22,9 +22,11 @@ def missing_inds(x, format_data=True):
 
     Returns
     ----------
-    inds : list, or list of lists
-        A list of indices representing rows with missing data. If a list of
-        numpy arrays is passed, a list of lists will be returned.
+    inds : 1-D numpy array, None, or list of (1-D numpy array or None)
+        For a single array: a 1-D numpy array of the row indices that
+        contain missing values, or None when the array has no missing
+        data. For a list of arrays: one such entry (array or None) per
+        dataset.
 
     """
 

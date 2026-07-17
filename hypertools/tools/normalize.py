@@ -193,13 +193,19 @@ def normalize(x, normalize='across', internal=False, format_data=True, impute=No
     normalize : str, False, None, or fitted Normalizer
         If set to 'across', the columns of the input data will be z-scored
         across lists (default). That is, the z-scores will be computed with
-        with respect to column n across all arrays passed in the list. If set
+        respect to column n across all arrays passed in the list. If set
         to 'within', the columns will be z-scored within each list that is
         passed. If set to 'row', each row of the input data will be z-scored.
-        If set to False, the input data will be returned with no z-scoring.
+        If set to False or None, the input data will be returned with no
+        z-scoring.
         A previously-fitted `Normalizer` (as returned by `return_model=True`)
         is applied via `.transform` instead of being refit. Any other value
         raises a `ValueError`.
+
+    internal : bool
+        If True, ALWAYS return a list (one array per input dataset), even
+        for single-dataset input -- used by hypertools' own pipeline
+        plumbing (default: False).
 
     format_data : bool
         Whether or not to first call the format_data function (default: True).

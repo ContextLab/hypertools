@@ -18,6 +18,10 @@ def df2mat(data, return_labels=False):
         The df that you want to convert.  Note that this currently only works
         with single-level (not Multi-level indices).
 
+    return_labels : bool
+        If True, also return a list of column labels for the transformed
+        array (default: False).
+
     Returns
     ----------
     plot_data : Numpy array

@@ -297,6 +297,19 @@ def impute(data, model='PPCA', return_model=False, **kwargs):
     The imputed data (and the fitted Imputer if return_model=True). Lists
     in, lists out: a single input dataset returns a single imputed
     DataFrame.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import hypertools as hyp
+    >>> x = np.cumsum(np.random.default_rng(0).standard_normal((40, 5)),
+    ...               axis=0)
+    >>> x[3, 1] = np.nan
+    >>> filled = hyp.impute(x, model='PPCA')
+    >>> filled.shape
+    (40, 5)
+    >>> bool(np.isnan(filled.to_numpy()).any())
+    False
     """
     data = _normalize_data(data)
     return _wrangled_impute(data, model=model, return_model=return_model,

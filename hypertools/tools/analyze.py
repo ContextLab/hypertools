@@ -51,8 +51,8 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
 
     normalize : str or False or None
         If set to 'across', the columns of the input data will be z-scored
-        across lists (default). That is, the z-scores will be computed with
-        with respect to column n across all arrays passed in the list. If set
+        across lists. That is, the z-scores will be computed with
+        respect to column n across all arrays passed in the list. If set
         to 'within', the columns will be z-scored within each list that is
         passed. If set to 'row', each row of the input data will be z-scored.
         If set to False or None (default), the input data will be returned
@@ -103,9 +103,11 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
         DBSCAN / AgglomerativeClustering that have no out-of-sample
         `predict`). For a list of datasets, `.transform` returns one flat
         label sequence over the row-concatenated data; to get labels split
-        PER dataset, call
-        `hypertools.cluster.cluster.cluster` directly (it returns per-dataset
-        labels alongside the transformed data in one call). `False` or
+        PER dataset, split that flat sequence by each dataset's row count,
+        e.g. ``np.split(labels, np.cumsum([len(d) for d in data])[:-1])``
+        (`hypertools.cluster` likewise returns one flat label sequence for
+        a list input, because the datasets are row-stacked before
+        clustering). `False` or
         `None` (default) skips this stage.
 
     pipeline : hypertools.Pipeline or None
@@ -171,6 +173,16 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
         `internal=True` to guarantee a list regardless of input shape. If
         `return_model=True`, an `(analyzed_data, model)` tuple is returned
         instead.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import hypertools as hyp
+    >>> x = np.cumsum(np.random.default_rng(0).standard_normal((40, 5)),
+    ...               axis=0)
+    >>> analyzed = hyp.analyze(x, normalize='within', reduce='PCA', ndims=3)
+    >>> analyzed.shape
+    (40, 3)
 
     """
     stage_kwargs = {'manip': manip, 'normalize': normalize, 'reduce': reduce,

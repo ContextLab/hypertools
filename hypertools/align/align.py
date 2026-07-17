@@ -364,6 +364,17 @@ def align(data, model='HyperAlign', return_model=False,
         If a keyword argument is not accepted by the resolved model's
         constructor (e.g. a misspelled parameter name).
 
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import hypertools as hyp
+    >>> rng = np.random.default_rng(0)
+    >>> a = rng.standard_normal((30, 4))
+    >>> b = a @ np.linalg.qr(rng.standard_normal((4, 4)))[0]  # rotated copy
+    >>> aligned = hyp.align([a, b], model='HyperAlign')
+    >>> [d.shape for d in aligned]
+    [(30, 4), (30, 4)]
+
     """
     if isinstance(data, list) and len(data) == 0:
         # an empty list used to fall through to the TEXT input funnel,

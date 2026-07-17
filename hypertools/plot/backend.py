@@ -79,7 +79,7 @@ Hypertools 1.0 revamp, the two options should be given equal priority in
 order to support the various possible combinations of new and older
 `IPython`/`ipykernel`/`notebook` versions going forward
 
-[1] https://matplotlib.org/faq/howto_faq.html#working-with-threads
+[1] https://matplotlib.org/stable/users/faq.html#work-with-threads
 [2] https://github.com/ipython/ipython/issues/12190#issuecomment-599154335.
 """
 
@@ -1082,14 +1082,12 @@ class set_interactive_backend:
        the value of a global variable (`IN_SET_CONTEXT`), which is
        backed by a nesting-depth counter (`_SET_CONTEXT_DEPTH`) so it
        remains `True` until the outermost context block exits. This
-       definitely isn't an ideal setup and could probably be refactored
-       out in the v1.0 overhaul, but for now the alternatives are A)
+       global-flag approach is used instead of the alternatives -- A)
        using something like `inspect.getframeinfo` or
        `traceback.extract_stack` to look for the context manager every
        time `hypertools.plot` is called, or B) re-running the same
-       runtime argument checks every time, either of which would be much
-       less efficient. So for now, the current setup is probably good
-       enough.
+       runtime argument checks every time -- either of which would be
+       much less efficient.
     5. The `$HYPERTOOLS_BACKEND` environment variable provides a third
        way of setting the backend: if set before `hypertools` is
        imported, it overrides the default *matplotlib* backend used for

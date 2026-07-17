@@ -204,6 +204,18 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
         `Manipulator` when `model` was a single spec, or a fitted
         `hypertools.Pipeline` when `model` was a list (default: False).
 
+    normalize, reduce, align, cluster : model spec or None
+        Cross-module stage kwargs (GH #138): when any of these is given,
+        the other stages also run (via
+        `hypertools.core.pipeline.build_pipeline`), in the canonical order
+        `manip -> normalize -> reduce -> align -> cluster` (GH #153), with
+        this function's own `model=` slotted in at the manip stage
+        (default: None for all four, i.e. only `manip` runs).
+
+    ndims : int or None
+        Passed through to the `reduce` stage (as `ndims=`) when `reduce=`
+        is also given.
+
     **kwargs
         Passed through to the manipulator's constructor when `model`
         resolves to a class (ignored when `model` is a list, an already

@@ -265,6 +265,16 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     -------
     forecasts (and the fitted Forecaster if return_model=True). Lists in,
     lists out: a single input dataset returns a single forecast DataFrame.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import hypertools as hyp
+    >>> x = np.cumsum(np.random.default_rng(0).standard_normal((40, 3)),
+    ...               axis=0)
+    >>> forecast = hyp.predict(x, model='Kalman', t=5)
+    >>> forecast.shape
+    (5, 3)
     """
     data = _normalize_data(data)
     return _wrangled_predict(data, model=model, t=t, return_model=return_model,

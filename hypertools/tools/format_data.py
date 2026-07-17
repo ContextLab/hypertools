@@ -29,26 +29,28 @@ def format_data(x, vectorizer='CountVectorizer',
     vectorizer : str, dict, class or class instance
         The vectorizer to use. Built-in options are 'CountVectorizer' or
         'TfidfVectorizer'. To change default parameters, set to a dictionary
-        e.g. {'model' : 'CountVectorizer', 'params' : {'max_features' : 10}}. See
-        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.feature_extraction.text
+        e.g. {'model' : 'CountVectorizer', 'kwargs' : {'max_features' : 10}}
+        (the legacy {'model', 'params'} form is also still accepted). See
+        https://scikit-learn.org/stable/api/sklearn.feature_extraction.html
         for details. You can also specify your own vectorizer model as a class,
         or class instance.  With either option, the class must have a
-        fit_transform method (see here: http://scikit-learn.org/stable/data_transforms.html).
-        If a class, pass any parameters as a dictionary to vectorizer_params. If
-        a class instance, no parameters can be passed.
+        fit_transform method (see https://scikit-learn.org/stable/data_transforms.html).
+        To set parameters, use the dict form (or a configured class
+        instance); a bare class is instantiated with its defaults.
 
     semantic : str, dict, class or class instance
         Text model to use to transform text data. Built-in options are
         'LatentDirichletAllocation' or 'NMF' (default: LDA). To change default
-        parameters, set to a dictionary e.g. {'model' : 'NMF', 'params' :
-        {'n_components' : 10}}. See
-        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
+        parameters, set to a dictionary e.g. {'model' : 'NMF', 'kwargs' :
+        {'n_components' : 10}} (the legacy {'model', 'params'} form is also
+        still accepted). See
+        https://scikit-learn.org/stable/api/sklearn.decomposition.html
         for details on the two model options. You can also specify your own
         text model as a class, or class instance.  With either option, the class
-        must have a fit_transform method (see here:
-        http://scikit-learn.org/stable/data_transforms.html).
-        If a class, pass any parameters as a dictionary to text_params. If
-        a class instance, no parameters can be passed.
+        must have a fit_transform method (see
+        https://scikit-learn.org/stable/data_transforms.html).
+        To set parameters, use the dict form (or a configured class
+        instance); a bare class is instantiated with its defaults.
 
     corpus : list (or list of lists) of text samples or 'wiki', 'nips', 'sotus'.
          Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'

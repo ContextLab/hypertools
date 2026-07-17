@@ -38,7 +38,7 @@ def align(data, align='hyper', n_iter=10, format_data=True):
     the representational space in human ventral temporal cortex.  Neuron 72,
     404 -- 416. (used to implement hyperalignment, see https://github.com/PyMVPA/PyMVPA)
 
-    Brain Imaging Analysis Kit, http://brainiak.org. (used to implement Shared Response Model [SRM], see https://github.com/IntelPNI/brainiak)
+    Brain Imaging Analysis Kit, https://brainiak.org. (used to implement Shared Response Model [SRM], see https://github.com/brainiak/brainiak)
 
     Parameters
     ----------

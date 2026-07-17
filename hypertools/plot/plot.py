@@ -460,7 +460,9 @@ def plot(
         Data for the plot. The form should be samples (rows) by features
         (cols). A plain python list of equal-length numeric lists (e.g.
         ``[[1., 2.], [3., 4.]]``) is treated as ONE dataset, exactly like
-        the equivalent ``np.array``. When a list of several datasets is
+        the equivalent ``np.array``. A bare scalar (e.g. ``hyp.plot(5)``)
+        is likewise accepted and treated as a single one-column
+        observation, drawn as a single point. When a list of several datasets is
         given, every dataset must have the same number of columns
         (features); to combine datasets with different feature counts,
         bring them into a shared space first (e.g.
@@ -1340,24 +1342,26 @@ def plot(
     vectorizer : str, dict, class or class instance
         The vectorizer to use. Built-in options are 'CountVectorizer' or
         'TfidfVectorizer'. To change default parameters, set to a dictionary
-        e.g. {'model' : 'CountVectorizer', 'params' : {'max_features' : 10}}. See
-        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.feature_extraction.text
+        e.g. {'model' : 'CountVectorizer', 'kwargs' : {'max_features' : 10}}
+        (the legacy {'model', 'params'} form is also still accepted). See
+        https://scikit-learn.org/stable/api/sklearn.feature_extraction.html
         for details. You can also specify your own vectorizer model as a class,
         or class instance.  With either option, the class must have a
-        fit_transform method (see here: http://scikit-learn.org/stable/data_transforms.html).
+        fit_transform method (see https://scikit-learn.org/stable/data_transforms.html).
         To set parameters, use the dict form (or a configured class
         instance); a bare class is instantiated with its defaults.
 
     semantic : str, dict, class or class instance
         Text model to use to transform text data. Built-in options are
         'LatentDirichletAllocation' or 'NMF' (default: LDA). To change default
-        parameters, set to a dictionary e.g. {'model' : 'NMF', 'params' :
-        {'n_components' : 10}}. See
-        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
+        parameters, set to a dictionary e.g. {'model' : 'NMF', 'kwargs' :
+        {'n_components' : 10}} (the legacy {'model', 'params'} form is also
+        still accepted). See
+        https://scikit-learn.org/stable/api/sklearn.decomposition.html
         for details on the two model options. You can also specify your own
         text model as a class, or class instance.  With either option, the class
-        must have a fit_transform method (see here:
-        http://scikit-learn.org/stable/data_transforms.html).
+        must have a fit_transform method (see
+        https://scikit-learn.org/stable/data_transforms.html).
         To set parameters, use the dict form (or a configured class
         instance); a bare class is instantiated with its defaults.
 

@@ -82,6 +82,16 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
         depending on the backend) when `show=True` and a figure was drawn;
         otherwise None.
 
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import hypertools as hyp
+    >>> x = np.cumsum(np.random.default_rng(0).standard_normal((40, 5)),
+    ...               axis=0)
+    >>> result = hyp.describe(x, reduce='PCA', max_dims=4, show=False)
+    >>> sorted(result.keys())
+    ['average', 'fig', 'individual']
+
     """
 
     # sklearn TSNE's default 'barnes_hut' method only supports

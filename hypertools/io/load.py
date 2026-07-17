@@ -136,18 +136,20 @@ def load(
 
     Examples
     --------
-    >>> hypertools.load('iris').columns.tolist()  # scikit-learn's iris
+    >>> import hypertools
+    >>> hypertools.load('iris').columns.tolist()  # doctest: +NORMALIZE_WHITESPACE
     ['sepal length (cm)', 'sepal width (cm)', 'petal length (cm)',
      'petal width (cm)', 'target']
-    >>> hypertools.load('penguins').columns.tolist()  # seaborn's penguins
+    >>> hypertools.load('penguins').columns.tolist()  # doctest: +NORMALIZE_WHITESPACE
     ['species', 'island', 'bill_length_mm', 'bill_depth_mm',
      'flipper_length_mm', 'body_mass_g', 'sex']
     >>> hypertools.load('fivethirtyeight/bechdel').shape  # 538's bechdel data
     (1794, 15)
     >>> hypertools.load('kaggle/uciml/iris').shape  # a Kaggle dataset
     (150, 6)
-    >>> hypertools.load('weights')  # built-in name always wins
-    [...]
+    >>> weights = hypertools.load('weights')  # built-in name always wins
+    >>> type(weights).__name__, len(weights)
+    ('list', 36)
 
     A **list of strings** resolves element-wise and returns a list of
     datasets that can be passed to any hypertools function.
@@ -235,11 +237,12 @@ def load(
 
     normalize : str or False or None
         If set to 'across', the columns of the input data will be z-scored
-        across lists (default). That is, the z-scores will be computed with
-        with respect to column n across all arrays passed in the list. If set
+        across lists. That is, the z-scores will be computed with
+        respect to column n across all arrays passed in the list. If set
         to 'within', the columns will be z-scored within each list that is
         passed. If set to 'row', each row of the input data will be z-scored.
-        If set to False, the input data will be returned with no z-scoring.
+        If set to False or None (default), the input data will be returned
+        with no z-scoring.
 
     legacy : bool
         Pass legacy=True to load DataGeometry objects created with hypertools<0.8.0

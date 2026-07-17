@@ -299,6 +299,17 @@ def cluster(x, cluster="KMeans", n_clusters=None, return_model=False,
         rows sum to 1. If `return_model=True`, a `(cluster_labels, model)`
         tuple is returned instead.
 
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import hypertools as hyp
+    >>> rng = np.random.default_rng(0)
+    >>> x = np.vstack([rng.standard_normal((20, 4)),
+    ...                rng.standard_normal((20, 4)) + 10.0])
+    >>> labels = hyp.cluster(x, n_clusters=2, random_state=0)
+    >>> len(labels), len(set(labels))
+    (40, 2)
+
     """
     # False is an explicit "skip this stage", for every stage kwarg, exactly
     # like None (F13-cluster-007 contract) -- normalize it up front so

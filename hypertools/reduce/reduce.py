@@ -113,6 +113,16 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         list -- comes back as a bare array. If `return_model=True`, an
         `(x_reduced, model)` tuple is returned instead.
 
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import hypertools as hyp
+    >>> x = np.cumsum(np.random.default_rng(0).standard_normal((40, 5)),
+    ...               axis=0)
+    >>> reduced = hyp.reduce(x, reduce='PCA', ndims=3)
+    >>> reduced.shape
+    (40, 3)
+
     """
     # validate ndims up front (QC 2026-07): a non-int silently hit a
     # `TypeError: '<=' not supported between int and str`, and ndims<=0
