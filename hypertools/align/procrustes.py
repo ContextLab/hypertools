@@ -5,7 +5,7 @@ import datawrangler as dw
 import numpy as np
 import pandas as pd
 
-from .common import Aligner
+from .common import Aligner, reject_unknown_kwargs
 from ..tools.format_data import format_data as formatter
 
 
@@ -81,19 +81,23 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
 
         # Check the sizes
         if sn != tn:
-            raise ValueError("Data for both spaces should have the same " \
-                  "number of samples. Got %d in template and %d in target space" \
-                  % (sn, tn))
+            raise ValueError(
+                "source and target must have the same number of rows "
+                "(samples); got %d (source) vs %d (target). Trim or "
+                "resample the datasets to matching lengths before "
+                "aligning." % (sn, tn))
 
         # Sums of squares
         ssqs = [np.sum(d**2, axis=0) for d in datas]
 
-        # XXX check for being invariant?
-        #     needs to be tuned up properly and not raise but handle
-        for i in range(2):
+        for i, which in enumerate(('source', 'target')):
             if np.all(ssqs[i] <= np.abs((np.finfo(datas[i].dtype).eps
                                        * sn )**2)):
-                raise ValueError("For now do not handle invariant in time datasets")
+                raise ValueError(
+                    "cannot align a dataset with (near-)zero variance: the "
+                    "%s dataset is constant/invariant across rows. Remove "
+                    "constant datasets or add variability before aligning."
+                    % which)
 
         norms = [ np.sqrt(np.sum(ssq)) for ssq in ssqs ]
         normed = [ data/norm for (data, norm) in zip(datas, norms) ]
@@ -106,10 +110,12 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
             if reduction:
                 normed[1] = np.hstack( (normed[1], np.zeros((sn, sm-tm))) )
             else:
-                raise ValueError("reduction=False, so mapping from " \
-                      "higher dimensionality " \
-                      "template space is not supported. template space had %d " \
-                      "while target %d dimensions (features)" % (sm, tm))
+                raise ValueError(
+                    "the source dataset has more columns (%d) than the "
+                    "target (%d), and reduction=False disallows mapping "
+                    "into a lower-dimensional space. Pass reduction=True "
+                    "to allow it, or choose a target with at least as many "
+                    "columns as the source." % (sm, tm))
 
         source, target = normed
         if oblique:
@@ -255,18 +261,21 @@ def align(source, target, scaling=True, reflection=True, reduction=False, obliqu
 
     # Check the sizes
     if sn != tn:
-        raise ValueError("Data for both spaces should have the same number of samples. \
-                          Got %d in template and %d in target space" % (sn, tn))
+        raise ValueError(
+            "source and target must have the same number of rows (samples); "
+            "got %d (source) vs %d (target). Trim or resample the datasets "
+            "to matching lengths before aligning." % (sn, tn))
 
     # Sums of squares
     ssqs = [np.sum(d ** 2, axis=0) for d in datas]
 
-    # TODO: check for being invariant?
-    #       needs to be tuned up properly and not raise but handle
-    for i in range(2):
+    for i, which in enumerate(('source', 'target')):
         if np.all(ssqs[i] <= np.abs((np.finfo(datas[i].dtype).eps
                                      * sn) ** 2)):
-            raise ValueError("For now do not handle invariant in time datasets")
+            raise ValueError(
+                "cannot align a dataset with (near-)zero variance: the %s "
+                "dataset is constant/invariant across rows. Remove constant "
+                "datasets or add variability before aligning." % which)
 
     norms = [np.sqrt(np.sum(ssq)) for ssq in ssqs]
     normed = [data / norm for (data, norm) in zip(datas, norms)]
@@ -279,10 +288,12 @@ def align(source, target, scaling=True, reflection=True, reduction=False, obliqu
         if reduction:
             normed[1] = np.hstack((normed[1], np.zeros((sn, sm - tm))))
         else:
-            raise ValueError("reduction=False, so mapping from \
-                              higher dimensionality \
-                              template space is not supported. template space had %d \
-                              while target %d dimensions (features)" % (sm, tm))
+            raise ValueError(
+                "the source dataset has more columns (%d) than the target "
+                "(%d), and reduction=False disallows mapping into a "
+                "lower-dimensional space. Pass reduction=True to allow it, "
+                "or choose a target with at least as many columns as the "
+                "source." % (sm, tm))
 
     source, target = normed
     if oblique:
@@ -461,8 +472,11 @@ class Procrustes(Aligner):
     """
     def __init__(self, target=None, scaling=True, reflection=True,
                  reduction=False, oblique=False, oblique_rcond=-1, index=0, **kwargs):
+        reject_unknown_kwargs('Procrustes', kwargs,
+                              ['target', 'scaling', 'reflection', 'reduction',
+                               'oblique', 'oblique_rcond', 'index'])
         required = ['proj', 'index']
         super().__init__(required=required, fitter=fitter, transformer=transformer,
                          data=None, target=target, scaling=scaling, reflection=reflection,
                          reduction=reduction, oblique=oblique, oblique_rcond=oblique_rcond,
-                         index=index, **kwargs)
+                         index=index)

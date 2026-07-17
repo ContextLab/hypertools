@@ -22,7 +22,7 @@ exposing a genuine per-dataset projector.
 import numpy as np
 import pandas as pd
 
-from .common import Aligner
+from .common import Aligner, reject_unknown_kwargs
 from .procrustes import align as _proc_align
 
 
@@ -109,9 +109,22 @@ class HyperAlign(Aligner):
     :param n_iter: number of hyperalignment passes; the common template is
         re-estimated from the aligned data and all datasets re-aligned to it,
         repeatedly. More iterations give a more stable common space
-        (default: 10). ``n_iter=0`` yields identity projections.
+        (default: 10). Must be a non-negative integer; ``n_iter=0`` yields
+        identity projections. A non-integer or negative value raises
+        ``ValueError`` (an earlier version validated with ``assert`` --
+        silently skipped under ``python -O`` -- and truncated floats).
     """
     def __init__(self, n_iter=10, **kwargs):
-        assert n_iter >= 0, 'n_iter must be non-negative'
+        reject_unknown_kwargs('HyperAlign', kwargs, ['n_iter'])
+        if isinstance(n_iter, bool) or not isinstance(n_iter, (int, np.integer)):
+            raise ValueError(
+                f"n_iter must be a non-negative integer (the number of "
+                f"hyperalignment passes); got {n_iter!r}. Pass e.g. "
+                "n_iter=10.")
+        if n_iter < 0:
+            raise ValueError(
+                f"n_iter must be a non-negative integer (the number of "
+                f"hyperalignment passes); got {n_iter}. Pass 0 for identity "
+                "projections, or a positive number of passes.")
         super().__init__(required=['proj'], fitter=fitter, transformer=transformer,
-                         data=None, n_iter=n_iter, **kwargs)
+                         data=None, n_iter=n_iter)
