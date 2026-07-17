@@ -137,6 +137,14 @@ Also cleaned: stray 102MB hypertools-dev venv + ancient dist/ artifacts deleted 
 
 AFTER 6c: full suite → reconciliation-verification agent for the 98 X-items (against settled code) → Phase 7.
 
+## Wave 6c COMMITTED + X-reconciliation (2026-07-17/18)
+
+- `ac854046` wave 6c (42 items; full suite **2258 passed / 0 failed**).
+- X-reconciliation (2 verifiers over the 98 open X-ids): **53 fixed** (by earlier waves under other ids), **5 by-design** (documented), **40 still-present minors** → wave 6d.
+- Wave 6d RUNNING (`wf_c5dcbd70-c61`): H1 validation/warnings polish (SRM features, describe max_dims, apply_model ndims parity, plot kwarg types, n_clusters=0, align 3-D rejection, hyper-alias deprecation, cluster int types, predict seam row, stacklevel sweep, UMAP/HyperAnimation/arima warning hygiene, PPCA rank-deficiency error, dw Pandas4Warning targeted filter) + H2 code-org/licensing (procrustes dedupe + index param, brainiak Apache-2.0 header + pca-magic license text, shared-helper dedup, parse_args removal, context.py removal, __all__, Clusterer/Reducer exports, dev/+RELEASE_NOTES cleanup, CLAUDE.md _externals fix, describe helper tests).
+- Deferred-with-justification (documented, not code-fixed): X1-005 data-arg naming unification (API rename too invasive pre-release), X1-010 public seeds for align/predict/impute (erroring beats silent no-op; enhancement for 1.1), X8-005 stale GH issue comments (handled at Phase-8 report time), X8-007 fig.number cosmetics (deliberate unregistration prevents leaks), X7-022 configurator published-record intent (docstring states it).
+- PR evidence curator running (staging ~20-24 before/after images + manifest to scratchpad).
+
 ## Phase 6 plan (after 5D commits)
 
 1. FULL suite gate. 2. `make clean && make html` FULL docs rebuild (regenerates all 54 gallery examples against fixed code — catches example breakage, refreshes auto_examples + thumbnails; commit regenerated artifacts; resolves D02-002/003/004). 3. Independent re-audit: ~8 fresh adversarial agents over the fixed areas (try to BREAK the fixes + hunt regressions). 4. Whole-branch independent review (quality/security/simplicity) over dev-1.0-refactor..HEAD. 5. Final reconciliation (5C/5D merged + dedup-cluster inheritance). Then Phase 7 merge + CI.
