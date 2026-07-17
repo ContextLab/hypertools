@@ -54,7 +54,23 @@ Wave 3 = second resume for remaining 17: D01, D05, D09, D10, D11, D12, D13, D14,
 
 ## Fix commits
 
-(one line per fix: `<sha> <finding-ids> <summary>`)
+- `885325c7` A2-manip (22 findings): per-dataset Smooth (F14-001/D01-001 critical), validation, doctest Examples. 290+6 tests green pre-commit.
+- `ff7153e6` A3-align (10): trim_and_pad row-order preservation (F12-001 critical), align=False no-op, kwarg validation.
+- `3517435f` A5-backend (7): HYPERTOOLS_BACKEND import crash (F06-001 critical), switch-state safety, eager validation.
+- `04985a4a` A8-tools (12): empty-list guard before LDA path (X2-005), analyze False-skip, df2mat pandas-3 (X4-001).
+
+Partial edits from spend-capped agents (A1/A4/A6/A7/B1) were REVERTED before these commits; those agents re-run fresh on this base (5A resume task wseijborg, 5B resume task w9mfyp0rc).
+
+## Controller integration queue (verify/do after waves land)
+
+1. Verify F15-005: hyperalign unknown-kwarg (n_itr) now raises by name (A3 claims fixed).
+2. Verify X2-005 remainder: impute([]) and predict([]) raise no-data errors (A4 contract).
+3. Verify corpus='sotus' end-to-end through text2mat after A1 lands registry fix.
+4. F06-010: plotly_backend.py:838 title-size comment (2-line fix, do at integration — B-pipeline owns file now).
+5. F06-009 + F01-014: document plot()-shadows-subpackage quirk (recommend `from hypertools.plot import backend`) — 5C docs wave; NOTE F01-014 verdict: `import hypertools.plot.plot` works; only attribute access fails.
+6. F15-007/008: docs/tutorials/analyze.ipynb cell-6 comment + cell-21 params→kwargs — 5C docs wave.
+7. A2 note: docs/pipeline_order.rst could add one-line shared-stats caveat for ZScore/Normalize on lists — 5C.
+8. F06-006: save_path .html plotly-only docstring — covered by B3 brief; verify.
 
 ## Workflow runs
 
