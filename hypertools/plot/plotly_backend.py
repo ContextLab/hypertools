@@ -31,6 +31,7 @@ from .meshutil import (blinn_phong_vertex_colors, points_enclosed,
 from .surface import (
     PLOTLY_IDENTITY_LIGHTING,
     PLOTLY_LIGHTPOSITION,
+    SURFACE_DEFAULTS,
     build_mesh_3d,
     build_outline_2d,
     mpl_lighting_kwargs,
@@ -328,12 +329,91 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
-    Parameters mirror the relevant subset of hypertools.plot.matplotlib_backend._draw:
-    `data` is a list of (n_i, d) arrays with d in (1, 2, 3), already
-    centered and scaled to [-1, 1]; `fmt` is a list of matplotlib-style
-    format strings (one per trace); `kwargs_list` carries per-trace
-    matplotlib kwargs ('color', 'linewidth', 'linestyle', 'marker',
-    'alpha', 'label').
+    Parameters mirror the relevant subset of
+    hypertools.plot.matplotlib_backend._draw (D11 audit: every parameter
+    listed; the notes further below expand on the non-obvious ones):
+
+    Parameters
+    ----------
+    data : list of numpy.ndarray
+        One (n_i, d) array per trace, d in (1, 2, 3), already centered and
+        scaled to [-1, 1] by `plot.py`.
+    fmt : list of str or None
+        Matplotlib-style format strings, one per trace (None -> '-').
+    kwargs_list : list of dict or None
+        Per-trace matplotlib-style kwargs ('color', 'linewidth',
+        'linestyle', 'marker', 'alpha', 'label', ...).
+    labels : list or None
+        Per-point annotation labels (one entry per observation; None
+        entries mean "no label for this point").
+    legend : list or None
+        Legend labels (one per trace); None hides the legend.
+    title : str or None
+        Figure title.
+    animate : bool or str
+        Animation style (False for static; True/'parallel'/'spin'/
+        'serial'/'window'/'morph').
+    size : (width, height) or None
+        Figure size in inches (converted to pixels at 100 dpi).
+    show : bool
+        Whether to call fig.show() (auto-suppressed in notebooks, where
+        returning the figure already displays it).
+    save_path : str or None
+        Where to save the figure (.html for interactive output).
+    frame_rate : int or float
+        Animation frames per second (frame_rate * duration total frames).
+    duration : float
+        Animation length in seconds.
+    rotations : float or list
+        Camera revolutions over the animation (list form: morph only).
+    elev : int or float
+        Starting camera elevation, degrees (3-D only).
+    azim : int or float
+        Starting camera azimuth, degrees (3-D only).
+    point_colors : list of numpy.ndarray or None
+        Per-point RGB colors (continuous/matrix hue), one array per trace.
+    tail_duration : float
+        Trail length in seconds for trail styles.
+    focused : float or None
+        In-focus (opaque) window length in seconds; None -> tail_duration.
+    chemtrails : bool or list of bool
+        Past-trail flag(s), per trace.
+    precog : bool or list of bool
+        Future-trail flag(s), per trace.
+    bullettime : bool or list of bool
+        Past+future trail flag(s), per trace.
+    zoom : float
+        3-D camera zoom factor.
+    forecasts : list of numpy.ndarray or None
+        predict= forecast traces (see below).
+    colorbar_info : dict or None
+        Colorbar spec from `plot._build_colorbar_info` (see below).
+    surface : list of dict or None
+        Per-trace surface= specs (hull rendering).
+    surface_colors : list or None
+        Resolved per-trace surface colors.
+    surface_point_colors : list or None
+        Optional (points, per-point RGB) bundles for hue-colored hulls.
+    density : list of dict or None
+        Per-trace density= specs (KDE shading).
+    density_colors : list or None
+        Resolved per-trace density colors.
+    morph_tags : list of bool or None
+        Which traces join an animate='morph' sequence.
+    morph_colors : list or None
+        Resolved per-trace colors for morph interpolation.
+    morph_samples : int or None
+        Optional point-count cap for morphing datasets.
+    font : matplotlib.font_manager.FontProperties or None
+        Resolved font (family name is applied to layout.font; see below).
+    label_alpha : float
+        Opacity of the label annotations' background box (default 0.5).
+    xlabel : str or None
+        x-axis title.
+    ylabel : str or None
+        y-axis title.
+    zlabel : str or None
+        z-axis title (3-D only; rejected upstream otherwise).
 
     `font` (GH #205): the ALREADY-RESOLVED `matplotlib.font_manager.
     FontProperties` from `hypertools.plot.fonts.resolve_font` (or `None`
@@ -406,6 +486,37 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     Returns the plotly Figure.
     """
     import plotly.graph_objects as go
+
+    # input validation (release-1.0 audit, F24-012): plot() always calls
+    # this with non-empty, already-reduced (<= 3-column) data and matching
+    # per-trace lists, but plotly_draw is publicly reachable (re-exported
+    # via the hypertools.plot.interactive shim) -- direct misuse previously
+    # surfaced as a bare IndexError (empty data / mismatched fmt) or
+    # SILENTLY drew only the first 3 columns of wider data.
+    if data is None or len(data) == 0:
+        raise ValueError(
+            "plotly_draw requires at least one dataset in `data`; got an "
+            "empty data list.")
+    for _i, _d in enumerate(data):
+        _shape = np.asarray(_d).shape
+        _ncols = _shape[1] if len(_shape) > 1 else 1
+        if len(_shape) not in (1, 2) or _ncols not in (1, 2, 3):
+            raise ValueError(
+                "plotly_draw supports 1-, 2-, or 3-column (already-"
+                f"reduced) datasets; data[{_i}] has shape {_shape}. Reduce "
+                "to <= 3 dimensions first (e.g. via hyp.plot's ndims=/"
+                "reduce=).")
+    if fmt is not None and len(fmt) != len(data):
+        raise ValueError(
+            f"fmt has {len(fmt)} entr{'y' if len(fmt) == 1 else 'ies'} but "
+            f"there are {len(data)} dataset(s); pass one format string per "
+            "dataset (or None).")
+    if kwargs_list is not None and len(kwargs_list) != len(data):
+        raise ValueError(
+            f"kwargs_list has {len(kwargs_list)} "
+            f"entr{'y' if len(kwargs_list) == 1 else 'ies'} but there are "
+            f"{len(data)} dataset(s); pass one kwargs dict per dataset "
+            "(or None).")
 
     fmt = fmt if fmt is not None else ['-'] * len(data)
     kwargs_list = kwargs_list if kwargs_list is not None else [{}] * len(data)
@@ -517,18 +628,25 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                       and surface[i] is not None
                       and not surface[i].get('keep_points', True))
 
-        # surface= (GH #109 rendering-fix), 3-D only: plotly cannot always
-        # correctly depth-composite Scatter3d points enclosed by an opaque
-        # Mesh3d surface (they can visibly "punch through" the mesh as a
-        # hole -- see `_trim_faces_inside_other_meshes`'s docstring for the
-        # full story and verification). Points this dataset's own surface
-        # encloses are dropped (set to NaN, plotly's standard "no point
-        # here" convention) from its marker/line trace instead -- they
-        # would be hidden behind the opaque surface anyway; any points the
-        # surface fails to enclose (smoothing/inflation only targets ~96%+
-        # containment, not 100%) are left visible as before.
+        # surface= (GH #109 rendering-fix), 3-D only, FULLY-OPAQUE surfaces
+        # only (release-1.0 audit, F07-001): plotly cannot always correctly
+        # depth-composite Scatter3d points enclosed by an opaque Mesh3d
+        # surface (they can visibly "punch through" the mesh as a hole --
+        # see `_trim_faces_inside_other_meshes`'s docstring for the full
+        # story and verification). Points a fully-opaque
+        # (alpha >= SURFACE_OPAQUE_ALPHA) surface encloses are dropped (set
+        # to NaN, plotly's standard "no point here" convention) from its
+        # marker/line trace instead -- they would be hidden behind the
+        # opaque surface anyway; any points the surface fails to enclose
+        # (smoothing/inflation targets ~99% containment, not 100%) are left
+        # visible as before. TRANSLUCENT surfaces (alpha < the threshold)
+        # never hide their points: the mesh now renders with real Mesh3d
+        # opacity (see `_mesh3d_trace`), so the data shows through it
+        # exactly like the matplotlib reference behavior.
         if (ndims >= 3 and not hide_points and surface is not None
-                and i < len(surface) and surface[i] is not None):
+                and i < len(surface) and surface[i] is not None
+                and surface[i].get('alpha', SURFACE_DEFAULTS['alpha'])
+                    >= SURFACE_OPAQUE_ALPHA):
             mesh = build_mesh_3d(arr[:, :3], surface[i], dataset_label=f' {i}',
                                  quiet=True)
             if mesh is not None:
@@ -951,6 +1069,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        surface=surface, surface_colors=surface_colors,
                        surface_trace_start=surface_trace_start_3d,
                        surface_dataset_indices=surface_dataset_indices,
+                       surface_point_colors=surface_point_colors,
                        data_trace_start=data_trace_start,
                        morph_tags=morph_tags, morph_colors=morph_colors,
                        morph_samples=morph_samples,
@@ -1118,11 +1237,21 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
         images[0].save(save_path, save_all=True, append_images=images[1:],
                        duration=frame_ms, loop=0)
     elif ext in ('png', 'apng'):
-        target = save_path if ext == 'png' else save_path[:-5] + '.png'
-        images[0].save(target, format='PNG', save_all=True,
-                       append_images=images[1:], duration=frame_ms, loop=0)
-        if target != save_path:
-            os.replace(target, save_path)
+        # write to a UNIQUE temporary .png and rename onto the requested
+        # name -- `save_path[:-5] + '.png'` silently destroyed a
+        # pre-existing sibling .png whenever the caller asked for .apng
+        # (release-1.0 audit, F09-002; same fix as animate._save_animation)
+        target_dir = os.path.dirname(os.path.abspath(save_path))
+        fd, tmp_path = tempfile.mkstemp(suffix='.png', dir=target_dir)
+        os.close(fd)
+        try:
+            images[0].save(tmp_path, format='PNG', save_all=True,
+                           append_images=images[1:], duration=frame_ms,
+                           loop=0)
+            os.replace(tmp_path, save_path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
     else:
         fps = max(1, int(round(float(frame_rate))))
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1180,21 +1309,58 @@ def _surface_base_rgb(spec, fallback_rgb):
     return fallback_rgb
 
 
+# `surface['alpha']` at/above this threshold renders through the
+# artifact-free OPAQUE path (alpha baked into the base color via
+# `_blend_toward_white`, enclosed data points hidden -- they would be
+# invisible behind the opaque mesh anyway); anything below it renders a
+# GENUINELY translucent Mesh3d so the enclosed data points stay visible,
+# exactly like the matplotlib reference behavior (release-1.0 audit,
+# F07-001: the point-hiding used to be unconditional, so a translucent
+# plotly surface showed no data at all). 0.999 (not 1.0 exactly) because
+# plotly's translucent rendering path engages -- speckle artifacts and all,
+# see `_blend_toward_white` -- for ANY opacity < 1, so near-1 alphas are
+# visually indistinguishable from 1.0 yet would pay its full artifact cost.
+SURFACE_OPAQUE_ALPHA = 0.999
+
+
+def _mesh_layer_opacity(alpha):
+    """Per-LAYER Mesh3d opacity for a translucent surface: every face is
+    emitted twice (both winding orders -- see `_mesh3d_trace`), so along any
+    line of sight the two coincident copies alpha-composite twice. Giving
+    each copy ``1 - sqrt(1 - alpha)`` makes the pair composite to exactly
+    the requested total `alpha` (``1 - (1 - o)**2 == alpha``), matching the
+    matplotlib renderer's single-layer (backface-culled) translucency -- and
+    the lower per-layer opacity also softens plotly's depth-sort speckle
+    (see `_blend_toward_white`), whose contrast scales with per-layer
+    opacity."""
+    return 1.0 - float(np.sqrt(max(0.0, 1.0 - float(alpha))))
+
+
 def _blend_toward_white(color_rgb, alpha):
     """Alpha-composite `color_rgb` over a white background (matching this
     module's `paper_bgcolor='white'`), returning the resulting flat RGB.
 
-    Used to FAKE a translucent look for the plotly surface mesh (GH #109
+    Used to FAKE a translucent look for the FULLY-OPAQUE
+    (``alpha >= SURFACE_OPAQUE_ALPHA``) plotly surface mesh (GH #109
     rendering-fix) instead of asking plotly's Mesh3d for real `opacity <
     1`: plotly's WebGL renderer has a documented, currently-unfixed
     depth-sorting limitation for translucent meshes
     (https://github.com/plotly/plotly.py/issues/3554 -- "an overlay of
     multiple transparent surfaces may not perfectly be sorted in depth by
-    the webgl API") that manifests as severe per-triangle speckle/faceting
+    the webgl API") that manifests as per-triangle speckle/faceting
     on these densely-tessellated smooth-hull meshes for ANY `opacity < 1`,
     even values as close to 1 as 0.999. Baking the requested alpha into an
     always-opaque color sidesteps that rendering path entirely -- plotly's
     own bug report confirms "setting opacity to 1 removes these artifacts".
+
+    Translucent surfaces (``alpha < SURFACE_OPAQUE_ALPHA``) no longer use
+    this blend (release-1.0 audit, F07-001): an opaque whitened mesh hides
+    the data points it encloses, so they now render with REAL Mesh3d
+    opacity (see `_mesh_layer_opacity`) against the dataset's true base
+    color -- accepting the (milder, per-layer-opacity-scaled) speckle as
+    the price of actually showing the data, exactly like the matplotlib
+    reference. The plot() docstring documents the trade-off and recommends
+    ``alpha=1.0`` where the artifacts are objectionable.
     """
     # array-aware so it handles BOTH a single (3,) base color and a per-VERTEX
     # (V, 3) color array (QC 2026-07 surface hue-per-vertex): each channel is
@@ -1225,14 +1391,19 @@ def _mesh3d_trace(go, verts, faces, color_rgb, opacity, view, light_kw):
     matplotlib renderer's own lighting model exactly, with hypertools'
     verified parameters.
 
-    `opacity` (the user-requested `surface['alpha']`) is NOT passed through
-    to plotly's own opacity/blending -- see `_blend_toward_white` -- the
-    trace is always rendered fully opaque (`opacity=1.0`), which plotly's
-    Mesh3d renders correctly and without artifacts. The alpha-composite
-    adjustment is instead baked into the base color BEFORE per-vertex
-    shading (so the shading itself is computed against the correct,
-    already-blended base color, exactly like the matplotlib path shades its
-    own unblended base color and then relies on real alpha compositing).
+    `opacity` (the user-requested `surface['alpha']`) is handled two ways
+    (release-1.0 audit, F07-001):
+
+    - ``opacity >= SURFACE_OPAQUE_ALPHA``: the trace is rendered fully
+      opaque (``opacity=1.0``), which plotly's Mesh3d renders correctly
+      and without artifacts; the alpha-composite adjustment is baked into
+      the base color BEFORE per-vertex shading (`_blend_toward_white`).
+    - ``opacity < SURFACE_OPAQUE_ALPHA``: the trace is GENUINELY
+      translucent -- per-layer ``opacity = 1 - sqrt(1 - alpha)`` (the
+      doubled winding composites twice; see `_mesh_layer_opacity`) against
+      the UNblended base color, exactly like the matplotlib path shades
+      its own unblended base color and relies on real alpha compositing --
+      so the data points the hull encloses stay visible through it.
 
     Double-sided (GH #109 round 2): plotly's Mesh3d back-face-culls each
     triangle independently against the camera. Our finely-tessellated
@@ -1267,13 +1438,18 @@ def _mesh3d_trace(go, verts, faces, color_rgb, opacity, view, light_kw):
     camera angle.
     """
     faces_both_windings = np.vstack([faces, faces[:, [0, 2, 1]]])
-    blended = _blend_toward_white(color_rgb, opacity)
-    vertexcolor = _vertexcolor_strings(verts, faces, blended, view, light_kw)
+    if opacity >= SURFACE_OPAQUE_ALPHA:
+        base_rgb = _blend_toward_white(color_rgb, opacity)
+        trace_opacity = 1.0
+    else:
+        base_rgb = np.asarray(color_rgb, dtype=float)
+        trace_opacity = _mesh_layer_opacity(opacity)
+    vertexcolor = _vertexcolor_strings(verts, faces, base_rgb, view, light_kw)
     return go.Mesh3d(
         x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
         i=faces_both_windings[:, 0], j=faces_both_windings[:, 1],
         k=faces_both_windings[:, 2],
-        vertexcolor=vertexcolor, opacity=1.0, flatshading=False,
+        vertexcolor=vertexcolor, opacity=trace_opacity, flatshading=False,
         lighting=PLOTLY_IDENTITY_LIGHTING, lightposition=PLOTLY_LIGHTPOSITION,
         hoverinfo='skip', showlegend=False, showscale=False)
 
@@ -1584,8 +1760,16 @@ def _mesh3d_geometry_update(go, verts, faces, color_rgb, opacity, view, light_kw
     `view`, the direction-towards-camera vector for THIS frame's angle.
     """
     faces_both_windings = np.vstack([faces, faces[:, [0, 2, 1]]])
-    blended = _blend_toward_white(color_rgb, opacity)
-    vertexcolor = _vertexcolor_strings(verts, faces, blended, view, light_kw)
+    # match _mesh3d_trace's opacity handling (release-1.0 audit, F07-001):
+    # a translucent base trace carries REAL Mesh3d opacity (which persists
+    # across frame updates), so its per-frame vertexcolor must be computed
+    # from the UNblended base color; only the fully-opaque path bakes the
+    # alpha into the color.
+    if opacity >= SURFACE_OPAQUE_ALPHA:
+        base_rgb = _blend_toward_white(color_rgb, opacity)
+    else:
+        base_rgb = np.asarray(color_rgb, dtype=float)
+    vertexcolor = _vertexcolor_strings(verts, faces, base_rgb, view, light_kw)
     return go.Mesh3d(x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
                      i=faces_both_windings[:, 0], j=faces_both_windings[:, 1],
                      k=faces_both_windings[:, 2], vertexcolor=vertexcolor)
@@ -1674,8 +1858,6 @@ def _colorbar_trace(go, colorbar_info, ndims, legend_present):
     controls which side of the plot the colorbar sits on; the default
     ('right') is pushed further right than an existing legend so the two
     never overlap (mirrors the matplotlib backend's `_add_right_colorbar`)."""
-    from .colors import get_palette_colors
-
     location = colorbar_info.get('location', 'right')
     # x: horizontal anchor for a vertical colorbar (location in
     # ('left', 'right')); orientation='h' + y for a horizontal one (top/bottom)
@@ -1696,7 +1878,12 @@ def _colorbar_trace(go, colorbar_info, ndims, legend_present):
         cb['title'] = dict(text=colorbar_info['label'])
 
     if colorbar_info['kind'] == 'continuous':
-        colors = get_palette_colors(colorbar_info['palette'], 100)
+        # `continuous_colormap` (not `get_palette_colors`): the continuous
+        # value mapping trims cyclic palettes so its endpoints stay
+        # distinguishable (release-1.0 audit, F01-013) -- the colorbar must
+        # show exactly the colors `mat2colors` assigned to the points.
+        from .colors import continuous_colormap
+        colors = continuous_colormap(colorbar_info['palette']).colors
         colorscale = _colors_to_plotly_colorscale(colors)
         cmin, cmax = colorbar_info['vmin'], colorbar_info['vmax']
         if colorbar_info.get('ticks') is not None:
@@ -1819,7 +2006,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    surface_dataset_indices=None, data_trace_start=0,
                    morph_tags=None, morph_colors=None, morph_samples=None,
                    morph_trace_start=None, morph_mesh_trace_start=None,
-                   morph_surface_spec=None):
+                   morph_surface_spec=None, surface_point_colors=None):
     """Attach frames + play controls: 'spin' rotates the camera; True /
     'parallel' reveals trajectories through a sliding time window; 'morph'
     eases the single traveling point-cloud trace (+ mesh, if surfaced)
@@ -1837,6 +2024,11 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     'serial') or its precomputed full-data mesh ('spin', where only the
     camera moves) -- `surface_trace_start` + an index into
     `surface_dataset_indices` gives that trace's position in `fig.data`.
+    `surface_point_colors` (release-1.0 audit, F07-005): the same
+    per-dataset ``(points, per_point_rgb)`` hue bundles `plotly_draw`'s
+    static path uses -- when present, every frame's mesh update keeps the
+    per-vertex hue coloring (windowed to the frame's visible slice for
+    'parallel'/'serial') instead of falling back to a flat mean color.
 
     `trail_trace_start`: the actual `fig.data` index where the trail traces
     (chemtrails/precog/bullettime) begin, as recorded by `plotly_draw`. This
@@ -1885,13 +2077,21 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
         else []
     )
 
-    def _surface_frame_data(windows_by_index, angle):
+    def _surface_frame_data(windows_by_index, angle,
+                            window_colors_by_index=None):
         """One Mesh3d geometry update per surfaced dataset, built from
         `windows_by_index[dataset_idx]` (that dataset's current window),
         shaded (GH #109 round 3) from `angle` -- THIS frame's camera azimuth
         (the camera rotates every frame in every animate mode, matching the
         matplotlib renderer -- see `_shade_and_cull_3d`), so the vertex
-        colors stay lit consistently with wherever the camera actually is."""
+        colors stay lit consistently with wherever the camera actually is.
+
+        `window_colors_by_index` (release-1.0 audit, F07-005): optional
+        ``{dataset_idx: per_point_rgb}`` dict, windowed to the SAME slice
+        as `windows_by_index` -- when present for a dataset, the mesh keeps
+        the per-vertex hue coloring static plots use
+        (`vertex_colors_from_points`) instead of falling back to one flat
+        (for a rainbow hue: gray) mean color."""
         view = view_vector(elev, angle)
         out = []
         for i in surface_dataset_indices:
@@ -1907,14 +2107,31 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 out.append(_degenerate_mesh3d_update(go, pt, base_rgb))
             else:
                 v, f = mesh
+                cols = (window_colors_by_index or {}).get(i)
+                if cols is not None and len(cols) == len(pts):
+                    base_rgb = vertex_colors_from_points(v, pts, cols)
                 out.append(_mesh3d_geometry_update(
                     go, v, f, base_rgb, spec['alpha'], view, light_kw))
         return out
+
+    def _window_colors(idx, start, stop):
+        """Dataset `idx`'s per-point hue RGB array sliced to the
+        ``[start:stop]`` row window (rows are aligned 1:1 with `data[idx]`
+        -- both come from the same post-interpolation `xform`; see
+        `plot.py`'s `surface_point_colors` construction), or ``None`` if
+        that dataset has no per-point hue colors (F07-005)."""
+        if not surface_point_colors or idx >= len(surface_point_colors):
+            return None
+        spc = surface_point_colors[idx]
+        if spc is None:
+            return None
+        return np.asarray(spc[1])[start:stop]
 
     if animate == 'spin' and ndims >= 3:
         # the FULL dataset is static in 'spin' mode (only the camera
         # rotates) -- precompute each surfaced dataset's mesh once
         spin_meshes = None
+        spin_base_rgbs = None
         if surface_trace_indices:
             spin_meshes = [
                 build_mesh_3d(
@@ -1922,6 +2139,23 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     surface[i], dataset_label=f' {i}', quiet=True)
                 for i in surface_dataset_indices
             ]
+            # per-vertex hue coloring (F07-005): 'spin' draws the FULL
+            # dataset every frame with a frozen mesh, so each surfaced
+            # dataset's per-vertex base colors are computed ONCE here (only
+            # the per-frame Blinn-Phong shading changes with the camera) --
+            # matching the static path's `_build_surface_traces_3d` exactly.
+            spin_base_rgbs = []
+            for idx, mesh in zip(surface_dataset_indices, spin_meshes):
+                flat_rgb = _surface_base_rgb(surface[idx], surface_colors[idx])
+                cols = _window_colors(idx, 0, None)
+                if mesh is not None and cols is not None:
+                    pts_i = np.atleast_2d(
+                        np.asarray(data[idx], dtype=np.float64))[:, :3]
+                    if len(cols) == len(pts_i):
+                        spin_base_rgbs.append(vertex_colors_from_points(
+                            mesh[0], pts_i, cols))
+                        continue
+                spin_base_rgbs.append(flat_rgb)
         for k in range(n_frames):
             angle = azim + 360.0 * rotations * k / n_frames
             frame_kwargs = dict(
@@ -1939,12 +2173,16 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 # still at the FIRST frame's angle while visibly orbiting.
                 view = view_vector(elev, angle)
                 surf_data = []
-                for idx, mesh in zip(surface_dataset_indices, spin_meshes):
+                for j, (idx, mesh) in enumerate(
+                        zip(surface_dataset_indices, spin_meshes)):
                     spec = surface[idx]
-                    base_rgb = _surface_base_rgb(spec, surface_colors[idx])
+                    # per-vertex hue colors precomputed once above
+                    # (F07-005); flat dataset color otherwise
+                    base_rgb = spin_base_rgbs[j]
                     if mesh is None:
                         surf_data.append(_degenerate_mesh3d_update(
-                            go, np.zeros(3), base_rgb))
+                            go, np.zeros(3),
+                            _surface_base_rgb(spec, surface_colors[idx])))
                     else:
                         v, f = mesh
                         light_kw = mpl_lighting_kwargs(spec)
@@ -2046,11 +2284,15 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             revealed = total_points * k / max(1, n_frames - 1)
             frame_traces = []
             windows_by_index = {}
+            window_colors_by_index = {}
             for idx, (arr, start) in enumerate(zip(data, starts)):
                 arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
                 shown = int(np.clip(revealed - start, 0, arr.shape[0]))
                 seg = arr[:shown]
                 windows_by_index[idx] = seg
+                cols = _window_colors(idx, 0, shown)
+                if cols is not None:
+                    window_colors_by_index[idx] = cols
                 if ndims >= 3:
                     frame_traces.append(go.Scatter3d(
                         x=seg[:, 0], y=seg[:, 1], z=seg[:, 2]))
@@ -2067,7 +2309,9 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     scene_camera=dict(eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
             if surface_trace_indices:
                 frame_kwargs['data'] = (list(frame_kwargs['data'])
-                                        + _surface_frame_data(windows_by_index, angle))
+                                        + _surface_frame_data(
+                                            windows_by_index, angle,
+                                            window_colors_by_index))
                 frame_kwargs['traces'] = (list(frame_kwargs['traces'])
                                           + surface_trace_indices)
             frames.append(go.Frame(**frame_kwargs))
@@ -2108,10 +2352,14 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             start = max(0, end - window)
             frame_traces = []
             windows_by_index = {}
+            window_colors_by_index = {}
             for idx, arr in enumerate(data):
                 arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
                 seg = arr[start:min(end, arr.shape[0])]
                 windows_by_index[idx] = seg
+                cols = _window_colors(idx, start, min(end, arr.shape[0]))
+                if cols is not None:
+                    window_colors_by_index[idx] = cols
                 if ndims >= 3:
                     frame_traces.append(go.Scatter3d(
                         x=seg[:, 0], y=seg[:, 1], z=seg[:, 2]))
@@ -2166,7 +2414,9 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     scene_camera=dict(eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
             if surface_trace_indices:
                 frame_kwargs['data'] = (list(frame_kwargs['data'])
-                                        + _surface_frame_data(windows_by_index, angle))
+                                        + _surface_frame_data(
+                                            windows_by_index, angle,
+                                            window_colors_by_index))
                 frame_kwargs['traces'] = (list(frame_kwargs['traces'])
                                           + surface_trace_indices)
             frames.append(go.Frame(**frame_kwargs))

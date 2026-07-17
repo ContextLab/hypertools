@@ -170,7 +170,15 @@ def normalize_density_arg(density):
     ValueError
         `density` is a dict with an unknown key, or is not one of the
         accepted forms (``None``, a bool, or a dict).
+
+    Notes
+    -----
+    numpy bools (``np.True_``/``np.False_``) are accepted anywhere a
+    Python bool is, matching ``per_group``'s tolerance (release-1.0
+    audit, F07-008).
     """
+    if isinstance(density, np.bool_):
+        density = bool(density)
     if density is None or density is False:
         return None
     if density is True:
@@ -213,6 +221,21 @@ def fit_kde(points, dataset_label=""):
         warnings.warn(
             f"density: dataset{dataset_label} has fewer than 3 points "
             "(need >= 3 to fit a KDE); skipping its density."
+        )
+        return None
+    # explicit degeneracy check (release-1.0 audit, D11-009): relying on
+    # gaussian_kde to raise was VALUE-dependent -- for some duplicate-point
+    # inputs the covariance is only NUMERICALLY (not exactly) singular and
+    # gaussian_kde "succeeds" silently. Rank-check the centered points so
+    # duplicate/collinear/coplanar data is always detected, whatever its
+    # values; the try/except below stays as a backstop.
+    centered = points - points.mean(axis=0)
+    if np.linalg.matrix_rank(centered) < points.shape[1]:
+        warnings.warn(
+            f"density: dataset{dataset_label} is degenerate (the points "
+            f"span fewer than {points.shape[1]} dimensions -- e.g. "
+            "duplicate, collinear, or coplanar points); skipping its "
+            "density."
         )
         return None
     try:

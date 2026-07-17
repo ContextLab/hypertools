@@ -118,13 +118,19 @@ def test_discrete_colorbar_mpl_matches_group_colors_and_legend_labels():
     plt.close(fig)
 
 
-def test_discrete_colorbar_default_labels_are_1_to_n_mpl():
+def test_discrete_colorbar_default_labels_are_category_names_mpl():
+    # release-1.0 audit F02-007: a categorical hue's category names are
+    # KNOWN whether or not legend=True was also passed, so the colorbar
+    # shows them directly (previously it fell back to 1..n unless a
+    # redundant legend was requested). The 1..n fallback is still
+    # exercised by test_discrete_colorbar_list_of_datasets_no_hue_mpl
+    # (multiple datasets, no hue -> no names available).
     x, hue = _discrete_hue_data()
     fig = hyp.plot(x, hue=hue, colorbar=True, show=False)  # no legend=
     plt.close(fig)
     _, cbar_ax = fig.axes
     labels = [t.get_text() for t in cbar_ax.get_yticklabels()]
-    assert labels == ['1', '2', '3']
+    assert labels == ['a', 'b', 'c']
 
 
 def test_discrete_colorbar_list_of_datasets_no_hue_mpl():
@@ -226,7 +232,10 @@ def test_continuous_colorbar_plotly_matches_palette():
     cb_trace = fig.data[-1]
     assert cb_trace.marker.showscale is True
 
-    expected = get_palette_colors('hls', 100)
+    # continuous mapping: cyclic palettes are trimmed so the colorbar's
+    # two ends stay distinguishable (release-1.0 audit, F01-013) -- the
+    # ground truth is the SAME continuous colormap mat2colors uses
+    expected = continuous_colormap('hls').colors
     first_stop, first_color = cb_trace.marker.colorscale[0]
     last_stop, last_color = cb_trace.marker.colorscale[-1]
     assert first_stop == pytest.approx(0.0)
@@ -258,7 +267,9 @@ def test_discrete_colorbar_plotly_matches_groups():
     cb_trace = fig.data[-1]
 
     assert list(cb_trace.marker.colorbar.tickvals) == [2, 1, 0]
-    assert list(cb_trace.marker.colorbar.ticktext) == ['1', '2', '3']
+    # release-1.0 audit F02-007: category names are shown without needing
+    # legend=True (previously '1'/'2'/'3' unless a legend was also drawn)
+    assert list(cb_trace.marker.colorbar.ticktext) == ['a', 'b', 'c']
     assert cb_trace.marker.cmin == pytest.approx(-0.5)
     assert cb_trace.marker.cmax == pytest.approx(2.5)
 

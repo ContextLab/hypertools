@@ -58,10 +58,13 @@ class HyperAnimation(tuple):
 
     def save(self, filename, *args, **kwargs):
         """Save the animation to a file. The writer is chosen by file extension
-        -- gif and png/apng (animated PNG) via Pillow, .svg as a frame-capped
-        vector animation, .mp4/.mov/.avi via ffmpeg -- matching what
-        ``hyp.plot(..., save_path=...)`` supports. Passing an explicit ``writer``
-        (or positional args) delegates straight to
+        -- .gif and .png/.apng (animated PNG) via Pillow, .svg as a
+        frame-capped vector animation, .mp4/.mov/.avi/.m4v/.mkv via ffmpeg
+        (only the video formats need ffmpeg) -- matching what
+        ``hyp.plot(..., save_path=...)`` supports; any other extension raises
+        ``ValueError`` naming the supported formats. ``filename`` may be a
+        str or any path-like (e.g. ``pathlib.Path``). Passing an explicit
+        ``writer`` (or positional args) delegates straight to
         ``matplotlib.animation.Animation.save`` instead.
 
         QC 2026-07: ``.save('x.svg')`` / ``.save('x.png')`` used to crash (raw

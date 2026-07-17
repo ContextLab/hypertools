@@ -23,6 +23,7 @@ import os
 import warnings
 
 import numpy as np
+import pandas as pd
 import matplotlib.font_manager as font_manager
 from matplotlib.font_manager import FontProperties
 from matplotlib.ft2font import FT2Font
@@ -57,7 +58,10 @@ _font_load_failures = set()
 
 def _iter_texts(obj):
     """Recursively yield every string found in `obj`, which may be a bare
-    string, `None`, a numpy array (e.g. a categorical `hue=`), or an
+    string, `None`, a numpy array, a pandas Series/Index/Categorical (e.g.
+    a categorical `hue=` -- previously silently skipped, so CJK labels
+    passed as a Series rendered as tofu while the identical list worked;
+    release-1.0 audit, F24-014), a dict (its values are scanned), or an
     arbitrarily nested list/tuple of the above (the shapes `labels=`/
     `legend=`/colorbar tick lists/`hue=` can take). Non-string,
     non-container leaves (numbers, bools, ...) are ASCII-only by
@@ -66,8 +70,11 @@ def _iter_texts(obj):
         return
     if isinstance(obj, str):
         yield obj
-    elif isinstance(obj, np.ndarray):
-        for item in obj.tolist():
+    elif isinstance(obj, (np.ndarray, pd.Series, pd.Index, pd.Categorical)):
+        for item in np.asarray(obj).tolist():
+            yield from _iter_texts(item)
+    elif isinstance(obj, dict):
+        for item in obj.values():
             yield from _iter_texts(item)
     elif isinstance(obj, (list, tuple)):
         for item in obj:
@@ -114,11 +121,31 @@ def _font_covers(fname, codepoints):
         return False
 
 
+def _weight_style_key(entry):
+    """Sort key preferring REGULAR-looking faces within a family: upright
+    styles first, then weights closest to 400 (regular), then filename for
+    determinism. Previously each family's files were ordered by filename
+    alone, which on macOS put 'Hiragino ... W0.ttc' (weight 100,
+    hairline-thin) ahead of the regular W4 face, so auto-detected CJK text
+    rendered ultra-light next to regular-weight ASCII (release-1.0 audit,
+    F24-008)."""
+    weight = entry.weight
+    if isinstance(weight, str):
+        weight = font_manager.weight_dict.get(weight, 400)
+    try:
+        weight = int(weight)
+    except (TypeError, ValueError):
+        weight = 400
+    style_penalty = 0 if entry.style == 'normal' else 1
+    return (style_penalty, abs(weight - 400), entry.fname)
+
+
 def _ordered_font_entries():
     """Every `ttflist` entry, preferred CJK/pan-Unicode families first (in
     `_PREFERRED_FAMILIES` order, each family's own multiple weight/style
-    files sorted by filename for determinism), then everything else
-    (sorted by family name, then filename)."""
+    files sorted regular-weight-first via `_weight_style_key`), then
+    everything else (sorted by family name, then the same
+    regular-weight-first key)."""
     ttflist = font_manager.fontManager.ttflist
     by_name = {}
     for entry in ttflist:
@@ -129,11 +156,12 @@ def _ordered_font_entries():
     for name in _PREFERRED_FAMILIES:
         entries = by_name.get(name)
         if entries:
-            ordered.extend(sorted(entries, key=lambda e: e.fname))
+            ordered.extend(sorted(entries, key=_weight_style_key))
             seen_names.add(name)
 
     remaining = [e for e in ttflist if e.name not in seen_names]
-    ordered.extend(sorted(remaining, key=lambda e: (e.name, e.fname)))
+    ordered.extend(sorted(remaining,
+                          key=lambda e: (e.name,) + _weight_style_key(e)))
     return ordered
 
 
@@ -192,15 +220,17 @@ def resolve_font(font, texts):
       ASCII-only plot gets `None` back (no override, byte-identical
       rendering to before this feature existed).
     - a `str`: either an installed font FAMILY NAME (resolved via
-      matplotlib's font lookup) or a path to a `.ttf`/`.otf`/`.ttc` FILE
+      matplotlib's font lookup; hyphenated and generic names like
+      'sans-serif' work) or a path to a `.ttf`/`.otf`/`.ttc` FILE
       (detected by `os.path.exists`, so relative and absolute paths both
-      work).
+      work; the file is verified to be a loadable font HERE, not at
+      draw time).
     - a `matplotlib.font_manager.FontProperties` instance: passed through
       unchanged.
 
     Raises `ValueError` if `font` is a string that is neither an existing
-    file path nor a family name matplotlib can resolve, listing what was
-    tried.
+    loadable font file nor a family name matplotlib can resolve, listing
+    what was tried.
     """
     if isinstance(font, FontProperties):
         return font
@@ -217,9 +247,27 @@ def resolve_font(font, texts):
                     f"font={font!r} looks like a font file path (based on "
                     f"its extension) but no such file exists."
                 )
+            # validate NOW that the file is actually a loadable font --
+            # otherwise the failure surfaces much later, at draw/save time,
+            # as a cryptic ft2font 'RuntimeError: Can not load face' that
+            # never mentions font= (release-1.0 audit, F24-003)
+            try:
+                FT2Font(font)
+            except Exception as exc:
+                raise ValueError(
+                    f"font={font!r} exists but is not a loadable font file "
+                    f"({exc}); pass a valid .ttf/.otf/.ttc font file, an "
+                    f"installed font family name, or a "
+                    f"matplotlib.font_manager.FontProperties instance."
+                ) from exc
             return FontProperties(fname=font)
 
-        fp = FontProperties(family=font)
+        # family passed as a LIST: a bare string family is parsed by
+        # matplotlib as a fontconfig PATTERN, so any hyphenated name --
+        # including the generic 'sans-serif' -- crashed with an uncaught
+        # ParseException before the guarded lookup below ever ran
+        # (release-1.0 audit, F24-001)
+        fp = FontProperties(family=[font])
         try:
             font_manager.findfont(fp, fallback_to_default=False)
         except Exception as exc:

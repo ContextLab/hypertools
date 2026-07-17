@@ -11,40 +11,111 @@ import matplotlib.animation as animation
 from .._shared.animated_svg import combine_frames_svg
 
 
+# video containers the ffmpeg writer (h264) can mux into
+_FFMPEG_EXTENSIONS = ('mp4', 'mov', 'avi', 'm4v', 'mkv')
+# every extension _save_animation understands, for error messages
+_SUPPORTED_ANIMATION_EXTENSIONS = (
+    '.gif, .png/.apng (animated PNG), .svg (animated vector graphics), '
+    'and -- with FFmpeg installed -- '
+    + '/'.join('.' + e for e in _FFMPEG_EXTENSIONS)
+)
+
+
+class _RealTimePillowWriter(animation.PillowWriter):
+    """PillowWriter whose per-frame delays cumulatively round onto the
+    format's timing grid, so total playback matches the requested duration.
+
+    GIF stores per-frame delays in centiseconds; the stock PillowWriter
+    writes a single ``int(1000 / fps)`` delay for every frame, so e.g. the
+    default ``frame_rate=30`` (33.33 ms/frame) lands on the 10 ms grid as
+    30 ms/frame and the whole animation plays ~10% fast (release-1.0 audit,
+    F04-010: 27 s for a requested 30 s). Cumulative rounding instead
+    alternates 30/40 ms so every frame's cumulative timestamp stays within
+    half a grid step of exact -- total wall-clock error is bounded by
+    ``grid_ms / 2`` regardless of length. ``grid_ms=10`` matches GIF;
+    APNG delays are stored in (at least) milliseconds, so ``grid_ms=1``.
+    """
+
+    def __init__(self, *args, grid_ms=10, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._grid_ms = max(1, int(grid_ms))
+
+    def finish(self):
+        """Write the buffered frames with cumulative-rounded per-frame
+        durations (see class docstring) instead of PillowWriter's single
+        truncated duration, so total playback time stays within grid_ms/2
+        of the requested ``len(frames) / fps`` seconds."""
+        per_frame_ms = 1000.0 / self.fps
+        grid = self._grid_ms
+        durations, prev = [], 0
+        for i in range(1, len(self._frames) + 1):
+            cum = int(round(i * per_frame_ms / grid)) * grid
+            durations.append(cum - prev)
+            prev = cum
+        self._frames[0].save(
+            self.outfile, save_all=True, append_images=self._frames[1:],
+            duration=durations, loop=0)
+
+
 def _save_animation(line_ani, save_path, frame_rate):
     """Save a matplotlib animation, choosing the writer by file extension.
 
     .gif and .png/.apng use PillowWriter (no ffmpeg required; Pillow writes
-    animated PNGs when the extension is .png/.apng); .mp4/.mov/.avi and
-    anything else use the ffmpeg writer, matching hypertools' historical
-    behavior.
+    animated PNGs when the extension is .png/.apng); .svg builds a
+    SMIL-animated vector file; .mp4/.mov/.avi/.m4v/.mkv use the ffmpeg
+    writer. Any other extension raises ``ValueError`` naming the supported
+    formats (release-1.0 audit, F04-011/F05-013: unknown extensions -- and
+    paths with NO extension -- previously fell through to ffmpeg and
+    surfaced as a raw ``CalledProcessError`` dumping the ffmpeg command
+    line).
     """
-    # gif / apng / video writers save EVERY animation frame (no subsampling)
-    # at fps=frame_rate, so an exported file plays in real time: its
-    # save_count (== frame_rate * duration) frames at 1000/frame_rate ms each
-    # total ~= duration seconds. Only the vector (SVG) writer subsamples, to
-    # bound file size. Do not subsample the raster/video paths or playback
-    # would run too fast.
-    ext = save_path.lower().rsplit('.', 1)[-1]
+    # gif / apng / video writers save EVERY animation frame (no subsampling),
+    # with per-frame delays that cumulatively track 1000/frame_rate ms (see
+    # _RealTimePillowWriter), so an exported file plays in real time: its
+    # save_count (== frame_rate * duration) frames total ~= duration seconds
+    # within the format's timing grid. Only the vector (SVG) writer
+    # subsamples, to bound file size. Do not subsample the raster/video
+    # paths or playback would run too fast.
+    import os
+    save_path = os.fspath(save_path)  # pathlib.Path works too (F09-004)
+    ext = os.path.splitext(save_path)[1].lower().lstrip('.')
     if ext == 'svg':
         _save_animated_svg(line_ani, save_path, frame_rate)
     elif ext == 'gif':
-        line_ani.save(save_path, writer=animation.PillowWriter(fps=frame_rate))
+        line_ani.save(save_path,
+                      writer=_RealTimePillowWriter(fps=frame_rate,
+                                                   grid_ms=10))
     elif ext in ('png', 'apng'):
         # Pillow emits an animated PNG (APNG) for multi-frame PNG saves,
-        # but only recognizes the .png extension -- write to .png and
-        # rename if the caller asked for .apng
-        import os
-        target = save_path
-        if ext == 'apng':
-            target = save_path[:-5] + '.png'
-        line_ani.save(target, writer=animation.PillowWriter(fps=frame_rate))
-        if target != save_path:
-            os.replace(target, save_path)
-    else:
+        # but only recognizes the .png extension -- write to a UNIQUE
+        # temporary .png in the target directory and rename it onto the
+        # requested name. (Release-1.0 audit, F09-002: writing to
+        # `save_path[:-5] + '.png'` silently destroyed a pre-existing
+        # sibling `.png` file whenever the caller asked for `.apng`.)
+        import tempfile
+        target_dir = os.path.dirname(os.path.abspath(save_path))
+        fd, tmp_path = tempfile.mkstemp(suffix='.png', dir=target_dir)
+        os.close(fd)
+        try:
+            line_ani.save(tmp_path,
+                          writer=_RealTimePillowWriter(fps=frame_rate,
+                                                       grid_ms=1))
+            os.replace(tmp_path, save_path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+    elif ext in _FFMPEG_EXTENSIONS:
         Writer = animation.writers["ffmpeg"]
         writer = Writer(fps=frame_rate, bitrate=1800)
         line_ani.save(save_path, writer=writer)
+    else:
+        what = f"extension {'.' + ext!r}" if ext else "missing extension"
+        raise ValueError(
+            f"unsupported animation save format ({what}) for "
+            f"{save_path!r}; supported extensions are "
+            f"{_SUPPORTED_ANIMATION_EXTENSIONS}. (For a static image "
+            "instead, pass animate=False.)"
+        )
 
 
 class _SVGFrameCollector(animation.AbstractMovieWriter):

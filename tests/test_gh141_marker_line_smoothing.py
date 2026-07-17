@@ -21,15 +21,15 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import hypertools as hyp
-from hypertools._shared.helpers import center, scale, interp_array_list, \
-    has_line_component
+from hypertools._shared.helpers import center, scale, has_line_component
+# the data-faithful STATIC line interpolator (release-1.0 audit, F01-001):
+# static smoothing now keeps every original sample as a drawn vertex and no
+# longer depends on the animation frame_rate/duration kwargs, so the ground
+# truth below mirrors plot.py by calling the same function.
+from hypertools.plot.plot import _interp_static_line
 from hypertools.tools.format_data import format_data
 from hypertools.tools.analyze import analyze
 from hypertools.reduce.reduce import reduce as reducer
-
-FRAME_RATE = 30
-DURATION = 30
-
 
 def _lines_for(fmt, data, **kwargs):
     fig = hyp.plot(data, fmt, animate=False, show=False, **kwargs)
@@ -67,8 +67,7 @@ def _expected_line_and_raw(fmt, data, ndims=3):
 
     n = xform[0].shape[0]
     if has_line_component(fmt) and n > 1:
-        interp_val = FRAME_RATE * DURATION / (n - 1)
-        xform = interp_array_list(xform, interp_val=interp_val)
+        xform = [_interp_static_line(xi) for xi in xform]
 
     stacked = np.vstack(xform)
     mean = np.mean(stacked, 0)

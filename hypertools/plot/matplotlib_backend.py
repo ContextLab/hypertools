@@ -8,6 +8,17 @@ import matplotlib
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import proj3d
+
+# matplotlib's own fmt-string parser (returns (linestyle, marker, color)
+# with 'None' sentinels where the fmt pins a component off) -- private but
+# stable for 15+ years; used so hypertools' marker+line fmt splitting
+# resolves color letters and linestyles exactly per the fmt grammar
+# (release-1.0 audit, F01-003/F01-009). Guarded so a future matplotlib
+# relocation degrades to the historical behavior instead of crashing.
+try:
+    from matplotlib.axes._base import _process_plot_format
+except ImportError:  # pragma: no cover
+    _process_plot_format = None
 import matplotlib.animation as animation
 import matplotlib.patches as patches
 from .._shared.helpers import *
@@ -216,14 +227,39 @@ def _build_mesh_list(points_list, surface, quiet=False):
 
 
 def _mesh_and_draw_3d(ax, points_list, surface, surface_colors, elev, azim,
-                      prior_colls=None, quiet=False):
+                      prior_colls=None, quiet=False,
+                      surface_point_colors=None):
     """Build fresh meshes from the CURRENT per-dataset point windows
     (`points_list`) and delegate to `_shade_and_cull_3d`. Used whenever the
     visible point window changes (static plots; 'parallel'/'serial'
-    animation frames)."""
+    animation frames).
+
+    `surface_point_colors` (release-1.0 audit, F07-005): optional list, one
+    entry per dataset, of ``(points, per_point_rgb)`` WINDOWED to the same
+    slice as `points_list` -- forwarded to `_shade_and_cull_3d` so animated
+    hue'd surfaces keep the same per-vertex hue coloring static plots use
+    (previously animation frames dropped it, rendering a rainbow-hue hull
+    flat gray)."""
     mesh_list = _build_mesh_list(points_list, surface, quiet=quiet)
     return _shade_and_cull_3d(ax, mesh_list, surface, surface_colors, elev,
-                              azim, prior_colls=prior_colls)
+                              azim, prior_colls=prior_colls,
+                              surface_point_colors=surface_point_colors)
+
+
+def _window_surface_point_colors(surface_point_colors, i, start, stop):
+    """Slice dataset `i`'s ``(points, per_point_rgb)`` hue-color bundle to
+    the ``[start:stop]`` row window an animation frame is drawing -- rows of
+    the bundle are aligned 1:1 with the drawn dataset's rows (both come
+    from the same post-interpolation `xform`; see `plot.py`'s
+    `surface_point_colors` construction) -- or ``None`` if that dataset has
+    no per-point hue colors (release-1.0 audit, F07-005)."""
+    if not surface_point_colors or i >= len(surface_point_colors):
+        return None
+    spc = surface_point_colors[i]
+    if spc is None:
+        return None
+    pts, cols = spc
+    return (np.asarray(pts)[start:stop], np.asarray(cols)[start:stop])
 
 
 def _fill_and_draw_2d(ax, points_list, surface, surface_colors):
@@ -262,6 +298,56 @@ def _anim_box_zoom(zoom):
     Static plots are unaffected: they use the default box aspect (zoom=1).
     """
     return 9.0 / max(0.5, 9.0 - zoom)
+
+
+def _anim_window_bounds(num, total_frames, n_points, window_frames):
+    """Map animation frame `num` (of `total_frames`) onto one dataset's
+    row indices for the parallel/'window' styles.
+
+    Animations are paced by the FRAME grid (``total_frames ==
+    round(frame_rate * duration)``), not by any single dataset's row count:
+    line datasets are pre-interpolated onto that exact grid by ``plot.py``
+    (identity mapping), while marker-only and 1-point datasets keep their
+    raw rows and are paced here instead (release-1.0 audit: F04-003
+    multi-dataset truncation, F04-005/F05-010 marker-only pacing, F05-012
+    single-point datasets).
+
+    Parameters
+    ----------
+    num : int
+        Current frame index, ``0 <= num < total_frames``.
+    total_frames : int
+        Total number of animation frames.
+    n_points : int
+        This dataset's row count.
+    window_frames : int
+        The opaque head window's length in frames.
+
+    Returns
+    -------
+    tuple of (int, int, int)
+        ``(start, end, trail_stop)``: the head window is ``data[start:end]``
+        (up to ``window_frames + 1`` rows, frozen at the trajectory's end
+        once the dataset is fully revealed -- a shorter dataset never
+        vanishes mid-animation), and a chemtrails trail is
+        ``data[0:trail_stop]`` -- 0 rows until the head window actually
+        starts sliding (F05-001: the historical ``num - window + 1`` stop
+        went NEGATIVE for early frames, so Python's negative indexing drew
+        nearly the whole FUTURE trajectory as a "past" trail, then blinked
+        empty). A precog trail is ``data[end - 1:]`` (sharing the head's
+        last vertex, so there is no one-segment gap -- F05-008).
+    """
+    total = max(1, int(total_frames))
+    end = int(np.ceil((num + 1) * n_points / total))
+    end = max(1, min(n_points, end))
+    if n_points == total:
+        w = int(window_frames)
+    else:
+        # rescale the window (given in frames) onto this dataset's rows
+        w = int(round(window_frames * n_points / total))
+    start = max(0, end - 1 - w)
+    trail_stop = max(0, end - w)
+    return start, end, trail_stop
 
 
 def _make_save_dpi_safe(line_ani):
@@ -447,21 +533,48 @@ def _draw(
         if f is None:
             ax.plot(*coords, **ikwargs)
             return
+        # resolve the fmt string with matplotlib's OWN parser so a color
+        # letter (the 'r' in 'ro-') is honored exactly per the fmt grammar
+        # (release-1.0 audit, F01-003: split combo styles silently dropped
+        # it), and so every component can be passed as an explicit kwarg --
+        # passing a positional fmt ALONGSIDE a linestyle=/marker= kwarg
+        # made matplotlib warn "linestyle is redundantly defined" on every
+        # documented linestyle= usage (F01-009/F08-014). An explicit
+        # color=/linestyle=/marker= kwarg still wins over the fmt string
+        # (the historical behavior).
+        if _process_plot_format is not None:
+            fmt_ls, fmt_marker, fmt_color = _process_plot_format(f)
+        else:  # pragma: no cover - matplotlib moved its private parser
+            fmt_ls, fmt_marker = split_marker_line_fmt(f)
+            fmt_color = None
         line_token, marker_char = split_marker_line_fmt(f)
         if line_token is not None and marker_char is not None:
             line_kwargs = {k: v for k, v in ikwargs.items() if k != 'marker'}
-            ax.plot(*coords, line_token, **line_kwargs)
-            # `linestyle` is set via the dict (rather than as a second,
-            # separate `linestyle=` call argument) so an explicit
-            # `linestyle=`/`linestyles=` kwarg already present in
-            # `ikwargs` is overwritten rather than colliding with it as a
-            # duplicate keyword argument.
+            line_kwargs.setdefault('linestyle', line_token)
+            if fmt_color is not None:
+                line_kwargs.setdefault('color', fmt_color)
+            line_artist = ax.plot(*coords, **line_kwargs)[0]
             marker_kwargs = {k: v for k, v in ikwargs.items() if k != 'marker'}
             marker_kwargs['label'] = '_nolegend_'
             marker_kwargs['linestyle'] = 'None'
+            marker_kwargs['marker'] = marker_char
+            # markers share their own line's color (F01-002): without an
+            # explicit color each split artist consumed one slot of the
+            # palette cycle, so markers never matched their line and two
+            # 'o-' datasets rendered with identical color pairs.
+            marker_kwargs.setdefault('color', line_artist.get_color())
             marker_coords = raw_coords if raw_data is not None else coords
-            ax.plot(*marker_coords, marker_char, **marker_kwargs)
-        else:
+            ax.plot(*marker_coords, **marker_kwargs)
+        elif _process_plot_format is not None:
+            plot_kwargs = dict(ikwargs)
+            if fmt_ls is not None:
+                plot_kwargs.setdefault('linestyle', fmt_ls)
+            if fmt_marker is not None:
+                plot_kwargs.setdefault('marker', fmt_marker)
+            if fmt_color is not None:
+                plot_kwargs.setdefault('color', fmt_color)
+            ax.plot(*coords, **plot_kwargs)
+        else:  # pragma: no cover - matplotlib moved its private parser
             ax.plot(*coords, f, **ikwargs)
 
     # plot data in 1D
@@ -963,7 +1076,14 @@ def _draw(
                 plane.remove()
 
         update_lines_parallel.planes = plot_cube(cube_scale, **frame_kwargs)
-        azim_now = rotations * (360 * (num / data_lines[0].shape[0]))
+        # camera: honor the user's azim= as the starting angle (F05-003 --
+        # previously parallel/window always started at azimuth 0, unlike
+        # 'serial'/'morph'/static plots) and pace the rotation over the
+        # FRAME count rather than the first dataset's row count (the two
+        # are no longer interchangeable for marker-only datasets, which
+        # keep their raw rows -- see `_anim_window_bounds`).
+        total_frames = max(1, int(round(frame_rate * duration)))
+        azim_now = azim + rotations * (360 * (num / total_frames))
         ax.view_init(elev=elev, azim=azim_now)
         # Axes3D.dist was removed in matplotlib >= 3.8, silently disabling
         # zoom; set_box_aspect(zoom=...) is the supported equivalent. See
@@ -980,8 +1100,17 @@ def _draw(
         # future window), just resolved per dataset now instead of once
         # globally.
         windows = []
+        window_spcs = []
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
+
+            # head/trail slicing (release-1.0 audit): every dataset is paced
+            # onto the shared frame grid -- see `_anim_window_bounds` for the
+            # F05-001 (negative chemtrails slice), F05-008 (precog gap),
+            # F04-003/F05-012 (shorter/1-point datasets vanishing or driving
+            # the frame count) fixes it encodes.
+            start, end, trail_stop = _anim_window_bounds(
+                num, total_frames, data.shape[0], tail_duration)
 
             if trail is not None:
                 ct, pc, bt = chemtrails[i], precog[i], bullettime[i]
@@ -989,28 +1118,30 @@ def _draw(
                     trail.set_data(data[:, 0:2].T)
                     trail.set_3d_properties(data[:, 2])
                 elif ct:
-                    trail.set_data(data[0 : num - tail_duration + 1, 0:2].T)
-                    trail.set_3d_properties(data[0 : num - tail_duration + 1, 2])
+                    trail.set_data(data[0:trail_stop, 0:2].T)
+                    trail.set_3d_properties(data[0:trail_stop, 2])
                 elif pc:
-                    trail.set_data(data[num + 1 :, 0:2].T)
-                    trail.set_3d_properties(data[num + 1 :, 2])
+                    trail.set_data(data[end - 1 :, 0:2].T)
+                    trail.set_3d_properties(data[end - 1 :, 2])
 
-            if num <= tail_duration:
-                window = data[0 : num + 1]
-            else:
-                window = data[num - tail_duration : num + 1]
+            window = data[start:end]
             line.set_data(window[:, 0:2].T)
             line.set_3d_properties(window[:, 2])
             windows.append(window)
+            window_spcs.append(_window_surface_point_colors(
+                surface_point_colors, i, start, end))
 
         # surface= (GH #109): recompute each dataset's hull from its CURRENT
         # visible window (same window as the head line above) and the
-        # current camera view (backface culling depends on it)
+        # current camera view (backface culling depends on it), keeping the
+        # per-vertex hue coloring of the (identically-windowed) points
+        # (F07-005)
         if surface is not None:
             prior = getattr(update_lines_parallel, "surface_colls", None)
             update_lines_parallel.surface_colls = _mesh_and_draw_3d(
                 ax, windows, surface, surface_colors, elev, azim_now,
-                prior_colls=prior, quiet=True)
+                prior_colls=prior, quiet=True,
+                surface_point_colors=window_spcs)
 
         # per-point labels track their datapoint's visibility window (the same
         # [num - tail_duration, num] window the head line uses above)
@@ -1037,7 +1168,10 @@ def _draw(
                 plane.remove()
 
         update_lines_spin.planes = plot_cube(cube_scale, **frame_kwargs)
-        azim_now = rotations * (360 * (num / (frame_rate * duration)))
+        # honor the user's azim= as the starting camera angle (F05-003:
+        # 'spin' previously always started at azimuth 0, so azim=45 was
+        # silently ignored and rotations=0 could not pick a viewing angle)
+        azim_now = azim + rotations * (360 * (num / (frame_rate * duration)))
         ax.view_init(elev=elev, azim=azim_now)
         # Axes3D.dist was removed in matplotlib >= 3.8, silently disabling
         # zoom; set_box_aspect(zoom=...) is the supported equivalent. See
@@ -1056,7 +1190,10 @@ def _draw(
             prior = getattr(update_lines_spin, "surface_colls", None)
             update_lines_spin.surface_colls = _shade_and_cull_3d(
                 ax, update_lines_spin.meshes, surface, surface_colors, elev,
-                azim_now, prior_colls=prior)
+                azim_now, prior_colls=prior,
+                # 'spin' draws the FULL dataset every frame, so the full
+                # (unwindowed) per-point hue colors apply as-is (F07-005)
+                surface_point_colors=surface_point_colors)
 
         # 'spin' draws every point every frame, so labels stay visible -- but
         # still reproject them for the rotated camera
@@ -1086,22 +1223,27 @@ def _draw(
 
         start = 0
         windows = []
-        for line, data in zip(lines, data_lines):
+        window_spcs = []
+        for i, (line, data) in enumerate(zip(lines, data_lines)):
             shown = int(np.clip(revealed - start, 0, data.shape[0]))
             window = data[:shown]
             line.set_data(window[:, 0:2].T)
             line.set_3d_properties(window[:, 2])
             windows.append(window)
+            window_spcs.append(_window_surface_point_colors(
+                surface_point_colors, i, 0, shown))
             start += data.shape[0]
 
         # surface= (GH #109): each dataset's hull follows its own currently-
-        # revealed portion (same window as its line above)
+        # revealed portion (same window as its line above), keeping the
+        # per-vertex hue coloring of the revealed points (F07-005)
         if surface is not None:
             azim_now = azim + rotations * 360.0 * num / total_frames
             prior = getattr(update_lines_serial, "surface_colls", None)
             update_lines_serial.surface_colls = _mesh_and_draw_3d(
                 ax, windows, surface, surface_colors, elev, azim_now,
-                prior_colls=prior, quiet=True)
+                prior_colls=prior, quiet=True,
+                surface_point_colors=window_spcs)
 
         # serial reveals points cumulatively: a label shows once its point has
         # been revealed (global index <= revealed), and stays
@@ -1167,10 +1309,21 @@ def _draw(
                 frame_meshes[morph_state["mesh_slot"]] = mesh
                 frame_colors = list(surface_colors)
                 frame_colors[morph_state["mesh_slot"]] = color
+            # per-point hue colors apply to the STATIC (untagged) datasets'
+            # surfaces only (F07-005) -- the traveling morph cloud's own
+            # hull keeps its single interpolated `color` (there is no
+            # per-point hue correspondence mid-morph), so its slot (and
+            # every morph-tagged slot) is forced to None here.
+            frame_spcs = None
+            if surface_point_colors:
+                frame_spcs = list(surface_point_colors)
+                for mi in morph_state["indices"]:
+                    if mi < len(frame_spcs):
+                        frame_spcs[mi] = None
             prior = getattr(update_morph, "surface_colls", None)
             update_morph.surface_colls = _shade_and_cull_3d(
                 ax, frame_meshes, surface, frame_colors, elev, azim_now,
-                prior_colls=prior)
+                prior_colls=prior, surface_point_colors=frame_spcs)
 
         # morph collapses the datasets to one traveling cloud that does not
         # correspond to the original labeled points -> hide per-point labels
@@ -1602,10 +1755,18 @@ def _draw(
 
         # get line animation
         if style in ["parallel", True, "window"]:
+            # frames == round(frame_rate * duration), the documented frame
+            # count, for EVERY dataset mix (release-1.0 audit): line datasets
+            # are pre-interpolated onto exactly this grid, and marker-only/
+            # 1-point datasets are paced onto it by `_anim_window_bounds` --
+            # previously frames came from x[0].shape[0] alone, so a longer
+            # LATER dataset was silently truncated (F04-003), marker-only
+            # animations ignored duration= entirely (F04-005/F05-010), and a
+            # 1-point FIRST dataset produced a 1-frame "animation" (F05-012).
             line_ani = animation.FuncAnimation(
                 fig,
                 update_lines_parallel,
-                x[0].shape[0],
+                max(1, int(round(frame_rate * duration))),
                 fargs=(
                     x,
                     lines,
@@ -1687,22 +1848,24 @@ def _draw(
             `(lines, trail_lines)` -- the updated head-line and trail
             artists, for `blit=True` animation.
         """
+        total_frames = max(1, int(round(frame_rate * duration)))
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
+            # same F05-001/F05-008/F04-003/F05-012 slicing fixes as the 3-D
+            # path -- see `_anim_window_bounds`.
+            start, end, trail_stop = _anim_window_bounds(
+                num, total_frames, data.shape[0], tail_duration)
             if trail is not None:
                 ct, pc, bt = chemtrails[i], precog[i], bullettime[i]
                 if (pc and ct) or bt:
                     trail.set_data(data[:, 0], data[:, 1])
                 elif ct:
-                    trail.set_data(data[0 : num - tail_duration + 1, 0],
-                                   data[0 : num - tail_duration + 1, 1])
+                    trail.set_data(data[0:trail_stop, 0],
+                                   data[0:trail_stop, 1])
                 elif pc:
-                    trail.set_data(data[num + 1 :, 0], data[num + 1 :, 1])
+                    trail.set_data(data[end - 1 :, 0], data[end - 1 :, 1])
 
-            if num <= tail_duration:
-                window = data[0 : num + 1]
-            else:
-                window = data[num - tail_duration : num + 1]
+            window = data[start:end]
             line.set_data(window[:, 0], window[:, 1])
 
         _sync_anim_labels(num, tail_duration)
@@ -1935,10 +2098,12 @@ def _draw(
             window_frames = int(frame_rate * _window_duration)
 
         if style in ["parallel", True, "window"]:
+            # frames == round(frame_rate * duration) -- see the identical
+            # F04-003/F04-005/F05-010/F05-012 note in `animate_plot3D`.
             line_ani = animation.FuncAnimation(
                 fig,
                 update_lines_parallel_2d,
-                x[0].shape[0],
+                max(1, int(round(frame_rate * duration))),
                 fargs=(x, lines, trail, window_frames, chemtrails, precog,
                       bullettime),
                 interval=1000 / frame_rate,
@@ -1995,12 +2160,15 @@ def _draw(
         # round17 #9 (GH #123): animations now support 2-D as well as 3-D
         # data (`dispatch_animate` above routes to `animate_plot2D` or
         # `animate_plot3D` accordingly); 1-D (and any other dimensionality)
-        # still has no animatable trajectory concept.
-        assert x[0].shape[1] in (2, 3), (
-            "Animations are only supported for 2-D or 3-D plots (got "
-            f"{x[0].shape[1]}-D data); pass ndims=2 or ndims=3 (the "
-            "default)."
-        )
+        # still has no animatable trajectory concept. A real ValueError, not
+        # an assert (F04-012: asserts vanish under `python -O`, and every
+        # sibling animate validation raises ValueError).
+        if x[0].shape[1] not in (2, 3):
+            raise ValueError(
+                "Animations are only supported for 2-D or 3-D plots (got "
+                f"{x[0].shape[1]}-D data); pass ndims=2 or ndims=3 (the "
+                "default)."
+            )
 
         # animation params
         ani_params = dict(
@@ -2166,7 +2334,15 @@ def _draw(
     # own fontproperties, so this also fixes multibyte legend clipping
     # without any change needed there.
     if legend is not None:
-        legend_kwargs = dict(loc='center left', bbox_to_anchor=(1.02, 0.5),
+        # a 3-D zlabel is drawn in the axes' right margin -- exactly where
+        # the legend is anchored -- so shift the legend further right when
+        # both are requested (release-1.0 audit, F10-005: the zlabel text
+        # rendered directly on top of the legend's first entry).
+        _legend_x = 1.02
+        if zlabel is not None and hasattr(ax, "get_proj"):
+            _legend_x = 1.18
+        legend_kwargs = dict(loc='center left',
+                             bbox_to_anchor=(_legend_x, 0.5),
                              borderaxespad=0.0, frameon=False)
         if font is not None:
             legend_kwargs['prop'] = font
