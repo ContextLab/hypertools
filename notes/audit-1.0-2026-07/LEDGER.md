@@ -123,6 +123,20 @@ D1 code residue: NEW streaming-ndims regression (our own fix tripped a new warni
 
 516 fixed/already-fixed · 54 skipped (cross-referrals) · 18 escalated (handled) · 12 env-resolved · 5 dropped (refuted) · 5 deferred (structural, justified) · **98 UNRESOLVED — all X-unit re-findings needing code-state verification** (incl. 2 majors: X3-002 static-line ~ fixed as F01-001 but title dodged the cluster regex; X8-001 mixed multi-row+1-row pchip crash — verify). Plan: after 6b + venv restore, one verification agent checks all 98 against current code → true residue gets a final fix round.
 
+## Phase 6b results (11/11 agents, 2026-07-17)
+
+**366 fixes VERIFIED by fresh adversarial re-runs** (io 31/31, manip+align 28/28, predict/impute 35/35, cluster/reduce/analyze 54/55, backend/core 41+, plot areas high-90s%). Environment recurrence: an agent pip-installed pre-audit code (git@e0f4e33e) into the shared venv at 04:25 — re-auditors caught it, forced repo sys.path, results valid; venv restored by controller (editable, /tmp import verified, packaging tests 6/6). PREVENTION: 6c prompts ban pip install outright.
+
+Real residue → wave 6c (RUNNING, `wf_5a36559a-342`, 4 agents):
+- G1: unfixed F08 input family (Categorical, MaskedArray silent-unmask, datetime64, type-naming, nested arrays, vectorizer-typo 401, bool list, DataFrame axis labels) + plot docstring cites + plotly px comment + dup dims warning.
+- G2: dispatcher consistency majors (align duplicate-index silent misalignment; minimal dict {'model':'PCA'} crash; cluster args-key discard) + params/kwargs warning parity, describe vstack, manip False-skip + assert fixes, None/empty-input unification, Pipeline dup steps, AutoRegressor lags bounds, impute empty-vs-NaN, datetime horizon, tuple input, Smooth NaN.
+- G3: security/quality on our own fixes (0600 mkstemp mode demotion, PermissionError wrapping, gzip-bomb cap, extensionless-pickle sniff) + stream HEAD-phase salvage, ffmpeg precheck, LSL resolve, lsl.py:63 ref.
+- G4: __init__ docstring FALSE import claim (controller's own miss — caught by re-audit), CLAUDE.md interactive.py shim note, readme absolute image URLs (PyPI), sdist tests graft, py3.14 classifier, SPDX license form.
+
+Also cleaned: stray 102MB hypertools-dev venv + ancient dist/ artifacts deleted + gitignored (`9d2acf7a`).
+
+AFTER 6c: full suite → reconciliation-verification agent for the 98 X-items (against settled code) → Phase 7.
+
 ## Phase 6 plan (after 5D commits)
 
 1. FULL suite gate. 2. `make clean && make html` FULL docs rebuild (regenerates all 54 gallery examples against fixed code — catches example breakage, refreshes auto_examples + thumbnails; commit regenerated artifacts; resolves D02-002/003/004). 3. Independent re-audit: ~8 fresh adversarial agents over the fixed areas (try to BREAK the fixes + hunt regressions). 4. Whole-branch independent review (quality/security/simplicity) over dev-1.0-refactor..HEAD. 5. Final reconciliation (5C/5D merged + dedup-cluster inheritance). Then Phase 7 merge + CI.
