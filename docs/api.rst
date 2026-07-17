@@ -112,6 +112,7 @@ Plot
   :toctree:
 
   plot
+  HyperAnimation
 
 Set interactive backend
 ------------------------
@@ -136,6 +137,7 @@ Apply model
   :toctree:
 
   apply_model
+  supported_models
 
 Pipeline
 ------------------
@@ -187,6 +189,18 @@ I/O
   :toctree:
 
   io.lsl_stream
+
+Exceptions
+------------------
+
+All hypertools-raised errors derive from `hypertools.HypertoolsError`:
+
+.. autosummary::
+  :toctree:
+
+  HypertoolsError
+  HypertoolsBackendError
+  HypertoolsIOError
 
 Tools
 ------------------

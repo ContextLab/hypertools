@@ -1,4 +1,21 @@
 #!/usr/bin/env python
+"""HyperTools: visualize and manipulate high-dimensional data.
+
+The classic API lives at the top level: `plot`, `analyze`, `reduce`,
+`align`, `normalize`, `describe`, `cluster`, `manip`, `predict`, `impute`,
+`load`, `save`, `apply_model`, `supported_models`, `Pipeline`, and
+`set_interactive_backend`, plus the `io` submodule and `HyperAnimation`
+(the return type of animated plots). Exceptions raised by hypertools
+(`HypertoolsError`, `HypertoolsBackendError`, `HypertoolsIOError`) are
+also importable from here.
+
+Import-form note: several top-level functions share a name with the
+subpackage they live in, so attribute access like
+``hypertools.plot.backend`` resolves against the ``plot`` *function* and
+fails. Import statements still work fine -- use
+``from hypertools.plot import backend`` (or
+``import hypertools.plot.backend as backend``) for submodule access.
+"""
 
 from .config import __version__
 from .plot.plot import plot
@@ -11,8 +28,10 @@ from .align.align import align
 from .tools.normalize import normalize
 from .reduce.describe import describe
 from .cluster.cluster import cluster
-from .core.model import apply_model
+from .core.model import apply_model, supported_models
 from .core.pipeline import Pipeline
+from .core.exceptions import (HypertoolsError, HypertoolsBackendError,
+                              HypertoolsIOError)
 from .manip.manip import manip
 from .predict.predict import predict
 from .impute.impute import impute

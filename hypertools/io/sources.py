@@ -275,7 +275,7 @@ def fivethirtyeight_dataset(name):
 
     This is an explicit, unambiguous prefix -- unlike :func:`sklearn_dataset`
     and :func:`seaborn_dataset`, an unrecognized slug or a folder with no
-    CSV files raises :class:`~hypertools._shared.exceptions.HypertoolsIOError`
+    CSV files raises :class:`~hypertools.core.exceptions.HypertoolsIOError`
     directly rather than returning None to fall through to the next
     resolver, since the user has unambiguously asked for a 538 dataset.
 
@@ -423,7 +423,7 @@ def kaggle_dataset(name):
     This is an explicit, unambiguous prefix -- like
     :func:`fivethirtyeight_dataset`, a malformed id or a dataset with no
     tabular files raises
-    :class:`~hypertools._shared.exceptions.HypertoolsIOError` directly
+    :class:`~hypertools.core.exceptions.HypertoolsIOError` directly
     rather than returning None to fall through to the next resolver.
 
     Returns
@@ -686,7 +686,7 @@ def load_local_file(path):
     .npy/.npz, .csv/.tsv/.txt, .json, .parquet, .mat, .xlsx/.xls, and
     gzip-compressed variants (.gz). Files with no extension are parsed by
     content sniffing; files with any OTHER extension raise
-    :class:`~hypertools._shared.exceptions.HypertoolsIOError` unless their
+    :class:`~hypertools.core.exceptions.HypertoolsIOError` unless their
     content matches a recognized binary format (pickle/npy/zip)."""
     path = Path(path)
     return _parse_payload(path.read_bytes(), path.name)

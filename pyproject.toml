@@ -35,6 +35,9 @@ dependencies = [
     "scipy>=1.13.0",
     "numpy>=2.0.0",
     "umap-learn>=0.5.5",
+    # umap-learn's own numba floor (>=0.51) lets uv resolve unbuildable
+    # numba 0.53/llvmlite 0.36 on py3.12+ (audit X5-003); pin a real floor
+    "numba>=0.59",
     "requests>=2.31.0",
     "dill>=0.3.8",
     "ipympl>=0.9.3",

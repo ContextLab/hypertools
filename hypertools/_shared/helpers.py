@@ -115,7 +115,14 @@ def vals2colors(vals, cmap='GnBu',res=100):
     # get palette from seaborn
     import seaborn as sns
     palette = np.array(sns.color_palette(cmap, res))
-    ranks = np.digitize(vals, np.linspace(np.min(vals), np.max(vals)+1, res+1)) - 1
+    vmin, vmax = np.min(vals), np.max(vals)
+    if vmax == vmin:
+        return [tuple(palette[0])] * len(vals)
+    # bin edges span [vmin, vmax] exactly so the palette's full range is
+    # used (a stray max+1 edge previously left the top of the map unused);
+    # clip keeps vals == vmax inside the last palette slot
+    edges = np.linspace(vmin, vmax, res + 1)
+    ranks = np.clip(np.digitize(vals, edges) - 1, 0, res - 1)
     return [tuple(i) for i in palette[ranks, :]]
 
 
@@ -130,7 +137,11 @@ def vals2bins(vals,res=100):
     # flatten if list of lists
     if any(isinstance(el, list) for el in vals):
         vals = list(itertools.chain(*vals))
-    return list(np.digitize(vals, np.linspace(np.min(vals), np.max(vals)+1, res+1)) - 1)
+    vmin, vmax = np.min(vals), np.max(vals)
+    if vmax == vmin:
+        return [0] * len(vals)
+    edges = np.linspace(vmin, vmax, res + 1)
+    return list(np.clip(np.digitize(vals, edges) - 1, 0, res - 1))
 
 
 def interp_array(arr, interp_val=10):

@@ -90,10 +90,12 @@ The dev-1.0 refactor moved several tools into their own top-level subpackages (e
 
 1. **Input Processing**: Data is formatted and validated through `format_data()`
 2. **Normalization**: Optional data normalization via `normalize()`
-3. **Alignment**: Optional cross-dataset alignment via `align()`
-4. **Dimensionality Reduction**: Data is reduced via `reduce()`
+3. **Dimensionality Reduction**: Data is reduced via `reduce()`
+4. **Alignment**: Optional cross-dataset alignment via `align()`
 5. **Clustering**: Optional clustering via `cluster()`
 6. **Visualization**: Final plotting through `plot()`
+
+(Verified canonical order — audit F03-011: normalize → reduce → align → cluster; figure coordinates match this staged order exactly.)
 
 ### Key Design Patterns
 
