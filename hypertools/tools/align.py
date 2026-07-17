@@ -15,7 +15,7 @@ list of numpy arrays, as the classic API promised.
 """
 import numpy as np
 
-from ..align.align import align as _align_dispatch
+from ..align.align import align as _align_dispatch, _ALIAS as _MODEL_ALIAS
 from .format_data import format_data as formatter
 
 
@@ -95,6 +95,15 @@ def align(data, align='hyper', n_iter=10, format_data=True):
 
     if model in ('hyper', 'HyperAlign'):
         params.setdefault('n_iter', n_iter)
+
+    # translate the classic spellings ('hyper', 'SRM', ...) to the 1.0
+    # registry names HERE, before dispatch: for THIS classic API they are
+    # the documented values (align='hyper' is even the default), so the
+    # dispatcher's model='hyper' DeprecationWarning (release-1.0 audit,
+    # X1-api-consistency-020) must not fire on the classic path -- it is
+    # about the 1.0 hyp.align(model=...) spelling only.
+    if isinstance(model, str):
+        model = _MODEL_ALIAS.get(model, model)
 
     # funnel any classic input (geo / text / arrays / mixed) into a list of
     # numpy arrays before handing off to the dispatcher

@@ -14,7 +14,7 @@ import warnings
 import numpy as np
 
 from .common import Clusterer, CLUSTERERS, MIXTURES, mixture_proportions, normalize_membership_rows
-from .._shared.helpers import *
+from ..core.model import external_stacklevel
 from ..tools.format_data import format_data as formatter
 
 # backward-compatible aliases: `hypertools.cluster.cluster.models` and
@@ -105,7 +105,7 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None,
             warnings.warn(
                 "{'model': ..., 'params': {...}} is deprecated; use "
                 "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
-                DeprecationWarning, stacklevel=3)
+                DeprecationWarning, stacklevel=external_stacklevel())
             model_params = dict(cluster["params"])
             model_args = []
         else:
@@ -306,7 +306,10 @@ def cluster(x, cluster="KMeans", n_clusters=None, return_model=False,
         column of the input (with a `UserWarning`), not one per row.
 
     n_clusters : int or None
-        Number of clusters to discover (default: None, which means 3). Not
+        Number of clusters to discover (default: None, which means 3).
+        Must be an integer >= 1; anything else raises a `ValueError`
+        naming the kwarg (rather than leaking scikit-learn's internal
+        parameter-validation error). Not
         used for models that discover the number of clusters automatically
         (HDBSCAN, MeanShift, DBSCAN, OPTICS, AffinityPropagation). For
         mixture models this sets the number of components. If the cluster
@@ -357,7 +360,8 @@ def cluster(x, cluster="KMeans", n_clusters=None, return_model=False,
     Returns
     -------
     cluster_labels : list or numpy.ndarray
-        For hard-clustering models, a list of cluster labels (one per
+        For hard-clustering models, a list of plain Python `int` cluster
+        labels (one per
         observation; FeatureAgglomeration instead returns one label per
         COLUMN of the input -- it clusters features). For mixture models,
         an (n_samples, n_components) array of membership proportions whose
@@ -411,6 +415,17 @@ def cluster(x, cluster="KMeans", n_clusters=None, return_model=False,
     n_clusters_explicit = n_clusters is not None
     if n_clusters is None:
         n_clusters = 3
+    elif (isinstance(n_clusters, bool)
+          or not isinstance(n_clusters, (int, np.integer)) or n_clusters < 1):
+        # pre-validate the documented hypertools kwarg instead of leaking
+        # sklearn's private InvalidParameterError class (release-1.0 audit,
+        # X2-error-quality-012) -- matching hypertools' own validated
+        # params (ndims/t/resample all raise ValueError).
+        raise ValueError(
+            f'n_clusters must be an integer >= 1 (the number of clusters/'
+            f'mixture components to discover); got {n_clusters!r}.')
+    else:
+        n_clusters = int(n_clusters)
 
     # a whole already-fitted Pipeline handed back as cluster= (e.g. the model
     # from an earlier cross-module return_model=True call) is reused as-is via
@@ -433,7 +448,8 @@ def cluster(x, cluster="KMeans", n_clusters=None, return_model=False,
             f"cluster()'s ndims= is a passthrough to the reduce stage and "
             f"has no effect unless reduce= is also given; ignoring "
             f"ndims={ndims}. Pass e.g. reduce='IncrementalPCA' to reduce "
-            f"before clustering.", UserWarning)
+            f"before clustering.", UserWarning,
+            stacklevel=external_stacklevel())
 
     # cross-module kwargs (#138): assemble and run a Pipeline (in canonical
     # order, #153) instead of the single-stage path below whenever another
@@ -482,12 +498,23 @@ def cluster(x, cluster="KMeans", n_clusters=None, return_model=False,
     # fit_transform'd directly, skipping spec re-resolution
     if isinstance(cluster, Clusterer):
         if cluster.is_fitted:
-            result = cluster.transform(stacked)
+            result = _plain_int_labels(cluster.transform(stacked))
         else:
-            result = cluster.fit_transform(stacked)
+            result = _plain_int_labels(cluster.fit_transform(stacked))
         return (result, cluster) if return_model else result
 
     clusterer = _resolve_cluster_spec(cluster, n_clusters, random_state,
                                       n_clusters_explicit)
-    result = clusterer.fit_transform(stacked)
+    result = _plain_int_labels(clusterer.fit_transform(stacked))
     return (result, clusterer) if return_model else result
+
+
+def _plain_int_labels(result):
+    """Convert a hard-clustering label list of numpy integer SCALARS to
+    plain Python ints (release-1.0 audit, X1-api-consistency-022: cluster()
+    was the one API spot handing back np.int32 scalars, which confuse
+    downstream serialization/comparison idioms). Mixture-model membership
+    matrices (numpy arrays) pass through unchanged."""
+    if isinstance(result, list):
+        return [int(v) if isinstance(v, np.integer) else v for v in result]
+    return result

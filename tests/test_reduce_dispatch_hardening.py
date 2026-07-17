@@ -63,9 +63,13 @@ def test_describe_max_dims_gt_features_does_not_crash():
     assert set(result.keys()) == {'average', 'individual', 'fig'}
 
 
-def test_describe_empty_component_range_warns_not_crashes():
+def test_describe_empty_component_range_raises_clear_error():
+    # H1 polish wave (X2-error-quality-017): a max_dims that leaves NO
+    # component range (range(2, max_dims) empty) used to silently return
+    # empty results and merely warn at figure time; it now fails fast with
+    # a ValueError naming the kwarg and its accepted domain.
     import matplotlib
     matplotlib.use('Agg')
     x = np.random.default_rng(0).normal(size=(30, 4))
-    with pytest.warns(UserWarning, match='no components to plot'):
+    with pytest.raises(ValueError, match='max_dims must be an integer >= 3'):
         hyp.describe(x, reduce='PCA', max_dims=2, show=True)

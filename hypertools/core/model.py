@@ -18,8 +18,50 @@ security-sensitive; named models here are imported explicitly.
 """
 
 import inspect
+import os
+import sys
 
 import numpy as np
+
+
+#: the hypertools package directory, used by `external_stacklevel` to tell
+#: library-internal frames apart from user code
+_PACKAGE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def external_stacklevel(extra_internal=('datawrangler',)):
+    """Compute a `warnings.warn` stacklevel that points at USER code.
+
+    Walks the call stack outward from the caller of this function and
+    returns the `stacklevel` of the first frame OUTSIDE the hypertools
+    package (and outside the `extra_internal` packages -- datawrangler's
+    funnel wrappers sit between hypertools dispatchers on several call
+    paths). Use as ``warnings.warn(..., stacklevel=external_stacklevel())``.
+
+    Why: warnings raised while resolving specs threaded through
+    ``hyp.plot()``/``hyp.analyze()`` used to be attributed (via a fixed
+    stacklevel) to hypertools' own frames, and Python's default filters
+    only DISPLAY a `DeprecationWarning` when it is attributed to
+    ``__main__`` -- so e.g. the legacy ``{'model': ..., 'params': {...}}``
+    deprecation was invisible to `plot()` callers (release-1.0 audit,
+    X4-warnings-008/-009).
+    """
+    try:
+        frame = sys._getframe(1)
+    except ValueError:  # pragma: no cover - no caller frame at all
+        return 2
+    level = 1
+    while frame is not None:
+        filename = frame.f_code.co_filename
+        internal = filename.startswith(_PACKAGE_DIR + os.sep)
+        if not internal:
+            internal = any(os.sep + pkg + os.sep in filename
+                           for pkg in extra_internal)
+        if not internal:
+            return level
+        frame = frame.f_back
+        level += 1
+    return max(level, 2)
 
 
 def _build_registry():
@@ -53,10 +95,15 @@ def apply_model(data, model, mode='auto', return_model=False,
     model : str, class, dict, sklearn-style instance, or list
         - str: a registered model name (see
           `hypertools.core.supported_models()`), e.g. 'PCA', 'KMeans',
-          'GaussianMixture'. (This registry covers reducers and
-          clusterers; `hyp.Pipeline` additionally accepts manipulator and
-          aligner names such as 'ZScore' or 'HyperAlign', which operate on
-          whole datasets rather than stacked arrays.)
+          'GaussianMixture'. (This registry covers the REDUCE and CLUSTER
+          model families only; manipulator, aligner, forecaster, and
+          imputer names -- e.g. 'ZScore', 'HyperAlign', 'Kalman' -- are
+          handled by their own dispatchers, `hyp.manip`/`hyp.align`/
+          `hyp.predict`/`hyp.impute`, because those models operate on
+          whole datasets rather than stacked arrays. `hyp.Pipeline`
+          additionally accepts manipulator and aligner names in a step
+          list.) An unknown name raises a `ValueError` saying exactly
+          this.
         - class: a scikit-learn style model class, instantiated with the
           spec's 'args'/'kwargs' (or defaults)
         - dict: the canonical {'model': <str, class, or instance>,
@@ -113,7 +160,11 @@ def apply_model(data, model, mode='auto', return_model=False,
         untouched.
 
     ndims : int or None
-        Convenience: sets n_components on models that accept it.
+        Convenience: sets n_components on models that accept it. Must be a
+        positive integer (or None); invalid values raise the same
+        `ValueError` as `hyp.reduce`'s `ndims=` (release-1.0 audit,
+        X2-error-quality-018: `apply_model(x, 'PCA', ndims=0)` used to
+        silently return a width-0 array).
 
     Returns
     -------
@@ -121,6 +172,16 @@ def apply_model(data, model, mode='auto', return_model=False,
     for the exact shape). Lists in, lists out: a single input dataset
     returns a single result.
     """
+    # ndims parity with hyp.reduce (release-1.0 audit, X2-error-quality-018:
+    # reduce(ndims=0) raised while apply_model(..., ndims=0) silently
+    # returned an (n, 0) array) -- same messages as reduce's validation.
+    if ndims is not None:
+        if isinstance(ndims, bool) or not isinstance(ndims, (int, np.integer)):
+            raise ValueError(
+                f"ndims must be a positive integer or None; got {ndims!r}")
+        if ndims < 1:
+            raise ValueError(f"ndims must be >= 1; got {ndims}")
+
     single_input = not isinstance(data, list)
     if format_data:
         # lazy: importing tools.format_data at module load time would create
@@ -229,11 +290,23 @@ def _resolve_model(model, ndims):
             raise ValueError(
                 f'unknown model {resolved!r}; supported names: '
                 f'{", ".join(supported_models())} (or pass a scikit-learn '
-                f'style class or instance directly; hyp.Pipeline '
-                f'additionally accepts manipulator/aligner names such as '
-                f"'ZScore' or 'HyperAlign')")
+                f'style class or instance directly). apply_model covers the '
+                f'REDUCE and CLUSTER model families only; manipulator, '
+                f'aligner, forecaster, and imputer models have their own '
+                f'dispatchers -- use hyp.manip, hyp.align, hyp.predict, or '
+                f'hyp.impute for those (hyp.Pipeline also accepts '
+                f"manipulator/aligner names such as 'ZScore' or "
+                f"'HyperAlign' in a step list).")
         if resolved == 'UMAP':
-            from umap import UMAP as model_cls
+            import warnings
+            with warnings.catch_warnings():
+                # umap-learn emits an ImportWarning about its OPTIONAL
+                # tensorflow/ParametricUMAP extra at import time -- noise
+                # for standard UMAP use (release-1.0 audit, X4-warnings-011;
+                # same pattern as the gensim filter in tools/text2mat).
+                warnings.filterwarnings(
+                    'ignore', message='Tensorflow not installed')
+                from umap import UMAP as model_cls
         else:
             model_cls = registry[resolved]
         resolved = model_cls

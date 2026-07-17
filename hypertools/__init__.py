@@ -38,3 +38,15 @@ from .predict.predict import predict
 from .impute.impute import impute
 from .io.save import save
 from . import io
+
+#: the public API (2026-07 release audit, X1-014): `from hypertools import *`
+#: yields exactly these documented names. Without __all__, star-imports also
+#: leaked internal submodules bound as attributes by the imports above
+#: (`config`, `core`, `datageometry`, `external`, `tools`, ...).
+__all__ = [
+    'plot', 'analyze', 'reduce', 'align', 'normalize', 'describe',
+    'cluster', 'manip', 'predict', 'impute', 'load', 'save',
+    'apply_model', 'supported_models', 'Pipeline',
+    'set_interactive_backend', 'HyperAnimation', 'io',
+    'HypertoolsError', 'HypertoolsBackendError', 'HypertoolsIOError',
+]

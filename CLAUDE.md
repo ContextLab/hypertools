@@ -82,9 +82,10 @@ The dev-1.0 refactor moved several tools into their own top-level subpackages (e
 - `multiindex.py` - Pandas MultiIndex handling
 - `fonts.py` - Font handling
 
-**External Dependencies** (`hypertools/_externals/`)
-- `ppca.py` - Probabilistic Principal Component Analysis
-- `srm.py` - Shared Response Model
+**Vendored Third-Party Code** (`hypertools/external/`)
+- `ppca.py` - Probabilistic Principal Component Analysis (vendored from pca-magic, Apache-2.0)
+- `brainiak.py` - Shared Response Model family (vendored from brainiak, Apache-2.0)
+- `hypertools/_externals/` contains only 3-line re-export shims (`ppca.py`, `srm.py`) that preserve the pre-1.0 import paths; the real implementations live in `hypertools/external/`
 
 ### Data Flow
 

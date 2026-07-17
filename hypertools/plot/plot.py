@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from .._shared.helpers import *
 from .._shared.params import default_params
+from ..core.model import external_stacklevel
 from ..tools.analyze import analyze
 from ..cluster.cluster import cluster as clusterer, mixture_models, \
     models as hard_cluster_models
@@ -691,6 +692,12 @@ def plot(
         ids]``); to force a continuous mapping, cast to float
         (``hue=np.asarray(ids, dtype=float)``).
 
+        A SCALAR `hue` (a single string or number, e.g. ``hue='red'``) is
+        broadcast to one group covering every observation -- a single
+        color -- and emits a `UserWarning`, since this is usually a
+        mistake (e.g. a DataFrame column NAME passed seaborn-style; pass
+        the column's values, ``hue=df['col']``, instead).
+
         When the data is a list of datasets, `hue` may mirror that nesting --
         one hue sub-sequence per dataset, each matching that dataset's length
         (e.g. ``hyp.plot([d0, d1], hue=[h0, h1])``); it is flattened to one
@@ -1033,7 +1040,11 @@ def plot(
         `hypertools.predict` model, e.g. 'Kalman', 'ARIMA', 'GaussianProcess'
         (see `hypertools.predict.predict` for accepted forms), and overlays
         one dashed, low-opacity (alpha 0.6) forecast trace per dataset in the
-        SAME color as its source line (no separate legend entry). Only
+        SAME color as its source line (no separate legend entry). The
+        drawn overlay prepends the last observed row so the dashed trace
+        connects to the trajectory (`t + 1` drawn vertices); the forecast
+        DATA itself -- e.g. in the ``return_model=True`` bundle -- has
+        exactly `t` rows, matching `hyp.predict`. Only
         supported for STATIC plots (default: None; raises
         ``NotImplementedError`` if combined with ``animate``).
 
@@ -1060,7 +1071,12 @@ def plot(
         The plotly backend saves .html natively (static or animated);
         its static image export (.png/.jpg/.svg/.pdf, via kaleido) and
         animated .gif/.png/.apng/video export render each frame through
-        kaleido.
+        kaleido. Note on ANIMATION export cost: every frame is rendered
+        and encoded, and the default `duration=30` x `frame_rate=30`
+        yields 900 frames -- roughly a minute of encoding and a
+        multi-MB file even for small datasets; encoding time and file
+        size scale linearly with `duration * frame_rate`, so pass a
+        shorter `duration=` (e.g. 2-5 seconds) for quick exports.
 
     animate : bool, 'parallel', 'spin', 'serial', 'window', 'morph', or list
         If True or 'parallel', plots the data as an animated trajectory, with
@@ -1186,7 +1202,11 @@ def plot(
     duration (animation only) : float
         Length of the animation in seconds (default: 30 seconds). Has no
         effect on static plots (static line smoothing uses a fixed
-        density, independent of the animation kwargs).
+        density, independent of the animation kwargs). Note: when saving
+        with `save_path=`, every frame is rendered and encoded
+        (`duration * frame_rate` frames -- 900 at the defaults), so
+        export time and file size scale linearly with `duration`; use a
+        short duration (e.g. 2-5 seconds) for quick exports.
 
     tail_duration (animation only) : float
         Sets the length of the tail of the data (default: 2 seconds)
@@ -1679,7 +1699,11 @@ def plot(
         `predict` was set, in which case it is
         ``{'model': ..., 'params': {'t': t}, 'forecasts': [...]}`` (one
         forecast array per input dataset, in the analyzed/plotted --
-        pre-center/scale -- space). Default False.
+        pre-center/scale -- space). Each bundled forecast has exactly `t`
+        rows, matching what ``hyp.predict(xform_data, model=..., t=t)``
+        returns; the DRAWN dashed overlay additionally prepends the last
+        observed row as a connector, so the drawn trace has `t + 1`
+        vertices. Default False.
 
     Returns
     -------
@@ -1739,6 +1763,33 @@ def plot(
     if isinstance(fmt, list):
         fmt = [f.decode("utf-8") if isinstance(f, bytes) else f for f in fmt]
 
+    # fmt must be a format string (or a per-dataset list of them):
+    # fmt=123 used to run the whole pipeline and die in a bare
+    # "object of type 'int' has no len()" that never named the kwarg
+    # (release-1.0 audit, X2-error-quality-015).
+    if fmt is not None and not isinstance(fmt, str):
+        if not (isinstance(fmt, (list, tuple))
+                and all(isinstance(f, str) for f in fmt)):
+            raise TypeError(
+                f"fmt must be a matplotlib format string (e.g. '-', '.', "
+                f"'o:') or a list of format strings (one per dataset); "
+                f"got {fmt!r}.")
+
+    # transform= is pre-transformed DATA (bypassing the analysis pipeline),
+    # not a model spec: a bad value used to crash later with "'str' object
+    # has no attribute 'shape'" (release-1.0 audit, X2-error-quality-015).
+    if transform is not None:
+        _xf_items = transform if isinstance(transform, (list, tuple)) \
+            else [transform]
+        for _xf in _xf_items:
+            if not (hasattr(_xf, 'shape') or hasattr(_xf, '__array__')):
+                raise TypeError(
+                    f"transform= must be already-transformed data (a numpy "
+                    f"array/DataFrame, or a list of them), or None; got "
+                    f"{type(_xf).__name__}: {_xf!r}. To choose a "
+                    "dimensionality-reduction model, pass reduce= instead "
+                    "(transform= bypasses the analysis pipeline entirely).")
+
     # elev=/azim= must be numbers (degrees). Previously a bad value ran the
     # whole pipeline and only crashed at DRAW time with a message that never
     # named the kwarg (F10-014).
@@ -1779,7 +1830,7 @@ def plot(
         warnings.warn(
             "x is a single scalar value; hypertools will plot it as a "
             "single 1-D point. Pass an array/list of observations for a "
-            "meaningful plot.")
+            "meaningful plot.", stacklevel=external_stacklevel())
 
     # align=False / cluster=False are documented as "no alignment" / "no
     # clustering" (same as None); normalize them here so the stage
@@ -1796,6 +1847,17 @@ def plot(
         names = [names]
     if isinstance(legend, str):
         legend = [legend]
+
+    # legend= must be a bool, a label string, or a list of labels: any
+    # other scalar (e.g. legend=7) was silently treated as truthy
+    # (release-1.0 audit, X2-error-quality-016).
+    if legend is not None and not isinstance(
+            legend, (bool, np.bool_, list, tuple, np.ndarray, pd.Series,
+                     pd.Index)):
+        raise TypeError(
+            f"legend= must be True/False, a label string, or a list of "
+            f"labels (one per drawn trace/group); got "
+            f"{type(legend).__name__}: {legend!r}.")
 
     # animate= dict form (GH #154 resolution): unpacked into the flat
     # animation kwargs HERE, at the very top of the function, before
@@ -1967,6 +2029,38 @@ def plot(
                 f"morph_samples must be a positive integer (the "
                 f"per-dataset point cap for animate='morph') or None; got "
                 f"{morph_samples!r}.")
+        # rotations='two' used to be accepted silently and only crash at
+        # SAVE time, deep inside matplotlib ("IndexError: list index out
+        # of range") with no mention of the kwarg; zoom=-1 was silently
+        # accepted despite the documented positive-zooms-in contract
+        # (release-1.0 audit, X2-error-quality-014). Validate both eagerly,
+        # next to the duration/frame_rate checks above.
+        if isinstance(rotations, (list, tuple)):
+            # per-segment morph pacing weights: each entry must be a
+            # non-negative number (the list-only-with-morph check below
+            # handles WHICH modes allow a list)
+            if not all(isinstance(r, (int, float, np.integer, np.floating))
+                       and not isinstance(r, bool) and r >= 0
+                       for r in rotations):
+                raise ValueError(
+                    f"rotations, when given as a per-segment list (for "
+                    f"animate='morph'), must contain only non-negative "
+                    f"numbers; got {rotations!r}.")
+        elif (rotations is None or isinstance(rotations, bool)
+              or not isinstance(rotations, (int, float, np.integer,
+                                            np.floating))):
+            raise ValueError(
+                f"rotations must be a number (of full camera rotations "
+                f"over the animation; rotations=0 fixes the camera), or a "
+                f"per-segment list with animate='morph'; got "
+                f"{rotations!r}.")
+        if (zoom is None or isinstance(zoom, bool)
+                or not isinstance(zoom, (int, float, np.integer,
+                                         np.floating))
+                or zoom <= 0):
+            raise ValueError(
+                f"zoom must be a positive number (the camera zoom factor; "
+                f"larger values zoom in, default 1); got {zoom!r}.")
 
     # save_path misuse fail-fast (F09-004/F09-007): normalize path-likes to
     # str (animated matplotlib and plotly writers do string operations on
@@ -2216,7 +2310,7 @@ def plot(
                 "stream_max, stream_window, ndims, reduce, normalize, "
                 "save_path, show, frame_rate, markersize, linewidth, "
                 "color, palette, title, size, elev, azim, ax (see the "
-                "stream_init docstring).", UserWarning)
+                "stream_init docstring).", UserWarning, stacklevel=external_stacklevel())
         return plot_stream(
             x, fmt, stream_init=stream_init, stream_chunk=stream_chunk,
             stream_max=stream_max, stream_window=stream_window,
@@ -2291,7 +2385,7 @@ def plot(
                     "MultiIndex grouping is only applied when a single "
                     "DataFrame is passed; the MultiIndex on dataset "
                     f"{_i} is being treated as a flat index."
-                )
+                , stacklevel=external_stacklevel())
 
     _multiindex_meta = None
     if isinstance(x, pd.DataFrame) and x.index.nlevels >= 2:
@@ -2318,7 +2412,7 @@ def plot(
                 "x has a row MultiIndex (GH #95): MultiIndex grouping "
                 "(leaf traces + per-level averages) takes precedence over "
                 "hue=; ignoring hue."
-            )
+            , stacklevel=external_stacklevel())
             hue = None
         x, _multiindex_meta = expand_multiindex(x)
 
@@ -2482,7 +2576,7 @@ def plot(
                 warnings.warn(
                     "Both color and colors defined: color will be "
                     "ignored in favor of colors."
-                )
+                , stacklevel=external_stacklevel())
 
     # handle linestyle (to be passed onto matplotlib). `linestyles` is
     # treated as an alias of `linestyle` and takes priority when both are
@@ -2497,7 +2591,7 @@ def plot(
                 warnings.warn(
                     "Both linestyle and linestyles defined: linestyle "
                     "will be ignored in favor of linestyles."
-                )
+                , stacklevel=external_stacklevel())
 
     # handle marker (to be passed onto matplotlib). `markers` is treated as
     # an alias of `marker` and takes priority when both are given -- but it
@@ -2512,7 +2606,7 @@ def plot(
                 warnings.warn(
                     "Both marker and markers defined: marker will be "
                     "ignored in favor of markers."
-                )
+                , stacklevel=external_stacklevel())
 
     # handle marker size (to be passed onto matplotlib/plotly)
     if markersize is not None:
@@ -2602,12 +2696,16 @@ def plot(
     # (post normalize->reduce->align) space (GH #169). Computed here -- one
     # forecast per ORIGINAL input dataset, before any cluster/hue reshaping
     # -- so the forecasts correspond 1:1 with the datasets about to be
-    # drawn. The final observed row of each dataset is prepended so the
-    # dashed trace connects to the plotted trajectory (forecast length is
-    # therefore t + 1). `bundle_forecasts` keeps this analyze-space copy
-    # (for the return_model bundle); `raw_forecasts` is a working copy that
-    # gets the SAME center/scale transform as `xform` below, so the drawn
-    # dashed trace lines up with the drawn (centered/scaled) data.
+    # drawn. For the DRAWN dashed trace only, the final observed row of
+    # each dataset is prepended so the trace connects to the plotted
+    # trajectory (drawn trace length is therefore t + 1).
+    # `bundle_forecasts` keeps the UNPREPENDED analyze-space forecasts --
+    # exactly `t` rows, matching what `hyp.predict(xform_data, ...)`
+    # returns (release-1.0 audit, X1-api-consistency-016: the bundle used
+    # to include the seam row, an off-by-one vs. hyp.predict);
+    # `raw_forecasts` is the seam-prepended working copy that gets the
+    # SAME center/scale transform as `xform` below, so the drawn dashed
+    # trace lines up with the drawn (centered/scaled) data.
     raw_forecasts = None
     bundle_forecasts = None
     if predict is not None:
@@ -2615,11 +2713,11 @@ def plot(
         _fc = _predictor(xform, model=predict, t=t)
         if not isinstance(_fc, list):
             _fc = [_fc]
+        bundle_forecasts = [np.asarray(fc, dtype=float) for fc in _fc]
         raw_forecasts = [
             np.vstack([np.asarray(xi[-1:]), np.asarray(fc)])
             for xi, fc in zip(xform, _fc)
         ]
-        bundle_forecasts = [np.array(fc) for fc in raw_forecasts]
 
     # per-point colors for multicolored lines (set by the hue branch below;
     # computed after interpolation). Dataset lengths are captured now so hue
@@ -2639,7 +2737,7 @@ def plot(
     if (((animate == 'morph') or isinstance(animate, list))
             and hue is not None):
         warnings.warn("hue is not supported with animate='morph'; "
-                      "ignoring hue.")
+                      "ignoring hue.", stacklevel=external_stacklevel())
         hue = None
 
     # original category NAMES for a categorical hue (set below, if
@@ -2675,13 +2773,13 @@ def plot(
                 "x has a row MultiIndex (GH #95): MultiIndex grouping "
                 "assigns color by the top-level index; ignoring "
                 "color/colors."
-            )
+            , stacklevel=external_stacklevel())
         if linewidth is not None:
             warnings.warn(
                 "x has a row MultiIndex (GH #95): MultiIndex grouping "
                 "assigns linewidth by level (leaves=1, thicker per level "
                 "averaged over); ignoring linewidth."
-            )
+            , stacklevel=external_stacklevel())
         xform, _mi_style = build_multiindex_styles(
             xform, _multiindex_meta, palette=palette,
             linestyle=linestyle, linestyles=linestyles)
@@ -2699,7 +2797,7 @@ def plot(
         if hue is not None:
             warnings.warn(
                 ("cluster" if cluster is not None else "n_clusters")
-                + " overrides hue, ignoring hue.")
+                + " overrides hue, ignoring hue.", stacklevel=external_stacklevel())
             hue = None
         if cluster is None:
             cluster = "KMeans"
@@ -2745,7 +2843,7 @@ def plot(
                 warnings.warn(
                     "{'model': ..., 'params': {...}} is deprecated; use "
                     "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
-                    DeprecationWarning, stacklevel=2)
+                    DeprecationWarning, stacklevel=external_stacklevel())
                 _spec_kwargs = dict(cluster["params"])
             params = default_params(model_key, _spec_kwargs) or {}
             if "n_clusters" in cluster:
@@ -2769,7 +2867,7 @@ def plot(
                     "INSTANCE (the instance's own parameters are used); "
                     "configure the instance directly (e.g. "
                     "KMeans(n_clusters=...)) or pass the model by name "
-                    "(e.g. cluster='KMeans').")
+                    "(e.g. cluster='KMeans').", stacklevel=external_stacklevel())
                 n_clusters = None
                 _n_clusters_explicit = False
         else:
@@ -2811,7 +2909,7 @@ def plot(
                 not in inspect.signature(_model_cls).parameters):
             warnings.warn(
                 f"n_clusters is not a valid parameter for "
-                f"{_mixture_name(model)} clustering and will be ignored.")
+                f"{_mixture_name(model)} clustering and will be ignored.", stacklevel=external_stacklevel())
             n_clusters = None
             _n_clusters_explicit = False
 
@@ -2862,7 +2960,7 @@ def plot(
                     "legend is not supported for mixture-model clustering "
                     "(observations have blended colors, not discrete "
                     "groups); ignoring legend."
-                )
+                , stacklevel=external_stacklevel())
                 legend = None
             if not animate:
                 # exact per-point colors (rendered via collections/scatter)
@@ -2902,7 +3000,7 @@ def plot(
     elif hue is not None:
         if color is not None:
             warnings.warn("hue= and color= were both given; color= will "
-                          "be ignored in favor of hue=.")
+                          "be ignored in favor of hue=.", stacklevel=external_stacklevel())
 
         # pandas containers are used POSITIONALLY (their values, in order):
         # a categorical Series whose index does not contain the label 0
@@ -2943,8 +3041,19 @@ def plot(
         # "put every observation in one group". Broadcast it to one value per
         # observation so it is not mis-measured as len('red') == 3 characters
         # (QC 2026-07 red-team: hue='red' on 20 points raised the nonsensical
-        # "hue has 3 entries but the data has 20 observations").
+        # "hue has 3 entries but the data has 20 observations"). Since a
+        # single-group hue colors nothing differently, this is usually a
+        # mistake -- e.g. a DataFrame COLUMN NAME passed seaborn-style --
+        # so say so rather than silently accepting it (release-1.0 audit,
+        # X2-error-quality-016).
         if hue_array is not None and hue_array.ndim == 0:
+            warnings.warn(
+                f"hue= was given a single scalar value ({hue!r}); all "
+                "observations will be placed in ONE group (a single "
+                "color). hue= takes the per-observation values themselves "
+                "-- a list/array with one entry per observation (e.g. "
+                "hue=df['col'] rather than a column name).",
+                UserWarning, stacklevel=external_stacklevel())
             hue = [hue_array.item()] * n_obs
             hue_array = np.asarray(hue)
         # validate hue length (QC 2026-07): a hue that was too SHORT silently
@@ -3053,7 +3162,7 @@ def plot(
             multicolor_hue = np.asarray(hue_array, dtype=np.float64)
             if legend is True:
                 warnings.warn("legend is not supported for continuous or "
-                              "matrix-valued hue; ignoring legend.")
+                              "matrix-valued hue; ignoring legend.", stacklevel=external_stacklevel())
                 legend = None
             hue = None
 
@@ -3070,7 +3179,7 @@ def plot(
             ]
             if legend is True:
                 warnings.warn("legend is not supported for matrix-valued "
-                              "hue; ignoring legend.")
+                              "hue; ignoring legend.", stacklevel=external_stacklevel())
                 legend = None
             hue = group_ids
 
@@ -3179,7 +3288,7 @@ def plot(
                         "only one observation; a pure line format cannot "
                         "render a single point, so it will be invisible -- "
                         "pass fmt='.' or fmt='o-' to mark singleton "
-                        "categories.")
+                        "categories.", stacklevel=external_stacklevel())
 
     # multilevel styling for nested-list input: every leaf under the same
     # outermost group shares that group's color, and each additional nesting
@@ -3265,14 +3374,14 @@ def plot(
                 "2-D animations, which use a fixed (non-rotating) "
                 "viewport; ignoring.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=external_stacklevel(),
             )
         if zoom != 1:
             warnings.warn(
                 "zoom= controls the 3-D camera's distance/box-aspect zoom "
                 "and has no 2-D equivalent; ignoring.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=external_stacklevel(),
             )
 
     # chemtrails/precog/bullettime (GH #127): broadcast bool-or-list to the
@@ -3302,7 +3411,7 @@ def plot(
                 "plots and will be ignored here; pass animate=True (or "
                 "'parallel') to draw trails.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=external_stacklevel(),
             )
 
     # GH #127 (+ morph/window follow-up): 'spin' has no "current position"
@@ -3338,7 +3447,7 @@ def plot(
                 f"animate={animate!r} does not support trail styles; "
                 f"ignoring {_detail}",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=external_stacklevel(),
             )
 
     # names= (QC 2026-07): per-DATASET names, distinct from per-point `labels=`
@@ -3548,7 +3657,7 @@ def plot(
                 "the figure will be drawn as a static plot without hover "
                 "labels. Run in an interactive session (or switch "
                 "backends, e.g. matplotlib.use('QtAgg')) to use explore "
-                "mode.", UserWarning)
+                "mode.", UserWarning, stacklevel=external_stacklevel())
         mpl_kwargs["picker"] = True
 
     # predict= forecasts were computed per ORIGINAL input dataset; if
@@ -3753,7 +3862,7 @@ def plot(
                 f"kwarg(s) to a trace property and will ignore them: "
                 f"{_unmapped_plotly_kwargs}. Supported passthrough "
                 f"kwargs for plotly are: {sorted(_PLOTLY_MAPPED_KWARGS)}."
-            )
+            , stacklevel=external_stacklevel())
 
         if "color" not in mpl_kwargs:
             import seaborn as sns_local
@@ -3897,7 +4006,7 @@ def plot(
                         "not supported for animate='morph'; drawing the "
                         "morph with its default colors.",
                         UserWarning,
-                    )
+                        stacklevel=external_stacklevel())
                 elif (line_ani is not None and animate != 'spin'
                         and has_line_component(fmt)):
                     # animated reveal styles (parallel/window/serial):

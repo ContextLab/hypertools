@@ -24,7 +24,11 @@ raising a friendly `ImportError` only then.
 Convergence warnings (non-invertible starting MA parameters, failure to
 fully converge on small/synthetic series, etc.) are common and harmless for
 short forecasts; they are suppressed narrowly around the `fit()` call only
-(not globally), so genuine warnings elsewhere in the process are unaffected.
+(not globally) and only for statsmodels' OWN routine fit-time noise (its
+ConvergenceWarning/ValueWarning categories plus the two specific
+starting-parameter UserWarnings -- see `_import_statsmodels_warnings`), so
+genuine warnings, including unrelated UserWarnings raised during the fit,
+are unaffected.
 """
 import warnings
 
@@ -46,16 +50,29 @@ def _import_arima():
     return SMArima
 
 
-def _import_convergence_warning():
-    from statsmodels.tools.sm_exceptions import ConvergenceWarning
-    return ConvergenceWarning
+def _import_statsmodels_warnings():
+    """The statsmodels warning categories (plus specific UserWarning message
+    prefixes) that the fitter suppresses around each column's `.fit()` --
+    kept NARROW so genuine, unrelated warnings still propagate (release-1.0
+    audit, X4-warnings-015: the fitter used to blanket-suppress ALL
+    UserWarnings during fit)."""
+    from statsmodels.tools.sm_exceptions import (ConvergenceWarning,
+                                                 ValueWarning)
+    # statsmodels raises these fit-time diagnostics as plain UserWarnings
+    # (module statsmodels.tsa.statespace.sarimax); they are routine for
+    # short/synthetic series and harmless for short forecasts.
+    messages = ('Non-invertible starting MA parameters found',
+                'Non-stationary starting autoregressive parameters found')
+    return (ConvergenceWarning, ValueWarning), messages
 
 
 def fitter(data, **kwargs):
     """Fit an independent `statsmodels` ARIMA model per column of `data`.
 
-    Convergence/user warnings raised during each column's `.fit()` are
-    suppressed (narrowly, only around the fit call).
+    statsmodels' routine fit-time warnings (ConvergenceWarning,
+    ValueWarning, and the specific starting-parameter UserWarnings) raised
+    during each column's `.fit()` are suppressed -- narrowly, only around
+    the fit call, and only those; other warnings propagate.
 
     Parameters
     ----------
@@ -73,7 +90,7 @@ def fitter(data, **kwargs):
         entry per column of `data`, in column order.
     """
     sm_arima = _import_arima()
-    convergence_warning = _import_convergence_warning()
+    sm_categories, sm_messages = _import_statsmodels_warnings()
     order = kwargs.get('order', (1, 1, 1))
     arima_kwargs = {k: v for k, v in kwargs.items() if k not in ('order', 'n_iter')}
 
@@ -81,8 +98,16 @@ def fitter(data, **kwargs):
     for col in data.columns:
         x = data[col].to_numpy(dtype=float)
         with warnings.catch_warnings():
-            warnings.simplefilter('ignore', category=UserWarning)
-            warnings.simplefilter('ignore', category=convergence_warning)
+            # NARROW suppression (release-1.0 audit, X4-warnings-015):
+            # only statsmodels' own routine fit-time noise is silenced --
+            # its ConvergenceWarning/ValueWarning categories and the two
+            # specific starting-parameter UserWarnings -- so any OTHER
+            # UserWarning raised during the fit still reaches the caller.
+            for category in sm_categories:
+                warnings.filterwarnings('ignore', category=category)
+            for message in sm_messages:
+                warnings.filterwarnings('ignore', message=message,
+                                        category=UserWarning)
             fit_result = sm_arima(x, order=order, **arima_kwargs).fit()
         results.append(fit_result)
 

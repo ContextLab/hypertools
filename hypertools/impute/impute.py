@@ -30,18 +30,14 @@ from .common import Imputer
 from .ppca import PPCA
 from .sklearn_imputers import SimpleImputer, KNNImputer, IterativeImputer
 from .kalman import Kalman
-from ..core.shared import unpack_model
+from ..core.shared import supported_names, unpack_model
 
 
 IMPUTERS = [PPCA, SimpleImputer, KNNImputer, IterativeImputer, Kalman]
 
 
-def _supported_names():
-    return [m.__name__ for m in IMPUTERS]
-
-
 def _spec_help():
-    return (f'supported names: {", ".join(_supported_names())} (or pass a '
+    return (f'supported names: {", ".join(supported_names(IMPUTERS))} (or pass a '
             "dict {'model': ..., 'args': [...], 'kwargs': {...}}, an Imputer "
             'subclass, or an Imputer instance directly). Note that raw '
             'scikit-learn imputer classes/instances are not accepted; use '
@@ -247,11 +243,11 @@ def _wrangled_impute(data, model='PPCA', return_model=False, **kwargs):
             f'{sorted(model)}. Pass e.g. '
             "{'model': 'PPCA', 'kwargs': {...}}.")
 
-    if isinstance(model, str) and model not in _supported_names():
+    if isinstance(model, str) and model not in supported_names(IMPUTERS):
         # case-insensitive fallback (release-1.0 audit,
         # D09-tutorials-applied-014: model='ppca' used to raise "unknown
         # impute model 'ppca'" while listing 'PPCA' as supported)
-        _by_lower = {n.lower(): n for n in _supported_names()}
+        _by_lower = {n.lower(): n for n in supported_names(IMPUTERS)}
         model = _by_lower.get(model.lower(), model)
     try:
         resolved = unpack_model(model, valid=IMPUTERS, parent_class=Imputer)

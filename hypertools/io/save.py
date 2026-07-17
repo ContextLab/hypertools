@@ -31,7 +31,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .._shared.exceptions import HypertoolsIOError
+from ..core.exceptions import HypertoolsIOError
 
 # extensions written as real (non-pickle) formats; everything else --
 # including .pkl/.pickle/.p/.geo, unknown extensions, and extensionless
@@ -113,7 +113,7 @@ def save(obj, fname, protocol=None):
 
     Raises
     ------
-    hypertools._shared.exceptions.HypertoolsIOError
+    hypertools.core.exceptions.HypertoolsIOError
         If the object cannot be serialized in the requested format (e.g.
         an unpicklable object holding an open file handle, or a nested
         dict aimed at .csv), or if the target path is invalid (missing

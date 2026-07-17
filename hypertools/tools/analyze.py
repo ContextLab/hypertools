@@ -222,11 +222,13 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
                 "pass pipeline= alone."
             )
         if ndims is not None:
+            from ..core.model import external_stacklevel
             warnings.warn(
                 f"ndims={ndims!r} is ignored when pipeline= is given: a "
                 "fitted Pipeline applies its reduce stage exactly as fitted. "
                 "Re-fit with analyze(..., reduce=..., ndims=..., "
-                "return_model=True) to change the dimensionality."
+                "return_model=True) to change the dimensionality.",
+                stacklevel=external_stacklevel()
             )
         if impute is not None:
             # honor impute= on the reuse path too (it was previously
@@ -270,10 +272,12 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
         cluster = None
 
     if ndims is not None and reduce is None:
+        from ..core.model import external_stacklevel
         warnings.warn(
             f"ndims={ndims!r} was passed but reduce= is None/False, so NO "
             "dimensionality reduction will be performed; also pass e.g. "
-            f"reduce='IncrementalPCA' to reduce to {ndims!r} dimensions."
+            f"reduce='IncrementalPCA' to reduce to {ndims!r} dimensions.",
+            stacklevel=external_stacklevel()
         )
 
     if impute is not None:

@@ -100,7 +100,7 @@ from typing import Iterable
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-from .._shared.exceptions import HypertoolsBackendError
+from ..core.exceptions import HypertoolsBackendError
 
 
 BACKEND_KEYS = {

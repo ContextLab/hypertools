@@ -279,6 +279,20 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
         # model=None)
         return (data, None) if return_model else data
 
-    return _funneled_manip(data, model=model, return_model=return_model,
-                           normalize=normalize, reduce=reduce, ndims=ndims,
-                           align=align, cluster=cluster, **kwargs)
+    import warnings
+    with warnings.catch_warnings():
+        # TARGETED upstream-noise filter (release-1.0 audit,
+        # X1-api-consistency-018 / X4-warnings-002): pydata-wrangler's
+        # stacked-apply/funnel path passes the deprecated `copy=` keyword
+        # to `pd.concat` (datawrangler/decorate/decorate.py `pandas_stack`),
+        # so every MULTI-DATASET manip emitted a pandas
+        # Pandas4Warning/DeprecationWarning the user can do nothing about.
+        # Suppress ONLY that specific message around our stacked-apply call
+        # site -- never Pandas4Warning wholesale -- until the fix lands
+        # upstream in pydata-wrangler (same maintainers).
+        warnings.filterwarnings(
+            'ignore', message='The copy keyword is deprecated',
+            category=DeprecationWarning)
+        return _funneled_manip(data, model=model, return_model=return_model,
+                               normalize=normalize, reduce=reduce, ndims=ndims,
+                               align=align, cluster=cluster, **kwargs)

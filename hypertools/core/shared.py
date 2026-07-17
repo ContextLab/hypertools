@@ -9,8 +9,48 @@ resolve later.
 import copy
 import warnings
 
+import numpy as np
+import pandas as pd
+
 #: sentinel distinguishing "no explicit default passed" in RobustDict.get
 _MISSING = object()
+
+
+def as_dataframe(data):
+    """Coerce `data` to a pandas DataFrame (returned as-is if it already
+    is one).
+
+    Shared by `hypertools.predict.common` and `hypertools.impute.common`
+    (2026-07 audit, X7-code-org-rest-019: previously duplicated verbatim
+    in both modules).
+    """
+    if isinstance(data, pd.DataFrame):
+        return data
+    return pd.DataFrame(np.asarray(data))
+
+
+def supported_names(models):
+    """Class names of the models in `models` (a dispatcher's registry
+    list), for spec-help / error messages (2026-07 audit,
+    X7-code-org-rest-019: previously re-defined per dispatcher)."""
+    return [m.__name__ for m in models]
+
+
+def import_kalman_filter(role):
+    """Import and return ``pykalman.KalmanFilter``, raising a friendly
+    ImportError naming the Kalman `role` (``'forecaster'`` or
+    ``'imputer'``) if pykalman is unavailable (2026-07 audit,
+    X7-code-org-rest-019: previously duplicated in predict/kalman.py and
+    impute/kalman.py, differing only in this one word)."""
+    try:
+        from pykalman import KalmanFilter
+    except ImportError as e:
+        raise ImportError(
+            f'pykalman is required for the Kalman {role}. It is normally a '
+            'core hypertools dependency; reinstall hypertools, or install '
+            'it directly with `pip install pykalman`.'
+        ) from e
+    return KalmanFilter
 
 
 def require_data(data, caller):

@@ -28,7 +28,9 @@ def fitter(data, align_type, **kwargs):
     **kwargs
         `features` : int, optional number of shared features (default:
         the shared column count of the already-padded datasets, i.e. the
-        MAXIMUM column count across the original datasets).
+        MAXIMUM column count across the original datasets). Must be a
+        positive integer; anything else raises a `ValueError` naming the
+        kwarg.
 
     Returns
     -------
@@ -42,6 +44,16 @@ def fitter(data, align_type, **kwargs):
     features = kwargs.pop('features', None)
     if features is None:
         features = np.min([d.shape[1] for d in data])
+    elif (isinstance(features, bool)
+          or not isinstance(features, (int, np.integer)) or features < 1):
+        # a bad features= used to leak numpy's "negative dimensions are not
+        # allowed" from deep inside the SRM's random-state internals,
+        # never naming the kwarg (release-1.0 audit, X2-error-quality-019)
+        raise ValueError(
+            f'features must be a positive integer (the number of shared '
+            f'SRM features) or None (default: the shared column count of '
+            f'the preprocessed datasets); got {features!r}.')
+    features = int(features)
 
     model = align_type(features=features)
     model.fit([d.values.T for d in data])

@@ -5,7 +5,6 @@ Helper functions
 """
 
 ##PACKAGES##
-import sys
 import numpy as np
 import itertools
 import pandas as pd
@@ -189,44 +188,6 @@ def interp_array_list(arr_list, interp_val=10):
     for idx,arr in enumerate(arr_list):
         smoothed[idx] = interp_array(arr,interp_val)
     return smoothed
-
-
-def parse_args(x, args):
-    """Broadcast positional plotting args across each dataset in `x`.
-
-    For each argument in `args`: if it is a list/tuple whose length
-    matches `len(x)`, one entry is assigned per dataset; otherwise the
-    same value is repeated for every dataset. Exits the process (via
-    `sys.exit(1)`) if a list/tuple argument's length does not match
-    `len(x)`.
-
-    Parameters
-    ----------
-    x : list
-        The datasets being plotted; only its length is used, to
-        determine how many per-dataset argument tuples to produce.
-    args : sequence
-        Positional arguments to distribute across the datasets.
-
-    Returns
-    -------
-    list of tuple
-        One tuple of arguments per dataset in `x`.
-    """
-    args_list = []
-    for i,item in enumerate(x):
-        tmp = []
-        for ii, arg in enumerate(args):
-            if isinstance(arg, (tuple, list)):
-                if len(arg) == len(x):
-                    tmp.append(arg[i])
-                else:
-                    print('Error: arguments must be a list of the same length as x')
-                    sys.exit(1)
-            else:
-                tmp.append(arg)
-        args_list.append(tuple(tmp))
-    return args_list
 
 
 def parse_kwargs(x, kwargs):

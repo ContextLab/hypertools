@@ -45,7 +45,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from .._shared.exceptions import HypertoolsIOError
+from ..core.exceptions import HypertoolsIOError
 
 _DRIVE_ID_RE = re.compile(r'^[A-Za-z0-9_-]{25,}$')
 _DOMAIN_RE = re.compile(r'^[\w-]+(\.[\w-]+)+(/\S*)?$')

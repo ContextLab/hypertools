@@ -71,7 +71,10 @@ def fitter(data, **kwargs):
     Raises
     ------
     ValueError
-        If fewer than 2 usable columns remain, or `d` is invalid.
+        If fewer than 2 usable columns remain, if `d` is invalid, or if
+        the usable columns are rank-deficient (perfectly collinear), which
+        makes the EM singular -- the error names remedies (drop/jitter the
+        collinear columns, lower `d`, or use another imputer).
     """
     d = kwargs.get('d', None)
     min_obs = kwargs.get('min_obs', 10)
@@ -81,11 +84,13 @@ def fitter(data, **kwargs):
     x = data.to_numpy(dtype=float)
     all_missing_rows = np.all(np.isnan(x), axis=1)
     if all_missing_rows.any():
+        from ..core.model import external_stacklevel
         warnings.warn(
             f"PPCA cannot fill {int(all_missing_rows.sum())} row(s) with no "
             "observed features at all; those rows will remain NaN. Use "
             "model='Kalman' (hypertools.impute.kalman.Kalman) to fill "
-            "fully-missing rows too (see GH #169).")
+            "fully-missing rows too (see GH #169).",
+            stacklevel=external_stacklevel())
     fit_rows = ~all_missing_rows
 
     obs_counts = (~np.isnan(x)).sum(axis=0)
@@ -118,18 +123,34 @@ def fitter(data, **kwargs):
 
     m = _PPCAModel()
     fit_data = x[np.ix_(fit_rows, keep_cols)].copy()
-    if random_state is None:
-        m.fit(data=fit_data, d=d, tol=tol, min_obs=min_obs)
-    else:
-        # the vendored PPCA initializes its EM from the GLOBAL numpy RNG with
-        # no seed parameter (QC 2026-07 red-team F17-impute-003): seed it
-        # temporarily, restoring the caller's RNG state afterwards.
-        state = np.random.get_state()
-        try:
-            np.random.seed(random_state)
+    try:
+        if random_state is None:
             m.fit(data=fit_data, d=d, tol=tol, min_obs=min_obs)
-        finally:
-            np.random.set_state(state)
+        else:
+            # the vendored PPCA initializes its EM from the GLOBAL numpy RNG
+            # with no seed parameter (QC 2026-07 red-team F17-impute-003):
+            # seed it temporarily, restoring the caller's RNG state
+            # afterwards.
+            state = np.random.get_state()
+            try:
+                np.random.seed(random_state)
+                m.fit(data=fit_data, d=d, tol=tol, min_obs=min_obs)
+            finally:
+                np.random.set_state(state)
+    except np.linalg.LinAlgError as e:
+        # perfectly collinear (rank-deficient) data makes the EM's
+        # covariance updates singular, which surfaced as a raw numpy
+        # LinAlgError from deep inside the vendored model (release-1.0
+        # audit, G1 observation) -- explain the cause and the remedies.
+        raise ValueError(
+            'PPCA could not fit this data: the observed columns appear to '
+            'be RANK-DEFICIENT (some columns are perfectly collinear / '
+            'linearly dependent), which makes the EM\'s covariance updates '
+            'singular. Remedies: drop or de-duplicate the collinear '
+            'columns; add a tiny amount of random noise (jitter) to break '
+            'the exact dependence; pass a smaller d= (at most the data\'s '
+            'true rank); or use a different imputer, e.g. model="Kalman", '
+            '"KNNImputer", or "IterativeImputer".') from e
     return {'ppca': m, 'fit_rows': fit_rows, 'keep_cols': keep_cols}
 
 

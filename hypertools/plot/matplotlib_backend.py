@@ -28,6 +28,7 @@ except ImportError:  # pragma: no cover
 import matplotlib.animation as animation
 import matplotlib.patches as patches
 from .._shared.helpers import *
+from ..core.model import external_stacklevel
 from .meshutil import (backface_cull, blinn_phong_colors,
                        vertex_colors_from_points, face_colors_from_vertex_colors)
 from .surface import (
@@ -139,7 +140,7 @@ def _draw_one_density_3d(ax, pts, spec, color, label="", boost=1.0):
             "hypertools[density3d]`, or use backend='plotly' for full "
             "volumetric rendering.",
             UserWarning,
-        )
+            stacklevel=external_stacklevel())
         rng = np.random.default_rng()
         fog = kde.resample(4000, seed=rng).T
         fog_coll = ax.scatter(fog[:, 0], fog[:, 1], fog[:, 2], s=6, c=[color],

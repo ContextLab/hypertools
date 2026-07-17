@@ -36,22 +36,11 @@ import numpy as np
 import pandas as pd
 
 from .common import Imputer
+from ..core.shared import import_kalman_filter
 
 _EM_VARS = ['transition_matrices', 'transition_covariance',
             'observation_covariance', 'initial_state_mean',
             'initial_state_covariance']
-
-
-def _import_kalman_filter():
-    try:
-        from pykalman import KalmanFilter
-    except ImportError as e:
-        raise ImportError(
-            'pykalman is required for the Kalman imputer. It is normally a '
-            'core hypertools dependency; reinstall hypertools, or install it '
-            'directly with `pip install pykalman`.'
-        ) from e
-    return KalmanFilter
 
 
 def fitter(data, **kwargs):
@@ -85,7 +74,7 @@ def fitter(data, **kwargs):
         interpolates through time, so a single row carries no temporal
         information.
     """
-    kalman_filter_cls = _import_kalman_filter()
+    kalman_filter_cls = import_kalman_filter('imputer')
     n_iter = kwargs.get('n_iter', 5)
 
     x = data.to_numpy(dtype=float)

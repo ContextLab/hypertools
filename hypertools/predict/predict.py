@@ -8,8 +8,8 @@ resolved Forecaster (DataFrame-based) is applied directly rather than via
 the array-based core.apply_model.
 
 Model specs may be: a registered name (``FORECASTERS``' ``__name__``\\ s), a
-dict in either ``{'model': ..., 'params': {...}}`` or the fork-style
-``{'model': ..., 'args': [...], 'kwargs': {...}}`` form, a Forecaster
+dict in either ``{'model': ..., 'params': {...}}`` (deprecated) or the
+fork-style ``{'model': ..., 'args': [...], 'kwargs': {...}}`` form, a Forecaster
 subclass, or a Forecaster instance. An instance that has already been fit
 (``instance.is_fitted``) is routed to `Forecaster.predict_new` instead of
 `fit_predict` -- the no-re-estimation path behind ``return_model=True``
@@ -32,7 +32,8 @@ from .autoreg import AutoRegressor
 from .arima import ARIMA
 from .laplace import Laplace
 from .chronos import Chronos
-from ..core.shared import unpack_model
+from ..core.shared import supported_names, unpack_model
+from ..core.model import external_stacklevel
 
 
 FORECASTERS = [Kalman, GaussianProcess, AutoRegressor, ARIMA, Laplace, Chronos]
@@ -43,12 +44,8 @@ FORECASTERS = [Kalman, GaussianProcess, AutoRegressor, ARIMA, Laplace, Chronos]
 _FORECASTER_ALIASES = {'GP': 'GaussianProcess'}
 
 
-def _supported_names():
-    return [f.__name__ for f in FORECASTERS]
-
-
 def _spec_help():
-    return (f'supported names: {", ".join(_supported_names())} (or pass a '
+    return (f'supported names: {", ".join(supported_names(FORECASTERS))} (or pass a '
             "dict {'model': ..., 'args': [...], 'kwargs': {...}}, a "
             'Forecaster subclass, or a Forecaster instance directly)')
 
@@ -163,7 +160,7 @@ def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
             warnings.warn(
                 "{'model': ..., 'params': {...}} is deprecated; use "
                 "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
-                DeprecationWarning, stacklevel=2)
+                DeprecationWarning, stacklevel=external_stacklevel())
         kwargs = {**dict(model.get('params', {})), **kwargs}
         model = model['model']
     elif isinstance(model, dict) and 'model' not in model:
@@ -177,8 +174,8 @@ def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
         # case-insensitive fallback (release-1.0 audit,
         # D09-tutorials-applied-014: model='kalman' used to raise "unknown
         # predict model 'kalman'" while listing 'Kalman' as supported)
-        if model not in _supported_names():
-            _by_lower = {n.lower(): n for n in _supported_names()}
+        if model not in supported_names(FORECASTERS):
+            _by_lower = {n.lower(): n for n in supported_names(FORECASTERS)}
             _by_lower.update({k.lower(): v
                               for k, v in _FORECASTER_ALIASES.items()})
             model = _by_lower.get(model.lower(), model)
@@ -214,7 +211,7 @@ def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
             f'ignoring keyword argument(s) {sorted(kwargs)}: model= is '
             'already a constructed instance, so constructor parameters '
             'cannot be applied. Pass the class (or a name/dict spec) to '
-            'set parameters.')
+            'set parameters.', stacklevel=external_stacklevel())
 
     if isinstance(resolved, Forecaster) and resolved.is_fitted:
         forecasts = resolved.predict_new(data, t)

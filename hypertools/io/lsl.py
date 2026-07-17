@@ -104,7 +104,7 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
     >>> stream = hyp.io.lsl_stream(type='EEG', timeout=5.0)  # doctest: +SKIP
     >>> hyp.plot(stream, stream_init=200, stream_chunk=20)  # doctest: +SKIP
     """
-    from .._shared.exceptions import HypertoolsIOError
+    from ..core.exceptions import HypertoolsIOError
 
     # validate lsl_stream's OWN parameters before they reach pylsl, whose
     # internal failures never name the offending argument (release-1.0

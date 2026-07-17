@@ -21,11 +21,7 @@ import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 
-
-def _as_dataframe(data):
-    if isinstance(data, pd.DataFrame):
-        return data
-    return pd.DataFrame(np.asarray(data))
+from ..core.shared import as_dataframe as _as_dataframe
 
 
 def _shared_columns(datasets):

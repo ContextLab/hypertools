@@ -273,10 +273,15 @@ def test_plot_does_not_mutate_callers_fmt_list():
     single = rng.standard_normal((1, 4))
     multi = rng.standard_normal((10, 4))
     user_fmt = ['-', '-']
-    with pytest.warns(UserWarning):
-        # (single-point line datasets warn; that's fine -- the point here
-        # is that the caller's list object stays untouched)
-        hyp.plot([single, multi], user_fmt, show=False)
+    # NOTE (H1 polish wave): this used to be wrapped in pytest.warns
+    # (UserWarning) on the mistaken premise that single-point line datasets
+    # warn -- they are silently drawn as points. The wrapper only ever
+    # matched a STRAY test-order-dependent UserWarning (matplotlib's
+    # 'Animation was deleted without rendering anything' fired at GC by
+    # earlier animation tests -- the exact noise X4-warnings-012 removed),
+    # so it failed on a pristine tree in isolation. The point here is only
+    # that the caller's list object stays untouched.
+    hyp.plot([single, multi], user_fmt, show=False)
     assert user_fmt == ['-', '-']
 
 

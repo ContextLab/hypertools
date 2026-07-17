@@ -36,23 +36,12 @@ import numpy as np
 import pandas as pd
 
 from .common import Forecaster
+from ..core.shared import import_kalman_filter
 
 #: soft cap on the delay-embedded state dimension (lags * n_features); the
 #: automatic `lags` choice shrinks toward 1 for wide data so the state (and
 #: the EM covariance estimates) stay tractable.
 _MAX_STATE_DIM = 32
-
-
-def _import_kalman_filter():
-    try:
-        from pykalman import KalmanFilter
-    except ImportError as e:
-        raise ImportError(
-            'pykalman is required for the Kalman forecaster. It is normally a '
-            'core hypertools dependency; reinstall hypertools, or install it '
-            'directly with `pip install pykalman`.'
-        ) from e
-    return KalmanFilter
 
 
 def _resolve_lags(lags, n, d):
@@ -129,7 +118,7 @@ def fitter(data, **kwargs):
         state mean>, 'cov': <final filtered state covariance>,
         'n_features': <number of observed columns>}`.
     """
-    kalman_filter_cls = _import_kalman_filter()
+    kalman_filter_cls = import_kalman_filter('forecaster')
     n_iter = kwargs.get('n_iter', 5)
     lags = kwargs.get('lags', None)
 

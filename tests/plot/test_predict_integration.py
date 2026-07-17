@@ -71,7 +71,11 @@ def test_predict_return_model_bundle():
     forecasts = bundle['predict']['forecasts']
     assert len(forecasts) == 2
     for fc in forecasts:
-        assert np.asarray(fc).shape == (t + 1, 3)
+        # exactly t forecast rows, matching hyp.predict (X1-api-016: the
+        # bundle used to include the drawn overlay's prepended seam row,
+        # an off-by-one vs. hyp.predict; the DRAWN trace still has t + 1
+        # vertices -- see test_predict_overlay_traces above)
+        assert np.asarray(fc).shape == (t, 3)
     assert bundle['models']['impute'] is None
 
 

@@ -22,11 +22,7 @@ import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 
-
-def _as_dataframe(data):
-    if isinstance(data, pd.DataFrame):
-        return data
-    return pd.DataFrame(np.asarray(data))
+from ..core.shared import as_dataframe as _as_dataframe
 
 
 def _infer_step(index):
@@ -106,10 +102,12 @@ def resolve_t(data, t):
     # silently produced a "forecast" from the OLDEST observation, landing
     # inside the observed range (QC 2026-07 red-team F16-predict-016).
     if len(index) > 1 and not index.is_monotonic_increasing:
+        from ..core.model import external_stacklevel
         warnings.warn(
             'the dataset index is not sorted in ascending order; forecasts '
             'continue from the LAST row. If your data are newest-first, sort '
-            'them (e.g. df.sort_index()) before forecasting.')
+            'them (e.g. df.sort_index()) before forecasting.',
+            stacklevel=external_stacklevel())
 
     if isinstance(t, (int, np.integer)) and not isinstance(t, bool):
         n_steps = int(t)

@@ -17,6 +17,7 @@ from .procrustes import Procrustes
 from .srm import SharedResponseModel, DeterministicSharedResponseModel, RobustSharedResponseModel
 from .null import NullAlign
 from ..core.shared import unpack_model
+from ..core.model import external_stacklevel
 
 
 ALIGNERS = [HyperAlign, SharedResponseModel, DeterministicSharedResponseModel,
@@ -39,6 +40,20 @@ _ALIAS = {
     'Procrustes': 'Procrustes',
     'NullAlign': 'NullAlign',
 }
+
+
+def _warn_deprecated_alias(name):
+    """Emit the promised DeprecationWarning for the documented-deprecated
+    `'hyper'` alias (release-1.0 audit, X1-api-consistency-020: the
+    docstring called it deprecated but no warning ever fired, so users
+    could never learn the canonical name). The other aliases ('SRM',
+    'DetSRM', 'RSRM') are documented as plain -- non-deprecated --
+    aliases and stay silent."""
+    if name == 'hyper':
+        warnings.warn(
+            "model='hyper' is a deprecated alias for 'HyperAlign'; pass "
+            "model='HyperAlign' instead.",
+            DeprecationWarning, stacklevel=external_stacklevel())
 
 
 def _reject_unknown_aligner(name):
@@ -92,6 +107,7 @@ def _resolve_align_spec(model, extra_kwargs):
             "alignment.")
 
     if isinstance(model, str):
+        _warn_deprecated_alias(model)
         model = _ALIAS.get(model, model)
 
     if isinstance(model, dict):
@@ -116,11 +132,12 @@ def _resolve_align_spec(model, extra_kwargs):
             warnings.warn(
                 "{'model': ..., 'params': {...}} is deprecated; use "
                 "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
-                DeprecationWarning, stacklevel=3)
+                DeprecationWarning, stacklevel=external_stacklevel())
             c_args, c_kwargs = [], dict(model['params'])
         else:
             c_args, c_kwargs = [], {}
         if isinstance(c_model, str):
+            _warn_deprecated_alias(c_model)
             c_model = _ALIAS.get(c_model, c_model)
         resolved_inner = unpack_model(c_model, valid=ALIGNERS, parent_class=Aligner)
         if isinstance(resolved_inner, str):
@@ -297,7 +314,8 @@ def align(data, model='HyperAlign', return_model=False,
     model : str, class, instance, dict, fitted Aligner, False, or None
         Alignment algorithm to use. Supported names: `'HyperAlign'`
         (hyperalignment, Haxby et al. 2011; `'hyper'` is a deprecated
-        alias), `'SharedResponseModel'` (`'SRM'` alias),
+        alias and emits a `DeprecationWarning` naming the canonical
+        spelling), `'SharedResponseModel'` (`'SRM'` alias),
         `'DeterministicSharedResponseModel'` (`'DetSRM'` alias),
         `'RobustSharedResponseModel'` (`'RSRM'` alias), `'Procrustes'`, and
         `'NullAlign'` (returns the trimmed/padded data unchanged). Can be
@@ -351,8 +369,9 @@ def align(data, model='HyperAlign', return_model=False,
     -------
     aligned : list of numpy arrays (or a single array)
         The aligned data, in the same list/single-item shape as `data`
-        (matching `hyp.reduce`/`hyp.cluster`/`hyp.manip`, and the classic
-        `hyp.align` API, which have always returned arrays): a list input
+        (matching `hyp.reduce`/`hyp.cluster` and the classic `hyp.align`
+        API, which return numpy arrays; note that `hyp.manip` instead
+        returns pandas DataFrames): a list input
         returns a list, a single bare array/DataFrame returns a single
         array. Output rows follow the FIRST dataset's index order. If
         `return_model=True`, an `(aligned, model)` tuple is returned
@@ -361,7 +380,9 @@ def align(data, model='HyperAlign', return_model=False,
     Raises
     ------
     ValueError
-        If `data` is an empty list (nothing to align), if the datasets
+        If `data` is an empty list (nothing to align), if any dataset has
+        more than 2 dimensions (pass a list of 2-D observations-by-
+        features datasets, not a 3-D stack), if the datasets
         share no common row-index values, or if `model` is an unknown
         name / `True`.
     TypeError
@@ -402,6 +423,29 @@ def align(data, model='HyperAlign', return_model=False,
         # GH #209: normalize a list SUBCLASS to a plain `list` before the
         # funnel-decorated `_align` runs -- see `_align`'s docstring.
         data = list(data)
+    # reject 3-D (or higher) array input up front (release-1.0 audit,
+    # X3-performance-004): datawrangler's funnel silently FLATTENED a
+    # (slices x time x channels) stack into (slices, time*channels), so a
+    # natural mistake -- passing a 3-D array instead of a list of 2-D
+    # datasets -- ground through a huge dense alignment and returned
+    # meaningless output. Matches reduce/cluster's fail-fast shape checks.
+    _datasets = data if isinstance(data, list) else [data]
+    for _i, _d in enumerate(_datasets):
+        _ndim = getattr(_d, 'ndim', None)
+        if _ndim is None and not isinstance(_d, (str, bytes)):
+            try:
+                _ndim = np.ndim(_d)
+            except Exception:
+                _ndim = None
+        if _ndim is not None and _ndim > 2:
+            _which = f'dataset {_i}' if isinstance(data, list) else 'data'
+            raise ValueError(
+                f'align expects 2-D (observations x features) datasets, '
+                f'but {_which} has {_ndim} dimensions '
+                f'(shape {tuple(np.shape(_d))}). Pass a LIST of 2-D '
+                'arrays/DataFrames (e.g. one per subject) instead of a '
+                'higher-dimensional stack -- e.g. list(x) for a 3-D '
+                'array x.')
     return _align(data, model=model, return_model=return_model,
                   manip=manip, normalize=normalize, reduce=reduce,
                   ndims=ndims, cluster=cluster, format_data=format_data,

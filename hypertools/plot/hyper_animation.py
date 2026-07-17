@@ -99,3 +99,24 @@ class HyperAnimation(tuple):
     def __repr__(self):
         return (f"HyperAnimation(figure={self.figure!r}, "
                 f"animation={type(self.animation).__name__})")
+
+    def __del__(self):
+        """Silence matplotlib's 'Animation was deleted without rendering
+        anything' UserWarning when a HyperAnimation is discarded/rebound
+        without ever being saved or displayed (release-1.0 audit,
+        X4-warnings-012: a common exploratory pattern -- ``hyp.plot(...,
+        animate=True)`` in a loop, or an unbound call -- scolded users at
+        garbage collection for hypertools' own object lifecycle). The
+        warning fires from ``Animation.__del__`` when its private
+        ``_draw_was_started`` flag is still False; marking the flag here,
+        as this wrapper is collected, keeps matplotlib quiet without
+        affecting rendering (nothing is drawn or closed -- saving/display
+        still work exactly as before if the inner animation object
+        outlives the wrapper)."""
+        try:
+            anim = self[1]
+            if getattr(anim, '_draw_was_started', None) is False:
+                anim._draw_was_started = True
+        except Exception:
+            # never let cleanup raise during interpreter shutdown/GC
+            pass

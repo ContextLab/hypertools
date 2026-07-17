@@ -77,18 +77,6 @@ def test_interp_array_list_interpval():
 #         helpers.check_data(str(1))
 
 
-def test_parse_args_array():
-    x = [np.random.random((3,3))]
-    args=('o',)
-    assert helpers.parse_args(x, args)==[('o',)]
-
-
-def test_parse_args_list():
-    x = [np.random.random((3,3))]*2
-    args=('o',)
-    assert helpers.parse_args(x, args)==[('o',),('o',)]
-
-
 def test_parse_kwargs_array():
     x = [np.random.random((3,3))]
     kwargs={'label': ['Group A']}

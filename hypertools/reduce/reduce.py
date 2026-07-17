@@ -5,7 +5,7 @@ import warnings
 import numpy as np
 from .common import (Reducer, models, REDUCERS, AUTOENCODER_NAMES,
                      resolve_reducer)
-from .._shared.helpers import *
+from ..core.model import external_stacklevel
 from ..tools.format_data import format_data as formatter
 
 
@@ -19,7 +19,30 @@ def _resolve_model(model_name):
     triggers numba JIT compilation that adds seconds to `import hypertools`
     even when UMAP is never used.
     """
-    return resolve_reducer(model_name)
+    with warnings.catch_warnings():
+        # umap-learn emits an ImportWarning about its OPTIONAL tensorflow/
+        # ParametricUMAP extra at import time -- noise for standard UMAP
+        # use (release-1.0 audit, X4-warnings-011; same pattern as the
+        # gensim filter in tools/text2mat).
+        warnings.filterwarnings('ignore', message='Tensorflow not installed')
+        return resolve_reducer(model_name)
+
+
+def _raise_unknown_reduce_model(model_name):
+    """Raise the standard unknown-reduce-model ValueError, naming the
+    offending value, a did-you-mean hint for case near-misses, and the
+    supported names (F11-reduce-describe-005; shared by the bare-string
+    and dict-spec paths -- the dict path used to leak a bare KeyError,
+    release-1.0 audit X7 residue)."""
+    supported_names = sorted(list(REDUCERS) + ['UMAP']
+                             + list(AUTOENCODER_NAMES))
+    match = next((name for name in supported_names
+                  if name.lower() == str(model_name).lower()), None)
+    hint = f" (did you mean {match!r}?)" if match else ""
+    raise ValueError(
+        f"unknown reduce model {model_name!r}{hint}; supported "
+        f"names: {', '.join(supported_names)}. A scikit-learn style "
+        f"class or instance can also be passed directly.") from None
 
 
 # main function
@@ -223,14 +246,14 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
     if isinstance(reduce, Reducer) and reduce.is_fitted:
         fitted_n_components = getattr(reduce.model_, 'n_components', None)
         if (ndims is not None) and (fitted_n_components is not None) and (ndims != fitted_n_components):
-            warnings.warn('Unequal values passed to dims and n_components. Using the already-fitted model.')
+            warnings.warn('Unequal values passed to dims and n_components. Using the already-fitted model.', stacklevel=external_stacklevel())
         if format_data:
             x = formatter(x, ppca=True)
         x_reduced, fitted = reduce_list(x, None, reuse=reduce)
         result = x_reduced if (internal or len(x_reduced) > 1) else x_reduced[0]
         return (result, fitted) if return_model else result
 
-    elif isinstance(reduce, str):  # Remove np.string_ check as it's deprecated in NumPy 2.0
+    elif isinstance(reduce, str):
         model_name = reduce
         model_params = {
             'n_components': ndims
@@ -273,7 +296,14 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
                  or type(c_model).__name__ == 'TSNE')
                 and 'perplexity' not in c_kwargs)
             if isinstance(c_model, str):
-                c_model = _resolve_model(c_model)
+                try:
+                    c_model = _resolve_model(c_model)
+                except KeyError:
+                    # an unknown name inside the DICT form used to leak a
+                    # bare KeyError ('Bogus') instead of the unknown-model
+                    # error the bare-string path raises (release-1.0
+                    # audit, X7-008 residue)
+                    _raise_unknown_reduce_model(c_model)
             # inject n_components=ndims when the model accepts it and the user
             # did not set it themselves. Without this, the canonical dict form
             # pre-built the instance with n_components=None (its default) and
@@ -323,7 +353,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
             warnings.warn(
                 "{'model': ..., 'params': {...}} is deprecated; use "
                 "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
-                DeprecationWarning, stacklevel=2)
+                DeprecationWarning, stacklevel=external_stacklevel())
 
     else:
         # handle other possibilities below: a bare (uninstantiated) custom
@@ -335,20 +365,14 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
 
     supported_names = sorted(list(REDUCERS) + ['UMAP'] + list(AUTOENCODER_NAMES))
     # if the model passed is a string, make sure it's one of the supported options
-    if isinstance(model_name, str):  # Remove np.string_ check as it's deprecated in NumPy 2.0
+    if isinstance(model_name, str):
         try:
             model = _resolve_model(model_name)
         except KeyError:
             # name the offending value and, for near-misses like 'umap',
             # suggest the correctly-cased registry name
             # (F11-reduce-describe-005)
-            match = next((name for name in supported_names
-                          if name.lower() == model_name.lower()), None)
-            hint = f" (did you mean {match!r}?)" if match else ""
-            raise ValueError(
-                f"unknown reduce model {model_name!r}{hint}; supported "
-                f"names: {', '.join(supported_names)}. A scikit-learn style "
-                f"class or instance can also be passed directly.") from None
+            _raise_unknown_reduce_model(model_name)
     # otherwise check any custom object for necessary methods
     else:
         model = model_name
@@ -382,13 +406,13 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
     if model_is_instance:
         instance_n_components = getattr(model, 'n_components', None)
         if (ndims is not None) and (instance_n_components is not None) and (ndims != instance_n_components):
-            warnings.warn('Unequal values passed to dims and n_components. Using the already-configured model instance.')
+            warnings.warn('Unequal values passed to dims and n_components. Using the already-configured model instance.', stacklevel=external_stacklevel())
         model_params['n_components'] = instance_n_components if instance_n_components is not None else ndims
     elif 'n_components' in model_params:
         if (ndims is None) or (ndims == model_params['n_components']):
             pass
         else:
-            warnings.warn('Unequal values passed to dims and n_components. Using ndims parameter.')
+            warnings.warn('Unequal values passed to dims and n_components. Using ndims parameter.', stacklevel=external_stacklevel())
             model_params['n_components'] = ndims
     else:
         model_params['n_components'] = ndims
@@ -418,7 +442,7 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
                 f"{max(i.shape[1] for i in x)} feature(s), so no reduction "
                 "was performed -- the input is returned unchanged. Request "
                 "at most as many dimensions as the data has features to "
-                "compute an actual embedding.", UserWarning)
+                "compute an actual embedding.", UserWarning, stacklevel=external_stacklevel())
         result = x if (internal or len(x) > 1) else x[0]
         return (result, None) if return_model else result
 
@@ -432,14 +456,14 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
                       'returning a zero vector of length ndims instead. '
                       'The plotted/returned values do NOT reflect the '
                       'input -- pass at least 2 observations to compute a '
-                      'real embedding.')
+                      'real embedding.', stacklevel=external_stacklevel())
         result = [np.zeros((1, model_params['n_components']), dtype=np.float64)]
         result = result if (internal or len(x) > 1) else result[0]
         return (result, None) if return_model else result
 
     elif stacked_x.shape[0] < model_params['n_components']:
             warnings.warn('The number of rows in your data is less than ndims.'
-                          ' The data will be reduced to the number of rows.')
+                          ' The data will be reduced to the number of rows.', stacklevel=external_stacklevel())
             model_params['n_components'] = stacked_x.shape[0]
             if model_is_instance:
                 model.n_components = stacked_x.shape[0]
@@ -470,14 +494,14 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         if (not model_is_instance
                 and getattr(model, '__name__', None) == 'TSNE'
                 and 'perplexity' not in model_params):
-            warnings.warn(tsne_warning, UserWarning)
+            warnings.warn(tsne_warning, UserWarning, stacklevel=external_stacklevel())
             model_params['perplexity'] = clamped_perplexity
         elif (model_is_instance and tsne_perplexity_unset
               and type(model).__name__ == 'TSNE'
               and getattr(model, 'perplexity', 0) >= n_rows):
             # the canonical dict spec constructed this instance above,
             # before the data size was known
-            warnings.warn(tsne_warning, UserWarning)
+            warnings.warn(tsne_warning, UserWarning, stacklevel=external_stacklevel())
             model.perplexity = clamped_perplexity
 
     # pin MDS's changing sklearn defaults (n_init: 4 -> 1 in sklearn 1.9;
@@ -563,7 +587,7 @@ def reduce_list(x, model, reuse=None):
 
     # Handle potential NaN values
     if np.any(np.isnan(stacked)):
-        warnings.warn('NaN values detected in input data. These may affect the reduction results.')
+        warnings.warn('NaN values detected in input data. These may affect the reduction results.', stacklevel=external_stacklevel())
 
     if reuse is not None:
         fitted = reuse

@@ -49,8 +49,14 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
 
     max_dims : int
         Dimensionalities 2 through `max_dims - 1` are evaluated (the bound
-        is EXCLUSIVE, matching Python's `range`). Defaults to
-        `min(n_observations, n_features)` of the stacked data. Values
+        is EXCLUSIVE, matching Python's `range`), so `max_dims` must be an
+        integer >= 3 (or None); anything else raises a `ValueError` naming
+        the kwarg. Defaults to
+        `min(n_observations, n_features)` of the stacked data (floored at
+        3, so 2-feature data still evaluates its one meaningful
+        dimensionality; 1-feature or single-observation data raises a
+        `ValueError` -- there is no dimensionality structure to
+        describe). Values
         beyond the data's own dimensionality are clamped with a
         `UserWarning` -- past `min(n_observations, n_features)` the
         correlations just flatline at 1.0, which is not evidence for more
@@ -72,9 +78,11 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
 
     backend : {'auto', 'matplotlib', 'plotly'}
         Which plotting backend to draw the correlation-vs-dimensions figure
-        with when `show=True` (default: 'auto', resolved the same way
+        with when `show=True`. Validated eagerly (even with `show=False`,
+        an unknown backend raises the same "backend must be one of ..."
+        `ValueError` as `hyp.plot`). Default: 'auto', resolved the same way
         `hyp.plot` resolves it -- plotly on Colab/Kaggle when available, else
-        matplotlib). The matplotlib figure is a seaborn line plot with the top
+        matplotlib. The matplotlib figure is a seaborn line plot with the top
         and right spines removed; the plotly figure is an interactive
         `go.Figure` (which has no top/right spines by default). Multi-dataset
         inputs get one distinguishable color per dataset, a legend, and the
@@ -106,12 +114,35 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
 
     """
     from ..core.shared import require_data
+    from ..core.model import external_stacklevel
     # None always raises the unified dispatcher TypeError, and a tuple of
     # datasets is accepted exactly like a list (2026-07 release audit,
     # final wave items 9/15)
     require_data(x, 'describe')
     if isinstance(x, tuple):
         x = list(x)
+
+    # validate max_dims up front (release-1.0 audit, X2-error-quality-017):
+    # max_dims=0/-3 silently returned empty results, and a float hit a bare
+    # "'float' object cannot be interpreted as an integer" from range()
+    # that never named the kwarg. The bound is EXCLUSIVE (range(2,
+    # max_dims)), so max_dims must be at least 3 for any component count
+    # to be evaluated.
+    if max_dims is not None:
+        if (isinstance(max_dims, bool)
+                or not isinstance(max_dims, (int, np.integer))
+                or max_dims < 3):
+            raise ValueError(
+                f'max_dims must be an integer >= 3 (dimensionalities 2 '
+                f'through max_dims - 1 are evaluated; the bound is '
+                f'exclusive) or None; got {max_dims!r}.')
+        max_dims = int(max_dims)
+
+    # validate backend= eagerly even when show=False (release-1.0 audit,
+    # X2-error-quality-017: a bogus backend was silently accepted unless a
+    # figure was actually drawn) -- same error hyp.plot raises.
+    from ..plot.plotly_backend import resolve_backend as _resolve_backend
+    _resolve_backend(backend)
 
     # sklearn TSNE's default 'barnes_hut' method only supports
     # n_components <= 3, so the summary loop crashed at dims=4 for the
@@ -171,6 +202,13 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
                 max_dims = x.shape[0]
             else:
                 max_dims = x.shape[1]
+            if max_dims < 3:
+                # (n, 2) data: the historical default (min(shape)) made the
+                # sweep empty -- range(2, 2) -- so describe() silently
+                # returned empty results (release-1.0 audit,
+                # X2-error-quality-017). Evaluate the one meaningful
+                # dimensionality (2) instead.
+                max_dims = 3
 
         # cap the sweep at the data's true dimensionality (release-1.0
         # audit, D14-docs-drift-015): with 8-feature data, max_dims=14
@@ -187,7 +225,8 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
                     f'with {x.shape[0]} observations x {x.shape[1]} '
                     f'features, at most {dim_cap - 1} components are '
                     f'meaningful. Evaluating dimensionalities '
-                    f'2-{dim_cap - 1} instead.', UserWarning)
+                    f'2-{dim_cap - 1} instead.', UserWarning,
+                    stacklevel=external_stacklevel())
             max_dims = dim_cap
 
         # TSNE's default barnes_hut method cannot fit n_components >= 4:
@@ -199,7 +238,8 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
                 "n_components <= 3, so describe() will evaluate "
                 f"dimensionalities 2-3 instead of 2-{max_dims - 1}; pass "
                 "reduce={'model': 'TSNE', 'kwargs': {'method': 'exact'}} "
-                "to evaluate more dimensions.", UserWarning)
+                "to evaluate more dimensions.", UserWarning,
+                stacklevel=external_stacklevel())
             max_dims = tsne_dims_cap
 
         # correlation matrix for all dimensions
@@ -230,6 +270,23 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
                 f"set of columns first (e.g. hyp.align, or pad/trim the "
                 f"features).")
 
+    # 1-column (or single-observation) data has no dimensionality structure
+    # to describe: the sweep would be empty and the result silently useless
+    # (release-1.0 audit, X2-error-quality-017)
+    _dsets = x if isinstance(x, list) else [x]
+    _shapes = [np.atleast_2d(np.asarray(xi)).shape for xi in _dsets]
+    if any(s[1] < 2 for s in _shapes):
+        raise ValueError(
+            f'describe() needs at least 2 features (columns) per dataset to '
+            f'evaluate how reduced dimensionalities preserve the data\'s '
+            f'structure; got dataset shape(s) {_shapes}. 1-column data has '
+            'no dimensionality to reduce.')
+    if any(s[0] < 2 for s in _shapes):
+        raise ValueError(
+            f'describe() needs at least 2 observations (rows) per dataset '
+            f'to compute pairwise distances; got dataset shape(s) '
+            f'{_shapes}.')
+
     # only warn about runtime when the input is actually large: the summary
     # loop's pairwise-distance matrices grow with the square of the number
     # of observations (F11-reduce-describe-011 -- this used to warn
@@ -240,7 +297,8 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     if n_rows > 1000 or n_elements > 1_000_000:
         warnings.warn(
             f'input data is large ({n_rows} total observations); this '
-            'computation can take a long time.')
+            'computation can take a long time.',
+            stacklevel=external_stacklevel())
 
     # a dictionary to store results
     result = {}
@@ -257,7 +315,8 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     fig = None
     if show and not any(result['individual']):
         warnings.warn('describe() has no components to plot (need max_dims >= 3 '
-                      'and at least 3 features); skipping the figure.')
+                      'and at least 3 features); skipping the figure.',
+                      stacklevel=external_stacklevel())
         show = False
     if show:
         from ..plot.plotly_backend import resolve_backend

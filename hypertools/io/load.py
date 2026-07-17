@@ -9,7 +9,7 @@ import pandas as pd
 import requests
 
 from ..datageometry import DataGeometry
-from .._shared.exceptions import HypertoolsIOError
+from ..core.exceptions import HypertoolsIOError
 from ..tools.analyze import analyze
 
 
