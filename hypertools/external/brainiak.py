@@ -8,7 +8,7 @@
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
 #
-#       http://www.apache.org/licenses/LICENSE-2.0
+#       https://www.apache.org/licenses/LICENSE-2.0
 #
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,7 +22,7 @@ The implementations are based on the following publications:
 .. [Chen2015] "A Reduced-Dimension fMRI Shared Response Model",
    P.-H. Chen, J. Chen, Y. Yeshurun-Dishon, U. Hasson, J. Haxby, P. Ramadge
    Advances in Neural Information Processing Systems (NIPS), 2015.
-   http://papers.nips.cc/paper/5855-a-reduced-dimension-fmri-shared-response-model
+   https://papers.nips.cc/paper/5855-a-reduced-dimension-fmri-shared-response-model
 
 .. [Anderson2016] "Enabling Factor Analysis on Thousand-Subject Neuroimaging
    Datasets",

@@ -37,7 +37,7 @@ def default_params(model, update_dict=None):
         A dict to update default parameters
 
     Returns
-    ----------
+    -------
 
     params : dict
         A dictionary of parameters

@@ -53,7 +53,7 @@ def procrustes(source, target, scaling=True, reflection=True, reduction=False,
         information.
 
     Returns
-    ----------
+    -------
     aligned_source : Numpy array
         The array source is aligned to target and returned
 

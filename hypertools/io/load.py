@@ -270,7 +270,7 @@ def load(
         flag. Local files are never subject to this policy.
 
     Returns
-    ----------
+    -------
     data : numpy array, DataFrame, list, or IterableDataset
         The loaded raw data (a list of datasets when a list of strings was
         passed). If reduce/ndims/align/normalize are supplied, the analyzed

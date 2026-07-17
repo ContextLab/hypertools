@@ -77,7 +77,7 @@ def format_data(x, vectorizer='CountVectorizer',
         (default: hyperalignment).
 
     Returns
-    ----------
+    -------
     data : list of numpy arrays
         A list of formatted arrays
     """
@@ -289,6 +289,29 @@ def format_data(x, vectorizer='CountVectorizer',
             warnings.warn('Numerical and text data with same number of '
                           'samples detected.  Aligning data to a common space.')
             processed_x = aligner(processed_x, align=text_align, format_data=False)
+        elif len(set(i.shape[1] for i in processed_x)) > 1:
+            # mixed text + numeric datasets whose sample counts differ
+            # CANNOT be auto-aligned to a common space, and (text having
+            # been embedded to its own topic-vector width) their mismatched
+            # column counts used to surface later as a bare numpy/hypertools
+            # column-count error that never mentioned text or alignment
+            # (release-1.0 audit, D08-tutorials-analysis-012 /
+            # D05-gallery-data-text-013). format_data itself still returns
+            # the per-dataset matrices (formatting mixed-width lists is a
+            # documented standalone use), but WARN with the real reason so
+            # any downstream shared-feature-space error is explained.
+            _counts = [
+                f"dataset {i}: {'text' if j in ('list_str', 'str', 'arr_str') else 'numeric'}, "
+                f'{arr.shape[0]} sample(s)'
+                for i, (arr, j) in enumerate(zip(processed_x, dtypes))]
+            warnings.warn(
+                'mixed text and numeric datasets were passed with '
+                f"DIFFERENT sample counts ({'; '.join(_counts)}), so they "
+                'cannot be auto-aligned to a common space (alignment '
+                'requires one text sample per numeric observation). The '
+                'datasets keep their own feature dimensionalities (text '
+                'embeds to its own topic-vector width), which most '
+                'hypertools analyses require to match.', UserWarning)
 
     return processed_x
 

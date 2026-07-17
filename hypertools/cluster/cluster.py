@@ -209,7 +209,7 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None,
 
 def cluster(x, cluster="KMeans", n_clusters=None, return_model=False,
            manip=None, normalize=None, reduce=None, ndims=None, align=None,
-           format_data=True, random_state=None):
+           format_data=True, random_state=None, model=None):
     """
     Performs clustering analysis and returns a list of cluster labels
 
@@ -289,8 +289,15 @@ def cluster(x, cluster="KMeans", n_clusters=None, return_model=False,
         and already-constructed instances you pass in, are left alone
         (default: None).
 
+    model : same forms as `cluster`, or None
+        Alias for `cluster=`, so the own-stage model spec can be spelled
+        `model=` here exactly as in `hyp.manip`/`hyp.impute`/`hyp.predict`/
+        `hyp.align` (release-1.0 audit: the sibling APIs used two different
+        kwarg conventions). Pass only one of `cluster=`/`model=`; passing
+        both (with different values) raises `ValueError` (default: None).
+
     Returns
-    ----------
+    -------
     cluster_labels : list or numpy.ndarray
         For hard-clustering models, a list of cluster labels (one per
         observation; FeatureAgglomeration instead returns one label per
@@ -311,6 +318,18 @@ def cluster(x, cluster="KMeans", n_clusters=None, return_model=False,
     (40, 2)
 
     """
+    # model= is an alias for cluster= (release-1.0 audit,
+    # D05-gallery-data-text-020: manip/impute/predict/align spell their
+    # own-stage spec `model=`, and hyp.cluster(x, model='KMeans') used to
+    # die with a bare TypeError naming neither kwarg).
+    if model is not None:
+        if cluster != 'KMeans' and cluster is not model:
+            raise ValueError(
+                "cannot pass both cluster= and model=; they are aliases "
+                "for the same model spec -- pass just one (e.g. "
+                "cluster='HDBSCAN' or model='HDBSCAN').")
+        cluster = model
+
     # False is an explicit "skip this stage", for every stage kwarg, exactly
     # like None (F13-cluster-007 contract) -- normalize it up front so
     # plot()/analyze() can thread cluster=False (and friends) through

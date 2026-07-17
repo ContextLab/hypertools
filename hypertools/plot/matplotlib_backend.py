@@ -72,6 +72,15 @@ def _draw_one_density_2d(ax, pts, spec, color, label=""):
     cmap = alpha_colormap(color, spec["alpha"])
     im = ax.imshow(Z, origin="lower", extent=extent, aspect="auto",
                    cmap=cmap, interpolation="bilinear", zorder=-1)
+    # clip the KDE glow to the drawn frame box: the density grid extends
+    # ~15% beyond the data bounds (and the KDE bandwidth blows up for tiny
+    # n), so for sparse data the haze flooded the figure margins OUTSIDE
+    # hypertools' own frame square (release-1.0 audit,
+    # D05-gallery-data-text-009). The 2-D paths always rescale data into
+    # the [-1, 1] box and draw the frame via plot_square(scale=1), so the
+    # frame rectangle is fixed in data coordinates.
+    im.set_clip_path(patches.Rectangle((-1.0, -1.0), 2.0, 2.0,
+                                       transform=ax.transData))
     im.set_label("_nolegend_")
 
 

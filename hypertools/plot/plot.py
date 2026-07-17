@@ -1287,7 +1287,8 @@ def plot(
         target point count, `morph_samples` is RECOMMENDED for clouds
         larger than ~2000 points (e.g. `morph_samples=1000`) -- the
         uncapped default can be slow, or memory-heavy, for very large
-        datasets. Ignored for every other `animate` mode.
+        datasets. Must be a positive integer (or None); anything else
+        raises ``ValueError``. Ignored for every other `animate` mode.
 
     interactive : bool
         If True, display the plot using an interactive matplotlib
@@ -1301,7 +1302,10 @@ def plot(
         point's index and coordinates are shown instead. Explore mode is
         currently only supported for 3D static plots (``ValueError``
         otherwise), and is an experimental feature (i.e. it may not yet
-        work properly).
+        work properly). Hover labels require an interactive matplotlib
+        backend: under a non-interactive backend (e.g. Agg in scripts,
+        CI, or the docs build) the figure is drawn as a static plot and a
+        ``UserWarning`` explains that hover labels are unavailable.
 
     mpl_backend : str
         The matplotlib backend used to create interactive and animated
@@ -1393,7 +1397,11 @@ def plot(
         their defaults), `save_path`, `show`, `frame_rate`, `markersize`,
         `linewidth`, `color`, `palette`, `title`, `size`, `elev`, `azim`,
         and `ax`. Any other parameter explicitly set alongside a
-        streaming input is ignored, with a ``UserWarning`` naming it.
+        streaming input is ignored, with a ``UserWarning`` naming it. In
+        particular, streaming plots are always drawn with the matplotlib
+        backend: a `backend=` request (e.g. ``backend='plotly'``) is
+        ignored with that warning, and the return value is a matplotlib
+        ``Figure`` even when the plotly backend was requested.
 
     stream_chunk : int
         Streaming data only: number of new samples fetched from the stream
@@ -1404,10 +1412,17 @@ def plot(
 
     stream_max : int or None
         Streaming data only: stop streaming after this many samples.
+        Exactly `stream_max` samples are consumed from the stream (never
+        more), and the returned figure's ``stream_info['truncated']`` is
+        then True -- it means streaming was stopped (by `stream_max`, an
+        interrupt, or an error) before the stream was observed to end.
         Default None streams continually until the stream is exhausted or
         the user interrupts (Ctrl-C); infinite streams render incoming
         data indefinitely, and any animation being saved via `save_path`
         is finalized whenever streaming stops (including on interrupt).
+        For streams, `save_path` supports .gif/.png/.apng (Pillow) and,
+        with FFmpeg installed, .mp4/.mov/.avi/.m4v/.mkv; other extensions
+        raise ``ValueError`` before any samples are consumed.
 
     stream_window : int or None
         Streaming data only: if set, only the most recent `stream_window`
@@ -1659,7 +1674,7 @@ def plot(
         pre-center/scale -- space). Default False.
 
     Returns
-    ----------
+    -------
     fig : matplotlib.figure.Figure or plotly Figure
         The rendered figure. Static plot coordinates are drawn in the
         centered/rescaled ``[-1, 1]`` display space described under `x`
@@ -1930,6 +1945,20 @@ def plot(
                     f"tail_duration must be a non-negative number of "
                     f"seconds (the trail/head-window length); got "
                     f"{tail_duration!r}.")
+        # morph_samples=-5 used to leak numpy's internal 'negative
+        # dimensions are not allowed' from the downsampling RNG without
+        # ever naming the kwarg (release-1.0 audit, D03-gallery-basics-007)
+        _ms_ok = (morph_samples is None
+                  or (not isinstance(morph_samples, bool)
+                      and isinstance(morph_samples, (int, float, np.integer,
+                                                     np.floating))
+                      and float(morph_samples) >= 1
+                      and float(morph_samples).is_integer()))
+        if not _ms_ok:
+            raise ValueError(
+                f"morph_samples must be a positive integer (the "
+                f"per-dataset point cap for animate='morph') or None; got "
+                f"{morph_samples!r}.")
 
     # save_path misuse fail-fast (F09-004/F09-007): normalize path-likes to
     # str (animated matplotlib and plotly writers do string operations on
@@ -2320,13 +2349,31 @@ def plot(
         # with a clear message BEFORE the pipeline runs.
         _widths = [ri.shape[1] for ri in raw]
         if len(set(_widths)) > 1:
+            # when the ORIGINAL input mixed text and numeric datasets, the
+            # real problem is a text/numeric sample-count mismatch (equal
+            # counts would have been auto-hyperaligned by format_data), not
+            # the embedded column counts -- say so (release-1.0 audit,
+            # D08-tutorials-analysis-012 / D05-gallery-data-text-013).
+            def _has_text(v):
+                if isinstance(v, str):
+                    return True
+                if isinstance(v, (list, tuple)):
+                    return any(_has_text(vi) for vi in v)
+                return False
+            _text_hint = (
+                " (Note: text datasets are embedded into topic vectors -- "
+                "hence the differing column counts -- and can only be "
+                "combined with numeric datasets when every dataset has the "
+                "SAME number of samples, which lets hypertools align them "
+                "to a common space.)") if _has_text(x) else ""
             raise ValueError(
                 "all datasets must have the same number of columns "
                 "(features) to be analyzed/plotted together, but the "
                 f"inputs have per-dataset column counts {_widths}. Either "
                 "pass datasets with matching columns, or bring them into "
                 "a shared space first and plot the result -- e.g. "
-                "hyp.plot(hyp.align(data, align='hyper'), ...).")
+                "hyp.plot(hyp.align(data, align='hyper'), ...)."
+                + _text_hint)
 
         # labels= carries one entry per observation (F01-010/F10-011):
         # validate BEFORE the pipeline runs, mirroring hue='s check.
@@ -2358,7 +2405,14 @@ def plot(
         else:
             xform = analyze(
                 raw,
-                ndims=ndims,
+                # plot()'s ndims defaults to 3 (unlike analyze's None), so
+                # forwarding it alongside reduce=None would trip analyze's
+                # "ndims= was passed but reduce= is None" warning on EVERY
+                # reduce=None plot -- including the internal streaming
+                # redraw -- even though plot enforces its own display
+                # dimensionality separately below (release-1.0 audit,
+                # D1-code-residue regression).
+                ndims=ndims if reduce is not None else None,
                 normalize=normalize,
                 reduce=reduce,
                 align=align,
@@ -3422,6 +3476,26 @@ def plot(
                 "explore mode is currently only supported for 3-D static "
                 f"plots; the data being plotted is {xform[0].shape[1]}-D. "
                 "Pass ndims=3 (the default) to use explore=True.")
+        # headless/non-interactive backends (Agg in scripts and CI, the
+        # doc-gallery build, ...) can render the figure but can never fire
+        # hover events, so explore=True silently degraded to a static plot
+        # with no hint why nothing pops up (release-1.0 audit,
+        # D05-gallery-data-text-012).
+        import matplotlib
+        _backend_name = matplotlib.get_backend().lower()
+        if any(_backend_name.endswith(nb) for nb in
+               ("agg", "pdf", "svg", "ps", "template")) \
+                and not _backend_name.endswith(("qtagg", "tkagg", "gtk3agg",
+                                                "gtk4agg", "wxagg",
+                                                "macosx")):
+            warnings.warn(
+                "explore=True shows labels on hover, which needs an "
+                "interactive matplotlib backend; the current backend "
+                f"({matplotlib.get_backend()!r}) is non-interactive, so "
+                "the figure will be drawn as a static plot without hover "
+                "labels. Run in an interactive session (or switch "
+                "backends, e.g. matplotlib.use('QtAgg')) to use explore "
+                "mode.", UserWarning)
         mpl_kwargs["picker"] = True
 
     # predict= forecasts were computed per ORIGINAL input dataset; if
@@ -3453,7 +3527,11 @@ def plot(
 
         _joint = np.vstack([np.vstack(xform), np.vstack(raw_forecasts)])
         _m1 = np.min(_joint)
-        _m2 = np.max(_joint - _m1)
+        _m2 = np.max(_joint - _m1) or 1.0  # degenerate (constant) data has
+        # zero range: dividing by it emitted an 'invalid value encountered
+        # in divide' RuntimeWarning and produced NaNs (release-1.0 audit,
+        # C2 residual warnings); constant data maps to a finite fixed
+        # position instead
         _rescale = lambda a: 2 * (np.divide(a - _m1, _m2)) - 1
         xform = [_rescale(xi) for xi in xform]
         raw_forecasts = [_rescale(fc) for fc in raw_forecasts]
@@ -3471,7 +3549,10 @@ def plot(
 
         _stacked = np.vstack(xform)
         _m1 = np.min(_stacked)
-        _m2 = np.max(_stacked - _m1)
+        _m2 = np.max(_stacked - _m1) or 1.0  # zero range (e.g. a single
+        # observation reduced to zeros, or constant data) -> a finite
+        # fixed position, instead of a divide-by-zero RuntimeWarning +
+        # NaNs (release-1.0 audit, C2 residual warnings)
         _rescale = lambda a: 2 * (np.divide(a - _m1, _m2)) - 1
         xform = [_rescale(xi) for xi in xform]
         raw_xform = [_rescale(xi) for xi in raw_xform]

@@ -176,6 +176,10 @@ todo_include_todos = False
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
+# Browser-tab icon (generated from the hypertools logo, images/hypercube.png);
+# without it every docs page load 404s on /favicon.ico
+html_favicon = '_static/favicon.ico'
+
 # Add custom CSS and JS
 html_css_files = [
     'custom.css',

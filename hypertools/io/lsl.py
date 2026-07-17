@@ -80,6 +80,10 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
     ------
     ImportError
         If `pylsl` is not installed.
+    TypeError
+        If `name` or `type` is not a string (or None).
+    ValueError
+        If `timeout` is not a positive number of seconds.
     hypertools.core.exceptions.HypertoolsIOError
         If no matching stream is found within `timeout` seconds, if the
         matched stream has a string (non-numeric) channel format, or --
@@ -94,6 +98,27 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
     >>> hyp.plot(stream, stream_init=200, stream_chunk=20)  # doctest: +SKIP
     """
     from .._shared.exceptions import HypertoolsIOError
+
+    # validate lsl_stream's OWN parameters before they reach pylsl, whose
+    # internal failures never name the offending argument (release-1.0
+    # audit, D10-tutorials-embeddings-lsl-013: lsl_stream(name=123) raised
+    # "descriptor 'encode' for 'str' objects doesn't apply to a 'int'
+    # object" from deep inside pylsl).
+    if name is not None and not isinstance(name, str):
+        raise TypeError(
+            f"name= must be a string (the LSL stream's 'name' property) or "
+            f"None; got {name.__class__.__name__}: {name!r}. If your stream "
+            "ids are numeric, pass the name as a string (e.g. "
+            f"name={str(name)!r}).")
+    if type is not None and not isinstance(type, str):
+        raise TypeError(
+            f"type= must be a string (the LSL stream's 'type' property, "
+            f"e.g. 'EEG') or None; got {type.__class__.__name__}: {type!r}.")
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) \
+            or timeout <= 0:
+        raise ValueError(
+            f'timeout= must be a positive number of seconds; got '
+            f'{timeout!r}.')
 
     pylsl = _import_pylsl()
 

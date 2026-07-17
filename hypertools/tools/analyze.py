@@ -162,7 +162,7 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
         give reproducible results across calls (default: None).
 
     Returns
-    ----------
+    -------
     analyzed_data : list of numpy arrays (or a single array)
         The processed data: for a LIST of datasets, a list with one entry
         per dataset. For a SINGLE dataset, `normalize=`/`reduce=`-only

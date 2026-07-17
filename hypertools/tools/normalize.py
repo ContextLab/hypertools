@@ -174,7 +174,7 @@ class Normalizer(BaseEstimator):
 
 def normalize(x, normalize='across', internal=False, format_data=True, impute=None,
              return_model=False, manip=None, reduce=None, ndims=None, align=None,
-             cluster=None):
+             cluster=None, model=None):
     """
     Z-transform the columns or rows of an array, or list of arrays
 
@@ -233,8 +233,15 @@ def normalize(x, normalize='across', internal=False, format_data=True, impute=No
         Passed through to the `reduce` stage (as `ndims=`) when `reduce=`
         is also given.
 
+    model : same forms as `normalize`, or None
+        Alias for `normalize=`, so the own-stage spec can be spelled
+        `model=` here exactly as in `hyp.manip`/`hyp.impute`/`hyp.predict`/
+        `hyp.align` (release-1.0 audit: the sibling APIs used two different
+        kwarg conventions). Pass only one of `normalize=`/`model=`; passing
+        both (with different values) raises `ValueError` (default: None).
+
     Returns
-    ----------
+    -------
     normalized_x : Numpy array or list of arrays
         An array or list of arrays where the columns or rows are z-scored. If
         the input was a list with more than one element, a list is returned;
@@ -267,6 +274,18 @@ def normalize(x, normalize='across', internal=False, format_data=True, impute=No
     >>> np.allclose(np.vstack(z_across).mean(axis=0), 0.0)
     True
     """
+    # model= is an alias for normalize= (release-1.0 audit,
+    # D05-gallery-data-text-020: manip/impute/predict/align spell their
+    # own-stage spec `model=`, and hyp.normalize(x, model='within') used
+    # to die with a bare TypeError naming neither kwarg).
+    if model is not None:
+        if normalize != 'across' and normalize is not model:
+            raise ValueError(
+                "cannot pass both normalize= and model=; they are aliases "
+                "for the same spec -- pass just one (e.g. "
+                "normalize='within' or model='within').")
+        normalize = model
+
     # cross-module kwargs (#138): assemble and run a Pipeline (in canonical
     # order, #153) instead of the single-stage path below whenever another
     # stage is requested. Lazy import avoids a normalize<->core.pipeline

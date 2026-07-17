@@ -116,3 +116,22 @@ a:hover {
 pre {
     border-radius: 4px;
 }
+
+/* sphinxcontrib-video wraps gallery mp4 animations in a container with the
+   default 'align-left' class, and furo's stylesheet floats
+   'article .align-left' left -- so on every animated example page the 640px
+   video floated left and squeezed the stderr output and the entire Python
+   source block into a ~64px unreadable sliver beside it. Un-float the video
+   container so the code renders full-width below it, matching non-animated
+   gallery pages. */
+article .sphinx-contrib-video-container.align-left,
+article .sphinx-contrib-video-container.align-right {
+    float: none;
+    clear: both;
+    margin: 0 0 1rem 0;
+}
+
+article .sphinx-contrib-video-container video {
+    max-width: 100%;
+    height: auto;
+}

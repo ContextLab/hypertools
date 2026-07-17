@@ -48,15 +48,17 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
   according to its mixture weights.
 + **Richer coloring:** the `hue` argument now accepts categorical labels,
   continuous values, or entire matrices (e.g. mixture proportions or model
-  weights), which are mapped to colors via the new
-  `hypertools.plot.colors.mat2colors`.
+  weights), which are mapped to colors via the new `mat2colors` helper
+  (`from hypertools.plot.colors import mat2colors`).
 + **Nested-list input:** `hyp.plot([[a, b], [c]])` colors datasets by their
   outermost grouping and renders more deeply nested datasets with thinner,
   fainter lines.
 + **Hull surfaces (optional):** `hyp.plot(..., surface=True)` overlays a
   smooth, lit surface over each dataset's convex hull — a filled outline in
-  2D, or a shaded, Taubin-smoothed "blob" in 3D — with a dict form for
-  per-dataset alpha/color/lighting/smoothing control.
+  2D, or a shaded, Taubin-smoothed "blob" in 3D. A dict of scalar options
+  (e.g. `surface={'alpha': 0.6}`) customizes all surfaces at once; a list
+  of bools/dicts (e.g. `surface=[{'alpha': 0.2}, {'alpha': 0.8}]`) controls
+  alpha/color/lighting/smoothing per dataset.
 + **Morph animation:** `hyp.plot(datasets, animate='morph')` treats each
   dataset as a point cloud and morphs smoothly between them (Hungarian-
   matched, smoothstep-eased), holding on each one along the way; `rotations`
@@ -78,8 +80,12 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
   `hyp.plot(B, pipeline=bundle['pipeline'])` to apply the exact same fitted
   transformation to a structurally-identical dataset `B`.
 + **`hyp.manip` and manip chaining:** `hyp.manip(data, model='ZScore')`
-  applies a per-dataset manipulation (`Normalize`, `ZScore`, `Smooth`,
-  `Resample`); a `list` of specs chains several as a `Pipeline`, and
+  applies a manipulation (`Normalize`, `ZScore`, `Smooth`, `Resample`) to
+  each dataset. `Smooth` and `Resample` run independently per dataset
+  (kernels never cross dataset boundaries); `ZScore` and `Normalize` also
+  transform each dataset separately but fit one shared set of statistics
+  across all datasets in a list (like `normalize='across'`). A `list` of
+  specs chains several manipulations as a `Pipeline`, and
   `hyp.plot(data, manip=[...])` runs the chain at the canonical `manip`
   stage -- first, before `normalize`/`reduce`/`align`/`cluster` -- e.g.
   `hyp.plot(data, manip=[{'model': 'Smooth', 'kwargs': {'kernel_width': 5}},
@@ -95,7 +101,10 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
   `LdaModel`/`LsiModel`/`HdpModel` semantic models, gated behind
   `pip install "hypertools[gensim]"` -- pass `semantic=None` with an
   embedding vectorizer like `Word2Vec` since the default LDA semantic stage
-  rejects negative embedding values.
+  rejects negative embedding values. Note that non-default vectorizers
+  train on the default `corpus='wiki'` corpus the first time, which can
+  take a couple of minutes even for tiny inputs; pass `corpus=` a list of
+  your own documents to train on those instead.
 + **LSL streaming (optional):** `hyp.io.lsl_stream(type='EEG')` resolves a
   live Lab Streaming Layer stream and wraps it for `hyp.plot(...,
   stream_init=200, stream_chunk=20)`, gated behind
@@ -135,10 +144,13 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
   scikit-learn (no extra dependency); packaging follows current standards
   (pyproject.toml, Python 3.10–3.13).
 + **Retired legacy arguments:** the long-deprecated `group` (use `hue`),
-  `model`/`model_params` (use `reduce`), `align(method=...)`/`align=True`
-  (use `align='hyper'`), and `cluster(ndims=...)` arguments were removed.
-  Saved geo files from hypertools 0.x still load — retired arguments are
-  translated or skipped with a warning on replay.
+  `model`/`model_params` (use `reduce`), and `align(method=...)`/
+  `align=True` (use `align='hyper'`) arguments were removed and now raise
+  errors instead of being silently accepted. `cluster`'s `ndims=` is no longer a
+  standalone reduction step: it is only forwarded to the `reduce=` stage,
+  and a warning fires if it is passed without `reduce=`. Saved geo files
+  from hypertools 0.x still load — retired arguments are translated or
+  skipped with a warning on replay.
 
 ## Try it!
 
@@ -178,8 +190,10 @@ Then, navigate to the folder and type:
 + matplotlib>=3.8.0
 + scipy>=1.13.0
 + numpy>=2.0.0
-+ umap-learn>=0.5.5
-+ requests, ipympl
++ umap-learn>=0.5.5, numba>=0.59
++ pydata-wrangler>=0.5.1 (data-wrangling core)
++ pykalman>=0.11, statsmodels>=0.14 (Kalman/ARIMA forecasting and imputation)
++ requests, dill, ipympl
 + ffmpeg (for saving animations)
 
 All Python dependencies are declared in `pyproject.toml` and installed
@@ -190,8 +204,9 @@ match, e.g. `pip install "hypertools[interactive,torch]"`):
 + `interactive` -- plotly + kaleido, for `hyp.plot(..., backend='plotly')`
 + `text` -- transformer/sentence-transformers text embeddings (via
   datawrangler's `hf` extra)
-+ `predict` -- `hyp.predict`/`hyp.impute` forecasters/imputers (Kalman,
-  ARIMA, and the skaters Laplace ensemble)
++ `predict` -- the skaters `Laplace` ensemble forecaster for `hyp.predict`
+  (`Kalman`, `GaussianProcess`, `AutoRegressor`, and `ARIMA` already work
+  with the base install)
 + `predict-hf` -- the Hugging Face `Chronos` forecaster for `hyp.predict`
 + `io` -- `.xlsx` support for `hyp.load`
 + `density3d` -- smooth 3-D `density=True` iso-surfaces (scikit-image)
@@ -218,7 +233,7 @@ Please cite as:
 Here is a bibtex formatted reference:
 
 ```bibtex
-@ARTICLE {,
+@ARTICLE{heusser2018hypertools,
     author  = {Andrew C. Heusser and Kirsten Ziman and Lucy L. W. Owen and Jeremy R. Manning},    
     title   = {HyperTools: a Python Toolbox for Gaining Geometric Insights into High-Dimensional Data},    
     journal = {Journal of Machine Learning Research},
@@ -250,7 +265,14 @@ See [here](http://hypertools.readthedocs.io/en/latest/auto_examples/index.html) 
 ## Plot
 
 ```python
+import numpy as np
 import hypertools as hyp
+
+# two random-walk "datasets" (rows = observations, columns = features)
+walk = lambda seed: np.cumsum(np.random.default_rng(seed).standard_normal((300, 10)), axis=0)
+list_of_arrays = [walk(1), walk(2)]
+list_of_labels = ['A'] * 300 + ['B'] * 300  # one label per observation
+
 hyp.plot(list_of_arrays, animate=True, hue=list_of_labels)
 ```
 
@@ -259,7 +281,15 @@ hyp.plot(list_of_arrays, animate=True, hue=list_of_labels)
 ## Align
 
 ```python
+import numpy as np
 import hypertools as hyp
+
+# rotated, noisy views of one shared trajectory
+rng = np.random.default_rng(0)
+base = np.cumsum(rng.standard_normal((300, 3)), axis=0)
+list_of_arrays = [base @ np.linalg.qr(rng.standard_normal((3, 3)))[0]
+                  + 0.05 * rng.standard_normal(base.shape) for _ in range(3)]
+
 hyp.plot(list_of_arrays, align='hyper')
 ```
 
@@ -278,7 +308,14 @@ Soft ("mixture-model") clustering, new in 1.0 -- each point's color blends
 its component memberships:
 
 ```python
+import numpy as np
 import hypertools as hyp
+
+# three overlapping point clouds
+rng = np.random.default_rng(0)
+array = np.vstack([rng.standard_normal((100, 3)) + offset
+                   for offset in ([0, 0, 0], [4, 0, 0], [0, 4, 0])])
+
 hyp.plot(array, 'o', cluster='GaussianMixture', n_clusters=3)
 ```
 
@@ -290,7 +327,13 @@ hyp.plot(array, 'o', cluster='GaussianMixture', n_clusters=3)
 New in 1.0: overlay a smooth, lit surface over each dataset's convex hull:
 
 ```python
+import numpy as np
 import hypertools as hyp
+
+rng = np.random.default_rng(0)
+blob_a = rng.standard_normal((100, 3))
+blob_b = rng.standard_normal((100, 3)) + [4, 0, 0]
+
 hyp.plot([blob_a, blob_b], '.', surface=True)
 ```
 
@@ -300,7 +343,13 @@ hyp.plot([blob_a, blob_b], '.', surface=True)
 ## Describe
 
 ```python
+import numpy as np
 import hypertools as hyp
+
+rng = np.random.default_rng(0)
+list_of_arrays = [np.cumsum(rng.standard_normal((200, 20)), axis=0)
+                  for _ in range(3)]
+
 hyp.describe(list_of_arrays, reduce='PCA', max_dims=14)
 ```
 ![Describe Example](images/describe_example.png)

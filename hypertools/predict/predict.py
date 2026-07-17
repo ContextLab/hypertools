@@ -165,6 +165,14 @@ def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
 
     if isinstance(model, str):
         model = _FORECASTER_ALIASES.get(model, model)
+        # case-insensitive fallback (release-1.0 audit,
+        # D09-tutorials-applied-014: model='kalman' used to raise "unknown
+        # predict model 'kalman'" while listing 'Kalman' as supported)
+        if model not in _supported_names():
+            _by_lower = {n.lower(): n for n in _supported_names()}
+            _by_lower.update({k.lower(): v
+                              for k, v in _FORECASTER_ALIASES.items()})
+            model = _by_lower.get(model.lower(), model)
     try:
         resolved = unpack_model(model, valid=FORECASTERS, parent_class=Forecaster)
     except ValueError as e:
@@ -225,7 +233,8 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
         Which forecaster to use (default: 'Kalman'). A string is one of
         `FORECASTERS`' names (Kalman, GaussianProcess, AutoRegressor, ARIMA,
         Laplace, Chronos); the short alias `'GP'` also resolves to
-        GaussianProcess. A dict may be ``{'model': ..., 'params': {...}}``
+        GaussianProcess, and names are matched case-insensitively
+        ('kalman' works too). A dict may be ``{'model': ..., 'params': {...}}``
         (deprecated) or ``{'model': ..., 'args': [...], 'kwargs': {...}}``.
         A class or an already-constructed (unfitted) instance is used
         directly. An ALREADY-FITTED Forecaster instance (returned from a

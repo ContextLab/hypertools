@@ -65,7 +65,7 @@ def align(data, align='hyper', n_iter=10, format_data=True):
         Whether or not to first call the format_data function (default: True).
 
     Returns
-    ----------
+    -------
     aligned : list
         An aligned list of numpy arrays
 

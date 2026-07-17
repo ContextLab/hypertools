@@ -514,7 +514,38 @@ class _TorchAutoencoderBase(BaseEstimator):
         numpy.ndarray of shape (n_samples, n_components)
             The latent codes (for `VariationalAutoencoder`, the latent
             means).
+
+        Raises
+        ------
+        ValueError
+            If `X` is not 2-D, or if a training hyperparameter is invalid
+            (`epochs` must be a non-negative integer, `batch_size` a
+            positive integer, and `lr` a positive finite number).
         """
+        # validate training hyperparameters up front: a typo'd `epochs=-5`
+        # used to run "successfully" and return a finite but UNTRAINED
+        # embedding with no error or warning (release-1.0 audit,
+        # D04-gallery-models-010).
+        if isinstance(self.epochs, bool) \
+                or not isinstance(self.epochs, (int, np.integer)) \
+                or self.epochs < 0:
+            raise ValueError(
+                f'epochs must be a non-negative integer (0 explicitly '
+                f'skips training, leaving the network at its random '
+                f'initialization); got {self.epochs!r}')
+        if isinstance(self.batch_size, bool) \
+                or not isinstance(self.batch_size, (int, np.integer)) \
+                or self.batch_size < 1:
+            raise ValueError(
+                f'batch_size must be a positive integer; got '
+                f'{self.batch_size!r}')
+        if isinstance(self.lr, bool) \
+                or not isinstance(self.lr, (int, float, np.integer,
+                                            np.floating)) \
+                or not np.isfinite(self.lr) or self.lr <= 0:
+            raise ValueError(
+                f'lr (learning rate) must be a positive finite number; '
+                f'got {self.lr!r}')
         X = np.asarray(X, dtype=np.float64)
         if X.ndim != 2:
             raise ValueError('X must be a 2D array')
@@ -610,11 +641,16 @@ class Autoencoder(_TorchAutoencoderBase):
         Latent (bottleneck) dimensionality (default: 2). Wired to
         `hypertools.reduce.reduce.reduce`'s `ndims=`.
     epochs : int
-        Number of training epochs (default: 100).
+        Number of training epochs (default: 100). Must be a non-negative
+        integer (validated at fit time); `epochs=0` explicitly skips
+        training, leaving the network at its random initialization
+        (useful only as an untrained baseline).
     batch_size : int
-        Minibatch size (default: 64).
+        Minibatch size (default: 64). Must be a positive integer
+        (validated at fit time).
     lr : float
-        Adam learning rate (default: 1e-3).
+        Adam learning rate (default: 1e-3). Must be a positive finite
+        number (validated at fit time).
     hidden_dims : None, int, or sequence of int
         Hidden layer width. `None` (default) computes a sensible width
         geometrically between `n_components` and the number of input

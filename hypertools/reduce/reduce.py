@@ -25,7 +25,8 @@ def _resolve_model(model_name):
 # main function
 def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
            manip=None, normalize=None, align=None, cluster=None,
-           internal=False, format_data=True, random_state=None):
+           internal=False, format_data=True, random_state=None,
+           model=None):
     """
     Reduces dimensionality of an array, or list of arrays
 
@@ -71,13 +72,22 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         Number of dimensions to reduce to. If None (the default), or if
         every dataset already has <= ndims columns, no model is fit and
         the (formatted) input is returned unchanged -- reduce() never
-        expands or rotates data at full dimensionality.
+        expands or rotates data at full dimensionality. Requesting MORE
+        dimensions than the data has features also skips the reduction,
+        with a `UserWarning` (the input comes back unchanged). NOTE: when
+        no reduction runs, there is no fitted model, so
+        `return_model=True` pairs the unchanged data with `None` (see
+        `return_model` below) -- pass an explicit `ndims` (e.g. `ndims=3`)
+        to actually fit a model.
 
     return_model : bool
         If True, also return the fitted model: the fitted `Reducer` wrapper
         when only the `reduce` stage ran, or a fitted `hypertools.Pipeline`
         when `manip=`/`normalize=`/`align=`/`cluster=` made multiple stages
-        run (default: False).
+        run (default: False). When NO reduction ran (`ndims=None` -- the
+        default -- with data at/below the requested dimensionality, or
+        `reduce=None`/`False`), the model slot of the returned
+        `(data, model)` tuple is `None`.
 
     manip, normalize, align, cluster : model spec or None
         Cross-module stage kwargs (GH #138): when any of these is given,
@@ -104,8 +114,15 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         `random_state` in a dict spec's `kwargs` takes precedence
         (default: None).
 
+    model : same forms as `reduce`, or None
+        Alias for `reduce=`, so the own-stage model spec can be spelled
+        `model=` here exactly as in `hyp.manip`/`hyp.impute`/`hyp.predict`/
+        `hyp.align` (release-1.0 audit: the sibling APIs used two different
+        kwarg conventions). Pass only one of `reduce=`/`model=`; passing
+        both (with different values) raises `ValueError` (default: None).
+
     Returns
-    ----------
+    -------
     x_reduced : Numpy array or list of arrays
         The reduced data with ndims dimensionality is returned. A list is
         returned when the input is a list of two or more datasets (or when
@@ -124,6 +141,18 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
     (40, 3)
 
     """
+    # model= is an alias for reduce= (release-1.0 audit,
+    # D05-gallery-data-text-020: manip/impute/predict/align spell their
+    # own-stage spec `model=`, and hyp.reduce(x, model='PCA') used to die
+    # with a bare TypeError naming neither kwarg).
+    if model is not None:
+        if reduce != 'IncrementalPCA' and reduce is not model:
+            raise ValueError(
+                "cannot pass both reduce= and model=; they are aliases "
+                "for the same model spec -- pass just one (e.g. "
+                "reduce='PCA' or model='PCA').")
+        reduce = model
+
     # validate ndims up front (QC 2026-07): a non-int silently hit a
     # `TypeError: '<=' not supported between int and str`, and ndims<=0
     # silently reduced to 0/negative columns. bool is an int subclass but is
@@ -341,6 +370,22 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
     # return used to hand back a 1-element LIST for a single array, so the return
     # type flipped between ndarray and list depending on ndims).
     if model_params['n_components'] is None or all([i.shape[1] <= model_params['n_components'] for i in x]):
+        # requesting MORE dimensions than the data has used to skip the
+        # reduction silently -- even for explicitly-requested nonlinear
+        # embeddings, whose k-D output is not the same thing as k-D raw
+        # data (release-1.0 audit, D04-gallery-models-008). Internal
+        # display-path calls (which legitimately no-op on already-low-D
+        # data) stay silent.
+        if (not internal and model_params['n_components'] is not None
+                and any(i.shape[1] < model_params['n_components']
+                        for i in x)):
+            warnings.warn(
+                f"ndims/n_components was set to "
+                f"{model_params['n_components']} but the data only has "
+                f"{max(i.shape[1] for i in x)} feature(s), so no reduction "
+                "was performed -- the input is returned unchanged. Request "
+                "at most as many dimensions as the data has features to "
+                "compute an actual embedding.", UserWarning)
         result = x if (internal or len(x) > 1) else x[0]
         return (result, None) if return_model else result
 
@@ -350,8 +395,11 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
     stacked_x = np.vstack([np.asarray(arr, dtype=np.float64) for arr in x])
 
     if stacked_x.shape[0] == 1:
-        warnings.warn('Cannot reduce the dimensionality of a single row of'
-                      ' data. Return zeros length of ndims')
+        warnings.warn('Cannot reduce a single observation (row) of data; '
+                      'returning a zero vector of length ndims instead. '
+                      'The plotted/returned values do NOT reflect the '
+                      'input -- pass at least 2 observations to compute a '
+                      'real embedding.')
         result = [np.zeros((1, model_params['n_components']), dtype=np.float64)]
         result = result if (internal or len(x) > 1) else result[0]
         return (result, None) if return_model else result

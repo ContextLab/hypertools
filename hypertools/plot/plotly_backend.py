@@ -1230,12 +1230,24 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
     # full frame set (n_frames == frame_rate*duration) the two agree, but
     # deriving the delay from frame_rate keeps real-time playback correct and
     # decoupled from the frame count (a regression guard against any future
-    # subsample-and-compensate creeping into the export path).
-    frame_ms = max(1, int(round(1000.0 / max(float(frame_rate), 1e-6))))
+    # subsample-and-compensate creeping into the export path). Delays
+    # cumulatively round onto the format's timing grid (GIF stores delays
+    # in CENTIseconds, APNG in milliseconds), mirroring the matplotlib
+    # path's _RealTimePillowWriter: a uniform int(1000/30)=33 -> 30 ms GIF
+    # delay made every default-framerate gif play ~10% fast (release-1.0
+    # audit, D06-gallery-animation-007 / F04-010).
+    def _grid_durations(n_frames, grid_ms):
+        per_frame_ms = 1000.0 / max(float(frame_rate), 1e-6)
+        durations, prev = [], 0
+        for i in range(1, n_frames + 1):
+            cum = int(round(i * per_frame_ms / grid_ms)) * grid_ms
+            durations.append(cum - prev)
+            prev = cum
+        return durations
 
     if ext == 'gif':
         images[0].save(save_path, save_all=True, append_images=images[1:],
-                       duration=frame_ms, loop=0)
+                       duration=_grid_durations(len(images), 10), loop=0)
     elif ext in ('png', 'apng'):
         # write to a UNIQUE temporary .png and rename onto the requested
         # name -- `save_path[:-5] + '.png'` silently destroyed a
@@ -1246,7 +1258,8 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
         os.close(fd)
         try:
             images[0].save(tmp_path, format='PNG', save_all=True,
-                           append_images=images[1:], duration=frame_ms,
+                           append_images=images[1:],
+                           duration=_grid_durations(len(images), 1),
                            loop=0)
             os.replace(tmp_path, save_path)
         finally:

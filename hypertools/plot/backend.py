@@ -1266,7 +1266,7 @@ def manage_backend(plot_func):
         The decorated function.
 
     Notes
-    ------
+    -----
     1. Capturing & restoring the rcParams needs to happen here rather
        than in `set_interactive_backend` so it's done independently for
        each plot

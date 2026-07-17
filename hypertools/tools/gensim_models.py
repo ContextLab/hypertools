@@ -58,7 +58,7 @@ def _tokenize(doc):
         A single text document.
 
     Returns
-    ----------
+    -------
 
     tokens : list of str
         Lowercased, punctuation-stripped tokens.
@@ -81,7 +81,7 @@ def _effective_workers(seed, workers):
         The user-requested worker count, or None to pick a default.
 
     Returns
-    ----------
+    -------
 
     workers : int
         1 if `seed` is not None and `workers` was not explicitly set;
@@ -108,7 +108,7 @@ def _dense_to_bow_corpus(X):
         A 1-D input is treated as a single document.
 
     Returns
-    ----------
+    -------
 
     corpus : list of list of (int, float)
         One bag-of-words representation per document (zero entries
@@ -191,7 +191,7 @@ class Word2VecVectorizer(BaseEstimator, TransformerMixin):
             Present for scikit-learn API compatibility.
 
         Returns
-        ----------
+        -------
 
         self : Word2VecVectorizer
         """
@@ -218,7 +218,7 @@ class Word2VecVectorizer(BaseEstimator, TransformerMixin):
             Raw text documents.
 
         Returns
-        ----------
+        -------
 
         embeddings : scipy.sparse.csr_matrix, shape (n_docs, vector_size)
         """
@@ -299,7 +299,7 @@ class Doc2VecVectorizer(BaseEstimator, TransformerMixin):
             Present for scikit-learn API compatibility.
 
         Returns
-        ----------
+        -------
 
         self : Doc2VecVectorizer
         """
@@ -327,7 +327,7 @@ class Doc2VecVectorizer(BaseEstimator, TransformerMixin):
             Raw text documents.
 
         Returns
-        ----------
+        -------
 
         embeddings : scipy.sparse.csr_matrix, shape (n_docs, vector_size)
         """
@@ -397,7 +397,7 @@ class FastTextVectorizer(BaseEstimator, TransformerMixin):
             Present for scikit-learn API compatibility.
 
         Returns
-        ----------
+        -------
 
         self : FastTextVectorizer
         """
@@ -425,7 +425,7 @@ class FastTextVectorizer(BaseEstimator, TransformerMixin):
             Raw text documents.
 
         Returns
-        ----------
+        -------
 
         embeddings : scipy.sparse.csr_matrix, shape (n_docs, vector_size)
         """
@@ -496,7 +496,7 @@ class LdaVectorizer(BaseEstimator, TransformerMixin):
             Present for scikit-learn API compatibility.
 
         Returns
-        ----------
+        -------
 
         self : LdaVectorizer
         """
@@ -519,7 +519,7 @@ class LdaVectorizer(BaseEstimator, TransformerMixin):
             Must have the same number of columns seen during `fit`.
 
         Returns
-        ----------
+        -------
 
         proportions : numpy.ndarray, shape (n_docs, num_topics)
             Each row sums to approximately 1.
@@ -585,7 +585,7 @@ class LsiVectorizer(BaseEstimator, TransformerMixin):
             Present for scikit-learn API compatibility.
 
         Returns
-        ----------
+        -------
 
         self : LsiVectorizer
         """
@@ -608,7 +608,7 @@ class LsiVectorizer(BaseEstimator, TransformerMixin):
             Must have the same number of columns seen during `fit`.
 
         Returns
-        ----------
+        -------
 
         projections : numpy.ndarray, shape (n_docs, num_topics)
         """
@@ -676,7 +676,7 @@ class HdpVectorizer(BaseEstimator, TransformerMixin):
             Present for scikit-learn API compatibility.
 
         Returns
-        ----------
+        -------
 
         self : HdpVectorizer
         """
@@ -698,7 +698,7 @@ class HdpVectorizer(BaseEstimator, TransformerMixin):
             Must have the same number of columns seen during `fit`.
 
         Returns
-        ----------
+        -------
 
         proportions : numpy.ndarray, shape (n_docs, max_topics)
         """

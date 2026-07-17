@@ -46,14 +46,22 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     max_dims : int
         Dimensionalities 2 through `max_dims - 1` are evaluated (the bound
         is EXCLUSIVE, matching Python's `range`). Defaults to
-        `min(n_observations, n_features)` of the stacked data. Note: with
-        `reduce='TSNE'` (default `barnes_hut` method), only dimensionalities
-        2-3 can be evaluated -- larger `max_dims` values are clamped with a
-        `UserWarning`; pass `reduce={'model': 'TSNE', 'kwargs': {'method':
-        'exact'}}` to evaluate more.
+        `min(n_observations, n_features)` of the stacked data. Values
+        beyond the data's own dimensionality are clamped with a
+        `UserWarning` -- past `min(n_observations, n_features)` the
+        correlations just flatline at 1.0, which is not evidence for more
+        meaningful components. Note: with `reduce='TSNE'` (default
+        `barnes_hut` method), only dimensionalities 2-3 can be evaluated
+        -- larger `max_dims` values are clamped with a `UserWarning`; pass
+        `reduce={'model': 'TSNE', 'kwargs': {'method': 'exact'}}` to
+        evaluate more.
 
     show : bool
-        Plot the result (default : true)
+        Plot the result (default: True). The figure is displayed only
+        when the resolved backend can show one (plotly, or an interactive
+        matplotlib backend); under a non-interactive matplotlib backend
+        (e.g. Agg) the figure is still drawn and returned in the result
+        dict's 'fig' key, without calling `plt.show()`.
 
     format_data : bool
         Whether or not to first call the format_data function (default: True).
@@ -71,7 +79,7 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
         holds the backend's own figure object).
 
     Returns
-    ----------
+    -------
 
     result : dict
         A dictionary with the analysis results. 'average' is the correlation
@@ -118,6 +126,7 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
         return method == 'barnes_hut'
 
     tsne_dims_cap = 4 if _tsne_barnes_hut(reduce) else None
+    _dim_cap_warned = []  # warn about a too-large max_dims only once
 
     def summary(x, max_dims=None):
         """Correlation between full-dimensional and reduced-dimensional pairwise distances, per component count.
@@ -151,6 +160,24 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
                 max_dims = x.shape[0]
             else:
                 max_dims = x.shape[1]
+
+        # cap the sweep at the data's true dimensionality (release-1.0
+        # audit, D14-docs-drift-015): with 8-feature data, max_dims=14
+        # used to silently evaluate components 8-13, whose correlations
+        # flatline at 1.0 past the true dimensionality -- easily misread
+        # as evidence that the data support more meaningful components
+        # than they have.
+        dim_cap = min(x.shape[0], x.shape[1]) + 1
+        if max_dims > dim_cap:
+            if not _dim_cap_warned:
+                _dim_cap_warned.append(True)
+                warnings.warn(
+                    f'max_dims={max_dims} exceeds the data dimensionality: '
+                    f'with {x.shape[0]} observations x {x.shape[1]} '
+                    f'features, at most {dim_cap - 1} components are '
+                    f'meaningful. Evaluating dimensionalities '
+                    f'2-{dim_cap - 1} instead.', UserWarning)
+            max_dims = dim_cap
 
         # TSNE's default barnes_hut method cannot fit n_components >= 4:
         # clamp the sweep (with a warning) instead of crashing at dims=4
@@ -262,7 +289,16 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
             ax.set_xlabel('Number of components')
             # drop the top and right spines (Jeremy's despine request)
             sns.despine(ax=ax, top=True, right=True)
-            plt.show()
+            # only call plt.show() when the backend can actually display a
+            # window: under Agg/pdf/svg/ps (scripts, CI, doc builds) it
+            # just emitted matplotlib's 'FigureCanvasAgg is non-interactive'
+            # UserWarning on every default describe() call (release-1.0
+            # audit, X4-warnings-006). The figure is returned either way.
+            import matplotlib
+            if matplotlib.get_backend().lower() not in ('agg', 'pdf',
+                                                        'svg', 'ps',
+                                                        'template'):
+                plt.show()
     # hand the figure back so it can be saved/styled/embedded -- describe()
     # used to be the one plotting entry point with no figure handle
     # (F11-reduce-describe-015)

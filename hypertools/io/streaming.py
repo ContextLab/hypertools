@@ -19,10 +19,38 @@ in insertion order and concatenated, and non-numeric fields are ignored.
 
 import collections.abc
 import itertools
+import os
 import warnings
 
 import numpy as np
 import pandas as pd
+
+
+def _validate_stream_save_path(save_path):
+    """Validate a streaming ``save_path``'s extension BEFORE any samples are
+    consumed, returning ``(path, ext)``.
+
+    Streams are rendered frame-by-frame as they arrive, so only
+    frame-grabbing writers work: Pillow (.gif, .png/.apng) and -- with
+    FFmpeg installed -- the video containers ffmpeg can mux into. Unknown
+    extensions used to fall through to the Pillow writer and die at
+    finalize time with PIL's raw 'unknown file extension' error, AFTER the
+    whole stream had been consumed (release-1.0 audit,
+    D09-tutorials-applied-009).
+    """
+    from ..plot.animate import _FFMPEG_EXTENSIONS
+    path = os.fspath(save_path)
+    ext = os.path.splitext(path)[1].lower().lstrip('.')
+    if ext not in ('gif', 'png', 'apng') + tuple(_FFMPEG_EXTENSIONS):
+        what = f"extension {'.' + ext!r}" if ext else 'missing extension'
+        raise ValueError(
+            f'unsupported streaming save format ({what}) for {path!r}; '
+            'streamed animations support .gif, .png/.apng (animated PNG), '
+            'and -- with FFmpeg installed -- '
+            + '/'.join('.' + e for e in _FFMPEG_EXTENSIONS)
+            + '. (.svg export is only available for non-streaming '
+            'animate= plots.)')
+    return path, ext
 
 
 
@@ -181,10 +209,15 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
 
     Streaming continues until the stream is exhausted, ``stream_max``
     samples have been consumed (when ``stream_max < stream_init``, the
-    head itself is capped at ``stream_max``), the user interrupts
-    (Ctrl-C), or the stream raises -- infinite streams render continually,
-    and any animation being saved is finalized whenever streaming stops,
-    including on interrupt and on error. A mid-stream error (source
+    head itself is capped at ``stream_max``; never MORE than
+    ``stream_max`` samples are pulled from the stream), the user
+    interrupts (Ctrl-C), or the stream raises -- infinite streams render
+    continually, and any animation being saved is finalized whenever
+    streaming stops, including on interrupt and on error. ``save_path``
+    supports the frame-grabbing formats: .gif and .png/.apng via Pillow,
+    plus (with FFmpeg installed) the video containers .mp4/.mov/.avi/
+    .m4v/.mkv; other extensions raise ``ValueError`` before any samples
+    are consumed. A mid-stream error (source
     disconnect, bad sample, ...) does NOT discard the consumed data: a
     ``RuntimeWarning`` is emitted and the figure is returned with
     everything consumed so far, the exception stored under
@@ -205,12 +238,16 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     single-channel stream raises ``ValueError`` (unless it ends within
     the head, in which case it renders like a static 1-D plot).
 
-    Returns a matplotlib Figure; ``fig.stream_info`` is a dict holding
+    Returns a matplotlib Figure (streaming plots are always drawn with the
+    matplotlib backend -- a ``backend=`` request is ignored with a
+    ``UserWarning`` by ``hyp.plot``); ``fig.stream_info`` is a dict holding
     ``'data'`` (the raw consumed samples), ``'xform_data'`` (the projected
     trajectory), ``'n_samples'``, ``'reduce_model'`` (the fitted reduction
-    model, or None), ``'truncated'`` (whether the stream was cut off
-    before exhaustion), and ``'error'`` (the exception that ended
-    streaming early, or None).
+    model, or None), ``'truncated'`` (whether streaming was stopped -- by
+    ``stream_max``, an interrupt, or an error -- before the stream was
+    observed to end; True even when the stream held exactly ``stream_max``
+    samples, since no extra sample is ever pulled to check), and
+    ``'error'`` (the exception that ended streaming early, or None).
     """
     import matplotlib
     import matplotlib.pyplot as plt
@@ -250,6 +287,10 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
         raise ValueError(
             f'ndims must be 1, 2, or 3 for streaming plots; got {ndims} '
             '(streamed samples are drawn in at most 3 dimensions)')
+    save_ext = None
+    if save_path is not None:
+        # fail fast on unwritable formats, BEFORE any samples are consumed
+        save_path, save_ext = _validate_stream_save_path(save_path)
 
     it = iter(stream)
     # the head is capped by stream_max too, so the documented sample cap
@@ -317,10 +358,37 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
 
     interactive = show and matplotlib.get_backend().lower() not in (
         'agg', 'pdf', 'svg', 'ps')
+    # choose the frame-grabbing writer by extension, mirroring the
+    # non-streaming animate= dispatch in plot/animate._save_animation:
+    # Pillow for .gif/.png/.apng (with real-time cumulative frame timing),
+    # ffmpeg for video containers (.mp4 and friends -- these used to crash
+    # at finalize time with PIL's raw 'unknown file extension: .mp4' even
+    # though animate= supports mp4; release-1.0 audit,
+    # D09-tutorials-applied-009).
     writer = None
+    writer_tmp = None  # temp .png target for .apng (renamed at finish)
     if save_path is not None:
-        writer = animation.PillowWriter(fps=frame_rate)
-        writer.setup(fig, save_path, dpi=fig.dpi)
+        from ..plot.animate import _RealTimePillowWriter
+        if save_ext in ('gif', 'png', 'apng'):
+            writer = _RealTimePillowWriter(
+                fps=frame_rate, grid_ms=10 if save_ext == 'gif' else 1)
+            target = save_path
+            if save_ext == 'apng':
+                # Pillow only emits animated PNG for the .png extension:
+                # write to a unique temp .png in the target directory and
+                # rename it onto the requested name after finish() (same
+                # workaround as animate._save_animation).
+                import tempfile
+                fd, writer_tmp = tempfile.mkstemp(
+                    suffix='.png',
+                    dir=os.path.dirname(os.path.abspath(save_path)))
+                os.close(fd)
+                target = writer_tmp
+            writer.setup(fig, target, dpi=fig.dpi)
+        else:
+            writer = animation.writers['ffmpeg'](fps=frame_rate,
+                                                 bitrate=1800)
+            writer.setup(fig, save_path, dpi=fig.dpi)
 
     def _redraw():
         # fixed head-fitted transform + clamp: the space inside the cube is
@@ -399,7 +467,19 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     try:
         while True:
             if stream_max is not None and n_seen >= stream_max:
-                truncated = any(True for _ in itertools.islice(it, 1))
+                # stream_max reached: stop WITHOUT touching the stream
+                # again. (An earlier version peeked one extra sample here
+                # to test whether the stream really had more, silently
+                # consuming -- and discarding -- a sample beyond the
+                # documented cap, which matters for stateful/costly
+                # sources like hardware acquisition or paid APIs;
+                # release-1.0 audit, D09-tutorials-applied-006. Exactly
+                # stream_max samples are now consumed, and 'truncated'
+                # means "streaming was stopped by stream_max, an
+                # interrupt, or an error before the stream was observed
+                # to end" -- it is True even for a stream holding exactly
+                # stream_max samples.)
+                truncated = True
                 break
             take = stream_chunk
             if stream_max is not None:
@@ -434,7 +514,13 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
             "fig.stream_info['error']).", RuntimeWarning, stacklevel=2)
     finally:
         if writer is not None:
-            writer.finish()
+            try:
+                writer.finish()
+                if writer_tmp is not None:
+                    os.replace(writer_tmp, save_path)
+            finally:
+                if writer_tmp is not None and os.path.exists(writer_tmp):
+                    os.remove(writer_tmp)
 
     fig.stream_info = {
         'data': [np.vstack(raw)],

@@ -23,7 +23,7 @@ def df2mat(data, return_labels=False):
         array (default: False).
 
     Returns
-    ----------
+    -------
     plot_data : Numpy array
         A Numpy array where text columns are turned into binary vectors.
 

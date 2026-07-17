@@ -184,6 +184,31 @@ def _wrangled_impute(data, model='PPCA', return_model=False, **kwargs):
             return [r[0] for r in results], [r[1] for r in results]
         return results
 
+    # a column with NO observed values at all carries no information: the
+    # imputers can only fabricate values for it (Kalman/PPCA fill 0.0).
+    # Warn so a dead sensor's zeros are not mistaken for data (release-1.0
+    # audit, D09-tutorials-applied-012). Checked on the POOLED view -- for
+    # a list sharing columns, a column observed in ANY dataset is informed
+    # (the datasets are stacked and imputed jointly).
+    _datasets = data if isinstance(data, list) else [data]
+    if all(isinstance(d, pd.DataFrame) for d in _datasets):
+        try:
+            _stacked = pd.concat(_datasets, axis=0)
+            _vals = _stacked.to_numpy(dtype=float)
+        except (TypeError, ValueError):
+            _vals = None
+        if _vals is not None and _vals.size:
+            _dead = np.isnan(_vals).all(axis=0)
+            if _dead.any():
+                _names = [str(c) for c, d_ in zip(_stacked.columns, _dead)
+                          if d_]
+                warnings.warn(
+                    f'column(s) {_names} have no observed values at all; '
+                    'their "imputed" values are not informed by any data '
+                    "(Kalman and PPCA fill such columns with 0.0). Drop "
+                    'these columns, or treat their filled values as '
+                    'placeholders rather than data.', UserWarning)
+
     if isinstance(model, dict) and 'kwargs' not in model and 'args' not in model:
         # {'model': ..., 'params': {...}} form: unpack before handing the
         # inner model spec to unpack_model (which only auto-unpacks the
@@ -208,6 +233,12 @@ def _wrangled_impute(data, model='PPCA', return_model=False, **kwargs):
             f'{sorted(model)}. Pass e.g. '
             "{'model': 'PPCA', 'kwargs': {...}}.")
 
+    if isinstance(model, str) and model not in _supported_names():
+        # case-insensitive fallback (release-1.0 audit,
+        # D09-tutorials-applied-014: model='ppca' used to raise "unknown
+        # impute model 'ppca'" while listing 'PPCA' as supported)
+        _by_lower = {n.lower(): n for n in _supported_names()}
+        model = _by_lower.get(model.lower(), model)
     try:
         resolved = unpack_model(model, valid=IMPUTERS, parent_class=Imputer)
     except ValueError as e:
@@ -270,7 +301,8 @@ def impute(data, model='PPCA', return_model=False, **kwargs):
     model : str, dict, class, or Imputer instance
         Which imputer to use (default: 'PPCA', matching the pre-1.0
         `format_data` default). A string is one of `IMPUTERS`' names (PPCA,
-        SimpleImputer, KNNImputer, IterativeImputer, Kalman). A dict may be
+        SimpleImputer, KNNImputer, IterativeImputer, Kalman); names are
+        matched case-insensitively ('ppca' works too). A dict may be
         `{'model': ..., 'params': {...}}` (deprecated) or
         `{'model': ..., 'args': [...], 'kwargs': {...}}`. A class or an
         already-constructed (unfitted) instance is used directly. An
