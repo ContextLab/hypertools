@@ -50,13 +50,21 @@ def apply_model(data, model, mode='auto', return_model=False,
     data : numpy array, pandas DataFrame, or list of arrays/DataFrames
         The dataset(s) to transform.
 
-    model : str, dict, sklearn-style instance, or list
-        - str: a registered model name (see `supported_models()`),
-          e.g. 'PCA', 'KMeans', 'GaussianMixture'
-        - dict: the canonical {'model': <str or instance>, 'args': [...],
-          'kwargs': {...}} (both 'args' and 'kwargs' optional), or the legacy
-          {'model': ..., 'params': {...}} form (accepted for backward
-          compatibility, emits a DeprecationWarning)
+    model : str, class, dict, sklearn-style instance, or list
+        - str: a registered model name (see
+          `hypertools.core.supported_models()`), e.g. 'PCA', 'KMeans',
+          'GaussianMixture'. (This registry covers reducers and
+          clusterers; `hyp.Pipeline` additionally accepts manipulator and
+          aligner names such as 'ZScore' or 'HyperAlign', which operate on
+          whole datasets rather than stacked arrays.)
+        - class: a scikit-learn style model class, instantiated with the
+          spec's 'args'/'kwargs' (or defaults)
+        - dict: the canonical {'model': <str, class, or instance>,
+          'args': [...], 'kwargs': {...}} (both 'args' and 'kwargs'
+          optional; 'args' are positional constructor arguments and
+          require a name/class 'model'), or the legacy {'model': ...,
+          'params': {...}} form (accepted for backward compatibility,
+          emits a DeprecationWarning)
         - instance: any object exposing fit/transform/fit_transform/
           fit_predict/predict_proba (scikit-learn convention)
         - list: a pipeline; each element is applied in sequence, with each
@@ -66,14 +74,31 @@ def apply_model(data, model, mode='auto', return_model=False,
         How to apply the model: 'fit_transform', 'fit_predict',
         'predict_proba', or 'auto' (default), which prefers predict_proba
         (fitting first), then fit_transform/transform, then fit_predict.
+        For a list (pipeline) spec, an explicit mode applies to the FINAL
+        stage only (earlier stages run in 'auto' mode), so e.g.
+        ['PCA', 'KMeans'] with mode='fit_predict' reduces, then returns
+        cluster labels. An explicit mode the model cannot honor raises a
+        ValueError naming the modes it does support. Note that 'auto' can
+        return a different result KIND than hyp.Pipeline's fit_transform
+        for the same model (e.g. GaussianMixture: membership probabilities
+        here via predict_proba, hard labels from a raw Pipeline step).
 
     return_model : bool
-        If True, also return the fitted model: the fitted model instance
-        when `model` is a single spec, or a fitted `hypertools.Pipeline`
-        (wrapping each stage's already-fitted model, in order) when `model`
-        is a list -- so it can be reused on held-out data via
-        `.transform()`/`pipeline.named_steps`/`pipeline.steps` (default:
-        False).
+        If True, also return the fitted model (default: False):
+
+        - single spec + stack=True: the fitted model instance
+        - single spec + stack=False: a LIST of fitted instances, one per
+          dataset (even for a single input dataset)
+        - list spec + stack=True: a fitted `hypertools.Pipeline` wrapping
+          each stage's already-fitted model, in order
+        - list spec + stack=False: a list of fitted `hypertools.Pipeline`
+          objects, one per dataset
+
+        Fitted models/pipelines are reusable on held-out data via
+        `.transform()`/`pipeline.named_steps`/`pipeline.steps`. Caveat:
+        models with no out-of-sample method (e.g. TSNE, MDS,
+        SpectralEmbedding) cannot honor `.transform()` on new data --
+        reusing such a pipeline raises a TypeError explaining this.
 
     format_data : bool
         Whether to run hypertools' format_data on the input (default: True).
@@ -81,15 +106,20 @@ def apply_model(data, model, mode='auto', return_model=False,
     stack : bool
         If True (default), datasets are vertically stacked and the model is
         fit ONCE across all of them, then results are split back to match
-        the input structure. If False, a separate model is fit per dataset.
+        the input structure. NOTE: with stack=True, a passed-in model
+        INSTANCE is fitted in place (the caller's object gains the fitted
+        state). If False, a separate model is fit per dataset; each
+        dataset gets its own clone and the caller's instance is left
+        untouched.
 
     ndims : int or None
         Convenience: sets n_components on models that accept it.
 
     Returns
     -------
-    result (and fitted model(s) if return_model=True). Lists in, lists out:
-    a single input dataset returns a single result.
+    result (and fitted model(s) if return_model=True; see `return_model`
+    for the exact shape). Lists in, lists out: a single input dataset
+    returns a single result.
     """
     single_input = not isinstance(data, list)
     if format_data:
@@ -102,13 +132,19 @@ def apply_model(data, model, mode='auto', return_model=False,
     elif single_input:
         data = [data]
 
-    # pipeline: thread the data through each stage
+    # pipeline: thread the data through each stage. `mode` describes the
+    # requested OUTPUT, so it applies to the FINAL stage only; earlier
+    # stages run in 'auto' mode (2026-07 audit F21-004: passing e.g.
+    # mode='fit_predict' into every stage made reduce->cluster pipelines
+    # crash on the first non-predicting stage).
     if isinstance(model, list):
         fitted = []
-        for stage in model:
+        last = len(model) - 1
+        for i, stage in enumerate(model):
             data, stage_model = apply_model(
-                data, stage, mode=mode, return_model=True,
-                format_data=False, stack=stack, ndims=ndims)
+                data, stage, mode=(mode if i == last else 'auto'),
+                return_model=True, format_data=False, stack=stack,
+                ndims=ndims)
             if not isinstance(data, list):
                 data = [data]
             fitted.append(stage_model)
@@ -122,9 +158,20 @@ def apply_model(data, model, mode='auto', return_model=False,
         # it fitted (skipping fit_transform, which would re-fit them) is
         # what lets `pipeline.transform(held_out)` reuse this exact fit
         from .pipeline import Pipeline
-        pipeline = Pipeline(fitted)
-        pipeline._is_fitted = True
-        return (result, pipeline)
+        if stack or not fitted:
+            pipeline = Pipeline(fitted)
+            pipeline._is_fitted = True
+            return (result, pipeline)
+        # stack=False: each stage fitted a SEPARATE model per dataset, so
+        # hand back one fitted Pipeline per dataset (2026-07 audit F21-003:
+        # this used to wrap the raw per-stage lists in a single Pipeline
+        # whose .transform crashed with AttributeError)
+        pipelines = []
+        for j in range(len(fitted[0])):
+            per_dataset = Pipeline([stage_models[j] for stage_models in fitted])
+            per_dataset._is_fitted = True
+            pipelines.append(per_dataset)
+        return (result, pipelines)
 
     model_instance = _resolve_model(model, ndims)
 
@@ -161,11 +208,18 @@ def _resolve_model(model, ndims):
     from .shared import unpack_model
     resolved = unpack_model(model)
 
-    params = {}
+    args, params = [], {}
     if isinstance(resolved, dict):
         # {'model': ..., 'args': [...], 'kwargs': {...}} (the LEGACY
         # {'model', 'params'} form is normalized to this shape --  with a
         # DeprecationWarning -- by unpack_model itself)
+        if 'model' not in resolved:
+            raise ValueError(
+                f"dict model specs require a 'model' key; got keys "
+                f"{sorted(resolved)}. Use "
+                "{'model': 'PCA', 'args': [...], 'kwargs': {...}} "
+                "('args'/'kwargs' optional).")
+        args = list(resolved.get('args', []))
         params = dict(resolved.get('kwargs', {}))
         resolved = resolved['model']
 
@@ -175,18 +229,27 @@ def _resolve_model(model, ndims):
             raise ValueError(
                 f'unknown model {resolved!r}; supported names: '
                 f'{", ".join(supported_models())} (or pass a scikit-learn '
-                f'style instance directly)')
+                f'style class or instance directly; hyp.Pipeline '
+                f'additionally accepts manipulator/aligner names such as '
+                f"'ZScore' or 'HyperAlign')")
         if resolved == 'UMAP':
             from umap import UMAP as model_cls
         else:
             model_cls = registry[resolved]
+        resolved = model_cls
+
+    if isinstance(resolved, type):
+        # a registry name or a bare class: instantiate it with the spec's
+        # 'args'/'kwargs' (2026-07 audit F21-001: 'args' used to be
+        # silently dropped, so {'model': 'PCA', 'args': [3]} fit PCA with
+        # its default components).
         # only inject n_components on models that actually accept it (QC 2026-07:
         # this used to force n_components onto e.g. KMeans -> "unexpected keyword
         # argument 'n_components'"; the instance path below already guards it).
-        if (ndims is not None and 'n_components' not in params
-                and 'n_components' in inspect.signature(model_cls).parameters):
+        if (ndims is not None and not args and 'n_components' not in params
+                and 'n_components' in inspect.signature(resolved).parameters):
             params['n_components'] = ndims
-        return model_cls(**params)
+        return resolved(*args, **params)
 
     # instance: duck-type on the sklearn convention
     if not any(hasattr(resolved, m) for m in
@@ -194,6 +257,14 @@ def _resolve_model(model, ndims):
         raise ValueError(
             'model instances must follow the scikit-learn convention '
             '(fit/transform/fit_transform/fit_predict/predict_proba)')
+    if args:
+        raise ValueError(
+            f"'args' ({args!r}) cannot be applied to an already-constructed "
+            f"{type(resolved).__name__} instance: positional constructor "
+            "arguments require a class or registry-name spec (e.g. "
+            "{'model': 'PCA', 'args': [3]}); for an instance, move the "
+            "values into 'kwargs' or construct the instance with them "
+            "directly.")
     if params:
         resolved.set_params(**params)
     if ndims is not None and hasattr(resolved, 'n_components'):
@@ -201,8 +272,28 @@ def _resolve_model(model, ndims):
     return resolved
 
 
+def _supported_modes(model):
+    """The explicit `mode=` values this model can honor."""
+    modes = []
+    if hasattr(model, 'fit_transform') or (hasattr(model, 'fit')
+                                           and hasattr(model, 'transform')):
+        modes.append('fit_transform')
+    if hasattr(model, 'fit_predict') or (hasattr(model, 'fit')
+                                         and hasattr(model, 'predict')):
+        modes.append('fit_predict')
+    if hasattr(model, 'predict_proba'):
+        modes.append('predict_proba')
+    return modes
+
+
 def _apply_single(model, stacked, mode):
-    """Fit and apply one model to one (stacked) array."""
+    """Fit and apply one model to one (stacked) array.
+
+    An explicit `mode=` the model cannot honor raises a clear ValueError
+    naming the model, the mode, and the modes it does support (2026-07
+    audit F21-004: mismatches used to surface as raw AttributeErrors like
+    "'PCA' object has no attribute 'predict_proba'").
+    """
     if mode == 'auto':
         if hasattr(model, 'predict_proba'):
             mode = 'predict_proba'
@@ -210,6 +301,14 @@ def _apply_single(model, stacked, mode):
             mode = 'fit_transform'
         else:
             mode = 'fit_predict'
+    elif mode in ('fit_transform', 'fit_predict', 'predict_proba'):
+        supported = _supported_modes(model)
+        if mode not in supported:
+            raise ValueError(
+                f"{type(model).__name__} does not support mode={mode!r} "
+                f"(it has no matching method); this model supports: "
+                f"{', '.join(supported) or 'none of the explicit modes'}. "
+                f"Use one of those, or mode='auto'.")
 
     if mode == 'fit_transform':
         if hasattr(model, 'fit_transform'):

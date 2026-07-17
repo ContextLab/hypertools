@@ -160,8 +160,20 @@ Homepage = "https://github.com/ContextLab/hypertools"
 Documentation = "https://hypertools.readthedocs.io"
 Repository = "https://github.com/ContextLab/hypertools"
 
+# NOTE (2026-07 audit X5-packaging-001): the include pattern must be
+# ["hypertools", "hypertools.*"] with namespaces disabled -- the previous
+# ["hypertools*"] glob plus implicit namespace-package discovery swept ANY
+# hypertools*-named directory in the repo root (e.g. a local hypertools-dev/
+# virtualenv) into the wheel and sdist.
 [tool.setuptools.packages.find]
-include = ["hypertools*"]
+include = ["hypertools", "hypertools.*"]
+namespaces = false
+
+# ship the published-defaults config (2026-07 audit X5-packaging-002 /
+# X7-code-org-rest-004: without this, config.ini was missing from wheels and
+# sdists, so get_default_options() was silently empty in every pip install)
+[tool.setuptools.package-data]
+"hypertools.core" = ["config.ini"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

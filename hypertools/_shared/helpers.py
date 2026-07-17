@@ -13,7 +13,13 @@ from matplotlib.lines import Line2D
 
 # NOTE: seaborn and scipy.interpolate are imported lazily inside the functions
 # that use them -- together they added ~1s to `import hypertools`.
-np.seterr(divide='ignore', invalid='ignore')
+#
+# 2026-07 audit (X7-code-org-rest-002): this module used to call
+# np.seterr(divide='ignore', invalid='ignore') at import time, permanently
+# silencing numpy divide/invalid warnings PROCESS-WIDE for anyone who
+# imported hypertools -- masking real numerical errors in users' own
+# analysis code. Suppression is now scoped locally (np.errstate) at the
+# specific call sites that intentionally divide by possibly-zero ranges.
 
 
 def center(x):
@@ -55,7 +61,17 @@ def scale(x):
     x_stacked = np.vstack(x)
     m1 = np.min(x_stacked)
     m2 = np.max(x_stacked - m1)
-    f = lambda x: 2*(np.divide(x - m1, m2)) - 1
+
+    def f(a):
+        """Rescale one array into [-1, 1] using the pooled min/range.
+
+        Constant data has zero range (m2 == 0): 0/0 is intentionally
+        allowed to produce NaN/inf here without warning -- suppression is
+        scoped to this division only (never process-wide; see note above).
+        """
+        with np.errstate(divide='ignore', invalid='ignore'):
+            return 2 * (np.divide(a - m1, m2)) - 1
+
     return [f(i) for i in x]
 
 

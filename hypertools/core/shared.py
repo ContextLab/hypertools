@@ -6,7 +6,11 @@ checked against a parent class, and dict specs have their inner model unpacked
 recursively. Anything unmatched is returned unchanged for the registry to
 resolve later.
 """
+import copy
 import warnings
+
+#: sentinel distinguishing "no explicit default passed" in RobustDict.get
+_MISSING = object()
 
 
 def is_reused_pipeline(spec, stage_kwargs, spec_label):
@@ -54,20 +58,50 @@ def is_reused_pipeline(spec, stage_kwargs, spec_label):
 
 
 class RobustDict(dict):
-    """dict whose missing keys return a default value instead of raising."""
+    """dict whose missing keys return a default value instead of raising.
+
+    Consistency guarantees (2026-07 audit, F23-core-config-exceptions-004):
+
+    - ``rd[key]``, ``rd.get(key)``, and ``rd.get(key, explicit)`` agree:
+      the first two return the configured default for a missing key, the
+      third returns the explicitly-passed one
+    - every missing-key lookup returns a FRESH (deep) copy of the default,
+      so mutating one result never pollutes later lookups
+    - ``rd.copy()`` returns another ``RobustDict`` with the same default
+      (plain ``dict(rd)`` still strips the default, as for any dict
+      subclass)
+    """
 
     def __init__(self, *args, **kwargs):
         self.default_value = kwargs.pop("__default_value__", None)
         super().__init__(*args, **kwargs)
 
+    def _fresh_default(self):
+        return copy.deepcopy(self.default_value)
+
     def __getitem__(self, key):
         try:
             return super().__getitem__(key)
         except KeyError:
-            return self.default_value
+            return self._fresh_default()
 
     def __missing__(self, key):
-        return self.default_value
+        return self._fresh_default()
+
+    def get(self, key, default=_MISSING):
+        """Like dict.get, but a missing key falls back to this dict's
+        configured ``__default_value__`` when no explicit ``default`` is
+        given (so ``rd.get(k)`` and ``rd[k]`` agree)."""
+        if key in self:
+            return super().__getitem__(key)
+        if default is not _MISSING:
+            return default
+        return self._fresh_default()
+
+    def copy(self):
+        """Return a shallow copy that is still a RobustDict (dict.copy
+        used to silently degrade to a plain dict, dropping the default)."""
+        return RobustDict(self, __default_value__=self.default_value)
 
 
 def unpack_model(m, valid=None, parent_class=None):
@@ -77,11 +111,13 @@ def unpack_model(m, valid=None, parent_class=None):
     ----------
     m : str, class, instance, dict, or list of these
         - str: matched against ``valid``'s class names (eval-free lookup)
-        - class or instance: matched against ``parent_class``; any other
-          (non-dict, non-list, non-string) object is treated as an
-          already-constructed/already-fitted model and passed through
-          unchanged, so a fitted instance handed back in (e.g. from an
-          earlier ``return_model=True`` call) is never mistaken for a spec
+        - class or instance: matched against ``parent_class``; when no
+          ``parent_class`` is given, any other (non-dict, non-list,
+          non-string) object -- a bare class for the caller to
+          instantiate, or an already-constructed/already-fitted model --
+          is passed through unchanged, so a fitted instance handed back in
+          (e.g. from an earlier ``return_model=True`` call) is never
+          mistaken for a spec
         - dict ``{'model': ..., 'args': [...], 'kwargs': {...}}``: the
           canonical dict form; ``'model'`` is unpacked recursively
         - dict ``{'model': ..., 'params': {...}}``: the LEGACY dict form
@@ -131,6 +167,17 @@ def unpack_model(m, valid=None, parent_class=None):
         # `'args' in x or 'kwargs' in x`). Missing pieces default to []/{}.
         if "model" in m:
             resolved = dict(m)
+            if "params" in resolved:
+                # legacy 'params' alongside canonical 'args'/'kwargs' (2026-07
+                # audit F23-007): it used to be retained inertly and silently
+                # ignored downstream -- warn and drop it so the mistake is
+                # visible (the canonical keys win)
+                dropped = resolved.pop("params")
+                warnings.warn(
+                    f"ignoring the legacy 'params' key ({dropped!r}) because "
+                    "'args'/'kwargs' are also present in the model spec; "
+                    "merge those values into 'kwargs' instead",
+                    DeprecationWarning, stacklevel=2)
             resolved["model"] = unpack_model(m["model"], valid=valid, parent_class=parent_class)
             resolved.setdefault("args", [])
             resolved.setdefault("kwargs", {})
@@ -140,7 +187,19 @@ def unpack_model(m, valid=None, parent_class=None):
         return m
 
     if isinstance(m, type):
-        raise ValueError(f"unknown model: {m!r}")
+        # mirror the instance behavior below: with no parent_class to
+        # validate against, a bare class is a legitimate spec for the
+        # caller to instantiate (2026-07 audit F23-008/F21-007: classes
+        # used to raise here while instances passed through)
+        if parent_class is None:
+            return m
+        raise ValueError(
+            f"unknown model spec: class {m.__name__} is not a subclass of "
+            f"{parent_class.__name__}. Pass "
+            + (f"one of {', '.join(sorted(v.__name__ for v in valid))}; "
+               if valid else "")
+            + f"a {parent_class.__name__} subclass or instance; or a dict "
+            "spec {'model': ..., 'args': [...], 'kwargs': {...}}.")
 
     # anything else (an already-constructed or already-fitted instance) is
     # passed through unchanged for the caller to duck-type/apply directly --
@@ -151,16 +210,34 @@ def unpack_model(m, valid=None, parent_class=None):
     if parent_class is None:
         return m
 
-    raise ValueError(f"unknown model: {m!r}")
+    raise ValueError(
+        f"unknown model spec: got a {type(m).__name__} instance, which is "
+        f"not a {parent_class.__name__} (or subclass) instance. Pass "
+        + (f"one of {', '.join(sorted(v.__name__ for v in valid))}; "
+           if valid else "")
+        + f"a {parent_class.__name__} subclass or instance; or a dict spec "
+        "{'model': ..., 'args': [...], 'kwargs': {...}}.")
 
 
 def get(value, i):
     """Return value[i] for a list/tuple (if in range), else value itself.
 
-    Lets a manipulator accept either one shared parameter or a per-dataset list.
+    Lets a manipulator accept either one shared parameter or a per-dataset
+    list. Negative indices follow the usual Python convention
+    (``get(v, -1)`` is ``v[-1]``). An out-of-range index means a
+    per-dataset list was shorter than the number of datasets: the whole
+    list is still returned (the historical broadcast behavior), but a
+    ``UserWarning`` now flags the length mismatch (2026-07 audit,
+    F23-core-config-exceptions-012).
     """
     if isinstance(value, (list, tuple)):
-        if 0 <= i < len(value):
+        n = len(value)
+        if -n <= i < n:
             return value[i]
+        warnings.warn(
+            f"parameter list of length {n} has no entry for dataset index "
+            f"{i}; using the whole list as this dataset's value. Pass a "
+            "scalar to share one value across all datasets, or a list with "
+            "one entry per dataset.", stacklevel=2)
         return value
     return value
