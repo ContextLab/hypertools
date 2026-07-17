@@ -259,15 +259,20 @@ def load(
 
     trust : bool
         Remote (non-built-in) sources only. Unpickling a payload fetched
-        from a URL/Drive/Dropbox/Sheets can execute arbitrary code, so by
-        default a ``UserWarning`` is raised before unpickling it, and
-        remote ``.npy``/``.npz`` payloads are loaded with
-        ``allow_pickle=False`` (raising ``ValueError`` if the array
-        actually needs pickle support, e.g. an object array). Pass
-        ``trust=True`` once you've verified the source to silence the
-        warning and allow pickle-backed remote arrays. Built-in example
-        datasets (listed below) are always trusted regardless of this
-        flag. Local files are never subject to this policy.
+        from a URL/Drive/Dropbox/Sheets executes arbitrary code embedded in
+        it, so by default hypertools **refuses** to unpickle remote data
+        (raising :class:`~hypertools.core.exceptions.HypertoolsIOError` --
+        a warning is not a security boundary). Remote ``.npy``/``.npz``
+        payloads are likewise loaded with ``allow_pickle=False`` (raising
+        if the array actually needs pickle support, e.g. an object array).
+        Pass ``trust=True`` -- only once you have verified the source -- to
+        allow unpickling remote data and pickle-backed remote arrays. This
+        covers every remote-pickle path (extension-based, content-sniffed,
+        and extensionless). Non-executable remote formats
+        (``.csv``/``.npz`` numeric/``.parquet``) never require ``trust``.
+        Built-in example datasets (listed below) are downloaded from a
+        fixed, integrity-checked set of hosts and do not require this flag.
+        Local files are never subject to this policy.
 
     Returns
     -------

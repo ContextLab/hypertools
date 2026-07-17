@@ -140,30 +140,33 @@ def test_load_streaming_rejects_load_time_transforms():
 
 
 def test_load_google_drive_id_and_url():
-    # the hosted 'spiral' pickle unpickles internally; load() returns its
-    # raw data (a list of arrays), never a DataGeometry. Unpickling a
-    # remote payload without trust=True deliberately provokes the
-    # trust notice (sources._PICKLE_TRUST_WARNING) on every load
-    with pytest.warns(UserWarning,
-                      match='unpickling data from a remote source'):
-        data = hyp.load(DRIVE_SPIRAL_ID)
-        assert isinstance(data, list)
-        url = ('https://drive.google.com/uc?export=download&id='
-               + DRIVE_SPIRAL_ID)
-        data2 = hyp.load(url)
+    # loading a remote pickle by raw Drive id / URL now REQUIRES trust=True
+    # (2026-07 release review, blocker #1: a warning is not a security
+    # boundary -- unpickling executes arbitrary code). Without it, load
+    # refuses; with it, load() returns the raw data (a list of arrays),
+    # never a DataGeometry.
+    url = ('https://drive.google.com/uc?export=download&id=' + DRIVE_SPIRAL_ID)
+    for src in (DRIVE_SPIRAL_ID, url):
+        with pytest.raises(HypertoolsTrustError, match='refusing to unpickle'):
+            hyp.load(src)
+    data = hyp.load(DRIVE_SPIRAL_ID, trust=True)
+    assert isinstance(data, list)
+    data2 = hyp.load(url, trust=True)
     assert isinstance(data2, list)
 
 
 def test_load_dropbox_url_forms():
-    # unpickling remote payloads without trust=True deliberately provokes
-    # the trust notice (sources._PICKLE_TRUST_WARNING) on every load
-    with pytest.warns(UserWarning,
-                      match='unpickling data from a remote source'):
-        a = hyp.load(DROPBOX_BUNNY)                   # dl=0 -> normalized
-        b = hyp.load('www.dropbox.com/s/7d9vo9idqk1hn31/bunny.pkl')
-        c = hyp.load('s/7d9vo9idqk1hn31/bunny.pkl')   # shared-link path
-    for o in (a, b, c):
-        assert np.asarray(o).shape[1] == 3            # x, y, z point cloud
+    # remote pickles fetched by URL are refused without trust=True; every
+    # URL form normalizes to the same download and, with trust=True, yields
+    # the same (N, 3) point cloud
+    forms = (DROPBOX_BUNNY,                                # dl=0 -> normalized
+             'www.dropbox.com/s/7d9vo9idqk1hn31/bunny.pkl',
+             's/7d9vo9idqk1hn31/bunny.pkl')               # shared-link path
+    for src in forms:
+        with pytest.raises(HypertoolsTrustError, match='refusing to unpickle'):
+            hyp.load(src)
+    for src in forms:
+        assert np.asarray(hyp.load(src, trust=True)).shape[1] == 3
 
 
 def test_load_generic_url_with_and_without_scheme():
@@ -314,15 +317,17 @@ def test_load_xls_without_xlrd_raises_friendly_error(tmp_path):
 
 # ---- Remote pickle / npy trust policy ----
 
-def test_remote_pickle_warns_without_trust(http_dir_server):
+def test_remote_pickle_refused_without_trust(http_dir_server):
+    # a warning is not a security boundary: a remote pickle must be REFUSED
+    # (not merely warned about, then unpickled) unless trust=True is passed
+    # (2026-07 release review, blocker #1)
     tmp_path, base_url = http_dir_server
     pd.to_pickle(pd.DataFrame({'a': [1, 2, 3]}), tmp_path / 'd.pkl')
-    with pytest.warns(UserWarning, match='trust=True'):
-        df = hyp.load(base_url + '/d.pkl')
-    assert df.shape == (3, 1)
+    with pytest.raises(HypertoolsTrustError, match='refusing to unpickle'):
+        hyp.load(base_url + '/d.pkl')
 
 
-def test_remote_pickle_trust_true_silences_warning(http_dir_server):
+def test_remote_pickle_trust_true_allows_and_is_silent(http_dir_server):
     tmp_path, base_url = http_dir_server
     pd.to_pickle(pd.DataFrame({'a': [1, 2, 3]}), tmp_path / 'd.pkl')
     with warnings.catch_warnings():

@@ -157,10 +157,14 @@ _DRIVE_INTERSTITIAL_FORM_RE = re.compile(
 _HIDDEN_INPUT_RE = re.compile(
     r'<input\s+type="hidden"\s+name="([^"]+)"\s+value="([^"]*)"')
 
-_PICKLE_TRUST_WARNING = (
-    'unpickling data from a remote source can execute arbitrary code; '
-    'pass trust=True to hypertools.load() once you have verified the '
-    'source, to silence this warning')
+_PICKLE_TRUST_REFUSAL = (
+    'refusing to unpickle data fetched from a remote source: unpickling '
+    'executes arbitrary code embedded in the payload, so hypertools does '
+    'NOT do it for remote data by default. If you downloaded this from a '
+    'source you trust and have verified it, pass trust=True to '
+    'hypertools.load() to allow it. When you control the data, prefer a '
+    'non-executable format (.npz / .csv / .parquet), which never needs '
+    'trust=True.')
 
 
 class HypertoolsTrustError(ValueError):
@@ -978,6 +982,10 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
         # (release-1.0 audit: re-review of X2-error-quality-001)
         try:
             return _unpickle_bytes(raw, trust=trust, remote=remote)
+        except HypertoolsTrustError:
+            # the remote-pickle refusal must surface as itself (with its
+            # trust=True remedy), not be mislabeled "corrupted"
+            raise
         except Exception as e:
             raise HypertoolsIOError(
                 f'{label!r} contains a pickle stream that could not be '
@@ -1118,10 +1126,14 @@ def _unpickle_bytes(raw, trust=False, remote=False):
     """pickle -> pandas unpickler -> dill, mirroring the tolerant chain
     used for the built-in example datasets.
 
-    Remote payloads (``remote=True``) emit a ``UserWarning`` unless
-    ``trust=True``: unpickling can execute arbitrary code."""
+    Remote payloads (``remote=True``) are REFUSED unless ``trust=True``:
+    unpickling can execute arbitrary code, so a warning is not a sufficient
+    security boundary (2026-07 release review, blocker #1). This is the
+    single chokepoint for every remote-pickle path -- extension-based
+    (.pkl/.pickle/.geo/.p), magic-byte-sniffed, and extensionless
+    protocol-0 -- so refusing here covers all of them."""
     if remote and not trust:
-        warnings.warn(_PICKLE_TRUST_WARNING, UserWarning, stacklevel=3)
+        raise HypertoolsTrustError(_PICKLE_TRUST_REFUSAL)
     import pickle
     try:
         return pickle.loads(raw)
