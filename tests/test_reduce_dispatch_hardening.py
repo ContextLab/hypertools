@@ -59,7 +59,8 @@ def test_invalid_ndims_raises_clear_error(bad):
 def test_describe_max_dims_gt_features_does_not_crash():
     x = np.random.default_rng(0).normal(size=(30, 4))
     result = hyp.describe(x, reduce='PCA', max_dims=8, show=False)
-    assert set(result.keys()) == {'average', 'individual'}
+    # 'fig' added by the 2026-07 release audit (F11-reduce-describe-015)
+    assert set(result.keys()) == {'average', 'individual', 'fig'}
 
 
 def test_describe_empty_component_range_warns_not_crashes():

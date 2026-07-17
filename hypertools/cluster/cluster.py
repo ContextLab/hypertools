@@ -25,7 +25,8 @@ models = CLUSTERERS
 mixture_models = MIXTURES
 
 
-def _resolve_cluster_spec(cluster, n_clusters, random_state=None):
+def _resolve_cluster_spec(cluster, n_clusters, random_state=None,
+                          n_clusters_explicit=False):
     """Resolve a `cluster=` spec into an unfitted `Clusterer`.
 
     Accepts the full model-spec grammar: a registry name (string), a bare
@@ -40,7 +41,12 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None):
     model's `__init__` signature accepts an `n_clusters` parameter
     (density/bandwidth clusterers that discover their own cluster count --
     HDBSCAN, MeanShift, DBSCAN, OPTICS, AffinityPropagation -- are left
-    alone); mixture models always get `n_components` instead.
+    alone); mixture models always get `n_components` instead. A cluster
+    count carried by the spec itself (an already-constructed instance's
+    own setting, a dict spec's kwargs, or a dict's top-level 'n_clusters')
+    always wins over the `n_clusters=` argument; when
+    `n_clusters_explicit` is True and the two conflict, a `UserWarning`
+    names the ignored value (F13-cluster-008/-009).
 
     Parameters
     ----------
@@ -48,6 +54,13 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None):
         The cluster spec (see above).
     n_clusters : int
         Number of clusters/components, used as described above.
+    random_state : int, RandomState, or None
+        Seed injected into the constructor when the model accepts one and
+        the spec did not set it (default: None).
+    n_clusters_explicit : bool
+        Whether `n_clusters` was explicitly provided by the caller (rather
+        than being the dispatcher default). Only explicit values trigger
+        conflict warnings (default: False).
 
     Returns
     -------
@@ -72,6 +85,15 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None):
                              "key (the legacy 'params' key is also accepted).")
         if "args" in cluster or "kwargs" in cluster:
             # canonical 1.0 dict spec: {'model': ..., 'args': [...], 'kwargs': {...}}
+            if "params" in cluster:
+                # both the canonical and the legacy parameter keys were
+                # given: the canonical 'args'/'kwargs' win, but say so
+                # instead of silently dropping 'params' (F13-cluster-008)
+                warnings.warn(
+                    "cluster spec contains both the canonical "
+                    "'args'/'kwargs' keys and the legacy 'params' key; "
+                    "ignoring 'params' and using 'args'/'kwargs'",
+                    UserWarning, stacklevel=3)
             model_params = dict(cluster.get("kwargs", {}))
         elif "params" in cluster:
             # LEGACY form (dev-1.0/fork): accepted for backward
@@ -87,6 +109,12 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None):
             model_params = {}
         if "n_clusters" in cluster:
             # top-level convenience: cluster={'model': ..., 'n_clusters': k}
+            if n_clusters_explicit and cluster["n_clusters"] != n_clusters:
+                warnings.warn(
+                    f"n_clusters={n_clusters} conflicts with the cluster "
+                    f"spec's own 'n_clusters' entry "
+                    f"({cluster['n_clusters']}); using the spec's value",
+                    UserWarning, stacklevel=3)
             n_clusters = cluster["n_clusters"]
     else:
         model_name = cluster
@@ -98,6 +126,32 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None):
         if not inspect.isclass(model_name):
             # already-constructed instance: params ignored, used as-is
             # (mirrors hypertools.reduce.common.Reducer)
+            if not (hasattr(model_name, 'fit')
+                    or hasattr(model_name, 'fit_predict')):
+                # e.g. cluster=42: fail here with the accepted spec forms
+                # instead of a downstream AttributeError (F13-cluster-011)
+                raise ValueError(
+                    f"invalid cluster model {model_name!r} (type "
+                    f"{type(model_name).__name__}): it has no fit or "
+                    f"fit_predict method. Pass one of the supported model "
+                    f"names "
+                    f"({', '.join(sorted(list(CLUSTERERS) + list(MIXTURES)))}), "
+                    f"a scikit-learn style clusterer class or instance, a "
+                    f"dict spec like {{'model': 'KMeans', 'kwargs': "
+                    f"{{...}}}}, or a fitted Clusterer.")
+            if n_clusters_explicit:
+                # the instance's own configuration always wins; say so when
+                # it visibly conflicts with n_clusters= (F13-cluster-008)
+                inst_k = getattr(model_name, 'n_clusters',
+                                 getattr(model_name, 'n_components', None))
+                if inst_k is not None and inst_k != n_clusters:
+                    warnings.warn(
+                        f"cluster= is an already-constructed "
+                        f"{type(model_name).__name__} instance (used as-is), "
+                        f"so n_clusters={n_clusters} is ignored in favor of "
+                        f"the instance's own setting ({inst_k}); configure "
+                        f"the instance directly to change it",
+                        UserWarning, stacklevel=3)
             return Clusterer(model_name)
         model_cls = model_name
         registry_name = getattr(model_name, "__name__", str(model_name))
@@ -114,13 +168,34 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None):
             f"pass a scikit-learn style instance directly)")
 
     if registry_name in MIXTURES:
+        if (n_clusters_explicit and "n_components" in model_params
+                and model_params["n_components"] != n_clusters):
+            warnings.warn(
+                f"n_clusters={n_clusters} conflicts with the cluster spec's "
+                f"n_components={model_params['n_components']}; using the "
+                f"spec's value", UserWarning, stacklevel=3)
         model_params.setdefault("n_components", n_clusters)
     elif "n_clusters" in inspect.signature(model_cls).parameters:
         # only inject n_clusters if the resolved model actually accepts it --
         # density/bandwidth clusterers (HDBSCAN, DBSCAN, MeanShift, OPTICS,
         # AffinityPropagation) discover the number of clusters themselves
         # and have no such __init__ parameter
+        if (n_clusters_explicit and "n_clusters" in model_params
+                and model_params["n_clusters"] != n_clusters):
+            warnings.warn(
+                f"n_clusters={n_clusters} conflicts with the cluster spec's "
+                f"n_clusters={model_params['n_clusters']}; using the spec's "
+                f"value", UserWarning, stacklevel=3)
         model_params.setdefault("n_clusters", n_clusters)
+
+    # silence sklearn >= 1.8's FutureWarning about HDBSCAN's changing `copy`
+    # default by pinning today's effective value (False) explicitly
+    # (F13-cluster-014). Results are identical either way: `copy` only
+    # controls whether the input array may be modified in place, and
+    # cluster() always fits on a freshly stacked array.
+    if (registry_name == "HDBSCAN"
+            and "copy" in inspect.signature(model_cls).parameters):
+        model_params.setdefault("copy", False)
 
     # reproducibility (QC 2026-07): inject a top-level random_state when the
     # model accepts it and the user did not set it (KMeans, GaussianMixture,
@@ -132,7 +207,7 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None):
     return Clusterer(model_cls, params=model_params)
 
 
-def cluster(x, cluster="KMeans", n_clusters=3, return_model=False,
+def cluster(x, cluster="KMeans", n_clusters=None, return_model=False,
            manip=None, normalize=None, reduce=None, ndims=None, align=None,
            format_data=True, random_state=None):
     """
@@ -144,8 +219,11 @@ def cluster(x, cluster="KMeans", n_clusters=3, return_model=False,
         The data to be clustered.  You can pass a single array/df or a list.
         If a list is passed, the arrays will be stacked and the clustering
         will be performed across all lists (i.e. not within each list).
+        All datasets in a list must have the same number of columns (the
+        stacked data shares one feature space); reduce or align them to a
+        common dimensionality first if they differ.
 
-    cluster : str, class, instance, dict, or fitted Clusterer
+    cluster : str, class, instance, dict, fitted Clusterer, False, or None
         Model to use to discover clusters.  Supported algorithms are: KMeans,
         MiniBatchKMeans, AgglomerativeClustering, Birch, FeatureAgglomeration,
         SpectralClustering, HDBSCAN, MeanShift, DBSCAN, OPTICS and
@@ -158,16 +236,26 @@ def cluster(x, cluster="KMeans", n_clusters=3, return_model=False,
         'params' : {'max_iter' : 100}}` (accepted for backward
         compatibility, but emits a `DeprecationWarning`). A
         previously-fitted `Clusterer` (as returned by `return_model=True`)
-        is applied via `.transform`/`.predict` instead of being refit. See
+        is applied via `.transform`/`.predict` instead of being refit;
+        no-predict models (e.g. AgglomerativeClustering) can only recover
+        their fit-time labels this way -- reusing them on different data
+        warns or raises rather than silently mislabeling. `None` or `False`
+        skips clustering entirely and returns the input unchanged. See
         scikit-learn specific model docs for details on parameters
         supported for each model. Note: LatentDirichletAllocation and NMF
-        require non-negative data.
+        require non-negative data, and FeatureAgglomeration clusters
+        features (columns), not observations -- it returns one label per
+        column of the input (with a `UserWarning`), not one per row.
 
-    n_clusters : int
-        Number of clusters to discover. Not used for models that discover
-        the number of clusters automatically (HDBSCAN, MeanShift, DBSCAN,
-        OPTICS, AffinityPropagation). For mixture models this sets the
-        number of components.
+    n_clusters : int or None
+        Number of clusters to discover (default: None, which means 3). Not
+        used for models that discover the number of clusters automatically
+        (HDBSCAN, MeanShift, DBSCAN, OPTICS, AffinityPropagation). For
+        mixture models this sets the number of components. If the cluster
+        spec itself carries a cluster count (an already-constructed
+        instance's own setting, or `n_clusters`/`n_components` in a dict
+        spec's kwargs), the spec's value wins and a `UserWarning` notes the
+        conflict.
 
     return_model : bool
         If True, also return the fitted model: the fitted `Clusterer`
@@ -175,31 +263,59 @@ def cluster(x, cluster="KMeans", n_clusters=3, return_model=False,
         `hypertools.Pipeline` when `manip=`/`normalize=`/`reduce=`/`align=`
         made multiple stages run (default: False).
 
-    manip, normalize, reduce, align : model spec or None
+    manip, normalize, reduce, align : model spec, False, or None
         Cross-module stage kwargs (GH #138): when any of these is given,
         the other stages also run (via
         `hypertools.core.pipeline.build_pipeline`), in the canonical order
         `manip -> normalize -> reduce -> align -> cluster` (GH #153), with
         this function's own `cluster=`/`n_clusters=` slotted in at the
         cluster stage (default: None for all four, i.e. only `cluster`
-        runs).
+        runs). `False` skips a stage, exactly like None.
 
     ndims : int or None
         Passed through to the `reduce` stage (as `ndims=`) when `reduce=`
-        is also given.
+        is also given. Without `reduce=` it has no effect, and a
+        `UserWarning` says so (the pre-1.0 `cluster(ndims=...)` shortcut
+        that reduced before clustering was removed).
 
     format_data : bool
         Whether or not to first call the format_data function (default: True).
+
+    random_state : int, RandomState, or None
+        Seed for reproducibility. Injected into the clustering model's
+        constructor when it accepts a `random_state` (KMeans,
+        SpectralClustering, GaussianMixture, ...) and the spec did not set
+        one itself; density clusterers without a `random_state` parameter,
+        and already-constructed instances you pass in, are left alone
+        (default: None).
 
     Returns
     ----------
     cluster_labels : list or numpy.ndarray
         For hard-clustering models, a list of cluster labels (one per
-        observation). For mixture models, an (n_samples, n_components) array
-        of membership proportions whose rows sum to 1. If `return_model=True`,
-        a `(cluster_labels, model)` tuple is returned instead.
+        observation; FeatureAgglomeration instead returns one label per
+        COLUMN of the input -- it clusters features). For mixture models,
+        an (n_samples, n_components) array of membership proportions whose
+        rows sum to 1. If `return_model=True`, a `(cluster_labels, model)`
+        tuple is returned instead.
 
     """
+    # False is an explicit "skip this stage", for every stage kwarg, exactly
+    # like None (F13-cluster-007 contract) -- normalize it up front so
+    # plot()/analyze() can thread cluster=False (and friends) through
+    if cluster is False:
+        cluster = None
+    manip = None if manip is False else manip
+    normalize = None if normalize is False else normalize
+    reduce = None if reduce is False else reduce
+    align = None if align is False else align
+
+    # n_clusters=None (the signature default) means 3; only an explicit
+    # value participates in spec-conflict warnings (F13-cluster-008/-009)
+    n_clusters_explicit = n_clusters is not None
+    if n_clusters is None:
+        n_clusters = 3
+
     # a whole already-fitted Pipeline handed back as cluster= (e.g. the model
     # from an earlier cross-module return_model=True call) is reused as-is via
     # .transform, BEFORE the cross-module branch below -- otherwise it would be
@@ -212,6 +328,17 @@ def cluster(x, cluster="KMeans", n_clusters=3, return_model=False,
         result = cluster.transform(x)
         return (result, cluster) if return_model else result
 
+    # the pre-1.0 cluster(ndims=...) shortcut (reduce, then cluster) was
+    # removed: in 1.0, ndims= is only a passthrough to an explicitly
+    # requested reduce stage. Say so instead of silently no-oping the
+    # argument for migrating 0.x users (F13-cluster-019).
+    if ndims is not None and reduce is None:
+        warnings.warn(
+            f"cluster()'s ndims= is a passthrough to the reduce stage and "
+            f"has no effect unless reduce= is also given; ignoring "
+            f"ndims={ndims}. Pass e.g. reduce='IncrementalPCA' to reduce "
+            f"before clustering.", UserWarning)
+
     # cross-module kwargs (#138): assemble and run a Pipeline (in canonical
     # order, #153) instead of the single-stage path below whenever another
     # stage is requested. Lazy import avoids a cluster<->core.pipeline cycle
@@ -222,7 +349,8 @@ def cluster(x, cluster="KMeans", n_clusters=3, return_model=False,
         # has no n_clusters= kwarg of its own (mirrors how it threads ndims=
         # through to the reduce stage), so the resolved (unfitted) Clusterer
         # is what gets passed to the cluster stage instead of the raw spec
-        cluster_spec = (_resolve_cluster_spec(cluster, n_clusters, random_state)
+        cluster_spec = (_resolve_cluster_spec(cluster, n_clusters, random_state,
+                                              n_clusters_explicit)
                         if cluster is not None else None)
         pipeline = build_pipeline(manip=manip, normalize=normalize,
                                    reduce=reduce, ndims=ndims,
@@ -235,6 +363,20 @@ def cluster(x, cluster="KMeans", n_clusters=3, return_model=False,
 
     if format_data:
         x = formatter(x, ppca=True)
+
+    # give ragged lists a real error instead of numpy's raw concatenation
+    # message (F13-cluster-012): the stack-once-fit-once recipe needs every
+    # dataset in one shared feature space
+    if isinstance(x, list) and len(x) > 1:
+        widths = [np.atleast_2d(np.asarray(xi)).shape[1] for xi in x]
+        if len(set(widths)) > 1:
+            raise ValueError(
+                f"cannot cluster a list of datasets with different numbers "
+                f"of columns (got column counts {widths}): the datasets are "
+                f"stacked and clustered in one shared feature space. Reduce "
+                f"or align them to a common dimensionality first, e.g. "
+                f"cluster(x, reduce='IncrementalPCA', ndims=k) or "
+                f"cluster(x, align='HyperAlign').")
 
     stacked = np.vstack(x)
 
@@ -249,6 +391,7 @@ def cluster(x, cluster="KMeans", n_clusters=3, return_model=False,
             result = cluster.fit_transform(stacked)
         return (result, cluster) if return_model else result
 
-    clusterer = _resolve_cluster_spec(cluster, n_clusters, random_state)
+    clusterer = _resolve_cluster_spec(cluster, n_clusters, random_state,
+                                      n_clusters_explicit)
     result = clusterer.fit_transform(stacked)
     return (result, clusterer) if return_model else result

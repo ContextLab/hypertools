@@ -52,4 +52,7 @@ def test_describe_plotly_backend_runs_and_returns_dict(monkeypatch):
     result = describe(data, reduce='PCA', max_dims=6, show=True,
                       backend='plotly')
     assert type(result) is dict
-    assert set(result.keys()) == {'average', 'individual'}
+    # 'fig' added by the 2026-07 release audit (F11-reduce-describe-015):
+    # describe() now hands back its figure so it can be saved/embedded
+    assert set(result.keys()) == {'average', 'individual', 'fig'}
+    assert isinstance(result['fig'], go.Figure)

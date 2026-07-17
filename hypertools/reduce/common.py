@@ -202,6 +202,11 @@ class Reducer(BaseEstimator):
         ------
         sklearn.exceptions.NotFittedError
             If `fit_transform` has not been called yet.
+        NotImplementedError
+            If the fitted model has no out-of-sample `transform` (e.g.
+            TSNE, MDS, SpectralEmbedding -- these only define
+            `fit_transform`, so they cannot embed new data without being
+            refit).
         """
         if self.model_ is None:
             raise NotFittedError('must fit reducer before transforming data')
@@ -211,4 +216,16 @@ class Reducer(BaseEstimator):
                 return model.predict_proba(stacked)
             loadings = model.transform(stacked)
             return normalize_membership_rows(loadings)
+        if not hasattr(model, 'transform'):
+            # TSNE / MDS / SpectralEmbedding define fit_transform but no
+            # transform: they cannot embed new data with an already-fitted
+            # model, so say so instead of surfacing a raw AttributeError
+            # (F11-reduce-describe-008)
+            name = type(model).__name__
+            raise NotImplementedError(
+                f"{name} has no out-of-sample transform (it only defines "
+                f"fit_transform), so a fitted {name} Reducer cannot embed "
+                f"new data. Refit instead: call hypertools.reduce on the "
+                f"new data, or on the combined old + new data if you need "
+                f"one shared embedding.")
         return model.transform(stacked)
