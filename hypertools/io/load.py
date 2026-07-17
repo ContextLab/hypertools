@@ -49,6 +49,56 @@ EXAMPLE_DATA = {
         'https://www.dropbox.com/s/6wxjyw8p052a5t9/datasaurus.pkl?dl=1',
 }
 
+# SHA-256 of each hosted built-in file, pinned so a built-in is verified
+# against a hard-coded cryptographic hash BEFORE it is deserialized (2026-07
+# release review, blocker #1). A mismatch (a corrupted/rate-limited download,
+# a poisoned cache, or a tampered/changed upstream file) is a HARD error --
+# never a silent redownload-and-reparse. Every cache hit is validated too.
+#
+# These pin the current pickle files. When the datasets are re-hosted in
+# non-executable formats (.npz/.parquet/.json.gz -- see the verified
+# conversion bundle handed off for Dropbox hosting), swap each EXAMPLE_DATA
+# entry to its new URL and replace the hash here with the converted file's
+# SHA-256; the .npz/.parquet path then never unpickles at all.
+_EXAMPLE_DATA_SHA256 = {
+    'weights': '695f50f48328f7b9f5741c89854b07f0c4989c4275f929caa76e95af2c92a7ff',
+    'weights_avg': '52be2d02d2c5754adbb58e68f86d2c2da2b7a339162f1d2e0c7e3b987ffde06f',
+    'weights_sample': 'eaf67c631e9cc8207c70ad1c93c6c022298a6e57f946ef39e24299c9c1bf3f8d',
+    'spiral': '7ca728d2972cb0271b3c68693aa7ec744962f8499043120eeefc6b755591f94c',
+    'mushrooms': 'b3abdaf8ae1597eeb95c1f1bc6cff6c38d02c9dff99a66ebafed6dc168d2c8cf',
+    'bunny': '7a43745c17834d54bb9dc10b7c286b4f23a4a1c437f8419d53dbe2eaf6ece663',
+    'cube': 'ca43191a3c77ce90d449a9cd327a53aaa7bd55032c7de06567c175d6524a02c1',
+    'dragon': 'dbfdbbc077f3884251a7140ee030eaf29cff915448d68e3afd96780e5cf79434',
+    'sphere': '8dae53277e2f15a57b3ca00299b6e7b980dcde6524c17350ad3b0cc3b3e0688f',
+    'teapot': 'c195e6221ad369b274d5f531b98a763c8fe03efadfc5d582011b3148fbf35973',
+    'vase': 'b1ef3da871ae93f1a661cc432cc70a2b662cc98748173b44457f838aee493e0f',
+    'biplane': 'f5e5661c2eea7a03f30229d6df5546bdd1a9df9e578c865dcefee983801fc814',
+    'datasaurus': '7ce78b634ef299098c75445bfc8f28f3edf122b415cdcc179ffda11b2e0bd126',
+    'wiki': '722d20a286edfad607904123d7756b95fb49e72e037af5d091422c994c4893be',
+    'nips': 'e240532dab310652bb489b4f0880af9f681652708dfe60ac3d6ff4e4ee4aaffc',
+    'wiki_model': '5ec3c34e2524e105a90ae498cca809d61ddfa90813a4621de65b37275fd515c9',
+    'nips_model': '4f93308a48002730866659bda7ef393f5451dc8360b9e3c91c9cf5d77f73a762',
+    'sotus_model': 'a7b085f7f6d94dbed6d961a1950de18a07b56456c77c2495a2868a9fefb07aa4',
+}
+
+
+def _sha256_file(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1 << 20), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _integrity_ok(dataset_path, name):
+    """True when the file matches its pinned SHA-256 (or the dataset is not
+    integrity-pinned, e.g. 'sotus' which loads via datawrangler)."""
+    pinned = _EXAMPLE_DATA_SHA256.get(name)
+    if pinned is None:
+        return True
+    return _sha256_file(dataset_path) == pinned
+
 
 def load(
         dataset,
@@ -486,24 +536,32 @@ def _load_example_data(dataset):
                     'Check the path and its permissions, then retry.'
                 ) from e
         _download_example_data(dataset_path)
-
-    try:
-        geo_data = _unpickle_example(dataset_path)
-    except Exception:
-        # a corrupt cache (e.g. an HTML error page saved by an interrupted
-        # or rate-limited download) poisons every subsequent load -- delete
-        # it and retry the download once before giving up
+    elif not _integrity_ok(dataset_path, dataset):
+        # validate every CACHE HIT: a cached file whose hash no longer
+        # matches the pin (corruption, or a poisoned/edited cache) is
+        # re-downloaded ONCE from the authoritative host, then re-checked
+        # below -- it is never deserialized on the strength of a stale,
+        # unverified cache (2026-07 release review, blocker #1).
         dataset_path.unlink(missing_ok=True)
         _download_example_data(dataset_path)
-        try:
-            geo_data = _unpickle_example(dataset_path)
-        except Exception as e:
-            dataset_path.unlink(missing_ok=True)
-            raise HypertoolsIOError(
-                f"Failed to load '{dataset}' data after re-downloading. "
-                "The download source may be temporarily unavailable or "
-                "rate-limited; please try again later."
-            ) from e
+
+    # hard integrity gate: the file is verified against its pinned SHA-256
+    # BEFORE any deserialization. A mismatch here is a hard error (the
+    # download loop already retried transient/rate-limited responses), never
+    # a silent redownload-and-reparse.
+    if not _integrity_ok(dataset_path, dataset):
+        actual = _sha256_file(dataset_path)
+        dataset_path.unlink(missing_ok=True)
+        raise HypertoolsIOError(
+            f"integrity check failed for the built-in dataset '{dataset}': "
+            f"its SHA-256 ({actual[:16]}...) does not match the expected, "
+            "pinned value. The download may have been corrupted or tampered "
+            "with, or the hosted file may have changed. The unverified file "
+            "was removed; re-run to download it again. If this persists, "
+            "please report it at "
+            "https://github.com/ContextLab/hypertools/issues.")
+
+    geo_data = _unpickle_example(dataset_path)
 
     if dataset == 'mushrooms':
         # format mushrooms dataset as a pandas DataFrame
@@ -568,9 +626,19 @@ def _download_example_data(dataset_path, max_attempts=4):
             time.sleep(2 * 3 ** (attempt - 1))
         try:
             _download_example_data_once(dataset_path)
-            return
         except HypertoolsIOError as e:
             last_error = e
+            continue
+        # a download only counts as SUCCESS when its bytes match the pinned
+        # checksum: Google Drive serves rate-limit/error HTML with a 200
+        # status, which would otherwise be cached as the "dataset". Retry
+        # those exactly like a transport failure (2026-07 release review).
+        if _integrity_ok(dataset_path, dataset_path.name):
+            return
+        last_error = HypertoolsIOError(
+            f"the downloaded '{dataset_path.name}' did not match its "
+            "expected checksum -- often a transient rate-limit response "
+            "served in place of the file; retrying")
     raise last_error
 
 
