@@ -39,9 +39,13 @@ def test_chain_fit_transform_roundtrip_matches_fit_then_transform():
     assert np.allclose(out_fit_transform, out_via_fit_then_transform)
 
 
-# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4.
+# the filter names the DeprecationWarning BASE class on purpose:
+# pandas.errors.Pandas4Warning subclasses it but does not exist on
+# pandas 2.x, and pytest aborts (UsageError, exit 4) on filter
+# categories it cannot import
 @pytest.mark.filterwarnings(
-    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
+    'ignore:The copy keyword is deprecated:DeprecationWarning')
 def test_multi_step_chain_threads_output_to_next_input():
     x = _rng().randn(20, 5)
     pipe = Pipeline(['ZScore', PCA(n_components=2)])
@@ -107,9 +111,13 @@ def test_inverse_transform_through_pca_reconstructs_reduced_space():
     assert np.allclose(back, x, atol=1e-8)
 
 
-# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4.
+# the filter names the DeprecationWarning BASE class on purpose:
+# pandas.errors.Pandas4Warning subclasses it but does not exist on
+# pandas 2.x, and pytest aborts (UsageError, exit 4) on filter
+# categories it cannot import
 @pytest.mark.filterwarnings(
-    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
+    'ignore:The copy keyword is deprecated:DeprecationWarning')
 def test_inverse_transform_succeeds_through_invertible_zscore():
     # ZScore is invertible (QC P1-1): a Pipeline can inverse_transform
     # through a leading ZScore step (it used to raise). PCA at full rank is

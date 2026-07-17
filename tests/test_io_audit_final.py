@@ -45,6 +45,19 @@ def _mode(path):
     return stat.S_IMODE(os.stat(path).st_mode)
 
 
+# POSIX permission-bit semantics (umask masking, chmod-preserved modes like
+# 0o604) do not exist on Windows: os.chmod there can only toggle the
+# read-only flag, and os.stat reports a synthetic 0o666/0o444 mode, so
+# `0o666 & ~umask` / `== 0o604` assertions are meaningless rather than
+# wrong-in-code. The production paths (_transfer_file_mode) still run on
+# Windows -- stat/umask/chmod are all valid there -- they just cannot be
+# observed through mode bits.
+posix_mode_bits = pytest.mark.skipif(
+    sys.platform == 'win32',
+    reason='POSIX mode-bit semantics (umask, arbitrary chmod modes) do not '
+           'exist on Windows; os.chmod only toggles the read-only flag')
+
+
 def walk_gen(n=120, dim=3, seed=0):
     rng = np.random.default_rng(seed)
     for _ in range(n):
@@ -70,6 +83,7 @@ def _tiny_animation():
 # atomic writes via mkstemp must not leak the temp file's private 0600
 # mode: new files honor the umask, overwrites preserve the target's mode.
 
+@posix_mode_bits
 def test_save_new_file_honors_umask(tmp_path):
     target = tmp_path / 'fresh.pkl'
     hyp.save(np.arange(10.0), str(target))
@@ -79,6 +93,7 @@ def test_save_new_file_honors_umask(tmp_path):
         '(mkstemp 0600 leaked onto the saved file?)')
 
 
+@posix_mode_bits
 def test_save_overwrite_preserves_existing_mode(tmp_path):
     target = tmp_path / 'existing.pkl'
     hyp.save(np.arange(5.0), str(target))
@@ -89,6 +104,7 @@ def test_save_overwrite_preserves_existing_mode(tmp_path):
     np.testing.assert_allclose(hyp.load(str(target)), np.arange(50.0))
 
 
+@posix_mode_bits
 def test_save_csv_overwrite_preserves_existing_mode(tmp_path):
     # the non-pickle formats go through the same mkstemp/replace path
     target = tmp_path / 'existing.csv'
@@ -98,6 +114,7 @@ def test_save_csv_overwrite_preserves_existing_mode(tmp_path):
     assert _mode(target) == 0o604
 
 
+@posix_mode_bits
 def test_animation_apng_new_file_honors_umask(tmp_path):
     from hypertools.plot.animate import _save_animation
     out = tmp_path / 'anim.apng'
@@ -111,6 +128,7 @@ def test_animation_apng_new_file_honors_umask(tmp_path):
         assert im.n_frames >= 2
 
 
+@posix_mode_bits
 def test_animation_apng_overwrite_preserves_mode(tmp_path):
     from hypertools.plot.animate import _save_animation
     out = tmp_path / 'anim.apng'
@@ -124,6 +142,7 @@ def test_animation_apng_overwrite_preserves_mode(tmp_path):
     assert _mode(out) == 0o604
 
 
+@posix_mode_bits
 def test_stream_apng_overwrite_preserves_mode(tmp_path):
     out = tmp_path / 'stream.apng'
     out.write_bytes(b'placeholder')
@@ -136,6 +155,7 @@ def test_stream_apng_overwrite_preserves_mode(tmp_path):
         assert im.n_frames >= 1
 
 
+@posix_mode_bits
 def test_stream_apng_new_file_honors_umask(tmp_path):
     out = tmp_path / 'stream_new.apng'
     hyp.plot(walk_gen(80), stream_init=30, stream_chunk=25,

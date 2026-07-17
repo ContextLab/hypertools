@@ -61,9 +61,13 @@ def test_smooth_list_per_dataset_with_default_bounds():
     assert np.all(np.asarray(out[1], dtype=float)[0] == 1.0)
 
 
-# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4.
+# the filter names the DeprecationWarning BASE class on purpose:
+# pandas.errors.Pandas4Warning subclasses it but does not exist on
+# pandas 2.x, and pytest aborts (UsageError, exit 4) on filter
+# categories it cannot import
 @pytest.mark.filterwarnings(
-    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
+    'ignore:The copy keyword is deprecated:DeprecationWarning')
 def test_smooth_multiindex_stacked_input_is_per_dataset():
     # pipelines pass stacked (multiindex) frames between stages; Smooth must
     # unstack and smooth each dataset independently
@@ -247,9 +251,13 @@ def test_fitted_axis1_normalize_refuses_new_data():
         hyp.manip(pd.DataFrame(rng.normal(size=(30, 5))), model=m)
 
 
-# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4.
+# the filter names the DeprecationWarning BASE class on purpose:
+# pandas.errors.Pandas4Warning subclasses it but does not exist on
+# pandas 2.x, and pytest aborts (UsageError, exit 4) on filter
+# categories it cannot import
 @pytest.mark.filterwarnings(
-    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
+    'ignore:The copy keyword is deprecated:DeprecationWarning')
 def test_fitted_axis1_zscore_refuses_new_data_but_replays_fit_data():
     rng = np.random.default_rng(10)
     df = pd.DataFrame(rng.normal(size=(20, 4)))

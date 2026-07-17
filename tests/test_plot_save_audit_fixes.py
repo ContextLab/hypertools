@@ -168,17 +168,29 @@ def test_failed_save_leaks_no_figures(tmp_path):
             hyp.plot(_walk(20), save_path=str(tmp_path / 'ghost/f.png'),
                      show=False)
     assert plt.get_fignums() == []
-    # a mid-save failure (unwritable directory) must clean up too
-    ro = tmp_path / 'readonly'
-    ro.mkdir()
-    os.chmod(ro, 0o500)
+
+
+@pytest.mark.skipif(hasattr(os, 'geteuid') and os.geteuid() == 0,
+                    reason='root bypasses file permission bits')
+def test_failed_midsave_leaks_no_figures(tmp_path):
+    # a MID-save failure (after the figure is drawn, inside fig.savefig)
+    # must clean up too. A read-only TARGET file makes savefig's
+    # open(..., 'wb') raise PermissionError on every platform:
+    # os.chmod(0o444) drops the write bit on POSIX and sets the read-only
+    # attribute on Windows (the one chmod semantic Windows honors). The
+    # previous fixture -- a chmod-0o500 parent directory -- does not
+    # restrict writes on Windows, which inverted the expectation there.
+    plt.close('all')
+    target = tmp_path / 'locked.png'
+    target.write_bytes(b'placeholder')
+    os.chmod(target, 0o444)
     try:
         for _ in range(2):
             with pytest.raises(PermissionError):
-                hyp.plot(_walk(20), save_path=str(ro / 'x.png'), show=False)
+                hyp.plot(_walk(20), save_path=str(target), show=False)
         assert plt.get_fignums() == []
     finally:
-        os.chmod(ro, 0o700)
+        os.chmod(target, 0o666)
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +214,11 @@ def test_save_path_existing_directory(tmp_path):
 
 def test_save_path_tilde_expanded(tmp_path, monkeypatch):
     from PIL import Image
+    # both variables: POSIX expanduser reads HOME, Windows prefers
+    # USERPROFILE -- setting only HOME would silently write into the real
+    # Windows profile directory and fail the assert below
     monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('USERPROFILE', str(tmp_path))
     hyp.plot(_walk(20), save_path='~/fig.png', show=False)
     assert Image.open(tmp_path / 'fig.png').format == 'PNG'
 

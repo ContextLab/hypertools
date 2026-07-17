@@ -46,9 +46,13 @@ def test_dw_symbols_exist(module_path, attr):
     )
 
 
-# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4.
+# the filter names the DeprecationWarning BASE class on purpose:
+# pandas.errors.Pandas4Warning subclasses it but does not exist on
+# pandas 2.x, and pytest aborts (UsageError, exit 4) on filter
+# categories it cannot import
 @pytest.mark.filterwarnings(
-    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
+    'ignore:The copy keyword is deprecated:DeprecationWarning')
 def test_stack_unstack_roundtrip():
     a = pd.DataFrame(np.arange(6).reshape(3, 2), columns=["x", "y"])
     b = pd.DataFrame(np.arange(6, 14).reshape(4, 2), columns=["x", "y"])

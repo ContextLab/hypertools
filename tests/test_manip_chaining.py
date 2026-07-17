@@ -380,9 +380,13 @@ def test_manip_kwargs_only_dict_applies_kwargs():
 from hypertools.manip.normalize import Normalize
 
 
-# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4.
+# the filter names the DeprecationWarning BASE class on purpose:
+# pandas.errors.Pandas4Warning subclasses it but does not exist on
+# pandas 2.x, and pytest aborts (UsageError, exit 4) on filter
+# categories it cannot import
 @pytest.mark.filterwarnings(
-    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
+    'ignore:The copy keyword is deprecated:DeprecationWarning')
 def test_zscore_inverse_transform_round_trip():
     rng = np.random.default_rng(3)
     X = rng.normal(loc=5, scale=3, size=(40, 4))
@@ -392,9 +396,13 @@ def test_zscore_inverse_transform_round_trip():
     assert np.allclose(back, X, atol=1e-8)
 
 
-# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4.
+# the filter names the DeprecationWarning BASE class on purpose:
+# pandas.errors.Pandas4Warning subclasses it but does not exist on
+# pandas 2.x, and pytest aborts (UsageError, exit 4) on filter
+# categories it cannot import
 @pytest.mark.filterwarnings(
-    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
+    'ignore:The copy keyword is deprecated:DeprecationWarning')
 def test_normalize_manip_inverse_transform_round_trip():
     rng = np.random.default_rng(4)
     X = rng.normal(size=(30, 3))
@@ -404,9 +412,13 @@ def test_normalize_manip_inverse_transform_round_trip():
     assert np.allclose(back, X, atol=1e-8)
 
 
-# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4
+# upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4.
+# the filter names the DeprecationWarning BASE class on purpose:
+# pandas.errors.Pandas4Warning subclasses it but does not exist on
+# pandas 2.x, and pytest aborts (UsageError, exit 4) on filter
+# categories it cannot import
 @pytest.mark.filterwarnings(
-    'ignore:The copy keyword is deprecated:pandas.errors.Pandas4Warning')
+    'ignore:The copy keyword is deprecated:DeprecationWarning')
 def test_pipeline_inverse_transform_through_zscore():
     rng = np.random.default_rng(5)
     X = rng.normal(size=(40, 4))

@@ -167,7 +167,11 @@ def test_save_protocol_rejected_for_non_pickle_format(tmp_path):
 # save() must expand ~ and $ENVVARS like load() does.
 
 def test_save_expands_tilde(tmp_path, monkeypatch):
+    # both variables: POSIX expanduser reads HOME, Windows prefers
+    # USERPROFILE -- setting only HOME would silently write into the real
+    # Windows profile directory and fail the assert below
     monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('USERPROFILE', str(tmp_path))
     arr = np.arange(4, dtype=float)
     hyp.save(arr, '~/tilde_test.pkl')
     saved = tmp_path / 'tilde_test.pkl'

@@ -218,13 +218,18 @@ def test_marker_only_honors_duration():
 # F04-006 / F05-004: invalid animate scalars raise instead of silent static
 # ---------------------------------------------------------------------------
 
-def test_animate_2_raises_value_error():
+def test_animate_2_raises_value_error(tmp_path):
     with pytest.raises(ValueError, match='animate=2'):
         hyp.plot(_walk(30, 3), animate=2, duration=1, frame_rate=6,
                  show=False)
+    # tmp_path (not a '/tmp' literal, which has no parent dir on Windows,
+    # tripping the save_path directory precheck before animate validation):
+    # the animate error must fire first and the file must never be written
+    never = tmp_path / 'never_written.gif'
     with pytest.raises(ValueError, match='not a recognized animate value'):
         hyp.plot(_walk(30, 3), animate=2, duration=1, frame_rate=6,
-                 save_path='/tmp/never_written.gif', show=False)
+                 save_path=str(never), show=False)
+    assert not never.exists()
 
 
 def test_animate_boolish_scalars_still_animate():
