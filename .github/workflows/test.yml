@@ -4,7 +4,11 @@ on:
   push:
     branches: [ master, dev, dev-1.0, dev-1.0-refactor ]
   pull_request:
-    branches: [ master, dev ]
+    # must include the branches PRs actually TARGET, or the PR-target
+    # workflow never runs and green checks are only push-triggered ones
+    # (2026-07 release review, blocker #3: PR #272 targets dev-1.0, which
+    # was missing here). Fork PRs in particular only run via pull_request.
+    branches: [ master, dev, dev-1.0, dev-1.0-refactor ]
 
 jobs:
   test:

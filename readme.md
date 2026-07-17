@@ -148,9 +148,23 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
   `align=True` (use `align='hyper'`) arguments were removed and now raise
   errors instead of being silently accepted. `cluster`'s `ndims=` is no longer a
   standalone reduction step: it is only forwarded to the `reduce=` stage,
-  and a warning fires if it is passed without `reduce=`. Saved geo files
-  from hypertools 0.x still load — retired arguments are translated or
-  skipped with a warning on replay.
+  and a warning fires if it is passed without `reduce=`. **Legacy data:**
+  geo files saved by hypertools **≥0.8** (pickle-format) still load — the
+  internal unpickle-only shim reads them and returns their raw data, with
+  retired arguments translated or skipped with a warning on replay. Older
+  **pre-0.8 `deepdish`/HDF5-format** geos cannot be read directly under
+  HyperTools' required NumPy 2 (the `deepdish` reader is unmaintained and
+  imports only under `numpy<2`); `hyp.load` detects them and raises a
+  message explaining the one-time out-of-process conversion:
+
+  ```bash
+  # in a throwaway environment, convert an old .geo to a modern format once
+  python -m venv /tmp/dd && /tmp/dd/bin/pip install "numpy<2" deepdish
+  /tmp/dd/bin/python -c "import deepdish as dd, numpy as np; \
+      d = dd.io.load('old.geo'); np.savez('old_converted.npz', \
+      **{'data': np.asarray(d['data'], dtype=object)})"
+  # then load old_converted.npz with hypertools as usual
+  ```
 
 ## Try it!
 
@@ -197,11 +211,21 @@ Then, navigate to the folder and type:
 + ffmpeg (for saving animations)
 
 All Python dependencies are declared in `pyproject.toml` and installed
-automatically by pip. HyperTools ships a small, fast-importing base
-install; the following optional extras add features on request (mix and
-match, e.g. `pip install "hypertools[interactive,torch]"`):
+automatically by pip. The base install covers all core functionality
+(plotting, dimensionality reduction, alignment, clustering, normalization,
+and `Kalman`/`ARIMA` forecasting + imputation) and therefore pulls in the
+full scientific stack (NumPy, SciPy, pandas, scikit-learn, matplotlib,
+seaborn, UMAP/Numba, statsmodels, pykalman, ipympl, pydata-wrangler); it is
+not a minimal footprint. Heavier optional model families are separated into
+extras that add features on request (mix and match, e.g.
+`pip install "hypertools[interactive,torch]"`):
 
-+ `interactive` -- plotly + kaleido, for `hyp.plot(..., backend='plotly')`
++ `interactive` -- plotly + kaleido, for `hyp.plot(..., backend='plotly')`.
+  **Note:** kaleido 1.x renders static images (PNG/PDF, and the frames of
+  saved plotly animations) through a headless **Chrome/Chromium**, which it
+  does *not* install. If image/GIF/video export from the plotly backend
+  fails with a browser/Chromium error, install Chrome or Chromium (or run
+  `plotly_get_chrome`). Interactive/HTML plotly output needs no browser.
 + `text` -- transformer/sentence-transformers text embeddings (via
   datawrangler's `hf` extra)
 + `predict` -- the skaters `Laplace` ensemble forecaster for `hyp.predict`

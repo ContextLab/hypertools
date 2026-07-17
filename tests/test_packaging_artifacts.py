@@ -184,3 +184,41 @@ def test_default_options_load_path_independently(tmp_path):
                             env=dict(os.environ, MPLBACKEND='Agg'))
     assert result.returncode == 0, result.stderr
     assert 'OK' in result.stdout
+
+
+def test_sdist_contains_only_tracked_files_plus_allowlist(built_artifacts):
+    """The sdist must not smuggle in untracked/generated files (2026-07
+    release review, issue #4: `graft tests` walks the filesystem, so ignored
+    tests/screenshots/*.png leaked in). Every shipped path must be either
+    git-tracked or in a small, documented build-metadata allowlist."""
+    _, sdist, _ = built_artifacts
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    tracked = subprocess.run(['git', 'ls-files'], cwd=repo,
+                             capture_output=True, text=True, check=True)
+    tracked_set = set(tracked.stdout.split())
+
+    # sdist paths are prefixed with '<name>-<version>/'; strip that prefix.
+    # only regular FILES matter (tar also lists directory entries)
+    members = [m.name for m in tarfile.open(sdist).getmembers()
+               if m.isfile() and '/' in m.name]
+    stripped = [m.split('/', 1)[1] for m in members]
+
+    # generated build metadata that legitimately is NOT git-tracked
+    ALLOW_EXACT = {'PKG-INFO', 'setup.cfg'}
+    def allowed(p):
+        return (p in tracked_set or p in ALLOW_EXACT
+                or p.endswith('.egg-info/PKG-INFO')
+                or p.endswith('.egg-info/SOURCES.txt')
+                or p.endswith('.egg-info/dependency_links.txt')
+                or p.endswith('.egg-info/requires.txt')
+                or p.endswith('.egg-info/top_level.txt')
+                or p.endswith('.egg-info/entry_points.txt')
+                or '.egg-info/' in p)
+
+    leaked = sorted(p for p in stripped if not allowed(p))
+    assert leaked == [], (
+        f'{len(leaked)} untracked file(s) leaked into the sdist '
+        f'(first 10): {leaked[:10]}')
+    # the specific regression: no generated screenshots
+    assert not any('tests/screenshots' in p for p in stripped), \
+        'tests/screenshots leaked into the sdist'

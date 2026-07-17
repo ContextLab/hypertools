@@ -22,8 +22,10 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    # all runtime deps resolve on 3.14 (audit X5-009)
-    "Programming Language :: Python :: 3.14",
+    # NOTE: no 3.14 classifier -- CI tests 3.10-3.13 only, and dependency
+    # resolution is not a compatibility test for a compiled scientific
+    # stack. Add a 3.14 job + behavioral tests before advertising it
+    # (2026-07 release review, issue #5).
     "Topic :: Scientific/Engineering :: Visualization",
     "Topic :: Multimedia :: Graphics",
     "Operating System :: POSIX",

@@ -21,8 +21,12 @@ set are new.
 - **Return types:** `hyp.plot` returns a matplotlib `Figure` (a
   `HyperAnimation` when `animate=` is used, or a plotly `Figure` with
   `backend='plotly'`); `hyp.load` returns raw data. The 0.x `DataGeometry`
-  ("geo") container is retired to an internal unpickle-only shell so saved
-  0.x geo files still load.
+  ("geo") container is retired to an internal unpickle-only shell so
+  **pickle-format geo files saved by hypertools ≥0.8 still load** (returning
+  their raw data). Older **pre-0.8 `deepdish`/HDF5-format** geo files cannot
+  be read under the required NumPy 2 and must be converted once in a
+  throwaway `numpy<2` environment (`hyp.load` detects them and explains how;
+  see the README "Legacy data" note).
 - **Packaging:** `pyproject.toml`-based packaging, Python 3.10-3.13, a
   small fast-importing base install (heavy dependencies load lazily;
   `import hypertools` is roughly 3.5x faster than 0.8.x), and optional

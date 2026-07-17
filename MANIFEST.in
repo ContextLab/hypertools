@@ -8,6 +8,13 @@
 # - local virtualenvs / build junk must never leak into the sdist
 include hypertools/core/config.ini
 graft tests
+# `graft` walks the FILESYSTEM, not git -- so generated/ignored output
+# directories under tests/ must be pruned explicitly or they leak into the
+# sdist (2026-07 release review, issue #4: 129 ignored screenshot files
+# shipped a 3.5 MB sdist). The CI packaging test asserts the sdist file
+# list is a subset of `git ls-files` + a small allowlist, so any NEW
+# generated directory is caught even if it is not pruned here.
 prune tests/.pytest_cache
+prune tests/screenshots
 prune hypertools-dev
-global-exclude *.py[cod] __pycache__ .DS_Store
+global-exclude *.py[cod] __pycache__ .DS_Store .pytest_cache
