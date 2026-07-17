@@ -115,3 +115,51 @@ def test_df_matching_column_order_unchanged():
     df2 = pd.DataFrame({'a': [5., 6.], 'b': [7., 8.]})
     out = format_data([df1, df2])
     assert np.allclose(out[1][:, 0], [5., 6.])
+
+
+# --- release-1.0 audit regressions (2026-07) --------------------------------
+
+def test_empty_list_raises_no_data_error_before_text_path(capsys):
+    # X2-error-quality-005: [] must raise the standard no-data error, NOT be
+    # routed into the text/LDA corpus pipeline (which printed 'loading
+    # corpus: minipedia...' to stdout and crashed inside sklearn's LDA)
+    import pytest
+    with pytest.raises(ValueError, match='no observations'):
+        format_data([])
+    assert 'loading corpus' not in capsys.readouterr().out
+
+
+def test_3d_array_raises_clear_shape_error():
+    # F15-analyze-012: 3-D input was silently axis-mangled (constant values)
+    # or crashed deep inside normalize (typical values)
+    import pytest
+    with pytest.raises(ValueError, match='2-D'):
+        format_data(np.zeros((4, 5, 6)))
+    with pytest.raises(ValueError, match='2-D'):
+        format_data(np.arange(120.).reshape(4, 5, 6))
+
+
+def test_df2mat_categorical_dataframe_warning_free():
+    # X4-warnings-001: select_dtypes(include=['object']) relied on deprecated
+    # pandas back-compat (Pandas4Warning, a DeprecationWarning subclass, on
+    # every categorical-DataFrame plot, e.g. the mushrooms demo)
+    import warnings
+    from hypertools.tools.df2mat import df2mat
+    df = pd.DataFrame({'a': [1., 2., 3.], 'b': ['x', 'y', 'x']})
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', DeprecationWarning)
+        out = df2mat(df)
+    # 1 numeric column + 2 dummy columns for 'x'/'y', all float
+    assert out.shape == (3, 3)
+    assert out.dtype.kind == 'f'
+    assert not np.isnan(out).any()
+
+
+def test_format_data_categorical_dataframe_warning_free():
+    # end-to-end: the same DataFrame through format_data itself
+    import warnings
+    df = pd.DataFrame({'a': [1., 2., 3.], 'b': ['x', 'y', 'x']})
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', DeprecationWarning)
+        out = format_data(df)
+    assert out[0].shape == (3, 3)

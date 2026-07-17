@@ -11,10 +11,14 @@ def format_data(x, vectorizer='CountVectorizer',
     """
     Formats data into a list of numpy arrays
 
-    This function is useful to identify rows of your array that contain missing
-    data or nans.  The returned indices can be used to remove the rows with
-    missing data, or label the missing data points that are interpolated
-    using PPCA.
+    This function is the standard input pass shared by hypertools' analysis
+    and plotting functions: it wraps the input into a list of 2-D
+    (observations x features) float arrays, converting pandas DataFrames
+    (binarizing text columns via `df2mat`) and embedding text (strings /
+    lists of strings) into numeric matrices via `text2mat` along the way.
+    Missing (NaN) values are filled via PPCA (or the `impute=` override),
+    and when text and numeric datasets with matching sample counts are
+    mixed, they are aligned into a common space.
 
     Parameters
     ----------
@@ -91,6 +95,15 @@ def format_data(x, vectorizer='CountVectorizer',
     # if x is not a list, make it one
     if not isinstance(x, list):
         x = [x]
+
+    # an empty list holds NO datasets: fail fast with the same no-data error
+    # the numeric path raises, BEFORE the vacuous all(...) check below could
+    # route [] toward the text/LDA corpus pipeline (QC 2026-07 /
+    # X2-error-quality-005).
+    if len(x) == 0:
+        raise ValueError(
+            'input has no observations (0 rows); there is nothing to '
+            'plot or analyze.')
 
     if all([isinstance(xi, str) for xi in x]):
         x = [x]
@@ -190,6 +203,19 @@ def format_data(x, vectorizer='CountVectorizer',
     if any([i.ndim <= 1 for i in processed_x]):
         processed_x = [np.reshape(i, (i.shape[0] if i.ndim == 1 else 1, 1))
                        if i.ndim <= 1 else i for i in processed_x]
+
+    # reject >2-D arrays with a clear message (QC 2026-07 / F15-analyze-012):
+    # they previously slipped through and were either silently axis-mangled
+    # (constant data came back transposed) or crashed deep inside normalize
+    # with an opaque "truth value of an array" error. fMRI users routinely
+    # hold 3-D (or 4-D) arrays; tell them exactly what shape is expected.
+    for _i, _arr in enumerate(processed_x):
+        if getattr(_arr, 'ndim', 2) > 2:
+            raise ValueError(
+                f'each dataset must be a 2-D (observations x features) '
+                f'array; dataset {_i} has {_arr.ndim} dimensions (shape '
+                f'{tuple(_arr.shape)}). To analyze or plot multiple '
+                'datasets, pass them as a list of 2-D arrays.')
 
     contains_text = any([dtype in ['list_str', 'str', 'arr_str'] for dtype in dtypes])
     contains_num = any([dtype in ['list_num', 'array', 'df', 'arr_num'] for dtype in dtypes])
