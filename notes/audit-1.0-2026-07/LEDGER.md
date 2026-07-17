@@ -59,7 +59,29 @@ Wave 3 = second resume for remaining 17: D01, D05, D09, D10, D11, D12, D13, D14,
 - `3517435f` A5-backend (7): HYPERTOOLS_BACKEND import crash (F06-001 critical), switch-state safety, eager validation.
 - `04985a4a` A8-tools (12): empty-list guard before LDA path (X2-005), analyze False-skip, df2mat pandas-3 (X4-001).
 
-Partial edits from spend-capped agents (A1/A4/A6/A7/B1) were REVERTED before these commits; those agents re-run fresh on this base (5A resume task wseijborg, 5B resume task w9mfyp0rc).
+- `462fe6ee` A1-io (40): sotus speeches restored (critical ×3), CSV sep fix (critical), unknown-ext guard (critical), atomic format-aware save(), model-pickle repair-on-load.
+- `c3f6f6da` A4-predict-impute (37): Kalman em_vars (2 criticals: flat forecasts + zero-fill impute), 1-D series (critical), degenerate guards.
+- `4c492f81` A6-core-packaging (26): config.ini in wheel, np.seterr side effect gone, venv droppings excluded.
+- `2179688b` A7-cluster-reduce (21): False-skip, TSNE/describe, honest errors.
+
+5A verification: 616 passed / 2 skipped (expected guards) pre-commit. Integration checks DONE 2026-07-12: corpus='sotus' → (2,50) topic vectors ✓; hyperalign n_itr → TypeError with did-you-mean ✓; impute([])/predict([]) → clear ValueErrors ✓.
+
+Partial edits from spend-capped agents (A1/A4/A6/A7/B1) were REVERTED before these commits; those agents re-ran fresh on this base.
+
+## Wave-5A COMPLETE (8/8, 178 findings fixed)
+
+New: A1-io 40 (sotus speeches restored via dw corpus — verified 29 docs; CSV sep fix; format-aware atomic save(); repair-on-load for stale model pickles), A4-predict-impute 37 (Kalman em_vars: impute sweep r=0.997/0.996/0.997/0.996 vs pre-fix 0.995/0.777/0/0; predict sine r=0.984; PPCA default r 0.125→0.977), A6-core-packaging 26 (config.ini IN wheel — real build verified; no venv droppings; np.seterr side effect gone), A7-cluster-reduce 21 fixed + 18 plot.py-side escalations.
+
+## Post-5B plot.py escalation batch (B5) — dispatch after B4 lands
+
+From A7: F13-001/002/003/004/005/007/009/010/016/020/021/022 (plot.py cluster integration: FeatureAgglomeration guard, n_clusters exemption grammar, random_state threading, bundle k mismatch, small-int-hue categorical palette, cluster=False, spec-kwargs precedence + dict KeyError, LDA/NMF caveat, class/instance specs, k-default docs, legend numeric sort). From A1: F22-004 (stream kwarg whitelist warn), F22-010 (plot.py:1003 stale geometry ref). From A4: F17-006 remainder (format_data.py:262 + plot.py stale PPCA comments).
+
+## Controller items (mine, after 5B — no agent owns these files)
+
+- hypertools/__init__.py: re-export HypertoolsError/BackendError/IOError (F23-005), export supported_models (F21-005), module docstring note on function-shadows-subpackage imports (F16-017, F11-014, F06-009, F01-014-refuted-nuance).
+- hypertools/config.py: importlib.metadata version + drop py<3.8 fallback (F23-009).
+- hypertools/io/sources.py:254,388: exception cross-ref path canonicalization (F23-006) [A1's file — trivial, post-wave].
+- pyproject.toml: numba>=0.59 floor INSIDE the umap extra (X5-003 proposal adjusted — not a core dep).
 
 ## Controller integration queue (verify/do after waves land)
 
