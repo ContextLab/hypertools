@@ -119,7 +119,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'hypertools'
-copyright = u'2017, Contextual Dynamics Laboratory'
+copyright = u'2017-2026, Contextual Dynamics Laboratory'
 author = u'Andrew C. Heusser, Kirsten Ziman, Lucy L. W. Owen, Jeremy R. Manning'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -194,9 +194,12 @@ html_js_files = [
 # _static/custom.css.
 html_theme = 'furo'
 
-extlinks = {'github': 'https://github.com/ContextLab/hypertools'}
-
 html_title = 'hypertools'
+
+# sphinx_gallery_conf contains function objects (image scrapers), which
+# sphinx cannot pickle into its environment cache; suppress the (harmless)
+# "cannot cache unpickleable configuration value" warning it triggers.
+suppress_warnings = ['config.cache']
 
 html_theme_options = {
     'source_repository': 'https://github.com/ContextLab/hypertools',
@@ -328,7 +331,9 @@ sphinx_gallery_conf = {
         'hypertools': None,  # Use relative links for local docs
         'matplotlib': 'https://matplotlib.org/stable/',
         'numpy': 'https://numpy.org/doc/stable/',
-        'scipy': 'https://docs.scipy.org/doc/scipy/reference/',
+        # NOTE: must be the docs ROOT (no trailing /reference/) so
+        # sphinx-gallery can fetch _static/documentation_options.js
+        'scipy': 'https://docs.scipy.org/doc/scipy/',
         'pandas': 'https://pandas.pydata.org/pandas-docs/stable/',
         'scikit-learn': 'https://scikit-learn.org/stable/',
     }

@@ -25,9 +25,13 @@ be replayed on new data with a single call.
 import numpy as np
 import hypertools as hyp
 
+# NOTE: train and test have the SAME number of rows on purpose -- the
+# multi-stage demo below includes an alignment stage, and aligners (e.g.
+# HyperAlign) operate on the rows common to all datasets, trimming any
+# extras. Equal-length datasets mean nothing is discarded.
 rng = np.random.default_rng(42)
 train = np.cumsum(rng.standard_normal((200, 12)), axis=0)
-test = np.cumsum(rng.standard_normal((80, 12)), axis=0)
+test = np.cumsum(rng.standard_normal((200, 12)), axis=0)
 
 # %% single-stage return_model: hyp.reduce returns the fitted Reducer
 reduced, model = hyp.reduce(train, reduce='PCA', ndims=3, return_model=True)
@@ -39,11 +43,13 @@ print(f'train: {reduced.shape}, test (via .transform): {test_reduced.shape}')
 
 # %% multi-stage return_model: normalize= + align= alongside reduce= makes
 # hyp.reduce run all three stages (canonical order, GH #153) and hands back
-# a fitted hyp.Pipeline
+# a fitted hyp.Pipeline. (Alignment keeps only the rows common to all
+# datasets -- pass equal-length datasets to avoid dropping data.)
 multi_out, pipeline = hyp.reduce(
     [train, test], reduce='PCA', ndims=3,
     normalize='across', align='HyperAlign', return_model=True)
 print(f'multi-stage model: {pipeline!r}')
+print(f'multi-stage output shapes: {[m.shape for m in multi_out]}')
 
 # %% hyp.plot's own return_model bundle exposes a 'pipeline' key that can be
 # fed straight back into pipeline= to replay the exact fitted pipeline on

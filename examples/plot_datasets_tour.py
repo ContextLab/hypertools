@@ -49,7 +49,9 @@ for title, loader, clean in sources:
     loaded.append((title, data if clean is None else clean(data)))
 
 # plot each successfully loaded source side by side, colored/reduced
-# automatically by hyp.plot
+# automatically by hyp.plot. The rows of these tabular datasets are
+# unordered samples, so each is drawn as points ('.') rather than as a
+# connected line.
 n = max(len(loaded), 1)
 ncols = 2 if n > 1 else 1
 nrows = (n + ncols - 1) // ncols
@@ -61,6 +63,5 @@ for ax in axes.flat:
     ax.set_axis_off()  # hide any unused panels
 for (title, data), ax in zip(loaded, axes.flat):
     ax.set_axis_on()
-    hyp.plot(data, ax=ax, title=title)
+    hyp.plot(data, '.', ax=ax, title=title)
 plt.tight_layout()
-plt.show()

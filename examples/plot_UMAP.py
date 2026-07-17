@@ -5,7 +5,8 @@ Visualizing the digits dataset using UMAP
 =============================
 
 This example loads in some data from the scikit-learn digits dataset and plots
-it using UMAP.
+it using UMAP, with one color per digit class and a legend mapping colors to
+digits.
 """
 
 # Code source: Andrew Heusser and Leland McInnes
@@ -18,4 +19,4 @@ digits = datasets.load_digits(n_class=6)
 data = digits.data
 hue = digits.target.astype('str')
 
-hyp.plot(data, '.', reduce='UMAP', hue=hue, ndims=2)
+hyp.plot(data, '.', reduce='UMAP', hue=hue, ndims=2, legend=True)

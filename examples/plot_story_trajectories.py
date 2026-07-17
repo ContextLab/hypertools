@@ -33,10 +33,11 @@ cloud as the story unfolds. The ``animate='window'`` style slides a short
 opaque trail along each aligned trajectory, so you literally watch all 36
 subjects travel the shared path in lock-step.
 
-A scale-free within-timepoint dispersion (how tightly the 36 subjects cluster
-around their shared centroid at each timepoint, divided by the overall cloud
-scale; lower = move together more) drops from ~0.64 to ~0.47 once the
-subjects are hyperaligned the RIGHT way -- see below.
+A scale-free within-timepoint dispersion (the mean distance of the 36
+subjects to their shared centroid at each timepoint, averaged over
+timepoints and divided by the overall cloud scale; lower = move together
+more) drops from ~0.71 to ~0.52 once the subjects are hyperaligned the
+RIGHT way -- see below.
 
 Getting alignment right
 -----------------------
@@ -49,8 +50,9 @@ The critical choice is *where* to hyperalign:
   only 3 (or even 10) dimensions to work in it can barely align anything,
   leaving the subjects a poorly-aligned tangle. Aligning in the full 100-hub
   space and reducing to 3-D *afterwards* is what pulls the displayed
-  trajectories together (dispersion ~0.64 when reduced-then-aligned -> ~0.47
-  when aligned-then-reduced). Note the hub space *is* the "low-dimensional"
+  trajectories together (dispersion ~0.88 unaligned, ~0.84 when reduced to
+  3-D then aligned, ~0.71 when reduced to 10-D then aligned -> ~0.52 when
+  aligned in hub space then reduced). Note the hub space *is* the "low-dimensional"
   space to align in -- it is already a 100-dim summary of hundreds of
   thousands of voxels; the mistake is over-reducing further before aligning.
 * **Use a linear reduction (IncrementalPCA).** ``reduce='UMAP'`` warped each
@@ -60,9 +62,11 @@ The critical choice is *where* to hyperalign:
 The exact code
 ----------------
 
-The full pipeline takes a couple of minutes on the full dataset, so this
-example does **not** re-run it live; instead it displays the pre-rendered
-result. Here is the exact code that produced it:
+The full pipeline runs in well under a minute on the full dataset (roughly
+ten seconds on a modern laptop, including saving the movie), but this
+example does **not** re-run it live; it displays the pre-rendered result so
+the gallery stays fast and deterministic. Here is the exact code that
+produced it:
 
 .. code-block:: python
 
@@ -71,9 +75,11 @@ result. Here is the exact code that produced it:
 
     data = hyp.load('weights')   # 36 subjects, each (timepoints, 100 hubs)
 
-    # per-subject preprocessing in native (100-hub) space
+    # per-subject preprocessing in native (100-hub) space. NOTE: Smooth
+    # requires an ODD kernel width (even widths are bumped up by 1 with a
+    # warning), so 41 is used here
     manip_spec = [
-        {'model': 'Smooth', 'kwargs': {'kernel_width': 40}},
+        {'model': 'Smooth', 'kwargs': {'kernel_width': 41}},
         {'model': 'Resample', 'kwargs': {'n_samples': 300}},
         'ZScore',
     ]
@@ -145,12 +151,11 @@ def _find_img_dir():
 IMG_DIR = _find_img_dir()
 
 # three moments as the story unfolds -- the sliding window early, midway, and
-# late -- from the pre-rendered animation
-fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+# late -- from the pre-rendered animation. (constrained layout keeps the
+# subplot titles from being clipped at the top of the figure.)
+fig, axes = plt.subplots(1, 3, figsize=(15, 5), layout='constrained')
 for ax, label in zip(axes, ('early', 'mid', 'late')):
     img = mpimg.imread(os.path.join(IMG_DIR, f'story_frame_{label}.png'))
     ax.imshow(img)
     ax.set_title(f'{label} in the story')
     ax.axis('off')
-plt.tight_layout()
-plt.show()

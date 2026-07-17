@@ -7,8 +7,8 @@ Forecasting timeseries with predict
 The `predict` kwarg overlays a forecast on top of your plotted data: a
 dashed, same-color tail extending `t` steps past the end of each dataset.
 Under the hood this calls `hypertools.predict`, which supports several
-forecasting models -- `'Kalman'` (a linear-Gaussian state-space filter,
-used here), `'GaussianProcess'`, `'AutoRegressor'` (any sklearn regressor
+forecasting models -- `'Kalman'` (a linear-Gaussian state-space filter),
+`'GaussianProcess'` (used here), `'AutoRegressor'` (any sklearn regressor
 run recursively), `'ARIMA'`, `'Laplace'`, and `'Chronos'` (a HuggingFace
 time-series foundation model) -- selected via `model=` when calling
 `hypertools.predict` directly. Calling `hyp.predict(data, model=...,

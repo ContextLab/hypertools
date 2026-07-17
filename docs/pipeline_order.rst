@@ -45,7 +45,12 @@ Why this order
   operations -- smoothing, resampling, z-scoring -- are per-dataset
   preprocessing steps (e.g. denoising a single subject's timeseries) that
   are most meaningful in the data's original feature space, before
-  anything has been rescaled or projected.
+  anything has been rescaled or projected. Note that while ``Smooth`` and
+  ``Resample`` are applied fully independently to each dataset in a list,
+  ``ZScore`` and ``Normalize`` transform each dataset separately but fit
+  ONE shared set of statistics (mean/std, or baseline/peak) across every
+  dataset in the list -- like ``hypertools.normalize``'s ``'across'``
+  mode (see the `hypertools.manip` docstring).
 
 - **Normalize standardizes feature scales** before any distance- or
   variance-based model (reduce, align, cluster) is fit, so that no single

@@ -11,12 +11,16 @@ embedding it in a larger layout, etc.) just works.
 
 If you also want access to the analyzed data and the fitted
 reduce/align/cluster models, pass ``return_model=True``. Instead of the
-bare figure, `hyp.plot` then returns a dict bundle:
-``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...}``, where
-``xform_data`` is the normalized/reduced/aligned data that was actually
-plotted, ``animation`` is the ``matplotlib.animation.Animation`` handle when
-``animate=True`` (``None`` otherwise, and for plotly figures), and ``models``
-records the reduce/align/cluster specs used to produce it.
+bare figure, `hyp.plot` then returns a dict bundle with six keys:
+``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...,
+'pipeline': ..., 'predict': ...}``, where ``xform_data`` is the
+normalized/reduced/aligned data that was actually plotted, ``animation`` is
+the ``matplotlib.animation.Animation`` handle when ``animate=True``
+(``None`` otherwise, and for plotly figures), ``models`` records the
+reduce/align/cluster specs used to produce it, ``pipeline`` is the fitted
+`hyp.Pipeline` (feed it back in via ``pipeline=`` to replay the exact
+fitted stages on new data), and ``predict`` holds the fitted forecaster
+and forecasts when ``predict=`` was used (``None`` otherwise).
 
 Note that `hyp.load` returns raw data directly (e.g. a list of arrays) --
 there is nothing further to unpack.
@@ -49,6 +53,7 @@ fig2 = out['fig']
 xform_data = out['xform_data']
 models = out['models']
 
+print(f"bundle keys: {sorted(out.keys())}")
 print(f"number of arrays returned: {len(xform_data)}")
 print(f"reduced shape (first array): {xform_data[0].shape}")
 print(f"reduce model spec: {models['reduce']}")
