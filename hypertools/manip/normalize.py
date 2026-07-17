@@ -40,7 +40,13 @@ def fitter(data, axis=0, min=0, max=1):
     ValueError
         If `min >= max`, or `axis` is not 0 or 1.
     """
-    assert min < max, ValueError('minimum must be strictly less than maximum')
+    # a real ValueError (as documented in Raises), not "assert cond,
+    # ValueError(...)" -- the assert idiom raised AssertionError and was
+    # silently stripped under `python -O` (audit F14-009)
+    if min >= max:
+        raise ValueError(
+            f'minimum must be strictly less than maximum; got min={min!r}, '
+            f'max={max!r}')
 
     if isinstance(data, list):
         data = pd.concat(data, axis=0, ignore_index=True)
@@ -168,6 +174,27 @@ class Normalize(Manipulator):
     axis : int, optional
         0 to normalize each column independently (default), 1 to
         normalize each row independently.
+
+    Notes
+    -----
+    For a LIST of datasets, ONE shared baseline/peak is fit across all of
+    them (like ``normalize='across'``); constant (zero-range) columns
+    normalize to `min` rather than NaN.
+
+    Raises
+    ------
+    ValueError
+        If `min >= max`.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from hypertools.manip import Normalize
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({'a': [1., 2., 3.], 'b': [10., 20., 30.]})
+    >>> out = Normalize().fit_transform(df)
+    >>> float(out['a'].min()), float(out['a'].max())
+    (0.0, 1.0)
     """
     # noinspection PyShadowingBuiltins
     def __init__(self, min=0, max=1, axis=0):

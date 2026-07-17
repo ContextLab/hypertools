@@ -17,18 +17,19 @@ KERNELS = ('savgol', 'gaussian', 'boxcar')
 # noinspection PyShadowingBuiltins
 @dw.decorate.funnel
 def fitter(data, **kwargs):
-    """Fit per-column min/max bounds for the `Smooth` manipulator.
+    """Record the smoothing parameters for the `Smooth` manipulator.
 
-    Records each column's pre-smoothing min/max (used later by
-    `transformer` to clip smoothed output when `maintain_bounds=True`)
-    along with the smoothing parameters themselves, so they travel
-    together as one fitted-params dict.
+    Smoothing is stateless: nothing is estimated from the fit-time data.
+    (Earlier versions recorded fit-time per-column min/max here for the
+    `maintain_bounds` clip; those bounds are now derived by `transformer`
+    from the data actually being transformed, so a fitted `Smooth` reused
+    on NEW data -- via ``return_model=True`` -- no longer replays the
+    fit-time range onto it, and column labels/counts may differ freely.)
 
     Parameters
     ----------
     data : DataFrame or list of DataFrame
-        Data to fit on. If a list, datasets are concatenated row-wise
-        before computing bounds.
+        Data being fit on (unused beyond marking the manipulator fitted).
     **kwargs
         `axis`, `kernel_width`, `order`, `mode`, `var`,
         `maintain_bounds` : the `Smooth` constructor parameters, passed
@@ -38,18 +39,10 @@ def fitter(data, **kwargs):
     -------
     dict
         `{'axis', 'kernel_width', 'order', 'mode', 'var',
-        'maintain_bounds', 'max': <per-column max>, 'min': <per-column
-        min>}`.
+        'maintain_bounds'}`.
     """
-    if isinstance(data, list):
-        data = pd.concat(data, axis=0, ignore_index=True)
-
-    data_max = data.max(axis=kwargs['axis'])
-    data_min = data.min(axis=kwargs['axis'])
-
     return {'axis': kwargs['axis'], 'kernel_width': kwargs['kernel_width'], 'order': kwargs['order'],
-            'mode': kwargs['mode'], 'var': kwargs['var'], 'max': data_max,
-            'min': data_min, 'maintain_bounds': kwargs['maintain_bounds']}
+            'mode': kwargs['mode'], 'var': kwargs['var'], 'maintain_bounds': kwargs['maintain_bounds']}
 
 
 def _resolve_kernel(kwargs):
@@ -86,14 +79,26 @@ def _resolve_kernel(kwargs):
         legacy_mode = kwargs.get('mode', 'savgol')
         if legacy_mode == 'gaussian':
             return 'gaussian', True
+        if legacy_mode != 'savgol':
+            raise ValueError(
+                f"invalid Smooth mode {legacy_mode!r}; must be 'savgol' or "
+                "'gaussian' (or use the kernel= kwarg: one of "
+                f"{KERNELS})")
         return 'savgol', False
     if kernel not in KERNELS:
         raise ValueError(f"invalid Smooth kernel {kernel!r}; must be one of {KERNELS}")
     return kernel, False
 
 
-@dw.decorate.apply_stacked
-def _transform_stacked(data, **kwargs):
+def _smooth_dataset(data, **kwargs):
+    """Smooth ONE DataFrame (axis=0 base case) column by column.
+
+    When `maintain_bounds` is True, each smoothed column is clipped to
+    THAT column's own pre-smoothing min/max, derived from `data` itself
+    -- never from fit-time state -- so reusing a fitted `Smooth` on new
+    data (different values, labels, or column count) behaves exactly
+    like smoothing that data fresh.
+    """
     smoothed = data.copy()
     branch, use_legacy_var = _resolve_kernel(kwargs)
     # clear, actionable errors for kernel_width edge cases (QC 2026-07): scipy
@@ -114,40 +119,72 @@ def _transform_stacked(data, **kwargs):
         values = np.asarray(data[c], dtype=float)
         if branch == 'gaussian':
             sigma = np.sqrt(kwargs['var']) if use_legacy_var else kwargs['kernel_width'] / 4
-            smoothed[c] = gaussian_filter1d(values, sigma=sigma)
+            smoothed_values = gaussian_filter1d(values, sigma=sigma)
         elif branch == 'boxcar':
-            smoothed[c] = uniform_filter1d(values, size=kwargs['kernel_width'])
+            smoothed_values = uniform_filter1d(values, size=kwargs['kernel_width'])
         else:
-            smoothed[c] = savgol_filter(data[c].values, kwargs['kernel_width'], kwargs['order'])
+            smoothed_values = savgol_filter(values, kwargs['kernel_width'], kwargs['order'])
 
         if kwargs['maintain_bounds']:
-            smoothed[c] = np.clip(smoothed[c].to_numpy(), kwargs['min'][c], kwargs['max'][c])
+            smoothed_values = np.clip(smoothed_values, np.nanmin(values), np.nanmax(values))
+        smoothed[c] = smoothed_values
 
     return smoothed
 
 
+def _transform(data, **kwargs):
+    """Apply smoothing PER DATASET (audit F14-001/D01-001 fix).
+
+    Lists and stacked (multiindex) DataFrames are smoothed one dataset at
+    a time (mirroring `resample.transformer`); smoothing a row-stacked
+    list as one continuous timeseries silently bled each dataset's edge
+    samples into its neighbors' (about kernel_width/2 samples per side of
+    every dataset boundary).
+    """
+    if dw.zoo.is_multiindex_dataframe(data):
+        return dw.stack([_transform(d, **kwargs) for d in dw.unstack(data)])
+    if isinstance(data, list):
+        return [_transform(d, **kwargs) for d in data]
+    if not isinstance(data, pd.DataFrame):
+        # e.g. a bare array passed between hypertools.Pipeline steps -- the
+        # old apply_stacked decorator wrangled these to DataFrames implicitly
+        data = pd.DataFrame(data)
+
+    axis = kwargs['axis']
+    if axis == 1:
+        return _transform(data.T, **dw.core.update_dict(kwargs, {'axis': 0})).T
+    if axis != 0:
+        raise ValueError(f'Invalid smoothing axis: {axis}')
+    return _smooth_dataset(data, **kwargs)
+
+
 def transformer(data, **kwargs):
-    """Apply the fitted smoothing kernel for the `Smooth` manipulator.
+    """Apply the smoothing kernel for the `Smooth` manipulator.
 
     Selects the smoothing branch via `_resolve_kernel` (savgol/gaussian/
     boxcar), validates/coerces `kernel_width` to a positive odd integer
-    (rounding and/or incrementing with a warning if needed), and -- for
-    `axis=1` -- transposes, recurses with `axis` flipped, and transposes
-    the result back.
+    (rounding to the nearest integer and/or incrementing by 1 with a
+    warning if needed), then smooths PER DATASET: each element of a list
+    (or each dataset in a stacked multiindex DataFrame) is smoothed
+    independently, so data never bleeds across dataset boundaries. For
+    `axis=1`, each dataset is transposed, smoothed along axis 0, and
+    transposed back.
 
     Parameters
     ----------
-    data : DataFrame or list of DataFrame
+    data : DataFrame, multiindex DataFrame, or list of DataFrame
         Data to smooth.
     **kwargs
         `axis`, `kernel`, `kernel_width`, `order`, `mode`, `var`,
-        `maintain_bounds`, `min`, `max` : parameters from `fitter` (plus
-        `kernel`, passed through from the `Smooth` constructor).
+        `maintain_bounds` : parameters from `fitter` (plus `kernel`,
+        passed through from the `Smooth` constructor).
 
     Returns
     -------
-    The smoothed data, in the same shape as `data`, with each column
-    optionally clipped to its fit-time min/max (`maintain_bounds=True`).
+    The smoothed data, in the same shape/structure as `data`, with each
+    column optionally clipped to its own pre-smoothing min/max
+    (`maintain_bounds=True`); the bounds are derived from the data being
+    transformed, not from fit-time state.
 
     Raises
     ------
@@ -155,40 +192,28 @@ def transformer(data, **kwargs):
         If `axis` is missing from `kwargs`, is not 0 or 1, or
         `kernel_width` resolves to a non-positive value.
     """
-    assert 'axis' in kwargs.keys(), ValueError('Must specify axis')
-    axis = kwargs.pop('axis', None)
+    if 'axis' not in kwargs:
+        raise ValueError('Must specify axis')
 
-    transpose = False
-    if axis == 1:
-        transpose = not transpose
-        axis = int(not axis)
-    elif axis != 0:
-        raise ValueError(f'Invalid smoothing axis: {axis}')
+    # coerce kernel_width ONCE, up front, so warnings fire once per call even
+    # for list input, and so the effective width matches the warning text
+    # (audit F14-008: the old code warned "Rounding ... to the nearest
+    # integer" but then TRUNCATED, e.g. 11.7 -> 11 instead of 12 -> odd 13).
+    kw = kwargs.get('kernel_width')
+    if kw is not None:
+        if kw != int(np.round(kw)):
+            warnings.warn('Rounding smoothing kernel width to the nearest integer')
+        kw = int(np.round(kw))
+        if kw % 2 != 1:
+            warnings.warn('Increasing smoothing kernel width by 1 (must be odd)')
+            kw += 1
+        if kw <= 0:
+            raise ValueError(
+                'kernel_width must be a positive odd integer; got '
+                f'{kwargs["kernel_width"]!r}')
+        kwargs = dw.core.update_dict(kwargs, {'kernel_width': kw})
 
-    if kwargs['kernel_width'] != int(np.round(kwargs['kernel_width'])):
-        warnings.warn('Rounding smoothing kernel width to the nearest integer')
-        kwargs['kernel_width'] = int(kwargs['kernel_width'])
-    if kwargs['kernel_width'] % 2 != 1:
-        warnings.warn('Increasing smoothing kernel width by 1 (must be odd)')
-        kwargs['kernel_width'] += 1
-    assert kwargs['kernel_width'] > 0, ValueError('smoothing kernel width must be a positive odd integer')
-
-    if transpose:
-        # NOTE: recurse into the (undecorated) *transformer* itself, not into
-        # _transform_stacked. _transform_stacked is decorated with
-        # dw.decorate.apply_stacked, which vertically re-stacks whatever data it is
-        # given (adding a synthetic 'ID' level to the row index) before doing any
-        # work. If we transposed data that had already been through that decorator,
-        # the synthetic ID level would leak into the columns, and the fitted
-        # min/max (keyed by the ORIGINAL, pre-stacking row labels) could no longer
-        # be looked up -- raising "key of type tuple not found and not a
-        # MultiIndex". Transposing before the data ever reaches the decorated
-        # function keeps the stacking machinery isolated to the (always axis==0)
-        # base case, where it is harmless.
-        return transformer(data.T, **dw.core.update_dict(kwargs, {'axis': axis})).T
-
-    assert axis == 0, ValueError('invalid transformation')
-    return _transform_stacked(data, **kwargs, axis=axis)
+    return _transform(data, **kwargs)
 
 
 class Smooth(Manipulator):
@@ -228,12 +253,14 @@ class Smooth(Manipulator):
         `sigma = sqrt(var)` instead of the `kernel_width`-based mapping
         above -- byte-identical to the original weights-trajectory recipe
         behavior. An explicit `kernel=` (including `kernel='savgol'`)
-        always takes precedence over `mode=`.
+        always takes precedence over `mode=`. Values outside
+        `{'savgol', 'gaussian'}` raise `ValueError`.
 
     kernel_width : int
         Smoothing window width for `'savgol'`/`'boxcar'` (and, via the
         mapping above, `'gaussian'` when using `kernel=`). Must be a
-        positive odd integer; non-integer/even values are rounded up with a
+        positive odd integer; non-integer values are rounded to the
+        nearest integer, and even values incremented by 1, each with a
         warning.
 
     order : int
@@ -246,13 +273,34 @@ class Smooth(Manipulator):
 
     maintain_bounds : bool
         If True (default), clip the smoothed output to each column's
-        original (pre-smoothing) min/max.
+        original (pre-smoothing) min/max. The bounds are derived from the
+        data being transformed -- so a fitted `Smooth` reused on new data
+        (via ``return_model=True``) clips to the NEW data's own range,
+        never the fit-time range.
+
+    Notes
+    -----
+    Smoothing is applied PER DATASET: each element of a list input is
+    smoothed independently, so data never bleeds across dataset
+    boundaries (audit F14-001/D01-001 fix).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import pandas as pd
+    >>> from hypertools.manip import Smooth
+    >>> rng = np.random.default_rng(0)
+    >>> df = pd.DataFrame({'y': np.sin(np.linspace(0, 6, 50))
+    ...                         + 0.1 * rng.standard_normal(50)})
+    >>> out = Smooth(kernel_width=11).fit_transform(df)
+    >>> out.shape
+    (50, 1)
     """
 
     # noinspection PyShadowingBuiltins
     def __init__(self, axis=0, kernel=None, mode='savgol', kernel_width=11, order=3, var=300,
                  maintain_bounds=True):
-        required = ['axis', 'min', 'max', 'mode', 'kernel_width', 'order', 'var', 'maintain_bounds']
+        required = ['axis', 'mode', 'kernel_width', 'order', 'var', 'maintain_bounds']
         super().__init__(axis=axis, fitter=fitter, transformer=transformer, data=None, mode=mode,
                          kernel=kernel, kernel_width=kernel_width, order=order, var=var,
                          maintain_bounds=maintain_bounds, required=required)

@@ -69,7 +69,11 @@ def _transform_stacked(data, **kwargs):
     # column into NaN, silently corrupting the data (QC 2026-07). A constant
     # column is already centered to 0 after subtracting its mean, so scaling by
     # 1 leaves it 0 -- matching hypertools.tools.normalize._zscore_column.
-    std_safe = np.where(std == 0, 1.0, std)
+    # Also guard NaN std (audit F14-006): pandas .std() is NaN for a single
+    # observation (ddof=1), which silently turned single-row input into
+    # all-NaN output; a single row is its own mean, so it z-scores to 0s
+    # (matching hyp.normalize and sklearn's StandardScaler).
+    std_safe = np.where((std == 0) | np.isnan(std), 1.0, std)
     for i, c in enumerate(z.columns):
         z[c] = (z[c] - mean[i]) / std_safe[i]
     return z
@@ -146,6 +150,28 @@ class ZScore(Manipulator):
     axis : int, optional
         0 to z-score each column independently (default), 1 to z-score
         each row independently.
+
+    Notes
+    -----
+    Standard deviations are SAMPLE standard deviations (``ddof=1``, the
+    pandas ``.std()`` convention). `hypertools.normalize` uses the
+    POPULATION standard deviation (``ddof=0``, the ``np.std``/
+    ``scipy.stats.zscore`` convention), so the two z-scoring entry points
+    differ by a factor of ``sqrt(n / (n - 1))``.
+
+    For a LIST of datasets, ONE shared mean/std is fit across all of them
+    (like ``normalize='across'``); single-observation (or constant)
+    columns z-score to 0s rather than NaN.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import pandas as pd
+    >>> from hypertools.manip import ZScore
+    >>> df = pd.DataFrame({'a': [1., 2., 3., 4.], 'b': [0., 10., 20., 30.]})
+    >>> z = ZScore().fit_transform(df)
+    >>> np.allclose(z.mean(axis=0), 0.0)
+    True
     """
     def __init__(self, axis=0):
         required = ['transpose', 'mean', 'std', 'axis']

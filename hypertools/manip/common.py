@@ -74,12 +74,35 @@ class Manipulator(BaseEstimator):
         sklearn.exceptions.NotFittedError
             If `fit`/`fit_transform` has not been called yet, or a
             required fitted attribute is missing.
+        NotImplementedError
+            If this manipulator was fit row-wise (``axis=1``) and
+            `new_data` is different data than it was fit on: the fitted
+            statistics are per-ROW of the FIT-time data, so applying them
+            positionally to unrelated rows is ill-defined (mirroring the
+            `inverse_transform` restriction; audit F14-012).
         """
         if self.data is None:
             raise NotFittedError("must fit manipulator before transforming data")
         for r in self.required:
             if not hasattr(self, r):
                 raise NotFittedError(f"missing fitted attribute: {r}")
+        # refuse to replay row-wise (axis=1) fit-time statistics onto NEW data
+        # (audit F14-012): a fitted axis=1 ZScore/Normalize stores one
+        # statistic per fit-time ROW, and silently broadcasting those onto a
+        # different dataset's rows corrupts it without warning. Manipulators
+        # whose transform re-derives everything from the data being
+        # transformed (e.g. Resample) set `_stateless_transform = True` and
+        # are exempt. Replaying the fit-time data itself (new_data=None, or
+        # fit_transform's internal call) is always fine.
+        if (new_data is not None and new_data is not self.data
+                and getattr(self, 'transpose', False)
+                and not getattr(self, '_stateless_transform', False)):
+            raise NotImplementedError(
+                f"applying a fitted row-wise (axis=1) {type(self).__name__} "
+                "to new data is ill-defined: its fitted statistics are "
+                "per-row of the fit-time data. Re-fit on the new data "
+                f"instead, e.g. hyp.manip(new_data, "
+                f"model='{type(self).__name__}', axis=1).")
         data_to_use = self.data if new_data is None else new_data
         if self.transformer is None:
             return data_to_use

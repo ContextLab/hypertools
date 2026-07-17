@@ -36,6 +36,20 @@ def _as_list_2d(x):
     return [np.atleast_2d(np.asarray(x, dtype=np.float64))], True
 
 
+def _check_column_counts(arrs):
+    """`'across'`-mode z-scoring stacks every dataset row-wise, so they must
+    all have the same number of columns; raise a clear ValueError naming the
+    mismatched counts instead of leaking numpy's vstack internals (audit
+    F14-018)."""
+    cols = [a.shape[1] for a in arrs]
+    if len(set(cols)) > 1:
+        raise ValueError(
+            "normalize='across' requires every dataset to have the same "
+            "number of columns (z-scores are computed per column across all "
+            f"datasets); got column counts {cols}. Use normalize='within' "
+            "or normalize='row' to z-score each dataset independently.")
+
+
 def _zscore_column(mean, std, y):
     """Z-score `y` against a given `mean`/`std`, matching the classic
     `normalize()` degenerate-input handling: an empty or constant-valued
@@ -106,6 +120,7 @@ class Normalizer(BaseEstimator):
         """
         if self.normalize == 'across':
             arrs, _ = _as_list_2d(x)
+            _check_column_counts(arrs)
             x_stacked = np.vstack(arrs)
             self.mean_ = np.mean(x_stacked, axis=0)
             self.std_ = np.std(x_stacked, axis=0)
@@ -123,6 +138,11 @@ class Normalizer(BaseEstimator):
         if self.normalize == 'across':
             if self.mean_ is None:
                 raise NotFittedError('must fit Normalizer before transforming data')
+            _check_column_counts(arrs)
+            if arrs[0].shape[1] != self.mean_.shape[0]:
+                raise ValueError(
+                    f'Normalizer was fit on {self.mean_.shape[0]} column(s) '
+                    f'but got {arrs[0].shape[1]}')
             out = [
                 np.array([_zscore_column(self.mean_[j], self.std_[j], i[:, j])
                           for j in range(i.shape[1])]).T
@@ -178,7 +198,8 @@ def normalize(x, normalize='across', internal=False, format_data=True, impute=No
         passed. If set to 'row', each row of the input data will be z-scored.
         If set to False, the input data will be returned with no z-scoring.
         A previously-fitted `Normalizer` (as returned by `return_model=True`)
-        is applied via `.transform` instead of being refit.
+        is applied via `.transform` instead of being refit. Any other value
+        raises a `ValueError`.
 
     format_data : bool
         Whether or not to first call the format_data function (default: True).
@@ -210,10 +231,35 @@ def normalize(x, normalize='across', internal=False, format_data=True, impute=No
     ----------
     normalized_x : Numpy array or list of arrays
         An array or list of arrays where the columns or rows are z-scored. If
-        the input was a list, a list is returned.  Otherwise, an array is
-        returned. If `return_model=True`, a `(normalized_x, model)` tuple is
+        the input was a list with more than one element, a list is returned;
+        a single array -- or a single-element list -- returns a bare array.
+        DataFrame inputs are converted to arrays (index/column metadata is
+        not preserved; use `hypertools.manip` with ``model='ZScore'`` to keep
+        it). If `return_model=True`, a `(normalized_x, model)` tuple is
         returned instead.
 
+    Notes
+    -----
+    Standard deviations are POPULATION standard deviations (``ddof=0``, the
+    ``np.std``/``scipy.stats.zscore`` convention). `hypertools.manip`'s
+    `ZScore` manipulator uses the SAMPLE standard deviation (``ddof=1``, the
+    pandas convention), so the two z-scoring entry points differ by a factor
+    of ``sqrt(n / (n - 1))``. Missing values (NaN) are PPCA-imputed during
+    the `format_data` stage (when `format_data=True`); `hypertools.manip`
+    propagates NaNs unchanged.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from hypertools import normalize
+    >>> x = np.array([[1., 0.], [2., 10.], [3., 20.], [4., 30.]])
+    >>> z = normalize(x, normalize='within')
+    >>> np.allclose(z.mean(axis=0), 0.0) and np.allclose(z.std(axis=0), 1.0)
+    True
+    >>> a, b = np.zeros((5, 2)), np.ones((5, 2))
+    >>> z_across = normalize([a, b], normalize='across')
+    >>> np.allclose(np.vstack(z_across).mean(axis=0), 0.0)
+    True
     """
     # cross-module kwargs (#138): assemble and run a Pipeline (in canonical
     # order, #153) instead of the single-stage path below whenever another
@@ -237,9 +283,15 @@ def normalize(x, normalize='across', internal=False, format_data=True, impute=No
         result = pipeline.fit_transform(x)
         return (result, pipeline) if return_model else result
 
-    assert (normalize in ['across', 'within', 'row', False, None]
-            or isinstance(normalize, Normalizer)), \
-        "scale_type must be across, within, row, none, or a fitted Normalizer."
+    # a real ValueError naming the actual parameter (audit F14-009: this was
+    # an assert -- stripped under `python -O` -- whose message referenced
+    # 'scale_type', a parameter that does not exist in the 1.0 API)
+    if not (normalize in ['across', 'within', 'row', False, None]
+            or isinstance(normalize, Normalizer)):
+        raise ValueError(
+            "normalize must be one of 'across', 'within', 'row', False/None "
+            f"(to skip normalization), or a fitted Normalizer; got "
+            f"{normalize!r}")
 
     if normalize in [False, None]:
         return (x, None) if return_model else x
