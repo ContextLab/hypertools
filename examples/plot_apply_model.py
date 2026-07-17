@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+================================
 Applying models with apply_model
-=============================
+================================
 
 `hyp.apply_model` is hypertools 1.0's unified model-application core:
 datasets are stacked, the model is fit ONCE across all of them, and the

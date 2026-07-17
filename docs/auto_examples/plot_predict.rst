@@ -18,15 +18,15 @@
 .. _sphx_glr_auto_examples_plot_predict.py:
 
 
-=============================
+===================================
 Forecasting timeseries with predict
-=============================
+===================================
 
 The `predict` kwarg overlays a forecast on top of your plotted data: a
 dashed, same-color tail extending `t` steps past the end of each dataset.
 Under the hood this calls `hypertools.predict`, which supports several
-forecasting models -- `'Kalman'` (a linear-Gaussian state-space filter,
-used here), `'GaussianProcess'`, `'AutoRegressor'` (any sklearn regressor
+forecasting models -- `'Kalman'` (a linear-Gaussian state-space filter),
+`'GaussianProcess'` (used here), `'AutoRegressor'` (any sklearn regressor
 run recursively), `'ARIMA'`, `'Laplace'`, and `'Chronos'` (a HuggingFace
 time-series foundation model) -- selected via `model=` when calling
 `hypertools.predict` directly. Calling `hyp.predict(data, model=...,
@@ -83,7 +83,7 @@ re-estimating) on new data.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.217 seconds)
+   **Total running time of the script:** (0 minutes 0.064 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_predict.py:

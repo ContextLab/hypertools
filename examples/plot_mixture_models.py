@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+===================================
 Soft clustering with mixture models
-=============================
+===================================
 
 In addition to hard clustering (KMeans, HDBSCAN, ...), hypertools 1.0
 supports mixture models: GaussianMixture, BayesianGaussianMixture,

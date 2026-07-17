@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+==========================================
 Visualizing the digits dataset using t-SNE
-=============================
+==========================================
 
 This example loads in some data from the scikit-learn digits dataset and plots
 it using t-SNE, with one color per digit class and a legend mapping colors to

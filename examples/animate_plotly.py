@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+===========================================
 Animated interactive plots (plotly backend)
-=============================
+===========================================
 
 Animations work on the plotly backend too: `animate=True` reveals
 trajectories through a sliding time window and `animate='spin'` rotates the

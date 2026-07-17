@@ -18,9 +18,9 @@
 .. _sphx_glr_auto_examples_plot_PPCA.py:
 
 
-=============================
+=================================================
 Interpolating missing data with probabalistic PCA
-=============================
+=================================================
 
 When you pass a matrix with with missing data, hypertools will attempt to
 fill in the values using probabalistic principal components analysis (PPCA).
@@ -28,7 +28,7 @@ Here is an example where we generate some synthetic data, remove some of the
 values, and then use PPCA to interpolate those missing values. Then, we plot
 both the original and data with missing values together to see how it performed.
 
-.. GENERATED FROM PYTHON SOURCE LINES 13-37
+.. GENERATED FROM PYTHON SOURCE LINES 13-38
 
 
 
@@ -42,10 +42,8 @@ both the original and data with missing values together to see how it performed.
 
  .. code-block:: none
 
-    /Users/jmanning/hypertools/hypertools/tools/format_data.py:131: UserWarning: Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)
-      warnings.warn('Missing data: Inexact solution computed with PPCA (see https://github.com/allentran/pca-magic for details)')
-    /Users/jmanning/hypertools/hypertools/plot/matplotlib_backend.py:102: UserWarning: linestyle is redundantly defined by the 'linestyle' keyword argument and the fmt string "-" (-> linestyle='-'). The keyword argument will take precedence.
-      ax.plot(data[i][:, 0], data[i][:, 1], data[i][:, 2], fmt[i], **ikwargs)
+    /Users/jmanning/hypertools/hypertools/tools/format_data.py:264: UserWarning: Missing data: filling missing values with PPCA (observed values are preserved exactly; only the NaN entries are reconstructed). Pass impute= to choose a different imputation model -- see hypertools.impute.
+      warnings.warn('Missing data: filling missing values '
 
 
 
@@ -66,15 +64,16 @@ both the original and data with missing values together to see how it performed.
     from copy import copy
     import hypertools as hyp
 
-    # simulate data
+    # simulate data (seeded so the figure is reproducible)
+    np.random.seed(123)
     K = 10 - toeplitz(np.arange(10))
     data1 = np.cumsum(np.random.multivariate_normal(np.zeros(10), K, 250), axis=0)
     data2 = copy(data1)
 
-    # simulate missing data
+    # simulate missing data: remove exactly 10% of the entries
     missing = .1
     inds = [(i,j) for i in range(data2.shape[0]) for j in range(data2.shape[1])]
-    missing_data = [inds[i] for i in np.random.choice(int(len(inds)), int(len(inds)*missing))]
+    missing_data = [inds[i] for i in np.random.choice(len(inds), int(len(inds)*missing), replace=False)]
     for i,j in missing_data:
         data2[i,j]=np.nan
 
@@ -84,7 +83,7 @@ both the original and data with missing values together to see how it performed.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.043 seconds)
+   **Total running time of the script:** (0 minutes 0.044 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_PPCA.py:

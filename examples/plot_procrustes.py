@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+==================================================
 Aligning two matrices with the procrustes function
-=============================
+==================================================
 
 In this example, we load in some synthetic data, rotate it, and then use the
 procrustes function to get the datasets back in alignment.  The procrustes

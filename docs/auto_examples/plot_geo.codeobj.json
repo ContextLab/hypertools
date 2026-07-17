@@ -217,6 +217,15 @@
    "name": "dict"
   }
  ],
+ "out.keys": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  }
+ ],
  "png_path": [
   {
    "is_class": false,

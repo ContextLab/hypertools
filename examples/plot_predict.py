@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+===================================
 Forecasting timeseries with predict
-=============================
+===================================
 
 The `predict` kwarg overlays a forecast on top of your plotted data: a
 dashed, same-color tail extending `t` steps past the end of each dataset.

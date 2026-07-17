@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+=========================================
 Visualizing the digits dataset using UMAP
-=============================
+=========================================
 
 This example loads in some data from the scikit-learn digits dataset and plots
 it using UMAP, with one color per digit class and a legend mapping colors to

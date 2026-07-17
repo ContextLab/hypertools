@@ -88,7 +88,7 @@ you set a label or move the colorbar to another side of the figure.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.306 seconds)
+   **Total running time of the script:** (0 minutes 0.196 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_colorbar.py:

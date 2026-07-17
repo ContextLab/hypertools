@@ -18,9 +18,9 @@
 .. _sphx_glr_auto_examples_animate_MDS.py:
 
 
-=============================
+=========================================================
 Animated trajectory plotted with multidimensional scaling
-=============================
+=========================================================
 
 This is a trajectory of brain data plotted in 3D with multidimensional scaling.
 
@@ -36,21 +36,8 @@ This is a trajectory of brain data plotted in 3D with multidimensional scaling.
 
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-    /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/sklearn/manifold/_mds.py:744: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9. To suppress this warning, provide some value of `n_init`.
-      warnings.warn(
-    /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/sklearn/manifold/_mds.py:754: FutureWarning: The default value of `init` will change from 'random' to 'classical_mds' in 1.10. To suppress this warning, provide some value of `init`.
-      warnings.warn(
 
 
-
-
-
-
-|
 
 .. code-block:: Python
 
@@ -72,7 +59,7 @@ This is a trajectory of brain data plotted in 3D with multidimensional scaling.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 5.847 seconds)
+   **Total running time of the script:** (0 minutes 6.196 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate_MDS.py:

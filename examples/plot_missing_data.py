@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+============================================================
 Using the missing_inds function to label interpolated values
-=============================
+============================================================
 
 If you have data with missing values, Hypertools will try to interpolate them
 using PPCA.  To visualize how well its doing, you can use the missing_inds

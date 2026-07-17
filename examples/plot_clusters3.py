@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+==================================
 Discovering clusters using HDBSCAN
-=============================
+==================================
 
 To make use of HDBSCAN as the clustering algorithm used to discover clusters,
 you must specify it as the cluster argument. If you wish to specify HDBSCAN

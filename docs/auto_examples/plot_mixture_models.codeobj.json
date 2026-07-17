@@ -8,6 +8,15 @@
    "name": "ndarray"
   }
  ],
+ "gmm": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "dict"
+  }
+ ],
  "hyp.cluster": [
   {
    "is_class": false,

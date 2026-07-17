@@ -18,17 +18,20 @@
 .. _sphx_glr_auto_examples_plot_clusters3.py:
 
 
-=============================
+==================================
 Discovering clusters using HDBSCAN
-=============================
+==================================
 
 To make use of HDBSCAN as the clustering algorithm used to discover clusters,
 you must specify it as the cluster argument. If you wish to specify HDBSCAN
-parameters you will need the dictionary form which includes both the model
-and the params. Since HDBSCAN does not require the number of clusters,
-n_clusters does not need to be set.
+parameters you will need the dictionary form, which includes both the model
+name and its keyword arguments (under the 'kwargs' key). Since HDBSCAN does
+not require the number of clusters, n_clusters does not need to be set.
+Note that HDBSCAN can also label some observations as noise (label -1);
+those points are colored as their own group. Because the rows of the
+mushrooms dataset are unordered samples, we plot them as points ('.').
 
-.. GENERATED FROM PYTHON SOURCE LINES 13-28
+.. GENERATED FROM PYTHON SOURCE LINES 16-30
 
 
 
@@ -38,19 +41,8 @@ n_clusters does not need to be set.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-    /Users/jmanning/hypertools/.venv/lib/python3.12/site-packages/sklearn/cluster/_hdbscan/hdbscan.py:722: FutureWarning: The default value of `copy` will change from False to True in 1.10. Explicitly set a value for `copy` to silence this warning.
-      warn(
 
 
-
-
-
-
-|
 
 .. code-block:: Python
 
@@ -60,20 +52,19 @@ n_clusters does not need to be set.
 
     # import
     import hypertools as hyp
-    import pandas as pd
 
     # load example data
     data = hyp.load('mushrooms')
 
     # plot
-    hyp.plot(data, cluster={'model':'HDBSCAN',
-                                 'params': {'min_samples':5,
-                                            'min_cluster_size':30}})
+    hyp.plot(data, '.', cluster={'model': 'HDBSCAN',
+                                 'kwargs': {'min_samples': 5,
+                                            'min_cluster_size': 30}})
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.329 seconds)
+   **Total running time of the script:** (0 minutes 0.316 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_clusters3.py:

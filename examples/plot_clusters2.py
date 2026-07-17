@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+============================================
 Using the cluster function to label clusters
-=============================
+============================================
 
 Here is an example where we generate some synthetic data, and then use the
 cluster function to get cluster labels, which we can then pass to the `hue`

@@ -41,4 +41,3 @@ for ax in axes[len(datasets):]:
     ax.set_visible(False)
 
 plt.tight_layout()
-plt.show()

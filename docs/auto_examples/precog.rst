@@ -27,7 +27,7 @@ argument.  This displays a low opacity version of the trace ahead of the
 current points being plotted.  This can be used in conjunction with the
 chemtrails argument to plot a low-opacity trace of the entire timeseries.
 
-.. GENERATED FROM PYTHON SOURCE LINES 12-27
+.. GENERATED FROM PYTHON SOURCE LINES 12-26
 
 
 
@@ -52,7 +52,6 @@ chemtrails argument to plot a low-opacity trace of the entire timeseries.
 
     # import
     import hypertools as hyp
-    import numpy as np
 
     # load example data
     data = hyp.load('weights_avg')
@@ -63,7 +62,7 @@ chemtrails argument to plot a low-opacity trace of the entire timeseries.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 6.255 seconds)
+   **Total running time of the script:** (0 minutes 6.358 seconds)
 
 
 .. _sphx_glr_download_auto_examples_precog.py:

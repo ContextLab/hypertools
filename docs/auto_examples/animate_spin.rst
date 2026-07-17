@@ -31,8 +31,8 @@ visualize static data in an animated rotating plot.
 
 .. video:: /auto_examples/images/sphx_glr_animate_spin_001.mp4
    :class: sphx-glr-single-img
-   :height: 960
-   :width: 1280
+   :height: 480
+   :width: 640
    :autoplay:
 
 
@@ -60,7 +60,7 @@ visualize static data in an animated rotating plot.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 8.160 seconds)
+   **Total running time of the script:** (0 minutes 6.150 seconds)
 
 
 .. _sphx_glr_download_auto_examples_animate_spin.py:

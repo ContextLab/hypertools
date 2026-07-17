@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+=================================================
 Interpolating missing data with probabalistic PCA
-=============================
+=================================================
 
 When you pass a matrix with with missing data, hypertools will attempt to
 fill in the values using probabalistic principal components analysis (PPCA).

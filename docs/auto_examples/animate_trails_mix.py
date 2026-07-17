@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+===============================
 Mixing trail styles per dataset
-=============================
+===============================
 
 `chemtrails`, `precog`, and `bullettime` each accept a per-dataset list of
 bools instead of a single bool, so different datasets in the same animation

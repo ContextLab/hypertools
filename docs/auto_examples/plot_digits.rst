@@ -18,9 +18,9 @@
 .. _sphx_glr_auto_examples_plot_digits.py:
 
 
-=============================
+==============================
 Visualizing the digits dataset
-=============================
+==============================
 
 This example loads in some data from the scikit-learn digits dataset and plots
 it.
@@ -59,7 +59,7 @@ it.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.076 seconds)
+   **Total running time of the script:** (0 minutes 0.089 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_digits.py:

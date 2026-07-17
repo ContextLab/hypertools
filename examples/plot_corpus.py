@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+==========================================
 Defining a custom corpus for plotting text
-=============================
+==========================================
 
 By default, the text samples will be transformed into a vector of word counts
 and then modeled using Latent Dirichlet Allocation (# of topics = 50) using a

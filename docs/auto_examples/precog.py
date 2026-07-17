@@ -17,7 +17,6 @@ chemtrails argument to plot a low-opacity trace of the entire timeseries.
 
 # import
 import hypertools as hyp
-import numpy as np
 
 # load example data
 data = hyp.load('weights_avg')

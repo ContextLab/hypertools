@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+===================================================
 Working with plot outputs (figures & fitted models)
-=============================
+===================================================
 
 `hyp.plot` returns a plain matplotlib (or plotly) Figure -- there is no
 special container object to learn. Anything you can do with a Figure

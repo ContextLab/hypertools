@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+==============================================================
 Using describe to evaluate the integrity of your visualization
-=============================
+==============================================================
 
 The downside to using dimensionality reduction to visualize your data is that
 some variance will likely be removed. To help get a sense for the integrity of

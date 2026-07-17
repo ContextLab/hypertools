@@ -73,9 +73,9 @@ the normalize function found in tools (see the third example).
     # import
     import hypertools as hyp
     import numpy as np
-    import matplotlib.pyplot as plt
 
-    # simulate data
+    # simulate data (seeded so the figures are reproducible)
+    np.random.seed(123)
     cluster1 = np.random.multivariate_normal(np.zeros(3), np.eye(3), size=100)
     cluster2 = np.random.multivariate_normal(np.zeros(3)+10, np.eye(3), size=100)
     data = [cluster1, cluster2]
@@ -95,7 +95,7 @@ the normalize function found in tools (see the third example).
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.061 seconds)
+   **Total running time of the script:** (0 minutes 0.063 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_normalize.py:

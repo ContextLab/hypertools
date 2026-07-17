@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+===================================
 Aligning matrices to a common space
-=============================
+===================================
 
 In this example, we plot the trajectory of multivariate brain activity for
 two groups of subjects that have been hyperaligned (Haxby et al, 2011).  First,

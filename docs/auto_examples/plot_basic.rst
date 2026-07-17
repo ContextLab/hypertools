@@ -23,8 +23,8 @@ A basic example
 =============================
 
 Here is a basic example where we load in some data (a list of arrays - samples
-by features), take the first two arrays in the list and plot them as points
-with the 'o'.  Hypertools can handle all format strings supported by matplotlib.
+by features) and plot all three arrays as points using the '.' format string.
+Hypertools can handle all format strings supported by matplotlib.
 
 .. GENERATED FROM PYTHON SOURCE LINES 11-23
 
@@ -34,9 +34,6 @@ with the 'o'.  Hypertools can handle all format strings supported by matplotlib.
    :alt: plot basic
    :srcset: /auto_examples/images/sphx_glr_plot_basic_001.png
    :class: sphx-glr-single-img
-
-.. raw:: html
-    :file: images/sphx_glr_plot_basic_002.html
 
 
 
@@ -60,7 +57,7 @@ with the 'o'.  Hypertools can handle all format strings supported by matplotlib.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.107 seconds)
+   **Total running time of the script:** (0 minutes 0.106 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_basic.py:

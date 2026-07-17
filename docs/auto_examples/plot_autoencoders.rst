@@ -31,7 +31,7 @@ the optional ``torch`` dependency (``pip install "hypertools[torch]"``).
 This example fits a shallow `Autoencoder` and a `VariationalAutoencoder` on
 the same data and compares them against PCA.
 
-.. GENERATED FROM PYTHON SOURCE LINES 15-51
+.. GENERATED FROM PYTHON SOURCE LINES 15-56
 
 
 
@@ -66,12 +66,18 @@ the same data and compares them against PCA.
     # a small, fast training budget -- plenty for a gallery example on 10D data
     ae_kwargs = {'epochs': 30, 'batch_size': 32, 'random_state': 0}
 
+    # the VAE needs a longer budget and a small KL weight: with the default
+    # kl_weight=1.0 the KL term dominates on a tiny dataset and the latent
+    # space collapses to a point (a classic VAE failure mode)
+    vae_kwargs = {'epochs': 100, 'batch_size': 32, 'random_state': 0,
+                  'kl_weight': 0.001}
+
     pca_out = hyp.reduce(data, reduce='PCA', ndims=2)
     ae_out = hyp.reduce(
         data, reduce={'model': 'Autoencoder', 'kwargs': ae_kwargs}, ndims=2)
     vae_out = hyp.reduce(
         data,
-        reduce={'model': 'VariationalAutoencoder', 'kwargs': ae_kwargs},
+        reduce={'model': 'VariationalAutoencoder', 'kwargs': vae_kwargs},
         ndims=2)
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
@@ -81,12 +87,11 @@ the same data and compares them against PCA.
         ax.scatter(out[:, 0], out[:, 1], c=t, cmap='viridis', s=10)
         ax.set_title(name)
     plt.tight_layout()
-    plt.show()
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 2.638 seconds)
+   **Total running time of the script:** (0 minutes 4.855 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_autoencoders.py:

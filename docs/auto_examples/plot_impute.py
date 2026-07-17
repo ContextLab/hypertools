@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+===============================================
 Imputing missing data: PPCA vs Kalman smoothing
-=============================
+===============================================
 
 Hypertools fills missing (NaN) values via `hypertools.impute` before
 reducing/plotting. This compares two imputers on the `weights_avg` dataset

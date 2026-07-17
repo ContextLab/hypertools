@@ -42,12 +42,18 @@ the axes box safely for every frame, and a raw shapes-zoo cloud is dense
 enough that its hull can itself have tens of thousands of faces --
 downsampling first keeps both that one-time sizing pass and every
 per-frame rebuild fast. The mesh smoothing is also capped at 2 rounds
-rather than the library default of 3 (roughly 20ms/frame instead of
-~100ms+, measured on this machine).
+rather than the library default of 3, roughly a 4x per-frame speedup
+(measured on a typical laptop).
 """
 
 # Code source: Contextual Dynamics Laboratory
 # License: MIT
+
+# use a pre-rendered gif of the morphing lit surface as this example's gallery
+# thumbnail, matching the other animated examples (animate_spin, chemtrails,
+# plot_story_trajectories, ...). Without this, sphinx-gallery thumbnailed the
+# trailing static-figure snapshot (the alpha-fade line below) as a frozen png.
+# sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_animate_surface_morph_thumb.gif'
 
 import numpy as np
 
@@ -115,5 +121,9 @@ fig, ani = hyp.plot(clouds, fmt='.', color='k', markersize=0.6,
                     duration=12, frame_rate=30,
                     morph_samples=n_points, surface=surface_spec)
 
-# fade the point layer to a subtle texture underneath the hull surface
-fig.axes[0].get_lines()[0].set_alpha(0.25)
+# fade the point layer to a subtle texture underneath the hull surface.
+# NOTE: under animate='morph' the per-dataset lines are hidden and the
+# VISIBLE traveling point cloud is a separate artist, so select the visible
+# line rather than assuming a position in get_lines()
+visible_lines = [ln for ln in fig.axes[0].get_lines() if ln.get_visible()]
+visible_lines[-1].set_alpha(0.25)

@@ -18,9 +18,9 @@
 .. _sphx_glr_auto_examples_plot_mixture_models.py:
 
 
-=============================
+===================================
 Soft clustering with mixture models
-=============================
+===================================
 
 In addition to hard clustering (KMeans, HDBSCAN, ...), hypertools 1.0
 supports mixture models: GaussianMixture, BayesianGaussianMixture,
@@ -30,7 +30,7 @@ discrete labels, and `hyp.plot` colors each observation by blending the
 component colors according to its mixture weights -- observations between
 clusters render with intermediate colors.
 
-.. GENERATED FROM PYTHON SOURCE LINES 15-36
+.. GENERATED FROM PYTHON SOURCE LINES 15-41
 
 
 
@@ -56,8 +56,8 @@ clusters render with intermediate colors.
 
  .. code-block:: none
 
-    (300, 3) [[0.997 0.003 0.   ]
-     [0.997 0.003 0.   ]]
+    (300, 3) [[0.997 0.    0.003]
+     [0.997 0.    0.003]]
 
 
 
@@ -80,12 +80,17 @@ clusters render with intermediate colors.
     rng = np.random.default_rng(42)
     data = np.vstack([rng.standard_normal((100, 5)) + 1.5 * i for i in range(3)])
 
+    # seed the mixture model so both plots below use the SAME fit: an unseeded
+    # GaussianMixture can return its components in a different order on each
+    # call, which would permute the colors between the two figures
+    gmm = {'model': 'GaussianMixture', 'kwargs': {'random_state': 0}}
+
     # soft cluster assignments: rows sum to 1
-    proportions = hyp.cluster(data, cluster='GaussianMixture', n_clusters=3)
+    proportions = hyp.cluster(data, cluster=gmm, n_clusters=3)
     print(proportions.shape, proportions[:2].round(3))
 
     # colors blend according to membership weights
-    hyp.plot(data, 'o', cluster='GaussianMixture', n_clusters=3)
+    hyp.plot(data, 'o', cluster=gmm, n_clusters=3)
 
     # equivalently, pass any (n_samples, k) matrix as hue
     hyp.plot(data, 'o', hue=proportions)
@@ -93,7 +98,7 @@ clusters render with intermediate colors.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.088 seconds)
+   **Total running time of the script:** (0 minutes 0.050 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_mixture_models.py:

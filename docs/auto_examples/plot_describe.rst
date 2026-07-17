@@ -18,17 +18,19 @@
 .. _sphx_glr_auto_examples_plot_describe.py:
 
 
-=============================
+==============================================================
 Using describe to evaluate the integrity of your visualization
-=============================
+==============================================================
 
 The downside to using dimensionality reduction to visualize your data is that
-some variance will likely be removed. To help get a sense for the integrity of your low
-dimensional visualizations, we built the `describe` function, which computes
-the covariance (samples by samples) of both the raw and reduced datasets, and
-plots their correlation.
+some variance will likely be removed. To help get a sense for the integrity of
+your low dimensional visualizations, we built the `describe` function. For
+each candidate number of dimensions, it reduces the data and correlates the
+pairwise Euclidean distances between observations in the reduced data with
+the pairwise distances in the raw (full-dimensional) data, then plots that
+correlation as a function of the number of dimensions.
 
-.. GENERATED FROM PYTHON SOURCE LINES 13-26
+.. GENERATED FROM PYTHON SOURCE LINES 15-28
 
 
 
@@ -38,19 +40,8 @@ plots their correlation.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-    /Users/jmanning/hypertools/hypertools/reduce/describe.py:57: UserWarning: When input data is large, this computation can take a long time.
-      warnings.warn('When input data is large, this computation can take a long time.')
 
 
-
-
-
-
-|
 
 .. code-block:: Python
 
@@ -71,7 +62,7 @@ plots their correlation.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 3.024 seconds)
+   **Total running time of the script:** (0 minutes 3.431 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_describe.py:

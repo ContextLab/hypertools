@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+=====================================
 Plotting State of the Union Addresses
-=============================
+=====================================
 
 `hyp.load('sotus')` returns the full text of the 29 State of the Union
 addresses delivered between 1989 and 2018, in chronological order. Passing

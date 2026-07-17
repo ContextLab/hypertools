@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+===================================
 Nested lists and multilevel styling
-=============================
+===================================
 
 hypertools 1.0 accepts arbitrarily nested lists of datasets. Every dataset
 under the same outermost group shares that group's color, and each

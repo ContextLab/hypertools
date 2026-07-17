@@ -18,14 +18,15 @@
 .. _sphx_glr_auto_examples_plot_UMAP.py:
 
 
-=============================
+=========================================
 Visualizing the digits dataset using UMAP
-=============================
+=========================================
 
 This example loads in some data from the scikit-learn digits dataset and plots
-it using UMAP.
+it using UMAP, with one color per digit class and a legend mapping colors to
+digits.
 
-.. GENERATED FROM PYTHON SOURCE LINES 10-22
+.. GENERATED FROM PYTHON SOURCE LINES 11-23
 
 
 
@@ -51,12 +52,12 @@ it using UMAP.
     data = digits.data
     hue = digits.target.astype('str')
 
-    hyp.plot(data, '.', reduce='UMAP', hue=hue, ndims=2)
+    hyp.plot(data, '.', reduce='UMAP', hue=hue, ndims=2, legend=True)
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 7.720 seconds)
+   **Total running time of the script:** (0 minutes 9.018 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_UMAP.py:

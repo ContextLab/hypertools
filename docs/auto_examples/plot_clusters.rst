@@ -23,11 +23,12 @@ Discovering clusters
 =============================
 
 The `n_clusters` kwarg can be used to discover clusters in your dataset.  It
-relies on scikit-learn's implementation of k-mean clustering to find clusters,
+relies on scikit-learn's implementation of k-means clustering to find clusters,
 and then labels the points accordingly. You must set the number of clusters
-yourself.
+yourself. Because the rows of the mushrooms dataset are unordered samples, we
+plot them as points (the '.' format string) rather than as a connected line.
 
-.. GENERATED FROM PYTHON SOURCE LINES 12-24
+.. GENERATED FROM PYTHON SOURCE LINES 13-25
 
 
 
@@ -53,12 +54,12 @@ yourself.
     data = hyp.load('mushrooms')
 
     # plot
-    hyp.plot(data, n_clusters=10)
+    hyp.plot(data, '.', n_clusters=10)
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.172 seconds)
+   **Total running time of the script:** (0 minutes 0.150 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_clusters.py:

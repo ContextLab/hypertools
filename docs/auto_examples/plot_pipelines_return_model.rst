@@ -37,7 +37,7 @@ projection, only ever fits once.
 via ``pipeline=``, so the exact multi-stage pipeline fit on one dataset can
 be replayed on new data with a single call.
 
-.. GENERATED FROM PYTHON SOURCE LINES 21-32
+.. GENERATED FROM PYTHON SOURCE LINES 21-36
 
 .. code-block:: Python
 
@@ -48,9 +48,13 @@ be replayed on new data with a single call.
     import numpy as np
     import hypertools as hyp
 
+    # NOTE: train and test have the SAME number of rows on purpose -- the
+    # multi-stage demo below includes an alignment stage, and aligners (e.g.
+    # HyperAlign) operate on the rows common to all datasets, trimming any
+    # extras. Equal-length datasets mean nothing is discarded.
     rng = np.random.default_rng(42)
     train = np.cumsum(rng.standard_normal((200, 12)), axis=0)
-    test = np.cumsum(rng.standard_normal((80, 12)), axis=0)
+    test = np.cumsum(rng.standard_normal((200, 12)), axis=0)
 
 
 
@@ -59,7 +63,7 @@ be replayed on new data with a single call.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 33-40
+.. GENERATED FROM PYTHON SOURCE LINES 37-44
 
 .. code-block:: Python
 
@@ -79,17 +83,18 @@ be replayed on new data with a single call.
  .. code-block:: none
 
     single-stage model: Reducer
-    train: (200, 3), test (via .transform): (80, 3)
+    train: (200, 3), test (via .transform): (200, 3)
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 41-43
+.. GENERATED FROM PYTHON SOURCE LINES 45-48
 
 hyp.reduce run all three stages (canonical order, GH #153) and hands back
-a fitted hyp.Pipeline
+a fitted hyp.Pipeline. (Alignment keeps only the rows common to all
+datasets -- pass equal-length datasets to avoid dropping data.)
 
-.. GENERATED FROM PYTHON SOURCE LINES 43-48
+.. GENERATED FROM PYTHON SOURCE LINES 48-54
 
 .. code-block:: Python
 
@@ -97,6 +102,7 @@ a fitted hyp.Pipeline
         [train, test], reduce='PCA', ndims=3,
         normalize='across', align='HyperAlign', return_model=True)
     print(f'multi-stage model: {pipeline!r}')
+    print(f'multi-stage output shapes: {[m.shape for m in multi_out]}')
 
 
 
@@ -107,16 +113,17 @@ a fitted hyp.Pipeline
  .. code-block:: none
 
     multi-stage model: Pipeline([normalize=<normalize stage>, reduce=<reduce stage>, align=<align stage>])
+    multi-stage output shapes: [(200, 3), (200, 3)]
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 49-51
+.. GENERATED FROM PYTHON SOURCE LINES 55-57
 
 fed straight back into pipeline= to replay the exact fitted pipeline on
 new data (GH #227) -- no need to re-specify normalize=/reduce=/align=
 
-.. GENERATED FROM PYTHON SOURCE LINES 51-55
+.. GENERATED FROM PYTHON SOURCE LINES 57-61
 
 .. code-block:: Python
 
@@ -140,7 +147,7 @@ new data (GH #227) -- no need to re-specify normalize=/reduce=/align=
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.148 seconds)
+   **Total running time of the script:** (0 minutes 0.025 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_pipelines_return_model.py:

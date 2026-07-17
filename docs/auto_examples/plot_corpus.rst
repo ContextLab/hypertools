@@ -18,12 +18,12 @@
 .. _sphx_glr_auto_examples_plot_corpus.py:
 
 
-=============================
+==========================================
 Defining a custom corpus for plotting text
-=============================
+==========================================
 
 By default, the text samples will be transformed into a vector of word counts
-and then modeled using Latent Dirichlet Allocation (# of topics = 100) using a
+and then modeled using Latent Dirichlet Allocation (# of topics = 50) using a
 model fit to a large sample of wikipedia pages.  However, you can optionally
 pass your own text to fit the semantic model. To do this define corpus as a
 list of documents (strings). A topic model will be fit on the fly and the text
@@ -62,7 +62,7 @@ will be plotted.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.020 seconds)
+   **Total running time of the script:** (0 minutes 0.019 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_corpus.py:

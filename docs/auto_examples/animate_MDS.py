@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+=========================================================
 Animated trajectory plotted with multidimensional scaling
-=============================
+=========================================================
 
 This is a trajectory of brain data plotted in 3D with multidimensional scaling.
 """
