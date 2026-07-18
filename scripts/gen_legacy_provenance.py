@@ -92,6 +92,12 @@ EXPECTED_LEGACY_SHA256 = {
     'datasaurus': '7ce78b634ef299098c75445bfc8f28f3edf122b415cdcc179ffda11b2e0bd126',
 }
 
+# the two maps must describe the same 15 datasets -- guard against one drifting
+# out of sync with the other (a source with no trust anchor, or vice versa)
+assert set(LEGACY_SOURCE) == set(EXPECTED_LEGACY_SHA256), (
+    'LEGACY_SOURCE and EXPECTED_LEGACY_SHA256 disagree: '
+    f'{set(LEGACY_SOURCE) ^ set(EXPECTED_LEGACY_SHA256)}')
+
 
 def fetch(src, attempts=5):
     """Download a legacy artifact (full URL or Google-Drive id), retrying

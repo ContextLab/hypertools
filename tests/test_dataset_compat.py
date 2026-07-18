@@ -126,11 +126,13 @@ def _canonical_sha256(obj):
 
 
 def test_baseline_covers_every_rehosted_dataset():
-    # the fixture must pin EVERY re-hosted built-in (sotus is now a fully
-    # migrated member of _REHOSTED) -- a new re-hosted dataset with no pinned
-    # baseline would silently escape the compatibility check
-    missing = set(L._REHOSTED) - set(_BASELINE)
-    assert not missing, f'datasets missing a compatibility baseline: {sorted(missing)}'
+    # the fixture must pin EXACTLY the re-hosted built-ins (sotus is a fully
+    # migrated member of _REHOSTED): no dataset missing a baseline, and no
+    # stale/unexpected baseline entry either (2026-07 review: exact coverage)
+    expected = set(L._REHOSTED)
+    assert set(_BASELINE) == expected, (
+        f'baseline coverage drift -- missing {sorted(expected - set(_BASELINE))}, '
+        f'unexpected {sorted(set(_BASELINE) - expected)}')
 
 
 @pytest.mark.parametrize('name', sorted(_BASELINE))
@@ -182,13 +184,18 @@ def test_baseline_matches_frozen_legacy_provenance():
     # regression is ever blessed by regenerating the baseline, the baseline
     # will no longer match this frozen legacy hash and this test fails.
     prov = json.loads((_DATA / 'rehosted_legacy_provenance.json').read_text())
-    missing = set(L._REHOSTED) - set(prov)
-    assert not missing, f'datasets missing legacy provenance: {sorted(missing)}'
+    expected = set(L._REHOSTED)
+    assert set(prov) == expected, (
+        f'provenance coverage drift -- missing {sorted(expected - set(prov))}, '
+        f'unexpected {sorted(set(prov) - expected)}')
 
-    # datasets WITH independent legacy evidence: the frozen legacy canonical
-    # hash (from the retired artifact) must equal the current baseline
+    # datasets WITH independent legacy evidence must be EXACTLY every re-hosted
+    # dataset except sotus (the documented exception) -- so a dataset cannot
+    # quietly lose its independent evidence while a stale entry keeps the count
     indep = {n for n, e in prov.items() if e.get('independent_evidence')}
-    assert len(indep) >= 15, f'too few independently-verified datasets: {sorted(indep)}'
+    assert indep == expected - {'sotus'}, (
+        f'independent-evidence drift: {sorted(indep)} '
+        f'(expected {sorted(expected - {"sotus"})})')
     mism = {n: (prov[n]['legacy_canonical_hash'], _BASELINE[n])
             for n in indep
             if prov[n]['legacy_canonical_hash'] != _BASELINE.get(n)}
