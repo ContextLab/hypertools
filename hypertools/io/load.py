@@ -16,70 +16,106 @@ from ..tools.analyze import analyze
 BASE_URL = 'https://docs.google.com/uc?export=download'
 DATA_DIR = Path.home().joinpath('hypertools_data')
 
+# Built-in datasets. The DATA datasets are hosted in non-executable formats
+# (.npz / .parquet / .json.gz) on Dropbox and loaded WITHOUT unpickling
+# (2026-07 release review, blocker #1). The old Google-Drive pickle ids for
+# them stay live so hypertools <1.0 keeps loading; 1.0 uses these URLs. The
+# fitted sklearn *_model Pipelines are inherently pickle, still hosted on
+# Drive and hash-verified before load (skops re-hosting is a follow-up).
+# 'sotus' loads via datawrangler's text zoo (see _load_sotus_corpus).
 EXAMPLE_DATA = {
-    'weights': '1ZXLao5Rxkr45KUMkv08Y1eAedTkpivsd',
-    'weights_avg': '1gfI1WB7QqogdYgdclqznhUfxsrhobueO',
-    'weights_sample': '1ub-xlYW1D_ASzbLcALcPJuhHUxRwHdIs',
-    'spiral': '1nHAusn2VsQinJk35xvJSd7CtWPC1uOwK',
-    'mushrooms': '12hmCIZp1tyUoPRHwpiAsm1GDBxiJS8ji',
-    'wiki': '1NUqm3svfu2rrFH04xmLbOh0u5WyTe9mh',
-    # 'sotus' is loaded via datawrangler's text zoo (see
-    # _load_sotus_corpus), NOT downloaded from this registry: the
-    # historical Drive id here had been duplicated with 'nips_model' (it
-    # served a pickled topic-model Pipeline instead of the documented
-    # speeches -- QC 2026-07, F18-load-hosted-001), and every older
-    # 'sotus' Drive id is dead.
+    'weights': 'https://www.dropbox.com/scl/fi/9byhw72c36grhf2toj3to/weights.npz?rlkey=tbr21gqpflljjttl15nuwij8z&dl=1',
+    'weights_avg': 'https://www.dropbox.com/scl/fi/qaj00kxx4c6j3309pryll/weights_avg.npz?rlkey=y8nx2n1j6fx7e8zrz8ko80mrs&dl=1',
+    'weights_sample': 'https://www.dropbox.com/scl/fi/96u1kjkvcb8449hxh6b0p/weights_sample.npz?rlkey=4f6vl26re8qpm626wtrfud6ox&dl=1',
+    'spiral': 'https://www.dropbox.com/scl/fi/mcjpsfkihjered7kyfcg4/spiral.npz?rlkey=4x0va41duh4txjr9y8jq4963c&dl=1',
+    'mushrooms': 'https://www.dropbox.com/scl/fi/4sz0zv1pypoko9nh9adh9/mushrooms.parquet?rlkey=1ndugdy10c4iznze65rvwie3j&dl=1',
+    'wiki': 'https://www.dropbox.com/scl/fi/50genuwwocsad93ciwyrj/wiki.json.gz?rlkey=kq921wznkx6iiuelvq2yk2mlp&dl=1',
+    'nips': 'https://www.dropbox.com/scl/fi/feszsl8vl6fn5u4iok1at/nips.json.gz?rlkey=zqcsarcqb336h7j23b9mwgbf3&dl=1',
+    'bunny': 'https://www.dropbox.com/scl/fi/teteaybwrtiqd671p1dlp/bunny.npz?rlkey=cvg855t17z1vq1e1ypy1kxzum&dl=1',
+    'cube': 'https://www.dropbox.com/scl/fi/hg00kbk331h64wlgnub04/cube.npz?rlkey=elo0ms55n8uz0e4qq5sclku1y&dl=1',
+    'dragon': 'https://www.dropbox.com/scl/fi/u9dc5oiirsb0vxuwwpwxw/dragon.npz?rlkey=oex83erlrdcskwhh6v8obiv38&dl=1',
+    'sphere': 'https://www.dropbox.com/scl/fi/cjvehkj3js7humoa0r1pa/sphere.npz?rlkey=n1ncxsx5550b8cormhe46rn3v&dl=1',
+    'teapot': 'https://www.dropbox.com/scl/fi/qgz9j9696lqwtea4lzkb7/teapot.npz?rlkey=vdee69b4wd6l9499kq8on02vl&dl=1',
+    'vase': 'https://www.dropbox.com/scl/fi/9m207u7ta0gu04hxbcnjr/vase.npz?rlkey=bitxamldgkyg2ybkaka6qdpo2&dl=1',
+    'biplane': 'https://www.dropbox.com/scl/fi/s2f4g8652dm5xdc313ogm/biplane.parquet?rlkey=x7jn1al8i92my6llkexilsi58&dl=1',
+    'datasaurus': 'https://www.dropbox.com/scl/fi/5hk73y5qehe2o31eflvfd/datasaurus.npz?rlkey=pj8y6so417g6t4nbpihx0s0tl&dl=1',
     'sotus': 'datawrangler-zoo:sotus',
-    'nips': '1FV7xT2hVgZ1sXfMvAdP1jRsK_dWhp49I',
+    # fitted sklearn Pipelines (pickle; hash-verified before load)
     'wiki_model': '1T-UAU-6KVGUBcUWqz7yG59vXnThu9T0H',
     'nips_model': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm',
     'sotus_model': '16_n9r82pwxzZh-0qdS4a6l0z3v__Q91C',
-    # "shapes zoo" 3D point clouds + the datasaurus dozen (hosted on
-    # Dropbox; full-URL entries are fetched directly). NOTE: the
-    # 'egyption_mask' source file is an empty (0, 3) array upstream, so it
-    # is intentionally not registered.
-    'bunny': 'https://www.dropbox.com/s/7d9vo9idqk1hn31/bunny.pkl?dl=1',
-    'cube': 'https://www.dropbox.com/s/tkrwe2m4maxl83j/cube.pkl?dl=1',
-    'dragon': 'https://www.dropbox.com/s/6w84icbvzh5oilr/dragon.pkl?dl=1',
-    'sphere': 'https://www.dropbox.com/s/wp8suye6oh4ze3u/sphere.pkl?dl=1',
-    'teapot': 'https://www.dropbox.com/s/f3jj18h3ge2gns6/teapot.pkl?dl=1',
-    'vase': 'https://www.dropbox.com/s/prquc7ov18zguuu/vase.pkl?dl=1',
-    'biplane': 'https://www.dropbox.com/s/4b9y9ouvjpjbj6x/biplane.pkl?dl=1',
-    'datasaurus':
-        'https://www.dropbox.com/s/6wxjyw8p052a5t9/datasaurus.pkl?dl=1',
+}
+
+# How each non-executable built-in reconstructs to the exact value hyp.load
+# returned from its former pickle (verified equal, incl. dtype/columns):
+#   npz_list      -> list of arrays (arr_0..arr_{n-1}, in order)
+#   npz_array     -> a single array (arr_0)
+#   npz_df_xy     -> list of DataFrames with columns ['x', 'y'] (datasaurus;
+#                    the original per-frame integer index is not used by any
+#                    consumer and is not preserved -- values are identical)
+#   parquet       -> DataFrame (columns + index preserved by parquet)
+#   jsongz_text   -> [ (n, 1) object array of document strings ] (text corpus)
+_REHOSTED = {
+    'weights': 'npz_list', 'weights_avg': 'npz_list',
+    'weights_sample': 'npz_list', 'spiral': 'npz_list',
+    'datasaurus': 'npz_df_xy',
+    'bunny': 'npz_array', 'cube': 'npz_array', 'dragon': 'npz_array',
+    'sphere': 'npz_array', 'teapot': 'npz_array', 'vase': 'npz_array',
+    'mushrooms': 'parquet', 'biplane': 'parquet',
+    'wiki': 'jsongz_text', 'nips': 'jsongz_text',
 }
 
 # SHA-256 of each hosted built-in file, pinned so a built-in is verified
-# against a hard-coded cryptographic hash BEFORE it is deserialized (2026-07
-# release review, blocker #1). A mismatch (a corrupted/rate-limited download,
-# a poisoned cache, or a tampered/changed upstream file) is a HARD error --
-# never a silent redownload-and-reparse. Every cache hit is validated too.
-#
-# These pin the current pickle files. When the datasets are re-hosted in
-# non-executable formats (.npz/.parquet/.json.gz -- see the verified
-# conversion bundle handed off for Dropbox hosting), swap each EXAMPLE_DATA
-# entry to its new URL and replace the hash here with the converted file's
-# SHA-256; the .npz/.parquet path then never unpickles at all.
+# against a hard-coded cryptographic hash BEFORE it is read (2026-07 release
+# review, blocker #1). A mismatch (corrupt/rate-limited download, poisoned
+# cache, or a tampered/changed upstream file) is a HARD error -- never a
+# silent redownload-and-reparse. Every cache hit is validated too. The DATA
+# hashes are of the non-executable Dropbox files; the *_model hashes are of
+# the Drive pickle files (still hash-verified before unpickling).
 _EXAMPLE_DATA_SHA256 = {
-    'weights': '695f50f48328f7b9f5741c89854b07f0c4989c4275f929caa76e95af2c92a7ff',
-    'weights_avg': '52be2d02d2c5754adbb58e68f86d2c2da2b7a339162f1d2e0c7e3b987ffde06f',
-    'weights_sample': 'eaf67c631e9cc8207c70ad1c93c6c022298a6e57f946ef39e24299c9c1bf3f8d',
-    'spiral': '7ca728d2972cb0271b3c68693aa7ec744962f8499043120eeefc6b755591f94c',
-    'mushrooms': 'b3abdaf8ae1597eeb95c1f1bc6cff6c38d02c9dff99a66ebafed6dc168d2c8cf',
-    'bunny': '7a43745c17834d54bb9dc10b7c286b4f23a4a1c437f8419d53dbe2eaf6ece663',
-    'cube': 'ca43191a3c77ce90d449a9cd327a53aaa7bd55032c7de06567c175d6524a02c1',
-    'dragon': 'dbfdbbc077f3884251a7140ee030eaf29cff915448d68e3afd96780e5cf79434',
-    'sphere': '8dae53277e2f15a57b3ca00299b6e7b980dcde6524c17350ad3b0cc3b3e0688f',
-    'teapot': 'c195e6221ad369b274d5f531b98a763c8fe03efadfc5d582011b3148fbf35973',
-    'vase': 'b1ef3da871ae93f1a661cc432cc70a2b662cc98748173b44457f838aee493e0f',
-    'biplane': 'f5e5661c2eea7a03f30229d6df5546bdd1a9df9e578c865dcefee983801fc814',
-    'datasaurus': '7ce78b634ef299098c75445bfc8f28f3edf122b415cdcc179ffda11b2e0bd126',
-    'wiki': '722d20a286edfad607904123d7756b95fb49e72e037af5d091422c994c4893be',
-    'nips': 'e240532dab310652bb489b4f0880af9f681652708dfe60ac3d6ff4e4ee4aaffc',
+    'weights': 'ab24402f6d998eea0550044f264d79593cd1adc97903d54322118119dbe8ed55',
+    'weights_avg': 'f8b38023867157f44fc7b22723f0e539eb7519d52cb1eff7be8b71f73f71b9f7',
+    'weights_sample': 'e5876ba8599b6819bfbf2e44dc58d9cfa0a9d1afbb8c6ad92687604bf8393933',
+    'spiral': '5c713739be0843c407cceebe659a0838fe18cf69f84291896bccb0c282f9d622',
+    'mushrooms': 'e9edd15fa603ba8ea49ca1726ccc889a1378b68286467b1e91a1ff0f0dc49de2',
+    'wiki': '9c1cfcb4552841d1f192de1a2cd4eeb33bbd3d0697c408f50a559666561d220a',
+    'nips': '10409cd39c62eea8325d98afdcf09b2a84e119e6ff4f977cb8e52eb144b624c4',
+    'bunny': '8c010711a9f7ca779c7a9b804f21028d15c099271a1c9c54ed221c10f8754f22',
+    'cube': 'fd87423f357a0bf909c74c56da1d6cd2a50a373d777dba442ab609aad0bb33bb',
+    'dragon': 'be1ae5262850539d9bfe37ec946a9a0e0fd745e58c5b69fa3b39284beca8cfa8',
+    'sphere': '503f1820e20f2e1daf0e9dc63bf5035ed5ad0b9299b1b7dbc560eb11e585b57a',
+    'teapot': '804e851abee7037d7bb9f135d5c3344b790af64aa4b04f96e789eb8473e4b284',
+    'vase': 'b3ee4ffd68b0b1e4e05ca54ef1193507c625915f5e8f7c6c50f576669bb80bc7',
+    'biplane': '8ffb74e24af0b84e20c151c6f0601fd677cb1f1f029e4d86eb7523c3a9a4268b',
+    'datasaurus': '8e8c2e1bc4ac33402f9448ab78860e7d79bef97ee5b413e4b2081b8b4d3f5f52',
     'wiki_model': '5ec3c34e2524e105a90ae498cca809d61ddfa90813a4621de65b37275fd515c9',
     'nips_model': '4f93308a48002730866659bda7ef393f5451dc8360b9e3c91c9cf5d77f73a762',
     'sotus_model': 'a7b085f7f6d94dbed6d961a1950de18a07b56456c77c2495a2868a9fefb07aa4',
 }
+
+
+def _parse_rehosted(path, name):
+    """Reconstruct a re-hosted (non-executable) built-in dataset from its
+    cached .npz/.parquet/.json.gz file -- no unpickling. Returns exactly what
+    hyp.load(name) returned from the former pickle (see _REHOSTED)."""
+    fmt = _REHOSTED[name]
+    if fmt == 'parquet':
+        return pd.read_parquet(path)
+    if fmt == 'jsongz_text':
+        import gzip
+        import json
+        with gzip.open(path, 'rt', encoding='utf-8') as f:
+            docs = json.load(f)
+        return [np.array(docs, dtype=object).reshape(-1, 1)]
+    # npz variants (content-sniffed by np.load regardless of the cache
+    # filename having no extension); allow_pickle=False -> no code execution
+    with np.load(path, allow_pickle=False) as z:
+        arrs = [z[f'arr_{i}'] for i in range(len(z.files))]
+    if fmt == 'npz_array':
+        return arrs[0]
+    if fmt == 'npz_df_xy':
+        return [pd.DataFrame(a, columns=['x', 'y']) for a in arrs]
+    return arrs  # npz_list
 
 
 def _sha256_file(path):
@@ -561,11 +597,13 @@ def _load_example_data(dataset):
             "please report it at "
             "https://github.com/ContextLab/hypertools/issues.")
 
-    geo_data = _unpickle_example(dataset_path)
+    # the DATA datasets are non-executable (.npz/.parquet/.json.gz) -> read
+    # them without ever unpickling (2026-07 release review, blocker #1)
+    if dataset in _REHOSTED:
+        return _parse_rehosted(dataset_path, dataset)
 
-    if dataset == 'mushrooms':
-        # format mushrooms dataset as a pandas DataFrame
-        geo_data.data = pd.DataFrame(geo_data.data)
+    # remaining built-ins are the fitted sklearn *_model Pipelines (pickle)
+    geo_data = _unpickle_example(dataset_path)
     if dataset.endswith('_model'):
         # hosted pipelines were pickled under an older scikit-learn (QC
         # 2026-07, F18-load-hosted-002); restore the standard estimator

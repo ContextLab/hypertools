@@ -90,3 +90,25 @@ def test_download_loop_rejects_wrong_checksum_bytes(tmp_path, monkeypatch):
 
     with pytest.raises(HypertoolsIOError, match='checksum'):
         L._download_example_data(tmp_path / 'spiral', max_attempts=2)
+
+
+def test_rehosted_npz_never_unpickles(tmp_path):
+    # the re-hosted DATA datasets are read with allow_pickle=False, so a
+    # file containing an object array (which would need pickle to load) is
+    # REFUSED, not executed -- proving the non-executable guarantee
+    import numpy as np
+    npz = tmp_path / 'x.npz'
+    np.savez(npz, arr_0=np.array([{'a': 1}], dtype=object))
+    plain = tmp_path / 'bunny'          # cache path has no extension
+    npz.rename(plain)
+    with pytest.raises(ValueError, match='allow_pickle'):
+        L._parse_rehosted(plain, 'bunny')   # bunny -> npz_array
+
+
+def test_rehosted_datasets_are_not_on_the_pickle_path():
+    # every re-hosted DATA dataset must be handled by _parse_rehosted, never
+    # by the pickle branch (regression guard for the 2026-07 re-hosting)
+    assert set(L._REHOSTED) <= set(L._EXAMPLE_DATA_SHA256)
+    for name, url in L.EXAMPLE_DATA.items():
+        if name in L._REHOSTED:
+            assert str(url).startswith('http'), f'{name} should be a URL'
