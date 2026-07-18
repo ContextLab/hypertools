@@ -27,6 +27,7 @@ in this suite.
 import hashlib
 import importlib
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -43,9 +44,17 @@ from hypertools.core.exceptions import HypertoolsIOError
 # import the module explicitly (same pattern as test_dataset_integrity.py)
 L = importlib.import_module('hypertools.io.load')
 
-_BASELINE = json.loads(
-    (Path(__file__).parent / 'data' / 'rehosted_compat_baseline.json')
-    .read_text())
+_DATA = Path(__file__).parent / 'data'
+_BASELINE = json.loads((_DATA / 'rehosted_compat_baseline.json').read_text())
+
+# The RELEASE GATE (finding #2, 2026-07 review): on ordinary cross-platform
+# CI a dataset that can't be downloaded (outage, rate limit, expired URL) is
+# skipped so unrelated PRs aren't blocked. But a release run must PROVE the
+# hosted artifacts are actually reachable and correct -- otherwise a green run
+# could mean "every dataset check silently skipped". Setting
+# HYPERTOOLS_REQUIRE_DATASETS=1 (the dedicated `dataset-gate` CI job does)
+# turns any download/load failure into a HARD failure instead of a skip.
+REQUIRE_DATASETS = os.environ.get('HYPERTOOLS_REQUIRE_DATASETS') == '1'
 
 
 def _canonical_sha256(obj):
@@ -132,13 +141,54 @@ def test_baseline_covers_every_rehosted_dataset():
 def test_rehosted_dataset_matches_pre_1_0_baseline(name):
     try:
         data = hyp.load(name)
-    except HypertoolsIOError as e:  # network genuinely unavailable
+    except HypertoolsIOError as e:
+        if REQUIRE_DATASETS:
+            raise            # release gate: a load failure is NOT skippable
         pytest.skip(f'could not download {name!r} ({e})')
     got = _canonical_sha256(data)
     assert got == _BASELINE[name], (
         f"{name}: loaded data no longer matches the pinned pre-1.0 "
         f"compatibility baseline (values/index/columns/dtype/ordering "
         f"changed). got {got[:16]}..., expected {_BASELINE[name][:16]}...")
+
+
+@pytest.mark.skipif(
+    not REQUIRE_DATASETS,
+    reason='release gate; set HYPERTOOLS_REQUIRE_DATASETS=1 (the dataset-gate '
+           'CI job) to require every hosted dataset to actually load')
+def test_release_gate_every_dataset_loads_and_matches():
+    # finding #2: a dedicated release gate that CANNOT pass by skipping. It
+    # loads every re-hosted dataset (a download/load failure raises here), so
+    # a systemic outage/rate-limit/expired-URL turns the run RED instead of a
+    # deceptively-green all-skipped run, and it reports the exact count.
+    checked = []
+    for name in sorted(_BASELINE):
+        data = hyp.load(name)          # raises -> hard fail, never skipped
+        assert _canonical_sha256(data) == _BASELINE[name], name
+        checked.append(name)
+    assert checked == sorted(_BASELINE)
+    print(f'\nRELEASE GATE: {len(checked)} re-hosted datasets downloaded and '
+          f'validated against the pinned baseline: {", ".join(checked)}')
+
+
+def test_baseline_matches_frozen_legacy_provenance():
+    # finding #3: the compat baseline is generated FROM the current loader, so
+    # on its own it only prevents future drift. This test anchors it to
+    # INDEPENDENT, frozen evidence: rehosted_legacy_provenance.json records,
+    # for every dataset, the canonical hash of what PRE-1.0 hyp.load returned
+    # -- computed directly from the retired legacy artifacts (each pinned by
+    # its own SHA-256; see scripts/gen_legacy_provenance.py). If a regression
+    # is ever blessed by regenerating the baseline, the baseline will no
+    # longer match this frozen legacy hash and this test fails.
+    prov = json.loads((_DATA / 'rehosted_legacy_provenance.json').read_text())
+    missing = (set(L._REHOSTED) | {'sotus'}) - set(prov)
+    assert not missing, f'datasets missing legacy provenance: {sorted(missing)}'
+    mism = {n: (prov[n]['legacy_canonical_hash'], _BASELINE[n])
+            for n in prov
+            if prov[n]['legacy_canonical_hash'] != _BASELINE.get(n)}
+    assert not mism, (
+        'the compatibility baseline no longer matches the frozen pre-1.0 '
+        f'legacy evidence (dataset: (legacy_hash, baseline_hash)): {mism}')
 
 
 def test_datasaurus_indexes_are_the_original_global_row_ranges():

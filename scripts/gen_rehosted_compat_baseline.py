@@ -33,6 +33,21 @@ from test_dataset_compat import _canonical_sha256
 import importlib
 L = importlib.import_module('hypertools.io.load')
 
+# Overwriting the baseline BLESSES whatever the current loader returns, so a
+# regression re-run here would silently pin the regression. Require explicit
+# acknowledgement, and point at the independent legacy-equivalence guard
+# (finding #3, 2026-07 review).
+if '--force' not in sys.argv:
+    sys.exit(
+        'refusing to overwrite tests/data/rehosted_compat_baseline.json '
+        'without --force.\n'
+        'This re-pins the baseline to the CURRENT loader output. Only do this '
+        'for an intentional, separately-verified change, and re-run\n'
+        '  python scripts/gen_legacy_provenance.py\n'
+        'afterwards so tests/test_dataset_compat.py'
+        '::test_baseline_matches_frozen_legacy_provenance still proves\n'
+        'equivalence to the pre-1.0 originals. Re-run with --force to proceed.')
+
 NAMES = sorted(set(L._REHOSTED) | {'sotus'})
 
 baseline = {}
