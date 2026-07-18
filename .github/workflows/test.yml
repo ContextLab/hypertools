@@ -302,7 +302,10 @@ jobs:
     - name: Install package
       run: |
         python -m pip install --upgrade pip
-        pip install .
+        # base install (NOT [dev]) so this gate also proves the hosted datasets
+        # load with only the base dependency stack -- plus pytest to run them
+        # and pytest-timeout to honor the suite's 20-min hung-download safety net
+        pip install . pytest pytest-timeout
     - name: Require EVERY hosted dataset to download + match the pinned baseline
       env:
         MPLBACKEND: Agg
