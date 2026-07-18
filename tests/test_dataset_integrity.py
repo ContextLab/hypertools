@@ -24,12 +24,29 @@ L = importlib.import_module('hypertools.io.load')
 
 
 def test_all_downloadable_builtins_are_pinned():
-    # every registry entry that is actually downloaded must have a pinned
-    # hash (sotus is excluded -- it loads via datawrangler, not the registry)
-    downloadable = {n for n in L.EXAMPLE_DATA
-                    if not str(L.EXAMPLE_DATA[n]).startswith('datawrangler')}
-    unpinned = downloadable - set(L._EXAMPLE_DATA_SHA256)
-    assert not unpinned, f'unpinned downloadable datasets: {sorted(unpinned)}'
+    # EVERY built-in registry entry must be integrity-pinned -- there is no
+    # exempt/datawrangler path any more (2026-07 review, blocker #1: sotus)
+    unpinned = set(L.EXAMPLE_DATA) - set(L._EXAMPLE_DATA_SHA256)
+    assert not unpinned, f'unpinned built-in datasets: {sorted(unpinned)}'
+    # the datawrangler bypass (unpinned, remote, pickle-permitting) is gone:
+    # every source is now a hosted URL or a bare Google-Drive id, never a
+    # 'datawrangler-zoo:'-style delegated scheme
+    schemed = [n for n, s in L.EXAMPLE_DATA.items()
+               if ':' in str(s) and not str(s).startswith('http')]
+    assert not schemed, f'non-URL delegated sources remain (bypass): {schemed}'
+
+
+def test_every_non_model_builtin_is_pinned_and_non_pickle():
+    # Jeremy's regression requirement (blocker #1): every DOWNLOADABLE
+    # non-model built-in must be BOTH hash-pinned AND non-executable (loaded
+    # via _parse_rehosted, never unpickled). The *_model sklearn Pipelines are
+    # the only remaining pickle built-ins.
+    for name, src in L.EXAMPLE_DATA.items():
+        if name.endswith('_model'):
+            continue
+        assert name in L._EXAMPLE_DATA_SHA256, f'{name} is not hash-pinned'
+        assert name in L._REHOSTED, f'{name} is not on the non-pickle path'
+        assert str(src).startswith('http'), f'{name} is not a hosted URL'
 
 
 def test_spiral_loads_and_passes_integrity():

@@ -191,6 +191,19 @@ def test_baseline_matches_frozen_legacy_provenance():
         f'legacy evidence (dataset: (legacy_hash, baseline_hash)): {mism}')
 
 
+def test_conversion_manifest_matches_loader_pins():
+    # the committed conversion record (retired artifact -> non-executable
+    # converted file, with roundtrip_ok) must agree with the loader's pinned
+    # SHA-256 for every re-hosted dataset, so it can't drift from what ships
+    man = json.loads((_DATA / 'rehosted_conversion_manifest.json').read_text())
+    for name in sorted(set(L._REHOSTED) | {'sotus'}):
+        assert name in man, f'{name} missing from the conversion manifest'
+        assert man[name]['converted_sha256'] == L._EXAMPLE_DATA_SHA256[name], (
+            f'{name}: conversion manifest converted_sha256 != loader pin')
+        assert man[name].get('roundtrip_ok') is True, (
+            f'{name}: conversion manifest does not record a verified roundtrip')
+
+
 def test_datasaurus_indexes_are_the_original_global_row_ranges():
     # the specific regression from finding #3: each Datasaurus frame's index
     # is its original contiguous global-row range, NOT a fresh RangeIndex

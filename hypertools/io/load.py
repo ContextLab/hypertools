@@ -22,7 +22,6 @@ DATA_DIR = Path.home().joinpath('hypertools_data')
 # them stay live so hypertools <1.0 keeps loading; 1.0 uses these URLs. The
 # fitted sklearn *_model Pipelines are inherently pickle, still hosted on
 # Drive and hash-verified before load (skops re-hosting is a follow-up).
-# 'sotus' loads via datawrangler's text zoo (see _load_sotus_corpus).
 EXAMPLE_DATA = {
     'weights': 'https://www.dropbox.com/scl/fi/9byhw72c36grhf2toj3to/weights.npz?rlkey=tbr21gqpflljjttl15nuwij8z&dl=1',
     'weights_avg': 'https://www.dropbox.com/scl/fi/qaj00kxx4c6j3309pryll/weights_avg.npz?rlkey=y8nx2n1j6fx7e8zrz8ko80mrs&dl=1',
@@ -39,7 +38,7 @@ EXAMPLE_DATA = {
     'vase': 'https://www.dropbox.com/scl/fi/9m207u7ta0gu04hxbcnjr/vase.npz?rlkey=bitxamldgkyg2ybkaka6qdpo2&dl=1',
     'biplane': 'https://www.dropbox.com/scl/fi/s2f4g8652dm5xdc313ogm/biplane.parquet?rlkey=x7jn1al8i92my6llkexilsi58&dl=1',
     'datasaurus': 'https://www.dropbox.com/scl/fi/5hk73y5qehe2o31eflvfd/datasaurus.npz?rlkey=pj8y6so417g6t4nbpihx0s0tl&dl=1',
-    'sotus': 'datawrangler-zoo:sotus',
+    'sotus': 'https://www.dropbox.com/scl/fi/s8jswmx5vk192yv2zm8mb/sotus.json.gz?rlkey=aahwhloazm4beou7lsi0p1qas&dl=1',
     # fitted sklearn Pipelines (pickle; hash-verified before load)
     'wiki_model': '1T-UAU-6KVGUBcUWqz7yG59vXnThu9T0H',
     'nips_model': '1J0MBhpRwdT2WChfWJ4HXYq6jU4XpyJPm',
@@ -54,7 +53,8 @@ EXAMPLE_DATA = {
 #                    frame's original integer index restored (datasaurus; see
 #                    _DATASAURUS_INDEX_STARTS)
 #   parquet       -> DataFrame (columns + index preserved by parquet)
-#   jsongz_text   -> [ (n, 1) object array of document strings ] (text corpus)
+#   jsongz_text   -> [ (n, 1) object array of document strings ] (wiki/nips)
+#   jsongz_strlist -> flat list of document strings (sotus's 29 speeches)
 _REHOSTED = {
     'weights': 'npz_list', 'weights_avg': 'npz_list',
     'weights_sample': 'npz_list', 'spiral': 'npz_list',
@@ -63,6 +63,7 @@ _REHOSTED = {
     'sphere': 'npz_array', 'teapot': 'npz_array', 'vase': 'npz_array',
     'mushrooms': 'parquet', 'biplane': 'parquet',
     'wiki': 'jsongz_text', 'nips': 'jsongz_text',
+    'sotus': 'jsongz_strlist',
 }
 
 # The "Datasaurus Dozen" is 13 shuffled 142-row blocks of one 1846-row table;
@@ -101,6 +102,7 @@ _EXAMPLE_DATA_SHA256 = {
     'vase': 'b3ee4ffd68b0b1e4e05ca54ef1193507c625915f5e8f7c6c50f576669bb80bc7',
     'biplane': '8ffb74e24af0b84e20c151c6f0601fd677cb1f1f029e4d86eb7523c3a9a4268b',
     'datasaurus': '8e8c2e1bc4ac33402f9448ab78860e7d79bef97ee5b413e4b2081b8b4d3f5f52',
+    'sotus': '20068fb4fe21a171c6c40a788c122ede30648e10ea44c3ea955301cfabc4c7b3',
     'wiki_model': '5ec3c34e2524e105a90ae498cca809d61ddfa90813a4621de65b37275fd515c9',
     'nips_model': '4f93308a48002730866659bda7ef393f5451dc8360b9e3c91c9cf5d77f73a762',
     'sotus_model': 'a7b085f7f6d94dbed6d961a1950de18a07b56456c77c2495a2868a9fefb07aa4',
@@ -114,11 +116,13 @@ def _parse_rehosted(path, name):
     fmt = _REHOSTED[name]
     if fmt == 'parquet':
         return pd.read_parquet(path)
-    if fmt == 'jsongz_text':
+    if fmt in ('jsongz_text', 'jsongz_strlist'):
         import gzip
         import json
         with gzip.open(path, 'rt', encoding='utf-8') as f:
             docs = json.load(f)
+        if fmt == 'jsongz_strlist':
+            return [str(d) for d in docs]     # sotus: flat list of speeches
         return [np.array(docs, dtype=object).reshape(-1, 1)]
     # npz variants (content-sniffed by np.load regardless of the cache
     # filename having no extension); allow_pickle=False -> no code execution
@@ -148,7 +152,7 @@ def _sha256_file(path):
 
 def _integrity_ok(dataset_path, name):
     """True when the file matches its pinned SHA-256 (or the dataset is not
-    integrity-pinned, e.g. 'sotus' which loads via datawrangler)."""
+    integrity-pinned -- e.g. a legacy source with no pin registered)."""
     pinned = _EXAMPLE_DATA_SHA256.get(name)
     if pinned is None:
         return True
@@ -288,7 +292,7 @@ def load(
         (columns) describing 8,124 mushroom samples (rows).
 
         `sotus` is a list of 29 State of the Union addresses (1989-2018),
-        as strings (loaded via the ``datawrangler`` text zoo).
+        as strings.
 
         `wiki` is a list holding one (3136, 1) numpy object array of
         wikipedia page texts, used to fit `wiki_model`.
@@ -547,33 +551,7 @@ def _load_legacy(dataset_path):
     return DataGeometry(**data_dict)
 
 
-def _load_sotus_corpus():
-    """The 'sotus' example dataset: 29 State of the Union addresses
-    (1989-2018), as a list of strings.
-
-    Loaded via datawrangler's text zoo (datawrangler is a core
-    dependency, and it caches the download locally) rather than the
-    legacy Google Drive registry: the historical Drive id for 'sotus'
-    had been duplicated with 'nips_model', so it served a pickled
-    topic-model Pipeline instead of the documented speeches, and every
-    older 'sotus' Drive id is dead (QC 2026-07, F18-load-hosted-001).
-    """
-    import contextlib
-    import io as _io
-
-    import datawrangler as dw
-
-    # get_corpus prints "loading corpus: sotus...done!" chatter; keep
-    # hypertools' own output clean
-    with contextlib.redirect_stdout(_io.StringIO()):
-        corpus = dw.zoo.text.get_corpus('sotus')
-    return [str(doc) for doc in np.asarray(corpus).ravel()]
-
-
 def _load_example_data(dataset):
-    if dataset == 'sotus':
-        return _load_sotus_corpus()
-
     dataset_path = DATA_DIR.joinpath(dataset)
     if not dataset_path.is_file():
         if not DATA_DIR.is_dir():
