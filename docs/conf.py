@@ -349,3 +349,26 @@ sphinx_gallery_conf = {
         'scikit-learn': 'https://scikit-learn.org/stable/',
     }
 }
+
+
+def setup(app):
+    # sphinx-gallery hyperlinks the API names in gallery code to external docs
+    # (the `reference_url` sites above) by fetching each one's searchindex.js.
+    # A TRANSIENT outage at any of those third-party sites (e.g. an HTTP 503)
+    # makes sphinx-gallery log a warning and continue -- the affected links
+    # simply aren't embedded -- but the docs-clean CI gate builds with -W, which
+    # would turn that external-network hiccup into a hard build failure (it
+    # already flaked once on a scikit-learn.org 503). Drop ONLY that specific
+    # fetch-failure warning so the gate stays robust to third-party site
+    # availability while still failing on real problems (broken references,
+    # gallery-execution errors, missing Chrome/pandoc). Read the Docs does not
+    # build with -W, so its behavior is unchanged; this only relaxes the strict
+    # CI gate for a failure mode that is never a defect in our sources.
+    import logging
+
+    class _DropTransientExternalDocLinkFetch(logging.Filter):
+        def filter(self, record):
+            return 'has occurred fetching' not in record.getMessage()
+
+    logging.getLogger('sphinx.sphinx-gallery').addFilter(
+        _DropTransientExternalDocLinkFetch())
