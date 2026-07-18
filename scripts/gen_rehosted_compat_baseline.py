@@ -48,7 +48,7 @@ if '--force' not in sys.argv:
         '::test_baseline_matches_frozen_legacy_provenance still proves\n'
         'equivalence to the pre-1.0 originals. Re-run with --force to proceed.')
 
-NAMES = sorted(set(L._REHOSTED) | {'sotus'})
+NAMES = sorted(L._REHOSTED)   # sotus is a fully migrated member of _REHOSTED
 
 baseline = {}
 for name in NAMES:

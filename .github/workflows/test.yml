@@ -278,13 +278,17 @@ jobs:
         cd /tmp/docs-clean/docs
         python -m sphinx -b html -W -E -a . _build/html
 
-  # Dataset release gate (2026-07 review, finding #2). The matrix's dataset
-  # tests SKIP a dataset that can't be downloaded so unrelated PRs aren't
-  # blocked by a transient outage -- but that means a green matrix run could
-  # mean "every hosted-dataset check silently skipped". This job forbids that:
-  # HYPERTOOLS_REQUIRE_DATASETS=1 turns any download/load failure into a HARD
-  # failure (never a skip), so the release signal is real, and it reports the
-  # exact number of datasets validated. Actions SHA-pinned like the jobs above.
+  # Dataset release gate (2026-07 review, findings #2 + #2-followup). Two
+  # things a green matrix run does NOT prove: (a) that the hosted-dataset
+  # checks actually ran -- the matrix SKIPS a dataset it can't download so
+  # transient outages don't block unrelated PRs; and (b) that the Dropbox/Drive
+  # URLs are still REACHABLE -- the loader accepts a hash-valid CACHE hit
+  # without contacting the host. This job forbids both gaps: it uses NO dataset
+  # cache and clears ~/hypertools_data first, so every artifact is fetched
+  # FRESH from its host, and HYPERTOOLS_REQUIRE_DATASETS=1 turns any
+  # download/load failure into a HARD failure (never a skip). So it genuinely
+  # proves host availability + integrity + baseline match, and reports the
+  # exact count. Actions SHA-pinned like the jobs above.
   dataset-gate:
     runs-on: ubuntu-latest
     steps:
@@ -293,12 +297,6 @@ jobs:
       uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.4.0 (pinned to SHA)
       with:
         python-version: '3.12'
-    - name: Cache hypertools example datasets
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0 (pinned to SHA)
-      with:
-        path: ~/hypertools_data
-        key: hypertools-example-data-v1
-        enableCrossOsArchive: true
     - name: Install package
       run: |
         python -m pip install --upgrade pip
@@ -306,14 +304,17 @@ jobs:
         # load with only the base dependency stack -- plus pytest to run them
         # and pytest-timeout to honor the suite's 20-min hung-download safety net
         pip install . pytest pytest-timeout
-    - name: Require EVERY hosted dataset to download + match the pinned baseline
+    - name: Require EVERY hosted dataset to DOWNLOAD FRESH + match the pinned baseline
       env:
         MPLBACKEND: Agg
         HYPERTOOLS_REQUIRE_DATASETS: '1'
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # -s so the release-gate test prints the exact count it validated;
-        # a download/load failure here fails the job (it cannot skip)
+        # NO cache above + clear any cache dir here => every dataset is fetched
+        # fresh from its host, so this is a genuine host-availability gate (not
+        # a cache-validity check). A download/load failure fails the job (it
+        # cannot skip); -s prints the exact count validated.
+        rm -rf ~/hypertools_data
         python -m pytest -v -s \
           tests/test_dataset_compat.py \
           tests/test_dataset_integrity.py

@@ -126,14 +126,10 @@ def _canonical_sha256(obj):
 
 
 def test_baseline_covers_every_rehosted_dataset():
-    # the fixture must pin EVERY re-hosted DATA built-in (incl. sotus once it
-    # is re-hosted) -- a new re-hosted dataset with no pinned baseline would
-    # silently escape the compatibility check
-    rehosted = set(L._REHOSTED)
-    # sotus is a re-hosted text corpus even while its loader migration is in
-    # flight; it is pinned here regardless
-    expected = rehosted | {'sotus'}
-    missing = expected - set(_BASELINE)
+    # the fixture must pin EVERY re-hosted built-in (sotus is now a fully
+    # migrated member of _REHOSTED) -- a new re-hosted dataset with no pinned
+    # baseline would silently escape the compatibility check
+    missing = set(L._REHOSTED) - set(_BASELINE)
     assert not missing, f'datasets missing a compatibility baseline: {sorted(missing)}'
 
 
@@ -167,7 +163,11 @@ def test_release_gate_every_dataset_loads_and_matches():
         assert _canonical_sha256(data) == _BASELINE[name], name
         checked.append(name)
     assert checked == sorted(_BASELINE)
-    print(f'\nRELEASE GATE: {len(checked)} re-hosted datasets downloaded and '
+    # "loaded" (not "downloaded"): the loader accepts a hash-valid cache hit
+    # without contacting the host, so this test alone only proves load+match.
+    # The dataset-gate CI job runs it with NO cache (fresh download) to also
+    # prove host availability -- see .github/workflows/test.yml.
+    print(f'\nRELEASE GATE: {len(checked)} re-hosted datasets loaded and '
           f'validated against the pinned baseline: {", ".join(checked)}')
 
 
@@ -175,20 +175,33 @@ def test_baseline_matches_frozen_legacy_provenance():
     # finding #3: the compat baseline is generated FROM the current loader, so
     # on its own it only prevents future drift. This test anchors it to
     # INDEPENDENT, frozen evidence: rehosted_legacy_provenance.json records,
-    # for every dataset, the canonical hash of what PRE-1.0 hyp.load returned
-    # -- computed directly from the retired legacy artifacts (each pinned by
-    # its own SHA-256; see scripts/gen_legacy_provenance.py). If a regression
-    # is ever blessed by regenerating the baseline, the baseline will no
-    # longer match this frozen legacy hash and this test fails.
+    # for each independently-verifiable dataset, the canonical hash of what
+    # PRE-1.0 hyp.load returned -- computed directly from the retired legacy
+    # artifact (pinned by its own reviewed SHA-256; scripts/gen_legacy_
+    # provenance.py authenticates each artifact BEFORE deserializing it). If a
+    # regression is ever blessed by regenerating the baseline, the baseline
+    # will no longer match this frozen legacy hash and this test fails.
     prov = json.loads((_DATA / 'rehosted_legacy_provenance.json').read_text())
-    missing = (set(L._REHOSTED) | {'sotus'}) - set(prov)
+    missing = set(L._REHOSTED) - set(prov)
     assert not missing, f'datasets missing legacy provenance: {sorted(missing)}'
+
+    # datasets WITH independent legacy evidence: the frozen legacy canonical
+    # hash (from the retired artifact) must equal the current baseline
+    indep = {n for n, e in prov.items() if e.get('independent_evidence')}
+    assert len(indep) >= 15, f'too few independently-verified datasets: {sorted(indep)}'
     mism = {n: (prov[n]['legacy_canonical_hash'], _BASELINE[n])
-            for n in prov
+            for n in indep
             if prov[n]['legacy_canonical_hash'] != _BASELINE.get(n)}
     assert not mism, (
         'the compatibility baseline no longer matches the frozen pre-1.0 '
         f'legacy evidence (dataset: (legacy_hash, baseline_hash)): {mism}')
+
+    # sotus is a DOCUMENTED evidence exception -- its pre-1.0 origin was the
+    # datawrangler corpus (not reliably recoverable), so it is NOT claimed as
+    # independent proof; it must be explicitly marked as such (finding #3)
+    assert prov['sotus']['independent_evidence'] is False
+    assert prov['sotus'].get('note'), 'sotus evidence exception must be documented'
+    assert prov['sotus']['legacy_canonical_hash'] is None
 
 
 def test_conversion_manifest_matches_loader_pins():
@@ -196,7 +209,7 @@ def test_conversion_manifest_matches_loader_pins():
     # converted file, with roundtrip_ok) must agree with the loader's pinned
     # SHA-256 for every re-hosted dataset, so it can't drift from what ships
     man = json.loads((_DATA / 'rehosted_conversion_manifest.json').read_text())
-    for name in sorted(set(L._REHOSTED) | {'sotus'}):
+    for name in sorted(L._REHOSTED):
         assert name in man, f'{name} missing from the conversion manifest'
         assert man[name]['converted_sha256'] == L._EXAMPLE_DATA_SHA256[name], (
             f'{name}: conversion manifest converted_sha256 != loader pin')
