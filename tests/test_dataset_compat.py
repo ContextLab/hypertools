@@ -49,38 +49,58 @@ _BASELINE = json.loads(
 
 
 def _canonical_sha256(obj):
-    """Version-stable canonical hash of a loaded dataset: raw numpy bytes for
-    numeric content, str() for everything else, plus explicit
-    dtype/shape/index/column metadata. Independent of the pandas version so
-    the pinned baseline holds across the CI matrix (pandas 2.x and 3.x).
+    """Version-stable canonical hash of a loaded dataset, capturing VALUES +
+    per-column/index LOGICAL type (numeric vs bool vs text) + columns +
+    ordering. Deliberately NORMALIZED so the pinned baseline holds across the
+    CI matrix's pandas versions (2.x and 3.x): pandas 3 loads a parquet's text
+    columns as the new ``str`` dtype where pandas 2 gives ``object`` -- the
+    VALUES are identical, only the dtype *label* differs, so text/object/
+    category/string columns are all hashed as one logical "text" type on their
+    str values rather than on the version-specific dtype string.
 
-    MUST stay identical to the generator (scripts-provenance in the module
-    docstring) or the pinned hashes become unreproducible.
+    scripts/gen_rehosted_compat_baseline.py imports THIS function to generate
+    the committed baseline, so the two can never drift.
     """
     h = hashlib.sha256()
 
     def u(s):
         h.update(('|' + s + '|').encode('utf-8'))
 
+    def hash_1d(values, dtype):
+        # one column or an index: numeric -> raw bytes (dtype-kind stable
+        # across pandas versions); everything else -> normalized text values
+        arr = np.asarray(values)
+        if arr.dtype.kind in 'iuf':          # int / unsigned / float
+            u('num:' + arr.dtype.kind + str(arr.dtype.itemsize))
+            h.update(np.ascontiguousarray(arr).tobytes())
+        elif arr.dtype.kind == 'b':          # bool
+            u('bool')
+            h.update(np.ascontiguousarray(arr.astype('u1')).tobytes())
+        elif arr.dtype.kind == 'c':          # complex
+            u('complex')
+            h.update(np.ascontiguousarray(arr).tobytes())
+        else:                                # object / str / category / etc.
+            u('text')
+            u('\x00'.join('' if v is None else str(v)
+                          for v in np.asarray(values, dtype=object).tolist()))
+        _ = dtype  # dtype label deliberately excluded (version-sensitive)
+
     def walk(o):
         if isinstance(o, pd.DataFrame):
             u('DF')
             u(','.join(map(str, o.columns)))
-            u(','.join(str(t) for t in o.dtypes))
-            u(str(o.index.dtype))
-            u(','.join(map(str, o.index.tolist())))
+            u('IDX')
+            hash_1d(o.index.to_numpy(), o.index.dtype)
             for c in o.columns:
-                walk(o[c].to_numpy())
+                u('COL')
+                hash_1d(o[c].to_numpy(), o[c].dtype)
         elif isinstance(o, pd.Series):
-            walk(o.to_numpy())
+            u('SERIES')
+            hash_1d(o.to_numpy(), o.dtype)
         elif isinstance(o, np.ndarray):
             u('ARR')
-            u(str(o.dtype))
             u(str(o.shape))
-            if o.dtype.kind in 'iufbc':
-                h.update(np.ascontiguousarray(o).tobytes())
-            else:
-                u('\x00'.join(map(str, o.ravel().tolist())))
+            hash_1d(o.ravel(), o.dtype)
         elif isinstance(o, (list, tuple)):
             u('SEQ')
             u(str(len(o)))

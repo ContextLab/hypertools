@@ -16,6 +16,11 @@ build:
   # the animated gallery examples as mp4 video
   apt_packages:
     - ffmpeg
+    # pandoc: nbsphinx renders the hand-authored tutorials/*.ipynb via pandoc.
+    # RTD's build image has historically bundled pandoc, but declare it
+    # explicitly so the notebook stage never depends on an implicit default
+    # (the docs-clean CI job installs it the same way).
+    - pandoc
   jobs:
     post_install:
       # Kaleido 1.x renders the gallery's Plotly examples (plot_interactive_backend,

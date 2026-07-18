@@ -96,6 +96,17 @@ jobs:
         # wheels for all three CI platforms/Python versions here.
         pip install -e ".[dev,torch]"
 
+    - name: Pre-fetch headless Chrome for kaleido (Plotly image/GIF export)
+      # tests/test_animation_export.py exports Plotly figures to GIF/MP4 via
+      # kaleido 1.x, which drives a headless Chrome. Pre-fetching it here (into
+      # choreographer's deps dir, where kaleido discovers it automatically)
+      # avoids a slow first-use Chrome download racing the test's own timeout
+      # on some runners (seen as an intermittent TimeoutError on
+      # windows/py3.13). Best effort: if the fetch fails, kaleido falls back to
+      # its own on-demand download, so this step never blocks the build.
+      run: plotly_get_chrome -y
+      continue-on-error: true
+
     - name: Rebuild matplotlib font cache (Ubuntu only)
       # GH #205: matplotlib scans installed fonts once and caches the
       # result (~/.cache/matplotlib/fontlist-*.json). On ubuntu-latest
@@ -233,7 +244,10 @@ jobs:
         sudo apt-get update
         # ffmpeg: mp4 rendering of animated gallery examples (matches RTD).
         # fonts-noto-cjk: CJK-covering font for the multibyte gallery text.
-        sudo apt-get install -y ffmpeg fonts-noto-cjk
+        # pandoc: nbsphinx renders the hand-authored tutorials/*.ipynb via
+        # pandoc (Read the Docs' build image bundles pandoc; a bare GH runner
+        # does not, so declare it here or the notebook stage fails).
+        sudo apt-get install -y ffmpeg fonts-noto-cjk pandoc
         fc-cache -f
     - name: Export a pristine source tree (tracked files only)
       run: |
