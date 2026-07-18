@@ -84,7 +84,7 @@ def test_download_loop_rejects_wrong_checksum_bytes(tmp_path, monkeypatch):
     monkeypatch.setattr(L, 'DATA_DIR', tmp_path)
     monkeypatch.setattr('time.sleep', lambda *_: None)
 
-    def fake_once(path):
+    def fake_once(path, name):
         path.write_bytes(b'<html>rate limited</html>')
     monkeypatch.setattr(L, '_download_example_data_once', fake_once)
 
@@ -112,3 +112,97 @@ def test_rehosted_datasets_are_not_on_the_pickle_path():
     for name, url in L.EXAMPLE_DATA.items():
         if name in L._REHOSTED:
             assert str(url).startswith('http'), f'{name} should be a URL'
+
+
+# ------------------------------------------------------- atomic downloads
+# finding #6 (2026-07 review): downloads must be atomic and concurrency-safe
+# -- a reader never sees a partial/unverified cache file, a failed download
+# leaves no corrupt file, and racing processes can't clobber one another.
+
+def _payload_and_sha():
+    import hashlib
+    import io
+    buf = io.BytesIO()
+    np.savez(buf, arr_0=np.arange(6.0).reshape(3, 2))
+    b = buf.getvalue()
+    return b, hashlib.sha256(b).hexdigest()
+
+
+def test_download_writes_to_temp_then_atomically_replaces(tmp_path, monkeypatch):
+    # the bytes are written to a PRIVATE temp file, verified, and only then
+    # os.replace'd into the final path -- the final cache path is never the
+    # write target, so a concurrent reader never sees a half-written file
+    monkeypatch.setattr(L, 'DATA_DIR', tmp_path)
+    final = tmp_path / 'spiral'
+    payload, sha = _payload_and_sha()
+    monkeypatch.setitem(L._EXAMPLE_DATA_SHA256, 'spiral', sha)
+    saw = []
+
+    def fake_once(dest, name):
+        # download target is a temp file, and `final` does not exist yet
+        saw.append((dest != final, not final.exists()))
+        dest.write_bytes(payload)
+    monkeypatch.setattr(L, '_download_example_data_once', fake_once)
+
+    L._download_example_data(final)
+
+    assert final.is_file() and L._integrity_ok(final, 'spiral')
+    assert saw == [(True, True)]                        # wrote to temp
+    assert not list(tmp_path.glob('.spiral.*.part'))   # temp cleaned up
+
+
+def test_failed_download_leaves_no_partial_cache_file(tmp_path, monkeypatch):
+    # a download whose bytes never match the pin must leave NO file at the
+    # final cache path and NO leftover temp files
+    monkeypatch.setattr(L, 'DATA_DIR', tmp_path)
+    monkeypatch.setattr('time.sleep', lambda *_: None)
+    final = tmp_path / 'spiral'
+    _, sha = _payload_and_sha()
+    monkeypatch.setitem(L._EXAMPLE_DATA_SHA256, 'spiral', sha)
+
+    def fake_once(dest, name):
+        dest.write_bytes(b'corrupt bytes that do not match the pin')
+    monkeypatch.setattr(L, '_download_example_data_once', fake_once)
+
+    with pytest.raises(HypertoolsIOError, match='checksum'):
+        L._download_example_data(final, max_attempts=2)
+    assert not final.exists()
+    assert not list(tmp_path.glob('.spiral.*.part'))
+
+
+def test_concurrent_downloads_are_consistent_and_leak_no_temp_files(
+        tmp_path, monkeypatch):
+    # many workers racing to fetch the same dataset all end up with the one
+    # correct, fully-verified file -- never a corrupt or partial one. Real
+    # threads + real files; the "download" copies valid bytes in with a small
+    # delay to widen the race window.
+    import threading
+    import time as _time
+    monkeypatch.setattr(L, 'DATA_DIR', tmp_path)
+    final = tmp_path / 'spiral'
+    payload, sha = _payload_and_sha()
+    monkeypatch.setitem(L._EXAMPLE_DATA_SHA256, 'spiral', sha)
+
+    def fake_once(dest, name):
+        _time.sleep(0.05)
+        dest.write_bytes(payload)
+    monkeypatch.setattr(L, '_download_example_data_once', fake_once)
+
+    errors = []
+
+    def worker():
+        try:
+            L._download_example_data(final)
+        except Exception as e:                     # pragma: no cover
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors
+    assert final.is_file() and L._integrity_ok(final, 'spiral')
+    assert final.read_bytes() == payload
+    assert not list(tmp_path.glob('.spiral.*.part'))

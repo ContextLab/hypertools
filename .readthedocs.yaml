@@ -17,6 +17,15 @@ build:
   apt_packages:
     - ffmpeg
   jobs:
+    post_install:
+      # Kaleido 1.x renders the gallery's Plotly examples (plot_interactive_backend,
+      # animate_plotly, ...) to static PNGs via HEADLESS CHROME -- the
+      # plotly_sg_scraper wired up in docs/conf.py. Read the Docs provisions no
+      # browser, so without this the two Plotly examples fail when Kaleido tries
+      # to launch Chrome and Sphinx exits non-zero (2026-07 release review,
+      # blocker #2). Fetch a pinned Chrome into choreographer's deps dir, where
+      # Kaleido discovers it automatically (no PATH wiring needed).
+      - plotly_get_chrome -y
     post_build:
       # Fix animated GIF thumbnails after documentation build
       - python docs/post_build.py

@@ -21,8 +21,15 @@
 import sys, os
 
 # plotly scraper for sphinx-gallery: renders plotly figures produced by
-# gallery examples (requires kaleido). Falls back gracefully if plotly is
-# unavailable so the docs still build.
+# gallery examples to static PNGs. This needs THREE things: plotly, kaleido,
+# and a real Chrome/Chromium that kaleido drives headlessly (kaleido 1.x). The
+# try/except below only covers a missing/broken *plotly import* -- it does NOT
+# paper over a missing Chrome: if plotly imports but Chrome is absent, the
+# Plotly gallery examples fail and the build errors out (by design, so a
+# misconfigured environment is caught, not silently shipped with broken
+# thumbnails). Chrome is provisioned via `plotly_get_chrome` -- on Read the
+# Docs by .readthedocs.yaml's post_install job, and in CI by the docs-clean
+# job in .github/workflows/test.yml (2026-07 release review, blocker #2).
 try:
     import plotly.io as pio
     pio.renderers.default = 'sphinx_gallery_png'

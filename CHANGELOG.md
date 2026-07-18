@@ -27,11 +27,15 @@ set are new.
   be read under the required NumPy 2 and must be converted once in a
   throwaway `numpy<2` environment (`hyp.load` detects them and explains how;
   see the README "Legacy data" note).
-- **Packaging:** `pyproject.toml`-based packaging, Python 3.10-3.13, a
-  small fast-importing base install (heavy dependencies load lazily;
-  `import hypertools` is roughly 3.5x faster than 0.8.x), and optional
-  extras (`interactive`, `text`, `predict`, `predict-hf`, `io`,
-  `density3d`, `torch`, `kaggle`, `lsl`, `gensim`, `dev`).
+- **Packaging:** `pyproject.toml`-based packaging, Python 3.10-3.13, and a
+  base install that covers all core functionality and therefore pulls in
+  the full scientific stack (NumPy, SciPy, pandas, scikit-learn,
+  matplotlib, seaborn, UMAP/Numba, statsmodels, pykalman, pydata-wrangler)
+  -- not a minimal footprint, but fast-importing (heavy dependencies load
+  lazily, so `import hypertools` is roughly 3.5x faster than 0.8.x). Heavier
+  optional model families are separated into extras (`interactive`, `text`,
+  `predict`, `predict-hf`, `io`, `density3d`, `torch`, `kaggle`, `lsl`,
+  `gensim`, `dev`).
 
 ### New features
 

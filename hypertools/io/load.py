@@ -47,12 +47,12 @@ EXAMPLE_DATA = {
 }
 
 # How each non-executable built-in reconstructs to the exact value hyp.load
-# returned from its former pickle (verified equal, incl. dtype/columns):
+# returned from its former pickle (verified equal, incl. dtype/columns/index):
 #   npz_list      -> list of arrays (arr_0..arr_{n-1}, in order)
 #   npz_array     -> a single array (arr_0)
-#   npz_df_xy     -> list of DataFrames with columns ['x', 'y'] (datasaurus;
-#                    the original per-frame integer index is not used by any
-#                    consumer and is not preserved -- values are identical)
+#   npz_df_xy     -> list of DataFrames with columns ['x', 'y'] and each
+#                    frame's original integer index restored (datasaurus; see
+#                    _DATASAURUS_INDEX_STARTS)
 #   parquet       -> DataFrame (columns + index preserved by parquet)
 #   jsongz_text   -> [ (n, 1) object array of document strings ] (text corpus)
 _REHOSTED = {
@@ -64,6 +64,19 @@ _REHOSTED = {
     'mushrooms': 'parquet', 'biplane': 'parquet',
     'wiki': 'jsongz_text', 'nips': 'jsongz_text',
 }
+
+# The "Datasaurus Dozen" is 13 shuffled 142-row blocks of one 1846-row table;
+# `hyp.load('datasaurus')` returns them as 13 DataFrames, and each frame's
+# ORIGINAL pandas index is the contiguous global row range of its block (e.g.
+# frame 0 spans rows 142-283). `hyp.load` returns raw data, so those indexes
+# are part of the public result -- 1.0 preserves them exactly (2026-07 release
+# review, finding #3). The hosted .npz stores only the x/y values (verified
+# bit-identical to the pre-1.0 pickle); these per-frame start offsets -- an
+# immutable compatibility constant, in frame order -- restore the indexes on
+# load. A regression fixture (tests/data/rehosted_compat_baseline.json) checks
+# the fully-reconstructed result against the pre-1.0 original.
+_DATASAURUS_INDEX_STARTS = (142, 1278, 1136, 0, 994, 284, 852, 1562, 1420,
+                            710, 426, 1704, 568)
 
 # SHA-256 of each hosted built-in file, pinned so a built-in is verified
 # against a hard-coded cryptographic hash BEFORE it is read (2026-07 release
@@ -114,7 +127,13 @@ def _parse_rehosted(path, name):
     if fmt == 'npz_array':
         return arrs[0]
     if fmt == 'npz_df_xy':
-        return [pd.DataFrame(a, columns=['x', 'y']) for a in arrs]
+        # restore each frame's original global-row-range index (finding #3)
+        assert len(arrs) == len(_DATASAURUS_INDEX_STARTS), (
+            f'{name}: {len(arrs)} frames but '
+            f'{len(_DATASAURUS_INDEX_STARTS)} pinned index offsets')
+        return [pd.DataFrame(a, columns=['x', 'y'],
+                             index=pd.Index(np.arange(s, s + len(a))))
+                for a, s in zip(arrs, _DATASAURUS_INDEX_STARTS)]
     return arrs  # npz_list
 
 
@@ -651,37 +670,111 @@ def _repair_unpickled_model(model):
     return model
 
 
+def _dataset_download_lock(dataset_path):
+    """A best-effort, per-dataset advisory lock so that concurrent processes
+    do not each re-download the same (potentially large) file.
+
+    Correctness NEVER depends on this lock -- the atomic temp-file +
+    ``os.replace`` in :func:`_download_example_data` is what guarantees a
+    reader never sees a partial or unverified file. The lock only avoids
+    wasted duplicate downloads, so if ``filelock`` is unavailable (it is a
+    transitive dependency of some extras, not the base install) or the lock
+    cannot be acquired promptly, we simply proceed without it.
+    """
+    import contextlib
+
+    try:
+        from filelock import FileLock, Timeout
+    except Exception:
+        return contextlib.nullcontext()
+
+    @contextlib.contextmanager
+    def _guarded():
+        lock = FileLock(str(dataset_path) + '.lock', timeout=600)
+        acquired = False
+        try:
+            try:
+                lock.acquire()
+                acquired = True
+            except Timeout:
+                pass  # heavy contention -> proceed; os.replace stays atomic
+            yield
+        finally:
+            if acquired:
+                lock.release()
+
+    return _guarded()
+
+
 def _download_example_data(dataset_path, max_attempts=4):
-    """Download an example dataset, retrying with backoff when the host
-    rate-limits (Google Drive answers rate-limited requests with an HTML
-    error page and a 200 status)."""
+    """Download an example dataset ATOMICALLY and hash-verify it before it is
+    ever visible at its final cache path.
+
+    Each attempt streams into a private temp file in the SAME directory,
+    verifies its SHA-256, and only then ``os.replace``s it into place (an
+    atomic rename on one filesystem). Consequences: a concurrent reader
+    never observes a partial or unverified cache entry; an interrupted or
+    killed download leaves at most an orphan ``.part`` temp file, never a
+    corrupt cache file; and two processes racing to fetch the same dataset
+    cannot delete or truncate each other's in-progress writes. A best-effort
+    per-dataset lock (:func:`_dataset_download_lock`) additionally avoids
+    duplicate large downloads.
+
+    Retries with backoff when the host rate-limits (Google Drive answers
+    rate-limited requests with an HTML error page and a 200 status).
+    """
+    import tempfile
     import time
 
-    last_error = None
-    for attempt in range(max_attempts):
-        if attempt > 0:
-            # 2s, 6s, 18s -- long enough for transient Drive rate limits
-            time.sleep(2 * 3 ** (attempt - 1))
-        try:
-            _download_example_data_once(dataset_path)
-        except HypertoolsIOError as e:
-            last_error = e
-            continue
-        # a download only counts as SUCCESS when its bytes match the pinned
-        # checksum: Google Drive serves rate-limit/error HTML with a 200
-        # status, which would otherwise be cached as the "dataset". Retry
-        # those exactly like a transport failure (2026-07 release review).
-        if _integrity_ok(dataset_path, dataset_path.name):
+    name = dataset_path.name
+    parent = dataset_path.parent
+
+    with _dataset_download_lock(dataset_path):
+        # another process may have finished the download while we waited on
+        # the lock -- don't redo it
+        if dataset_path.is_file() and _integrity_ok(dataset_path, name):
             return
-        last_error = HypertoolsIOError(
-            f"the downloaded '{dataset_path.name}' did not match its "
-            "expected checksum -- often a transient rate-limit response "
-            "served in place of the file; retrying")
-    raise last_error
+
+        last_error = None
+        for attempt in range(max_attempts):
+            if attempt > 0:
+                # 2s, 6s, 18s -- long enough for transient Drive rate limits
+                time.sleep(2 * 3 ** (attempt - 1))
+
+            fd, tmp_name = tempfile.mkstemp(dir=parent, prefix=f'.{name}.',
+                                            suffix='.part')
+            os.close(fd)
+            tmp_path = Path(tmp_name)
+            try:
+                _download_example_data_once(tmp_path, name)
+            except HypertoolsIOError as e:
+                last_error = e
+                tmp_path.unlink(missing_ok=True)
+                continue
+
+            # a download only counts as SUCCESS when its bytes match the
+            # pinned checksum: Google Drive serves rate-limit/error HTML with
+            # a 200 status, which would otherwise be cached as the "dataset".
+            # Retry those exactly like a transport failure.
+            if _integrity_ok(tmp_path, name):
+                # atomic publish: a reader sees either the previous state or
+                # the whole verified file, never a half-written one
+                os.replace(tmp_path, dataset_path)
+                return
+
+            tmp_path.unlink(missing_ok=True)
+            last_error = HypertoolsIOError(
+                f"the downloaded '{name}' did not match its expected "
+                "checksum -- often a transient rate-limit response served "
+                "in place of the file; retrying")
+        raise last_error
 
 
-def _download_example_data_once(dataset_path):
-    source = EXAMPLE_DATA[dataset_path.name]
+def _download_example_data_once(dest_path, name):
+    """Fetch ``EXAMPLE_DATA[name]`` into ``dest_path`` (a private temp file;
+    never the final cache path). Raises HypertoolsIOError on a transport
+    failure or an obvious error page."""
+    source = EXAMPLE_DATA[name]
     session = requests.Session()
     try:
         if source.startswith('http'):
@@ -705,7 +798,7 @@ def _download_example_data_once(dataset_path):
                                            stream=True)
 
         response.raise_for_status()
-        with dataset_path.open('wb') as f:
+        with dest_path.open('wb') as f:
             # write stream in chunks to avoid loading whole file into memory
             for chunk in response.iter_content(chunk_size=32768):
                 if chunk:
@@ -713,23 +806,23 @@ def _download_example_data_once(dataset_path):
 
         # Google Drive answers rate-limited/oversized requests with an HTML
         # page and a 200 status; caching it would poison every later load.
-        # All hypertools example datasets are pickles, which never start
-        # with '<'.
-        with dataset_path.open('rb') as f:
+        # Every hypertools example file is binary (.npz/.parquet/.json.gz or
+        # a pickle) and never starts with '<'.
+        with dest_path.open('rb') as f:
             if f.read(1) == b'<':
-                dataset_path.unlink(missing_ok=True)
+                dest_path.unlink(missing_ok=True)
                 raise HypertoolsIOError(
-                    f"Download of '{dataset_path.name}' returned an error "
-                    "page instead of the dataset (the host may be "
-                    "rate-limiting requests). Please try again later."
+                    f"Download of '{name}' returned an error page instead "
+                    "of the dataset (the host may be rate-limiting "
+                    "requests). Please try again later."
                 )
     except HypertoolsIOError:
         raise
     except Exception as e:
         # clean up partial file in case of error while writing stream
-        dataset_path.unlink(missing_ok=True)
+        dest_path.unlink(missing_ok=True)
         raise HypertoolsIOError(
-            f"Failed to download '{dataset_path.name}' dataset"
+            f"Failed to download '{name}' dataset"
         ) from e
 
 

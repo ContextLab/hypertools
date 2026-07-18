@@ -10,6 +10,7 @@ This document is a set of guidelines for contributing to HyperTools on GitHub. T
 * [Participation guidelines](#participation-guidelines)
 * [What we're working on](#what-were-working-on)
 * [How to submit changes](#how-to-submit-changes)
+* [Merging pull requests (maintainers)](#merging-pull-requests-maintainers)
 * [How to report bugs](#how-to-report-bugs)
 * [Communication channels](#communication-channels)
 
@@ -30,6 +31,26 @@ Once you've identified one of the issues above that you feel you can contribute 
 3. **Submit a [pull request](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests)**. This opens a discussion around your project and lets the project lead know you are proposing changes. Please run the test suite (`pytest`, from the repository root) before opening a pull request, and add tests covering any new functionality or bug fixes.
 
 First time contributing to open source? Check out the *free* guide, [How to Contribute to Open Source](https://opensource.guide/how-to-contribute/).
+
+## Merging pull requests (maintainers)
+
+**Squash-merge** any pull request whose branch history contains large or
+generated binaries -- most importantly the long-lived `1.0` development
+branches (`dev-1.0-refactor` -> `dev-1.0` -> `master`). Earlier commits on
+those branches carried large generated artifacts (rendered documentation
+galleries, audit evidence, example-dataset payloads) that were later removed
+from the working tree. Those blobs still live in the branch's commit
+*history*: a normal merge copies that entire history -- and every large blob
+in it -- into the target branch permanently, inflating clone and fetch size
+for everyone (the packed history is well over 1 GB even though the current
+tree is ~115 MB). Squash-merging brings only the final tree into the target
+branch, so the removed binaries never enter its permanent history.
+
+Do **not** rewrite already-published history (e.g. `filter-repo`/force-push)
+to shrink it -- that breaks every existing clone and open PR. Squash-merge is
+the supported way to keep the target branch small without rewriting history.
+After a squash-merge, the source branch (with its heavy history) can be
+deleted.
 
 ## How to report bugs
 

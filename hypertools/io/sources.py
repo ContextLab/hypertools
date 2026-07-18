@@ -546,9 +546,12 @@ def load_source(source, split=None, streaming=False, trust=False,
     Hugging Face [Iterable]Dataset). Raises HypertoolsIOError listing
     every attempted interpretation when nothing works.
 
-    ``trust`` is threaded from :func:`hypertools.load`: it silences the
-    remote-pickle security warning and re-enables ``allow_pickle`` for
-    remote .npy/.npz payloads (see ``_parse_payload``).
+    ``trust`` is threaded from :func:`hypertools.load`: it opts in to
+    remote deserialization -- unpickling a remote payload and re-enabling
+    ``allow_pickle`` for remote .npy/.npz payloads (see ``_parse_payload``).
+    The default, ``trust=False``, REFUSES to unpickle a remote payload
+    (raising ``HypertoolsTrustError``); it is a security boundary, not a
+    warning.
 
     ``extra_attempts`` optionally seeds the "tried, in order" list with
     descriptions of resolvers already attempted by the caller (e.g. the
@@ -891,9 +894,12 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
     first and content sniffing second (extensionless payloads only).
 
     ``remote`` marks payloads fetched over the network (as opposed to a
-    local file): unpickling a remote payload without ``trust=True`` emits
-    a ``UserWarning``, and remote .npy/.npz use ``allow_pickle=False``
-    unless ``trust=True``. Local files are never subject to this policy.
+    local file): unpickling a remote payload without ``trust=True`` is
+    REFUSED, raising ``HypertoolsTrustError`` (arbitrary code in a pickle
+    would run on load), and remote .npy/.npz use ``allow_pickle=False``
+    unless ``trust=True`` (a remote .npy/.npz that needs pickled objects
+    likewise raises ``HypertoolsTrustError``). Local files are never
+    subject to this policy.
     """
     label = str(name_hint) or 'payload'
     if not raw:

@@ -1,15 +1,16 @@
 #!/usr/bin/env python
-"""Smoke-test an INSTALLED hypertools wheel (release qualification, CI #8).
+"""Smoke-test an INSTALLED hypertools artifact (release qualification, CI #8).
 
-Run with the fresh-venv interpreter that pip-installed the built wheel, from
-a directory that is NOT the repo, so an accidental import of the source tree
-cannot mask a packaging gap:
+Run with the fresh-venv interpreter that pip-installed the built artifact
+(wheel OR sdist -- both are exercised in CI, since their build/discovery
+paths differ), from a directory that is NOT the repo, so an accidental
+import of the source tree cannot mask a packaging gap:
 
     /tmp/fresh/bin/python /path/to/repo/scripts/wheel_smoke_test.py
 
-Exercises that the public API is importable from the wheel, that the bundled
-config.ini shipped (defaults resolve, not silently empty), and that a real
-minimal pipeline runs end-to-end.
+Exercises that the public API is importable from the installed package, that
+the bundled config.ini shipped (defaults resolve, not silently empty), and
+that a real minimal pipeline runs end-to-end.
 """
 import os
 import sys
