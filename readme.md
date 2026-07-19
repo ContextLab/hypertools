@@ -1,4 +1,4 @@
-![Hypertools logo](https://raw.githubusercontent.com/ContextLab/hypertools/master/images/hypercube.png)
+![Hypertools logo](images/hypercube.png)
 
 [![Tests](https://img.shields.io/github/actions/workflow/status/ContextLab/hypertools/test.yml?label=tests)](https://github.com/ContextLab/hypertools/actions/workflows/test.yml)
 [![Documentation Status](https://readthedocs.org/projects/hypertools/badge/?version=latest)](https://hypertools.readthedocs.io/en/latest/?badge=latest)
@@ -7,14 +7,7 @@
 "_To deal with hyper-planes in a 14 dimensional space, visualize a 3D space and say 'fourteen' very loudly.  Everyone does it._" - Geoff Hinton
 
 
-<!-- The example images below are the regenerated 1.0 versions that live in
-     this branch's images/ dir. They are pinned to commit ebefa543 so this
-     README previews the actual 1.0 images before 1.0 reaches master (master
-     still holds the 0.x versions). RELEASE TASK: once 1.0 is merged to master,
-     replace the ebefa543...2776 commit SHA with `master` in the image URLs
-     below, so they track master again. The logo above stays on master/ (it is
-     unchanged since 0.x). -->
-![Hypertools example](https://raw.githubusercontent.com/ContextLab/hypertools/ebefa54310780a46f3dff54a532f25d757cc2776/images/hypertools.gif)
+![Hypertools example](images/story_trajectories.gif)
 
 ## Overview
 
@@ -307,7 +300,7 @@ list_of_labels = ['A'] * 300 + ['B'] * 300  # one label per observation
 hyp.plot(list_of_arrays, animate=True, hue=list_of_labels)
 ```
 
-![Plot example](https://raw.githubusercontent.com/ContextLab/hypertools/ebefa54310780a46f3dff54a532f25d757cc2776/images/plot.gif)
+![Plot example](images/plot.gif)
 
 ## Align
 
@@ -326,11 +319,11 @@ hyp.plot(list_of_arrays, align='hyper')
 
 ### BEFORE
 
-![Align before example](https://raw.githubusercontent.com/ContextLab/hypertools/ebefa54310780a46f3dff54a532f25d757cc2776/images/align_before.gif)
+![Align before example](images/align_before.gif)
 
 ### AFTER
 
-![Align after example](https://raw.githubusercontent.com/ContextLab/hypertools/ebefa54310780a46f3dff54a532f25d757cc2776/images/align_after.gif)
+![Align after example](images/align_after.gif)
 
 
 ## Cluster
@@ -350,7 +343,7 @@ array = np.vstack([rng.standard_normal((100, 3)) + offset
 hyp.plot(array, 'o', cluster='GaussianMixture', n_clusters=3)
 ```
 
-![Cluster Example](https://raw.githubusercontent.com/ContextLab/hypertools/ebefa54310780a46f3dff54a532f25d757cc2776/images/cluster_example.png)
+![Cluster Example](images/cluster_example.png)
 
 
 ## Surfaces
@@ -368,10 +361,7 @@ blob_b = rng.standard_normal((100, 3)) + [4, 0, 0]
 hyp.plot([blob_a, blob_b], '.', surface=True)
 ```
 
-<!-- surface_example.png is new in 1.0 (not on master yet); pinned to ebefa543
-     like the other 1.0 images above. Switch the SHA to `master` after 1.0
-     merges to master (see the RELEASE TASK note near the top). -->
-![Surface Example](https://raw.githubusercontent.com/ContextLab/hypertools/ebefa54310780a46f3dff54a532f25d757cc2776/images/surface_example.png)
+![Surface Example](images/surface_example.png)
 
 
 ## Describe
@@ -386,4 +376,4 @@ list_of_arrays = [np.cumsum(rng.standard_normal((200, 20)), axis=0)
 
 hyp.describe(list_of_arrays, reduce='PCA', max_dims=14)
 ```
-![Describe Example](https://raw.githubusercontent.com/ContextLab/hypertools/ebefa54310780a46f3dff54a532f25d757cc2776/images/describe_example.png)
+![Describe Example](images/describe_example.png)
