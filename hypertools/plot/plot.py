@@ -109,6 +109,77 @@ def _seaborn_palette_arg(palette, n_colors):
     return palette
 
 
+def _fmt_draws_line(fmt):
+    """True if `fmt` draws a line for ANY trace (so the data must be
+    segmented into contiguous runs rather than globally merged by category;
+    GH #291). A per-trace fmt LIST counts if any entry has a line
+    component; a bare string/None uses `has_line_component` directly."""
+    if isinstance(fmt, (list, tuple, np.ndarray)):
+        return any(has_line_component(f) for f in fmt)
+    return has_line_component(fmt)
+
+
+def _categorical_color_label_maps(hue, palette, explicit_colors,
+                                  group_labels, sort_numeric):
+    """Map each hue category -> (colour, legend label), in the SAME drawn
+    order the marker/global grouping would use, so a LINE plot's per-category
+    colours match an equivalent marker plot.
+
+    `explicit_colors`/`group_labels` are the per-category values already
+    resolved by the special hue sub-cases (partially-labeled hue, quantized
+    matrix/mixture colours, cluster labels); when the colour was left to the
+    palette (plain string/int categorical, hard clustering) it is resolved
+    here from `palette`. `sort_numeric` selects sorted-numeric drawn order
+    (integer hue / cluster ids) over first-appearance order (string hue)."""
+    import seaborn as sns
+    appear = list(dict.fromkeys(hue))
+    if sort_numeric:
+        try:
+            drawn = sorted(appear)
+        except TypeError:
+            drawn = appear
+    else:
+        drawn = appear
+    if (isinstance(explicit_colors, (list, tuple))
+            and len(explicit_colors) == len(drawn)):
+        cat_color = {c: explicit_colors[i] for i, c in enumerate(drawn)}
+    else:
+        pal = sns.color_palette(
+            _seaborn_palette_arg(palette, len(drawn)), len(drawn))
+        cat_color = {c: tuple(pal[i]) for i, c in enumerate(drawn)}
+    if (isinstance(group_labels, (list, tuple))
+            and len(group_labels) == len(drawn)):
+        cat_label = {c: group_labels[i] for i, c in enumerate(drawn)}
+    else:
+        cat_label = {c: str(c) for c in drawn}
+    return cat_color, cat_label
+
+
+def _regroup_categorical_lines(xform, hue, labels, cat_color, cat_label):
+    """Regroup LINE data by categorical `hue` into contiguous runs (GH #291).
+
+    Splits each input dataset into maximal same-category runs (preserving
+    order + dataset identity), colours each run by its category, bridges only
+    runs adjacent WITHIN one input dataset, and gives each category exactly
+    ONE legend entry (the first run carries the label; later runs of the same
+    category get ``'_nolegend_'``). Returns
+    ``(segments, seg_labels, run_colors, run_group_labels)``."""
+    segments, seg_labels, seg_cat, seg_bridge = segment_by_run(
+        xform, hue, labels)
+    breaks = {i + 1 for i in range(len(segments) - 1) if not seg_bridge[i]}
+    segments = patch_lines(segments, breaks=breaks)
+    run_colors = [cat_color[c] for c in seg_cat]
+    seen = set()
+    run_group_labels = []
+    for c in seg_cat:
+        if c in seen:
+            run_group_labels.append('_nolegend_')
+        else:
+            seen.add(c)
+            run_group_labels.append(cat_label.get(c, str(c)))
+    return segments, seg_labels, run_colors, run_group_labels
+
+
 def _interp_static_line(arr):
     """PCHIP-smooth a trajectory for STATIC line drawing, data-faithfully.
 
@@ -2760,13 +2831,6 @@ def plot(
     # was actually drawn with (F13-004)
     _bundle_cluster_stage = None
 
-    # per-group flags (set by reshape_data below when it regroups by
-    # cluster/hue category): True for a group whose first row begins a
-    # SEPARATE input dataset, so patch_lines does not bridge a line into
-    # it and join two distinct trajectories (GH #291). None until a
-    # regroup happens; patch_lines treats None as "no breaks".
-    _group_starts = None
-
     # MultiIndex DataFrames (GH #95): xform currently holds the TRANSFORMED
     # leaf trajectories (post normalize/reduce/align), in the same order as
     # `_multiindex_meta['leaf_keys']` -- exactly what `build_multiindex_styles`
@@ -2974,21 +3038,52 @@ def plot(
                 multicolor_hue = np.asarray(cluster_labels,
                                             dtype=np.float64)
                 hue = None
+            elif _fmt_draws_line(fmt):
+                # LINE animation: segment each dataset into contiguous
+                # same-group runs (never merging a group's non-adjacent
+                # points or crossing a dataset boundary; GH #291), each run
+                # coloured by its quantized blended group colour.
+                blended = mat2colors(cluster_labels, palette=palette)
+                group_ids, group_colors = colors2groups(blended)
+                _cat_color = {gid: group_colors[gid]
+                              for gid in dict.fromkeys(group_ids)}
+                _cat_label = {gid: str(gid) for gid in dict.fromkeys(group_ids)}
+                xform, labels, _run_colors, hue_group_labels = \
+                    _regroup_categorical_lines(
+                        xform, group_ids, labels, _cat_color, _cat_label)
+                mpl_kwargs["color"] = _run_colors
+                hue = group_ids
             else:
-                # animations render one trace per group: quantize the
+                # marker animations render one trace per group: quantize the
                 # blended colors into (near-)identical-color groups
                 blended = mat2colors(cluster_labels, palette=palette)
                 group_ids, group_colors = colors2groups(blended)
-                xform, labels, _group_starts = reshape_data(
-                    xform, group_ids, labels, return_boundaries=True)
+                xform, labels = reshape_data(xform, group_ids, labels)
                 mpl_kwargs["color"] = [
                     group_colors[gid]
                     for gid in sorted(set(group_ids), key=group_ids.index)
                 ]
                 hue = group_ids
+        elif _fmt_draws_line(fmt):
+            # LINE clustering: contiguous-run segmentation so a cluster's
+            # non-adjacent points are NOT joined into one polyline and
+            # separate datasets are never bridged (GH #291); each run is
+            # coloured + labelled by its cluster id in sorted order, one
+            # legend/colorbar entry per cluster.
+            _cat_color, _cat_label = _categorical_color_label_maps(
+                cluster_labels, palette, None, None, sort_numeric=True)
+            xform, labels, _run_colors, hue_group_labels = \
+                _regroup_categorical_lines(
+                    xform, cluster_labels, labels, _cat_color, _cat_label)
+            mpl_kwargs["color"] = _run_colors
+            hue = cluster_labels
+            try:
+                _cats_sorted = sorted(set(cluster_labels))
+            except TypeError:
+                _cats_sorted = list(dict.fromkeys(cluster_labels))
+            hue_category_names = [str(c) for c in _cats_sorted]
         else:
-            xform, labels, _group_starts = reshape_data(
-                xform, cluster_labels, labels, return_boundaries=True)
+            xform, labels = reshape_data(xform, cluster_labels, labels)
             # reshape_data returns groups in first-appearance order;
             # reorder the drawn groups (and their legend/colorbar
             # labels) into sorted label order so a legend reads
@@ -3001,7 +3096,6 @@ def plot(
                 _order = list(range(len(_cats)))
             xform = [xform[i] for i in _order]
             labels = [labels[i] for i in _order]
-            _group_starts = [_group_starts[i] for i in _order]
             hue = cluster_labels
             hue_group_labels = [str(_cats[i]) for i in _order]
             hue_category_names = list(hue_group_labels)
@@ -3262,36 +3356,44 @@ def plot(
                     "numeric values, or the rows of a 2-D numeric matrix; "
                     f"got an entry of type {type(_bad).__name__}: {_bad!r}"
                 ) from exc
-            if n_clusters is None:
-                _n_datasets_before_hue = len(xform)
-                xform, labels, _group_starts = reshape_data(
-                    xform, hue, labels, return_boundaries=True)
+            _n_datasets_before_hue = len(xform)
+            if _fmt_draws_line(fmt):
+                # LINE: contiguous-run segmentation preserving order AND
+                # input-dataset identity (GH #291). Global category merging
+                # (reshape_data) would fuse separate datasets that share a
+                # category into one line, and collapse a category that
+                # recurs along a trajectory (A A B B A A) into a tangled
+                # polyline joining non-adjacent points. Segmenting keeps each
+                # run separate, colours it by its category, bridges only runs
+                # adjacent within one dataset, and gives each category ONE
+                # legend entry.
+                _cat_color, _cat_label = _categorical_color_label_maps(
+                    hue, palette, mpl_kwargs.get("color"),
+                    hue_group_labels, _hue_sort_numeric)
+                xform, labels, _run_colors, hue_group_labels = \
+                    _regroup_categorical_lines(
+                        xform, hue, labels, _cat_color, _cat_label)
+                mpl_kwargs["color"] = _run_colors
+            else:
+                # MARKER-only: global grouping (one trace per category) is
+                # correct -- scatter has no connecting edges to fuse. Integer/
+                # boolean hue is grouped in first-appearance order then
+                # reordered into sorted numeric order (F13-005).
+                xform, labels = reshape_data(xform, hue, labels)
                 if _hue_sort_numeric:
-                    # categorical integer hue: reshape_data grouped in
-                    # first-appearance order; reorder the drawn groups to
-                    # the sorted numeric order hue_group_labels (set
-                    # above) already uses (F13-005)
                     _appear = list(sorted(set(hue), key=list(hue).index))
                     _order = sorted(range(len(_appear)),
                                     key=lambda i: _appear[i])
                     xform = [xform[i] for i in _order]
                     labels = [labels[i] for i in _order]
-                    _group_starts = [_group_starts[i] for i in _order]
-                _hue_regrouped_counts = (_n_datasets_before_hue, len(xform))
-            # interpolate lines if they are grouped. Bridge each group to
-            # the next EXCEPT into a group that begins a separate input
-            # dataset -- otherwise two distinct trajectories get joined by
-            # a spurious connecting segment (GH #291).
+            _hue_regrouped_counts = (_n_datasets_before_hue, len(xform))
+            # a PURE line cannot render a single-observation category -- it
+            # draws NOTHING (and crashed animated interpolation, F02-002).
+            # A non-bridged single-point run (dataset-boundary/last run, or a
+            # singleton category) hits this; warn, naming the category. ('o-'
+            # and other marker+line combos still show the marker, so this is
+            # gated on the pure-line format only.)
             if is_line(fmt):
-                _breaks = ({i for i, s in enumerate(_group_starts) if s}
-                           if _group_starts is not None else None)
-                xform = patch_lines(xform, breaks=_breaks)
-                # patch_lines bridges each group to the next, so only the
-                # LAST group can remain a single point -- which a pure line
-                # format draws as NOTHING (and which crashed the animated
-                # interpolation outright; F02-002). Warn, naming the
-                # category, instead of rendering it invisibly with no
-                # feedback.
                 _tiny = [i for i, xi in enumerate(xform) if xi.shape[0] < 2]
                 if _tiny:
                     _tiny_names = ", ".join(

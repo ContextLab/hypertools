@@ -156,61 +156,189 @@ def test_wrong_length_nested_hue_still_errors():
         hyp.plot(data, '.', hue=bad, show=False)
 
 
-# --- GH #291: categorical hue must not bridge separate datasets --------
+# --- GH #291: categorical/cluster LINES must not join separate trajectories
 
-def _capture_drawn_traces(plot_call):
-    """Run a hyp.plot(...) call and return the list of arrays actually
-    handed to the matplotlib drawing routine (post hue-regroup + line
-    interpolation). plot.py binds `_draw` locally, so patch it there."""
+def _capture_draw(plot_call):
+    """Run a hyp.plot(...) call and capture what actually reaches the drawing
+    routine: the per-trace arrays (post hue/cluster regroup + interpolation),
+    and the per-trace color/label kwargs. plot.py binds `_draw` locally, so
+    patch it there."""
     import importlib
     plot_mod = importlib.import_module('hypertools.plot.plot')
-    captured = {}
+    cap = {}
     orig = plot_mod._draw
 
     def spy(x, *a, **k):
-        captured['x'] = [np.asarray(xi) for xi in x]
+        cap['x'] = [np.asarray(xi) for xi in x]
+        kwl = k.get('kwargs_list')
+        cap['colors'] = [d.get('color') for d in kwl] if kwl else None
+        cap['labels'] = [d.get('label') for d in kwl] if kwl else None
         return orig(x, *a, **k)
 
     plot_mod._draw = spy
     try:
-        plot_call()
+        cap['fig'] = plot_call()
     finally:
         plot_mod._draw = orig
-    return captured['x']
+    return cap
 
 
-def test_categorical_hue_does_not_bridge_separate_datasets():
-    # hyp.plot([A, B], hue=['A']*len(A) + ['B']*len(B)) drew a spurious
-    # straight line from A's last point to B's first point, because the
-    # per-category regroup + patch_lines bridged every group to the next
-    # (GH #291). The two datasets are separate trajectories: no drawn trace
-    # may end exactly where another begins.
-    rng = np.random.default_rng(0)
-    A = np.cumsum(rng.standard_normal((20, 2)), axis=0)
-    B = np.cumsum(rng.standard_normal((20, 2)), axis=0) + np.array([0, 30.0])
-    hue = ['A'] * len(A) + ['B'] * len(B)
-
-    traces = _capture_drawn_traces(
-        lambda: hyp.plot([A, B], hue=hue, show=False))
-    assert len(traces) == 2
-    # no trace's endpoint coincides with another trace's start (the bridge)
+def _any_endpoint_touches_start(traces):
+    """True if any trace ENDS exactly where a DIFFERENT trace STARTS -- the
+    signature of a spurious bridge between two separate trajectories."""
     for i, ti in enumerate(traces):
         for j, tj in enumerate(traces):
-            if i != j:
-                assert not np.allclose(ti[-1], tj[0]), \
-                    f"trace {i} bridges into trace {j} (GH #291 regression)"
+            if i != j and np.allclose(ti[-1], tj[0]):
+                return (i, j)
+    return None
 
 
-def test_categorical_hue_single_trajectory_stays_connected():
-    # the flip side of GH #291: coloring ONE trajectory by contiguous
-    # categories must still render a continuous line -- each colored
-    # segment is bridged to the next (there is no dataset boundary to break
-    # at), so consecutive traces share the transition point.
-    rng = np.random.default_rng(1)
-    T = np.cumsum(rng.standard_normal((20, 2)), axis=0)
-    hue = ['a'] * 10 + ['b'] * 10
+def _walks(n_datasets, seed=0, n=20, ndims=2, spread=60.0):
+    """`n_datasets` well-separated random-walk trajectories."""
+    rng = np.random.default_rng(seed)
+    return [np.cumsum(rng.standard_normal((n, ndims)), axis=0)
+            + k * spread for k in range(n_datasets)]
 
-    traces = _capture_drawn_traces(lambda: hyp.plot(T, hue=hue, show=False))
-    assert len(traces) == 2
-    # the 'a' segment's last point == the 'b' segment's first point (bridge)
-    assert np.allclose(traces[0][-1], traces[1][0])
+
+def test_gh291_two_datasets_different_categories():
+    A, B = _walks(2)
+    cap = _capture_draw(lambda: hyp.plot(
+        [A, B], '-', hue=['a'] * 20 + ['b'] * 20, show=False))
+    assert len(cap['x']) == 2
+    assert _any_endpoint_touches_start(cap['x']) is None
+
+
+def test_gh291_two_datasets_same_category():
+    # the case the first fix MISSED: one category over two datasets was
+    # merged into a single connected line. Must stay two separate traces,
+    # same colour, one legend entry.
+    A, B = _walks(2)
+    cap = _capture_draw(lambda: hyp.plot(
+        [A, B], '-', hue=['same'] * 40, legend=True, show=False))
+    assert len(cap['x']) == 2
+    assert _any_endpoint_touches_start(cap['x']) is None
+    assert np.allclose(cap['colors'][0], cap['colors'][1])   # same colour
+    # one legend entry for the shared category (the rest '_nolegend_')
+    real = [l for l in cap['labels'] if l != '_nolegend_']
+    assert real == ['same']
+
+
+def test_gh291_two_datasets_reverse_numeric_categories():
+    # reordering group flags by sorted category once produced a REVERSE
+    # bridge from the second dataset into the first.
+    A, B = _walks(2)
+    cap = _capture_draw(lambda: hyp.plot(
+        [A, B], '-', hue=[2] * 20 + [1] * 20, show=False))
+    assert len(cap['x']) == 2
+    assert _any_endpoint_touches_start(cap['x']) is None
+
+
+def test_gh291_category_repeated_across_datasets():
+    A, B, C = _walks(3)
+    cap = _capture_draw(lambda: hyp.plot(
+        [A, B, C], '-', hue=['a'] * 20 + ['b'] * 20 + ['a'] * 20, show=False))
+    assert len(cap['x']) == 3
+    assert _any_endpoint_touches_start(cap['x']) is None
+    # the two 'a' datasets share a colour, the 'b' dataset differs
+    ca, cb, ca2 = cap['colors']
+    assert np.allclose(ca, ca2) and not np.allclose(ca, cb)
+
+
+def test_gh291_ABA_within_one_trajectory_preserves_run_order():
+    # A A B B A A in ONE dataset -> three runs in source order, drawn as a
+    # CONTINUOUS line (bridged within the dataset), never collapsing the two
+    # A runs into one polyline joining their non-adjacent points.
+    rng = np.random.default_rng(2)
+    T = np.cumsum(rng.standard_normal((30, 2)), axis=0)
+    cap = _capture_draw(lambda: hyp.plot(
+        T, '-', hue=['A'] * 10 + ['B'] * 10 + ['A'] * 10,
+        legend=True, show=False))
+    assert len(cap['x']) == 3                       # runs A, B, A
+    # continuous within the trajectory: each run bridges to the next
+    assert np.allclose(cap['x'][0][-1], cap['x'][1][0])
+    assert np.allclose(cap['x'][1][-1], cap['x'][2][0])
+    # both A runs share a colour; only one 'A' legend entry
+    assert np.allclose(cap['colors'][0], cap['colors'][2])
+    real = [l for l in cap['labels'] if l != '_nolegend_']
+    assert real == ['A', 'B']
+
+
+def test_gh291_three_datasets_no_cross_bridge():
+    A, B, C = _walks(3)
+    cap = _capture_draw(lambda: hyp.plot(
+        [A, B, C], '-', hue=['a'] * 20 + ['b'] * 20 + ['c'] * 20, show=False))
+    assert len(cap['x']) == 3
+    assert _any_endpoint_touches_start(cap['x']) is None
+
+
+def test_gh291_single_point_runs_warn_and_dont_bridge_datasets():
+    # alternating categories -> single-point runs; within one dataset they
+    # bridge into a continuous line, and a pure line warns they'd otherwise
+    # be invisible.
+    rng = np.random.default_rng(3)
+    T = np.cumsum(rng.standard_normal((5, 2)), axis=0)
+    with pytest.warns(UserWarning, match="one observation"):
+        cap = _capture_draw(lambda: hyp.plot(
+            T, '-', hue=['a', 'b', 'a', 'b', 'a'], show=False))
+    assert len(cap['x']) == 5
+
+
+@pytest.mark.parametrize("fmt,expected_traces", [
+    ('.', 1),      # marker-only: global grouping (one trace per category)
+    ('-', 2),      # line-only: one run per dataset
+    ('o-', 2),     # marker+line combo: segmented like a line
+])
+def test_gh291_marker_line_combo_formats(fmt, expected_traces):
+    A, B = _walks(2)
+    cap = _capture_draw(lambda: hyp.plot(
+        [A, B], fmt, hue=['same'] * 40, show=False))
+    assert len(cap['x']) == expected_traces
+    if fmt != '.':
+        assert _any_endpoint_touches_start(cap['x']) is None
+
+
+@pytest.mark.parametrize("animate", ['spin', True, 'window'])
+def test_gh291_animated_categorical_hue_no_cross_bridge(animate):
+    A, B = _walks(2, ndims=3)
+    cap = _capture_draw(lambda: hyp.plot(
+        [A, B], '-', hue=['a'] * 20 + ['b'] * 20,
+        animate=animate, duration=1, show=False))
+    assert len(cap['x']) == 2
+    assert _any_endpoint_touches_start(cap['x']) is None
+
+
+def test_gh291_plotly_categorical_hue_no_cross_bridge():
+    A, B = _walks(2)
+    fig = hyp.plot([A, B], '-', hue=['a'] * 20 + ['b'] * 20,
+                   backend='plotly', show=False)
+    # each dataset is its own line trace; none is joined to the other
+    line_traces = [np.column_stack([t.x, t.y]) for t in fig.data
+                   if getattr(t, 'x', None) is not None
+                   and t.mode is not None and 'lines' in t.mode]
+    assert len(line_traces) >= 2
+    assert _any_endpoint_touches_start(line_traces) is None
+
+
+def test_gh291_cluster_line_traces_do_not_bridge():
+    # cluster-generated categorical groups must be segmented too: a cluster
+    # spanning two datasets must not draw a line between them, and a cluster's
+    # non-adjacent points within a dataset must not be joined.
+    A, B = _walks(2)
+    cap = _capture_draw(lambda: hyp.plot(
+        [A, B], '-', n_clusters=2, show=False))
+    assert _any_endpoint_touches_start(cap['x']) is None
+
+
+def test_gh291_cluster_line_segments_stay_within_one_dataset():
+    # two well-separated walks + 2 clusters: after segmentation every drawn
+    # run belongs to a single input dataset, so no run's point span covers
+    # BOTH clouds (which a cross-dataset bridge would produce). Uses reduce/
+    # normalize=None so drawn coords stay in the input space for the check.
+    A = np.cumsum(np.random.default_rng(4).standard_normal((20, 2)), axis=0)
+    B = A + np.array([200.0, 0.0])          # cloud B far to the right
+    cap = _capture_draw(lambda: hyp.plot(
+        [A, B], '-', n_clusters=2, reduce=None, normalize=None, show=False))
+    # a run bridging A<->B would span ~200 in x; a within-dataset run spans
+    # only the walk's own extent (well under 100)
+    for t in cap['x']:
+        assert t[:, 0].max() - t[:, 0].min() < 100.0

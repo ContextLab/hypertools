@@ -95,19 +95,6 @@ def test_reshape_data():
     assert np.array_equal(helpers.reshape_data(x, labels, labels)[0],[np.array([[1,2],[1,2]]),np.array([[3,4],[3,4]])])
 
 
-def test_reshape_data_boundaries():
-    # two separate 2-row datasets, one hue category each: the SECOND group
-    # begins a new input dataset (stacked row 2), so it is flagged so
-    # patch_lines will not bridge a line into it (GH #291).
-    A = np.array([[0., 0.], [1., 0.]])
-    B = np.array([[0., 5.], [1., 5.]])
-    hue = ['A', 'A', 'B', 'B']
-    reshaped, _labels, starts = helpers.reshape_data(
-        [A, B], hue, None, return_boundaries=True)
-    assert len(reshaped) == 2
-    assert starts == [False, True]
-
-
 def test_patch_lines_bridges_by_default():
     # without breaks, each group is extended with the first point of the
     # next group so a line renders continuously across the groups
@@ -126,3 +113,42 @@ def test_patch_lines_breaks_skip_bridge():
     out = helpers.patch_lines([A.copy(), B.copy()], breaks={1})
     assert out[0].shape[0] == 2                      # A unchanged
     assert not np.array_equal(out[0][-1], B[0])      # no bridge point
+
+
+def test_segment_by_run_two_datasets_same_category():
+    # GH #291: two datasets sharing ONE category must NOT be merged into a
+    # single run -- each dataset is its own run and they are not bridgeable
+    A = np.array([[0., 0.], [1., 0.], [2., 0.]])
+    B = np.array([[9., 0.], [8., 0.], [7., 0.]])
+    segs, seg_labels, seg_cat, seg_bridge = helpers.segment_by_run(
+        [A, B], ['x'] * 6)
+    assert len(segs) == 2
+    assert [s.shape[0] for s in segs] == [3, 3]
+    assert seg_cat == ['x', 'x']
+    assert seg_bridge == [False]                     # dataset boundary between
+
+
+def test_segment_by_run_repeated_category_within_dataset():
+    # A A B B A A in ONE dataset -> three runs in source order, each a
+    # bridgeable neighbour of the next (same dataset, colour transitions)
+    T = np.arange(12, dtype=float).reshape(6, 2)
+    segs, seg_labels, seg_cat, seg_bridge = helpers.segment_by_run(
+        [T], ['A', 'A', 'B', 'B', 'A', 'A'])
+    assert seg_cat == ['A', 'B', 'A']
+    assert [s.shape[0] for s in segs] == [2, 2, 2]
+    assert seg_bridge == [True, True]                # all within one dataset
+    # runs preserve original row order (no 1->4 style jumps)
+    assert np.array_equal(segs[0], T[0:2])
+    assert np.array_equal(segs[1], T[2:4])
+    assert np.array_equal(segs[2], T[4:6])
+
+
+def test_segment_by_run_bridge_flags_across_datasets():
+    # runs within a dataset bridge; the boundary between datasets does not
+    A = np.arange(8, dtype=float).reshape(4, 2)   # cats a a b b
+    B = np.arange(4, dtype=float).reshape(2, 2)   # cat  c c
+    segs, seg_labels, seg_cat, seg_bridge = helpers.segment_by_run(
+        [A, B], ['a', 'a', 'b', 'b', 'c', 'c'], labels=[0, 1, 2, 3, 4, 5])
+    assert seg_cat == ['a', 'b', 'c']
+    assert seg_bridge == [True, False]            # a->b same ds; b->c boundary
+    assert seg_labels == [[0, 1], [2, 3], [4, 5]]

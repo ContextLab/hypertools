@@ -223,12 +223,19 @@ def parse_kwargs(x, kwargs):
     return kwargs_list
 
 
-def reshape_data(x, hue, labels, return_boundaries=False):
+def reshape_data(x, hue, labels):
     """Regroup stacked data and labels by category (for per-category plotting).
 
     Stacks `x` into a single array, then splits its rows back out into
     one sub-array per distinct value of `hue` (in first-seen order),
     carrying the corresponding `labels` entries along with them.
+
+    This GLOBALLY merges every observation of a category into a single
+    array regardless of its source dataset or position, so it is only
+    appropriate for MARKER/scatter plots (which have no connecting edges).
+    A LINE plot must use `segment_by_run` instead, which preserves order
+    and dataset identity so a line never joins observations that were not
+    actually adjacent in one input trajectory (GH #291).
 
     Parameters
     ----------
@@ -240,22 +247,14 @@ def reshape_data(x, hue, labels, return_boundaries=False):
     labels : sequence or None
         Per-row labels to carry along with the regrouping. If None,
         `None` is used for every row.
-    return_boundaries : bool, default False
-        When True, additionally return a per-group boolean list flagging
-        groups whose FIRST row starts a new input dataset (see below).
 
     Returns
     -------
-    tuple of (list of numpy.ndarray, list of list[, list of bool])
+    tuple of (list of numpy.ndarray, list of list)
         `x_reshaped` -- one array per distinct `hue` category, each
         containing the rows belonging to that category (stacked).
         `labels_reshaped` -- the corresponding labels for each category,
         in matching order.
-        `starts_new_dataset` (only if `return_boundaries`) -- one bool per
-        group: True when that group's first row is the first row of an
-        input dataset other than the very first. `patch_lines` uses this
-        to avoid bridging a line INTO a group that begins a separate input
-        trajectory (a spurious segment joining two datasets, GH #291).
     """
     categories = list(sorted(set(hue), key=list(hue).index))
     x_stacked = np.vstack(x)
@@ -263,22 +262,73 @@ def reshape_data(x, hue, labels, return_boundaries=False):
     labels_reshaped = [[] for _ in categories]
     if labels is None:
         labels = [None]*len(hue)
-    # stacked-row indices at which a new input dataset begins (datasets
-    # 1..n-1; dataset 0 starts at row 0, which is never a bridge target)
-    dataset_starts = set(
-        int(s) for s in np.cumsum([len(xi) for xi in x])[:-1])
-    group_first_idx = [None]*len(categories)
     for idx, (point, label) in enumerate(zip(hue, labels)):
-        g = categories.index(point)
-        if group_first_idx[g] is None:
-            group_first_idx[g] = idx
-        x_reshaped[g].append(x_stacked[idx])
-        labels_reshaped[g].append(labels[idx])
-    reshaped = [np.vstack(i) for i in x_reshaped]
-    if return_boundaries:
-        starts_new_dataset = [fi in dataset_starts for fi in group_first_idx]
-        return reshaped, labels_reshaped, starts_new_dataset
-    return reshaped, labels_reshaped
+        x_reshaped[categories.index(point)].append(x_stacked[idx])
+        labels_reshaped[categories.index(point)].append(labels[idx])
+    return [np.vstack(i) for i in x_reshaped], labels_reshaped
+
+
+def segment_by_run(x, hue, labels=None):
+    """Split datasets into contiguous same-category runs for LINE plots.
+
+    Unlike `reshape_data` (which merges ALL observations of a category into
+    one array regardless of position or source dataset), this walks each
+    input dataset in order and starts a new segment whenever the category
+    changes OR a dataset boundary is crossed. A line may then only ever
+    connect observations that were genuinely adjacent within one input
+    trajectory -- so separate datasets are never joined, and a category that
+    recurs along a trajectory (``A A B B A A``) is not collapsed into one
+    tangled polyline (GH #291).
+
+    Parameters
+    ----------
+    x : list of numpy.ndarray
+        Input datasets (each a 2-D array of observations, in order).
+    hue : sequence
+        Per-observation category id, length == total rows of ``vstack(x)``,
+        in the same row order.
+    labels : sequence or None
+        Per-observation labels carried along with the segmentation. If None,
+        each segment gets a list of ``None`` (matching `reshape_data`).
+
+    Returns
+    -------
+    segments : list of numpy.ndarray
+        One array per maximal run of consecutive same-category observations
+        within a single input dataset, in original order.
+    seg_labels : list of list
+        The labels of each segment's observations, parallel to `segments`.
+    seg_category : list
+        The category id of each segment, parallel to `segments`.
+    seg_bridge : list of bool
+        ``seg_bridge[i]`` is True when segments i and i+1 are consecutive
+        runs of the SAME input dataset, so a line may be bridged from i into
+        i+1 (a colour transition within one trajectory); False at dataset
+        boundaries. Length is ``len(segments) - 1``. Pass the complementary
+        indices to ``patch_lines(breaks=...)``.
+    """
+    hue = list(hue)
+    labels = [None]*len(hue) if labels is None else list(labels)
+    segments, seg_labels, seg_category, seg_dataset = [], [], [], []
+    row = 0
+    for di, xi in enumerate(x):
+        arr = np.asarray(xi)
+        n = arr.shape[0]
+        start = 0
+        while start < n:
+            cat = hue[row + start]
+            end = start + 1
+            while end < n and hue[row + end] == cat:
+                end += 1
+            segments.append(arr[start:end])
+            seg_labels.append(labels[row + start:row + end])
+            seg_category.append(cat)
+            seg_dataset.append(di)
+            start = end
+        row += n
+    seg_bridge = [seg_dataset[i] == seg_dataset[i + 1]
+                  for i in range(len(segments) - 1)]
+    return segments, seg_labels, seg_category, seg_bridge
 
 
 def patch_lines(x, breaks=None):
@@ -286,14 +336,10 @@ def patch_lines(x, breaks=None):
 
     Extending every group with the first point of the NEXT group makes a
     line format render one continuous curve across group (colour)
-    transitions within a single trajectory.
-
-    `breaks` is an optional iterable of group indices that begin a SEPARATE
-    input dataset: a line is never bridged into such a group, so two
-    distinct input trajectories are not joined by a spurious connecting
-    segment (GH #291 -- e.g. ``hyp.plot([A, B], hue=['A']*len(A) +
-    ['B']*len(B))`` previously drew a line from A's last point to B's
-    first point).
+    transitions. `breaks` is an optional iterable of group indices that must
+    NOT be bridged INTO from their predecessor -- used to keep a line from
+    crossing a dataset boundary (GH #291), e.g. the run segments produced by
+    `segment_by_run` are bridged only where ``seg_bridge`` is True.
     """
     breaks = set() if breaks is None else set(breaks)
     for idx in range(len(x)-1):
