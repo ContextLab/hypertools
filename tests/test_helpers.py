@@ -120,23 +120,25 @@ def test_segment_by_run_two_datasets_same_category():
     # single run -- each dataset is its own run and they are not bridgeable
     A = np.array([[0., 0.], [1., 0.], [2., 0.]])
     B = np.array([[9., 0.], [8., 0.], [7., 0.]])
-    segs, seg_labels, seg_cat, seg_bridge = helpers.segment_by_run(
+    segs, seg_labels, seg_cat, seg_bridge, seg_ds = helpers.segment_by_run(
         [A, B], ['x'] * 6)
     assert len(segs) == 2
     assert [s.shape[0] for s in segs] == [3, 3]
     assert seg_cat == ['x', 'x']
     assert seg_bridge == [False]                     # dataset boundary between
+    assert seg_ds == [0, 1]                           # one run per dataset
 
 
 def test_segment_by_run_repeated_category_within_dataset():
     # A A B B A A in ONE dataset -> three runs in source order, each a
     # bridgeable neighbour of the next (same dataset, colour transitions)
     T = np.arange(12, dtype=float).reshape(6, 2)
-    segs, seg_labels, seg_cat, seg_bridge = helpers.segment_by_run(
+    segs, seg_labels, seg_cat, seg_bridge, seg_ds = helpers.segment_by_run(
         [T], ['A', 'A', 'B', 'B', 'A', 'A'])
     assert seg_cat == ['A', 'B', 'A']
     assert [s.shape[0] for s in segs] == [2, 2, 2]
     assert seg_bridge == [True, True]                # all within one dataset
+    assert seg_ds == [0, 0, 0]                        # all from dataset 0
     # runs preserve original row order (no 1->4 style jumps)
     assert np.array_equal(segs[0], T[0:2])
     assert np.array_equal(segs[1], T[2:4])
@@ -147,8 +149,9 @@ def test_segment_by_run_bridge_flags_across_datasets():
     # runs within a dataset bridge; the boundary between datasets does not
     A = np.arange(8, dtype=float).reshape(4, 2)   # cats a a b b
     B = np.arange(4, dtype=float).reshape(2, 2)   # cat  c c
-    segs, seg_labels, seg_cat, seg_bridge = helpers.segment_by_run(
+    segs, seg_labels, seg_cat, seg_bridge, seg_ds = helpers.segment_by_run(
         [A, B], ['a', 'a', 'b', 'b', 'c', 'c'], labels=[0, 1, 2, 3, 4, 5])
     assert seg_cat == ['a', 'b', 'c']
     assert seg_bridge == [True, False]            # a->b same ds; b->c boundary
     assert seg_labels == [[0, 1], [2, 3], [4, 5]]
+    assert seg_ds == [0, 0, 1]                    # a,b from ds0; c from ds1

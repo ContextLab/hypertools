@@ -163,8 +163,10 @@ def _regroup_categorical_lines(xform, hue, labels, cat_color, cat_label):
     runs adjacent WITHIN one input dataset, and gives each category exactly
     ONE legend entry (the first run carries the label; later runs of the same
     category get ``'_nolegend_'``). Returns
-    ``(segments, seg_labels, run_colors, run_group_labels)``."""
-    segments, seg_labels, seg_cat, seg_bridge = segment_by_run(
+    ``(segments, seg_labels, run_colors, run_group_labels, seg_dataset)``;
+    `seg_dataset` is each run's source input-dataset index (for propagating
+    per-dataset styles via `_expand_styles_to_runs`)."""
+    segments, seg_labels, seg_cat, seg_bridge, seg_dataset = segment_by_run(
         xform, hue, labels)
     breaks = {i + 1 for i in range(len(segments) - 1) if not seg_bridge[i]}
     segments = patch_lines(segments, breaks=breaks)
@@ -177,7 +179,42 @@ def _regroup_categorical_lines(xform, hue, labels, cat_color, cat_label):
         else:
             seen.add(c)
             run_group_labels.append(cat_label.get(c, str(c)))
-    return segments, seg_labels, run_colors, run_group_labels
+    return segments, seg_labels, run_colors, run_group_labels, seg_dataset
+
+
+def _expand_styles_to_runs(fmt, mpl_kwargs, seg_dataset, n_datasets):
+    """Propagate per-INPUT-DATASET styles across run segmentation (GH #291
+    follow-up).
+
+    Contiguous-run segmentation turns N input datasets into >= N drawn runs,
+    so a caller's per-dataset style list (`fmt` plus the NAMED styling kwargs
+    that reach `mpl_kwargs` -- ``color``/``marker``/``linestyle``/
+    ``markersize``/``linewidth``) would otherwise fail the later one-value-
+    per-trace length checks. Any such list/tuple whose length equals the
+    INPUT-dataset count is expanded to run length by repeating each dataset's
+    value across the runs it produced; a list already at run length is left
+    untouched (explicit per-run styling). Generic ``**kwargs`` passthrough
+    values (e.g. ``alpha=``) never reach `mpl_kwargs` -- they are applied
+    verbatim per trace, never broadcast -- so they are unaffected here.
+    Returns the (possibly expanded) `fmt`; mutates `mpl_kwargs` in place.
+
+    `seg_dataset` gives each run's source-dataset index. When there is one
+    run per dataset (``len(seg_dataset) == n_datasets``) the two layouts
+    coincide and nothing needs changing."""
+    n_runs = len(seg_dataset)
+    if n_runs == n_datasets:
+        return fmt
+
+    def _expand(val):
+        if isinstance(val, (list, tuple)) and len(val) == n_datasets:
+            return [val[d] for d in seg_dataset]
+        return val
+
+    if isinstance(fmt, (list, tuple)) and len(fmt) == n_datasets:
+        fmt = [fmt[d] for d in seg_dataset]
+    for key in list(mpl_kwargs):
+        mpl_kwargs[key] = _expand(mpl_kwargs[key])
+    return fmt
 
 
 def _interp_static_line(arr):
@@ -627,8 +664,22 @@ def plot(
         supported, including color letters (e.g. ``'ro-'`` draws red
         markers joined by a red line, exactly as in matplotlib; an
         explicit `color=`/`colors=` kwarg wins over a fmt color letter).
-        A per-dataset fmt LIST must have exactly one entry per drawn
-        trace, or a ``ValueError`` naming fmt and both counts is raised.
+
+        A single fmt string is broadcast to every drawn trace. A fmt LIST is
+        distributed one-entry-per-DRAWN-TRACE, and normally there is one
+        trace per input dataset. ``hue=``/``cluster=``/``n_clusters=`` (and a
+        MultiIndex) regroup the data so the drawn-trace count can differ from
+        the input-dataset count; in the ONE reconciled case -- a categorical
+        (or cluster) LINE, which splits each dataset into one trace per
+        contiguous same-category run so lines never join separate
+        trajectories (GH #291) -- a fmt list given at INPUT-dataset length is
+        automatically propagated to each dataset's runs, so
+        ``hyp.plot([A, B], hue=h, fmt=['.', '-'])`` draws every run of A with
+        markers and every run of B as a line. Otherwise (marker-only
+        grouping, MultiIndex) the fmt list must match the drawn-trace count.
+        A list matching neither the input-dataset count nor the drawn-trace
+        count raises a ``ValueError`` naming fmt and both counts. A fmt tuple
+        is accepted and treated exactly like the equivalent list.
 
         Static line rendering is DATA-FAITHFUL: line styles are smoothed
         by PCHIP interpolation, which only ever ADDS points between
@@ -702,16 +753,29 @@ def plot(
         objects were never going to support the same kwarg surface as
         matplotlib).
 
-        Every per-dataset list/tuple-valued kwarg `plot()` itself
-        broadcasts this way (`color`/`colors`, `marker`/`markers`,
-        `linestyle`/`linestyles` -- NOT the generic `**kwargs` passthrough
-        above, which is never broadcast) has its length validated (GH
-        #206): it MUST equal the number of datasets being drawn (the
-        FINAL count, after any `cluster`/`hue`/MultiIndex reshaping), or
-        ``ValueError`` is raised naming the kwarg, the length actually
-        given, and the required dataset count. Previously a mismatched-
-        length list silently degraded to `None` for every dataset with no
-        error or warning at all.
+        Every list/tuple-valued NAMED styling kwarg `plot()` itself
+        broadcasts (`color`/`colors`, `marker`/`markers`, `linestyle`/
+        `linestyles`, `linewidth`, `markersize` -- NOT the generic `**kwargs`
+        passthrough above, which is applied verbatim and never broadcast, so
+        `alpha=`, `zorder=`, etc. must be a single value) is distributed
+        one-entry-per-DRAWN-TRACE and its length is validated against the
+        FINAL drawn-trace count (GH #206); a mismatch raises a ``ValueError``
+        naming the kwarg, the length given, and that count (previously it
+        silently degraded to `None` for every trace).
+
+        `cluster=`/`hue=`/`n_clusters=`/MultiIndex regroup the data, so the
+        final drawn-trace count can differ from the number of INPUT datasets.
+        In ONE case the two layouts are reconciled for you: a categorical
+        (or cluster) LINE splits each dataset into one trace per contiguous
+        same-category run (GH #291), and a style list given at INPUT-dataset
+        length is automatically propagated to every run that dataset produced
+        -- so ``hyp.plot([A, B], hue=h, linewidth=[1, 3])`` draws all of A's
+        runs at width 1 and all of B's at width 3 (a list already at run
+        length is used verbatim). For every OTHER regrouping -- marker-only
+        hue/cluster grouping (which merges observations across datasets into
+        one per-category trace, so a per-dataset style is not even well
+        defined), and MultiIndex expansion -- a style list must match the
+        resulting drawn-trace count, not the input-dataset count.
 
     palette : str, list of colors, or matplotlib.colors.Colormap
         A matplotlib or seaborn color palette (name), an explicit list of
@@ -1831,6 +1895,14 @@ def plot(
     # decoded here once so every downstream fmt consumer sees str.
     if isinstance(fmt, bytes):
         fmt = fmt.decode("utf-8")
+    # a fmt TUPLE is normalized to a list up front so every downstream
+    # consumer (which tests `isinstance(fmt, list)`) handles it identically
+    # -- previously a tuple passed the list/tuple validation below but then
+    # fell through the list-only branches and surfaced an unrelated internal
+    # error (e.g. "'<=' not supported between 'int' and 'str'") whose
+    # occurrence depended on the hue pattern (reviewer follow-up).
+    if isinstance(fmt, tuple):
+        fmt = list(fmt)
     if isinstance(fmt, list):
         fmt = [f.decode("utf-8") if isinstance(f, bytes) else f for f in fmt]
 
@@ -3048,9 +3120,11 @@ def plot(
                 _cat_color = {gid: group_colors[gid]
                               for gid in dict.fromkeys(group_ids)}
                 _cat_label = {gid: str(gid) for gid in dict.fromkeys(group_ids)}
-                xform, labels, _run_colors, hue_group_labels = \
+                _nd = len(xform)
+                xform, labels, _run_colors, hue_group_labels, _seg_ds = \
                     _regroup_categorical_lines(
                         xform, group_ids, labels, _cat_color, _cat_label)
+                fmt = _expand_styles_to_runs(fmt, mpl_kwargs, _seg_ds, _nd)
                 mpl_kwargs["color"] = _run_colors
                 hue = group_ids
             else:
@@ -3072,9 +3146,11 @@ def plot(
             # legend/colorbar entry per cluster.
             _cat_color, _cat_label = _categorical_color_label_maps(
                 cluster_labels, palette, None, None, sort_numeric=True)
-            xform, labels, _run_colors, hue_group_labels = \
+            _nd = len(xform)
+            xform, labels, _run_colors, hue_group_labels, _seg_ds = \
                 _regroup_categorical_lines(
                     xform, cluster_labels, labels, _cat_color, _cat_label)
+            fmt = _expand_styles_to_runs(fmt, mpl_kwargs, _seg_ds, _nd)
             mpl_kwargs["color"] = _run_colors
             hue = cluster_labels
             try:
@@ -3370,9 +3446,11 @@ def plot(
                 _cat_color, _cat_label = _categorical_color_label_maps(
                     hue, palette, mpl_kwargs.get("color"),
                     hue_group_labels, _hue_sort_numeric)
-                xform, labels, _run_colors, hue_group_labels = \
+                xform, labels, _run_colors, hue_group_labels, _seg_ds = \
                     _regroup_categorical_lines(
                         xform, hue, labels, _cat_color, _cat_label)
+                fmt = _expand_styles_to_runs(
+                    fmt, mpl_kwargs, _seg_ds, _n_datasets_before_hue)
                 mpl_kwargs["color"] = _run_colors
             else:
                 # MARKER-only: global grouping (one trace per category) is

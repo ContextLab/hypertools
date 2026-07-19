@@ -342,3 +342,152 @@ def test_gh291_cluster_line_segments_stay_within_one_dataset():
     # only the walk's own extent (well under 100)
     for t in cap['x']:
         assert t[:, 0].max() - t[:, 0].min() < 100.0
+
+
+# --- GH #291 follow-up: per-INPUT-dataset styles propagate to runs --------
+
+def _capture_style(plot_call, key):
+    """Return the per-trace values of style `key` (from kwargs_list) that
+    reach the drawing routine, plus the fmt passed and trace count."""
+    import importlib
+    plot_mod = importlib.import_module('hypertools.plot.plot')
+    cap = {}
+    orig = plot_mod._draw
+
+    def spy(x, *a, **k):
+        cap['n'] = len(x)
+        cap['fmt'] = k.get('fmt')
+        kwl = k.get('kwargs_list')
+        cap['vals'] = [d.get(key) for d in kwl] if kwl else None
+        return orig(x, *a, **k)
+
+    plot_mod._draw = spy
+    try:
+        plot_call()
+    finally:
+        plot_mod._draw = orig
+    return cap
+
+
+def test_gh291_per_dataset_linewidth_propagates_to_runs():
+    # each of two datasets has two categorical runs -> 4 traces; a per-INPUT-
+    # dataset linewidth=[1, 3] must reach A's runs as 1 and B's runs as 3
+    # (not raise "length 2 != 4"), so callers needn't know the run count.
+    A, B = _walks(2)
+    h = ['a'] * 10 + ['b'] * 10 + ['a'] * 10 + ['b'] * 10
+    cap = _capture_style(
+        lambda: hyp.plot([A, B], '-', hue=h, linewidth=[1, 3], show=False),
+        'linewidth')
+    assert cap['n'] == 4
+    assert cap['vals'] == [1, 1, 3, 3]
+
+
+def test_gh291_per_dataset_fmt_list_propagates_to_runs():
+    # fmt=['.', '-'] per input dataset -> A's runs drawn as markers, B's as
+    # lines (a marker-only dataset split by another dataset's line still gets
+    # its own marker style, never a spurious connecting line).
+    A, B = _walks(2)
+    h = ['a'] * 10 + ['b'] * 10 + ['a'] * 10 + ['b'] * 10
+    cap = _capture_style(
+        lambda: hyp.plot([A, B], hue=h, fmt=['.', '-'], show=False), 'color')
+    assert cap['n'] == 4
+    assert cap['fmt'] == ['.', '.', '-', '-']
+
+
+def test_gh291_explicit_per_run_style_list_respected():
+    # a list already at the drawn-trace (run) count is used verbatim
+    A, B = _walks(2)
+    h = ['a'] * 10 + ['b'] * 10 + ['a'] * 10 + ['b'] * 10
+    cap = _capture_style(
+        lambda: hyp.plot([A, B], '-', hue=h, linewidth=[1, 2, 3, 4],
+                         show=False), 'linewidth')
+    assert cap['n'] == 4
+    assert cap['vals'] == [1, 2, 3, 4]
+
+
+def test_gh291_per_dataset_marker_propagates_on_cluster_lines():
+    # cluster lines use the same segmentation machinery: a per-dataset marker
+    # list must propagate to that dataset's cluster runs too
+    A = np.cumsum(np.random.default_rng(7).standard_normal((20, 2)), axis=0)
+    B = A + np.array([200.0, 0.0])
+    cap = _capture_style(
+        lambda: hyp.plot([A, B], 'o-', n_clusters=2, marker=['o', 's'],
+                         reduce=None, normalize=None, show=False), 'marker')
+    # every drawn run inherits its source dataset's marker
+    assert cap['vals'] is not None
+    assert set(cap['vals']) <= {'o', 's'}
+
+
+def test_gh291_style_list_matching_neither_count_raises():
+    # a list matching neither the input-dataset count (2) nor the run count
+    # (4) still raises the GH #206 length error
+    A, B = _walks(2)
+    h = ['a'] * 10 + ['b'] * 10 + ['a'] * 10 + ['b'] * 10
+    with pytest.raises(ValueError, match=r'linewidth.*3.*4'):
+        hyp.plot([A, B], '-', hue=h, linewidth=[1, 2, 3], show=False)
+
+
+def test_gh291_per_dataset_linewidth_propagates_plotly():
+    # the propagation happens at the shared frontend, so the plotly backend
+    # inherits it -- a per-dataset linewidth must not raise on 4 runs
+    A, B = _walks(2)
+    h = ['a'] * 10 + ['b'] * 10 + ['a'] * 10 + ['b'] * 10
+    fig = hyp.plot([A, B], '-', hue=h, linewidth=[1, 3],
+                   backend='plotly', show=False)
+    assert fig is not None
+    widths = [t.line.width for t in fig.data
+              if getattr(t, 'line', None) is not None
+              and t.line.width is not None]
+    # plotly rescales absolute widths, but the per-dataset propagation must
+    # leave exactly two distinct widths in the requested 1:3 ratio (A's runs
+    # thin, B's runs 3x thicker) -- not a length error on 4 runs
+    distinct = sorted(set(widths))
+    assert len(distinct) == 2
+    assert distinct[1] == pytest.approx(3 * distinct[0])
+
+
+# --- GH #291 follow-up: tuple-valued fmt is normalized to a list ----------
+
+@pytest.mark.parametrize("hue,expect_traces", [
+    (None, 2),                                            # plain, no hue
+    (['a'] * 20 + ['b'] * 20, 2),                         # one run per dataset
+    (['a'] * 10 + ['b'] * 10 + ['a'] * 10 + ['b'] * 10, 4),  # 2 runs/dataset
+])
+def test_gh291_tuple_fmt_accepted_like_list(hue, expect_traces):
+    # fmt=('.', '-') (a TUPLE) used to pass early validation but then fail
+    # downstream with an unrelated internal error whose occurrence depended
+    # on the hue pattern; it must now behave exactly like fmt=['.', '-'].
+    A, B = _walks(2)
+    kw = {} if hue is None else {'hue': hue}
+    cap = _capture_style(
+        lambda: hyp.plot([A, B], fmt=('.', '-'), show=False, **kw), 'color')
+    assert cap['n'] == expect_traces
+    assert cap['fmt'] == ['.'] * (expect_traces // 2) + ['-'] * (expect_traces // 2)
+
+
+def test_gh291_tuple_fmt_plotly():
+    A, B = _walks(2)
+    fig = hyp.plot([A, B], hue=['a'] * 20 + ['b'] * 20, fmt=('.', '-'),
+                   backend='plotly', show=False)
+    assert fig is not None
+
+
+def test_gh291_tuple_fmt_animation():
+    A, B = _walks(2, ndims=3)
+    fig = hyp.plot([A, B], hue=['a'] * 20 + ['b'] * 20, fmt=('.', '-'),
+                   animate=True, duration=1, show=False)
+    assert fig is not None
+
+
+def test_gh291_marker_only_hue_style_list_matches_trace_count():
+    # documented contract for the NON-line-segmented paths: a marker-only hue
+    # plot merges observations into one trace per CATEGORY (global grouping),
+    # so a style list must match the resulting trace count, not the input-
+    # dataset count -- per-dataset propagation applies only to line runs.
+    A, B = _walks(2)
+    hue = ['a'] * 20 + ['b'] * 20            # 2 categories -> 2 marker traces
+    cap = _capture_style(
+        lambda: hyp.plot([A, B], '.', hue=hue, linewidth=[1, 3], show=False),
+        'linewidth')
+    assert cap['n'] == 2
+    assert cap['vals'] == [1, 3]             # one per category trace

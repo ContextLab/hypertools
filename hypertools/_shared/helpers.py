@@ -191,16 +191,23 @@ def interp_array_list(arr_list, interp_val=10):
 
 
 def parse_kwargs(x, kwargs):
-    """Broadcast each kwarg in `kwargs` across the datasets in `x`: a
-    scalar value is repeated for every dataset; a list/tuple value is
-    distributed one-entry-per-dataset and MUST match `len(x)` exactly.
+    """Broadcast each kwarg in `kwargs` across the drawn traces in `x`: a
+    scalar value is repeated for every trace; a list/tuple value is
+    distributed one-entry-per-trace and MUST match `len(x)` exactly.
+
+    Note `x` here is the list of DRAWN traces, which is not always the list
+    of INPUT datasets: `hue=`/`cluster=`/`n_clusters=`/MultiIndex regroup the
+    data (a categorical line splits each dataset into one trace per
+    contiguous run, GH #291), so `plot()` propagates any per-input-dataset
+    style list to the runs BEFORE calling this, leaving only trace-length
+    lists to distribute here.
 
     GH #206: a mismatched-length list previously degraded SILENTLY to
-    `None` for every dataset (a user's `color=['red', 'blue']` against 3
-    datasets would silently plot with no color at all, no error/warning
-    ever raised) -- this now raises a clear ``ValueError`` naming the
-    kwarg, the length actually given, and the number of datasets it needed
-    to match, exactly as the original GH #206 request specified.
+    `None` for every trace (a user's `color=['red', 'blue']` against 3
+    traces would silently plot with no color at all, no error/warning ever
+    raised) -- this now raises a clear ``ValueError`` naming the kwarg, the
+    length actually given, and the number of traces it needed to match,
+    exactly as the original GH #206 request specified.
     """
     n = len(x)
     kwargs_list = []
@@ -212,9 +219,9 @@ def parse_kwargs(x, kwargs):
                 if len(val) != n:
                     raise ValueError(
                         f"{kwarg}= was given as a list/tuple of length "
-                        f"{len(val)}, but there are {n} dataset(s) to plot; "
+                        f"{len(val)}, but there are {n} trace(s) to draw; "
                         f"pass either a single value (broadcast to every "
-                        f"dataset) or a list/tuple of length {n}."
+                        f"trace) or a list/tuple of length {n}."
                     )
                 tmp[kwarg] = val[i]
             else:
@@ -306,6 +313,11 @@ def segment_by_run(x, hue, labels=None):
         i+1 (a colour transition within one trajectory); False at dataset
         boundaries. Length is ``len(segments) - 1``. Pass the complementary
         indices to ``patch_lines(breaks=...)``.
+    seg_dataset : list of int
+        The source input-dataset index of each segment, parallel to
+        `segments`. Lets the caller propagate a per-INPUT-DATASET style
+        (fmt/linewidth/marker/...) to every run that dataset produced (GH
+        #291 follow-up), rather than forcing callers to know the run count.
     """
     hue = list(hue)
     labels = [None]*len(hue) if labels is None else list(labels)
@@ -328,7 +340,7 @@ def segment_by_run(x, hue, labels=None):
         row += n
     seg_bridge = [seg_dataset[i] == seg_dataset[i + 1]
                   for i in range(len(segments) - 1)]
-    return segments, seg_labels, seg_category, seg_bridge
+    return segments, seg_labels, seg_category, seg_bridge, seg_dataset
 
 
 def patch_lines(x, breaks=None):
