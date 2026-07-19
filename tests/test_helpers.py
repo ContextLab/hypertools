@@ -93,3 +93,36 @@ def test_reshape_data():
     x = [[1,2],[3,4]]*2
     labels = ['a','b','a','b']
     assert np.array_equal(helpers.reshape_data(x, labels, labels)[0],[np.array([[1,2],[1,2]]),np.array([[3,4],[3,4]])])
+
+
+def test_reshape_data_boundaries():
+    # two separate 2-row datasets, one hue category each: the SECOND group
+    # begins a new input dataset (stacked row 2), so it is flagged so
+    # patch_lines will not bridge a line into it (GH #291).
+    A = np.array([[0., 0.], [1., 0.]])
+    B = np.array([[0., 5.], [1., 5.]])
+    hue = ['A', 'A', 'B', 'B']
+    reshaped, _labels, starts = helpers.reshape_data(
+        [A, B], hue, None, return_boundaries=True)
+    assert len(reshaped) == 2
+    assert starts == [False, True]
+
+
+def test_patch_lines_bridges_by_default():
+    # without breaks, each group is extended with the first point of the
+    # next group so a line renders continuously across the groups
+    A = np.array([[0., 0.], [1., 0.]])
+    B = np.array([[0., 5.], [1., 5.]])
+    out = helpers.patch_lines([A.copy(), B.copy()])
+    assert out[0].shape[0] == 3                      # A gained B's first point
+    assert np.array_equal(out[0][-1], B[0])          # bridge point == B start
+
+
+def test_patch_lines_breaks_skip_bridge():
+    # a break at group 1 means "do not bridge INTO group 1": the two
+    # groups stay disjoint, so no spurious A->B connecting segment (GH #291)
+    A = np.array([[0., 0.], [1., 0.]])
+    B = np.array([[0., 5.], [1., 5.]])
+    out = helpers.patch_lines([A.copy(), B.copy()], breaks={1})
+    assert out[0].shape[0] == 2                      # A unchanged
+    assert not np.array_equal(out[0][-1], B[0])      # no bridge point

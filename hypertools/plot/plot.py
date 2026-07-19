@@ -2760,6 +2760,13 @@ def plot(
     # was actually drawn with (F13-004)
     _bundle_cluster_stage = None
 
+    # per-group flags (set by reshape_data below when it regroups by
+    # cluster/hue category): True for a group whose first row begins a
+    # SEPARATE input dataset, so patch_lines does not bridge a line into
+    # it and join two distinct trajectories (GH #291). None until a
+    # regroup happens; patch_lines treats None as "no breaks".
+    _group_starts = None
+
     # MultiIndex DataFrames (GH #95): xform currently holds the TRANSFORMED
     # leaf trajectories (post normalize/reduce/align), in the same order as
     # `_multiindex_meta['leaf_keys']` -- exactly what `build_multiindex_styles`
@@ -2972,14 +2979,16 @@ def plot(
                 # blended colors into (near-)identical-color groups
                 blended = mat2colors(cluster_labels, palette=palette)
                 group_ids, group_colors = colors2groups(blended)
-                xform, labels = reshape_data(xform, group_ids, labels)
+                xform, labels, _group_starts = reshape_data(
+                    xform, group_ids, labels, return_boundaries=True)
                 mpl_kwargs["color"] = [
                     group_colors[gid]
                     for gid in sorted(set(group_ids), key=group_ids.index)
                 ]
                 hue = group_ids
         else:
-            xform, labels = reshape_data(xform, cluster_labels, labels)
+            xform, labels, _group_starts = reshape_data(
+                xform, cluster_labels, labels, return_boundaries=True)
             # reshape_data returns groups in first-appearance order;
             # reorder the drawn groups (and their legend/colorbar
             # labels) into sorted label order so a legend reads
@@ -2992,6 +3001,7 @@ def plot(
                 _order = list(range(len(_cats)))
             xform = [xform[i] for i in _order]
             labels = [labels[i] for i in _order]
+            _group_starts = [_group_starts[i] for i in _order]
             hue = cluster_labels
             hue_group_labels = [str(_cats[i]) for i in _order]
             hue_category_names = list(hue_group_labels)
@@ -3254,7 +3264,8 @@ def plot(
                 ) from exc
             if n_clusters is None:
                 _n_datasets_before_hue = len(xform)
-                xform, labels = reshape_data(xform, hue, labels)
+                xform, labels, _group_starts = reshape_data(
+                    xform, hue, labels, return_boundaries=True)
                 if _hue_sort_numeric:
                     # categorical integer hue: reshape_data grouped in
                     # first-appearance order; reorder the drawn groups to
@@ -3265,10 +3276,16 @@ def plot(
                                     key=lambda i: _appear[i])
                     xform = [xform[i] for i in _order]
                     labels = [labels[i] for i in _order]
+                    _group_starts = [_group_starts[i] for i in _order]
                 _hue_regrouped_counts = (_n_datasets_before_hue, len(xform))
-            # interpolate lines if they are grouped
+            # interpolate lines if they are grouped. Bridge each group to
+            # the next EXCEPT into a group that begins a separate input
+            # dataset -- otherwise two distinct trajectories get joined by
+            # a spurious connecting segment (GH #291).
             if is_line(fmt):
-                xform = patch_lines(xform)
+                _breaks = ({i for i, s in enumerate(_group_starts) if s}
+                           if _group_starts is not None else None)
+                xform = patch_lines(xform, breaks=_breaks)
                 # patch_lines bridges each group to the next, so only the
                 # LAST group can remain a single point -- which a pure line
                 # format draws as NOTHING (and which crashed the animated

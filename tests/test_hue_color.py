@@ -154,3 +154,63 @@ def test_wrong_length_nested_hue_still_errors():
     bad = [[0] * 299 for _ in range(3)]  # 299 != 300 per dataset
     with pytest.raises(ValueError, match="observations"):
         hyp.plot(data, '.', hue=bad, show=False)
+
+
+# --- GH #291: categorical hue must not bridge separate datasets --------
+
+def _capture_drawn_traces(plot_call):
+    """Run a hyp.plot(...) call and return the list of arrays actually
+    handed to the matplotlib drawing routine (post hue-regroup + line
+    interpolation). plot.py binds `_draw` locally, so patch it there."""
+    import importlib
+    plot_mod = importlib.import_module('hypertools.plot.plot')
+    captured = {}
+    orig = plot_mod._draw
+
+    def spy(x, *a, **k):
+        captured['x'] = [np.asarray(xi) for xi in x]
+        return orig(x, *a, **k)
+
+    plot_mod._draw = spy
+    try:
+        plot_call()
+    finally:
+        plot_mod._draw = orig
+    return captured['x']
+
+
+def test_categorical_hue_does_not_bridge_separate_datasets():
+    # hyp.plot([A, B], hue=['A']*len(A) + ['B']*len(B)) drew a spurious
+    # straight line from A's last point to B's first point, because the
+    # per-category regroup + patch_lines bridged every group to the next
+    # (GH #291). The two datasets are separate trajectories: no drawn trace
+    # may end exactly where another begins.
+    rng = np.random.default_rng(0)
+    A = np.cumsum(rng.standard_normal((20, 2)), axis=0)
+    B = np.cumsum(rng.standard_normal((20, 2)), axis=0) + np.array([0, 30.0])
+    hue = ['A'] * len(A) + ['B'] * len(B)
+
+    traces = _capture_drawn_traces(
+        lambda: hyp.plot([A, B], hue=hue, show=False))
+    assert len(traces) == 2
+    # no trace's endpoint coincides with another trace's start (the bridge)
+    for i, ti in enumerate(traces):
+        for j, tj in enumerate(traces):
+            if i != j:
+                assert not np.allclose(ti[-1], tj[0]), \
+                    f"trace {i} bridges into trace {j} (GH #291 regression)"
+
+
+def test_categorical_hue_single_trajectory_stays_connected():
+    # the flip side of GH #291: coloring ONE trajectory by contiguous
+    # categories must still render a continuous line -- each colored
+    # segment is bridged to the next (there is no dataset boundary to break
+    # at), so consecutive traces share the transition point.
+    rng = np.random.default_rng(1)
+    T = np.cumsum(rng.standard_normal((20, 2)), axis=0)
+    hue = ['a'] * 10 + ['b'] * 10
+
+    traces = _capture_drawn_traces(lambda: hyp.plot(T, hue=hue, show=False))
+    assert len(traces) == 2
+    # the 'a' segment's last point == the 'b' segment's first point (bridge)
+    assert np.allclose(traces[0][-1], traces[1][0])
