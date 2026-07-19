@@ -20,7 +20,7 @@ from PIL import Image, ImageSequence
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MP4_DIR = os.path.join(REPO, 'docs', 'auto_examples', 'images')
 THUMBS = os.path.join(REPO, 'docs', '_static', 'thumbnails')
-PLOTLY_GIF = os.path.join(REPO, 'docs', 'images', 'v2.0-animations',
+PLOTLY_GIF = os.path.join(REPO, 'docs', 'images', 'v1.0-animations',
                           'plotly_spin.gif')
 
 MPL_ANIMS = ['animate', 'animate_MDS', 'animate_spin', 'chemtrails',

@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from PIL import Image, ImageSequence
 
 import hypertools as hyp
-from hypertools.tools.streaming import is_stream, row_to_vector
+from hypertools.io.streaming import is_stream, row_to_vector
 
 
 def walk_gen(n=300, dim=6, seed=0):
@@ -46,36 +46,46 @@ def test_row_to_vector_formats():
 
 
 def test_stream_plot_consumes_and_projects():
-    geo = hyp.plot(walk_gen(300), show=False, stream_init=100,
-                   stream_chunk=50, stream_max=None)
-    assert geo.xform_data[0].shape == (300, 3)
-    assert geo.data[0].shape == (300, 6)
-    assert geo.stream_info['n_samples'] == 300
-    assert not geo.stream_info['truncated']
+    # the walk deliberately drifts past the head-fitted display box,
+    # provoking the clamped-samples notice
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        fig = hyp.plot(walk_gen(300), show=False, stream_init=100,
+                       stream_chunk=50, stream_max=None)
+    assert fig.stream_info['xform_data'][0].shape == (300, 3)
+    assert fig.stream_info['data'][0].shape == (300, 6)
+    assert fig.stream_info['n_samples'] == 300
+    assert not fig.stream_info['truncated']
     # every consumed sample is on the plot
-    assert len(geo.ax.lines[0].get_data_3d()[0]) == 300
+    assert len(fig.axes[0].lines[0].get_data_3d()[0]) == 300
     plt.close('all')
 
 
 def test_stream_models_fitted_on_head_only():
     """The reduction model must be fitted on the first stream_init samples
     and only *applied* afterwards (issue #101's core requirement)."""
-    geo = hyp.plot(walk_gen(250), show=False, stream_init=80,
-                   stream_chunk=40, stream_max=None)
-    model = geo.stream_info['reduce_model']
+    # the walk deliberately drifts past the head-fitted display box,
+    # provoking the clamped-samples notice
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        fig = hyp.plot(walk_gen(250), show=False, stream_init=80,
+                       stream_chunk=40, stream_max=None)
+    model = fig.stream_info['reduce_model']
     # IncrementalPCA records how many samples it was fitted on
     assert model.n_samples_seen_ == 80
     # the stored projection reproduces the plotted trajectory exactly
-    expected = model.transform(geo.data[0])
-    np.testing.assert_allclose(geo.xform_data[0], expected, atol=1e-10)
+    expected = model.transform(fig.stream_info['data'][0])
+    np.testing.assert_allclose(fig.stream_info['xform_data'][0], expected,
+                               atol=1e-10)
     plt.close('all')
 
 
 def test_stream_max_cuts_off_stream():
-    geo = hyp.plot(walk_gen(500), show=False, stream_init=50,
-                   stream_chunk=50, stream_max=200)
-    assert geo.stream_info['truncated']
-    assert geo.xform_data[0].shape[0] == 200
+    # the walk deliberately drifts past the head-fitted display box,
+    # provoking the clamped-samples notice
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        fig = hyp.plot(walk_gen(500), show=False, stream_init=50,
+                       stream_chunk=50, stream_max=200)
+    assert fig.stream_info['truncated']
+    assert fig.stream_info['xform_data'][0].shape[0] == 200
     plt.close('all')
 
 
@@ -88,25 +98,31 @@ def test_infinite_stream_with_stream_max():
             p = p + 0.1 * rng.standard_normal(4)
             yield p
 
-    geo = hyp.plot(infinite(), show=False, stream_init=60, stream_chunk=30,
-                   stream_max=150)
-    assert geo.stream_info['truncated']
-    assert geo.xform_data[0].shape[0] == 150
+    # the walk deliberately drifts past the head-fitted display box,
+    # provoking the clamped-samples notice
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        fig = hyp.plot(infinite(), show=False, stream_init=60,
+                       stream_chunk=30, stream_max=150)
+    assert fig.stream_info['truncated']
+    assert fig.stream_info['xform_data'][0].shape[0] == 150
     plt.close('all')
 
 
 def test_stream_window_limits_display_not_retention():
-    geo = hyp.plot(walk_gen(300), show=False, stream_init=100,
-                   stream_chunk=50, stream_max=None, stream_window=80)
+    # the walk deliberately drifts past the head-fitted display box,
+    # provoking the clamped-samples notice
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        fig = hyp.plot(walk_gen(300), show=False, stream_init=100,
+                       stream_chunk=50, stream_max=None, stream_window=80)
     # display: only the trailing window is on the artist
-    assert len(geo.ax.lines[0].get_data_3d()[0]) == 80
-    # retention: everything consumed is on the geometry
-    assert geo.xform_data[0].shape[0] == 300
+    assert len(fig.axes[0].lines[0].get_data_3d()[0]) == 80
+    # retention: everything consumed is on stream_info
+    assert fig.stream_info['xform_data'][0].shape[0] == 300
     plt.close('all')
 
 
 def test_stream_interrupt_finalizes(tmp_path):
-    """Ctrl-C during an infinite stream still returns the geometry and
+    """Ctrl-C during an infinite stream still returns the figure and
     finalizes the saved animation."""
     out = str(tmp_path / 'interrupted.gif')
 
@@ -118,10 +134,13 @@ def test_stream_interrupt_finalizes(tmp_path):
             yield p
         raise KeyboardInterrupt
 
-    geo = hyp.plot(interrupting(), show=False, stream_init=60,
-                   stream_chunk=30, stream_max=None, save_path=out)
-    assert geo.stream_info['truncated']
-    assert geo.xform_data[0].shape[0] == 120
+    # the walk deliberately drifts past the head-fitted display box,
+    # provoking the clamped-samples notice
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        fig = hyp.plot(interrupting(), show=False, stream_init=60,
+                       stream_chunk=30, stream_max=None, save_path=out)
+    assert fig.stream_info['truncated']
+    assert fig.stream_info['xform_data'][0].shape[0] == 120
     with Image.open(out) as im:
         assert im.n_frames >= 2  # head + at least one chunk, finalized
     plt.close('all')
@@ -129,8 +148,11 @@ def test_stream_interrupt_finalizes(tmp_path):
 
 def test_stream_animation_export(tmp_path):
     out = str(tmp_path / 'stream.gif')
-    hyp.plot(walk_gen(200), show=False, stream_init=100, stream_chunk=25,
-             stream_max=None, save_path=out)
+    # the walk deliberately drifts past the head-fitted display box,
+    # provoking the clamped-samples notice
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        hyp.plot(walk_gen(200), show=False, stream_init=100,
+                 stream_chunk=25, stream_max=None, save_path=out)
     plt.close('all')
     with Image.open(out) as im:
         # one frame for the head + one per chunk
@@ -142,22 +164,26 @@ def test_stream_animation_export(tmp_path):
 
 def test_stream_low_dim_passthrough():
     """<=3-dimensional samples need no reduction model."""
-    geo = hyp.plot(iter(np.random.default_rng(0).standard_normal((120, 3))),
+    fig = hyp.plot(iter(np.random.default_rng(0).standard_normal((120, 3))),
                    show=False, stream_init=40, stream_chunk=40,
                    stream_max=None)
-    assert geo.stream_info['reduce_model'] is None
-    assert geo.xform_data[0].shape == (120, 3)
+    assert fig.stream_info['reduce_model'] is None
+    assert fig.stream_info['xform_data'][0].shape == (120, 3)
     plt.close('all')
 
 
 def test_stream_normalize_uses_head_stats():
-    geo = hyp.plot(walk_gen(200), show=False, stream_init=100,
-                   stream_chunk=50, stream_max=None, normalize='across')
-    head = geo.data[0][:100]
+    # the walk deliberately drifts past the head-fitted display box,
+    # provoking the clamped-samples notice
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        fig = hyp.plot(walk_gen(200), show=False, stream_init=100,
+                       stream_chunk=50, stream_max=None, normalize='across')
+    head = fig.stream_info['data'][0][:100]
     mu, sd = head.mean(axis=0), head.std(axis=0)
-    model = geo.stream_info['reduce_model']
-    expected = model.transform((geo.data[0] - mu) / sd)
-    np.testing.assert_allclose(geo.xform_data[0], expected, atol=1e-10)
+    model = fig.stream_info['reduce_model']
+    expected = model.transform((fig.stream_info['data'][0] - mu) / sd)
+    np.testing.assert_allclose(fig.stream_info['xform_data'][0], expected,
+                               atol=1e-10)
     plt.close('all')
 
 
@@ -182,11 +208,14 @@ def test_huggingface_iterable_dataset_stream():
     ds = ds.select_columns(['SepalLengthCm', 'SepalWidthCm',
                             'PetalLengthCm', 'PetalWidthCm'])
     assert is_stream(ds)
-    geo = hyp.plot(ds, '.', show=False, stream_init=50, stream_chunk=25,
-                   stream_max=None)
-    assert geo.stream_info['n_samples'] == 150
-    assert geo.xform_data[0].shape == (150, 3)
-    assert geo.data[0].shape == (150, 4)
+    # iris' later rows fall outside the display box fitted on the first 50,
+    # provoking the clamped-samples notice
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        fig = hyp.plot(ds, '.', show=False, stream_init=50, stream_chunk=25,
+                       stream_max=None)
+    assert fig.stream_info['n_samples'] == 150
+    assert fig.stream_info['xform_data'][0].shape == (150, 3)
+    assert fig.stream_info['data'][0].shape == (150, 4)
     plt.close('all')
 
 
@@ -194,7 +223,7 @@ def test_stream_view_is_frozen_after_head():
     """Round-6.5: once the head sets the space, drawn positions of already-
     plotted points NEVER move as new chunks arrive (no per-chunk rescale
     'twitch'), and the axis limits stay fixed."""
-    import hypertools.tools.streaming as st
+    import hypertools.io.streaming as st
 
     # drifting walk: later samples leave the head's extent
     def drifting(n=300):
@@ -204,22 +233,26 @@ def test_stream_view_is_frozen_after_head():
             p = p + 0.05 * rng.standard_normal(4) + 0.05  # steady drift
             yield p
 
-    geo = hyp.plot(drifting(), show=False, stream_init=100, stream_chunk=50,
-                   stream_max=None)
+    # the drift deliberately leaves the head-fitted display box, provoking
+    # the clamped-samples notice
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        fig = hyp.plot(drifting(), show=False, stream_init=100,
+                       stream_chunk=50, stream_max=None)
     # reconstruct what the head looked like on the first draw: its first
     # 100 projected rows, pushed through the frozen transform, must equal
     # the first 100 drawn points of the final artist exactly
-    xs, ys, zs = geo.ax.lines[0].get_data_3d()
+    xs, ys, zs = fig.axes[0].lines[0].get_data_3d()
     drawn = np.column_stack([xs, ys, zs])
-    model = geo.stream_info['reduce_model']
-    head_red = model.transform(geo.data[0][:100])
+    model = fig.stream_info['reduce_model']
+    head_red = model.transform(fig.stream_info['data'][0][:100])
     mu = head_red.mean(axis=0, keepdims=True)
     c = head_red - mu
     m1, m2 = c.min(), (c - c.min()).max()
     expected_head = 2.0 * ((head_red - mu) - m1) / m2 - 1.0
     np.testing.assert_allclose(drawn[:100], expected_head, atol=1e-12)
     # limits are the standard fixed cube
-    assert geo.ax.get_xlim3d()[0] <= -1 and geo.ax.get_xlim3d()[1] >= 1
+    assert fig.axes[0].get_xlim3d()[0] <= -1 and \
+        fig.axes[0].get_xlim3d()[1] >= 1
     plt.close('all')
 
 
@@ -232,9 +265,12 @@ def test_stream_out_of_range_samples_clamped_to_box():
             p = p + step * rng.standard_normal(4)
             yield p
 
-    geo = hyp.plot(exploding(), show=False, stream_init=100, stream_chunk=50,
-                   stream_max=None)
-    xs, ys, zs = geo.ax.lines[0].get_data_3d()
+    # the explosion deliberately leaves the head-fitted display box,
+    # provoking the clamped-samples notice this test is about
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        fig = hyp.plot(exploding(), show=False, stream_init=100,
+                       stream_chunk=50, stream_max=None)
+    xs, ys, zs = fig.axes[0].lines[0].get_data_3d()
     drawn = np.column_stack([xs, ys, zs])
     # every drawn point is inside (or exactly on) the box surface
     assert np.abs(drawn).max() <= 1.0 + 1e-12

@@ -21,8 +21,15 @@
 import sys, os
 
 # plotly scraper for sphinx-gallery: renders plotly figures produced by
-# gallery examples (requires kaleido). Falls back gracefully if plotly is
-# unavailable so the docs still build.
+# gallery examples to static PNGs. This needs THREE things: plotly, kaleido,
+# and a real Chrome/Chromium that kaleido drives headlessly (kaleido 1.x). The
+# try/except below only covers a missing/broken *plotly import* -- it does NOT
+# paper over a missing Chrome: if plotly imports but Chrome is absent, the
+# Plotly gallery examples fail and the build errors out (by design, so a
+# misconfigured environment is caught, not silently shipped with broken
+# thumbnails). Chrome is provisioned via `plotly_get_chrome` -- on Read the
+# Docs by .readthedocs.yaml's post_install job, and in CI by the docs-clean
+# job in .github/workflows/test.yml (2026-07 release review, blocker #2).
 try:
     import plotly.io as pio
     pio.renderers.default = 'sphinx_gallery_png'
@@ -36,7 +43,7 @@ sys.path.insert(0, os.path.abspath('../'))
 def _install_notebook_cell():
     """First cell for every gallery notebook: install hypertools so the
     notebook runs standalone in Colab. Branch-aware -- installs the current
-    branch from GitHub for previews (e.g. dev-2.0), or the released package
+    branch from GitHub for previews (e.g. dev-1.0), or the released package
     on master. Kept in sync with scripts/add_colab_install_cell.py, which
     injects the same line into the hand-authored tutorial notebooks."""
     import subprocess
@@ -85,6 +92,17 @@ extensions = ['sphinx.ext.autodoc',
 # allow nbsphinx errors for missing optional dependencies
 nbsphinx_allow_errors = True
 
+# numpydoc auto-inserts a "Methods" autosummary (with :toctree:) into every
+# documented class's page by default, pointing at per-method stub pages
+# that autosummary_generate never creates for inherited/sklearn-mixin
+# methods (fit/transform/get_params/etc.) -- this task's api.rst additions
+# are the first CLASS entries (Pipeline, the six Autoencoder reducers, the
+# six gensim Vectorizer wrappers), so leaving this at its True default
+# produces ~100 "stub file not found" warnings. Off: classes' methods are
+# still fully documented on the class's own page (via numpydoc's docstring
+# rendering), just without the broken per-method stub links.
+numpydoc_class_members_toctree = False
+
 # Never execute notebooks during the docs build: tutorial notebooks are
 # committed pre-executed (with outputs), and 'auto' also re-executed every
 # sphinx-gallery-generated .ipynb -- doubling build time and hanging on
@@ -108,7 +126,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'hypertools'
-copyright = u'2017, Contextual Dynamics Laboratory'
+copyright = u'2017-2026, Contextual Dynamics Laboratory'
 author = u'Andrew C. Heusser, Kirsten Ziman, Lucy L. W. Owen, Jeremy R. Manning'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -165,6 +183,10 @@ todo_include_todos = False
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
+# Browser-tab icon (generated from the hypertools logo, images/hypercube.png);
+# without it every docs page load 404s on /favicon.ico
+html_favicon = '_static/favicon.ico'
+
 # Add custom CSS and JS
 html_css_files = [
     'custom.css',
@@ -183,9 +205,12 @@ html_js_files = [
 # _static/custom.css.
 html_theme = 'furo'
 
-extlinks = {'github': 'https://github.com/ContextLab/hypertools'}
-
 html_title = 'hypertools'
+
+# sphinx_gallery_conf contains function objects (image scrapers), which
+# sphinx cannot pickle into its environment cache; suppress the (harmless)
+# "cannot cache unpickleable configuration value" warning it triggers.
+suppress_warnings = ['config.cache']
 
 html_theme_options = {
     'source_repository': 'https://github.com/ContextLab/hypertools',
@@ -317,8 +342,22 @@ sphinx_gallery_conf = {
         'hypertools': None,  # Use relative links for local docs
         'matplotlib': 'https://matplotlib.org/stable/',
         'numpy': 'https://numpy.org/doc/stable/',
-        'scipy': 'https://docs.scipy.org/doc/scipy/reference/',
+        # NOTE: must be the docs ROOT (no trailing /reference/) so
+        # sphinx-gallery can fetch _static/documentation_options.js
+        'scipy': 'https://docs.scipy.org/doc/scipy/',
         'pandas': 'https://pandas.pydata.org/pandas-docs/stable/',
         'scikit-learn': 'https://scikit-learn.org/stable/',
     }
 }
+
+
+def setup(app):
+    # Keep the strict (-W) docs-clean CI gate robust to TRANSIENT third-party
+    # doc-site outages: sphinx-gallery fetches each `reference_url` site's
+    # searchindex.js to hyperlink API names, and a 503 there would otherwise
+    # fail the whole build. The filter (and the unit test that guards its
+    # message-matching against sphinx-gallery's source) lives in a
+    # side-effect-free module so it can be tested -- see
+    # docs/_gallery_log_filter.py and tests/test_docs_gallery_log_filter.py.
+    from _gallery_log_filter import install
+    install()

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+==========================================
 Defining a custom corpus for plotting text
-=============================
+==========================================
 
 By default, the text samples will be transformed into a vector of word counts
-and then modeled using Latent Dirichlet Allocation (# of topics = 100) using a
+and then modeled using Latent Dirichlet Allocation (# of topics = 50) using a
 model fit to a large sample of wikipedia pages.  However, you can optionally
 pass your own text to fit the semantic model. To do this define corpus as a
 list of documents (strings). A topic model will be fit on the fly and the text

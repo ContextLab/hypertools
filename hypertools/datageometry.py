@@ -1,298 +1,39 @@
+"""
+INTERNAL -- not part of the public API.
+
+Retained solely to unpickle the hosted example-dataset geo files so
+:func:`hypertools.load` can extract their raw data; hypertools 1.0 users
+never receive a DataGeometry (``plot()`` returns a Figure, ``load()``
+returns raw data).
+
+This module MUST stay at the import path ``hypertools.datageometry`` so the
+hosted example-dataset pickles (created by hypertools < 1.0) resolve their
+stored class reference ``hypertools.datageometry.DataGeometry`` when
+unpickled. Unpickling bypasses ``__init__`` and restores the instance
+``__dict__`` directly, so the minimal class below is sufficient to recover
+``self.data`` via :meth:`get_data`.
+"""
+
 import copy
-import pickle
-import warnings
-
-import pandas as pd
-
-from .tools.normalize import normalize as normalizer
-from .tools.reduce import reduce as reducer
-from .tools.align import align as aligner
-from .tools.format_data import format_data
-from ._shared.helpers import convert_text, get_dtype
-from .config import __version__
-
-
-def _maybe_load_strings(data):
-    """Route strings that plausibly name data sources (built-in dataset
-    names, file paths, Hugging Face ids, Drive/Dropbox links, URLs) through
-    hyp.load. Strings that don't look like sources -- and lists containing
-    any such string -- pass through untouched, so raw text still flows to
-    the text-embedding pipeline."""
-    from .tools.sources import is_loadable_string
-
-    if isinstance(data, str) and is_loadable_string(data):
-        from .tools.load import load
-        return load(data)
-    if isinstance(data, (list, tuple)) and len(data) and \
-            all(isinstance(d, str) for d in data) and \
-            all(is_loadable_string(d) for d in data):
-        from .tools.load import load
-        return load(list(data))
-    return data
 
 
 class DataGeometry(object):
-    """
-    Hypertools data object class
+    """INTERNAL unpickle-only shell for legacy hypertools geo pickles.
 
-    A DataGeometry object contains the data, figure handles and transform
-    functions used to create a plot.  Note: this class should not be called
-    directly, but is used by the `hyp.plot` function to create a plot object.
-
-    Parameters
-    ----------
-
-    fig : matplotlib.Figure
-        The matplotlib figure handle for the plot
-
-    ax : matplotlib.Axes
-        The matplotlib axes handle for the plot
-
-    line_ani : matplotlib.animation.FuncAnimation
-        The matplotlib animation handle (if the plot is an animation)
-
-    data : list
-        A list of numpy arrays representing the raw data
-
-    xform_data : list
-        A list of numpy arrays representing the transformed data
-
-    reduce : dict
-        A dictionary containing the reduction model and parameters
-
-    align : dict
-        A dictionary containing align model and parameters
-
-    normalize : str
-        A string representing the kind of normalization
-
-    kwargs : dict
-        A dictionary containing all kwargs passed to the plot function
-
-    version : str
-        The version of the software used to create the class instance
-
+    Not part of the public API. Exists only so the hosted example-dataset
+    pickles can be unpickled and their raw data extracted via
+    :meth:`get_data`. hypertools 1.0 never constructs or returns one of
+    these to users.
     """
 
-    def __init__(self, fig=None, ax=None, line_ani=None, data=None, xform_data=None,
-                 reduce=None, align=None, normalize=None, semantic=None,
-                 vectorizer=None, corpus=None, kwargs=None, version=__version__,
-                 dtype=None):
-
-        # matplotlib figure handle
-        self.fig = fig
-
-        # matplotlib axis handle
-        self.ax = ax
-
-        # matplotlib line_ani handle (if its an animation)
-        self.line_ani = line_ani
-
-        # convert to numpy array if text
-        if isinstance(data, list):
-            data = list(map(convert_text, data))
+    def __init__(self, data=None, **kwargs):
+        # Kept minimal so hypertools.io.load._load_legacy (deepdish-format
+        # geos) can still reconstruct an object. Unpickling the hosted
+        # pickles does NOT call this -- it restores __dict__ directly.
         self.data = data
-        self.dtype = get_dtype(data)
-
-        # the transformed data
-        self.xform_data = xform_data
-
-        # dictionary of model and model_params
-        self.reduce = reduce
-
-        # 'hyper', 'SRM' or None
-        self.align = align
-
-        # 'within', 'across', 'row' or False
-        self.normalize = normalize
-
-        # text params
-        self.semantic = semantic
-        self.vectorizer = vectorizer
-
-        self.corpus = corpus
-
-        # dictionary of kwargs
-        self.kwargs = kwargs
-
-        # hypertools version
-        self.version = version
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
     def get_data(self):
-        """Return a copy of the data"""
+        """Return a copy of the data."""
         return copy.copy(self.data)
-
-    def get_formatted_data(self):
-        """Return a formatted copy of the data"""
-        return format_data(self.data)
-
-    # a function to transform new data
-    def transform(self, data=None):
-        """
-        Return transformed data, or transform new data using the same model
-        parameters
-
-        Parameters
-        ----------
-        data : numpy array, pandas dataframe, string or list
-            The data to transform.  If no data is passed, the xform_data from
-            the DataGeometry object will be returned.  Strings (and lists of
-            strings) naming data sources are loaded automatically via
-            :func:`hypertools.load`: built-in dataset names, local file
-            paths, Hugging Face dataset ids, Google Drive / Dropbox links,
-            and other URLs all work; raw text is embedded as usual.
-
-        Returns
-        ----------
-        xformed_data : list of numpy arrays
-            The transformed data
-
-        """
-        # if no new data passed,
-        if data is None:
-            return self.xform_data
-        else:
-            data = _maybe_load_strings(data)
-            formatted = format_data(
-                data,
-                semantic=self.semantic,
-                vectorizer=self.vectorizer,
-                corpus=self.corpus,
-                ppca=True)
-            norm = normalizer(formatted, normalize=self.normalize)
-            reduction = reducer(
-                norm,
-                reduce=self.reduce,
-                ndims=self.reduce['params']['n_components'])
-            return aligner(reduction, align=self.align)
-
-    # a function to plot the data
-    def plot(self, data=None, **kwargs):
-        """
-        Plot the data
-
-        Parameters
-        ----------
-        data : numpy array, pandas dataframe, string or list
-            The data to plot.  If no data is passed, the xform_data from
-            the DataGeometry object will be returned.  Strings (and lists
-            of strings) naming data sources are loaded automatically via
-            :func:`hypertools.load` (built-in dataset names, local file
-            paths, Hugging Face dataset ids, Google Drive / Dropbox links,
-            and other URLs); raw text is embedded as usual.
-
-        kwargs : keyword arguments
-            Any keyword arguments supported by `hypertools.plot` are also supported
-            by this method
-
-        Returns
-        ----------
-        geo : hypertools.DataGeometry
-            A new data geometry object
-
-        """
-
-        # import plot here to avoid circular imports
-        from .plot.plot import plot as plotter
-
-        if data is None:
-            d = copy.copy(self.data)
-            transform = copy.copy(self.xform_data)
-            if any([k in kwargs for k in ['reduce', 'align', 'normalize',
-                                          'semantic', 'vectorizer', 'corpus']]):
-                d = copy.copy(self.data)
-                transform = None
-        else:
-            d = _maybe_load_strings(data)
-            transform = None
-
-        # get kwargs and update with new kwargs
-        new_kwargs = copy.copy(self.kwargs)
-
-        # animation pacing follows the CURRENT library standard (30 fps,
-        # 30 s duration, 1 rotation per 30 s) rather than values baked into
-        # saved geos -- old .geo files carry their era's defaults (e.g.
-        # frame_rate=50, rotations=2) as explicit kwargs, which would
-        # silently replay outdated pacing. Callers can still override by
-        # passing these to plot() directly.
-        for pacing_key in ('frame_rate', 'rotations', 'duration'):
-            new_kwargs.pop(pacing_key, None)
-
-        update_kwargs = dict(transform=transform, reduce=self.reduce,
-                       align=self.align, normalize=self.normalize,
-                       semantic=self.semantic, vectorizer=self.vectorizer,
-                       corpus=self.corpus)
-        new_kwargs.update(update_kwargs)
-        for key in kwargs:
-            new_kwargs.update({key : kwargs[key]})
-
-        # geos saved by hypertools < 2.0 may carry arguments that were
-        # retired in 2.0; translate/drop them so old files still replay
-        retired = {'group': 'hue', 'model': None, 'model_params': None}
-        for old_key, new_key in retired.items():
-            if old_key in new_kwargs:
-                value = new_kwargs.pop(old_key)
-                if new_key is not None and value is not None \
-                        and new_kwargs.get(new_key) is None:
-                    new_kwargs[new_key] = value
-                import warnings
-                warnings.warn(f"'{old_key}' was retired in hypertools 2.0; "
-                              "it has been "
-                              + (f"mapped to '{new_key}'" if new_key
-                                 else "ignored")
-                              + " while replaying this saved geo.")
-        return plotter(d, **new_kwargs)
-
-    def save(self, fname, compression=None):
-        """
-        Save method for the data geometry object
-
-        The data will be saved as a 'geo' file, which is a dictionary containing
-        the elements of a data geometry object saved in the hd5 format using
-        `deepdish`.
-
-        Parameters
-        ----------
-        fname : str
-            A name for the file.  If the file extension (.geo) is not specified,
-            it will be appended.
-        """
-        if compression is not None:
-            warnings.warn("Hypertools has switched from deepdish to pickle "
-                          "for saving DataGeomtry objects. 'compression' "
-                          "argument has no effect and will be removed in a "
-                          "future version",
-                          FutureWarning)
-
-        # automatically add extension if not present
-        if not fname.endswith('.geo'):
-            fname += '.geo'
-
-        # can't save/restore matplotlib objects across sessions
-        curr_fig = self.fig
-        curr_ax = self.ax
-        curr_line_ani = self.line_ani
-
-        curr_data = self.data
-        # convert pandas DataFrames to dicts of
-        # {column_name: list(column_values)} to fix I/O compatibility
-        # issues across certain pandas versions. Expected self.data
-        # format is restored by hypertools.load
-        if isinstance(curr_data, pd.DataFrame):
-            data_out_fmt = curr_data.to_dict('list')
-        else:
-            data_out_fmt = curr_data
-
-        try:
-            self.fig = self.ax = self.line_ani = None
-            self.data = data_out_fmt
-            # save
-            with open(fname, 'wb') as f:
-                pickle.dump(self, f)
-        finally:
-            # make sure we don't mutate attribute values whether or not
-            # save was successful
-            self.fig = curr_fig
-            self.ax = curr_ax
-            self.line_ani = curr_line_ani
-            self.data = curr_data

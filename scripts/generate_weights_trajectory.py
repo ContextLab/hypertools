@@ -7,14 +7,11 @@ hypertools.gif), reconstructed from the 2020 pieman_trajectory_demo notebook
 Run from the repo root:
     .venv/bin/python scripts/generate_weights_trajectory.py
 
-Output: docs/images/v2.0-animations/weights_hyperaligned.gif
+Output: docs/images/v1.0-animations/weights_hyperaligned.gif
 """
 
 import os
 import subprocess
-
-import numpy as np
-from scipy.ndimage import gaussian_filter1d
 
 import matplotlib
 matplotlib.use('Agg')
@@ -24,13 +21,14 @@ N_ITER = 20
 KERNEL_VAR = 300
 ALIGN = 'SRM'
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                       'docs', 'images', 'v2.0-animations')
+                       'docs', 'images', 'v1.0-animations')
 
 
 def smooth(datasets, var=KERNEL_VAR):
-    """Gaussian temporal smoothing (timecorr-style, variance in timepoints)."""
-    return [gaussian_filter1d(np.asarray(d, dtype=np.float64),
-                              sigma=np.sqrt(var), axis=0)
+    """Gaussian temporal smoothing (timecorr-style, variance in timepoints),
+    via hyp.manip's Smooth(mode='gaussian') -- see hypertools/manip/smooth.py.
+    """
+    return [hyp.manip(d, model='Smooth', mode='gaussian', var=var, axis=0)
             for d in datasets]
 
 

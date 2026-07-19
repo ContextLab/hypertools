@@ -1,48 +1,59 @@
 # -*- coding: utf-8 -*-
 """
-=============================
-A DataGeometry object or "geo"
-=============================
+===================================================
+Working with plot outputs (figures & fitted models)
+===================================================
 
-When the plot function is called, it returns a DataGeometry object, or geo. A
-geo contains all the pieces needed to regenerate the plot. You can use the geo
-plot method to evaluate the same plot with new arguments, like changing the color
-of the points, or trying a different normalization method.  To save the plot,
-simply call geo.save(fname), where fname is a file name/path.  Then, this file
-can be reloaded using hyp.load to be plotted again at another time.  Finally,
-the transform method can be used to transform new data using the same transformations
-that were applied to the geo.
+`hyp.plot` returns a plain matplotlib (or plotly) Figure -- there is no
+special container object to learn. Anything you can do with a Figure
+(``fig.savefig(...)``, grabbing ``fig.axes[0]`` to tweak the plot,
+embedding it in a larger layout, etc.) just works.
+
+If you also want access to the analyzed data and the fitted
+reduce/align/cluster models, pass ``return_model=True``. Instead of the
+bare figure, `hyp.plot` then returns a dict bundle with six keys:
+``{'fig': ..., 'xform_data': ..., 'animation': ..., 'models': ...,
+'pipeline': ..., 'predict': ...}``, where ``xform_data`` is the
+normalized/reduced/aligned data that was actually plotted, ``animation`` is
+the ``matplotlib.animation.Animation`` handle when ``animate=True``
+(``None`` otherwise, and for plotly figures), ``models`` records the
+reduce/align/cluster specs used to produce it, ``pipeline`` is the fitted
+`hyp.Pipeline` (feed it back in via ``pipeline=`` to replay the exact
+fitted stages on new data), and ``predict`` holds the fitted forecaster
+and forecasts when ``predict=`` was used (``None`` otherwise).
+
+Note that `hyp.load` returns raw data directly (e.g. a list of arrays) --
+there is nothing further to unpack.
 """
 
-# Code source: Andrew Heusser
+# Code source: Contextual Dynamics Lab
 # License: MIT
 
 # import
+import os
+import tempfile
 import hypertools as hyp
 
-# load some data
-geo = hyp.load('mushrooms')
+# load some data -- a list of arrays, ready to plot as-is
+data = hyp.load('spiral')
 
-# plot
-t = geo.plot()
+# plot: the return value is just a matplotlib Figure
+fig = hyp.plot(data, ndims=3)
 
-# replot with new parameters
-geo.plot(normalize='within', color='green')
+# treat it like any other Figure
+png_path = os.path.join(tempfile.mkdtemp(), 'spiral.png')
+fig.savefig(png_path)
+ax = fig.axes[0]
+print(f"axes type: {type(ax).__name__}")
 
-# save the object
-# geo.save('test')
+# ask for the fitted models and the analyzed data alongside the figure
+out = hyp.plot(data, ndims=3, reduce='PCA', return_model=True)
 
-# load it back in
-# geo = hyp.load('test.geo')
+fig2 = out['fig']
+xform_data = out['xform_data']
+models = out['models']
 
-# transform some new data
-# transformed_data = geo.transform(data)
-
-# transform some 'new' data and plot it
-# hyp.plot(transformed_data, '.')
-
-# get a copy of the data
-# geo.get_data()
-
-# get the formatted data
-# geo.get_formatted_data()
+print(f"bundle keys: {sorted(out.keys())}")
+print(f"number of arrays returned: {len(xform_data)}")
+print(f"reduced shape (first array): {xform_data[0].shape}")
+print(f"reduce model spec: {models['reduce']}")

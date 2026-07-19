@@ -19,8 +19,7 @@ precog argument to plot a low-opacity trace of the entire timeseries.
 import hypertools as hyp
 
 # load example data
-geo = hyp.load('weights_avg')
+data = hyp.load('weights_avg')
 
 # plot
-ani_geo = geo.plot(animate=True, chemtrails=True)
-ani = ani_geo.line_ani  # the underlying matplotlib FuncAnimation
+fig, ani = hyp.plot(data, animate=True, chemtrails=True)

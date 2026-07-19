@@ -22,8 +22,7 @@ visualized.
 import hypertools as hyp
 
 # load the data
-geo = hyp.load('weights')
-data = geo.get_data()
+data = hyp.load('weights')
 
 # process the data
 data = hyp.analyze(data, normalize='within', reduce='PCA', ndims=10,

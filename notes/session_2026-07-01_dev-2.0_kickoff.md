@@ -1,4 +1,4 @@
-# Session 2026-07-01: hypertools 2.0 kickoff (dev-2.0 branch)
+# Session 2026-07-01: hypertools 1.0 kickoff (dev-1.0 branch)
 
 ## Goal (user request)
 1. Diagnose/clean up "10k+ uncommitted changes" in local repo. ✅ DONE
@@ -15,7 +15,7 @@
 ## Findings so far
 
 ### "10k+ uncommitted changes" — RESOLVED
-Working tree was actually clean. The count came from two untracked dirs: `.venv/` (545MB virtualenv, Python 3.12.10) and `.omc/` (12KB tooling state). Fixed by adding `.venv/`, `venv/`, `.omc/`, `__pycache__/` to .gitignore (commit c8257b6 on dev-2.0).
+Working tree was actually clean. The count came from two untracked dirs: `.venv/` (545MB virtualenv, Python 3.12.10) and `.omc/` (12KB tooling state). Fixed by adding `.venv/`, `venv/`, `.omc/`, `__pycache__/` to .gitignore (commit c8257b6 on dev-1.0).
 
 ### Repo/branch state
 - `origin` = ContextLab/hypertools, master at 125a09b (v0.8.2).
@@ -27,12 +27,12 @@ Working tree was actually clean. The count came from two untracked dirs: `.venv/
   - `jeremy/streaming` — zmq-based streaming plots, keyboard listener.
   - `jeremy/text-features` — format_data/transform fixes, ndims bug fixes.
 - Deleted stale local branch `fix/colab-import-error` (already merged).
-- Created local branch **`dev-2.0`** from master — all 2.0 work goes here.
+- Created local branch **`dev-1.0`** from master — all 2.0 work goes here.
 
 ### Performance
 - `import hypertools`: 11.6s cold / **5.1s warm**. ~3s is umap→pynndescent (numba JIT) eagerly imported via `hypertools.tools.reduce`; seaborn ~0.7s. Fix: lazy imports (PEP 562 module `__getattr__`).
 
-### Open GitHub issues worth addressing in 2.0 (selection)
+### Open GitHub issues worth addressing in 1.0 (selection)
 - #265 animations broken with numpy≥2 in Jupyter; #235 animate=True broken in Colab
 - #264 multiple figures in a loop; #259 import mutates matplotlib rcParams (side effects!)
 - #251/#244/#199 better tests; #236 extract cluster/reduced data from plot result
@@ -40,17 +40,17 @@ Working tree was actually clean. The count came from two untracked dirs: `.venv/
 - #212 pip install dependency pain; #193 geo iterable/indexable; #191 interactive backend request (ipyvolume)
 
 ## Completed this session
-- [x] All 4 subagent reports collected (jeremy/dev design, backend branches, master audit, fork issue tracker #1-34 incl. comments). Full synthesis in **notes/hypertools_2.0_roadmap.md** — read that first when resuming.
-- [x] Roadmap/architecture doc committed on dev-2.0.
+- [x] All 4 subagent reports collected (jeremy/dev design, backend branches, master audit, fork issue tracker #1-34 incl. comments). Full synthesis in **notes/hypertools_1.0_roadmap.md** — read that first when resuming.
+- [x] Roadmap/architecture doc committed on dev-1.0.
 - [x] Screenshot harness (scripts/screenshot_harness.py) + baseline generator (scripts/generate_baseline_screenshots.py): 13/13 cases pass on v0.8.2, PNGs in tests/screenshots/baseline_v0.8.2/ (gitignored), 2 spot-checked visually — correct.
-- [x] Dev notebook: dev/hypertools_2.0_dev.ipynb (valid nbformat, 20 cells, one section per public function + use-case matrix).
+- [x] Dev notebook: dev/hypertools_1.0_dev.ipynb (valid nbformat, 20 cells, one section per public function + use-case matrix).
 
 ## Jeremy's confirmations (2026-07-02)
 - backend='auto' policy approved (plotly only on Colab/Kaggle; matplotlib elsewhere).
 - REQUIRED carries from revamp: multilevel-index support, stack/unstack implementation strategy, robust coloring (mat2colors/vals2colors), mixture models as soft-clustering alternative. Detailed specs added to roadmap ("Data shapes & color system" section) + dev notebook section 4.
 
 ## Key facts to remember when resuming
-- Branch: **dev-2.0** (all work here; NEVER touch master — PR only after Jeremy signs off).
+- Branch: **dev-1.0** (all work here; NEVER touch master — PR only after Jeremy signs off).
 - Fork remote added as `jeremy`; refactor code = `jeremy/dev` branch `dev/` folder; backend lessons in `jeremy/matplotlib-backend-revert` notes/.
 - Fork issues verdict: plotly-as-primary caused the worst unfixed bugs (GIF camera #34, GIF background #33, 3D camera centering #25) → matplotlib default + plotly optional is the confirmed 2.0 architecture.
 - `describe(show=False)` skips figure creation entirely (API inconsistency, 2.0 cleanup item).
@@ -58,19 +58,19 @@ Working tree was actually clean. The count came from two untracked dirs: `.venv/
 - Agent-report gotcha (harness quirk this session): subagent final messages arrived as stubs; recover with jq over the task .output transcript (assistant text entries).
 
 ## Implementation status (updated 2026-07-02, second work block)
-All implemented on dev-2.0, tests green at every commit (169 passing, up from 136):
-- **Phase 0 DONE**: pyproject.toml (v2.0.0.dev0, py3.10+), CI matrix 3.10-3.13 + action bumps + screenshot artifacts, readthedocs py3.11, memoize REMOVED everywhere (user requirement), lazy imports (import 5.1s → 1.46s), sklearn HDBSCAN swap (external hdbscan + SyntaxWarning filter dropped), double-format fix in plot, rc_context styling fix (#259, verified rcParams untouched).
+All implemented on dev-1.0, tests green at every commit (169 passing, up from 136):
+- **Phase 0 DONE**: pyproject.toml (v1.0.0.dev0, py3.10+), CI matrix 3.10-3.13 + action bumps + screenshot artifacts, readthedocs py3.11, memoize REMOVED everywhere (user requirement), lazy imports (import 5.1s → 1.46s), sklearn HDBSCAN swap (external hdbscan + SyntaxWarning filter dropped), double-format fix in plot, rc_context styling fix (#259, verified rcParams untouched).
 - **Phase 1 DONE**: mixture models (GaussianMixture/BayesianGM/LDA/NMF) return (n,k) proportions from cluster(); hypertools/tools/colors.py (mat2colors/colors2groups); plot() supports mixture cluster= (blended colors), matrix-valued hue, continuous hue; nested-list input with multilevel styling (outer-group color, depth-scaled linewidth/alpha; text lists excluded).
 - **Phase 2 DONE**: hypertools/plot/interactive.py plotly backend (2D/3D, fmt→mode, camera conversion, no-ticks aesthetic, sliding-window + spin animations w/ play controls); plot(backend='auto'|'matplotlib'|'plotly'); auto = plotly ONLY on Colab/Kaggle (approved policy). kaleido export wired into screenshot harness.
 - **Verification: 44/44 screenshot cases pass** (scripts/generate_verification_screenshots.py) covering plot/reduce/align/normalize/cluster/analyze/describe/format_data/load/text + plotly backend cases; INDEX.md manifest generated. Spot-checked visually: correct.
-- README updated (What's new in 2.0, requirements, extras).
+- README updated (What's new in 1.0, requirements, extras).
 
 ## Remaining before PR
-- [x] Execute dev notebook end-to-end (8/8 code cells, 0 errors) — dev/hypertools_2.0_dev_executed.ipynb committed. Executing it caught a REAL bug: backend.py's mpl.use fallback only caught ImportError, but matplotlib>=3.9 raises ValueError for missing ipympl (likely the Colab #235 root cause) — fixed.
-- [x] Committed verification screenshots to docs/images/v2.0-verification/ (1.2MB, 44 PNGs + INDEX.md).
+- [x] Execute dev notebook end-to-end (8/8 code cells, 0 errors) — dev/hypertools_1.0_dev_executed.ipynb committed. Executing it caught a REAL bug: backend.py's mpl.use fallback only caught ImportError, but matplotlib>=3.9 raises ValueError for missing ipympl (likely the Colab #235 root cause) — fixed.
+- [x] Committed verification screenshots to docs/images/v1.0-verification/ (1.2MB, 44 PNGs + INDEX.md).
 - [x] Final checks: 169/169 tests, 13/13 baselines, import 1.5s, README updated.
 - [x] Sphinx docs build succeeded (use .venv/bin sphinx-build; GIF thumbnail post-processing ok).
-- [x] Pushed dev-2.0; PR #270 opened: https://github.com/ContextLab/hypertools/pull/270 (awaiting Jeremy sign-off; DO NOT MERGE). CI matrix (3 OS x py3.10-3.13) running.
+- [x] Pushed dev-1.0; PR #270 opened: https://github.com/ContextLab/hypertools/pull/270 (awaiting Jeremy sign-off; DO NOT MERGE). CI matrix (3 OS x py3.10-3.13) running.
 
 ## PR body
 Saved at scratchpad pr_body.md (session-local); recreate from this file's summary + roadmap if lost.
@@ -104,12 +104,12 @@ Feedback: (a) backends must match visually (styles/sizing/colors), (b) many feat
 - Evidence push bf2899c: CI fully green again (24/24 checks, 3 OS x py3.10-3.13).
 - PR #270 body rewritten with full scope; evidence comment posted:
   https://github.com/ContextLab/hypertools/pull/270#issuecomment-4865614702
-- Everything Jeremy flagged is done: backend parity (22/22 montages, docs/images/v2.0-parity), full feature screenshot coverage (75/75, docs/images/v2.0-verification), apply_model core, gallery+sphinx, animation bugs #264/#265 regression-tested, deprecated kwargs retired.
+- Everything Jeremy flagged is done: backend parity (22/22 montages, docs/images/v1.0-parity), full feature screenshot coverage (75/75, docs/images/v1.0-verification), apply_model core, gallery+sphinx, animation bugs #264/#265 regression-tested, deprecated kwargs retired.
 - Awaiting Jeremy's review/sign-off. DO NOT MERGE.
 
 ## Fourth work block (2026-07-02, review round 2)
 Jeremy's feedback: mixtures not showing multi-class membership; title/aspect/sizing mismatch across backends; animation "doesn't appear to work" + need gif/apng/mp4 export; gallery thumbnails old + verify plotly animations. All addressed (commit b77945f):
-- **Animation export**: _save_animation (plot.py) picks writer by extension (.gif Pillow / .png+.apng animated PNG / .mp4 ffmpeg); plotly _export_animation_file renders frames via kaleido + assembles (PIL/ffmpeg), controls excluded from exports (must set layout.updatemenus = (), NOT update_layout([])); plotly n_frames now scales with duration (15/s, clamped 10-90) — export tests 14min → <5min. 7 tests w/ real files. Samples in docs/images/v2.0-animations/ + INDEX.
+- **Animation export**: _save_animation (plot.py) picks writer by extension (.gif Pillow / .png+.apng animated PNG / .mp4 ffmpeg); plotly _export_animation_file renders frames via kaleido + assembles (PIL/ffmpeg), controls excluded from exports (must set layout.updatemenus = (), NOT update_layout([])); plotly n_frames now scales with duration (15/s, clamped 10-90) — export tests 14min → <5min. 7 tests w/ real files. Samples in docs/images/v1.0-animations/ + INDEX.
 - **Overlapping mixtures**: all mixture demos use 1.5-sd-separated blobs (make_overlapping_clusters in both scripts, examples, notebook); test asserts >15% genuinely soft assignments. Verified visually: blended boundary colors on both backends.
 - **Parity round 2**: title centered/black/16px matching mpl; default 640x480; 2D frame fills canvas (dropped scaleanchor); 3D aspectmode manual 4:4:3 (mpl default box aspect) — test updated accordingly; camera r=1.95 for size match.
 - **Gallery**: plotly_sg_scraper in docs/conf.py (renderer sphinx_gallery_png); animate_plotly example; animated thumbnail sphx_glr_animate_plotly_thumb.gif generated + registered in post_build.py. Verified: plotly PNG in built gallery html.
@@ -130,7 +130,7 @@ Jeremy's feedback: mixtures not showing multi-class membership; title/aspect/siz
 4. Multi-panel via ax= verified (tests + screenshot). Embedding respects user's color cycle (axes created before rc_context) — intended.
 5. hyperalign n_iter=10 default (iterative template re-estimation); fixed dict-form returning None + method NameError.
 6. weights_hyperaligned.gif reconstruction: needed zoom=2.5 + high frame count (interp factor = duration*frame_rate/n_rows — low values DOWNSAMPLE), no chemtrails (they accumulate a hairball), ffmpeg palettegen for clean white bg. FOUND+FIXED: Axes3D.dist removed in mpl>=3.8 → zoom was a silent no-op; now set_box_aspect(zoom=10/(9-zoom)).
-7. pydata-sphinx-theme (screenshots in docs/images/v2.0-theme/). FOUND+FIXED: nbsphinx_execute='auto' re-executed every gallery ipynb (double execution; hang on plotly export in nbsphinx kernel) → 'never' (tutorials ship executed).
+7. pydata-sphinx-theme (screenshots in docs/images/v1.0-theme/). FOUND+FIXED: nbsphinx_execute='auto' re-executed every gallery ipynb (double execution; hang on plotly export in nbsphinx kernel) → 'never' (tutorials ship executed).
 8. shapes zoo: bunny/cube/dragon/sphere/teapot/vase/biplane + datasaurus via Dropbox URLs (EXAMPLE_DATA now accepts full URLs); tolerant unpickler (pickle → pd.read_pickle → dill); dill added as dep. egyption_mask EXCLUDED — source file is empty (0,3) both locally and at the link (flag for Jeremy to re-export).
 9. No re-download leak: verified + regression test (cache byte-stable across repeated loads).
 10. Modern demos: gallery plot_shapes_zoo + plot_datasaurus; executed notebooks docs/tutorials/hugging_face_embeddings.ipynb (sentence-transformers + fancyzhx/ag_news, GMM soft clusters, UMAP, spin gif) + modern_sklearn_dynamics.ipynb (HDBSCAN, GMM, Lorenz multicolored line + gif); registered in tutorials.rst.
@@ -198,7 +198,7 @@ Other round-4.5 fixes: repeated-hyperalign scale collapse (procrustes optimal sc
 - Shipped fd2747e; 237 tests.
 
 ## Round 7 (2026-07-03): Colab install cells + full-panel examples
-- COLAB INSTALL: every committed docs notebook (39 auto_examples + 13 tutorials) opens with a branch-aware install cell. scripts/add_colab_install_cell.py (idempotent, MARKER='pip install'): on non-master installs the branch via `%pip install -q "hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@<branch>"`, on master installs released pkg. conf.py first_notebook_cell (new _install_notebook_cell() helper, same branch logic) emits the same line for gallery notebooks on rebuild. NOTE: sphinx-gallery only regenerates .ipynb for RE-EXECUTED examples (cached ones keep prior notebook), so the injector is the guarantee that ALL committed notebooks carry the line; run it after any notebook regeneration. VERIFIED in clean uv venv (py3.11): git install resolves, imports 2.0.0.dev0, mixture-cluster 2.0 syntax + plotly work.
-- USER BRANCH-TEST COMMAND (give verbatim): %pip install -q "hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@dev-2.0"
+- COLAB INSTALL: every committed docs notebook (39 auto_examples + 13 tutorials) opens with a branch-aware install cell. scripts/add_colab_install_cell.py (idempotent, MARKER='pip install'): on non-master installs the branch via `%pip install -q "hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@<branch>"`, on master installs released pkg. conf.py first_notebook_cell (new _install_notebook_cell() helper, same branch logic) emits the same line for gallery notebooks on rebuild. NOTE: sphinx-gallery only regenerates .ipynb for RE-EXECUTED examples (cached ones keep prior notebook), so the injector is the guarantee that ALL committed notebooks carry the line; run it after any notebook regeneration. VERIFIED in clean uv venv (py3.11): git install resolves, imports 1.0.0.dev0, mixture-cluster 2.0 syntax + plotly work.
+- USER BRANCH-TEST COMMAND (give verbatim): %pip install -q "hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@dev-1.0"
 - SHAPES ZOO example: all 7 shapes (bunny/cube/dragon/sphere/teapot/vase/biplane), black ',' pixel dots, one panel each (dynamic grid, hide extras). DATASAURUS example: all 13 datasets, black '.' dots, one panel each. Both color='k' (verified renders black). No hypertools/ code changed this round.
 - Shipped 84e2d40. CI on prior 4e676d7 (pytest-timeout hardening) went ALL GREEN — the 6h Windows hang is fixed.

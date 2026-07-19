@@ -6,6 +6,7 @@ This script should be run after sphinx-gallery builds the documentation
 to replace PNG thumbnails with animated GIF thumbnails for specific examples.
 """
 
+import glob
 import os
 import shutil
 import re
@@ -56,7 +57,20 @@ GIF_REPLACEMENTS = {
     "sphx_glr_animate_thumb.png": "sphx_glr_animate_thumb.gif",
     "sphx_glr_precog_thumb.png": "sphx_glr_precog_thumb.gif",
     "sphx_glr_save_movie_thumb.png": "sphx_glr_save_movie_thumb.gif",
-    "sphx_glr_animate_plotly_thumb.png": "sphx_glr_animate_plotly_thumb.gif"
+    "sphx_glr_animate_plotly_thumb.png": "sphx_glr_animate_plotly_thumb.gif",
+    # QC 2026-07: the story-trajectories example ships an animated gif thumbnail
+    # (docs/_static/thumbnails/sphx_glr_plot_story_trajectories_thumb.gif) and
+    # sets sphinx_gallery_thumbnail_path to it, but it was never registered here,
+    # so post_build never swapped its static png for the gif -- the gallery card
+    # showed a frozen frame instead of the animation.
+    "sphx_glr_plot_story_trajectories_thumb.png":
+        "sphx_glr_plot_story_trajectories_thumb.gif",
+    # QC 2026-07: animate_surface_morph ends with a static-figure tweak (an
+    # alpha-fade), so sphinx-gallery thumbnailed that frozen frame instead of
+    # the morph animation. It now ships a gif thumbnail + thumbnail_path like
+    # the others; register the swap here too.
+    "sphx_glr_animate_surface_morph_thumb.png":
+        "sphx_glr_animate_surface_morph_thumb.gif",
 }
 
 def copy_gif_thumbnails():
@@ -202,10 +216,19 @@ def inject_notebook_badges():
 
     gallery_dir = os.path.dirname(GALLERY_HTML)
     n = 0
+    build_root = os.path.dirname(gallery_dir)
     for fname in os.listdir(gallery_dir):
         if not fname.endswith('.html') or fname == 'index.html':
             continue
         stem = fname[:-5]
+        # only badge real gallery examples: pages whose source notebook does
+        # not exist (e.g. sphinx-gallery's generated sg_execution_times.html)
+        # would get a Colab badge pointing at a nonexistent .ipynb (404).
+        # The source gallery dir (docs/auto_examples) is checked because that
+        # is exactly what the Colab URL below points at on GitHub.
+        if not os.path.exists(
+                os.path.join(DOCS_DIR, 'auto_examples', stem + '.ipynb')):
+            continue
         path = os.path.join(gallery_dir, fname)
         with open(path) as f:
             html = f.read()
@@ -213,16 +236,27 @@ def inject_notebook_badges():
             continue  # already injected (idempotent re-runs)
         colab = ('https://colab.research.google.com/github/ContextLab/'
                  f'hypertools/blob/{branch}/docs/auto_examples/{stem}.ipynb')
+        # local download link: sphinx places the notebook under
+        # _downloads/<hash>/<stem>.ipynb in the built site (there is no
+        # sibling auto_examples/<stem>.ipynb in the output), so link the
+        # real location; fall back to plain text if it isn't found
+        dl = glob.glob(os.path.join(build_root, '_downloads', '*',
+                                    stem + '.ipynb'))
+        if dl:
+            rel = os.path.relpath(dl[0], gallery_dir).replace(os.sep, '/')
+            grab = (f'or grab the <a class="reference download" '
+                    f'href="{rel}" download>.ipynb</a> (also linked at the '
+                    'bottom of the page)')
+        else:
+            grab = ('or grab the .ipynb from the links at the bottom of '
+                    'the page')
         badge = (
             '<p class="hypertools-colab-badge" style="margin:0.5em 0 1em 0">'
             f'<a href="{colab}" target="_blank" rel="noopener">'
             '<img src="https://colab.research.google.com/assets/'
             'colab-badge.svg" alt="Open in Colab" '
             'style="vertical-align:middle"></a>'
-            '&nbsp; <em>run this example as a notebook &mdash; or grab the '
-            '<a class="reference download" '
-            f'href="{stem}.ipynb" download>.ipynb</a> from the links at the '
-            'bottom of the page</em></p>')
+            f'&nbsp; <em>run this example as a notebook &mdash; {grab}</em></p>')
         # place right after the page's first <h1>
         marker = '</h1>'
         idx = html.find(marker)

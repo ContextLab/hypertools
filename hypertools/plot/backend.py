@@ -1,7 +1,7 @@
 """
 Module that deals with managing the matplotlib backend for interactive
-and/or animated plots created via `hypertools.plot` and
-`hypertools.DataGeometry.plot`.  Main functionality is contained in
+and/or animated plots created via `hypertools.plot`.  Main
+functionality is contained in
 `set_interactive_backend` (sole front-end function) and `manage_backend`
 (decorator for `hypertools.plot`).
 
@@ -50,7 +50,10 @@ HYPERTOOLS_BACKEND : str
 IN_SET_CONTEXT : bool
     A switch read by the `manage_backed` decorator to determine whether
     or not the wrapped call to `hypertools.plot` was made inside a
-    `set_interactive_backend` context block.
+    `set_interactive_backend` context block. Backed by
+    `_SET_CONTEXT_DEPTH` (a nesting-depth counter) so it stays True
+    until the *outermost* context block exits, even when
+    `set_interactive_backend` contexts are nested.
 IPYTHON_INSTANCE : `ipykernel.zmqshell.ZMQInteractiveShell` or None
     The IPython InteractiveShell instance for the current
     IPython kernel, if `hypertools` was imported into a Jupyter
@@ -72,11 +75,11 @@ switch_backend : function
 
 FUTURE: `matplotlib` project leader says `nbagg` backend will be retired
 "in the next year or two" in favor of the `ipympl` backend [2]. For the
-Hypertools 2.0 revamp, the two options should be given equal priority in
+Hypertools 1.0 revamp, the two options should be given equal priority in
 order to support the various possible combinations of new and older
 `IPython`/`ipykernel`/`notebook` versions going forward
 
-[1] https://matplotlib.org/faq/howto_faq.html#working-with-threads
+[1] https://matplotlib.org/stable/users/faq.html#work-with-threads
 [2] https://github.com/ipython/ipython/issues/12190#issuecomment-599154335.
 """
 
@@ -97,7 +100,7 @@ from typing import Iterable
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-from .._shared.exceptions import HypertoolsBackendError
+from ..core.exceptions import HypertoolsBackendError
 
 
 BACKEND_KEYS = {
@@ -116,10 +119,21 @@ BACKEND_MAPPING = None
 BACKEND_WARNING = None
 HYPERTOOLS_BACKEND = None
 IN_SET_CONTEXT = False
+# nesting depth of currently active `set_interactive_backend` context blocks;
+# IN_SET_CONTEXT == (_SET_CONTEXT_DEPTH > 0). Kept as a separate counter so
+# exiting an inner nested context doesn't flip IN_SET_CONTEXT to False while
+# an outer context is still active (QC audit 2026-07, F06-004)
+_SET_CONTEXT_DEPTH = 0
 IPYTHON_INSTANCE = None
 IS_NOTEBOOK = None
 reset_backend = None
 switch_backend = None
+# Preferred RENDER backend ('plotly' or 'matplotlib') chosen via
+# set_interactive_backend(); None means auto-detect (Colab/Kaggle -> plotly).
+# This selects WHICH LIBRARY draws the plot (consulted by
+# plotly_backend.resolve_backend), distinct from HYPERTOOLS_BACKEND, which is a
+# matplotlib backend name for interactive/animated matplotlib plots.
+PREFERRED_RENDER_BACKEND = None
 
 
 class ParrotDict(dict):
@@ -471,7 +485,9 @@ def _get_jupyter_frontend():
     # that doesn't depend on the base notebook app. In either case,
     # the frontend being used is ambiguous, but our "best guess"
     # depends on whether or not JupyterLab is installed.
-    with redirect_stdout(StringIO()) as lab_version_stdout:
+    # stdout is redirected only to swallow the version banner; the
+    # captured text itself is never needed (only the return code is)
+    with redirect_stdout(StringIO()):
         retcode = IPython.utils.process.system("jupyter lab --version")
     if retcode == 0:
         # JupyterLab is installed in the server environment, possibly
@@ -505,6 +521,10 @@ def _init_backend():
         switch_backend
 
     curr_backend = mpl.get_backend()
+    # pre-assign so the `finally` block below can't raise UnboundLocalError
+    # (masking the real exception) if something fails before a working
+    # backend is found (QC audit 2026-07, F06-001)
+    working_backend = None
 
     try:
         # `get_ipython()` function exists in the namespace if
@@ -528,7 +548,6 @@ def _init_backend():
             "Qt4Agg",
             "GTK4Agg",
             "GTK3Agg",
-            "TkAgg",
             "WXAgg",
         )
         if sys.platform == "darwin":
@@ -536,39 +555,57 @@ def _init_backend():
             # work, appears to be faster, and Mac does NOT like Tkinter
             backends = ("MacOSX", *backends)
 
-        # TODO: document setting environment variable
-        # check for configurable environment variable
+        # check for configurable environment variable (documented in the
+        # `set_interactive_backend` and `hypertools.plot` docstrings)
         env_backend = os.getenv("HYPERTOOLS_BACKEND")
-        if env_backend is not None:
-            # prefer user-specified backend, if set
-            if env_backend.lower() in tuple(map(str.lower, backends)):
-                backends = (
-                    backends[: backends.index(HYPERTOOLS_BACKEND)],
-                    *backends[backends.index(HYPERTOOLS_BACKEND) + 1 :],
-                )
-
-            backends = (env_backend, *backends)
-
-        for b in backends:
-            try:
-                mpl.use(b)
-                working_backend = b
-                break
-
-            except (ImportError, NameError, ValueError):
-                # ImportError/NameError:
-                #     raised if backend's dependencies aren't installed
-                # ValueError:
-                #     raised if named backed isn't supported by
-                #     installed matplotlib version
-                continue
-
+        # matplotlib's own explicit backend selection (MPLBACKEND). If the
+        # user configured a backend there -- e.g. MPLBACKEND=Agg for a
+        # headless run -- and did NOT override it with hypertools' own
+        # HYPERTOOLS_BACKEND, respect it: do NOT force a GUI backend on top
+        # of an explicit, deliberate choice. Before the 2026-07 release
+        # audit, hypertools unconditionally preferred MacOSX on macOS and
+        # the animate path then switched to it, producing an uncatchable
+        # native abort on genuinely headless Macs even under MPLBACKEND=Agg.
+        mpl_env_backend = os.getenv("MPLBACKEND")
+        if env_backend is None and mpl_env_backend:
+            working_backend = mpl.get_backend()
         else:
-            BACKEND_WARNING = (
-                "Failed to switch to any interactive backend "
-                f"({', '.join(backends)}). Falling back to 'Agg'."
-            )
-            working_backend = "Agg"
+            if env_backend is not None:
+                # prefer user-specified backend, if set. If it's already in
+                # the candidate list, remove the existing entry
+                # (case-insensitively) so it isn't tried twice.
+                # NB: compare against the LOCAL `env_backend` -- the module
+                # global HYPERTOOLS_BACKEND is still None at this point, and
+                # looking it up here crashed `import hypertools` whenever
+                # $HYPERTOOLS_BACKEND named a candidate backend (QC audit
+                # 2026-07, F06-001)
+                backends_lower = tuple(map(str.lower, backends))
+                if env_backend.lower() in backends_lower:
+                    env_ix = backends_lower.index(env_backend.lower())
+                    backends = (*backends[:env_ix], *backends[env_ix + 1 :])
+
+                backends = (env_backend, *backends)
+
+            for b in backends:
+                try:
+                    mpl.use(b)
+                    working_backend = b
+                    break
+
+                except (ImportError, NameError, ValueError):
+                    # ImportError/NameError:
+                    #     raised if backend's dependencies aren't installed
+                    # ValueError:
+                    #     raised if named backed isn't supported by
+                    #     installed matplotlib version
+                    continue
+
+            else:
+                BACKEND_WARNING = (
+                    "Failed to switch to any interactive backend "
+                    f"({', '.join(backends)}). Falling back to 'Agg'."
+                )
+                working_backend = "Agg"
 
         if env_backend is not None and working_backend.lower() != env_backend.lower():
             # The only time a plotting-related warning should be issued
@@ -682,7 +719,8 @@ def _init_backend():
         # restore backend
         mpl.use(curr_backend)
         BACKEND_MAPPING = BackendMapping(BACKEND_KEYS)
-        HYPERTOOLS_BACKEND = HypertoolsBackend(working_backend).normalize()
+        if working_backend is not None:
+            HYPERTOOLS_BACKEND = HypertoolsBackend(working_backend).normalize()
 
 
 def _switch_backend_regular(backend):
@@ -913,50 +951,105 @@ def _get_runtime_args(func, *func_args, **func_kwargs):
     return bound_args.arguments
 
 
+def _valid_matplotlib_backends():
+    """
+    Build the set of recognized matplotlib backend names (lowercased),
+    including the IPython aliases from `BACKEND_KEYS`. Used by
+    `set_interactive_backend` to validate its argument eagerly, so typos
+    fail immediately with a clear message rather than at the next
+    interactive/animated plot (QC audit 2026-07, F06-003).
+
+    Returns
+    -------
+    set of str
+        lowercased matplotlib backend names and aliases
+    """
+    names = set()
+    for py_key, ipy_keys in BACKEND_KEYS.items():
+        names.add(str(py_key).lower())
+        if isinstance(ipy_keys, str):
+            ipy_keys = (ipy_keys,)
+        names.update(str(k).lower() for k in ipy_keys)
+    try:
+        from matplotlib.backends import backend_registry
+
+        names.update(str(b).lower() for b in backend_registry.list_all())
+    except ImportError:
+        # matplotlib < 3.9 has no backend registry
+        names.update(str(b).lower() for b in mpl.rcsetup.all_backends)
+    return names
+
+
 class set_interactive_backend:
     """
-    Manually set the `matplotlib` backend used for generating
-    interactive plots.
+    Set the plotting backend `hypertools` uses.
 
-    Whereas `hypertools.plot`'s `mpl_backend` keyword argument can be
-    used to specify the backend for a single plot,
+    Accepts two kinds of values:
+
+    1. A *render* backend -- ``'matplotlib'`` or ``'plotly'``
+       (case-insensitive) -- selecting which library draws `hypertools`
+       plots. By default, `hypertools` auto-detects: it renders with
+       plotly on Google Colab and Kaggle (where plotly is preinstalled
+       and matplotlib figures are static) and with matplotlib everywhere
+       else. Passing ``'auto'`` (or ``None``) restores this default
+       auto-detection after a render backend has been set.
+    2. A *matplotlib* backend name (e.g., ``'TkAgg'``, ``'QtAgg'``,
+       ``'MacOSX'``) -- the matplotlib GUI backend used for interactive
+       and animated plots when rendering with matplotlib.
+
+    Whereas `hypertools.plot`'s `backend` and `mpl_backend` keyword
+    arguments can be used to specify these for a single plot,
     `hypertools.set_interactive_backend` is useful for doing so for
-    multiple (or all) interactive plots at once, and can be in two
-    different ways:
+    multiple (or all) plots at once, and can be used in two different
+    ways:
 
-    1. directly, to change the backend for all subsequent interactive
-       plots
-          ```
-          import hypertools as hyp
-          geo = hyp.load('weights_avg')
+    1. directly, to change the backend for all subsequent plots::
 
-          geo.plot(interactive=True)          # uses the default backend
+           import hypertools as hyp
+           data = hyp.load('weights_avg')
 
-          hyp.set_interactive_backend('TkAgg')
-          geo.plot(interactive=True)          # uses the TkInter backend
-          geo.plot(animate=True)              # uses the TkInter backend
-          ```
+           hyp.plot(data)                        # rendered with matplotlib
+
+           hyp.set_interactive_backend('plotly')
+           hyp.plot(data)                        # rendered with plotly
+           hyp.plot(data, animate=True)          # animated plotly figure
+
+           hyp.set_interactive_backend('auto')   # restore auto-detection
 
     2. as a context manager with the `with` statement, to temporarily
-       change the backend
-          ```
-          import hypertools as hyp
-          geo = hyp.load('weights_avg')
+       change the backend::
 
-          geo.plot(interactive=True)          # uses the default backend
+           import hypertools as hyp
+           data = hyp.load('weights_avg')
 
-          with hyp.set_interactive_backend('TkAgg'):
-              geo.plot(interactive=True)      # uses the TkInter backend
+           with hyp.set_interactive_backend('plotly'):
+               hyp.plot(data, interactive=True)  # rendered with plotly
 
-          geo.plot(animate=True)              # uses the default backend
-          ```
+           hyp.plot(data, animate=True)          # default backend again
 
     Parameters
     ----------
-    backend : str
-        The `matplotlib` backend to use for interactive plots, either
-        temporarily (when used as a context manager with `with`) or for
-        the life of the interpreter (when called as a function)
+    backend : str or None
+        Either a render backend (``'matplotlib'`` or ``'plotly'``),
+        ``'auto'``/``None`` to restore render-backend auto-detection, or
+        the `matplotlib` backend to use for interactive plots (e.g.,
+        ``'TkAgg'``). Applies temporarily when used as a context manager
+        with `with`, or for the life of the interpreter when called as a
+        function.
+
+    Raises
+    ------
+    TypeError
+        If `backend` is not a string (or None).
+    ValueError
+        If `backend` is not ``'auto'``, a render backend, or a
+        recognized matplotlib backend name. The error message lists the
+        valid choices.
+    HypertoolsBackendError
+        When entering the context manager with a matplotlib backend that
+        cannot be switched to on the current system (e.g., ``'TkAgg'``
+        without a working Tk installation). In that case, the
+        pre-existing backend settings are left unchanged.
 
     Notes
     -----
@@ -967,50 +1060,130 @@ class set_interactive_backend:
     2. Calling this directly does *not* immediately change the plotting
        backend; it changes the backend `hypertools` will use to create
        interactive plots going forward.
-    3. However, when used as a context manager, the backend passed to
+    3. However, when used as a context manager with a *matplotlib*
+       backend name, the backend passed to
        `hypertools.set_interactive_backend` will be used for *all* plots
        created inside the context block, regardless of whether:
-         - they are interactive/animated or static
-         - the `mpl_backend` keyword argument is passed to
-           `hypertools.plot`
-         - they were created with `hypertools`, `matplotlib`, or a
-           different `matplotlib`-based library (e.g., `seaborn`,
-           `quail`, `umap-learn`)
+
+       - they are interactive/animated or static
+       - the `mpl_backend` keyword argument is passed to
+         `hypertools.plot`
+       - they were created with `hypertools`, `matplotlib`, or a
+         different `matplotlib`-based library (e.g., `seaborn`,
+         `quail`, `umap-learn`)
+
        There are a few reasons for this behavior:
-         - being able to skip inspecting the arguments passed to each
-           `hypertools.plot` call means almost no overhead is added for
-           calls after the first, and makes wrapping multiple calls much
-           more efficient
-         - the plotting backend is an attribute of `matplotlib` itself
-           and `matplotlib` doesn't support running multiple backends
-           simultaneously in the same namespace, so it's impossible to
-           avoid it affecting other `matplotlib`-based plotting libraries
-         - it's reasonable to assume this was the desired outcome when
-           multiple plots are generated inside a context block, since A)
-           the context block will always have been created manually by
-           the user, and B) the API provides multiple other ways to set
-           the backend without this effect
-    3. The `manage_backend` decorator for `hypertools.plot` determines
+
+       - being able to skip inspecting the arguments passed to each
+         `hypertools.plot` call means almost no overhead is added for
+         calls after the first, and makes wrapping multiple calls much
+         more efficient
+       - the plotting backend is an attribute of `matplotlib` itself
+         and `matplotlib` doesn't support running multiple backends
+         simultaneously in the same namespace, so it's impossible to
+         avoid it affecting other `matplotlib`-based plotting libraries
+       - it's reasonable to assume this was the desired outcome when
+         multiple plots are generated inside a context block, since A)
+         the context block will always have been created manually by
+         the user, and B) the API provides multiple other ways to set
+         the backend without this effect
+
+    4. The `manage_backend` decorator for `hypertools.plot` determines
        whether it's being called inside the
        `hypertools.set_interactive_backend` context manager by checking
        the value of a global variable (`IN_SET_CONTEXT`), which is
-       switched to `True` when the the runtime context is entered and
-       `False` when it's exited. This definitely isn't an ideal setup
-       and could probably be refactored out in the v2.0 overhaul, but
-       for now the alternatives are A) using something like
-       `inspect.getframeinfo` or `traceback.extract_stack` to look for
-       the context manager every time `hypertools.plot` is called, or B)
-       re-running the same runtime argument checks every time, either of
-       which would be much less efficient. So for now, the current setup
-       is probably good enough.
+       backed by a nesting-depth counter (`_SET_CONTEXT_DEPTH`) so it
+       remains `True` until the outermost context block exits. This
+       global-flag approach is used instead of the alternatives -- A)
+       using something like `inspect.getframeinfo` or
+       `traceback.extract_stack` to look for the context manager every
+       time `hypertools.plot` is called, or B) re-running the same
+       runtime argument checks every time -- either of which would be
+       much less efficient.
+    5. The `$HYPERTOOLS_BACKEND` environment variable provides a third
+       way of setting the backend: if set before `hypertools` is
+       imported, it overrides the default *matplotlib* backend used for
+       interactive/animated matplotlib plots. It accepts matplotlib
+       backend names only -- to prefer the plotly renderer, use
+       `hypertools.set_interactive_backend('plotly')` or
+       `hypertools.plot`'s `backend='plotly'` keyword argument instead.
     """
 
     def __init__(self, backend):
-        global BACKEND_WARNING, HYPERTOOLS_BACKEND
+        global BACKEND_WARNING, HYPERTOOLS_BACKEND, PREFERRED_RENDER_BACKEND
+
+        # None means "restore render-backend auto-detection", same as
+        # 'auto' (QC audit 2026-07, F06-007)
+        if backend is None:
+            backend = "auto"
+        if not isinstance(backend, str):
+            raise TypeError(
+                "backend must be a string: 'auto', 'matplotlib', "
+                "'plotly', or a matplotlib backend name (e.g., 'TkAgg', "
+                f"'QtAgg', 'MacOSX'); got {type(backend).__name__}: "
+                f"{backend!r}. Pass the backend name as a string instead."
+            )
+
+        self.new_interactive_backend = HypertoolsBackend(backend).normalize()
+        # 'plotly'/'matplotlib' are RENDER-backend selectors (which library
+        # draws the plot), NOT matplotlib backend names. Route them to the
+        # render preference consulted by plotly_backend.resolve_backend(), and
+        # do NOT try to switch matplotlib's backend to them -- QC 2026-07:
+        # set_interactive_backend('plotly') followed by an animated plot raised
+        # HypertoolsBackendError trying to switch matplotlib to a nonexistent
+        # 'plotly' backend, and it silently did nothing for static plots.
+        # match case-insensitively ('Plotly' etc.): otherwise a capitalized
+        # render-backend name was treated as an mpl backend and, with an
+        # animated plot, raised the exact HypertoolsBackendError this routing
+        # exists to prevent (QC 2026-07 red-team). Store the canonical lowercase
+        # value so resolve_backend()'s preference check matches.
+        _bk_str = str(self.new_interactive_backend).lower()
+        self.is_render_backend = _bk_str in ('auto', 'plotly', 'matplotlib')
+        if self.is_render_backend:
+            self.old_render_backend = PREFERRED_RENDER_BACKEND
+            # 'auto' restores environment-based auto-detection (plotly on
+            # Colab/Kaggle, matplotlib elsewhere)
+            PREFERRED_RENDER_BACKEND = None if _bk_str == 'auto' else _bk_str
+            if _bk_str == 'plotly':
+                # warn now (rather than silently falling back to matplotlib
+                # at plot time) if the requested preference can't be honored
+                # (QC audit 2026-07, F06-008). Lazy import avoids a
+                # backend <-> plotly_backend import cycle at module load.
+                from .plotly_backend import _has_plotly
+
+                if not _has_plotly():
+                    warnings.warn(
+                        "set_interactive_backend('plotly'): plotly is not "
+                        "installed, so plots will fall back to matplotlib. "
+                        "To use the plotly backend, run:\n"
+                        '    pip install "hypertools[interactive]"'
+                    )
+            self.new_is_different = False
+            self.backend_switched = False
+            return
+
+        # eagerly validate matplotlib backend names so typos fail here,
+        # with a clear message, instead of corrupting module state and
+        # surfacing only at the next animated/interactive plot (QC audit
+        # 2026-07, F06-003). "module://..." paths are always legal
+        # matplotlib backend specs, so they're accepted as-is.
+        valid_mpl_backends = _valid_matplotlib_backends()
+        if not (_bk_str.startswith('module://')
+                or _bk_str in valid_mpl_backends):
+            valid_names = ', '.join(
+                sorted(n for n in valid_mpl_backends
+                       if not n.startswith('module://'))
+            )
+            raise ValueError(
+                f"{backend!r} is not a recognized backend. Valid options "
+                "are 'auto' (restore render-backend auto-detection), "
+                "'matplotlib' or 'plotly' (render backends), a "
+                "'module://...' backend path, or a matplotlib backend "
+                f"name: {valid_names}"
+            )
 
         self.old_interactive_backend = HYPERTOOLS_BACKEND.normalize()
         self.old_backend_warning = BACKEND_WARNING
-        self.new_interactive_backend = HypertoolsBackend(backend).normalize()
         self.new_is_different = (
             self.new_interactive_backend != self.old_interactive_backend
         )
@@ -1021,21 +1194,46 @@ class set_interactive_backend:
             BACKEND_WARNING = None
 
     def __enter__(self):
-        global IN_SET_CONTEXT
+        global BACKEND_WARNING, HYPERTOOLS_BACKEND, IN_SET_CONTEXT
+        global _SET_CONTEXT_DEPTH
 
+        if not self.is_render_backend:
+            # (a render-backend preference needs no matplotlib backend
+            # switch)
+            self.curr_backend = HypertoolsBackend(mpl.get_backend()).normalize()
+            if self.curr_backend != self.new_interactive_backend:
+                try:
+                    switch_backend(self.new_interactive_backend)
+                except Exception:
+                    # if the switch fails, the `with` block is never
+                    # entered and `self.__exit__()` never runs, so roll
+                    # back the module state set in `self.__init__()`
+                    # before re-raising -- otherwise a single failed
+                    # switch left IN_SET_CONTEXT/HYPERTOOLS_BACKEND/
+                    # BACKEND_WARNING corrupted for the rest of the
+                    # session (QC audit 2026-07, F06-002)
+                    if self.new_is_different:
+                        HYPERTOOLS_BACKEND = self.old_interactive_backend
+                        BACKEND_WARNING = self.old_backend_warning
+                    raise
+                self.backend_switched = True
+        # only mark the context as entered once any backend switch has
+        # succeeded. IN_SET_CONTEXT is backed by a nesting-depth counter
+        # so exiting an inner nested context doesn't flip it to False
+        # while an outer context is still active (QC audit 2026-07,
+        # F06-004)
+        _SET_CONTEXT_DEPTH += 1
         IN_SET_CONTEXT = True
-        self.curr_backend = HypertoolsBackend(mpl.get_backend()).normalize()
-        if self.curr_backend != self.new_interactive_backend:
-            # set this before calling switch_backend to make sure
-            # `self.__exit__()` cleans up after any unexpected errors
-            # while switching
-            self.backend_switched = True
-            switch_backend(self.new_interactive_backend)
 
     def __exit__(self, exc_type, exc_value, traceback):
         global BACKEND_WARNING, HYPERTOOLS_BACKEND, IN_SET_CONTEXT
+        global PREFERRED_RENDER_BACKEND, _SET_CONTEXT_DEPTH
 
-        IN_SET_CONTEXT = False
+        _SET_CONTEXT_DEPTH = max(0, _SET_CONTEXT_DEPTH - 1)
+        IN_SET_CONTEXT = _SET_CONTEXT_DEPTH > 0
+        if self.is_render_backend:
+            PREFERRED_RENDER_BACKEND = self.old_render_backend
+            return
         if self.new_is_different:
             HYPERTOOLS_BACKEND = self.old_interactive_backend
             BACKEND_WARNING = self.old_backend_warning
@@ -1080,7 +1278,7 @@ def manage_backend(plot_func):
         The decorated function.
 
     Notes
-    ------
+    -----
     1. Capturing & restoring the rcParams needs to happen here rather
        than in `set_interactive_backend` so it's done independently for
        each plot
@@ -1091,23 +1289,62 @@ def manage_backend(plot_func):
 
     @wraps(plot_func)
     def plot_wrapper(*args, **kwargs):
+        """Call `plot_func`, managing rcParams and the matplotlib backend around it.
+
+        Snapshots `mpl.rcParams` beforehand (setting `pdf.fonttype`/
+        `ps.fonttype` to 42 for editable-text vector exports) and
+        restores it afterward; also temporarily switches to an
+        interactive/animation-capable backend when needed, skipping that
+        switch entirely when already running inside a
+        `hypertools.set_interactive_backend` context.
+        """
         # record current rcParams
         old_rcParams = mpl.rcParams.copy()
+        # Editable text in vector (PDF/PS) exports is a useful default for a
+        # scientific-figure library, but it must NOT leak into the user's
+        # global matplotlib config as an import-time side effect (issue #259).
+        # Set it here, inside the managed scope: any save that happens during
+        # the wrapped ``plot()`` call uses TrueType fonts, and the ``finally``
+        # block below restores the user's original rcParams afterward.
+        mpl.rcParams["pdf.fonttype"] = 42
+        mpl.rcParams["ps.fonttype"] = 42
         # assume using the mock-`contextlib.nullcontext` context
         backend_context = _null_backend_context
         tmp_backend = None
 
         if not IN_SET_CONTEXT:
             plot_kwargs = _get_runtime_args(plot_func, *args, **kwargs)
-            if plot_kwargs.get("animate") or plot_kwargs.get("interactive"):
-                curr_backend = HypertoolsBackend(mpl.get_backend()).normalize()
-                tmp_backend = plot_kwargs.get("mpl_backend")
-                if tmp_backend == "auto":
-                    tmp_backend = HYPERTOOLS_BACKEND.normalize()
+            want_interactive = (plot_kwargs.get("animate")
+                                or plot_kwargs.get("interactive"))
+            # A GUI/interactive matplotlib backend is only needed to DISPLAY
+            # a live figure. Rendering an animation to a file (save_path=) or
+            # with show=False works on any non-interactive backend (Agg
+            # included), so switching to a GUI backend in those cases is
+            # unnecessary -- and aborts uncatchably on headless systems
+            # (release audit 2026-07). Only switch when the figure will
+            # actually be shown interactively.
+            will_display = (plot_kwargs.get("show", True)
+                            and not plot_kwargs.get("save_path"))
+            if want_interactive and will_display:
+                # Only matplotlib-rendered plots need an interactive/animation-
+                # capable matplotlib backend. When the plot renders with plotly
+                # (the frames are embedded in the plotly Figure), skip the
+                # matplotlib backend switch entirely -- otherwise a render
+                # preference of 'plotly' resolved to a matplotlib backend name
+                # and crashed (QC 2026-07).
+                from .plotly_backend import resolve_backend as _resolve_backend
+                _render = _resolve_backend(plot_kwargs.get("backend", "auto"))
+                if _render != "plotly":
+                    curr_backend = HypertoolsBackend(mpl.get_backend()).normalize()
+                    tmp_backend = plot_kwargs.get("mpl_backend")
+                    if tmp_backend == "auto":
+                        tmp_backend = HYPERTOOLS_BACKEND.normalize()
 
-                if tmp_backend not in ("disable", curr_backend):
-                    # if all conditions are met, use the real context
-                    backend_context = set_interactive_backend
+                    # 'plotly' is a render backend, not a matplotlib backend --
+                    # never try to switch matplotlib to it
+                    if tmp_backend not in ("disable", "plotly", curr_backend):
+                        # if all conditions are met, use the real context
+                        backend_context = set_interactive_backend
 
         try:
             try:

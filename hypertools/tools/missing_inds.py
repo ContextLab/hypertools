@@ -21,10 +21,16 @@ def missing_inds(x, format_data=True):
         Whether or not to first call the format_data function (default: True).
 
     Returns
-    ----------
-    inds : list, or list of lists
-        A list of indices representing rows with missing data. If a list of
-        numpy arrays is passed, a list of lists will be returned.
+    -------
+    inds : 1-D numpy integer array, or list of 1-D numpy integer arrays
+        For a single array: a 1-D numpy array of the (unique, sorted) row
+        indices that contain missing values -- EMPTY (shape ``(0,)``) when
+        the array has no missing data, so downstream fancy indexing like
+        ``x[inds, :]`` always yields a well-formed (possibly empty)
+        selection. (Returning ``None`` here, as hypertools < 1.0 did,
+        made ``x[None, :]`` silently act as ``np.newaxis`` and produce a
+        wrong-shaped array.) For a list of arrays: one such entry per
+        dataset.
 
     """
 
@@ -33,10 +39,11 @@ def missing_inds(x, format_data=True):
 
     inds = []
     for arr in x:
-        if np.argwhere(np.isnan(arr)).size == 0:
-            inds.append(None)
+        hits = np.argwhere(np.isnan(arr))
+        if hits.size == 0:
+            inds.append(np.array([], dtype=np.intp))
         else:
-            inds.append(np.argwhere(np.isnan(arr))[:,0])
+            inds.append(np.unique(hits[:, 0]))
     if len(inds) > 1:
         return inds
     else:

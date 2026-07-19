@@ -23,8 +23,8 @@ def test_issue_264_fresh_results_in_loops():
     for seed in range(3):
         data = np.cumsum(
             np.random.default_rng(seed).standard_normal((80, 5)), axis=0)
-        geo = hyp.plot(data, show=False)
-        line = geo.ax.get_lines()[0]
+        fig = hyp.plot(data, show=False)
+        line = fig.axes[0].get_lines()[0]
         drawn.append(np.column_stack(line.get_data_3d()))
         plt.close('all')
 
@@ -54,8 +54,8 @@ def test_issue_265_animate_numpy2():
     arr = np.array([[math.sin(3 * i / 100), math.cos(3 * i / 100),
                      (i / 100) ** 2, (i / 100) ** 3, 1 / (1 + i / 100)]
                     for i in range(0, 300)])
-    geo = hyp.plot(arr, animate=True, show=False)
-    assert geo.line_ani is not None
+    fig, ani = hyp.plot(arr, animate=True, show=False)
+    assert ani is not None
     plt.close('all')
 
 
@@ -74,7 +74,7 @@ def test_corrupt_dataset_cache_recovers():
     subsequent text-data test with UnpicklingError. load() must detect the
     corrupt cache, delete it, and re-download.
     """
-    from hypertools.tools.load import DATA_DIR
+    from hypertools.io.load import DATA_DIR
     from hypertools._shared.exceptions import HypertoolsIOError
 
     target = DATA_DIR / 'spiral'
@@ -107,10 +107,12 @@ def test_fmt_list_line_interpolation_keeps_arrays():
 
     a = np.cumsum(np.random.default_rng(0).standard_normal((40, 3)), axis=0)
     b = np.cumsum(np.random.default_rng(1).standard_normal((40, 3)), axis=0)
-    geo = hyp.plot([a, b], ['-', '--'], show=False)
-    assert all(hasattr(x, 'shape') and x.ndim == 2 for x in geo.xform_data)
+    result = hyp.plot([a, b], ['-', '--'], show=False, return_model=True)
+    assert all(hasattr(x, 'shape') and x.ndim == 2
+               for x in result['xform_data'])
     # both trajectories drawn, smoothed to more points than the input
-    drawn = [ln for ln in geo.ax.lines if len(ln.get_data()[0]) > 1]
+    fig = result['fig']
+    drawn = [ln for ln in fig.axes[0].lines if len(ln.get_data()[0]) > 1]
     assert len(drawn) == 2
     assert all(len(ln.get_data()[0]) > 40 for ln in drawn)
     plt.close('all')

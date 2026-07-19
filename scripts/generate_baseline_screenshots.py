@@ -4,9 +4,9 @@ Run from the repo root with the project venv:
     .venv/bin/python scripts/generate_baseline_screenshots.py
 
 These baselines document CURRENT behavior on master/v0.8.2 across the core
-use-case matrix, so the dev-2.0 modernization can be visually diffed against
+use-case matrix, so the dev-1.0 modernization can be visually diffed against
 them (aesthetic parity was the main unresolved gap in the earlier
-matplotlib-backend attempt — see notes/hypertools_2.0_roadmap.md).
+matplotlib-backend attempt — see notes/hypertools_1.0_roadmap.md).
 
 Outputs: tests/screenshots/baseline_v0.8.2/<function>/<case>.png
 (directory is gitignored; screenshots are reviewed locally / uploaded as CI
@@ -78,7 +78,7 @@ def main():
         # NOTE: describe(show=False) skips figure CREATION entirely (unlike
         # plot(show=False), which builds but doesn't display). show=True is
         # safe headless because plt.show() is a no-op under Agg. The
-        # inconsistency is a 2.0 API cleanup item.
+        # inconsistency is a 1.0 API cleanup item.
         ('describe', 'default',
          lambda: hyp.describe(walk, show=True)),
     ]

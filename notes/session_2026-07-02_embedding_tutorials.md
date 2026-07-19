@@ -1,4 +1,4 @@
-# Session 2026-07-02: Wikipedia + conversation trajectory tutorials (dev-2.0)
+# Session 2026-07-02: Wikipedia + conversation trajectory tutorials (dev-1.0)
 
 ## What was done
 1. **docs/tutorials/wikipedia_embeddings.ipynb** (new, executed, 6 code cells, 0 errors)
@@ -31,8 +31,8 @@
 - convokit + sentence-transformers are tutorial-only deps (installed in .venv, NOT added to package requirements; notebooks tell users to `%pip install`).
 - Notebooks executed via nbclient with kernel spec.argv[0] patched to .venv python, cwd docs/tutorials, MPLBACKEND=Agg.
 - Interpolation for animated line lists keys off the FIRST dataset's length (plot.py ~line 540) — a single-point first dataset silently disables interpolation (frames=1). Not fixed (avoided in tutorial by ensuring all segments have >=2 points); worth a follow-up issue.
-- Nothing committed/pushed per instructions; all changes left in working tree on dev-2.0.
-- Other uncommitted changes in the tree (plot.py, docs/images/v2.0-animations/*, scripts/generate_shape_morph.py, tests/test_round4.py) are from a parallel session — untouched by this session.
+- Nothing committed/pushed per instructions; all changes left in working tree on dev-1.0.
+- Other uncommitted changes in the tree (plot.py, docs/images/v1.0-animations/*, scripts/generate_shape_morph.py, tests/test_round4.py) are from a parallel session — untouched by this session.
 
 ## Revision round 2 (same day, per Jeremy's review)
 - **conversation_trajectories.ipynb rebuilt for `animate='serial'`** (new hypertools mode; bullettime version + conversation_bullettime.gif removed):

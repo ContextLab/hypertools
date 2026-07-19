@@ -1,0 +1,99 @@
+{
+  "biplane": {
+    "independent_evidence": true,
+    "legacy_artifact_sha256": "f5e5661c2eea7a03f30229d6df5546bdd1a9df9e578c865dcefee983801fc814",
+    "legacy_canonical_hash": "c75e01e815f12e0adeecb51c0807c89bd6e04260d8cfb5c4c1d898a40b25414d",
+    "legacy_source": "https://www.dropbox.com/s/4b9y9ouvjpjbj6x/biplane.pkl?dl=1"
+  },
+  "bunny": {
+    "independent_evidence": true,
+    "legacy_artifact_sha256": "7a43745c17834d54bb9dc10b7c286b4f23a4a1c437f8419d53dbe2eaf6ece663",
+    "legacy_canonical_hash": "87349495567a8d1ef956e2fbe2ea006e45328e2feb83946492e7874cf4a52a8d",
+    "legacy_source": "https://www.dropbox.com/s/7d9vo9idqk1hn31/bunny.pkl?dl=1"
+  },
+  "cube": {
+    "independent_evidence": true,
+    "legacy_artifact_sha256": "ca43191a3c77ce90d449a9cd327a53aaa7bd55032c7de06567c175d6524a02c1",
+    "legacy_canonical_hash": "edd69dbc637b1414a0820461fc541012fca41a63143d2438e7ca645586ec79ba",
+    "legacy_source": "https://www.dropbox.com/s/tkrwe2m4maxl83j/cube.pkl?dl=1"
+  },
+  "datasaurus": {
+    "independent_evidence": true,
+    "legacy_artifact_sha256": "7ce78b634ef299098c75445bfc8f28f3edf122b415cdcc179ffda11b2e0bd126",
+    "legacy_canonical_hash": "2290115281ca5bda99066083ebb39b05c36b4fe3be27cba7cfa23f8756836272",
+    "legacy_source": "https://www.dropbox.com/s/6wxjyw8p052a5t9/datasaurus.pkl?dl=1"
+  },
+  "dragon": {
+    "independent_evidence": true,
+    "legacy_artifact_sha256": "dbfdbbc077f3884251a7140ee030eaf29cff915448d68e3afd96780e5cf79434",
+    "legacy_canonical_hash": "a5759a792a22b2b8f09860e64476094eabfd93acabca51f38402c6dbb6e2b2bd",
+    "legacy_source": "https://www.dropbox.com/s/6w84icbvzh5oilr/dragon.pkl?dl=1"
+  },
+  "mushrooms": {
+    "independent_evidence": true,
+    "legacy_artifact_sha256": "b3abdaf8ae1597eeb95c1f1bc6cff6c38d02c9dff99a66ebafed6dc168d2c8cf",
+    "legacy_canonical_hash": "926063878c33748883099f317fa6359b9557a4bab4dba02cf6310db399af635e",
+    "legacy_source": "12hmCIZp1tyUoPRHwpiAsm1GDBxiJS8ji"
+  },
+  "nips": {
+    "independent_evidence": true,
+    "legacy_artifact_sha256": "e240532dab310652bb489b4f0880af9f681652708dfe60ac3d6ff4e4ee4aaffc",
+    "legacy_canonical_hash": "5388c7ca7f4150160bd7053fb0153ace3aae6301f1ab3fc5f4b7400ee0d41f99",
+    "legacy_source": "1FV7xT2hVgZ1sXfMvAdP1jRsK_dWhp49I"
+  },
+  "sotus": {
+    "independent_evidence": false,
+    "legacy_artifact_sha256": null,
+    "legacy_canonical_hash": null,
+    "legacy_source": "datawrangler-zoo:sotus",
+    "note": "pre-1.0 origin was the datawrangler zoo corpus (removed in 1.0); no reliably recoverable legacy artifact, so equivalence rests on the migration-time round-trip check, not an independent frozen artifact. Not claimed as independent proof."
+  },
+  "sphere": {
+    "independent_evidence": true,
+    "legacy_artifact_sha256": "8dae53277e2f15a57b3ca00299b6e7b980dcde6524c17350ad3b0cc3b3e0688f",
+    "legacy_canonical_hash": "3c416c3b8f7f2f5b2ec1b584ad83e6fb7c090c180329f33df1f1a71f007dbd21",
+    "legacy_source": "https://www.dropbox.com/s/wp8suye6oh4ze3u/sphere.pkl?dl=1"
+  },
+  "spiral": {
+    "independent_evidence": true,
+    "legacy_artifact_sha256": "7ca728d2972cb0271b3c68693aa7ec744962f8499043120eeefc6b755591f94c",
+    "legacy_canonical_hash": "14577f5b70a5ea34512c0eb60cb0b0552b02a0139b12887b2bc3fed0d3cba73e",
+    "legacy_source": "1nHAusn2VsQinJk35xvJSd7CtWPC1uOwK"
+  },
+  "teapot": {
+    "independent_evidence": true,
+    "legacy_artifact_sha256": "c195e6221ad369b274d5f531b98a763c8fe03efadfc5d582011b3148fbf35973",
+    "legacy_canonical_hash": "d152f57ea481982a0775346a3cb34015edc3cfb749daad9d11d44be5f7b9f1ff",
+    "legacy_source": "https://www.dropbox.com/s/f3jj18h3ge2gns6/teapot.pkl?dl=1"
+  },
+  "vase": {
+    "independent_evidence": true,
+    "legacy_artifact_sha256": "b1ef3da871ae93f1a661cc432cc70a2b662cc98748173b44457f838aee493e0f",
+    "legacy_canonical_hash": "9cdc0b387a407671078791615584b64c67442e219bf793b2cf01b6bbb13082d2",
+    "legacy_source": "https://www.dropbox.com/s/prquc7ov18zguuu/vase.pkl?dl=1"
+  },
+  "weights": {
+    "independent_evidence": true,
+    "legacy_artifact_sha256": "695f50f48328f7b9f5741c89854b07f0c4989c4275f929caa76e95af2c92a7ff",
+    "legacy_canonical_hash": "7418aaa6c901cfda1aec313e9388e9e8799bcbba949d6ef379b5795d325e519d",
+    "legacy_source": "1ZXLao5Rxkr45KUMkv08Y1eAedTkpivsd"
+  },
+  "weights_avg": {
+    "independent_evidence": true,
+    "legacy_artifact_sha256": "52be2d02d2c5754adbb58e68f86d2c2da2b7a339162f1d2e0c7e3b987ffde06f",
+    "legacy_canonical_hash": "26523d7996868578efa63ef836cc7230b5c1e8758eac4658eeff8188be046ee2",
+    "legacy_source": "1gfI1WB7QqogdYgdclqznhUfxsrhobueO"
+  },
+  "weights_sample": {
+    "independent_evidence": true,
+    "legacy_artifact_sha256": "eaf67c631e9cc8207c70ad1c93c6c022298a6e57f946ef39e24299c9c1bf3f8d",
+    "legacy_canonical_hash": "2faeb4bd7baea0d6d1d14c44acb194cb82e2822deb23efb360e1eac8dfe1327e",
+    "legacy_source": "1ub-xlYW1D_ASzbLcALcPJuhHUxRwHdIs"
+  },
+  "wiki": {
+    "independent_evidence": true,
+    "legacy_artifact_sha256": "722d20a286edfad607904123d7756b95fb49e72e037af5d091422c994c4893be",
+    "legacy_canonical_hash": "a1b158c47786b80bce2736735fffe517e9e11388db862f6a357214c78f3e2cac",
+    "legacy_source": "1NUqm3svfu2rrFH04xmLbOh0u5WyTe9mh"
+  }
+}

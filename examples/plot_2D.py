@@ -14,7 +14,7 @@ A 2D plot can be created by setting ndims=2.
 import hypertools as hyp
 
 # load data
-geo = hyp.load('weights_sample')
+data = hyp.load('weights_sample')
 
 # plot
-geo.plot(fmt='.', ndims=2)
+hyp.plot(data, fmt='.', ndims=2)

@@ -22,3 +22,14 @@ tests/screenshots/
 docs/auto_examples/animation.mp4
 docs/auto_examples/searchindex.db
 docs/auto_examples/test-image.pdf
+
+# stray local virtualenvs / build outputs (audit X5-001/X5-006)
+hypertools-dev/
+dist/
+
+# audit working notes + evidence (moved to PR #272 comments; full trail on
+# the audit/release-1.0-2026-07 branch). Do not re-track (release review #10).
+notes/audit-1.0-2026-07/
+# generated sphinx-gallery output: regenerated at docs build time from
+# examples/*.py -- source examples stay tracked, generated gallery does not.
+docs/auto_examples/

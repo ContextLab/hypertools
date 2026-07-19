@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+==============================
 Visualizing the digits dataset
-=============================
+==============================
 
 This example loads in some data from the scikit-learn digits dataset and plots
 it.

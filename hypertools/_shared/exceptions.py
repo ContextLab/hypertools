@@ -1,14 +1,7 @@
-class HypertoolsError(Exception):
-    pass
-
-
-class HypertoolsBackendError(HypertoolsError):
-    def __init__(self, message):
-        super().__init__(message)
-        self.message = message
-
-
-class HypertoolsIOError(HypertoolsError, OSError):
-    def __init__(self, message):
-        super().__init__(message)
-        self.message = message
+# Moved to hypertools.core.exceptions (HyperTools 1.0 refactor). Kept as a shim
+# so existing imports (hypertools._shared.exceptions) keep working.
+from ..core.exceptions import (  # noqa: F401
+    HypertoolsError,
+    HypertoolsBackendError,
+    HypertoolsIOError,
+)

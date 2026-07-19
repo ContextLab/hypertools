@@ -3,13 +3,11 @@ furo>=2024.1
 sphinx-gallery>=0.10.0
 sphinxcontrib-video
 numpydoc>=1.1.0
-deepdish
 nbsphinx>=0.8.0
 jupyter_client>=6.0.0
 wikipedia
 ipython
 # Main package dependencies
-PPCA>=0.0.2
 scikit-learn>=1.4.0
 pandas>=2.2.0
 seaborn>=0.13.0
@@ -20,5 +18,34 @@ umap-learn>=0.5.5
 requests>=2.31.0
 ipympl>=0.9.3
 # Optional dependencies for examples
-hdbscan>=0.8.11
 memory_profiler
+# Interactive/plotly gallery examples (plot_interactive_backend, animate_plotly,
+# plot_geo, plot_multicolored_lines) and conf.py's plotly sphinx-gallery scraper.
+# Pins match the [interactive] extra in pyproject.toml (kaleido 1.x requires
+# plotly>=6.1.1 for static image export).
+plotly>=6.1.1
+kaleido>=1.0
+# NOTE: the gallery's animated examples render mp4 video via
+# matplotlib_animations = (True, 'mp4') in docs/conf.py, which requires the
+# ffmpeg *system* binary (not pip-installable) -- on Read the Docs it is
+# provided via build.apt_packages in .readthedocs.yaml; install it locally
+# (e.g. `brew install ffmpeg` / `apt install ffmpeg`) before building docs.
+# hyp.predict/[predict] models used by gallery examples (plot_predict, plot_impute)
+pykalman>=0.11
+statsmodels>=0.14
+skaters>=0.11
+# plot(..., density=True) 3-D iso-surfaces ([density3d] extra); gallery
+# examples build with it installed so the docs show the iso-surface path
+# rather than the scatter-fog fallback
+scikit-image>=0.22.0
+# hypertools.reduce.autoencoders (GH #162) and hypertools.tools.gensim_models
+# (GH #198) import torch/gensim unconditionally at module level, so both are
+# needed for autodoc/autosummary to import those modules (docs/api.rst's
+# "Autoencoder reducers"/"Gensim text models" sections) as well as to run
+# examples/plot_autoencoders.py and examples/plot_gensim_text.py in the
+# gallery build
+torch>=2.0
+gensim>=4.3
+# hyp.load('kaggle/<owner>/<dataset>') (GH #116), used by
+# examples/plot_datasets_tour.py
+kagglehub>=0.3

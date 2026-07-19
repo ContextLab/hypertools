@@ -2,7 +2,7 @@
 and animation export work (PR #270 review item).
 
 Outputs:
-    docs/images/v2.0-animations/<case>.gif  (small, loopable, committed)
+    docs/images/v1.0-animations/<case>.gif  (small, loopable, committed)
     docs/_static/thumbnails/sphx_glr_animate_plotly_thumb.gif (gallery thumb)
 
 Run from the repo root:
@@ -24,7 +24,7 @@ from PIL import Image, ImageSequence
 import hypertools as hyp
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(REPO, 'docs', 'images', 'v2.0-animations')
+OUT = os.path.join(REPO, 'docs', 'images', 'v1.0-animations')
 THUMBS = os.path.join(REPO, 'docs', '_static', 'thumbnails')
 SEED = 42
 
@@ -69,7 +69,7 @@ def main():
                    duration=im.info.get('duration', 80), loop=0)
     print(f'  thumbnail: {os.path.getsize(thumb_path) // 1024}KB')
 
-    index = ['# Animation export evidence (hypertools 2.0)', '',
+    index = ['# Animation export evidence (hypertools 1.0)', '',
              'Sample animations exported via `hyp.plot(..., save_path=...)`;'
              ' the extension picks the format (.gif / .png [APNG] / .mp4).',
              '', '| case | file | frames |', '|-|-|-|']

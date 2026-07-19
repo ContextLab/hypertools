@@ -71,6 +71,52 @@ def test_camera_eye_matches_matplotlib_convention():
     assert abs(eye['x']) < 1e-9 and abs(eye['y']) < 1e-9 and eye['z'] > 0
 
 
+# every printable matplotlib marker character (matplotlib.lines.Line2D.markers
+# minus the line/None sentinels and non-character marker keys)
+ALL_MPL_MARKERS = list('.,ov^<>1234spP*hH+xXDd|_')
+
+
+def test_pixel_marker_is_markers_not_lines():
+    # regression: the ',' (pixel) marker was omitted from the plotly marker
+    # table, so it fell through to mode='lines' (GH plotly-marker bug). Every
+    # marker-only fmt must yield a markers mode with no line.
+    mode, _symbol, _dash = _parse_fmt(',', {})
+    assert mode == 'markers'
+
+
+def test_all_matplotlib_markers_recognized_as_markers_plotly():
+    # EVERY matplotlib marker char must map to a plotly 'markers' mode
+    for m in ALL_MPL_MARKERS:
+        mode, symbol, _dash = _parse_fmt(m, {})
+        assert mode == 'markers', f"marker {m!r} parsed as {mode!r}, not markers"
+        assert symbol, f"marker {m!r} produced empty plotly symbol"
+
+
+def test_plotly_marker_plot_end_to_end_pixel():
+    # full pipeline: hyp.plot with the pixel marker must produce marker traces
+    d = [np.random.default_rng(0).random((20, 3)) for _ in range(2)]
+    fig = plot(d, ',', backend='plotly', show=False)
+    assert fig.data[0].mode == 'markers'
+
+
+def test_marker_vs_line_parity_both_backends():
+    # matplotlib and plotly must AGREE: a marker-only fmt draws markers (no
+    # line) on both backends. matplotlib is the reference (Line2D handles all
+    # markers); plotly must match.
+    import matplotlib.pyplot as plt
+    d = [np.random.default_rng(1).random((20, 3)) for _ in range(2)]
+    for m in ALL_MPL_MARKERS:
+        mpl_fig = plot(d, m, backend='matplotlib', show=False)
+        line = mpl_fig.axes[0].lines[0]
+        assert str(line.get_marker()) == m
+        assert line.get_linestyle() in ('None', 'none', '')
+        plt.close('all')
+
+        plotly_fig = plot(d, m, backend='plotly', show=False)
+        assert plotly_fig.data[0].mode == 'markers', (
+            f"plotly rendered marker {m!r} as {plotly_fig.data[0].mode!r}")
+
+
 def test_plotly_draw_3d():
     fig = plotly_draw([walk[:, :3], walk[:, :3] + 2], show=False)
     # 2 data traces + 1 wireframe-cube trace (matches matplotlib's frame)
@@ -93,22 +139,22 @@ def test_plotly_draw_2d():
 
 
 def test_plot_backend_plotly_end_to_end():
-    geo = plot(walk, backend='plotly', show=False)
-    assert type(geo.fig).__module__.startswith('plotly')
-    assert geo.ax is None and geo.line_ani is None
-    # transformed data is still attached for downstream analysis
-    assert geo.xform_data is not None
+    fig = plot(walk, backend='plotly', show=False)
+    assert type(fig).__module__.startswith('plotly')
+    # transformed data is still available via return_model
+    result = plot(walk, backend='plotly', show=False, return_model=True)
+    assert result['xform_data'] is not None
 
 
 def test_plot_backend_plotly_animate_frames():
-    geo = plot(walk, backend='plotly', animate=True, show=False)
-    assert len(geo.fig.frames) > 0
-    geo = plot(walk, backend='plotly', animate='spin', show=False)
-    assert len(geo.fig.frames) > 0
+    fig = plot(walk, backend='plotly', animate=True, show=False)
+    assert len(fig.frames) > 0
+    fig = plot(walk, backend='plotly', animate='spin', show=False)
+    assert len(fig.frames) > 0
 
 
 def test_plot_backend_matplotlib_unchanged():
-    geo = plot(walk, backend='matplotlib', show=False)
-    assert type(geo.fig).__module__.startswith('matplotlib')
+    fig = plot(walk, backend='matplotlib', show=False)
+    assert type(fig).__module__.startswith('matplotlib')
     import matplotlib.pyplot as plt
     plt.close('all')

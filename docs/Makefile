@@ -4,6 +4,10 @@
 # You can set these variables from the command line.
 SPHINXOPTS    =
 SPHINXBUILD   = sphinx-build
+# Interpreter for the post-build script. Overridable (e.g. make html
+# PYTHON=/path/to/venv/bin/python); defaults to python3, which exists on
+# systems where a bare `python` alias does not.
+PYTHON        ?= python3
 PAPER         =
 BUILDDIR      = _build
 
@@ -47,7 +51,7 @@ notebooks:
 html:
 	$(SPHINXBUILD) -b html -E $(ALLSPHINXOPTS) $(BUILDDIR)/html
 	@echo "Running post-build script to fix animated thumbnails..."
-	python post_build.py
+	$(PYTHON) post_build.py
 	@echo
 	@echo "Build finished. The HTML pages are in $(BUILDDIR)/html."
 

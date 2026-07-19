@@ -1,4 +1,4 @@
-# HyperTools 2.0 Roadmap (branch: dev-2.0)
+# HyperTools 1.0 Roadmap (branch: dev-1.0)
 
 > **STATUS (2026-07-02):** Phases 0-2 implemented and verified (169 tests,
 > 44/44 screenshot matrix, notebook executed clean); PR opened to master for
@@ -14,7 +14,7 @@ experiment branches (`threejs-backend`, `d3-threejs-backend`, `matplotlib-backen
 
 **Modernize in place.** The old refactor was a parallel rewrite in a `dev/` folder that
 drifted 88 commits behind master with no tests. Instead: evolve `hypertools/` directly on
-`dev-2.0`, keeping the existing public API and the 129-test suite green at every commit.
+`dev-1.0`, keeping the existing public API and the 129-test suite green at every commit.
 No push to master; final integration only via PR after Jeremy's manual sign-off.
 
 ## What we take from the old refactor (verified against jeremy/dev)
@@ -37,7 +37,7 @@ sentence-transformers), modin, holoviews abstraction layer, Google-Docs corpus d
 fork notes/visualization_backend_research_2025-06-14.md), D3+Three.js custom backend
 (14-week plan, never started — maintenance trap).
 
-## Data shapes & color system — first-class 2.0 features (per Jeremy, 2026-07-02)
+## Data shapes & color system — first-class 1.0 features (per Jeremy, 2026-07-02)
 
 These revamp ideas are CRITICAL carries, not nice-to-haves:
 
@@ -106,7 +106,7 @@ These revamp ideas are CRITICAL carries, not nice-to-haves:
 - **Screenshot harness**: every plot-producing test saves a PNG to
   `tests/screenshots/<function>/<case>.png`; CI uploads as artifacts; visual review
   checklist in the dev notebook. (Plotly figures rendered via kaleido.)
-- **Dev notebook** `dev/hypertools_2.0_dev.ipynb`: one section per public function,
+- **Dev notebook** `dev/hypertools_1.0_dev.ipynb`: one section per public function,
   exercising the full use-case matrix, for interactive verification in Jupyter/Colab.
 - Performance regression checks: import time + plot() wall time on canonical datasets.
 
@@ -121,14 +121,14 @@ These revamp ideas are CRITICAL carries, not nice-to-haves:
 - **Phase 3 — issue burn-down**: #265, #264, #259, #235, #236, #227, #223, #217, #211,
   #206, #205, #193, #190...
 - **Phase 4 — docs**: rebuild Sphinx site, regenerate gallery (incl. interactive plotly
-  examples), update README/tutorials for 2.0 API, migration guide.
+  examples), update README/tutorials for 1.0 API, migration guide.
 
 ## Design decisions mined from the fork's issue tracker (jeremymanning/hypertools #1-34, incl. comments)
 
 - **Backend lesson (the big one):** the refactor adopted plotly as PRIMARY backend (#1, #2)
   and its hardest, never-fixed bugs were plotly rendering issues: 3D camera mis-centering
   (#25, reopened after a claimed fix), GIF exports losing background (#33) and freezing
-  camera position (#34). This validates 2.0's reversal: matplotlib default, plotly optional.
+  camera position (#34). This validates 1.0's reversal: matplotlib default, plotly optional.
 - **Caching removed deliberately** (#3, #4): stringified cache keys ignored kwargs/nested
   dicts → stale results with same data + different args. 2.0: no memoize (matches audit).
 - **API hygiene decisions to keep** (#4, #5): single canonical form per argument (no
@@ -152,6 +152,6 @@ These revamp ideas are CRITICAL carries, not nice-to-haves:
 ## Decisions confirmed by Jeremy (2026-07-02)
 
 - `backend='auto'` policy **APPROVED**: matplotlib default everywhere EXCEPT Colab/Kaggle
-  (→ plotly). Conservative for 2.0; revisit broader Jupyter auto-switching later.
+  (→ plotly). Conservative for 1.0; revisit broader Jupyter auto-switching later.
 - Multilevel indices, stack/unstack strategy, robust coloring, and mixture-model soft
   clustering are REQUIRED carries (see "Data shapes & color system" section above).

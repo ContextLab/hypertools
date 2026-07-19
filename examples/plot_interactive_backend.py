@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+============================================
 Interactive plotting with the plotly backend
-=============================
+============================================
 
-HyperTools 2.0 can render any plot with plotly instead of matplotlib by
+HyperTools 1.0 can render any plot with plotly instead of matplotlib by
 passing `backend='plotly'` -- handy for rotating and zooming 3D plots
 interactively. With the default `backend='auto'`, hypertools automatically
 uses plotly on Google Colab and Kaggle notebooks (where plotly is
