@@ -1171,6 +1171,100 @@ def _show_sphinx_gallery(fig):
 
 import contextlib
 
+# --- headless-Chrome (kaleido) robustness for animation export -------------
+# kaleido 1.x drives headless Chrome; its OWN per-render timeout only wraps the
+# figure CALC (`asyncio.wait_for(tab._calc_fig(...), timeout)`), NOT browser
+# launch or tab acquisition -- so a wedged Chrome can hang a `to_image()` call
+# UNBOUNDED. That repeatedly stalled Windows CI at pytest's 20-minute per-test
+# limit (test_animation_export.py::test_plotly_mp4_export sat 1200s inside
+# kaleido's sync-server `call_function`). Every frame render is therefore
+# bounded by a wall-clock watchdog; a wedged browser is force-torn-down; and
+# the export is retried, falling back from the fast shared session to per-call
+# one-shot rendering (each a fresh browser) so an abandoned wedged thread can
+# never corrupt the retry.
+_KALEIDO_FRAME_TIMEOUT = 120       # per-frame render wall-clock bound (seconds)
+_KALEIDO_EXPORT_ATTEMPTS = 3       # whole-export attempts before giving up
+
+
+def _bounded_to_image(snapshot, fmt, width, height,
+                      timeout=_KALEIDO_FRAME_TIMEOUT):
+    """Render one plotly snapshot to image bytes, bounding the kaleido/Chrome
+    call at `timeout` seconds. The call runs in a daemon worker thread; if it
+    overruns (a wedged headless Chrome), ``TimeoutError`` is raised and the
+    stuck worker is abandoned (daemon -> dies with the process)."""
+    import threading
+    box = {}
+
+    def _worker():
+        try:
+            box['out'] = snapshot.to_image(format=fmt, width=width,
+                                           height=height)
+        except BaseException as exc:  # noqa: BLE001 - re-raised to caller below
+            box['exc'] = exc
+
+    worker = threading.Thread(target=_worker, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        raise TimeoutError(
+            f"kaleido {fmt} render exceeded {timeout}s (headless Chrome "
+            "wedged)")
+    if 'exc' in box:
+        raise box['exc']
+    return box['out']
+
+
+def _reset_kaleido_server(timeout=20):
+    """Best-effort teardown of the global kaleido sync server (+ its headless
+    Chrome). A clean ``stop_sync_server`` joins the server thread, which itself
+    blocks when that thread is stuck in a wedged Chrome call -- so the stop is
+    bounded, and on overrun the singleton's running flag is cleared directly,
+    abandoning the stuck (daemon) thread. Retries then use one-shot rendering
+    (a fresh browser per call), so the abandoned thread -- which still
+    references the singleton's queues -- is never reused."""
+    import threading
+    try:
+        import kaleido
+        server = getattr(kaleido, '_global_server', None)
+        if server is None or not server.is_running():
+            return
+    except Exception:  # noqa: BLE001 - kaleido missing/old -> nothing to reset
+        return
+    done = threading.Event()
+
+    def _stop():
+        try:
+            kaleido.stop_sync_server(silence_warnings=True)
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            done.set()
+
+    threading.Thread(target=_stop, daemon=True).start()
+    if not done.wait(timeout):
+        try:                       # clean stop wedged -> abandon stuck thread
+            server._initialized = False
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _retry_kaleido_export(render_all):
+    """Run `render_all(use_shared)` -- which renders every frame and returns the
+    collected results -- retrying the whole export if a frame's kaleido/Chrome
+    call wedges or errors. The first attempt uses the fast shared browser
+    session; after a wedge the server is reset and later attempts render
+    per-call one-shot (fresh browser each, watchdog-bounded), which cannot be
+    corrupted by an abandoned wedged thread. The last error is raised if every
+    attempt fails."""
+    last_exc = None
+    for attempt in range(_KALEIDO_EXPORT_ATTEMPTS):
+        try:
+            return render_all(use_shared=(attempt == 0))
+        except Exception as exc:  # noqa: BLE001 - flaky external browser; retry
+            last_exc = exc
+            _reset_kaleido_server()
+    raise last_exc
+
 
 @contextlib.contextmanager
 def _shared_kaleido_session():
@@ -1198,7 +1292,6 @@ def _shared_kaleido_session():
     try:
         import kaleido
         start = kaleido.start_sync_server
-        stop = kaleido.stop_sync_server
         server = getattr(kaleido, '_global_server', None)
     except (ImportError, AttributeError):
         yield
@@ -1221,7 +1314,11 @@ def _shared_kaleido_session():
             yield
     finally:
         if started_here:
-            stop(silence_warnings=True)
+            # bounded teardown: a plain stop_sync_server() joins the server
+            # thread, which hangs if that thread is stuck in a wedged Chrome
+            # call -- the exact hang this session guards against (GH #291
+            # follow-up / Windows-CI kaleido flake)
+            _reset_kaleido_server()
 
 
 def _export_animation_file(fig, save_path, frame_rate, duration, size):
@@ -1273,14 +1370,20 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
 
     if ext == 'svg':
         # vector export: render each frame as SVG and stitch them into one
-        # SMIL-animated SVG (one shared kaleido browser session for all
-        # frames -- see _shared_kaleido_session)
+        # SMIL-animated SVG. First attempt shares one kaleido browser session
+        # across all frames (fast); a wedged frame is watchdog-bounded and the
+        # export retries per-call one-shot (see _retry_kaleido_export).
         from .._shared.animated_svg import combine_frames_svg
-        with _shared_kaleido_session():
-            frame_svgs = [
-                snapshot.to_image(format='svg', width=width,
-                                  height=height).decode('utf-8')
-                for snapshot in frame_snapshots()]
+
+        def _render_all_svgs(use_shared):
+            session = (_shared_kaleido_session() if use_shared
+                       else contextlib.nullcontext())
+            with session:
+                return [_bounded_to_image(snapshot, 'svg', width,
+                                          height).decode('utf-8')
+                        for snapshot in frame_snapshots()]
+
+        frame_svgs = _retry_kaleido_export(_render_all_svgs)
         with open(save_path, 'w') as f:
             f.write(combine_frames_svg(frame_svgs, max(1.0, duration)))
         return
@@ -1290,11 +1393,17 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
     # for the interactive-HTML embedding path (_show_sphinx_gallery), where
     # it caps embedded-file size; an exported gif/png/mp4 must never be
     # subsampled or it would play back too fast.
-    images = []
-    with _shared_kaleido_session():
-        for snapshot in frame_snapshots():
-            png = snapshot.to_image(format='png', width=width, height=height)
-            images.append(Image.open(io.BytesIO(png)).convert('RGB'))
+    def _render_all_pngs(use_shared):
+        session = (_shared_kaleido_session() if use_shared
+                   else contextlib.nullcontext())
+        imgs = []
+        with session:
+            for snapshot in frame_snapshots():
+                png = _bounded_to_image(snapshot, 'png', width, height)
+                imgs.append(Image.open(io.BytesIO(png)).convert('RGB'))
+        return imgs
+
+    images = _retry_kaleido_export(_render_all_pngs)
 
     # per-frame delay is the TRUE inter-frame interval (1000 / frame_rate),
     # tied to the requested framerate -- NOT 1000*duration/n_frames. With the
