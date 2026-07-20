@@ -70,6 +70,23 @@ PT_TO_PX = 100.0 / 72.0
 DEFAULT_FIGSIZE = (6.4, 4.8)  # matplotlib rcParams['figure.figsize'] inches
 DEFAULT_LINEWIDTH_PT = 1.5   # matplotlib rcParams['lines.linewidth']
 DEFAULT_MARKERSIZE_PT = 6.0  # matplotlib rcParams['lines.markersize']
+# Default CSS font stack for the plotly backend, mirroring the matplotlib
+# backend's bundled-Noto-Sans-first ordering (see plot/fonts.py) so both
+# backends look the same. A browser resolves a CSS stack PER GLYPH, so the
+# pan-CJK entries keep mixed-script text rendering even though no single
+# family covers everything; `sans-serif` is the final guaranteed fallback.
+# NOTE: unlike matplotlib, plotly/kaleido cannot be handed a font FILE -- only
+# a family name -- so the bundled face is used here only when it also happens
+# to be installed system-wide on the rendering machine.
+_PLOTLY_SANS_STACK = ('"Noto Sans", "Helvetica Neue", Helvetica, Arial, '
+                      '"Noto Sans CJK JP", "Hiragino Sans", sans-serif')
+
+# Animation Play/Pause control styling. The controls used to sit at paper
+# (0, 0) anchored bottom-left, which in 2-D -- where the axes fill the paper
+# area -- drew them ON TOP of the plot's bottom-left corner (maintainer report,
+# Andy). They now hang BELOW the plotting area, laid out horizontally, with the
+# bottom margin opened up so nothing is clipped.
+_ANIM_BUTTON_MARGIN_B = 64   # bottom margin reserved for the controls (px)
 CUBE_LINEWIDTH_PT = 1.5      # hypertools' wireframe cube linewidth (1pt in
                              # matplotlib; slightly heavier here because
                              # plotly's 3D line antialiasing renders lighter)
@@ -968,16 +985,16 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         margin_r += 110
 
     # font= (GH #205): plotly text surfaces take a FAMILY NAME (not a file
-    # path), so only `font.get_name()` is used, wrapped in a small
-    # fallback chain in case the exact family name isn't installed in
-    # whatever renders this (browser/Chromium via kaleido) -- 'Noto Sans
-    # CJK JP' is a common pan-CJK fallback, then a generic sans-serif.
-    # `font_family` is None (no override -- byte-identical to before this
-    # kwarg existed) unless the caller passed `font=` or auto-detection
-    # (in `plot.py`, shared with the matplotlib backend) found non-ASCII
-    # text and a covering font.
-    font_family = (f'"{font.get_name()}", "Noto Sans CJK JP", sans-serif'
-                   if font is not None else None)
+    # path), so only `font.get_name()` is used, wrapped in a fallback chain
+    # in case the exact family name isn't installed in whatever renders this
+    # (browser/Chromium via kaleido). An explicit/auto-detected `font=` leads;
+    # otherwise the chain itself is the default, so plotly matches the
+    # matplotlib backend's bundled-Noto-Sans look instead of falling back to
+    # plotly's own default face. A CSS font stack is resolved PER GLYPH by the
+    # browser, so listing pan-CJK faces after the Latin ones keeps mixed-script
+    # text rendering even though no single family covers everything.
+    font_family = (f'"{font.get_name()}", {_PLOTLY_SANS_STACK}'
+                   if font is not None else _PLOTLY_SANS_STACK)
 
     layout = dict(
         paper_bgcolor='white',
@@ -986,14 +1003,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         margin=dict(l=10, r=margin_r, t=40 if title else 10, b=10),
         legend=dict(bgcolor='rgba(255,255,255,0.8)',
                     x=1.02, y=0.5, xanchor='left', yanchor='middle'),
+        # layout.font is plotly's inherited default for every text surface
+        # (legend, colorbar title/ticks, plot title, annotations) that doesn't
+        # set its own `font.family` -- so this one line covers all of them
+        # except the title, which historically hardcoded its own family
+        # (fixed just below).
+        font=dict(family=font_family),
     )
-    if font_family is not None:
-        # layout.font is plotly's inherited default for every text
-        # surface (legend, colorbar title/ticks, plot title) that doesn't
-        # set its own `font.family` -- so this one line covers all of
-        # them except the title, which historically hardcoded its own
-        # family (fixed just below).
-        layout['font'] = dict(family=font_family)
     if title is not None:
         # centered over the plotting area (xref='paper'), like matplotlib
         # centers its title over the axes; same 12pt sans-serif appearance,
@@ -2732,16 +2748,35 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
 
     fig.frames = frames
     frame_ms = max(10, int(1000.0 * duration / n_frames))
-    fig.update_layout(updatemenus=[dict(
-        type='buttons',
-        showactive=False,
-        y=0, x=0, xanchor='left', yanchor='bottom',
-        buttons=[
-            dict(label='Play', method='animate',
-                 args=[None, dict(frame=dict(duration=frame_ms, redraw=True),
-                                  fromcurrent=True,
-                                  transition=dict(duration=0))]),
-            dict(label='Pause', method='animate',
-                 args=[[None], dict(frame=dict(duration=0, redraw=False),
-                                    mode='immediate')]),
-        ])])
+    # Play/Pause controls: laid out horizontally BELOW the plotting area
+    # (y < 0 in paper coords, anchored by their top edge) rather than at paper
+    # (0, 0). In 3-D the scene floats above that corner so the old placement
+    # merely looked cramped, but in 2-D the axes fill the paper area and the
+    # controls landed ON the plot's bottom-left corner (maintainer report).
+    # `margin.b` is opened up in the same call so they are never clipped;
+    # update_layout merges nested dicts, so l/r/t margins are preserved.
+    # Symmetric `pad` centers each label in its button (the default padding
+    # made 'Play' sit noticeably off-center).
+    fig.update_layout(
+        margin=dict(b=_ANIM_BUTTON_MARGIN_B),
+        updatemenus=[dict(
+            type='buttons',
+            direction='right',
+            showactive=False,
+            x=0, xanchor='left',
+            y=-0.06, yanchor='top',
+            pad=dict(l=8, r=8, t=6, b=6),
+            bgcolor='rgba(255,255,255,0.95)',
+            bordercolor='rgba(0,0,0,0.22)',
+            borderwidth=1,
+            font=dict(family=_PLOTLY_SANS_STACK, size=12, color='#2b2b2b'),
+            buttons=[
+                dict(label='Play', method='animate',
+                     args=[None,
+                           dict(frame=dict(duration=frame_ms, redraw=True),
+                                fromcurrent=True,
+                                transition=dict(duration=0))]),
+                dict(label='Pause', method='animate',
+                     args=[[None], dict(frame=dict(duration=0, redraw=False),
+                                        mode='immediate')]),
+            ])])

@@ -30,7 +30,8 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 import pytest
 
 import hypertools as hyp
-from hypertools.plot.fonts import find_covering_font, resolve_font
+from hypertools.plot.fonts import (find_covering_font, resolve_font,
+                                   sans_serif_stack)
 
 JP_LABELS_A = ['いち', 'に', 'さん']
 JP_LABELS_B = ['よん', 'ご', 'ろく']
@@ -291,36 +292,51 @@ def test_font_kwarg_invalid_family_raises_value_error():
 
 # --------------------------------------------------------- ASCII regression
 #
-# ASCII-only plots must render EXACTLY as before this feature: `font=`
-# resolves to None (no override), and hypertools' pre-existing font
-# choices for labels (hardcoded `family="serif"`) and legend (unset --
-# rcParams' default family) are unchanged.
+# ASCII-only plots resolve `font=` to None (no per-artist override) and draw
+# every text surface in hypertools' bundled sans-serif fallback STACK.
+#
+# NOTE: point labels previously hardcoded `family="serif"`. That was changed
+# deliberately (maintainer font review): it clashed with the sans-serif used
+# everywhere else, and -- because a hardcoded generic resolves through
+# matplotlib's stock serif list rather than hypertools' stack -- a label
+# character the serif faces happened to lack (e.g. U+2726 '✦') rendered as
+# "tofu" even when an installed font had a glyph for it.
 
 def test_ascii_only_resolve_font_returns_none():
     assert resolve_font(None, ['abc', ['def', None], 'ghi']) is None
 
 
-def test_ascii_only_labels_keep_historical_serif_family():
+def test_ascii_only_labels_inherit_the_sans_stack():
     fig = _labeled_plot(['a', 'b', 'c'])
     ax = fig.axes[0]
     label_texts = [t for t in ax.texts if t.get_text() in ('a', 'b', 'c')]
     assert label_texts, "no label Text artists found"
     for t in label_texts:
-        assert t.get_fontfamily() == ['serif']
+        assert t.get_fontfamily() != ['serif'], "labels must not force serif"
+        assert t.get_fontfamily() == sans_serif_stack()
         assert t.get_fontproperties().get_file() is None
     plt.close(fig)
 
 
-def test_ascii_only_legend_keeps_rcparams_default_family():
+def test_ascii_only_legend_inherits_the_sans_stack():
     x = [_random_points(10, seed=1), _random_points(10, seed=2)]
     fig = hyp.plot(x, legend=['group a', 'group b'], show=False)
     ax = fig.axes[0]
     legend = ax.get_legend()
-    default_family = plt.rcParams['font.family']
     for t in legend.get_texts():
-        assert t.get_fontfamily() == default_family
+        assert t.get_fontfamily() == sans_serif_stack()
         assert t.get_fontproperties().get_file() is None
     plt.close(fig)
+
+
+def test_plot_does_not_leak_font_rcparams_into_global_state():
+    # the stack is applied inside a scoped rc_context -- plotting must not
+    # change the font the user's own (non-hypertools) figures render with
+    before = list(plt.rcParams['font.family'])
+    before_sans = list(plt.rcParams['font.sans-serif'])
+    plt.close(_labeled_plot(['a', 'b', 'c']))
+    assert list(plt.rcParams['font.family']) == before
+    assert list(plt.rcParams['font.sans-serif']) == before_sans
 
 
 # ------------------------------------------------------- legend fit (CJK)
@@ -461,12 +477,17 @@ def test_plotly_layout_font_family_matches_explicit_font_kwarg():
     assert fp.get_name() in fig.layout.font.family
 
 
-def test_plotly_ascii_only_layout_font_is_unset():
-    # ASCII-only regression: font=None + no non-ASCII text anywhere ->
-    # layout.font.family stays unset (plotly's own default), exactly as
-    # before this feature existed.
+def test_plotly_ascii_only_uses_the_default_sans_stack():
+    # Changed deliberately (maintainer font review): layout.font.family used to
+    # be left unset for ASCII-only text, so plotly fell back to its OWN default
+    # face and looked nothing like the matplotlib backend. It now always
+    # carries hypertools' sans stack -- a CSS stack, which a browser resolves
+    # PER GLYPH, so the pan-CJK entries keep mixed-script text rendering too.
     fig = _plotly_plot(['group a', 'group b'])
-    assert fig.layout.font.family is None
+    family = fig.layout.font.family
+    assert family is not None
+    assert 'Noto Sans' in family          # the bundled face leads the stack
+    assert family.strip().endswith('sans-serif')   # guaranteed final fallback
 
 
 def test_plotly_font_kwarg_invalid_family_raises_value_error():
@@ -567,3 +588,67 @@ def test_plotly_point_labels_different_cjk_text_renders_different_pixels(
     assert not np.array_equal(buf_b, buf_none), (
         "Japanese point-label render is pixel-identical to the unlabeled "
         "render -- the label isn't actually being drawn")
+
+
+# ------------------------------------------- bundled font + fallback stack
+# hypertools vendors one small sans-serif face (Noto Sans, SIL OFL 1.1, under
+# hypertools/external/fonts) so plots look the same on every platform instead
+# of inheriting whatever the machine happens to have, and builds a per-glyph
+# FALLBACK STACK around it so mixed-script text renders completely.
+
+def test_bundled_font_file_is_shipped_and_registered():
+    from hypertools.plot.fonts import bundled_font_files, installed_families
+    files = bundled_font_files()
+    assert files, "no bundled font file found"
+    assert any(f.endswith('NotoSans-Regular.ttf') for f in files)
+    for f in files:
+        assert os.path.getsize(f) > 0
+    # the OFL requires the license to travel with the font
+    license_path = os.path.join(os.path.dirname(files[0]), 'OFL.txt')
+    assert os.path.isfile(license_path)
+    assert 'SIL Open Font License' in open(license_path, encoding='utf-8').read()
+    assert 'Noto Sans' in installed_families()
+
+
+def test_sans_serif_stack_is_installed_only_and_anchored():
+    from hypertools.plot.fonts import installed_families, sans_serif_stack
+    stack = sans_serif_stack()
+    assert stack, "stack must never be empty"
+    assert stack[0] == 'Noto Sans', "bundled face should lead"
+    # DejaVu Sans (shipped with matplotlib) always anchors the end, so the
+    # stack can never resolve to nothing
+    assert stack[-1] == 'DejaVu Sans'
+    # every entry must be installed -- naming a missing family makes
+    # matplotlib log 'findfont: ... not found' for every text artist
+    available = installed_families()
+    assert all(fam in available for fam in stack)
+    assert len(stack) == len(set(stack)), "no duplicate families"
+
+
+def test_sans_serif_stack_puts_an_explicit_font_first():
+    from hypertools.plot.fonts import sans_serif_stack
+    stack = sans_serif_stack('DejaVu Sans')
+    assert stack[0] == 'DejaVu Sans'
+    assert len(stack) == len(set(stack))
+
+
+def test_renderable_mixed_script_text_does_not_warn():
+    # the covering-font warning used to fire whenever no SINGLE font covered
+    # all the text -- which, with per-glyph fallback, is the common case for
+    # ordinary accented/Greek text that renders perfectly. It must now warn
+    # only about characters NOTHING in the stack can draw.
+    from hypertools.plot.fonts import _codepoints_uncovered_by_stack
+    text = 'café Ω≈π'
+    codepoints = {ord(c) for c in text if ord(c) > 127}
+    assert _codepoints_uncovered_by_stack(codepoints) == set()
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter('always')
+        resolve_font(None, [text])
+    assert not [x for x in w if 'tofu' in str(x.message)]
+
+
+def test_truly_uncovered_codepoint_is_still_detected():
+    # a private-use codepoint no real font maps -- the warning path must
+    # still catch genuine gaps rather than being disabled outright
+    from hypertools.plot.fonts import _codepoints_uncovered_by_stack
+    assert _codepoints_uncovered_by_stack({0xE000}) == {0xE000}

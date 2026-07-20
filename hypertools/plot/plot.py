@@ -31,7 +31,7 @@ from .density import broadcast_density, normalize_density_arg
 from .trails import broadcast_trail_flag
 from .multiindex import expand_multiindex, build_multiindex_styles
 from .morph import resolve_morph_rotations
-from .fonts import resolve_font
+from .fonts import resolve_font, sans_serif_stack
 
 
 # GH #206: the subset of mpl_kwargs keys `plotly_backend.plotly_draw` (and
@@ -931,20 +931,23 @@ def plot(
         `layout.scene.annotations`/`layout.annotations`, the legend,
         colorbar title/ticks, and the plot title.
 
-        - `None` (default): AUTO-DETECT. If all text hypertools is about
-          to draw is plain ASCII, this is a no-op (each backend's default
-          font is used, exactly as before this kwarg existed). If any
-          text contains non-ASCII characters (e.g. Japanese/Chinese/
-          Korean/Cyrillic labels), hypertools scans installed fonts for
-          one whose character map covers every character needed and uses
-          it automatically -- so ``labels=["いち", "に", "さん"]`` "just
-          works" without tofu (empty boxes) or missing-glyph warnings, as
-          long as SOME covering font is installed (on most Linux distros,
-          ``apt-get install fonts-noto-cjk`` provides one; macOS/Windows
-          usually already have one, e.g. Hiragino Sans/Yu Gothic). If no
-          installed font covers the needed characters, a single
-          ``UserWarning`` is raised naming a few of the missing characters
-          and rendering falls back to the backend's default (tofu).
+        - `None` (default): hypertools uses its own sans-serif FALLBACK
+          STACK, led by the Noto Sans face bundled with the package (SIL
+          OFL 1.1, in ``hypertools/external/fonts``) so plots look the same
+          on every platform rather than inheriting whatever the machine
+          happens to have. Both backends resolve the stack PER GLYPH --
+          matplotlib walks a ``font.family`` list, a browser walks a CSS
+          font stack -- so text mixing scripts renders completely from
+          several faces (e.g. Latin from Noto Sans, Japanese from an
+          installed CJK face, math symbols from DejaVu Sans) instead of
+          showing tofu for whatever a single face lacks. Non-ASCII text
+          additionally triggers a scan for one font covering ALL of it,
+          which (when found) is used directly. A ``UserWarning`` is raised
+          only for characters NOTHING available can draw, naming them.
+          Bundling every script is infeasible (a pan-CJK face alone is
+          ~16 MB), so for full CJK coverage install a pan-Unicode font --
+          ``apt-get install fonts-noto-cjk`` on most Linux distros;
+          macOS/Windows usually already ship one (Hiragino Sans/Yu Gothic).
         - `str`: either the name of an installed font FAMILY (e.g.
           ``'Noto Sans CJK JP'``), or a path to a ``.ttf``/``.otf``/
           ``.ttc`` font FILE (existing paths are detected automatically,
@@ -4122,6 +4125,23 @@ def plot(
                 palette=_seaborn_palette_arg(palette, len(xform)),
                 n_colors=len(xform))
             sns.set_style(style="whitegrid")
+            # Font, applied AFTER sns.set_style (which sets its own font
+            # rcParams). A LIST gives matplotlib >= 3.6 PER-GLYPH fallback, so
+            # text mixing scripts renders fully instead of showing "tofu" for
+            # whatever the single active face lacks -- and unlike the explicit
+            # `fontproperties=` applied to titles/labels/legends downstream,
+            # an rcParam also covers text hypertools never touches directly
+            # (tick labels, and anything the user adds to the returned axes).
+            # Scoped by rc_context, so the user's global rcParams are intact.
+            _font_stack = sans_serif_stack(
+                resolved_font.get_name() if resolved_font is not None else None)
+            # BOTH keys: artists created with an explicit generic
+            # `family='sans-serif'` (seaborn's style, and matplotlib's own
+            # default) resolve through `font.sans-serif`, while artists that
+            # inherit the rcParam resolve through `font.family` -- setting only
+            # one leaves the other resolving through matplotlib's stock list.
+            plt.rcParams['font.family'] = _font_stack
+            plt.rcParams['font.sans-serif'] = _font_stack
 
             # draw the plot
             fig, ax, data, line_ani = _draw(

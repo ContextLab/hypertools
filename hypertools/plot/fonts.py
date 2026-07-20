@@ -48,12 +48,110 @@ _PREFERRED_FAMILIES = [
 
 _FONT_FILE_EXTS = ('.ttf', '.otf', '.ttc')
 
+# The BUNDLED default face (vendored under hypertools/external/fonts, SIL
+# OFL 1.1). matplotlib ships only DejaVu Sans, so without this the default
+# look varied per machine; bundling one ~570 KB face makes hypertools render
+# identically everywhere. It covers Latin/Greek/Cyrillic -- broader scripts
+# (CJK, emoji, Indic) are far too large to bundle and are reached through the
+# per-glyph fallback stack below instead.
+_BUNDLED_FAMILY = 'Noto Sans'
+_BUNDLED_FONT_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    'external', 'fonts')
+
+# Good-looking sans-serif faces to prefer, in order, when they are installed.
+# `_BUNDLED_FAMILY` leads because hypertools ships it (so it always resolves);
+# the rest are common system faces that users may prefer/recognize. Anything
+# NOT installed is filtered out before reaching matplotlib, because naming a
+# missing family makes matplotlib log a `findfont: ... not found` message for
+# every text artist.
+_NICE_SANS_FAMILIES = [
+    _BUNDLED_FAMILY,
+    'Helvetica Neue',
+    'Helvetica',
+    'Arial',
+    'Segoe UI',
+    'Roboto',
+    'Liberation Sans',
+]
+
+# matplotlib's own bundled face -- always installed, and the widest-coverage
+# fallback we can rely on (math symbols, arrows, dingbats DejaVu has that Noto
+# Sans does not), so it always anchors the end of the stack.
+_LAST_RESORT_FAMILY = 'DejaVu Sans'
+
 # module-level caches (GH #205): scanning every installed font's cmap is
 # not free (each candidate needs an FT2Font open + a glyph-index lookup per
 # codepoint), so both the final per-codepoint-set result and any font that
 # failed to load are cached for the life of the process.
 _covering_font_cache = {}
 _font_load_failures = set()
+_bundled_registered = False
+
+
+def bundled_font_files():
+    """Absolute paths of the font files vendored with hypertools."""
+    if not os.path.isdir(_BUNDLED_FONT_DIR):
+        return []
+    return [os.path.join(_BUNDLED_FONT_DIR, fname)
+            for fname in sorted(os.listdir(_BUNDLED_FONT_DIR))
+            if fname.lower().endswith(_FONT_FILE_EXTS)]
+
+
+def register_bundled_fonts():
+    """Make the vendored face(s) visible to matplotlib's font manager.
+
+    Idempotent (matplotlib's `addfont` appends unconditionally, so repeated
+    calls would pile up duplicate entries). Additive only -- it registers an
+    extra font, never changes the user's rcParams or removes anything.
+    """
+    global _bundled_registered
+    if _bundled_registered:
+        return
+    _bundled_registered = True          # set first: never retry a bad file
+    for path in bundled_font_files():
+        try:
+            font_manager.fontManager.addfont(path)
+        except Exception:  # noqa: BLE001 - a bad/corrupt bundled file must
+            pass           # never break plotting; the stack falls back below
+
+
+def installed_families():
+    """Set of family names matplotlib can currently resolve."""
+    register_bundled_fonts()
+    return {entry.name for entry in font_manager.fontManager.ttflist}
+
+
+def sans_serif_stack(first=None):
+    """Ordered font families for matplotlib's PER-GLYPH fallback.
+
+    matplotlib (>= 3.6) walks a ``font.family`` LIST per character, so a stack
+    renders text whose glyphs live in different faces -- e.g. Latin from Noto
+    Sans, Japanese from an installed CJK face, and math symbols from DejaVu
+    Sans -- instead of drawing "tofu" boxes for whatever the single active font
+    lacks. Ordering: `first` (an explicitly resolved ``font=``) if given, then
+    the good-looking sans faces that are installed, then the pan-Unicode/CJK
+    families, and finally DejaVu Sans as the widest-coverage anchor.
+
+    Every entry is filtered against what is actually installed, so matplotlib
+    never logs a ``findfont: ... not found`` message for a family in the stack.
+    """
+    available = installed_families()
+    stack = []
+
+    def _add(name):
+        if name and name in available and name not in stack:
+            stack.append(name)
+
+    _add(first)                              # an explicit font= wins outright
+    for family in _NICE_SANS_FAMILIES:
+        _add(family)
+    for family in _PREFERRED_FAMILIES:       # pan-Unicode / CJK coverage
+        _add(family)
+    _add(_LAST_RESORT_FAMILY)
+    if _LAST_RESORT_FAMILY not in stack:     # matplotlib always ships it, but
+        stack.append(_LAST_RESORT_FAMILY)    # never return an empty stack
+    return stack
 
 
 def _iter_texts(obj):
@@ -119,6 +217,36 @@ def _font_covers(fname, codepoints):
     except Exception:
         _font_load_failures.add(fname)
         return False
+
+
+def _codepoints_uncovered_by_stack(codepoints):
+    """Subset of `codepoints` that NO family in `sans_serif_stack()` can draw.
+
+    matplotlib walks the stack per glyph, so a character only renders as
+    "tofu" if every family in it lacks that character -- which is a much
+    narrower (and much rarer) condition than "no SINGLE font covers all of
+    the text at once".
+    """
+    remaining = set(codepoints)
+    for family in sans_serif_stack():
+        if not remaining:
+            break
+        try:
+            fname = font_manager.findfont(
+                FontProperties(family=[family]), fallback_to_default=False)
+        except Exception:  # noqa: BLE001 - unresolvable family covers nothing
+            continue
+        if fname in _font_load_failures:
+            continue
+        try:
+            ft = FT2Font(fname)
+            # skip universal-placeholder fonts, exactly as `_font_covers` does
+            if any(ft.get_char_index(cp) != 0 for cp in _NONCHARACTER_PROBES):
+                continue
+            remaining = {cp for cp in remaining if ft.get_char_index(cp) == 0}
+        except Exception:  # noqa: BLE001
+            _font_load_failures.add(fname)
+    return remaining
 
 
 def _weight_style_key(entry):
@@ -193,17 +321,25 @@ def find_covering_font(texts):
             _covering_font_cache[key] = result
             return result
 
-    sample = ''.join(chr(cp) for cp in sorted(codepoints)[:5])
-    warnings.warn(
-        f"hypertools: no installed font covers the character(s) "
-        f"{sample!r} (and possibly others) needed for this plot's text -- "
-        f"it will likely render as 'tofu' (empty boxes). Pass "
-        f"font=<family name or path to a .ttf/.otf/.ttc file> to "
-        f"hyp.plot(...), or install a pan-Unicode font such as 'Noto Sans "
-        f"CJK' (e.g. `apt-get install fonts-noto-cjk` on Debian/Ubuntu).",
-        UserWarning,
-        stacklevel=3,
-    )
+    # No SINGLE font covers all of this text -- which is NOT a problem by
+    # itself: matplotlib walks `sans_serif_stack()` per glyph, so text mixing
+    # scripts (say Latin + Japanese + math symbols) still renders completely
+    # from several faces. Warn only about characters NOTHING in the stack can
+    # draw, otherwise this fires on ordinary accented/Greek text that renders
+    # perfectly (maintainer font review).
+    missing = _codepoints_uncovered_by_stack(codepoints)
+    if missing:
+        sample = ''.join(chr(cp) for cp in sorted(missing)[:5])
+        warnings.warn(
+            f"hypertools: no installed font covers the character(s) "
+            f"{sample!r} (and possibly others) needed for this plot's text -- "
+            f"they will render as 'tofu' (empty boxes). Pass "
+            f"font=<family name or path to a .ttf/.otf/.ttc file> to "
+            f"hyp.plot(...), or install a pan-Unicode font such as 'Noto Sans "
+            f"CJK' (e.g. `apt-get install fonts-noto-cjk` on Debian/Ubuntu).",
+            UserWarning,
+            stacklevel=3,
+        )
     _covering_font_cache[key] = None
     return None
 

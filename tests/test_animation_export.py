@@ -370,3 +370,50 @@ def test_real_export_succeeds_after_a_killed_export(tmp_path, monkeypatch):
              save_path=out, show=False)
     assert os.path.getsize(out) > 0
     assert _animated_frames(out) > 1
+
+
+# ------------------------------------------- animation Play/Pause controls
+# Maintainer report (Andy): in 2-D the controls were drawn ON TOP of the
+# chart's bottom-left corner, and their styling was rough ("Play is a little
+# off center inside the button"). They used to sit at paper (0, 0) anchored
+# bottom-left -- fine in 3-D, where the scene floats above that corner, but in
+# 2-D the axes fill the paper area. They now hang BELOW the plotting area.
+
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_animation_controls_sit_below_the_plot_area(ndims):
+    fig = hyp.plot(walk, animate=True, ndims=ndims, backend='plotly',
+                   show=False)
+    menus = fig.layout.updatemenus
+    assert len(menus) == 1
+    menu = menus[0]
+    # anchored by its TOP edge at a NEGATIVE paper y => entirely below the
+    # plotting area (paper y=0 is its bottom edge), so it cannot overlap
+    assert menu.yanchor == 'top'
+    assert menu.y < 0, 'controls must hang below the plot, not overlap it'
+    # ... and the bottom margin is opened up so they are not clipped off
+    assert fig.layout.margin.b >= _pb._ANIM_BUTTON_MARGIN_B
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_animation_controls_are_themed(ndims):
+    fig = hyp.plot(walk, animate=True, ndims=ndims, backend='plotly',
+                   show=False)
+    menu = fig.layout.updatemenus[0]
+    assert menu.direction == 'right', 'controls should lay out horizontally'
+    # symmetric padding centers each label in its button
+    assert menu.pad.l == menu.pad.r and menu.pad.t == menu.pad.b
+    assert menu.pad.l > 0 and menu.pad.t > 0
+    assert menu.bgcolor and menu.bordercolor and menu.borderwidth >= 1
+    # same font stack as the rest of the figure, not plotly's default face
+    assert menu.font.family == _pb._PLOTLY_SANS_STACK
+    assert [b.label for b in menu.buttons] == ['Play', 'Pause']
+
+
+def test_animation_controls_preserve_other_margins():
+    # update_layout merges nested dicts -- opening up margin.b must not clobber
+    # the left/right/top margins the static layout computed
+    static = hyp.plot(walk, ndims=2, backend='plotly', show=False)
+    anim = hyp.plot(walk, animate=True, ndims=2, backend='plotly', show=False)
+    for side in ('l', 'r', 't'):
+        assert getattr(anim.layout.margin, side) == \
+            getattr(static.layout.margin, side)

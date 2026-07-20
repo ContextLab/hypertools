@@ -670,12 +670,17 @@ def _draw(
                 # the place of the historical `family="serif"` -- passing
                 # BOTH would be ambiguous, and `fontproperties` is what
                 # actually needs to carry the CJK-covering font face.
-                # When there is no resolved font (plain ASCII labels),
-                # `family="serif"` is kept exactly as before so ASCII-only
-                # plots render byte-identically to pre-#205 hypertools.
+                # With NO resolved font, point labels now INHERIT the
+                # rcParams font stack like every other text surface, rather
+                # than forcing `family="serif"`. That hardcoded serif both
+                # clashed with the sans-serif used everywhere else and, more
+                # importantly, resolved through matplotlib's stock serif list
+                # instead of hypertools' per-glyph fallback stack -- so a
+                # label character the serif faces lacked (e.g. U+2726 '✦')
+                # rendered as "tofu" even though an installed font had it
+                # (maintainer font review).
                 _label_font_kwargs = (
-                    dict(fontproperties=font) if font is not None
-                    else dict(family="serif")
+                    dict(fontproperties=font) if font is not None else {}
                 )
                 if data[0].shape[-1] > 2:
                     x2, y2, _ = proj3d.proj_transform(x[0], x[1], x[2], proj)

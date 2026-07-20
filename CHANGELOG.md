@@ -71,6 +71,23 @@ set are new.
 - Plotting no longer mutates global matplotlib settings; the unreliable
   result cache was removed; HDBSCAN comes from scikit-learn instead of the
   external `hdbscan` package.
+- **Typography:** plots now render in a bundled sans-serif (Noto Sans, SIL
+  OFL 1.1, vendored in `hypertools/external/fonts`) on both backends, so
+  output looks the same on every platform instead of inheriting each
+  machine's default face. Fonts resolve through a per-glyph FALLBACK STACK,
+  so text mixing scripts renders completely from several faces rather than
+  showing "tofu" boxes for whatever a single face lacks. Two consequences:
+  point `labels=` no longer force a serif face (they inherit the stack like
+  every other text surface -- previously a label character the serif faces
+  lacked rendered as tofu even when an installed font had it), and the
+  "no font covers this text" warning now fires only for characters NOTHING
+  available can draw, instead of whenever no SINGLE font covered all of it.
+  The font stack is applied inside a scoped `rc_context`, so your own
+  matplotlib settings are still left untouched.
+- **Animation controls (plotly):** the Play/Pause buttons moved from the
+  plot's bottom-left corner to below the plotting area, laid out
+  horizontally and lightly themed. In 2-D -- where the axes fill the paper
+  area -- they previously overlapped the chart itself.
 
 ### Release audit (2026-07)
 

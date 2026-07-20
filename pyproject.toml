@@ -190,6 +190,11 @@ namespaces = false
 # sdists, so get_default_options() was silently empty in every pip install)
 [tool.setuptools.package-data]
 "hypertools.core" = ["config.ini"]
+# vendored Noto Sans (SIL OFL 1.1) -- the bundled default sans-serif face, so
+# plots render identically on every platform instead of falling back to
+# whatever the machine happens to have installed. Ship the license and
+# provenance README alongside the font, as the OFL requires.
+"hypertools.external" = ["fonts/*.ttf", "fonts/OFL.txt", "fonts/README.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
