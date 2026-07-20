@@ -221,19 +221,17 @@ def test_render_subprocess_times_out_kills_and_raises_bounded(monkeypatch):
     assert time.time() - t0 < 90
 
 
-def test_export_worker_renders_all_frames_to_files(tmp_path):
-    # the subprocess worker, run directly, must render EVERY frame to its own
-    # image file (atomic rename -> no half-written frames)
-    from hypertools.plot import _kaleido_export_worker as worker
+def test_render_frames_via_subprocess_returns_all_frames():
+    # the production render path spawns the worker as a KILLABLE subprocess
+    # (deadline + retry) and returns one image blob per frame. This is the ONLY
+    # safe way to exercise the worker end-to-end: invoking worker.main() in the
+    # test process has no timeout, so a transient Chrome wedge would hang the
+    # whole test (it did, on a CI runner) instead of being bounded + retried.
     fig = _small_plotly_anim_fig()
-    fig_json = tmp_path / 'figure.json'
-    fig_json.write_text(fig.to_json())
-    frames_dir = tmp_path / 'frames'
-    frames_dir.mkdir()
-    worker.main([str(fig_json), str(frames_dir), 'png', '200', '200'])
-    files = sorted(frames_dir.glob('*.png'))
-    assert len(files) == len(fig.frames)
-    assert all(f.stat().st_size > 0 for f in files)
+    n = len(fig.frames)
+    blobs = _pb._render_frames_via_subprocess(fig, 'png', 200, 200, n)
+    assert len(blobs) == n
+    assert all(isinstance(b, bytes) and len(b) > 0 for b in blobs)
 
 
 def test_real_export_succeeds_after_a_killed_export(tmp_path, monkeypatch):
