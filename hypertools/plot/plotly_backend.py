@@ -1249,8 +1249,14 @@ def _kill_process_tree(proc):
     try:
         if os.name == 'nt':
             try:
-                subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)],
-                               capture_output=True, timeout=15)
+                killed = subprocess.run(
+                    ['taskkill', '/F', '/T', '/PID', str(proc.pid)],
+                    capture_output=True, timeout=15)
+                if killed.returncode != 0:
+                    # taskkill ran but did NOT kill the tree (access denied, a
+                    # partially-exited tree, ...) -- fall back rather than
+                    # assuming success and racing a retry against a live worker
+                    proc.kill()
             except subprocess.TimeoutExpired:
                 proc.kill()          # taskkill itself stalled
         else:
@@ -1282,8 +1288,12 @@ def _wait_with_progress(proc, count_completed,
     as long as it needs. `ceiling`, if given, is an absolute backstop against
     pathological slow-drip progress.
 
-    Returns True if the process was killed (stalled or over ceiling), False if
-    it exited on its own.
+    Returns the reason the wait ended: ``'exited'`` (the process finished on its
+    own), ``'stalled'`` (no new frame within `stall_timeout` -- a wedged
+    browser), or ``'ceiling'`` (still progressing, but past the absolute
+    backstop). The two kill reasons are reported separately because they need
+    different diagnosis: a wedge is a browser fault, while a ceiling hit means
+    an export that really is rendering, just far too slowly.
     """
     import time
     start = time.monotonic()
@@ -1291,7 +1301,7 @@ def _wait_with_progress(proc, count_completed,
     last_count = count_completed()
     while True:
         if proc.poll() is not None:
-            return False
+            return 'exited'
         time.sleep(poll)
         now = time.monotonic()
         count = count_completed()
@@ -1300,10 +1310,10 @@ def _wait_with_progress(proc, count_completed,
             last_progress = now
         if now - last_progress > stall_timeout:
             _kill_process_tree(proc)
-            return True
+            return 'stalled'
         if ceiling is not None and now - start > ceiling:
             _kill_process_tree(proc)
-            return True
+            return 'ceiling'
 
 
 def _render_frames_via_subprocess(fig, ext, width, height, n_frames):
@@ -1352,16 +1362,35 @@ def _render_frames_via_subprocess(fig, ext, width, height, n_frames):
                          fig_json, frames_dir, ext, str(width), str(height)],
                         stdout=subprocess.DEVNULL, stderr=errf,
                         start_new_session=(os.name != 'nt'))
-                    killed = _wait_with_progress(
+                    reason = _wait_with_progress(
                         proc, _completed,
                         stall_timeout=_KALEIDO_STALL_TIMEOUT,
                         ceiling=ceiling)
-                if killed:
+                # EVERY frame present wins, however the worker ended: it may
+                # have rendered them all and then wedged during browser
+                # TEARDOWN, after the last frame landed. Never discard a
+                # complete export because the browser misbehaved on the way out.
+                files = sorted(glob.glob(os.path.join(frames_dir, f'*.{ext}')))
+                if len(files) == n_frames:
+                    out = []
+                    for fp in files:
+                        with open(fp, 'rb') as fh:
+                            out.append(fh.read())
+                    return out
+                if reason == 'stalled':
                     last_err = TimeoutError(
                         "plotly frame export stalled: no new frame for "
                         f"{_KALEIDO_STALL_TIMEOUT}s (headless Chrome wedged) "
-                        f"after {_completed()}/{n_frames} frame(s); killed the "
+                        f"after {len(files)}/{n_frames} frame(s); killed the "
                         "render subprocess and its browser, retrying")
+                    continue
+                if reason == 'ceiling':
+                    last_err = TimeoutError(
+                        "plotly frame export exceeded its absolute ceiling of "
+                        f"{ceiling}s while still rendering ({len(files)}/"
+                        f"{n_frames} frame(s) done) -- the export is making "
+                        "progress but far too slowly; killed the render "
+                        "subprocess and its browser, retrying")
                     continue
                 if proc.returncode != 0:
                     tail = ''
@@ -1375,17 +1404,10 @@ def _render_frames_via_subprocess(fig, ext, width, height, n_frames):
                         "plotly frame export subprocess failed (exit "
                         f"{proc.returncode}): {tail}")
                     continue
-                files = sorted(glob.glob(os.path.join(frames_dir, f'*.{ext}')))
-                if len(files) != n_frames:
-                    last_err = RuntimeError(
-                        f"plotly frame export produced {len(files)} of "
-                        f"{n_frames} frame image(s)")
-                    continue
-                out = []
-                for fp in files:
-                    with open(fp, 'rb') as fh:
-                        out.append(fh.read())
-                return out
+                last_err = RuntimeError(
+                    f"plotly frame export produced {len(files)} of "
+                    f"{n_frames} frame image(s)")
+                continue
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
     raise last_err if last_err is not None else RuntimeError(

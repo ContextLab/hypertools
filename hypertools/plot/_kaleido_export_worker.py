@@ -39,23 +39,32 @@ def main(argv):
     with open(fig_json_path, encoding='utf-8') as fh:
         fig = go.Figure(json.load(fh))
 
+    # Only fully-renamed frames count as done -- a partial `.part` file is never
+    # mistaken for a finished frame.
+    targets = [os.path.join(out_dir, f'{i:06d}.{ext}')
+               for i in range(len(fig.frames))]
+
+    # FAST PATH, checked BEFORE any browser is started: a previous attempt may
+    # have rendered every frame and then wedged during browser TEARDOWN, after
+    # the last frame already landed. Starting Chrome again just to discover
+    # there is nothing to draw would let a wedged Kaleido fail an export whose
+    # frames are all present -- so return immediately instead.
+    if all(os.path.exists(t) for t in targets):
+        return
+
     # one shared headless-Chrome session for every frame (fast); if it wedges,
     # the parent kills this whole process, so no in-process recovery is needed
     with _shared_kaleido_session():
         for i, snapshot in enumerate(_frame_snapshots(fig)):
-            final = os.path.join(out_dir, f'{i:06d}.{ext}')
-            # RESUME: a previous attempt may have rendered this frame before
-            # its Chrome wedged. The parent reuses one frames dir across
-            # attempts, so a wedge late in a long export doesn't redo hundreds
-            # of successful renders. (Only fully-renamed frames count -- a
-            # partial `.part` file is never mistaken for a finished frame.)
-            if os.path.exists(final):
+            # RESUME: skip frames a previous attempt already rendered, so a
+            # wedge late in a long export doesn't redo hundreds of renders
+            if os.path.exists(targets[i]):
                 continue
             img = snapshot.to_image(format=ext, width=width, height=height)
             part = os.path.join(out_dir, f'.{i:06d}.{ext}.part')
             with open(part, 'wb') as out:
                 out.write(img)
-            os.replace(part, final)
+            os.replace(part, targets[i])
 
 
 if __name__ == '__main__':

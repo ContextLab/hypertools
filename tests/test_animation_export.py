@@ -216,8 +216,8 @@ def test_wait_with_progress_kills_a_stalled_render():
         [sys.executable, '-c', 'import time; time.sleep(600)'],
         start_new_session=(os.name != 'nt'))
     t0 = time.time()
-    killed = _pb._wait_with_progress(proc, lambda: 0, stall_timeout=3, poll=0.5)
-    assert killed is True
+    reason = _pb._wait_with_progress(proc, lambda: 0, stall_timeout=3, poll=0.5)
+    assert reason == 'stalled'
     assert proc.poll() is not None
     assert time.time() - t0 < 30
 
@@ -236,8 +236,8 @@ def test_wait_with_progress_does_not_kill_a_slow_but_progressing_render():
         progress['n'] += 1        # a new frame lands on every poll
         return progress['n']
 
-    killed = _pb._wait_with_progress(proc, count, stall_timeout=2, poll=0.5)
-    assert killed is False        # ran ~6s > 2s stall timeout, still not killed
+    reason = _pb._wait_with_progress(proc, count, stall_timeout=2, poll=0.5)
+    assert reason == 'exited'     # ran ~6s > 2s stall timeout, still not killed
     assert proc.returncode == 0   # ... it exited on its own
 
 
@@ -253,9 +253,11 @@ def test_wait_with_progress_enforces_the_absolute_ceiling():
         return progress['n']
 
     t0 = time.time()
-    killed = _pb._wait_with_progress(proc, count, stall_timeout=300,
+    reason = _pb._wait_with_progress(proc, count, stall_timeout=300,
                                      ceiling=3, poll=0.5)
-    assert killed is True
+    # reported as a CEILING hit, not a stall: frames were arriving the whole
+    # time, so this needs different diagnosis than a wedged browser
+    assert reason == 'ceiling'
     assert proc.poll() is not None
     assert time.time() - t0 < 30
 
@@ -273,10 +275,13 @@ def test_render_subprocess_stall_kills_and_raises_bounded(monkeypatch):
     assert time.time() - t0 < 120
 
 
-def test_worker_skips_frames_already_rendered(tmp_path):
-    # RESUME support: a retry must not redo renders that already landed. Every
-    # frame is pre-created, so the worker should skip them all and exit without
-    # ever launching Chrome, leaving the sentinel bytes untouched.
+def test_worker_starts_no_browser_when_every_frame_already_exists(tmp_path):
+    # RESUME, complete case: a previous attempt may have rendered EVERY frame
+    # and then wedged during browser TEARDOWN. Starting Chrome again just to
+    # discover there is nothing to draw would let a broken Kaleido fail an
+    # export whose frames are all present -- so the worker must return before
+    # touching a browser at all. A stub `kaleido` on PYTHONPATH records any
+    # attempt to start one (and removes the need for a real browser here).
     fig = _small_plotly_anim_fig()
     fig_json = tmp_path / 'figure.json'
     fig_json.write_text(fig.to_json())
@@ -284,13 +289,54 @@ def test_worker_skips_frames_already_rendered(tmp_path):
     frames_dir.mkdir()
     for i in range(len(fig.frames)):
         (frames_dir / f'{i:06d}.png').write_bytes(b'SENTINEL')
+
+    stub_dir = tmp_path / 'stub'
+    stub_dir.mkdir()
+    marker = tmp_path / 'browser-was-started'
+    (stub_dir / 'kaleido.py').write_text(
+        'import os\n'
+        'class _S:\n'
+        '    def is_running(self):\n'
+        '        return False\n'
+        '_global_server = _S()\n'
+        'def start_sync_server(*a, **k):\n'
+        f'    open(r"{marker}", "w").close()\n'
+        'def stop_sync_server(*a, **k):\n'
+        '    pass\n')
+    env = dict(os.environ, PYTHONPATH=str(stub_dir))
     proc = subprocess.run(
         [sys.executable, '-m', 'hypertools.plot._kaleido_export_worker',
          str(fig_json), str(frames_dir), 'png', '200', '200'],
-        capture_output=True, timeout=180)
+        capture_output=True, timeout=180, env=env)
     assert proc.returncode == 0, proc.stderr.decode('utf-8', 'replace')[-2000:]
+    assert not marker.exists(), 'worker started a browser on a complete resume'
     for i in range(len(fig.frames)):
         assert (frames_dir / f'{i:06d}.png').read_bytes() == b'SENTINEL'
+
+
+def test_export_accepts_a_complete_frame_set_from_a_killed_worker(monkeypatch):
+    # Parent side of the same hazard: if the worker is killed (here: an
+    # impossibly short stall timeout) but every frame already landed, the export
+    # must ACCEPT that complete set rather than reporting failure. Frames are
+    # pre-seeded into the workdir the parent creates, via a patched mkdtemp.
+    import tempfile as _tempfile
+    fig = _small_plotly_anim_fig()
+    n = len(fig.frames)
+    real_mkdtemp = _tempfile.mkdtemp
+
+    def seeded_mkdtemp(*a, **k):
+        d = real_mkdtemp(*a, **k)
+        frames_dir = os.path.join(d, 'frames')
+        os.makedirs(frames_dir, exist_ok=True)
+        for i in range(n):                     # export is already complete
+            with open(os.path.join(frames_dir, f'{i:06d}.png'), 'wb') as fh:
+                fh.write(b'SEEDED')
+        return d
+
+    monkeypatch.setattr(_tempfile, 'mkdtemp', seeded_mkdtemp)
+    monkeypatch.setattr(_pb, '_KALEIDO_STALL_TIMEOUT', 1)   # kill the worker
+    blobs = _pb._render_frames_via_subprocess(fig, 'png', 200, 200, n)
+    assert blobs == [b'SEEDED'] * n
 
 
 def test_render_frames_via_subprocess_returns_all_frames():
