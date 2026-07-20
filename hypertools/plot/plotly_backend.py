@@ -1183,13 +1183,27 @@ import threading
 # (abandoning the thread and poking kaleido's private singleton state corrupts a
 # later export in the same process), so frame rendering runs in a KILLABLE
 # SUBPROCESS: it owns its own kaleido singleton + Chrome, the parent enforces a
-# hard wall-clock deadline, and on overrun the whole process tree (Chrome
+# PROGRESS-SENSITIVE watchdog, and on a stall the whole process tree (Chrome
 # included) is killed and the export retried in a fresh subprocess. A module
 # lock serializes exports so at most one render subprocess (and its browser)
 # exists at a time.
+#
+# The watchdog measures PROGRESS, not total elapsed time. A whole-export
+# deadline scaled by frame count cannot tell "a long export that is steadily
+# rendering" from "Chrome is wedged": the DEFAULT animation is duration=30 x
+# frame_rate=30 = ~900 frames, so any per-frame-scaled deadline generous enough
+# for a healthy 900-frame export is hours long -- far past pytest's 1200s cap,
+# letting a real wedge hang CI for hours. Instead the worker renames each frame
+# into place atomically as it finishes, the parent counts completed frames, and
+# the inactivity timer resets on every new frame. A wedge is therefore caught in
+# STALL_TIMEOUT seconds regardless of frame count, while a healthy export runs as
+# long as it needs. A generous absolute ceiling remains as a second safeguard
+# against pathological slow-drip progress.
 _KALEIDO_EXPORT_ATTEMPTS = 2          # whole-export attempts before giving up
-_KALEIDO_MIN_DEADLINE = 180           # floor for a whole-export deadline (s)
-_KALEIDO_PER_FRAME_BUDGET = 6         # added to the deadline per frame (s)
+_KALEIDO_STALL_TIMEOUT = 120          # kill if no NEW frame lands in this long
+_KALEIDO_POLL_INTERVAL = 2            # progress-poll cadence (seconds)
+_KALEIDO_MIN_CEILING = 1800           # floor for the absolute ceiling (s)
+_KALEIDO_CEILING_PER_FRAME = 30       # absolute-ceiling budget per frame (s)
 _EXPORT_LOCK = threading.Lock()       # one render subprocess at a time
 
 
@@ -1215,24 +1229,30 @@ def _frame_snapshots(fig):
         yield snapshot
 
 
-def _export_deadline(n_frames):
-    """Wall-clock budget for rendering `n_frames` frames in one subprocess -- a
-    generous multiple of the real per-frame cost (a legit frame renders in a few
-    seconds even on a slow 2-core runner) so only a genuinely wedged Chrome
-    trips it, while two attempts stay well under pytest's 1200s per-test cap."""
-    return max(_KALEIDO_MIN_DEADLINE, n_frames * _KALEIDO_PER_FRAME_BUDGET)
+def _export_ceiling(n_frames):
+    """Absolute wall-clock backstop for one render attempt -- deliberately far
+    above the real cost (a frame renders in a few seconds even on a slow 2-core
+    runner) so it never trips a healthy export. The PRIMARY guard is the
+    progress watchdog in `_wait_with_progress`; this only catches pathological
+    slow-drip progress that keeps resetting the inactivity timer."""
+    return max(_KALEIDO_MIN_CEILING, n_frames * _KALEIDO_CEILING_PER_FRAME)
 
 
 def _kill_process_tree(proc):
     """Kill a render subprocess AND its headless-Chrome children. On POSIX the
     subprocess is its own session leader, so the whole group is signalled; on
-    Windows ``taskkill /T`` walks the tree. Best-effort and bounded."""
+    Windows ``taskkill /T`` walks the tree. Best-effort and BOUNDED at every
+    step -- including `taskkill` itself, which is a subprocess that can stall
+    and would otherwise block the recovery path indefinitely."""
     import signal
     import subprocess
     try:
         if os.name == 'nt':
-            subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)],
-                           capture_output=True)
+            try:
+                subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)],
+                               capture_output=True, timeout=15)
+            except subprocess.TimeoutExpired:
+                proc.kill()          # taskkill itself stalled
         else:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -1249,32 +1269,82 @@ def _kill_process_tree(proc):
         pass
 
 
+def _wait_with_progress(proc, count_completed,
+                        stall_timeout=_KALEIDO_STALL_TIMEOUT,
+                        ceiling=None, poll=_KALEIDO_POLL_INTERVAL):
+    """Wait for `proc`, killing it only when it STOPS MAKING PROGRESS.
+
+    `count_completed()` returns how many frames have finished (the worker
+    renames each into place atomically, so the count only ever grows). The
+    inactivity timer resets on every new frame, so a wedged headless Chrome is
+    caught in `stall_timeout` seconds NO MATTER how many frames the export has
+    -- while a healthy long export (the default animation is ~900 frames) runs
+    as long as it needs. `ceiling`, if given, is an absolute backstop against
+    pathological slow-drip progress.
+
+    Returns True if the process was killed (stalled or over ceiling), False if
+    it exited on its own.
+    """
+    import time
+    start = time.monotonic()
+    last_progress = start
+    last_count = count_completed()
+    while True:
+        if proc.poll() is not None:
+            return False
+        time.sleep(poll)
+        now = time.monotonic()
+        count = count_completed()
+        if count > last_count:
+            last_count = count
+            last_progress = now
+        if now - last_progress > stall_timeout:
+            _kill_process_tree(proc)
+            return True
+        if ceiling is not None and now - start > ceiling:
+            _kill_process_tree(proc)
+            return True
+
+
 def _render_frames_via_subprocess(fig, ext, width, height, n_frames):
     """Render every animation frame of `fig` to an image file (format `ext`) in
-    a fresh, KILLABLE subprocess, enforcing a hard wall-clock deadline -- the
-    only reliable way to bound a blocked headless-Chrome call and reclaim it (a
-    Python thread cannot). On timeout the process tree (Chrome included) is
-    killed and the export retried in a new subprocess; a non-zero exit or a
-    short frame count is likewise retried. Returns the per-frame image BYTES in
-    frame order, or raises the last error if every attempt fails. Exports are
-    serialized (`_EXPORT_LOCK`) so a wedged browser never coexists with a fresh
-    one."""
+    a KILLABLE subprocess, guarded by a PROGRESS watchdog -- the only reliable
+    way to bound a blocked headless-Chrome call and reclaim it (a Python thread
+    cannot). A stalled render (no new frame for `_KALEIDO_STALL_TIMEOUT`) has
+    its process tree, Chrome included, killed and the export retried; a
+    non-zero exit or short frame count is likewise retried. Retries RESUME:
+    frames already rendered are kept and skipped by the worker, so a wedge on
+    frame 800 of 900 does not redo 800 successful renders. Returns the per-frame
+    image BYTES in frame order, or raises the last error if every attempt fails.
+    Exports are serialized (`_EXPORT_LOCK`) so a wedged browser never coexists
+    with a fresh one."""
     import glob
+    import shutil
     import subprocess
     import tempfile
-    deadline = _export_deadline(n_frames)
+    ceiling = _export_ceiling(n_frames)
     last_err = None
-    with _EXPORT_LOCK:
-        for _attempt in range(_KALEIDO_EXPORT_ATTEMPTS):
-            with tempfile.TemporaryDirectory() as tmp:
-                fig_json = os.path.join(tmp, 'figure.json')
-                frames_dir = os.path.join(tmp, 'frames')
-                err_path = os.path.join(tmp, 'stderr.log')
-                os.makedirs(frames_dir)
-                with open(fig_json, 'w') as fh:
-                    fh.write(fig.to_json())
+    # ONE working dir for the whole export (not per attempt) so a retry resumes
+    # from the frames that already landed. mkdtemp + ignore_errors rmtree rather
+    # than TemporaryDirectory: on Windows a just-killed worker/Chrome can still
+    # hold frame files open, and a cleanup exception would REPLACE the
+    # TimeoutError we actually want to report.
+    workdir = tempfile.mkdtemp(prefix='hypertools-plotly-export-')
+    try:
+        with _EXPORT_LOCK:
+            fig_json = os.path.join(workdir, 'figure.json')
+            frames_dir = os.path.join(workdir, 'frames')
+            os.makedirs(frames_dir, exist_ok=True)
+            with open(fig_json, 'w') as fh:
+                fh.write(fig.to_json())
+
+            def _completed():
+                return len(glob.glob(os.path.join(frames_dir, f'*.{ext}')))
+
+            for attempt in range(_KALEIDO_EXPORT_ATTEMPTS):
+                err_path = os.path.join(workdir, f'stderr-{attempt}.log')
                 # stderr -> file (not a PIPE) so a chatty Chrome can't deadlock
-                # on a full pipe buffer while we wait on the deadline
+                # on a full pipe buffer while we watch for progress
                 with open(err_path, 'wb') as errf:
                     proc = subprocess.Popen(
                         [sys.executable, '-m',
@@ -1282,16 +1352,18 @@ def _render_frames_via_subprocess(fig, ext, width, height, n_frames):
                          fig_json, frames_dir, ext, str(width), str(height)],
                         stdout=subprocess.DEVNULL, stderr=errf,
                         start_new_session=(os.name != 'nt'))
-                    try:
-                        rc = proc.wait(timeout=deadline)
-                    except subprocess.TimeoutExpired:
-                        _kill_process_tree(proc)
-                        last_err = TimeoutError(
-                            f"plotly frame export exceeded {deadline}s "
-                            "(headless Chrome wedged); killed the render "
-                            "subprocess and its browser, retrying")
-                        continue
-                if rc != 0:
+                    killed = _wait_with_progress(
+                        proc, _completed,
+                        stall_timeout=_KALEIDO_STALL_TIMEOUT,
+                        ceiling=ceiling)
+                if killed:
+                    last_err = TimeoutError(
+                        "plotly frame export stalled: no new frame for "
+                        f"{_KALEIDO_STALL_TIMEOUT}s (headless Chrome wedged) "
+                        f"after {_completed()}/{n_frames} frame(s); killed the "
+                        "render subprocess and its browser, retrying")
+                    continue
+                if proc.returncode != 0:
                     tail = ''
                     try:
                         with open(err_path, encoding='utf-8',
@@ -1301,7 +1373,7 @@ def _render_frames_via_subprocess(fig, ext, width, height, n_frames):
                         pass
                     last_err = RuntimeError(
                         "plotly frame export subprocess failed (exit "
-                        f"{rc}): {tail}")
+                        f"{proc.returncode}): {tail}")
                     continue
                 files = sorted(glob.glob(os.path.join(frames_dir, f'*.{ext}')))
                 if len(files) != n_frames:
@@ -1314,6 +1386,8 @@ def _render_frames_via_subprocess(fig, ext, width, height, n_frames):
                     with open(fp, 'rb') as fh:
                         out.append(fh.read())
                 return out
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
     raise last_err if last_err is not None else RuntimeError(
         "plotly frame export failed")
 

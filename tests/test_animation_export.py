@@ -190,9 +190,11 @@ def _small_plotly_anim_fig():
                     backend='plotly', show=False)
 
 
-def test_export_deadline_scales_with_frame_count():
-    assert _pb._export_deadline(1) == _pb._KALEIDO_MIN_DEADLINE
-    assert _pb._export_deadline(10_000) == 10_000 * _pb._KALEIDO_PER_FRAME_BUDGET
+def test_export_ceiling_is_a_generous_backstop_not_the_primary_guard():
+    # the ceiling only catches pathological slow-drip progress; the real guard
+    # is the stall watchdog, so the ceiling is deliberately far above cost
+    assert _pb._export_ceiling(1) == _pb._KALEIDO_MIN_CEILING
+    assert _pb._export_ceiling(10_000) == 10_000 * _pb._KALEIDO_CEILING_PER_FRAME
 
 
 def test_kill_process_tree_terminates_a_hung_subprocess_bounded():
@@ -207,18 +209,88 @@ def test_kill_process_tree_terminates_a_hung_subprocess_bounded():
     assert time.time() - t0 < 20              # ... and bounded
 
 
-def test_render_subprocess_times_out_kills_and_raises_bounded(monkeypatch):
-    # force an impossibly short whole-export deadline so even a healthy render
-    # subprocess overruns: the parent must kill the process tree, retry, and
+def test_wait_with_progress_kills_a_stalled_render():
+    # no new frame ever completes -> wedged -> killed within the stall timeout,
+    # regardless of how many frames the export has in total
+    proc = subprocess.Popen(
+        [sys.executable, '-c', 'import time; time.sleep(600)'],
+        start_new_session=(os.name != 'nt'))
+    t0 = time.time()
+    killed = _pb._wait_with_progress(proc, lambda: 0, stall_timeout=3, poll=0.5)
+    assert killed is True
+    assert proc.poll() is not None
+    assert time.time() - t0 < 30
+
+
+def test_wait_with_progress_does_not_kill_a_slow_but_progressing_render():
+    # THE point of a progress watchdog: a render that keeps completing frames
+    # is never killed, even though it runs far past the stall timeout. This is
+    # what makes the DEFAULT ~900-frame animation safe -- a frame-count-scaled
+    # whole-export deadline could not distinguish this from a wedge.
+    proc = subprocess.Popen(
+        [sys.executable, '-c', 'import time; time.sleep(6)'],
+        start_new_session=(os.name != 'nt'))
+    progress = {'n': 0}
+
+    def count():
+        progress['n'] += 1        # a new frame lands on every poll
+        return progress['n']
+
+    killed = _pb._wait_with_progress(proc, count, stall_timeout=2, poll=0.5)
+    assert killed is False        # ran ~6s > 2s stall timeout, still not killed
+    assert proc.returncode == 0   # ... it exited on its own
+
+
+def test_wait_with_progress_enforces_the_absolute_ceiling():
+    # backstop: even with progress on every poll, the ceiling eventually trips
+    proc = subprocess.Popen(
+        [sys.executable, '-c', 'import time; time.sleep(600)'],
+        start_new_session=(os.name != 'nt'))
+    progress = {'n': 0}
+
+    def count():
+        progress['n'] += 1
+        return progress['n']
+
+    t0 = time.time()
+    killed = _pb._wait_with_progress(proc, count, stall_timeout=300,
+                                     ceiling=3, poll=0.5)
+    assert killed is True
+    assert proc.poll() is not None
+    assert time.time() - t0 < 30
+
+
+def test_render_subprocess_stall_kills_and_raises_bounded(monkeypatch):
+    # force an impossibly short stall timeout so even a healthy render is
+    # treated as wedged: the parent must kill the process tree, retry, and
     # finally raise a bounded TimeoutError -- never the 20-min hang.
-    monkeypatch.setattr(_pb, '_export_deadline', lambda n: 0.5)
+    monkeypatch.setattr(_pb, '_KALEIDO_STALL_TIMEOUT', 1)
     fig = _small_plotly_anim_fig()
     n = len(fig.frames)
     t0 = time.time()
-    with pytest.raises(TimeoutError, match='wedged'):
+    with pytest.raises(TimeoutError, match='stalled'):
         _pb._render_frames_via_subprocess(fig, 'png', 200, 200, n)
-    # _KALEIDO_EXPORT_ATTEMPTS attempts, each ~0.5s deadline + kill overhead
-    assert time.time() - t0 < 90
+    assert time.time() - t0 < 120
+
+
+def test_worker_skips_frames_already_rendered(tmp_path):
+    # RESUME support: a retry must not redo renders that already landed. Every
+    # frame is pre-created, so the worker should skip them all and exit without
+    # ever launching Chrome, leaving the sentinel bytes untouched.
+    fig = _small_plotly_anim_fig()
+    fig_json = tmp_path / 'figure.json'
+    fig_json.write_text(fig.to_json())
+    frames_dir = tmp_path / 'frames'
+    frames_dir.mkdir()
+    for i in range(len(fig.frames)):
+        (frames_dir / f'{i:06d}.png').write_bytes(b'SENTINEL')
+    proc = subprocess.run(
+        [sys.executable, '-m', 'hypertools.plot._kaleido_export_worker',
+         str(fig_json), str(frames_dir), 'png', '200', '200'],
+        capture_output=True, timeout=180)
+    assert proc.returncode == 0, proc.stderr.decode('utf-8', 'replace')[-2000:]
+    for i in range(len(fig.frames)):
+        assert (frames_dir / f'{i:06d}.png').read_bytes() == b'SENTINEL'
 
 
 def test_render_frames_via_subprocess_returns_all_frames():
@@ -242,8 +314,8 @@ def test_real_export_succeeds_after_a_killed_export(tmp_path, monkeypatch):
     # threads / mutating kaleido's private singleton.
     fig = _small_plotly_anim_fig()
     n = len(fig.frames)
-    with monkeypatch.context() as m:            # force a timeout+kill first
-        m.setattr(_pb, '_export_deadline', lambda _n: 0.5)
+    with monkeypatch.context() as m:            # force a stall+kill first
+        m.setattr(_pb, '_KALEIDO_STALL_TIMEOUT', 1)
         with pytest.raises(TimeoutError):
             _pb._render_frames_via_subprocess(fig, 'png', 200, 200, n)
     # ... then a genuine export in the SAME parent process must succeed

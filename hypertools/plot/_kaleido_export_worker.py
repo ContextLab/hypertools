@@ -43,11 +43,19 @@ def main(argv):
     # the parent kills this whole process, so no in-process recovery is needed
     with _shared_kaleido_session():
         for i, snapshot in enumerate(_frame_snapshots(fig)):
+            final = os.path.join(out_dir, f'{i:06d}.{ext}')
+            # RESUME: a previous attempt may have rendered this frame before
+            # its Chrome wedged. The parent reuses one frames dir across
+            # attempts, so a wedge late in a long export doesn't redo hundreds
+            # of successful renders. (Only fully-renamed frames count -- a
+            # partial `.part` file is never mistaken for a finished frame.)
+            if os.path.exists(final):
+                continue
             img = snapshot.to_image(format=ext, width=width, height=height)
             part = os.path.join(out_dir, f'.{i:06d}.{ext}.part')
             with open(part, 'wb') as out:
                 out.write(img)
-            os.replace(part, os.path.join(out_dir, f'{i:06d}.{ext}'))
+            os.replace(part, final)
 
 
 if __name__ == '__main__':
