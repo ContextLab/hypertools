@@ -166,84 +166,91 @@ def test_mixture_soft_membership_on_overlapping_clusters():
 # --- kaleido/Chrome wedge robustness (Windows-CI hang guard) ---------------
 # kaleido 1.x can hang a to_image() call UNBOUNDED (its own timeout only wraps
 # the figure calc, not browser launch/tab acquisition), which stalled Windows
-# CI at the 20-min per-test limit. Exports now bound each frame with a wall-
-# clock watchdog and retry past a wedge (fast shared session -> per-call one-
-# shot). These verify that mechanism deterministically, without a real hang.
+# CI at the 20-min per-test limit. A blocked native/browser call cannot be
+# interrupted from a Python thread, so frame rendering runs in a KILLABLE
+# subprocess with a hard wall-clock deadline; on overrun the whole process tree
+# (Chrome included) is killed and the export retried in a fresh subprocess.
+# These exercise that lifecycle -- including a genuinely-blocked renderer, its
+# bounded termination, and a real export afterwards in the same parent process.
 
 import importlib
+import subprocess
+import sys
+import time
 # the `hypertools.plot` submodule name is shadowed by the `plot` function, so
 # reach the backend module via importlib rather than a dotted import
 _pb = importlib.import_module('hypertools.plot.plotly_backend')
 
 
-class _HangingSnapshot:
-    def to_image(self, format, width, height):
-        import time
-        time.sleep(30)          # far longer than the test's watchdog timeout
-        return b'never'
+def _small_plotly_anim_fig():
+    """A real animated plotly Figure with a handful of frames (for the export
+    subprocess to render)."""
+    w3 = np.cumsum(np.random.default_rng(0).standard_normal((10, 3)), axis=0)
+    return hyp.plot(w3, animate=True, duration=1, frame_rate=3,
+                    backend='plotly', show=False)
 
 
-class _FastSnapshot:
-    def to_image(self, format, width, height):
-        return b'IMG:' + format.encode()
+def test_export_deadline_scales_with_frame_count():
+    assert _pb._export_deadline(1) == _pb._KALEIDO_MIN_DEADLINE
+    assert _pb._export_deadline(10_000) == 10_000 * _pb._KALEIDO_PER_FRAME_BUDGET
 
 
-def test_bounded_to_image_times_out_on_a_wedged_render():
+def test_kill_process_tree_terminates_a_hung_subprocess_bounded():
+    # a genuinely blocked child (sleeps far past any deadline) must be killed
+    # and reaped in bounded wall-clock time -- the core recovery primitive
+    proc = subprocess.Popen(
+        [sys.executable, '-c', 'import time; time.sleep(600)'],
+        start_new_session=(os.name != 'nt'))
+    t0 = time.time()
+    _pb._kill_process_tree(proc)
+    assert proc.poll() is not None            # actually dead
+    assert time.time() - t0 < 20              # ... and bounded
+
+
+def test_render_subprocess_times_out_kills_and_raises_bounded(monkeypatch):
+    # force an impossibly short whole-export deadline so even a healthy render
+    # subprocess overruns: the parent must kill the process tree, retry, and
+    # finally raise a bounded TimeoutError -- never the 20-min hang.
+    monkeypatch.setattr(_pb, '_export_deadline', lambda n: 0.5)
+    fig = _small_plotly_anim_fig()
+    n = len(fig.frames)
+    t0 = time.time()
     with pytest.raises(TimeoutError, match='wedged'):
-        _pb._bounded_to_image(_HangingSnapshot(), 'png', 100, 100, timeout=0.5)
+        _pb._render_frames_via_subprocess(fig, 'png', 200, 200, n)
+    # _KALEIDO_EXPORT_ATTEMPTS attempts, each ~0.5s deadline + kill overhead
+    assert time.time() - t0 < 90
 
 
-def test_bounded_to_image_returns_bytes_when_fast():
-    out = _pb._bounded_to_image(_FastSnapshot(), 'svg', 10, 10, timeout=5)
-    assert out == b'IMG:svg'
+def test_export_worker_renders_all_frames_to_files(tmp_path):
+    # the subprocess worker, run directly, must render EVERY frame to its own
+    # image file (atomic rename -> no half-written frames)
+    from hypertools.plot import _kaleido_export_worker as worker
+    fig = _small_plotly_anim_fig()
+    fig_json = tmp_path / 'figure.json'
+    fig_json.write_text(fig.to_json())
+    frames_dir = tmp_path / 'frames'
+    frames_dir.mkdir()
+    worker.main([str(fig_json), str(frames_dir), 'png', '200', '200'])
+    files = sorted(frames_dir.glob('*.png'))
+    assert len(files) == len(fig.frames)
+    assert all(f.stat().st_size > 0 for f in files)
 
 
-def test_bounded_to_image_propagates_real_errors():
-    class _Boom:
-        def to_image(self, format, width, height):
-            raise ValueError('bad figure')
-    with pytest.raises(ValueError, match='bad figure'):
-        _pb._bounded_to_image(_Boom(), 'png', 10, 10, timeout=5)
-
-
-def test_retry_export_falls_back_to_oneshot_after_a_wedge():
-    calls = []
-
-    def render_all(use_shared):
-        calls.append(use_shared)
-        if len(calls) == 1:
-            raise TimeoutError('simulated wedge')   # first (shared) attempt
-        return ['frame-a', 'frame-b']
-
-    result = _pb._retry_kaleido_export(render_all)
-    assert result == ['frame-a', 'frame-b']
-    # first attempt shares a session; the retry renders per-call one-shot
-    assert calls == [True, False]
-
-
-def test_retry_export_raises_last_error_after_exhausting_attempts():
-    def always_fail(use_shared):
-        raise RuntimeError('persistent chrome failure')
-    with pytest.raises(RuntimeError, match='persistent chrome failure'):
-        _pb._retry_kaleido_export(always_fail)
-
-
-def test_plotly_export_recovers_from_a_wedged_frame(tmp_path, monkeypatch):
-    # inject a wedge into the FIRST frame render (shared attempt); the export
-    # must reset and complete via the one-shot retry, producing a real gif.
-    real = _pb._bounded_to_image
-    state = {'injected': False}
-
-    def flaky(snapshot, fmt, width, height, timeout=_pb._KALEIDO_FRAME_TIMEOUT):
-        if not state['injected']:
-            state['injected'] = True
-            raise TimeoutError('simulated wedge (headless Chrome)')
-        return real(snapshot, fmt, width, height, timeout)
-
-    monkeypatch.setattr(_pb, '_bounded_to_image', flaky)
-    out = str(tmp_path / 'anim.gif')
+def test_real_export_succeeds_after_a_killed_export(tmp_path, monkeypatch):
+    # THE lifecycle guard: a wedged-and-killed export must leave the PARENT
+    # process uncorrupted (no leaked global-server state, no stale closer
+    # thread), so a subsequent REAL export in the same process still works --
+    # the whole reason for a process boundary over abandoning in-process
+    # threads / mutating kaleido's private singleton.
+    fig = _small_plotly_anim_fig()
+    n = len(fig.frames)
+    with monkeypatch.context() as m:            # force a timeout+kill first
+        m.setattr(_pb, '_export_deadline', lambda _n: 0.5)
+        with pytest.raises(TimeoutError):
+            _pb._render_frames_via_subprocess(fig, 'png', 200, 200, n)
+    # ... then a genuine export in the SAME parent process must succeed
+    out = str(tmp_path / 'after.gif')
     hyp.plot(walk, animate=True, duration=1, frame_rate=5, backend='plotly',
              save_path=out, show=False)
-    assert state['injected']                 # the wedge really was hit
-    assert os.path.getsize(out) > 0          # ... and the export still succeeded
+    assert os.path.getsize(out) > 0
     assert _animated_frames(out) > 1

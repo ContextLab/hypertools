@@ -1170,100 +1170,152 @@ def _show_sphinx_gallery(fig):
 
 
 import contextlib
+import threading
 
-# --- headless-Chrome (kaleido) robustness for animation export -------------
+# --- headless-Chrome (kaleido) animation export: hard timeout via subprocess -
 # kaleido 1.x drives headless Chrome; its OWN per-render timeout only wraps the
-# figure CALC (`asyncio.wait_for(tab._calc_fig(...), timeout)`), NOT browser
-# launch or tab acquisition -- so a wedged Chrome can hang a `to_image()` call
-# UNBOUNDED. That repeatedly stalled Windows CI at pytest's 20-minute per-test
-# limit (test_animation_export.py::test_plotly_mp4_export sat 1200s inside
-# kaleido's sync-server `call_function`). Every frame render is therefore
-# bounded by a wall-clock watchdog; a wedged browser is force-torn-down; and
-# the export is retried, falling back from the fast shared session to per-call
-# one-shot rendering (each a fresh browser) so an abandoned wedged thread can
-# never corrupt the retry.
-_KALEIDO_FRAME_TIMEOUT = 120       # per-frame render wall-clock bound (seconds)
-_KALEIDO_EXPORT_ATTEMPTS = 3       # whole-export attempts before giving up
+# figure CALC (`asyncio.wait_for(tab._calc_fig(...), ...)`), NOT browser launch
+# or tab acquisition, and its shared sync server blocks on an unbounded
+# Queue.get -- so a wedged Chrome hangs a `to_image()` call FOREVER
+# (test_animation_export.py::test_plotly_mp4_export sat pytest's full 1200s
+# inside kaleido's sync-server call_function on Windows CI). A blocked native/
+# browser call cannot be safely interrupted OR reclaimed from a Python thread
+# (abandoning the thread and poking kaleido's private singleton state corrupts a
+# later export in the same process), so frame rendering runs in a KILLABLE
+# SUBPROCESS: it owns its own kaleido singleton + Chrome, the parent enforces a
+# hard wall-clock deadline, and on overrun the whole process tree (Chrome
+# included) is killed and the export retried in a fresh subprocess. A module
+# lock serializes exports so at most one render subprocess (and its browser)
+# exists at a time.
+_KALEIDO_EXPORT_ATTEMPTS = 2          # whole-export attempts before giving up
+_KALEIDO_MIN_DEADLINE = 180           # floor for a whole-export deadline (s)
+_KALEIDO_PER_FRAME_BUDGET = 6         # added to the deadline per frame (s)
+_EXPORT_LOCK = threading.Lock()       # one render subprocess at a time
 
 
-def _bounded_to_image(snapshot, fmt, width, height,
-                      timeout=_KALEIDO_FRAME_TIMEOUT):
-    """Render one plotly snapshot to image bytes, bounding the kaleido/Chrome
-    call at `timeout` seconds. The call runs in a daemon worker thread; if it
-    overruns (a wedged headless Chrome), ``TimeoutError`` is raised and the
-    stuck worker is abandoned (daemon -> dies with the process)."""
-    import threading
-    box = {}
-
-    def _worker():
-        try:
-            box['out'] = snapshot.to_image(format=fmt, width=width,
-                                           height=height)
-        except BaseException as exc:  # noqa: BLE001 - re-raised to caller below
-            box['exc'] = exc
-
-    worker = threading.Thread(target=_worker, daemon=True)
-    worker.start()
-    worker.join(timeout)
-    if worker.is_alive():
-        raise TimeoutError(
-            f"kaleido {fmt} render exceeded {timeout}s (headless Chrome "
-            "wedged)")
-    if 'exc' in box:
-        raise box['exc']
-    return box['out']
+def _frame_snapshots(fig):
+    """Yield one static, frameless `go.Figure` snapshot per animation frame in
+    `fig.frames` -- a copy of the pristine base (embedded frames cleared,
+    play/pause controls hidden) with that frame's layout/data updates applied,
+    suitable for rendering to a single image when assembling a GIF/video/SVG
+    export. Module-level so the export subprocess can reuse it."""
+    import plotly.graph_objects as go
+    base = go.Figure(fig)
+    base.frames = ()
+    base.layout.updatemenus = ()
+    for frame in fig.frames:
+        snapshot = go.Figure(base)
+        if frame.layout:
+            snapshot.update_layout(frame.layout)
+        if frame.data:
+            indices = frame.traces if frame.traces is not None \
+                else range(len(frame.data))
+            for idx, trace in zip(indices, frame.data):
+                snapshot.data[idx].update(trace)
+        yield snapshot
 
 
-def _reset_kaleido_server(timeout=20):
-    """Best-effort teardown of the global kaleido sync server (+ its headless
-    Chrome). A clean ``stop_sync_server`` joins the server thread, which itself
-    blocks when that thread is stuck in a wedged Chrome call -- so the stop is
-    bounded, and on overrun the singleton's running flag is cleared directly,
-    abandoning the stuck (daemon) thread. Retries then use one-shot rendering
-    (a fresh browser per call), so the abandoned thread -- which still
-    references the singleton's queues -- is never reused."""
-    import threading
+def _export_deadline(n_frames):
+    """Wall-clock budget for rendering `n_frames` frames in one subprocess -- a
+    generous multiple of the real per-frame cost (a legit frame renders in a few
+    seconds even on a slow 2-core runner) so only a genuinely wedged Chrome
+    trips it, while two attempts stay well under pytest's 1200s per-test cap."""
+    return max(_KALEIDO_MIN_DEADLINE, n_frames * _KALEIDO_PER_FRAME_BUDGET)
+
+
+def _kill_process_tree(proc):
+    """Kill a render subprocess AND its headless-Chrome children. On POSIX the
+    subprocess is its own session leader, so the whole group is signalled; on
+    Windows ``taskkill /T`` walks the tree. Best-effort and bounded."""
+    import signal
+    import subprocess
     try:
-        import kaleido
-        server = getattr(kaleido, '_global_server', None)
-        if server is None or not server.is_running():
-            return
-    except Exception:  # noqa: BLE001 - kaleido missing/old -> nothing to reset
-        return
-    done = threading.Event()
-
-    def _stop():
+        if os.name == 'nt':
+            subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)],
+                           capture_output=True)
+        else:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
+    except Exception:  # noqa: BLE001 - teardown is best-effort
         try:
-            kaleido.stop_sync_server(silence_warnings=True)
+            proc.kill()
         except Exception:  # noqa: BLE001
             pass
-        finally:
-            done.set()
-
-    threading.Thread(target=_stop, daemon=True).start()
-    if not done.wait(timeout):
-        try:                       # clean stop wedged -> abandon stuck thread
-            server._initialized = False
-        except Exception:  # noqa: BLE001
-            pass
+    try:
+        proc.wait(timeout=15)
+    except Exception:  # noqa: BLE001
+        pass
 
 
-def _retry_kaleido_export(render_all):
-    """Run `render_all(use_shared)` -- which renders every frame and returns the
-    collected results -- retrying the whole export if a frame's kaleido/Chrome
-    call wedges or errors. The first attempt uses the fast shared browser
-    session; after a wedge the server is reset and later attempts render
-    per-call one-shot (fresh browser each, watchdog-bounded), which cannot be
-    corrupted by an abandoned wedged thread. The last error is raised if every
-    attempt fails."""
-    last_exc = None
-    for attempt in range(_KALEIDO_EXPORT_ATTEMPTS):
-        try:
-            return render_all(use_shared=(attempt == 0))
-        except Exception as exc:  # noqa: BLE001 - flaky external browser; retry
-            last_exc = exc
-            _reset_kaleido_server()
-    raise last_exc
+def _render_frames_via_subprocess(fig, ext, width, height, n_frames):
+    """Render every animation frame of `fig` to an image file (format `ext`) in
+    a fresh, KILLABLE subprocess, enforcing a hard wall-clock deadline -- the
+    only reliable way to bound a blocked headless-Chrome call and reclaim it (a
+    Python thread cannot). On timeout the process tree (Chrome included) is
+    killed and the export retried in a new subprocess; a non-zero exit or a
+    short frame count is likewise retried. Returns the per-frame image BYTES in
+    frame order, or raises the last error if every attempt fails. Exports are
+    serialized (`_EXPORT_LOCK`) so a wedged browser never coexists with a fresh
+    one."""
+    import glob
+    import subprocess
+    import tempfile
+    deadline = _export_deadline(n_frames)
+    last_err = None
+    with _EXPORT_LOCK:
+        for _attempt in range(_KALEIDO_EXPORT_ATTEMPTS):
+            with tempfile.TemporaryDirectory() as tmp:
+                fig_json = os.path.join(tmp, 'figure.json')
+                frames_dir = os.path.join(tmp, 'frames')
+                err_path = os.path.join(tmp, 'stderr.log')
+                os.makedirs(frames_dir)
+                with open(fig_json, 'w') as fh:
+                    fh.write(fig.to_json())
+                # stderr -> file (not a PIPE) so a chatty Chrome can't deadlock
+                # on a full pipe buffer while we wait on the deadline
+                with open(err_path, 'wb') as errf:
+                    proc = subprocess.Popen(
+                        [sys.executable, '-m',
+                         'hypertools.plot._kaleido_export_worker',
+                         fig_json, frames_dir, ext, str(width), str(height)],
+                        stdout=subprocess.DEVNULL, stderr=errf,
+                        start_new_session=(os.name != 'nt'))
+                    try:
+                        rc = proc.wait(timeout=deadline)
+                    except subprocess.TimeoutExpired:
+                        _kill_process_tree(proc)
+                        last_err = TimeoutError(
+                            f"plotly frame export exceeded {deadline}s "
+                            "(headless Chrome wedged); killed the render "
+                            "subprocess and its browser, retrying")
+                        continue
+                if rc != 0:
+                    tail = ''
+                    try:
+                        with open(err_path, encoding='utf-8',
+                                  errors='replace') as fh:
+                            tail = fh.read()[-2000:]
+                    except OSError:
+                        pass
+                    last_err = RuntimeError(
+                        "plotly frame export subprocess failed (exit "
+                        f"{rc}): {tail}")
+                    continue
+                files = sorted(glob.glob(os.path.join(frames_dir, f'*.{ext}')))
+                if len(files) != n_frames:
+                    last_err = RuntimeError(
+                        f"plotly frame export produced {len(files)} of "
+                        f"{n_frames} frame image(s)")
+                    continue
+                out = []
+                for fp in files:
+                    with open(fp, 'rb') as fh:
+                        out.append(fh.read())
+                return out
+    raise last_err if last_err is not None else RuntimeError(
+        "plotly frame export failed")
 
 
 @contextlib.contextmanager
@@ -1292,6 +1344,7 @@ def _shared_kaleido_session():
     try:
         import kaleido
         start = kaleido.start_sync_server
+        stop = kaleido.stop_sync_server
         server = getattr(kaleido, '_global_server', None)
     except (ImportError, AttributeError):
         yield
@@ -1314,11 +1367,11 @@ def _shared_kaleido_session():
             yield
     finally:
         if started_here:
-            # bounded teardown: a plain stop_sync_server() joins the server
-            # thread, which hangs if that thread is stuck in a wedged Chrome
-            # call -- the exact hang this session guards against (GH #291
-            # follow-up / Windows-CI kaleido flake)
-            _reset_kaleido_server()
+            # This session runs INSIDE the export subprocess, whose whole
+            # process tree the parent kills on a wedge -- so a plain stop is
+            # safe here (if it ever blocked on a wedged Chrome, the process is
+            # killed anyway; nothing in the parent depends on this cleanup).
+            stop(silence_warnings=True)
 
 
 def _export_animation_file(fig, save_path, frame_rate, duration, size):
@@ -1332,78 +1385,35 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
     import subprocess
     import tempfile
 
-    import plotly.graph_objects as go
     from PIL import Image
 
     size = size if size is not None else DEFAULT_FIGSIZE
     width, height = int(size[0] * 100), int(size[1] * 100)
     ext = save_path.lower().rsplit('.', 1)[-1]
+    n_frames = len(fig.frames)
 
-    # ONE frameless, controls-hidden base copy, made once: copying `fig`
-    # inside the per-frame loop re-copied every embedded animation frame
-    # each iteration (O(n_frames^2) work that only ever got thrown away by
-    # `snapshot.frames = ()`)
-    base = go.Figure(fig)
-    base.frames = ()
-    # hide the interactive play/pause controls in exported frames
-    # (update_layout(updatemenus=[]) is a no-op; assign directly)
-    base.layout.updatemenus = ()
-
-    def frame_snapshots():
-        """Yield one static `go.Figure` snapshot per animation frame in `fig.frames`.
-
-        Each snapshot is a copy of the pristine frameless `base` (frames
-        cleared, play/pause controls hidden) with that frame's layout/data
-        updates applied, suitable for rendering to a single static image
-        (e.g. via `to_image`) when assembling a GIF/video/SVG export.
-        """
-        for frame in fig.frames:
-            snapshot = go.Figure(base)
-            if frame.layout:
-                snapshot.update_layout(frame.layout)
-            if frame.data:
-                indices = frame.traces if frame.traces is not None \
-                    else range(len(frame.data))
-                for idx, trace in zip(indices, frame.data):
-                    snapshot.data[idx].update(trace)
-            yield snapshot
-
+    # Every frame is rendered in a killable subprocess (see
+    # _render_frames_via_subprocess) so a wedged headless Chrome is bounded by a
+    # hard deadline and cannot hang the export -- the frame snapshots are built
+    # from `fig` inside that subprocess via the module-level `_frame_snapshots`.
     if ext == 'svg':
         # vector export: render each frame as SVG and stitch them into one
-        # SMIL-animated SVG. First attempt shares one kaleido browser session
-        # across all frames (fast); a wedged frame is watchdog-bounded and the
-        # export retries per-call one-shot (see _retry_kaleido_export).
+        # SMIL-animated SVG
         from .._shared.animated_svg import combine_frames_svg
-
-        def _render_all_svgs(use_shared):
-            session = (_shared_kaleido_session() if use_shared
-                       else contextlib.nullcontext())
-            with session:
-                return [_bounded_to_image(snapshot, 'svg', width,
-                                          height).decode('utf-8')
-                        for snapshot in frame_snapshots()]
-
-        frame_svgs = _retry_kaleido_export(_render_all_svgs)
+        frame_bytes = _render_frames_via_subprocess(
+            fig, 'svg', width, height, n_frames)
+        frame_svgs = [b.decode('utf-8') for b in frame_bytes]
         with open(save_path, 'w') as f:
             f.write(combine_frames_svg(frame_svgs, max(1.0, duration)))
         return
 
-    # exported files contain EVERY animation frame (frame_snapshots iterates
-    # the full fig.frames -- no subsampling). Frame subsampling is reserved
-    # for the interactive-HTML embedding path (_show_sphinx_gallery), where
-    # it caps embedded-file size; an exported gif/png/mp4 must never be
-    # subsampled or it would play back too fast.
-    def _render_all_pngs(use_shared):
-        session = (_shared_kaleido_session() if use_shared
-                   else contextlib.nullcontext())
-        imgs = []
-        with session:
-            for snapshot in frame_snapshots():
-                png = _bounded_to_image(snapshot, 'png', width, height)
-                imgs.append(Image.open(io.BytesIO(png)).convert('RGB'))
-        return imgs
-
-    images = _retry_kaleido_export(_render_all_pngs)
+    # exported files contain EVERY animation frame (no subsampling). Frame
+    # subsampling is reserved for the interactive-HTML embedding path
+    # (_show_sphinx_gallery), where it caps embedded-file size; an exported
+    # gif/png/mp4 must never be subsampled or it would play back too fast.
+    frame_bytes = _render_frames_via_subprocess(
+        fig, 'png', width, height, n_frames)
+    images = [Image.open(io.BytesIO(b)).convert('RGB') for b in frame_bytes]
 
     # per-frame delay is the TRUE inter-frame interval (1000 / frame_rate),
     # tied to the requested framerate -- NOT 1000*duration/n_frames. With the
