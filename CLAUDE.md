@@ -28,7 +28,7 @@ HyperTools is a Python library for visualizing and manipulating high-dimensional
 **DataGeometry Class** (`hypertools/datageometry.py`)
 - INTERNAL, unpickle-only legacy shell (its own docstring: "not part of the public API"); not used by any current API function
 - Kept solely so `hypertools.load()` can unpickle hosted example-dataset geo files (created by hypertools < 1.0) and extract their raw data via `get_data()`
-- In 1.0, `plot()` returns a matplotlib `Figure` and `load()` returns raw data -- no `DataGeometry` is ever constructed or returned to users
+- In 1.0, `plot()` returns a matplotlib `Figure` (or a `HyperAnimation` when `animate=` is set) and `load()` returns raw data -- no `DataGeometry` is ever constructed or returned to users
 
 **Main API Functions** (`hypertools/__init__.py`)
 - `plot()` - Primary visualization function
@@ -89,14 +89,15 @@ The dev-1.0 refactor moved several tools into their own top-level subpackages (e
 
 ### Data Flow
 
-1. **Input Processing**: Data is formatted and validated through `format_data()`
-2. **Normalization**: Optional data normalization via `normalize()`
-3. **Dimensionality Reduction**: Data is reduced via `reduce()`
-4. **Alignment**: Optional cross-dataset alignment via `align()`
-5. **Clustering**: Optional clustering via `cluster()`
-6. **Visualization**: Final plotting through `plot()`
+1. **Input Processing**: Data is formatted and validated through `format_data()` (missing-data `impute()` happens at this stage)
+2. **Manipulation**: Optional per-dataset manipulation via `manip()` (smooth/resample/z-score/etc.)
+3. **Normalization**: Optional data normalization via `normalize()`
+4. **Dimensionality Reduction**: Data is reduced via `reduce()`
+5. **Alignment**: Optional cross-dataset alignment via `align()`
+6. **Clustering**: Optional clustering via `cluster()`
+7. **Visualization**: Final plotting/animation through `plot()`, with optional `predict()` overlays
 
-(Verified canonical order — audit F03-011: normalize → reduce → align → cluster; figure coordinates match this staged order exactly.)
+(Verified canonical order — audit F03-011 / GH #153, docs/pipeline_order.rst: impute (at format) → manip → normalize → reduce → align → cluster → plot/animate → predict; the classic `normalize → reduce → align → cluster` core is unchanged and figure coordinates match this staged order exactly.)
 
 ### Key Design Patterns
 
@@ -110,7 +111,7 @@ The dev-1.0 refactor moved several tools into their own top-level subpackages (e
 
 - The package follows a functional programming style with separate modules for each operation
 - All major functions are designed to work with multiple input formats
-- `plot()` returns a matplotlib `Figure`; `load()` returns raw data -- there is no central state-container object in 1.0 (`DataGeometry` is an internal unpickle-only legacy shell; see above)
+- `plot()` returns a matplotlib `Figure` (or a `HyperAnimation` for animated plots); `load()` returns raw data -- there is no central state-container object in 1.0 (`DataGeometry` is an internal unpickle-only legacy shell; see above)
 - Tests are located in `tests/` directory and follow pytest conventions
 - Documentation is built with Sphinx and uses example galleries
 - The codebase requires Python 3.10+ (`requires-python = ">=3.10"`)

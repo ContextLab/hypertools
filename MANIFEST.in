@@ -7,6 +7,10 @@
 #   the impute conftest -- a non-runnable suite)
 # - local virtualenvs / build junk must never leak into the sdist
 include hypertools/core/config.ini
+# ship the changelog to source-archive consumers (readme ships automatically;
+# CHANGELOG.md does not without an explicit include). It is git-tracked, so
+# the CI packaging test's "sdist is a subset of git ls-files" assertion holds.
+include CHANGELOG.md
 graft tests
 # `graft` walks the FILESYSTEM, not git -- so generated/ignored output
 # directories under tests/ must be pruned explicitly or they leak into the

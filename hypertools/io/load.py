@@ -354,7 +354,10 @@ def load(
         with no z-scoring.
 
     legacy : bool
-        Pass legacy=True to load DataGeometry objects created with hypertools<0.8.0
+        Pass ``legacy=True`` to read a dataset saved in the old pickled
+        ``DataGeometry`` format by hypertools<0.8.0. Its raw data is
+        extracted and returned like any other dataset -- a ``DataGeometry``
+        object is never returned (that class is not part of the 1.0 API).
 
     split : string or None
         Hugging Face datasets only: which split to load (default: the

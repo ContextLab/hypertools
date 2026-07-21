@@ -972,8 +972,9 @@ def plot(
         by a browser, or by Chromium via kaleido for static image export)
         only understands FAMILY NAMES -- there is no way to point it at a
         specific font file -- so hypertools takes the resolved font's
-        family name (`FontProperties.get_name()`), wraps it in a small
-        fallback chain (``'"<name>", "Noto Sans CJK JP", sans-serif'``),
+        family name (`FontProperties.get_name()`) and puts it at the FRONT
+        of hypertools' curated sans-serif CSS stack (e.g.
+        ``'"<name>", "Noto Sans", "Helvetica Neue", ..., sans-serif'``),
         and sets it as `layout.font.family`, which every plotly text
         surface hypertools creates inherits unless it overrides its own
         `font.family` (none do, after this change). Static plotly image
