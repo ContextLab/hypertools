@@ -24,11 +24,12 @@ Run after (re)generating notebooks, then commit:
 
     .venv/bin/python scripts/add_colab_install_cell.py
 
-RELEASE NOTE: the PyPI form only resolves to 1.0 once 1.0 is published to
-PyPI. Run this on ``master`` AFTER the PyPI upload (or the notebooks would
-install the previous PyPI release), then commit the migrated notebooks. The
-``release-gate`` CI job enforces that no ``git+``/``@dev`` install
-survives on a release build.
+RELEASE NOTE: run this on the ``master`` BRANCH when cutting the release and
+commit the migrated notebooks BEFORE master/tag CI and the PyPI upload (see
+RELEASE_CHECKLIST.md for the full order). Until the upload the notebooks
+briefly resolve the previous PyPI release, which is harmless -- they are static
+source content. The ``release-gate`` CI job enforces that no ``git+``/``@dev``
+install survives on a release build.
 """
 
 import glob

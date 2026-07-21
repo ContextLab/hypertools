@@ -131,7 +131,7 @@ def test_release_gate_no_branch_installs_in_published_notebooks():
     assert not offenders, (
         'RELEASE GATE: published notebooks still contain preview/branch '
         'hypertools installs; run `python scripts/add_colab_install_cell.py` '
-        f'on master AFTER the PyPI upload and commit: {offenders}')
+        f'on master before creating the release commit: {offenders}')
 
 
 @pytest.mark.skipif(
