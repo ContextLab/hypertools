@@ -42,18 +42,38 @@ _HYP_BRANCH_RE = re.compile(
 REQUIRE_RELEASE = os.environ.get('HYPERTOOLS_REQUIRE_RELEASE') == '1'
 
 
-def _tracked_tutorial_notebooks():
-    # prefer git (only the tracked notebooks); fall back to a glob when there is
-    # no .git (e.g. a source archive that still ships docs/)
+def _git_ls(pattern):
     try:
-        out = subprocess.run(
-            ['git', 'ls-files', 'docs/tutorials/*.ipynb'],
-            capture_output=True, text=True, cwd=_REPO, timeout=30).stdout.split()
-        if out:
-            return [os.path.join(_REPO, p) for p in out]
+        out = subprocess.run(['git', 'ls-files', pattern],
+                             capture_output=True, text=True, cwd=_REPO,
+                             timeout=30).stdout.split()
+        return [os.path.join(_REPO, p) for p in out]
     except Exception:
-        pass
-    return sorted(glob.glob(os.path.join(_TUT_DIR, '*.ipynb')))
+        return []
+
+
+def _tracked_tutorials():
+    """The hand-authored tutorial notebooks (always git-tracked)."""
+    got = _git_ls('docs/tutorials/*.ipynb')
+    return got or sorted(glob.glob(os.path.join(_TUT_DIR, '*.ipynb')))
+
+
+def _tracked_published_notebooks():
+    """Every git-tracked published notebook. Today this is the 15 tutorials:
+    docs/auto_examples/*.ipynb are GITIGNORED and regenerated at build time
+    from docs/conf.py's branch-aware install cell, so they are not shipped and
+    do not exist in a bare checkout (the release-gate CI job runs on a bare
+    checkout). The GENERATED gallery is release-gated separately in the
+    docs-clean CI job. Scanning the union keeps this gate correct if a gallery
+    notebook is ever committed. (2026-07 release review, finding #2.)"""
+    got = _git_ls('docs/tutorials/*.ipynb') + _git_ls('docs/auto_examples/*.ipynb')
+    if got:
+        return got
+    # no .git -> source-archive fallback (both dirs, if present)
+    out = []
+    for d in (_TUT_DIR, os.path.join(_REPO, 'docs', 'auto_examples')):
+        out += sorted(glob.glob(os.path.join(d, '*.ipynb')))
+    return out
 
 
 def _hyp_install_lines(path):
@@ -70,15 +90,17 @@ def _hyp_install_lines(path):
     return lines
 
 
-def test_there_are_tracked_tutorial_notebooks():
+def test_there_are_tracked_published_notebooks():
     # guards against the scan silently passing because it found nothing
-    assert len(_tracked_tutorial_notebooks()) >= 10
+    assert len(_tracked_tutorials()) >= 15
+    # the published-notebook union is at least the tutorials
+    assert len(_tracked_published_notebooks()) >= len(_tracked_tutorials())
 
 
 def test_no_notebook_installs_the_defunct_refactor_branch():
     offenders = []
     branches = set()
-    for path in _tracked_tutorial_notebooks():
+    for path in _tracked_published_notebooks():
         for line in _hyp_install_lines(path):
             for br in _HYP_BRANCH_RE.findall(line):
                 branches.add(br)
@@ -102,7 +124,7 @@ def test_release_gate_no_branch_installs_in_published_notebooks():
     # (they would install code that omits release fixes, or 404 once the branch
     # is deleted post-merge). Every hypertools install must be the PyPI spec.
     offenders = []
-    for path in _tracked_tutorial_notebooks():
+    for path in _tracked_published_notebooks():
         for line in _hyp_install_lines(path):
             if 'git+' in line or _HYP_BRANCH_RE.search(line):
                 offenders.append((os.path.basename(path), line.strip()))
@@ -121,7 +143,7 @@ def test_release_gate_no_preview_note_in_published_notebooks():
     # strip the standard "(<x> preview) / On release this becomes ..." note, or
     # the released notebooks ship saying "preview". Scans install cells only.
     offenders = []
-    for path in _tracked_tutorial_notebooks():
+    for path in _tracked_published_notebooks():
         with open(path, encoding='utf-8') as f:
             nb = json.load(f)
         for cell in nb.get('cells', []):

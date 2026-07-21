@@ -16,6 +16,7 @@ job sets it on master/tag builds) enforce the flipped form and cannot pass by
 skipping. See RELEASE_CHECKLIST.md.
 """
 
+import datetime
 import os
 import re
 
@@ -24,12 +25,15 @@ import pytest
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _README = os.path.join(_REPO, 'readme.md')
 _CHANGELOG = os.path.join(_REPO, 'CHANGELOG.md')
+_PYPROJECT = os.path.join(_REPO, 'pyproject.toml')
 
-# readme.md / CHANGELOG.md ship in the sdist but NOT the wheel, so skip when the
-# suite runs from an installed package that lacks them.
+# readme.md / CHANGELOG.md / pyproject.toml ship in the sdist but NOT the wheel,
+# so skip when the suite runs from an installed package that lacks them.
 pytestmark = pytest.mark.skipif(
-    not (os.path.isfile(_README) and os.path.isfile(_CHANGELOG)),
-    reason='requires a source checkout (readme.md / CHANGELOG.md absent)')
+    not (os.path.isfile(_README) and os.path.isfile(_CHANGELOG)
+         and os.path.isfile(_PYPROJECT)),
+    reason='requires a source checkout (readme.md / CHANGELOG.md / pyproject '
+           'absent)')
 
 REQUIRE_RELEASE = os.environ.get('HYPERTOOLS_REQUIRE_RELEASE') == '1'
 
@@ -38,8 +42,15 @@ REQUIRE_RELEASE = os.environ.get('HYPERTOOLS_REQUIRE_RELEASE') == '1'
 _OUR_IMG_RE = re.compile(
     r'raw\.githubusercontent\.com/ContextLab/hypertools/([^/]+)/(images/[^\s")]+)')
 _SHA40_RE = re.compile(r'^[0-9a-f]{40}$')
-_VERSION_TAG_RE = re.compile(r'^v\d+\.\d+\.\d+$')
 _CHANGELOG_HEADING_RE = re.compile(r'^##\s*(\d+\.\d+\.\d+)\s*\(([^)]*)\)', re.M)
+
+
+def _project_version():
+    """The single source of truth for the release version (pyproject.toml)."""
+    m = re.search(r'(?m)^version\s*=\s*["\']([^"\']+)["\']',
+                  open(_PYPROJECT, encoding='utf-8').read())
+    assert m, 'pyproject.toml has no version'
+    return m.group(1)
 
 
 def _readme():
@@ -70,9 +81,12 @@ def test_readme_images_share_one_ref_and_exist_in_tree():
     assert not missing, f'README references images absent from the tree: {missing}'
 
 
-def test_changelog_has_a_version_heading():
+def test_changelog_top_version_matches_pyproject():
     m = _CHANGELOG_HEADING_RE.search(open(_CHANGELOG, encoding='utf-8').read())
     assert m, 'CHANGELOG.md has no "## X.Y.Z (...)" heading'
+    assert m.group(1) == _project_version(), (
+        f'CHANGELOG top version {m.group(1)!r} != pyproject version '
+        f'{_project_version()!r}')
 
 
 # --------------------------------------------------------------- release gate
@@ -81,15 +95,16 @@ def test_changelog_has_a_version_heading():
     not REQUIRE_RELEASE,
     reason='release gate; set HYPERTOOLS_REQUIRE_RELEASE=1 (the release-gate '
            'CI job does on master/tag builds)')
-def test_release_gate_readme_images_use_version_tag_not_commit_sha():
-    # finding: README images pinned to a commit SHA must become the v1.0.0 tag
-    # at release (a SHA can be garbage-collected / is opaque; the tag is stable).
-    bad = sorted({ref for ref, _ in _our_image_refs()
-                  if _SHA40_RE.match(ref) or not _VERSION_TAG_RE.match(ref)})
+def test_release_gate_readme_images_use_the_version_tag_not_commit_sha():
+    # finding: README images pinned to a commit SHA must become the release tag
+    # (a SHA can be garbage-collected / is opaque; the tag is stable). The ref
+    # must be EXACTLY v<pyproject.version>, not merely any semver-looking tag.
+    want = 'v' + _project_version()
+    bad = sorted({ref for ref, _ in _our_image_refs() if ref != want})
     assert not bad, (
-        'RELEASE GATE: README image URLs must point at the v1.0.0 tag, not '
+        f'RELEASE GATE: README image URLs must point at the {want} tag, not '
         f'{bad}. Re-point .../ContextLab/hypertools/<ref>/images/... to '
-        '/v1.0.0/ (see RELEASE_CHECKLIST.md).')
+        f'/{want}/ (see RELEASE_CHECKLIST.md).')
 
 
 @pytest.mark.skipif(
@@ -100,10 +115,18 @@ def test_release_gate_changelog_is_dated_not_unreleased():
     text = open(_CHANGELOG, encoding='utf-8').read()
     m = _CHANGELOG_HEADING_RE.search(text)
     assert m, 'CHANGELOG.md has no "## X.Y.Z (...)" heading'
+    assert m.group(1) == _project_version(), (
+        f'RELEASE GATE: CHANGELOG top version {m.group(1)!r} != pyproject '
+        f'version {_project_version()!r}')
     date = m.group(2).strip()
-    assert re.fullmatch(r'\d{4}-\d{2}-\d{2}', date), (
-        'RELEASE GATE: the top CHANGELOG heading must carry a real release '
-        f'date (YYYY-MM-DD), not {date!r} (see RELEASE_CHECKLIST.md).')
+    # a REAL calendar date -- fromisoformat rejects e.g. 2026-99-99, which a
+    # \d{4}-\d{2}-\d{2} regex would accept.
+    try:
+        datetime.date.fromisoformat(date)
+    except ValueError:
+        raise AssertionError(
+            'RELEASE GATE: the top CHANGELOG heading must carry a real release '
+            f'date (YYYY-MM-DD), not {date!r} (see RELEASE_CHECKLIST.md).')
 
 
 @pytest.mark.skipif(
