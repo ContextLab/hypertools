@@ -2,13 +2,13 @@ name: Tests
 
 on:
   push:
-    branches: [ master, dev, dev-1.0, dev-1.0-refactor ]
+    branches: [ master, dev, dev-1.0 ]
   pull_request:
     # must include the branches PRs actually TARGET, or the PR-target
     # workflow never runs and green checks are only push-triggered ones
     # (2026-07 release review, blocker #3: PR #272 targets dev-1.0, which
     # was missing here). Fork PRs in particular only run via pull_request.
-    branches: [ master, dev, dev-1.0, dev-1.0-refactor ]
+    branches: [ master, dev, dev-1.0 ]
 
 jobs:
   test:
@@ -319,17 +319,17 @@ jobs:
           tests/test_dataset_compat.py \
           tests/test_dataset_integrity.py
 
-  # Notebook install-cell release gate (2026-07 release review, notebook-install
-  # finding). The committed tutorial notebooks install a hypertools GITHUB BRANCH
-  # on dev branches (correct -- they preview the matching dev build). At release
-  # that MUST become the plain PyPI spec, or Colab users install code that omits
-  # release fixes (and the branch 404s once it is deleted post-merge). This gate
-  # runs ONLY on master / release tags and turns any surviving `git+`/`@<branch>`
-  # hypertools install in a published notebook into a HARD failure (it cannot
-  # pass by skipping). Release cut: merge to master, publish to PyPI, run
-  # `python scripts/add_colab_install_cell.py`, commit -- then this gate is green.
+  # Release readiness gate (2026-07 release review). Several release-facing
+  # references are deliberately in DEV form on dev branches and MUST flip at
+  # publish; nothing else proves they were all flipped. This job runs ONLY on
+  # master / release tags, sets HYPERTOOLS_REQUIRE_RELEASE=1, and turns any
+  # surviving dev-form reference into a HARD failure (it cannot pass by
+  # skipping): (a) a `git+`/`@<branch>` hypertools install in a published
+  # notebook; (b) a commit-SHA-pinned README image URL (must be the v1.0.0
+  # tag); (c) a `(unreleased)` CHANGELOG heading (must be dated). See
+  # RELEASE_CHECKLIST.md for the exact publish sequence that makes it green.
   # Actions SHA-pinned like the jobs above.
-  notebook-install-gate:
+  release-gate:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
     steps:
@@ -340,10 +340,12 @@ jobs:
         python-version: '3.12'
     - name: Install pytest
       run: python -m pip install --upgrade pip pytest
-    - name: Require published notebooks to install the PyPI package (no branch installs)
+    - name: Require all release-facing references to be in RELEASE form
       env:
-        HYPERTOOLS_REQUIRE_RELEASE_NOTEBOOKS: '1'
+        HYPERTOOLS_REQUIRE_RELEASE: '1'
       run: |
-        # a surviving git+/@<branch> hypertools install fails the job; -s prints
-        # the offenders. Run scripts/add_colab_install_cell.py on master to fix.
-        python -m pytest -v -s tests/test_notebook_install_gate.py
+        # any surviving dev-form reference fails the job; -s prints the
+        # offenders. RELEASE_CHECKLIST.md documents how to make each green.
+        python -m pytest -v -s \
+          tests/test_notebook_install_gate.py \
+          tests/test_release_readiness_gate.py

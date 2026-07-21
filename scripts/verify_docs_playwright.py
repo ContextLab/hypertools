@@ -23,6 +23,7 @@ from __future__ import annotations
 import functools
 import http.server
 import io
+import os
 import socket
 import subprocess
 import sys
@@ -37,7 +38,23 @@ from playwright.sync_api import sync_playwright
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS_HTML = REPO_ROOT / "docs" / "_build" / "html"
 SCREENSHOT_DIR = REPO_ROOT / "docs" / "images" / "v1.0-docs"
-BRANCH = "dev-1.0-refactor"
+def _current_branch() -> str:
+    """The branch the docs were built for -- must match the branch-aware Colab
+    install cells (docs/conf.py + scripts/add_colab_install_cell.py). Detected
+    the same way, so this verifier never goes stale against a branch rename."""
+    branch = os.environ.get("READTHEDOCS_GIT_IDENTIFIER", "")
+    if not branch:
+        try:
+            branch = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True, text=True, cwd=REPO_ROOT,
+                timeout=10).stdout.strip()
+        except Exception:
+            branch = ""
+    return branch or "master"
+
+
+BRANCH = _current_branch()
 
 # Minimum standard deviation of pixel intensities (0-255 scale) for an
 # element screenshot to be considered "non-blank". A truly blank/white or
@@ -148,14 +165,22 @@ def verify_tutorial_branch_aware_install(page) -> str:
     `pip install ... @<branch>` cell must be present as the notebook's
     install-from-source instructions."""
     content = page.content()
+    if "pip install" not in content:
+        raise VerificationFailure(
+            "tutorial page has no 'pip install' cell")
+    if BRANCH == "master":
+        # released docs install the PyPI package, NOT a branch
+        if "hypertools[" not in content:
+            raise VerificationFailure(
+                "tutorial page has no 'hypertools[...]' PyPI install cell")
+        if "git+" in content:
+            raise VerificationFailure(
+                "released tutorial page still has a git+/branch install")
+        return "hypertools[...] (PyPI)"
     needle = f"@{BRANCH}"
     if needle not in content:
         raise VerificationFailure(
             f"tutorial page has no branch-aware install reference ({needle!r} not found)"
-        )
-    if "pip install" not in content:
-        raise VerificationFailure(
-            "tutorial page has no 'pip install' cell alongside the branch reference"
         )
     return needle
 

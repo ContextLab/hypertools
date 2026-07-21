@@ -9,10 +9,13 @@ skipped any cell already containing "pip install"), so a stale
 re-targeting behavior that fixes that.
 """
 
+import ast
 import importlib.util
 import json
 import os
 import pathlib
+
+import pytest
 
 _SCRIPT = (pathlib.Path(__file__).resolve().parent.parent
            / 'scripts' / 'add_colab_install_cell.py')
@@ -56,6 +59,20 @@ def test_retarget_to_master_drops_git_ref():
     out = acic.retarget_text(_BRANCH_LINE, 'master')
     assert out == '%pip install -q "hypertools[interactive]"'
     assert 'git+' not in out and '@' not in out
+
+
+def test_retarget_to_master_cleans_the_preview_note():
+    # release review, GAP #1: the master migration must also strip the
+    # "(<x> preview) ... On release this becomes ..." note, or the released
+    # notebooks ship saying "preview".
+    cell = ('# Install hypertools (dev-1.0 preview) -- run this first on Colab.\n'
+            '# On release this becomes: %pip install hypertools\n'
+            f'    {_BRANCH_LINE}')
+    out = acic.retarget_text(cell, 'master')
+    assert 'preview' not in out
+    assert 'On release this becomes' not in out
+    assert '# Install hypertools (run this first on Colab)' in out
+    assert acic.retarget_text(out, 'master') == out       # idempotent
 
 
 def test_retarget_updates_preview_note_token_on_branch():
@@ -104,6 +121,40 @@ def test_retarget_notebook_preserves_other_cells_and_guards():
     assert ''.join(nb['cells'][2]['source']) == 'import hypertools as hyp'
     # second pass is a no-op
     assert acic.retarget_notebook(nb, 'dev-1.0') is False
+
+
+def _conf_install_cell(branch, monkeypatch):
+    """Call docs/conf.py's `_install_notebook_cell()` for a forced branch,
+    AST-extracted so importing the whole Sphinx config (with its extensions) is
+    not required. Returns the generated first-cell text."""
+    conf = pathlib.Path(__file__).resolve().parent.parent / 'docs' / 'conf.py'
+    tree = ast.parse(conf.read_text(encoding='utf-8'))
+    fn = next((n for n in tree.body
+               if isinstance(n, ast.FunctionDef)
+               and n.name == '_install_notebook_cell'), None)
+    assert fn is not None, 'docs/conf.py has no _install_notebook_cell()'
+    src = ast.get_source_segment(conf.read_text(encoding='utf-8'), fn)
+    ns = {'os': os, '__file__': str(conf)}
+    exec(src, ns)                                    # noqa: S102 (trusted repo file)
+    monkeypatch.setenv('READTHEDOCS_GIT_IDENTIFIER', branch)
+    return ns['_install_notebook_cell']()
+
+
+@pytest.mark.parametrize('branch', ['master', 'dev-1.0'])
+def test_conf_py_gallery_generator_matches_the_script(branch, monkeypatch):
+    # docs/conf.py generates the gallery notebooks' install cell; the script
+    # does the same for the hand-authored tutorials. They are "kept in sync" by
+    # hand -- lock that so the two can't drift (release review).
+    conf_cell = _conf_install_cell(branch, monkeypatch)
+    # the actual install magic, NOT the "# On release this becomes: %pip
+    # install ..." comment line (which also contains 'pip install')
+    conf_pip = next(ln for ln in conf_cell.splitlines()
+                    if ln.strip().startswith('%pip install'))
+    _, script_pip = acic.install_lines(branch)
+    assert conf_pip.strip() == script_pip.strip(), (
+        f'docs/conf.py and scripts/add_colab_install_cell.py disagree on the '
+        f'{branch} install line:\n  conf.py: {conf_pip.strip()}\n  script : '
+        f'{script_pip.strip()}')
 
 
 def test_process_real_tutorial_roundtrip_is_stable(tmp_path):

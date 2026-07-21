@@ -27,7 +27,7 @@ Run after (re)generating notebooks, then commit:
 RELEASE NOTE: the PyPI form only resolves to 1.0 once 1.0 is published to
 PyPI. Run this on ``master`` AFTER the PyPI upload (or the notebooks would
 install the previous PyPI release), then commit the migrated notebooks. The
-``notebook-install-gate`` CI job enforces that no ``git+``/``@dev`` install
+``release-gate`` CI job enforces that no ``git+``/``@dev`` install
 survives on a release build.
 """
 
@@ -54,6 +54,14 @@ _BRANCH_SPEC_RE = re.compile(
 
 # The `(<branch> preview)` token inside the "# Install hypertools (...)" note.
 _PREVIEW_NOTE_RE = re.compile(r'\(([\w.\-]+) preview\)')
+
+# The standard two-line preview note, collapsed to the clean master note when
+# migrating to the release (else the flipped notebooks keep saying "preview" /
+# "On release this becomes ..." -- release review, sweep GAP #1).
+_STD_PREVIEW_NOTE_RE = re.compile(
+    r'# Install hypertools \([\w.\-]+ preview\) -- run this first on Colab\.\n'
+    r'# On release this becomes: [^\n]*(?:\n|$)')
+_MASTER_NOTE = '# Install hypertools (run this first on Colab)\n'
 
 
 def current_branch():
@@ -97,7 +105,11 @@ def retarget_text(text, branch):
     """
     new = _BRANCH_SPEC_RE.sub(
         lambda m: hyp_spec(m.group(1), branch), text)
-    if branch != 'master':
+    if branch == 'master':
+        # drop the whole "(<x> preview) ... On release this becomes ..." note so
+        # the released notebooks don't ship saying "preview"
+        new = _STD_PREVIEW_NOTE_RE.sub(_MASTER_NOTE, new)
+    else:
         new = _PREVIEW_NOTE_RE.sub(f'({branch} preview)', new)
     return new
 

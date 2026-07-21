@@ -1,0 +1,119 @@
+"""Release-readiness gate for the non-notebook release-facing references
+(2026-07 release review). Companion to test_notebook_install_gate.py.
+
+Some references are deliberately in DEV form on dev branches and MUST flip at
+publish. This module pins two of them:
+
+* README image URLs are pinned to a commit SHA today; at release they must be
+  the ``v1.0.0`` git tag (immutable, survives the dev-1.0 branch deletion).
+* the CHANGELOG heading is ``(unreleased)`` today; at release it must carry a
+  real date.
+
+ALWAYS-ON checks (safe on any branch) verify internal consistency and that the
+referenced image files actually exist, so the tag will contain them. The
+RELEASE-GATED checks (``HYPERTOOLS_REQUIRE_RELEASE=1``; the ``release-gate`` CI
+job sets it on master/tag builds) enforce the flipped form and cannot pass by
+skipping. See RELEASE_CHECKLIST.md.
+"""
+
+import os
+import re
+
+import pytest
+
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_README = os.path.join(_REPO, 'readme.md')
+_CHANGELOG = os.path.join(_REPO, 'CHANGELOG.md')
+
+# readme.md / CHANGELOG.md ship in the sdist but NOT the wheel, so skip when the
+# suite runs from an installed package that lacks them.
+pytestmark = pytest.mark.skipif(
+    not (os.path.isfile(_README) and os.path.isfile(_CHANGELOG)),
+    reason='requires a source checkout (readme.md / CHANGELOG.md absent)')
+
+REQUIRE_RELEASE = os.environ.get('HYPERTOOLS_REQUIRE_RELEASE') == '1'
+
+# an image URL served from OUR repo, capturing the ref (commit SHA now, tag at
+# release): .../ContextLab/hypertools/<ref>/images/<name>
+_OUR_IMG_RE = re.compile(
+    r'raw\.githubusercontent\.com/ContextLab/hypertools/([^/]+)/(images/[^\s")]+)')
+_SHA40_RE = re.compile(r'^[0-9a-f]{40}$')
+_VERSION_TAG_RE = re.compile(r'^v\d+\.\d+\.\d+$')
+_CHANGELOG_HEADING_RE = re.compile(r'^##\s*(\d+\.\d+\.\d+)\s*\(([^)]*)\)', re.M)
+
+
+def _readme():
+    with open(_README, encoding='utf-8') as f:
+        return f.read()
+
+
+def _our_image_refs():
+    """(ref, image_path) for every OUR-repo raw image URL in the README."""
+    return _OUR_IMG_RE.findall(_readme())
+
+
+# --------------------------------------------------------------- always on
+
+def test_readme_has_our_repo_images():
+    refs = _our_image_refs()
+    assert len(refs) >= 5, f'expected several README images, found {len(refs)}'
+
+
+def test_readme_images_share_one_ref_and_exist_in_tree():
+    refs = _our_image_refs()
+    pins = {ref for ref, _ in refs}
+    # a single pin (all SHA now, all tag at release) -- no stale-vs-current mix
+    assert len(pins) == 1, f'README images point at mixed refs {sorted(pins)}'
+    # every referenced image exists in the tree, so the release tag contains it
+    missing = sorted({img for _, img in refs
+                      if not os.path.isfile(os.path.join(_REPO, img))})
+    assert not missing, f'README references images absent from the tree: {missing}'
+
+
+def test_changelog_has_a_version_heading():
+    m = _CHANGELOG_HEADING_RE.search(open(_CHANGELOG, encoding='utf-8').read())
+    assert m, 'CHANGELOG.md has no "## X.Y.Z (...)" heading'
+
+
+# --------------------------------------------------------------- release gate
+
+@pytest.mark.skipif(
+    not REQUIRE_RELEASE,
+    reason='release gate; set HYPERTOOLS_REQUIRE_RELEASE=1 (the release-gate '
+           'CI job does on master/tag builds)')
+def test_release_gate_readme_images_use_version_tag_not_commit_sha():
+    # finding: README images pinned to a commit SHA must become the v1.0.0 tag
+    # at release (a SHA can be garbage-collected / is opaque; the tag is stable).
+    bad = sorted({ref for ref, _ in _our_image_refs()
+                  if _SHA40_RE.match(ref) or not _VERSION_TAG_RE.match(ref)})
+    assert not bad, (
+        'RELEASE GATE: README image URLs must point at the v1.0.0 tag, not '
+        f'{bad}. Re-point .../ContextLab/hypertools/<ref>/images/... to '
+        '/v1.0.0/ (see RELEASE_CHECKLIST.md).')
+
+
+@pytest.mark.skipif(
+    not REQUIRE_RELEASE,
+    reason='release gate; set HYPERTOOLS_REQUIRE_RELEASE=1 (the release-gate '
+           'CI job does on master/tag builds)')
+def test_release_gate_changelog_is_dated_not_unreleased():
+    text = open(_CHANGELOG, encoding='utf-8').read()
+    m = _CHANGELOG_HEADING_RE.search(text)
+    assert m, 'CHANGELOG.md has no "## X.Y.Z (...)" heading'
+    date = m.group(2).strip()
+    assert re.fullmatch(r'\d{4}-\d{2}-\d{2}', date), (
+        'RELEASE GATE: the top CHANGELOG heading must carry a real release '
+        f'date (YYYY-MM-DD), not {date!r} (see RELEASE_CHECKLIST.md).')
+
+
+@pytest.mark.skipif(
+    not REQUIRE_RELEASE,
+    reason='release gate; set HYPERTOOLS_REQUIRE_RELEASE=1 (the release-gate '
+           'CI job does on master/tag builds)')
+def test_release_gate_readme_has_no_dev_branch_reference():
+    # the README must not ship pointing at a dev preview branch
+    offenders = [ln.strip() for ln in _readme().splitlines()
+                 if 'dev-1.0-refactor' in ln
+                 or re.search(r'hypertools\.git@dev', ln)]
+    assert not offenders, (
+        f'RELEASE GATE: README still references a dev branch: {offenders}')

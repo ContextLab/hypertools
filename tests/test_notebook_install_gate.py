@@ -8,8 +8,8 @@ Two layers (2026-07 release review, notebook-install finding):
   GitHub-branch install must point at ONE consistent branch. This would have
   caught the stale-branch bug and prevents it regressing on any branch.
 
-* RELEASE GATE (``HYPERTOOLS_REQUIRE_RELEASE_NOTEBOOKS=1``; the dedicated
-  ``notebook-install-gate`` CI job sets it on master/tag builds) -- every
+* RELEASE GATE (``HYPERTOOLS_REQUIRE_RELEASE=1``; the dedicated
+  ``release-gate`` CI job sets it on master/tag builds) -- every
   hypertools install must be the plain PyPI spec, i.e. NO ``git+`` / ``@<branch>``
   preview install may survive into a release. This cannot pass by skipping.
 """
@@ -39,7 +39,7 @@ _HYP_BRANCH_RE = re.compile(
     r'hypertools\[[^\]]*\]\s*@\s*'
     r'git\+https://github\.com/ContextLab/hypertools\.git@([\w./\-]+)')
 
-REQUIRE_RELEASE = os.environ.get('HYPERTOOLS_REQUIRE_RELEASE_NOTEBOOKS') == '1'
+REQUIRE_RELEASE = os.environ.get('HYPERTOOLS_REQUIRE_RELEASE') == '1'
 
 
 def _tracked_tutorial_notebooks():
@@ -95,8 +95,8 @@ def test_no_notebook_installs_the_defunct_refactor_branch():
 
 @pytest.mark.skipif(
     not REQUIRE_RELEASE,
-    reason='release gate; set HYPERTOOLS_REQUIRE_RELEASE_NOTEBOOKS=1 (the '
-           'notebook-install-gate CI job does on master/tag builds)')
+    reason='release gate; set HYPERTOOLS_REQUIRE_RELEASE=1 (the '
+           'release-gate CI job does on master/tag builds)')
 def test_release_gate_no_branch_installs_in_published_notebooks():
     # finding: a release must not ship notebooks that install a GitHub branch
     # (they would install code that omits release fixes, or 404 once the branch
@@ -110,3 +110,30 @@ def test_release_gate_no_branch_installs_in_published_notebooks():
         'RELEASE GATE: published notebooks still contain preview/branch '
         'hypertools installs; run `python scripts/add_colab_install_cell.py` '
         f'on master AFTER the PyPI upload and commit: {offenders}')
+
+
+@pytest.mark.skipif(
+    not REQUIRE_RELEASE,
+    reason='release gate; set HYPERTOOLS_REQUIRE_RELEASE=1 (the '
+           'release-gate CI job does on master/tag builds)')
+def test_release_gate_no_preview_note_in_published_notebooks():
+    # release review, GAP #1: the migration flips the install LINE but must also
+    # strip the standard "(<x> preview) / On release this becomes ..." note, or
+    # the released notebooks ship saying "preview". Scans install cells only.
+    offenders = []
+    for path in _tracked_tutorial_notebooks():
+        with open(path, encoding='utf-8') as f:
+            nb = json.load(f)
+        for cell in nb.get('cells', []):
+            if cell.get('cell_type') != 'code':
+                continue
+            src = ''.join(cell.get('source', []))
+            if 'pip install' not in src:
+                continue
+            for marker in ('On release this becomes', ' preview)'):
+                if marker in src:
+                    offenders.append((os.path.basename(path), marker))
+    assert not offenders, (
+        'RELEASE GATE: published notebooks still carry a preview install note; '
+        'run `python scripts/add_colab_install_cell.py` on master: '
+        f'{offenders}')
