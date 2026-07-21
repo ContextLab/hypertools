@@ -4,6 +4,7 @@ builtin -> local file -> Hugging Face -> Google Sheets -> Google Drive ->
 Dropbox -> URL, and lists of strings resolve to lists of datasets. All
 tests use real files and real network calls (no mocks)."""
 
+import contextlib
 import functools
 import http.server
 import threading
@@ -34,6 +35,31 @@ DRIVE_BIG_FILE_ID = '1l_5RK28JRL19wpT22B-DY9We3TVXnnQQ'
 GOOGLE_SHEETS_SAMPLE_URL = (
     'https://docs.google.com/spreadsheets/d/'
     '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit#gid=0')
+
+# Hosted-dataset matrix tests must not fail unrelated CI on a TRANSIENT network
+# error (a Hugging Face ReadTimeout, a 5xx, a dropped connection) -- skip on
+# those, matching tests/test_dataset_compat.py's convention, while still
+# exercising the real load path when the host is reachable. Real (non-transient)
+# errors still propagate and fail. (2026-07: a HF ReadTimeout on
+# test_load_huggingface_dataset flaked one ubuntu-3.13 matrix cell.)
+_TRANSIENT_NETWORK = (
+    'readtimeout', 'read timed out', 'timed out', 'timeout',
+    'connectionerror', 'connection error', 'connection reset',
+    'connection aborted', 'remotedisconnected', 'incompleteread',
+    'max retries', 'service unavailable', 'temporarily unavailable',
+    ' 503', ' 502', ' 504', 'name resolution', 'temporary failure',
+    'network is unreachable', 'failed to establish',
+)
+
+
+@contextlib.contextmanager
+def _skip_on_transient_network(what):
+    try:
+        yield
+    except Exception as e:            # re-raised below unless it is transient
+        if any(m in str(e).lower() for m in _TRANSIENT_NETWORK):
+            pytest.skip(f'transient network error {what}: {e}')
+        raise
 
 
 @pytest.fixture
@@ -113,23 +139,25 @@ def test_load_local_formats(tmp_path):
 
 def test_load_huggingface_dataset():
     pytest.importorskip('datasets')
-    df = hyp.load('scikit-learn/iris')
+    with _skip_on_transient_network('loading scikit-learn/iris'):
+        df = hyp.load('scikit-learn/iris')
     assert isinstance(df, pd.DataFrame)
     assert df.shape[0] == 150
 
 
 def test_load_huggingface_streaming_flows_to_plot():
     pytest.importorskip('datasets')
-    ds = hyp.load('scikit-learn/iris', streaming=True)
-    from hypertools.io.streaming import is_stream
-    assert is_stream(ds)
-    ds = ds.select_columns(['SepalLengthCm', 'SepalWidthCm',
-                            'PetalLengthCm', 'PetalWidthCm'])
-    # iris' later rows fall outside the display box fitted on the first 50,
-    # provoking the clamped-samples notice
-    with pytest.warns(RuntimeWarning, match='outside the display box'):
-        fig = hyp.plot(ds, '.', show=False, stream_init=50, stream_chunk=50)
-    assert fig.stream_info['n_samples'] == 150
+    with _skip_on_transient_network('streaming scikit-learn/iris'):
+        ds = hyp.load('scikit-learn/iris', streaming=True)
+        from hypertools.io.streaming import is_stream
+        assert is_stream(ds)
+        ds = ds.select_columns(['SepalLengthCm', 'SepalWidthCm',
+                                'PetalLengthCm', 'PetalWidthCm'])
+        # iris' later rows fall outside the display box fitted on the first 50,
+        # provoking the clamped-samples notice
+        with pytest.warns(RuntimeWarning, match='outside the display box'):
+            fig = hyp.plot(ds, '.', show=False, stream_init=50, stream_chunk=50)
+        assert fig.stream_info['n_samples'] == 150
     plt.close('all')
 
 
