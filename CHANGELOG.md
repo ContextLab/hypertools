@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 (2026-07-18)
+## 1.0.0 (unreleased)
 
 HyperTools 1.0 is a ground-up modernization of the toolbox. The familiar
 one-call API (`plot`, `analyze`, `reduce`, `align`, `cluster`, `normalize`,
