@@ -726,12 +726,12 @@ def test_covered_text_renders_without_missing_glyph_warnings():
 
 def test_sans_serif_stack_first_leads_but_extra_is_only_a_fallback():
     # the core of the fix: an EXPLICIT font= (`first`) leads the stack, but an
-    # AUTO-detected gap font (`extra`) is a fallback only -- Noto stays primary
-    assert sans_serif_stack(first='Arial')[0] == 'Arial'
-    assert sans_serif_stack(extra='Arial')[0] == 'Noto Sans'
-    # and `extra` never displaces the bundled face even when both are given
-    both = sans_serif_stack(first='Arial', extra='Helvetica')
-    assert both[0] == 'Arial' and both.index('Noto Sans') < both.index('Helvetica')
+    # AUTO-detected gap font (`extra`) is a fallback only -- Noto stays primary.
+    # DejaVu Sans ships with matplotlib, so it is installed on EVERY platform
+    # (unlike Arial/Helvetica, which are macOS/Windows-only and would be
+    # filtered out of the stack on Linux CI).
+    assert sans_serif_stack(first='DejaVu Sans')[0] == 'DejaVu Sans'
+    assert sans_serif_stack(extra='DejaVu Sans')[0] == 'Noto Sans'
 
 
 def test_auto_gap_font_is_appended_not_made_primary(monkeypatch):
