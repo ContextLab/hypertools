@@ -949,10 +949,11 @@ def plot(
           swap the whole plot onto some other font. Only when the stack has
           a genuine COVERAGE GAP (a script no stack family can draw) does
           hypertools scan for an installed font covering that gap and ADD it
-          to the stack as an extra fallback (Noto stays primary); if a
-          covering font IS found and it happens to be pan-script, those gap
-          characters naturally render from it. A ``UserWarning`` is raised
-          only for characters NOTHING available can draw, naming them.
+          as an extra fallback (Noto stays primary) -- to matplotlib's
+          ``font.family`` list and, appended near the end, to the plotly CSS
+          stack (the latter still needs that family installed in the browser
+          to take effect; see the backend note below). A ``UserWarning`` is
+          raised only for characters NOTHING available can draw, naming them.
           Bundling every script is infeasible (a pan-CJK face alone is
           ~16 MB), so for full CJK coverage install a pan-Unicode font --
           ``apt-get install fonts-noto-cjk`` on most Linux distros;
@@ -2337,6 +2338,14 @@ def plot(
     # so the primary face stays the bundled Noto Sans and per-glyph fallback
     # supplies only the characters the stack lacks (maintainer font review).
     _artist_font = resolved_font if font is not None else None
+    # The plotly backend has no rcParams stack, so an AUTO-detected gap family
+    # must be handed to it EXPLICITLY (as a family name appended near the end
+    # of its CSS stack) -- otherwise a character matplotlib renders via the
+    # discovered font would silently show as tofu on plotly (maintainer font
+    # review). `None` for the explicit-font and no-gap cases.
+    _plotly_font_extra = (resolved_font.get_name()
+                          if (resolved_font is not None and font is None)
+                          else None)
 
     # label_alpha= resolution (GH #103): resolved ONCE, here, exactly like
     # font= above -- `None` (default) keeps the historical hardcoded 0.5
@@ -4122,6 +4131,7 @@ def plot(
             morph_colors=morph_colors,
             morph_samples=morph_samples,
             font=_artist_font,
+            font_extra=_plotly_font_extra,
             label_alpha=resolved_label_alpha,
             xlabel=xlabel,
             ylabel=ylabel,

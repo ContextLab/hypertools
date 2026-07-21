@@ -754,3 +754,48 @@ def test_auto_gap_font_is_appended_not_made_primary(monkeypatch):
     assert 'DejaVu Sans' in family
     assert family.index('Noto Sans') < family.index('DejaVu Sans')
     plt.close(fig)
+
+
+# ------------------------------------- cross-backend gap-font propagation
+# When the curated stack cannot render a character but another INSTALLED font
+# can, matplotlib appends that font to its rcParams stack. plotly has no such
+# stack, so the discovered family must be handed to it explicitly and appended
+# near the END of its CSS stack -- otherwise plotly silently renders tofu for a
+# character matplotlib renders fine (maintainer font review).
+
+def test_auto_gap_font_propagates_to_plotly_as_a_fallback(monkeypatch):
+    import importlib
+    from matplotlib.font_manager import FontProperties
+    plotmod = importlib.import_module('hypertools.plot.plot')
+    dejavu = FontProperties(family='DejaVu Sans')
+    monkeypatch.setattr(plotmod, 'resolve_font',
+                        lambda font, texts: dejavu if font is None else None)
+    fig = hyp.plot(_random_points(4), '.', labels=['a', 'b', 'c', 'd'],
+                   title='gap', backend='plotly', show=False)
+    fam = fig.layout.font.family
+    assert 'DejaVu Sans' in fam
+    # appended AFTER the primary Latin faces (Noto leads) and BEFORE the
+    # generic sans-serif tail, so it supplies only missing glyphs
+    assert fam.index('Noto Sans') < fam.index('DejaVu Sans') < fam.rindex(
+        'sans-serif')
+    # every text surface (here the point annotations) inherits the same stack
+    anns = fig.layout.scene.annotations
+    assert anns
+    assert all('DejaVu Sans' in a.font.family for a in anns)
+
+
+def test_explicit_font_leads_plotly_stack_not_appended():
+    # explicit font= is the caller's choice -> it must LEAD the plotly CSS
+    # stack, unlike an auto gap font which is only a trailing fallback
+    fig = hyp.plot(_random_points(4), '.', title='x', backend='plotly',
+                   font='DejaVu Sans', show=False)
+    assert fig.layout.font.family.startswith('"DejaVu Sans"')
+
+
+def test_default_plotly_stack_unchanged_without_a_gap():
+    fig = hyp.plot(_random_points(4), '.', title='plain', backend='plotly',
+                   show=False)
+    import importlib
+    stack = importlib.import_module(
+        'hypertools.plot.plotly_backend')._PLOTLY_SANS_STACK
+    assert fig.layout.font.family == stack

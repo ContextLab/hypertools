@@ -351,8 +351,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 surface_colors=None, surface_point_colors=None,
                 density=None, density_colors=None,
                 morph_tags=None, morph_colors=None, morph_samples=None,
-                font=None, label_alpha=0.5, xlabel=None, ylabel=None,
-                zlabel=None):
+                font=None, font_extra=None, label_alpha=0.5, xlabel=None,
+                ylabel=None, zlabel=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -995,18 +995,28 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         margin_r += 110
 
     # font= (GH #205): plotly text surfaces take a FAMILY NAME (not a file
-    # path), so only `font.get_name()` is used, wrapped in a fallback chain in
-    # case the exact family name isn't installed in whatever renders this
-    # (browser/Chromium via kaleido). Only an EXPLICIT `font=` is passed here
-    # (auto-detected gap fonts are handled on the matplotlib side and are not
-    # meaningful to the browser anyway); it leads, otherwise the default stack
-    # is used. This PREFERS the same Noto-first face as the matplotlib backend
-    # but cannot guarantee it -- the browser only resolves an installed family
-    # name, never hypertools' bundled font FILE (see `_PLOTLY_SANS_STACK`). The
+    # path), so a family name is wrapped in a fallback chain in case it isn't
+    # installed in whatever renders this (browser/Chromium via kaleido). The
     # CSS stack is resolved PER GLYPH by the browser, so listing pan-CJK faces
     # after the Latin ones keeps mixed-script text rendering.
-    font_family = (f'"{font.get_name()}", {_PLOTLY_SANS_STACK}'
-                   if font is not None else _PLOTLY_SANS_STACK)
+    #   * `font` -- an EXPLICIT font= -- LEADS the stack (the caller's choice).
+    #   * `font_extra` -- an AUTO-detected family filling a real coverage GAP
+    #     (the matplotlib side adds the same family to its fallback stack) --
+    #     is appended near the END, so it supplies only the glyphs the Latin
+    #     faces lack rather than replacing the primary typography. Without
+    #     this, a character matplotlib renders via the discovered font would
+    #     silently show as tofu on plotly (maintainer font review).
+    # This PREFERS the same Noto-first face as the matplotlib backend but
+    # cannot guarantee it -- the browser only resolves an installed family
+    # NAME, never hypertools' bundled font FILE (see `_PLOTLY_SANS_STACK`).
+    if font is not None:
+        font_family = f'"{font.get_name()}", {_PLOTLY_SANS_STACK}'
+    elif font_extra:
+        # insert the gap family just before the generic `sans-serif` tail
+        font_family = _PLOTLY_SANS_STACK.replace(
+            'sans-serif', f'"{font_extra}", sans-serif')
+    else:
+        font_family = _PLOTLY_SANS_STACK
 
     layout = dict(
         paper_bgcolor='white',
