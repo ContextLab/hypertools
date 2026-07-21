@@ -79,8 +79,47 @@ DEFAULT_MARKERSIZE_PT = 6.0  # matplotlib rcParams['lines.markersize']
 # through to whatever system face matches next, and the result varies by
 # platform. A browser resolves a CSS stack PER GLYPH, so the pan-CJK entries
 # still keep mixed-script text rendering; `sans-serif` is the final fallback.
-_PLOTLY_SANS_STACK = ('"Noto Sans", "Helvetica Neue", Helvetica, Arial, '
-                      '"Noto Sans CJK JP", "Hiragino Sans", sans-serif')
+_PLOTLY_SANS_FAMILIES = ('Noto Sans', 'Helvetica Neue', 'Helvetica', 'Arial',
+                         'Noto Sans CJK JP', 'Hiragino Sans')
+_PLOTLY_GENERIC_TAIL = 'sans-serif'   # CSS generic family; always last resort
+
+
+def _plotly_font_family(explicit=None, extra=None):
+    """Build a CSS ``font-family`` stack string for plotly text surfaces.
+
+    The curated ``_PLOTLY_SANS_FAMILIES`` supply the body of the stack, with
+    the generic ``sans-serif`` tail always last. Two optional roles bracket
+    them:
+
+    * ``explicit`` -- a caller-supplied ``font=`` family -- LEADS the stack
+      (the caller's typography choice wins).
+    * ``extra`` -- an auto-detected family filling a real coverage GAP (the
+      matplotlib side adds the same family to its own fallback stack) -- is
+      appended just before the ``sans-serif`` tail, so a browser resolving the
+      stack per glyph uses it only for the glyphs the curated faces lack.
+
+    Family names already present (case-sensitive) are not repeated, so passing
+    an ``explicit``/``extra`` that is already curated leaves the stack tidy.
+    Every family name is quoted; the generic tail is left bare, as CSS
+    requires.
+    """
+    families = []
+
+    def _add(name):
+        if name and name not in families:
+            families.append(name)
+
+    _add(explicit)
+    for name in _PLOTLY_SANS_FAMILIES:
+        _add(name)
+    _add(extra)
+    quoted = ', '.join('"{}"'.format(name) for name in families)
+    return '{}, {}'.format(quoted, _PLOTLY_GENERIC_TAIL)
+
+
+# The default stack (no explicit face, no gap filler); the single source of
+# truth other modules and tests compare against.
+_PLOTLY_SANS_STACK = _plotly_font_family()
 
 # Animation Play/Pause control styling. The controls used to sit at paper
 # (0, 0) anchored bottom-left, which in 2-D -- where the axes fill the paper
@@ -1008,15 +1047,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     #     silently show as tofu on plotly (maintainer font review).
     # This PREFERS the same Noto-first face as the matplotlib backend but
     # cannot guarantee it -- the browser only resolves an installed family
-    # NAME, never hypertools' bundled font FILE (see `_PLOTLY_SANS_STACK`).
-    if font is not None:
-        font_family = f'"{font.get_name()}", {_PLOTLY_SANS_STACK}'
-    elif font_extra:
-        # insert the gap family just before the generic `sans-serif` tail
-        font_family = _PLOTLY_SANS_STACK.replace(
-            'sans-serif', f'"{font_extra}", sans-serif')
-    else:
-        font_family = _PLOTLY_SANS_STACK
+    # NAME, never hypertools' bundled font FILE (see `_plotly_font_family`).
+    font_family = _plotly_font_family(
+        explicit=font.get_name() if font is not None else None,
+        extra=font_extra)
 
     layout = dict(
         paper_bgcolor='white',

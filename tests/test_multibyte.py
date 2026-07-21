@@ -799,3 +799,53 @@ def test_default_plotly_stack_unchanged_without_a_gap():
     stack = importlib.import_module(
         'hypertools.plot.plotly_backend')._PLOTLY_SANS_STACK
     assert fig.layout.font.family == stack
+
+
+# ------------------------------------- plotly CSS stack builder (helper unit)
+# `_plotly_font_family` replaced a fragile string `.replace('sans-serif', ...)`
+# and is the single source of truth for the default stack, the explicit-lead
+# case, and the trailing gap-fallback case. It also de-duplicates a family that
+# is already curated, so an explicit/extra face already in the stack stays tidy
+# (maintainer font review, non-blocking cleanup).
+
+def _plotly_font_helper():
+    import importlib
+    return importlib.import_module(
+        'hypertools.plot.plotly_backend')._plotly_font_family
+
+
+def test_plotly_font_family_default_equals_the_module_constant():
+    import importlib
+    pb = importlib.import_module('hypertools.plot.plotly_backend')
+    assert pb._plotly_font_family() == pb._PLOTLY_SANS_STACK
+    # the generic CSS family is always the bare, final token
+    assert pb._PLOTLY_SANS_STACK.rsplit(',', 1)[-1].strip() == 'sans-serif'
+
+
+def test_plotly_font_family_explicit_leads_and_is_quoted():
+    fam = _plotly_font_helper()(explicit='Roboto')
+    assert fam.startswith('"Roboto"')
+    assert fam.index('Roboto') < fam.index('Noto Sans')
+
+
+def test_plotly_font_family_extra_trails_before_generic_tail():
+    fam = _plotly_font_helper()(extra='DejaVu Sans')
+    assert fam.index('Noto Sans') < fam.index('DejaVu Sans') < fam.rindex(
+        'sans-serif')
+
+
+def test_plotly_font_family_dedups_family_already_in_stack():
+    build = _plotly_font_helper()
+    # an explicit face that is already curated is not repeated ...
+    assert build(explicit='Arial').count('"Arial"') == 1
+    # ... nor is a gap face that happens to collide with a curated one
+    assert build(extra='Helvetica').count('"Helvetica"') == 1
+
+
+def test_plotly_public_path_dedups_explicit_family_already_in_stack():
+    # driving the real plot() path with font='Noto Sans' (already the primary
+    # curated face) must not duplicate it in the layout stack
+    fig = hyp.plot(_random_points(4), '.', title='x', backend='plotly',
+                   font='Noto Sans', show=False)
+    assert fig.layout.font.family.count('"Noto Sans"') == 1
+    assert fig.layout.font.family.startswith('"Noto Sans"')
