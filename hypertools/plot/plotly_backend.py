@@ -87,9 +87,18 @@ _PLOTLY_SANS_STACK = ('"Noto Sans", "Helvetica Neue", Helvetica, Arial, '
 # Andy). They now hang BELOW the plotting area, laid out horizontally, with the
 # bottom margin opened up so nothing is clipped.
 _ANIM_BUTTON_MARGIN_B = 64   # bottom margin reserved for the controls (px)
-CUBE_LINEWIDTH_PT = 1.5      # hypertools' wireframe cube linewidth (1pt in
-                             # matplotlib; slightly heavier here because
-                             # plotly's 3D line antialiasing renders lighter)
+CUBE_LINEWIDTH_PT = 1.5      # hypertools' frame linewidth, matching the
+                             # matplotlib backend's ~2px frame (both the 3D
+                             # wireframe cube and the 2D square)
+# The 2D square is an SVG `shape` (honors its stroke width faithfully) but the
+# 3D cube is a Scatter3d line, which plotly's gl line renderer draws at roughly
+# 0.6x the requested width -- so at the same requested width the cube came out
+# ~1px while the square came out ~2px, and the 2D frame looked visibly heavier
+# than the 3D one (maintainer report, Andy). Boost ONLY the 3D cube's requested
+# width so both render at the same ~2px as the matplotlib backend. Measured in
+# the kaleido/Chrome renderer (which also produces every exported image and the
+# docs gallery); the exact factor is not critical -- 1.3-1.7 all land on 2px.
+_CUBE_GL_WIDTH_BOOST = 1.5
 
 # matplotlib's '.' and ',' marker glyphs are defined with HALF the path
 # scale of every other marker character (verified via
@@ -1605,7 +1614,10 @@ def _cube_trace(go, scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT):
         zs += [z0, z1, None]
     return go.Scatter3d(
         x=xs, y=ys, z=zs, mode='lines',
-        line=dict(color='black', width=linewidth_pt * PT_TO_PX),
+        # boosted so the gl-rendered cube matches the SVG square's ~2px stroke
+        # (see _CUBE_GL_WIDTH_BOOST) -- the 2D square uses no boost
+        line=dict(color='black',
+                  width=linewidth_pt * PT_TO_PX * _CUBE_GL_WIDTH_BOOST),
         showlegend=False, hoverinfo='skip')
 
 

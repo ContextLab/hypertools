@@ -88,6 +88,11 @@ set are new.
   plot's bottom-left corner to below the plotting area, laid out
   horizontally and lightly themed. In 2-D -- where the axes fill the paper
   area -- they previously overlapped the chart itself.
+- **Frame outline weight (plotly):** the 3-D wireframe cube and the 2-D
+  square frame now render at the same ~2px stroke (matching the matplotlib
+  backend). plotly's gl line renderer draws 3-D `Scatter3d` lines lighter
+  than the equivalent 2-D SVG shape, so the 3-D cube previously looked
+  noticeably thinner than the 2-D square.
 
 ### Release audit (2026-07)
 
