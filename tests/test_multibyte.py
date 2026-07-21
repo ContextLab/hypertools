@@ -36,13 +36,34 @@ from hypertools.plot.fonts import (find_covering_font, resolve_font,
 JP_LABELS_A = ['いち', 'に', 'さん']
 JP_LABELS_B = ['よん', 'ご', 'ろく']
 
-covering_font_available = find_covering_font(['い']) is not None
+# "can hypertools render CJK here?" -- i.e. does the Noto-first fallback stack
+# (bundled Noto Sans + installed pan-CJK families + DejaVu) cover a CJK glyph?
+# (Since the stack now supplies CJK per-glyph, find_covering_font(CJK) returns
+# None on a machine whose stack already covers it -- so it can no longer be
+# used as this gate.)
+from hypertools.plot.fonts import _codepoints_uncovered_by_stack
+covering_font_available = not _codepoints_uncovered_by_stack({ord('い')})
 requires_covering_font = pytest.mark.skipif(
     not covering_font_available,
     reason="no installed font covers this test's CJK characters (CI "
            "provisions one separately; this machine's Hiragino Sans/Noto "
            "Sans/etc. covers it locally)",
 )
+
+
+def _installed_cjk_fontproperties():
+    """A `FontProperties` for SOME installed font covering CJK 'い'.
+
+    Auto-detection (`resolve_font(None, ...)`) now returns None for CJK when the
+    fallback STACK already covers it, so tests that need a concrete CJK font --
+    e.g. to pass an explicit ``font=`` -- get one directly here. Only called
+    under `requires_covering_font`, so a covering font is known to exist."""
+    from matplotlib.font_manager import FontProperties
+    from hypertools.plot.fonts import _ordered_font_entries, _font_covers
+    for entry in _ordered_font_entries():
+        if _font_covers(entry.fname, {ord('い')}):
+            return FontProperties(fname=entry.fname)
+    return None
 
 
 def _random_points(n, seed=0):
@@ -132,13 +153,14 @@ def test_find_covering_font_returns_none_for_ascii_only():
 
 
 @requires_covering_font
-def test_find_covering_font_covers_every_requested_codepoint():
-    fp = find_covering_font(JP_LABELS_A)
-    assert fp is not None
-    from matplotlib.ft2font import FT2Font
-    ft = FT2Font(fp.get_file())
-    codepoints = {ord(ch) for s in JP_LABELS_A for ch in s if ord(ch) > 127}
-    assert all(ft.get_char_index(cp) != 0 for cp in codepoints)
+def test_find_covering_font_returns_none_when_stack_already_covers_cjk():
+    # NEW contract (maintainer font review): when the Noto-first fallback stack
+    # already covers the text (CJK included, on a machine whose CJK family is in
+    # the stack), find_covering_font returns None -- no override, so the primary
+    # face stays the bundled Noto Sans. It only returns a font for a real GAP.
+    assert not _codepoints_uncovered_by_stack(
+        {ord(ch) for s in JP_LABELS_A for ch in s if ord(ch) > 127})
+    assert find_covering_font(JP_LABELS_A) is None
 
 
 def test_find_covering_font_warns_once_when_nothing_covers():
@@ -169,9 +191,11 @@ def test_resolve_font_none_ascii_only_returns_none():
 
 
 @requires_covering_font
-def test_resolve_font_none_non_ascii_returns_covering_font():
-    fp = resolve_font(None, JP_LABELS_A)
-    assert fp is not None
+def test_resolve_font_none_cjk_returns_none_stack_covers_it():
+    # auto-detect returns None because the fallback stack renders CJK per-glyph
+    # (Noto stays primary) -- and the text still renders with no tofu (proved by
+    # the no-missing-glyph-warnings tests below)
+    assert resolve_font(None, JP_LABELS_A) is None
 
 
 def test_resolve_font_fontproperties_passthrough():
@@ -262,7 +286,7 @@ def test_title_no_missing_glyph_warnings():
 
 @requires_covering_font
 def test_font_kwarg_family_name_string_no_missing_glyph_warnings():
-    fp = find_covering_font(JP_LABELS_A)
+    fp = _installed_cjk_fontproperties()
     fig = _labeled_plot(JP_LABELS_A, font=fp.get_name())
     assert _missing_glyph_warnings(fig) == []
     plt.close(fig)
@@ -270,7 +294,7 @@ def test_font_kwarg_family_name_string_no_missing_glyph_warnings():
 
 @requires_covering_font
 def test_font_kwarg_file_path_string_no_missing_glyph_warnings():
-    fp = find_covering_font(JP_LABELS_A)
+    fp = _installed_cjk_fontproperties()
     fig = _labeled_plot(JP_LABELS_A, font=fp.get_file())
     assert _missing_glyph_warnings(fig) == []
     plt.close(fig)
@@ -278,7 +302,7 @@ def test_font_kwarg_file_path_string_no_missing_glyph_warnings():
 
 @requires_covering_font
 def test_font_kwarg_fontproperties_instance_no_missing_glyph_warnings():
-    fp = find_covering_font(JP_LABELS_A)
+    fp = _installed_cjk_fontproperties()
     fig = _labeled_plot(JP_LABELS_A, font=fp)
     assert _missing_glyph_warnings(fig) == []
     plt.close(fig)
@@ -426,14 +450,19 @@ def test_plotly_labels_kwarg_is_drawn_as_scene_annotations():
 
 @requires_covering_font
 def test_plotly_japanese_labels_exact_string_equality():
+    import importlib
+    stack = importlib.import_module(
+        'hypertools.plot.plotly_backend')._PLOTLY_SANS_STACK
     x = _random_points(3)
     fig = hyp.plot(x, '.', labels=JP_LABELS_A, backend='plotly', show=False)
     annotations = fig.layout.scene.annotations
     assert [a.text for a in annotations] == JP_LABELS_A
-    assert fig.layout.font.family is not None
-    assert find_covering_font(JP_LABELS_A).get_name() in fig.layout.font.family
+    # CJK no longer prepends an auto-detected family; the browser resolves the
+    # default CSS stack (which lists pan-CJK fallbacks after the Latin faces)
+    # per glyph. The layout and every annotation carry that default stack.
+    assert fig.layout.font.family == stack
     for a in annotations:
-        assert find_covering_font(JP_LABELS_A).get_name() in a.font.family
+        assert a.font.family == stack
 
 
 @requires_covering_font
@@ -461,20 +490,26 @@ def test_plotly_colorbar_label_and_ticktext_exact_string_equality():
 
 
 @requires_covering_font
-def test_plotly_layout_font_family_matches_auto_detected_font():
-    fp = find_covering_font(JP_LABELS_A[:2])
+def test_plotly_layout_font_uses_default_stack_for_auto_cjk():
+    # auto-detected CJK adds no override now -- plotly uses its default CSS
+    # stack, which already lists pan-CJK fallbacks for the browser to resolve
+    # per glyph (and keeps Noto Sans preferred)
+    import importlib
+    stack = importlib.import_module(
+        'hypertools.plot.plotly_backend')._PLOTLY_SANS_STACK
     fig = _plotly_plot(JP_LABELS_A[:2])
-    assert fig.layout.font.family is not None
-    assert fp.get_name() in fig.layout.font.family
+    assert fig.layout.font.family == stack
+    assert 'Noto Sans' in fig.layout.font.family
 
 
 @requires_covering_font
 def test_plotly_layout_font_family_matches_explicit_font_kwarg():
-    fp = find_covering_font(JP_LABELS_A[:2])
-    # ASCII-only text, but font= given explicitly -- must still be honored
-    fig = _plotly_plot(['group a', 'group b'], font=fp.get_name())
+    name = _installed_cjk_fontproperties().get_name()
+    # ASCII-only text, but font= given explicitly -- must still be honored,
+    # prepended to the default stack
+    fig = _plotly_plot(['group a', 'group b'], font=name)
     assert fig.layout.font.family is not None
-    assert fp.get_name() in fig.layout.font.family
+    assert name in fig.layout.font.family
 
 
 def test_plotly_ascii_only_uses_the_default_sans_stack():
@@ -652,3 +687,70 @@ def test_truly_uncovered_codepoint_is_still_detected():
     # still catch genuine gaps rather than being disabled outright
     from hypertools.plot.fonts import _codepoints_uncovered_by_stack
     assert _codepoints_uncovered_by_stack({0xE000}) == {0xE000}
+
+
+# ------------------------------------- stable primary face (maintainer review)
+# The bundled Noto Sans must stay the PRIMARY family for text the fallback stack
+# already covers -- a stray accent, Greek letter, or math symbol must NOT swap
+# the whole plot onto some other installed platform font (the pre-review bug:
+# "Cafe" rendered in Noto Sans but "Café" switched everything to Hiragino).
+
+@pytest.mark.parametrize('text', [
+    'plain ascii',                       # ASCII
+    'Café résumé naïve',                 # accented Latin
+    'Ω α β γ Δ Σ π',                     # Greek
+    '± × ÷ ≈ ≤ ≥ ∑ ∫ √ ∞',               # common math symbols
+    'Å µm ° © ® ™ € £',                  # misc symbols
+    'Cyrillic Привет',                   # Cyrillic
+])
+def test_covered_text_keeps_noto_sans_primary(text):
+    # resolve_font returns None (no override) whenever the stack covers the text
+    assert resolve_font(None, [text]) is None
+    # ... so every drawn text surface keeps Noto Sans as its first family
+    fig = hyp.plot(_random_points(3), '.', labels=['a', 'b', 'c'],
+                   title=text, show=False)
+    assert fig.axes[0].title.get_fontfamily()[0] == 'Noto Sans'
+    for t in fig.axes[0].texts:
+        assert t.get_fontfamily()[0] == 'Noto Sans'
+    plt.close(fig)
+
+
+def test_covered_text_renders_without_missing_glyph_warnings():
+    # stable primary face must not come at the cost of tofu: accented/Greek/math
+    # still render (from Noto, or DejaVu via per-glyph fallback)
+    fig = hyp.plot(_random_points(3), '.', labels=['a', 'b', 'c'],
+                   title='Café Ω ± ∑ Å µ °', show=False)
+    assert _missing_glyph_warnings(fig) == []
+    plt.close(fig)
+
+
+def test_sans_serif_stack_first_leads_but_extra_is_only_a_fallback():
+    # the core of the fix: an EXPLICIT font= (`first`) leads the stack, but an
+    # AUTO-detected gap font (`extra`) is a fallback only -- Noto stays primary
+    assert sans_serif_stack(first='Arial')[0] == 'Arial'
+    assert sans_serif_stack(extra='Arial')[0] == 'Noto Sans'
+    # and `extra` never displaces the bundled face even when both are given
+    both = sans_serif_stack(first='Arial', extra='Helvetica')
+    assert both[0] == 'Arial' and both.index('Noto Sans') < both.index('Helvetica')
+
+
+def test_auto_gap_font_is_appended_not_made_primary(monkeypatch):
+    # simulate a real coverage gap: force resolve_font(None, ...) to return a
+    # covering font (as it would for a script no stack family has) and verify
+    # plot() adds it as a FALLBACK, leaving Noto Sans primary on the artists.
+    import importlib
+    from matplotlib.font_manager import FontProperties
+    plotmod = importlib.import_module('hypertools.plot.plot')
+    dejavu = FontProperties(family='DejaVu Sans')
+    monkeypatch.setattr(plotmod, 'resolve_font', lambda font, texts: (
+        dejavu if font is None else None))
+    fig = hyp.plot(_random_points(3), '.', labels=['a', 'b', 'c'],
+                   title='gap', show=False)
+    # the artist keeps the in-context stack: Noto Sans PRIMARY, the gap filler
+    # (DejaVu) present only as a later fallback (rcParams itself is restored on
+    # rc_context exit, so it is not inspected here)
+    family = fig.axes[0].title.get_fontfamily()
+    assert family[0] == 'Noto Sans'
+    assert 'DejaVu Sans' in family
+    assert family.index('Noto Sans') < family.index('DejaVu Sans')
+    plt.close(fig)

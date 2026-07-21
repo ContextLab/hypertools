@@ -70,14 +70,15 @@ PT_TO_PX = 100.0 / 72.0
 DEFAULT_FIGSIZE = (6.4, 4.8)  # matplotlib rcParams['figure.figsize'] inches
 DEFAULT_LINEWIDTH_PT = 1.5   # matplotlib rcParams['lines.linewidth']
 DEFAULT_MARKERSIZE_PT = 6.0  # matplotlib rcParams['lines.markersize']
-# Default CSS font stack for the plotly backend, mirroring the matplotlib
-# backend's bundled-Noto-Sans-first ordering (see plot/fonts.py) so both
-# backends look the same. A browser resolves a CSS stack PER GLYPH, so the
-# pan-CJK entries keep mixed-script text rendering even though no single
-# family covers everything; `sans-serif` is the final guaranteed fallback.
-# NOTE: unlike matplotlib, plotly/kaleido cannot be handed a font FILE -- only
-# a family name -- so the bundled face is used here only when it also happens
-# to be installed system-wide on the rendering machine.
+# Default CSS font stack for the plotly backend. It PREFERS the same
+# Noto-Sans-first ordering as the matplotlib backend, but the two do NOT
+# render identically: matplotlib is handed the bundled Noto Sans FILE, whereas
+# plotly/kaleido can only be given a family NAME resolved by the rendering
+# browser (Chrome/kaleido, Jupyter, ...). So "Noto Sans" here is used only if
+# it also happens to be installed on that machine; otherwise the browser falls
+# through to whatever system face matches next, and the result varies by
+# platform. A browser resolves a CSS stack PER GLYPH, so the pan-CJK entries
+# still keep mixed-script text rendering; `sans-serif` is the final fallback.
 _PLOTLY_SANS_STACK = ('"Noto Sans", "Helvetica Neue", Helvetica, Arial, '
                       '"Noto Sans CJK JP", "Hiragino Sans", sans-serif')
 
@@ -994,14 +995,16 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         margin_r += 110
 
     # font= (GH #205): plotly text surfaces take a FAMILY NAME (not a file
-    # path), so only `font.get_name()` is used, wrapped in a fallback chain
-    # in case the exact family name isn't installed in whatever renders this
-    # (browser/Chromium via kaleido). An explicit/auto-detected `font=` leads;
-    # otherwise the chain itself is the default, so plotly matches the
-    # matplotlib backend's bundled-Noto-Sans look instead of falling back to
-    # plotly's own default face. A CSS font stack is resolved PER GLYPH by the
-    # browser, so listing pan-CJK faces after the Latin ones keeps mixed-script
-    # text rendering even though no single family covers everything.
+    # path), so only `font.get_name()` is used, wrapped in a fallback chain in
+    # case the exact family name isn't installed in whatever renders this
+    # (browser/Chromium via kaleido). Only an EXPLICIT `font=` is passed here
+    # (auto-detected gap fonts are handled on the matplotlib side and are not
+    # meaningful to the browser anyway); it leads, otherwise the default stack
+    # is used. This PREFERS the same Noto-first face as the matplotlib backend
+    # but cannot guarantee it -- the browser only resolves an installed family
+    # name, never hypertools' bundled font FILE (see `_PLOTLY_SANS_STACK`). The
+    # CSS stack is resolved PER GLYPH by the browser, so listing pan-CJK faces
+    # after the Latin ones keeps mixed-script text rendering.
     font_family = (f'"{font.get_name()}", {_PLOTLY_SANS_STACK}'
                    if font is not None else _PLOTLY_SANS_STACK)
 

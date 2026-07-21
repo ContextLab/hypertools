@@ -72,18 +72,25 @@ set are new.
   result cache was removed; HDBSCAN comes from scikit-learn instead of the
   external `hdbscan` package.
 - **Typography:** plots now render in a bundled sans-serif (Noto Sans, SIL
-  OFL 1.1, vendored in `hypertools/external/fonts`) on both backends, so
-  output looks the same on every platform instead of inheriting each
-  machine's default face. Fonts resolve through a per-glyph FALLBACK STACK,
+  OFL 1.1, vendored in `hypertools/external/fonts`). The **matplotlib**
+  backend is handed the font FILE, so it renders in Noto Sans identically on
+  every platform instead of inheriting the machine's default face. The
+  **plotly** backend can only pass a family NAME to the rendering browser
+  (never a font file), so it *prefers* Noto Sans but falls back to the next
+  installed system face when Noto isn't present -- plotly typography can
+  still vary by platform. Fonts resolve through a per-glyph FALLBACK STACK,
   so text mixing scripts renders completely from several faces rather than
-  showing "tofu" boxes for whatever a single face lacks. Two consequences:
-  point `labels=` no longer force a serif face (they inherit the stack like
-  every other text surface -- previously a label character the serif faces
-  lacked rendered as tofu even when an installed font had it), and the
-  "no font covers this text" warning now fires only for characters NOTHING
-  available can draw, instead of whenever no SINGLE font covered all of it.
-  The font stack is applied inside a scoped `rc_context`, so your own
-  matplotlib settings are still left untouched.
+  showing "tofu" boxes for whatever the primary face lacks, and the primary
+  face stays Noto Sans -- an accent or Greek letter no longer swaps the whole
+  plot onto some other installed font. A covering font is auto-added to the
+  stack (as a fallback, Noto still primary) only when the stack genuinely
+  cannot draw a character. Also: point `labels=` no longer force a serif
+  face (they inherit the stack like every other text surface -- previously a
+  label character the serif faces lacked rendered as tofu even when an
+  installed font had it), and the "no font covers this text" warning now
+  fires only for characters NOTHING available can draw, instead of whenever
+  no SINGLE font covered all of it. The font stack is applied inside a scoped
+  `rc_context`, so your own matplotlib settings are left untouched.
 - **Animation controls (plotly):** the Play/Pause buttons moved from the
   plot's bottom-left corner to below the plotting area, laid out
   horizontally and lightly themed. In 2-D -- where the axes fill the paper

@@ -122,16 +122,18 @@ def installed_families():
     return {entry.name for entry in font_manager.fontManager.ttflist}
 
 
-def sans_serif_stack(first=None):
+def sans_serif_stack(first=None, extra=None):
     """Ordered font families for matplotlib's PER-GLYPH fallback.
 
     matplotlib (>= 3.6) walks a ``font.family`` LIST per character, so a stack
     renders text whose glyphs live in different faces -- e.g. Latin from Noto
     Sans, Japanese from an installed CJK face, and math symbols from DejaVu
     Sans -- instead of drawing "tofu" boxes for whatever the single active font
-    lacks. Ordering: `first` (an explicitly resolved ``font=``) if given, then
-    the good-looking sans faces that are installed, then the pan-Unicode/CJK
-    families, and finally DejaVu Sans as the widest-coverage anchor.
+    lacks. Ordering: `first` (an EXPLICIT ``font=``) if given, then the
+    good-looking sans faces that are installed, then the pan-Unicode/CJK
+    families, then `extra` (an AUTO-detected family filling a coverage gap --
+    added as a FALLBACK so Noto stays primary rather than taking over ASCII),
+    and finally DejaVu Sans as the widest-coverage anchor.
 
     Every entry is filtered against what is actually installed, so matplotlib
     never logs a ``findfont: ... not found`` message for a family in the stack.
@@ -148,6 +150,7 @@ def sans_serif_stack(first=None):
         _add(family)
     for family in _PREFERRED_FAMILIES:       # pan-Unicode / CJK coverage
         _add(family)
+    _add(extra)                              # auto gap-filler: fallback only
     _add(_LAST_RESORT_FAMILY)
     if _LAST_RESORT_FAMILY not in stack:     # matplotlib always ships it, but
         stack.append(_LAST_RESORT_FAMILY)    # never return an empty stack
@@ -294,14 +297,25 @@ def _ordered_font_entries():
 
 
 def find_covering_font(texts):
-    """Find an installed font whose character map covers every non-ASCII
-    codepoint across `texts` (a string, or an arbitrarily nested list/
-    tuple of strings/None).
+    """Find an EXTRA font needed to cover text the default stack can't render.
 
-    Returns `None` if `texts` has no non-ASCII characters at all (no
-    override needed -- the default font is fine), or if no installed font
-    covers everything (a single `UserWarning` is emitted, naming a few of
-    the missing characters, before returning `None`).
+    hypertools already draws every text surface through the Noto-first
+    fallback stack (`sans_serif_stack`), which a per-glyph renderer walks one
+    character at a time -- so ordinary accented Latin, Greek, Cyrillic, and
+    common math symbols are already covered by the bundled Noto Sans (plus
+    DejaVu Sans), and CJK is covered too on any machine whose installed CJK
+    families are in the stack. This function therefore returns a font ONLY
+    when the stack has a genuine COVERAGE GAP, so that a single accent or
+    Greek letter never swaps the whole plot onto an unrelated platform font
+    (maintainer font review).
+
+    Returns `None` when `texts` is all ASCII, or when the default stack
+    already covers every character (the common case -- no override needed).
+    When the stack CANNOT draw some character, returns a
+    `FontProperties` for an installed font covering that GAP (to be ADDED to
+    the fallback stack, keeping Noto primary), or -- if nothing installed
+    covers the gap either -- emits one `UserWarning` naming a few of the
+    truly-missing characters and returns `None`.
 
     Results are cached (keyed by the frozenset of needed codepoints) since
     the same label/legend/title text set is often resolved more than once
@@ -315,31 +329,35 @@ def find_covering_font(texts):
     if key in _covering_font_cache:
         return _covering_font_cache[key]
 
+    # (1) make the bundled face visible, then (2) ask what the normal
+    # Noto-first stack cannot already render.
+    register_bundled_fonts()
+    gap = _codepoints_uncovered_by_stack(codepoints)
+    if not gap:
+        # (3) the stack covers everything -> no override; keep Noto primary.
+        _covering_font_cache[key] = None
+        return None
+
+    # (4) a real gap: search installed fonts for one covering ONLY the gap
+    # codepoints (not the whole string), to be added as an extra fallback.
     for entry in _ordered_font_entries():
-        if _font_covers(entry.fname, codepoints):
+        if _font_covers(entry.fname, gap):
             result = FontProperties(fname=entry.fname)
             _covering_font_cache[key] = result
             return result
 
-    # No SINGLE font covers all of this text -- which is NOT a problem by
-    # itself: matplotlib walks `sans_serif_stack()` per glyph, so text mixing
-    # scripts (say Latin + Japanese + math symbols) still renders completely
-    # from several faces. Warn only about characters NOTHING in the stack can
-    # draw, otherwise this fires on ordinary accented/Greek text that renders
-    # perfectly (maintainer font review).
-    missing = _codepoints_uncovered_by_stack(codepoints)
-    if missing:
-        sample = ''.join(chr(cp) for cp in sorted(missing)[:5])
-        warnings.warn(
-            f"hypertools: no installed font covers the character(s) "
-            f"{sample!r} (and possibly others) needed for this plot's text -- "
-            f"they will render as 'tofu' (empty boxes). Pass "
-            f"font=<family name or path to a .ttf/.otf/.ttc file> to "
-            f"hyp.plot(...), or install a pan-Unicode font such as 'Noto Sans "
-            f"CJK' (e.g. `apt-get install fonts-noto-cjk` on Debian/Ubuntu).",
-            UserWarning,
-            stacklevel=3,
-        )
+    # nothing installed covers the gap either -> warn about those characters
+    sample = ''.join(chr(cp) for cp in sorted(gap)[:5])
+    warnings.warn(
+        f"hypertools: no installed font covers the character(s) "
+        f"{sample!r} (and possibly others) needed for this plot's text -- "
+        f"they will render as 'tofu' (empty boxes). Pass "
+        f"font=<family name or path to a .ttf/.otf/.ttc file> to "
+        f"hyp.plot(...), or install a pan-Unicode font such as 'Noto Sans "
+        f"CJK' (e.g. `apt-get install fonts-noto-cjk` on Debian/Ubuntu).",
+        UserWarning,
+        stacklevel=3,
+    )
     _covering_font_cache[key] = None
     return None
 
@@ -351,10 +369,14 @@ def resolve_font(font, texts):
 
     `font` may be:
 
-    - `None` (default): auto-detect via `find_covering_font`, but ONLY
-      when `texts` actually contains non-ASCII characters -- an
-      ASCII-only plot gets `None` back (no override, byte-identical
-      rendering to before this feature existed).
+    - `None` (default): auto-detect via `find_covering_font`, which returns
+      a font ONLY when the default Noto-first fallback stack has a real
+      COVERAGE GAP (a character no stack family can draw). For ASCII, and
+      for accented Latin/Greek/Cyrillic/math and any CJK the stack already
+      covers, it returns `None` -- no override, so the primary face stays
+      the bundled Noto Sans. An auto-detected gap font is meant to be ADDED
+      to the fallback stack (keeping Noto primary), NOT applied as a single
+      face to whole text artists (see `hyp.plot`'s handling).
     - a `str`: either an installed font FAMILY NAME (resolved via
       matplotlib's font lookup; hyphenated and generic names like
       'sans-serif' work) or a path to a `.ttf`/`.otf`/`.ttc` FILE

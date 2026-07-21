@@ -933,16 +933,25 @@ def plot(
 
         - `None` (default): hypertools uses its own sans-serif FALLBACK
           STACK, led by the Noto Sans face bundled with the package (SIL
-          OFL 1.1, in ``hypertools/external/fonts``) so plots look the same
-          on every platform rather than inheriting whatever the machine
-          happens to have. Both backends resolve the stack PER GLYPH --
-          matplotlib walks a ``font.family`` list, a browser walks a CSS
-          font stack -- so text mixing scripts renders completely from
-          several faces (e.g. Latin from Noto Sans, Japanese from an
-          installed CJK face, math symbols from DejaVu Sans) instead of
-          showing tofu for whatever a single face lacks. Non-ASCII text
-          additionally triggers a scan for one font covering ALL of it,
-          which (when found) is used directly. A ``UserWarning`` is raised
+          OFL 1.1, in ``hypertools/external/fonts``). matplotlib is handed
+          that font FILE, so the MATPLOTLIB backend renders in the bundled
+          Noto Sans identically on every platform. The PLOTLY backend can
+          only pass a family NAME to the rendering browser (it cannot use a
+          font file), so it *prefers* Noto Sans but falls back to the next
+          installed system face when Noto isn't present -- plotly typography
+          may therefore vary by platform. Both backends resolve their stack
+          PER GLYPH (matplotlib walks a ``font.family`` list; a browser walks
+          a CSS stack), so text mixing scripts renders completely from
+          several faces (Latin from Noto Sans, Japanese from an installed
+          CJK face, math symbols from DejaVu Sans) instead of showing tofu
+          for whatever the primary face lacks -- and, crucially, the primary
+          face stays Noto Sans, so a stray accent or Greek letter does NOT
+          swap the whole plot onto some other font. Only when the stack has
+          a genuine COVERAGE GAP (a script no stack family can draw) does
+          hypertools scan for an installed font covering that gap and ADD it
+          to the stack as an extra fallback (Noto stays primary); if a
+          covering font IS found and it happens to be pan-script, those gap
+          characters naturally render from it. A ``UserWarning`` is raised
           only for characters NOTHING available can draw, naming them.
           Bundling every script is infeasible (a pan-CJK face alone is
           ~16 MB), so for full CJK coverage install a pan-Unicode font --
@@ -2320,6 +2329,14 @@ def plot(
         _font_texts.append(colorbar.get('label'))
         _font_texts.append(colorbar.get('ticks'))
     resolved_font = resolve_font(font, _font_texts)
+    # Font applied DIRECTLY to individual text artists (title/labels/legend/
+    # colorbar). Only an EXPLICIT font= is applied that way -- it is the
+    # caller's stated choice for every surface. An AUTO-detected font
+    # (`resolved_font` set while `font is None`) merely fills a coverage GAP
+    # and is added to the fallback STACK instead (see the rc_context below),
+    # so the primary face stays the bundled Noto Sans and per-glyph fallback
+    # supplies only the characters the stack lacks (maintainer font review).
+    _artist_font = resolved_font if font is not None else None
 
     # label_alpha= resolution (GH #103): resolved ONCE, here, exactly like
     # font= above -- `None` (default) keeps the historical hardcoded 0.5
@@ -4104,7 +4121,7 @@ def plot(
             morph_tags=morph_tags,
             morph_colors=morph_colors,
             morph_samples=morph_samples,
-            font=resolved_font,
+            font=_artist_font,
             label_alpha=resolved_label_alpha,
             xlabel=xlabel,
             ylabel=ylabel,
@@ -4128,13 +4145,23 @@ def plot(
             # Font, applied AFTER sns.set_style (which sets its own font
             # rcParams). A LIST gives matplotlib >= 3.6 PER-GLYPH fallback, so
             # text mixing scripts renders fully instead of showing "tofu" for
-            # whatever the single active face lacks -- and unlike the explicit
-            # `fontproperties=` applied to titles/labels/legends downstream,
-            # an rcParam also covers text hypertools never touches directly
-            # (tick labels, and anything the user adds to the returned axes).
-            # Scoped by rc_context, so the user's global rcParams are intact.
-            _font_stack = sans_serif_stack(
-                resolved_font.get_name() if resolved_font is not None else None)
+            # whatever the single active face lacks -- and an rcParam also
+            # covers text hypertools never touches directly (tick labels, and
+            # anything the user adds to the returned axes). Scoped by
+            # rc_context, so the user's global rcParams are intact.
+            #
+            # An EXPLICIT font= is made primary; an AUTO-detected font (which
+            # `resolve_font` only returns to fill a real coverage GAP -- e.g. a
+            # script no stack family has) is appended as a FALLBACK so the
+            # bundled Noto Sans stays the primary face and a stray accent/Greek
+            # letter never swaps the whole plot onto a platform font
+            # (maintainer font review).
+            if resolved_font is None:
+                _font_stack = sans_serif_stack()
+            elif font is not None:
+                _font_stack = sans_serif_stack(first=resolved_font.get_name())
+            else:
+                _font_stack = sans_serif_stack(extra=resolved_font.get_name())
             # BOTH keys: artists created with an explicit generic
             # `family='sans-serif'` (seaborn's style, and matplotlib's own
             # default) resolve through `font.sans-serif`, while artists that
@@ -4177,7 +4204,7 @@ def plot(
                 morph_tags=morph_tags,
                 morph_colors=morph_colors,
                 morph_samples=morph_samples,
-                font=resolved_font,
+                font=_artist_font,
                 label_alpha=resolved_label_alpha,
                 xlabel=xlabel,
                 ylabel=ylabel,
@@ -4279,7 +4306,7 @@ def plot(
             # an EARLIER legend fit; fitting the legend last, against
             # whatever the current layout actually is, sidesteps that.
             if colorbar_info is not None and ax is not None:
-                _add_colorbar(fig, ax, colorbar_info, font=resolved_font)
+                _add_colorbar(fig, ax, colorbar_info, font=_artist_font)
 
             # legend fitting (GH #100/#95 follow-up): a right-side (outside)
             # legend can overflow the figure's right edge. `tight_layout`
