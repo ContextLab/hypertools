@@ -30,33 +30,54 @@ def _code_cell_texts(nb):
             yield ''.join(cell.get('source', []))
 
 
+def _hyp_install_lines(nb):
+    """Every code-cell LINE that pip-installs hypertools, paired with the full
+    text of the cell it lives in (for the preview-note check). Working per-LINE
+    (not per-cell) is what lets a SECOND malformed install alongside a valid one
+    be rejected."""
+    out = []
+    for text in _code_cell_texts(nb):
+        for line in text.splitlines():
+            # skip comment lines -- e.g. the "# On release this becomes:
+            # %pip install hypertools" note is prose, not an executed install
+            if line.lstrip().startswith('#'):
+                continue
+            if 'pip install' in line and 'hypertools' in line:
+                out.append((line, text))
+    return out
+
+
 def classify_notebooks(paths):
     """Classify each notebook by basename into three problem buckets.
 
     Returns ``(missing, branch_installs, stale_notes)`` where a name appears in:
 
-    * ``missing`` -- no hypertools pip-install at all, OR a hypertools install
-      that is not in the required ``hypertools[...]`` PyPI-extras form;
-    * ``branch_installs`` -- a hypertools install still using ``git+`` /
+    * ``missing`` -- no hypertools pip-install at all, OR ANY hypertools install
+      line that is not in the required ``hypertools[...]`` PyPI-extras form;
+    * ``branch_installs`` -- ANY hypertools install line still using ``git+`` /
       ``hypertools.git@<branch>``;
     * ``stale_notes`` -- a hypertools install cell that still carries a
       ``preview`` / "On release this becomes" note.
 
-    A notebook that passes appears in none of the three.
+    EVERY hypertools install must be valid: a notebook with a good
+    ``hypertools[...]`` install AND a second malformed ``pip install hypertools``
+    is rejected (into ``missing``). A notebook that passes appears in none of
+    the three.
     """
     missing, branch_installs, stale_notes = [], [], []
     for p in paths:
         with open(p, encoding='utf-8') as f:
             nb = json.load(f)
-        hyp_cells = [t for t in _code_cell_texts(nb)
-                     if 'pip install' in t and 'hypertools' in t]
+        lines = _hyp_install_lines(nb)
         name = os.path.basename(p)
-        if not hyp_cells or not any('hypertools[' in t for t in hyp_cells):
-            missing.append(name)
-        elif any('git+' in t or 'hypertools.git@' in t for t in hyp_cells):
-            branch_installs.append(name)
-        elif any('preview' in t or 'On release this becomes' in t
-                 for t in hyp_cells):
+        if not lines:
+            missing.append(name)                       # no hypertools install
+        elif any('hypertools[' not in ln for ln, _ in lines):
+            missing.append(name)                       # a non-`hypertools[...]` install
+        elif any('git+' in ln or 'hypertools.git@' in ln for ln, _ in lines):
+            branch_installs.append(name)               # any branch install
+        elif any('preview' in ct or 'On release this becomes' in ct
+                 for _, ct in lines):
             stale_notes.append(name)
     return missing, branch_installs, stale_notes
 

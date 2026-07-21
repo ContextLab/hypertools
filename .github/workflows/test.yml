@@ -295,7 +295,6 @@ jobs:
       run: |
         python /tmp/docs-clean/scripts/check_release_notebooks.py \
           --min 50 /tmp/docs-clean/docs/auto_examples
-        PY
 
   # Dataset release gate (2026-07 review, findings #2 + #2-followup). Two
   # things a green matrix run does NOT prove: (a) that the hosted-dataset

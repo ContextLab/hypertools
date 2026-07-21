@@ -72,6 +72,21 @@ def test_non_bracket_install_flagged_missing(tmp_path):
     assert missing == ['bare.ipynb']
 
 
+def test_valid_plus_second_malformed_install_is_rejected(tmp_path):
+    # release review edge case: a good hypertools[...] install AND a second
+    # bare `pip install hypertools` in the same notebook must NOT pass -- EVERY
+    # install must be valid, so per-LINE inspection flags the malformed one.
+    p = _write(tmp_path, 'mixed.ipynb', _nb(_PYPI, '%pip install -q hypertools'))
+    missing, branch, stale = crn.classify_notebooks([p])
+    assert missing == ['mixed.ipynb'] and not branch and not stale
+
+
+def test_valid_plus_second_branch_install_is_rejected(tmp_path):
+    p = _write(tmp_path, 'mixed2.ipynb', _nb(_PYPI, _BRANCH))
+    missing, branch, stale = crn.classify_notebooks([p])
+    assert branch == ['mixed2.ipynb'] and not missing and not stale
+
+
 def test_mixed_set_each_lands_in_its_bucket(tmp_path):
     good = _write(tmp_path, 'good.ipynb', _nb(_PYPI))
     branch = _write(tmp_path, 'branch.ipynb', _nb(_BRANCH))
