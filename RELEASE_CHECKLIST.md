@@ -104,6 +104,17 @@ same artifacts you verify are the ones you publish.
       notes (from `CHANGELOG.md`).
 - [ ] `pip install hypertools` in a clean env → installs `1.0.0`; run the
       README quick-start snippet.
+- [ ] **Publish the gallery notebooks for Colab.** The gallery
+      "Open in Colab" badges point at
+      `blob/docs-notebooks/v1.0.0/auto_examples/<stem>.ipynb`; those generated
+      notebooks are gitignored, so publish them to the `docs-notebooks` branch:
+      build the gallery (`cd docs && make html`), then
+      `python scripts/publish_gallery_notebooks.py --ref v1.0.0 --notebooks-dir docs/auto_examples --push`
+      (the script creates the `docs-notebooks` orphan branch on first run —
+      one-time bootstrap). Verify the targets resolve:
+      `HYPERTOOLS_REQUIRE_RELEASE=1 pytest tests/test_release_readiness_gate.py::test_release_gate_gallery_colab_notebooks_are_published`.
+      (This can be automated with a `contents: write` `publish-gallery-notebooks`
+      CI job on master/tags — enable once you've decided the token handling.)
 - [ ] **Read the Docs**: trigger/confirm a build of the `v1.0.0` tag (and
       point the "stable"/default version at it). The released docs' Colab
       install cells must show `%pip install "hypertools[interactive]"`

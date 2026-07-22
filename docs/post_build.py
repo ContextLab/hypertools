@@ -167,8 +167,14 @@ def wrap_thumbnail_links():
         except Exception:
             branch = ''
     branch = branch or 'master'
+    # The generated gallery notebooks are gitignored (never committed to the
+    # main tree), so a Colab link into `blob/<branch>/docs/auto_examples/` 404s.
+    # They are instead PUBLISHED to the `docs-notebooks` branch under
+    # `<ref>/auto_examples/` by the `publish-gallery-notebooks` CI job (see
+    # scripts/publish_gallery_notebooks.py); point Colab there (release review,
+    # blocker 2).
     base = ('https://colab.research.google.com/github/ContextLab/'
-            f'hypertools/blob/{branch}/docs/auto_examples/')
+            f'hypertools/blob/docs-notebooks/{branch}/auto_examples/')
 
     def _wrap(match):
         img = match.group(0)
@@ -234,8 +240,11 @@ def inject_notebook_badges():
             html = f.read()
         if 'hypertools-colab-badge' in html:
             continue  # already injected (idempotent re-runs)
+        # published to the `docs-notebooks` branch (see the base-URL note in
+        # link_gallery_thumbnails and scripts/publish_gallery_notebooks.py)
         colab = ('https://colab.research.google.com/github/ContextLab/'
-                 f'hypertools/blob/{branch}/docs/auto_examples/{stem}.ipynb')
+                 f'hypertools/blob/docs-notebooks/{branch}/auto_examples/'
+                 f'{stem}.ipynb')
         # local download link: sphinx places the notebook under
         # _downloads/<hash>/<stem>.ipynb in the built site (there is no
         # sibling auto_examples/<stem>.ipynb in the output), so link the

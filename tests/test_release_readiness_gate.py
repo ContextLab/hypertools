@@ -148,3 +148,36 @@ def test_release_gate_readme_has_no_dev_branch_reference():
                  or re.search(r'hypertools\.git@dev', ln)]
     assert not offenders, (
         f'RELEASE GATE: README still references a dev branch: {offenders}')
+
+
+@pytest.mark.skipif(
+    not REQUIRE_RELEASE,
+    reason='release gate; set HYPERTOOLS_REQUIRE_RELEASE=1 (the release-gate '
+           'CI job does on master/tag builds)')
+def test_release_gate_gallery_colab_notebooks_are_published():
+    # blocker 2: the gallery "Open in Colab" badges point at
+    # github.com/.../blob/docs-notebooks/v<version>/auto_examples/<stem>.ipynb.
+    # Those must actually EXIST on the docs-notebooks branch (published by
+    # scripts/publish_gallery_notebooks.py) or the badges 404. Resolve a core
+    # set for this release version.
+    import urllib.request
+    version = _project_version()
+    base = ('https://raw.githubusercontent.com/ContextLab/hypertools/'
+            f'docs-notebooks/v{version}/auto_examples/')
+    missing = []
+    for stem in ('plot_basic', 'plot_clusters', 'plot_align'):
+        url = base + stem + '.ipynb'
+        try:
+            with urllib.request.urlopen(url, timeout=30) as r:
+                ok = (r.status == 200)
+        except Exception as e:                       # HTTPError(404) etc.
+            ok = False
+            code = getattr(e, 'code', e)
+        else:
+            code = 200
+        if not ok:
+            missing.append((stem, code))
+    assert not missing, (
+        f'RELEASE GATE: gallery notebooks not published to docs-notebooks for '
+        f'v{version} (run scripts/publish_gallery_notebooks.py --ref v{version} '
+        f'--push after building the docs): {missing}')

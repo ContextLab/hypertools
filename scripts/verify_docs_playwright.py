@@ -162,10 +162,12 @@ def verify_colab_badge(page) -> str:
     href = link.get_attribute("href")
     if not href or "colab.research.google.com" not in href:
         raise VerificationFailure(f"Colab badge link href looks wrong: {href!r}")
-    if BRANCH not in href:
+    # the generated notebooks live on the docs-notebooks branch (they are
+    # gitignored in the main tree), so the badge must point there under this ref
+    if "blob/docs-notebooks/" not in href or f"/{BRANCH}/" not in href:
         raise VerificationFailure(
-            f"Colab badge href is not branch-aware (expected {BRANCH!r} in URL): {href!r}"
-        )
+            "Colab badge must point at blob/docs-notebooks/"
+            f"{BRANCH}/auto_examples/...: {href!r}")
     return href
 
 
