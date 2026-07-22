@@ -56,10 +56,18 @@ The PyPI upload is irreversible, so it happens LAST — only after the exact
 release commit AND the tag have passed hosted CI (step 5/6). Build now so the
 same artifacts you verify are the ones you publish.
 
-- [ ] `python -m build` → `dist/hypertools-1.0.0.tar.gz` + `…-py3-none-any.whl`.
+- [ ] Record the build commit: `git rev-parse HEAD` (must equal the tagged
+      commit before you upload in step 6).
+- [ ] Build from a CLEAN dist: `rm -rf dist && python -m build` →
+      `dist/hypertools-1.0.0.tar.gz` + `…-py3-none-any.whl`.
 - [ ] `twine check dist/*` → PASSED.
-- [ ] sdist/wheel contain the bundled font + licenses: `tar tzf dist/*.tar.gz | grep -E 'NotoSans|OFL|CHANGELOG'`.
+- [ ] Artifacts bundle the fonts + all license materials (font OFL, Apache-2.0
+      license + third-party notices for the vendored brainiak/ppca, CHANGELOG):
+      `tar tzf dist/*.tar.gz | grep -E 'NotoSans|OFL|LICENSE-APACHE|THIRD_PARTY|CHANGELOG'`
+      (5+ hits) and the same on the wheel via `unzip -l dist/*.whl`.
 - [ ] Fresh-venv smoke: install the wheel in a throwaway venv, `import hypertools`, `hypertools.__version__ == '1.0.0'`.
+- [ ] Record artifact digests: `shasum -a 256 dist/*` (keep with the build
+      commit; verify these exact files are the ones uploaded in step 6).
 - [ ] Keep `dist/` — you upload these exact files in step 6.
 
 ## 4. Push `master` + wait for its CI
@@ -81,9 +89,19 @@ same artifacts you verify are the ones you publish.
 
 ## 6. Publish to PyPI (the already-verified artifacts) + smoke
 
-- [ ] `twine upload dist/*` — the exact files from step 3, built from the
-      now-CI-green commit. (The static notebooks briefly resolving the previous
-      PyPI release before this upload is harmless.)
+- [ ] Confirm the tag points at the recorded build commit:
+      `git rev-parse v1.0.0^{commit}` == the step-3 build commit, and
+      `shasum -a 256 dist/*` == the step-3 digests. Publish ONLY if both match.
+- [ ] Prefer **PyPI Trusted Publishing** (OIDC) via a protected GitHub
+      environment over a long-lived token. If uploading manually: use a
+      project-scoped API token, an account with 2FA, and reviewed owner/recovery
+      access.
+- [ ] Upload the EXACT files by name (not a `dist/*` glob, which could sweep a
+      stale artifact): `twine upload dist/hypertools-1.0.0.tar.gz dist/hypertools-1.0.0-py3-none-any.whl`.
+      (The static notebooks briefly resolving the previous PyPI release before
+      this upload is harmless.)
+- [ ] Create a **GitHub Release** for the `v1.0.0` tag with the 1.0 release
+      notes (from `CHANGELOG.md`).
 - [ ] `pip install hypertools` in a clean env → installs `1.0.0`; run the
       README quick-start snippet.
 - [ ] **Read the Docs**: trigger/confirm a build of the `v1.0.0` tag (and

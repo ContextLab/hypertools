@@ -24,6 +24,7 @@ import functools
 import http.server
 import io
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -54,7 +55,15 @@ def _current_branch() -> str:
     return branch or "master"
 
 
+def _is_release_ref(branch: str) -> bool:
+    """`master` OR a vX.Y.Z release tag -> the released (PyPI) install form.
+    Kept identical to docs/conf.py + scripts/add_colab_install_cell.py so a TAG
+    build (READTHEDOCS_GIT_IDENTIFIER=v1.0.0) is verified as release form."""
+    return branch == "master" or re.fullmatch(r"v\d+\.\d+\.\d+", branch or "") is not None
+
+
 BRANCH = _current_branch()
+IS_RELEASE = _is_release_ref(BRANCH)
 
 # Minimum standard deviation of pixel intensities (0-255 scale) for an
 # element screenshot to be considered "non-blank". A truly blank/white or
@@ -168,7 +177,7 @@ def verify_tutorial_branch_aware_install(page) -> str:
     if "pip install" not in content:
         raise VerificationFailure(
             "tutorial page has no 'pip install' cell")
-    if BRANCH == "master":
+    if IS_RELEASE:
         # released docs install the PyPI package, NOT a branch
         if "hypertools[" not in content:
             raise VerificationFailure(

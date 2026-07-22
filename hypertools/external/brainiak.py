@@ -1,4 +1,9 @@
 # Vendored from https://github.com/brainiak/brainiak (Apache-2.0). See header below.
+# MODIFIED for HyperTools by the Contextual Dynamics Lab: the Shared Response
+# Model implementation was extracted from brainiak and adapted as a standalone
+# vendored module (removing the brainiak package dependency). A full copy of the
+# Apache License 2.0 ships alongside this file as LICENSE-APACHE-2.0.txt; see
+# THIRD_PARTY_NOTICES.md for provenance.
 #!/usr/bin/env python
 # coding: latin-1
 

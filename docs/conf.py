@@ -43,9 +43,12 @@ sys.path.insert(0, os.path.abspath('../'))
 def _install_notebook_cell():
     """First cell for every gallery notebook: install hypertools so the
     notebook runs standalone in Colab. Branch-aware -- installs the current
-    branch from GitHub for previews (e.g. dev-1.0), or the released package
-    on master. Kept in sync with scripts/add_colab_install_cell.py, which
-    injects the same line into the hand-authored tutorial notebooks."""
+    branch from GitHub for previews (e.g. dev-1.0), or the released package on
+    master AND on a release TAG (a Read the Docs tag build sets
+    READTHEDOCS_GIT_IDENTIFIER=v1.0.0, which must install from PyPI, not
+    @v1.0.0 from GitHub). Kept in sync with scripts/add_colab_install_cell.py,
+    which injects the same line into the hand-authored tutorial notebooks."""
+    import re
     import subprocess
     branch = os.environ.get('READTHEDOCS_GIT_IDENTIFIER', '')
     if not branch:
@@ -58,7 +61,9 @@ def _install_notebook_cell():
         except Exception:
             branch = ''
     branch = branch or 'master'
-    if branch == 'master':
+    # master or a vX.Y.Z release tag -> the released package; anything else
+    # (dev-1.0, feature branches) -> that branch from GitHub as a preview.
+    if branch == 'master' or re.fullmatch(r'v\d+\.\d+\.\d+', branch):
         pip = '%pip install -q "hypertools[interactive]"'
         note = '# Install hypertools (run this first on Colab)'
     else:

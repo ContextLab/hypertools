@@ -1,5 +1,9 @@
 # Vendored from the pca-magic project:
 #   https://github.com/allentran/pca-magic
+# MODIFIED for HyperTools by the Contextual Dynamics Lab: vendored and adapted
+# as a standalone module (replacing the unmaintained pca-magic dependency). A
+# full copy of the Apache License 2.0 ships alongside this file as
+# LICENSE-APACHE-2.0.txt; see THIRD_PARTY_NOTICES.md for provenance.
 #
 #  Copyright 2015 Allen Tran
 #

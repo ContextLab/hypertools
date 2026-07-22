@@ -4,7 +4,7 @@ Colab.
 
 The install line is branch-aware:
 
-* on ``master`` it installs the RELEASED package
+* on ``master`` OR a ``vX.Y.Z`` release tag it installs the RELEASED package
   (``%pip install -q "hypertools[interactive]"``);
 * on any other branch it installs THAT branch from GitHub, so the dev-1.0
   preview notebooks install the matching dev build rather than the older
@@ -80,15 +80,23 @@ def current_branch():
     return branch or 'master'
 
 
+def _is_release_ref(branch):
+    """True if `branch` is the release form -- `master` OR a vX.Y.Z release tag.
+    A Read the Docs / CI TAG build reports `v1.0.0`, which must install the
+    released package from PyPI, not `@v1.0.0` from GitHub (release review).
+    Kept identical to docs/conf.py and scripts/verify_docs_playwright.py."""
+    return branch == 'master' or re.fullmatch(r'v\d+\.\d+\.\d+', branch or '')
+
+
 def hyp_spec(extras, branch):
     """The canonical install spec for `hypertools[<extras>]` on `branch`."""
-    if branch == 'master':
+    if _is_release_ref(branch):
         return f'hypertools[{extras}]'
     return f'hypertools[{extras}] @ {_GIT_URL}@{branch}'
 
 
 def install_lines(branch):
-    if branch == 'master':
+    if _is_release_ref(branch):
         pip = '%pip install -q "hypertools[interactive]"'
         note = '# Install hypertools (run this first on Colab)'
     else:
@@ -108,7 +116,7 @@ def retarget_text(text, branch):
     """
     new = _BRANCH_SPEC_RE.sub(
         lambda m: hyp_spec(m.group(1), branch), text)
-    if branch == 'master':
+    if _is_release_ref(branch):
         # drop the whole "(<x> preview) ... On release this becomes ..." note so
         # the released notebooks don't ship saying "preview"
         new = _STD_PREVIEW_NOTE_RE.sub(_MASTER_NOTE, new)

@@ -192,17 +192,22 @@ def test_load_huggingface_dataset():
 
 def test_load_huggingface_streaming_flows_to_plot():
     pytest.importorskip('datasets')
+    # wrap ONLY the network-touching calls (the stream open + the plot that
+    # pulls chunks over the wire), so a genuine regression in the non-network
+    # assertions can't be masked just because its message happens to contain a
+    # word like "timeout" (release review hardening).
     with _skip_on_transient_network('streaming scikit-learn/iris'):
         ds = hyp.load('scikit-learn/iris', streaming=True)
-        from hypertools.io.streaming import is_stream
-        assert is_stream(ds)
-        ds = ds.select_columns(['SepalLengthCm', 'SepalWidthCm',
-                                'PetalLengthCm', 'PetalWidthCm'])
-        # iris' later rows fall outside the display box fitted on the first 50,
-        # provoking the clamped-samples notice
+    from hypertools.io.streaming import is_stream
+    assert is_stream(ds)
+    ds = ds.select_columns(['SepalLengthCm', 'SepalWidthCm',
+                            'PetalLengthCm', 'PetalWidthCm'])
+    # iris' later rows fall outside the display box fitted on the first 50,
+    # provoking the clamped-samples notice
+    with _skip_on_transient_network('reading the scikit-learn/iris stream'):
         with pytest.warns(RuntimeWarning, match='outside the display box'):
             fig = hyp.plot(ds, '.', show=False, stream_init=50, stream_chunk=50)
-        assert fig.stream_info['n_samples'] == 150
+    assert fig.stream_info['n_samples'] == 150
     plt.close('all')
 
 

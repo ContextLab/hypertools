@@ -72,6 +72,31 @@ def test_sdist_ships_config_ini(built_artifacts):
     assert any(n.endswith('hypertools/core/config.ini') for n in names)
 
 
+def test_apache_license_and_third_party_notices_ship(built_artifacts):
+    # vendored brainiak.py + ppca.py are Apache-2.0 and MODIFIED, so
+    # redistribution must bundle a full Apache-2.0 license text + third-party
+    # notices in BOTH artifacts (2026-07 release review, licensing blocker).
+    wheel, sdist, _ = built_artifacts
+    required = (
+        'hypertools/external/LICENSE-APACHE-2.0.txt',
+        'hypertools/external/THIRD_PARTY_NOTICES.md',
+    )
+    wnames = zipfile.ZipFile(wheel).namelist()
+    snames = tarfile.open(sdist).getnames()
+    for r in required:
+        assert r in wnames, f'{r} missing from wheel'
+        assert any(n.endswith(r) for n in snames), f'{r} missing from sdist'
+    apache = zipfile.ZipFile(wheel).read(
+        'hypertools/external/LICENSE-APACHE-2.0.txt').decode('utf-8')
+    assert ('Apache License' in apache
+            and 'Version 2.0, January 2004' in apache
+            and 'END OF TERMS AND CONDITIONS' in apache), \
+        'bundled file is not the full Apache 2.0 license text'
+    notices = zipfile.ZipFile(wheel).read(
+        'hypertools/external/THIRD_PARTY_NOTICES.md').decode('utf-8').lower()
+    assert 'brainiak' in notices and 'pca-magic' in notices
+
+
 def test_no_stray_venv_content_in_wheel(built_artifacts):
     wheel, _, _ = built_artifacts
     names = zipfile.ZipFile(wheel).namelist()

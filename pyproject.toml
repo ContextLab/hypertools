@@ -210,8 +210,13 @@ namespaces = false
 # vendored Noto Sans (SIL OFL 1.1) -- the bundled default sans-serif face, so
 # plots render identically on every platform instead of falling back to
 # whatever the machine happens to have installed. Ship the license and
-# provenance README alongside the font, as the OFL requires.
-"hypertools.external" = ["fonts/*.ttf", "fonts/OFL.txt", "fonts/README.md"]
+# provenance README alongside the font, as the OFL requires. Also ship the
+# Apache-2.0 license text + third-party notices for the vendored Apache-2.0
+# code (brainiak.py, ppca.py), as Apache 2.0 requires on redistribution.
+"hypertools.external" = [
+    "fonts/*.ttf", "fonts/OFL.txt", "fonts/README.md",
+    "LICENSE-APACHE-2.0.txt", "THIRD_PARTY_NOTICES.md",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

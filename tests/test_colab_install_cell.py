@@ -140,7 +140,17 @@ def _conf_install_cell(branch, monkeypatch):
     return ns['_install_notebook_cell']()
 
 
-@pytest.mark.parametrize('branch', ['master', 'dev-1.0'])
+def test_is_release_ref_master_and_version_tags_only():
+    # release review: a vX.Y.Z tag build must be RELEASE form (PyPI), not a
+    # `@v1.0.0`-from-GitHub preview; dev branches stay preview.
+    for ref in ('master', 'v1.0.0', 'v0.8.2', 'v10.20.30'):
+        assert acic._is_release_ref(ref), ref
+    for ref in ('dev-1.0', 'dev-1.0-refactor', 'HEAD', 'feature/x', '',
+                'v1.0', 'v1.0.0rc1', '1.0.0'):
+        assert not acic._is_release_ref(ref), ref
+
+
+@pytest.mark.parametrize('branch', ['master', 'dev-1.0', 'v1.0.0'])
 def test_conf_py_gallery_generator_matches_the_script(branch, monkeypatch):
     # docs/conf.py generates the gallery notebooks' install cell; the script
     # does the same for the hand-authored tutorials. They are "kept in sync" by

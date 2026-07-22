@@ -15,6 +15,13 @@ on:
     # was missing here). Fork PRs in particular only run via pull_request.
     branches: [ master, dev, dev-1.0 ]
 
+# Least privilege: this workflow only reads the repo (it runs tests + builds
+# docs, and passes GITHUB_TOKEN to repo-controlled code for dataset API quota).
+# Pin the token to read-only so it does not inherit the repo default (2026-07
+# release review hardening).
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
