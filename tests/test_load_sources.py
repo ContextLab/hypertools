@@ -47,9 +47,23 @@ _TRANSIENT_NETWORK = (
     'connectionerror', 'connection error', 'connection reset',
     'connection aborted', 'remotedisconnected', 'incompleteread',
     'max retries', 'service unavailable', 'temporarily unavailable',
-    ' 503', ' 502', ' 504', 'name resolution', 'temporary failure',
+    ' 503', ' 502', ' 504', 'temporary failure',
     'network is unreachable', 'failed to establish',
+    # DNS-resolution failures. urllib3 raises NameResolutionError whose message
+    # is "Failed to resolve '<host>'"; hyp.load() wraps it into its diagnostic.
+    # Keep the CamelCase-lowered class name AND the message text (neither
+    # contains the spaced "name resolution"/"failed to establish" above).
+    'name resolution', 'nameresolutionerror', 'failed to resolve',
+    'getaddrinfo',
 )
+
+
+def _is_transient_network(text):
+    """True if `text` reads like a TRANSIENT network error (timeout, dropped
+    connection, 5xx, DNS-resolution failure) rather than a real defect. Pure
+    predicate so it can be unit-tested without the skip machinery."""
+    text = text.lower()
+    return any(marker in text for marker in _TRANSIENT_NETWORK)
 
 
 @contextlib.contextmanager
@@ -57,9 +71,40 @@ def _skip_on_transient_network(what):
     try:
         yield
     except Exception as e:            # re-raised below unless it is transient
-        if any(m in str(e).lower() for m in _TRANSIENT_NETWORK):
+        if _is_transient_network(str(e)):
             pytest.skip(f'transient network error {what}: {e}')
         raise
+
+
+def test_is_transient_network_recognizes_wrapped_load_errors():
+    # hyp.load() wraps the underlying network error into its own diagnostic, so
+    # the classifier must recognize it from that wrapped message -- including a
+    # DNS failure (urllib3 NameResolutionError -> "Failed to resolve ...").
+    dns = HypertoolsIOError(
+        "could not load 'scikit-learn/iris'. Tried, in order:\n"
+        "  - Hugging Face dataset: NameResolutionError: Failed to resolve "
+        "'huggingface.co' ([Errno -3] Temporary failure in name resolution)")
+    timeout = HypertoolsIOError(
+        "could not load 'scikit-learn/iris'. Tried, in order:\n"
+        "  - Hugging Face dataset: ReadTimeout: The read operation timed out")
+    unavailable = HypertoolsIOError('503 Server Error: Service Unavailable')
+    for exc in (dns, timeout, unavailable):
+        assert _is_transient_network(str(exc)), str(exc)
+    # a genuine failure is NOT transient and must still surface
+    assert not _is_transient_network("AssertionError: shape (150,) != (149,)")
+    assert not _is_transient_network("KeyError: 'SepalLengthCm'")
+
+
+def test_skip_on_transient_network_skips_dns_but_reraises_real():
+    dns = HypertoolsIOError("NameResolutionError: Failed to resolve 'huggingface.co'")
+    with pytest.raises(BaseException) as excinfo:      # pytest.skip -> Skipped
+        with _skip_on_transient_network('loading x'):
+            raise dns
+    assert excinfo.type.__name__ == 'Skipped'
+    # a real error propagates unchanged (not skipped)
+    with pytest.raises(ValueError, match='genuine bug'):
+        with _skip_on_transient_network('loading x'):
+            raise ValueError('genuine bug')
 
 
 @pytest.fixture
