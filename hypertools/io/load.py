@@ -384,6 +384,10 @@ def load(
         (``.csv``/``.npz`` numeric/``.parquet``) never require ``trust``.
         Built-in example datasets (listed below) are downloaded from a
         fixed, integrity-checked set of hosts and do not require this flag.
+        Note that ``trust`` governs REMOTE sources; a **local file path** is
+        treated as trusted and unpickled without it (matching ``numpy.load`` /
+        ``pandas.read_pickle``), so only ``hyp.load()`` a local pickle you
+        created or trust.
         Local files are never subject to this policy.
 
     Returns

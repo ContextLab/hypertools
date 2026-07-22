@@ -16,7 +16,13 @@ authors = [
     { name = "Contextual Dynamics Lab", email = "contextualdynamics@gmail.com" },
 ]
 requires-python = ">=3.10"
+keywords = [
+    "visualization", "dimensionality reduction", "high-dimensional data",
+    "machine learning", "data science", "clustering", "alignment",
+    "hyperalignment", "PCA", "UMAP", "time series", "plotting",
+]
 classifiers = [
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -34,18 +40,27 @@ classifiers = [
     "Operating System :: Microsoft :: Windows",
 ]
 dependencies = [
-    "scikit-learn>=1.4.0",
-    # pandas 3.0+ supported as of datawrangler 0.5.0 (data-wrangler#30/#31 fixed the
-    # pandas-3 type detection). The <3 ceiling has been lifted; CI exercises pandas 3.x.
-    "pandas>=2.2.0",
+    # NOTE (2026-07 red-team): these floors must be co-installable with the
+    # numpy>=2.0 floor below. matplotlib<3.9, pandas<2.2.2, numba<0.60 and
+    # scikit-learn<1.4.2 each require/only-support numpy<2, so a floor-pinned
+    # resolver (`uv --resolution lowest`, a minimum-pinned lockfile) would hit
+    # ResolutionImpossible. Default (newest-first) installs are unaffected.
+    "scikit-learn>=1.4.2",   # 1.4.2 is the first with numpy-2 runtime support
+    # pandas 3.0+ supported as of datawrangler 0.5.0 (data-wrangler#30/#31 fixed
+    # the pandas-3 type detection); the <3 ceiling is lifted (CI exercises
+    # pandas 3.x). 2.2.2 is the first pandas that supports numpy 2 (2.2.0/.1
+    # require numpy<2).
+    "pandas>=2.2.2",
     "seaborn>=0.13.0",
-    "matplotlib>=3.8.0",
+    "matplotlib>=3.9.0",     # 3.8.x requires numpy<2; 3.9.0 supports numpy 2
     "scipy>=1.13.0",
     "numpy>=2.0.0",
     "umap-learn>=0.5.5",
     # umap-learn's own numba floor (>=0.51) lets uv resolve unbuildable
-    # numba 0.53/llvmlite 0.36 on py3.12+ (audit X5-003); pin a real floor
-    "numba>=0.59",
+    # numba 0.53/llvmlite 0.36 on py3.12+ (audit X5-003); pin a real floor.
+    # numba<0.60 requires numpy<1.27; 0.61.0 is the first supporting py3.10-3.13
+    # with numpy 2 (matches requires-python>=3.10 + the 3.13 CI cell).
+    "numba>=0.61.0",
     "requests>=2.31.0",
     "dill>=0.3.8",
     "ipympl>=0.9.3",
@@ -175,6 +190,8 @@ dev = [
 Homepage = "https://github.com/ContextLab/hypertools"
 Documentation = "https://hypertools.readthedocs.io"
 Repository = "https://github.com/ContextLab/hypertools"
+Changelog = "https://github.com/ContextLab/hypertools/blob/master/CHANGELOG.md"
+Issues = "https://github.com/ContextLab/hypertools/issues"
 
 # NOTE (2026-07 audit X5-packaging-001): the include pattern must be
 # ["hypertools", "hypertools.*"] with namespaces disabled -- the previous

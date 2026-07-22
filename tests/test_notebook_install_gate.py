@@ -32,8 +32,15 @@ pytestmark = pytest.mark.skipif(
     not os.path.isdir(_TUT_DIR),
     reason='requires a source checkout (docs/tutorials/ absent in wheel/sdist)')
 
-# a %pip/!pip install line that mentions hypertools
-_PIP_HYP_RE = re.compile(r'(?:%|!)?\s*pip install\b.*hypertools', re.IGNORECASE)
+# a line that actually EXECUTES a package install (shell/magic prefix or a bare
+# tool token at line start), so it matches %pip/!pip/!pip3/pipx/pip<TAB>install/
+# uv pip/conda but NOT a comment or a documentation string like
+# `print("pip install git+...")`. Keyed on the literal `pip install` before, it
+# both missed `!pip3 install ...@branch` and false-flagged such print strings
+# (release review). Kept identical to scripts/check_release_notebooks.py.
+_INSTALL_LINE_RE = re.compile(
+    r'^[%!]?\s*(?:pip[0-9]*|pipx|uv\s+pip|conda|mamba|python[0-9.]*\s+-m\s+pip)'
+    r'\s+install\b', re.IGNORECASE)
 # a hypertools GitHub-branch install spec, capturing the branch
 _HYP_BRANCH_RE = re.compile(
     r'hypertools\[[^\]]*\]\s*@\s*'
@@ -85,7 +92,7 @@ def _hyp_install_lines(path):
         if cell.get('cell_type') != 'code':
             continue
         for line in ''.join(cell.get('source', [])).splitlines():
-            if _PIP_HYP_RE.search(line):
+            if 'hypertools' in line and _INSTALL_LINE_RE.match(line.lstrip()):
                 lines.append(line)
     return lines
 

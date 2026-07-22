@@ -54,13 +54,15 @@ _BRANCH_SPEC_RE = re.compile(
     + re.escape(_GIT_URL) + r'@[\w./\-]+')
 
 # The `(<branch> preview)` token inside the "# Install hypertools (...)" note.
-_PREVIEW_NOTE_RE = re.compile(r'\(([\w.\-]+) preview\)')
+# The branch token allows `/` to match `_BRANCH_SPEC_RE` (e.g. `feature/x`), so
+# the note is retargeted in lock-step with the install line (release review).
+_PREVIEW_NOTE_RE = re.compile(r'\(([\w./\-]+) preview\)')
 
 # The standard two-line preview note, collapsed to the clean master note when
 # migrating to the release (else the flipped notebooks keep saying "preview" /
 # "On release this becomes ..." -- release review, sweep GAP #1).
 _STD_PREVIEW_NOTE_RE = re.compile(
-    r'# Install hypertools \([\w.\-]+ preview\) -- run this first on Colab\.\n'
+    r'# Install hypertools \([\w./\-]+ preview\) -- run this first on Colab\.\n'
     r'# On release this becomes: [^\n]*(?:\n|$)')
 _MASTER_NOTE = '# Install hypertools (run this first on Colab)\n'
 

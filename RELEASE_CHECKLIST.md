@@ -34,8 +34,11 @@ detached tag checkout — the notebook migrator detects the branch via
       `master`/tag build (the migrator only retargets any on-disk copy, and the
       `docs-clean` CI job release-gates the generated gallery).
 - [ ] **README images: commit SHA → `v1.0.0` tag (8 URLs).**
-      `sed -i '' 's#/ContextLab/hypertools/fc2429cb550de10611031ae34d3c723267daeea4/#/ContextLab/hypertools/v1.0.0/#g' readme.md`
-      (drop the `''` after `-i` on GNU sed). Verify: `grep -c 'fc2429cb' readme.md` → 0.
+      `sed -E -i '' 's#(/ContextLab/hypertools/)[^/]+(/images/)#\1v1.0.0\2#g' readme.md`
+      (drop the `''` after `-i` on GNU sed). This retargets WHATEVER ref is
+      pinned (robust to the SHA having drifted), not just `fc2429cb`. Verify the
+      POSITIVE: `grep -c '/ContextLab/hypertools/v1.0.0/images/' readme.md` → 8
+      and `grep -Ec '/ContextLab/hypertools/[0-9a-f]{7,40}/images/' readme.md` → 0.
 - [ ] **CHANGELOG date.** Edit `CHANGELOG.md`: `## 1.0.0 (unreleased)` →
       `## 1.0.0 (YYYY-MM-DD)` with the real release date.
 - [ ] (Optional prose) `docs/tutorials/stock_forecasting.ipynb` has a

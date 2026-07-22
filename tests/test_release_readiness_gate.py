@@ -42,7 +42,10 @@ REQUIRE_RELEASE = os.environ.get('HYPERTOOLS_REQUIRE_RELEASE') == '1'
 _OUR_IMG_RE = re.compile(
     r'raw\.githubusercontent\.com/ContextLab/hypertools/([^/]+)/(images/[^\s")]+)')
 _SHA40_RE = re.compile(r'^[0-9a-f]{40}$')
-_CHANGELOG_HEADING_RE = re.compile(r'^##\s*(\d+\.\d+\.\d+)\s*\(([^)]*)\)', re.M)
+# capture a PEP440-ish version (accepts pre/post-releases like 1.0.0rc1) so an
+# rc/beta cut is compared against pyproject rather than hard-failing the regex.
+_CHANGELOG_HEADING_RE = re.compile(
+    r'^##\s*(\d+\.\d+\.\d+[\w.+!-]*)\s*\(([^)]*)\)', re.M)
 
 
 def _project_version():
@@ -119,14 +122,19 @@ def test_release_gate_changelog_is_dated_not_unreleased():
         f'RELEASE GATE: CHANGELOG top version {m.group(1)!r} != pyproject '
         f'version {_project_version()!r}')
     date = m.group(2).strip()
-    # a REAL calendar date -- fromisoformat rejects e.g. 2026-99-99, which a
-    # \d{4}-\d{2}-\d{2} regex would accept.
+    # require the canonical YYYY-MM-DD form AND a real calendar date: the regex
+    # rejects fromisoformat-accepted-but-non-canonical values (20260721,
+    # 2026-07-21T00:00, 2026-7-21), and fromisoformat rejects impossible dates
+    # (2026-99-99, 2026-02-30) the regex alone would accept.
+    canonical = re.fullmatch(r'\d{4}-\d{2}-\d{2}', date) is not None
+    real = True
     try:
         datetime.date.fromisoformat(date)
     except ValueError:
-        raise AssertionError(
-            'RELEASE GATE: the top CHANGELOG heading must carry a real release '
-            f'date (YYYY-MM-DD), not {date!r} (see RELEASE_CHECKLIST.md).')
+        real = False
+    assert canonical and real, (
+        'RELEASE GATE: the top CHANGELOG heading must carry a real release '
+        f'date in YYYY-MM-DD form, not {date!r} (see RELEASE_CHECKLIST.md).')
 
 
 @pytest.mark.skipif(

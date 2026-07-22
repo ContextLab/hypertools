@@ -198,7 +198,9 @@ I/O
 Exceptions
 ------------------
 
-All hypertools-raised errors derive from `hypertools.HypertoolsError`:
+HyperTools' I/O, backend, and remote-load/trust errors derive from
+`hypertools.HypertoolsError`. Input-validation errors (invalid parameters or
+data shapes) raise standard `ValueError`/`TypeError` with actionable messages.
 
 .. autosummary::
   :toctree:

@@ -21,6 +21,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import re
 import sys
 
 
@@ -30,19 +31,27 @@ def _code_cell_texts(nb):
             yield ''.join(cell.get('source', []))
 
 
+# A line that actually EXECUTES a package install. Anchored to the start of the
+# (stripped) line at a shell/magic prefix or a bare tool token, so it matches
+# `%pip`/`!pip`/`!pip3`/`pipx`/`pip<TAB>install`/`uv pip`/`conda`/... but NOT a
+# comment (`# ... pip install`) or a documentation STRING (`print("pip install
+# git+...")`), which lack that prefix. Keyed on the literal `pip install` before,
+# it both MISSED `!pip3 install ...@branch` (a live dev install slipping through)
+# and FLAGGED `print("pip install git+...")` (a false positive). Release review.
+_INSTALL_LINE_RE = re.compile(
+    r'^[%!]?\s*(?:pip[0-9]*|pipx|uv\s+pip|conda|mamba|python[0-9.]*\s+-m\s+pip)'
+    r'\s+install\b', re.IGNORECASE)
+
+
 def _hyp_install_lines(nb):
-    """Every code-cell LINE that pip-installs hypertools, paired with the full
-    text of the cell it lives in (for the preview-note check). Working per-LINE
-    (not per-cell) is what lets a SECOND malformed install alongside a valid one
-    be rejected."""
+    """Every code-cell LINE that installs hypertools, paired with the full text
+    of the cell it lives in (for the preview-note check). Working per-LINE (not
+    per-cell) is what lets a SECOND malformed install alongside a valid one be
+    rejected."""
     out = []
     for text in _code_cell_texts(nb):
         for line in text.splitlines():
-            # skip comment lines -- e.g. the "# On release this becomes:
-            # %pip install hypertools" note is prose, not an executed install
-            if line.lstrip().startswith('#'):
-                continue
-            if 'pip install' in line and 'hypertools' in line:
+            if 'hypertools' in line and _INSTALL_LINE_RE.match(line.lstrip()):
                 out.append((line, text))
     return out
 

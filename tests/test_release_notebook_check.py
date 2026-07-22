@@ -96,6 +96,37 @@ def test_mixed_set_each_lands_in_its_bucket(tmp_path):
     assert m == ['none.ipynb'] and b == ['branch.ipynb'] and s == ['prev.ipynb']
 
 
+def test_alternate_install_spellings_are_detected(tmp_path):
+    # release review, HIGH bypass: non-`pip install` spellings must NOT evade the
+    # check. A branch install written as !pip3 / pipx / pip<TAB> is still a
+    # branch install.
+    for i, cmd in enumerate((
+            '!pip3 install -q "hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@dev-1.0"',
+            '!pipx install "hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@dev-1.0"',
+            '%pip\tinstall -q "hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@dev-1.0"')):
+        p = _write(tmp_path, f'alt{i}.ipynb', _nb(cmd))
+        missing, branch, stale = crn.classify_notebooks([p])
+        assert branch == [f'alt{i}.ipynb'], (cmd, missing, branch, stale)
+
+
+def test_documentation_string_is_not_a_false_positive(tmp_path):
+    # release review, MEDIUM false-positive: a code cell that merely DOCUMENTS a
+    # source install inside a string must not be mistaken for an executed install
+    # and block an otherwise-valid release.
+    nb = _nb(
+        _PYPI,
+        'print("to try the dev build: '
+        'pip install git+https://github.com/ContextLab/hypertools.git@main")')
+    p = _write(tmp_path, 'doc.ipynb', nb)
+    assert crn.classify_notebooks([p]) == ([], [], [])
+
+
+def test_comment_install_line_is_not_detected(tmp_path):
+    nb = _nb('# to install: %pip install "hypertools[interactive]"\n' + _PYPI)
+    p = _write(tmp_path, 'cmt.ipynb', nb)
+    assert crn.classify_notebooks([p]) == ([], [], [])
+
+
 def test_main_ok_and_min_count(tmp_path):
     _write(tmp_path, 'good.ipynb', _nb(_PYPI))
     assert crn.main([str(tmp_path)]) == 0

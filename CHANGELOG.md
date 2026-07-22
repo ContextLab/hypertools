@@ -71,6 +71,13 @@ set are new.
 - Plotting no longer mutates global matplotlib settings; the unreliable
   result cache was removed; HDBSCAN comes from scikit-learn instead of the
   external `hdbscan` package.
+- **Categorical / cluster lines no longer bridge separate datasets (GH #291):**
+  in a line plot colored by a per-point `hue=`/`cluster=` label, each
+  contiguous run is drawn as its own segment. A line no longer connects the
+  last point of one dataset (or category run) to the first point of the next,
+  and recurring categories (e.g. `A A B B A A`) keep their run order instead
+  of collapsing into one line per category. Per-dataset styles (`fmt=`,
+  `linewidth=`, `marker=`, ...) propagate across the resulting segments.
 - **Typography:** plots now render in a bundled sans-serif (Noto Sans, SIL
   OFL 1.1, vendored in `hypertools/external/fonts`). The **matplotlib**
   backend is handed the font FILE, so it renders in Noto Sans identically on
