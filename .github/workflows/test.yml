@@ -368,6 +368,11 @@ jobs:
     - name: Require all release-facing references to be in RELEASE form
       env:
         HYPERTOOLS_REQUIRE_RELEASE: '1'
+        # the gallery gate reads the docs-notebooks branch tree via the GitHub
+        # API; authenticate it (5000/hr vs the 60/hr unauthenticated limit) so
+        # the gate can't throttle-fail intermittently. Read-only per the
+        # top-level `permissions: contents: read`.
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         # any surviving dev-form reference fails the job; -s prints the
         # offenders. RELEASE_CHECKLIST.md documents how to make each green.
