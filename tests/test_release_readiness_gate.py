@@ -66,6 +66,40 @@ def _our_image_refs():
     return _OUR_IMG_RE.findall(_readme())
 
 
+# the generated gallery has ~53 notebooks; a floor (not the exact count, which
+# drifts as examples are added/removed) catches a truncated/partial publish
+# (e.g. 3 of 53) while tolerating normal gallery evolution.
+_GALLERY_MIN = 40
+
+
+def _manifest_is_complete(manifest, version, min_count=_GALLERY_MIN):
+    """(ok, reason) for the published docs-notebooks/v{version}/manifest.json.
+
+    Verifies the manifest describes the release version's COMPLETE,
+    self-consistent gallery inventory in one shot (so the gate need not probe
+    each notebook): right ref, internally consistent count, a non-truncated
+    set, and the core examples present. Pure/unit-testable (no network)."""
+    if not isinstance(manifest, dict):
+        return False, f'manifest is not an object: {type(manifest).__name__}'
+    want_ref = 'v' + version
+    if manifest.get('ref') != want_ref:
+        return False, f"manifest ref {manifest.get('ref')!r} != {want_ref!r}"
+    nbs = manifest.get('notebooks')
+    if not isinstance(nbs, list):
+        return False, 'manifest has no notebooks list'
+    if manifest.get('count') != len(nbs):
+        return False, (f"manifest count {manifest.get('count')!r} != "
+                       f'len(notebooks) {len(nbs)}')
+    if len(nbs) < min_count:
+        return False, (f'manifest lists only {len(nbs)} notebooks (< '
+                       f'{min_count}) -- a partial/truncated publish?')
+    missing_core = sorted({'plot_basic', 'plot_clusters', 'plot_align'}
+                          - set(nbs))
+    if missing_core:
+        return False, f'manifest missing core gallery notebooks: {missing_core}'
+    return True, 'ok'
+
+
 # --------------------------------------------------------------- always on
 
 def test_readme_has_our_repo_images():
@@ -90,6 +124,28 @@ def test_changelog_top_version_matches_pyproject():
     assert m.group(1) == _project_version(), (
         f'CHANGELOG top version {m.group(1)!r} != pyproject version '
         f'{_project_version()!r}')
+
+
+def test_manifest_is_complete_validator():
+    """The pure gallery-manifest validator the release gate relies on."""
+    good = {'ref': 'v1.0.0', 'count': 40,
+            'notebooks': ['plot_basic', 'plot_clusters', 'plot_align']
+                         + [f'ex_{i}' for i in range(37)]}
+    assert _manifest_is_complete(good, '1.0.0') == (True, 'ok')
+    # wrong ref (published under a different version's namespace)
+    assert not _manifest_is_complete({**good, 'ref': 'v0.9.0'}, '1.0.0')[0]
+    # count disagrees with the actual list (partial/hand-edited)
+    assert not _manifest_is_complete({**good, 'count': 99}, '1.0.0')[0]
+    # truncated publish -- only the 3 core notebooks
+    truncated = {'ref': 'v1.0.0', 'count': 3,
+                 'notebooks': ['plot_basic', 'plot_clusters', 'plot_align']}
+    assert not _manifest_is_complete(truncated, '1.0.0')[0]
+    # complete count but a core example missing
+    no_core = {'ref': 'v1.0.0', 'count': 40,
+               'notebooks': [f'ex_{i}' for i in range(40)]}
+    assert not _manifest_is_complete(no_core, '1.0.0')[0]
+    # not even an object
+    assert not _manifest_is_complete(['nope'], '1.0.0')[0]
 
 
 # --------------------------------------------------------------- release gate
@@ -155,29 +211,46 @@ def test_release_gate_readme_has_no_dev_branch_reference():
     reason='release gate; set HYPERTOOLS_REQUIRE_RELEASE=1 (the release-gate '
            'CI job does on master/tag builds)')
 def test_release_gate_gallery_colab_notebooks_are_published():
-    # blocker 2: the gallery "Open in Colab" badges point at
-    # github.com/.../blob/docs-notebooks/v<version>/auto_examples/<stem>.ipynb.
-    # Those must actually EXIST on the docs-notebooks branch (published by
-    # scripts/publish_gallery_notebooks.py) or the badges 404. Resolve a core
-    # set for this release version.
+    # blocker 2 + review Med #1: the gallery "Open in Colab" badges point at
+    # github.com/.../blob/docs-notebooks/v<version>/auto_examples/<stem>.ipynb
+    # (master 'latest' AND the v<version> tag 'stable' docs both resolve to
+    # this one namespace -- see docs/post_build.py _publish_ref). Verify the
+    # WHOLE published set from a single manifest fetch (not one probe per
+    # notebook), then spot-check that a sample of the listed notebooks resolve.
+    import json
     import urllib.request
     version = _project_version()
     base = ('https://raw.githubusercontent.com/ContextLab/hypertools/'
-            f'docs-notebooks/v{version}/auto_examples/')
+            f'docs-notebooks/v{version}/')
+
+    # 1) fetch the single manifest published alongside the notebooks
+    try:
+        with urllib.request.urlopen(base + 'manifest.json', timeout=30) as r:
+            manifest = json.loads(r.read().decode('utf-8'))
+    except Exception as e:                            # HTTPError(404) etc.
+        pytest.fail(
+            f'RELEASE GATE: no gallery manifest at docs-notebooks/v{version}/'
+            f'manifest.json ({getattr(e, "code", e)}). Run '
+            f'scripts/publish_gallery_notebooks.py --ref v{version} --push '
+            'after building the docs.')
+
+    # 2) the manifest must describe the complete, self-consistent inventory
+    ok, reason = _manifest_is_complete(manifest, version)
+    assert ok, f'RELEASE GATE: gallery manifest for v{version} invalid: {reason}'
+
+    # 3) spot-check that a sample of the listed notebooks actually resolve
+    #    (a manifest can't vouch for files that were never pushed)
+    nbs = manifest['notebooks']
+    sample = sorted({nbs[0], nbs[len(nbs) // 2], nbs[-1]})
     missing = []
-    for stem in ('plot_basic', 'plot_clusters', 'plot_align'):
-        url = base + stem + '.ipynb'
+    for stem in sample:
+        url = base + 'auto_examples/' + stem + '.ipynb'
         try:
             with urllib.request.urlopen(url, timeout=30) as r:
-                ok = (r.status == 200)
-        except Exception as e:                       # HTTPError(404) etc.
-            ok = False
-            code = getattr(e, 'code', e)
-        else:
-            code = 200
-        if not ok:
-            missing.append((stem, code))
+                if r.status != 200:
+                    missing.append((stem, r.status))
+        except Exception as e:                        # HTTPError(404) etc.
+            missing.append((stem, getattr(e, 'code', repr(e))))
     assert not missing, (
-        f'RELEASE GATE: gallery notebooks not published to docs-notebooks for '
-        f'v{version} (run scripts/publish_gallery_notebooks.py --ref v{version} '
-        f'--push after building the docs): {missing}')
+        f'RELEASE GATE: manifest lists notebooks that do not resolve on '
+        f'docs-notebooks/v{version}/ (partial publish?): {missing}')

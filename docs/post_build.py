@@ -10,10 +10,72 @@ import glob
 import os
 import shutil
 import re
+import subprocess
 
 # Base paths
 DOCS_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_THUMBS_DIR = os.path.join(DOCS_DIR, "_static", "thumbnails")
+
+
+def _doc_branch():
+    """The ref this docs build is for: the Read the Docs identifier (e.g.
+    ``v1.0.0`` on a tag build, ``master``/``dev-1.0`` on a branch build), or
+    the local git branch, defaulting to ``master``."""
+    branch = os.environ.get('READTHEDOCS_GIT_IDENTIFIER', '')
+    if not branch:
+        try:
+            branch = subprocess.run(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                capture_output=True, text=True, cwd=DOCS_DIR,
+                timeout=10).stdout.strip()
+        except Exception:
+            branch = ''
+    return branch or 'master'
+
+
+def _package_version():
+    """hypertools version, for the versioned notebook namespace. Prefer the
+    installed package (present in every docs build); fall back to pyproject."""
+    try:
+        import hypertools
+        return hypertools.__version__
+    except Exception:
+        pp = os.path.join(DOCS_DIR, '..', 'pyproject.toml')
+        try:
+            with open(pp, encoding='utf-8') as f:
+                m = re.search(r'(?m)^version\s*=\s*["\']([^"\']+)["\']', f.read())
+            if m:
+                return m.group(1)
+        except OSError:
+            pass
+        return '0.0.0'
+
+
+def _publish_ref(branch, version):
+    """The ``docs-notebooks/<ref>/`` namespace whose notebooks a doc build's
+    Colab badges point at.
+
+    Release-form builds -- ``master`` (the "latest" docs) AND every ``vX.Y.Z``
+    tag (the "stable" docs) -- all resolve to the SINGLE published versioned
+    namespace ``v{version}``. That is the only namespace published as part of a
+    release (``scripts/publish_gallery_notebooks.py --ref v{version}``), so both
+    the latest and the stable docs open the same, existing notebooks; a raw
+    ``master`` (or per-tag) namespace would 404 because nothing publishes it.
+    Dev-branch previews keep their own branch namespace, published on demand.
+
+    Kept in sync with ``docs/conf.py``'s ``_install_notebook_cell`` release
+    check (master or a ``vX.Y.Z`` tag)."""
+    if branch == 'master' or re.fullmatch(r'v\d+\.\d+\.\d+', branch or ''):
+        return 'v' + version
+    return branch
+
+
+def _notebook_base_url():
+    """Colab base URL for the gallery notebooks, in the namespace this build
+    resolves to (see ``_publish_ref``)."""
+    ref = _publish_ref(_doc_branch(), _package_version())
+    return (ref, 'https://colab.research.google.com/github/ContextLab/'
+                 f'hypertools/blob/docs-notebooks/{ref}/auto_examples/')
 
 # Auto-detect build directory (Read the Docs vs local)
 def find_build_dirs():
@@ -156,25 +218,15 @@ def wrap_thumbnail_links():
         print("  Skipping thumbnail links (no build dir)")
         return 0
     import re as _re
-    import subprocess
-    branch = os.environ.get('READTHEDOCS_GIT_IDENTIFIER', '')
-    if not branch:
-        try:
-            branch = subprocess.run(
-                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-                capture_output=True, text=True, cwd=DOCS_DIR,
-                timeout=10).stdout.strip()
-        except Exception:
-            branch = ''
-    branch = branch or 'master'
     # The generated gallery notebooks are gitignored (never committed to the
     # main tree), so a Colab link into `blob/<branch>/docs/auto_examples/` 404s.
     # They are instead PUBLISHED to the `docs-notebooks` branch under
-    # `<ref>/auto_examples/` by the `publish-gallery-notebooks` CI job (see
-    # scripts/publish_gallery_notebooks.py); point Colab there (release review,
-    # blocker 2).
-    base = ('https://colab.research.google.com/github/ContextLab/'
-            f'hypertools/blob/docs-notebooks/{branch}/auto_examples/')
+    # `<ref>/auto_examples/` by scripts/publish_gallery_notebooks.py, run as a
+    # manual release step (see RELEASE_CHECKLIST.md; there is no CI job for it
+    # yet). Point Colab at the namespace this build resolves to -- master/tag
+    # builds share the versioned `v{version}` namespace (release review,
+    # blocker 2 / namespace fix).
+    ref, base = _notebook_base_url()
 
     def _wrap(match):
         img = match.group(0)
@@ -197,7 +249,7 @@ def wrap_thumbnail_links():
     with open(GALLERY_HTML, 'w') as f:
         f.write(html)
     print(f"  Wrapped {n} gallery thumbnails with notebook links "
-          f"(branch: {branch})")
+          f"(notebook ref: {ref})")
     return n
 
 
@@ -208,17 +260,7 @@ def inject_notebook_badges():
     if GALLERY_HTML is None:
         print("  Skipping notebook badges (no build dir)")
         return 0
-    import subprocess
-    branch = os.environ.get('READTHEDOCS_GIT_IDENTIFIER', '')
-    if not branch:
-        try:
-            branch = subprocess.run(
-                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-                capture_output=True, text=True, cwd=DOCS_DIR,
-                timeout=10).stdout.strip()
-        except Exception:
-            branch = ''
-    branch = branch or 'master'
+    ref, colab_base = _notebook_base_url()
 
     gallery_dir = os.path.dirname(GALLERY_HTML)
     n = 0
@@ -241,10 +283,8 @@ def inject_notebook_badges():
         if 'hypertools-colab-badge' in html:
             continue  # already injected (idempotent re-runs)
         # published to the `docs-notebooks` branch (see the base-URL note in
-        # link_gallery_thumbnails and scripts/publish_gallery_notebooks.py)
-        colab = ('https://colab.research.google.com/github/ContextLab/'
-                 f'hypertools/blob/docs-notebooks/{branch}/auto_examples/'
-                 f'{stem}.ipynb')
+        # wrap_thumbnail_links and scripts/publish_gallery_notebooks.py)
+        colab = f'{colab_base}{stem}.ipynb'
         # local download link: sphinx places the notebook under
         # _downloads/<hash>/<stem>.ipynb in the built site (there is no
         # sibling auto_examples/<stem>.ipynb in the output), so link the
@@ -276,7 +316,7 @@ def inject_notebook_badges():
             f.write(html)
         n += 1
     print(f"  Injected notebook badges into {n} example pages "
-          f"(branch: {branch})")
+          f"(notebook ref: {ref})")
     return n
 
 

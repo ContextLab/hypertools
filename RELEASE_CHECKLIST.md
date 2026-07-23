@@ -16,6 +16,12 @@ detached tag checkout — the notebook migrator detects the branch via
 - [ ] `dev-1.0` CI fully green (push + PR workflows).
 - [ ] Full suite green locally: `pytest` (2470+ passed, 0 failed).
 - [ ] Decide the release date and the version (`1.0.0`).
+- [ ] **conda-forge prerequisite (GH #282).** `pydata-wrangler` is merged and
+      available on conda-forge:
+      `conda search -c conda-forge 'pydata-wrangler>=0.5.1'` returns a hit.
+      The hypertools feedstock (step 7) lists it as a runtime dependency, and
+      conda-forge forbids pip-only run deps — so hold the release until it
+      lands. (Submitted to `conda-forge/staged-recipes`; waiting on merge.)
 
 ## 1. Merge to `master`
 
@@ -44,11 +50,32 @@ detached tag checkout — the notebook migrator detects the branch via
 - [ ] (Optional prose) `docs/tutorials/stock_forecasting.ipynb` has a
       free-text "hypertools 1.0 preview" comment the migrator does not touch —
       reword if desired (not gate-enforced).
-- [ ] **Verify the gate locally BEFORE committing:**
-      `HYPERTOOLS_REQUIRE_RELEASE=1 pytest -v tests/test_notebook_install_gate.py tests/test_release_readiness_gate.py`
+- [ ] **Verify the file-content gates locally BEFORE committing.** Exclude the
+      gallery-resolve gate — it checks the *remote* `docs-notebooks` branch,
+      published in the next step, so it cannot pass yet:
+      `HYPERTOOLS_REQUIRE_RELEASE=1 pytest -v tests/test_notebook_install_gate.py tests/test_release_readiness_gate.py -k 'not gallery_colab_notebooks_are_published'`
       → all green (no branch installs, no preview note, images on the tag,
       CHANGELOG dated).
 - [ ] Commit all of the above on `master` in one release commit.
+- [ ] **Publish the gallery notebooks NOW — before any release gate needs them
+      (this is what breaks the publish-order deadlock).** The gallery "Open in
+      Colab" badges point at `blob/docs-notebooks/v1.0.0/auto_examples/<stem>.ipynb`,
+      and the `release-gate` job runs on BOTH the `master` push (step 4) and the
+      `v1.0.0` tag (step 5) — it fails until those notebooks exist, so they must
+      be published before you push, not after. Build the gallery and publish:
+      `cd docs && make html` then, from the repo root,
+      `python scripts/publish_gallery_notebooks.py --ref v1.0.0 --notebooks-dir docs/auto_examples --push`
+      (creates the `docs-notebooks` orphan branch on first run — one-time
+      bootstrap — and also writes `v1.0.0/manifest.json`). Publishing static
+      notebooks before PyPI is harmless: their `%pip install hypertools[...]`
+      cells resolve 1.0 the moment PyPI is updated (step 6).
+      Both the `master` "latest" docs and the `v1.0.0` "stable" docs resolve to
+      this ONE `v1.0.0` namespace (`docs/post_build.py` `_publish_ref`), so this
+      single publish covers both.
+- [ ] **Verify the gallery gate now resolves:**
+      `HYPERTOOLS_REQUIRE_RELEASE=1 pytest tests/test_release_readiness_gate.py::test_release_gate_gallery_colab_notebooks_are_published`
+      → green (the `manifest.json` describes the full inventory and a sample of
+      the notebooks resolve on `docs-notebooks/v1.0.0/`).
 
 ## 3. Build + verify artifacts locally (do NOT upload yet)
 
@@ -104,17 +131,13 @@ same artifacts you verify are the ones you publish.
       notes (from `CHANGELOG.md`).
 - [ ] `pip install hypertools` in a clean env → installs `1.0.0`; run the
       README quick-start snippet.
-- [ ] **Publish the gallery notebooks for Colab.** The gallery
-      "Open in Colab" badges point at
-      `blob/docs-notebooks/v1.0.0/auto_examples/<stem>.ipynb`; those generated
-      notebooks are gitignored, so publish them to the `docs-notebooks` branch:
-      build the gallery (`cd docs && make html`), then
-      `python scripts/publish_gallery_notebooks.py --ref v1.0.0 --notebooks-dir docs/auto_examples --push`
-      (the script creates the `docs-notebooks` orphan branch on first run —
-      one-time bootstrap). Verify the targets resolve:
+- [ ] **Gallery notebooks: confirm still resolved.** They were already
+      published to `docs-notebooks/v1.0.0/` in step 2 (before the gates), so the
+      Colab badges resolve; only re-run this if you rebuilt the gallery since:
       `HYPERTOOLS_REQUIRE_RELEASE=1 pytest tests/test_release_readiness_gate.py::test_release_gate_gallery_colab_notebooks_are_published`.
-      (This can be automated with a `contents: write` `publish-gallery-notebooks`
-      CI job on master/tags — enable once you've decided the token handling.)
+      (Publication is a MANUAL step today — there is no CI job for it; a
+      `contents: write` `publish-gallery-notebooks` job on master/tags could
+      automate it once token/environment handling is decided.)
 - [ ] **Read the Docs**: trigger/confirm a build of the `v1.0.0` tag (and
       point the "stable"/default version at it). The released docs' Colab
       install cells must show `%pip install "hypertools[interactive]"`
@@ -122,7 +145,45 @@ same artifacts you verify are the ones you publish.
 - [ ] PyPI project page renders the README with all 8 images resolving (they
       now point at the `v1.0.0` tag).
 
-## 7. Cleanup
+## 7. Publish to conda-forge (GH #282)
+
+conda-forge builds from the PyPI sdist, so this runs AFTER the PyPI upload
+(step 6). hypertools is pure Python with no console-scripts, so it builds as a
+single `noarch: python` package. Its `pydata-wrangler` runtime dep must already
+be on conda-forge (the step-0 gate) — conda-forge forbids pip-only run deps.
+
+- [ ] Generate the recipe from the published sdist:
+      `grayskull pypi hypertools==1.0.0` (grayskull fetches the sdist, computes
+      its SHA-256, and maps most deps automatically).
+- [ ] Hand-fix the generated `recipe/meta.yaml`:
+      - `matplotlib` → `matplotlib-base` (conda-forge convention: avoids the Qt pull-in).
+      - `build:` → `noarch: python`; `host:` = `python >=3.10`, `pip`,
+        `setuptools >=77`.
+      - carry the pyproject floors into `run:` (`python >=3.10`, `numpy >=2.0`,
+        `scikit-learn >=1.4.2`, `pandas >=2.2.2`, `matplotlib-base >=3.9.0`,
+        `numba >=0.61.0`, `pydata-wrangler >=0.5.1`, …).
+      - `license: MIT` and list EVERY bundled license in `license_file`:
+        `LICENSE`, `hypertools/external/LICENSE-APACHE-2.0.txt`,
+        `hypertools/external/fonts/OFL.txt` (conda-forge review checks these).
+      - `test:` → `imports: hypertools` + `commands: pip check`.
+      - do NOT add the `[predict]` / `[predict-hf]` / `[lsl]` extras: `skaters`,
+        `chronos-forecasting`, and `pylsl` are not on conda-forge, so they stay
+        pip-only (note this in the recipe PR; the base package is unaffected).
+        The rest of the extras map fine (`kaleido` → `python-kaleido`,
+        `torch` → `pytorch`; plotly / scikit-image / kagglehub / gensim are all
+        on conda-forge).
+- [ ] Open a PR to `conda-forge/staged-recipes` adding
+      `recipes/hypertools/meta.yaml`; list the lab maintainers under
+      `recipe-maintainers`. CI lints + test-builds; a conda-forge core member
+      reviews and merges.
+- [ ] After merge, the bot auto-creates `conda-forge/hypertools-feedstock`,
+      builds, and uploads. Verify in a clean env:
+      `conda install -c conda-forge hypertools` installs `1.0.0` and
+      `import hypertools` works.
+- [ ] (Ongoing) the conda-forge bot opens version-bump PRs automatically on each
+      future PyPI release; maintainers just review/merge.
+
+## 8. Cleanup
 
 - [ ] After the release is confirmed good, delete the `dev-1.0` /
       `dev-1.0-refactor` branches if desired (the released artifacts no longer
@@ -142,6 +203,7 @@ run with `HYPERTOOLS_REQUIRE_RELEASE=1` by the `release-gate` CI job on
 | README branch refs | no `dev-1.0-refactor` / `hypertools.git@dev…` |
 | CHANGELOG heading | `## <version> (YYYY-MM-DD)` — version == pyproject, and a REAL calendar date (not `(unreleased)`, not `2026-99-99`) |
 | generated gallery (`docs-clean` job) | every built `docs/auto_examples/*.ipynb` carries the PyPI spec (covers all 68 published notebooks, at the build layer) |
+| gallery Colab notebooks published | `docs-notebooks/v<version>/manifest.json` present + the full inventory published (a partial/truncated publish fails). Requires step 2's publish to have run BEFORE the master/tag push — see the deadlock note there. |
 
 Always-on (every branch): no notebook installs the defunct `dev-1.0-refactor`;
 all tutorial branch-installs share one branch; every README image is a single

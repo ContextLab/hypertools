@@ -15,8 +15,14 @@ exist on GitHub. This script publishes the built notebooks to a dedicated
     └── ...
 
 so post_build.py's ``blob/docs-notebooks/<ref>/auto_examples/<stem>.ipynb`` links
-resolve. The `publish-gallery-notebooks` CI job runs this on master/tag builds;
-run it manually with the same effect. Nothing on the main branch changes.
+resolve. This is run MANUALLY as a release step (see RELEASE_CHECKLIST.md) --
+there is no CI job for it yet; a ``contents: write`` ``publish-gallery-notebooks``
+job could automate it once token/environment handling is decided. Nothing on the
+main branch changes.
+
+Alongside the notebooks it writes a ``<ref>/manifest.json`` recording the ref,
+the source commit, and the full notebook inventory, so the release gate can
+verify the complete published set in one request (not one probe per notebook).
 
     python scripts/publish_gallery_notebooks.py --ref v1.0.0 \
         --notebooks-dir docs/auto_examples [--push]
@@ -26,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import json
 import os
 import re
 import shutil
@@ -48,6 +55,34 @@ def target_paths(notebook_paths, ref):
             for p in notebook_paths if p.endswith('.ipynb')}
 
 
+def manifest_content(notebook_paths, ref, source_commit=None):
+    """The ``<ref>/manifest.json`` contents: the ref, the source commit the
+    notebooks were generated from (or ``None``), the count, and the sorted
+    notebook stems. Written FROM the actual copied files, so ``count`` always
+    equals ``len(notebooks)`` and cannot over-claim -- the release gate reads
+    this one file to verify the whole published inventory (rather than probing
+    each notebook). Pure/unit-testable."""
+    stems = sorted(os.path.basename(p)[:-len('.ipynb')]
+                   for p in notebook_paths if p.endswith('.ipynb'))
+    return {
+        'ref': ref,
+        'source_commit': source_commit,
+        'count': len(stems),
+        'notebooks': stems,
+    }
+
+
+def _head_commit():
+    """The hypertools repo commit these notebooks were generated from (best
+    effort; ``None`` if git is unavailable)."""
+    try:
+        out = subprocess.run(['git', 'rev-parse', 'HEAD'],
+                             capture_output=True, text=True).stdout.strip()
+        return out or None
+    except Exception:
+        return None
+
+
 def _run(cmd, cwd=None):
     subprocess.run(cmd, cwd=cwd, check=True)
 
@@ -68,13 +103,24 @@ def publish(notebooks_dir, ref, push=False, remote=REPO_URL):
         if rc != 0:
             _run(['git', 'clone', '--depth', '1', remote, work])
             _run(['git', 'checkout', '--orphan', PUBLISH_BRANCH], cwd=work)
-            _run(['git', 'rm', '-rf', '--quiet', '.'], cwd=work)
+            # clear the default branch's files from the orphan's index;
+            # --ignore-unmatch keeps this a no-op (not an error) when the
+            # default branch is empty, so first-bootstrap can't wedge here
+            _run(['git', 'rm', '-rf', '--quiet', '--ignore-unmatch', '.'],
+                 cwd=work)
         # replace this ref's notebooks wholesale so removed examples don't linger
         ref_dir = os.path.join(work, ref, 'auto_examples')
         shutil.rmtree(os.path.join(work, ref), ignore_errors=True)
         os.makedirs(ref_dir, exist_ok=True)
         for src, rel in layout.items():
             shutil.copy2(src, os.path.join(work, rel))
+        # manifest sits one level up from auto_examples, at <ref>/manifest.json,
+        # written from the files just copied so it can't over-claim the set
+        manifest = manifest_content(nbs, ref, _head_commit())
+        with open(os.path.join(work, ref, 'manifest.json'), 'w',
+                  encoding='utf-8') as f:
+            json.dump(manifest, f, indent=2, sort_keys=True)
+            f.write('\n')
         _run(['git', 'add', '-A'], cwd=work)
         # nothing to commit -> already up to date
         if subprocess.run(['git', 'diff', '--cached', '--quiet'],

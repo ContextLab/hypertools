@@ -203,10 +203,19 @@ def test_load_huggingface_streaming_flows_to_plot():
     ds = ds.select_columns(['SepalLengthCm', 'SepalWidthCm',
                             'PetalLengthCm', 'PetalWidthCm'])
     # iris' later rows fall outside the display box fitted on the first 50,
-    # provoking the clamped-samples notice
-    with _skip_on_transient_network('reading the scikit-learn/iris stream'):
-        with pytest.warns(RuntimeWarning, match='outside the display box'):
+    # provoking the clamped-samples notice. Wrap ONLY the network-touching plot
+    # (it pulls chunks over the wire) in the transient-skip, and RECORD warnings
+    # so the assertion that the clamped-samples RuntimeWarning fired lives
+    # OUTSIDE the skip -- a genuine regression that stops emitting it then FAILS
+    # the test rather than being masked by a transient-network marker (e.g.
+    # "timeout") in some unrelated message (release review hardening).
+    import warnings
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        with _skip_on_transient_network('reading the scikit-learn/iris stream'):
             fig = hyp.plot(ds, '.', show=False, stream_init=50, stream_chunk=50)
+    assert any('outside the display box' in str(w.message) for w in caught), (
+        'expected the clamped-samples RuntimeWarning from the streaming plot')
     assert fig.stream_info['n_samples'] == 150
     plt.close('all')
 
