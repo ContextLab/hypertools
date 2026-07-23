@@ -74,8 +74,14 @@ detached tag checkout — the notebook migrator detects the branch via
       single publish covers both.
 - [ ] **Verify the gallery gate now resolves:**
       `HYPERTOOLS_REQUIRE_RELEASE=1 pytest tests/test_release_readiness_gate.py::test_release_gate_gallery_colab_notebooks_are_published`
-      → green (the `manifest.json` describes the full inventory and a sample of
-      the notebooks resolve on `docs-notebooks/v1.0.0/`).
+      → green. This gate ties the published notebooks to THIS release: the
+      `manifest.json`'s `source_commit` must equal `git rev-parse HEAD`, its
+      inventory must EXACTLY match the gallery you just built, and the
+      `docs-notebooks` branch's actual `.ipynb` set (read once via the GitHub
+      tree API) must equal the manifest. **Publish from the release commit and
+      do NOT commit afterward** — any later commit changes HEAD, so you must
+      rebuild the gallery and re-publish (the gate fails until you do). The same
+      gate re-runs on the master push (step 4) and the tag (step 5).
 
 ## 3. Build + verify artifacts locally (do NOT upload yet)
 
@@ -203,7 +209,7 @@ run with `HYPERTOOLS_REQUIRE_RELEASE=1` by the `release-gate` CI job on
 | README branch refs | no `dev-1.0-refactor` / `hypertools.git@dev…` |
 | CHANGELOG heading | `## <version> (YYYY-MM-DD)` — version == pyproject, and a REAL calendar date (not `(unreleased)`, not `2026-99-99`) |
 | generated gallery (`docs-clean` job) | every built `docs/auto_examples/*.ipynb` carries the PyPI spec (covers all 68 published notebooks, at the build layer) |
-| gallery Colab notebooks published | `docs-notebooks/v<version>/manifest.json` present + the full inventory published (a partial/truncated publish fails). Requires step 2's publish to have run BEFORE the master/tag push — see the deadlock note there. |
+| gallery Colab notebooks published | `docs-notebooks/v<version>/manifest.json` present, its `source_commit` == the release HEAD, its inventory == the built gallery, and the branch's actual `.ipynb` set (one GitHub tree request) == the manifest — so stale (old-RC), partial, or mismatched publishes all fail. Requires step 2's publish to have run FROM the release commit, BEFORE the master/tag push — see the deadlock note there. |
 
 Always-on (every branch): no notebook installs the defunct `dev-1.0-refactor`;
 all tutorial branch-installs share one branch; every README image is a single

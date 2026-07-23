@@ -134,8 +134,11 @@ def publish(notebooks_dir, ref, push=False, remote=REPO_URL):
             _run(['git', 'push', 'origin', PUBLISH_BRANCH], cwd=work)
             print(f'pushed {len(layout)} notebooks to {PUBLISH_BRANCH}/{ref}/')
         else:
-            print(f'staged {len(layout)} notebooks for {PUBLISH_BRANCH}/{ref}/ '
-                  '(dry run; pass --push to publish)')
+            # the commit was made in a throwaway clone that is deleted below --
+            # nothing leaves this machine; "validated locally" is the honest
+            # description (not a "dry run" that "staged" anything remotely)
+            print(f'validated {len(layout)} notebooks for {PUBLISH_BRANCH}/{ref}/ '
+                  'locally; no push performed (pass --push to publish)')
         return 0
     finally:
         shutil.rmtree(work, ignore_errors=True)
