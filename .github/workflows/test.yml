@@ -2,9 +2,25 @@ name: Tests
 
 on:
   push:
-    branches: [ master, dev ]
+    branches: [ master, dev, dev-1.0 ]
+    # a `branches` filter without a `tags` filter means TAG pushes do NOT
+    # trigger this workflow -- so the release-gate job (which keys on
+    # refs/tags/) would never run on the v1.0.0 tag. Admit version tags too
+    # (2026-07 release review).
+    tags: [ 'v*' ]
   pull_request:
-    branches: [ master, dev ]
+    # must include the branches PRs actually TARGET, or the PR-target
+    # workflow never runs and green checks are only push-triggered ones
+    # (2026-07 release review, blocker #3: PR #272 targets dev-1.0, which
+    # was missing here). Fork PRs in particular only run via pull_request.
+    branches: [ master, dev, dev-1.0 ]
+
+# Least privilege: this workflow only reads the repo (it runs tests + builds
+# docs, and passes GITHUB_TOKEN to repo-controlled code for dataset API quota).
+# Pin the token to read-only so it does not inherit the repo default (2026-07
+# release review hardening).
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -13,70 +29,353 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.9', '3.10', '3.11', '3.12']
-        
+        # datawrangler 0.5.0+ supports pandas 3.0 (dw#30/#31) and py3.10-3.13. The pandas<3
+        # ceiling is lifted, so the resolver naturally picks pandas 3.x on py3.11-3.13 and
+        # pandas 2.x on py3.10 (pandas 3.0 requires py>=3.11) -- the matrix exercises both.
+        # A dedicated pinned-pandas-3 gate runs below on ubuntu/py3.12.
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+
     steps:
-    - uses: actions/checkout@v4
-    
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2 (pinned to SHA, release review #8)
+
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.4.0 (pinned to SHA)
       with:
         python-version: ${{ matrix.python-version }}
-        
+
     - name: Cache pip dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0 (pinned to SHA)
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt') }}
+        key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml') }}
         restore-keys: |
           ${{ runner.os }}-pip-${{ matrix.python-version }}-
           ${{ runner.os }}-pip-
-          
+
+    - name: Cache hypertools example datasets
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0 (pinned to SHA)
+      with:
+        path: ~/hypertools_data
+        key: hypertools-example-data-v1
+        # datasets are immutable; every runner shares one cache entry so CI
+        # doesn't hammer the download host with 24 concurrent requests
+        enableCrossOsArchive: true
+
     - name: Install system dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y ffmpeg
-        
+        # fonts-noto-cjk (GH #205): ubuntu-latest ships no CJK-covering font
+        # at all, so tests/test_multibyte.py's `requires_covering_font`
+        # skipif would silently skip every CJK-dependent test on this OS.
+        sudo apt-get install -y ffmpeg fonts-noto-cjk
+        fc-cache -f
+
     - name: Install system dependencies (macOS)
       if: matrix.os == 'macos-latest'
       run: |
         brew install ffmpeg
-        
+
     - name: Install system dependencies (Windows)
       if: matrix.os == 'windows-latest'
       run: |
         choco install ffmpeg
       continue-on-error: true
-        
-    - name: Install Python dependencies
+
+    - name: Install package with dev dependencies
+      # GH #130 (hyp.io.lsl_stream, tests/test_lsl_streaming.py): pylsl is
+      # in the [dev] extra (pyproject.toml) with NO separate native liblsl
+      # install step on any of the three platforms below -- investigated
+      # during Task 13's implementation, pylsl>=1.16's wheels BUNDLE the
+      # native liblsl library for every platform this matrix runs on:
+      #   - ubuntu-latest (x86_64): manylinux_2_35_x86_64 wheel -> ships
+      #     pylsl/lib/liblsl.so (ubuntu-latest's glibc satisfies 2.35+)
+      #   - macos-latest (arm64/x86_64): macosx_11_0_universal2 wheel ->
+      #     ships pylsl/lib/liblsl.dylib; verified working end-to-end
+      #     locally (real in-process StreamOutlet -> StreamInlet round trip)
+      #   - windows-latest (x86_64): win_amd64 wheel -> ships
+      #     pylsl/lib/lsl.dll
+      # so all three CI platforms are "provisioned" and none is excluded;
+      # tests/test_lsl_streaming.py::test_ci_has_pylsl fails the build (not
+      # skip) if pylsl is ever unimportable here, e.g. if a future pylsl
+      # release drops the bundled binary for one of these wheel tags.
       run: |
         python -m pip install --upgrade pip
-        pip install pytest pytest-cov
-        pip install -r requirements.txt
-        
-    - name: Install package in development mode
+        # [torch] (also pulled in transitively by [dev]) is installed
+        # explicitly too so a future change to the dev extra can't
+        # silently drop torch coverage of the six autoencoder reducers
+        # (GH #162, tests/test_autoencoders.py). torch>=2.0 ships CPU
+        # wheels for all three CI platforms/Python versions here.
+        pip install -e ".[dev,torch]"
+
+    - name: Pre-fetch headless Chrome for kaleido (Plotly image/GIF export)
+      # tests/test_animation_export.py exports Plotly figures to GIF/MP4 via
+      # kaleido 1.x, which drives a headless Chrome. Pre-fetching it here (into
+      # choreographer's deps dir, where kaleido discovers it automatically)
+      # avoids a slow first-use Chrome download racing the test's own timeout
+      # on some runners (seen as an intermittent TimeoutError on
+      # windows/py3.13). Best effort: if the fetch fails, kaleido falls back to
+      # its own on-demand download, so this step never blocks the build.
+      run: plotly_get_chrome -y
+      continue-on-error: true
+
+    - name: Rebuild matplotlib font cache (Ubuntu only)
+      # GH #205: matplotlib scans installed fonts once and caches the
+      # result (~/.cache/matplotlib/fontlist-*.json). On ubuntu-latest
+      # runners that cache is built (by whatever process first imports
+      # matplotlib.font_manager -- here, `pip install`'s dependency
+      # resolution/build step, or a previous cached run) BEFORE
+      # fonts-noto-cjk is installed above, so `find_covering_font`
+      # (hypertools/plot/fonts.py) would scan a stale font list missing
+      # every Noto Sans CJK file and skip every CJK-dependent test in
+      # tests/test_multibyte.py. Force one rebuild here (expensive -- do
+      # it once per job, not from inside fonts.py on every call).
+      if: matrix.os == 'ubuntu-latest'
       run: |
-        pip install -e .
-        
+        python -c "import matplotlib.font_manager as fm; fm._load_fontmanager(try_read_cache=False)"
+
     - name: Run pytest
       env:
         MPLBACKEND: Agg
+        # Authenticate the fivethirtyeight loader's GitHub API listing calls
+        # (tests/test_load_538_kaggle.py). The default GITHUB_TOKEN raises the
+        # REST API quota from 60 to 5000 requests/hour, so the ~12 concurrent
+        # matrix jobs sharing a runner IP pool don't exhaust the shared
+        # unauthenticated limit (403 rate-limit failures). See
+        # hypertools/io/sources.py::_github_api_headers.
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         pytest -v --tb=short
-        
+
+    - name: Acceptance gate — pandas 3.0 (Ubuntu Python 3.12 only)
+      # Guarantees a pandas-3 run regardless of resolver choices (dw#30/#31 fix).
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+      env:
+        MPLBACKEND: Agg
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        pip install "pandas>=3.0"
+        python -c "import pandas as pd; assert pd.__version__.split('.')[0] == '3', pd.__version__; print('pandas', pd.__version__)"
+        pytest -q
+
     - name: Run pytest with coverage (Ubuntu Python 3.12 only)
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
       env:
         MPLBACKEND: Agg
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         pytest --cov=hypertools --cov-report=xml --cov-report=term-missing
-        
+
     - name: Upload coverage to Codecov (Ubuntu Python 3.12 only)
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0 (pinned to SHA)
       with:
         file: ./coverage.xml
         flags: unittests
         name: codecov-umbrella
         fail_ci_if_error: false
+
+    - name: Generate verification screenshots (Ubuntu Python 3.12 only)
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+      env:
+        MPLBACKEND: Agg
+      run: |
+        python scripts/generate_baseline_screenshots.py
+
+    - name: Upload screenshots as artifacts (Ubuntu Python 3.12 only)
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.0 (pinned to SHA)
+      with:
+        name: verification-screenshots
+        path: tests/screenshots/
+        retention-days: 30
+
+  # Release qualification: build the wheel + sdist ONCE, then install EACH
+  # artifact into its OWN fresh environment (not the editable source
+  # checkout) and smoke-test the public API + validate metadata. Both are
+  # exercised because wheel and sdist use different package-discovery/build
+  # paths -- a gap can exist in one and not the other (2026-07 release
+  # review, issues #8 wheel + follow-up sdist). Actions are SHA-pinned like
+  # the test job above.
+  wheel-smoke:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2 (pinned to SHA)
+    - name: Set up Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.4.0 (pinned to SHA)
+      with:
+        python-version: '3.12'
+    - name: Build wheel + sdist
+      run: |
+        python -m pip install --upgrade pip build twine
+        python -m build --outdir dist .
+        twine check dist/*
+    - name: Install the built WHEEL into a fresh venv and smoke-test
+      env:
+        MPLBACKEND: Agg
+      run: |
+        python -m venv /tmp/fresh-wheel
+        # install the wheel artifact itself -- NOT the source checkout
+        /tmp/fresh-wheel/bin/pip install --upgrade pip
+        /tmp/fresh-wheel/bin/pip install dist/*.whl
+        # run from /tmp (NOT the repo) so an accidental source-tree import
+        # can't mask a packaging gap; the script itself asserts it imported
+        # hypertools from site-packages
+        cd /tmp && /tmp/fresh-wheel/bin/python "$GITHUB_WORKSPACE/scripts/wheel_smoke_test.py"
+    - name: Install the built SDIST into a fresh venv and smoke-test
+      env:
+        MPLBACKEND: Agg
+      run: |
+        python -m venv /tmp/fresh-sdist
+        # build the sdist FROM the sdist (its own build path), not the repo
+        /tmp/fresh-sdist/bin/pip install --upgrade pip
+        /tmp/fresh-sdist/bin/pip install dist/*.tar.gz
+        cd /tmp && /tmp/fresh-sdist/bin/python "$GITHUB_WORKSPACE/scripts/wheel_smoke_test.py"
+
+  # Fresh-source docs build (2026-07 release review, blocker #2). Read the Docs
+  # no longer ships a generated docs/auto_examples/ tree, so every RTD build now
+  # executes ALL gallery examples and renders the Plotly snapshots via headless
+  # Chrome from scratch. This job reproduces exactly that contract: it builds
+  # from a pristine `git archive` (tracked files only), asserts the generated
+  # gallery is absent, provisions Chrome the same way RTD does, and runs Sphinx
+  # with -W -E -a (warnings are errors, no cached env, rebuild everything) so a
+  # missing browser or ANY gallery-execution failure fails the build HERE --
+  # before it reaches RTD. Mirrors .readthedocs.yaml (Python 3.11 + ffmpeg +
+  # plotly_get_chrome). Actions SHA-pinned like the jobs above.
+  docs-clean:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2 (pinned to SHA)
+    - name: Set up Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.4.0 (pinned to SHA)
+      with:
+        python-version: '3.11'
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        # ffmpeg: mp4 rendering of animated gallery examples (matches RTD).
+        # fonts-noto-cjk: CJK-covering font for the multibyte gallery text.
+        # pandoc: nbsphinx renders the hand-authored tutorials/*.ipynb via
+        # pandoc (Read the Docs' build image bundles pandoc; a bare GH runner
+        # does not, so declare it here or the notebook stage fails).
+        sudo apt-get install -y ffmpeg fonts-noto-cjk pandoc
+        fc-cache -f
+    - name: Export a pristine source tree (tracked files only)
+      run: |
+        mkdir -p /tmp/docs-clean
+        git archive --format=tar HEAD | tar -x -C /tmp/docs-clean
+        # the generated gallery must NOT be tracked: a fresh RTD build
+        # regenerates it, so its presence here would MASK execution failures
+        if [ -e /tmp/docs-clean/docs/auto_examples ]; then
+          echo "::error::docs/auto_examples is tracked; it must be generated fresh"
+          exit 1
+        fi
+    - name: Install package + docs requirements + headless Chrome
+      run: |
+        python -m pip install --upgrade pip
+        cd /tmp/docs-clean
+        pip install .
+        pip install -r docs/doc_requirements.txt
+        # headless Chrome for the Plotly gallery scraper (kaleido 1.x); RTD
+        # provisions it identically via .readthedocs.yaml's post_install job
+        plotly_get_chrome -y
+    - name: Build docs from clean source (warnings = errors, cold gallery)
+      env:
+        MPLBACKEND: Agg
+        # raise the fivethirtyeight/kaggle loader's GitHub API quota (some
+        # gallery examples load hosted datasets during execution)
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        cd /tmp/docs-clean/docs
+        python -m sphinx -b html -W -E -a . _build/html
+    - name: Release gate -- generated gallery notebooks install the PyPI package
+      # docs/auto_examples/*.ipynb are gitignored and GENERATED by the build
+      # above from docs/conf.py's branch-aware install-cell (so they don't exist
+      # in a bare checkout and the release-gate job cannot scan them). Here they
+      # DO exist, so on a release build require every generated gallery notebook
+      # to carry a VALID PyPI install (hypertools[...], no git+/@<branch>, no
+      # preview note) -- covering all 68 published notebooks. The check is
+      # scripts/check_release_notebooks.py, unit-tested in
+      # tests/test_release_notebook_check.py. 2026-07 release review.
+      if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
+      run: |
+        python /tmp/docs-clean/scripts/check_release_notebooks.py \
+          --min 50 /tmp/docs-clean/docs/auto_examples
+
+  # Dataset release gate (2026-07 review, findings #2 + #2-followup). Two
+  # things a green matrix run does NOT prove: (a) that the hosted-dataset
+  # checks actually ran -- the matrix SKIPS a dataset it can't download so
+  # transient outages don't block unrelated PRs; and (b) that the Dropbox/Drive
+  # URLs are still REACHABLE -- the loader accepts a hash-valid CACHE hit
+  # without contacting the host. This job forbids both gaps: it uses NO dataset
+  # cache and clears ~/hypertools_data first, so every artifact is fetched
+  # FRESH from its host, and HYPERTOOLS_REQUIRE_DATASETS=1 turns any
+  # download/load failure into a HARD failure (never a skip). So it genuinely
+  # proves host availability + integrity + baseline match, and reports the
+  # exact count. Actions SHA-pinned like the jobs above.
+  dataset-gate:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2 (pinned to SHA)
+    - name: Set up Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.4.0 (pinned to SHA)
+      with:
+        python-version: '3.12'
+    - name: Install package
+      run: |
+        python -m pip install --upgrade pip
+        # base install (NOT [dev]) so this gate also proves the hosted datasets
+        # load with only the base dependency stack -- plus pytest to run them
+        # and pytest-timeout to honor the suite's 20-min hung-download safety net
+        pip install . pytest pytest-timeout
+    - name: Require EVERY hosted dataset to DOWNLOAD FRESH + match the pinned baseline
+      env:
+        MPLBACKEND: Agg
+        HYPERTOOLS_REQUIRE_DATASETS: '1'
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # NO cache above + clear any cache dir here => every dataset is fetched
+        # fresh from its host, so this is a genuine host-availability gate (not
+        # a cache-validity check). A download/load failure fails the job (it
+        # cannot skip); -s prints the exact count validated.
+        rm -rf ~/hypertools_data
+        python -m pytest -v -s \
+          tests/test_dataset_compat.py \
+          tests/test_dataset_integrity.py
+
+  # Release readiness gate (2026-07 release review). Several release-facing
+  # references are deliberately in DEV form on dev branches and MUST flip at
+  # publish; nothing else proves they were all flipped. This job runs ONLY on
+  # master / release tags, sets HYPERTOOLS_REQUIRE_RELEASE=1, and turns any
+  # surviving dev-form reference into a HARD failure (it cannot pass by
+  # skipping): (a) a `git+`/`@<branch>` hypertools install in a published
+  # notebook; (b) a commit-SHA-pinned README image URL (must be the v1.0.0
+  # tag); (c) a `(unreleased)` CHANGELOG heading (must be dated). See
+  # RELEASE_CHECKLIST.md for the exact publish sequence that makes it green.
+  # Actions SHA-pinned like the jobs above.
+  release-gate:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
+    steps:
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2 (pinned to SHA)
+    - name: Set up Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.4.0 (pinned to SHA)
+      with:
+        python-version: '3.12'
+    - name: Install pytest
+      run: python -m pip install --upgrade pip pytest
+    - name: Require all release-facing references to be in RELEASE form
+      env:
+        HYPERTOOLS_REQUIRE_RELEASE: '1'
+        # the gallery gate reads the docs-notebooks branch tree via the GitHub
+        # API; authenticate it (5000/hr vs the 60/hr unauthenticated limit) so
+        # the gate can't throttle-fail intermittently. Read-only per the
+        # top-level `permissions: contents: read`.
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # any surviving dev-form reference fails the job; -s prints the
+        # offenders. RELEASE_CHECKLIST.md documents how to make each green.
+        python -m pytest -v -s \
+          tests/test_notebook_install_gate.py \
+          tests/test_release_readiness_gate.py

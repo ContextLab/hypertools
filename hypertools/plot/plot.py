@@ -1,16 +1,490 @@
 #!/usr/bin/env python
+"""hyp.plot: the main HyperTools visualization entry point.
+
+Contains the `plot()` dispatcher (input normalization, the
+manip/normalize/reduce/align/cluster analysis pipeline, hue/cluster/
+MultiIndex regrouping, color/legend/colorbar resolution, streaming
+dispatch, and save/return handling) plus its private helpers. Low-level
+drawing lives in `matplotlib_backend` and `plotly_backend`.
+"""
+import copy
+import inspect
+import os
 import warnings
-import matplotlib.animation as animation
 import matplotlib.pyplot as plt
+import pandas as pd
 from .._shared.helpers import *
 from .._shared.params import default_params
+from ..core.model import external_stacklevel
 from ..tools.analyze import analyze
-from ..tools.cluster import cluster as clusterer
-from ..tools.reduce import reduce as reducer
+from ..cluster.cluster import cluster as clusterer, mixture_models, \
+    models as hard_cluster_models
+from .colors import mat2colors, colors2groups, get_palette_colors, continuous_colormap
+from ..reduce.reduce import reduce as reducer
 from ..tools.format_data import format_data
-from .draw import _draw
+from .matplotlib_backend import _draw
 from .backend import manage_backend
-from ..datageometry import DataGeometry
+from .plotly_backend import resolve_backend
+from .animate import _save_animation
+from .surface import broadcast_surface, normalize_surface_arg
+from .density import broadcast_density, normalize_density_arg
+from .trails import broadcast_trail_flag
+from .multiindex import expand_multiindex, build_multiindex_styles
+from .morph import resolve_morph_rotations
+from .fonts import resolve_font, sans_serif_stack
+
+
+# GH #206: the subset of mpl_kwargs keys `plotly_backend.plotly_draw` (and
+# its trail/forecast helpers) actually reads and maps onto a plotly trace
+# property, via the existing `_resolve_fmt`/`_trace_name` machinery -- see
+# every `tkwargs.get(...)` call in `hypertools/plot/plotly_backend.py`.
+# Any OTHER kwarg (arbitrary matplotlib-style passthrough, e.g. `zorder=`,
+# `markeredgecolor=`, `dashes=`) has no plotly equivalent and is silently
+# unusable there; `plot()` warns (once, naming every such kwarg) rather
+# than silently dropping it with no feedback at all.
+_PLOTLY_MAPPED_KWARGS = frozenset(
+    {'color', 'alpha', 'linewidth', 'markersize', 'marker', 'linestyle',
+     'label'})
+
+
+def _apply_extra_kwargs(kwargs_list, extra):
+    """Merge arbitrary extra matplotlib-style kwargs (GH #206's `**kwargs`
+    passthrough) into every per-dataset dict in `kwargs_list`, IN PLACE.
+
+    Deliberately bypasses `parse_kwargs`'s per-dataset list/tuple
+    broadcasting entirely: `extra`'s values are applied VERBATIM,
+    identically, to every dataset, whatever their type -- including a
+    list/tuple value (e.g. `dashes=(4, 2)`), which is a single matplotlib
+    property VALUE, not a per-dataset list of separate values. Running
+    such a value through `parse_kwargs`'s broadcast machinery (designed
+    for hypertools' own per-dataset style kwargs -- color/marker/
+    linestyle/etc., where a list genuinely means "one value per dataset")
+    would either misinterpret it (if its length happened to equal the
+    dataset count) or now raise a spurious ``ValueError`` (since
+    `parse_kwargs` was fixed, also for GH #206, to raise rather than
+    silently drop a length that does NOT match the dataset count) -- both
+    wrong for a kwarg whose natural value just happens to be tuple/list
+    shaped. Callers needing genuine PER-DATASET control over an arbitrary
+    property can already reach for the dedicated, per-dataset-aware kwargs
+    (`color`/`marker`/`linestyle`/`markersize`/`linewidth`).
+
+    A key already present in a given dataset's dict (set by a named
+    parameter, e.g. `color=`, or by internal styling logic, e.g.
+    MultiIndex/mixture-cluster `alpha`, `legend=`'s `label`, `explore=`'s
+    `picker`) is left untouched -- named/internal styling always wins over
+    a same-named extra kwarg.
+    """
+    if not extra:
+        return
+    for d in kwargs_list:
+        for k, v in extra.items():
+            if k not in d:
+                d[k] = v
+
+
+# target vertex count for STATIC line smoothing -- matches the historical
+# default density (frame_rate=30 * duration=30 = ~900 interpolated
+# vertices), but as a fixed constant so animation kwargs no longer alter
+# static rendering (release-1.0 audit, F01-007).
+_STATIC_LINE_TARGET_VERTICES = 900
+
+# de-emphasized color for UNLABELED points (the None entries of a
+# partially-labeled categorical hue; release-1.0 audit, F02-013) -- the
+# same neutral gray `colors.NAN_COLOR` uses for non-finite hue values, so
+# "no information" reads consistently across the library.
+_UNLABELED_HUE_COLOR = (0.75, 0.75, 0.75)
+
+
+def _seaborn_palette_arg(palette, n_colors):
+    """`palette` in a form seaborn's `color_palette`/`set_palette` accept.
+
+    plot() documents palette= as a name, a list of colors, or a matplotlib
+    `Colormap` (F02-011); seaborn handles the first two natively but not a
+    Colormap INSTANCE, so that one is pre-sampled to `n_colors` RGB tuples
+    via `get_palette_colors` (the same resolution `mat2colors`/the colorbar
+    use, keeping every path's colors identical)."""
+    from matplotlib.colors import Colormap
+    if isinstance(palette, Colormap):
+        return [tuple(c) for c in get_palette_colors(palette, n_colors)]
+    return palette
+
+
+def _fmt_draws_line(fmt):
+    """True if `fmt` draws a line for ANY trace (so the data must be
+    segmented into contiguous runs rather than globally merged by category;
+    GH #291). A per-trace fmt LIST counts if any entry has a line
+    component; a bare string/None uses `has_line_component` directly."""
+    if isinstance(fmt, (list, tuple, np.ndarray)):
+        return any(has_line_component(f) for f in fmt)
+    return has_line_component(fmt)
+
+
+def _categorical_color_label_maps(hue, palette, explicit_colors,
+                                  group_labels, sort_numeric):
+    """Map each hue category -> (colour, legend label), in the SAME drawn
+    order the marker/global grouping would use, so a LINE plot's per-category
+    colours match an equivalent marker plot.
+
+    `explicit_colors`/`group_labels` are the per-category values already
+    resolved by the special hue sub-cases (partially-labeled hue, quantized
+    matrix/mixture colours, cluster labels); when the colour was left to the
+    palette (plain string/int categorical, hard clustering) it is resolved
+    here from `palette`. `sort_numeric` selects sorted-numeric drawn order
+    (integer hue / cluster ids) over first-appearance order (string hue)."""
+    import seaborn as sns
+    appear = list(dict.fromkeys(hue))
+    if sort_numeric:
+        try:
+            drawn = sorted(appear)
+        except TypeError:
+            drawn = appear
+    else:
+        drawn = appear
+    if (isinstance(explicit_colors, (list, tuple))
+            and len(explicit_colors) == len(drawn)):
+        cat_color = {c: explicit_colors[i] for i, c in enumerate(drawn)}
+    else:
+        pal = sns.color_palette(
+            _seaborn_palette_arg(palette, len(drawn)), len(drawn))
+        cat_color = {c: tuple(pal[i]) for i, c in enumerate(drawn)}
+    if (isinstance(group_labels, (list, tuple))
+            and len(group_labels) == len(drawn)):
+        cat_label = {c: group_labels[i] for i, c in enumerate(drawn)}
+    else:
+        cat_label = {c: str(c) for c in drawn}
+    return cat_color, cat_label
+
+
+def _regroup_categorical_lines(xform, hue, labels, cat_color, cat_label):
+    """Regroup LINE data by categorical `hue` into contiguous runs (GH #291).
+
+    Splits each input dataset into maximal same-category runs (preserving
+    order + dataset identity), colours each run by its category, bridges only
+    runs adjacent WITHIN one input dataset, and gives each category exactly
+    ONE legend entry (the first run carries the label; later runs of the same
+    category get ``'_nolegend_'``). Returns
+    ``(segments, seg_labels, run_colors, run_group_labels, seg_dataset)``;
+    `seg_dataset` is each run's source input-dataset index (for propagating
+    per-dataset styles via `_expand_styles_to_runs`)."""
+    segments, seg_labels, seg_cat, seg_bridge, seg_dataset = segment_by_run(
+        xform, hue, labels)
+    breaks = {i + 1 for i in range(len(segments) - 1) if not seg_bridge[i]}
+    segments = patch_lines(segments, breaks=breaks)
+    run_colors = [cat_color[c] for c in seg_cat]
+    seen = set()
+    run_group_labels = []
+    for c in seg_cat:
+        if c in seen:
+            run_group_labels.append('_nolegend_')
+        else:
+            seen.add(c)
+            run_group_labels.append(cat_label.get(c, str(c)))
+    return segments, seg_labels, run_colors, run_group_labels, seg_dataset
+
+
+def _expand_styles_to_runs(fmt, mpl_kwargs, seg_dataset, n_datasets):
+    """Propagate per-INPUT-DATASET styles across run segmentation (GH #291
+    follow-up).
+
+    Contiguous-run segmentation turns N input datasets into >= N drawn runs,
+    so a caller's per-dataset style list (`fmt` plus the NAMED styling kwargs
+    that reach `mpl_kwargs` -- ``color``/``marker``/``linestyle``/
+    ``markersize``/``linewidth``) would otherwise fail the later one-value-
+    per-trace length checks. Any such list/tuple whose length equals the
+    INPUT-dataset count is expanded to run length by repeating each dataset's
+    value across the runs it produced; a list already at run length is left
+    untouched (explicit per-run styling). Generic ``**kwargs`` passthrough
+    values (e.g. ``alpha=``) never reach `mpl_kwargs` -- they are applied
+    verbatim per trace, never broadcast -- so they are unaffected here.
+    Returns the (possibly expanded) `fmt`; mutates `mpl_kwargs` in place.
+
+    `seg_dataset` gives each run's source-dataset index. When there is one
+    run per dataset (``len(seg_dataset) == n_datasets``) the two layouts
+    coincide and nothing needs changing."""
+    n_runs = len(seg_dataset)
+    if n_runs == n_datasets:
+        return fmt
+
+    def _expand(val):
+        if isinstance(val, (list, tuple)) and len(val) == n_datasets:
+            return [val[d] for d in seg_dataset]
+        return val
+
+    if isinstance(fmt, (list, tuple)) and len(fmt) == n_datasets:
+        fmt = [fmt[d] for d in seg_dataset]
+    for key in list(mpl_kwargs):
+        mpl_kwargs[key] = _expand(mpl_kwargs[key])
+    return fmt
+
+
+def _interp_static_line(arr):
+    """PCHIP-smooth a trajectory for STATIC line drawing, data-faithfully.
+
+    Subdivides each segment between consecutive samples with an equal
+    number of interpolated points so the result has roughly
+    `_STATIC_LINE_TARGET_VERTICES` vertices, while keeping EVERY original
+    sample (including the final one) as an exact vertex of the drawn line
+    (release-1.0 audit, F01-001: the historical `np.arange`-based grid
+    never reached the final sample -- lines stopped short of their true
+    endpoint, and for n > 900 samples the "interpolation" silently became
+    decimation). Interpolation only ever ADDS points between samples;
+    trajectories already at/above the target density are returned
+    unchanged (never decimated).
+    """
+    from scipy.interpolate import PchipInterpolator as pchip
+    arr = np.asarray(arr)
+    n = arr.shape[0]
+    if n < 2 or n >= _STATIC_LINE_TARGET_VERTICES:
+        return arr
+    # interpolated points to ADD per segment
+    k = int(np.ceil((_STATIC_LINE_TARGET_VERTICES - n) / (n - 1)))
+    seg = np.linspace(0.0, 1.0, k + 2)[:-1]  # left knot + k interior points
+    xx = np.concatenate([i + seg for i in range(n - 1)]
+                        + [np.array([n - 1.0])])
+    out = pchip(np.arange(n), arr)(xx)
+    # PCHIP passes through its knots up to floating error; enforce
+    # exactness so the drawn line provably contains every input sample.
+    out[::k + 1] = arr
+    return out
+
+
+def _interp_anim_line(arr, n_frames):
+    """Resample one trajectory onto the animation's exact frame grid.
+
+    PCHIP-interpolates (the same monotone interpolant the static path uses)
+    onto ``np.linspace(0, n - 1, n_frames)``: exactly `n_frames` rows -- one
+    per animation frame -- for EVERY dataset (release-1.0 audit: the
+    historical ``np.arange``-step grid was computed from the FIRST dataset
+    only, so later datasets of a different length were silently truncated or
+    ran out mid-animation, F04-003, and floating-point step error produced
+    901/41 frames where the docstring promises exactly
+    ``frame_rate * duration``, F04-004). Endpoints are exact, so the
+    animation provably reaches the final sample.
+    """
+    from scipy.interpolate import PchipInterpolator as pchip
+    arr = np.asarray(arr)
+    n = arr.shape[0]
+    if n < 2:
+        return arr
+    grid = np.linspace(0.0, n - 1.0, max(2, int(n_frames)))
+    out = pchip(np.arange(n), arr)(grid)
+    out[0] = arr[0]
+    out[-1] = arr[-1]
+    return out
+
+
+def _require_finite_for_line(xi, dataset_index):
+    """Fail fast, with a hypertools-level message, when a line-styled
+    trajectory still contains non-finite values after preprocessing.
+
+    PCHIP interpolation (static smoothing and animation frame gridding)
+    raises scipy's bare "`y` must contain only finite values." for NaN/inf
+    input. Rows with ALL features missing are the usual cause: the default
+    PPCA imputation cannot reconstruct them (it already warned), and the
+    raw scipy traceback named neither the problem nor the fix
+    (release-1.0 audit, F05-011).
+    """
+    if not np.isfinite(np.asarray(xi, dtype=float)).all():
+        raise ValueError(
+            f"dataset {dataset_index} still contains non-finite values "
+            "(NaN/inf) after preprocessing, so its line cannot be smoothed/"
+            "animated. This usually means some rows had ALL features "
+            "missing -- the default PPCA imputation cannot fill those. "
+            "Drop those rows, impute them first (e.g. hyp.impute(data, "
+            "model='Kalman')), or plot markers only (fmt='.')."
+        )
+
+
+def _normalize_save_path(save_path):
+    """Validate/normalize ``save_path=`` up front (release-1.0 audit,
+    F09-004/F09-007).
+
+    Accepts any path-like (``pathlib.Path`` included -- downstream writers
+    call ``.lower()``/string slicing), expands ``~``, and fails fast --
+    BEFORE the expensive analyze/reduce/align pipeline runs and before any
+    figure is created -- on the misuses that previously surfaced as cryptic
+    deep-stack errors or silent misbehavior: a non-path type (was
+    ``AttributeError: 'int' object has no attribute 'write'``), an empty
+    string (silently wrote a hidden ``'.png'`` file), an existing directory,
+    and a missing parent directory.
+
+    Returns
+    -------
+    str
+        The normalized filesystem path.
+    """
+    try:
+        sp = os.fspath(save_path)
+    except TypeError:
+        raise TypeError(
+            "save_path must be a str or a path-like object (e.g. "
+            f"pathlib.Path); got {type(save_path).__name__}: {save_path!r}."
+        ) from None
+    if isinstance(sp, bytes):
+        sp = os.fsdecode(sp)
+    if not sp.strip():
+        raise ValueError(
+            "save_path is an empty string; pass a real file path (e.g. "
+            "save_path='figure.png')."
+        )
+    sp = os.path.expanduser(sp)
+    if os.path.isdir(sp):
+        raise ValueError(
+            f"save_path points to an existing directory ({sp!r}); include "
+            f"a file name, e.g. save_path={os.path.join(sp, 'figure.png')!r}."
+        )
+    parent = os.path.dirname(os.path.abspath(sp))
+    if not os.path.isdir(parent):
+        raise FileNotFoundError(
+            f"save_path directory does not exist: {parent!r}. Create it "
+            "first (e.g. os.makedirs) or point save_path at an existing "
+            "directory."
+        )
+    return sp
+
+
+def _is_numeric_matrix(x):
+    """True when `x` is a plain python "matrix": a non-empty list whose
+    entries are all non-empty lists/tuples of scalars, with equal row
+    lengths -- e.g. ``[[1., 2.], [3., 4.]]``. Such input is ONE dataset
+    (exactly like the equivalent ``np.array``), not a nested list of
+    scalar "datasets" (release-1.0 audit, F01-004/F08-001)."""
+    if not (isinstance(x, list) and x):
+        return False
+    for row in x:
+        if not (isinstance(row, (list, tuple)) and len(row) > 0):
+            return False
+        if not all(isinstance(v, (int, float, np.number))
+                   and not isinstance(v, bool) for v in row):
+            return False
+    return len({len(row) for row in x}) == 1
+
+
+def _validate_labels_length(labels, dataset_lengths):
+    """Raise a clear ValueError when `labels=` does not carry exactly one
+    entry per observation (release-1.0 audit, F01-010/F10-011: a short
+    list crashed with a bare IndexError; a long one was silently
+    truncated). Accepts flat lists or lists nested per dataset."""
+    n_obs = int(sum(dataset_lengths))
+    if any(isinstance(el, (list, tuple)) for el in labels):
+        n_labels = sum(len(el) if isinstance(el, (list, tuple)) else 1
+                       for el in labels)
+    else:
+        n_labels = len(labels)
+    if n_labels != n_obs:
+        raise ValueError(
+            f"labels has {n_labels} entr{'y' if n_labels == 1 else 'ies'} "
+            f"but the data has {n_obs} observations; labels must have "
+            "exactly one entry per observation (use None entries for "
+            "points that should not be labeled).")
+
+
+def _valid_line2d_kwargs():
+    """The set of keyword-argument names matplotlib line artists accept
+    (full property names plus their aliases, e.g. both 'linewidth' and
+    'lw'), used to validate the GH #206 ``**kwargs`` passthrough up
+    front."""
+    from matplotlib.lines import Line2D
+    from matplotlib.artist import ArtistInspector
+    insp = ArtistInspector(Line2D)
+    valid = set(insp.get_setters())
+    for prop, aliases in getattr(insp, "aliasd", {}).items():
+        valid.add(prop)
+        valid.update(aliases)
+    return valid
+
+
+def _validate_extra_plot_kwargs(extra_kwargs):
+    """Fail fast, BEFORE the analyze/reduce pipeline runs, on extra kwargs
+    that no backend can use (release-1.0 audit, F01-012/F03-005):
+    previously a renamed 0.x kwarg (``group=``) or a misspelled stage
+    kwarg (``n_dims=``) ran the whole pipeline and then died with a
+    cryptic ``AttributeError: Line2D.set() got an unexpected keyword
+    argument ...``. Raises ``TypeError`` naming the kwarg, with a
+    did-you-mean hint where one exists."""
+    if not extra_kwargs:
+        return
+    if "group" in extra_kwargs:
+        raise TypeError(
+            "plot() got an unexpected keyword argument 'group'; group= "
+            "was renamed to hue= in hypertools 1.0 -- pass hue= instead.")
+    valid = _valid_line2d_kwargs() | set(_PLOTLY_MAPPED_KWARGS)
+    unknown = [k for k in extra_kwargs if k not in valid]
+    if unknown:
+        import difflib
+        import inspect
+        param_names = set(inspect.signature(plot).parameters) - {"x", "kwargs"}
+        candidates = sorted(param_names | valid)
+        k = unknown[0]
+        match = difflib.get_close_matches(k, candidates, n=1, cutoff=0.6)
+        hint = f"; did you mean {match[0]!r}?" if match else ""
+        raise TypeError(
+            f"plot() got an unexpected keyword argument {k!r}{hint} "
+            "(extra keyword arguments are passed through to matplotlib "
+            "line artists -- see the **kwargs entry in plot's docstring).")
+
+
+def _resolve_animate_mode(animate, n_datasets):
+    """Resolve ``animate=`` for ``animate='morph'`` support (Hungarian
+    point-cloud morphs between datasets, maintainer request): `animate` may
+    be a single GLOBAL mode (``False``/``True``/``'parallel'``/``'spin'``/
+    ``'serial'``/``'morph'``, unchanged from before) OR, ONLY for morph, a
+    per-dataset list with ``'morph'``/``None``/``False`` entries (one per
+    FINAL -- post cluster/hue-reshape -- dataset, matching `n_datasets`):
+    ``'morph'``-tagged datasets join the morph sequence IN LIST ORDER;
+    untagged datasets render as static (unanimated) backdrops.
+
+    Returns
+    -------
+    (mode, morph_tags)
+        `mode` is what every backend actually receives: the raw scalar
+        `animate` unchanged, or ``'morph'`` if a list was given. `morph_tags`
+        is ``None`` for every non-morph mode, or a list of `n_datasets` bool
+        (``True`` where that dataset joins the morph sequence) whenever
+        `mode` is ``'morph'`` (scalar ``animate='morph'`` tags every
+        dataset).
+
+    Raises
+    ------
+    ValueError
+        A list entry is not ``'morph'``/``None``/``False``; a list's length
+        doesn't match `n_datasets`; or fewer than 2 datasets end up tagged
+        ``'morph'`` (scalar or list form).
+    """
+    if isinstance(animate, (list, tuple)):
+        tags = []
+        for item in animate:
+            if item in (None, False):
+                tags.append(False)
+            elif item == "morph":
+                tags.append(True)
+            else:
+                raise ValueError(
+                    "animate list entries must be 'morph' or None/False "
+                    "(per-dataset animate lists only support tagging "
+                    f"datasets for animate='morph'); got {item!r}."
+                )
+        if len(tags) != n_datasets:
+            raise ValueError(
+                f"animate list has {len(tags)} entries but there are "
+                f"{n_datasets} datasets to plot; pass a single mode to "
+                "apply it to every dataset, or a list matching the "
+                "dataset count."
+            )
+        if sum(tags) < 2:
+            raise ValueError(
+                "animate='morph' (per-dataset list form) requires at "
+                f"least 2 datasets tagged 'morph'; got {sum(tags)}."
+            )
+        return "morph", tags
+    if animate == "morph":
+        if n_datasets < 2:
+            raise ValueError(
+                "animate='morph' requires at least 2 datasets to morph "
+                f"between; got {n_datasets}."
+            )
+        return "morph", [True] * n_datasets
+    return animate, None
 
 
 @manage_backend
@@ -19,39 +493,51 @@ def plot(
     fmt="-",
     marker=None,
     markers=None,
+    markersize=None,
+    linewidth=None,
     linestyle=None,
     linestyles=None,
     color=None,
     colors=None,
     palette="hls",
-    group=None,
     hue=None,
+    color_reduce=None,
     labels=None,
+    names=None,
     legend=None,
+    colorbar=None,
     title=None,
     size=None,
     elev=10,
     azim=-60,
     ndims=3,
-    model=None,
-    model_params=None,
     reduce="IncrementalPCA",
     cluster=None,
     align=None,
     normalize=None,
+    manip=None,
+    pipeline=None,
+    impute=None,
+    resample=None,
     n_clusters=None,
+    random_state=None,
+    predict=None,
+    t=10,
     save_path=None,
     animate=False,
     duration=30,
     tail_duration=2,
-    rotations=2,
+    rotations=1,
     zoom=1,
     chemtrails=False,
     precog=False,
     bullettime=False,
-    frame_rate=50,
+    frame_rate=30,
+    focused=None,
+    morph_samples=None,
     interactive=False,
     explore=False,
+    backend="auto",
     mpl_backend="auto",
     show=True,
     transform=None,
@@ -60,17 +546,165 @@ def plot(
     corpus="wiki",
     ax=None,
     frame_kwargs=None,
+    stream_init=10000,
+    stream_chunk=100,
+    stream_max=None,
+    stream_window=None,
+    return_model=False,
+    surface=None,
+    density=None,
+    font=None,
+    label_alpha=None,
+    xlabel=None,
+    ylabel=None,
+    zlabel=None,
+    **kwargs,
 ):
     """
     Plots dimensionality reduced data and parses plot arguments
 
     Parameters
     ----------
-    x : Numpy array, DataFrame, String, Geo or mixed list
-        Data for the plot. The form should be samples (rows) by features (cols).
+    x : Numpy array, DataFrame, String, or mixed list
+        Data for the plot. The form should be samples (rows) by features
+        (cols). A plain python list of equal-length numeric lists (e.g.
+        ``[[1., 2.], [3., 4.]]``) is treated as ONE dataset, exactly like
+        the equivalent ``np.array``. A bare scalar (e.g. ``hyp.plot(5)``)
+        is likewise accepted and treated as a single one-column
+        observation, drawn as a single point. When a list of several datasets is
+        given, every dataset must have the same number of columns
+        (features); to combine datasets with different feature counts,
+        bring them into a shared space first (e.g.
+        ``hyp.plot(hyp.align(data, align='hyper'), ...)``).
+
+        Display space: static plots do NOT draw the input values in their
+        original units. The (possibly reduced/aligned) coordinates are
+        mean-centered and rescaled into ``[-1, 1]`` (a single shared
+        affine transform across all datasets) to fit hypertools' unitless
+        square/cube frame -- so coordinates read off the returned Figure
+        are an affine image of the analyzed data, not the raw values, and
+        scales are not comparable across separately-created figures. Use
+        ``return_model=True`` to retrieve the analyzed (pre-rescale) data.
+
+        A DataFrame with a row **MultiIndex** (``x.index.nlevels >= 2``) is
+        handled specially (GH #95): it is expanded, BEFORE the format_data/
+        analyze/reduce pipeline runs, into one "leaf" dataset per unique full
+        index combination (level order as given), so leaves flow through
+        normalize/reduce/align exactly like any other list of datasets. AFTER
+        that pipeline transforms them, one MEAN trajectory is computed (in
+        the transformed/reduced space) for every unique value-combination of
+        each non-leaf level -- from the deepest such level up to the top
+        (outermost) level -- and appended as additional traces. For levels
+        numbered 0 (top) through L-1 (leaf), where L = ``x.index.nlevels``,
+        a trace whose deepest represented level is ``level_idx`` (``L - 1``
+        for a leaf; ``k`` for a mean over the prefix ``levels[0:k+1]``)
+        gets:
+
+        - ``linewidth = 1 + (L - 1 - level_idx)`` -- i.e. 1 plus the number
+          of levels averaged over: leaves are always 1, and each level
+          higher up is one point thicker, so the TOP-level means are the
+          thickest (``L``).
+        - ``alpha = min(1.0, 1 / (level_idx + 1) + 0.2)`` -- leaves are the
+          most transparent, the top-level mean is fully opaque (1.0), with
+          intermediate levels smoothly in between.
+        - ``color`` assigned purely by the trace's TOP-level index value
+          (from `palette`, in order of that value's first appearance) --
+          every leaf and every mean sharing the same top-level value shares
+          one color.
+
+        Example (2 levels, e.g. ``(condition, subject)``): leaves get
+        lw=1, alpha=0.7; the condition-means (the only non-leaf level, which
+        is also the top level here) get lw=2, alpha=1.0, and are the only
+        traces with a legend label. Example (3 levels, e.g.
+        ``(group, condition, subject)``): leaves lw=1, alpha=1/3+0.2≈0.533;
+        (group, condition)-means lw=2, alpha=0.7; group-means (top level)
+        lw=3, alpha=1.0.
+
+        `legend` is automatically populated with one entry per unique
+        top-level index value: only each top-level mean trace carries that
+        label; every other trace (all leaves, and any intermediate-level
+        means) is drawn with ``label='_nolegend_'`` (excluded from the
+        legend, matching the convention `predict=`'s forecast overlay
+        already uses). If `linestyle`/`linestyles` is given as a list, its
+        length MUST equal the number of unique top-level index values (one
+        style per top-level group, applied to every trace in that group);
+        a mismatched length raises ``ValueError``. Any `color`/`colors`/
+        `linewidth` kwarg is ignored (with a ``UserWarning``) since
+        MultiIndex grouping owns those. `hue=` is superseded with a
+        ``UserWarning`` (MultiIndex grouping takes precedence); `cluster=`/
+        `n_clusters=` raise ``ValueError`` (both would fight the MultiIndex
+        color assignment) -- reset the index first
+        (``df.reset_index(drop=True)``) to cluster instead. `predict=` also
+        raises ``ValueError`` when combined with MultiIndex expansion:
+        forecasts are computed one-per-leaf BEFORE the per-level mean
+        traces are appended, so the leaf count no longer matches the final
+        trace count -- reset the index first to use `predict=`. Row
+        averaging assumes member leaves align by row POSITION at each
+        timepoint; leaves of unequal length are averaged over their
+        overlapping prefix (the shortest member's length), with a single
+        ``UserWarning`` per affected group (deduplicated even when a
+        3+-level tree causes multiple groupings to share members). Works
+        with both static and animated plots and both rendering backends,
+        since the expansion happens upstream of drawing. A MultiIndex on
+        the COLUMNS (as opposed to the row index) is unrelated to this and
+        is unaffected -- it is handled by the existing column-formatting
+        pipeline in `hypertools.tools.format_data`/`hypertools.tools.df2mat`.
+        A single-level (or default `RangeIndex`) DataFrame, or a plain
+        array/list input, is completely unaffected by any of the above.
+
+        Expansion is ONLY applied when a single bare DataFrame is passed as
+        `x`. If `x` is a LIST containing one or more MultiIndex DataFrames
+        (whether alone or mixed with arrays/other DataFrames), the
+        MultiIndex is silently treated as a flat index on each such element
+        by the normal list-of-datasets pipeline -- a ``UserWarning`` is
+        raised naming each offending element's position in the list.
 
     fmt : str or list of strings
-        A list of format strings.  All matplotlib format strings are supported.
+        A list of format strings.  All matplotlib format strings are
+        supported, including color letters (e.g. ``'ro-'`` draws red
+        markers joined by a red line, exactly as in matplotlib; an
+        explicit `color=`/`colors=` kwarg wins over a fmt color letter).
+
+        A single fmt string is broadcast to every drawn trace. A fmt LIST is
+        distributed one-entry-per-DRAWN-TRACE, and normally there is one
+        trace per input dataset. ``hue=``/``cluster=``/``n_clusters=`` (and a
+        MultiIndex) regroup the data so the drawn-trace count can differ from
+        the input-dataset count; in the ONE reconciled case -- a categorical
+        (or cluster) LINE, which splits each dataset into one trace per
+        contiguous same-category run so lines never join separate
+        trajectories (GH #291) -- a fmt list given at INPUT-dataset length is
+        automatically propagated to each dataset's runs, so
+        ``hyp.plot([A, B], hue=h, fmt=['.', '-'])`` draws every run of A with
+        markers and every run of B as a line. Otherwise (marker-only
+        grouping, MultiIndex) the fmt list must match the drawn-trace count.
+        A list matching neither the input-dataset count nor the drawn-trace
+        count raises a ``ValueError`` naming fmt and both counts. A fmt tuple
+        is accepted and treated exactly like the equivalent list.
+
+        Static line rendering is DATA-FAITHFUL: line styles are smoothed
+        by PCHIP interpolation, which only ever ADDS points between
+        samples -- every original sample (including the final one) is
+        always among the drawn line vertices, and trajectories with ~900+
+        samples are drawn as-is (never decimated).
+
+        A format string combining a LINE style with a MARKER (e.g. 'o-',
+        's--') gets the SAME connecting-line smoothing/interpolation a
+        pure line style (e.g. '-') gets (GH #141 follow-up; previously
+        marker+line combos silently skipped interpolation, drawing
+        straight/unsmoothed segments between raw points). The line and
+        markers are drawn as two separate artists on the STATIC (non-
+        animated) matplotlib backend: the smoothed/interpolated line, plus
+        markers at the TRUE (pre-interpolation) sample points -- so
+        markers never drift onto the dense interpolated curve. Pure line-
+        only and pure marker-only styles are unaffected (still one
+        artist, as before). For ANIMATED matplotlib plots, and for the
+        plotly backend (static or animated -- it always draws a marker+
+        line combo as a single 'lines+markers' trace), a marker+line
+        combo's line is likewise now smoothed (the interpolation gate fix
+        is backend-agnostic), but its markers currently render at the
+        same (interpolated) points as the line rather than only the
+        original samples -- splitting those into separate artists/traces
+        for every animated style and for plotly is a follow-up.
 
     linestyle(s) : str or list of str
         A list of line styles
@@ -78,121 +712,759 @@ def plot(
     marker(s) : str or list of str
         A list of marker types
 
+    markersize : int or float
+        Size of the markers in points (default: matplotlib's 6.0). Applies
+        to both backends.
+
+    linewidth : int or float
+        Width of plotted lines in points (default: matplotlib's 1.5 for
+        static plots, 1 for animations). Applies to both backends.
+
     color(s) : str or list of str
-        A list of marker types
+        A list of colors
 
-    palette : str
-        A matplotlib or seaborn color palette
+    **kwargs : any other matplotlib-style keyword argument
+        GH #206: any keyword argument that isn't one of `plot()`'s own
+        named parameters above is passed straight through to each drawn
+        artist -- e.g. `zorder=3`, `alpha=0.5`, `dashes=(4, 2)`,
+        `markeredgecolor='k'`. Applied VERBATIM, identically, to every
+        drawn dataset -- unlike `color`/`marker`/`linestyle`/etc. (see
+        below), an extra kwarg's value is NEVER interpreted as "one entry
+        per dataset" even if it happens to be a list/tuple (e.g.
+        `dashes=(4, 2)` is a single dash-pattern VALUE, not per-dataset
+        values `4` and `2`) -- so there is no per-dataset form for an
+        extra kwarg; use one of the dedicated per-dataset-aware kwargs
+        (`color`/`marker`/`linestyle`/`markersize`/`linewidth`) for that.
+        Merged in AFTER the named style kwargs are resolved, so an
+        explicit named kwarg (or internal styling logic, e.g. MultiIndex/
+        mixture-cluster `alpha`, `legend=`'s `label`, `explore=`'s
+        `picker`) always wins on a naming collision. A kwarg that no
+        backend can use (not a matplotlib line-artist property or alias,
+        nor a plotly-mappable name) raises ``TypeError`` naming it -- with
+        a did-you-mean hint for near-misses of plot's own parameters
+        (e.g. ``n_dims`` -> ``ndims``) -- BEFORE the pipeline runs, rather
+        than surfacing a cryptic matplotlib internals error after it
+        (release-1.0 audit; the legacy 0.x ``group=`` kwarg gets a
+        dedicated "renamed to hue=" message). On the plotly backend, only
+        a small subset maps onto an actual trace property (`color`,
+        `alpha`, `linewidth`, `markersize`, `marker`, `linestyle`,
+        `label`); anything else is ignored with a ``UserWarning`` naming
+        every unmapped kwarg (rather than raising, since plotly's trace
+        objects were never going to support the same kwarg surface as
+        matplotlib).
 
-    group : str/int/float or list
-        A list of group labels. Length must match the number of rows in your
-        dataset. If the data type is numerical, the values will be mapped to
-        rgb values in the specified palette. If the data type is strings,
-        the points will be labeled categorically. To label a subset of points,
-        use None (i.e. ['a', None, 'b','a']).
+        Every list/tuple-valued NAMED styling kwarg `plot()` itself
+        broadcasts (`color`/`colors`, `marker`/`markers`, `linestyle`/
+        `linestyles`, `linewidth`, `markersize` -- NOT the generic `**kwargs`
+        passthrough above, which is applied verbatim and never broadcast, so
+        `alpha=`, `zorder=`, etc. must be a single value) is distributed
+        one-entry-per-DRAWN-TRACE and its length is validated against the
+        FINAL drawn-trace count (GH #206); a mismatch raises a ``ValueError``
+        naming the kwarg, the length given, and that count (previously it
+        silently degraded to `None` for every trace).
+
+        `cluster=`/`hue=`/`n_clusters=`/MultiIndex regroup the data, so the
+        final drawn-trace count can differ from the number of INPUT datasets.
+        In ONE case the two layouts are reconciled for you: a categorical
+        (or cluster) LINE splits each dataset into one trace per contiguous
+        same-category run (GH #291), and a style list given at INPUT-dataset
+        length is automatically propagated to every run that dataset produced
+        -- so ``hyp.plot([A, B], hue=h, linewidth=[1, 3])`` draws all of A's
+        runs at width 1 and all of B's at width 3 (a list already at run
+        length is used verbatim). For every OTHER regrouping -- marker-only
+        hue/cluster grouping (which merges observations across datasets into
+        one per-category trace, so a per-dataset style is not even well
+        defined), and MultiIndex expansion -- a style list must match the
+        resulting drawn-trace count, not the input-dataset count.
+
+    palette : str, list of colors, or matplotlib.colors.Colormap
+        A matplotlib or seaborn color palette (name), an explicit list of
+        colors (hex strings like '#ff0000', named colors like 'red', or
+        RGB(A) tuples -- usable on every path: categorical, continuous,
+        matrix hue, and the colorbar), or a matplotlib `Colormap` instance
+        (sampled evenly). For a CONTINUOUS `hue`, a short color list is
+        blended into a smooth gradient using the listed colors as anchors
+        (seaborn ``blend_palette`` semantics); for categorical/matrix hue
+        the list must supply at least one color per category/component.
+        Note the default 'hls' (like 'husl') is CYCLIC: for a continuous
+        `hue` mapping, hypertools samples only ~5/6 of its hue circle so
+        the minimum and maximum hue values stay visually distinguishable;
+        categorical palettes are used as-is.
+
+    hue : list, numpy array, pandas Series/Index/Categorical, or 2D matrix
+        Values used to color the plot, one per observation, matched to the
+        observations POSITIONALLY (a pandas Series' index is ignored).
+        Accepts categorical labels (one per observation; grouped and
+        colored by category), continuous numeric values (mapped through
+        the palette; combined with a line format this produces
+        multicolored lines whose color varies continuously along each
+        trajectory, and a marker+line combo format like ``'o-'`` keeps
+        BOTH components -- the multicolored line plus per-point-colored
+        markers at the true sample points), or a 2D matrix with one row
+        per observation (e.g.
+        mixture proportions or model weights; colors are blended per
+        observation). Non-finite (NaN/inf) continuous/matrix hue values
+        are drawn in a neutral light gray (with a warning) and are
+        excluded from the color mapping, so the remaining observations
+        keep their full color range. To label a subset of points
+        categorically, use None entries (i.e. ['a', None, 'b', 'a']):
+        the None-labeled points are drawn in the same de-emphasized
+        neutral gray, get no legend entry, and do not consume a palette
+        slot (the named categories keep the first palette colors, in
+        first-appearance order).
+
+        The categorical-vs-continuous choice: string labels always take
+        the CATEGORICAL path (one trace per category, legend-able,
+        categories in first-appearance order). A 1-D numeric hue takes
+        the CONTINUOUS path (per-point palette-mapped colors, no
+        legend), EXCEPT that integer (or boolean) values with at most 12
+        unique values -- and fewer unique values than observations --
+        are treated as categorical group ids (e.g. the cluster labels
+        ``hyp.cluster`` returns): one trace per id, palette-colored and
+        legend-labeled in sorted numeric order. Float-valued or
+        higher-cardinality integer hues are always continuous. To force
+        grouping, pass the ids as strings (``hue=[str(g) for g in
+        ids]``); to force a continuous mapping, cast to float
+        (``hue=np.asarray(ids, dtype=float)``).
+
+        A SCALAR `hue` (a single string or number, e.g. ``hue='red'``) is
+        broadcast to one group covering every observation -- a single
+        color -- and emits a `UserWarning`, since this is usually a
+        mistake (e.g. a DataFrame column NAME passed seaborn-style; pass
+        the column's values, ``hue=df['col']``, instead).
+
+        When the data is a list of datasets, `hue` may mirror that nesting --
+        one hue sub-sequence per dataset, each matching that dataset's length
+        (e.g. ``hyp.plot([d0, d1], hue=[h0, h1])``); it is flattened to one
+        value (or matrix row) per observation.
+
+        A 2D matrix hue with MORE than 3 columns (or any matrix, if
+        `color_reduce=` is given) is first reduced to 3 columns and mapped
+        directly to (r, g, b) -- see `color_reduce`.
+
+    color_reduce : str, dict, class, instance, or None
+        How to reduce an arbitrary high-dimensional matrix `hue` to the 3
+        columns used as (r, g, b). Any `hyp.reduce` spec (default: None ->
+        'IncrementalPCA'). Only applies when `hue` is a 2D matrix; the three
+        reduced dimensions are min-max scaled to [0, 1] per column and used as
+        the red/green/blue channels, so an arbitrary per-observation feature
+        matrix becomes a continuous RGB coloring. A matrix `hue` with <=3
+        columns is left on the palette-blend path unless `color_reduce=` is
+        given explicitly.
+
+    names : list or None
+        Per-DATASET names, one per dataset in a list input (default: None).
+        Distinct from `labels` (per-POINT text call-outs) and `hue` (per-
+        observation coloring): each name labels its dataset's trace and turns
+        the legend on, so `hyp.plot([raw, a, b], names=['raw', 'a', 'b'])`
+        shows a legend naming the three datasets. Must have exactly one entry
+        per dataset; mutually exclusive with passing a `legend=` list (use one
+        or the other). Rendered on both the matplotlib and plotly backends.
+        Incompatible with a CATEGORICAL `hue` (which regroups the data by
+        category, so the drawn traces are no longer the named datasets);
+        that combination raises ``ValueError`` -- label the hue categories
+        with ``legend=[...]`` instead.
 
     labels : list
-        A list of labels for each point. Must be dimensionality of data (x).
-        If no label is wanted for a particular point, input None.
+        A list of point labels: exactly one entry per OBSERVATION (row)
+        across all datasets, or a nested list with one sub-list per
+        dataset; a length mismatch raises ``ValueError`` naming labels and
+        both counts. If no label is wanted for a particular point, input
+        None for that entry.
 
-    legend : list or bool
+        In an ANIMATION whose frame grid is coarser than the data (fewer
+        than one frame per sample), each label is attached to the nearest
+        drawn frame point, so labels are never silently dropped.
+
+        Supported on BOTH backends (GH #205/#F3): matplotlib draws these as
+        `ax.annotate` call-outs; plotly draws the same points as
+        `layout.scene.annotations` (3D) or `layout.annotations` (2D), at
+        the same data coordinates, honoring the resolved `font=` (see
+        below) the same way the legend/colorbar/title do.
+
+    label_alpha : float or None
+        Opacity of the translucent background box drawn behind each
+        `labels=` point annotation (GH #103). `None` (default) keeps the
+        historical opacity, 0.5, on both backends. Must be a number in
+        ``[0, 1]``; any other value raises `ValueError`. On matplotlib
+        this sets the annotation `bbox`'s `alpha`; on plotly it sets the
+        alpha channel of the annotation's `bgcolor`
+        (``'rgba(255,255,255,<label_alpha>)'``). Works for both static
+        and animated plots (labels are drawn once, at the original data
+        coordinates, and persist across every frame on both backends).
+
+    legend : list, str, or bool
         If set to True, legend is implicitly computed from data. Passing a
-        list will add string labels to the legend (one for each list item).
+        list will add string labels to the legend (one for each list
+        item); the list must have exactly one entry per drawn dataset/
+        group (``ValueError`` naming legend otherwise). A bare string is
+        treated as a single-entry list (valid only for a single dataset).
+
+    colorbar : bool or dict
+        If True, draws a colorbar reflecting the color mapping in use
+        (GH #100). For a continuous 1D `hue` (or continuous `hue` combined
+        with a line format, which produces multicolored lines), the
+        colorbar is a continuous `ScalarMappable` spanning the ACTUAL
+        `hue` value range, using the SAME palette as the lines/markers.
+        For discrete groups (categorical `hue`, `cluster`/`n_clusters`, or
+        a plain list of datasets with no `hue`/`cluster`), the colorbar is
+        segmented (one BoundaryNorm-style block per group), with tick
+        labels taken from an explicit ``legend=[...]`` list if given, else
+        the categorical `hue`'s own category names (no ``legend=True``
+        needed), else ``1..n``. Pass a dict for finer control:
+        ``{'label': str, 'ticks': [...], 'location': 'right'|'left'|'top'|
+        'bottom'}`` (all keys optional; ``location`` defaults to
+        ``'right'``, the same side as the legend -- when both a legend and
+        a right-side colorbar are shown, the figure is widened so neither
+        is clipped or overlaps the other). Raises ``ValueError`` if
+        requested with no color mapping available at all (e.g. a single
+        dataset with no `hue`/`cluster`). Default None (no colorbar).
 
     title : str
         A title for the plot
 
+    font : None, str, or matplotlib.font_manager.FontProperties
+        Controls the font used for every text surface hypertools draws,
+        on BOTH backends (GH #205): point annotations (`labels=`), the
+        legend, colorbar tick labels/axis label, and the plot title -- on
+        matplotlib via `ax.annotate`/`ax.legend`/etc.; on plotly via
+        `layout.scene.annotations`/`layout.annotations`, the legend,
+        colorbar title/ticks, and the plot title.
+
+        - `None` (default): hypertools uses its own sans-serif FALLBACK
+          STACK, led by the Noto Sans face bundled with the package (SIL
+          OFL 1.1, in ``hypertools/external/fonts``). matplotlib is handed
+          that font FILE, so the MATPLOTLIB backend renders in the bundled
+          Noto Sans identically on every platform. The PLOTLY backend can
+          only pass a family NAME to the rendering browser (it cannot use a
+          font file), so it *prefers* Noto Sans but falls back to the next
+          installed system face when Noto isn't present -- plotly typography
+          may therefore vary by platform. Both backends resolve their stack
+          PER GLYPH (matplotlib walks a ``font.family`` list; a browser walks
+          a CSS stack), so text mixing scripts renders completely from
+          several faces (Latin from Noto Sans, Japanese from an installed
+          CJK face, math symbols from DejaVu Sans) instead of showing tofu
+          for whatever the primary face lacks -- and, crucially, the primary
+          face stays Noto Sans, so a stray accent or Greek letter does NOT
+          swap the whole plot onto some other font. Only when the stack has
+          a genuine COVERAGE GAP (a script no stack family can draw) does
+          hypertools scan for an installed font covering that gap and ADD it
+          as an extra fallback (Noto stays primary) -- to matplotlib's
+          ``font.family`` list and, appended near the end, to the plotly CSS
+          stack (the latter still needs that family installed in the browser
+          to take effect; see the backend note below). A ``UserWarning`` is
+          raised only for characters NOTHING available can draw, naming them.
+          Bundling every script is infeasible (a pan-CJK face alone is
+          ~16 MB), so for full CJK coverage install a pan-Unicode font --
+          ``apt-get install fonts-noto-cjk`` on most Linux distros;
+          macOS/Windows usually already ship one (Hiragino Sans/Yu Gothic).
+        - `str`: either the name of an installed font FAMILY (e.g.
+          ``'Noto Sans CJK JP'``), or a path to a ``.ttf``/``.otf``/
+          ``.ttc`` font FILE (existing paths are detected automatically,
+          relative or absolute). Raises ``ValueError`` if the string is
+          neither a resolvable family name nor an existing file.
+        - `matplotlib.font_manager.FontProperties`: used as-is.
+
+        Backend semantics differ because matplotlib and plotly resolve
+        fonts differently: matplotlib accepts a font FILE and sets a
+        `FontProperties` object on each `Text` artist individually
+        (exact glyph outlines, embedded at save time). plotly (rendered
+        by a browser, or by Chromium via kaleido for static image export)
+        only understands FAMILY NAMES -- there is no way to point it at a
+        specific font file -- so hypertools takes the resolved font's
+        family name (`FontProperties.get_name()`) and puts it at the FRONT
+        of hypertools' curated sans-serif CSS stack (e.g.
+        ``'"<name>", "Noto Sans", "Helvetica Neue", ..., sans-serif'``),
+        and sets it as `layout.font.family`, which every plotly text
+        surface hypertools creates inherits unless it overrides its own
+        `font.family` (none do, after this change). Static plotly image
+        export (`save_path=...png/.jpg` etc., via kaleido) still depends
+        on the exporting machine's OS having a font that actually covers
+        the requested family/characters -- unlike matplotlib, hypertools
+        cannot embed a specific font file into a plotly export.
+
+    xlabel, ylabel, zlabel : str or None
+        Axis labels, on BOTH backends, for STATIC and ANIMATED plots, in
+        2-D and 3-D (round17 #7). `None` (default): no label, EXCEPT that
+        when a single DataFrame with named (non-default, non-duplicate)
+        columns is plotted and the drawn axes correspond 1:1 to its
+        (df2mat-transformed) columns -- a 2- or 3-column DataFrame drawn
+        with no real dimensionality reduction -- the column names become
+        the default axis labels (release-1.0 audit, F08-016). Explicitly
+        passed labels always win (pass e.g. ``xlabel=''`` to suppress an
+        inferred label), and nothing is inferred when `transform=` or
+        `pipeline=` replace the standard analysis pipeline. matplotlib:
+        `ax.set_xlabel`/`ax.set_ylabel`/`ax.set_zlabel`; hypertools draws
+        its own cube/square frame in place of matplotlib's default axes
+        box (ticks/spines/panes are hidden), so whenever any of these
+        three is given, only the specific label Text artist(s) are kept
+        visible rather than the whole axis (ticks/spines/gridlines/3-D
+        panes stay hidden either way). plotly: `layout.scene.xaxis.title`/
+        `.yaxis.title`/`.zaxis.title` for 3-D, `layout.xaxis.title`/
+        `.yaxis.title` for 2-D -- again with only that axis's title shown
+        (ticks/gridlines/zero-line stay hidden). `zlabel` on a 2-D plot
+        (`ndims` < 3, or data that is intrinsically lower-dimensional)
+        raises `ValueError` (no z-axis to label) -- pass `ndims=3` (the
+        default) to use `zlabel=`, or use `xlabel=`/`ylabel=` for 2-D
+        data.
+
     size : list
-        A list of [width, height] in inches to resize the figure
+        A [width, height] pair of numbers, in inches, to resize the figure
+        (anything else raises ``ValueError`` naming size)
 
-    normalize : str or False
-        If set to 'across', the columns of the input data will be z-scored
-        across lists (default). If set to 'within', the columns will be
-        z-scored within each list that is passed. If set to 'row', each row of
-        the input data will be z-scored. If set to False, the input data will
-        be returned (default is False).
+    elev : int or float
+        The camera elevation angle, in degrees, for 3-D plots: the angle
+        above (positive) or below (negative) the x-y plane (default: 10,
+        matplotlib's `Axes3D.view_init` convention). Must be a number;
+        ignored for 2-D/1-D plots.
 
-    reduce : str or dict
-        Decomposition/manifold learning model to use.  Models supported: PCA,
-        IncrementalPCA, SparsePCA, MiniBatchSparsePCA, KernelPCA, FastICA,
-        FactorAnalysis, TruncatedSVD, DictionaryLearning, MiniBatchDictionaryLearning,
-        TSNE, Isomap, SpectralEmbedding, LocallyLinearEmbedding, and MDS. Can be
-        passed as a string, but for finer control of the model parameters, pass
-        as a dictionary, e.g. reduce={'model' : 'PCA', 'params' : {'whiten' : True}}.
-        See scikit-learn specific model docs for details on parameters supported
-        for each model.
+    azim : int or float
+        The camera azimuth angle, in degrees, for 3-D plots: the rotation
+        of the viewpoint about the z axis (default: -60, matplotlib's
+        `Axes3D.view_init` convention). Must be a number; ignored for
+        2-D/1-D plots. For every rotating 3-D animation style ('spin',
+        'parallel'/True, 'window', 'serial', 'morph') this is the STARTING
+        azimuth; the camera sweeps `rotations` full turns from it, so
+        rotations=0 gives a fixed camera at exactly this angle.
+
+    normalize : str, False, or None
+        If set to 'across', the columns of the input data are z-scored
+        across lists. If set to 'within', the columns are z-scored within
+        each list that is passed. If set to 'row', each row of the input
+        data is z-scored. If set to False or None, no normalization is
+        applied (default: None).
+
+    manip : model spec or None
+        A `hypertools.manip` spec (a registry name, dict spec, class/
+        instance, or a `list` chaining several -- see
+        `hypertools.manip.manip.manip`), run at the canonical `manip` stage
+        position (GH #153): FIRST, before `normalize`/`reduce`/`align`/
+        `cluster` -- e.g. ``hyp.plot(data, manip=[{'model': 'Smooth',
+        'kwargs': {'kernel_width': 25}}, {'model': 'Resample', 'kwargs':
+        {'n_samples': 1000}}], align={'model': 'HyperAlign'},
+        reduce='UMAP')`` runs the whole cross-module pipeline in one call
+        (GH #275). `resample=` (below) is independent sugar for a single
+        `Resample` step applied BEFORE this stage's data reaches it (so
+        resample sugar always runs first when both are given). Mutually
+        exclusive with `pipeline=` (default: None).
+
+    pipeline : hypertools.Pipeline or None
+        A previously-FITTED `Pipeline` (e.g. from
+        ``hyp.analyze(data, ..., return_model=True)`` or this function's
+        own `return_model=True` bundle's `'pipeline'` key) to apply to `x`
+        via `.transform` instead of fitting new `manip`/`normalize`/
+        `reduce`/`align`/`cluster` models (GH #227) -- e.g. fit on dataset
+        A via ``p = hyp.analyze(A, manip='Smooth', reduce='PCA',
+        align='HyperAlign', return_model=True)[1]`` and reuse those exact
+        fitted parameters on a structurally-identical dataset B via
+        ``hyp.plot(B, pipeline=p)``. Mutually exclusive with `manip=`/
+        `normalize=`/`reduce=`/`ndims=`/`align=`/`cluster=` (each must be
+        left at its default) -- passing both raises `ValueError` naming the
+        conflicting kwarg(s). `resample=` is still applied (as sugar, before
+        `pipeline.transform` runs) since it is not one of the stage kwargs
+        the fitted `Pipeline` itself covers (default: None).
+
+    reduce : str, dict, class, instance, or fitted Reducer
+        Decomposition/manifold learning model to use (default:
+        'IncrementalPCA'). Models supported: PCA, IncrementalPCA, SparsePCA,
+        MiniBatchSparsePCA, KernelPCA, FastICA, FactorAnalysis, TruncatedSVD,
+        DictionaryLearning, MiniBatchDictionaryLearning, TSNE, Isomap,
+        SpectralEmbedding, LocallyLinearEmbedding, MDS, and UMAP; the mixture
+        (soft-clustering) models GaussianMixture, BayesianGaussianMixture,
+        LatentDirichletAllocation and NMF (which return per-observation
+        membership proportions, GH #174); and the torch-backed autoencoders
+        Autoencoder, DeepAutoencoder, SparseAutoencoder,
+        ConvolutionalAutoencoder, SequenceAutoencoder and
+        VariationalAutoencoder (GH #162, `pip install "hypertools[torch]"`).
+        Can be passed as a string, or for finer control of the model
+        parameters as a dictionary, e.g.
+        reduce={'model': 'PCA', 'kwargs': {'whiten': True}}. See scikit-learn
+        specific model docs for details on parameters supported for each model.
+        A model INSTANCE (including an already-FITTED reducer, which is
+        applied via `.transform` without refitting) is also accepted; if
+        its output still has more than 3 dimensions (e.g.
+        ``PCA(n_components=5)``), a second display-only reduction with the
+        default reducer projects it to 3 dimensions for plotting. If None,
+        no reduction is applied -- valid only when the data already has at
+        most 3 (or `ndims`) dimensions; otherwise a ``ValueError``
+        explains that the data cannot be drawn unreduced.
 
     ndims : int
         An `int` representing the number of dims to reduce the data x
-        to. If ndims > 3, will plot in 3 dimensions but return the higher
-        dimensional data. Default is None, which will plot data in 3
-        dimensions and return the data with the same number of dimensions
-        possibly normalized and/or aligned according to normalize/align
-        kwargs.
+        to. If ndims > 3, the data is analyzed at that dimensionality but
+        plotted in 3 dimensions (a second, display-only reduction with the
+        default reducer); use ``return_model=True`` to retrieve the
+        higher-dimensional analyzed data. Default is 3 (plot in 3
+        dimensions).
 
-    align : str or dict or False/None
-        If str, either 'hyper' or 'SRM'.  If 'hyper', alignment algorithm will be
-        hyperalignment. If 'SRM', alignment algorithm will be shared response
-        model.  You can also pass a dictionary for finer control, where the 'model'
-        key is a string that specifies the model and the params key is a dictionary
-        of parameter values (default : 'hyper').
+    align : str, dict, False, or None
+        Alignment model to bring a list of datasets into a shared space.
+        If str, 'hyper' (hyperalignment) or 'SRM' (shared response model).
+        You can also pass a dictionary for finer control, where the 'model'
+        key specifies the model and 'kwargs' holds its parameters, e.g.
+        align={'model': 'HyperAlign', 'kwargs': {'n_iter': 10}}. If False or
+        None, no alignment is applied (default: None).
 
-    cluster : str or dict or False/None
+    cluster : str, dict, class, instance, False, or None
         If cluster is passed, HyperTools will perform clustering using the
-        specified clustering clustering model. Supportted algorithms are:
-        KMeans, MiniBatchKMeans, AgglomerativeClustering, Birch,
-        FeatureAgglomeration, SpectralClustering and HDBSCAN (default: None).
-        Can be passed as a string, but for finer control of the model
-        parameters, pass as a dictionary, e.g.
-        reduce={'model' : 'KMeans', 'params' : {'max_iter' : 100}}. See
-        scikit-learn specific model docs for details on parameters supported for
-        each model. If no parameters are specified in the string a default set
-        of parameters will be used.
+        specified clustering model (a registry name, dict spec, model
+        class, or sklearn-API model instance -- an instance's own
+        parameters are used, so `n_clusters=` is ignored, with a warning,
+        alongside one). Supported algorithms are: KMeans,
+        MiniBatchKMeans, AgglomerativeClustering, Birch,
+        SpectralClustering, MeanShift, DBSCAN, OPTICS, AffinityPropagation and
+        HDBSCAN, plus the mixture (soft-clustering) models GaussianMixture,
+        BayesianGaussianMixture, LatentDirichletAllocation and NMF. Can be
+        passed as a string, or for finer control of the model parameters as a
+        dictionary, e.g. cluster={'model': 'KMeans', 'kwargs': {'max_iter':
+        100}}. See scikit-learn specific model docs for details on parameters
+        supported for each model. If no parameters are specified a default set
+        of parameters will be used: 3 clusters/components for most models
+        (the same default as `hyp.cluster`), 20 components for
+        LatentDirichletAllocation and NMF (default: None). Clustering runs
+        on the REDUCED (post `normalize=`/`reduce=`/`align=`) scores, not
+        the raw input -- so LatentDirichletAllocation and NMF, which
+        require non-negative data, fail here even when the raw data is
+        non-negative (the reduced scores are signed); run `hyp.cluster`
+        on the raw data instead to use those models. FeatureAgglomeration
+        raises a ``ValueError``: it clusters features (columns), not
+        observations, so its labels cannot group the plotted rows -- use
+        `hyp.cluster(data, cluster='FeatureAgglomeration')` directly.
+        Cluster labels are drawn as one trace per cluster (palette
+        colors, legend entries in sorted label order).
 
     n_clusters : int
-        If n_clusters is passed, HyperTools will perform k-means clustering
-        with the k parameter set to n_clusters. The resulting clusters will
-        be plotted in different colors according to the color palette.
+        If n_clusters is passed, HyperTools will perform clustering with
+        the cluster count set to n_clusters, using k-means unless
+        `cluster=` selects another model. The resulting clusters are
+        plotted in different colors according to the color palette.
+        Default None: each model's default count is used (3, matching
+        `hyp.cluster`; 20 components for LatentDirichletAllocation/NMF).
+        Ignored, with a ``UserWarning``, for models that discover the
+        number of clusters themselves (HDBSCAN, MeanShift, DBSCAN,
+        OPTICS, AffinityPropagation). If the `cluster=` spec itself
+        carries a cluster count (an instance's own setting, or
+        `n_clusters`/`n_components` in a dict spec's kwargs), the spec's
+        value wins and a ``UserWarning`` notes the conflict -- the same
+        precedence `hyp.cluster` applies.
 
-    save_path : str
-        Path to save the image/movie. Must include the file extension in the
-        save path (i.e. save_path='/path/to/file/image.png'). NOTE: If saving
-        an animation, FFMPEG must be installed (this is a matplotlib req).
-        FFMPEG can be easily installed on a mac via homebrew brew install
-        ffmpeg or linux via apt-get apt-get install ffmpeg. If you don't
-        have homebrew (mac only), you can install it like this:
-        /usr/bin/ruby -e "$(curl -fsSL
-        https://raw.githubusercontent.com/Homebrew/install/master/install)".
+    random_state : int, RandomState, or None
+        Seed for reproducibility, threaded to the reduce/cluster stages: it is
+        injected into any stage model whose constructor accepts a
+        `random_state` (UMAP, TSNE, KMeans, GaussianMixture, ...), so e.g.
+        `hyp.plot(x, reduce='UMAP', random_state=0)` gives a repeatable
+        embedding. Deterministic models and pre-constructed instances are
+        unaffected (default: None).
 
-    animate : bool, 'parallel' or 'spin'
+    impute : str or dict or class or class instance or None
+        Overrides the default PPCA fill for missing (NaN) values with a
+        different `hypertools.impute` model, e.g. 'Kalman', 'KNNImputer'
+        (default: None, i.e. PPCA -- observed values are preserved
+        exactly and only the NaN entries are reconstructed; see
+        `hypertools.impute.ppca`). See `hypertools.impute.impute` for
+        accepted forms.
+
+    resample : int or False/None
+        If set to an integer `N` (GH #94), each input dataset is
+        PCHIP-resampled to exactly `N` rows via the existing
+        `hypertools.manip` ``Resample`` manipulator, applied right after
+        `hypertools.tools.format_data` (so it sees whatever `x` has been
+        normalized into -- a plain list of per-dataset numpy arrays) and
+        BEFORE the normalize/reduce/align pipeline. `resample=500` on a
+        100-row dataset produces per-dataset arrays with exactly 500 rows
+        going into normalize/reduce/align/cluster/hue -- and the SAME
+        values `hyp.manip(data, model='Resample', n_samples=500)` produces
+        on that same input, since it is the identical manipulator call
+        under the hood. This is independent
+        of, and happens well before, the later line-smoothing
+        interpolation (GH #141) applied for animation/line-drawing
+        purposes. Default `None` (no resampling, unchanged pre-existing
+        behavior); `False` is equivalent to `None`. Raises ``ValueError``
+        if `resample` is anything other than `False`/`None` or an integer
+        ``>= 2``.
+
+    predict : str or dict or class or class instance or None
+        If set, forecasts `t` new rows per input dataset (in the plotted,
+        post normalize/reduce/align space) using the specified
+        `hypertools.predict` model, e.g. 'Kalman', 'ARIMA', 'GaussianProcess'
+        (see `hypertools.predict.predict` for accepted forms), and overlays
+        one dashed, low-opacity (alpha 0.6) forecast trace per dataset in the
+        SAME color as its source line (no separate legend entry). The
+        drawn overlay prepends the last observed row so the dashed trace
+        connects to the trajectory (`t + 1` drawn vertices); the forecast
+        DATA itself -- e.g. in the ``return_model=True`` bundle -- has
+        exactly `t` rows, matching `hyp.predict`. Only
+        supported for STATIC plots (default: None; raises
+        ``NotImplementedError`` if combined with ``animate``).
+
+    t : int or datetime-like
+        Forecast horizon passed to `predict` (see
+        `hypertools.predict.common.resolve_t`); ignored unless `predict` is
+        set (default: 10).
+
+    save_path : str or path-like
+        Path to save the image/movie; the format is chosen by the file
+        extension, which must be included (e.g.
+        save_path='/path/to/file/image.png'). ``pathlib.Path`` objects work
+        everywhere a str does, a leading ``~`` is expanded, and the target
+        directory must already exist (a missing directory/empty path/
+        non-path value fails fast with a clear error before the plot is
+        computed). Supported formats: STATIC matplotlib plots accept any
+        `matplotlib.pyplot.savefig` format (.png, .pdf, .svg, .eps, .jpg,
+        ...); ANIMATED matplotlib plots accept .gif, .png/.apng (animated
+        PNG), and .svg (animated vector graphics) with no extra
+        dependencies, plus the video formats .mp4/.mov/.avi/.m4v/.mkv,
+        which -- and ONLY which -- require FFmpeg (https://ffmpeg.org;
+        e.g. ``brew install ffmpeg`` on macOS with Homebrew
+        (https://brew.sh) or ``apt-get install ffmpeg`` on Debian/Ubuntu).
+        The plotly backend saves .html natively (static or animated);
+        its static image export (.png/.jpg/.svg/.pdf, via kaleido) and
+        animated .gif/.png/.apng/video export render each frame through
+        kaleido. Note on ANIMATION export cost: every frame is rendered
+        and encoded, and the default `duration=30` x `frame_rate=30`
+        yields 900 frames -- roughly a minute of encoding and a
+        multi-MB file even for small datasets; encoding time and file
+        size scale linearly with `duration * frame_rate`, so pass a
+        shorter `duration=` (e.g. 2-5 seconds) for quick exports.
+
+    animate : bool, 'parallel', 'spin', 'serial', 'window', 'morph', or list
         If True or 'parallel', plots the data as an animated trajectory, with
         each dataset plotted simultaneously. If 'spin', all the data is plotted
-        at once but the camera spins around the plot (default: False).
+        at once but the camera spins around the plot. If 'serial', datasets
+        appear ONE AT A TIME in list order: each grows point-by-point into
+        place while all previous datasets stay fully drawn, and datasets are
+        never connected to each other -- useful for e.g. conversation turns
+        accumulating in a shared embedding space (default: False). This MODE
+        is always GLOBAL -- there is exactly one camera and one frame loop
+        driving every dataset in the animation, so it cannot vary per
+        dataset (unlike `chemtrails`/`precog`/`bullettime` below, which CAN).
+
+        2-D animations (round17 #9, GH #123): every style EXCEPT `'spin'`
+        works for `ndims=2` as well as `ndims=3`, in both backends, using a
+        FIXED (non-rotating) viewport -- there is simply no camera-angle
+        bookkeeping to do in 2-D. `'spin'` rotates the camera and nothing
+        else, so it is meaningless for 2-D data and raises `ValueError`
+        (naming the other styles) instead of silently doing nothing.
+        `rotations=`/`zoom=` are 3-D camera controls with no 2-D
+        equivalent; passing either as a non-default value alongside a
+        2-D `animate` warns once (`UserWarning`) that it is ignored, in
+        both backends -- including `animate='morph'`, whose `rotations`
+        doubles as a per-segment PACING control in 3-D (not purely a
+        camera control there -- see the note under `'morph'` below), but
+        which is ignored the SAME way for consistency with every other
+        2-D style: 2-D morphs always use even segment timing.
+
+        If 'window' (round17 #8, GH #275 -- Jeremy's own definition:
+        "like bullettime, but without the precog and chemtrail parts"), a
+        sliding, FULLY-OPAQUE window of length `focused` (seconds; see
+        `focused` below) moves along each trajectory -- nothing outside the
+        window is drawn at all, not even a faded trail (unlike `bullettime`/
+        `chemtrails`/`precog`, which paint a low-opacity backdrop outside
+        their own in-focus window). In 3-D, the camera still rotates at a
+        constant speed per `rotations`, exactly like `True`/`'parallel'`; in
+        2-D there is no camera, so only the window itself moves. Any of
+        `chemtrails`/`precog`/`bullettime` passed alongside `animate='window'`
+        is ignored (`UserWarning`, naming the ignored flag(s) and dataset
+        indices -- see the note under `bullettime` below), since 'window' has
+        no trail artist/trace to configure. Both 2-D and 3-D, in both
+        backends.
+
+        If 'morph' (maintainer request, 2026-07-06), every dataset is
+        treated as a POINT CLOUD (not a trajectory, regardless of `fmt`) and
+        morphed ds_1 -> ds_2 -> ... -> ds_N through a hold/morph/hold/...
+        schedule (``2N - 1`` segments: ``[hold_1, morph_1->2, hold_2, ...,
+        hold_N]``). Every dataset keeps its FULL point count (maintainer
+        request, 2026-07-06 follow-up): the target count `n` is the
+        LARGEST morphing dataset's own size (after the optional
+        `morph_samples` cap below), and any dataset with `m < n` points is
+        padded up to `n` by duplicating `n - m` of its OWN points, chosen
+        at random (seeded) -- no real data point is ever dropped. The
+        duplicated (padding) points are hidden during that dataset's own
+        HOLD segments (so semi-transparent markers alpha-composite exactly
+        like a plain plot of that dataset's true points) and shown, like
+        every other point, during MORPH segments. Consecutive (now equal-
+        sized, `n`-point) clouds are chain-matched point-for-point with the
+        Hungarian algorithm (`scipy.optimize.linear_sum_assignment` on
+        pairwise distances, so each point travels the shortest total
+        distance to its partner in the next cloud -- exactly
+        `examples/plot_shape_morph.py`'s original hand-rolled algorithm,
+        now built into the library), and eased between clouds with
+        smoothstep interpolation. A SINGLE point artist/trace is drawn
+        (one per plot, not one per dataset): its color linearly (RGB)
+        interpolates between the two datasets' own colors during a morph
+        segment and is solid during a hold. Requires at least 2 datasets;
+        raises `ValueError` otherwise. Both 2-D and 3-D data are supported
+        (round17 #9, GH #123 -- previously 2-D raised `NotImplementedError`);
+        `surface=True` recomputes that one artist's hull every frame from
+        its current interpolated positions (unaffected by which points are
+        duplicates -- a duplicate is an exact copy of an existing point, so
+        it never changes a convex hull's shape), but this hull-tracking is
+        still 3-D only -- `surface=` is silently a no-op for an animated
+        2-D `'morph'` (or any other 2-D animate style; see `surface`'s own
+        docstring).
+
+        `animate` may ALSO be a per-dataset LIST (length = the number of
+        FINAL, post `cluster`/`hue`-reshape datasets), with each entry
+        `'morph'`, `None`, or `False`: `'morph'`-tagged datasets join the
+        morph sequence IN LIST ORDER; untagged datasets are drawn as STATIC
+        (unanimated) backdrops, present in every frame. At least 2 entries
+        must be `'morph'` (`ValueError` otherwise); any other mode string
+        inside a list raises `ValueError` (list form only supports tagging
+        datasets for `animate='morph'` -- 'spin'/'serial'/etc. cannot vary
+        per dataset, see above). A scalar `animate='morph'` is equivalent to
+        tagging every dataset `'morph'`.
+
+        `animate` may ALSO be a `dict` (GH #154 resolution): a mega-dict
+        SPEC for the animation, mirroring the model-spec grammar used
+        elsewhere in hypertools -- `'style'` plays the role of `model`
+        (REQUIRED; the value is any of the scalar `animate` forms above,
+        e.g. `'spin'`) and every OTHER key maps onto one of the flat
+        animation kwargs below (`duration`, `tail_duration`, `rotations`,
+        `zoom`, `chemtrails`, `precog`, `bullettime`, `frame_rate`,
+        `focused`, `morph_samples`) -- e.g. ``animate={'style': 'spin', 'rotations':
+        2, 'duration': 15}`` is exactly equivalent to
+        ``animate='spin', rotations=2, duration=15``. The dict is unpacked
+        into the flat kwargs at the very top of `plot()`, before anything
+        else runs, so every downstream code path only ever sees the flat
+        form. Raises `ValueError` if `'style'` is missing (message shows
+        an example dict), if the dict has any key that isn't `'style'` or
+        one of the flat animation kwargs above (message lists the valid
+        keys), or if a dict key's value CONFLICTS with that same flat
+        kwarg passed explicitly (a different value) -- naming the
+        conflicting key and both values. This mega-dict form is additive
+        sugar, not a new pipeline concept -- flat kwargs remain the
+        primary/documented direction (GH #154); note that a `style=`/
+        `labels=` mega-dict covering EVERY `plot()` kwarg (not just
+        animation) was considered and explicitly rejected as unnecessary
+        churn.
+
+    backend : str
+        Rendering backend: 'matplotlib' (the classic renderer),
+        'plotly' (interactive; requires plotly -- install with
+        `pip install hypertools[interactive]`), or 'auto' (default), which
+        uses plotly on Google Colab / Kaggle notebooks where interactivity
+        matters most and matplotlib everywhere else. With the plotly backend,
+        the return value is a plotly Figure (any animation frames are
+        embedded directly in it, so no separate animation object is
+        returned).
 
     duration (animation only) : float
-        Length of the animation in seconds (default: 30 seconds)
+        Length of the animation in seconds (default: 30 seconds). Has no
+        effect on static plots (static line smoothing uses a fixed
+        density, independent of the animation kwargs). Note: when saving
+        with `save_path=`, every frame is rendered and encoded
+        (`duration * frame_rate` frames -- 900 at the defaults), so
+        export time and file size scale linearly with `duration`; use a
+        short duration (e.g. 2-5 seconds) for quick exports.
 
     tail_duration (animation only) : float
         Sets the length of the tail of the data (default: 2 seconds)
 
-    rotations (animation only) : float
-        Number of rotations around the box (default: 2)
+    rotations (animation only) : float or list
+        Number of rotations around the box over the course of the
+        animation (default: 1 -- with the default 30-second duration,
+        one revolution every 30 seconds). Identical pacing on both
+        backends. A list is ONLY valid with `animate='morph'`: it must have
+        exactly ``2N - 1`` entries (`N` = the number of morphing datasets),
+        one per hold/morph segment (``[hold_1, morph_1->2, hold_2, ...,
+        hold_N]``) -- e.g. `rotations=[1, 0.25, 2, 0.25, 1]` for 3 morphing
+        datasets spins 1 full rotation during the first hold, a quarter
+        rotation during the first morph, 2 rotations during the second
+        hold, etc. Camera rotation speed (degrees/frame) is CONSTANT across
+        the whole animation: each segment's SCREEN TIME (frame count) is
+        proportional to its own rotation count -- not split evenly across
+        segments -- so a segment with more rotations gets more time, never
+        faster spinning (see :func:`hypertools.plot.morph.segment_frame_counts`
+        and its `ZERO_ROTATION_FLOOR`: a segment with 0 rotations still gets
+        a small amount of screen time so it stays visible). Within a
+        segment, that segment's own rotation count is spread uniformly over
+        its own frames, and the camera azimuth accumulates CONTINUOUSLY
+        across segment boundaries (no jump). `N` is the number
+        of morphing datasets AFTER the reduce/align/cluster/hue pipeline
+        (the FINAL, drawn dataset count), which can differ from the number
+        of datasets originally passed in. `ValueError` if a list is given
+        with any `animate` mode other than `'morph'` (checked immediately,
+        before the pipeline runs -- this only depends on `animate` itself),
+        or if the list length doesn't match ``2N - 1`` (names the expected
+        length; only knowable once `N` is, so checked after the pipeline
+        runs).
 
     zoom (animation only) : float
-        How far to zoom into the plot, positive numbers will zoom in (default: 0)
+        How far to zoom into the plot, positive numbers will zoom in (default: 1)
 
-    chemtrails (animation only) : bool
+    chemtrails (animation only) : bool or list of bool
         A low-opacity trail is left behind the trajectory (default: False).
+        Pass a list of bool (one entry per drawn dataset -- i.e. the FINAL
+        count after any `cluster`/`hue`/`n_clusters` regrouping) for
+        per-dataset control (GH #127): e.g. `chemtrails=[True, False]` turns
+        chemtrails on for dataset 0 only. A bare bool is broadcast to every
+        dataset. Raises `ValueError` if a list's length does not match the
+        number of drawn datasets (naming both counts). Trail styles
+        (`chemtrails`/`precog`/`bullettime`) only apply when
+        `animate=True`/`'parallel'` -- see the note under `bullettime` below.
 
-    precog (animation only) : bool
-        A low-opacity trail is plotted ahead of the trajectory (default: False).
+    precog (animation only) : bool or list of bool
+        A low-opacity trail is plotted ahead of the trajectory (default:
+        False). Accepts a per-dataset list exactly like `chemtrails` above,
+        and the two may be mixed per dataset (e.g. dataset 0 chemtrails,
+        dataset 1 precog, dataset 2 bullettime).
 
-    bullettime (animation only) : bool
+    bullettime (animation only) : bool or list of bool
         A low-opacity trail is plotted ahead and behind the trajectory
-        (default: False).
+        (default: False). Accepts a per-dataset list exactly like
+        `chemtrails` above. For any single dataset, `bullettime=True` (or
+        `chemtrails=True` AND `precog=True` together) shows the FULL trail;
+        `chemtrails` alone shows only the past window; `precog` alone shows
+        only the future window; none of the three shows just the moving
+        window (no separate trail artist/trace at all for that dataset).
+        GH #127: trail styles apply ONLY to `animate=True`/`'parallel'`.
+        `'spin'` has no "current position" for a trail to lead/follow (only
+        the camera moves), and `'serial'`'s point-by-point reveal already
+        communicates elapsed time, so `animate='spin'`/`'serial'` ignore
+        `chemtrails`/`precog`/`bullettime` entirely (no trail artist/trace
+        is created) and emit a `UserWarning` naming the mode, the ignored
+        flag(s), and which dataset indices had them set.
 
     frame_rate (animation only) : int or float
-        Frame rate for animation (default: 50)
+        Frame rate for animation in frames per second (default: 30).
+        Both backends generate exactly frame_rate * duration frames, so
+        matplotlib and plotly animations play at identical speed,
+        duration, and framerate. Has no effect on static plots (static
+        line smoothing uses a fixed density, independent of the animation
+        kwargs).
+
+    focused (animation only) : float or None
+        Round17 #8 (GH #275): the length, in SECONDS -- the SAME unit as
+        `tail_duration` -- of the "in-focus" (fully-opaque) window: the
+        portion of a trajectory drawn opaque by default under `chemtrails`/
+        `precog`/`bullettime`, or the sliding window size for the new
+        `animate='window'` (see `animate` above). Default `None`: resolves
+        to `tail_duration`'s own value -- today's hardcoded/`tail_duration`-
+        derived focus length -- so omitting `focused=` never changes
+        existing behavior; pass an explicit `focused=` to decouple the
+        in-focus window's length from `tail_duration` (e.g. a wide
+        `chemtrails` fade with a narrow opaque head, or vice versa).
+        Silently ignored (no error, no warning -- this is the documented,
+        expected no-op case) for `animate='spin'`/`'parallel'` (or `True`)
+        with NO `chemtrails`/`precog`/`bullettime` flag set on any dataset,
+        and for `animate='morph'` -- none of these has a separate "in-focus
+        window distinct from the whole trajectory" concept for `focused` to
+        control. Must be a non-negative number if given; raises `ValueError`
+        otherwise.
+
+    morph_samples (``animate='morph'`` only) : int or None
+        An OPTIONAL cap on morphing-dataset size, applied BEFORE the
+        duplicate-padding described under `animate` above: any morphing
+        dataset larger than `morph_samples` is first downsampled (without
+        replacement, seeded) to exactly `morph_samples` points. Default
+        `None`: no cap -- every dataset keeps its full point count, and the
+        target count is simply the largest dataset's own size. Since the
+        Hungarian assignment's cost is roughly ``O(n^3)`` in the (post-cap)
+        target point count, `morph_samples` is RECOMMENDED for clouds
+        larger than ~2000 points (e.g. `morph_samples=1000`) -- the
+        uncapped default can be slow, or memory-heavy, for very large
+        datasets. Must be a positive integer (or None); anything else
+        raises ``ValueError``. Ignored for every other `animate` mode.
 
     interactive : bool
         If True, display the plot using an interactive matplotlib
@@ -201,18 +1473,23 @@ def plot(
         argument has no effect (default: False).
 
     explore : bool
-        Displays user defined labels will appear on hover. If no labels are
-        passed, the point index and coordinate will be plotted. To use,
-        set explore=True. Note: Explore mode is currently only supported
-        for 3D static plots, and is an experimental feature (i.e it may not yet
-        work properly).
+        If True, hovering over a data point displays that point's
+        user-defined label (from `labels=`); if no labels were passed, the
+        point's index and coordinates are shown instead. Explore mode is
+        currently only supported for 3D static plots (``ValueError``
+        otherwise), and is an experimental feature (i.e. it may not yet
+        work properly). Hover labels require an interactive matplotlib
+        backend: under a non-interactive backend (e.g. Agg in scripts,
+        CI, or the docs build) the figure is drawn as a static plot and a
+        ``UserWarning`` explains that hover labels are unavailable.
 
     mpl_backend : str
         The matplotlib backend used to create interactive and animated
         plots.  May be 'auto' (default), 'disable', or a backend key
         accepted by matplotlib. If 'auto', hypertools will use a backend
         determined automatically based on your environment
-        (`hypertools.plot.backend.HYPERTOOLS_BACKEND`). If 'disable',
+        (`from hypertools.plot.backend import HYPERTOOLS_BACKEND`). If
+        'disable',
         experimental backend-switching is disabled and the current global
         matplotlib backend (`matplotlib.get_backend()`) is used.
         Otherwise, try to use the backend specified. NOTES: *This
@@ -227,8 +1504,17 @@ def plot(
         the value of `backend` is prioritized over this argument.
 
     show : bool
-        If set to False, the figure will not be displayed, but the figure,
-        axis and data objects will still be returned (default: True).
+        If set to False, the figure will not be displayed, but it is still
+        returned (and remains valid/savable; see Returns). With show=False,
+        hypertools also closes/deregisters its pyplot figure once drawing
+        (and any `save_path=` export) is done -- including animated figures
+        on non-GUI backends -- so batch-export loops never accumulate open
+        figures. Note that show=True displays the figure in notebook/
+        IPython contexts (and the plotly backend calls its own renderer in
+        scripts); in a plain non-interactive Python script the matplotlib
+        backend registers the figure with pyplot but does not itself call
+        ``plt.show()`` -- call ``plt.show()`` yourself to open a window.
+        Default: True.
 
     transform : list of numpy arrays or None
         The transformed data, bypasses transformations if this is set
@@ -237,26 +1523,28 @@ def plot(
     vectorizer : str, dict, class or class instance
         The vectorizer to use. Built-in options are 'CountVectorizer' or
         'TfidfVectorizer'. To change default parameters, set to a dictionary
-        e.g. {'model' : 'CountVectorizer', 'params' : {'max_features' : 10}}. See
-        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.feature_extraction.text
+        e.g. {'model' : 'CountVectorizer', 'kwargs' : {'max_features' : 10}}
+        (the legacy {'model', 'params'} form is also still accepted). See
+        https://scikit-learn.org/stable/api/sklearn.feature_extraction.html
         for details. You can also specify your own vectorizer model as a class,
         or class instance.  With either option, the class must have a
-        fit_transform method (see here: http://scikit-learn.org/stable/data_transforms.html).
-        If a class, pass any parameters as a dictionary to vectorizer_params. If
-        a class instance, no parameters can be passed.
+        fit_transform method (see https://scikit-learn.org/stable/data_transforms.html).
+        To set parameters, use the dict form (or a configured class
+        instance); a bare class is instantiated with its defaults.
 
     semantic : str, dict, class or class instance
         Text model to use to transform text data. Built-in options are
         'LatentDirichletAllocation' or 'NMF' (default: LDA). To change default
-        parameters, set to a dictionary e.g. {'model' : 'NMF', 'params' :
-        {'n_components' : 10}}. See
-        http://scikit-learn.org/stable/modules/classes.html#module-sklearn.decomposition
+        parameters, set to a dictionary e.g. {'model' : 'NMF', 'kwargs' :
+        {'n_components' : 10}} (the legacy {'model', 'params'} form is also
+        still accepted). See
+        https://scikit-learn.org/stable/api/sklearn.decomposition.html
         for details on the two model options. You can also specify your own
         text model as a class, or class instance.  With either option, the class
-        must have a fit_transform method (see here:
-        http://scikit-learn.org/stable/data_transforms.html).
-        If a class, pass any parameters as a dictionary to text_params. If
-        a class instance, no parameters can be passed.
+        must have a fit_transform method (see
+        https://scikit-learn.org/stable/data_transforms.html).
+        To set parameters, use the dict form (or a configured class
+        instance); a bare class is instantiated with its defaults.
 
     corpus : list (or list of lists) of text samples or 'wiki', 'nips', 'sotus'.
         Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
@@ -273,30 +1561,942 @@ def plot(
         For 2D plots, the frame is a square and `frame_kwargs` are
         forwarded to `matplotlib.patches.Rectangle`.
 
+    stream_init : int
+        Streaming data only (iterators/generators and Hugging Face
+        ``datasets.IterableDataset`` are detected automatically): number of
+        initial samples used to estimate the normalization and reduction
+        parameters (default: 10000). Those fitted models are then *applied*
+        to all future samples, which are added to the plot dynamically.
+        Only a subset of `plot`'s parameters applies to streaming inputs:
+        `fmt`, the four `stream_*` parameters, `ndims`, `reduce`,
+        `normalize`, `align`/`cluster`/`n_clusters` (rejected with a
+        ``ValueError`` -- not yet supported for streams -- but accepted at
+        their defaults), `save_path`, `show`, `frame_rate`, `markersize`,
+        `linewidth`, `color`, `palette`, `title`, `size`, `elev`, `azim`,
+        and `ax`. Any other parameter explicitly set alongside a
+        streaming input is ignored, with a ``UserWarning`` naming it. In
+        particular, streaming plots are always drawn with the matplotlib
+        backend: a `backend=` request (e.g. ``backend='plotly'``) is
+        ignored with that warning, and the return value is a matplotlib
+        ``Figure`` even when the plotly backend was requested.
+
+    stream_chunk : int
+        Streaming data only: number of new samples fetched from the stream
+        per update (default: 100). Each fetched chunk is projected through
+        the fitted models and rendered as one animation frame / live
+        redraw, so this sets both the download batch size and the temporal
+        resolution of the resulting animation.
+
+    stream_max : int or None
+        Streaming data only: stop streaming after this many samples.
+        Exactly `stream_max` samples are consumed from the stream (never
+        more), and the returned figure's ``stream_info['truncated']`` is
+        then True -- it means streaming was stopped (by `stream_max`, an
+        interrupt, or an error) before the stream was observed to end.
+        Default None streams continually until the stream is exhausted or
+        the user interrupts (Ctrl-C); infinite streams render incoming
+        data indefinitely, and any animation being saved via `save_path`
+        is finalized whenever streaming stops (including on interrupt).
+        For streams, `save_path` supports .gif/.png/.apng (Pillow) and,
+        with FFmpeg installed, .mp4/.mov/.avi/.m4v/.mkv; other extensions
+        raise ``ValueError`` before any samples are consumed.
+
+    stream_window : int or None
+        Streaming data only: if set, only the most recent `stream_window`
+        samples are displayed (comet style) while older samples scroll off;
+        all consumed samples are still retained on the returned figure's
+        ``stream_info`` dict (its ``'data'``/``'xform_data'`` entries).
+        Default None displays the full accumulated trajectory.
+
+    surface : bool, dict, or list of bool/dict, or None
+        If set, overlays a smooth, lit surface over each dataset's convex
+        hull (GH #109): a filled smooth outline for 2D data, or a shaded
+        3D "blob" (inflated, subdivided, and Taubin-smoothed hull -- see
+        `hypertools.plot.meshutil.smooth_hull_3d`) for 3D data. Pass
+        ``True`` for the defaults below, a dict to override specific keys
+        (unset keys use their default), or a list of bool/dict (one per
+        *drawn* dataset, matching the final -- post `cluster`/`hue`
+        regrouping -- dataset count) for per-dataset control; a bare
+        ``False``/``None`` entry in the list disables that dataset's
+        surface. Raises ``ValueError`` for 1D data (no hull concept), for
+        an unrecognized dict key or an out-of-range dict value (see the
+        per-key constraints below), or if a list's length does not match
+        the number of drawn datasets. A dataset with too few points to form a
+        hull (< 3 for 2D, < 4 for 3D) or whose points are exactly
+        collinear/coplanar has its surface silently skipped with a
+        ``UserWarning`` (never a crash). Default None (no surfaces).
+
+        Accepted dict keys, with defaults:
+
+        - ``alpha`` (float, default 0.6): surface opacity; must be in
+          (0, 1]. A translucent (< 1.0) surface shows the enclosed data
+          points through the hull on BOTH backends. Note that a
+          translucent 3D matplotlib surface REQUIRES the built-in
+          backface culling (always applied) to avoid interior-face
+          "cracks" showing through; plotly renders a translucent surface
+          as a genuinely translucent ``Mesh3d`` (its doubled-winding mesh
+          gets per-layer opacity ``1 - sqrt(1 - alpha)``, compositing to
+          exactly ``alpha`` total), which keeps the full mesh but may show
+          per-triangle depth-sorting noise (a known WebGL/plotly
+          limitation -- plotly.py issue #3554 -- not a hypertools bug) --
+          prefer ``alpha=1.0`` if this is objectionable: at ``alpha >=
+          0.999`` the plotly mesh instead renders through an artifact-free
+          fully-opaque path (the alpha is baked into the surface color),
+          and data points enclosed by their own opaque surface are hidden
+          from that dataset's trace (they would be invisible behind it
+          anyway, and hiding them avoids a WebGL "punch-through" defect).
+        - ``color`` (color spec or None, default None): surface base
+          color. ``None`` inherits the dataset's own drawn line/marker
+          color (resolved from `color`/`colors` if given, else the
+          `palette` color cycle).
+        - ``lighting`` (dict, default ``{}``): overrides the two-light
+          Blinn-Phong lighting model BOTH backends use identically (see
+          `hypertools.plot.meshutil.blinn_phong_colors`/
+          `blinn_phong_vertex_colors`) -- matplotlib shades per-FACE;
+          plotly shades per-VERTEX (precomputed and handed to
+          ``go.Mesh3d`` as ``vertexcolor``, with plotly's own lighting
+          engine forced to the identity so it reproduces those colors
+          verbatim -- needed so the double-sided winding workaround below
+          doesn't render dark self-shaded patches) -- so every key below
+          visibly affects both backends the same way. Accepted keys:
+
+          - ``ambient`` (float, default 0.45): flat, direction-independent
+            base brightness; higher values flatten/wash out shading
+            (matte look), 0 makes unlit faces fully black.
+          - ``diffuse`` (float, default 0.55): key-light (Lambertian)
+            contribution; scales how strongly faces facing the key light
+            brighten relative to those facing away.
+          - ``fill`` (float, default 0.25): weaker opposite-side fill-light
+            contribution, so faces angled away from the key light are not
+            rendered fully flat/black.
+          - ``specular`` (float, default 0.30): strength of the glossy
+            highlight; 0 gives a fully matte surface, higher values (e.g.
+            0.9) give a glossy/wet look.
+          - ``shininess`` (float, default 48): specular exponent -- higher
+            values (e.g. 128) tighten the highlight into a small glossy
+            spot; lower values spread it into a broad sheen.
+          - ``lightdir`` (3-vector ``(x, y, z)`` or None, default None):
+            explicit key-light direction in scene/data coordinates
+            (need not be normalized; must not be the zero vector). ``None``
+            (default) derives the key light automatically from the current
+            camera view (offset above and to the side), matching each
+            backend's own default camera-relative lighting.
+
+          plotly's light position (for its own, identity-forced lighting
+          engine, unrelated to the vertex-color computation above) is
+          fixed at ``(2.5, -1.5, 3.0)`` in scene coordinates. Ignored for
+          2D surfaces (flat fills have no lighting). Unrecognized keys
+          (e.g. the pre-GH-109-round-3 plotly-only ``roughness``/
+          ``fresnel``, which no longer affect either backend's rendering)
+          raise ``ValueError`` rather than being silently accepted.
+        - ``smoothing`` (int, default 3): number of interleaved
+          [subdivide, Taubin-smooth] rounds for a 3D hull (face count
+          scales as ``4 ** smoothing``); must be in [0, 6] (beyond 6 the
+          face count -- 4096x the raw hull's at 6 -- is a memory/time
+          footgun with no visible smoothness gain); ignored for 2D.
+        - ``pre_inflate`` (float, default 1.0): scale factor applied to
+          the 3D hull about its centroid before smoothing (default: no
+          blanket inflation); must be a positive, finite number. Any
+          shrinkage smoothing introduces is instead recovered by a
+          minimal, grow-only post-hoc rescale targeting ~99% containment
+          of the actual input points, so the surface hugs the data rather
+          than ballooning past it. The rescale is mathematically bounded
+          (hard-capped at 3.0x growth): well-sampled clouds typically need
+          at most ~1.25x, and only tiny (4-5 point) hulls -- whose coarse
+          meshes lose proportionally far more of their bulge to smoothing
+          -- approach the cap (see
+          `hypertools.plot.meshutil.smooth_hull_3d`). Ignored for 2D.
+        - ``keep_points`` (bool, default True): if False, hides that
+          dataset's own line/marker (only the surface is shown). Note
+          that on plotly, points enclosed by their own FULLY-OPAQUE
+          (``alpha >= 0.999``) surface are hidden even when
+          ``keep_points=True`` -- see the ``alpha`` entry above;
+          translucent surfaces always show their points.
+
+        Out-of-range values for any key above raise an eager
+        ``ValueError`` (naming the key, the constraint, and the received
+        value) BEFORE the analyze/reduce pipeline runs, exactly like
+        `density`'s validation.
+
+        Animated plots (matplotlib and plotly, 3D only -- round17 #9, GH
+        #123: 2-D `animate` is now supported, but per-frame hull tracking
+        is not, so `surface=` is silently a no-op on an animated 2-D plot,
+        in both backends) recompute each dataset's hull every frame from
+        its CURRENTLY VISIBLE window:
+        the revealed portion for ``animate='serial'``, the sliding
+        head/tail window for ``animate=True``/``'parallel'`` (matching the
+        window drawn by `chemtrails`/`tail_duration`), or the full,
+        precomputed-once dataset for ``animate='spin'`` (only the camera
+        orbits, so only per-frame shading/backface-culling -- not the mesh
+        itself -- needs recomputing). Animated surfaces keep the same
+        per-vertex `hue` coloring static surfaces use (each frame's hull
+        is colored from its currently-visible points' own hue colors) on
+        both backends. Surfaces never gain a legend entry
+        (``label='_nolegend_'`` / ``showlegend=False``) in either backend.
+
+    density : bool, dict, or None
+        If set, overlays a subtle KDE (kernel density estimate) "glow"
+        behind the data (GH #108, #191): a 2-D alpha-ramped heatmap, or a
+        3-D volumetric cloud, showing where each dataset's points are
+        concentrated. Pass ``True`` for the defaults below, or a dict to
+        override specific keys (unset keys use their default). Unlike
+        `surface`, `density` has no per-dataset list form and no `color`
+        override -- every density layer always inherits its dataset's own
+        drawn color (or, with ``per_group=False``, a single neutral-gray
+        layer is drawn for the pooled data). Raises ``ValueError`` for 1D
+        data (no 2-D/3-D density concept) or an unrecognized dict key. A
+        dataset with too few points (< 3) or degenerate (singular
+        covariance -- e.g. exactly duplicated/collinear/coplanar points)
+        has its density silently skipped with a ``UserWarning`` (never a
+        crash). Default None (no density shading).
+
+        Accepted dict keys, with defaults:
+
+        - ``alpha`` (float, default 0.2): base opacity, kept subtle by
+          design so the density layer never dominates the actual data.
+          matplotlib's 2-D layer ramps linearly from fully transparent up
+          to exactly this alpha at the KDE's peak; matplotlib's 3-D
+          iso-surface/fog alphas and both plotly layers' opacities scale
+          proportionally with it (see the backend-specific notes below).
+        - ``levels`` (int, default 3): number of nested 3-D iso-surface
+          shells. Wired into BOTH 3-D backends: matplotlib draws one
+          `Poly3DCollection` per level, at density-fraction thresholds
+          spaced evenly across ``[0.10, 0.65]`` via `numpy.linspace`
+          (`levels=3`, the default, reproduces the original hand-tuned
+          thresholds -- 10%/35%/65% of peak density, alphas 0.03/0.05/0.07
+          -- EXACTLY, since evenly-spaced ``linspace(0.10, 0.65, 3)`` would
+          instead give a 37.5%-not-35% middle shell); plotly's
+          ``go.Volume`` layer uses ``surface_count=5*levels`` (15 at the
+          default). **2-D density has no ``levels`` concept at all** --
+          the 2-D layer is a single continuous alpha/heatmap ramp with no
+          discrete shells, so ``levels`` is silently ignored for 2-D data
+          (no error; the key is still valid, it's just a no-op there).
+        - ``grid`` (int, default None): KDE evaluation grid resolution per
+          axis. ``None`` auto-resolves to 200 for 2-D data or 50 for 3-D
+          data (a 3-D grid is `grid**3` KDE evaluations, so much coarser by
+          default).
+        - ``per_group`` (bool, default True): fit and draw one density
+          layer per drawn dataset. ``False`` pools every dataset's points
+          into a single combined KDE, drawn as one neutral-gray layer
+          instead.
+
+        Backend rendering: matplotlib's 2-D layer is an alpha-ramped
+        ``imshow`` (a `LinearSegmentedColormap` from transparent to the
+        dataset's color at `alpha`, bilinear-interpolated, drawn below the
+        data) -- not `contourf`, whose hard per-level boundaries read as
+        banding rather than a smooth glow. matplotlib's 3-D layer is nested
+        translucent iso-surfaces via `skimage.measure.marching_cubes`
+        (`levels` shells spanning 10%-65% of peak density, alphas ramping
+        0.03-0.07, both scaled by `alpha / 0.2`; see the `levels` entry
+        above for the exact spacing) when scikit-image is installed
+        (``pip install hypertools[density3d]``); otherwise it falls back to
+        a translucent scatter "fog" (4000 points resampled from the KDE,
+        `alpha` 0.03 scaled the same way) and emits a `UserWarning`
+        suggesting the extra or ``backend='plotly'`` (which always renders
+        a full volumetric `go.Volume`, no extra required). plotly's 2-D
+        layer is a `go.Contour` heatmap (`coloring='heatmap'`, no
+        contour lines, an alpha-ramped colorscale to `1.5 * alpha` --
+        note this peak alpha is deliberately 1.5x the mpl 2-D layer's
+        `alpha`, a documented cross-backend visibility difference, not a
+        bug: plotly's heatmap reads fainter than mpl's `imshow` at the same
+        alpha value, so the ramp is boosted to compensate); its
+        3-D layer is a `go.Volume` with, for a scene-filling dataset
+        (boost=1), `isomin=0.05`, `isomax=1.0`, `surface_count=5*levels`,
+        `opacity=min(2 * alpha, 0.4)`, and an `opacityscale` ramp tuned so
+        the volume stays visible at plotly's 3-D scene scale, over a solid
+        per-dataset colorscale. For a dataset SMALL relative to the scene
+        (e.g. widely-separated clusters), the auto-boost shifts all of
+        these together -- `opacity` and `surface_count` scale up (opacity
+        capped at 0.75), `isomin` drops (down to 0.01), and the
+        `opacityscale` breakpoints and the KDE grid's padding widen to
+        expose more of the KDE's outer tail -- see
+        `hypertools.plot.density.resolve_plotly_volume_params` for the
+        exact formulas. Density layers never gain a legend entry in
+        either backend.
+
+        3-D static-export caveat (both backends): when `per_group=True`
+        (the default) draws more than one dataset's translucent 3-D density
+        layer, the overlapping surfaces/volumes can composite unevenly in
+        STATIC exports (PNG/SVG via matplotlib's Agg renderer or plotly's
+        `kaleido`-based ``write_image``/``to_image``) -- a WebGL/rasterizer
+        alpha-blending-order limitation, not a data or fitting bug. The
+        interactive view (a live matplotlib window or plotly's browser/
+        notebook widget) renders correctly; only static snapshots of
+        multi-dataset 3-D density can look off.
+
+        Animated plots (both backends, any `animate` style): the density
+        is computed ONCE from the FULL dataset and drawn as a static
+        background -- a single KDE evaluation is far too slow
+        (~500ms at a 50^3 grid) to redo every animation frame, so, unlike
+        `surface`, the density layer does not track the currently-visible
+        window and is never touched by per-frame updates.
+
+    return_model : bool
+        If True, return a dict bundle
+        ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'pipeline': ...,
+        'models': ..., 'predict': ...}`` instead of the bare figure, where
+        ``xform_data`` is the normalized/reduced/aligned data, ``animation``
+        is the ``matplotlib.animation.Animation`` handle (``None`` unless
+        ``animate=True`` with the matplotlib backend), ``pipeline`` is a
+        fitted `hypertools.Pipeline` covering whichever of `manip=`/
+        `normalize=`/`reduce=`/`align=`/`cluster=` ran (the SAME `pipeline=`
+        object passed in, if any; `None` when `transform=` was used, since
+        then there is no raw data to have fit one on) -- pass it back in as
+        `hyp.plot(new_data, pipeline=bundle['pipeline'])` to reuse these
+        exact fitted parameters (GH #227), ``models`` holds the
+        reduce/align/cluster/impute specs, and ``predict`` is ``None`` unless
+        `predict` was set, in which case it is
+        ``{'model': ..., 'params': {'t': t}, 'forecasts': [...]}`` (one
+        forecast array per input dataset, in the analyzed/plotted --
+        pre-center/scale -- space). Each bundled forecast has exactly `t`
+        rows, matching what ``hyp.predict(xform_data, model=..., t=t)``
+        returns; the DRAWN dashed overlay additionally prepends the last
+        observed row as a connector, so the drawn trace has `t + 1`
+        vertices. Default False.
+
     Returns
-    ----------
-    geo : hypertools.DataGeometry
-        A new data geometry object
+    -------
+    fig : matplotlib.figure.Figure or plotly Figure
+        The rendered figure. Static plot coordinates are drawn in the
+        centered/rescaled ``[-1, 1]`` display space described under `x`
+        above. For animated matplotlib plots a ``HyperAnimation`` is
+        returned instead: a ``(fig, animation)`` tuple subclass (so
+        ``fig, anim = hyp.plot(...)`` unpacking works) that also exposes
+        ``.figure``/``.to_html5_video()``/``.to_jshtml()``/``.save()`` and
+        auto-plays inline in notebooks -- keep a reference to it so the
+        underlying ``matplotlib.animation.FuncAnimation`` stays alive.
+        When ``return_model=True``, a dict
+        ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'pipeline': ...,
+        'models': ..., 'predict': ...}`` is returned (``animation`` included
+        so the handle isn't dropped for animated plots; ``pipeline`` is the
+        fitted `hypertools.Pipeline` covering the stages that ran, reusable
+        via ``hyp.plot(new_data, pipeline=...)``).
+
+    Examples
+    --------
+    Plot a single high-dimensional dataset as a static 3-D trajectory (the
+    data is reduced to 3 dimensions with the default reducer):
+
+    >>> import numpy as np
+    >>> import hypertools as hyp
+    >>> x = np.cumsum(np.random.default_rng(0).standard_normal((50, 8)),
+    ...               axis=0)
+    >>> fig = hyp.plot(x, show=False)
+    >>> fig.axes[0].name
+    '3d'
+
+    Plot two datasets as labeled point clouds (one legend entry each):
+
+    >>> fig = hyp.plot([x, x + 10], '.', names=['a', 'b'], show=False)
+    >>> [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
+    ['a', 'b']
+
+    Color a trajectory continuously by time, in a 2-D projection:
+
+    >>> fig = hyp.plot(x, ndims=2, hue=np.arange(50), show=False)
+    >>> fig.axes[0].name
+    'rectilinear'
 
     """
 
-    # warnings for deprecated API args
-    if (model is not None) or (model_params is not None):
-        warnings.warn(
-            "Model and model_params arguments will be deprecated. Please use \
-                      reduce keyword argument. See docs for details: http://hypertools.readthedocs.io/en/latest/hypertools.plot.html#hypertools.plot"
-        )
-        reduce = {}
-        reduce["model"] = model
-        reduce["params"] = model_params
+    # early kwarg validation (release-1.0 audit): catch renamed/misspelled/
+    # unknown keyword arguments HERE, with a clear TypeError naming the
+    # kwarg (plus a did-you-mean hint), BEFORE the expensive analyze/
+    # reduce/align pipeline runs.
+    _validate_extra_plot_kwargs(kwargs)
 
-    if group is not None:
+    # fmt: accept plain-bytes format strings like np.bytes_ (F01-017) --
+    # decoded here once so every downstream fmt consumer sees str.
+    if isinstance(fmt, bytes):
+        fmt = fmt.decode("utf-8")
+    # a fmt TUPLE is normalized to a list up front so every downstream
+    # consumer (which tests `isinstance(fmt, list)`) handles it identically
+    # -- previously a tuple passed the list/tuple validation below but then
+    # fell through the list-only branches and surfaced an unrelated internal
+    # error (e.g. "'<=' not supported between 'int' and 'str'") whose
+    # occurrence depended on the hue pattern (reviewer follow-up).
+    if isinstance(fmt, tuple):
+        fmt = list(fmt)
+    if isinstance(fmt, list):
+        fmt = [f.decode("utf-8") if isinstance(f, bytes) else f for f in fmt]
+
+    # fmt must be a format string (or a per-dataset list of them):
+    # fmt=123 used to run the whole pipeline and die in a bare
+    # "object of type 'int' has no len()" that never named the kwarg
+    # (release-1.0 audit, X2-error-quality-015).
+    if fmt is not None and not isinstance(fmt, str):
+        if not (isinstance(fmt, (list, tuple))
+                and all(isinstance(f, str) for f in fmt)):
+            raise TypeError(
+                f"fmt must be a matplotlib format string (e.g. '-', '.', "
+                f"'o:') or a list of format strings (one per dataset); "
+                f"got {fmt!r}.")
+
+    # transform= is pre-transformed DATA (bypassing the analysis pipeline),
+    # not a model spec: a bad value used to crash later with "'str' object
+    # has no attribute 'shape'" (release-1.0 audit, X2-error-quality-015).
+    if transform is not None:
+        _xf_items = transform if isinstance(transform, (list, tuple)) \
+            else [transform]
+        for _xf in _xf_items:
+            if not (hasattr(_xf, 'shape') or hasattr(_xf, '__array__')):
+                raise TypeError(
+                    f"transform= must be already-transformed data (a numpy "
+                    f"array/DataFrame, or a list of them), or None; got "
+                    f"{type(_xf).__name__}: {_xf!r}. To choose a "
+                    "dimensionality-reduction model, pass reduce= instead "
+                    "(transform= bypasses the analysis pipeline entirely).")
+
+    # elev=/azim= must be numbers (degrees). Previously a bad value ran the
+    # whole pipeline and only crashed at DRAW time with a message that never
+    # named the kwarg (F10-014).
+    for _angle_name, _angle_value in (("elev", elev), ("azim", azim)):
+        if isinstance(_angle_value, bool) or not isinstance(
+                _angle_value, (int, float, np.integer, np.floating)):
+            raise TypeError(
+                f"{_angle_name}= must be a number (the camera "
+                f"{'elevation' if _angle_name == 'elev' else 'azimuth'} in "
+                f"degrees); got {_angle_value!r}.")
+
+    # size= must be a [width, height] pair of numbers; the raw matplotlib
+    # unpack error never mentioned size= (F10-012).
+    if size is not None:
+        _size_ok = (not isinstance(size, (str, bytes))
+                    and hasattr(size, "__len__") and len(size) == 2
+                    and all(isinstance(v, (int, float, np.integer,
+                                           np.floating))
+                            and not isinstance(v, bool) for v in size))
+        if not _size_ok:
+            raise ValueError(
+                "size= must be a [width, height] pair of numbers (the "
+                f"figure size in inches); got {size!r}.")
+
+    # ax= must be a matplotlib Axes; a bad value crashed deep inside the
+    # backend with "'str' object has no attribute 'name'" (F10-015).
+    if ax is not None:
+        import matplotlib.axes as _mpl_axes
+        if not isinstance(ax, _mpl_axes.Axes):
+            raise TypeError(
+                "ax= must be a matplotlib Axes (2-D) or Axes3D (3-D) "
+                f"instance; got {type(ax).__name__!r}.")
+
+    # a bare scalar is plotted as a single 1-D point -- warn rather than
+    # doing so silently (D11-014).
+    if isinstance(x, (int, float, np.integer, np.floating)) \
+            and not isinstance(x, bool):
         warnings.warn(
-            "Group will be deprecated. Please use "
-            "hue keyword argument. See docs for details: "
-            "http://hypertools.readthedocs.io/en/latest/hypertools.plot.html#hypertools.plot"
+            "x is a single scalar value; hypertools will plot it as a "
+            "single 1-D point. Pass an array/list of observations for a "
+            "meaningful plot.", stacklevel=external_stacklevel())
+
+    # align=False / cluster=False are documented as "no alignment" / "no
+    # clustering" (same as None); normalize them here so the stage
+    # dispatchers below never see a bare False (F03-003/F03-004).
+    if align is False:
+        align = None
+    if cluster is False:
+        cluster = None
+
+    # a bare string for names=/legend= is ONE name, not a sequence of
+    # single-character names (F10-009: names='ab' silently became
+    # ['a', 'b']); wrap it so the per-dataset length checks below apply.
+    if isinstance(names, str):
+        names = [names]
+    if isinstance(legend, str):
+        legend = [legend]
+
+    # legend= must be a bool, a label string, or a list of labels: any
+    # other scalar (e.g. legend=7) was silently treated as truthy
+    # (release-1.0 audit, X2-error-quality-016).
+    if legend is not None and not isinstance(
+            legend, (bool, np.bool_, list, tuple, np.ndarray, pd.Series,
+                     pd.Index)):
+        raise TypeError(
+            f"legend= must be True/False, a label string, or a list of "
+            f"labels (one per drawn trace/group); got "
+            f"{type(legend).__name__}: {legend!r}.")
+
+    # animate= dict form (GH #154 resolution): unpacked into the flat
+    # animation kwargs HERE, at the very top of the function, before
+    # anything else runs -- so every downstream code path (all of which
+    # predates this feature) only ever sees the flat kwargs it already
+    # understands; `animate` itself becomes the resolved style string/
+    # bool/list from here on. `'style'` plays the role of `model` in
+    # hypertools' usual spec-dict grammar; every other key must be one of
+    # the flat animation kwargs below. A dict key CONFLICTING with the
+    # same flat kwarg passed explicitly (a different value) is almost
+    # certainly a mistake -- raise rather than silently pick one; compared
+    # against each flat kwarg's own LITERAL default (mirroring the
+    # pipeline=/stage-kwarg conflict check below) since there is no other
+    # way to tell "explicitly passed, coincidentally equal to the default"
+    # from "never passed" from inside the function body.
+    if isinstance(animate, dict):
+        _ANIMATE_DICT_DEFAULTS = {
+            'duration': 30,
+            'tail_duration': 2,
+            'rotations': 1,
+            'zoom': 1,
+            'chemtrails': False,
+            'precog': False,
+            'bullettime': False,
+            'frame_rate': 30,
+            'focused': None,
+            'morph_samples': None,
+        }
+        if 'style' not in animate:
+            raise ValueError(
+                "animate= dict form requires a 'style' key naming the "
+                "animation style (e.g. animate={'style': 'spin', "
+                "'rotations': 2, 'duration': 15}); got a dict with keys "
+                f"{sorted(animate.keys())}."
+            )
+        _animate_dict = dict(animate)
+        _animate_style = _animate_dict.pop('style')
+        _unknown_animate_keys = set(_animate_dict) - set(_ANIMATE_DICT_DEFAULTS)
+        if _unknown_animate_keys:
+            raise ValueError(
+                f"animate= dict got unknown key(s) "
+                f"{sorted(_unknown_animate_keys)}; valid keys are 'style' "
+                f"plus {sorted(_ANIMATE_DICT_DEFAULTS)}."
+            )
+        _animate_flat_locals = {
+            'duration': duration,
+            'tail_duration': tail_duration,
+            'rotations': rotations,
+            'zoom': zoom,
+            'chemtrails': chemtrails,
+            'precog': precog,
+            'bullettime': bullettime,
+            'frame_rate': frame_rate,
+            'focused': focused,
+            'morph_samples': morph_samples,
+        }
+        for _key, _dict_value in _animate_dict.items():
+            _default_value = _ANIMATE_DICT_DEFAULTS[_key]
+            _flat_value = _animate_flat_locals[_key]
+            if _flat_value != _default_value and _flat_value != _dict_value:
+                raise ValueError(
+                    f"animate= dict specifies {_key}={_dict_value!r} but "
+                    f"{_key}={_flat_value!r} was also passed explicitly as "
+                    f"a flat kwarg with a different value; pass {_key}= in "
+                    "only one place (either inside animate= or as its own "
+                    "kwarg)."
+                )
+        duration = _animate_dict.get('duration', duration)
+        tail_duration = _animate_dict.get('tail_duration', tail_duration)
+        rotations = _animate_dict.get('rotations', rotations)
+        zoom = _animate_dict.get('zoom', zoom)
+        chemtrails = _animate_dict.get('chemtrails', chemtrails)
+        precog = _animate_dict.get('precog', precog)
+        bullettime = _animate_dict.get('bullettime', bullettime)
+        frame_rate = _animate_dict.get('frame_rate', frame_rate)
+        focused = _animate_dict.get('focused', focused)
+        morph_samples = _animate_dict.get('morph_samples', morph_samples)
+        animate = _animate_style
+
+    # animate='chemtrails'/'precog'/'bullettime' sugar (QC 2026-07): these are
+    # trail EFFECTS, not animation styles. Historically, passing one as the
+    # animate STYLE silently produced a STATIC plot (the style whitelist in the
+    # matplotlib backend did not recognize them). Map each to animate='parallel'
+    # with the matching trail flag on -- what the effect actually needs (trails
+    # apply to animate=True/'parallel').
+    if isinstance(animate, str) and animate in ('chemtrails', 'precog',
+                                                'bullettime'):
+        if animate == 'chemtrails':
+            chemtrails = True
+        elif animate == 'precog':
+            precog = True
+        else:
+            bullettime = True
+        animate = 'parallel'
+
+    # validate the animate style: an unrecognized string used to fall through
+    # to a silent static plot (QC 2026-07). Fail fast with a clear message.
+    if isinstance(animate, str) and animate not in ('parallel', 'spin',
+                                                    'serial', 'morph', 'window'):
+        raise ValueError(
+            f"unknown animate style {animate!r}; valid styles are 'parallel', "
+            "'spin', 'serial', 'morph', 'window' (or True/False). The trail "
+            "effects 'chemtrails'/'precog'/'bullettime' are boolean kwargs, not "
+            "styles -- e.g. animate='parallel', chemtrails=True.")
+
+    # non-bool/non-string scalars (release-1.0 audit, F04-006/F05-004):
+    # anything ==True/==False (np.True_, 1, 0, ...) is normalized to a real
+    # bool; every OTHER scalar (e.g. animate=2 -- perhaps meant as
+    # "2 rotations"?) used to slip past the string whitelist above, silently
+    # render a STATIC plot (the backend dispatch is `animate in [True,
+    # 'parallel', ...]`), and then crash with `AttributeError: 'NoneType'
+    # object has no attribute 'save'` if save_path= was also set.
+    if isinstance(animate, np.ndarray):
+        animate = animate.tolist()  # per-dataset morph tags as an array
+    if animate is not None and not isinstance(animate, (bool, str, dict,
+                                                        list, tuple)):
+        if animate == True or animate == False:  # noqa: E712 (np.bool_/0/1)
+            animate = bool(animate)
+        else:
+            raise ValueError(
+                f"animate={animate!r} is not a recognized animate value; "
+                "use True/False, a style string ('parallel', 'spin', "
+                "'serial', 'morph', 'window', or the sugar styles "
+                "'chemtrails'/'precog'/'bullettime'), the dict form "
+                "(animate={'style': ..., ...}), or a per-dataset list for "
+                "animate='morph'. For extra camera rotations, pass "
+                "rotations= instead.")
+
+    # animations need a positive duration and frame rate (QC 2026-07: duration=0
+    # or frame_rate=0 raised ZeroDivisionError, and a negative duration a cryptic
+    # "zero-size array to reduction" error, from the frame-count math; release-1.0
+    # audit F04-007: duration=None slipped through to a bare TypeError in the
+    # frame-count multiplication, and F05-009: a negative tail_duration silently
+    # suppressed the opaque head for the whole animation).
+    if animate:
+        if (duration is None or isinstance(duration, bool)
+                or not isinstance(duration, (int, float, np.integer,
+                                             np.floating))
+                or duration <= 0):
+            raise ValueError(
+                f"duration must be a positive number of seconds for an "
+                f"animation; got {duration!r}.")
+        if (frame_rate is None or isinstance(frame_rate, bool)
+                or not isinstance(frame_rate, (int, float, np.integer,
+                                               np.floating))
+                or frame_rate <= 0):
+            raise ValueError(
+                f"frame_rate must be a positive number; got {frame_rate!r}.")
+        if not isinstance(tail_duration, (list, tuple)):
+            if (tail_duration is None or isinstance(tail_duration, bool)
+                    or not isinstance(tail_duration, (int, float, np.integer,
+                                                      np.floating))
+                    or tail_duration < 0):
+                raise ValueError(
+                    f"tail_duration must be a non-negative number of "
+                    f"seconds (the trail/head-window length); got "
+                    f"{tail_duration!r}.")
+        # morph_samples=-5 used to leak numpy's internal 'negative
+        # dimensions are not allowed' from the downsampling RNG without
+        # ever naming the kwarg (release-1.0 audit, D03-gallery-basics-007)
+        _ms_ok = (morph_samples is None
+                  or (not isinstance(morph_samples, bool)
+                      and isinstance(morph_samples, (int, float, np.integer,
+                                                     np.floating))
+                      and float(morph_samples) >= 1
+                      and float(morph_samples).is_integer()))
+        if not _ms_ok:
+            raise ValueError(
+                f"morph_samples must be a positive integer (the "
+                f"per-dataset point cap for animate='morph') or None; got "
+                f"{morph_samples!r}.")
+        # rotations='two' used to be accepted silently and only crash at
+        # SAVE time, deep inside matplotlib ("IndexError: list index out
+        # of range") with no mention of the kwarg; zoom=-1 was silently
+        # accepted despite the documented positive-zooms-in contract
+        # (release-1.0 audit, X2-error-quality-014). Validate both eagerly,
+        # next to the duration/frame_rate checks above.
+        if isinstance(rotations, (list, tuple)):
+            # per-segment morph pacing weights: each entry must be a
+            # non-negative number (the list-only-with-morph check below
+            # handles WHICH modes allow a list)
+            if not all(isinstance(r, (int, float, np.integer, np.floating))
+                       and not isinstance(r, bool) and r >= 0
+                       for r in rotations):
+                raise ValueError(
+                    f"rotations, when given as a per-segment list (for "
+                    f"animate='morph'), must contain only non-negative "
+                    f"numbers; got {rotations!r}.")
+        elif (rotations is None or isinstance(rotations, bool)
+              or not isinstance(rotations, (int, float, np.integer,
+                                            np.floating))):
+            raise ValueError(
+                f"rotations must be a number (of full camera rotations "
+                f"over the animation; rotations=0 fixes the camera), or a "
+                f"per-segment list with animate='morph'; got "
+                f"{rotations!r}.")
+        if (zoom is None or isinstance(zoom, bool)
+                or not isinstance(zoom, (int, float, np.integer,
+                                         np.floating))
+                or zoom <= 0):
+            raise ValueError(
+                f"zoom must be a positive number (the camera zoom factor; "
+                f"larger values zoom in, default 1); got {zoom!r}.")
+
+    # save_path misuse fail-fast (F09-004/F09-007): normalize path-likes to
+    # str (animated matplotlib and plotly writers do string operations on
+    # it), expand ~, and reject non-paths/empty strings/missing directories
+    # BEFORE the expensive pipeline runs or any figure exists.
+    if save_path is not None:
+        save_path = _normalize_save_path(save_path)
+
+    # focused= resolution (GH #275 round17 #8): the length, in SECONDS (the
+    # same unit as `tail_duration`), of the opaque "in-focus" window for
+    # `animate='window'` and for any dataset with a `chemtrails`/`precog`/
+    # `bullettime` trail. `None` (default) resolves to `tail_duration`'s own
+    # value -- today's hardcoded/tail_duration-derived focus length -- so
+    # omitting `focused=` never changes existing behavior. Silently ignored
+    # (no error) for `animate='spin'`/`'parallel'` (with no trail flags set)/
+    # `'morph'`, where the concept of a separate "in-focus" window distinct
+    # from `tail_duration` doesn't apply -- see `matplotlib_backend
+    # .animate_plot3D`/`plotly_backend._add_animation` for exactly where
+    # `focused` vs. `tail_duration` is used.
+    if focused is not None:
+        if (isinstance(focused, bool)
+                or not isinstance(focused, (int, float))
+                or focused < 0):
+            raise ValueError(
+                f"focused= must be a non-negative number, or None (default: "
+                f"tail_duration's value, {tail_duration!r}); got {focused!r}."
+            )
+        resolved_focused = focused
+    else:
+        resolved_focused = tail_duration
+
+    # predict= + animate: forecast overlays are static-plot only in v1
+    # (animating a growing/appended forecast trace is follow-up work).
+    if predict is not None and animate:
+        raise NotImplementedError(
+            "predict= is not yet supported with animate: forecast traces "
+            "are static-plot only in this release. Pass animate=False (the "
+            "default) to use predict=, or omit predict= for an animated plot."
         )
-        hue = group
+
+    # rotations= as a per-SEGMENT list is only meaningful for
+    # animate='morph' (every other mode has exactly one continuous camera
+    # sweep, with no segment boundaries to assign rotations to). Whether
+    # `animate` is IN morph mode at all is fully determined by the RAW
+    # `animate` argument -- a scalar `'morph'`, or ANY list/tuple (which
+    # `_resolve_animate_mode` below only ever uses to per-dataset-tag a
+    # morph sequence) -- never by how many datasets end up being plotted,
+    # so this mismatch is checked here, fail-fast, before the (expensive)
+    # analyze/reduce/align/cluster/hue pipeline runs, mirroring the
+    # colorbar=/surface=/density= early validation just below. The
+    # COMPLEMENTARY checks that DO depend on the FINAL (post cluster/hue-
+    # reshape) dataset count -- rotations' exact ``2N - 1`` length and the
+    # "at least 2 morph-tagged datasets" minimum -- cannot be resolved yet
+    # here and are still checked later, once `xform` (and so the final
+    # dataset count) is known; see `_resolve_animate_mode`/
+    # `resolve_morph_rotations` below.
+    if isinstance(rotations, (list, tuple)) and not (
+        animate == "morph" or isinstance(animate, (list, tuple))
+    ):
+        raise ValueError(
+            "rotations as a list is only supported with animate='morph' "
+            f"(got animate={animate!r}); pass a scalar rotations= for "
+            "this animate mode."
+        )
+
+    # colorbar= kwarg validation (GH #100): fail fast with a clear message
+    # before any of the (expensive) analyze/reduce/align pipeline runs.
+    _VALID_COLORBAR_LOCATIONS = ('right', 'left', 'top', 'bottom')
+    _VALID_COLORBAR_KEYS = {'label', 'ticks', 'location'}
+    if colorbar is not None and colorbar is not False:
+        if colorbar is True:
+            colorbar = {}
+        elif isinstance(colorbar, dict):
+            unknown = set(colorbar) - _VALID_COLORBAR_KEYS
+            if unknown:
+                raise ValueError(
+                    f"colorbar dict got unknown key(s) {sorted(unknown)}; "
+                    f"valid keys are {sorted(_VALID_COLORBAR_KEYS)}."
+                )
+            loc = colorbar.get('location', 'right')
+            if loc not in _VALID_COLORBAR_LOCATIONS:
+                raise ValueError(
+                    f"colorbar['location'] must be one of "
+                    f"{_VALID_COLORBAR_LOCATIONS}; got {loc!r}."
+                )
+        else:
+            raise ValueError(
+                "colorbar must be True, False, None, or a dict with keys "
+                f"a subset of {sorted(_VALID_COLORBAR_KEYS)}; got "
+                f"{colorbar!r}."
+            )
+    else:
+        colorbar = None
+
+    # font= resolution (GH #205): resolved ONCE, here, from every piece of
+    # text hypertools might draw that is knowable before the (expensive)
+    # analyze/reduce/align pipeline runs -- labels=, a literal legend=
+    # list, title=, colorbar['label']/['ticks'] if given, and `hue=` (when
+    # `legend=True`, matplotlib's auto-legend draws one entry per unique
+    # CATEGORICAL hue value, so non-ASCII hue values need to be scanned
+    # here too -- their exact codepoints match what ends up in the legend
+    # even though the deduplicated/sorted unique-value list itself isn't
+    # known until the hue-grouping pipeline runs below). A continuous
+    # (all-numeric) `hue` contributes no strings and is silently skipped
+    # by the text-flattening helper. Resolving once up front means every
+    # text surface `_draw`/`_add_colorbar` touches later shares the exact
+    # same FontProperties, rather than each independently re-scanning
+    # installed fonts.
+    _font_texts = [labels, legend, title, hue]
+    if colorbar is not None:
+        _font_texts.append(colorbar.get('label'))
+        _font_texts.append(colorbar.get('ticks'))
+    resolved_font = resolve_font(font, _font_texts)
+    # Font applied DIRECTLY to individual text artists (title/labels/legend/
+    # colorbar). Only an EXPLICIT font= is applied that way -- it is the
+    # caller's stated choice for every surface. An AUTO-detected font
+    # (`resolved_font` set while `font is None`) merely fills a coverage GAP
+    # and is added to the fallback STACK instead (see the rc_context below),
+    # so the primary face stays the bundled Noto Sans and per-glyph fallback
+    # supplies only the characters the stack lacks (maintainer font review).
+    _artist_font = resolved_font if font is not None else None
+    # The plotly backend has no rcParams stack, so an AUTO-detected gap family
+    # must be handed to it EXPLICITLY (as a family name appended near the end
+    # of its CSS stack) -- otherwise a character matplotlib renders via the
+    # discovered font would silently show as tofu on plotly (maintainer font
+    # review). `None` for the explicit-font and no-gap cases.
+    _plotly_font_extra = (resolved_font.get_name()
+                          if (resolved_font is not None and font is None)
+                          else None)
+
+    # label_alpha= resolution (GH #103): resolved ONCE, here, exactly like
+    # font= above -- `None` (default) keeps the historical hardcoded 0.5
+    # opacity on both backends; any other value must be a real alpha
+    # (a number in [0, 1]), validated fail-fast before the expensive
+    # analyze/reduce/align pipeline runs.
+    if label_alpha is None:
+        resolved_label_alpha = 0.5
+    elif (isinstance(label_alpha, bool)
+            or not isinstance(label_alpha, (int, float))
+            or not (0 <= label_alpha <= 1)):
+        raise ValueError(
+            f"label_alpha= must be a number in [0, 1], or None (default: "
+            f"0.5); got {label_alpha!r}."
+        )
+    else:
+        resolved_label_alpha = label_alpha
+
+    # surface= kwarg validation (GH #109): fail fast (unknown dict keys)
+    # before the expensive analyze/reduce pipeline runs. `_surface_norm` is
+    # either None (disabled), a single validated dict (broadcast to every
+    # dataset once the final dataset count is known), or a list of
+    # dict-or-None (length-checked against that same final count below).
+    _surface_norm = normalize_surface_arg(surface)
+
+    # density= kwarg validation (GH #108/#191): fail fast (unknown dict
+    # keys) before the expensive analyze/reduce pipeline runs, mirroring
+    # `surface=`'s validation above. `_density_norm` is either None
+    # (disabled) or a single validated dict, broadcast to every dataset (or
+    # pooled into one layer, per its `per_group` key) once the final
+    # dataset count is known.
+    _density_norm = normalize_density_arg(density)
+
+    # resample= kwarg validation (GH #94): fail fast before the expensive
+    # analyze/reduce pipeline runs, mirroring colorbar=/surface=/density=
+    # above. A valid `resample` is False/None (disabled, default) or an
+    # int >= 2 (PCHIP interpolation -- what `hypertools.manip.Resample`
+    # uses under the hood, same as the interpolation this module already
+    # does for line smoothing -- needs at least 2 points to fit a curve).
+    if resample is not None and resample is not False:
+        if (isinstance(resample, bool)
+                or not isinstance(resample, (int, np.integer))
+                or resample < 2):
+            raise ValueError(
+                "resample= must be an integer >= 2 (the target sample "
+                "count per dataset) or False/None to disable resampling; "
+                f"got {resample!r}."
+            )
+
+    # pipeline= kwarg validation (GH #227): mutually exclusive with the
+    # stage kwargs it replaces -- fail fast before the expensive analyze/
+    # reduce pipeline runs, mirroring resample=/colorbar=/surface=/
+    # density= above. Compared against plot()'s own LITERAL defaults
+    # (reduce="IncrementalPCA", ndims=3) rather than `is not None` (unlike
+    # hyp.analyze's own pipeline= check, whose stage kwargs all default to
+    # None) since plot() always has a reduce=/ndims= value.
+    if pipeline is not None:
+        _conflicting = [name for name, default_value, value in (
+            ('manip', None, manip),
+            ('normalize', None, normalize),
+            ('reduce', 'IncrementalPCA', reduce),
+            ('ndims', 3, ndims),
+            ('align', None, align),
+            ('cluster', None, cluster),
+        ) if value != default_value]
+        if _conflicting:
+            raise ValueError(
+                "pipeline= is mutually exclusive with the stage kwarg(s) "
+                f"{', '.join(_conflicting)} (a fitted Pipeline already "
+                "encodes which stages run and their fitted parameters); "
+                "pass pipeline= alone (resample= is still applied first, "
+                "as sugar -- see pipeline='s docstring)."
+            )
+
+    # A whole already-fitted Pipeline belongs in pipeline=, not a single stage
+    # kwarg: passing one as reduce=/manip=/etc would apply it as that ONE stage
+    # and then plot re-applies the reduce stage to enforce ndims, double-applying
+    # it (QC 2026-07: this produced a cryptic "X has N features, but PCA is
+    # expecting M features" error). Point the user at the dedicated reuse path.
+    from ..core.pipeline import Pipeline as _HypPipeline
+    for _stage_name, _stage_value in (('manip', manip), ('normalize', normalize),
+                                      ('reduce', reduce), ('align', align),
+                                      ('cluster', cluster)):
+        if isinstance(_stage_value, _HypPipeline) and _stage_value.is_fitted:
+            raise ValueError(
+                f"{_stage_name}= received an already-fitted hypertools Pipeline. "
+                "A whole fitted Pipeline encodes all of its own stages -- reuse "
+                "it via hyp.plot(x, pipeline=<that Pipeline>), not as a single "
+                "stage kwarg.")
+
+    # streaming inputs (issue #101): iterators/generators and Hugging Face
+    # IterableDatasets are detected from the structure of the input -- no
+    # flag needed. Models are fitted on the first `stream_init` samples and
+    # every subsequent sample is projected through the fitted models and
+    # added to the plot dynamically (fetched in chunks of `stream_chunk`),
+    # continuing until the stream ends, `stream_max` samples have been
+    # consumed, or the user interrupts.
+    from ..io.streaming import is_stream, plot_stream
+    if is_stream(x):
+        # only the parameters forwarded below have a streaming
+        # implementation. Any OTHER parameter the caller explicitly set is
+        # named in a UserWarning instead of being silently dropped
+        # (F22-004) -- detected by comparing each plot() parameter's
+        # current value against its signature default (`cluster=False`
+        # etc. were already normalized to their None defaults above, so
+        # documented no-op spellings do not warn).
+        _stream_forwarded = {
+            'x', 'fmt', 'stream_init', 'stream_chunk', 'stream_max',
+            'stream_window', 'ndims', 'reduce', 'normalize', 'align',
+            'cluster', 'n_clusters', 'save_path', 'show', 'frame_rate',
+            'markersize', 'linewidth', 'color', 'palette', 'title',
+            'size', 'elev', 'azim', 'ax'}
+        _local_vals = locals()
+        _stream_dropped = []
+        for _pname, _param in inspect.signature(plot).parameters.items():
+            if (_pname in _stream_forwarded
+                    or _param.kind is inspect.Parameter.VAR_KEYWORD):
+                continue
+            _val = _local_vals.get(_pname, _param.default)
+            try:
+                _diff = not (_val is _param.default
+                             or _val == _param.default)
+            except Exception:
+                _diff = True
+            if _diff:
+                _stream_dropped.append(_pname)
+        _stream_dropped.extend(kwargs)
+        if _stream_dropped:
+            warnings.warn(
+                "streaming input: the following plot() parameter(s) have "
+                "no streaming implementation and will be ignored: "
+                f"{', '.join(sorted(_stream_dropped))}. Parameters "
+                "honored for streams: fmt, stream_init, stream_chunk, "
+                "stream_max, stream_window, ndims, reduce, normalize, "
+                "save_path, show, frame_rate, markersize, linewidth, "
+                "color, palette, title, size, elev, azim, ax (see the "
+                "stream_init docstring).", UserWarning, stacklevel=external_stacklevel())
+        return plot_stream(
+            x, fmt, stream_init=stream_init, stream_chunk=stream_chunk,
+            stream_max=stream_max, stream_window=stream_window,
+            ndims=ndims, reduce=reduce,
+            normalize=normalize, align=align, cluster=cluster,
+            n_clusters=n_clusters, save_path=save_path, show=show,
+            frame_rate=frame_rate, markersize=markersize,
+            linewidth=linewidth, color=color, palette=palette, title=title,
+            size=size, elev=elev, azim=azim, ax=ax)
+
+    # remember whether the USER supplied an axis before `_draw` reassigns the
+    # local `ax` to the axis it created (used by the GH #148 close below).
+    _user_supplied_ax = ax is not None
 
     if ax is not None:
         if ndims > 2:
@@ -307,17 +2507,225 @@ def plot(
 
     text_args = {"vectorizer": vectorizer, "semantic": semantic, "corpus": corpus}
 
+    # a plain python "matrix" -- a list of equal-length rows of numbers,
+    # e.g. [[1., 2.], [3., 4.]] -- is ONE dataset (exactly like the
+    # equivalent np.array), NOT a nested list of scalar "datasets"
+    # (F01-004/F08-001: the flattening below used to treat every NUMBER as
+    # a leaf, then crash with a nonsensical error about a color= kwarg the
+    # caller never passed). Ragged all-numeric rows are left as-is:
+    # format_data treats each numeric list as its own (column-vector)
+    # dataset.
+    if _is_numeric_matrix(x):
+        x = np.asarray(x, dtype=float)
+
+    # nested lists (e.g. [[a, b], [c]]) are flattened into a flat list of
+    # datasets while recording each leaf's outermost-group index and nesting
+    # depth; these drive multilevel styling below (color by outer group,
+    # thinner/fainter lines per deeper level)
+    nested_groups = nested_depths = None
+    if isinstance(x, list) and any(isinstance(el, list) for el in x) \
+            and not all(isinstance(el, str) for el in x) \
+            and not all(isinstance(el, (list, tuple)) and len(el) > 0
+                        and all(isinstance(v, (int, float, np.number))
+                                and not isinstance(v, bool) for v in el)
+                        for el in x):
+        x, nested_groups, nested_depths = _flatten_nested(x)
+
+    # MultiIndex DataFrames (GH #95): a DataFrame with a row MultiIndex
+    # (nlevels >= 2) is expanded HERE, before format_data/analyze/reduce, into
+    # one "leaf" dataset per unique full index combination -- so the leaves
+    # flow through the normal pipeline (normalize/reduce/align, streaming,
+    # interpolation, animation) exactly like any other list of datasets.
+    # After that pipeline transforms them (see the `_multiindex_meta is not
+    # None` branch below, alongside cluster/hue), per-level MEAN trajectories
+    # are computed in the TRANSFORMED space and appended, with per-dataset
+    # color/linewidth/alpha/linestyle/label overrides (see
+    # `hypertools.plot.multiindex` for the exact formulas). `cluster`/
+    # `n_clusters` fight the MultiIndex color assignment (both try to own
+    # the grouping-to-color mapping) and raise; `hue` is superseded with a
+    # warning (MultiIndex grouping takes precedence).
+    #
+    # This expansion ONLY happens for a BARE single MultiIndex DataFrame.
+    # A list containing MultiIndex DataFrame(s) (whether alone or mixed with
+    # arrays/other DataFrames) does NOT trigger expansion -- each such
+    # DataFrame is instead treated as a flat/plain dataset by the normal
+    # list-of-datasets pipeline, silently dropping the MultiIndex grouping
+    # unless we warn here.
+    if isinstance(x, list):
+        for _i, _el in enumerate(x):
+            if isinstance(_el, pd.DataFrame) and _el.index.nlevels >= 2:
+                warnings.warn(
+                    "MultiIndex grouping is only applied when a single "
+                    "DataFrame is passed; the MultiIndex on dataset "
+                    f"{_i} is being treated as a flat index."
+                , stacklevel=external_stacklevel())
+
+    _multiindex_meta = None
+    if isinstance(x, pd.DataFrame) and x.index.nlevels >= 2:
+        if cluster is not None or n_clusters is not None:
+            raise ValueError(
+                "cluster=/n_clusters= is not compatible with a row-"
+                "MultiIndex DataFrame (GH #95): MultiIndex grouping already "
+                "assigns colors by the top-level index and would conflict "
+                "with cluster-based grouping. Reset the index "
+                "(df.reset_index(drop=True)) before clustering, or drop "
+                "cluster=/n_clusters= to use the MultiIndex grouping."
+            )
+        if predict is not None:
+            raise ValueError(
+                "predict= is not supported with MultiIndex expansion in "
+                "this release: forecasts are computed one-per-leaf before "
+                "the per-level mean traces are appended, so the leaf count "
+                "no longer matches the final trace count. Reset the index "
+                "(df.reset_index(drop=True)) before using predict=, or "
+                "drop predict= to use the MultiIndex grouping."
+            )
+        if hue is not None:
+            warnings.warn(
+                "x has a row MultiIndex (GH #95): MultiIndex grouping "
+                "(leaf traces + per-level averages) takes precedence over "
+                "hue=; ignoring hue."
+            , stacklevel=external_stacklevel())
+            hue = None
+        x, _multiindex_meta = expand_multiindex(x)
+
+    # default axis labels from DataFrame column names (release-1.0 audit,
+    # F08-plot-inputs-016): when a SINGLE DataFrame with named (non-default,
+    # non-duplicate) columns is passed, remember its df2mat-transformed
+    # column labels; they become the default xlabel/ylabel(/zlabel) below
+    # IF the drawn axes end up corresponding 1:1 to those columns (i.e. the
+    # transformed data is 2-D or 3-D, so no real dimensionality reduction
+    # mixes the columns). User-passed xlabel=/ylabel=/zlabel= always win,
+    # and nothing is inferred when transform=/pipeline= replace the
+    # standard analysis pipeline.
+    _df_axis_labels = None
+    if transform is None and pipeline is None:
+        _lbl_df = None
+        if isinstance(x, pd.DataFrame):
+            _lbl_df = x
+        elif (isinstance(x, (list, tuple)) and len(x) == 1
+              and isinstance(x[0], pd.DataFrame)):
+            _lbl_df = x[0]
+        if (_lbl_df is not None and _lbl_df.shape[1] <= 3
+                and _lbl_df.index.nlevels == 1
+                and not isinstance(_lbl_df.columns,
+                                   (pd.RangeIndex, pd.MultiIndex))
+                and not _lbl_df.columns.duplicated().any()):
+            try:
+                from ..tools.df2mat import df2mat as _df2mat
+                from ..tools.format_data import _prepare_df
+                _df_axis_labels = _df2mat(_prepare_df(_lbl_df, warn=False),
+                                          return_labels=True)[1]
+            except Exception:
+                _df_axis_labels = None  # never let label sugar break a plot
+
     # analyze the data
+    raw = None
     if transform is None:
-        raw = format_data(x, **text_args)
-        xform = analyze(
-            raw,
-            ndims=ndims,
-            normalize=normalize,
-            reduce=reduce,
-            align=align,
-            internal=True,
-        )
+        raw = format_data(x, impute=impute, **text_args)
+
+        # resample= (GH #94): PCHIP-resample each dataset to exactly
+        # `resample` rows via the existing `hyp.manip` `Resample`
+        # manipulator, applied HERE -- right after `format_data` has
+        # normalized `x` into a plain list of per-dataset numpy arrays,
+        # and BEFORE `analyze` (normalize/reduce/align) runs -- so the
+        # resampled row count is what normalize/reduce/align/cluster/hue
+        # all see, and (mirroring `predict=`'s forecast values) resample=
+        # values match `hyp.manip(data, model='Resample',
+        # n_samples=resample)` on the SAME per-dataset array exactly
+        # (`hyp.manip`'s dict model spec, e.g. ``{'model': 'Resample',
+        # 'args': [], 'kwargs': {'n_samples': resample}}``, is equivalent
+        # but the plain `model='Resample', n_samples=...` call form is
+        # simpler and used here). Runs before, and independently of, the
+        # later line-smoothing interpolation (GH #141) -- that step still
+        # only densifies for ANIMATION/line-drawing purposes and operates
+        # on whatever row count resample= (or the original data) leaves it.
+        if resample:
+            from ..manip.manip import manip as _manip
+            raw = [
+                np.asarray(_manip(ri, model='Resample', n_samples=resample))
+                for ri in raw
+            ]
+
+        # per-dataset feature counts must agree (F01-011/F03-008/F08-002):
+        # the reduce stage stacks every dataset, so mismatched widths used
+        # to die deep inside numpy ("all the input array dimensions ...
+        # must match exactly") with no dataset info or fix hint. Fail fast
+        # with a clear message BEFORE the pipeline runs.
+        _widths = [ri.shape[1] for ri in raw]
+        if len(set(_widths)) > 1:
+            # when the ORIGINAL input mixed text and numeric datasets, the
+            # real problem is a text/numeric sample-count mismatch (equal
+            # counts would have been auto-hyperaligned by format_data), not
+            # the embedded column counts -- say so (release-1.0 audit,
+            # D08-tutorials-analysis-012 / D05-gallery-data-text-013).
+            def _has_text(v):
+                if isinstance(v, str):
+                    return True
+                if isinstance(v, (list, tuple)):
+                    return any(_has_text(vi) for vi in v)
+                return False
+            _text_hint = (
+                " (Note: text datasets are embedded into topic vectors -- "
+                "hence the differing column counts -- and can only be "
+                "combined with numeric datasets when every dataset has the "
+                "SAME number of samples, which lets hypertools align them "
+                "to a common space.)") if _has_text(x) else ""
+            raise ValueError(
+                "all datasets must have the same number of columns "
+                "(features) to be analyzed/plotted together, but the "
+                f"inputs have per-dataset column counts {_widths}. Either "
+                "pass datasets with matching columns, or bring them into "
+                "a shared space first and plot the result -- e.g. "
+                "hyp.plot(hyp.align(data, align='hyper'), ...)."
+                + _text_hint)
+
+        # labels= carries one entry per observation (F01-010/F10-011):
+        # validate BEFORE the pipeline runs, mirroring hue='s check.
+        if labels is not None:
+            _validate_labels_length(labels, [ri.shape[0] for ri in raw])
+
+        # a per-dataset fmt LIST must match the dataset count
+        # (F01-006/F10-003): fail fast here when no later regrouping
+        # (hue=/cluster=/MultiIndex) can change the drawn-trace count; the
+        # regrouped case is re-checked against the FINAL count below.
+        if (isinstance(fmt, list) and hue is None and cluster is None
+                and n_clusters is None and _multiindex_meta is None
+                and len(fmt) != len(raw)):
+            raise ValueError(
+                f"fmt was given as a list of length {len(fmt)}, but there "
+                f"are {len(raw)} dataset(s) to plot; pass one format "
+                "string per dataset, or a single fmt string to broadcast "
+                "it to every dataset.")
+
+        if pipeline is not None:
+            # pipeline= (GH #227): apply the fitted Pipeline's stages via
+            # .transform (never refit) instead of fitting new manip=/
+            # normalize=/reduce=/align=/cluster= models. reduce=/ndims=/
+            # normalize=/align=/cluster=/manip= were already validated
+            # (above) to still be at their defaults, so they are safely
+            # omitted here -- pipeline= governs every stage.
+            xform, _ = analyze(raw, pipeline=pipeline, internal=True,
+                               impute=impute, return_model=True)
+        else:
+            xform = analyze(
+                raw,
+                # plot()'s ndims defaults to 3 (unlike analyze's None), so
+                # forwarding it alongside reduce=None would trip analyze's
+                # "ndims= was passed but reduce= is None" warning on EVERY
+                # reduce=None plot -- including the internal streaming
+                # redraw -- even though plot enforces its own display
+                # dimensionality separately below (release-1.0 audit,
+                # D1-code-residue regression).
+                ndims=ndims if reduce is not None else None,
+                normalize=normalize,
+                reduce=reduce,
+                align=align,
+                manip=manip,
+                internal=True,
+                impute=impute,
+                random_state=random_state,
+            )
     else:
         xform = transform
 
@@ -327,272 +2735,2467 @@ def plot(
     # catch all matplotlib kwargs here to pass on
     mpl_kwargs = {}
 
-    # handle color (to be passed onto matplotlib)
-    if color is not None:
+    # handle color (to be passed onto matplotlib). `colors` is treated as
+    # an alias of `color` (like linestyle(s)/marker(s) below) and takes
+    # priority when both are given -- but it must ALSO work on its own:
+    # previously this block was nested inside `if color is not None`, so
+    # `colors=` alone was silently ignored and fell back to the default
+    # palette (GH #142 follow-up).
+    if color is not None or colors is not None:
         mpl_kwargs["color"] = color
         if colors is not None:
             mpl_kwargs["color"] = colors
-            warnings.warn(
-                "Both color and colors defined: color will be ignored \
-                          in favor of colors."
-            )
+            if color is not None:
+                warnings.warn(
+                    "Both color and colors defined: color will be "
+                    "ignored in favor of colors."
+                , stacklevel=external_stacklevel())
 
-    # handle linestyle (to be passed onto matplotlib)
-    if linestyle is not None:
+    # handle linestyle (to be passed onto matplotlib). `linestyles` is
+    # treated as an alias of `linestyle` and takes priority when both are
+    # given -- but it must ALSO work on its own: previously this block was
+    # nested inside `if linestyle is not None`, so `linestyles=` alone was
+    # silently ignored (GH #142 follow-up).
+    if linestyle is not None or linestyles is not None:
         mpl_kwargs["linestyle"] = linestyle
         if linestyles is not None:
             mpl_kwargs["linestyle"] = linestyles
-            warnings.warn(
-                "Both linestyle and linestyles defined: linestyle  \
-                          will be ignored in favor of linestyles."
-            )
+            if linestyle is not None:
+                warnings.warn(
+                    "Both linestyle and linestyles defined: linestyle "
+                    "will be ignored in favor of linestyles."
+                , stacklevel=external_stacklevel())
 
-    # handle marker (to be passed onto matplotlib)
-    if marker is not None:
+    # handle marker (to be passed onto matplotlib). `markers` is treated as
+    # an alias of `marker` and takes priority when both are given -- but it
+    # must ALSO work on its own: previously this block was nested inside
+    # `if marker is not None`, so `markers=` alone was silently ignored
+    # (GH #142 follow-up).
+    if marker is not None or markers is not None:
         mpl_kwargs["marker"] = marker
         if markers is not None:
             mpl_kwargs["marker"] = markers
+            if marker is not None:
+                warnings.warn(
+                    "Both marker and markers defined: marker will be "
+                    "ignored in favor of markers."
+                , stacklevel=external_stacklevel())
+
+    # handle marker size (to be passed onto matplotlib/plotly)
+    if markersize is not None:
+        mpl_kwargs["markersize"] = markersize
+
+    # handle line width (to be passed onto matplotlib/plotly)
+    if linewidth is not None:
+        mpl_kwargs["linewidth"] = linewidth
+
+    # reduce data to <=3 dims for DISPLAY. `analyze` above already applied
+    # the requested reduce= spec; this pass only enforces the display
+    # dimensionality (3, or ndims if lower) and is SKIPPED when the data is
+    # already there -- re-applying a fitted/instance reducer here
+    # re-transformed its own (already-reduced) output and crashed with
+    # "X has 3 features, but ... is expecting N features" (F03-002); it
+    # also re-fired one-shot warnings (e.g. the deprecated {'model',
+    # 'params'} spec warning) twice per plot() call (F03-009). xform was
+    # already formatted by analyze(), so format_data is skipped here.
+    _display_ndims = ndims if (ndims and ndims < 3) else 3
+    if xform[0].shape[1] > _display_ndims:
+        if reduce is None:
+            raise ValueError(
+                f"the data to plot has {xform[0].shape[1]} dimensions, but "
+                f"static plots support at most {_display_ndims}; "
+                "reduce=None disables dimensionality reduction, so the "
+                "data cannot be drawn. Pass a reduce model (e.g. the "
+                "default reduce='IncrementalPCA'), or reduce the data "
+                "yourself before plotting.")
+        _display_reduce = reduce
+        if (not isinstance(reduce, (str, dict, type))
+                and hasattr(reduce, "fit_transform")):
+            # a model INSTANCE (possibly fitted, possibly configured with
+            # >3 components) must not be applied a second time -- project
+            # to display space with the default reducer instead.
+            _display_reduce = "IncrementalPCA"
+        xform = reducer(xform, ndims=_display_ndims, reduce=_display_reduce,
+                        internal=True, format_data=False)
+        if xform[0].shape[1] > _display_ndims:
+            # e.g. a dict spec pinning n_components > 3: fall back to the
+            # default display projection rather than crash downstream.
+            xform = reducer(xform, ndims=_display_ndims,
+                            reduce="IncrementalPCA", internal=True,
+                            format_data=False)
+
+    # surface= (GH #109): no hull concept in 1D -- fail fast rather than
+    # silently ignoring the kwarg.
+    if _surface_norm is not None and xform[0].shape[1] == 1:
+        raise ValueError(
+            "surface= is not supported for 1D data (no hull concept in a "
+            "single dimension)."
+        )
+
+    # density= (GH #108/#191): no 2D/3D density-grid concept in 1D -- fail
+    # fast rather than silently ignoring the kwarg (mirrors surface= above).
+    if _density_norm is not None and xform[0].shape[1] == 1:
+        raise ValueError(
+            "density= is not supported for 1D data (no 2D/3D density grid "
+            "concept in a single dimension)."
+        )
+
+    # zlabel= (round17 #7): no z-axis to label on a 2D (or 1D) plot -- fail
+    # fast rather than silently ignoring the kwarg (mirrors surface=/
+    # density= above), now that xform's FINAL dimensionality is known.
+    # apply the DataFrame-column default axis labels (F08-016), now that
+    # xform's FINAL dimensionality is known -- only when it matches the
+    # DataFrame's transformed column count exactly (2-D or 3-D), so each
+    # drawn axis IS one named column; user-passed labels take precedence
+    # (pass e.g. xlabel='' to suppress a single inferred label).
+    if (_df_axis_labels is not None
+            and len(_df_axis_labels) == xform[0].shape[1]
+            and len(_df_axis_labels) in (2, 3)):
+        if xlabel is None:
+            xlabel = str(_df_axis_labels[0])
+        if ylabel is None:
+            ylabel = str(_df_axis_labels[1])
+        if len(_df_axis_labels) == 3 and zlabel is None:
+            zlabel = str(_df_axis_labels[2])
+
+    if zlabel is not None and xform[0].shape[1] < 3:
+        raise ValueError(
+            f"zlabel= is not supported for {xform[0].shape[1]}-D data (no "
+            "z-axis in a 2-D or 1-D plot); pass ndims=3 (the default) to "
+            "use zlabel=, or use xlabel=/ylabel= for 2-D data."
+        )
+
+    # predict=: forecast `t` new rows per input dataset, in the plotted
+    # (post normalize->reduce->align) space (GH #169). Computed here -- one
+    # forecast per ORIGINAL input dataset, before any cluster/hue reshaping
+    # -- so the forecasts correspond 1:1 with the datasets about to be
+    # drawn. For the DRAWN dashed trace only, the final observed row of
+    # each dataset is prepended so the trace connects to the plotted
+    # trajectory (drawn trace length is therefore t + 1).
+    # `bundle_forecasts` keeps the UNPREPENDED analyze-space forecasts --
+    # exactly `t` rows, matching what `hyp.predict(xform_data, ...)`
+    # returns (release-1.0 audit, X1-api-consistency-016: the bundle used
+    # to include the seam row, an off-by-one vs. hyp.predict);
+    # `raw_forecasts` is the seam-prepended working copy that gets the
+    # SAME center/scale transform as `xform` below, so the drawn dashed
+    # trace lines up with the drawn (centered/scaled) data.
+    raw_forecasts = None
+    bundle_forecasts = None
+    if predict is not None:
+        from ..predict.predict import predict as _predictor
+        _fc = _predictor(xform, model=predict, t=t)
+        if not isinstance(_fc, list):
+            _fc = [_fc]
+        bundle_forecasts = [np.asarray(fc, dtype=float) for fc in _fc]
+        raw_forecasts = [
+            np.vstack([np.asarray(xi[-1:]), np.asarray(fc)])
+            for xi, fc in zip(xform, _fc)
+        ]
+
+    # per-point colors for multicolored lines (set by the hue branch below;
+    # computed after interpolation). Dataset lengths are captured now so hue
+    # values can be re-interpolated to match the interpolated trajectories.
+    multicolor_hue = None
+    # when a high-dim matrix hue is reduced to a 3-column RGB matrix (see the
+    # color_reduce= branch below), multicolor_hue holds literal per-point RGB
+    # values that must be used AS colors rather than blended over a palette.
+    multicolor_hue_is_rgb = False
+    pre_interp_lengths = [len(xi) for xi in xform]
+
+    # morph interpolates between point CLOUDS, so hue (which colors fixed
+    # observations) has no stable point to attach to across the morph -- every
+    # hue form crashed here (IndexError from the data/label reshape, QC 2026-07,
+    # pre-existing). Drop hue (with a warning) before the cluster/hue grouping
+    # chain below rather than crash.
+    if (((animate == 'morph') or isinstance(animate, list))
+            and hue is not None):
+        warnings.warn("hue is not supported with animate='morph'; "
+                      "ignoring hue.", stacklevel=external_stacklevel())
+        hue = None
+
+    # original category NAMES for a categorical hue (set below, if
+    # applicable), used by `legend=True` so the legend/colorbar show the
+    # actual category strings rather than the integer group ids `hue` gets
+    # reassigned to just below (group_by_category returns ints).
+    hue_category_names = None
+    # one label per drawn GROUP, in group order -- like hue_category_names
+    # but with '_nolegend_' placeholders for unnamed groups (the None
+    # entries of a partially-labeled hue; F02-013), so legend=True and the
+    # discrete colorbar can label every trace without a length mismatch.
+    hue_group_labels = None
+    # (n_input_datasets, n_hue_groups) when a categorical hue regrouped the
+    # data by category -- names= (one name per INPUT dataset) cannot apply
+    # after that regrouping (F02-009).
+    _hue_regrouped_counts = None
+    # unfitted Clusterer built from the SAME resolved spec the figure's
+    # cluster stage used (set in the cluster branch below), so the
+    # return_model bundle's pipeline encodes the parameters the figure
+    # was actually drawn with (F13-004)
+    _bundle_cluster_stage = None
+
+    # MultiIndex DataFrames (GH #95): xform currently holds the TRANSFORMED
+    # leaf trajectories (post normalize/reduce/align), in the same order as
+    # `_multiindex_meta['leaf_keys']` -- exactly what `build_multiindex_styles`
+    # needs to compute per-level mean trajectories IN THE REDUCED SPACE and
+    # append them. cluster=/n_clusters= were already rejected and hue=
+    # already squelched (with a warning) above, so this always wins the
+    # cluster/hue/nested_groups chain below.
+    if _multiindex_meta is not None:
+        if color is not None or colors is not None:
             warnings.warn(
-                "Both marker and markers defined: marker will be \
-                          ignored in favor of markers."
-            )
+                "x has a row MultiIndex (GH #95): MultiIndex grouping "
+                "assigns color by the top-level index; ignoring "
+                "color/colors."
+            , stacklevel=external_stacklevel())
+        if linewidth is not None:
+            warnings.warn(
+                "x has a row MultiIndex (GH #95): MultiIndex grouping "
+                "assigns linewidth by level (leaves=1, thicker per level "
+                "averaged over); ignoring linewidth."
+            , stacklevel=external_stacklevel())
+        xform, _mi_style = build_multiindex_styles(
+            xform, _multiindex_meta, palette=palette,
+            linestyle=linestyle, linestyles=linestyles)
+        mpl_kwargs["color"] = _mi_style["colors"]
+        mpl_kwargs["linewidth"] = _mi_style["linewidths"]
+        mpl_kwargs["alpha"] = _mi_style["alphas"]
+        if _mi_style["linestyles"] is not None:
+            mpl_kwargs["linestyle"] = _mi_style["linestyles"]
+        mpl_kwargs["label"] = _mi_style["labels"]
+        legend = _mi_style["labels"]
 
-    # reduce data to 3 dims for plotting, if ndims is None, return this
-    if ndims and ndims < 3:
-        xform = reducer(xform, ndims=ndims, reduce=reduce, internal=True)
-    else:
-        xform = reducer(xform, ndims=3, reduce=reduce, internal=True)
-
-    # find cluster and reshape if n_clusters
-    if cluster is not None:
+    # find cluster and reshape if cluster=/n_clusters= was given
+    # (n_clusters= alone defaults to KMeans, matching the docstring)
+    elif cluster is not None or n_clusters is not None:
         if hue is not None:
-            warnings.warn("cluster overrides hue, ignoring hue.")
-        if isinstance(cluster, (str, bytes)):
+            warnings.warn(
+                ("cluster" if cluster is not None else "n_clusters")
+                + " overrides hue, ignoring hue.", stacklevel=external_stacklevel())
+            hue = None
+        if cluster is None:
+            cluster = "KMeans"
+        if isinstance(cluster, bytes):
+            cluster = cluster.decode("utf-8")
+
+        from ..cluster.cluster import _resolve_cluster_spec
+        _n_clusters_explicit = n_clusters is not None
+        _cluster_instance = None
+        _spec_kwargs = {}
+        _spec_top_n = None
+        if isinstance(cluster, str):
             model = cluster
-            params = default_params(model)
+            params = default_params(model) or {}
         elif isinstance(cluster, dict):
+            if "model" not in cluster:
+                # the same instructive error hyp.cluster raises for a
+                # model-less dict spec, instead of a bare KeyError
+                # (F13-010)
+                raise ValueError(
+                    "If passing a dictionary, pass the model as the "
+                    "value of the 'model' key and a dictionary of custom "
+                    "parameters as the value of the 'kwargs' key (the "
+                    "legacy 'params' key is also accepted).")
             model = cluster["model"]
-            params = default_params(model, cluster["params"])
+            model_key = model if isinstance(model, str) \
+                else getattr(model, "__name__", str(model))
+            # canonical {'model': ..., 'args': [...], 'kwargs': {...}} (or
+            # just 'kwargs', no 'args') vs LEGACY {'model': ...,
+            # 'params': {...}} (accepted for backward compatibility, with
+            # a DeprecationWarning) -- mirrors
+            # hypertools.cluster.cluster._resolve_cluster_spec's own
+            # dict-shape handling (round17 Task 6 fix: this used to only
+            # read cluster.get('params', {}), silently DROPPING a
+            # canonical {'model', 'kwargs'} dict's kwargs). The spec below
+            # is always rebuilt in the canonical {'model', 'kwargs'} form
+            # before being handed to `_resolve_cluster_spec` further down,
+            # so that call never re-triggers this same warning -- do NOT
+            # double-warn.
+            if "args" in cluster or "kwargs" in cluster:
+                _spec_kwargs = dict(cluster.get("kwargs", {}))
+            elif "params" in cluster:
+                warnings.warn(
+                    "{'model': ..., 'params': {...}} is deprecated; use "
+                    "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
+                    DeprecationWarning, stacklevel=external_stacklevel())
+                _spec_kwargs = dict(cluster["params"])
+            params = default_params(model_key, _spec_kwargs) or {}
+            if "n_clusters" in cluster:
+                # top-level convenience:
+                # cluster={'model': ..., 'n_clusters': k} -- handed to
+                # _resolve_cluster_spec below, which applies hyp.cluster's
+                # documented precedence (the spec's value wins over
+                # n_clusters=, with a UserWarning on explicit conflicts)
+                _spec_top_n = cluster["n_clusters"]
+        elif isinstance(cluster, type) or hasattr(cluster, "fit_predict") \
+                or hasattr(cluster, "fit_transform"):
+            # a class or (sklearn-API) model instance: hyp.cluster accepts
+            # these directly (F03-014) -- resolve the registry name for
+            # the mixture-model check below and pass the object through.
+            model = cluster if isinstance(cluster, type) else type(cluster)
+            _cluster_instance = None if isinstance(cluster, type) else cluster
+            params = {}
+            if n_clusters is not None and _cluster_instance is not None:
+                warnings.warn(
+                    "n_clusters= is ignored when cluster= is a model "
+                    "INSTANCE (the instance's own parameters are used); "
+                    "configure the instance directly (e.g. "
+                    "KMeans(n_clusters=...)) or pass the model by name "
+                    "(e.g. cluster='KMeans').", stacklevel=external_stacklevel())
+                n_clusters = None
+                _n_clusters_explicit = False
         else:
             raise ValueError(
-                "Invalid cluster model specified; should be" " string or dictionary!"
-            )
+                "invalid cluster model: expected a string, dict spec, "
+                "class, or (sklearn-API) model instance; got "
+                f"{cluster!r}.")
 
-        if n_clusters is not None:
-            if cluster in ("HDBSCAN",):
+        # FeatureAgglomeration clusters FEATURES (columns), not
+        # observations: it yields one label per COLUMN, so there is no
+        # per-observation grouping to color/reshape the plot with --
+        # regrouping by its labels silently drew n_features "points"
+        # where the data's rows should be, or crashed downstream
+        # (F13-001).
+        if _mixture_name(model) == "FeatureAgglomeration":
+            raise ValueError(
+                "cluster='FeatureAgglomeration' is not supported by "
+                "hyp.plot: FeatureAgglomeration clusters features "
+                "(columns), not observations, so its labels (one per "
+                "column) cannot color or group the plotted rows. Use "
+                "hyp.cluster(data, cluster='FeatureAgglomeration') to "
+                "get per-column labels directly.")
+
+        # n_clusters= exemption for models that discover their own
+        # cluster count (HDBSCAN, DBSCAN, MeanShift, OPTICS,
+        # AffinityPropagation): warn-and-ignore instead of crashing in
+        # the sklearn constructor, using the same signature-based check
+        # as hyp.cluster's _resolve_cluster_spec (F13-002; generalizes
+        # the old HDBSCAN-only special case).
+        _model_cls = None
+        if isinstance(model, str):
+            _model_cls = (hard_cluster_models.get(model)
+                          or mixture_models.get(model))
+        elif isinstance(model, type):
+            _model_cls = model
+        if (_n_clusters_explicit and _model_cls is not None
+                and _mixture_name(model) not in mixture_models
+                and "n_clusters"
+                not in inspect.signature(_model_cls).parameters):
+            warnings.warn(
+                f"n_clusters is not a valid parameter for "
+                f"{_mixture_name(model)} clustering and will be ignored.", stacklevel=external_stacklevel())
+            n_clusters = None
+            _n_clusters_explicit = False
+
+        # default_params() pre-fills a DEFAULT cluster count (KMeans
+        # n_clusters=3, LDA/NMF n_components=20, ...). When the caller
+        # supplied a count (n_clusters= or the dict's top-level
+        # 'n_clusters'), drop that default -- it is not a user-typed
+        # spec kwarg, so it must not win the resolver's spec-kwargs-
+        # take-precedence rule (F13-009) or trigger a bogus conflict
+        # warning.
+        if _n_clusters_explicit or _spec_top_n is not None:
+            for _count_key in ("n_clusters", "n_components"):
+                if _count_key in params and _count_key not in _spec_kwargs:
+                    del params[_count_key]
+
+        # resolve the spec ONCE with hyp.cluster's own resolver -- same
+        # grammar, same precedence (spec kwargs beat n_clusters=, with a
+        # UserWarning on explicit conflicts), same signature-based
+        # n_clusters exemption, and random_state= injection
+        # (F13-002/-003/-009/-020) -- and build the return_model
+        # bundle's cluster stage from the IDENTICAL resolved spec so the
+        # bundled pipeline encodes the same parameters the figure was
+        # drawn with (F13-004).
+        if _cluster_instance is not None:
+            _resolve_spec = _cluster_instance
+        else:
+            _resolve_spec = {"model": model, "kwargs": params}
+            if _spec_top_n is not None:
+                _resolve_spec["n_clusters"] = _spec_top_n
+        _cluster_stage = _resolve_cluster_spec(
+            _resolve_spec, n_clusters if n_clusters is not None else 3,
+            random_state=random_state,
+            n_clusters_explicit=_n_clusters_explicit)
+        # a second, unfitted resolution of the same spec for the bundle
+        # (n_clusters_explicit=False: any conflict was already warned
+        # about just above -- values resolve identically either way)
+        _bundle_cluster_stage = _resolve_cluster_spec(
+            _resolve_spec, n_clusters if n_clusters is not None else 3,
+            random_state=random_state)
+
+        cluster_labels = clusterer(xform, cluster=_cluster_stage)
+
+        if _mixture_name(model) in mixture_models:
+            # soft assignments: color each observation by the proportion-
+            # weighted blend of its components' colors
+            if legend is True:
                 warnings.warn(
-                    "n_clusters is not a valid parameter for "
-                    "HDBSCAN clustering and will be ignored."
-                )
+                    "legend is not supported for mixture-model clustering "
+                    "(observations have blended colors, not discrete "
+                    "groups); ignoring legend."
+                , stacklevel=external_stacklevel())
+                legend = None
+            if not animate:
+                # exact per-point colors (rendered via collections/scatter)
+                multicolor_hue = np.asarray(cluster_labels,
+                                            dtype=np.float64)
+                hue = None
+            elif _fmt_draws_line(fmt):
+                # LINE animation: segment each dataset into contiguous
+                # same-group runs (never merging a group's non-adjacent
+                # points or crossing a dataset boundary; GH #291), each run
+                # coloured by its quantized blended group colour.
+                blended = mat2colors(cluster_labels, palette=palette)
+                group_ids, group_colors = colors2groups(blended)
+                _cat_color = {gid: group_colors[gid]
+                              for gid in dict.fromkeys(group_ids)}
+                _cat_label = {gid: str(gid) for gid in dict.fromkeys(group_ids)}
+                _nd = len(xform)
+                xform, labels, _run_colors, hue_group_labels, _seg_ds = \
+                    _regroup_categorical_lines(
+                        xform, group_ids, labels, _cat_color, _cat_label)
+                fmt = _expand_styles_to_runs(fmt, mpl_kwargs, _seg_ds, _nd)
+                mpl_kwargs["color"] = _run_colors
+                hue = group_ids
             else:
-                params["n_clusters"] = n_clusters
-
-        cluster_labels = clusterer(xform, cluster={"model": model, "params": params})
-        xform, labels = reshape_data(xform, cluster_labels, labels)
-        hue = cluster_labels
-
-    elif n_clusters is not None:
-        # If cluster was None default to KMeans
-        cluster_labels = clusterer(xform, cluster="KMeans", n_clusters=n_clusters)
-        xform, labels = reshape_data(xform, cluster_labels, labels)
-        if hue is not None:
-            warnings.warn("n_clusters overrides hue, ignoring hue.")
+                # marker animations render one trace per group: quantize the
+                # blended colors into (near-)identical-color groups
+                blended = mat2colors(cluster_labels, palette=palette)
+                group_ids, group_colors = colors2groups(blended)
+                xform, labels = reshape_data(xform, group_ids, labels)
+                mpl_kwargs["color"] = [
+                    group_colors[gid]
+                    for gid in sorted(set(group_ids), key=group_ids.index)
+                ]
+                hue = group_ids
+        elif _fmt_draws_line(fmt):
+            # LINE clustering: contiguous-run segmentation so a cluster's
+            # non-adjacent points are NOT joined into one polyline and
+            # separate datasets are never bridged (GH #291); each run is
+            # coloured + labelled by its cluster id in sorted order, one
+            # legend/colorbar entry per cluster.
+            _cat_color, _cat_label = _categorical_color_label_maps(
+                cluster_labels, palette, None, None, sort_numeric=True)
+            _nd = len(xform)
+            xform, labels, _run_colors, hue_group_labels, _seg_ds = \
+                _regroup_categorical_lines(
+                    xform, cluster_labels, labels, _cat_color, _cat_label)
+            fmt = _expand_styles_to_runs(fmt, mpl_kwargs, _seg_ds, _nd)
+            mpl_kwargs["color"] = _run_colors
+            hue = cluster_labels
+            try:
+                _cats_sorted = sorted(set(cluster_labels))
+            except TypeError:
+                _cats_sorted = list(dict.fromkeys(cluster_labels))
+            hue_category_names = [str(c) for c in _cats_sorted]
+        else:
+            xform, labels = reshape_data(xform, cluster_labels, labels)
+            # reshape_data returns groups in first-appearance order;
+            # reorder the drawn groups (and their legend/colorbar
+            # labels) into sorted label order so a legend reads
+            # '0, 1, 2' rather than e.g. '1, 0, 2' (F13-022)
+            _cats = list(sorted(set(cluster_labels),
+                                key=list(cluster_labels).index))
+            try:
+                _order = sorted(range(len(_cats)), key=lambda i: _cats[i])
+            except TypeError:
+                _order = list(range(len(_cats)))
+            xform = [xform[i] for i in _order]
+            labels = [labels[i] for i in _order]
+            hue = cluster_labels
+            hue_group_labels = [str(_cats[i]) for i in _order]
+            hue_category_names = list(hue_group_labels)
 
     # group data if there is a grouping var
     elif hue is not None:
         if color is not None:
-            warnings.warn("Using group, color keyword will be ignored.")
+            warnings.warn("hue= and color= were both given; color= will "
+                          "be ignored in favor of hue=.", stacklevel=external_stacklevel())
 
-        # if list of lists, unpack
-        if any(isinstance(el, list) for el in hue):
-            hue = list(itertools.chain(*hue))
+        # pandas containers are used POSITIONALLY (their values, in order):
+        # a categorical Series whose index does not contain the label 0
+        # (e.g. a column sliced from a filtered DataFrame) crashed with a
+        # bare `KeyError: 0` at the `hue[0]` tuple check below, because
+        # `[]` on a Series is LABEL-based indexing (release-1.0 audit,
+        # F02-003). A single-column DataFrame keeps its existing
+        # matrix-hue handling via np.asarray below.
+        if isinstance(hue, (pd.Series, pd.Index, pd.Categorical)):
+            hue = hue.tolist()
 
-        # if all of the elements are numbers, map them to colors
-        if all(isinstance(el, int) or isinstance(el, float) for el in hue):
-            hue = vals2bins(hue)
-        elif all(isinstance(el, str) for el in hue):
-            hue = group_by_category(hue)
+        # NESTED per-dataset hue: when the data is a list of datasets, hue may
+        # be given with the SAME nesting -- one hue sub-sequence per dataset,
+        # each matching that dataset's length (the classic list-of-lists form,
+        # e.g. examples/plot_hue.py). Flatten it to one value (or one matrix
+        # row) per observation before classifying, so np.asarray doesn't read a
+        # (n_datasets, len) block as a (3, ...) matrix hue. A genuinely flat or
+        # (n_obs, k) matrix hue has len(hue) != n_datasets (or scalar elements),
+        # so it is left untouched.
+        if (isinstance(hue, (list, tuple)) and len(xform) > 1
+                and len(hue) == len(xform)
+                and all(np.ndim(h) >= 1 and len(h) == len(xi)
+                        for h, xi in zip(hue, xform))):
+            flat_hue = []
+            for h in hue:
+                flat_hue.extend(list(h))
+            hue = flat_hue
+
+        # classify the hue argument: per-observation numeric matrix
+        # (mixture proportions, model weights, ...), continuous 1D values,
+        # or discrete grouping labels
+        n_obs = sum(len(xi) for xi in xform)
+        try:
+            hue_array = np.asarray(hue)
+        except Exception:
+            hue_array = None
+        # a SCALAR hue -- a single string or number, e.g. hue='red' -- means
+        # "put every observation in one group". Broadcast it to one value per
+        # observation so it is not mis-measured as len('red') == 3 characters
+        # (QC 2026-07 red-team: hue='red' on 20 points raised the nonsensical
+        # "hue has 3 entries but the data has 20 observations"). Since a
+        # single-group hue colors nothing differently, this is usually a
+        # mistake -- e.g. a DataFrame COLUMN NAME passed seaborn-style --
+        # so say so rather than silently accepting it (release-1.0 audit,
+        # X2-error-quality-016).
+        if hue_array is not None and hue_array.ndim == 0:
+            warnings.warn(
+                f"hue= was given a single scalar value ({hue!r}); all "
+                "observations will be placed in ONE group (a single "
+                "color). hue= takes the per-observation values themselves "
+                "-- a list/array with one entry per observation (e.g. "
+                "hue=df['col'] rather than a column name).",
+                UserWarning, stacklevel=external_stacklevel())
+            hue = [hue_array.item()] * n_obs
+            hue_array = np.asarray(hue)
+        # validate hue length (QC 2026-07): a hue that was too SHORT silently
+        # truncated the plot (rendered only the first len(hue) points, no
+        # warning); too LONG raised a cryptic IndexError deep in reshape_data.
+        # hue must carry exactly one value/row per observation.
+        _hue_len = (hue_array.shape[0]
+                    if hue_array is not None and hue_array.ndim >= 1
+                    else len(hue))
+        if _hue_len != n_obs:
+            raise ValueError(
+                f"hue has {_hue_len} entr{'y' if _hue_len == 1 else 'ies'} but "
+                f"the data has {n_obs} observations; hue must have exactly one "
+                "value (or one row, for a matrix hue) per observation.")
+        hue_is_matrix = (hue_array is not None and hue_array.ndim == 2
+                         and np.issubdtype(hue_array.dtype, np.number)
+                         and hue_array.shape[0] == n_obs)
+        # small-cardinality integer (or boolean) hue -- e.g. the cluster
+        # labels hyp.cluster returns -- is CATEGORICAL, not continuous: on
+        # the continuous path, adjacent integer labels (0 and 1) map to
+        # visually indistinguishable neighboring palette samples
+        # (F13-005). Rule (documented in the hue docstring): integer/bool
+        # dtype, at most 12 unique values, and fewer unique values than
+        # observations; anything else numeric stays continuous.
+        _hue_int_categorical = (
+            hue_array is not None and hue_array.ndim == 1
+            and (np.issubdtype(hue_array.dtype, np.integer)
+                 or np.issubdtype(hue_array.dtype, np.bool_))
+            and hue_array.shape[0] == n_obs
+            and len(np.unique(hue_array)) <= 12
+            and len(np.unique(hue_array)) < n_obs)
+        hue_is_continuous = (hue_array is not None and hue_array.ndim == 1
+                             and np.issubdtype(hue_array.dtype, np.number)
+                             and hue_array.shape[0] == n_obs
+                             and not _hue_int_categorical)
+
+        # arbitrary matrix hue -> RGB: when the hue matrix has MORE than 3
+        # columns, or color_reduce= is explicitly given, reduce it to 3 columns
+        # (default 'IncrementalPCA'; color_reduce accepts any hyp.reduce spec)
+        # and min-max each column to [0, 1] so the three reduced dimensions map
+        # directly to (r, g, b). Those per-observation rows are then used AS
+        # colors. A <=3-column matrix with no color_reduce= keeps the
+        # palette-blend path (mixture proportions etc.).
+        if hue_is_matrix and (hue_array.shape[1] > 3 or color_reduce is not None):
+            _rgb = np.asarray(hue_array, dtype=np.float64)
+            if _rgb.shape[1] > 3:
+                # more than 3 columns: reduce to 3 (default IncrementalPCA;
+                # color_reduce accepts any hyp.reduce spec). A <=3-column matrix
+                # is NOT reduced -- hyp.reduce(ndims=3) can't synthesize more
+                # dimensions than the input has, and doing so crashed for k<=3
+                # (QC 2026-07 red-team); its columns are used directly instead.
+                from ..reduce.reduce import reduce as _color_reducer
+                try:
+                    _rgb = np.asarray(
+                        _color_reducer(
+                            _rgb,
+                            reduce=(color_reduce or 'IncrementalPCA'),
+                            ndims=3),
+                        dtype=np.float64)
+                except ValueError as exc:
+                    # name the kwarg the user actually passed (the
+                    # underlying error says 'reduce', which the user never
+                    # typed; release-1.0 audit, F02-008) and collapse any
+                    # whitespace runs from wrapped source lines
+                    raise ValueError(
+                        f"color_reduce={color_reduce!r} failed to reduce "
+                        "the matrix hue to 3 color channels: "
+                        f"{' '.join(str(exc).split())}") from exc
+                if _rgb.ndim == 3 and _rgb.shape[0] == 1:
+                    _rgb = _rgb[0]
+            # min-max each column to [0, 1]
+            _lo = _rgb.min(axis=0, keepdims=True)
+            _hi = _rgb.max(axis=0, keepdims=True)
+            _span = np.where((_hi - _lo) > 0, _hi - _lo, 1.0)
+            _rgb = np.clip((_rgb - _lo) / _span, 0.0, 1.0)
+            # pad to exactly 3 channels (a 1- or 2-column matrix given with an
+            # explicit color_reduce=): fill the missing channel(s) with a
+            # neutral 0.5 so the present columns still drive the color.
+            if _rgb.shape[1] < 3:
+                _rgb = np.hstack(
+                    [_rgb, np.full((_rgb.shape[0], 3 - _rgb.shape[1]), 0.5)])
+            hue_array = _rgb
+            multicolor_hue_is_rgb = True
+
+        # set when a categorical INTEGER/boolean hue needs its groups
+        # reordered from first-appearance to sorted numeric order after
+        # reshape_data below (F13-005/F13-022)
+        _hue_sort_numeric = False
+
+        # morph animations tag/reshape datasets specially, so continuous/matrix
+        # hue there keeps the grouped path below; every other animation (spin,
+        # window, parallel, serial, True) uses the SAME exact-per-point-color
+        # path as static plots (QC 2026-07). Excluding all animations here sent
+        # continuous hue into the categorical regroup below, which split it into
+        # single-point "groups" and crashed the frame interpolation
+        # (`interp_array`: "x must contain at least 2 elements").
+        _animate_is_morph = (animate == 'morph') or isinstance(animate, list)
+
+        if (hue_is_matrix or hue_is_continuous) and not _animate_is_morph:
+            # EXACT PER-POINT COLORS: color varies continuously across
+            # observations. Datasets stay intact (no group reshape, which
+            # would fragment lines and quantize marker colors); per-point
+            # colors are computed after interpolation, below, and rendered
+            # via collections (lines) or scatter (markers), and -- for
+            # animations -- passed through to each frame as point_colors.
+            multicolor_hue = np.asarray(hue_array, dtype=np.float64)
+            if legend is True:
+                warnings.warn("legend is not supported for continuous or "
+                              "matrix-valued hue; ignoring legend.", stacklevel=external_stacklevel())
+                legend = None
+            hue = None
+
+        elif hue_is_matrix:
+            # markers (or animated) path: blend colors per observation,
+            # then group observations with (near-)identical colors into
+            # traces
+            blended = (hue_array if multicolor_hue_is_rgb
+                       else mat2colors(hue_array, palette=palette))
+            group_ids, group_colors = colors2groups(blended)
+            mpl_kwargs["color"] = [
+                group_colors[gid]
+                for gid in sorted(set(group_ids), key=group_ids.index)
+            ]
+            if legend is True:
+                warnings.warn("legend is not supported for matrix-valued "
+                              "hue; ignoring legend.", stacklevel=external_stacklevel())
+                legend = None
+            hue = group_ids
+
+        else:
+            # if list of lists, unpack
+            if any(isinstance(el, list) for el in hue):
+                hue = list(itertools.chain(*hue))
+
+            # if all of the elements are numbers, map them to colors
+            if not isinstance(hue[0], tuple):
+                if _hue_int_categorical:
+                    # categorical integer/boolean group ids (F13-005):
+                    # grouped and palette-colored like string labels, with
+                    # groups (and legend/colorbar labels) in sorted
+                    # numeric order -- see the hue docstring's
+                    # categorical-vs-continuous rule
+                    _int_cats = sorted(set(hue_array.tolist()))
+                    hue_category_names = [str(c) for c in _int_cats]
+                    hue_group_labels = list(hue_category_names)
+                    hue = hue_array.tolist()
+                    _hue_sort_numeric = True
+                elif all(isinstance(el, (int, float, np.integer,
+                                         np.floating))
+                         and not isinstance(el, bool) for el in hue):
+                    hue = vals2bins(hue)
+                elif all(isinstance(el, str) for el in hue):
+                    hue_category_names = list(
+                        sorted(set(hue), key=list(hue).index))
+                    hue_group_labels = list(hue_category_names)
+                    hue = group_by_category(hue)
+                elif (any(el is None for el in hue)
+                      and any(isinstance(el, str) for el in hue)
+                      and all(el is None or isinstance(el, str)
+                              for el in hue)):
+                    # partially-labeled hue (the docstring's "label a subset
+                    # of points" form, e.g. ['a', None, 'b', 'a']): the None
+                    # entries mark UNLABELED points. They form their own
+                    # group but are drawn in a de-emphasized neutral gray
+                    # and get no legend entry, and the NAMED categories keep
+                    # the first palette slots in first-appearance order --
+                    # previously the None group consumed a fully-saturated
+                    # palette slot the legend never explained, and shifted
+                    # the named categories' colors (release-1.0 audit,
+                    # F02-013).
+                    _cats = list(sorted(set(hue), key=list(hue).index))
+                    hue_category_names = [c for c in _cats if c is not None]
+                    hue_group_labels = ['_nolegend_' if c is None else c
+                                        for c in _cats]
+                    _base = get_palette_colors(palette,
+                                               len(hue_category_names))
+                    _named_idx = {c: i for i, c
+                                  in enumerate(hue_category_names)}
+                    mpl_kwargs["color"] = [
+                        _UNLABELED_HUE_COLOR if c is None
+                        else tuple(_base[_named_idx[c]]) for c in _cats]
+                    hue = group_by_category(hue)
 
         # reshape the data according to group
-        if n_clusters is None:
-            xform, labels = reshape_data(xform, hue, labels)
-        # interpolate lines if they are grouped
-        if is_line(fmt):
-            xform = patch_lines(xform)
+        if hue is not None:
+            # fail fast, naming hue=, on unhashable entries (e.g. a dict
+            # passed as hue) -- previously a bare "TypeError: unhashable
+            # type" escaped from deep inside reshape_data (F02-010)
+            try:
+                set(hue)
+            except TypeError as exc:
+                _bad = next((el for el in hue
+                             if getattr(el, '__hash__', None) is None), None)
+                raise TypeError(
+                    "hue= entries must be hashable category labels, 1-D "
+                    "numeric values, or the rows of a 2-D numeric matrix; "
+                    f"got an entry of type {type(_bad).__name__}: {_bad!r}"
+                ) from exc
+            _n_datasets_before_hue = len(xform)
+            if _fmt_draws_line(fmt):
+                # LINE: contiguous-run segmentation preserving order AND
+                # input-dataset identity (GH #291). Global category merging
+                # (reshape_data) would fuse separate datasets that share a
+                # category into one line, and collapse a category that
+                # recurs along a trajectory (A A B B A A) into a tangled
+                # polyline joining non-adjacent points. Segmenting keeps each
+                # run separate, colours it by its category, bridges only runs
+                # adjacent within one dataset, and gives each category ONE
+                # legend entry.
+                _cat_color, _cat_label = _categorical_color_label_maps(
+                    hue, palette, mpl_kwargs.get("color"),
+                    hue_group_labels, _hue_sort_numeric)
+                xform, labels, _run_colors, hue_group_labels, _seg_ds = \
+                    _regroup_categorical_lines(
+                        xform, hue, labels, _cat_color, _cat_label)
+                fmt = _expand_styles_to_runs(
+                    fmt, mpl_kwargs, _seg_ds, _n_datasets_before_hue)
+                mpl_kwargs["color"] = _run_colors
+            else:
+                # MARKER-only: global grouping (one trace per category) is
+                # correct -- scatter has no connecting edges to fuse. Integer/
+                # boolean hue is grouped in first-appearance order then
+                # reordered into sorted numeric order (F13-005).
+                xform, labels = reshape_data(xform, hue, labels)
+                if _hue_sort_numeric:
+                    _appear = list(sorted(set(hue), key=list(hue).index))
+                    _order = sorted(range(len(_appear)),
+                                    key=lambda i: _appear[i])
+                    xform = [xform[i] for i in _order]
+                    labels = [labels[i] for i in _order]
+            _hue_regrouped_counts = (_n_datasets_before_hue, len(xform))
+            # a PURE line cannot render a single-observation category -- it
+            # draws NOTHING (and crashed animated interpolation, F02-002).
+            # A non-bridged single-point run (dataset-boundary/last run, or a
+            # singleton category) hits this; warn, naming the category. ('o-'
+            # and other marker+line combos still show the marker, so this is
+            # gated on the pure-line format only.)
+            if is_line(fmt):
+                _tiny = [i for i, xi in enumerate(xform) if xi.shape[0] < 2]
+                if _tiny:
+                    _tiny_names = ", ".join(
+                        repr(hue_group_labels[i])
+                        if (hue_group_labels is not None
+                            and i < len(hue_group_labels))
+                        else f"group {i}" for i in _tiny)
+                    warnings.warn(
+                        f"hue categor{'y' if len(_tiny) == 1 else 'ies'} "
+                        f"{_tiny_names} ha{'s' if len(_tiny) == 1 else 've'} "
+                        "only one observation; a pure line format cannot "
+                        "render a single point, so it will be invisible -- "
+                        "pass fmt='.' or fmt='o-' to mark singleton "
+                        "categories.", stacklevel=external_stacklevel())
+
+    # multilevel styling for nested-list input: every leaf under the same
+    # outermost group shares that group's color, and each additional nesting
+    # level renders thinner and fainter (summary -> detail)
+    elif nested_groups is not None and color is None and colors is None:
+        import seaborn as sns
+        n_outer = len(set(nested_groups))
+        base_colors = sns.color_palette(
+            _seaborn_palette_arg(palette, n_outer), n_outer)
+        mpl_kwargs["color"] = [base_colors[g] for g in nested_groups]
+        min_depth = min(nested_depths)
+        if any(d != min_depth for d in nested_depths):
+            mpl_kwargs["linewidth"] = [
+                max(0.5, 2.0 * (0.7 ** (d - min_depth))) for d in nested_depths
+            ]
+            mpl_kwargs["alpha"] = [
+                max(0.3, 0.9 ** (d - min_depth)) for d in nested_depths
+            ]
+
+    # surface= (GH #109): broadcast to the FINAL (post cluster/hue-reshape)
+    # dataset count -- reshaping above can change how many traces are
+    # actually drawn, so this must run after it, not against the original
+    # `x`.
+    surface_list = (broadcast_surface(_surface_norm, len(xform))
+                    if _surface_norm is not None else None)
+
+    # density= (GH #108/#191): broadcast to the FINAL (post cluster/hue-
+    # reshape) dataset count, same as surface= above.
+    density_list = (broadcast_density(_density_norm, len(xform))
+                    if _density_norm is not None else None)
+
+    # animate='morph' (Hungarian-matched point-cloud morphs between
+    # datasets, maintainer request): resolve a scalar or per-dataset LIST
+    # `animate` into the actual backend style (`animate` from here on is
+    # always one GLOBAL mode -- there is only ever one camera and one frame
+    # loop, exactly as before) plus `morph_tags` (which FINAL datasets join
+    # the morph sequence), now that `xform` reflects the final (post
+    # cluster/hue-reshape) dataset count -- same timing as
+    # surface_list/density_list above.
+    animate, morph_tags = _resolve_animate_mode(animate, len(xform))
+    # round17 #9 (GH #123): animate='morph' now supports 2-D as well as
+    # 3-D data, matching every other animate style -- only 1-D (and any
+    # higher-than-3-D result, which `plot.py` never actually produces for
+    # plotting) has no hull/point-cloud concept to morph between.
+    if morph_tags is not None and xform[0].shape[1] not in (2, 3):
+        raise NotImplementedError(
+            "animate='morph' is only supported for 2-D or 3-D plots; the "
+            f"data being plotted is {xform[0].shape[1]}-D. Pass ndims=2 or "
+            "ndims=3 (the default) to use animate='morph'."
+        )
+
+    # `rotations` as a per-SEGMENT list ([hold_1, morph_1->2, hold_2, ...],
+    # length 2 * n_morph_datasets - 1): the mode-mismatch check (list given
+    # under a non-morph mode) was already raised, fail-fast, near the top
+    # of this function -- it depends only on the raw `animate` argument,
+    # not on `n_datasets`. The length check below, in contrast, genuinely
+    # cannot happen any earlier: `n_morph_datasets` is the count of FINAL
+    # (post cluster/hue-reshape) datasets tagged for morph, which is only
+    # known now that `xform`/`morph_tags` exist.
+    if morph_tags is not None:
+        rotations = resolve_morph_rotations(rotations, sum(morph_tags))
+
+    # 2-D animations (round17 #9, GH #123): fixed (non-rotating) viewport --
+    # `rotations=`/`zoom=` are 3-D camera controls with no 2-D equivalent,
+    # so whenever `animate` is truthy on 2-D data and either was set to a
+    # non-default value, warn (once, here -- BEFORE dispatching to either
+    # backend, so both backends behave identically) that it is ignored.
+    # Applies uniformly to every animate style, including 'morph': its
+    # `rotations` doubles as a per-segment PACING control in 3-D (see
+    # `hypertools.plot.morph.segment_frame_counts`), not purely a camera
+    # control, but that coupling is itself 3-D-camera-derived, so 2-D
+    # morphs always use even segment timing for consistency with every
+    # other 2-D animate style (both backends -- see
+    # `matplotlib_backend.animate_plot2D`/`plotly_backend._add_animation`).
+    if animate and xform[0].shape[1] == 2:
+        _rotations_is_default = (
+            rotations == 1 if not isinstance(rotations, (list, tuple))
+            else False
+        )
+        if not _rotations_is_default:
+            warnings.warn(
+                "rotations= controls 3-D camera spin and has no effect on "
+                "2-D animations, which use a fixed (non-rotating) "
+                "viewport; ignoring.",
+                UserWarning,
+                stacklevel=external_stacklevel(),
+            )
+        if zoom != 1:
+            warnings.warn(
+                "zoom= controls the 3-D camera's distance/box-aspect zoom "
+                "and has no 2-D equivalent; ignoring.",
+                UserWarning,
+                stacklevel=external_stacklevel(),
+            )
+
+    # chemtrails/precog/bullettime (GH #127): broadcast bool-or-list to the
+    # FINAL (post cluster/hue-reshape) dataset count, same as surface=/
+    # density= above -- each accepts a single bool (applied to every
+    # dataset) or a list/tuple of bool (one entry per drawn dataset, mixed
+    # per-dataset combinations allowed). `animate` itself stays a single
+    # GLOBAL mode -- only these trail FLAGS become per-dataset.
+    chemtrails = broadcast_trail_flag(chemtrails, len(xform), "chemtrails")
+    precog = broadcast_trail_flag(precog, len(xform), "precog")
+    bullettime = broadcast_trail_flag(bullettime, len(xform), "bullettime")
+
+    # trail flags on a STATIC plot (release-1.0 audit, F05-007): the same
+    # user mistake the spin/serial/morph/window branch below already warns
+    # about -- a user who forgot animate=True got no feedback about why
+    # their trails were missing.
+    if not animate:
+        _static_trail_flags = [
+            name for name, flags in (("chemtrails", chemtrails),
+                                     ("precog", precog),
+                                     ("bullettime", bullettime))
+            if any(flags)
+        ]
+        if _static_trail_flags:
+            warnings.warn(
+                f"{'/'.join(_static_trail_flags)} only affect ANIMATED "
+                "plots and will be ignored here; pass animate=True (or "
+                "'parallel') to draw trails.",
+                UserWarning,
+                stacklevel=external_stacklevel(),
+            )
+
+    # GH #127 (+ morph/window follow-up): 'spin' has no "current position"
+    # (only the camera moves, so a trail has nothing to trail BEHIND or AHEAD
+    # of), 'serial' already communicates elapsed time via its point-by-point
+    # reveal, 'morph' draws a single traveling point-cloud artist with no
+    # per-dataset "current position" either, and 'window' (round17 #8) is
+    # explicitly bullettime MINUS its chemtrails/precog trail components
+    # (Jeremy's own definition) -- trail styles are semantically meaningless
+    # in all four, so warn once (naming the mode, which flag(s) were set, and
+    # for which dataset indices) rather than silently building frozen/
+    # invisible trail artists. `_draw`/`plotly_draw` skip creating those
+    # artists entirely for these modes (see their own `style`/`animate`
+    # branches), so this is purely informational -- no flags are mutated
+    # here.
+    if animate in ("spin", "serial", "morph", "window"):
+        _ignored_trail_flags = [
+            (_name, [i for i, v in enumerate(_flags) if v])
+            for _name, _flags in (
+                ("chemtrails", chemtrails),
+                ("precog", precog),
+                ("bullettime", bullettime),
+            )
+        ]
+        _ignored_trail_flags = [
+            (name, idxs) for name, idxs in _ignored_trail_flags if idxs
+        ]
+        if _ignored_trail_flags:
+            _detail = ", ".join(
+                f"{name} for datasets {idxs}" for name, idxs in _ignored_trail_flags
+            )
+            warnings.warn(
+                f"animate={animate!r} does not support trail styles; "
+                f"ignoring {_detail}",
+                UserWarning,
+                stacklevel=external_stacklevel(),
+            )
+
+    # names= (QC 2026-07): per-DATASET names, distinct from per-point `labels=`
+    # (text call-outs on individual observations) and the `legend=True`
+    # auto-numbering. Each name labels its dataset's trace and turns the legend
+    # on, so `hyp.plot([raw, a, b, c], names=['raw','a','b','c'], ...)` shows a
+    # legend naming the four datasets. Resolved BEFORE the legend block below so
+    # it wins over a bare legend=True; explicit conflicting values raise.
+    if names is not None:
+        names = list(names)
+        if _hue_regrouped_counts is not None:
+            # a categorical hue stacks and REGROUPS the data by category,
+            # so the drawn traces are hue groups, not the input datasets
+            # names= labels -- previously this surfaced as a misleading
+            # "names must have one entry per dataset (<group count>)"
+            # error, or silently labeled category groups with dataset
+            # names whenever the counts coincided (F02-009).
+            _nd, _ng = _hue_regrouped_counts
+            raise ValueError(
+                "names= assigns one name per input dataset, but hue= "
+                f"regrouped the data into hue groups ({_nd} dataset(s) -> "
+                f"{_ng} hue group(s)), so per-dataset names cannot apply. "
+                "Label the hue groups with legend=[...] (one entry per "
+                "group, in first-appearance order) instead, or drop hue=.")
+        if len(names) != len(xform):
+            raise ValueError(
+                f"names must have one entry per dataset ({len(xform)}); got "
+                f"{len(names)}")
+        if isinstance(legend, (list, tuple)):
+            raise ValueError(
+                "pass dataset names via names= OR a legend= list, not both")
+        legend = names
 
     # handle legend
     if legend is not None:
         if legend is False:
             legend = None
         elif legend is True and hue is not None:
-            legend = [item for item in sorted(set(hue), key=list(hue).index)]
+            if hue_group_labels is not None:
+                # categorical string hue: show the ORIGINAL category names,
+                # not the integer group ids `hue` was reassigned to above
+                # ('_nolegend_' placeholders keep unnamed None-entry groups
+                # out of the legend while matching the trace count).
+                legend = list(hue_group_labels)
+            else:
+                legend = [item for item in
+                         sorted(set(hue), key=list(hue).index)]
         elif legend is True and hue is None:
             legend = [i + 1 for i in range(len(xform))]
 
+        # a legend LIST must carry one entry per drawn trace -- checked
+        # here (naming legend=, the kwarg the user actually passed) rather
+        # than letting parse_kwargs report a mismatch on the internal
+        # 'label' kwarg (F10-010).
+        if isinstance(legend, (list, tuple)) and len(legend) != len(xform):
+            raise ValueError(
+                f"legend= was given as a list of length {len(legend)}, "
+                f"but there are {len(xform)} dataset(s)/group(s) to plot; "
+                "pass one entry per drawn dataset, or legend=True to "
+                "auto-number them.")
+
         mpl_kwargs["label"] = legend
 
-    # interpolate if its a line plot
-    if fmt is None or isinstance(fmt, str):
-        if is_line(fmt):
-            if xform[0].shape[0] > 1:
-                xform = interp_array_list(
-                    xform, interp_val=frame_rate * duration / (xform[0].shape[0] - 1)
-                )
-    elif type(fmt) is list:
-        for idx, xi in enumerate(xform):
-            if is_line(fmt[idx]):
-                if xi.shape[0] > 1:
-                    xform[idx] = interp_array_list(
-                        xi, interp_val=frame_rate * duration / (xi.shape[0] - 1)
-                    )
+    # colorbar (GH #100): resolve the color-mapping info (continuous hue
+    # value range + palette, or discrete group colors + labels) now, while
+    # `hue`/`multicolor_hue`/`xform`/`legend` reflect the FINAL grouping
+    # decision (post cluster/hue reshape, post legend-label resolution) but
+    # BEFORE interpolation (which doesn't change the mapping, only the
+    # point density) -- shared by both the matplotlib and plotly backends.
+    colorbar_info = _build_colorbar_info(
+        colorbar, hue, multicolor_hue, cluster, n_clusters, xform,
+        mpl_kwargs, legend, palette, hue_group_labels=hue_group_labels)
 
-    # handle explore flag
+    # interpolate if its a line plot. animate='morph' treats every dataset
+    # as a POINT CLOUD (Hungarian-matched to its neighbors in `morph.py`),
+    # never as a time-ordered trajectory -- interpolating it here would
+    # change its point count/order for no benefit and would desync the
+    # (separately, seed-controlled) morph sampling downstream, so this
+    # entire step is skipped for it.
+    # GH #141: marker+line combo styles (e.g. 'o-') must get the SAME
+    # connecting-line smoothing/interpolation pure line styles (e.g. '-')
+    # already get -- gated on `has_line_component` (true whenever a line is
+    # drawn at all) rather than the stricter `is_line` (true only when
+    # there is NO marker), which previously skipped interpolation entirely
+    # for any marker+line combo. `raw_xform` keeps a reference to the
+    # PRE-interpolation per-dataset arrays so markers can still be drawn at
+    # the true sample points (matplotlib_backend's static plot1D/2D/3D
+    # split combo styles into a smoothed line artist + a markers-only
+    # artist using this raw copy); it is carried through the SAME later
+    # transforms (nan_to_num/center/scale, below) as `xform` so the two
+    # stay in the same coordinate space. `interp_array`/`interp_array_list`
+    # return NEW arrays rather than mutating their input, so this reference
+    # stays valid even after `xform` itself is reassigned below.
+    raw_xform = list(xform)
+    pre_interp_point_counts = [xi.shape[0] for xi in xform]
+    # a per-dataset fmt LIST re-checked against the FINAL trace count (the
+    # early pre-pipeline check above cannot run when hue=/cluster=/
+    # MultiIndex regrouping changes the number of drawn traces) -- a
+    # mismatch used to surface as a bare IndexError from the loop below
+    # (F01-005/F01-006/F10-003).
+    if isinstance(fmt, list) and len(fmt) != len(xform):
+        raise ValueError(
+            f"fmt was given as a list of length {len(fmt)}, but there are "
+            f"{len(xform)} trace(s) to draw (the drawn-trace count can "
+            "differ from the input dataset count when hue=/cluster=/"
+            "n_clusters= or a MultiIndex regroups the data); pass one "
+            "format string per drawn trace, or a single fmt string to "
+            "broadcast it to every trace.")
+    # STATIC line smoothing is DATA-FAITHFUL (`_interp_static_line`): it
+    # only ever ADDS points between samples, keeps every original sample
+    # (including the final one) as a drawn vertex, and uses a fixed target
+    # density -- so duration=/frame_rate= (animation kwargs) no longer
+    # change static rendering (F01-001/F01-007). ANIMATED plots keep the
+    # historical frame_rate*duration grid: there the interpolated rows ARE
+    # the animation's frame-sampling.
+    if animate == "morph":
+        pass
+    elif fmt is None or isinstance(fmt, str):
+        if has_line_component(fmt):
+            if any(xi.shape[0] > 1 for xi in xform):
+                # rows with remaining NaN/inf would crash PCHIP with a bare
+                # scipy message -- fail fast with a hypertools-level one
+                # (release-1.0 audit, F05-011)
+                for _i, _xi in enumerate(xform):
+                    if _xi.shape[0] > 1:
+                        _require_finite_for_line(_xi, _i)
+                if animate:
+                    # Every multi-row dataset is resampled onto the EXACT
+                    # frame grid (release-1.0 audit): per-dataset
+                    # interpolation (previously the step came from
+                    # xform[0]'s length alone, silently truncating longer
+                    # LATER datasets, F04-003) with exactly
+                    # round(frame_rate * duration) rows (the docstring's
+                    # promised frame count -- the old np.arange step
+                    # produced 901/41 frames for some lengths, F04-004).
+                    # Per-dataset singleton guard (F02-002/F05-012): a
+                    # 1-point dataset (singleton hue category, or a
+                    # reference point plotted beside a trajectory) cannot
+                    # be PCHIP-interpolated (scipy needs >= 2 samples) --
+                    # leave it as-is instead of crashing the whole plot;
+                    # the backend paces it onto the frame grid.
+                    _n_frames = max(2, int(round(frame_rate * duration)))
+                    xform = [xi if xi.shape[0] < 2
+                             else _interp_anim_line(xi, _n_frames)
+                             for xi in xform]
+                else:
+                    xform = [_interp_static_line(xi) for xi in xform]
+    elif isinstance(fmt, list):
+        for idx, xi in enumerate(xform):
+            if has_line_component(fmt[idx]):
+                if xi.shape[0] > 1:
+                    # see the F05-011 note above
+                    _require_finite_for_line(xi, idx)
+                    # per-dataset exact frame grid -- see the F04-003/
+                    # F04-004 note in the single-fmt branch above. (The
+                    # historical interp_array_list call here treated the
+                    # 2D array as a LIST of rows, silently replacing the
+                    # dataset with a list of per-row interpolations --
+                    # latent for years because a bug made is_line() always
+                    # False.)
+                    if animate:
+                        xform[idx] = _interp_anim_line(
+                            xi, max(2, int(round(frame_rate * duration))))
+                    else:
+                        xform[idx] = _interp_static_line(xi)
+
+    # interpolation adds points, so per-point labels must be re-mapped onto
+    # the interpolated trajectories (each label lands at its original
+    # point's new index; in-between points get None)
+    post_interp_point_counts = [xi.shape[0] for xi in xform]
+    if labels is not None and post_interp_point_counts != pre_interp_point_counts:
+        labels = _expand_labels(labels, pre_interp_point_counts,
+                                post_interp_point_counts)
+
+    # compute per-point colors for multicolored lines now that trajectories
+    # have been interpolated (hue values are re-interpolated to match)
+    line_colors = None
+    if multicolor_hue is not None:
+        line_colors = _multicolor_line_colors(
+            multicolor_hue, pre_interp_lengths, xform, palette,
+            is_rgb=multicolor_hue_is_rgb)
+
+    # handle explore flag (a real ValueError, not an assert -- asserts are
+    # stripped under `python -O`, F01-016/F10-013)
     if explore:
-        assert (
-            xform[0].shape[1] == 3
-        ), "Explore mode is currently only supported for 3D plots."
+        if xform[0].shape[1] != 3:
+            raise ValueError(
+                "explore mode is currently only supported for 3-D static "
+                f"plots; the data being plotted is {xform[0].shape[1]}-D. "
+                "Pass ndims=3 (the default) to use explore=True.")
+        # headless/non-interactive backends (Agg in scripts and CI, the
+        # doc-gallery build, ...) can render the figure but can never fire
+        # hover events, so explore=True silently degraded to a static plot
+        # with no hint why nothing pops up (release-1.0 audit,
+        # D05-gallery-data-text-012).
+        import matplotlib
+        _backend_name = matplotlib.get_backend().lower()
+        if any(_backend_name.endswith(nb) for nb in
+               ("agg", "pdf", "svg", "ps", "template")) \
+                and not _backend_name.endswith(("qtagg", "tkagg", "gtk3agg",
+                                                "gtk4agg", "wxagg",
+                                                "macosx")):
+            warnings.warn(
+                "explore=True shows labels on hover, which needs an "
+                "interactive matplotlib backend; the current backend "
+                f"({matplotlib.get_backend()!r}) is non-interactive, so "
+                "the figure will be drawn as a static plot without hover "
+                "labels. Run in an interactive session (or switch "
+                "backends, e.g. matplotlib.use('QtAgg')) to use explore "
+                "mode.", UserWarning, stacklevel=external_stacklevel())
         mpl_kwargs["picker"] = True
 
-    # center
-    xform = center(xform)
+    # predict= forecasts were computed per ORIGINAL input dataset; if
+    # cluster/hue reshaping regrouped `xform` into a different number of
+    # traces (by category rather than by dataset), the 1:1 correspondence
+    # no longer holds -- skip drawing forecasts rather than mismatch traces.
+    if raw_forecasts is not None and len(raw_forecasts) != len(xform):
+        raw_forecasts = None
 
-    # scale
-    xform = scale(xform)
+    # center + scale. When forecasts are drawn, the frame must contain
+    # EVERYTHING drawn: compute the center/scale statistics from the FULL
+    # stacked data (observed + forecasts, mirroring the animation principle
+    # that limits/frame come from the full stacked data) and pass both
+    # through the SAME transform. Otherwise forecasts that extend beyond
+    # the observed data's range map outside [-1, 1] and render past the
+    # square/cube frame (axes are off, so nothing clips them).
+    # GH #141: `raw_xform` (the pre-interpolation sample points, used to
+    # draw markers at their TRUE locations for marker+line combo styles --
+    # see the interpolation block above) must land in the EXACT same
+    # coordinate space as `xform`, so it is carried through the identical
+    # center/scale statistics computed from `xform` (+ forecasts, when
+    # present) below -- never its OWN, independently-computed stats.
+    if raw_forecasts is not None:
+        _joint = np.vstack([np.vstack(xform), np.vstack(raw_forecasts)])
+        _mean = np.mean(_joint, 0)
+        xform = [xi - _mean for xi in xform]
+        raw_forecasts = [fc - _mean for fc in raw_forecasts]
+        raw_xform = [xi - _mean for xi in raw_xform]
+
+        _joint = np.vstack([np.vstack(xform), np.vstack(raw_forecasts)])
+        _m1 = np.min(_joint)
+        _m2 = np.max(_joint - _m1) or 1.0  # degenerate (constant) data has
+        # zero range: dividing by it emitted an 'invalid value encountered
+        # in divide' RuntimeWarning and produced NaNs (release-1.0 audit,
+        # C2 residual warnings); constant data maps to a finite fixed
+        # position instead
+        _rescale = lambda a: 2 * (np.divide(a - _m1, _m2)) - 1
+        xform = [_rescale(xi) for xi in xform]
+        raw_forecasts = [_rescale(fc) for fc in raw_forecasts]
+        raw_xform = [_rescale(xi) for xi in raw_xform]
+    else:
+        # no forecasts: identical to the historical center()/scale() path,
+        # but with the SAME stats also applied to raw_xform (rather than
+        # calling center()/scale() a second time on raw_xform, which would
+        # compute DIFFERENT stats from raw_xform's own, possibly narrower,
+        # pre-interpolation range).
+        _stacked = np.vstack(xform)
+        _mean = np.mean(_stacked, 0)
+        xform = [xi - _mean for xi in xform]
+        raw_xform = [xi - _mean for xi in raw_xform]
+
+        _stacked = np.vstack(xform)
+        _m1 = np.min(_stacked)
+        _m2 = np.max(_stacked - _m1) or 1.0  # zero range (e.g. a single
+        # observation reduced to zeros, or constant data) -> a finite
+        # fixed position, instead of a divide-by-zero RuntimeWarning +
+        # NaNs (release-1.0 audit, C2 residual warnings)
+        _rescale = lambda a: 2 * (np.divide(a - _m1, _m2)) - 1
+        xform = [_rescale(xi) for xi in xform]
+        raw_xform = [_rescale(xi) for xi in raw_xform]
 
     # handle palette with seaborn
+    import seaborn as sns
     if isinstance(palette, np.bytes_):
         palette = palette.decode("utf-8")
-    sns.set_palette(palette=palette, n_colors=len(xform))
-    sns.set_style(style="whitegrid")
+
+    # a bare (r, g, b[, a]) tuple/list of floats is a SINGLE matplotlib
+    # color (F10-004), not a per-dataset list -- broadcast it to every
+    # dataset before parse_kwargs' per-dataset list handling sees it.
+    _color_val = mpl_kwargs.get("color")
+    if (isinstance(_color_val, (list, tuple))
+            and len(_color_val) in (3, 4)
+            and all(isinstance(v, (int, float, np.integer, np.floating))
+                    and not isinstance(v, bool) and 0 <= v <= 1
+                    for v in _color_val)):
+        mpl_kwargs["color"] = [tuple(_color_val)] * len(xform)
 
     # turn kwargs into a list
     kwargs_list = parse_kwargs(xform, mpl_kwargs)
 
+    # GH #206: arbitrary extra matplotlib-style kwargs (anything not one
+    # of plot()'s own named parameters, e.g. `zorder=`, `dashes=`,
+    # `alpha=`, `markeredgecolor=`) are merged in AFTER the named/internal
+    # style kwargs above (`_apply_extra_kwargs` never overwrites a key
+    # already set), verbatim -- no per-dataset list broadcasting is
+    # attempted for these (see `_apply_extra_kwargs`'s docstring for why).
+    _apply_extra_kwargs(kwargs_list, kwargs)
+
+    def _resolve_dataset_colors():
+        """Resolve each dataset's OWN drawn color: an explicit color/colors
+        kwarg if given (already in `kwargs_list`), or -- if none was given --
+        the same per-dataset palette-cycle color both backends fall back to
+        (matplotlib via `sns.set_palette` below; plotly via the `sns_local`
+        fallback a few lines down). Shared by `surface_colors` (GH #109) and
+        `density_colors` (GH #108/#191): both need the exact color each
+        dataset will actually be drawn in on EITHER backend, resolved
+        identically."""
+        import matplotlib.colors as _mcolors
+        if "color" in mpl_kwargs:
+            _base_colors = [kwargs_list[i].get("color")
+                            for i in range(len(xform))]
+        elif line_colors is not None:
+            # hue= is set: use each dataset's MEAN per-point hue color as its
+            # representative color, so surface=/density=/morph honor hue instead
+            # of falling back to the palette cycle (QC 2026-07: surface=True
+            # ignored hue -- the hull/mesh drew in a palette color while the
+            # points were hue-colored).
+            return [tuple(np.asarray(lc, dtype=float).mean(axis=0)[:3])
+                    for lc in line_colors]
+        else:
+            _base_colors = list(sns.color_palette(
+                _seaborn_palette_arg(palette, len(xform)), len(xform)))
+        return [
+            _mcolors.to_rgb(c) if c is not None
+            else _mcolors.to_rgb(f"C{i % 10}")
+            for i, c in enumerate(_base_colors)
+        ]
+
+    # surface= (GH #109): resolve each dataset's OWN drawn color now (used
+    # when a dataset's surface spec has color=None, i.e. "inherit").
+    surface_colors = (_resolve_dataset_colors()
+                      if surface_list is not None else None)
+
+    # surface= per-vertex coloring (QC 2026-07): when hue is set, color each
+    # surface hull VERTEX by an inverse-distance-weighted blend of the enclosed
+    # points' hue colors (meshutil.vertex_colors_from_points) rather than one
+    # flat mean color (the old behavior painted the whole hull the average of
+    # the points' colors -- e.g. gray for a rainbow hue). Bundle each dataset's
+    # (points, per-point RGB); None where a dataset has no surface, no per-point
+    # hue colors, or an EXPLICIT surface color= was given (an explicit color
+    # wins over the inferred hue -- otherwise it would be silently ignored),
+    # in which case surface_colors' flat color is used.
+    def _surface_inherits_color(i):
+        spec = surface_list[i] if i < len(surface_list) else None
+        return spec is not None and spec.get('color') is None
+
+    if surface_list is not None and line_colors is not None:
+        surface_point_colors = [
+            (np.asarray(xform[i])[:, :3], np.asarray(line_colors[i])[:, :3])
+            if _surface_inherits_color(i) else None
+            for i in range(len(xform))
+        ]
+    else:
+        surface_point_colors = None
+
+    # density= (GH #108/#191): resolve each dataset's OWN drawn color the
+    # SAME way as surface_colors above (density has no color-override key,
+    # so this is always what gets drawn, per_group=True case only -- the
+    # per_group=False pooled layer uses a fixed neutral gray instead).
+    density_colors = (_resolve_dataset_colors()
+                      if density_list is not None else None)
+
+    # animate='morph': resolve each dataset's OWN drawn color the SAME way
+    # as surface_colors/density_colors above -- the traveling morph cloud's
+    # color is a linear RGB interpolation between two datasets' OWN colors
+    # (see `hypertools.plot.morph.morph_color`), so both backends need
+    # every dataset's resolved color regardless of whether surface=/
+    # density= were requested.
+    morph_colors = (_resolve_dataset_colors()
+                    if morph_tags is not None else None)
+
     # handle format strings
     if fmt is not None:
-        if type(fmt) is not list:
+        if not isinstance(fmt, list):
             draw_fmt = [fmt for i in xform]
         else:
-            draw_fmt = fmt
+            # COPY the caller's list: the matplotlib backend rewrites
+            # single-point line entries to '.' in place, which must not
+            # leak back into the user's own fmt list
+            # (X6-code-org-plot-008)
+            draw_fmt = list(fmt)
     else:
-        draw_fmt = ["-"] * len(x)
+        # sized from the FINAL trace count -- `x` is the ORIGINAL input,
+        # whose length differs after hue=/cluster= regrouping (F01-005:
+        # fmt=None + hue on a list input crashed with a bare IndexError)
+        draw_fmt = ["-"] * len(xform)
 
     # convert all nans to zeros
     for i, xi in enumerate(xform):
         xform[i] = np.nan_to_num(xi)
+    raw_xform = [np.nan_to_num(xi) for xi in raw_xform]
+    if raw_forecasts is not None:
+        raw_forecasts = [np.nan_to_num(fc) for fc in raw_forecasts]
 
-    # draw the plot
-    fig, ax, data, line_ani = _draw(
-        xform,
-        fmt=draw_fmt,
-        kwargs_list=kwargs_list,
-        labels=labels,
-        legend=legend,
-        title=title,
-        animate=animate,
-        duration=duration,
-        tail_duration=tail_duration,
-        rotations=rotations,
-        zoom=zoom,
-        chemtrails=chemtrails,
-        precog=precog,
-        bullettime=bullettime,
-        frame_rate=frame_rate,
-        elev=elev,
-        azim=azim,
-        explore=explore,
-        show=show,
-        size=size,
-        ax=ax,
-        frame_kwargs=frame_kwargs,
-    )
+    # interactive (plotly) backend: render with plotly and skip the
+    # matplotlib pipeline entirely. backend='auto' resolves to plotly only
+    # on Colab/Kaggle (see hypertools.plot.plotly_backend for the policy).
+    if resolve_backend(backend) == "plotly":
+        from .plotly_backend import plotly_draw
 
-    # tighten layout
-    plt.tight_layout()
+        # GH #206: warn (once, listing every offending kwarg) about extra
+        # kwargs that reached `mpl_kwargs` (via the `**kwargs` passthrough
+        # above) but that the plotly backend has no property to map them
+        # onto -- checked against the RAW `kwargs` the caller passed
+        # (rather than `mpl_kwargs`, which also holds plotly-supported
+        # named params like `color=`/`linewidth=`), so only genuinely
+        # unmappable extras are reported.
+        _unmapped_plotly_kwargs = sorted(set(kwargs) - _PLOTLY_MAPPED_KWARGS)
+        if _unmapped_plotly_kwargs:
+            warnings.warn(
+                f"backend='plotly' cannot map the following extra "
+                f"kwarg(s) to a trace property and will ignore them: "
+                f"{_unmapped_plotly_kwargs}. Supported passthrough "
+                f"kwargs for plotly are: {sorted(_PLOTLY_MAPPED_KWARGS)}."
+            , stacklevel=external_stacklevel())
 
-    # save
-    if save_path is not None:
-        if animate:
-            Writer = animation.writers["ffmpeg"]
-            writer = Writer(fps=frame_rate, bitrate=1800)
-            line_ani.save(save_path, writer=writer)
-
-        else:
-            plt.savefig(save_path)
-
-    # gather reduce params
-    if isinstance(reduce, dict):
-        reduce_dict = reduce
+        if "color" not in mpl_kwargs:
+            import seaborn as sns_local
+            mpl_kwargs = dict(mpl_kwargs)
+            mpl_kwargs["color"] = sns_local.color_palette(
+                _seaborn_palette_arg(palette, len(xform)), len(xform))
+            kwargs_list = parse_kwargs(xform, mpl_kwargs)
+            _apply_extra_kwargs(kwargs_list, kwargs)
+        fig = plotly_draw(
+            xform,
+            fmt=draw_fmt,
+            kwargs_list=kwargs_list,
+            labels=labels,
+            legend=legend,
+            title=title,
+            animate=animate,
+            size=size,
+            show=show,
+            save_path=save_path,
+            frame_rate=frame_rate,
+            duration=duration,
+            rotations=rotations,
+            elev=elev,
+            azim=azim,
+            point_colors=line_colors,
+            tail_duration=tail_duration,
+            focused=resolved_focused,
+            chemtrails=chemtrails,
+            precog=precog,
+            bullettime=bullettime,
+            zoom=zoom,
+            forecasts=raw_forecasts,
+            colorbar_info=colorbar_info,
+            surface=surface_list,
+            surface_colors=surface_colors,
+            surface_point_colors=surface_point_colors,
+            density=density_list,
+            density_colors=density_colors,
+            morph_tags=morph_tags,
+            morph_colors=morph_colors,
+            morph_samples=morph_samples,
+            font=_artist_font,
+            font_extra=_plotly_font_extra,
+            label_alpha=resolved_label_alpha,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            zlabel=zlabel,
+        )
+        ax = None
+        data = xform
+        line_ani = None
     else:
-        reduce_dict = {
-            "model": reduce,
-            "params": {"n_components": ndims},
+        # Apply the hypertools palette/style only for the duration of this
+        # plot call. Previously sns.set_palette/sns.set_style mutated global
+        # matplotlib rcParams as a side effect of plotting (GH issue #259);
+        # rc_context restores the user's settings on exit. The figure's axes
+        # and artists are created inside the context, so they keep the
+        # hypertools styling.
+        with plt.rc_context():
+            sns.set_palette(
+                palette=_seaborn_palette_arg(palette, len(xform)),
+                n_colors=len(xform))
+            sns.set_style(style="whitegrid")
+            # Font, applied AFTER sns.set_style (which sets its own font
+            # rcParams). A LIST gives matplotlib >= 3.6 PER-GLYPH fallback, so
+            # text mixing scripts renders fully instead of showing "tofu" for
+            # whatever the single active face lacks -- and an rcParam also
+            # covers text hypertools never touches directly (tick labels, and
+            # anything the user adds to the returned axes). Scoped by
+            # rc_context, so the user's global rcParams are intact.
+            #
+            # An EXPLICIT font= is made primary; an AUTO-detected font (which
+            # `resolve_font` only returns to fill a real coverage GAP -- e.g. a
+            # script no stack family has) is appended as a FALLBACK so the
+            # bundled Noto Sans stays the primary face and a stray accent/Greek
+            # letter never swaps the whole plot onto a platform font
+            # (maintainer font review).
+            if resolved_font is None:
+                _font_stack = sans_serif_stack()
+            elif font is not None:
+                _font_stack = sans_serif_stack(first=resolved_font.get_name())
+            else:
+                _font_stack = sans_serif_stack(extra=resolved_font.get_name())
+            # BOTH keys: artists created with an explicit generic
+            # `family='sans-serif'` (seaborn's style, and matplotlib's own
+            # default) resolve through `font.sans-serif`, while artists that
+            # inherit the rcParam resolve through `font.family` -- setting only
+            # one leaves the other resolving through matplotlib's stock list.
+            plt.rcParams['font.family'] = _font_stack
+            plt.rcParams['font.sans-serif'] = _font_stack
+
+            # draw the plot
+            fig, ax, data, line_ani = _draw(
+                xform,
+                fmt=draw_fmt,
+                kwargs_list=kwargs_list,
+                labels=labels,
+                legend=legend,
+                title=title,
+                animate=animate,
+                raw_data=raw_xform,
+                duration=duration,
+                tail_duration=tail_duration,
+                focused=resolved_focused,
+                rotations=rotations,
+                zoom=zoom,
+                chemtrails=chemtrails,
+                precog=precog,
+                bullettime=bullettime,
+                frame_rate=frame_rate,
+                elev=elev,
+                azim=azim,
+                explore=explore,
+                show=show,
+                size=size,
+                ax=ax,
+                frame_kwargs=frame_kwargs,
+                surface=surface_list,
+                surface_colors=surface_colors,
+                surface_point_colors=surface_point_colors,
+                density=density_list,
+                density_colors=density_colors,
+                morph_tags=morph_tags,
+                morph_colors=morph_colors,
+                morph_samples=morph_samples,
+                font=_artist_font,
+                label_alpha=resolved_label_alpha,
+                xlabel=xlabel,
+                ylabel=ylabel,
+                zlabel=zlabel,
+            )
+
+            # predict=: overlay one dashed, low-opacity (alpha 0.6) forecast
+            # trace per input dataset (GH #169), in the SAME color as its
+            # source line. Added AFTER `_draw` has already built the legend
+            # (from the original data lines only, via ax.legend() inside
+            # `_draw`), so these traces never gain a legend entry;
+            # label='_nolegend_' mirrors the trail-artist precedent
+            # (matplotlib_backend's animated trails) as a second guard.
+            if raw_forecasts is not None:
+                _src_lines = list(ax.lines)
+                for _i, _fc in enumerate(raw_forecasts):
+                    _fc_color = (_src_lines[_i].get_color()
+                                if _i < len(_src_lines) else None)
+                    _d = _fc.shape[1] if _fc.ndim > 1 else 1
+                    if _d >= 3:
+                        ax.plot(_fc[:, 0], _fc[:, 1], _fc[:, 2],
+                               linestyle='--', color=_fc_color, alpha=0.6,
+                               label='_nolegend_')
+                    elif _d == 2:
+                        ax.plot(_fc[:, 0], _fc[:, 1], linestyle='--',
+                               color=_fc_color, alpha=0.6, label='_nolegend_')
+                    else:
+                        ax.plot(_fc[:, 0], linestyle='--', color=_fc_color,
+                               alpha=0.6, label='_nolegend_')
+
+            # exact per-point colors: swap the single-color artists for
+            # per-segment-colored line collections or per-point-colored
+            # scatter (the cube/square frame and axes from _draw are kept)
+            if line_colors is not None:
+                if (line_ani is not None and animate == 'morph'):
+                    # morph draws its own single traveling artist; the
+                    # static swap below would REMOVE it (and there is no
+                    # per-point correspondence to color) -- warn instead
+                    # of silently destroying the animation (F04-001
+                    # follow-up)
+                    warnings.warn(
+                        "per-point (continuous/matrix) hue coloring is "
+                        "not supported for animate='morph'; drawing the "
+                        "morph with its default colors.",
+                        UserWarning,
+                        stacklevel=external_stacklevel())
+                elif (line_ani is not None and animate != 'spin'
+                        and has_line_component(fmt)):
+                    # animated reveal styles (parallel/window/serial):
+                    # per-frame multicolor rendering (F04-001/F05-002 --
+                    # the static swap froze the animation; 'spin' keeps
+                    # the static swap below, which is exactly right for a
+                    # camera-only animation). Marker+line combos animate
+                    # as a single line artist (see _draw's raw_data note),
+                    # so they take this path too.
+                    _apply_multicolor_animation(
+                        ax, xform, line_colors, kwargs_list, line_ani,
+                        style=animate, chemtrails=chemtrails,
+                        precog=precog, bullettime=bullettime,
+                        total_frames=max(1, int(round(frame_rate
+                                                      * duration))))
+                elif is_line(fmt):
+                    _apply_multicolor_lines(ax, xform, line_colors,
+                                            kwargs_list)
+                elif has_line_component(fmt):
+                    # marker+line combo fmt (e.g. 'o-') with continuous/
+                    # matrix hue (GH #141 x F02-004): keep BOTH components
+                    # -- a multicolored smoothed connecting line PLUS
+                    # per-point-colored markers at the TRUE (pre-
+                    # interpolation) sample points, mirroring the no-hue
+                    # combo rendering. Previously the line was silently
+                    # dropped and a marker was scattered at every
+                    # interpolated point (~45x more "data points" than
+                    # exist).
+                    _apply_multicolor_lines(ax, xform, line_colors,
+                                            kwargs_list)
+                    _marker_colors = _multicolor_line_colors(
+                        multicolor_hue, pre_interp_lengths, raw_xform,
+                        palette, is_rgb=multicolor_hue_is_rgb)
+                    _apply_multicolor_markers(ax, raw_xform, _marker_colors,
+                                              kwargs_list, fmt=fmt)
+                else:
+                    _apply_multicolor_markers(ax, xform, line_colors,
+                                              kwargs_list, fmt=fmt)
+
+            # tighten layout (static plots only: animated axes are given
+            # the full canvas so rotating zoomed cubes don't clip, and
+            # tight_layout would shrink them back into subplot margins)
+            if not animate:
+                plt.tight_layout()
+
+            # colorbar (GH #100): built once, here, from the (frame-
+            # independent) color mapping. For animated plots this is never
+            # touched by the per-frame update callbacks, so it stays static
+            # across every frame. Added BEFORE the legend fit below so that
+            # fit accounts for whatever room/reposition the colorbar just
+            # consumed -- a 'left'/'top'/'bottom' colorbar reshapes `ax`
+            # via matplotlib's own `make_axes` machinery, which can discard
+            # an EARLIER legend fit; fitting the legend last, against
+            # whatever the current layout actually is, sidesteps that.
+            if colorbar_info is not None and ax is not None:
+                _add_colorbar(fig, ax, colorbar_info, font=_artist_font)
+
+            # legend fitting (GH #100/#95 follow-up): a right-side (outside)
+            # legend can overflow the figure's right edge. `tight_layout`
+            # reserves room for it on 2D axes but NOT on 3D axes, and
+            # neither accounts for a colorbar sharing that edge (location=
+            # 'right') or reshaping `ax` (location='left'/'top'/'bottom').
+            # This previously only ran for STATIC plots, leaving the legend
+            # fully clipped whenever animate=True (the legend is added by
+            # `_draw` above regardless of `animate`, and is static across
+            # every animation frame, so fitting it once here -- exactly like
+            # the colorbar above -- is enough; no per-frame work needed).
+            if legend is not None and ax is not None:
+                _fit_right_legend(fig, ax)
+
+            # save. `fig.savefig`, NOT `plt.savefig` (release-1.0 audit,
+            # F09-001: `plt.savefig` writes pyplot's CURRENT figure, so
+            # with a user-supplied ax= whose figure was not current the
+            # exported file silently contained the WRONG figure). The
+            # except-branch keeps a failing save (bad extension,
+            # permissions, ...) from leaking the already-drawn figure into
+            # pyplot's manager when the caller asked for show=False
+            # (F09-006) -- the cleanup mirrors the normal-path close below.
+            if save_path is not None:
+                try:
+                    if animate:
+                        _save_animation(line_ani, save_path, frame_rate)
+                    else:
+                        fig.savefig(save_path)
+                except Exception:
+                    if (not show and not _user_supplied_ax
+                            and isinstance(fig, plt.Figure)):
+                        plt.close(fig)
+                    # the exception propagates before the HyperAnimation
+                    # wrapper is ever constructed, so its __del__ silencing
+                    # (X4-warnings-012) can never run for this abandoned,
+                    # never-rendered FuncAnimation -- without this it warned
+                    # "Animation was deleted without rendering anything" at
+                    # the next cyclic-gc pass, misattributed to whatever code
+                    # ran later (release-1.0 audit, zero-warnings sweep).
+                    if animate and line_ani is not None:
+                        from .hyper_animation import mark_draw_started
+                        mark_draw_started(line_ani)
+                    raise
+
+    # Return shape (Jeremy decision #2):
+    #   - static (matplotlib or plotly): return the Figure alone
+    #   - animated matplotlib: return (fig, line_ani) so the caller can keep
+    #     a reference to the FuncAnimation (needed to keep it alive); ax is
+    #     recoverable as fig.axes[0], so it needs no separate return slot
+    #   - animated plotly: frames are embedded in the Figure, so return fig
+    #   - return_model=True: return a dict bundle exposing the analyzed
+    #     xform_data plus the reduce/align/cluster model specs
+    # GH #148: show=False must also remove the figure from pyplot's global
+    # manager. `plt.ioff()` alone leaves it registered, so Jupyter's post-cell
+    # flush_figures() still displays it (and a later plt.show() re-draws it).
+    # Closing deregisters it; the returned Figure stays valid and savable.
+    # Skip when the user supplied their own `ax` (their figure to manage) and
+    # skip plotly figures (not pyplot-managed). ANIMATED figures are closed
+    # too (release-1.0 audit, F09-003: every animated show=False call leaked
+    # one registered pyplot figure, growing without bound in batch-export
+    # loops); the returned HyperAnimation stays fully usable afterward --
+    # `.save()`/`.to_jshtml()` drive their frames explicitly on the existing
+    # canvas, GUI-backed or not (verified on FigureCanvasMac; covered by
+    # tests/test_plot_save_audit_fixes.py). Closing nulls the FuncAnimation's
+    # event source but leaves its pending FIRST-DRAW hook connected, and a
+    # later draw of the returned figure would fire it and dump a spurious
+    # "'NoneType' object has no attribute 'add_callback'" traceback (the
+    # historical GUI-backend crash this branch used to dodge by never
+    # closing animated figures at all) -- so disconnect that hook explicitly;
+    # Animation.save()/to_jshtml() never need it.
+    if (not show and not _user_supplied_ax and isinstance(fig, plt.Figure)):
+        # matplotlib >= 3.11: plt.close() DETACHES the figure's real canvas,
+        # swapping in a bare FigureCanvasBase (draw() is a no-op and there is
+        # no buffer_rgba), so the returned figure could no longer render or
+        # re-save. Re-attach the original canvas after closing -- restoring
+        # matplotlib <= 3.10's close semantics (canvas kept, figure
+        # deregistered from pyplot), which is exactly the contract documented
+        # above: the returned Figure stays valid, savable, and renderable.
+        _live_canvas = fig.canvas
+        plt.close(fig)
+        if fig.canvas is not _live_canvas:
+            fig.set_canvas(_live_canvas)
+        if line_ani is not None:
+            _first_draw_id = getattr(line_ani, '_first_draw_id', None)
+            if _first_draw_id is not None:
+                try:
+                    fig.canvas.mpl_disconnect(_first_draw_id)
+                except Exception:
+                    pass
+                line_ani._first_draw_id = None
+
+    if return_model:
+        # gather reduce params (spec, not a fitted instance)
+        if isinstance(reduce, dict):
+            reduce_dict = reduce
+        else:
+            reduce_dict = {"model": reduce, "params": {"n_components": ndims}}
+        # gather align params
+        if isinstance(align, dict):
+            align_dict = align
+        else:
+            align_dict = {"model": align, "params": {}}
+        # 'pipeline' (GH #227, round17 Task 6): a fitted hypertools.Pipeline
+        # covering whichever of manip/normalize/reduce/align/cluster ran,
+        # so `hyp.plot(B, pipeline=bundle['pipeline'])` reuses these exact
+        # fitted parameters on new data instead of refitting. When the
+        # caller passed pipeline= themselves (reuse case), that SAME
+        # (already-fitted) Pipeline is reused here too. When the caller
+        # supplied transform= directly (bypassing format_data/analyze
+        # entirely, so there is no `raw` this pipeline could have been fit
+        # on), no pipeline can be reconstructed. resample= sugar is NOT
+        # represented as a pipeline step (it is applied to `raw` before
+        # this pipeline is fit, mirroring how format_data itself is not a
+        # step either), so reusing this pipeline on new data does not
+        # re-apply resample=.
+        if pipeline is not None:
+            bundle_pipeline = pipeline
+        elif raw is not None:
+            from ..core.pipeline import build_pipeline
+            # the cluster stage reuses the EXACT resolved spec the
+            # figure's own cluster stage was built from (set in the
+            # cluster branch above; None when no clustering ran) --
+            # previously this path re-resolved the raw cluster= spec with
+            # cluster.cluster()'s n_clusters=3 default, so the bundled
+            # pipeline could encode a different cluster count/parameters
+            # than the published figure (F13-004), and the n_clusters=-
+            # only KMeans path was omitted from the pipeline entirely.
+            cluster_spec = _bundle_cluster_stage
+            # LOW (accepted tradeoff): this refits manip/normalize/reduce/
+            # align/cluster a second time on `raw`, duplicating the work
+            # already done above to produce `xform_data` for the figure --
+            # kept because it is the only way to hand back a genuinely
+            # fit-once-reusable `Pipeline` object (see the `pipeline=`
+            # discussion above) without threading a Pipeline out of every
+            # internal code path that can produce `xform_data`.
+            bundle_pipeline = build_pipeline(manip=manip, normalize=normalize,
+                                             reduce=reduce, ndims=ndims,
+                                             align=align, cluster=cluster_spec)
+            # this refit re-resolves the SAME reduce spec the figure was
+            # drawn with, so any spec-conflict warning it emits (e.g.
+            # "Unequal values passed to dims and n_components" when a
+            # pre-configured reduce instance's n_components differs from
+            # ndims) was ALREADY issued once by the analyze() call above --
+            # suppress the duplicate (release-1.0 audit, R1).
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    'ignore',
+                    message='Unequal values passed to dims and '
+                            'n_components',
+                    category=UserWarning)
+                bundle_pipeline.fit_transform(raw)
+        else:
+            bundle_pipeline = None
+        # the bundle hands back the RAW FuncAnimation (never a
+        # HyperAnimation), so the X4-warnings-012 __del__ silencing never
+        # applies to it; without this, discarding the bundle leaked
+        # matplotlib's "Animation was deleted without rendering anything"
+        # UserWarning at the next cyclic-gc pass (release-1.0 audit,
+        # zero-warnings sweep; see hyper_animation.mark_draw_started).
+        if line_ani is not None:
+            from .hyper_animation import mark_draw_started
+            mark_draw_started(line_ani)
+        return {
+            "fig": fig,
+            "xform_data": xform_data,
+            "animation": line_ani,
+            "pipeline": bundle_pipeline,
+            "models": {
+                "reduce": reduce_dict,
+                "align": align_dict,
+                "cluster": cluster,
+                "impute": impute,
+            },
+            "predict": None if predict is None else {
+                "model": predict,
+                "params": {"t": t},
+                "forecasts": bundle_forecasts,
+            },
         }
 
-    # gather align params
-    if isinstance(align, dict):
-        align_dict = align
+    # only animated matplotlib plots set line_ani; plotly and static plots
+    # leave it None. An animated plot returns a HyperAnimation (QC 2026-07): a
+    # single object exposing .to_html5_video()/.to_jshtml()/.save()/.figure that
+    # auto-plays inline in a notebook -- so `anim = hyp.plot(data, animate=...)`
+    # then `anim.to_html5_video()` works (it used to fail on the bare tuple).
+    # HyperAnimation still unpacks as the legacy (figure, animation) tuple, so
+    # `fig, anim = hyp.plot(...)` keeps working too.
+    if line_ani is not None:
+        from .hyper_animation import HyperAnimation
+        return HyperAnimation(fig, line_ani)
+
+    return fig
+
+
+def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
+                         xform, mpl_kwargs, legend, palette,
+                         hue_group_labels=None):
+    """Resolve `colorbar=` into a backend-agnostic color-mapping dict, or
+    None if no colorbar was requested (GH #100).
+
+    Returns a dict with key ``'kind'`` of:
+    - ``'continuous'``: ``vmin``/``vmax`` (the ACTUAL hue value range) and
+      ``palette`` -- the caller builds a `ScalarMappable` from
+      `continuous_colormap(palette)` + `Normalize(vmin, vmax)`, which is
+      guaranteed to match `_multicolor_line_colors`'s per-point colors
+      (same palette, same `mat2colors` default `n_bins`).
+    - ``'discrete'``: ``colors`` ((n, 3) array, ORDER matching the drawn
+      groups) and ``labels`` (tick labels, from `legend` if it is a list,
+      else from `hue_group_labels` -- the categorical hue's category names,
+      known whether or not the user ALSO asked for a legend (F02-007) --
+      else ``1..n``).
+    Both kinds also carry the user-facing ``label``/``ticks``/``location``
+    overrides (from the `colorbar` dict; see `plot`'s docstring).
+
+    Raises ``ValueError`` if `colorbar` was requested but there is no
+    color mapping to show (a single, ungrouped dataset), or the mapping is
+    a per-observation blend with no discrete grouping (an unbounded color
+    space -- nothing finite to put on a colorbar).
+    """
+    if colorbar is None:
+        return None
+
+    label = colorbar.get('label')
+    ticks = colorbar.get('ticks')
+    location = colorbar.get('location', 'right')
+
+    if multicolor_hue is not None and multicolor_hue.ndim == 1 and hue is None:
+        vals = np.asarray(multicolor_hue, dtype=np.float64)
+        return {
+            'kind': 'continuous',
+            'vmin': float(np.min(vals)),
+            'vmax': float(np.max(vals)),
+            'palette': palette,
+            'label': label,
+            'ticks': ticks,
+            'location': location,
+        }
+
+    if multicolor_hue is not None:
+        raise ValueError(
+            "colorbar is not supported for per-observation matrix/mixture"
+            "-blended hue without discrete grouping (colors vary "
+            "continuously over an unbounded blend space, so there is no "
+            "finite set of colors to show). Use a 1D continuous hue, or "
+            "combine with cluster= (with animate=True, which quantizes "
+            "the blend into discrete groups) instead."
+        )
+
+    n_groups = len(xform)
+    if n_groups <= 1 and hue is None and cluster is None and n_clusters is None:
+        raise ValueError(
+            "colorbar=True requires a color mapping (hue=, cluster=, or "
+            "n_clusters=): a single, ungrouped dataset renders in one "
+            "color, so there is nothing to map on a colorbar."
+        )
+
+    explicit_colors = mpl_kwargs.get('color')
+    if (isinstance(explicit_colors, (list, tuple))
+            and len(explicit_colors) == n_groups):
+        # the mixture-blend paths (cluster=<mixture model> or matrix hue,
+        # animated) set an EXPLICIT per-group color list -- reuse it
+        # verbatim so the colorbar swatches exactly match the drawn lines.
+        colors = np.asarray(explicit_colors)[:, :3]
     else:
-        align_dict = {"model": align, "params": {}}
+        # everything else (categorical hue, non-mixture cluster/n_clusters,
+        # or a plain list of datasets) is colored from the ambient palette
+        # in dataset/group order -- exactly what sns.set_palette (mpl) /
+        # the per-trace sns.color_palette (plotly) assign when drawing.
+        colors = get_palette_colors(palette, n_groups)
 
-    # gather all other kwargs
-    kwargs = {
-        "fmt": fmt,
-        "marker": marker,
-        "markers": markers,
-        "linestyle": linestyle,
-        "linestyles": linestyles,
-        "color": color,
-        "colors": colors,
-        "palette": palette,
-        "hue": hue,
-        "ndims": ndims,
-        "labels": labels,
-        "legend": legend,
-        "title": title,
-        "animate": animate,
-        "duration": duration,
-        "tail_duration": tail_duration,
-        "rotations": rotations,
-        "zoom": zoom,
-        "chemtrails": chemtrails,
-        "precog": precog,
-        "bullettime": bullettime,
-        "frame_rate": frame_rate,
-        "elev": elev,
-        "azim": azim,
-        "explore": explore,
-        "n_clusters": n_clusters,
-        "size": size,
-        "interactive": interactive,
-        "mpl_backend": mpl_backend,
-        "frame_kwargs": frame_kwargs
+    if isinstance(legend, list):
+        labels = list(legend)
+    elif (hue_group_labels is not None
+            and len(hue_group_labels) == n_groups):
+        # categorical hue: the category names are known even without
+        # legend=True -- previously the colorbar fell back to 1..n unless
+        # a (redundant) legend was also requested (F02-007)
+        labels = list(hue_group_labels)
+    else:
+        labels = [i + 1 for i in range(n_groups)]
+
+    # A trace labeled '_nolegend_' (e.g. every MultiIndex leaf and
+    # intermediate-level mean, GH #95 -- only the TOP-level mean of each
+    # group carries a real label) must NEVER appear on the colorbar: filter
+    # colors/labels down to the REAL (legend-worthy) entries together, so a
+    # 2-level MultiIndex DataFrame (8 leaves + 2 top-level means) renders 2
+    # colorbar segments (one per top-level group), not 10.
+    if '_nolegend_' in labels:
+        keep = [i for i, l in enumerate(labels) if l != '_nolegend_']
+        if not keep:
+            raise ValueError(
+                "colorbar=True requires at least one labeled group, but "
+                "every trace is unlabeled ('_nolegend_') -- there is no "
+                "finite set of named groups to show."
+            )
+        colors = np.asarray(colors)[keep]
+        labels = [labels[i] for i in keep]
+
+    return {
+        'kind': 'discrete',
+        'colors': colors,
+        'labels': labels,
+        'label': label,
+        'ticks': ticks,
+        'location': location,
     }
-    # turn lists into np arrays so that they don't turn into pickles when saved
-    for kwarg in kwargs:
-        if isinstance(kwargs[kwarg], list):
-            try:
-                kwargs[kwarg] = np.array(kwargs[kwarg])
-            except:
-                warnings.warn(
-                    "Could not convert all list arguments to numpy "
-                    "arrays.  If list is longer than 256 items, it "
-                    "will automatically be pickled, which could "
-                    "cause Python 2/3 compatibility issues for the "
-                    "DataGeometry object."
-                )
 
-    return DataGeometry(
-        fig=fig,
-        ax=ax,
-        data=x,
-        xform_data=xform_data,
-        line_ani=line_ani,
-        reduce=reduce_dict,
-        align=align_dict,
-        normalize=normalize,
-        semantic=semantic,
-        vectorizer=vectorizer,
-        corpus=corpus,
-        kwargs=kwargs,
-    )
+
+def _apply_font_to_colorbar(cbar, font):
+    """Apply the resolved `font=` (GH #205) to every text surface a
+    colorbar draws: its tick labels (on whichever axis is the "long" one
+    for its orientation -- x for a horizontal top/bottom colorbar, y for a
+    vertical left/right one) and its axis label. Applied unconditionally
+    to BOTH axes (harmless -- the unused one has no text) rather than
+    branching on orientation, which keeps this correct regardless of
+    location=. A no-op when `font` is None (no override requested/needed)."""
+    if font is None:
+        return
+    for lbl in list(cbar.ax.get_xticklabels()) + list(cbar.ax.get_yticklabels()):
+        lbl.set_fontproperties(font)
+    cbar.ax.xaxis.label.set_fontproperties(font)
+    cbar.ax.yaxis.label.set_fontproperties(font)
+
+
+def _add_colorbar(fig, ax, colorbar_info, font=None):
+    """Attach a matplotlib colorbar built from `_build_colorbar_info`'s
+    output to `fig`/`ax` (GH #100): a continuous `ScalarMappable` for
+    continuous hue, or a `BoundaryNorm`-segmented one (one block per
+    group, tick labels = group names) for discrete groups."""
+    from matplotlib.cm import ScalarMappable
+    from matplotlib.colors import BoundaryNorm, ListedColormap, Normalize
+
+    default_tick_labels = None
+    if colorbar_info['kind'] == 'continuous':
+        cmap = continuous_colormap(colorbar_info['palette'])
+        norm = Normalize(vmin=colorbar_info['vmin'],
+                         vmax=colorbar_info['vmax'])
+        ticks = colorbar_info['ticks']
+    else:
+        n = len(colorbar_info['colors'])
+        cmap = ListedColormap(colorbar_info['colors'])
+        norm = BoundaryNorm(np.arange(n + 1) - 0.5, n)
+        ticks = (colorbar_info['ticks'] if colorbar_info['ticks'] is not None
+                 else list(range(n)))
+        default_tick_labels = colorbar_info['labels']
+
+    mappable = ScalarMappable(norm=norm, cmap=cmap)
+    mappable.set_array([])
+    tick_kwargs = {} if ticks is None else {'ticks': ticks}
+    # the FINAL tick label strings/title -- these can be much wider than the
+    # numeric default tick labels matplotlib would otherwise draw (e.g. group
+    # names), so they must be applied BEFORE any pixel-measurement-based
+    # width fitting runs (see `_add_right_colorbar`), not after.
+    ticklabels = (None if default_tick_labels is None or colorbar_info['ticks']
+                 is not None else [str(l) for l in default_tick_labels])
+    label = colorbar_info['label']
+
+    if colorbar_info['location'] == 'right':
+        cbar = _add_right_colorbar(fig, ax, mappable, ticklabels=ticklabels,
+                                   label=label, font=font, **tick_kwargs)
+    else:
+        cbar = fig.colorbar(mappable, ax=ax,
+                            location=colorbar_info['location'],
+                            **tick_kwargs)
+        if ticklabels is not None:
+            cbar.set_ticklabels(ticklabels)
+        if label:
+            cbar.set_label(label)
+        _apply_font_to_colorbar(cbar, font)
+
+    # A VERTICAL discrete colorbar ('right'/'left') must read top-to-bottom
+    # in the SAME order as the legend (first group at the TOP) -- matplotlib's
+    # default low-value-at-bottom convention otherwise reverses it relative
+    # to the legend, which reads first-to-last top-to-bottom (GH #100
+    # follow-up). `invert_yaxis` only flips the DISPLAY orientation of the
+    # existing data-to-color mapping -- the same data value still maps to
+    # the same color, so color<->label pairing survives the flip exactly;
+    # it just moves group 0 from the bottom to the top. A HORIZONTAL
+    # discrete colorbar ('top'/'bottom') already reads left-to-right in
+    # legend order (matplotlib's default), so it is left untouched.
+    # Continuous colorbars are numeric and must keep the conventional
+    # low-at-bottom orientation, so this only applies to 'discrete'.
+    if (colorbar_info['kind'] == 'discrete'
+            and colorbar_info['location'] in ('right', 'left')):
+        cbar.ax.invert_yaxis()
+    return cbar
+
+
+def _tight_right_edge_in(fig):
+    """The TRUE required figure width (inches) to avoid clipping ANY artist
+    off the right edge -- e.g. a legend and/or a colorbar's tick labels/axis
+    label.
+
+    Uses `Figure.get_tightbbox`, which computes each artist's actual extent
+    from its text/renderer metrics independent of the figure's CURRENT
+    canvas size -- unlike measuring rasterized "inked" pixels (the
+    previous approach here), which silently UNDER-reports whenever content
+    already overflows the current canvas: pixels that fall outside the
+    canvas are simply never in the rendered buffer, so a rasterize-based
+    fit that only closes the gap by a small fixed margin each iteration
+    converges far too slowly for long labels (needing many more than
+    `max_iter` steps -- GH #100 follow-up) and can still leave content
+    clipped. Measuring the true extent directly lets every caller compute
+    the exact required width in one shot.
+
+    hypertools draws inside a seaborn `rc_context`, but the figure is
+    actually rendered downstream (the sphinx-gallery scraper, or a bare
+    savefig/display after `plot()` returns) under the RESTORED default
+    rcParams, whose font is WIDER than seaborn's. Measuring under the
+    seaborn font would make content look like it fits when it clips in the
+    real output, so this always measures under `matplotlib.rcParamsDefault`
+    to match what actually gets saved/displayed.
+    """
+    import matplotlib
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    with plt.rc_context(matplotlib.rcParamsDefault):
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        renderer = canvas.get_renderer()
+        return float(fig.get_tightbbox(renderer).x1)
+
+
+def _legend_right_edge_in(fig, legend):
+    """The legend's right edge (inches from the figure's left edge),
+    measured under the restored default rcParams exactly like
+    `_tight_right_edge_in` (see its docstring for why rcParamsDefault) --
+    but for the LEGEND artist alone, so unclipped animated data/trail
+    artists whose projected extent overshoots the canvas cannot inflate
+    the legend fit (release-1.0 audit, F04-002)."""
+    import matplotlib
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    with plt.rc_context(matplotlib.rcParamsDefault):
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        renderer = canvas.get_renderer()
+        return float(legend.get_window_extent(renderer).x1) / fig.dpi
+
+
+def _add_right_colorbar(fig, ax, mappable, pad_in=0.2, width_in=0.35,
+                        max_iter=3, ticklabels=None, label=None, font=None,
+                        **colorbar_kwargs):
+    """Add `mappable`'s colorbar in a NEW strip to the right of the figure
+    -- to the right of an existing right-side legend, if any -- widening
+    the figure (via `_tight_right_edge_in`'s true-extent measurement, then
+    repositioning `ax` by its unchanged absolute inches so neither the plot
+    nor an already-fitted legend need to shrink or move).
+
+    `ticklabels`/`label` (the FINAL tick label strings and axis label, if
+    any -- e.g. group names, which can be far wider than the default
+    numeric tick labels matplotlib would otherwise draw) are applied
+    IMMEDIATELY after the colorbar is created and BEFORE the width-fitting
+    pass below runs -- fitting against the (short) default labels and only
+    swapping in the real ones afterward would fit the wrong content and
+    leave the real labels clipped.
+
+    That fitting pass widens the figure to the exact true extent measured by
+    `_tight_right_edge_in`, repositioning BOTH `ax` and the new colorbar
+    axes by their unchanged absolute inches, so nothing is clipped off the
+    right edge regardless of label length."""
+    try:
+        fig.set_layout_engine('none')
+    except Exception:
+        pass
+
+    right_edge_in = _tight_right_edge_in(fig)
+    w, h = fig.get_size_inches()
+
+    cbar_x0_in = right_edge_in + pad_in
+    new_w = cbar_x0_in + width_in + pad_in
+    if new_w > w:
+        pos = ax.get_position()
+        left_in, bottom_in = pos.x0 * w, pos.y0 * h
+        w_in_ax, h_in_ax = pos.width * w, pos.height * h
+        fig.set_size_inches(new_w, h)
+        ax.set_position([left_in / new_w, bottom_in / h,
+                         w_in_ax / new_w, h_in_ax / h])
+        w = new_w
+
+    pos = ax.get_position()
+    cbar_ax = fig.add_axes([cbar_x0_in / w, pos.y0 + pos.height * 0.2,
+                            width_in / w, pos.height * 0.6])
+    cbar = fig.colorbar(mappable, cax=cbar_ax, **colorbar_kwargs)
+    if ticklabels is not None:
+        cbar.set_ticklabels(ticklabels)
+    if label:
+        cbar.set_label(label)
+    # font (GH #205) applied BEFORE the width-fitting pass below so that
+    # pass measures the ACTUAL (possibly wider, multibyte-covering) font
+    # -- fitting against the default font first and swapping fonts
+    # afterward could leave a multibyte label/ticklabel clipped.
+    _apply_font_to_colorbar(cbar, font)
+
+    # second pass: the colorbar's tick labels/title were just drawn and may
+    # extend past the reserved `width_in` strip -- widen to the exact true
+    # extent (in one shot, not a fixed-step guess) as needed.
+    for _ in range(max_iter):
+        w_cur, h_cur = fig.get_size_inches()
+        new_w = _tight_right_edge_in(fig) + pad_in
+        if new_w <= w_cur + 1e-3:
+            break
+        ax_pos, cbar_pos = ax.get_position(), cbar_ax.get_position()
+        ax_left_in, ax_w_in = ax_pos.x0 * w_cur, ax_pos.width * w_cur
+        cbar_left_in, cbar_w_in = cbar_pos.x0 * w_cur, cbar_pos.width * w_cur
+        fig.set_size_inches(new_w, h_cur)
+        ax.set_position([ax_left_in / new_w, ax_pos.y0,
+                         ax_w_in / new_w, ax_pos.height])
+        cbar_ax.set_position([cbar_left_in / new_w, cbar_pos.y0,
+                              cbar_w_in / new_w, cbar_pos.height])
+    return cbar
+
+
+def _fit_right_legend(fig, ax, pad_in=0.15, max_iter=3):
+    """Ensure a right-side (outside) legend stays fully within the figure.
+
+    hypertools anchors its legend to the RIGHT of the plot via
+    ``ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5))``.
+    ``tight_layout`` reserves horizontal room for such a legend on 2D axes but
+    NOT on 3D (Axes3D) axes, and a wide legend (long labels or many entries)
+    overflows the figure's right edge on either -- the earlier "shrink the
+    axes" approach hit a floor and gave up, clipping the legend. Instead widen
+    the figure, adding room only on the right while keeping the plot's absolute
+    size and position, until the legend's right edge sits inside the canvas.
+    Fixing the figure itself (rather than a save kwarg) means every downstream
+    save path AND interactive/notebook display shows the full legend.
+
+    Runs for BOTH static and animated plots (GH #100/#95 follow-up: the
+    legend is added by `_draw` regardless of `animate` and is static across
+    every animation frame, so a single fit here -- after the figure/axes
+    already reflect whatever a colorbar in ANY location did to `ax` -- is
+    enough; no per-frame work needed), and after ANY colorbar has already
+    been added (see the call site in `plot()`), so this always fits against
+    the figure's current, final layout rather than being undone by it.
+    """
+    legend = ax.get_legend()
+    if legend is None:
+        return
+    # tight_layout may install a persistent layout engine that re-runs on every
+    # draw/save and would override the manual set_position below (undoing the
+    # widening). Freeze it so our figure resizing sticks through savefig.
+    try:
+        fig.set_layout_engine('none')
+    except Exception:
+        pass
+    for _ in range(max_iter):
+        w, h = fig.get_size_inches()
+        # measure the LEGEND's own right edge, not the full-figure
+        # tightbbox (release-1.0 audit, F04-002): animated data/trail
+        # artists are deliberately UNCLIPPED (`set_clip_on(False)`, see
+        # animate_plot3D's axes-box slicing fix), and a precog/bullettime
+        # trail holds (nearly) the whole trajectory from the first frame --
+        # its projected extent can reach far past the canvas, so a
+        # tightbbox-driven fit ran away to the 3x cap and exported every
+        # frame with the plot squashed into the left third. Only the legend
+        # needs room here; for content that genuinely fits the canvas the
+        # two measurements agree exactly.
+        new_w = min(_legend_right_edge_in(fig, legend) + pad_in, 3.0 * w)
+        if new_w <= w + 1e-3:
+            return  # legend already fits
+        pos = ax.get_position()
+        left_in, plot_w_in = pos.x0 * w, pos.width * w
+        # widen (add room only on the right) while keeping the plot's
+        # absolute size and position, so the legend gains room without
+        # shrinking the plot.
+        fig.set_size_inches(new_w, h)
+        ax.set_position([left_in / new_w, pos.y0,
+                         plot_w_in / new_w, pos.height])
+
+
+def _flatten_nested(x, _depth=1):
+    """Flatten arbitrarily nested lists of datasets (arrays/DataFrames) into
+    a flat list, recording each leaf's outermost-group index and nesting
+    depth. Lists containing strings (text data) are returned un-flattened,
+    since nested string lists denote text corpora, not grouped datasets."""
+    if _contains_string(x):
+        return x, None, None
+    leaves, groups, depths = [], [], []
+    for outer_idx, el in enumerate(x):
+        for leaf, depth in _iter_leaves(el, _depth):
+            leaves.append(leaf)
+            groups.append(outer_idx)
+            depths.append(depth)
+    return leaves, groups, depths
+
+
+def _iter_leaves(el, depth):
+    if isinstance(el, list):
+        for sub in el:
+            yield from _iter_leaves(sub, depth + 1)
+    else:
+        yield el, depth
+
+
+def _contains_string(el):
+    if isinstance(el, str):
+        return True
+    if isinstance(el, list):
+        return any(_contains_string(sub) for sub in el)
+    return False
+
+
+def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False):
+    """Per-point RGB colors for multicolored lines.
+
+    hue_src holds one value (or one row) per ORIGINAL observation; the
+    trajectories in xform have since been interpolated to a higher temporal
+    resolution, so each dataset's hue values are linearly re-interpolated to
+    its new length before color mapping. Colors are mapped over the
+    CONCATENATED hue values so the scale is shared across datasets.
+
+    When `is_rgb` is True, `hue_src` already holds literal per-point RGB values
+    (e.g. a matrix hue reduced to 3 columns via `plot`'s `color_reduce=`), so
+    the re-interpolated values are used AS colors instead of being mapped
+    through `mat2colors`.
+
+    Returns a list of (n_i, 3) arrays, one per dataset in xform.
+    """
+    hue_src = np.asarray(hue_src, dtype=np.float64)
+    if hue_src.ndim == 1:
+        hue_src = hue_src[:, None]
+
+    splits = np.cumsum(orig_lengths)[:-1]
+    pieces = np.vsplit(hue_src, splits)
+
+    interped = []
+    for piece, xi in zip(pieces, xform):
+        n_new = xi.shape[0]
+        if n_new == piece.shape[0]:
+            interped.append(piece)
+            continue
+        old_t = np.linspace(0.0, 1.0, piece.shape[0])
+        new_t = np.linspace(0.0, 1.0, n_new)
+        interped.append(np.column_stack(
+            [np.interp(new_t, old_t, piece[:, c])
+             for c in range(piece.shape[1])]))
+
+    stacked = np.vstack(interped)
+    if is_rgb:
+        colors = np.clip(stacked, 0.0, 1.0)
+    else:
+        colors = mat2colors(
+            stacked.ravel() if stacked.shape[1] == 1 else stacked,
+            palette=palette)
+
+    out, start = [], 0
+    for xi in xform:
+        out.append(np.asarray(colors[start:start + xi.shape[0]]))
+        start += xi.shape[0]
+    return out
+
+
+def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list):
+    """Replace single-color line artists with per-segment-colored
+    collections (matplotlib backend)."""
+    from matplotlib.collections import LineCollection
+    from mpl_toolkits.mplot3d.art3d import Line3DCollection
+
+    for line in list(ax.lines):
+        line.remove()
+
+    is_3d = xform[0].shape[1] >= 3
+    for i, (xi, ci) in enumerate(zip(xform, line_colors)):
+        tkwargs = kwargs_list[i] if i < len(kwargs_list) else {}
+        lw = tkwargs.get('linewidth') or plt.rcParams['lines.linewidth']
+        if xi.shape[1] == 1:
+            pts = np.column_stack([np.arange(xi.shape[0]), xi[:, 0]])
+        else:
+            pts = xi[:, :3] if is_3d else xi[:, :2]
+        segments = np.stack([pts[:-1], pts[1:]], axis=1)
+        seg_colors = (ci[:-1] + ci[1:]) / 2.0
+        if is_3d:
+            coll = Line3DCollection(segments, colors=seg_colors,
+                                    linewidths=lw)
+            ax.add_collection3d(coll)
+        else:
+            coll = LineCollection(segments, colors=seg_colors,
+                                  linewidths=lw)
+            ax.add_collection(coll)
+
+
+def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
+                                line_ani, style, chemtrails, precog,
+                                bullettime, total_frames):
+    """Per-frame multicolored (continuous/matrix hue) line rendering for
+    ANIMATED matplotlib plots (release-1.0 audit, F04-001/F05-002).
+
+    The static multicolor path (`_apply_multicolor_lines`) swaps the
+    single-color line artists for full-trajectory collections -- on an
+    animated plot that removed the very artists the FuncAnimation updates
+    each frame and drew the ENTIRE multicolored trajectory statically in
+    every frame: no reveal, no chemtrails/precog/bullettime, and a 2-D
+    animation collapsed to a single-frame gif (the plotly backend animated
+    the identical call correctly). Instead: HIDE the single-color artists
+    (they keep driving the reveal/window bookkeeping each frame) and add
+    one initially-empty per-dataset collection for the head window plus one
+    per trail; then wrap the animation's frame callback so that, after each
+    original update runs, every collection is re-sliced to exactly the
+    index window its hidden artist just moved to -- the multicolor
+    rendering animates in lockstep with the no-hue animation.
+
+    Only used for the parallel/'window'/'serial' reveal styles: 'spin'
+    draws the full trajectory every frame (the static swap is already
+    correct there), and 'morph' draws its own single traveling artist (the
+    static swap would have REMOVED it -- callers skip morph entirely).
+    """
+    from matplotlib.collections import LineCollection
+    from mpl_toolkits.mplot3d.art3d import Line3DCollection
+
+    is_3d = xform[0].shape[1] >= 3
+    n = len(xform)
+    # artist bookkeeping mirrors matplotlib_backend.animate_plot3D/2D: the
+    # n head lines are created first, then one trail artist per dataset
+    # that wants one (parallel/True only -- window/serial never create
+    # trails), in dataset order.
+    head_lines = list(ax.lines[:n])
+    wants_trail = [
+        style in (True, 'parallel')
+        and bool(chemtrails[i] or precog[i] or bullettime[i])
+        for i in range(n)
+    ]
+    _trail_artists = list(ax.lines[n:n + sum(wants_trail)])
+    trail_lines = {}
+    for i in range(n):
+        if wants_trail[i] and _trail_artists:
+            trail_lines[i] = _trail_artists.pop(0)
+
+    def _linewidth(i):
+        tkwargs = kwargs_list[i] if i < len(kwargs_list) else {}
+        return (tkwargs.get('linewidth')
+                or plt.rcParams['lines.linewidth'])
+
+    def _points(i):
+        xi = xform[i]
+        if xi.shape[1] == 1:
+            return np.column_stack([np.arange(xi.shape[0]), xi[:, 0]])
+        return xi[:, :3] if is_3d else xi[:, :2]
+
+    def _make_collection(i, alpha=None):
+        if is_3d:
+            coll = Line3DCollection([], linewidths=_linewidth(i),
+                                    alpha=alpha)
+            # autolim=False: the animation already fixed the axes limits
+            # (cube_scale), and autoscaling an EMPTY collection crashes
+            # inside Axes3D.add_collection3d
+            ax.add_collection3d(coll, autolim=False)
+        else:
+            coll = LineCollection([], linewidths=_linewidth(i), alpha=alpha)
+            ax.add_collection(coll)
+        coll.set_label('_nolegend_')
+        # match the line artists' unclipping (see animate_plot3D's
+        # axes-box slicing fix)
+        coll.set_clip_on(False)
+        return coll
+
+    head_colls = [_make_collection(i) for i in range(n)]
+    trail_colls = {i: _make_collection(i, alpha=0.3) for i in trail_lines}
+
+    for artist in head_lines + list(trail_lines.values()):
+        artist.set_visible(False)
+
+    def _artist_len(artist):
+        return (len(artist.get_data_3d()[0]) if is_3d
+                else len(artist.get_xdata()))
+
+    def _set_segments(coll, pts, colors):
+        if pts.shape[0] < 2:
+            coll.set_segments([])
+            return
+        segments = np.stack([pts[:-1], pts[1:]], axis=1)
+        colors = np.asarray(colors)
+        coll.set_segments(segments)
+        coll.set_color((colors[:-1] + colors[1:]) / 2.0)
+
+    orig_func = line_ani._func
+
+    def _multicolor_frame(num, *fargs):
+        result = orig_func(num, *fargs)
+        for i in range(n):
+            pts = _points(i)
+            ci = np.asarray(line_colors[i])
+            n_pts = pts.shape[0]
+            # the hidden head artist was just set to the exact visible
+            # window; recover its [start, end) indices from its length
+            # plus the same frame->row mapping the backend used (see
+            # matplotlib_backend._anim_window_bounds)
+            head_len = _artist_len(head_lines[i])
+            if style == 'serial':
+                start, end = 0, head_len
+            else:
+                end = int(np.ceil((num + 1) * n_pts
+                                  / max(1, int(total_frames))))
+                end = max(1, min(n_pts, end))
+                start = max(0, end - head_len)
+            _set_segments(head_colls[i], pts[start:end], ci[start:end])
+
+            trail = trail_lines.get(i)
+            if trail is not None:
+                trail_len = _artist_len(trail)
+                if precog[i] and not (chemtrails[i] or bullettime[i]):
+                    ts, te = n_pts - trail_len, n_pts  # anchored at the end
+                else:
+                    ts, te = 0, trail_len  # chemtrails/bullettime: from 0
+                _set_segments(trail_colls[i], pts[ts:te], ci[ts:te])
+        return result
+
+    line_ani._func = _multicolor_frame
+
+
+def _expand_labels(labels, old_lengths, new_lengths):
+    """Re-map per-point labels onto interpolated trajectories.
+
+    Each original point's label is placed at that point's index in the
+    interpolated (longer) trajectory; the interpolated in-between points get
+    None (no annotation). When the trajectory was DOWN-sampled instead
+    (animation frame grids can have fewer points than samples), each label
+    lands on the nearest remaining point. Accepts flat label lists or lists
+    nested per dataset; returns a flat list matching sum(new_lengths).
+    """
+    if any(isinstance(el, list) for el in labels):
+        flat = list(itertools.chain(*labels))
+    else:
+        flat = list(labels)
+
+    out = []
+    start = 0
+    for old_n, new_n in zip(old_lengths, new_lengths):
+        piece = flat[start:start + old_n]
+        start += old_n
+        expanded = [None] * new_n
+        for i, lab in enumerate(piece):
+            # only REAL labels claim a slot: assigning the (mostly-None)
+            # in-between entries too let a later None overwrite an
+            # already-placed label whenever several original indices
+            # mapped to the same new index (down-sampling), silently
+            # dropping the user's labels (release-1.0 audit, F10-001).
+            if lab is None:
+                continue
+            if old_n == 1:
+                j = 0
+            else:
+                j = min(new_n - 1, int(round(i * (new_n - 1) / (old_n - 1))))
+            expanded[j] = lab
+        out.extend(expanded)
+    return out
+
+
+def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list,
+                              fmt=None):
+    """Replace single-color marker artists with per-point-colored scatter
+    (matplotlib backend). Gives exact per-observation colors -- e.g. mixture
+    proportions render as true blends instead of quantized groups. When
+    `fmt` is a single format string carrying a marker character (e.g. the
+    'o' of 'o-'), that marker glyph is used for the scatter points
+    (F02-004); otherwise the default circle is drawn."""
+    for line in list(ax.lines):
+        line.remove()
+
+    marker = None
+    if fmt is not None and not isinstance(fmt, (list, tuple, np.ndarray)):
+        _, marker = split_marker_line_fmt(fmt)
+    marker = marker or 'o'
+
+    is_3d = xform[0].shape[1] >= 3
+    for i, (xi, ci) in enumerate(zip(xform, point_colors)):
+        tkwargs = kwargs_list[i] if i < len(kwargs_list) else {}
+        ms = float(tkwargs.get('markersize')
+                   or plt.rcParams['lines.markersize'])
+        s = ms ** 2  # scatter sizes are areas in points^2
+        if xi.shape[1] == 1:
+            ax.scatter(np.arange(xi.shape[0]), xi[:, 0], c=ci, s=s,
+                       marker=marker)
+        elif is_3d:
+            ax.scatter(xi[:, 0], xi[:, 1], xi[:, 2], c=ci, s=s,
+                       depthshade=False, marker=marker)
+        else:
+            ax.scatter(xi[:, 0], xi[:, 1], c=ci, s=s, marker=marker)
+
+def _mixture_name(model):
+    """Registry name for a cluster-model spec (string or class)."""
+    return model if isinstance(model, str) \
+        else getattr(model, "__name__", str(model))
+

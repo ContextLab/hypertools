@@ -15,10 +15,11 @@ the image to be saved, including the file extension (e.g. pdf)
 
 # import
 import hypertools as hyp
-import numpy as np
 
 # load example data
-geo = hyp.load('weights_sample')
+data = hyp.load('weights_sample')
 
 # plot
-geo.plot(fmt='o', save_path='test-image.pdf')
+import os, tempfile
+save_path = os.path.join(tempfile.mkdtemp(), 'test-image.pdf')
+hyp.plot(data, fmt='o', save_path=save_path)

@@ -1,1 +1,24 @@
-include requirements.txt
+# sdist manifest (2026-07 audit X5-packaging-001/-002/-004):
+# - hypertools/core/config.ini must ship (get_default_options() reads it;
+#   also declared as package-data in pyproject.toml for the wheel)
+# - the FULL tests tree must ship so `pytest` runs from an unpacked sdist
+#   (X5-004: only the flat tests/test_*.py files shipped before, dropping
+#   tests/{align,cluster,core,...}/, tests/data/, tests/matplotlibrc, and
+#   the impute conftest -- a non-runnable suite)
+# - local virtualenvs / build junk must never leak into the sdist
+include hypertools/core/config.ini
+# ship the changelog to source-archive consumers (readme ships automatically;
+# CHANGELOG.md does not without an explicit include). It is git-tracked, so
+# the CI packaging test's "sdist is a subset of git ls-files" assertion holds.
+include CHANGELOG.md
+graft tests
+# `graft` walks the FILESYSTEM, not git -- so generated/ignored output
+# directories under tests/ must be pruned explicitly or they leak into the
+# sdist (2026-07 release review, issue #4: 129 ignored screenshot files
+# shipped a 3.5 MB sdist). The CI packaging test asserts the sdist file
+# list is a subset of `git ls-files` + a small allowlist, so any NEW
+# generated directory is caught even if it is not pruned here.
+prune tests/.pytest_cache
+prune tests/screenshots
+prune hypertools-dev
+global-exclude *.py[cod] __pycache__ .DS_Store .pytest_cache

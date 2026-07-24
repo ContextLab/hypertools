@@ -1,15 +1,25 @@
 #!/usr/bin/env python
+"""Classic array/mode ``align`` API (HyperTools <1.0).
 
-from .._externals.srm import SRM
-from .procrustes import procrustes
+Thin compatibility wrapper over the 1.0 dispatcher exported as
+:func:`hypertools.align` (:mod:`hypertools.align.align`). The classic
+string/dict ``align`` argument is forwarded to the dispatcher's ``model=``
+(which itself understands the legacy ``'hyper'``/``'SRM'``/etc. spellings --
+see ``hypertools.align.align._ALIAS``), ``n_iter`` is threaded into
+hyperalignment, and (when ``format_data=True``) the input -- a DataGeometry,
+text, arrays, or a mix -- is first funneled through
+:func:`hypertools.tools.format_data.format_data` into a list of numpy arrays,
+mirroring dev-1.0's ``format_data=True`` behavior; the dispatcher is then
+called with ``format_data=False`` to avoid re-running that pass. Output is a
+list of numpy arrays, as the classic API promised.
+"""
 import numpy as np
-from .format_data import format_data as formatter
-from .._shared.helpers import memoize
-import warnings
 
-@memoize
-def align(data, align='hyper', normalize=None, ndims=None, method=None,
-          format_data=True):
+from ..align.align import align as _align_dispatch, _ALIAS as _MODEL_ALIAS
+from .format_data import format_data as formatter
+
+
+def align(data, align='hyper', n_iter=10, format_data=True):
     """
     Aligns a list of arrays
 
@@ -28,7 +38,7 @@ def align(data, align='hyper', normalize=None, ndims=None, method=None,
     the representational space in human ventral temporal cortex.  Neuron 72,
     404 -- 416. (used to implement hyperalignment, see https://github.com/PyMVPA/PyMVPA)
 
-    Brain Imaging Analysis Kit, http://brainiak.org. (used to implement Shared Response Model [SRM], see https://github.com/IntelPNI/brainiak)
+    Brain Imaging Analysis Kit, https://brainiak.org. (used to implement Shared Response Model [SRM], see https://github.com/brainiak/brainiak)
 
     Parameters
     ----------
@@ -39,101 +49,72 @@ def align(data, align='hyper', normalize=None, ndims=None, method=None,
         If str, either 'hyper' or 'SRM'.  If 'hyper', alignment algorithm will be
         hyperalignment. If 'SRM', alignment algorithm will be shared response
         model.  You can also pass a dictionary for finer control, where the 'model'
-        key is a string that specifies the model and the params key is a dictionary
-        of parameter values (default : 'hyper').
+        key is a string that specifies the model and the 'kwargs' key (or the
+        legacy 'params' key) is a dictionary of parameter values
+        (default : 'hyper').
+
+    n_iter : int
+        Number of hyperalignment iterations: the common template is
+        re-estimated from the aligned data and all datasets are re-aligned
+        to it, repeatedly. More iterations give a more stable common space
+        (default: 10). Only used when align='hyper'; may also be passed via
+        the dict form, e.g. align={'model': 'hyper',
+        'params': {'n_iter': 10}}.
 
     format_data : bool
         Whether or not to first call the format_data function (default: True).
 
-    normalize : None
-        Deprecated argument.  Please use new analyze function to perform
-        combinations of transformations
-
-    ndims : None
-        Deprecated argument.  Please use new analyze function to perform
-        combinations of transformations
-
     Returns
-    ----------
+    -------
     aligned : list
         An aligned list of numpy arrays
 
     """
-
-    # if model is None, just return data
+    # if model is None, just return data unchanged
     if align is None:
         return data
-    elif isinstance(align, dict):
-        if align['model'] is None:
+    if align is True:
+        # retired in 1.0 (previously deprecated): boolean form was ambiguous --
+        # require an explicit algorithm name
+        raise ValueError("align=True was removed in hypertools 1.0; specify the "
+                         "algorithm instead, e.g. align='hyper' or align='SRM'.")
+
+    if isinstance(align, dict):
+        model = align['model']
+        if model is None:
             return data
+        # the canonical 1.0 dict spec uses 'kwargs'; the classic/legacy
+        # spec (and dev-1.0's own dict form) uses 'params' -- accept both
+        if 'kwargs' in align:
+            params = dict(align['kwargs'])
+        else:
+            params = dict(align.get('params', {}))
+        n_iter = params.get('n_iter', n_iter)
     else:
-        if method is not None:
-            warnings.warn('The method argument will be deprecated.  Please use align. See the API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.tools.align.html#hypertools.tools.align')
-            align = method
+        model, params = align, {}
 
-        if align is True:
-            warnings.warn("Setting align=True will be deprecated.  Please specify the \
-                          type of alignment, i.e. align='hyper'. See API docs for more info: http://hypertools.readthedocs.io/en/latest/hypertools.tools.align.html#hypertools.tools.align")
-            align = 'hyper'
+    if model in ('hyper', 'HyperAlign'):
+        params.setdefault('n_iter', n_iter)
 
-        # common format
-        if format_data:
-            data = formatter(data, ppca=True)
+    # translate the classic spellings ('hyper', 'SRM', ...) to the 1.0
+    # registry names HERE, before dispatch: for THIS classic API they are
+    # the documented values (align='hyper' is even the default), so the
+    # dispatcher's model='hyper' DeprecationWarning (release-1.0 audit,
+    # X1-api-consistency-020) must not fire on the classic path -- it is
+    # about the 1.0 hyp.align(model=...) spelling only.
+    if isinstance(model, str):
+        model = _MODEL_ALIAS.get(model, model)
 
-        if len(data) == 1:
-            warnings.warn('Data in list of length 1 can not be aligned. '
-                 'Skipping the alignment.')
+    # funnel any classic input (geo / text / arrays / mixed) into a list of
+    # numpy arrays before handing off to the dispatcher
+    if format_data:
+        data = formatter(data, ppca=True)
 
-        if data[0].shape[1] >= data[0].shape[0]:
-            warnings.warn('The number of features exceeds number of samples. This can lead \
-                 to overfitting.  We recommend reducing the dimensionality to be \
-                 less than the number of samples prior to hyperalignment.')
-
-        if (align == 'hyper') or (method == 'hyper'):
-
-            ##STEP 0: STANDARDIZE SIZE AND SHAPE##
-            sizes_0 = [x.shape[0] for x in data]
-            sizes_1 = [x.shape[1] for x in data]
-
-            #find the smallest number of rows
-            R = min(sizes_0)
-            C = max(sizes_1)
-
-            m = [np.empty((R,C), dtype=np.ndarray)] * len(data)
-
-            for idx,x in enumerate(data):
-                y = x[0:R,:]
-                missing = C - y.shape[1]
-                add = np.zeros((y.shape[0], missing))
-                y = np.append(y, add, axis=1)
-                m[idx]=y
-
-            ##STEP 1: TEMPLATE##
-            for x in range(0, len(m)):
-                if x==0:
-                    template = np.copy(m[x])
-                else:
-                    next = procrustes(m[x], template / (x + 1))
-                    template += next
-            template /= len(m)
-
-            ##STEP 2: NEW COMMON TEMPLATE##
-            #align each subj to the template from STEP 1
-            template2 = np.zeros(template.shape)
-            for x in range(0, len(m)):
-                next = procrustes(m[x], template)
-                template2 += next
-            template2 /= len(m)
-
-            #STEP 3 (below): ALIGN TO NEW TEMPLATE
-            aligned = [np.zeros(template2.shape)] * len(m)
-            for x in range(0, len(m)):
-                next = procrustes(m[x], template2)
-                aligned[x] = next
-            return aligned
-
-        elif (align == 'SRM') or (method == 'SRM'):
-            data = [i.T for i in data]
-            srm = SRM(features=np.min([i.shape[0] for i in data]))
-            fit = srm.fit(data)
-            return [i.T for i in srm.transform(data)]
+    # format_data=False: this shim already ran the formatting pass above
+    # (when format_data=True) -- the dispatcher's own model= already
+    # understands the legacy 'hyper'/'SRM'/etc. spellings, so `model` is
+    # forwarded as-is
+    out = _align_dispatch(data, model=model, format_data=False, **params)
+    if not isinstance(out, list):
+        out = [out]
+    return [np.asarray(o) for o in out]

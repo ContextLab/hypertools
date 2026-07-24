@@ -1,0 +1,203 @@
+"""Ensure every committed docs notebook (gallery + tutorials) starts with a
+cell that installs hypertools, so it runs standalone when opened in Google
+Colab.
+
+The install line is branch-aware:
+
+* on ``master`` OR a ``vX.Y.Z`` release tag it installs the RELEASED package
+  (``%pip install -q "hypertools[interactive]"``);
+* on any other branch it installs THAT branch from GitHub, so the dev-1.0
+  preview notebooks install the matching dev build rather than the older
+  PyPI release.
+
+The script is idempotent AND self-correcting: a notebook that already has a
+hypertools install cell is not skipped -- its install target is RE-TARGETED to
+match the current branch (2026-07 release review: the old ``has_install`` guard
+merely detected the words "pip install" and skipped, so a stale
+``@dev-1.0-refactor`` target could never be migrated to ``@dev-1.0`` or, at
+release, to the plain PyPI spec). Only the hypertools ``... @ git+...@<branch>``
+spec is rewritten; the notebook's own extras (``[interactive]``,
+``[interactive,predict]``, ``[interactive,lsl]``, ...) and any other install
+lines (e.g. a tutorial's ``%pip install -q convokit``) are preserved verbatim.
+
+Run after (re)generating notebooks, then commit:
+
+    .venv/bin/python scripts/add_colab_install_cell.py
+
+RELEASE NOTE: run this on the ``master`` BRANCH when cutting the release and
+commit the migrated notebooks BEFORE master/tag CI and the PyPI upload (see
+RELEASE_CHECKLIST.md for the full order). Until the upload the notebooks
+briefly resolve the previous PyPI release, which is harmless -- they are static
+source content. The ``release-gate`` CI job enforces that no ``git+``/``@dev``
+install survives on a release build.
+"""
+
+import glob
+import json
+import os
+import re
+import subprocess
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+NOTEBOOKS = (glob.glob(os.path.join(REPO, 'docs', 'auto_examples', '*.ipynb'))
+             + glob.glob(os.path.join(REPO, 'docs', 'tutorials', '*.ipynb')))
+
+MARKER = 'pip install'          # a code cell with any pip install line
+INLINE = '%matplotlib inline'
+_GIT_URL = 'git+https://github.com/ContextLab/hypertools.git'
+
+# A hypertools GitHub-branch install spec, capturing the extras so they are
+# preserved across a re-target: e.g. `hypertools[interactive,predict] @
+# git+https://github.com/ContextLab/hypertools.git@dev-1.0-refactor`.
+_BRANCH_SPEC_RE = re.compile(
+    r'hypertools\[([^\]]*)\]\s*@\s*'
+    + re.escape(_GIT_URL) + r'@[\w./\-]+')
+
+# The `(<branch> preview)` token inside the "# Install hypertools (...)" note.
+# The branch token allows `/` to match `_BRANCH_SPEC_RE` (e.g. `feature/x`), so
+# the note is retargeted in lock-step with the install line (release review).
+_PREVIEW_NOTE_RE = re.compile(r'\(([\w./\-]+) preview\)')
+
+# The standard two-line preview note, collapsed to the clean master note when
+# migrating to the release (else the flipped notebooks keep saying "preview" /
+# "On release this becomes ..." -- release review, sweep GAP #1).
+_STD_PREVIEW_NOTE_RE = re.compile(
+    r'# Install hypertools \([\w./\-]+ preview\) -- run this first on Colab\.\n'
+    r'# On release this becomes: [^\n]*(?:\n|$)')
+_MASTER_NOTE = '# Install hypertools (run this first on Colab)\n'
+
+
+def current_branch():
+    branch = os.environ.get('READTHEDOCS_GIT_IDENTIFIER', '')
+    if not branch:
+        try:
+            branch = subprocess.run(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                capture_output=True, text=True, cwd=REPO,
+                timeout=10).stdout.strip()
+        except Exception:
+            branch = ''
+    return branch or 'master'
+
+
+def _is_release_ref(branch):
+    """True if `branch` is the release form -- `master` OR a vX.Y.Z release tag.
+    A Read the Docs / CI TAG build reports `v1.0.0`, which must install the
+    released package from PyPI, not `@v1.0.0` from GitHub (release review).
+    Kept identical to docs/conf.py and scripts/verify_docs_playwright.py."""
+    return branch == 'master' or re.fullmatch(r'v\d+\.\d+\.\d+', branch or '')
+
+
+def hyp_spec(extras, branch):
+    """The canonical install spec for `hypertools[<extras>]` on `branch`."""
+    if _is_release_ref(branch):
+        return f'hypertools[{extras}]'
+    return f'hypertools[{extras}] @ {_GIT_URL}@{branch}'
+
+
+def install_lines(branch):
+    if _is_release_ref(branch):
+        pip = '%pip install -q "hypertools[interactive]"'
+        note = '# Install hypertools (run this first on Colab)'
+    else:
+        pip = f'%pip install -q "{hyp_spec("interactive", branch)}"'
+        note = (f'# Install hypertools ({branch} preview) -- run this first '
+                'on Colab.\n# On release this becomes: '
+                '%pip install hypertools')
+    return note, pip
+
+
+def retarget_text(text, branch):
+    """Rewrite any hypertools branch-install spec in `text` to `branch`.
+
+    Preserves the notebook's extras and every other line. Also updates the
+    ``(<branch> preview)`` token in the install note so the comment stays
+    consistent with the install line. Returns the (possibly unchanged) text.
+    """
+    new = _BRANCH_SPEC_RE.sub(
+        lambda m: hyp_spec(m.group(1), branch), text)
+    if _is_release_ref(branch):
+        # drop the whole "(<x> preview) ... On release this becomes ..." note so
+        # the released notebooks don't ship saying "preview"
+        new = _STD_PREVIEW_NOTE_RE.sub(_MASTER_NOTE, new)
+    else:
+        new = _PREVIEW_NOTE_RE.sub(f'({branch} preview)', new)
+    return new
+
+
+def has_install(nb):
+    for cell in nb.get('cells', []):
+        if cell.get('cell_type') == 'code' and \
+                MARKER in ''.join(cell.get('source', [])):
+            return True
+    return False
+
+
+def retarget_notebook(nb, branch):
+    """Re-target every code cell's hypertools branch install. True if changed."""
+    changed = False
+    for cell in nb.get('cells', []):
+        if cell.get('cell_type') != 'code':
+            continue
+        src = ''.join(cell.get('source', []))
+        new = retarget_text(src, branch)
+        if new != src:
+            cell['source'] = new.splitlines(keepends=True)
+            changed = True
+    return changed
+
+
+def new_code_cell(source_text):
+    return {
+        'cell_type': 'code',
+        'execution_count': None,
+        'metadata': {},
+        'outputs': [],
+        'source': source_text.splitlines(keepends=True),
+    }
+
+
+def main():
+    branch = current_branch()
+    note, pip = install_lines(branch)
+    retargeted = added = 0
+    for path in sorted(NOTEBOOKS):
+        with open(path) as f:
+            nb = json.load(f)
+        if has_install(nb):
+            # already has an install cell -> re-target it to this branch
+            if retarget_notebook(nb, branch):
+                with open(path, 'w') as f:
+                    # ensure_ascii=False keeps literal UTF-8 (matching nbformat)
+                    # so re-targeting doesn't churn every non-ASCII glyph into a
+                    # \\uXXXX escape and bloat the diff.
+                    json.dump(nb, f, indent=1, ensure_ascii=False)
+                    f.write('\n')
+                retargeted += 1
+            continue
+        cells = nb.setdefault('cells', [])
+        # if the notebook opens with a lone `%matplotlib inline` cell (the
+        # sphinx-gallery gallery notebooks), fold the install line into it so
+        # there is a single tidy setup cell; otherwise prepend a new cell
+        first = cells[0] if cells else None
+        if (first and first.get('cell_type') == 'code'
+                and INLINE in ''.join(first.get('source', []))
+                and len(''.join(first.get('source', [])).strip()) < 40):
+            first['source'] = (f'{note}\n{pip}\n\n{INLINE}').splitlines(
+                keepends=True)
+        else:
+            cells.insert(0, new_code_cell(f'{note}\n{pip}'))
+        with open(path, 'w') as f:
+            json.dump(nb, f, indent=1, ensure_ascii=False)
+            f.write('\n')
+        added += 1
+    print(f'branch: {branch}')
+    print(f'install line: {pip}')
+    print(f'added install cell to {added} notebook(s); '
+          f're-targeted {retargeted}; '
+          f'{len(NOTEBOOKS) - added - retargeted} already correct '
+          f'(of {len(NOTEBOOKS)})')
+
+
+if __name__ == '__main__':
+    main()

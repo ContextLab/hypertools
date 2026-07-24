@@ -86,3 +86,52 @@
     margin-top: 5px;
     color: #333;
 }
+/* ---- ContextLab brand (ported from ContextLab/scheduler, based on the
+   lab's website): Nunito Sans everywhere, lowercase thin headings with
+   slight letter-spacing, lab green for links/brand ---- */
+@import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;600;700&display=swap');
+
+body {
+    font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont,
+        'Segoe UI', Helvetica, Arial, sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6,
+.sidebar-brand-text,
+.toc-title {
+    font-family: 'Nunito Sans', sans-serif;
+    text-transform: lowercase;
+    letter-spacing: 0.6px;
+    font-weight: 300;
+}
+
+a {
+    color: var(--color-brand-content, #007030);
+}
+
+a:hover {
+    color: #005524;
+}
+
+pre {
+    border-radius: 4px;
+}
+
+/* sphinxcontrib-video wraps gallery mp4 animations in a container with the
+   default 'align-left' class, and furo's stylesheet floats
+   'article .align-left' left -- so on every animated example page the 640px
+   video floated left and squeezed the stderr output and the entire Python
+   source block into a ~64px unreadable sliver beside it. Un-float the video
+   container so the code renders full-width below it, matching non-animated
+   gallery pages. */
+article .sphinx-contrib-video-container.align-left,
+article .sphinx-contrib-video-container.align-right {
+    float: none;
+    clear: both;
+    margin: 0 0 1rem 0;
+}
+
+article .sphinx-contrib-video-container video {
+    max-width: 100%;
+    height: auto;
+}

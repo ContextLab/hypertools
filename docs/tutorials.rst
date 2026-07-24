@@ -3,7 +3,7 @@
 .. _tutorials:
 
 How to use `HyperTools`
-================
+=======================
 
 Plot
 ----------------
@@ -53,14 +53,6 @@ Cluster
 
   tutorials/cluster.ipynb
 
-DataGeometry Objects
-----------------
-
-.. toctree::
-  :maxdepth: 2
-
-  tutorials/geo.ipynb
-
 Plotting text
 ----------------
 
@@ -68,3 +60,87 @@ Plotting text
   :maxdepth: 2
 
   tutorials/text.ipynb
+
+Visualizing Hugging Face embeddings
+-----------------------------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/hugging_face_embeddings.ipynb
+
+Modern scikit-learn models and dynamics
+---------------------------------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/modern_sklearn_dynamics.ipynb
+
+Mapping Wikipedia with modern text embeddings
+---------------------------------------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/wikipedia_embeddings.ipynb
+
+Visualizing the shape of a conversation
+---------------------------------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/conversation_trajectories.ipynb
+
+Plotting streaming data
+-----------------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/streaming_data.ipynb
+
+Streaming from a Lab Streaming Layer (LSL) device
+---------------------------------------------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/lsl_streaming.ipynb
+
+Forecasting stock prices with hyp.predict
+-----------------------------------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/stock_forecasting.ipynb
+
+Imputing and forecasting a real projectile arc with hyp.impute and hyp.predict
+------------------------------------------------------------------------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/projectile_kalman.ipynb
+
+Story trajectories: brain activity while listening to a story
+-------------------------------------------------------------
+
+An animated cloud of hyperaligned trajectories showing how all 36 subjects'
+whole-brain activity traces out a *shared* path through a low-dimensional space
+while they listen to the same spoken story (fMRI data from Simony et al.,
+2016). Each subject is preprocessed with a per-subject ``manip`` (Smooth →
+Resample → ZScore), **hyperaligned in the 100-hub feature space** (``n_iter=10``)
+and only *then* reduced to 3-D with ``reduce='IncrementalPCA'``; an
+``animate='window'`` trail then slides along the aligned trajectories so you
+watch all 36 subjects move together through the story. Aligning in the hub
+space *before* reducing (rather than over-reducing first, which starves
+hyperalignment) is what pulls the trajectories together -- their within-timepoint
+spread tightens ~30%. See the full gallery example,
+:doc:`auto_examples/plot_story_trajectories`.
+
+.. image:: _static/thumbnails/sphx_glr_plot_story_trajectories_thumb.gif
+   :width: 400
+   :alt: Animated hyperaligned brain-activity trajectories through a spoken story

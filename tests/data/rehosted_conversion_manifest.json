@@ -1,0 +1,202 @@
+{
+  "biplane": {
+    "converted_bytes": 1270273,
+    "converted_file": "biplane.parquet",
+    "converted_sha256": "8ffb74e24af0b84e20c151c6f0601fd677cb1f1f029e4d86eb7523c3a9a4268b",
+    "dataset": "biplane",
+    "format": "parquet",
+    "orig_cache_bytes": 2903750,
+    "orig_cache_sha256": "f5e5661c2eea7a03f30229d6df5546bdd1a9df9e578c865dcefee983801fc814",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "bunny": {
+    "converted_bytes": 862992,
+    "converted_file": "bunny.npz",
+    "converted_sha256": "8c010711a9f7ca779c7a9b804f21028d15c099271a1c9c54ed221c10f8754f22",
+    "dataset": "bunny",
+    "format": "npz(array)",
+    "orig_cache_bytes": 862919,
+    "orig_cache_sha256": "7a43745c17834d54bb9dc10b7c286b4f23a4a1c437f8419d53dbe2eaf6ece663",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "cube": {
+    "converted_bytes": 726168,
+    "converted_file": "cube.npz",
+    "converted_sha256": "fd87423f357a0bf909c74c56da1d6cd2a50a373d777dba442ab609aad0bb33bb",
+    "dataset": "cube",
+    "format": "npz(array)",
+    "orig_cache_bytes": 726095,
+    "orig_cache_sha256": "ca43191a3c77ce90d449a9cd327a53aaa7bd55032c7de06567c175d6524a02c1",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "datasaurus": {
+    "converted_bytes": 32710,
+    "converted_file": "datasaurus.npz",
+    "converted_sha256": "8e8c2e1bc4ac33402f9448ab78860e7d79bef97ee5b413e4b2081b8b4d3f5f52",
+    "dataset": "datasaurus",
+    "format": "npz(list[13])",
+    "orig_cache_bytes": 49244,
+    "orig_cache_sha256": "7ce78b634ef299098c75445bfc8f28f3edf122b415cdcc179ffda11b2e0bd126",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "dragon": {
+    "converted_bytes": 552216,
+    "converted_file": "dragon.npz",
+    "converted_sha256": "be1ae5262850539d9bfe37ec946a9a0e0fd745e58c5b69fa3b39284beca8cfa8",
+    "dataset": "dragon",
+    "format": "npz(array)",
+    "orig_cache_bytes": 552143,
+    "orig_cache_sha256": "dbfdbbc077f3884251a7140ee030eaf29cff915448d68e3afd96780e5cf79434",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "mushrooms": {
+    "converted_bytes": 57713,
+    "converted_file": "mushrooms.parquet",
+    "converted_sha256": "e9edd15fa603ba8ea49ca1726ccc889a1378b68286467b1e91a1ff0f0dc49de2",
+    "dataset": "mushrooms",
+    "format": "parquet",
+    "orig_cache_bytes": 619645,
+    "orig_cache_sha256": "b3abdaf8ae1597eeb95c1f1bc6cff6c38d02c9dff99a66ebafed6dc168d2c8cf",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "nips": {
+    "converted_bytes": 53078206,
+    "converted_file": "nips.json.gz",
+    "converted_sha256": "10409cd39c62eea8325d98afdcf09b2a84e119e6ff4f977cb8e52eb144b624c4",
+    "dataset": "nips",
+    "format": "json.gz(list[str])",
+    "n_docs": 7241,
+    "orig_cache_bytes": 181496820,
+    "orig_cache_sha256": "e240532dab310652bb489b4f0880af9f681652708dfe60ac3d6ff4e4ee4aaffc",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "nips_model": {
+    "dataset": "nips_model",
+    "note": "fitted sklearn Pipeline; non-executable re-hosting needs skops or retrain-on-load -- follow-up. Interim: hash-pinned.",
+    "orig_cache_bytes": 4101290,
+    "orig_cache_sha256": "4f93308a48002730866659bda7ef393f5451dc8360b9e3c91c9cf5d77f73a762",
+    "type": "sklearn-pipeline (pickle)"
+  },
+  "sotus": {
+    "converted_bytes": 359240,
+    "converted_file": "sotus.json.gz",
+    "converted_sha256": "20068fb4fe21a171c6c40a788c122ede30648e10ea44c3ea955301cfabc4c7b3",
+    "dataset": "sotus",
+    "format": "jsongz(list[str])",
+    "orig_cache_bytes": null,
+    "orig_cache_sha256": null,
+    "orig_source": "datawrangler-zoo:sotus (pre-1.0 origin; not a hypertools-hosted artifact)",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "sotus_model": {
+    "dataset": "sotus_model",
+    "note": "fitted sklearn Pipeline; non-executable re-hosting needs skops or retrain-on-load -- follow-up. Interim: hash-pinned.",
+    "orig_cache_bytes": 1886448,
+    "orig_cache_sha256": "a7b085f7f6d94dbed6d961a1950de18a07b56456c77c2495a2868a9fefb07aa4",
+    "type": "sklearn-pipeline (pickle)"
+  },
+  "sphere": {
+    "converted_bytes": 723504,
+    "converted_file": "sphere.npz",
+    "converted_sha256": "503f1820e20f2e1daf0e9dc63bf5035ed5ad0b9299b1b7dbc560eb11e585b57a",
+    "dataset": "sphere",
+    "format": "npz(array)",
+    "orig_cache_bytes": 723431,
+    "orig_cache_sha256": "8dae53277e2f15a57b3ca00299b6e7b980dcde6524c17350ad3b0cc3b3e0688f",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "spiral": {
+    "converted_bytes": 48506,
+    "converted_file": "spiral.npz",
+    "converted_sha256": "5c713739be0843c407cceebe659a0838fe18cf69f84291896bccb0c282f9d622",
+    "dataset": "spiral",
+    "format": "npz(list[2])",
+    "orig_cache_bytes": 97345,
+    "orig_cache_sha256": "7ca728d2972cb0271b3c68693aa7ec744962f8499043120eeefc6b755591f94c",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "teapot": {
+    "converted_bytes": 41736,
+    "converted_file": "teapot.npz",
+    "converted_sha256": "804e851abee7037d7bb9f135d5c3344b790af64aa4b04f96e789eb8473e4b284",
+    "dataset": "teapot",
+    "format": "npz(array)",
+    "orig_cache_bytes": 41663,
+    "orig_cache_sha256": "c195e6221ad369b274d5f531b98a763c8fe03efadfc5d582011b3148fbf35973",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "vase": {
+    "converted_bytes": 864792,
+    "converted_file": "vase.npz",
+    "converted_sha256": "b3ee4ffd68b0b1e4e05ca54ef1193507c625915f5e8f7c6c50f576669bb80bc7",
+    "dataset": "vase",
+    "format": "npz(array)",
+    "orig_cache_bytes": 864719,
+    "orig_cache_sha256": "b1ef3da871ae93f1a661cc432cc70a2b662cc98748173b44457f838aee493e0f",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "weights": {
+    "converted_bytes": 4328786,
+    "converted_file": "weights.npz",
+    "converted_sha256": "ab24402f6d998eea0550044f264d79593cd1adc97903d54322118119dbe8ed55",
+    "dataset": "weights",
+    "format": "npz(list[36])",
+    "orig_cache_bytes": 4453792,
+    "orig_cache_sha256": "695f50f48328f7b9f5741c89854b07f0c4989c4275f929caa76e95af2c92a7ff",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "weights_avg": {
+    "converted_bytes": 160506,
+    "converted_file": "weights_avg.npz",
+    "converted_sha256": "f8b38023867157f44fc7b22723f0e539eb7519d52cb1eff7be8b71f73f71b9f7",
+    "dataset": "weights_avg",
+    "format": "npz(list[2])",
+    "orig_cache_bytes": 166150,
+    "orig_cache_sha256": "52be2d02d2c5754adbb58e68f86d2c2da2b7a339162f1d2e0c7e3b987ffde06f",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "weights_sample": {
+    "converted_bytes": 360748,
+    "converted_file": "weights_sample.npz",
+    "converted_sha256": "e5876ba8599b6819bfbf2e44dc58d9cfa0a9d1afbb8c6ad92687604bf8393933",
+    "dataset": "weights_sample",
+    "format": "npz(list[3])",
+    "orig_cache_bytes": 372235,
+    "orig_cache_sha256": "eaf67c631e9cc8207c70ad1c93c6c022298a6e57f946ef39e24299c9c1bf3f8d",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "wiki": {
+    "converted_bytes": 18789655,
+    "converted_file": "wiki.json.gz",
+    "converted_sha256": "9c1cfcb4552841d1f192de1a2cd4eeb33bbd3d0697c408f50a559666561d220a",
+    "dataset": "wiki",
+    "format": "json.gz(list[str])",
+    "n_docs": 3136,
+    "orig_cache_bytes": 56725663,
+    "orig_cache_sha256": "722d20a286edfad607904123d7756b95fb49e72e037af5d091422c994c4893be",
+    "roundtrip_ok": true,
+    "status": "ok"
+  },
+  "wiki_model": {
+    "dataset": "wiki_model",
+    "note": "fitted sklearn Pipeline; non-executable re-hosting needs skops or retrain-on-load -- follow-up. Interim: hash-pinned.",
+    "orig_cache_bytes": 4723009,
+    "orig_cache_sha256": "5ec3c34e2524e105a90ae498cca809d61ddfa90813a4621de65b37275fd515c9",
+    "type": "sklearn-pipeline (pickle)"
+  }
+}

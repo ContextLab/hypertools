@@ -1,0 +1,204 @@
+# Session 2026-07-01: hypertools 1.0 kickoff (dev-1.0 branch)
+
+## Goal (user request)
+1. Diagnose/clean up "10k+ uncommitted changes" in local repo. ✅ DONE
+2. Explore the old refactor attempt (jeremymanning/hypertools fork) in detail.
+3. Start a new dev branch integrating the refactor's *ideas* into a correct, modernized toolbox.
+
+## Hard constraints from user
+- **NEVER push to or touch master directly** — mission-critical repo; user must manually sign off on the PR.
+- Not committed to plotly; it's attractive for interactivity in Colab/Kaggle (where hypertools is used most).
+- Ideal: **preserve matplotlib backend**, add the good parts of the refactor.
+- Update all docs; modernize to current library versions; drop unmaintained deps; optimize bottlenecks ("snappy").
+- **EVERY function meticulously tested + screenshotted** across many use cases; create a dev notebook for testing.
+
+## Findings so far
+
+### "10k+ uncommitted changes" — RESOLVED
+Working tree was actually clean. The count came from two untracked dirs: `.venv/` (545MB virtualenv, Python 3.12.10) and `.omc/` (12KB tooling state). Fixed by adding `.venv/`, `venv/`, `.omc/`, `__pycache__/` to .gitignore (commit c8257b6 on dev-1.0).
+
+### Repo/branch state
+- `origin` = ContextLab/hypertools, master at 125a09b (v0.8.2).
+- `origin/dev` is fully merged into master (0 ahead / 18 behind) — nothing to salvage.
+- Added remote `jeremy` = jeremymanning/hypertools fork. Branches:
+  - `jeremy/dev` — the big refactor: 97 commits ahead / 88 behind master (merge-base 948050a). Rewrite lives in `dev/` folder: modular packages (align/, cluster/, core/, manip/, reduce/, plot/, external/), sklearn-like model API, config.ini/configurator, datawrangler integration, HyperData class concept. Plotting used **holoviews** (not plotly!). Heavy deps: flair, modin, holoviews. Last commits = align module draft "not tested or debugged".
+  - `jeremy/threejs-backend`, `jeremy/d3-threejs-backend` — Three.js/D3 backend experiments + research docs.
+  - `jeremy/matplotlib-backend-revert` — documents why backend experiment was reverted (technical findings docs).
+  - `jeremy/streaming` — zmq-based streaming plots, keyboard listener.
+  - `jeremy/text-features` — format_data/transform fixes, ndims bug fixes.
+- Deleted stale local branch `fix/colab-import-error` (already merged).
+- Created local branch **`dev-1.0`** from master — all 2.0 work goes here.
+
+### Performance
+- `import hypertools`: 11.6s cold / **5.1s warm**. ~3s is umap→pynndescent (numba JIT) eagerly imported via `hypertools.tools.reduce`; seaborn ~0.7s. Fix: lazy imports (PEP 562 module `__getattr__`).
+
+### Open GitHub issues worth addressing in 1.0 (selection)
+- #265 animations broken with numpy≥2 in Jupyter; #235 animate=True broken in Colab
+- #264 multiple figures in a loop; #259 import mutates matplotlib rcParams (side effects!)
+- #251/#244/#199 better tests; #236 extract cluster/reduced data from plot result
+- #227 sklearn-pipeline-style DataGeometry; #217 return procrustes projection matrix
+- #212 pip install dependency pain; #193 geo iterable/indexable; #191 interactive backend request (ipyvolume)
+
+## Completed this session
+- [x] All 4 subagent reports collected (jeremy/dev design, backend branches, master audit, fork issue tracker #1-34 incl. comments). Full synthesis in **notes/hypertools_1.0_roadmap.md** — read that first when resuming.
+- [x] Roadmap/architecture doc committed on dev-1.0.
+- [x] Screenshot harness (scripts/screenshot_harness.py) + baseline generator (scripts/generate_baseline_screenshots.py): 13/13 cases pass on v0.8.2, PNGs in tests/screenshots/baseline_v0.8.2/ (gitignored), 2 spot-checked visually — correct.
+- [x] Dev notebook: dev/hypertools_1.0_dev.ipynb (valid nbformat, 20 cells, one section per public function + use-case matrix).
+
+## Jeremy's confirmations (2026-07-02)
+- backend='auto' policy approved (plotly only on Colab/Kaggle; matplotlib elsewhere).
+- REQUIRED carries from revamp: multilevel-index support, stack/unstack implementation strategy, robust coloring (mat2colors/vals2colors), mixture models as soft-clustering alternative. Detailed specs added to roadmap ("Data shapes & color system" section) + dev notebook section 4.
+
+## Key facts to remember when resuming
+- Branch: **dev-1.0** (all work here; NEVER touch master — PR only after Jeremy signs off).
+- Fork remote added as `jeremy`; refactor code = `jeremy/dev` branch `dev/` folder; backend lessons in `jeremy/matplotlib-backend-revert` notes/.
+- Fork issues verdict: plotly-as-primary caused the worst unfixed bugs (GIF camera #34, GIF background #33, 3D camera centering #25) → matplotlib default + plotly optional is the confirmed 2.0 architecture.
+- `describe(show=False)` skips figure creation entirely (API inconsistency, 2.0 cleanup item).
+- Import perf: 5.1s warm (umap/pynndescent ~3s) — lazy imports are Phase 0.
+- Agent-report gotcha (harness quirk this session): subagent final messages arrived as stubs; recover with jq over the task .output transcript (assistant text entries).
+
+## Implementation status (updated 2026-07-02, second work block)
+All implemented on dev-1.0, tests green at every commit (169 passing, up from 136):
+- **Phase 0 DONE**: pyproject.toml (v1.0.0.dev0, py3.10+), CI matrix 3.10-3.13 + action bumps + screenshot artifacts, readthedocs py3.11, memoize REMOVED everywhere (user requirement), lazy imports (import 5.1s → 1.46s), sklearn HDBSCAN swap (external hdbscan + SyntaxWarning filter dropped), double-format fix in plot, rc_context styling fix (#259, verified rcParams untouched).
+- **Phase 1 DONE**: mixture models (GaussianMixture/BayesianGM/LDA/NMF) return (n,k) proportions from cluster(); hypertools/tools/colors.py (mat2colors/colors2groups); plot() supports mixture cluster= (blended colors), matrix-valued hue, continuous hue; nested-list input with multilevel styling (outer-group color, depth-scaled linewidth/alpha; text lists excluded).
+- **Phase 2 DONE**: hypertools/plot/interactive.py plotly backend (2D/3D, fmt→mode, camera conversion, no-ticks aesthetic, sliding-window + spin animations w/ play controls); plot(backend='auto'|'matplotlib'|'plotly'); auto = plotly ONLY on Colab/Kaggle (approved policy). kaleido export wired into screenshot harness.
+- **Verification: 44/44 screenshot cases pass** (scripts/generate_verification_screenshots.py) covering plot/reduce/align/normalize/cluster/analyze/describe/format_data/load/text + plotly backend cases; INDEX.md manifest generated. Spot-checked visually: correct.
+- README updated (What's new in 1.0, requirements, extras).
+
+## Remaining before PR
+- [x] Execute dev notebook end-to-end (8/8 code cells, 0 errors) — dev/hypertools_1.0_dev_executed.ipynb committed. Executing it caught a REAL bug: backend.py's mpl.use fallback only caught ImportError, but matplotlib>=3.9 raises ValueError for missing ipympl (likely the Colab #235 root cause) — fixed.
+- [x] Committed verification screenshots to docs/images/v1.0-verification/ (1.2MB, 44 PNGs + INDEX.md).
+- [x] Final checks: 169/169 tests, 13/13 baselines, import 1.5s, README updated.
+- [x] Sphinx docs build succeeded (use .venv/bin sphinx-build; GIF thumbnail post-processing ok).
+- [x] Pushed dev-1.0; PR #270 opened: https://github.com/ContextLab/hypertools/pull/270 (awaiting Jeremy sign-off; DO NOT MERGE). CI matrix (3 OS x py3.10-3.13) running.
+
+## PR body
+Saved at scratchpad pr_body.md (session-local); recreate from this file's summary + roadmap if lost.
+
+## Original Phase 0 plan (for reference)
+- [ ] pyproject.toml (PEP 621) + delete .travis.yml + CI bump (py3.10-3.13, setup-python@v5, cache@v4, codecov@v4).
+- [ ] Lazy imports (module __getattr__) — target `import hypertools` < 1s; verify with -X importtime.
+- [ ] Fix double-reduction in plot.py; remove str-keyed memoize (fork issue #3 confirmed it returns stale results).
+- [ ] Swap hdbscan→sklearn.cluster.HDBSCAN; vendor dev/ppca.py to replace pca-magic.
+- [ ] Run FULL test suite (129 tests) before/after each change; keep green.
+- Then Phase 1 (core: apply_model registry, decorator chain, transform-chain result object), Phase 2 (plotting: style layer, HyperToolsFigure, plotly backend, backend='auto'), Phase 3 (issue burn-down), Phase 4 (docs). Details in roadmap.
+
+## Final CI status (2026-07-02 ~01:10 EDT)
+- PR #270 full matrix GREEN: 24/24 checks pass (3 OS x py3.10-3.13, both push + pull_request runs).
+- One transient failure fixed en route: GitHub's windows/py3.13 runner ships broken Tcl/Tk (TkAgg imports but window creation raises _tkinter.TclError). Fixed in 6e6330e: manage_backend retries the plot once on the original backend after an interactive-backend TclError.
+- Session complete. Awaiting Jeremy's PR review/sign-off. NEXT SESSION: address review comments; then remaining roadmap items (stack/unstack apply_model, DataGeometry transform chain #227/#236, gallery regen, #264/#265).
+
+## Third work block (2026-07-02, after Jeremy's PR feedback)
+Feedback: (a) backends must match visually (styles/sizing/colors), (b) many features unscreenshotted, (c) formerly-deferred items all IN scope. All addressed:
+- **Backend parity**: plotly renderer rewritten to mirror matplotlib exactly — black wireframe cube (3D)/square (2D) via traces/shapes, axes hidden, unit range, camera from elev/azim (r=2.5), pt→px conversion (1.5pt lines, 6pt markers), full fmt support (markers+dashes, 3D symbol fallback since plotly Scatter3d only supports 8 symbols). Parity montage generator: scripts/generate_parity_screenshots.py (22 side-by-side cases; cluster fits precomputed once — refit permutes component colors, not backend skew).
+- **is_line() bug found+fixed**: '' in Line2D.markers made it False for ALL fmt strings → line interpolation silently disabled on modern matplotlib; also parse linestyles before marker chars ('-.'). Restoring interpolation exposed label-index bug → labels now re-mapped onto interpolated trajectories (_expand_labels).
+- **Multicolored lines**: continuous/matrix hue + line fmt = per-segment continuous coloring. mpl: Line3DCollection/LineCollection replacing line artists; plotly: per-point line colors (3D) / segment traces (2D). Excluded for animate (warns).
+- **Deprecated kwargs RETIRED**: plot(group/model/model_params), reduce(model/model_params/normalize/align), align(method/normalize/ndims/align=True→ValueError), cluster(ndims). Old saved geos replay via translation (group→hue) with warning in DataGeometry.plot.
+- **apply_model core**: hypertools/tools/apply_model.py — stack→fit once→unstack; specs: name/dict/instance/pipeline-list; modes auto/fit_transform/fit_predict/predict_proba; return_model; stack=False per-dataset; whitelist registry (NO eval). Public as hyp.apply_model. 12 tests.
+- **Verification matrix expanded 44→75 cases** (all features BOTH backends incl. multicolor/nested/mixtures/animations) — 75/75 pass. Parity 22/22.
+- **Regression tests**: #264 (loop staleness — memoize was root cause), #265 (numpy2 animate, exact repro from issue), #259 (rcParams). 
+- **Gallery**: 5 new examples (interactive_backend, mixture_models, multicolored_lines, nested_lists, apply_model) all execute clean; apply_model added to docs/api.rst.
+- Notebook re-executed 0 errors. README updated. Tests: 185+ green.
+
+## Final status after third work block (2026-07-02 ~09:00 EDT)
+- Evidence push bf2899c: CI fully green again (24/24 checks, 3 OS x py3.10-3.13).
+- PR #270 body rewritten with full scope; evidence comment posted:
+  https://github.com/ContextLab/hypertools/pull/270#issuecomment-4865614702
+- Everything Jeremy flagged is done: backend parity (22/22 montages, docs/images/v1.0-parity), full feature screenshot coverage (75/75, docs/images/v1.0-verification), apply_model core, gallery+sphinx, animation bugs #264/#265 regression-tested, deprecated kwargs retired.
+- Awaiting Jeremy's review/sign-off. DO NOT MERGE.
+
+## Fourth work block (2026-07-02, review round 2)
+Jeremy's feedback: mixtures not showing multi-class membership; title/aspect/sizing mismatch across backends; animation "doesn't appear to work" + need gif/apng/mp4 export; gallery thumbnails old + verify plotly animations. All addressed (commit b77945f):
+- **Animation export**: _save_animation (plot.py) picks writer by extension (.gif Pillow / .png+.apng animated PNG / .mp4 ffmpeg); plotly _export_animation_file renders frames via kaleido + assembles (PIL/ffmpeg), controls excluded from exports (must set layout.updatemenus = (), NOT update_layout([])); plotly n_frames now scales with duration (15/s, clamped 10-90) — export tests 14min → <5min. 7 tests w/ real files. Samples in docs/images/v1.0-animations/ + INDEX.
+- **Overlapping mixtures**: all mixture demos use 1.5-sd-separated blobs (make_overlapping_clusters in both scripts, examples, notebook); test asserts >15% genuinely soft assignments. Verified visually: blended boundary colors on both backends.
+- **Parity round 2**: title centered/black/16px matching mpl; default 640x480; 2D frame fills canvas (dropped scaleanchor); 3D aspectmode manual 4:4:3 (mpl default box aspect) — test updated accordingly; camera r=1.95 for size match.
+- **Gallery**: plotly_sg_scraper in docs/conf.py (renderer sphinx_gallery_png); animate_plotly example; animated thumbnail sphx_glr_animate_plotly_thumb.gif generated + registered in post_build.py. Verified: plotly PNG in built gallery html.
+- **Notebook**: animations display inline via to_jshtml + plotly frames; gif export cell; re-executed 0 errors (resources path dev/).
+- Suite: 192 passing (185 + 7 animation-export). 22/22 parity, 75/75 verification regenerated. Awaiting CI + posting round-2 evidence comment.
+
+## Round 2 final status (2026-07-02 ~11:15 EDT)
+- CI fully green on 0264b3a: 24/24 checks. Round-2 evidence comment posted:
+  https://github.com/ContextLab/hypertools/pull/270#issuecomment-4867433316
+- Extra hardening shipped during CI stabilization: dataset downloads validate content + retry w/ backoff (fe3bb8f, 0264b3a); CI shares one cross-OS cache of ~/hypertools_data so 24 jobs stop hammering Google Drive (root cause of intermittent text-test failures).
+- Totals: 193 tests, 75/75 verification, 22/22 parity, 4 animation GIF exports committed, plotly in sphinx gallery w/ animated thumbnail.
+- Awaiting Jeremy's review. DO NOT MERGE.
+
+## Round 3 (2026-07-02 afternoon): 10 review items, all shipped (commits 46c171b, 1499e32)
+1. SVG export static+ANIMATED (SMIL) both backends — hypertools/_shared/animated_svg.py combiner; mpl frames via AbstractMovieWriter subclass; plotly via kaleido svg frames. Browser-verified: setCurrentTime scrub in headless Chrome renders different frames. (Playwright MCP servers were wedged; headless Chrome CLI + local http.server worked. Chrome --virtual-time-budget does NOT advance SMIL — use setCurrentTime.)
+2. plotly window animation rotates camera per frame now (layout scene_camera in each frame).
+3. plotly titles: xref='paper', centered, black 16px, DejaVu font stack.
+4. Multi-panel via ax= verified (tests + screenshot). Embedding respects user's color cycle (axes created before rc_context) — intended.
+5. hyperalign n_iter=10 default (iterative template re-estimation); fixed dict-form returning None + method NameError.
+6. weights_hyperaligned.gif reconstruction: needed zoom=2.5 + high frame count (interp factor = duration*frame_rate/n_rows — low values DOWNSAMPLE), no chemtrails (they accumulate a hairball), ffmpeg palettegen for clean white bg. FOUND+FIXED: Axes3D.dist removed in mpl>=3.8 → zoom was a silent no-op; now set_box_aspect(zoom=10/(9-zoom)).
+7. pydata-sphinx-theme (screenshots in docs/images/v1.0-theme/). FOUND+FIXED: nbsphinx_execute='auto' re-executed every gallery ipynb (double execution; hang on plotly export in nbsphinx kernel) → 'never' (tutorials ship executed).
+8. shapes zoo: bunny/cube/dragon/sphere/teapot/vase/biplane + datasaurus via Dropbox URLs (EXAMPLE_DATA now accepts full URLs); tolerant unpickler (pickle → pd.read_pickle → dill); dill added as dep. egyption_mask EXCLUDED — source file is empty (0,3) both locally and at the link (flag for Jeremy to re-export).
+9. No re-download leak: verified + regression test (cache byte-stable across repeated loads).
+10. Modern demos: gallery plot_shapes_zoo + plot_datasaurus; executed notebooks docs/tutorials/hugging_face_embeddings.ipynb (sentence-transformers + fancyzhx/ag_news, GMM soft clusters, UMAP, spin gif) + modern_sklearn_dynamics.ipynb (HDBSCAN, GMM, Lorenz multicolored line + gif); registered in tutorials.rst.
+- Suite: 202 passing. Parity 22/22 regenerated. Awaiting CI on 1499e32, then round-3 comment.
+
+## Round 3 final (2026-07-02 ~13:30 EDT)
+- CI 24/24 green on 1499e32. Round-3 evidence comment posted:
+  https://github.com/ContextLab/hypertools/pull/270#issuecomment-4868835592
+- All 10 round-3 items shipped + 2 bonus root-cause fixes (Axes3D.dist zoom, nbsphinx re-execution hang). 202 tests.
+- Awaiting Jeremy's review. DO NOT MERGE.
+
+## Round 4.5 — the weights mystery SOLVED (2026-07-02 evening)
+Jeremy provided ~/Desktop/pieman_trajectory_demo.ipynb (2020, hypertools 0.6.2 + timecorr). The classic story-trajectories look requires a pipeline plain plot(align=...) never ran:
+  smooth (gaussian temporal, timecorr var=300) -> hyp.align REPEATED n_iter=20 (re-align the aligned output; SRM) -> smooth again -> reduce='UMAP' -> plot/animate
+Missing pieces in all prior reconstructions: (a) temporal smoothing before AND after alignment (the smooth flowing look), (b) UMAP not PCA for the 3D reduction, (c) SRM. Implemented: align('SRM', n_iter=...) repeated application; scripts/generate_weights_trajectory.py reproduces the full recipe (uses scipy gaussian_filter1d sigma=sqrt(var), matching timecorr's kernel).
+Other round-4.5 fixes: repeated-hyperalign scale collapse (procrustes optimal scaling <1 -> geometric shrink; per-pass output rescaling, stable at n_iter=50, corr 0.362->0.373 on weights); single-call cluster syntax cluster={'model': cls_or_name, 'n_clusters': k} in cluster()+plot(); 30fps animation standard everywhere (plotly density 30/s cap 600; all gifs regenerated fps=30 no downsampling); serial-mode conversation rebuilt (per-sentence windows within utterances -> true disconnection; repeating speaker colors; rotations=1); wikipedia single-call syntax, duration=10, rotations=1.
+
+## Round 4.5 SHIPPED (2317cd5), then weights loop-shape correction (2026-07-02 late)
+- WEIGHTS FINAL recipe (scripts/generate_weights_trajectory.py): smooth(gaussian var=300, scipy gaussian_filter1d sigma=sqrt(300)) -> align('SRM', n_iter=20) -> smooth -> reduce={'model':'UMAP','params':{'n_neighbors':36,'min_dist':0.1,'random_state':42}} -> **animate='spin'** (NOT window), duration=30, frame_rate=30, rotations=1, linewidth=3, zoom=2, size=[8,6].
+  - CORRECTION vs 2317cd5: had shipped n_neighbors=150; Jeremy: that gives "a straight (slightly curved) line, with no dramatic bends" — download.png has a LOOP. Swept nn={15,30,36,50,80,150} x min_dist x seeds vs download.png. nn=15 hairball; nn=150 over-globalizes -> flattens loop; **nn=36 md=0.1 = tight bundle WITH the loop** (best qualitative match).
+  - ANIMATION STYLE (Jeremy, round 4.6): sliding window (animate=True + tail_duration=4), NOT spin (briefly shipped spin in b362d67; reverted). CRITICAL REQUIREMENT: the view/space inside the cube must be FIXED across the full animation — must not depend on which window is visible. Already guaranteed by implementation: helpers.scale() normalizes once from the FULL stacked data (plot.py:614) and update_lines_parallel never touches limits; VERIFIED programmatically (limits identical across frames: +/-1.15/+/-1.04, while fragment x-extent slides -0.99..0.04 -> 0.36..1.00 -> -0.80..-0.11).
+  - PROVED it's a pure UMAP-n_neighbors effect, not a version/alignment artifact: (a) modern SRM branch align.py:137 SRM(features=min shape[0]) re-fit per pass is byte-identical to era 0.6.2 align.py SRM branch; (b) built era venv (uv, py3.9, numba 0.55, umap-learn 0.4.6, patched layouts.py int32->intp) and fit 0.4.6 on the SAME modern-aligned data -> ALSO a hairball at its default nn=15. So old deps don't recover the look; neighborhood tuning does. Byte-exact era repro infeasible on arm64 (ht 0.6.2 pins sklearn 0.21.3, won't build). download.png = DESIRED look, acceptance qualitative (bundle + loop, not a straight line). Cached: /tmp/aligned_weights.npz (modern SRM x20 aligned), /tmp/raw_weights.npz.
+  - SRM corr plateaus 0.87 (shared-signal ceiling; SRM unchanged since v0.6.2).
+- align('SRM') n_iter support; hyperalign per-pass rescale (collapse fix).
+- Single-call syntax: cluster={'model': cls_or_name, 'n_clusters': k} in cluster()+plot(); mixture colors automatic.
+- 30fps standard everywhere; conversation serial rebuild (3-sentence windows WITHIN utterances; repeating speaker colors; rotations=1); wikipedia 10s/1 rotation/markersize=2; lorenz+hf 30s.
+- plotly evidence gifs kept prior render (kaleido 450-frame exports impractically slow — noted in PR comment).
+- 206 tests. Awaiting CI on 2317cd5, then round-4.5 comment (drafted in scratchpad/pr_round45_comment.md).
+
+## Round 5 (2026-07-02, streaming + theme)
+- STREAMING DATA (issue #101 from 2017): streams are a first-class data type, NO flag (per Jeremy's issue comments + review message). hypertools/tools/streaming.py:
+  - is_stream(): Python Iterators/generators + HF datasets.IterableDataset (duck-typed via __mro__; `datasets` only a [dev] extra).
+  - row_to_vector(): dict rows -> numeric fields concatenated in insertion order (strings/None ignored); vectors pass through. Users control fields with .select_columns().
+  - Semantics (Jeremy-confirmed): stream_init=10000 default = samples for ESTIMATING normalize/reduce params, then APPLIED to all future data; stream_chunk=100 = fetch batch = one redraw/animation frame per chunk; stream_max=None default = continual (infinite) streaming, explicit cutoff stops; stream_window (new, optional) = comet-style trailing display window (retention unaffected).
+  - Infinite streams: continual rendering; KeyboardInterrupt caught -> PillowWriter finalized + geo returned (saving requires cutting off the stream).
+  - Reduce model must support .transform (IncrementalPCA default, PCA, UMAP; TSNE raises). align/cluster on streams raise ValueError (cluster: future).
+  - geo.stream_info = {n_samples, reduce_model, truncated}; geo.data raw, geo.xform_data projected.
+  - tests/test_streaming.py: 14 REAL tests (generators, infinite gen, interrupt+gif finalize, window, head-only-fit assertion via IncrementalPCA.n_samples_seen_, real HF iris stream).
+- SPHINX THEME: pydata-sphinx-theme -> furo (Jeremy confirmed), ContextLab brand ported from ContextLab/scheduler: Nunito Sans (300/400/600/700), lowercase headings w/ 0.6px letter-spacing + weight 300, green #007030 light / #4CAF50 dark; brand block appended to docs/_static/custom.css; conf.py light/dark_css_variables + footer GitHub icon; doc_requirements.txt furo>=2024.1. Build + Chrome screenshots verified (index, api, streaming tutorial).
+- Tutorial docs/tutorials/streaming_data.ipynb (nbclient-executed, 0 errors; streaming_lorenz.gif + streaming_window.gif) + tutorials.rst entry.
+- pyproject [dev] += datasets>=2.20.0.
+
+## Round 6 (2026-07-02/03, gallery + universal loader)
+- GALLERY EXECUTION: sphinx-gallery filename_pattern default only ran plot_* -> 10 examples (chemtrails/animate*/precog/explore/save_*/analyze) had output-less pages (Jeremy's chemtrails.html complaint). conf.py: filename_pattern r'.*\.py' + matplotlib_animations (True,'mp4') (requires sphinxcontrib-video, added to doc_requirements). Animation examples expose `ani = ani_geo.line_ani` (scraper only finds Animation objects in example globals). save_* examples -> tempfile (repo cleanliness; .gitignore had animation.mp4/test-image.pdf entries from the old pollution).
+- COLAB: post_build.py inject_notebook_badges() adds branch-aware Open-in-Colab badge + .ipynb link after each example page h1 (notebooks = committed docs/auto_examples/*.ipynb; branch autodetect: READTHEDOCS_GIT_IDENTIFIER -> git -> master). Idempotent.
+- DUAL-BACKEND AUDIT: scripts/audit_gallery_backends.py runs every example x {matplotlib, plotly} in subprocesses (6 workers), exports PNG per run, writes REPORT.md. GOTCHA: hypertools/__init__ `from .plot.plot import plot` shadows the plot subpackage attr -> patch via sys.modules['hypertools.plot.plot'], and pass ABSOLUTE example paths (cwd=tempdir). Result: 78/78 pass (save_movie/plotly needs long timeout: kaleido 600-frame mp4; mpl animation PNGs = pre-animation frame, harness artifact).
+- REAL BUG FOUND+FIXED by audit: fmt-list branch called interp_array_list (plural) per dataset -> replaced arrays with lists of per-row interpolations; latent for years because is_line() was always False pre-round-2 fix. Now interp_array + regression test (test_regressions.py::test_fmt_list_line_interpolation_keeps_arrays). Fixed plot_procrustes + plot_missing_data examples.
+- PLOTLY PARITY: chemtrails/precog/bullettime = low-opacity trail traces (between data traces and cube; updated per window frame); tail_duration -> window = max_len*tail/duration; zoom -> _zoom_r r=1.95*(9-zoom)/8 all cameras; forwarded from plot.py. explore = plotly native hover. tests/test_plotly_trails.py (6 tests).
+- UNIVERSAL LOADER (Jeremy's spec, exact order): builtin -> local file (npy/npz/csv/tsv/txt/json/parquet/mat/pickle-chain) -> HF dataset (split=, streaming=; streaming feeds hyp.plot) -> Drive URL/bare id -> Dropbox URL/s\//scl\/fi paths -> any URL +-scheme. Lists of strings -> lists of datasets. DataGeometry.plot/transform route strings via _maybe_load_strings (is_loadable_string: cheap no-network check; raw text passes through). hypertools/tools/sources.py (+security warning re pickle). Legacy Drive IDs still live (spiral=1nHAusn2VsQinJk35xvJSd7CtWPC1uOwK) — used in real tests. df2mat fix: pandas>=2 get_dummies bool -> object arrays crashed np.isnan (dtype=float). tests/test_load_sources.py (12 real tests incl network).
+- 232 tests passing (fast set) + animation-export set rerun after plot.py changes.
+
+## Round 6.5 (2026-07-03, review fixes)
+- NEW ANIMATION DEFAULTS (Jeremy-specified standard): frame_rate=30 (was 50), rotations=1 (was 2), duration=30 -> ONE revolution per 30 seconds, on BOTH backends. plotly frame math now n_frames = frame_rate*duration EXACTLY like mpl (600-frame cap REMOVED; frame_ms = 1000/frame_rate); verified identical 900 frames @ ~33ms at defaults + permanent parity test (test_plotly_trails.py::test_backends_have_identical_animation_pacing). animate_plotly example duration 5->30.
+- STREAMING STABILITY: the data->box transform is FROZEN from the head (hyp.plot's center+scale affine captured once: mu=head col means, m1/m2 from centered head min/max); every future sample goes through the same transform and is np.clip'ed to [-1,1] (= closest point on box surface). No per-chunk rescale => zero twitch (verified: 0.0 vanishing-ink across tutorial gif frames). Tests: test_stream_view_is_frozen_after_head (exact position match), test_stream_out_of_range_samples_clamped_to_box.
+- LEGENDS: both backends render the legend to the RIGHT of the plot, vertically centered on the box. mpl: ax.legend(loc='center left', bbox_to_anchor=(1.02,0.5), frameon=False). plotly: legend x=1.02/y=0.5 + right margin 120 when legend shown. Screenshot-verified 2D+3D.
+- GALLERY THUMBNAILS: (a) clicks were dead -- sphinx-gallery >=0.17 markup no longer wraps thumb <img> in an anchor and old gallery-fixes.js targeted extinct .xref spans; post_build.wrap_thumbnail_links() now wraps each thumb img in a Colab-notebook link (title text still opens the example page); gallery-fixes.js reduced to a comment. (b) animated thumbs were squashed 200x200 from 4:3 sources; scripts/generate_gallery_thumbs.py regenerates all 7 as 200x150 letterboxed on 200x200 white (source: build mp4s, note _001/_002 numbering).
+- API DOCS: DataGeometry.plot/transform docstrings document string/list-of-string loading via hyp.load.
+- Animation example md5s deleted to force re-execution at new defaults; docs rebuilt.
+
+## Round 6.5 addendum: the plotly-speed bug was THREE stacked causes
+1. Library defaults (fixed: 30fps/30s/1rot both backends; plotly n_frames=frame_rate*duration, no cap; parity test).
+2. **Pickled example geos replayed old pacing**: .geo files store kwargs incl. their era's defaults (frame_rate=50, rotations=2); DataGeometry.plot merged saved kwargs OVER current defaults, so every gallery example calling geo.plot() rendered 1500-frame/50fps animations even after the defaults change. Fix: DataGeometry.plot pops frame_rate/rotations/duration from saved kwargs (explicit caller args still win).
+3. **plotly sphinx-gallery renderer**: fig.show() under the sphinx_gallery_png renderer wrote full-frame html + kaleido png serializing ALL frames (900-frame fig = ~57min + huge pages). Fix: interactive.py _show_sphinx_gallery() writes frame-stripped png + html with embedded frames capped at 150, frame duration scaled by the skip so TOTAL duration/rotation speed unchanged (~0.1MB pages, seconds not hours).
+- Debug gotcha x2: sphinx-gallery reuses cached example outputs via .py.md5 (library-code changes don't invalidate!); mp4 pacing verified via ffprobe (900 frames @ 30/1 fps) — ALWAYS probe artifacts, don't trust build logs.
+- Shipped fd2747e; 237 tests.
+
+## Round 7 (2026-07-03): Colab install cells + full-panel examples
+- COLAB INSTALL: every committed docs notebook (39 auto_examples + 13 tutorials) opens with a branch-aware install cell. scripts/add_colab_install_cell.py (idempotent, MARKER='pip install'): on non-master installs the branch via `%pip install -q "hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@<branch>"`, on master installs released pkg. conf.py first_notebook_cell (new _install_notebook_cell() helper, same branch logic) emits the same line for gallery notebooks on rebuild. NOTE: sphinx-gallery only regenerates .ipynb for RE-EXECUTED examples (cached ones keep prior notebook), so the injector is the guarantee that ALL committed notebooks carry the line; run it after any notebook regeneration. VERIFIED in clean uv venv (py3.11): git install resolves, imports 1.0.0.dev0, mixture-cluster 2.0 syntax + plotly work.
+- USER BRANCH-TEST COMMAND (give verbatim): %pip install -q "hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@dev-1.0"
+- SHAPES ZOO example: all 7 shapes (bunny/cube/dragon/sphere/teapot/vase/biplane), black ',' pixel dots, one panel each (dynamic grid, hide extras). DATASAURUS example: all 13 datasets, black '.' dots, one panel each. Both color='k' (verified renders black). No hypertools/ code changed this round.
+- Shipped 84e2d40. CI on prior 4e676d7 (pytest-timeout hardening) went ALL GREEN — the 6h Windows hang is fixed.

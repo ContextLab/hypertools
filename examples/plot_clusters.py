@@ -5,9 +5,10 @@ Discovering clusters
 =============================
 
 The `n_clusters` kwarg can be used to discover clusters in your dataset.  It
-relies on scikit-learn's implementation of k-mean clustering to find clusters,
+relies on scikit-learn's implementation of k-means clustering to find clusters,
 and then labels the points accordingly. You must set the number of clusters
-yourself.
+yourself. Because the rows of the mushrooms dataset are unordered samples, we
+plot them as points (the '.' format string) rather than as a connected line.
 """
 
 # Code source: Andrew Heusser
@@ -17,7 +18,7 @@ yourself.
 import hypertools as hyp
 
 # load example data
-geo = hyp.load('mushrooms')
+data = hyp.load('mushrooms')
 
 # plot
-geo.plot(n_clusters=10)
+hyp.plot(data, '.', n_clusters=10)

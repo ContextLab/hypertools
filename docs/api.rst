@@ -7,15 +7,12 @@
 API reference
 =============
 
-.. _plot_api:
-
-DataGeometry class
-------------------
-
-.. autosummary::
-  :toctree:
-
-  hypertools.DataGeometry
+This page lists every public entry point exported from ``hypertools``
+(see ``hypertools/__init__.py``), organized roughly in the
+:doc:`canonical pipeline order <pipeline_order>` (GH #153): load/impute,
+manip, normalize, reduce, align, cluster, predict, plot/analyze, plus the
+model-application core, I/O helpers, and the text/reducer model families
+used by ``manip=``/``reduce=``.
 
 Load
 ------------------
@@ -23,23 +20,31 @@ Load
 .. autosummary::
   :toctree:
 
-  hypertools.load
+  load
 
-Analyze
+Save
 ------------------
 
 .. autosummary::
   :toctree:
 
-  hypertools.analyze
+  save
 
-Plot
+Impute
 ------------------
 
 .. autosummary::
   :toctree:
 
-  hypertools.plot
+  impute
+
+Manip
+------------------
+
+.. autosummary::
+  :toctree:
+
+  manip
 
 Normalize
 ------------------
@@ -47,7 +52,7 @@ Normalize
 .. autosummary::
   :toctree:
 
-  hypertools.normalize
+  normalize
 
 Reduce
 ------------------
@@ -55,7 +60,21 @@ Reduce
 .. autosummary::
   :toctree:
 
-  hypertools.reduce
+  reduce
+
+Autoencoder reducers (GH #162) -- optional ``torch`` extra
+(``pip install "hypertools[torch]"``); pass by name (e.g.
+``reduce='Autoencoder'``) or by class to `hypertools.reduce`:
+
+.. autosummary::
+  :toctree:
+
+  reduce.autoencoders.Autoencoder
+  reduce.autoencoders.SparseAutoencoder
+  reduce.autoencoders.DeepAutoencoder
+  reduce.autoencoders.ConvolutionalAutoencoder
+  reduce.autoencoders.SequenceAutoencoder
+  reduce.autoencoders.VariationalAutoencoder
 
 Align
 ------------------
@@ -63,7 +82,12 @@ Align
 .. autosummary::
   :toctree:
 
-  hypertools.align
+  align
+
+.. autosummary::
+  :toctree:
+
+  align.procrustes
 
 Cluster
 ------------------
@@ -71,7 +95,67 @@ Cluster
 .. autosummary::
   :toctree:
 
-  hypertools.cluster
+  cluster
+
+Predict
+------------------
+
+.. autosummary::
+  :toctree:
+
+  predict
+
+Plot
+------------------
+
+.. autosummary::
+  :toctree:
+
+  plot
+  HyperAnimation
+
+Set interactive backend
+------------------------
+
+.. autosummary::
+  :toctree:
+
+  set_interactive_backend
+
+Analyze
+------------------
+
+.. autosummary::
+  :toctree:
+
+  analyze
+
+Apply model
+------------------
+
+.. autosummary::
+  :toctree:
+
+  apply_model
+  supported_models
+
+Pipeline
+------------------
+
+`hypertools.Pipeline` chains fitted pipeline stages for reuse (GH #227
+#161). Standalone dispatchers (`hypertools.reduce`, `hypertools.manip`,
+...) called with ``return_model=True`` return a `hypertools.Pipeline` when
+more than one stage ran (and the single fitted wrapper when only one stage
+ran); `hypertools.plot`'s ``return_model=True`` bundle always carries a
+`hypertools.Pipeline` under its ``'pipeline'`` key, even for a single
+stage. A `hypertools.Pipeline` can be applied to new data via
+``.transform()`` and passed back in via ``pipeline=`` to
+`hypertools.plot`/`hypertools.analyze`.
+
+.. autosummary::
+  :toctree:
+
+  Pipeline
 
 Describe
 ------------------
@@ -79,26 +163,65 @@ Describe
 .. autosummary::
   :toctree:
 
-  hypertools.describe
+  describe
+
+Text vectorization
+------------------
+
+.. autosummary::
+  :toctree:
+
+  tools.text2mat
+
+Gensim text models (GH #198) -- optional ``gensim`` extra
+(``pip install "hypertools[gensim]"``); pass by name (e.g.
+``vectorizer='Word2Vec'``) to `hypertools.tools.text2mat`:
+
+.. autosummary::
+  :toctree:
+
+  tools.gensim_models.Word2VecVectorizer
+  tools.gensim_models.Doc2VecVectorizer
+  tools.gensim_models.FastTextVectorizer
+  tools.gensim_models.LdaVectorizer
+  tools.gensim_models.LsiVectorizer
+  tools.gensim_models.HdpVectorizer
+
+I/O
+------------------
+
+.. autosummary::
+  :toctree:
+
+  io.lsl_stream
+
+Exceptions
+------------------
+
+HyperTools' I/O, backend, and remote-load/trust errors derive from
+`hypertools.HypertoolsError`. Input-validation errors (invalid parameters or
+data shapes) raise standard `ValueError`/`TypeError` with actionable messages.
+
+.. autosummary::
+  :toctree:
+
+  HypertoolsError
+  HypertoolsBackendError
+  HypertoolsIOError
 
 Tools
 ------------------
 .. autosummary::
   :toctree:
 
-  hypertools.tools.format_data
+  tools.format_data
 
 .. autosummary::
   :toctree:
 
-  hypertools.tools.procrustes
+  tools.missing_inds
 
 .. autosummary::
   :toctree:
 
-  hypertools.tools.missing_inds
-
-.. autosummary::
-  :toctree:
-
-  hypertools.tools.df2mat
+  tools.df2mat

@@ -21,16 +21,16 @@ import hypertools as hyp
 import numpy as np
 
 # load example data
-geo = hyp.load('weights_sample')
-data = geo.get_data()
+data = hyp.load('weights_sample')
 
-# simulate random groups
+# simulate random groups (seeded so the figure is reproducible)
+np.random.seed(123)
 hue=[]
 for idx,i in enumerate(data):
     tmp=[]
     for iidx,ii in enumerate(i):
-            tmp.append(int(np.random.randint(1000, size=1)))
+            tmp.append(int(np.random.randint(1000)))
     hue.append(tmp)
 
 # plot
-geo.plot(fmt='.', hue=hue)
+hyp.plot(data, fmt='.', hue=hue)

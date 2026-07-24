@@ -19,8 +19,61 @@
 # import os
 # import sys
 import sys, os
-import sphinx_bootstrap_theme
+
+# plotly scraper for sphinx-gallery: renders plotly figures produced by
+# gallery examples to static PNGs. This needs THREE things: plotly, kaleido,
+# and a real Chrome/Chromium that kaleido drives headlessly (kaleido 1.x). The
+# try/except below only covers a missing/broken *plotly import* -- it does NOT
+# paper over a missing Chrome: if plotly imports but Chrome is absent, the
+# Plotly gallery examples fail and the build errors out (by design, so a
+# misconfigured environment is caught, not silently shipped with broken
+# thumbnails). Chrome is provisioned via `plotly_get_chrome` -- on Read the
+# Docs by .readthedocs.yaml's post_install job, and in CI by the docs-clean
+# job in .github/workflows/test.yml (2026-07 release review, blocker #2).
+try:
+    import plotly.io as pio
+    pio.renderers.default = 'sphinx_gallery_png'
+    from plotly.io._sg_scraper import plotly_sg_scraper
+except Exception:  # pragma: no cover
+    def plotly_sg_scraper(*args, **kwargs):
+        return ''
 sys.path.insert(0, os.path.abspath('../'))
+
+
+def _install_notebook_cell():
+    """First cell for every gallery notebook: install hypertools so the
+    notebook runs standalone in Colab. Branch-aware -- installs the current
+    branch from GitHub for previews (e.g. dev-1.0), or the released package on
+    master AND on a release TAG (a Read the Docs tag build sets
+    READTHEDOCS_GIT_IDENTIFIER=v1.0.0, which must install from PyPI, not
+    @v1.0.0 from GitHub). Kept in sync with scripts/add_colab_install_cell.py,
+    which injects the same line into the hand-authored tutorial notebooks."""
+    import re
+    import subprocess
+    branch = os.environ.get('READTHEDOCS_GIT_IDENTIFIER', '')
+    if not branch:
+        try:
+            branch = subprocess.run(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                capture_output=True, text=True,
+                cwd=os.path.dirname(os.path.abspath(__file__)),
+                timeout=10).stdout.strip()
+        except Exception:
+            branch = ''
+    branch = branch or 'master'
+    # master or a vX.Y.Z release tag -> the released package; anything else
+    # (dev-1.0, feature branches) -> that branch from GitHub as a preview.
+    if branch == 'master' or re.fullmatch(r'v\d+\.\d+\.\d+', branch):
+        pip = '%pip install -q "hypertools[interactive]"'
+        note = '# Install hypertools (run this first on Colab)'
+    else:
+        url = 'git+https://github.com/ContextLab/hypertools.git@' + branch
+        pip = f'%pip install -q "hypertools[interactive] @ {url}"'
+        note = (f'# Install hypertools ({branch} preview) -- run this first '
+                'on Colab.\n# On release this becomes: '
+                '%pip install hypertools')
+    return f'{note}\n{pip}\n\n%matplotlib inline'
+
 
 # -- General configuration ------------------------------------------------
 
@@ -36,18 +89,30 @@ extensions = ['sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.viewcode',
     'sphinx_gallery.gen_gallery',
+    # renders the .. video:: directives sphinx-gallery emits for
+    # matplotlib animations (matplotlib_animations = (True, 'mp4'))
+    'sphinxcontrib.video',
     'nbsphinx']
 
 # allow nbsphinx errors for missing optional dependencies
 nbsphinx_allow_errors = True
 
-# Control notebook execution based on environment
-# Check if we're on Read the Docs environment
-import os
-if os.environ.get('READTHEDOCS', None) == 'True':
-    nbsphinx_execute = 'never'
-else:
-    nbsphinx_execute = 'auto'
+# numpydoc auto-inserts a "Methods" autosummary (with :toctree:) into every
+# documented class's page by default, pointing at per-method stub pages
+# that autosummary_generate never creates for inherited/sklearn-mixin
+# methods (fit/transform/get_params/etc.) -- this task's api.rst additions
+# are the first CLASS entries (Pipeline, the six Autoencoder reducers, the
+# six gensim Vectorizer wrappers), so leaving this at its True default
+# produces ~100 "stub file not found" warnings. Off: classes' methods are
+# still fully documented on the class's own page (via numpydoc's docstring
+# rendering), just without the broken per-method stub links.
+numpydoc_class_members_toctree = False
+
+# Never execute notebooks during the docs build: tutorial notebooks are
+# committed pre-executed (with outputs), and 'auto' also re-executed every
+# sphinx-gallery-generated .ipynb -- doubling build time and hanging on
+# plotly/kaleido exports inside the nbsphinx kernel.
+nbsphinx_execute = 'never'
 
 # Generate the API documentation when building
 autosummary_generate = True
@@ -66,7 +131,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'hypertools'
-copyright = u'2017, Contextual Dynamics Laboratory'
+copyright = u'2017-2026, Contextual Dynamics Laboratory'
 author = u'Andrew C. Heusser, Kirsten Ziman, Lucy L. W. Owen, Jeremy R. Manning'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -90,7 +155,13 @@ language = 'en'
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This patterns also effect to html_static_path and html_extra_path
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store',
+                    # sphinx-gallery writes a downloadable .ipynb next to
+                    # each generated .rst; without this exclusion nbsphinx
+                    # claims the page and renders the UNEXECUTED notebook
+                    # (code cells, no output, no animations) instead of
+                    # the gallery page
+                    'auto_examples/*.ipynb']
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'
@@ -117,6 +188,10 @@ todo_include_todos = False
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
+# Browser-tab icon (generated from the hypertools logo, images/hypercube.png);
+# without it every docs page load 404s on /favicon.ico
+html_favicon = '_static/favicon.ico'
+
 # Add custom CSS and JS
 html_css_files = [
     'custom.css',
@@ -128,29 +203,56 @@ html_js_files = [
 
 # -- Options for HTML output ---------------------------------------------------
 
-# The theme to use for HTML and HTML Help pages.  See the documentation for
-# a list of builtin themes.
-html_theme = 'bootstrap'
+# The theme to use for HTML and HTML Help pages: Furo with the ContextLab
+# look (ported from https://github.com/ContextLab/scheduler, which is based
+# on the lab's website) -- Nunito Sans, lowercase thin headings, and the
+# lab's green as the brand color. The font/typography rules live in
+# _static/custom.css.
+html_theme = 'furo'
 
-# Theme options are theme-specific and customize the look and feel of a theme
-# further.  For a list of options available for each theme, see the
-# documentation.
-extlinks = {'github': 'https://github.com/ContextLab/hypertools'}
+html_title = 'hypertools'
+
+# sphinx_gallery_conf contains function objects (image scrapers), which
+# sphinx cannot pickle into its environment cache; suppress the (harmless)
+# "cannot cache unpickleable configuration value" warning it triggers.
+suppress_warnings = ['config.cache']
 
 html_theme_options = {
-    'source_link_position': "footer",
-    'bootswatch_theme': "yeti",
-    'navbar_sidebarrel': False,
-    'bootstrap_version': "3",
-    'navbar_links': [("API", "api"),
-                     ("Gallery", "auto_examples/index"),
-                     ("Tutorials", "tutorials"),
-                     ("Download", "http://www.github.com/ContextLab/hypertools", True)],
-
-    }
-
-# Add any paths that contain custom themes here, relative to this directory.
-html_theme_path = sphinx_bootstrap_theme.get_html_theme_path()
+    'source_repository': 'https://github.com/ContextLab/hypertools',
+    'source_branch': 'master',
+    'source_directory': 'docs/',
+    'light_css_variables': {
+        'color-brand-primary': '#007030',
+        'color-brand-content': '#007030',
+        'font-stack': "'Nunito Sans', -apple-system, BlinkMacSystemFont, "
+                      "'Segoe UI', Helvetica, Arial, sans-serif",
+    },
+    'dark_css_variables': {
+        'color-brand-primary': '#4CAF50',
+        'color-brand-content': '#4CAF50',
+    },
+    'footer_icons': [
+        {
+            'name': 'GitHub',
+            'url': 'https://github.com/ContextLab/hypertools',
+            'html': '<svg stroke="currentColor" fill="currentColor" '
+                    'stroke-width="0" viewBox="0 0 16 16"><path '
+                    'fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 '
+                    '2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 '
+                    '0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-'
+                    '.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 '
+                    '1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.'
+                    '51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-'
+                    '2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 '
+                    '1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 '
+                    '2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 '
+                    '3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-'
+                    '.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 '
+                    '16 8c0-4.42-3.58-8-8-8z"></path></svg>',
+            'class': '',
+        },
+    ],
+}
 
 # -- Options for HTMLHelp output ------------------------------------------
 
@@ -217,6 +319,13 @@ sphinx_gallery_conf = {
     'abort_on_example_error': False,
     # Execute code to generate plots
     'plot_gallery': True,
+    # execute EVERY example (the sphinx-gallery default only executes
+    # files named plot_*, which left animate*/chemtrails/precog/explore/
+    # save_*/analyze pages with code but no rendered output)
+    'filename_pattern': r'.*\.py',
+    # render matplotlib FuncAnimations (exposed as variables in the
+    # examples) as embedded HTML5 video via ffmpeg
+    'matplotlib_animations': (True, 'mp4'),
     # Download all examples as zip files
     'download_all_examples': True,
     # Ignore warnings during gallery building
@@ -225,19 +334,35 @@ sphinx_gallery_conf = {
     'expected_failing_examples': [],
     # Performance optimizations
     'capture_repr': ('_repr_html_',),
-    'image_scrapers': ('matplotlib',),
+    # scrape BOTH matplotlib figures and plotly figures (the plotly scraper
+    # renders interactive figures into the gallery via kaleido)
+    'image_scrapers': ('matplotlib', plotly_sg_scraper),
     # Limit memory usage display
     'show_memory': False,
     # Ensure proper thumbnail linking
-    'first_notebook_cell': '%matplotlib inline',
+    'first_notebook_cell': _install_notebook_cell(),
     'thumbnail_size': (200, 200),
     # Enable references to work - for local docs, use relative path
     'reference_url': {
         'hypertools': None,  # Use relative links for local docs
         'matplotlib': 'https://matplotlib.org/stable/',
         'numpy': 'https://numpy.org/doc/stable/',
-        'scipy': 'https://docs.scipy.org/doc/scipy/reference/',
+        # NOTE: must be the docs ROOT (no trailing /reference/) so
+        # sphinx-gallery can fetch _static/documentation_options.js
+        'scipy': 'https://docs.scipy.org/doc/scipy/',
         'pandas': 'https://pandas.pydata.org/pandas-docs/stable/',
         'scikit-learn': 'https://scikit-learn.org/stable/',
     }
 }
+
+
+def setup(app):
+    # Keep the strict (-W) docs-clean CI gate robust to TRANSIENT third-party
+    # doc-site outages: sphinx-gallery fetches each `reference_url` site's
+    # searchindex.js to hyperlink API names, and a 503 there would otherwise
+    # fail the whole build. The filter (and the unit test that guards its
+    # message-matching against sphinx-gallery's source) lives in a
+    # side-effect-free module so it can be tested -- see
+    # docs/_gallery_log_filter.py and tests/test_docs_gallery_log_filter.py.
+    from _gallery_log_filter import install
+    install()

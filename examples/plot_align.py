@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+===================================
 Aligning matrices to a common space
-=============================
+===================================
 
 In this example, we plot the trajectory of multivariate brain activity for
 two groups of subjects that have been hyperaligned (Haxby et al, 2011).  First,
@@ -18,11 +18,11 @@ import hypertools as hyp
 import numpy as np
 
 # load example data
-data = hyp.load('weights').get_data()
-data = hyp.align(data, align='hyper')
+data = hyp.load('weights')
+data = hyp.align(data, model='hyper')
 
-# average into two groups
-group1 = np.mean(data[:17], 0)
+# average into two equal groups (18 subjects each)
+group1 = np.mean(data[:18], 0)
 group2 = np.mean(data[18:], 0)
 
 # plot
