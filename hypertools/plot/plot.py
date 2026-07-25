@@ -1281,6 +1281,13 @@ def plot(
         is always GLOBAL -- there is exactly one camera and one frame loop
         driving every dataset in the animation, so it cannot vary per
         dataset (unlike `chemtrails`/`precog`/`bullettime` below, which CAN).
+        On the matplotlib backend, 'serial' COMPOSES with those per-dataset
+        trail flags (chemtrails-serial / precog-serial / bullettime-serial):
+        the ONE dataset currently being revealed also traces out its own
+        low-opacity trail (past / future / whole, per its flag) led by a
+        short opaque comet-head, while already-revealed datasets stay fully
+        drawn and future ones stay invisible -- see `bullettime` below. (The
+        plotly backend still reveals 'serial' fully opaque with no trail.)
 
         2-D animations (round17 #9, GH #123): every style EXCEPT `'spin'`
         works for `ndims=2` as well as `ndims=3`, in both backends, using a
@@ -1452,8 +1459,9 @@ def plot(
         chemtrails on for dataset 0 only. A bare bool is broadcast to every
         dataset. Raises `ValueError` if a list's length does not match the
         number of drawn datasets (naming both counts). Trail styles
-        (`chemtrails`/`precog`/`bullettime`) only apply when
-        `animate=True`/`'parallel'` -- see the note under `bullettime` below.
+        (`chemtrails`/`precog`/`bullettime`) apply to `animate=True`/
+        `'parallel'` and, on the matplotlib backend, to `animate='serial'`
+        (see the note under `bullettime` below).
 
     precog (animation only) : bool or list of bool
         A low-opacity trail is plotted ahead of the trajectory (default:
@@ -1469,13 +1477,21 @@ def plot(
         `chemtrails` alone shows only the past window; `precog` alone shows
         only the future window; none of the three shows just the moving
         window (no separate trail artist/trace at all for that dataset).
-        GH #127: trail styles apply ONLY to `animate=True`/`'parallel'`.
-        `'spin'` has no "current position" for a trail to lead/follow (only
-        the camera moves), and `'serial'`'s point-by-point reveal already
-        communicates elapsed time, so `animate='spin'`/`'serial'` ignore
-        `chemtrails`/`precog`/`bullettime` entirely (no trail artist/trace
-        is created) and emit a `UserWarning` naming the mode, the ignored
-        flag(s), and which dataset indices had them set.
+        GH #127: trail styles apply to `animate=True`/`'parallel'` and, on
+        the matplotlib backend, to `animate='serial'` -- where they COMPOSE
+        with the serial reveal: only the ONE dataset currently being revealed
+        carries a trail (chemtrails = its revealed-so-far past, precog = its
+        not-yet-revealed future, bullettime / chemtrails+precog = its whole
+        trajectory), led by a short opaque comet-head near the reveal tip,
+        while already-revealed datasets stay fully drawn and future ones stay
+        invisible. `'spin'` has no "current position" for a trail to lead/
+        follow (only the camera moves), `'morph'` draws a single traveling
+        cloud, and `'window'` is bullettime MINUS its trail by definition, so
+        `animate='spin'`/`'morph'`/`'window'` (and `'serial'` on the plotly
+        backend, which reveals fully opaque) ignore `chemtrails`/`precog`/
+        `bullettime` entirely (no trail artist/trace is created) and emit a
+        `UserWarning` naming the mode, the ignored flag(s), and which dataset
+        indices had them set.
 
     frame_rate (animation only) : int or float
         Frame rate for animation in frames per second (default: 30).
@@ -3704,18 +3720,26 @@ def plot(
 
     # GH #127 (+ morph/window follow-up): 'spin' has no "current position"
     # (only the camera moves, so a trail has nothing to trail BEHIND or AHEAD
-    # of), 'serial' already communicates elapsed time via its point-by-point
-    # reveal, 'morph' draws a single traveling point-cloud artist with no
+    # of), 'morph' draws a single traveling point-cloud artist with no
     # per-dataset "current position" either, and 'window' (round17 #8) is
     # explicitly bullettime MINUS its chemtrails/precog trail components
     # (Jeremy's own definition) -- trail styles are semantically meaningless
-    # in all four, so warn once (naming the mode, which flag(s) were set, and
+    # in all three, so warn once (naming the mode, which flag(s) were set, and
     # for which dataset indices) rather than silently building frozen/
     # invisible trail artists. `_draw`/`plotly_draw` skip creating those
     # artists entirely for these modes (see their own `style`/`animate`
-    # branches), so this is purely informational -- no flags are mutated
-    # here.
-    if animate in ("spin", "serial", "morph", "window"):
+    # branches), so this is purely informational -- no flags are mutated here.
+    #
+    # 'serial' now COMPOSES with the trail flags on the MATPLOTLIB backend
+    # (chemtrails-serial / precog-serial / bullettime-serial -- the currently-
+    # revealing dataset traces out its own trail; see
+    # `matplotlib_backend.update_lines_serial`), so it is NOT ignored there.
+    # The plotly backend still reveals serial fully-opaque with no trail, so
+    # 'serial' stays in the ignore list only for that backend.
+    _trail_ignoring_modes = ("spin", "morph", "window")
+    if resolve_backend(backend) == "plotly":
+        _trail_ignoring_modes = _trail_ignoring_modes + ("serial",)
+    if animate in _trail_ignoring_modes:
         _ignored_trail_flags = [
             (_name, [i for i, v in enumerate(_flags) if v])
             for _name, _flags in (
@@ -5085,11 +5109,11 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
     n = len(xform)
     # artist bookkeeping mirrors matplotlib_backend.animate_plot3D/2D: the
     # n head lines are created first, then one trail artist per dataset
-    # that wants one (parallel/True only -- window/serial never create
-    # trails), in dataset order.
+    # that wants one (parallel/True AND serial create trails -- serial now
+    # composes with the trail flags; 'window' never does), in dataset order.
     head_lines = list(ax.lines[:n])
     wants_trail = [
-        style in (True, 'parallel')
+        style in (True, 'parallel', 'serial')
         and bool(chemtrails[i] or precog[i] or bullettime[i])
         for i in range(n)
     ]
@@ -5160,7 +5184,19 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
             # matplotlib_backend._anim_window_bounds)
             head_len = _artist_len(head_lines[i])
             if style == 'serial':
-                start, end = 0, head_len
+                # serial: the head artist is the opaque comet-head near the
+                # reveal tip (or, with no trail flag, the whole revealed
+                # span). Recover its position from this dataset's cumulative
+                # reveal count so the multicolored head sits exactly where
+                # the backend drew it (see
+                # matplotlib_backend.update_lines_serial).
+                _lengths = [_points(j).shape[0] for j in range(n)]
+                _start_i = int(sum(_lengths[:i]))
+                revealed = (sum(_lengths) * num
+                            / max(1, int(total_frames) - 1))
+                shown = int(np.clip(revealed - _start_i, 0, n_pts))
+                end = shown
+                start = max(0, shown - head_len)
             else:
                 end = int(np.ceil((num + 1) * n_pts
                                   / max(1, int(total_frames))))

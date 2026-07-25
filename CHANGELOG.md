@@ -6,6 +6,14 @@ Small, additive plotting features and fixes (fully backward-compatible).
 
 ### New features
 
+- **`animate='serial'` now composes with the trail flags**
+  (`chemtrails`/`precog`/`bullettime`), in both 2-D and 3-D: datasets are
+  revealed one at a time (as before), but the dataset currently being drawn
+  now carries its trail (e.g. a fading chemtrail) while already-revealed
+  datasets stay fully drawn -- "chemtrails-serial", "precog-serial",
+  "bullettime-serial". Plain `animate='serial'` (no trail flag) is unchanged;
+  a windowed serial is left as follow-up.
+
 - **`predict=` now works with `animate='spin'`.** A spinning 3-D plot can
   carry its `predict=` forecast overlay -- the dashed, low-opacity forecast
   trace(s) are drawn once and rotate with the scene. The time-progressing

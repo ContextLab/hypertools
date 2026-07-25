@@ -233,18 +233,21 @@ def test_bad_length_list_names_actual_counts():
 
 
 # ---------------------------------------------------------------------------
-# spin / serial modes (GH #127 follow-up): trail styles are semantically
-# meaningless in both -- 'spin' has no "current position" for a trail to
-# lead/follow (only the camera moves), and 'serial''s point-by-point reveal
-# already communicates elapsed time. `plot()` now warns ONCE (naming the
-# mode, the ignored flag(s), and which dataset indices had them set) and
-# neither backend creates a trail artist/trace at all in these modes
-# (previously the artists/traces WERE created but stayed frozen/invisible
-# for the whole animation -- dead stubs).
+# spin / morph / window modes (GH #127 follow-up): trail styles are
+# semantically meaningless -- 'spin' has no "current position" for a trail to
+# lead/follow (only the camera moves), 'morph' draws one traveling cloud, and
+# 'window' is bullettime MINUS its trail by definition. `plot()` warns ONCE
+# (naming the mode, the ignored flag(s), and which dataset indices had them
+# set) and neither backend creates a trail artist/trace at all in these modes.
+#
+# 'serial' is the EXCEPTION on the matplotlib backend: it now COMPOSES with
+# the trail flags (chemtrails-serial / precog-serial / bullettime-serial),
+# tested separately below. The plotly backend still reveals 'serial' fully
+# opaque with no trail, so it keeps warning there.
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize('mode', ['spin', 'serial'])
-def test_mpl_spin_serial_warns_and_skips_trail_artists(mode):
+@pytest.mark.parametrize('mode', ['spin'])
+def test_mpl_spin_warns_and_skips_trail_artists(mode):
     data = _walks(k=3, n=20)
     with pytest.warns(UserWarning,
                        match=r"animate=%r.*chemtrails.*\[0, 2\]" % mode):
@@ -265,8 +268,8 @@ def test_mpl_spin_serial_warns_and_skips_trail_artists(mode):
     plt.close('all')
 
 
-@pytest.mark.parametrize('mode', ['spin', 'serial'])
-def test_mpl_spin_serial_warning_names_multiple_ignored_flags(mode):
+@pytest.mark.parametrize('mode', ['spin'])
+def test_mpl_spin_warning_names_multiple_ignored_flags(mode):
     """precog on dataset 1 only -- the warning names precog (not
     chemtrails/bullettime, which are unset) and dataset index [1]."""
     data = _walks(k=2, n=20)
@@ -276,6 +279,176 @@ def test_mpl_spin_serial_warning_names_multiple_ignored_flags(mode):
             data, animate=mode, duration=1, tail_duration=1, frame_rate=5,
             precog=[False, True], show=False,
         )
+    import matplotlib.pyplot as plt
+    plt.close('all')
+
+
+# ---------------------------------------------------------------------------
+# serial COMPOSES with the trail flags on the matplotlib backend (new family:
+# chemtrails-serial / precog-serial / bullettime-serial). Datasets still
+# reveal one at a time; the ONE currently-revealing dataset also traces out a
+# faded trail relative to its own reveal, past datasets stay fully drawn, and
+# future datasets stay invisible.
+# ---------------------------------------------------------------------------
+
+def _serial_trail_bundle(**flags):
+    """3 datasets, animate='serial'; return (bundle, data_lines, lines, trail)
+    with NO 'trail styles' warning emitted (matplotlib serial now supports
+    trails)."""
+    data = _walks(k=3, n=20)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        bundle = hyp.plot(
+            data, fmt='-', animate='serial', duration=2, frame_rate=10,
+            show=False, return_model=True, **flags,
+        )
+    assert not any('trail styles' in str(w.message) for w in caught)
+    line_ani = bundle['animation']
+    assert line_ani is not None
+    # serial 3D fargs: (x, lines, trail, cube_scale, window_frames,
+    # rotations, zoom, chemtrails, precog, bullettime, elev)
+    data_lines, lines, trail = (line_ani._args[0], line_ani._args[1],
+                                line_ani._args[2])
+    return bundle, line_ani, data_lines, lines, trail
+
+
+def _len3d(artist):
+    return len(artist.get_data_3d()[0])
+
+
+@pytest.mark.parametrize('flag', ['chemtrails', 'precog', 'bullettime'])
+def test_mpl_serial_composes_with_trail_flags(flag):
+    """serial + one trail flag (all datasets): trail artists are CREATED, and
+    at a mid-animation frame the currently-revealing dataset carries a faded
+    trail while a fully-revealed earlier dataset is drawn in full and an
+    unstarted later dataset is empty."""
+    bundle, line_ani, data_lines, lines, trail = _serial_trail_bundle(
+        **{flag: True})
+
+    # a trail artist exists for every dataset (flag set on all), faded
+    assert all(t is not None for t in trail)
+    assert all(abs(t.get_alpha() - 0.3) < 1e-9 for t in trail)
+
+    # pick a frame well into dataset 1's reveal so its opaque comet-head is
+    # strictly shorter than the revealed span (a fade is actually visible).
+    # tf = frame_rate*duration = 20; total_points = 3*20 = 60.
+    tf = 20
+    num = 11
+    line_ani._func(num, *line_ani._args)
+    n0, n1 = data_lines[0].shape[0], data_lines[1].shape[0]
+    total_points = sum(d.shape[0] for d in data_lines)
+    revealed = total_points * num / max(1, tf - 1)
+    shown = int(np.clip(revealed - n0, 0, n1))       # dataset 1's reveal count
+    assert 0 < shown < n1                            # ds1 is mid-reveal
+
+    # past dataset 0 fully drawn as opaque head, no trail
+    assert _len3d(lines[0]) == n0
+    assert _len3d(trail[0]) == 0
+    # future dataset 2 invisible (head + trail empty)
+    assert _len3d(lines[2]) == 0
+    assert _len3d(trail[2]) == 0
+
+    # currently-revealing dataset 1: opaque comet-head STRICTLY shorter than
+    # its revealed span (so the faded trail shows), plus a faded trail whose
+    # extent matches the flag's semantics
+    assert 0 < _len3d(lines[1]) < shown
+    tl = _len3d(trail[1])
+    if flag == 'chemtrails':
+        assert tl == shown                 # revealed-so-far past
+    elif flag == 'precog':
+        assert tl == n1 - (shown - 1)      # not-yet-revealed future
+    else:  # bullettime
+        assert tl == n1                    # whole trajectory
+
+    import matplotlib.pyplot as plt
+    plt.close('all')
+
+
+def test_mpl_serial_plain_still_has_no_trail_artists():
+    """Plain animate='serial' (no trail flag) is UNCHANGED: no trail artists
+    are created and each revealed dataset is drawn fully opaque (data[:shown])."""
+    data = _walks(k=3, n=20)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        bundle = hyp.plot(data, fmt='-', animate='serial', duration=2,
+                          frame_rate=10, show=False, return_model=True)
+    assert not any('trail styles' in str(w.message) for w in caught)
+    line_ani = bundle['animation']
+    data_lines, lines, trail = (line_ani._args[0], line_ani._args[1],
+                                line_ani._args[2])
+    # trail list is present (one slot per dataset) but every slot is None --
+    # no trail artist was ever built
+    assert all(t is None for t in trail)
+    # exactly one Line3D per dataset (heads only)
+    assert len(bundle['fig'].axes[0].lines) == 3
+    # head is the whole revealed span, opaque, exactly as before
+    line_ani._func(9, *line_ani._args)
+    assert _len3d(lines[0]) == data_lines[0].shape[0]   # ds0 fully revealed
+    assert _len3d(lines[1]) == 8                          # ds1 shown=8
+    assert _len3d(lines[2]) == 0                          # ds2 not started
+
+    import matplotlib.pyplot as plt
+    plt.close('all')
+
+
+def test_mpl_serial_mixed_trail_flags_per_dataset():
+    """Per-dataset flags compose with serial: dataset 0 chemtrails, dataset 1
+    precog, dataset 2 bullettime, dataset 3 none -> a trail artist only for
+    the first three."""
+    data = _walks(k=4, n=20)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        bundle = hyp.plot(
+            data, fmt='-', animate='serial', duration=2, frame_rate=10,
+            chemtrails=[True, False, False, False],
+            precog=[False, True, False, False],
+            bullettime=[False, False, True, False],
+            show=False, return_model=True,
+        )
+    assert not any('trail styles' in str(w.message) for w in caught)
+    trail = bundle['animation']._args[2]
+    assert [t is not None for t in trail] == [True, True, True, False]
+
+    import matplotlib.pyplot as plt
+    plt.close('all')
+
+
+def test_mpl_serial_trail_renders_and_saves(tmp_path):
+    """End-to-end: a serial+chemtrails animation saves a multi-frame GIF
+    without error (the motivating conversation-turns use case)."""
+    rng = np.random.default_rng(0)
+    turns = [np.cumsum(rng.standard_normal((8, 3)), 0)
+             + rng.standard_normal(3) * 4 for _ in range(6)]
+    out = tmp_path / 'chemserial.gif'
+    fig, ani = hyp.plot(turns, fmt='-', animate='serial', chemtrails=True,
+                        duration=2, frame_rate=6, show=False)
+    ani.save(str(out))
+    assert out.exists() and out.stat().st_size > 0
+
+    import matplotlib.pyplot as plt
+    plt.close('all')
+
+
+def test_mpl_serial_2d_composes_with_trail_flags():
+    """2-D serial also composes with the trail flags (fixed viewport)."""
+    rng = np.random.default_rng(3)
+    turns = [np.cumsum(rng.standard_normal((10, 2)), 0)
+             + rng.standard_normal(2) * 4 for _ in range(3)]
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        bundle = hyp.plot(turns, fmt='-', animate='serial', chemtrails=True,
+                          ndims=2, duration=2, frame_rate=10, show=False,
+                          return_model=True)
+    assert not any('trail styles' in str(w.message) for w in caught)
+    line_ani = bundle['animation']
+    # 2D serial fargs: (x, lines, trail, window_frames, chemtrails,
+    # precog, bullettime)
+    trail = line_ani._args[2]
+    assert all(t is not None for t in trail)
+    line_ani._func(9, *line_ani._args)
+    # dataset 1 revealing -> its 2-D trail has data
+    assert any(len(t.get_xdata()) > 0 for t in trail)
+
     import matplotlib.pyplot as plt
     plt.close('all')
 

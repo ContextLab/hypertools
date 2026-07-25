@@ -1223,20 +1223,36 @@ def _draw(
         return lines
 
     def update_lines_serial(
-        num, data_lines, lines, cube_scale, rotations=1, zoom=1, elev=10
+        num, data_lines, lines, trail_lines, cube_scale, window_frames=1,
+        rotations=1, zoom=1, chemtrails=None, precog=None, bullettime=None,
+        elev=10,
     ):
         """Serial animation: datasets appear ONE AT A TIME, each growing
         point-by-point into place while all previous datasets stay fully
         drawn (e.g. conversation turns adding to a shared embedding space).
-        Datasets are never connected to each other."""
+        Datasets are never connected to each other.
+
+        Trail composition (GH #127 follow-up): when a per-dataset
+        chemtrails/precog/bullettime flag is set, the ONE dataset currently
+        being revealed ALSO traces out a low-opacity trail relative to its
+        OWN reveal, led by a short opaque comet-head near the reveal tip --
+        chemtrails fades its revealed-so-far past (``data[:shown]``), precog
+        fades its not-yet-revealed future (``data[shown - 1:]``, sharing the
+        head's last vertex so there is no one-segment gap, cf.
+        `_anim_window_bounds`' F05-008), and bullettime (or chemtrails AND
+        precog together) fades the WHOLE trajectory. Already-revealed
+        datasets stay fully drawn (accumulated history) and future ones stay
+        invisible. With NO trail flag set for a dataset (plain 'serial'), its
+        whole revealed portion is drawn fully opaque with no trail --
+        byte-for-byte the historical behavior."""
         if hasattr(update_lines_serial, "planes"):
             for plane in update_lines_serial.planes:
                 plane.remove()
         update_lines_serial.planes = plot_cube(cube_scale, **frame_kwargs)
 
         total_frames = int(round(frame_rate * duration))
-        ax.view_init(elev=elev,
-                     azim=azim + rotations * 360.0 * num / total_frames)
+        azim_now = azim + rotations * 360.0 * num / total_frames
+        ax.view_init(elev=elev, azim=azim_now)
         ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
 
         lengths = [d.shape[0] for d in data_lines]
@@ -1246,21 +1262,65 @@ def _draw(
         start = 0
         windows = []
         window_spcs = []
-        for i, (line, data) in enumerate(zip(lines, data_lines)):
-            shown = int(np.clip(revealed - start, 0, data.shape[0]))
-            window = data[:shown]
-            line.set_data(window[:, 0:2].T)
-            line.set_3d_properties(window[:, 2])
-            windows.append(window)
+        for i, (line, data, trail) in enumerate(itertools.zip_longest(
+                lines, data_lines, trail_lines)):
+            n_pts = data.shape[0]
+            shown = int(np.clip(revealed - start, 0, n_pts))
+            start += n_pts
+
+            ct = chemtrails[i] if chemtrails is not None else False
+            pc = precog[i] if precog is not None else False
+            bt = bullettime[i] if bullettime is not None else False
+            # a dataset composes a trail only if it both HAS a trail artist
+            # (created by `_wants_trail`) and a flag set this frame's window.
+            has_trail = trail is not None and (ct or pc or bt)
+
+            trail_seg = data[:0]
+            if not has_trail:
+                # plain 'serial' (or a dataset with no trail flag): the whole
+                # revealed portion is drawn fully opaque -- UNCHANGED.
+                head = data[:shown]
+            elif shown <= 0:
+                # not started revealing yet: head + trail both empty.
+                head = data[:0]
+            elif shown >= n_pts:
+                # fully revealed: the whole dataset stays drawn as opaque
+                # history, trail cleared.
+                head = data[:n_pts]
+            else:
+                # currently revealing: a short opaque comet-head leads the
+                # reveal tip while the rest traces out as a faded trail.
+                # `window_frames` is the head length in FRAMES; scale it onto
+                # this dataset's SHARE of the serial timeline
+                # (`n_pts / total_points`, since the serial sweep packs every
+                # dataset's rows into the same frame grid), mirroring
+                # `_anim_window_bounds`' start = end - 1 - w head sizing.
+                w = max(1, int(round(window_frames * n_pts
+                                     / max(1, total_points))))
+                head = data[max(0, shown - 1 - w):shown]
+                if (ct and pc) or bt:
+                    trail_seg = data[:n_pts]              # bullettime: whole
+                elif ct:
+                    trail_seg = data[:shown]              # chemtrails: past
+                else:
+                    trail_seg = data[max(0, shown - 1):]  # precog: future
+
+            line.set_data(head[:, 0:2].T)
+            line.set_3d_properties(head[:, 2])
+            if trail is not None:
+                trail.set_data(trail_seg[:, 0:2].T)
+                trail.set_3d_properties(trail_seg[:, 2])
+
+            # surface hull follows the full revealed portion (same window as
+            # plain serial), independent of the comet-head trimming above
+            windows.append(data[:shown])
             window_spcs.append(_window_surface_point_colors(
                 surface_point_colors, i, 0, shown))
-            start += data.shape[0]
 
         # surface= (GH #109): each dataset's hull follows its own currently-
         # revealed portion (same window as its line above), keeping the
         # per-vertex hue coloring of the revealed points (F07-005)
         if surface is not None:
-            azim_now = azim + rotations * 360.0 * num / total_frames
             prior = getattr(update_lines_serial, "surface_colls", None)
             update_lines_serial.surface_colls = _mesh_and_draw_3d(
                 ax, windows, surface, surface_colors, elev, azim_now,
@@ -1452,18 +1512,22 @@ def _draw(
         # via `itertools.zip_longest` already (marker-only animations relied
         # on this same mechanism before this change).
         #
-        # 'spin'/'serial' (GH #127 follow-up): neither `update_lines_spin`
-        # nor `update_lines_serial` accepts (or ever touches) a trail_lines
-        # argument -- 'spin' has no "current position" for a trail to lead/
-        # follow (only the camera moves) and 'serial' already communicates
-        # elapsed time via its point-by-point reveal. Trail artists created
-        # here for those two styles would therefore stay frozen at their
-        # initial (single-point) state for the whole animation: invisible/
-        # useless stubs. `plot.py` already warns the caller and names the
-        # ignored flags/dataset indices; this just skips ever creating them
-        # so `_wants_trail` is forced False for every dataset in these modes.
+        # 'spin' (GH #127 follow-up): `update_lines_spin` never accepts (or
+        # touches) a trail_lines argument -- 'spin' has no "current position"
+        # for a trail to lead/follow (only the camera moves). A trail artist
+        # created here for 'spin' would stay frozen at its initial (single-
+        # point) state for the whole animation: an invisible/useless stub.
+        # 'morph' draws a single traveling cloud (no per-dataset current
+        # position) and 'window' is bullettime MINUS its trail by definition,
+        # so both likewise skip trails. `plot.py` already warns the caller
+        # (and names the ignored flags/dataset indices) for these modes.
+        #
+        # 'serial' now COMPOSES with the trail flags (chemtrails-serial /
+        # precog-serial / bullettime-serial): `update_lines_serial` draws the
+        # currently-revealing dataset with a per-dataset trail, so its trail
+        # artists ARE created here whenever a flag is set for that dataset.
         def _wants_trail(idx):
-            if style in ("spin", "serial", "morph", "window"):
+            if style in ("spin", "morph", "window"):
                 return False
             return chemtrails[idx] or precog[idx] or bullettime[idx]
 
@@ -1831,7 +1895,8 @@ def _draw(
                 fig,
                 update_lines_serial,
                 int(round(frame_rate * duration)),
-                fargs=(x, lines, cube_scale_anim, rotations, zoom, elev),
+                fargs=(x, lines, trail, cube_scale_anim, window_frames,
+                       rotations, zoom, chemtrails, precog, bullettime, elev),
                 interval=1000 / frame_rate,
                 blit=False,
                 repeat=False,
@@ -1913,8 +1978,13 @@ def _draw(
         _sync_anim_labels(num, tail_duration)
         return lines, trail_lines
 
-    def update_lines_serial_2d(num, data_lines, lines):
-        """2D counterpart of `update_lines_serial` (fixed viewport, no camera/cube).
+    def update_lines_serial_2d(num, data_lines, lines, trail_lines,
+                               window_frames=1, chemtrails=None, precog=None,
+                               bullettime=None):
+        """2D counterpart of `update_lines_serial` (fixed viewport, no
+        camera/cube) -- including the same chemtrails/precog/bullettime trail
+        composition on the currently-revealing dataset (see
+        `update_lines_serial`).
 
         Returns
         -------
@@ -1927,11 +1997,38 @@ def _draw(
         revealed = total_points * num / max(1, total_frames - 1)
 
         start = 0
-        for line, data in zip(lines, data_lines):
-            shown = int(np.clip(revealed - start, 0, data.shape[0]))
-            window = data[:shown]
-            line.set_data(window[:, 0], window[:, 1])
-            start += data.shape[0]
+        for i, (line, data, trail) in enumerate(itertools.zip_longest(
+                lines, data_lines, trail_lines)):
+            n_pts = data.shape[0]
+            shown = int(np.clip(revealed - start, 0, n_pts))
+            start += n_pts
+
+            ct = chemtrails[i] if chemtrails is not None else False
+            pc = precog[i] if precog is not None else False
+            bt = bullettime[i] if bullettime is not None else False
+            has_trail = trail is not None and (ct or pc or bt)
+
+            trail_seg = data[:0]
+            if not has_trail:
+                head = data[:shown]                       # UNCHANGED
+            elif shown <= 0:
+                head = data[:0]
+            elif shown >= n_pts:
+                head = data[:n_pts]
+            else:
+                w = max(1, int(round(window_frames * n_pts
+                                     / max(1, total_points))))
+                head = data[max(0, shown - 1 - w):shown]
+                if (ct and pc) or bt:
+                    trail_seg = data[:n_pts]              # bullettime: whole
+                elif ct:
+                    trail_seg = data[:shown]              # chemtrails: past
+                else:
+                    trail_seg = data[max(0, shown - 1):]  # precog: future
+
+            line.set_data(head[:, 0], head[:, 1])
+            if trail is not None:
+                trail.set_data(trail_seg[:, 0], trail_seg[:, 1])
 
         _sync_anim_labels(num, 0, revealed=revealed)
         return lines
@@ -2017,7 +2114,10 @@ def _draw(
         ax = fig.add_subplot(111)
 
         def _wants_trail(idx):
-            if style in ("serial", "morph", "window"):
+            # 'serial' composes with the trail flags (see animate_plot3D's
+            # `_wants_trail`); only 'morph'/'window' skip trails in 2-D
+            # ('spin' is rejected for 2-D data before this point).
+            if style in ("morph", "window"):
                 return False
             return chemtrails[idx] or precog[idx] or bullettime[idx]
 
@@ -2172,7 +2272,8 @@ def _draw(
                 fig,
                 update_lines_serial_2d,
                 int(round(frame_rate * duration)),
-                fargs=(x, lines),
+                fargs=(x, lines, trail, window_frames, chemtrails, precog,
+                      bullettime),
                 interval=1000 / frame_rate,
                 blit=False,
                 repeat=False,
