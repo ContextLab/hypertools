@@ -1478,6 +1478,17 @@ def _draw(
             for idx in range(len(x))
         ]
 
+        # fold the 0.3 trail-fade factor into whatever alpha the dataset kwargs
+        # already carry (default 1.0 -> 0.3, i.e. unchanged for the common
+        # no-alpha case). Passing a bare `alpha=0.3` alongside **kwargs_list[idx]
+        # collided when MultiIndex expansion assigned a per-trace alpha (faint
+        # leaf traces vs. opaque group-mean traces), raising "got multiple
+        # values for keyword argument 'alpha'".
+        def _trail_kwargs(kw):
+            kw = dict(kw) if isinstance(kw, dict) else {}
+            kw["alpha"] = 0.3 * kw.pop("alpha", 1.0)
+            return kw
+
         trail = []
         if fmt is not None:
             lines = [
@@ -1498,9 +1509,8 @@ def _draw(
                         dat[0:1, 1],
                         dat[0:1, 2],
                         fmt[idx],
-                        alpha=0.3,
                         linewidth=linewidths[idx],
-                        **kwargs_list[idx]
+                        **_trail_kwargs(kwargs_list[idx])
                     )[0] if _wants_trail(idx) else None
                     for idx, dat in enumerate(x)
                 ]
@@ -1521,9 +1531,8 @@ def _draw(
                         dat[0:1, 0],
                         dat[0:1, 1],
                         dat[0:1, 2],
-                        alpha=0.3,
                         linewidth=linewidths[idx],
-                        **kwargs_list[idx]
+                        **_trail_kwargs(kwargs_list[idx])
                     )[0] if _wants_trail(idx) else None
                     for idx, dat in enumerate(x)
                 ]
@@ -2020,6 +2029,15 @@ def _draw(
             for idx in range(len(x))
         ]
 
+        # see animate_plot3D: fold the 0.3 trail-fade factor into any alpha the
+        # dataset kwargs already carry, so a per-trace alpha from MultiIndex
+        # expansion does not collide with a bare `alpha=0.3` ("got multiple
+        # values for keyword argument 'alpha'").
+        def _trail_kwargs(kw):
+            kw = dict(kw) if isinstance(kw, dict) else {}
+            kw["alpha"] = 0.3 * kw.pop("alpha", 1.0)
+            return kw
+
         trail = []
         if fmt is not None:
             lines = [
@@ -2038,9 +2056,8 @@ def _draw(
                         dat[0:1, 0],
                         dat[0:1, 1],
                         fmt[idx],
-                        alpha=0.3,
                         linewidth=linewidths[idx],
-                        **kwargs_list[idx]
+                        **_trail_kwargs(kwargs_list[idx])
                     )[0] if _wants_trail(idx) else None
                     for idx, dat in enumerate(x)
                 ]
@@ -2059,9 +2076,8 @@ def _draw(
                     ax.plot(
                         dat[0:1, 0],
                         dat[0:1, 1],
-                        alpha=0.3,
                         linewidth=linewidths[idx],
-                        **kwargs_list[idx]
+                        **_trail_kwargs(kwargs_list[idx])
                     )[0] if _wants_trail(idx) else None
                     for idx, dat in enumerate(x)
                 ]

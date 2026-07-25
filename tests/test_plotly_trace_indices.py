@@ -14,8 +14,11 @@ would overwrite the (static) forecast traces with trail geometry every
 frame, while the real trail traces are never updated and stay empty.
 
 `hyp.plot()`'s public `predict=` parameter cannot reach this combination
-(`predict=` + `animate=` raises `NotImplementedError` by design), but the
-lower-level `plotly_draw` function -- exported from
+(`predict=` is allowed only with the camera-only `animate='spin'`, which has
+no trail traces; the time-progressing modes that DO draw trails --
+`True`/`'parallel'`/`'window'`/etc. -- still raise `NotImplementedError` when
+combined with `predict=`, by design), but the lower-level `plotly_draw`
+function -- exported from
 `hypertools.plot.interactive` and directly unit-tested -- accepts
 `forecasts=` and `animate=`/`chemtrails=` independently, so the
 combination IS reachable through that entry point.

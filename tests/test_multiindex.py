@@ -388,6 +388,29 @@ def test_plot_2level_animated_mpl_smoke():
     plt.close('all')
 
 
+@pytest.mark.parametrize('ndims', [3, 2])
+@pytest.mark.parametrize('trail', ['bullettime', 'chemtrails'])
+def test_multiindex_trail_alpha_no_collision(ndims, trail, tmp_path):
+    """MultiIndex expansion assigns a per-trace ``alpha`` (faint leaf traces
+    vs. opaque group-mean traces). The animated trail artists
+    (chemtrails/precog/bullettime) used to pass a hardcoded ``alpha=0.3``
+    alongside ``**kwargs_list[idx]``, so that per-trace alpha collided ->
+    ``TypeError: ... got multiple values for keyword argument 'alpha'``. The
+    0.3 fade is now folded into any pre-existing alpha, so building AND
+    rendering the animation must not raise (both ndims=3 and ndims=2)."""
+    df = _make_2level_df(n_time=12)
+    fig, ani = hyp.plot(df, animate=True, duration=1, tail_duration=0.3,
+                        frame_rate=3, ndims=ndims, legend=True, show=False,
+                        **{trail: True})
+    assert ani is not None
+    # the collision used to raise while *building* the trail artists inside
+    # hyp.plot(); saving forces a real render of the faded trail frames too.
+    out = tmp_path / f'mi_{trail}_{ndims}d.gif'
+    ani.save(str(out))
+    assert out.exists() and out.stat().st_size > 0
+    plt.close('all')
+
+
 # ---------------------------------------------------------------------------
 # regression: single-level DataFrame / plain arrays unchanged
 # ---------------------------------------------------------------------------

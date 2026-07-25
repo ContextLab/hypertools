@@ -143,13 +143,63 @@ def test_forecast_vertices_stay_inside_frame(ndims, model):
         assert pts.max() <= 1.0 + 1e-9
 
 
-# --- animate + predict: clear NotImplementedError (v1 static-plot only) ----
+# --- animate + predict: allowed for 'spin' (camera-only), else raises -------
 
-def test_animate_and_predict_raises_not_implemented():
+@pytest.mark.parametrize('mode', [True, 'parallel', 'serial', 'window',
+                                  'morph'])
+def test_time_progressing_animate_and_predict_raises_not_implemented(mode):
+    # every animate mode that REVEALS/APPENDS data over time still rejects
+    # predict= (appending a growing forecast trace is out-of-scope follow-up);
+    # only the camera-only 'spin' mode is allowed (see the spin test below).
     a = _walk(9)
     b = _walk(10, offset=1.0)
     with pytest.raises(NotImplementedError):
-        hyp.plot([a, b], predict='Kalman', animate=True, show=False)
+        hyp.plot([a, b], predict='Kalman', animate=mode, show=False)
+
+
+def test_predict_with_spin_renders_dashed_forecast_overlay(tmp_path):
+    # animate='spin' only rotates the camera around the STATIC scene, so the
+    # fixed dashed forecast overlay is coherent: it is drawn once and rotates
+    # with everything else (GH #169 follow-up).
+    a = _walk(9)
+    b = _walk(10, offset=1.0)
+    t = 12
+    fig, ani = hyp.plot([a, b], predict='Kalman', t=t, animate='spin',
+                        rotations=1, duration=1, frame_rate=5, show=False)
+    ax = fig.axes[0]
+
+    # one dashed forecast overlay per dataset, same styling as the static path
+    fc_lines = [l for l in ax.lines if l.get_linestyle() == '--']
+    assert len(fc_lines) == len([a, b])
+    for fc in fc_lines:
+        assert fc.get_alpha() == pytest.approx(0.6)
+        assert fc.get_label() == '_nolegend_'
+        assert len(fc.get_xdata()) == t + 1  # t rows + prepended seam vertex
+        # unclipped like the other 3-D line artists, so a rotated camera
+        # never crops the overlay (matches animate_plot3D's set_clip_on(False))
+        assert fc.get_clip_on() is False
+
+    # the animation must actually render end-to-end (camera-only spin)
+    out = tmp_path / 'predict_spin.gif'
+    ani.save(str(out))
+    assert out.stat().st_size > 0
+    plt.close(fig)
+
+
+def test_predict_with_spin_return_model_bundle_carries_forecasts():
+    a = _walk(9)
+    b = _walk(10, offset=1.0)
+    t = 12
+    bundle = hyp.plot([a, b], predict='Kalman', t=t, animate='spin',
+                      rotations=1, duration=1, frame_rate=5, show=False,
+                      return_model=True)
+    assert bundle['animation'] is not None
+    assert bundle['predict']['model'] == 'Kalman'
+    forecasts = bundle['predict']['forecasts']
+    assert len(forecasts) == 2
+    for fc in forecasts:
+        assert np.asarray(fc).shape[0] == t  # unprepended: exactly t rows
+    plt.close(bundle['fig'])
 
 
 # --- plotly backend parity: trace count / dash / showlegend ---------------

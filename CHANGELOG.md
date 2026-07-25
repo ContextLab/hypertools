@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.0.1 (unreleased)
+
+Small, additive plotting features and fixes (fully backward-compatible).
+
+### New features
+
+- **`predict=` now works with `animate='spin'`.** A spinning 3-D plot can
+  carry its `predict=` forecast overlay -- the dashed, low-opacity forecast
+  trace(s) are drawn once and rotate with the scene. The time-progressing
+  animation styles (`True`/`'parallel'`/`'serial'`/`'window'`/`'morph'`)
+  still raise `NotImplementedError` with `predict=`, since a growing forecast
+  trace over those remains follow-up work.
+
+### Bug fixes
+
+- **Animated MultiIndex plots with trails no longer crash.** Animating a
+  row-`MultiIndex` `DataFrame` with `chemtrails`/`precog`/`bullettime` raised
+  `TypeError: ... got multiple values for keyword argument 'alpha'`: the trail
+  artists passed a hardcoded `alpha=0.3` alongside the per-trace `alpha` that
+  MultiIndex expansion assigns (to distinguish faint leaf traces from opaque
+  group means). The 0.3 trail fade is now folded into whatever `alpha` the
+  trace already carries, in both the 3-D and 2-D animation paths.
+
 ## 1.0.0 (unreleased)
 
 HyperTools 1.0 is a ground-up modernization of the toolbox. The familiar

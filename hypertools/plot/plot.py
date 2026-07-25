@@ -119,6 +119,44 @@ def _fmt_draws_line(fmt):
     return has_line_component(fmt)
 
 
+def _draw_forecast_overlays(ax, raw_forecasts):
+    """Overlay one dashed, low-opacity (alpha 0.6) forecast trace per input
+    dataset (GH #169), in the SAME color as its source line.
+
+    Called AFTER `_draw` has already built the legend (from the original data
+    lines only), so these traces never gain a legend entry;
+    `label='_nolegend_'` mirrors the trail-artist precedent
+    (matplotlib_backend's animated trails) as a second guard. Shared by the
+    STATIC path and the `animate='spin'` setup (which only rotates the camera
+    around this same static overlay), so both draw identical artists from the
+    identical seam-prepended forecast arrays.
+
+    Returns
+    -------
+    list
+        The created matplotlib line artists (so callers -- e.g. the
+        `animate='spin'` path -- can `set_clip_on(False)` on them).
+    """
+    artists = []
+    src_lines = list(ax.lines)
+    for i, fc in enumerate(raw_forecasts):
+        fc_color = src_lines[i].get_color() if i < len(src_lines) else None
+        d = fc.shape[1] if fc.ndim > 1 else 1
+        if d >= 3:
+            artists.extend(ax.plot(
+                fc[:, 0], fc[:, 1], fc[:, 2], linestyle='--',
+                color=fc_color, alpha=0.6, label='_nolegend_'))
+        elif d == 2:
+            artists.extend(ax.plot(
+                fc[:, 0], fc[:, 1], linestyle='--',
+                color=fc_color, alpha=0.6, label='_nolegend_'))
+        else:
+            artists.extend(ax.plot(
+                fc[:, 0], linestyle='--', color=fc_color,
+                alpha=0.6, label='_nolegend_'))
+    return artists
+
+
 def _categorical_color_label_maps(hue, palette, explicit_colors,
                                   group_labels, sort_numeric):
     """Map each hue category -> (colour, legend label), in the SAME drawn
@@ -1193,9 +1231,14 @@ def plot(
         drawn overlay prepends the last observed row so the dashed trace
         connects to the trajectory (`t + 1` drawn vertices); the forecast
         DATA itself -- e.g. in the ``return_model=True`` bundle -- has
-        exactly `t` rows, matching `hyp.predict`. Only
-        supported for STATIC plots (default: None; raises
-        ``NotImplementedError`` if combined with ``animate``).
+        exactly `t` rows, matching `hyp.predict`. Supported for STATIC plots
+        and for ``animate='spin'`` (which only rotates the camera around the
+        static forecast overlay, so the dashed trace simply rotates with the
+        rest of the scene); NOT supported with the time-progressing animate
+        modes (``True``/``'parallel'``/``'serial'``/``'window'``/``'morph'``,
+        or a per-dataset morph list), which reveal/append data over time --
+        combining `predict` with any of those raises ``NotImplementedError``
+        (default: None).
 
     t : int or datetime-like
         Forecast horizon passed to `predict` (see
@@ -1337,6 +1380,15 @@ def plot(
         `labels=` mega-dict covering EVERY `plot()` kwarg (not just
         animation) was considered and explicitly rejected as unnecessary
         churn.
+
+        `predict=` (forecast overlays; see below) is compatible with
+        `animate='spin'` ONLY: spin renders a STATIC scene and merely rotates
+        the camera, so the fixed dashed forecast overlay is drawn once and
+        rotates along with everything else. Every OTHER animate mode
+        (`True`/`'parallel'`/`'serial'`/`'window'`/`'morph'`, and per-dataset
+        morph lists) reveals/appends data over time, where a growing forecast
+        trace is out-of-scope follow-up work, so combining `predict=` with any
+        of those raises `NotImplementedError`.
 
     backend : str
         Rendering backend: 'matplotlib' (the classic renderer),
@@ -2249,13 +2301,22 @@ def plot(
     else:
         resolved_focused = tail_duration
 
-    # predict= + animate: forecast overlays are static-plot only in v1
-    # (animating a growing/appended forecast trace is follow-up work).
-    if predict is not None and animate:
+    # predict= + animate: a forecast is a FIXED overlay, so it is coherent
+    # with any animate mode that only moves the CAMERA over an otherwise
+    # static scene -- that is exactly animate='spin' (it rotates `view_init`
+    # per frame; it never appends or reveals data over time). The overlay is
+    # drawn once and simply rotates with everything else. Every OTHER mode
+    # (True/'parallel'/'serial'/'window'/'morph', and per-dataset morph
+    # lists) DOES progress/reveal data over time, where appending a growing
+    # forecast trace is out-of-scope follow-up work -- so those still raise.
+    if predict is not None and animate and animate != "spin":
         raise NotImplementedError(
-            "predict= is not yet supported with animate: forecast traces "
-            "are static-plot only in this release. Pass animate=False (the "
-            "default) to use predict=, or omit predict= for an animated plot."
+            "predict= is only supported with static plots and with "
+            "animate='spin' (which just rotates the camera around the static "
+            f"forecast overlay); it is not yet supported with animate="
+            f"{animate!r}, which reveals/appends data over time. Pass "
+            "animate=False or animate='spin' to use predict=, or omit "
+            "predict= for a time-progressing animation."
         )
 
     # rotations= as a per-SEGMENT list is only meaningful for
@@ -4226,25 +4287,20 @@ def plot(
             # trace per input dataset (GH #169), in the SAME color as its
             # source line. Added AFTER `_draw` has already built the legend
             # (from the original data lines only, via ax.legend() inside
-            # `_draw`), so these traces never gain a legend entry;
-            # label='_nolegend_' mirrors the trail-artist precedent
-            # (matplotlib_backend's animated trails) as a second guard.
+            # `_draw`), so these traces never gain a legend entry. The SAME
+            # helper (and the SAME seam-prepended arrays) serve both the
+            # static path and the animate='spin' path below.
             if raw_forecasts is not None:
-                _src_lines = list(ax.lines)
-                for _i, _fc in enumerate(raw_forecasts):
-                    _fc_color = (_src_lines[_i].get_color()
-                                if _i < len(_src_lines) else None)
-                    _d = _fc.shape[1] if _fc.ndim > 1 else 1
-                    if _d >= 3:
-                        ax.plot(_fc[:, 0], _fc[:, 1], _fc[:, 2],
-                               linestyle='--', color=_fc_color, alpha=0.6,
-                               label='_nolegend_')
-                    elif _d == 2:
-                        ax.plot(_fc[:, 0], _fc[:, 1], linestyle='--',
-                               color=_fc_color, alpha=0.6, label='_nolegend_')
-                    else:
-                        ax.plot(_fc[:, 0], linestyle='--', color=_fc_color,
-                               alpha=0.6, label='_nolegend_')
+                _forecast_artists = _draw_forecast_overlays(ax, raw_forecasts)
+                # animate='spin' only rotates the camera around the fully-
+                # drawn static scene, so these overlays rotate with everything
+                # else once they exist -- no per-frame update needed. But they
+                # must be unclipped, exactly like the other 3-D line artists
+                # (see animate_plot3D's `set_clip_on(False)` block), so they
+                # aren't clipped at wide rotation angles.
+                if animate == 'spin':
+                    for _artist in _forecast_artists:
+                        _artist.set_clip_on(False)
 
             # exact per-point colors: swap the single-color artists for
             # per-segment-colored line collections or per-point-colored
