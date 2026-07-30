@@ -132,8 +132,9 @@ Jeremy resolved all four (2026-07-29). **Plans 1 and 2 now have ZERO open decisi
 2. **`on_frame=` ships on BOTH backends; the `NotImplementedError` is DELETED.** Jeremy asked me to
    explain the limitation instead of accepting it, and the premise turned out FALSE:
    - `_add_animation` (`plotly_backend.py:2517`) builds every frame in a **Python loop at build
-     time** (`frames.append(go.Frame(...))` at :2729/:2819/:2865). Plotly's missing loop is at
-     PLAYBACK, not build.
+     time** (`frames.append(go.Frame(...))` at :2729 spin, :2819 morph, :2865 serial, **:2975
+     parallel/window** — FOUR sites; this line originally listed only three, corrected 2026-07-30).
+     Plotly's missing loop is at PLAYBACK, not build.
    - matplotlib fires at RENDER time (`FuncAnimation`, blit=False, `matplotlib_backend.py:1935`);
      lazily when displayed, eagerly when saved (`animate.py:116`).
    - So schedules CANNOT be identical, but OUTPUT can. Contract: **`on_frame` must be a pure
@@ -282,13 +283,45 @@ with a better answer.
 
 ## OPEN — needs Jeremy before execution
 
-Eleven flagged decisions, listed in the README. The two that matter most:
+**Superseded as of round 9 (2026-07-30). This section previously listed eleven decisions and two
+claims that later turned out wrong; corrected below. Do not resurrect the old text.**
 
-1. **`morph_samples` above threshold: raise (implemented) vs cap-with-warning.** Revisits Jeremy's
-   own 2026-07-06 request. `morph.py:17-24` guarantees no real data point is ever dropped, so
-   capping would violate a documented guarantee.
-2. **`on_frame=` on plotly is genuinely unreachable** — precomputed JSON played by a browser, no
-   Python per-frame loop. The one place the parity directive can't be met by implementation.
+Eight of the eleven are **resolved** — all eight are recorded in the README's *Standing decisions*.
+The two that had been called out as most important both closed, and one of them closed because the
+claim behind it was false:
 
-Also still open from earlier sessions: the `pyproject` 1.0.0 → 1.0.1 bump, and whether to commit
-the Bluesky launch clips / notebooks / examples at all.
+1. ~~**`morph_samples` above threshold: raise vs cap-with-warning**~~ → **RESOLVED**: new public
+   `simplify=` flag. No-op below the tractability cap; above it, `simplify=True` (default) silently
+   downsamples with *no* warning, `simplify=False` raises and names `simplify=True` in the message.
+   `morph.py:17-24`'s no-point-dropped guarantee becomes conditional and its docstring must be
+   updated as part of Plan 1 (Contract 7).
+2. ~~**`on_frame=` on plotly is genuinely unreachable**~~ → **THIS CLAIM WAS WRONG.** plotly has a
+   build-time Python frame loop: `_add_animation` at `plotly_backend.py:2517`, appending
+   `go.Frame(**frame_kwargs)` at **four** sites — :2729, :2819, :2865, **:2975** (re-verified
+   2026-07-30; earlier notes in this file listed only the first three). What it lacks is a
+   *playback* loop, which is a different thing. `on_frame` is therefore reachable on both backends
+   as a purity contract, the `NotImplementedError` is **deleted rather than relocated**, and
+   `test_on_frame_output_parity_across_backends(style, order)` pins it. The parity directive has no
+   exception in 1.1.
+
+   Separately, streaming is matplotlib-only regardless, but **not** by a backend-specific warning.
+   `streaming.py:263-265` is only the *docstring* describing the behavior. The real mechanism is a
+   signature-driven aggregate check in `plot()` at `plot.py:2551-2581`: `_stream_forwarded` is the
+   allow-list of parameters streaming honors, every other formal parameter whose value differs from
+   its default is collected into `_stream_dropped` (plus all of `**kwargs`), and one `UserWarning`
+   names the whole set. `backend` **is** a formal `plot()` parameter and is **not** in
+   `_stream_forwarded` (both verified 2026-07-30), so a `backend=` request is reported through that
+   general path — there is no code anywhere that warns about `backend` and streaming specifically.
+
+**Seven decisions genuinely remain**, none in Plans 1 or 2 — four in Plan 3 (silent forecast drop
+under `hue=`/`cluster=`; throttling beyond memoization; the `min_history` degenerate stub;
+finished-dataset forecast under `order='serial'`) and three in Plan 4 (where `image_palette` is
+exported; the paintings outlier trim; the morph example's `normalize()` helper). They are listed by
+**name, deliberately unnumbered**, in the README — cite them by name, never by number. Four rounds
+of citation drift in this plan set all traced to numbered references going stale under renumbering.
+
+Both earlier-session items are **closed, committed, not pushed**: the `pyproject` 1.0.0 → 1.0.1 bump
+shipped with the antialias work in `74c50b39`, and the notebooks/examples question resolved as
+*commit them* in `4d1d2223` (5 `examples/animate_*.py`, 5 new notebooks, 14 re-executed tutorials).
+The Bluesky launch clips are **not** committed — `notes/bluesky-launch/` is gitignored and
+`git check-ignore` confirms `POST.md` is ignored; tracked files under that path = 0.

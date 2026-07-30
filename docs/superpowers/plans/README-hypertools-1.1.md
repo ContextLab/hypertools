@@ -143,7 +143,11 @@ in the round-5 exchange. Both sets are recorded under *Standing decisions*.
 - **`on_frame=` works on BOTH backends, as a purity contract rather than a timing contract.**
   The earlier claim that plotly has no Python per-frame loop was wrong: `_add_animation`
   (`plotly_backend.py:2517`) builds every frame in a Python loop, appending `go.Frame` at
-  `:2729/:2819/:2865`. What plotly lacks is a loop during *playback*. So the hook is called once
+  **four** sites: `:2729` (spin), `:2819` (morph), `:2865` (serial), `:2975` (the `else:`
+  parallel/window branch). What plotly lacks is a loop during *playback*. **All four must be
+  patched** — `:2975` serves the default `animate=True` parallel style, so patching only the first
+  three would ship an `on_frame` that never fires for the most common animation. Plan 1's Task 7
+  Step 6a is the authority here and applies one identical block to all four. So the hook is called once
   per frame by each backend's natural loop — matplotlib at render time (`FuncAnimation`,
   `matplotlib_backend.py:1935`, possibly re-called per frame index across loops/saves), plotly once
   per frame at build. **`on_frame` must therefore be a pure function of its `FrameContext`;**
