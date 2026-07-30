@@ -38,6 +38,17 @@ except Exception:  # pragma: no cover
     def plotly_sg_scraper(*args, **kwargs):
         return ''
 sys.path.insert(0, os.path.abspath('../'))
+# `setup()` below does `from _gallery_log_filter import install` -- a sibling
+# module living right next to this file (docs/_gallery_log_filter.py). Read
+# the Docs' own build harness invokes Sphinx via `python -m sphinx`, which
+# Python implicitly puts the CURRENT WORKING DIRECTORY (docs/) onto
+# sys.path[0] for, so that import silently works there. The documented local
+# workflow (`cd docs && make html`, i.e. the installed `sphinx-build`
+# console-script) gets no such implicit entry -- console-script entry points
+# don't add cwd to sys.path -- so the same import raised ModuleNotFoundError
+# for every local/CI build using that entry point. Explicitly adding this
+# file's own directory makes the import invocation-agnostic.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 def _install_notebook_cell():
