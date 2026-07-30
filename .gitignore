@@ -33,3 +33,6 @@ notes/audit-1.0-2026-07/
 # generated sphinx-gallery output: regenerated at docs build time from
 # examples/*.py -- source examples stay tracked, generated gallery does not.
 docs/auto_examples/
+
+# social-media launch assets (post drafts + demo gifs) -- not for GitHub
+notes/bluesky-launch/

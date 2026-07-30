@@ -144,3 +144,43 @@ spread tightens ~30%. See the full gallery example,
 .. image:: _static/thumbnails/sphx_glr_plot_story_trajectories_thumb.gif
    :width: 400
    :alt: Animated hyperaligned brain-activity trajectories through a spoken story
+
+A market as one moving path: chemtrails and a live forecast
+-----------------------------------------------------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/market_forecast.ipynb
+
+Decades of weather: bold means, faint cities, temperature colormaps
+-------------------------------------------------------------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/weather_decades.ipynb
+
+The shape of a conversation, revealed one turn at a time
+--------------------------------------------------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/conversation_shape.ipynb
+
+Five paintings, described in words and drawn in their own colors
+----------------------------------------------------------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/painting_embeddings.ipynb
+
+Morphing through the shapes zoo
+-------------------------------
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/morph_shapes_zoo.ipynb
