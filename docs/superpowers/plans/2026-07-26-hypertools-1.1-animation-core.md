@@ -1,4 +1,4 @@
-# HyperTools 1.1 — Animation Core Implementation Plan (v4)
+# HyperTools 1.1 — Animation Core Implementation Plan (v4.1)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -9,6 +9,17 @@
 **Tech Stack:** Python 3.12.10, numpy 2.3.5, pandas, matplotlib 3.10.8 (primary backend), plotly 6.8.0 (interactive backend), scipy 1.17.0, pytest 9.0.2.
 
 ---
+
+## Revision note (v4.1)
+
+Two blockers from the second 2026-07-30 review of v4. **Both confirmed against source before editing**; no task added, removed, retitled or renumbered.
+
+| # | blocker | verification | fix |
+|-|-|-|-|
+| **F1** *(High)* | plotly **spin** callbacks had no defined `artists` value | **Confirmed.** v4 said *"`artists` is `frame_traces`"* for all four branches, but the spin branch never builds a `frame_traces`. Its whole per-frame payload is `dict(name=str(k), layout=dict(scene_camera=...))` — **no `data` key at all** (`plotly_backend.py:2695-2699`), matching the branch's own comment: *"the FULL dataset is static in 'spin' mode (only the camera rotates)"*. A literal implementation raises `NameError`; `[]` would falsely claim a spin frame draws nothing. A `data` key exists only when surfaced, and then it is `surf_data`, the re-shaded `Mesh3d` updates (`:2711-2735`) | Step 6a now states the contract **per branch**: `frame_traces` for morph/serial/parallel; for spin, `tuple(fig.data[i] for i in trace_indices)` — the shared static traces the frame really renders — with `tuple(surf_data)` appended when surfaced. **Scope verified**: `fig` is a parameter (`:2517`), `trace_indices` binds at `:2602`, `surface_trace_indices` at `:2609`, all before the spin branch at `:2666`, so no new plumbing. The *shared-not-per-frame* consequence is documented rather than hidden, in `FrameContext.artists`, the guide and the CHANGELOG. Three new tests: spin artists are non-empty and identical across frames, surfaced spin appends per-frame mesh updates, and a spin mutation is retained **figure-wide**. The review is right that the parity test cannot catch this — it excludes `artists` by design, because artists were never a cross-backend guarantee |
+| **F2** *(Medium)* | the guide presented post-construction registration as cross-backend | **Confirmed by running it.** `hyp.plot(..., animate=True)` returns `HyperAnimation` on matplotlib but a plain `plotly.graph_objects.Figure` on plotly, with its frames **already built** (measured: 2 frames present at return). `plot.py:4605-4612` says so directly — *"only animated matplotlib plots set `line_ani`; plotly and static plots leave it None"* — and `HyperAnimation` is constructed only under `if line_ani is not None`. So plotly has neither the method nor a window to use it. The neighbouring `ctx.axes` example was also matplotlib-specific while sitting in a backend-general section | The guide now leads with the portable form (`on_frame=` passed to `plot()`, both backends), gives **labelled** `# MATPLOTLIB ONLY` and `# PLOTLY ONLY` examples, and adds a *"Registering after construction is matplotlib-only"* section explaining **why** it cannot exist on plotly. The `plot()` docstring and CHANGELOG entry are qualified the same way. Three new guide tests pin the qualification, the labels, and spin's shared artists |
+
+**Suite arithmetic:** Task 7 **27 → 30**, Task 9 **15 → 18**. Total **120 → 126**; final **2,677 passed / 13 skipped**. Checkpoints from Task 7 on: **2646, 2659, 2677**.
 
 ## Revision note (v4)
 
@@ -29,7 +40,7 @@ Four maintainer blockers from the 2026-07-30 review, plus three defects the revi
 | **E2** | **This plan's *Decisions* list was numbered**, with three numeric back-references — the exact drift pattern that has now produced **five** stale citations across the plan set | De-numbered to named bullets with the rationale inline, matching the README. All three back-references re-pointed by name. Plan 4's list de-numbered too, and its two numeric citations re-pointed |
 | **E3** | **Plan 4 stated the pre-`simplify=` morph behaviour** — *"animation-core Task 3 makes an uncapped morph above 2000 points **raise**"*. Under the resolved decision the default silently **caps**; only `simplify=False` raises | Corrected in place, with the better reason to keep `morph_samples=N` stated: explicitness and reproducibility, not error-avoidance |
 
-**Suite arithmetic:** Task 7 **24 → 27** (+2 mutation-retention, +1 export); Task 9 **0 → 15** (the guide's tests). Total added **102 → 120**; final expected **2,671 passed / 13 skipped** against the verified 2,551 baseline. Every cumulative checkpoint from Task 7 onward was recomputed: 2643, 2656, 2671.
+**Suite arithmetic:** Task 7 **24 → 30** (+2 mutation-retention, +1 export, +3 plotly-spin artists); Task 9 **0 → 18** (the guide's tests). Total added **102 → 126**; final expected **2,677 passed / 13 skipped** against the verified 2,551 baseline. Every cumulative checkpoint from Task 7 onward was recomputed: 2646, 2659, 2677.
 
 ## Revision note (v3)
 
@@ -2378,6 +2389,16 @@ class FrameContext:
         any trail artists, matching the backend's own bookkeeping.
         BACKEND-NATIVE: on plotly these are that frame's ``go.Scatter``/
         ``go.Scatter3d`` traces, in the same order.
+
+        One documented exception, on plotly only. ``animate='spin'``
+        rotates the camera and re-sends no point data, so its frames share
+        the figure's static traces rather than carrying their own. There
+        ``artists`` is those shared traces, and mutating one applies to the
+        WHOLE animation rather than a single frame. When a spin plot is
+        also surfaced, that frame's re-shaded ``Mesh3d`` updates follow the
+        shared traces, and those trailing entries ARE per-frame. Every
+        other style, and every style on matplotlib, is per-frame
+        throughout.
     datasets : list of numpy.ndarray
         The arrays the animation actually DRAWS FROM, in dataset order --
         not the raw input. For a line format `plot()` pre-interpolates every
@@ -2660,7 +2681,105 @@ This step — **not Task 4** — owns the plotly side, so the dispatch block exi
 | serial (`:2865`) | `'serial'` / `'serial'` | `revealed_counts=_shown`, then `serial_current_index(_shown, lengths)` — the **same** helper, imported from `matplotlib_backend` (Step 4), which Task 8 Step 4 also imports here | `None` |
 | parallel/window (`:2975`) | the resolved `animate` / `'parallel'` | all `None` | `None` |
 
-`artists` is `frame_traces` (that frame's traces, head then trail, the order the loop already builds); `datasets` is `data`; `n_frames` is `n_frames`. `figure` is the `go.Figure` and `axes` is `None`, per `FrameContext`'s backend note.
+`datasets` is `data`; `n_frames` is `n_frames`. `figure` is the `go.Figure` and `axes` is `None`, per `FrameContext`'s backend note.
+
+**`artists` — and the spin branch is NOT `frame_traces`.** Three of the four branches build a per-frame trace list named `frame_traces`; **spin does not build one at all**, so `artists=frame_traces` would raise `NameError` for `animate='spin'`. Verified against source 2026-07-30: the spin loop's payload is
+
+```python
+frame_kwargs = dict(
+    name=str(k),
+    layout=dict(scene_camera=dict(eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom)))))
+```
+
+with **no `data` key at all** (`plotly_backend.py:2695-2699`) — the branch's own comment says *"the FULL dataset is static in 'spin' mode (only the camera rotates)"*. A `data` key appears **only** when surfaces are enabled, and then it is `surf_data`, the re-shaded `Mesh3d` updates addressed by `surface_trace_indices` (`plotly_backend.py:2711-2735`).
+
+Substituting `[]` is **not** an acceptable fallback: `FrameContext.artists` is documented as the drawn artists, and an empty tuple would say a spin frame draws nothing, which is false.
+
+**The contract, stated explicitly per branch:**
+
+| branch | `artists` | shared or per-frame? |
+|-|-|-|
+| morph, serial, parallel/window | `frame_traces` — that frame's traces, head then trail, in the order the loop already builds them | **per-frame**: mutating one affects only that frame |
+| **spin, no surfaces** | the figure's **static data traces**, `tuple(fig.data[i] for i in trace_indices)` — the traces the frame actually renders, which spin re-uses rather than re-sending | **shared**: every frame renders the same trace objects, so a mutation applies to the whole animation |
+| **spin, surfaced** | the same static data traces **followed by** that frame's `surf_data` mesh updates | **mixed**: the leading static traces are shared; the trailing `surf_data` entries are per-frame |
+
+Implement it as an explicit per-branch assignment, not a single shared expression:
+
+```python
+# spin branch, immediately before frames.append(go.Frame(**frame_kwargs)):
+_frame_artists = tuple(fig.data[i] for i in trace_indices)
+if surface_trace_indices:
+    _frame_artists = _frame_artists + tuple(surf_data)
+```
+
+**Scope check (verified 2026-07-30, do not skip):** all three names this needs are already in scope at the spin loop — `fig` is `_add_animation`'s first parameter (`plotly_backend.py:2517`), `trace_indices` is bound at `:2602` as `list(range(data_trace_start, data_trace_start + n_data_traces))`, and `surface_trace_indices` at `:2609`. Both bindings precede the spin branch at `:2666`, so no new plumbing is required. `surf_data` is local to the surfaced sub-branch, which is why the `tuple(surf_data)` append sits inside the `if`.
+
+**Why "shared" is the honest answer rather than a wart to hide.** Spin genuinely does not redraw the data — only the camera moves. A caller who recolours `ctx.artists[0]` on frame 3 of a spin will see that colour on every frame, and that is what the figure really does. The docstring, the guide and the CHANGELOG all say so; the retention test asserts the shared semantics rather than pretending it is per-frame.
+
+This is also why the parity test can keep excluding `artists` (it compares only backend-independent fields) — parity across backends was never the guarantee for artists. What pins spin is the dedicated pair of tests below.
+
+Add these to `tests/plot/test_on_frame_hook.py`, in the backend-parity section:
+
+```python
+def test_plotly_spin_artists_are_the_static_data_traces():
+    """Regression: the spin branch builds no `frame_traces` (its frame payload
+    is camera-layout only, plotly_backend.py:2695-2699), so a literal
+    `artists=frame_traces` raises NameError there. Spin publishes the traces it
+    actually renders -- the figure's static ones -- never an empty tuple."""
+    pytest.importorskip('plotly')
+    seen = []
+    hyp.set_interactive_backend('plotly')
+    try:
+        fig = hyp.plot(_datasets(), '-', animate='spin', duration=1,
+                       frame_rate=4, on_frame=seen.append, show=False)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+    assert len(seen) == 4
+    assert all(len(ctx.artists) > 0 for ctx in seen), 'never empty'
+    assert all(hasattr(a, 'x') for a in seen[0].artists), 'traces, not artists'
+    # shared, not per-frame: every frame publishes the SAME trace objects
+    assert all(ctx.artists[0] is seen[0].artists[0] for ctx in seen)
+    assert seen[0].artists[0] in tuple(fig.data)
+
+
+def test_plotly_surface_spin_artists_include_the_per_frame_mesh_updates():
+    """Surfaced spin DOES send per-frame data (`surf_data`, the re-shaded
+    Mesh3d updates at plotly_backend.py:2711-2735). Those trail the static
+    traces, so a caller can reach both."""
+    pytest.importorskip('plotly')
+    rng = np.random.default_rng(0)
+    cloud = rng.normal(size=(40, 3))
+    seen = []
+    hyp.set_interactive_backend('plotly')
+    try:
+        hyp.plot([cloud], animate='spin', surface=True, duration=1,
+                 frame_rate=4, on_frame=seen.append, show=False)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+    plain = len(tuple(t for t in seen[0].artists if hasattr(t, 'x')))
+    assert len(seen[0].artists) > plain, 'mesh updates are appended'
+    # the trailing mesh entries are PER-FRAME: different objects each frame
+    assert seen[0].artists[-1] is not seen[1].artists[-1]
+
+
+def test_plotly_spin_mutation_is_retained_and_is_figure_wide():
+    """Spin's documented consequence: because the traces are shared, a
+    mutation is figure-wide rather than per-frame. Asserted, not hidden."""
+    pytest.importorskip('plotly')
+
+    def rename(ctx):
+        if ctx.frame == 1:
+            ctx.artists[0].name = 'touched-on-frame-1'
+
+    hyp.set_interactive_backend('plotly')
+    try:
+        fig = hyp.plot(_datasets(), '-', animate='spin', duration=1,
+                       frame_rate=4, on_frame=rename, show=False)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+    assert fig.data[0].name == 'touched-on-frame-1', (
+        'the mutation lands on the shared figure trace')
+```
 
 - [ ] **Step 6b: Put `FrameContext` on the public surface — and keep `FrameHooks` off it**
 
@@ -2717,7 +2836,7 @@ def test_frame_context_is_exported_at_top_level_but_frame_hooks_is_not():
 - [ ] **Step 7: Run the test and confirm it passes**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_on_frame_hook.py -v`
-Expected: **27 passed** (23 plain + 4 parametrized parity cases).
+Expected: **30 passed** (26 plain + 4 parametrized parity cases) — the 23 defs from Step 1, plus Step 6a's three spin-artist tests and Step 6b's export test.
 
 Then confirm the public-surface tests still pass, since Step 6b touched them:
 
@@ -2737,8 +2856,11 @@ Add an `on_frame` entry to `plot()`'s docstring:
         and the exact per-dataset reveal counts. For ``animate='morph'`` it
         also reports ``segment_index`` and ``segment_kind`` ('hold' or
         'transition'). Use this instead of reaching into matplotlib's
-        private ``FuncAnimation._func``. Callbacks may also be attached
-        afterwards via ``HyperAnimation.on_frame()``.
+        private ``FuncAnimation._func``. On MATPLOTLIB, callbacks may also
+        be attached afterwards via ``HyperAnimation.on_frame()``; this is
+        not available on plotly, whose animated return is a plain
+        ``go.Figure`` with its frames already built, so pass ``on_frame=``
+        here for backend-portable code.
 
         Supported on BOTH backends, with the same per-frame context
         metadata but different call schedules: matplotlib calls back at
@@ -2772,7 +2894,7 @@ Note the `return_model=True` limitation in the `return_model` entry (`plot.py:19
 - [ ] **Step 9: Run the FULL suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2643 passed, 13 skipped`. Grep for any test asserting that `on_frame=` is unavailable on plotly — there is none in the repo today, but if one appears it is asserting v2's removed premise, not a contract.
+Expected: `2646 passed, 13 skipped`. Grep for any test asserting that `on_frame=` is unavailable on plotly — there is none in the repo today, but if one appears it is asserting v2's removed premise, not a contract.
 
 - [ ] **Step 10: Commit**
 
@@ -3137,7 +3259,7 @@ Extend the `title` entry written in Task 1:
 - [ ] **Step 8: Run the FULL suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2656 passed, 13 skipped`.
+Expected: `2659 passed, 13 skipped`.
 
 - [ ] **Step 9: Commit**
 
@@ -3165,7 +3287,10 @@ git commit -m "feat(plot): per-segment titles for serial-style animations, on bo
 - Per-dataset `alpha=`, alongside the existing per-dataset `color=`/
   `linewidth=`. Inputs that assign alpha internally (row MultiIndex, nested
   lists) keep their own values and now say so instead of losing silently.
-- Public `on_frame=` hook and `HyperAnimation.on_frame()`, giving a
+- Public `on_frame=` hook (**both backends**) and, on matplotlib,
+  `HyperAnimation.on_frame()` for attaching after construction — not
+  available on plotly, whose animated return is a plain `go.Figure` whose
+  frames are already built. Both give a
   `FrameContext` with the frame index, axes, drawn artists, animated arrays,
   the serial-reveal counts, and -- for morphs -- `segment_index`/
   `segment_kind`. Replaces reaching into `FuncAnimation._func`. Works on
@@ -3314,23 +3439,97 @@ Per-frame callbacks
 -------------------
 
 ``on_frame=`` runs your function once per frame with a
-:class:`~hypertools.FrameContext`:
+:class:`~hypertools.FrameContext`. **Passing it to** ``plot()`` **works on
+both backends** and is the portable form:
 
 .. code-block:: python
 
+    def label_frame(ctx):
+        # ctx.frame and ctx.n_frames are backend-independent
+        print(f'frame {ctx.frame} of {ctx.n_frames}')
+
+    hyp.plot(data, '-', animate=True, on_frame=label_frame)
+
+The context carries the frame index and total, the resolved ``style`` and
+``order``, the arrays being drawn, the serial-reveal counts, and -- for
+morphs -- ``segment_index`` and ``segment_kind``. All of those are the same
+on either backend.
+
+What you *do* with the context is usually backend-specific, because
+``ctx.figure``, ``ctx.axes`` and ``ctx.artists`` are backend-native. The
+matplotlib form:
+
+.. code-block:: python
+
+    # MATPLOTLIB ONLY -- ctx.axes is None on plotly
     def annotate(ctx):
         ctx.axes.set_title(f'frame {ctx.frame} of {ctx.n_frames}')
 
     fig, ani = hyp.plot(data, '-', animate=True, on_frame=annotate)
 
-You can also attach one after the fact::
+and the plotly equivalent, which reaches the frame's traces instead:
 
-    anim = hyp.plot(data, '-', animate=True)
-    anim.on_frame(annotate)
+.. code-block:: python
 
-The context carries the frame index and total, the resolved ``style`` and
-``order``, the arrays being drawn, the serial-reveal counts, and -- for
-morphs -- ``segment_index`` and ``segment_kind``.
+    # PLOTLY ONLY -- ctx.artists are that frame's traces
+    def rename(ctx):
+        ctx.artists[0].name = f'frame {ctx.frame}'
+
+    hyp.set_interactive_backend('plotly')
+    fig = hyp.plot(data, '-', animate=True, on_frame=rename)
+
+.. _animation-spin-artists:
+
+``animate='spin'`` shares its artists
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Spin rotates the camera and re-sends no point data, so on plotly every
+frame renders the *same* trace objects. ``ctx.artists`` is therefore shared
+across frames, and a mutation applies to the **whole animation** rather
+than to one frame::
+
+    def recolour(ctx):
+        if ctx.frame == 0:
+            ctx.artists[0].line.color = 'red'   # red for the ENTIRE spin
+
+Writing a spin callback as though each frame had its own artists is the
+common mistake here -- the last frame's value would appear to win, because
+there was only ever one object. If you want something that genuinely varies
+per frame under spin, vary the layout (via the figure) rather than the
+traces, or use ``animate=True`` instead.
+
+A surfaced spin is the mixed case: its frames *do* carry re-shaded
+``Mesh3d`` updates, which follow the shared traces in ``ctx.artists``, and
+those trailing entries are per-frame. Every other style, and every style on
+matplotlib, is per-frame throughout.
+
+.. _animation-post-construction:
+
+Registering after construction is matplotlib-only
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+On matplotlib you can attach a callback to an animation you already have::
+
+    anim = hyp.plot(data, '-', animate=True)   # a HyperAnimation
+    anim.on_frame(annotate)                     # fires on subsequent draws
+
+**This is not available on plotly, and cannot be.** An animated matplotlib
+plot returns a :class:`~hypertools.HyperAnimation`, whose frames are drawn
+lazily at render time -- so there is still a window in which to register.
+An animated plotly plot returns a plain ``plotly.graph_objects.Figure``:
+its frames are *already built* by the time ``plot()`` returns, so there is
+no later frame to call back into, and the returned object has no
+``.on_frame()`` method.
+
+If you are writing backend-portable code, **pass the callback to**
+``plot()``. That is the form that works everywhere:
+
+.. code-block:: python
+
+    hyp.plot(data, '-', animate=True, on_frame=my_callback)   # both backends
+
+    anim = hyp.plot(data, '-', animate=True)                  # matplotlib only
+    anim.on_frame(my_callback)
 
 .. _animation-callback-contract:
 
@@ -3500,6 +3699,36 @@ def test_animation_guide_does_not_call_the_contract_purity():
     guide's own example sets a title every frame."""
     text = GUIDE.read_text().lower()
     assert 'pure function' not in text
+
+
+def test_animation_guide_marks_post_construction_registration_matplotlib_only():
+    """`HyperAnimation.on_frame()` cannot exist on plotly: animated plotly
+    returns a plain go.Figure whose frames are already built when plot()
+    returns (plot.py:4605-4612 -- only animated matplotlib sets line_ani).
+    The guide must not present post-construction registration as portable."""
+    text = ' '.join(GUIDE.read_text().split())
+    assert 'Registering after construction is matplotlib-only' in text
+    assert 'This is not available on plotly, and cannot be.' in text
+    # and it must say what to do instead
+    assert 'pass the callback to' in text.lower()
+
+
+def test_animation_guide_labels_its_backend_specific_examples():
+    """ctx.axes is None on plotly and ctx.artists are traces, so neither
+    example is portable. Each must be labelled rather than sitting
+    unmarked in a backend-general section."""
+    text = GUIDE.read_text()
+    assert '# MATPLOTLIB ONLY' in text
+    assert '# PLOTLY ONLY' in text
+
+
+def test_animation_guide_documents_spin_shared_artists():
+    """animate='spin' re-sends no point data, so on plotly its frames share
+    the figure's static traces and a mutation is figure-wide. A caller who
+    does not know that will write a spin callback that appears broken."""
+    text = ' '.join(GUIDE.read_text().split())
+    assert 'spin' in text
+    assert 'whole animation' in text or 'figure-wide' in text
 ```
 
 - [ ] **Step 5: Simplify the gallery examples that hand-rolled these primitives — MECHANICAL MIGRATION ONLY**
@@ -3532,7 +3761,7 @@ Expected: build succeeds with **0 warnings** (the repo holds an RTD-parity zero-
 - [ ] **Step 8: Run the FULL suite one last time**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2671 passed, 13 skipped`.
+Expected: `2677 passed, 13 skipped`.
 
 - [ ] **Step 9: Commit**
 
@@ -3593,11 +3822,11 @@ git commit -m "docs(1.1): document order=, per-dataset alpha=, on_frame, per-seg
 | 4 | 7 | 1 def × 4 cases | **10** | 11 ✗ |
 | 5 | 16 | 1 × 4, 1 × 2 | **20** | 20 ✓ |
 | 6 | 10 | — | **10** | 11 ✗ |
-| 7 | 24 | 1 def × 4 cases | **27** | 20 (v3 dropped the plotly-raises test and added 3 defs incl. the ×4 parity case; **v4 adds 3 more** — two mutation-retention tests and the `FrameContext` export test) |
+| 7 | 27 | 1 def × 4 cases | **30** | 20 (v3 dropped the plotly-raises test and added 3 defs incl. the ×4 parity case; **v4 adds 6** — two mutation-retention tests, the `FrameContext` export test, and **v4.1**'s three plotly-spin artist tests) |
 | 8 | 13 | — | **13** | 14 ✗ |
-| 9 | 5 | 1 def × 10 cases | **15** | 0 (**new in v4**: `tests/test_animation_guide_docs.py`, the guide's content + navigation tests) |
+| 9 | 8 | 1 def × 10 cases | **18** | 0 (**new in v4**: `tests/test_animation_guide_docs.py`; **v4.1** adds three more — post-construction qualification, backend-labelled examples, spin's shared artists) |
 
-Added (v4): 9 + 5 + 11 + 10 + 20 + 10 + **27** + 13 + **15** = **120**. Final expected: `2671 passed, 13 skipped`. *(v3 totalled 102 for a final of 2,653; v4 adds 3 to Task 7 and creates Task 9's 15.)* Each task's Step "run the FULL suite" states its own running total, so a drift is caught at the task that caused it.
+Added (v4.1): 9 + 5 + 11 + 10 + 20 + 10 + **30** + 13 + **18** = **126**. Final expected: `2677 passed, 13 skipped`. *(v3 totalled 102 → 2,653; v4 made it 120 → 2,671; v4.1 adds 3 spin tests to Task 7 and 3 guide tests to Task 9.)* Each task's Step "run the FULL suite" states its own running total, so a drift is caught at the task that caused it.
 
 The three ✗ rows are a **v2 counting error, not a v3 change**: v2 counted a parametrized def as both one def *and* its cases (visible in its own Task 4 breakdown, *"4 plain + 4 parametrized + 3 plain"* for a file with 7 defs), and over-counted Tasks 6 and 8 by one each with no parametrization present to explain it. Nothing about those tasks' contents changed in v3.
 

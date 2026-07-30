@@ -158,6 +158,19 @@ in the round-5 exchange. Both sets are recorded under *Standing decisions*.
   browser boundary it raises, naming the backend; it never silently degrades. **As of the round-5
   exchange there is no such capability in 1.1** — `on_frame=` was the sole claimed exception and
   turned out not to be one (below).
+- **The `on_frame=` ARGUMENT works on both backends; post-construction registration does not.**
+  `hyp.plot(..., on_frame=fn)` is the portable form. `HyperAnimation.on_frame(fn)` is
+  **matplotlib-only** and cannot be otherwise: animated matplotlib returns a `HyperAnimation` whose
+  frames are drawn lazily at render time, while animated plotly returns a plain `go.Figure` whose
+  frames are **already built** when `plot()` returns (`plot.py:4605-4612` — only animated matplotlib
+  sets `line_ani`; verified by running it). There is no later frame to register against.
+  Relatedly, `ctx.figure`/`ctx.axes`/`ctx.artists` are backend-native, so callback *bodies* are
+  usually backend-specific even though the context metadata is not.
+- **`animate='spin'` shares its artists on plotly.** Spin moves only the camera and re-sends no
+  point data (`plotly_backend.py:2695-2699` — the frame payload has no `data` key), so its frames
+  publish the figure's static traces and a mutation is **figure-wide, not per-frame**. A surfaced
+  spin additionally carries per-frame `Mesh3d` updates, appended after the shared traces. This is
+  the one place `ctx.artists` is not per-frame, and it is documented rather than smoothed over.
 - **`on_frame=` works on BOTH backends, as a determinism/idempotence contract rather than a timing contract.**
   The earlier claim that plotly has no Python per-frame loop was wrong: `_add_animation`
   (`plotly_backend.py:2517`) builds every frame in a Python loop, appending `go.Frame` at
