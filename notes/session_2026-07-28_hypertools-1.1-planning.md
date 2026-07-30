@@ -325,3 +325,54 @@ shipped with the antialias work in `74c50b39`, and the notebooks/examples questi
 *commit them* in `4d1d2223` (5 `examples/animate_*.py`, 5 new notebooks, 14 re-executed tutorials).
 The Bluesky launch clips are **not** committed — `notes/bluesky-launch/` is gitignored and
 `git check-ignore` confirms `POST.md` is ignored; tracked files under that path = 0.
+
+---
+
+## Round 9 (2026-07-30) — Plan 1 review; animation-core v3 → v4
+
+Four maintainer blockers, **all four confirmed by reproduction** before any edit. Three further
+defects surfaced from the same audit that the review did not name.
+
+| # | blocker | verification |
+|-|-|-|
+| B1 | no animation guide is planned | The ONLY `docs/` string in the whole plan was `git add CHANGELOG.md docs/ examples/` — staging a directory no step wrote to. Task 9 was *titled* "CHANGELOG, docs, and example cleanup" with zero doc steps. Self-contradictory in the other direction too: Step 4's 0-warning gate means an **unlinked** new `.rst` would have FAILED the build |
+| B2 | callback contract misstated as "purity" | Confirmed in adjacent lines: the `plot()` docstring said *"must be a pure function"* and the example on the NEXT line called `ctx.axes.set_title(...)` |
+| B3 | `FrameContext` public but unexported | Confirmed. Also found the enforcement: `tests/test_codeorg_licensing_audit_fixes.py:295-300` is a **hardcoded literal set**, so `__all__` and that literal must change atomically or the suite goes red |
+| B4 | Plan 1 / Plan 4 example ownership | Confirmed and **mutual** — Plan 4 has a task per example (T2/T3/T5/T6) over the same four files, 52 mentions |
+
+**Found by the audit, not the review:**
+
+- **E1 — every 1.1 plan's docs-verification step could not run.** All six `cd docs && make clean &&
+  make html` fail: `make` runs the `sphinx-build` **console script**, whose `sys.path[0]` is the
+  venv `bin/`, so `docs/conf.py:367`'s `from _gallery_log_filter import install` raises
+  `ModuleNotFoundError`. Reproduced twice. `python -m sphinx` works because `-m` puts the CWD
+  (`docs/`) on `sys.path`. Worse: `make html` omits `-W`, so it never enforced the zero-warning
+  gate it claimed to. **CI truth** (`.github/workflows/test.yml:283-291`):
+  `cd docs && python -m sphinx -b html -W -E -a . _build/html`. All six replaced across all 4 plans.
+- **E2** — animation-core's *Decisions* list was numbered with 3 numeric back-references. De-numbered.
+- **E3** — Plan 4 still stated the pre-`simplify=` morph behaviour ("raise"); default now caps silently.
+
+**The sixth citation-drift instance, and the worst one.** The README's own drift log said Plan 2's
+`"Decisions still open #5"` citation was *"now cited by name"*. It wasn't — a second occurrence
+survived at `2026-07-28-hypertools-1.1-multiindex.md:3565` for eleven days, carrying the same wrong
+number (the drop was #9). **Lesson recorded in the README: a partial fix plus a note claiming
+"fixed" is worse than no fix, because the note stops anyone re-checking.** Verify a citation fix by
+grepping the *pattern* across every plan, never by fixing the instance you were shown.
+
+**Two of my own claims were wrong and were caught by verifying them:**
+1. I wrote "zero of the four examples accumulate — no `+=`" into the plan. A grep found `+=` in two.
+   Both turned out benign — `animate_market_forecast.py:255` is **module-level precompute** building
+   an `ACC` array (wrapper at `:323` only does `ACC[min(num, total-1)]`), and
+   `animate_conversation.py:254` is a loop-local in a deterministic helper. Claim narrowed to "inside
+   the per-frame wrapper" and the **precompute-then-index** idiom is now taught in the guide.
+2. I wrote a test using `ani = hyp.plot(...)`. `HyperAnimation` is a `(figure, animation)` **tuple
+   subclass** (`hyper_animation.py:45`), so that binds the tuple. Fixed to `fig, ani = ...`.
+
+**Arithmetic:** Task 7 24 → **27**, Task 9 0 → **15**. Total 102 → **120**; final **2,671 passed /
+13 skipped** vs the 2,551 baseline. Checkpoints from Task 7 on: 2643, 2656, 2671.
+
+**Also this round (maintainer request):** the "welcome" animation. The **README was already**
+`story_trajectories.gif` (`README.md:10`); only `docs/index.rst:9` still used `hypertools.gif`.
+Switched, with alt text describing the hyperaligned story trajectories.
+`plot_story_trajectories.py` is the storytelling-hyperalignment demo (36 subjects, Simony et al.
+2016 "PieMan"). `hypertools.gif` is now referenced only by generator scripts; left in tree.
