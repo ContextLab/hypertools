@@ -33,6 +33,11 @@ notes/audit-1.0-2026-07/
 # generated sphinx-gallery output: regenerated at docs build time from
 # examples/*.py -- source examples stay tracked, generated gallery does not.
 docs/auto_examples/
+# sphinx-gallery also writes a top-level "all galleries" computation-times
+# summary outside gallery_dirs/ -- same generated-artifact rule applies (it
+# embeds machine-specific timings and drifts out of sync with the example
+# count on every gallery change).
+docs/sg_execution_times.rst
 
 # social-media launch assets (post drafts + demo gifs) -- not for GitHub
 notes/bluesky-launch/

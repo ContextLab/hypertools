@@ -376,3 +376,38 @@ grepping the *pattern* across every plan, never by fixing the instance you were 
 Switched, with alt text describing the hyperaligned story trajectories.
 `plot_story_trajectories.py` is the storytelling-hyperalignment demo (36 subjects, Simony et al.
 2016 "PieMan"). `hypertools.gif` is now referenced only by generator scripts; left in tree.
+
+## Round 10 (2026-07-30) — "nothing is out of scope": findings I had dismissed
+
+Jeremy, CRITICAL: *"there's nothing out of scope — ALL findings must be addressed and treated as
+relevant. failed checks mean: dispatch subagents to diagnose and fix. incidental findings mean:
+dispatch subagents to diagnose and fix."* Saved to memory as `nothing-is-out-of-scope`. I had
+dismissed three items in one session; every one is now diagnosed.
+
+| finding | how I dismissed it | resolution |
+|-|-|-|
+| 2 background tasks died, exit 144, 0-byte output (`bku8h5xu7` "Block until final test suite completes", `b4ibj9igv` "Wait for tests and paintings re-render") | *"aren't from this work"* — they predate a context compaction | subagent dispatched to trace what they gated and fix anything half-finished, esp. `animate_painting_embeddings.py` + its notebook |
+| `docs/sg_execution_times.rst` stale — tracked, says "53 files", repo has **58** examples | *"build noise, CI regenerates it"* | **UNTRACKED + gitignored.** Correct per the repo's own rule: `docs/auto_examples/` is already ignored (`.gitignore:35`) and CI asserts generated gallery output must not be tracked *because "its presence would MASK execution failures"* (`test.yml:268-272`). Verified safe: **no** `.rst` or `conf.py` references it, so no toctree breakage |
+| `images/hypertools.gif` orphaned | *"harmless, left in tree"* | **KEEP — on evidence.** It is the documented OUTPUT TARGET of `scripts/round17_evidence/readme_media.py:63` and the stated visual reference in `generate_story_trajectories.py:48,85` and `generate_weights_trajectory.py:2`. Deleting it would dangle a generator's contract |
+
+**Widened by the scan (the original framing was too narrow).** `hypertools.gif` was not the only
+orphan — a full-repo reference scan found **six** unreferenced images, and it is the *least*
+orphaned of them. These five have **zero references anywhere in the repo**:
+`demo_density.png`, `demo_multicolored.png`, `demo_plotly.png`, `demo_predict.png`, `hypercube.pdf`.
+**Not deleted, and deliberately so:** this repo serves `images/` over
+`raw.githubusercontent.com/...` URLs (README does exactly that), so third parties — old issues, PRs,
+posts — may hot-link them, and deletion breaks those silently and invisibly to us. Needs Jeremy's
+call, since only he knows whether they are dead. Recorded rather than left ambiguous.
+
+**A fourth finding, self-caught: the PostToolUse verifier cries wolf.** The
+*"Edit operation failed"* / *"Command failed"* messages I had been calling spurious are real, with a
+precise root cause: `~/.claude/plugins/.../oh-my-claudecode/4.2.15/scripts/post-tool-verifier.mjs`
+decides failure by **substring-matching the tool's output text** — `detectWriteFailure` (`:209-220`)
+tests `/error/i` and `/failed/i`, `detectBashFailure` (`:138-152`) adds `/cannot/i`, `/abort/i`.
+No exit code, no error flag. So an edit whose *content* discusses failure modes ("raises
+`NameError`") is reported as a failed edit, and a successful `grep` printing text containing "fail"
+becomes "Command failed". **This is the same pathology Jeremy just corrected in me:** a check that
+always cries wolf trains the reader to ignore it, so a genuine failure passes unnoticed. Installed
+OMC is 4.2.15; the local marketplace copy is byte-identical, so there is no newer local copy. Fixes
+both touch Jeremy's GLOBAL config (`omc update` to 4.15.7, or override the hook), so they need his
+call — patching the plugin cache in place would be erased by the next update.
