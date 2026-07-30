@@ -3182,7 +3182,7 @@ Expected: the SVG is rewritten (its mtime changes; it was 59 106 bytes before). 
 
 - [ ] **Step 7: Build the docs to the RTD-parity standard**
 
-Run: `cd docs && make clean && make html 2>&1 | tail -30`
+Run: `cd docs && MPLBACKEND=Agg ../.venv/bin/python -m sphinx -b html -W -E -a . _build/html 2>&1 | tail -30`
 Expected: build succeeds with **0 warnings** (the bar the 1.0 release gate enforces). A new page not in any toctree is a Sphinx warning, so this also proves Step 4 landed.
 
 - [ ] **Step 8: Commit**
@@ -3441,7 +3441,7 @@ Expected: green, and a non-zero count — the tutorial genuinely uses a column h
 - [ ] **Step 3: Build the docs to RTD parity**
 
 ```bash
-cd docs && make clean && make html 2>&1 | tail -30
+cd docs && MPLBACKEND=Agg ../.venv/bin/python -m sphinx -b html -W -E -a . _build/html 2>&1 | tail -30
 ```
 Expected: **0 warnings**. Then confirm the new page rendered and is linked:
 
@@ -3562,6 +3562,6 @@ Every "N passed" was obtained by counting `def test_` in the block above it: 27,
 **Remaining risk.** Four places:
 
 1. **Task 6 is the largest single change** and the likeliest to disturb existing figures: the continuous-vs-categorical branch must keep categorical hue deferring to the grouping and keep row-hierarchy hue warning, or existing figures silently change colour. `test_categorical_hue_still_defers_to_the_grouping`, `test_row_hierarchy_hue_is_still_warned_and_ignored` and the full-suite run in Step 5 are the guards; if the task grows beyond one reviewable diff, split it into "classify hue early" and "propagate hue through FinalTraces".
-2. **Tasks 8 and 9 both touch `plot.py:3999`, and so does forecast-animation Task 2.** Whichever lands second must extend rather than replace — Task 8 Step 3.4 says so explicitly, and the distinction (hierarchical mismatch = raise; hue/cluster regrouping = status-quo silent, per README *Decisions still open* #5) is stated so the merge is mechanical.
+2. **Tasks 8 and 9 both touch `plot.py:3999`, and so does forecast-animation Task 2.** Whichever lands second must extend rather than replace — Task 8 Step 3.4 says so explicitly, and the distinction (hierarchical mismatch = raise; hue/cluster regrouping = status-quo silent, per the README's open decision named **"Silent forecast drop under `hue=`/`cluster=`"**) is stated so the merge is mechanical.
 3. **`tests/test_multiindex.py:479` is now the ONLY passing test this plan rewrites.** *Decisions (resolved)* #1 removed the other one (`:453` keeps warn-and-flatten), so the compatibility surface is a single line: `predict=` over a hierarchy stops raising blanketly. It is tabulated up front, changelogged, and Task 5 Step 5 actively verifies that `:453` was *not* touched.
 4. **Contract 10 is a shape rule users will meet as an error, on either axis.** A row hierarchy whose innermost level is unique per row cannot be forecast, and neither can any hierarchy over a 1-row frame; both are properties of the data rather than limitations the user can configure away. The mitigations are all in the message and the docs: the error names the trace and its row count, and then explains the cause the axis actually has — the one-trace-per-index-tuple rule plus `df.reset_index(drop=True)` / a column hierarchy for rows, or a single-observation input for columns, where flattening is deliberately **not** offered because it cannot add a row. `docs/hierarchy.rst`'s comparison table and the CHANGELOG's *Documented limitations* say the same thing before the user hits it. `test_row_hierarchy_with_one_row_leaves_raises_naming_the_trace` and `test_one_row_column_hierarchy_raises_about_the_input_not_the_grouping` assert the messages rather than merely the exception type, `test_animated_one_row_hierarchy_still_raises_the_precondition` pins that the check precedes the forecast schedule, and `test_row_hierarchy_with_multi_row_leaves_forecasts_every_trace` verifies its own frame's leaf shapes before asserting counts — so no side can pass vacuously.

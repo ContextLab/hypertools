@@ -1,14 +1,35 @@
-# HyperTools 1.1 — Animation Core Implementation Plan (v3)
+# HyperTools 1.1 — Animation Core Implementation Plan (v4)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give `hyp.plot` the animation primitives its own gallery examples currently hand-roll, so a tutorial can showcase hypertools instead of working around it — and make the matplotlib and plotly backends mean the same thing by the same call.
 
-**Architecture:** Three defects are fixed first (title stringification, animated-hue `linewidth`, morph intractability); they are independent and cheap. Then the plotly backend gains the serial trail composition matplotlib already has, so the two backends are at parity **before** a new spelling is layered on top. Only then is `order=` introduced — and it is **folded into the resolved backend mode** inside `_resolve_animate_mode`, so every one of the four downstream `animate` consumers gets the right value without a per-site substitution. Per-dataset `alpha=` joins the existing named-kwarg machinery with an explicit precedence rule. A public per-frame hook is added on **one shared mutable callback registry** created in `plot()` and adopted (never re-created) by `HyperAnimation`. Per-segment titles are built on that registry, discriminating morph holds from transitions by **segment parity**, not by a float. Every change is additive: no existing call signature changes meaning.
+**Architecture:** Three defects are fixed first (title stringification, animated-hue `linewidth`, morph intractability); they are independent and cheap. Then the plotly backend gains the serial trail composition matplotlib already has, so the two backends are at parity **before** a new spelling is layered on top. Only then is `order=` introduced — and it is **folded into the resolved backend mode** inside `_resolve_animate_mode`, so every one of the four downstream `animate` consumers gets the right value without a per-site substitution. Per-dataset `alpha=` joins the existing named-kwarg machinery with an explicit precedence rule. A public per-frame hook is added on **one shared mutable callback registry** created in `plot()` and adopted (never re-created) by `HyperAnimation`. Per-segment titles are built on that registry, discriminating morph holds from transitions by **segment parity**, not by a float. The hook's receipt type, `FrameContext`, joins the curated public surface; the `FrameHooks` registry stays internal. The plan closes with a written **animation guide** (`docs/animation.rst`), linked into the site navigation and pinned by its own tests. Every change is additive: no existing call signature changes meaning.
 
 **Tech Stack:** Python 3.12.10, numpy 2.3.5, pandas, matplotlib 3.10.8 (primary backend), plotly 6.8.0 (interactive backend), scipy 1.17.0, pytest 9.0.2.
 
 ---
+
+## Revision note (v4)
+
+Four maintainer blockers from the 2026-07-30 review, plus three defects the review did not name that the same audit turned up. **No task was added, removed, retitled or renumbered** — sibling plans cite *animation-core* **Task 5** and **Task 7** by number and those remain load-bearing. Task 7 gains Step **6b**; Task 9 grows from 6 steps to 9.
+
+| # | blocker | what was wrong | fix |
+|-|-|-|-|
+| **B1** | *No animation guide is actually planned* | **Confirmed.** Task 7 Step 8 and contract 3 both pointed at "the guide", and Task 9 was titled *"CHANGELOG, docs, and example cleanup"* — but no step created any `.rst`. The single `docs/` reference in the entire plan was `git add CHANGELOG.md docs/ examples/`, staging a directory nothing wrote to. Step 4's *"0 warnings"* gate made this self-contradictory in the other direction too: an unlinked new `.rst` would have **failed** the build | New **Step 2** writes `docs/animation.rst` in full (style/order, trails, title sequences, per-dataset styling, `simplify=`, `on_frame=`, the callback contract, backend scheduling, `_func`/`_args` migration); new **Step 3** links it into `docs/index.rst`'s toctree — mandatory, not cosmetic, because of the zero-warning standard; new **Step 4** adds `tests/test_animation_guide_docs.py` (**15** tests) pinning existence, toctree membership, topic coverage, both backend schedules, the contract sentence verbatim, and a regression guard against the word "pure" returning |
+| **B2** | *The callback contract is still misstated* | **Confirmed, and the plan contradicted itself in adjacent lines**: the `plot()` docstring said *"must be a pure function"* and the example on the very next line called `ctx.axes.set_title(...)` — a mutation. `on_frame` exists to mutate artists; a literally pure callback would do nothing | Replaced at **all 8 sites** in this plan, both README sites, and the two *rendering* sites in Plan 3, with the maintainer's wording verbatim: *"Callbacks must be deterministic and idempotent for a given frame context. They must not depend on call count, call order, wall-clock time, or accumulated external state."* The distinction is now stated positively — **accumulation** is forbidden, **effects** are not — and the sanctioned precompute-then-index idiom is named. *"Output parity"* → *"context-metadata parity"* throughout; `test_on_frame_output_parity_across_backends` → `test_on_frame_context_metadata_parity_across_backends`. Two **mutation-retention** tests added (Step 1b), one per backend; the plotly one also pins the Step 6a dispatch **order**, since dispatching after `frames.append` would silently drop every mutation |
+| **B3** | *`FrameContext` lacks a resolved public-API decision* | **Confirmed.** The plan called it public but exposed it only at `hypertools.plot.animation_context.FrameContext`, contradicting 1.0's curated `__all__` (`hypertools/__init__.py:43-52`) | New **Step 6b**: export `hypertools.FrameContext`, add to `__all__`, add to `docs/api.rst` beside `HyperAnimation`, and update the **hardcoded** `documented` literal at `tests/test_codeorg_licensing_audit_fixes.py:295-300` — all four **atomically**, since that literal is a hardcoded set and touching `__all__` alone turns the suite red (verified). `FrameHooks` stays internal; a new test asserts both directions. The README now separates the public callback API from the internal registry |
+| **B4** | *Plan 1 / Plan 4 documentation ownership is ambiguous* | **Confirmed and mutual** — Plan 4 has a dedicated task per example (T2 market, T3 weather, T5 conversation, T6 morph) covering all four files Task 9 rewrites, 52 mentions total | Task 9 Step 5 is retitled **"MECHANICAL MIGRATION ONLY"** and carries a boundary table; Plan 4's contract 3 carries the reciprocal table. Plan 1 removes private reaches without changing behaviour; Plan 4 owns all narrative, visualization and notebook work, and **owns its own metrics** — Plan 1 must not enforce them against files Plan 4 has not rewritten yet |
+
+**Found by the same audit, not in the review:**
+
+| # | defect | fix |
+|-|-|-|
+| **E1** | **Every 1.1 plan's docs-verification step could not run.** All six `cd docs && make clean && make html` instructions fail: `make` invokes the `sphinx-build` **console script**, whose `sys.path[0]` is the venv `bin/`, so `docs/conf.py:367`'s `from _gallery_log_filter import install` raises `ModuleNotFoundError`. Reproduced twice today. Worse, `make html` omits `-W`, so even a working invocation would not have enforced the zero-warning gate it claimed to | All six replaced across **all four plans** with the byte-for-byte CI command (`.github/workflows/test.yml:283-291`): `cd docs && MPLBACKEND=Agg ../.venv/bin/python -m sphinx -b html -W -E -a . _build/html`. `python -m` is what puts `docs/` on `sys.path`. Rationale recorded inline so it is not "simplified" back |
+| **E2** | **This plan's *Decisions* list was numbered**, with three numeric back-references — the exact drift pattern that has now produced **five** stale citations across the plan set | De-numbered to named bullets with the rationale inline, matching the README. All three back-references re-pointed by name. Plan 4's list de-numbered too, and its two numeric citations re-pointed |
+| **E3** | **Plan 4 stated the pre-`simplify=` morph behaviour** — *"animation-core Task 3 makes an uncapped morph above 2000 points **raise**"*. Under the resolved decision the default silently **caps**; only `simplify=False` raises | Corrected in place, with the better reason to keep `morph_samples=N` stated: explicitness and reproducibility, not error-avoidance |
+
+**Suite arithmetic:** Task 7 **24 → 27** (+2 mutation-retention, +1 export); Task 9 **0 → 15** (the guide's tests). Total added **102 → 120**; final expected **2,671 passed / 13 skipped** against the verified 2,551 baseline. Every cumulative checkpoint from Task 7 onward was recomputed: 2643, 2656, 2671.
 
 ## Revision note (v3)
 
@@ -18,7 +39,7 @@ The maintainer **resolved all four** of v2's open decisions (2026-07-29). v3 fol
 |-|-|-|-|
 | **1. `morph_samples` above the cap** | Task 3 **raises** unconditionally; Contract 7 asserted *"`morph_samples` never silently drops data"* | New public `plot()` flag **`simplify=True`** (default). Below the cap `simplify` is a **no-op**. Above the cap: `simplify=True` **silently downsamples to the cap** — no warning, no print; `simplify=False` **raises**, naming the measured cost and suggesting `simplify=True`. Contract 7 rewritten to the conditional guarantee | Maintainer, verbatim: *"add a 'simplify' flag to control this behavior; if below cap, simplify does nothing. otherwise either silently drop with **no** warning if simplify=True (default), or print an informative message with a suggestion to set simplify=True and then raise an exception if simplify=False."* The cost that motivates it: uncapped morph over the built-in zoo was **killed at 10 min** (`duration=1, frame_rate=2`; `hyp.load` returns 30135–36022 pts), while **`morph_samples=2000` → 8.2 s** (`notes/audit/PLAN.md:260`, row B3; same figure at `notes/session_2026-07-26_demo-polish-and-tutorial-review.md:239`) |
 | **2. `on_frame=` on plotly** | Task 7 raised `NotImplementedError`, *"a plotly animation is precomputed JSON played by a browser; there is no Python frame loop to call back into"* | **That premise is false.** The `NotImplementedError` and every claim of unreachability are **removed**; `on_frame=` ships on **both** backends. Contract 2 no longer carries an exception. Task 7 owns the plotly dispatch; Task 4 references it | `_add_animation` (`plotly_backend.py:2517`) builds every frame in a **Python loop at build time**: `frames = []` (`:2601`), then `frames.append(go.Frame(**frame_kwargs))` at `:2729` (spin), `:2819` (morph), `:2865` (serial) and `:2975` (the `else:` parallel/window branch at `:2866`) — **four** branches, one per style. Re-verified in this repo today; note the fourth site, which the directive's three-site list omitted. What plotly lacks is a Python loop **during playback**: once `fig.frames` is populated the browser plays it |
-| **2a. call schedules differ; output does not** | — | The new contract states the schedules explicitly and requires `on_frame` to be a **pure function of its `FrameContext`**. Parity is asserted on the backend-independent fields | matplotlib uses `FuncAnimation(..., blit=False)` (`matplotlib_backend.py:1935`, `:1957`, `:1968`), whose updater fires at **render** time — lazily during interactive playback, eagerly when saving (`animate.py:116`; the gif/apng/video writers save every frame). Every current use case is already a pure function of the frame index, verified across all four `_func`-monkeypatching examples: `examples/animate_morph_zoo.py` does `label.set_text(shape_title(frame))`; `animate_conversation.py` and `animate_weather_decades.py` read live artist state **0** times inside their wrappers; `animate_market_forecast.py`'s only **2** artist reads are one-time setup calibration (the uppercase `SLOPE`/`BLO`/`BHI` constants, computed after a full reveal), not per-frame |
+| **2a. call schedules differ; context metadata does not** | — | The new contract states the schedules explicitly and requires `on_frame` to be **deterministic and idempotent for a given `FrameContext`** — *not* "pure", since mutating artists is the point. **Context-metadata** parity is asserted on the backend-independent fields; rendered output is deliberately **not** claimed to match, and per-backend mutation *retention* is tested instead | matplotlib uses `FuncAnimation(..., blit=False)` (`matplotlib_backend.py:1935`, `:1957`, `:1968`), whose updater fires at **render** time — lazily during interactive playback, eagerly when saving (`animate.py:116`; the gif/apng/video writers save every frame). Every current use case is already idempotent per frame index, verified across all four `_func`-monkeypatching examples: `examples/animate_morph_zoo.py` does `label.set_text(shape_title(frame))` — a mutation, but an idempotent one; `animate_conversation.py` and `animate_weather_decades.py` read live artist state **0** times inside their wrappers; `animate_market_forecast.py`'s only **2** artist reads are one-time setup calibration (the uppercase `SLOPE`/`BLO`/`BHI` constants, computed after a full reveal), not per-frame. **Zero of the four accumulate inside the per-frame wrapper**, verified 2026-07-30 — so the contract costs the existing gallery nothing. Two of them *do* contain `+=`, and both are the idiom the guide should teach: `animate_market_forecast.py` accumulates at **module level** (`:255`) to precompute an `ACC` frame→value array, and its wrapper (`:323`) only does `acc = ACC[min(num, total - 1)]`, an idempotent lookup; `animate_conversation.py:254`'s `used += step` is a loop-local in the deterministic helper `caption_lines()`, reset on every call. **Precompute-then-index is the sanctioned pattern for anything that looks cumulative** |
 | **3. animated continuous-hue default linewidth 1.5 → 1.0** | Listed as open decision #1, implementation already in Task 2 | **SHIP IT.** No implementation change. Recorded as decided, and the CHANGELOG now records it as a **visible change** to existing animated hue figures | Task 2 Step 1's measured red state `[1.5, 1.5, 1.5]` → green `[0.5, 0.5, 5.0]`; animated **no-hue** lines are already `1.0` (`matplotlib_backend.py:1603` `pop("linewidth", 1)`), so the fix makes hue and no-hue agree |
 | **4. `order='serial'` with `spin`/`window`** | Listed as open decision #3; warn-and-ignore already implemented | **Unchanged**, and no longer labelled open. Warn-and-ignore matches the repo's established convention at `plot.py:3760-3781` | Measured: `animate='spin', chemtrails=True` → *"animate='spin' does not support trail styles; ignoring chemtrails for datasets [0, 1, 2]"* |
 
@@ -63,7 +84,15 @@ Two v1 claims the review **confirmed correct** and this plan keeps unchanged:
 1. **`animate=` names a STYLE; `order=` names an ORDERING.** `_resolve_animate_mode` folds them into ONE resolved backend mode, so `animate` from `plot.py:3653` onward is already what every backend and every downstream consumer should see. There is no second "backend_mode" variable.
 2. **Backend parity is a requirement, not an aspiration.** Any `hyp.plot(...)` call that draws on matplotlib must draw the equivalent thing on plotly. Where a Python-level capability genuinely cannot cross the browser boundary, the call raises `NotImplementedError` naming the backend — it never silently degrades. **This plan leaves no such case.** It closes the serial-trail gap (Task 4), the per-segment-title gap (Task 8) and — the one v2 listed as unreachable — `on_frame=` on plotly (Task 7): plotly *does* have a Python per-frame loop, at build time inside `_add_animation` (`plotly_backend.py:2517`, appends at `:2729`/`:2819`/`:2865`/`:2975`). No `plot()` argument in this plan raises `NotImplementedError` for being on the wrong backend.
 3. **One shared frame-hook registry.** `plot()` creates a `FrameHooks` object; `_draw` closes over it; `HyperAnimation.__new__` **adopts** it. A callback registered after construction fires. There is exactly one place a `FrameContext` is built and dispatched, and it is the **outermost** wrapper of `line_ani._func`, so hooks always observe final artists (including hue collections). On plotly the same registry is dispatched once per frame inside `_add_animation`'s build loop.
-   **`on_frame` MUST be a pure function of its `FrameContext`.** The two backends produce the same per-frame *output* on different *schedules*, and the schedules are part of the contract: matplotlib calls back at **render** time (`FuncAnimation(..., blit=False)`, `matplotlib_backend.py:1935`/`:1957`/`:1968`), so a given frame index **may be called more than once** across a looping animation or a save (`animate.py:116`; gif/apng/video writers save every frame); plotly calls back **exactly once per frame index**, at build time. Side effects that depend on call count, call ordering or wall-clock are therefore **unsupported and untested**, and the docstring and guide say so. What *is* guaranteed and tested is output parity: for the same `on_frame`, both backends yield the same backend-independent `FrameContext` fields per frame index (`frame`, `n_frames`, `style`, `order`, `current_index`, `current_fraction`, `revealed_counts`, `segment_index`, `segment_kind`, and the `datasets` shapes). `figure`/`axes`/`artists` are necessarily backend-**native** — matplotlib `Figure`/`Axes`/artists, or the `go.Figure` and that frame's traces — and are documented as such rather than faked.
+   **`on_frame` MUST be deterministic and idempotent for a given `FrameContext`.** State it exactly this way, in the docstring, the guide and the CHANGELOG:
+
+   > Callbacks must be deterministic and idempotent for a given frame context. They must not depend on call count, call order, wall-clock time, or accumulated external state.
+
+   **Do not call this "purity."** The entire purpose of `on_frame` is to mutate backend artists — `label.set_text(...)`, `artist.set_alpha(...)` — so a literally pure callback would be useless. What the contract forbids is *accumulation*, not *effects*: `label.set_text(shape_title(frame))` is idempotent and fine; `counter += 1` or `alpha *= 0.9` is not, because re-delivery of the same frame changes the result.
+
+   The requirement exists because the schedules differ, and the schedules are part of the contract: matplotlib calls back at **render** time (`FuncAnimation(..., blit=False)`, `matplotlib_backend.py:1935`/`:1957`/`:1968`), so a given frame index **may be called more than once** across a looping animation or a save (`animate.py:116`; gif/apng/video writers save every frame); plotly calls back **exactly once per frame index**, at build time. Idempotence is precisely what makes a repeated matplotlib call indistinguishable from plotly's single call.
+
+   What is guaranteed and tested is **context-metadata parity**, *not* output parity: for the same `on_frame`, both backends yield the same backend-independent `FrameContext` fields per frame index (`frame`, `n_frames`, `style`, `order`, `current_index`, `current_fraction`, `revealed_counts`, `segment_index`, `segment_kind`, and the `datasets` shapes). Rendered output is explicitly **not** claimed to match: `figure`/`axes`/`artists` are backend-**native** — matplotlib `Figure`/`Axes`/artists, or the `go.Figure` and that frame's traces — so a callback that mutates them is not source-compatible across backends, and asserting output parity would be asserting something false. What each backend *does* guarantee is that a mutation the callback makes is **retained** in that backend's own rendered frame; that is tested per backend (Task 7 Step 1b), not across them.
 4. **`FrameContext` reports segment structure explicitly.** `segment_index` and `segment_kind ∈ {'hold', 'transition'}` are fields, never inferred from `current_fraction`. `current_fraction` is documented as progress *within the current segment/dataset*, which for morph does **not** distinguish holds from transitions.
 5. **`FrameContext.datasets` are the arrays the animation actually draws from** (`data_lines` in the backend), not the raw input. For line formats those are pre-interpolated onto the frame grid; `revealed_counts[i]` indexes into `datasets[i]`.
 6. **Named-kwarg precedence is unchanged.** `plot.py:71-75` says internal styling wins over a same-named extra kwarg. Promoting `alpha` to a named parameter keeps that outcome: where an internal path already writes `mpl_kwargs['alpha']` (MultiIndex, nested-list depth), a user `alpha=` **warns and is ignored**, exactly mirroring the existing `linewidth=` precedent at `plot.py:3045-3050`.
@@ -97,7 +126,11 @@ Two v1 claims the review **confirmed correct** and this plan keeps unchanged:
 | `hypertools/plot/plotly_backend.py` | serial trail traces + per-frame titles + the per-frame hook dispatch in `_add_animation`'s build loop (backend parity) | modify |
 | `hypertools/plot/morph.py` | the no-point-dropped guarantee in its module docstring (`:17-24`), restated as conditional on `simplify=` | modify |
 | `hypertools/plot/hyper_animation.py` | `HyperAnimation` gains `.on_frame()` over the **adopted** registry | modify |
-| `hypertools/plot/animation_context.py` | **new** — `FrameContext` + `FrameHooks` | create |
+| `hypertools/plot/animation_context.py` | **new** — `FrameContext` (**public**) + `FrameHooks` (**internal**) | create |
+| `hypertools/__init__.py` | export `FrameContext`; add to `__all__` (Task 7 Step 6b) | modify |
+| `docs/api.rst` | list `FrameContext` beside `HyperAnimation` (Task 7 Step 6b) | modify |
+| `docs/animation.rst` | **new** — the animation guide (Task 9 Step 2) | create |
+| `docs/index.rst` | add `animation` to the toctree (Task 9 Step 3) | modify |
 | `tests/plot/test_title_validation.py` | `title=` type contract, fail-fast placement | create |
 | `tests/plot/test_animated_hue_linewidth.py` | animated continuous-hue `linewidth=` | create |
 | `tests/plot/test_morph_samples_guard.py` | morph tractability guard | create |
@@ -106,6 +139,8 @@ Two v1 claims the review **confirmed correct** and this plan keeps unchanged:
 | `tests/plot/test_per_dataset_alpha.py` | per-dataset `alpha=` + precedence | create |
 | `tests/plot/test_on_frame_hook.py` | public per-frame hook, 2-D and hue coverage | create |
 | `tests/plot/test_serial_titles.py` | per-segment titles, both backends | create |
+| `tests/test_animation_guide_docs.py` | the guide's content + navigation (Task 9 Step 4) | create |
+| `tests/test_codeorg_licensing_audit_fixes.py` | add `FrameContext` to the hardcoded `documented` set (`:295-300`) | modify |
 
 ---
 
@@ -287,7 +322,7 @@ rcParams['lines.linewidth'] = 1.5
 
 **Artist selector.** The head/trail collections are the only ones `_make_collection` labels `'_nolegend_'` (`plot.py:5172`); cube planes carry matplotlib's auto `_childN` labels. Verified stable both before and after driving a frame. The static control selects the last `len(datasets)` collections, since `_apply_multicolor_lines` (`plot.py:5075-5101`) removes every `Line2D` and appends its collections last.
 
-**Known consequence, and why it is right.** After the fix, an animated hue plot with **no** explicit `linewidth=` renders at `1.0` (the backend's `pop("linewidth", 1)` default, matching the animated no-hue line artists) instead of `1.5` (rcParams). Measured today: animated no-hue lines are already `1.0` while the hue overlay was `1.5` — i.e. the overlay did **not** match the artist it replaces. The fix makes hue and no-hue animations agree. A test pins this invariant. **Maintainer decision 2026-07-29: SHIP IT** — settled, not open; recorded in the CHANGELOG (Task 9) as a visible change to existing animated hue figures. See *Decisions (all resolved)* #1.
+**Known consequence, and why it is right.** After the fix, an animated hue plot with **no** explicit `linewidth=` renders at `1.0` (the backend's `pop("linewidth", 1)` default, matching the animated no-hue line artists) instead of `1.5` (rcParams). Measured today: animated no-hue lines are already `1.0` while the hue overlay was `1.5` — i.e. the overlay did **not** match the artist it replaces. The fix makes hue and no-hue animations agree. A test pins this invariant. **Maintainer decision 2026-07-29: SHIP IT** — settled, not open; recorded in the CHANGELOG (Task 9) as a visible change to existing animated hue figures. See the *Decisions (all resolved)* entry named **"Animated-hue default linewidth"**.
 
 **Files:**
 - Modify: `hypertools/plot/plot.py:5150-5153`
@@ -478,7 +513,7 @@ n=4000   4.99 s   cost matrix 0.128 GB
 | largest morphing cloud **> the cap**, no explicit `morph_samples=` | **silently** downsample to the cap. **No `warnings.warn`. No `print`.** | **raise**, with a message that names the measured cost and explicitly suggests `simplify=True` |
 | explicit `morph_samples=` passed | `simplify` never engages — the caller already chose | same |
 
-The title of this task still holds: `animate='morph'` never hangs — it now either **simplifies** or **refuses**, and which one is the caller's documented choice. Silent means silent: hanging is worse than approximating, and the maintainer was explicit that the default path must not nag. The uncapped morph over the built-in zoo was **killed at 10 minutes**; `morph_samples=2000` renders the same call in **8.2 s** (`notes/audit/PLAN.md:260`, row B3). The threshold is the size the docstring already calls out (`plot.py:1519-1522`: *"`morph_samples` is RECOMMENDED for clouds larger than ~2000 points"*). Every gallery example that morphs the zoo already passes `morph_samples=` explicitly (`examples/plot_shape_morph.py:73`, `examples/animate_morph_zoo.py:96`, `examples/animate_surface_morph.py:122`), so no example changes behaviour either way. See *Decisions (all resolved)* #2.
+The title of this task still holds: `animate='morph'` never hangs — it now either **simplifies** or **refuses**, and which one is the caller's documented choice. Silent means silent: hanging is worse than approximating, and the maintainer was explicit that the default path must not nag. The uncapped morph over the built-in zoo was **killed at 10 minutes**; `morph_samples=2000` renders the same call in **8.2 s** (`notes/audit/PLAN.md:260`, row B3). The threshold is the size the docstring already calls out (`plot.py:1519-1522`: *"`morph_samples` is RECOMMENDED for clouds larger than ~2000 points"*). Every gallery example that morphs the zoo already passes `morph_samples=` explicitly (`examples/plot_shape_morph.py:73`, `examples/animate_morph_zoo.py:96`, `examples/animate_surface_morph.py:122`), so no example changes behaviour either way. See the *Decisions (all resolved)* entry named **"`morph_samples` above 2000"**.
 
 **Why the raise carries the message instead of printing it first.** The maintainer wrote *"print an informative message with a suggestion to set simplify=True and then raise an exception"*. That is implemented as **one `raise` whose message is that informative message** — not a bare `print()` followed by a `raise`. A raised exception's message is already surfaced to the user, so printing it first duplicates the text and writes to stdout from library code, which nothing else in `plot.py` does. Stated here so the choice is visible and reversible (see *Revision note (v3)* for the one-line switch).
 
@@ -1179,7 +1214,7 @@ git commit -m "feat(plotly): serial reveal composes with chemtrails/precog/bulle
 | `animate='morph'` | `'morph'` | inherently serial; `order` reports `'serial'` |
 | `animate='morph', order='parallel'` | — | `ValueError` (contradiction) |
 | `animate=['morph', None, 'morph'], order='serial'` | `'morph'` | **C5**: gate runs on the RESOLVED mode |
-| `animate='spin' \| 'window'`, `order='serial'` | `'spin'`/`'window'` | `UserWarning`, ordering ignored — matches the repo's established warn-and-ignore convention at `plot.py:3760-3781`. **Settled** (maintainer, 2026-07-29): unchanged from v2, no longer an open question. See *Decisions (all resolved)* #3. |
+| `animate='spin' \| 'window'`, `order='serial'` | `'spin'`/`'window'` | `UserWarning`, ordering ignored — matches the repo's established warn-and-ignore convention at `plot.py:3760-3781`. **Settled** (maintainer, 2026-07-29): unchanged from v2, no longer an open question. See the *Decisions (all resolved)* entry named **"`order='serial'` with `animate='spin'` or `'window'`"**. |
 | `order='serial'` with `animate=False` | — | `ValueError: order='serial' requires an animated plot` (mirrors the `on_frame` error shape, review G7) |
 | `order=3` | — | `ValueError` that still offers the `zorder` hint (review G6) |
 
@@ -1832,16 +1867,21 @@ Four of the five new gallery examples monkeypatch matplotlib's private `FuncAnim
 - **2-D is covered.** All seven updaters record state: `update_lines_parallel` (`:1118`), `update_lines_spin` (`:1229`), `update_lines_serial` (`:1283`), `update_morph` (`:1398`), `update_lines_parallel_2d` (`:2009`), `update_lines_serial_2d` (`:2048`), `update_morph_2d` (`:2107`). Tests drive both dimensionalities.
 - **`return_model=True`.** That path hands back the **raw** `FuncAnimation` and never constructs a `HyperAnimation` (`plot.py:4584-4586`, `4612-4614`), so `.on_frame()` is unavailable there. `on_frame=` passed to `plot()` still fires (the dispatcher is on `line_ani._func`). Both facts are tested and documented.
 - **Both backends (maintainer decision, 2026-07-29 — v2's `NotImplementedError` is REMOVED).** v2 asserted that "a plotly animation is precomputed JSON played by a browser; there is no Python frame loop to call back into". **That premise is false.** `_add_animation` (`plotly_backend.py:2517`) builds every frame in a **Python loop at build time** — `frames = []` (`:2601`), then `frames.append(go.Frame(**frame_kwargs))` at `:2729` (spin), `:2819` (morph), `:2865` (serial) and `:2975` (the `else:` parallel/window branch at `:2866`). What plotly lacks is a Python loop **during playback**: once `fig.frames` is populated the browser plays it. So `on_frame=` ships on both backends and Contract 2 has no exception left.
-- **The call SCHEDULES differ; the OUTPUT does not.** `on_frame` is called **once per frame**, with a `FrameContext` carrying the frame index and that frame's data, at the point that frame is produced by each backend's natural loop:
+- **The call SCHEDULES differ; the CONTEXT METADATA does not.** `on_frame` is called **once per frame**, with a `FrameContext` carrying the frame index and that frame's data, at the point that frame is produced by each backend's natural loop:
   - **matplotlib — at render time.** `FuncAnimation(..., blit=False)` (`matplotlib_backend.py:1935`, `:1957`, `:1968`) fires its updater lazily during interactive playback and eagerly when saving (`animate.py:116`; the gif/apng/video writers save every frame). A given frame index **may therefore be called more than once** across a loop or a save.
   - **plotly — exactly once per frame index**, at build time inside `_add_animation`.
-  - **Therefore `on_frame` MUST be a pure function of its `FrameContext`.** Side effects that depend on call count, call ordering or wall-clock are **unsupported and untested**; the docstring (Step 8) and the guide say so. This costs nothing today: verified across all four `_func`-monkeypatching gallery examples, every current use case is already a pure function of the frame index — `examples/animate_morph_zoo.py` does `label.set_text(shape_title(frame))`; `animate_conversation.py` and `animate_weather_decades.py` read live artist state **0** times inside their wrappers; `animate_market_forecast.py`'s only **2** artist reads are one-time setup calibration (the uppercase `SLOPE`/`BLO`/`BHI` constants computed after a full reveal), not per-frame.
-  - **Output parity is the testable guarantee**, and it is asserted by `test_on_frame_output_parity_across_backends`: for the same `on_frame`, both backends yield the same backend-independent `FrameContext` per frame index. `figure`/`axes`/`artists` are necessarily backend-**native** (matplotlib `Figure`/`Axes`/artists, or the `go.Figure` and that frame's traces) and are documented as such, not faked; `test_plotly_frame_context_carries_backend_native_objects` pins that too. See *Decisions (all resolved)* #4.
+  - **Therefore `on_frame` MUST be deterministic and idempotent for a given `FrameContext`.** The binding sentence, used verbatim in the docstring (Step 8), the guide (Task 9) and the CHANGELOG:
+
+    > Callbacks must be deterministic and idempotent for a given frame context. They must not depend on call count, call order, wall-clock time, or accumulated external state.
+
+    **Never call this "purity."** `on_frame` exists to mutate artists; a pure callback would do nothing. Idempotence — not absence of effects — is what makes matplotlib's possible re-delivery of a frame index indistinguishable from plotly's single delivery. This costs nothing today: verified 2026-07-30 across all four `_func`-monkeypatching gallery examples, **no per-frame wrapper accumulates**. `examples/animate_morph_zoo.py` does `label.set_text(shape_title(frame))` — a mutation, and idempotent; `animate_conversation.py` and `animate_weather_decades.py` read live artist state **0** times inside their wrappers; `animate_market_forecast.py`'s only **2** artist reads are one-time setup calibration (the uppercase `SLOPE`/`BLO`/`BHI` constants computed after a full reveal), not per-frame. Where an example genuinely needs a running quantity it **precomputes at module level and indexes by frame** (`animate_market_forecast.py:255` builds `ACC`; the wrapper at `:323` only reads `ACC[min(num, total - 1)]`). Teach that idiom in the guide.
+  - **Context-metadata parity is the testable guarantee — output parity is NOT claimed**, and asserting it would be asserting something false. `test_on_frame_context_metadata_parity_across_backends` pins the former: for the same `on_frame`, both backends yield the same backend-independent `FrameContext` fields per frame index. `figure`/`axes`/`artists` are backend-**native** (matplotlib `Figure`/`Axes`/artists, or the `go.Figure` and that frame's traces), so a callback that mutates them is **not source-compatible across backends**; they are documented as such, not faked, and `test_plotly_frame_context_carries_backend_native_objects` pins that. What each backend separately guarantees is that a mutation the callback performs is **retained in that backend's own rendered frame** — one test per backend, Step 1b. See the *Decisions (all resolved)* entry named **"`FrameContext` exposes backend-native objects"**.
 
 **Files:**
 - Create: `hypertools/plot/animation_context.py`
 - Modify: `hypertools/plot/hyper_animation.py`, `hypertools/plot/plot.py`, `hypertools/plot/matplotlib_backend.py`, `hypertools/plot/plotly_backend.py` (Step 6a — the four frame-build sites)
-- Test: `tests/plot/test_on_frame_hook.py` (create)
+- Modify (Step 6b, public surface — atomic): `hypertools/__init__.py` (import + `__all__`), `docs/api.rst` (Plot autosummary)
+- Test: `tests/plot/test_on_frame_hook.py` (create), `tests/test_codeorg_licensing_audit_fixes.py:295-300` (modify the hardcoded `documented` set — **required**, or Step 6b turns the suite red)
 
 **Interfaces:**
 - Consumes: `order` from `_resolve_animate_mode` (Task 5).
@@ -2132,12 +2172,15 @@ def test_on_frame_fires_once_per_frame_on_plotly():
     ('spin', 'parallel'),
     ('morph', 'serial'),
 ])
-def test_on_frame_output_parity_across_backends(style, order):
-    """THE parity guarantee: same `on_frame`, same per-frame content.
+def test_on_frame_context_metadata_parity_across_backends(style, order):
+    """THE parity guarantee: same `on_frame`, same per-frame CONTEXT METADATA.
 
-    Parity is over the backend-INDEPENDENT fields. `figure`/`axes`/`artists`
-    are backend-native by design (matplotlib artists vs. plotly traces) and
-    are excluded here and documented as such -- see the next test.
+    Deliberately NOT "output parity". Parity holds over the backend-
+    INDEPENDENT fields only. `figure`/`axes`/`artists` are backend-native by
+    design (matplotlib artists vs. plotly traces), so a callback that mutates
+    them is not source-compatible across backends and rendered output is not
+    claimed to match. Those fields are excluded here and documented as such
+    -- see the next test, and the per-backend retention pair in Step 1b.
     """
     pytest.importorskip('plotly')
 
@@ -2193,6 +2236,59 @@ def test_plotly_frame_context_carries_backend_native_objects():
     assert all(hasattr(a, 'x') for a in ctx.artists), 'traces, not artists'
 
 
+# --- mutation retention: the per-backend guarantee (Step 1b) ----------------
+# Cross-backend OUTPUT parity is deliberately NOT asserted anywhere: artists
+# and traces are backend-native, so a mutating callback is not source-
+# compatible across backends. What each backend owes the caller is that a
+# mutation it was handed is RETAINED in the frame that backend renders.
+
+def test_matplotlib_callback_mutation_is_retained_in_the_rendered_frame():
+    """The hook exists to mutate. Setting a title from the callback must
+    survive into the frame matplotlib actually renders -- and, because a
+    frame index may be re-delivered, re-running the same index must land on
+    the same title rather than compounding."""
+    captured = {}
+
+    def retitle(ctx):
+        ctx.axes.set_title(f'f{ctx.frame}')
+        captured['ax'] = ctx.axes
+
+    fig, ani = hyp.plot(_datasets(), '-', animate=True, duration=1,
+                        frame_rate=4, on_frame=retitle, show=False)
+    _drive(ani, 3)
+    assert captured['ax'].get_title() == 'f2', (
+        'the mutation made during the last driven frame is still on the axes')
+
+    # idempotence: re-delivering an earlier index reproduces that index's
+    # state exactly, which is what makes matplotlib's repeat harmless.
+    # (`_func` here is the TEST HARNESS standing in for matplotlib's own
+    # renderer, exactly as `_drive` does -- it is not the user-facing reach
+    # into private internals this plan removes.)
+    ani._func(1, *ani._args)
+    assert captured['ax'].get_title() == 'f1'
+
+
+def test_plotly_callback_mutation_is_retained_in_the_stored_frame():
+    """Same guarantee on plotly, and it pins the DISPATCH ORDER: Step 6a puts
+    the hook immediately BEFORE `frames.append(go.Frame(**frame_kwargs))`, so
+    a trace the callback mutates is captured by the stored frame. Dispatching
+    after the append would silently drop every mutation and this test is what
+    catches that."""
+    pytest.importorskip('plotly')
+
+    def rename(ctx):
+        ctx.artists[0].name = f'frame-{ctx.frame}'
+
+    hyp.set_interactive_backend('plotly')
+    try:
+        fig = hyp.plot(_datasets(), '-', animate=True, duration=1,
+                       frame_rate=4, on_frame=rename, show=False)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+    assert fig.frames[2].data[0].name == 'frame-2'
+    assert fig.frames[0].data[0].name == 'frame-0'
+
+
 def test_return_model_bundle_hands_back_a_raw_funcanimation():
     """Documented limitation: the bundle never constructs a HyperAnimation
     (plot.py:4584-4586, :4612-4614), so .on_frame() is not available there --
@@ -2211,7 +2307,7 @@ def test_return_model_bundle_hands_back_a_raw_funcanimation():
 - [ ] **Step 2: Run the test and confirm it fails**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_on_frame_hook.py -v`
-Expected: collection FAILS with `ModuleNotFoundError: No module named 'hypertools.plot.animation_context'`. **24 tests (20 plain defs + 4 parametrized cases), 0 collected.**
+Expected: collection FAILS with `ModuleNotFoundError: No module named 'hypertools.plot.animation_context'`. **26 tests (22 plain defs + 4 parametrized cases), 0 collected.**
 
 - [ ] **Step 3: Create the context object and the shared registry**
 
@@ -2251,9 +2347,16 @@ class FrameContext:
     backend-native: matplotlib `Figure`/`Axes`/artists, or the `go.Figure`
     and that frame's traces. The two backends also call back on different
     SCHEDULES -- matplotlib at render time (so a frame index may recur across
-    a loop or a save), plotly exactly once per index at build time -- so a
-    callback MUST be a pure function of its context. Side effects that depend
-    on call count, ordering or wall-clock are unsupported and untested.
+    a loop or a save), plotly exactly once per index at build time -- so
+    callbacks must be deterministic and idempotent for a given frame
+    context. They must not depend on call count, call order, wall-clock
+    time, or accumulated external state.
+
+    Mutating artists is expected and supported -- that is what the hook is
+    for. What is unsupported is ACCUMULATION: ``label.set_text(title(ctx))``
+    is fine, ``count += 1`` or ``alpha *= 0.9`` is not, because matplotlib
+    may deliver the same frame index more than once. If you need a running
+    quantity, precompute it once and index it by ``ctx.frame``.
 
     Attributes
     ----------
@@ -2548,7 +2651,7 @@ This step — **not Task 4** — owns the plotly side, so the dispatch block exi
                 frame_hooks.dispatch(fig, None)      # plotly has no Axes
 ```
 
-`_frame_state` is built per branch from quantities each branch already has in hand, and must name the **same fields with the same values** as the matplotlib updater for the same style (Step 5) — that identity is what `test_on_frame_output_parity_across_backends` asserts:
+`_frame_state` is built per branch from quantities each branch already has in hand, and must name the **same fields with the same values** as the matplotlib updater for the same style (Step 5) — that identity is what `test_on_frame_context_metadata_parity_across_backends` asserts:
 
 | branch | `style` / `order` | serial position | segment fields |
 |-|-|-|-|
@@ -2559,10 +2662,67 @@ This step — **not Task 4** — owns the plotly side, so the dispatch block exi
 
 `artists` is `frame_traces` (that frame's traces, head then trail, the order the loop already builds); `datasets` is `data`; `n_frames` is `n_frames`. `figure` is the `go.Figure` and `axes` is `None`, per `FrameContext`'s backend note.
 
+- [ ] **Step 6b: Put `FrameContext` on the public surface — and keep `FrameHooks` off it**
+
+**The decision:** `FrameContext` is **public** and exported as `hypertools.FrameContext`. `FrameHooks` is **internal** and is not exported, not documented, and not named in any public docstring.
+
+The rationale is the split between the two: a user *receives* a `FrameContext` on every callback and will reasonably want to type-annotate it, `isinstance`-check it, or build one in their own tests. They never construct or touch a `FrameHooks` — it is the registry `plot()` creates and `HyperAnimation` adopts, an implementation detail of contract 3. Exporting the receipt type without the registry is the smallest surface that makes the hook usable.
+
+Leaving it at `hypertools.plot.animation_context.FrameContext` was **not** acceptable: 1.0 deliberately curates `__all__` so that `from hypertools import *` yields exactly the documented names (`hypertools/__init__.py:43-52`), and a public API reachable only by a three-segment private-looking path contradicts that.
+
+These four edits are **one atomic change** — do all of them in this step. `tests/test_codeorg_licensing_audit_fixes.py:294-305` compares `__all__` against a **hardcoded literal set**, so touching `__all__` without touching that literal turns the suite red:
+
+1. In `hypertools/__init__.py`, beside the existing `HyperAnimation` import:
+
+```python
+from .plot.animation_context import FrameContext
+```
+
+2. Add `'FrameContext'` to `__all__` (`hypertools/__init__.py:46-52`), next to `'HyperAnimation'`:
+
+```python
+    'set_interactive_backend', 'HyperAnimation', 'FrameContext', 'io',
+```
+
+3. In `docs/api.rst`, add it under the existing **Plot** `autosummary` block beside `HyperAnimation` (`docs/api.rst:111-115`):
+
+```rst
+  plot
+  HyperAnimation
+  FrameContext
+```
+
+4. In `tests/test_codeorg_licensing_audit_fixes.py`, add `'FrameContext'` to the `documented` literal inside `test_all_names_resolve_and_cover_documented_api` (`:295-300`), so the curated-surface assertion still describes reality:
+
+```python
+                  'Pipeline', 'set_interactive_backend', 'HyperAnimation',
+                  'FrameContext',
+                  'io', 'HypertoolsError', 'HypertoolsBackendError',
+```
+
+Then add this test to `tests/plot/test_on_frame_hook.py`, in the basics section:
+
+```python
+def test_frame_context_is_exported_at_top_level_but_frame_hooks_is_not():
+    """`FrameContext` is public: users receive one per callback and will
+    annotate and isinstance-check it. `FrameHooks` is the internal registry
+    from contract 3 -- users never construct one, so it stays off the
+    curated surface that `hypertools/__init__.py:43-52` maintains."""
+    assert hyp.FrameContext is FrameContext
+    assert 'FrameContext' in hyp.__all__
+    assert not hasattr(hyp, 'FrameHooks')
+    assert 'FrameHooks' not in hyp.__all__
+```
+
 - [ ] **Step 7: Run the test and confirm it passes**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_on_frame_hook.py -v`
-Expected: **24 passed** (20 plain + 4 parametrized parity cases).
+Expected: **27 passed** (23 plain + 4 parametrized parity cases).
+
+Then confirm the public-surface tests still pass, since Step 6b touched them:
+
+Run: `.venv/bin/python -m pytest tests/test_codeorg_licensing_audit_fixes.py -v -k "star_import or documented"`
+Expected: **3 passed** (`test_star_import_yields_exactly_all`, `test_star_import_does_not_leak_internal_submodules`, `test_all_names_resolve_and_cover_documented_api`).
 
 - [ ] **Step 8: Document the hook**
 
@@ -2580,28 +2740,39 @@ Add an `on_frame` entry to `plot()`'s docstring:
         private ``FuncAnimation._func``. Callbacks may also be attached
         afterwards via ``HyperAnimation.on_frame()``.
 
-        Supported on BOTH backends, with the same per-frame content but
-        different call schedules: matplotlib calls back at render time, so
-        a frame index may recur across a looping animation or a save;
-        plotly calls back exactly once per frame index, while the frames
-        are built. ``on_frame`` must therefore be a **pure function of its
-        context** -- side effects that depend on call count, call ordering
-        or wall-clock are unsupported. ``ctx.figure``, ``ctx.axes`` and
-        ``ctx.artists`` are backend-native (``ctx.axes`` is ``None`` on
-        plotly, whose ``ctx.artists`` are that frame's traces); every other
-        field is identical across backends.
+        Supported on BOTH backends, with the same per-frame context
+        metadata but different call schedules: matplotlib calls back at
+        render time, so a frame index may recur across a looping animation
+        or a save; plotly calls back exactly once per frame index, while
+        the frames are built. **Callbacks must be deterministic and
+        idempotent for a given frame context. They must not depend on call
+        count, call order, wall-clock time, or accumulated external
+        state.**
+
+        Mutating what the context hands you is the point of the hook and is
+        fully supported -- the example below sets a title every frame.
+        What is unsupported is accumulation (``count += 1``,
+        ``alpha *= 0.9``), because a repeated frame would change the
+        result. Precompute running quantities and index them by
+        ``ctx.frame``.
+
+        ``ctx.figure``, ``ctx.axes`` and ``ctx.artists`` are backend-native
+        (``ctx.axes`` is ``None`` on plotly, whose ``ctx.artists`` are that
+        frame's traces), so a callback that touches them is **not**
+        portable across backends; every other field is identical across
+        backends.
 
         >>> def annotate(ctx):
         ...     ctx.axes.set_title(f'frame {ctx.frame} of {ctx.n_frames}')
         >>> anim = hyp.plot(data, animate=True, on_frame=annotate)
 ```
 
-Note the `return_model=True` limitation in the `return_model` entry (`plot.py:1920`). Say the same thing about purity and schedules in the animation guide (the prose that Task 9 Step 2 rewrites the examples against), so a reader who never opens the docstring still gets it.
+Note the `return_model=True` limitation in the `return_model` entry (`plot.py:1920`). Say the same thing about determinism/idempotence and schedules in the animation guide (the prose that Task 9 Step 2 rewrites the examples against), so a reader who never opens the docstring still gets it.
 
 - [ ] **Step 9: Run the FULL suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2640 passed, 13 skipped`. Grep for any test asserting that `on_frame=` is unavailable on plotly — there is none in the repo today, but if one appears it is asserting v2's removed premise, not a contract.
+Expected: `2643 passed, 13 skipped`. Grep for any test asserting that `on_frame=` is unavailable on plotly — there is none in the repo today, but if one appears it is asserting v2's removed premise, not a contract.
 
 - [ ] **Step 10: Commit**
 
@@ -2966,7 +3137,7 @@ Extend the `title` entry written in Task 1:
 - [ ] **Step 8: Run the FULL suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2653 passed, 13 skipped`.
+Expected: `2656 passed, 13 skipped`.
 
 - [ ] **Step 9: Commit**
 
@@ -2978,7 +3149,7 @@ git commit -m "feat(plot): per-segment titles for serial-style animations, on bo
 
 ---
 
-## Task 9: CHANGELOG, docs, and example cleanup
+## Task 9: CHANGELOG, the animation guide, and example cleanup
 
 - [ ] **Step 1: Add the 1.1 entries to CHANGELOG.md**
 
@@ -2998,12 +3169,15 @@ git commit -m "feat(plot): per-segment titles for serial-style animations, on bo
   `FrameContext` with the frame index, axes, drawn artists, animated arrays,
   the serial-reveal counts, and -- for morphs -- `segment_index`/
   `segment_kind`. Replaces reaching into `FuncAnimation._func`. Works on
-  **both** backends and yields the same per-frame content on each, but the
-  call schedules differ -- matplotlib calls back at render time (a frame
-  index may recur across a loop or a save), plotly exactly once per frame
-  while the frames are built -- so `on_frame` must be a pure function of its
-  context. `ctx.figure`/`ctx.axes`/`ctx.artists` are backend-native
-  (`ctx.axes` is `None` on plotly, whose `ctx.artists` are traces).
+  **both** backends and yields the same per-frame context metadata on each,
+  but the call schedules differ -- matplotlib calls back at render time (a
+  frame index may recur across a loop or a save), plotly exactly once per
+  frame while the frames are built. Callbacks must be deterministic and
+  idempotent for a given frame context. They must not depend on call count,
+  call order, wall-clock time, or accumulated external state. Mutating artists is supported and expected; accumulating is not.
+  `ctx.figure`/`ctx.axes`/`ctx.artists` are backend-native (`ctx.axes` is
+  `None` on plotly, whose `ctx.artists` are traces), so a callback that
+  mutates them is not portable across backends.
 - Per-segment `title=` for serial-style animations, blanking morph
   transitions, on both backends.
 - `simplify=` on `plot()` (default `True`). Today it governs
@@ -3038,29 +3212,333 @@ git commit -m "feat(plot): per-segment titles for serial-style animations, on bo
   for which of your data actually reaches the plot.
 ```
 
-- [ ] **Step 2: Simplify the gallery examples that hand-rolled these primitives**
+- [ ] **Step 2: Write the animation guide — `docs/animation.rst`**
 
-`examples/animate_morph_zoo.py:99-115` re-implements per-segment titling with `_morph.morph_schedule`/`frame_to_segment` and a `_func` monkeypatch; `examples/animate_conversation.py`, `animate_market_forecast.py` and `animate_weather_decades.py` monkeypatch `_func` and read `ani._args`. Replace each with `title=[...]` and/or `on_frame=`, delete the private imports, and update each module docstring to describe the library call instead of the workaround.
+This is a **new file** and a real deliverable of this task. Until now the plan referred to "the guide" in several places (the `on_frame` contract, Task 7 Step 8) without anything creating it; those references resolve here.
 
-- [ ] **Step 3: Verify every rewritten example still runs**
+Create `docs/animation.rst`. It follows `docs/pipeline_order.rst`'s shape — a `.. _label:` anchor, a title, narrative prose with runnable snippets:
+
+```rst
+.. _animation:
+
+Animating plots
+===============
+
+Every animation in HyperTools comes out of one call: ``hypertools.plot``
+with ``animate=``. This guide covers what you can vary -- the animation
+style, the order data is revealed in, trails, titles, per-dataset styling,
+and per-frame callbacks -- and what differs between the matplotlib and
+plotly backends.
+
+Style and order are independent
+-------------------------------
+
+``animate=`` names a *style*; ``order=`` names the *ordering*. They are
+orthogonal, which is new in 1.1:
+
+.. code-block:: python
+
+    import hypertools as hyp
+
+    data = hyp.load('weights')
+
+    hyp.plot(data, '-', animate=True)                      # parallel reveal
+    hyp.plot(data, '-', animate=True, order='serial')      # one at a time
+    hyp.plot(data, '-', animate='spin')                    # rotate, no reveal
+
+``animate='serial'`` remains a permanent alias for
+``animate=True, order='serial'``, and ``animate='morph'`` is inherently
+serial. ``order='serial'`` has no meaning for ``'spin'`` or ``'window'``;
+passing it there warns and is ignored, rather than raising.
+
+Trails
+------
+
+``chemtrails=``, ``precog=`` and ``bullettime=`` leave a visible history
+behind (or ahead of) the moving head. As of 1.1 they compose with a serial
+reveal on **both** backends:
+
+.. code-block:: python
+
+    hyp.plot(data, '-', animate=True, order='serial', chemtrails=True)
+
+Titles that change with the animation
+-------------------------------------
+
+Pass a **list** of strings as ``title=`` to name each segment of a
+serial-style animation. For a morph, the holds are named and the
+transitions are left blank automatically:
+
+.. code-block:: python
+
+    hyp.plot([a, b, c], '-', animate='morph',
+             title=['first', 'second', 'third'])
+
+Anywhere else a non-string ``title=`` raises ``TypeError``. Use ``names=``
+for per-dataset legend entries and ``labels=`` for per-observation
+annotations.
+
+Per-dataset styling
+-------------------
+
+``color=``, ``linewidth=`` and -- new in 1.1 -- ``alpha=`` accept one value
+per dataset:
+
+.. code-block:: python
+
+    hyp.plot([a, b, c], '-', animate=True,
+             color=['red', 'blue', 'green'], alpha=[1.0, 0.6, 0.3])
+
+Some inputs assign alpha internally (row-MultiIndex frames, nested lists).
+Those keep their own values and say so with a warning rather than silently
+discarding yours.
+
+Large morphs and ``simplify=``
+------------------------------
+
+Morphing clouds larger than about 2000 points is intractable to render.
+``simplify=True`` (the default) silently downsamples them so the render
+finishes. Pass ``simplify=False`` to get a ``ValueError`` instead, which
+restores the guarantee that no real data point is ever dropped:
+
+.. code-block:: python
+
+    hyp.plot(big_clouds, animate='morph')                   # downsampled
+    hyp.plot(big_clouds, animate='morph', simplify=False)   # raises
+    hyp.plot(big_clouds, animate='morph', morph_samples=500) # you decide
+
+An explicit ``morph_samples=`` always wins, and below the threshold
+``simplify`` does nothing at all.
+
+Per-frame callbacks
+-------------------
+
+``on_frame=`` runs your function once per frame with a
+:class:`~hypertools.FrameContext`:
+
+.. code-block:: python
+
+    def annotate(ctx):
+        ctx.axes.set_title(f'frame {ctx.frame} of {ctx.n_frames}')
+
+    fig, ani = hyp.plot(data, '-', animate=True, on_frame=annotate)
+
+You can also attach one after the fact::
+
+    anim = hyp.plot(data, '-', animate=True)
+    anim.on_frame(annotate)
+
+The context carries the frame index and total, the resolved ``style`` and
+``order``, the arrays being drawn, the serial-reveal counts, and -- for
+morphs -- ``segment_index`` and ``segment_kind``.
+
+.. _animation-callback-contract:
+
+The callback contract
+~~~~~~~~~~~~~~~~~~~~~
+
+**Callbacks must be deterministic and idempotent for a given frame
+context. They must not depend on call count, call order, wall-clock time,
+or accumulated external state.**
+
+Mutating what the context hands you is the *point* of the hook and is fully
+supported -- the example above sets a title on every frame. What is
+unsupported is **accumulation**::
+
+    def ok(ctx):                     # idempotent: same frame, same result
+        label.set_text(TITLES[ctx.frame])
+
+    def broken(ctx):                 # accumulates: a repeated frame drifts
+        ctx.artists[0].set_alpha(ctx.artists[0].get_alpha() * 0.9)
+
+If you need a running quantity, precompute it once and index it by
+``ctx.frame``::
+
+    ACC = compute_running_accuracy(...)     # once, before plotting
+
+    def show_accuracy(ctx):
+        label.set_text(f'{ACC[ctx.frame]:.0f}%')
+
+Backend scheduling
+~~~~~~~~~~~~~~~~~~
+
+The two backends call back on different schedules, and that is why the
+contract exists:
+
+.. list-table::
+   :header-rows: 1
+
+   * - backend
+     - when it calls
+     - how often per frame index
+   * - matplotlib
+     - at render time
+     - **one or more times** -- a looping animation or a save replays frames
+   * - plotly
+     - at build time, before ``plot()`` returns
+     - exactly once
+
+Both backends deliver the same *context metadata* for a given frame index.
+They do **not** produce interchangeable rendered output from a mutating
+callback: ``ctx.figure``, ``ctx.axes`` and ``ctx.artists`` are
+backend-native (on plotly ``ctx.axes`` is ``None`` and ``ctx.artists`` are
+that frame's traces), so a callback that touches them is backend-specific
+code. Each backend does guarantee that a mutation you make is retained in
+the frame it renders.
+
+Migrating from ``_func``/``_args``
+----------------------------------
+
+Before 1.1 the only way to run code per frame was to monkeypatch
+matplotlib's private ``FuncAnimation._func`` and read ``_args``. That
+reached into matplotlib internals, worked on one backend only, and broke
+whenever the private signature changed. Replace it:
+
+.. code-block:: python
+
+    # before -- private, matplotlib-only
+    _orig = ani._func
+
+    def _wrapped(num, *args):
+        out = _orig(num, *args)
+        label.set_text(TITLES[num])
+        return out
+
+    ani._func = _wrapped
+
+    # after -- public, both backends
+    fig, ani = hyp.plot(data, '-', animate=True,
+                        on_frame=lambda ctx: label.set_text(TITLES[ctx.frame]))
+
+If you were re-deriving the serial reveal counts by hand from ``_args``,
+use ``ctx.revealed_counts``; if you were computing which morph segment a
+frame belonged to, use ``ctx.segment_index`` and ``ctx.segment_kind``
+rather than thresholding ``ctx.current_fraction`` -- a hold and a
+transition are not separable by fraction alone.
+```
+
+- [ ] **Step 3: Link the guide into the site navigation**
+
+An unreferenced `.rst` in the source tree makes Sphinx warn *"document isn't included in any toctree"*, and Step 7 holds the repo's zero-warning standard — so this step is **not optional**. Add `animation` to the toctree in `docs/index.rst:41-48`, after `pipeline_order`:
+
+```rst
+.. toctree::
+   :maxdepth: 2
+   :caption: Contents:
+
+   api
+   pipeline_order
+   animation
+   tutorials
+   auto_examples/index
+```
+
+- [ ] **Step 4: Write the guide's content and navigation tests**
+
+Create `tests/test_animation_guide_docs.py`. These pin the guide against drift: they fail if the guide stops covering a documented feature, if it falls out of the toctree, or if it reintroduces the "pure function" framing this plan removed.
+
+```python
+"""The animation guide (docs/animation.rst) exists, is reachable, and
+covers every animation feature 1.1 documents."""
+import pathlib
+
+import pytest
+
+DOCS = pathlib.Path(__file__).resolve().parents[1] / 'docs'
+GUIDE = DOCS / 'animation.rst'
+
+
+def test_animation_guide_exists():
+    assert GUIDE.is_file(), 'docs/animation.rst is a Task 9 deliverable'
+
+
+def test_animation_guide_is_in_the_toctree():
+    """Not decorative: an unreferenced .rst makes Sphinx warn, and the repo
+    holds a zero-warning build standard."""
+    index = (DOCS / 'index.rst').read_text()
+    toctree = index.split('.. toctree::', 1)[1]
+    entries = [ln.strip() for ln in toctree.split('\n\n')[1].splitlines()]
+    assert 'animation' in entries, f'not in the toctree: {entries}'
+
+
+@pytest.mark.parametrize('topic', [
+    "order='serial'",      # ordering as its own axis
+    'chemtrails',          # trails
+    'title=',              # per-segment title sequences
+    'simplify=',           # morph tractability
+    'alpha=',              # per-dataset styling
+    'on_frame=',           # the hook itself
+    'FrameContext',        # the public context type
+    'revealed_counts',     # the serial schedule it exposes
+    'segment_kind',        # morph segment structure
+    '_func',               # migration away from the private internals
+])
+def test_animation_guide_covers(topic):
+    assert topic in GUIDE.read_text(), f'guide does not mention {topic}'
+
+
+def test_animation_guide_documents_both_backend_schedules():
+    text = GUIDE.read_text()
+    assert 'matplotlib' in text and 'plotly' in text
+    assert 'render time' in text
+    assert 'build time' in text
+
+
+def test_animation_guide_states_the_callback_contract_verbatim():
+    """The one sentence that has to be identical in the guide, the plot()
+    docstring and the CHANGELOG."""
+    text = ' '.join(GUIDE.read_text().split())
+    assert ('Callbacks must be deterministic and idempotent for a given '
+            'frame context.') in text
+    assert ('must not depend on call count, call order, wall-clock time, '
+            'or accumulated external state.') in text
+
+
+def test_animation_guide_does_not_call_the_contract_purity():
+    """Regression guard. Callbacks mutate artists by design -- calling the
+    contract 'purity' is the misstatement this plan's v4 removed, and the
+    guide's own example sets a title every frame."""
+    text = GUIDE.read_text().lower()
+    assert 'pure function' not in text
+```
+
+- [ ] **Step 5: Simplify the gallery examples that hand-rolled these primitives — MECHANICAL MIGRATION ONLY**
+
+> **Ownership boundary — read before editing anything under `examples/`.** This step and Plan 4 both touch the same four files, so the split is explicit:
+>
+> | this step (Plan 1) | Plan 4 |
+> |-|-|
+> | **Mechanical migration off private internals only** — delete `_func`/`_args` monkeypatches and private `_morph`/`_shared` imports, replace them with the equivalent `title=` / `on_frame=` call | **All narrative, visualization and notebook work** — rewriting what the example *demonstrates*, its prose, its figures, and the paired `docs/tutorials/*.ipynb` |
+> | Behaviour must be **unchanged**: the rewritten example renders what it rendered before | Behaviour changes freely — Plan 4 reframes several examples outright (e.g. Task 3 turns 6 city-datasets into 20 features of one trajectory) |
+> | Module docstring: touch **only** the sentences that describe the private workaround being removed | Owns the full docstring/narrative rewrite |
+> | **Do not** assert Plan 4's line-count or class-mix metrics here | Plan 4 Task 8 owns those metrics and measures them after its own rewrites |
+>
+> Rationale: doing narrative work here would be done twice and thrown away, and enforcing Plan 4's final metrics against a file Plan 4 has not rewritten yet would fail for the wrong reason. Plan 4's Tasks 2, 3, 5 and 6 are the authority for what these examples ultimately say.
+
+`examples/animate_morph_zoo.py:99-115` re-implements per-segment titling with `_morph.morph_schedule`/`frame_to_segment` and a `_func` monkeypatch; `examples/animate_conversation.py`, `animate_market_forecast.py` and `animate_weather_decades.py` monkeypatch `_func` and read `ani._args`. Replace each with `title=[...]` and/or `on_frame=`, and delete the private imports. Where an example computes a running quantity, keep the existing precompute-then-index shape (`animate_market_forecast.py:255` builds `ACC`; the wrapper reads `ACC[frame]`) — that is already contract-compliant and needs no redesign.
+
+- [ ] **Step 6: Verify every rewritten example still runs**
 
 Run: `for f in examples/animate_conversation.py examples/animate_market_forecast.py examples/animate_morph_zoo.py examples/animate_weather_decades.py; do echo "== $f"; .venv/bin/python "$f" || break; done`
 Expected: each exits 0 with no traceback and no `UserWarning` about ignored kwargs.
 
-- [ ] **Step 4: Verify the docs build clean**
+- [ ] **Step 7: Verify the docs build clean**
 
-Run: `cd docs && make clean && make html 2>&1 | tail -20`
+> **Use `python -m sphinx`, not `make html`.** Verified 2026-07-30: `make html` invokes the `sphinx-build` **console script**, whose `sys.path[0]` is the venv's `bin/` directory, so `docs/conf.py:367`'s `from _gallery_log_filter import install` raises `ModuleNotFoundError`. `python -m sphinx` puts the current directory (`docs/`) on `sys.path` and the import resolves. The command below is byte-for-byte what the `docs-clean` CI job runs (`.github/workflows/test.yml:283-291`), including `-W` (warnings are errors) — which is the actual gate, and which `make html` does not apply.
+
+Run: `cd docs && MPLBACKEND=Agg ../.venv/bin/python -m sphinx -b html -W -E -a . _build/html 2>&1 | tail -20`
 Expected: build succeeds with **0 warnings** (the repo holds an RTD-parity zero-warning standard).
 
-- [ ] **Step 5: Run the FULL suite one last time**
+- [ ] **Step 8: Run the FULL suite one last time**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2653 passed, 13 skipped`.
+Expected: `2671 passed, 13 skipped`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add CHANGELOG.md docs/ examples/
+git add CHANGELOG.md docs/animation.rst docs/index.rst \
+        tests/test_animation_guide_docs.py examples/
 git commit -m "docs(1.1): document order=, per-dataset alpha=, on_frame, per-segment titles; simplify examples"
 ```
 
@@ -3115,14 +3593,15 @@ git commit -m "docs(1.1): document order=, per-dataset alpha=, on_frame, per-seg
 | 4 | 7 | 1 def × 4 cases | **10** | 11 ✗ |
 | 5 | 16 | 1 × 4, 1 × 2 | **20** | 20 ✓ |
 | 6 | 10 | — | **10** | 11 ✗ |
-| 7 | 21 | 1 def × 4 cases | **24** | 20 (v3 drops the plotly-raises test, adds 3 defs incl. the ×4 parity case) |
+| 7 | 24 | 1 def × 4 cases | **27** | 20 (v3 dropped the plotly-raises test and added 3 defs incl. the ×4 parity case; **v4 adds 3 more** — two mutation-retention tests and the `FrameContext` export test) |
 | 8 | 13 | — | **13** | 14 ✗ |
+| 9 | 5 | 1 def × 10 cases | **15** | 0 (**new in v4**: `tests/test_animation_guide_docs.py`, the guide's content + navigation tests) |
 
-Added: 9 + 5 + 11 + 10 + 20 + 10 + 24 + 13 = **102**. Final expected: `2653 passed, 13 skipped`. Each task's Step "run the FULL suite" states its own running total, so a drift is caught at the task that caused it.
+Added (v4): 9 + 5 + 11 + 10 + 20 + 10 + **27** + 13 + **15** = **120**. Final expected: `2671 passed, 13 skipped`. *(v3 totalled 102 for a final of 2,653; v4 adds 3 to Task 7 and creates Task 9's 15.)* Each task's Step "run the FULL suite" states its own running total, so a drift is caught at the task that caused it.
 
 The three ✗ rows are a **v2 counting error, not a v3 change**: v2 counted a parametrized def as both one def *and* its cases (visible in its own Task 4 breakdown, *"4 plain + 4 parametrized + 3 plain"* for a file with 7 defs), and over-counted Tasks 6 and 8 by one each with no parametrization present to explain it. Nothing about those tasks' contents changed in v3.
 
-**Remaining risk.** Task 4 is the largest single diff (a rewritten plotly frame loop) and the likeliest to disturb existing figures; `test_plain_serial_parity_is_unchanged` and `test_parallel_trail_parity_is_unchanged` are the guards, and the branch is only entered for `animate == 'serial'`. Task 7 touches all seven matplotlib updaters, the return path, and now four plotly frame-build sites; if it grows beyond one reviewable diff, split it into "publish the schedule from one helper" (Steps 4–5), "wire the matplotlib hook" (Step 6) and "wire the plotly hook" (Step 6a) as separate commits, running the full suite after each. Step 6a is the lowest-risk of the three — it only *adds* a `record`/`dispatch` pair before existing `frames.append` calls and changes no frame content — but it is the one whose per-branch field values must match Step 5's exactly, which `test_on_frame_output_parity_across_backends` is there to catch.
+**Remaining risk.** Task 4 is the largest single diff (a rewritten plotly frame loop) and the likeliest to disturb existing figures; `test_plain_serial_parity_is_unchanged` and `test_parallel_trail_parity_is_unchanged` are the guards, and the branch is only entered for `animate == 'serial'`. Task 7 touches all seven matplotlib updaters, the return path, and now four plotly frame-build sites; if it grows beyond one reviewable diff, split it into "publish the schedule from one helper" (Steps 4–5), "wire the matplotlib hook" (Step 6) and "wire the plotly hook" (Step 6a) as separate commits, running the full suite after each. Step 6a is the lowest-risk of the three — it only *adds* a `record`/`dispatch` pair before existing `frames.append` calls and changes no frame content — but it is the one whose per-branch field values must match Step 5's exactly, which `test_on_frame_context_metadata_parity_across_backends` is there to catch.
 
 ---
 
@@ -3130,19 +3609,21 @@ The three ✗ rows are a **v2 counting error, not a v3 change**: v2 counted a pa
 
 **Nothing here is open.** All four of v2's flagged decisions were resolved by the maintainer on 2026-07-29 and are implemented in the tasks above; this section is the record, kept so a reader can see what was chosen and how to reverse it. Nothing in this plan is waiting on anyone.
 
-1. **Animated-hue default linewidth: 1.5 → 1.0.** Task 2's fix reads the width off the hidden head artist, which for a caller who passed no `linewidth=` is `1.0` (the backend's `pop("linewidth", 1)` default at `matplotlib_backend.py:1603`) rather than `1.5` (`rcParams['lines.linewidth']`). Measured today, the animated **no-hue** lines are already `1.0`, so this makes hue and no-hue animations agree — but it is a visible change to existing hue animations.
+> **These entries are deliberately UNNUMBERED — cite them by name.** Four separate instances of citation drift in this plan set traced to numeric references going stale when a list was reordered or an item removed. The plan-set README's open-decision list was de-numbered for the same reason. Refer to *"the animated-hue linewidth decision"*, not *"#1"*.
+
+- **Animated-hue default linewidth: 1.5 → 1.0.** Task 2's fix reads the width off the hidden head artist, which for a caller who passed no `linewidth=` is `1.0` (the backend's `pop("linewidth", 1)` default at `matplotlib_backend.py:1603`) rather than `1.5` (`rcParams['lines.linewidth']`). Measured today, the animated **no-hue** lines are already `1.0`, so this makes hue and no-hue animations agree — but it is a visible change to existing hue animations.
    - **RESOLVED: ship it.** No implementation change; Task 2 already does this. Pinned by `test_animated_hue_default_width_matches_the_artist_it_replaces`, and recorded under **Changed** in the CHANGELOG (Task 9) as a visible change to existing animated hue figures, with `linewidth=1.5` named as the way to keep the old look.
    - *Not taken:* also changing `matplotlib_backend.py:1603` / `:2198` to `pop("linewidth", plt.rcParams['lines.linewidth'])`, making **all** animated lines `1.5` and matching static plots. Broader blast radius; would need its own full-suite pass.
 
-2. **`morph_samples` above 2000: cap or refuse?** `morph.py:17-24` guarantees no real data point is ever dropped, and `tests/test_morph_animation.py:121-131` encodes the uncapped default; v1 capped silently (an error), v2 raised unconditionally.
+- **`morph_samples` above 2000: cap or refuse?** `morph.py:17-24` guarantees no real data point is ever dropped, and `tests/test_morph_animation.py:121-131` encodes the uncapped default; v1 capped silently (an error), v2 raised unconditionally.
    - **RESOLVED: a `simplify=` flag decides, and the default is to cap.** Verbatim: *"add a 'simplify' flag to control this behavior; if below cap, simplify does nothing. otherwise either silently drop with no warning if simplify=True (default), or print an informative message with a suggestion to set simplify=True and then raise an exception if simplify=False."* Implemented in Task 3: no-op below the cap; **silent** downsample above it by default (no `warnings.warn`, no `print`); `ValueError` naming `simplify=True` when `simplify=False`. Contract 7 is rewritten to the conditional guarantee, and Task 3 Step 6 rewrites `morph.py:17-24` and `plot.py:1516-1518` so no in-source guarantee outlives it.
    - *Scope:* `simplify=` governs morph tractability **only**, and is documented as such.
    - *To make the message print separately as well:* prepend `print(_msg)` before the `raise` in Task 3 Step 3 and add a `capsys` assertion to `test_simplify_false_over_the_threshold_raises_naming_simplify`. See the *Revision note (v3)* for why one `raise` carries it instead.
 
-3. **`order='serial'` with `animate='spin'` or `'window'`: warn-and-ignore vs. hard error.** v1 raised `NotImplementedError`; the review noted this is a *new* hard error where the repo's established behaviour for the same shape of request is warn-and-ignore (`plot.py:3760-3781`, measured: `animate='spin', chemtrails=True` → *"animate='spin' does not support trail styles; ignoring chemtrails for datasets [0, 1, 2]"*).
+- **`order='serial'` with `animate='spin'` or `'window'`: warn-and-ignore vs. hard error.** v1 raised `NotImplementedError`; the review noted this is a *new* hard error where the repo's established behaviour for the same shape of request is warn-and-ignore (`plot.py:3760-3781`, measured: `animate='spin', chemtrails=True` → *"animate='spin' does not support trail styles; ignoring chemtrails for datasets [0, 1, 2]"*).
    - **RESOLVED: unchanged — warn and ignore**, matching the established convention. `test_serial_ordering_warns_and_is_ignored_for_spin_and_window`.
    - *To switch to a hard error:* in Task 5 Step 3's fold, replace the `warnings.warn(...)`/`order = 'parallel'` pair with a `raise NotImplementedError(...)`, and change that test to `pytest.raises`.
 
-4. **`on_frame=` on the plotly backend.** v2 asserted this was the one place parity was unreachable, on the theory that a plotly animation is precomputed JSON with no Python per-frame loop.
+- **`FrameContext` exposes backend-native objects (`on_frame=` on the plotly backend).** v2 asserted this was the one place parity was unreachable, on the theory that a plotly animation is precomputed JSON with no Python per-frame loop.
    - **RESOLVED: the theory was wrong; `on_frame=` ships on both backends and the `NotImplementedError` is deleted.** `_add_animation` (`plotly_backend.py:2517`) builds every frame in a Python loop at build time — `frames = []` (`:2601`), `frames.append(go.Frame(**frame_kwargs))` at `:2729` (spin), `:2819` (morph), `:2865` (serial), `:2975` (parallel/window). What plotly lacks is a Python loop during *playback*. Task 7 Step 6a implements the dispatch across all four sites; Task 4 references it rather than duplicating it.
-   - *The cost, stated rather than hidden:* the two backends call back on different **schedules** (matplotlib at render time, possibly repeating a frame index across a loop or a save; plotly exactly once per index at build time), so `on_frame` must be a **pure function of its `FrameContext`**, and `figure`/`axes`/`artists` are backend-native. Both facts are in the docstring, the guide and the CHANGELOG. Output parity over the backend-independent fields is asserted by `test_on_frame_output_parity_across_backends`; the backend-native fields by `test_plotly_frame_context_carries_backend_native_objects`. This is v2's *Alternative A*, adopted with its parity hazard named and tested rather than assumed away.
+   - *The cost, stated rather than hidden:* the two backends call back on different **schedules** (matplotlib at render time, possibly repeating a frame index across a loop or a save; plotly exactly once per index at build time), so `on_frame` must be **deterministic and idempotent for a given `FrameContext`** — never described as "pure", since mutating artists is the entire point — and `figure`/`axes`/`artists` are backend-native. Both facts are in the docstring, the guide and the CHANGELOG. **Context-metadata** parity over the backend-independent fields is asserted by `test_on_frame_context_metadata_parity_across_backends`; the backend-native fields by `test_plotly_frame_context_carries_backend_native_objects`; and per-backend mutation *retention* by the Step 1b pair. **Output parity is explicitly not claimed** — artists and traces are backend-native, so a mutation callback is not source-compatible across backends and any such assertion would be false. This is v2's *Alternative A*, adopted with its parity hazard named and tested rather than assumed away.

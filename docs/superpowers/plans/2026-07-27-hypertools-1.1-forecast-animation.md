@@ -98,7 +98,9 @@ Task 1 is fully standalone. Task 2 is standalone **except** for `ForecastSchedul
 
 5. **Forecast artists identify themselves.** Every forecast artist carries `_hyp_forecast_role ∈ {'static', 'live', 'trail'}` (matplotlib) / `trace.meta = {'hyp_forecast_role': ...}` (plotly), plus `_hyp_forecast_age` on trail artists. Linestyle is **not** a discriminator: user data drawn with `fmt='--'` is dashed too.
 
-6. **Every frame is a pure function of its index.** No accumulating ring buffer, no state mutated by drawing. `_func(12)` renders identically whether or not `_func(2)` ran first — required because `ani.save()` and `to_jshtml()` replay from frame 0 and the tests drive frames out of order.
+6. **Every frame is DETERMINISTIC AND IDEMPOTENT in its index.** No accumulating ring buffer, no state carried between draws. `_func(12)` renders identically whether or not `_func(2)` ran first — required because `ani.save()` and `to_jshtml()` replay from frame 0 and the tests drive frames out of order.
+
+   *Wording matters here, and matches animation-core's contract 3:* drawing necessarily **mutates** artists, so this is not "purity" in the functional sense and must not be written that way. What is forbidden is **accumulation**, not effects. (The forecast *schedule* computed in Task 1 **is** genuinely pure — index in, displacement out, no effects — and that plan text is correct as written; the distinction is between computing the frame and drawing it.)
 
 7. **`return_model=True`'s `predict.forecasts` is unchanged**: the full-history forecast, exactly `t` rows, analyze space, one per input dataset (`plot.py:1935-1941`). For a time-progressing animation this is *also* the forecast drawn at the **final** frame, because at the last frame the revealed history **is** the full history (`_anim_window_bounds(total-1, total, n, w)` → `end = n`). One sentence of the docstring is amended; the value is not.
 
@@ -1451,7 +1453,7 @@ def _validate_forecast_trail(forecast_trail, predict):
     return forecast_trail
 ```
 
-- [ ] **Step 4: Render the fan as a pure function of the frame index**
+- [ ] **Step 4: Render the fan idempotently from the frame index**
 
 Add to `hypertools/plot/forecast.py`:
 
@@ -1858,7 +1860,7 @@ git commit -m "docs(plot): pin the return_model forecast contract for animated p
 
 - [ ] **Step 3: Verify the docs build clean**
 
-Run: `cd docs && make clean && make html 2>&1 | tail -20`
+Run: `cd docs && MPLBACKEND=Agg ../.venv/bin/python -m sphinx -b html -W -E -a . _build/html 2>&1 | tail -20`
 Expected: build succeeds with **0 warnings** (the RTD-parity bar the 1.0 release gate enforces).
 
 - [ ] **Step 4: Run the WHOLE suite one final time**

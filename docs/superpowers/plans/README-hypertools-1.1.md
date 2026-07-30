@@ -16,7 +16,7 @@ Nothing ships until the whole line works; the Bluesky announcement waits.
 
 | # | plan | what it delivers |
 |-|-|-|
-| 1 | [animation core](2026-07-26-hypertools-1.1-animation-core.md) | `order='parallel'\|'serial'`, per-dataset `alpha=`, public `on_frame` hook + `FrameHooks`, per-segment titles, plotly serial parity, 3 bug fixes |
+| 1 | [animation core](2026-07-26-hypertools-1.1-animation-core.md) | `order='parallel'\|'serial'`, per-dataset `alpha=`, public `on_frame` hook + public `FrameContext` (internal `FrameHooks` registry), per-segment titles, plotly serial parity, 3 bug fixes |
 | 2 | [MultiIndex](2026-07-28-hypertools-1.1-multiindex.md) | shared grouping in `core/hierarchy.py`, one authoritative final-trace builder, column-hierarchy expansion, continuous `hue=` through a hierarchy, hierarchical `hyp.predict`, `predict=` with expansion, plotly parity, the hierarchy guide + CHANGELOG 1.1.0 |
 | 3 | [forecast animation](2026-07-27-hypertools-1.1-forecast-animation.md) | precomputed forecast schedule, `predict=` with time-progressing animations, `forecast_trail=`, plotly parity |
 | 4 | [examples and tutorials](2026-07-28-hypertools-1.1-examples-and-tutorials.md) | native palette-from-image, then the 5 launch examples + 15 older tutorials rewritten against the new API |
@@ -35,6 +35,15 @@ Plan 2 (MultiIndex, 12 tasks) ────────────────�
 
 Plan 1 is the keystone: its `FrameHooks` registry is what lets Plans 2-4 stop monkeypatching
 matplotlib's private `FuncAnimation._func`, which four of the five examples do today.
+
+**Public vs. internal, so the two are never conflated:** `on_frame=` (the `plot()` argument),
+`HyperAnimation.on_frame()` (the post-construction registration) and **`FrameContext`** are the
+public callback API — `FrameContext` is exported as `hypertools.FrameContext`, listed in
+`__all__`, and documented in `docs/api.rst` beside `HyperAnimation` (Plan 1 Task 7 Step 6b).
+**`FrameHooks` is internal**: it is the shared mutable registry `plot()` creates and
+`HyperAnimation` adopts (contract 3), never exported and never named in a user-facing docstring.
+Users receive a `FrameContext`; they never construct a `FrameHooks`. Where this README says Plan 1
+"delivers `FrameHooks`", it means the internal mechanism Plans 2-4 build on, not a public name.
 
 ---
 
@@ -79,8 +88,17 @@ something that no longer, or never did, exist):
   row-in-list decision — the drop was #9. Caught while renumbering this README, which would
   otherwise have made the stale citation accidentally correct. Now cited **by name**.
 
-When any plan is renumbered, re-check every sibling citation — this bit four times. Cite
-decisions by name, not by number; numbers move.
+- **The fix above was incomplete, found 2026-07-30.** A *second* `#5` citation survived in the
+  MultiIndex plan (`2026-07-28-hypertools-1.1-multiindex.md:3565`) for eleven days after this entry
+  claimed the citation was "now cited by name" — carrying the same wrong number (the drop was #9).
+  A search-and-replace that fixes one occurrence and a note that says "fixed" is worse than no fix,
+  because the note stops anyone re-checking. Now re-pointed by name, and the numbered lists in
+  **animation-core** and **examples-and-tutorials** have been de-numbered as well, so the pattern
+  has no remaining source.
+
+When any plan is renumbered, re-check every sibling citation — this bit **six** times. Cite
+decisions by name, not by number; numbers move. Verify a citation fix by grepping for the *pattern*
+across every plan, never by fixing the one instance you were shown.
 
 **A reviewer's claim is evidence, not proof.** The round-3 review's blocking finding was right in
 principle but named the wrong frame: it read `tests/test_multiindex.py:479` as producing "six
@@ -140,7 +158,7 @@ in the round-5 exchange. Both sets are recorded under *Standing decisions*.
   browser boundary it raises, naming the backend; it never silently degrades. **As of the round-5
   exchange there is no such capability in 1.1** — `on_frame=` was the sole claimed exception and
   turned out not to be one (below).
-- **`on_frame=` works on BOTH backends, as a purity contract rather than a timing contract.**
+- **`on_frame=` works on BOTH backends, as a determinism/idempotence contract rather than a timing contract.**
   The earlier claim that plotly has no Python per-frame loop was wrong: `_add_animation`
   (`plotly_backend.py:2517`) builds every frame in a Python loop, appending `go.Frame` at
   **four** sites: `:2729` (spin), `:2819` (morph), `:2865` (serial), `:2975` (the `else:`
@@ -150,9 +168,20 @@ in the round-5 exchange. Both sets are recorded under *Standing decisions*.
   Step 6a is the authority here and applies one identical block to all four. So the hook is called once
   per frame by each backend's natural loop — matplotlib at render time (`FuncAnimation`,
   `matplotlib_backend.py:1935`, possibly re-called per frame index across loops/saves), plotly once
-  per frame at build. **`on_frame` must therefore be a pure function of its `FrameContext`;**
-  output parity is the tested guarantee. Verified safe: all four examples that monkeypatch
-  `FuncAnimation._func` compute per-frame content purely from the frame index.
+  per frame at build. **Callbacks must therefore be deterministic and idempotent for a given frame
+  context: they must not depend on call count, call order, wall-clock time, or accumulated external
+  state.** Do **not** call this "purity" — mutating artists is the entire purpose of the hook, and
+  the plan's own docstring example sets a title every frame. Idempotence, not absence of effects,
+  is what makes matplotlib's possible re-delivery indistinguishable from plotly's single call.
+
+  The tested guarantee is **context-metadata parity**, *not* output parity: the backend-independent
+  `FrameContext` fields match per frame index. Rendered output is deliberately not claimed to match,
+  because `figure`/`axes`/`artists` are backend-native and a mutating callback is therefore not
+  source-compatible across backends. What each backend separately guarantees — one test apiece — is
+  that a mutation the callback makes is **retained** in that backend's own frame. Verified safe: all
+  four examples that monkeypatch `FuncAnimation._func` derive per-frame content from the frame index
+  and none accumulates inside its wrapper; where a running quantity is needed they precompute at
+  module level and index by frame.
 - **`morph_samples` above the tractability cap is governed by `simplify=`** (new in 1.1, default
   `True`). Below the cap it does nothing. Above it, `simplify=True` downsamples **silently, with no
   warning**; `simplify=False` raises with a message naming `simplify=True`. This narrows the

@@ -60,6 +60,18 @@ This is the first revision of this plan, so there is no prior version to correct
 
 3. **No private reaches.** After this plan, no example or notebook contains `ani._func`, `ani._args`, `hypertools._shared`, `hypertools.plot.morph`, or any other name not documented in `plot()`'s docstring or `docs/api.rst`. Per-frame work goes through the public `on_frame=` hook (animation-core Task 7); per-segment naming goes through `title=` (animation-core Task 8).
 
+   **Ownership split with animation-core Task 9 Step 5 — both plans touch the same four `examples/animate_*.py` files, so this is explicit and reciprocal:**
+
+   | animation-core Task 9 Step 5 | **this plan (the authority on content)** |
+   |-|-|
+   | **Mechanical migration only** — delete the `_func`/`_args` monkeypatches and private imports, substitute the equivalent `title=`/`on_frame=` call, leave rendered behaviour unchanged | **All narrative, visualization and notebook work** — what each example demonstrates, its prose, its figures, and the paired `docs/tutorials/*.ipynb` |
+   | Touches only the docstring sentences describing the removed workaround | Owns the full docstring and narrative rewrite |
+   | **Must not** assert this plan's line-count or class-mix metrics | **Task 8 owns those metrics**, and measures them only after this plan's rewrites land |
+
+   Read it as a two-stage handoff: Plan 1 makes the examples *stop using private internals* without changing what they show; this plan then decides what they should show. Tasks 2, 3, 5 and 6 here are the final word on each file's content. If a file arrives from Plan 1 already migrated, do **not** re-migrate it — rewrite its narrative on top.
+
+   *Do not enforce this plan's metrics from Plan 1*: measuring a file Plan 1 has migrated but this plan has not yet rewritten fails for the wrong reason, and would push Plan 1's implementer into doing editorial work that gets discarded here.
+
 4. **Network fetches live in examples, wrapped in a fallback, never in a library test.** Every fetch follows the shape the current examples already use (`animate_market_forecast.py:70-97`, `animate_weather_decades.py:74-95`): a `try/except Exception: return None` fetcher, a deterministic synthetic substitute, and a `print(...)` naming which source was used. Task 1's tests write real image files to `tmp_path` and touch no network. `image_palette()` deliberately does **not** accept a URL, so the library never fetches.
 
 5. **Forecast scoring stays out of the library.** Standing maintainer decision, restated by the forecast-animation plan's Global Constraints (*"Forecast scoring stays OUT of the library ... accuracy/backtest logic belongs in the tutorial as legitimately custom code"*). Task 2's per-sector and overall accuracy is example code, and is budgeted and timed rather than left open-ended.
@@ -585,7 +597,7 @@ Expected: baseline + 17. Pay attention to `tests/test_colors.py`, `tests/plot/te
 
 - [ ] **Step 8: Rebuild the docs (a new autodoc section was added)**
 
-Run: `cd docs && make clean && make html 2>&1 | tail -20`
+Run: `cd docs && MPLBACKEND=Agg ../.venv/bin/python -m sphinx -b html -W -E -a . _build/html 2>&1 | tail -20`
 Expected: build succeeds with **0 warnings** (the RTD-parity bar the 1.0 release gate enforces).
 
 - [ ] **Step 9: Commit**
@@ -1179,7 +1191,7 @@ git commit -m "docs(gallery): weather example is the paper figure in one native 
 | `all_windows`/`owners` bookkeeping + `clouds = [red[owners == name] ...]` (`:148-160`, `:181-182`, class **B**) | a **list of lists of strings** straight into `hyp.plot` — verified `hyp.reduce([[s,s,s],[s,s,s],[s,s]], ndims=3)` → `[(3,3),(3,3),(2,3)]`, so `format_data` does the splitting |
 | the k-means + `np.argmax(counts)` + luminance-clamp block inside `canvas_color` (`:136-144`, class **B** once Task 1 exists) | `image_palette(path)[0]` — and the luminance clamp is no longer needed, because the salience ordering returns a vivid colour rather than the muted background it was compensating for |
 | `fig.text(...)` title (`:198-201`, class **B**) | `title=` |
-| the 85th-percentile outlier trim (`:172-179`, class **C**) | **dropped** — see *Decisions still needed* #2 |
+| the 85th-percentile outlier trim (`:172-179`, class **C**) | **dropped** — see the *Decisions still needed* entry named **"The paintings example's outlier trim"** |
 | `blurb` in the side panel | the full `text` each painting already carries, which is what was embedded — the panel now shows exactly what produced the geometry |
 
 The download-and-cache half of `canvas_color` **stays** (class **A**, textbook: hypertools does not fetch images, Contract 4).
@@ -1585,8 +1597,8 @@ git commit -m "docs(gallery): conversation example uses native text, order='seri
 - the **teapot** (maintainer instruction), with its `hyp.load('teapot')` 1728-rows / 301-unique note (`:45-50`);
 - `CUBE_SCALE = 0.8`, because a cube normalized to ±1 fills the drawn axes box exactly and reads as noise in a wireframe (`:63-66`);
 - the closed loop `clouds.append(clouds[0])`, and the hand sampling that makes it possible — `morph_samples=` draws a **fresh** subset per dataset, so it cannot produce the identical closing sample (`:54-61`);
-- `normalize()`, because `plot()` rescales with **one shared pooled affine** (`plot.py:4040-4051`, `_shared/helpers.py:24-69`), so clouds left in their raw units would be drawn at wildly different sizes. See *Decisions still needed* #3;
-- the explicit `morph_samples=N`, now load-bearing: animation-core Task 3 makes an uncapped morph over clouds above 2000 points **raise**.
+- `normalize()`, because `plot()` rescales with **one shared pooled affine** (`plot.py:4040-4051`, `_shared/helpers.py:24-69`), so clouds left in their raw units would be drawn at wildly different sizes. See the *Decisions still needed* entry named **"The morph example's hand-written `normalize()`"**;
+- the explicit `morph_samples=N`. **Corrected 2026-07-30 — this bullet previously said animation-core Task 3 makes an uncapped morph above 2000 points "raise", which is the pre-`simplify=` behaviour and is no longer true.** Under the resolved decision, the default `simplify=True` **silently downsamples** to the cap; only `simplify=False` raises. So `morph_samples=N` is *not* load-bearing in the "or it errors" sense — the example would still run without it. Keep it anyway, and for a better reason: it makes the sampling **explicit and reproducible** rather than leaving the reader to discover that a silent cap was applied. State that in the prose.
 
 **Files:** rewrite the tail of `examples/animate_morph_zoo.py`; rewrite `docs/tutorials/morph_shapes_zoo.ipynb`.
 
@@ -2154,7 +2166,7 @@ Expected: the baseline plus Task 1's 17 and Task 8's 109, all passing, 13 skippe
 
 - [ ] **Step 8: Build the docs to the RTD-parity standard**
 
-Run: `cd docs && make clean && make html 2>&1 | tail -30`
+Run: `cd docs && MPLBACKEND=Agg ../.venv/bin/python -m sphinx -b html -W -E -a . _build/html 2>&1 | tail -30`
 Expected: build succeeds with **0 warnings**. Then verify the five tutorial pages actually show something:
 
 ```bash
@@ -2183,20 +2195,22 @@ git commit -m "test(docs): gate examples and tutorials on native ratio + defect 
 
 ## Decisions still needed
 
+> **These entries are deliberately UNNUMBERED — cite them by name.** Five instances of citation drift in this plan set traced to numeric references going stale under reordering; the README's and animation-core's lists were de-numbered for the same reason.
+
 Flagged rather than invented. Each states the options and the exact change to switch; the plan implements the option marked **(implemented)** so it stays runnable end to end.
 
-1. **Where `image_palette` is exported.** `hypertools/__init__.py` carries a curated `__all__` (`__init__.py:46-52`) and adding a name to it is a public-API decision.
+- **Where `image_palette` is exported.** `hypertools/__init__.py` carries a curated `__all__` (`__init__.py:46-52`) and adding a name to it is a public-API decision.
    - **(implemented)** `hypertools.plot.colors.image_palette`, beside the two existing public palette helpers (`get_palette_colors`, `continuous_colormap`), documented in a new `docs/api.rst` **Colors** section, plus the declarative `palette='image:<path>'` spelling that needs no import at all.
    - *Alternative:* also export it top-level as `hyp.image_palette`. To switch: add `from .plot.colors import image_palette` to `hypertools/__init__.py` and append `'image_palette'` to `__all__`; `tests/test_d1_code_residue.py` and any star-import test will need the new name.
    - **Needs:** maintainer preference on growing the top-level surface in a minor release.
 
-2. **The paintings example's outlier trim.** The current 85th-percentile per-cloud trim (`animate_painting_embeddings.py:172-179`) only exists between `hyp.reduce` and `hyp.plot`. Once the example is a single `hyp.plot` call over raw text, there is no such gap, and `hyp.reduce` cannot select the sentence-transformer (it has no `vectorizer=`; verified `TypeError`).
+- **The paintings example's outlier trim.** The current 85th-percentile per-cloud trim (`animate_painting_embeddings.py:172-179`) only exists between `hyp.reduce` and `hyp.plot`. Once the example is a single `hyp.plot` call over raw text, there is no such gap, and `hyp.reduce` cannot select the sentence-transformer (it has no `vectorizer=`; verified `TypeError`).
    - **(implemented)** drop the trim. UMAP with `n_neighbors=12, min_dist=0.25` already clumps each description, and the plan does not invent a library feature to preserve a cosmetic step.
    - *Alternative A:* add `vectorizer=`/`semantic=`/`corpus=` to `reduce()`/`analyze()` (audit recommendation #6), restoring the two-step shape. Small and independently useful, but it is library work no 1.1 plan currently owns.
    - *Alternative B:* add a `manip='TrimOutliers'` manipulator (audit recommendation #7) so the trim becomes a native pipeline stage — but `manip` runs **before** `reduce`, so it would trim in the 384-dimensional embedding space, which is not the same operation.
    - **Needs:** maintainer decision on whether either library addition belongs in 1.1.
 
-3. **The morph example's hand-written `normalize()`.** Per-cloud centring and isotropic rescaling is genuinely not redundant — `plot()` uses **one shared pooled affine** (`plot.py:4040-4051`, `_shared/helpers.py:24-69`) — but `normalize='within'` (`tools/normalize.py:175`, modes at `:86`) z-scores each dataset per column, which distorts a point cloud's aspect ratio.
+- **The morph example's hand-written `normalize()`.** Per-cloud centring and isotropic rescaling is genuinely not redundant — `plot()` uses **one shared pooled affine** (`plot.py:4040-4051`, `_shared/helpers.py:24-69`) — but `normalize='within'` (`tools/normalize.py:175`, modes at `:86`) z-scores each dataset per column, which distorts a point cloud's aspect ratio.
    - **(implemented)** keep the 5-line helper, with the comment explaining exactly why it is not redundant.
    - *Alternative:* add an aspect-preserving `normalize='isotropic'` (or `'unit-cube'`) mode, and delete the helper. Roughly 20 lines plus tests in `hypertools/tools/normalize.py`; no 1.1 plan owns it.
    - **Needs:** maintainer decision on adding a normalize mode in 1.1.
@@ -2237,7 +2251,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
 | Conversation = native text, `animate='serial'` + `chemtrails`, per-segment titles | Task 5: list-of-lists of strings in; `animate=True, order='serial', chemtrails=True`; `title=[one per turn]`. The collision I feared (categorical hue collapsing 28 turns and breaking per-dataset titles) was **measured and disproved**: 6 datasets stay 6 datasets with a 3-entry legend. |
 | Morph = native per-segment titles, explicit `morph_samples`, keep the teapot, cube scaling, closed loop | Task 6: `title=titles` replaces the private `_morph` reach; `morph_samples=N` kept and now load-bearing; teapot, `CUBE_SCALE`, and `clouds.append(clouds[0])` all kept with the reasons restated. |
 | Task 7 groups the 15 older tutorials so each step is reviewable | Five steps, one per recurring fix (ffmpeg, HF embed, `ax=`, `manip='Smooth'`, `analyze`/`reduce`), each with its own execution check, its own `grep` assertion, and its own commit. |
-| Task 8 re-measures per file, asserts improvement, full suite, 0-warning docs | Task 8: a committed metric, a 109-test gate, a per-file re-measure, all five examples run headless, the full suite, `make clean && make html` with 0 warnings, plus a rendered-output check and a re-run-everything step. |
+| Task 8 re-measures per file, asserts improvement, full suite, 0-warning docs | Task 8: a committed metric, a 109-test gate, a per-file re-measure, all five examples run headless, the full suite, the CI-parity `python -m sphinx -b html -W -E -a` build with 0 warnings, plus a rendered-output check and a re-run-everything step. |
 | BEFORE and AFTER per example, from the audit's baseline | Each of Tasks 2–6 opens with the measured BEFORE (raw lines, code lines, native lines, ratio, **and** the audit's A/B/C/D/NATIVE classification) and the contracted AFTER budget, which Task 8 asserts. |
 | Network in examples only; keep the offline-fallback property | Contract 4, and every rewrite implements the existing shape: `try/except Exception: return None` + a deterministic synthetic substitute + a `print` naming the source. Task 1's tests write PNGs to `tmp_path`; `image_palette` refuses URLs by design. |
 | Real file:line citations | Every claim about existing code cites a line I opened in this session: `docs/conf.py:115`, `plot.py:807/882/895/930/950/1013/1064/1246/2750-2751/3039-3050`, `colors.py:24/105/227/250/269/287/305-306/323-331`, `text2mat.py:89/184/391/404`, `animate.py:84`, `smooth.py:14/232`, `morph.py:36`, `scripts/generate_gallery_thumbs.py:26`, plus per-example line ranges. |
