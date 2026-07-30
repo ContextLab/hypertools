@@ -1,0 +1,2260 @@
+# HyperTools 1.1 — Examples and Tutorials Implementation Plan (v1)
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Make the five launch examples and the fifteen older tutorials *showcase* hypertools instead of working around it. Measured today, **6.5% of the code in the five launch examples belongs to a hypertools call** (48 of 739 code lines) and **37.9% is defect** — it either re-implements something native or fills a gap Plans 1–3 close. This plan rewrites every one of them against the 1.1 API, in lockstep with its notebook, and adds the one library feature the examples still need that no other 1.1 plan owns.
+
+**Architecture:** One library task first (Task 1: palette-from-image), because two example rewrites consume it and it is the last orphaned feature from the audit. Then five example rewrites, each *paired with its notebook in the same task and the same commit* — a script fixed without its notebook leaves the defect published, because `nbsphinx_execute = 'never'` (`docs/conf.py:115`) ships the committed notebook verbatim. Then the fifteen older tutorials, grouped by the recurring fix so each step is one reviewable diff. Finally a verification task that makes the improvement **permanent**: a committed measurement script, a real pytest module that fails if any defect marker reappears, the full suite, every example executed, every notebook re-executed, and a zero-warning docs build.
+
+**Tech Stack:** Python 3.12.10, numpy 2.3.5, pandas 3.0.3, matplotlib 3.10.8, plotly 6.8.0, scikit-learn, Pillow 12.1.0, nbconvert 7.17.1, ipykernel 7.3.0, pytest 9.0.2.
+
+---
+
+## Verification note (v1)
+
+This is the first revision of this plan, so there is no prior version to correct. What follows is the equivalent discipline: **every fact this plan leans on was re-measured in this repo before the plan was written**, and the table records where the handoff brief, the two audits, or my own first guess turned out to be wrong or incomplete.
+
+| claim as received | what I measured (`/Users/jmanning/hypertools/.venv/bin/python`, 2026-07-28) |
+|-|-|
+| "`nbsphinx_execute = 'never'` means committed outputs ship verbatim" | True (`docs/conf.py:115`) — but **all five launch notebooks ship with ZERO executed outputs**: `conversation_shape` 0/6 code cells, `market_forecast` 0/7, `morph_shapes_zoo` 0/6, `painting_embeddings` 0/6, `weather_decades` 0/7. The 15 older tutorials carry 3–15 executed cells each. So the five launch tutorial pages currently render as **code with no figure at all**. There is also **no gallery thumbnail** for any of the five (`docs/_static/thumbnails/` holds 12 files; `scripts/generate_gallery_thumbs.py:26` hard-codes `MPL_ANIMS = ['animate', 'animate_MDS', 'animate_spin', 'chemtrails', 'precog', 'save_movie']`). Task 8 fixes both. |
+| Equal per-dataset feature widths required by `plot.py:2745` | The comment block starts at `plot.py:2744`; the **check** is `plot.py:2750-2751` (`_widths = [ri.shape[1] for ri in raw]` / `if len(set(_widths)) > 1:`). Cite 2750-2751. |
+| Market panel: 24/24 tickers, 2513 trading days, 2016-07-28 → 2026-07-28 | **Confirmed exactly.** All 24 tickers fetched from `https://query1.finance.yahoo.com/v8/finance/chart/<T>?range=10y&interval=1d` with a `User-Agent` header; every one returned `len(timestamp) == 2513`; AAPL first 2016-07-28, last 2026-07-28. Six sectors × 4 tickers = equal widths, satisfying `plot.py:2750-2751`. |
+| Weather: `temperatures.csv` is (1645 months, 20 cities) | The raw CSV is **(1965, 43)**: `Unnamed: 0`, `Year`, `Month`, then **both** `<City>_anomaly` and `<City>` for 20 cities. `dropna()` → **1645 complete rows, 1875–2013**. The 20 absolute-temperature columns are selected by `raw[list(locs['City'])]` → `(1645, 20)`. `temperature_locs.csv` is (20, 4): `Unnamed: 0`, `City`, `Lat`, `Long`. |
+| The weather paper call is "essentially ONE native call", 516 distinct colours | Confirmed, and stronger. `hyp.plot(temps, fmt='-', hue=avg_temp, palette='RdBu_r', normalize='across', manip='Smooth', animate=True, chemtrails=True, colorbar=True, duration=8, frame_rate=20, show=False)` runs in **0.3 s**, emits **no warnings**, and produces **2 axes** (`Axes3D` + the colorbar `Axes`). After driving frame 150 the head+trail collections carry **879 distinct RGBA values**. (516 was presumably a different frame/duration; the qualitative claim holds and is now pinned to exact parameters.) |
+| `hyp.reduce(list_of_strings, ndims=3)` → (8, 3) | Confirmed. Also confirmed: `hyp.reduce([[s,s,s],[s,s,s],[s,s]], ndims=3)` → `[(3,3), (3,3), (2,3)]`, so grouped text needs no manual re-split; and `hyp.plot(texts, '.', ndims=3, vectorizer='TfidfVectorizer', semantic=None, corpus=None)` → `Figure`. |
+| `labels=` is per-OBSERVATION, flat or nested | Confirmed on real artists. Flat `[None]*15` with 2 non-None entries → 2 annotations; nested `[[...5], [...5], [...5]]` with 2 non-None entries → 2 annotations. |
+| GIF saving is native | Confirmed end to end: `hyp.plot(..., animate=True, save_path='x.gif')` wrote a **24 832-byte** real GIF with no ffmpeg (`plot.py:1246`, dispatch at `animate.py:84`). |
+| Palette-from-image is ABSENT | Confirmed. `hyp.plot(..., palette='image:/tmp/nope.png')` → `ValueError: 'image:/tmp/nope.png' is not a valid palette name` (raised by seaborn through `colors.py:306`). No `PIL`/image handling anywhere in `hypertools/`. |
+| The existing `image_palette()` orders k-means clusters BY SIZE and so returns the background tone | Confirmed and reproduced. On a synthetic 90%-beige / 10%-vivid-red image, `km.cluster_centers_[np.argmax(counts)]` (`examples/animate_painting_embeddings.py:138-140`) → `[0.784, 0.769, 0.737]` (the beige). Ordering by `population × chroma` → `[0.863, 0.078, 0.078]` (the red) first. Task 1 encodes this as a test. |
+| Verified baseline `2564 collected`, `2551 passed, 13 skipped` | `pytest --collect-only -q` → **`2564/2566 tests collected (2 deselected)`**. Consistent. |
+| *(my own first guess)* the notebooks can be re-executed with the `python3` kernel | **False.** `~/Library/Jupyter/kernels/python3/kernel.json` points at an unrelated project's `.venv/bin/python`, not this repo's. Notebook execution needs a kernel registered from **this** repo's venv (`ipykernel` 7.3.0 is installed there). Global Constraints carry the exact recipe. |
+| *(my own first guess)* a new `image_palette` needs a Pillow extra | **Unnecessary.** `matplotlib>=3.9.0` is a core dependency and itself requires `pillow>=8` (`importlib.metadata.requires('matplotlib')` → `['pillow>=8...']`), so Pillow is already guaranteed in every hypertools install. Task 1 declares it explicitly anyway (one line, zero new install weight). |
+| *(my own first guess)* a categorical `hue=` would collapse the conversation's 28 turns and break per-segment `title=` | **False, verified.** With 6 line datasets and a nested categorical `hue`, `hyp.plot(...)` draws **6 lines** and a **3-entry legend** (`['Alice', 'Hatter', 'March Hare']`); `animate='serial'` still passes **6 datasets** to the backend (`len(ani._args[0]) == 6`). So per-turn `title=` and per-speaker `hue=`/`legend=True` compose. (`plot.py:204-228` regroups *contiguous runs*, not whole categories.) |
+| *(unstated)* the market accuracy readout is cheap | **It is not, and the budget is now measured.** `hyp.predict(x, model='Kalman', t=1)` costs 274 ms at 60 rows, 217–472 ms at 250, 445 ms at 500, 873 ms at 1000, **2178 ms at 2500**. The full walk-forward loop was timed: 7 series × 30 anchors on a **60-row rolling window = 210 fits in 7.3 s**; the same loop at a 250-row window costs 30.7 s. The current example's whole run is **6.2 s**. Task 2 therefore fixes `WINDOW = 60`, `N_SCORED = 30` and states the measured cost. |
+| *(unstated)* `manip={'model':'Smooth','kwargs':{'kernel_width':10}}` is a clean drop-in for the pandas rolling mean | It works, but emits `UserWarning: Increasing smoothing kernel width by 1 (must be odd)` (`hypertools/manip/smooth.py:232`). Task 7 uses **11**, not 10, so the tutorial produces no warning. |
+| *(unstated)* the measurement metric | The audit's "% hypertools" counts *lines matching* `\bhyp\.|\bhypertools\b`, which scores a 10-line `hyp.plot(...)` call as **1** native line. This plan uses a **logical-statement** metric (a continuation line belongs to the statement it continues). Measured on the same five scripts it gives 48 native of 739 code lines = **6.5%**, reproducing the audit's 6.0% NATIVE-line classification to within rounding — so the two agree, and the logical-statement metric is the one Task 8 gates on because it is the one that rewards a big native call. |
+
+**Measured baseline, logical-statement metric** (the numbers every task below is held to):
+
+| file | code lines | native lines | ratio |
+|-|-|-|-|
+| `examples/animate_conversation.py` | 166 | 9 | 5.4% |
+| `examples/animate_market_forecast.py` | 191 | 11 | 5.8% |
+| `examples/animate_morph_zoo.py` | 40 | 6 | 15.0% |
+| `examples/animate_painting_embeddings.py` | 146 | 11 | 7.5% |
+| `examples/animate_weather_decades.py` | 196 | 11 | 5.6% |
+| **five scripts, total** | **739** | **48** | **6.5%** |
+| `docs/tutorials/conversation_shape.ipynb` | 186 | 11 | 5.9% |
+| `docs/tutorials/market_forecast.ipynb` | 192 | 11 | 5.7% |
+| `docs/tutorials/morph_shapes_zoo.ipynb` | 45 | 8 | 17.8% |
+| `docs/tutorials/painting_embeddings.ipynb` | 116 | 10 | 8.6% |
+| `docs/tutorials/weather_decades.ipynb` | 206 | 10 | 4.9% |
+
+---
+
+## Contracts this plan establishes
+
+1. **A gallery example's job is to demonstrate the library, not to substitute for it.** Every line that re-implements a native capability (audit class **B**) or works around a gap Plans 1–3 close (class **C**) is deleted. What remains is data acquisition (**A**) and deliberate presentation (**D**), and each surviving **D** block must be something hypertools genuinely does not claim to do.
+
+2. **Script and notebook are one deliverable.** They are edited in the same task and land in the same commit. Task 8 enforces this mechanically: the defect-marker scan and the ratio gate run over `examples/animate_*.py` **and** `docs/tutorials/*.ipynb`, so a script fixed alone fails the gate.
+
+3. **No private reaches.** After this plan, no example or notebook contains `ani._func`, `ani._args`, `hypertools._shared`, `hypertools.plot.morph`, or any other name not documented in `plot()`'s docstring or `docs/api.rst`. Per-frame work goes through the public `on_frame=` hook (animation-core Task 7); per-segment naming goes through `title=` (animation-core Task 8).
+
+4. **Network fetches live in examples, wrapped in a fallback, never in a library test.** Every fetch follows the shape the current examples already use (`animate_market_forecast.py:70-97`, `animate_weather_decades.py:74-95`): a `try/except Exception: return None` fetcher, a deterministic synthetic substitute, and a `print(...)` naming which source was used. Task 1's tests write real image files to `tmp_path` and touch no network. `image_palette()` deliberately does **not** accept a URL, so the library never fetches.
+
+5. **Forecast scoring stays out of the library.** Standing maintainer decision, restated by the forecast-animation plan's Global Constraints (*"Forecast scoring stays OUT of the library ... accuracy/backtest logic belongs in the tutorial as legitimately custom code"*). Task 2's per-sector and overall accuracy is example code, and is budgeted and timed rather than left open-ended.
+
+6. **Every "AFTER" number in this plan is a contracted budget, not a measurement of code that does not exist yet.** Each rewrite states `code ≤ N` and `ratio ≥ P%`; Task 8 asserts them with a committed script and a pytest module. If a rewrite cannot meet its budget, the budget is renegotiated in the plan — the assertion is never weakened to fit the code.
+
+7. **Behaviour parity with today, except where a defect is being removed.** Each rewrite keeps its example's visual identity (the market's quarter-turn and forecast fan, the weather figure's blue-cold/red-hot sweep, the paintings' spin, the conversation's one-turn-at-a-time reveal, the morph's closed loop and teapot). Where an effect is deliberately dropped because no 1.1 API expresses it, it is named in *Decisions still needed*, never quietly lost.
+
+---
+
+## Global Constraints
+
+- Target release: **1.1**. Nothing here ships to users until the whole 1.1 line is working.
+- Run everything with the repo venv: `.venv/bin/python`. **The base anaconda python is BROKEN** (numpy/matplotlib mismatch); a bare `python`/`pytest` will fail confusingly.
+- Run pytest from the repo root; `pyproject.toml` sets `testpaths = ["tests"]` and `timeout = 1200`.
+- **Verified baseline: `2564 collected` (2 deselected), `2551 passed, 13 skipped`.** Plans 1–3 add 97 + 94 + 88 tests of their own; this plan states its own deltas relative to whatever the suite is when it starts, and each task re-runs the whole suite.
+- **Never simplify a test to make it pass.** If a test fails repeatedly, fix the code.
+- **No mock objects.** Task 1's tests write real PNGs and read them back; the example-hygiene tests in Task 8 read the real committed files.
+- Force `matplotlib.use("Agg")` in every matplotlib test module. There is **no** `conftest.py` in this repo.
+- Every example must still run headless: `MPLBACKEND=Agg .venv/bin/python examples/<file>.py`.
+- **Notebook execution recipe** (used by Tasks 2–7; the repo's `python3` kernelspec points at an unrelated venv, so a kernel must be registered from this repo first):
+
+  ```bash
+  .venv/bin/python -m ipykernel install --user --name hypertools-venv \
+      --display-name "hypertools (.venv)"
+  .venv/bin/python scripts/execute_tutorial.py docs/tutorials/<name>.ipynb
+  ```
+
+  `scripts/execute_tutorial.py` is created in Task 2 Step 1; it executes in place with the venv kernel and then restores `metadata.kernelspec` to the neutral `{"display_name": "Python 3", "language": "python", "name": "python3"}` the committed notebooks carry, so Colab is unaffected.
+- When any behaviour changes, update the docstring/markdown in the same commit (repo rule: docs travel with code).
+- Commit after every task. Branch off `dev-1.0`; never commit to `master`.
+- Re-run **all** checks after any fix made to satisfy another check.
+- **The working tree is not clean, and that is expected.** As of 2026-07-28 15:48, Plans 1–3 are being implemented concurrently: `hypertools/plot/plot.py`, `plotly_backend.py`, `matplotlib_backend.py`, `_shared/helpers.py`, `pyproject.toml` and eight test modules are already modified, and `tests/test_antialias.py` is staged. Before starting any task here, `git status` and confirm which of Plans 1–3 have landed — the *Prerequisites* table says which tasks each rewrite needs. Two concurrent edits to `docs/tutorials/analyze.ipynb` and `reduce.ipynb` were checked while writing this plan and are **markdown-prose only**; the code cells this plan cites (analyze cells 8/13/18/23/28, all still the `for x in ...: sb.heatmap(x)` loop) are unchanged, and the five launch examples and their notebooks are untouched.
+
+---
+
+## Prerequisites
+
+Plans 1, 2 and 3 must land first. Per task:
+
+| this plan's task | depends on | why |
+|-|-|-|
+| **Task 1** (palette from image) | *(none)* | Pure library addition in `hypertools/plot/colors.py`. Can start immediately, in parallel with Plans 1–3. |
+| **Task 2** (Market) | **MultiIndex** T1 (`group_columns`), T2 (final-trace builder), T5 (column MultiIndex in `plot()`), T6 (hue as a per-trace auxiliary value), T8 (`predict=` over final traces); **Forecast-animation** T3 (narrow the `predict=` refusal), T4 (draw the per-frame forecast), T5 (`forecast_trail=`); **Animation-core** T1 (`title=` type contract) | The whole example *is* a column MultiIndex + a continuous hue through a hierarchy + one forecast per trace during a time-progressing animation. Without MultiIndex T4 the hue is discarded (`plot.py:2678-2684`); without Forecast-animation T3 the call raises `NotImplementedError` (`plot.py:2347-2354`). |
+| **Task 3** (Weather) | *(none strictly)* — verified to run on today's `dev-1.0`; **Animation-core** T1 for the `title=` contract | The paper-style call already works today. Sequence it after Plan 1 only so the whole 1.1 line is tested together. |
+| **Task 4** (Paintings) | **Task 1** (palette from image); **Animation-core** T1 (`title=`) | `color=` per cloud comes from `image_palette`; the hand-rolled title becomes `title=`. |
+| **Task 5** (Conversation) | **Animation-core** T5 (`order='serial'`), T7 (`on_frame=` + `HyperAnimation.on_frame`), T8 (per-segment `title=`), T4 (plotly serial+trail parity) | `animate=True, order='serial', chemtrails=True` is exactly Animation-core T4+T5; the recency fade moves onto the public `on_frame=` hook; the caption/speaker artists are replaced by per-segment `title=`. |
+| **Task 6** (Morph) | **Animation-core** T8 (per-segment `title=`), T3 (`morph_samples` guard) | The private `hypertools.plot.morph` reach is exactly what T8 replaces; T3 makes the explicit `morph_samples=N` load-bearing rather than incidental. |
+| **Task 7** (15 older tutorials) | *(none)* | Every fix uses API that exists on `dev-1.0` today (`save_path='*.gif'`, `vectorizer=<hf-id>`, `ax=`, `manip='Smooth'`, `hyp.plot`, `hyp.describe`). Can run in parallel with Plans 1–3. |
+| **Task 8** (verification) | Tasks 1–7 | It measures them. |
+
+---
+
+## File Structure
+
+| file | responsibility | change |
+|-|-|-|
+| `hypertools/plot/colors.py` | `image_palette()` + the `'image:<path>'` palette spelling | modify |
+| `hypertools/plot/plot.py` | `palette=` docstring entry (`plot.py:807`) | modify |
+| `pyproject.toml` | declare `pillow>=8` explicitly (already transitive via matplotlib) | modify |
+| `docs/api.rst` | document `image_palette` under a new "Colors" section | modify |
+| `tests/plot/test_image_palette.py` | palette-from-image, incl. the largest-cluster regression | create |
+| `tests/test_examples_are_native.py` | defect-marker scan + ratio gate over examples and notebooks | create |
+| `scripts/measure_native_ratio.py` | the committed measurement used by the gate and by hand | create |
+| `scripts/execute_tutorial.py` | execute a notebook in place with the venv kernel, restore kernelspec | create |
+| `scripts/generate_gallery_thumbs.py` | add the five launch examples to `MPL_ANIMS` | modify |
+| `examples/animate_market_forecast.py` + `docs/tutorials/market_forecast.ipynb` | the MultiIndex showcase | rewrite |
+| `examples/animate_weather_decades.py` + `docs/tutorials/weather_decades.ipynb` | the paper figure | rewrite |
+| `examples/animate_painting_embeddings.py` + `docs/tutorials/painting_embeddings.ipynb` | native text + native palette | rewrite |
+| `examples/animate_conversation.py` + `docs/tutorials/conversation_shape.ipynb` | native text + serial + per-segment titles | rewrite |
+| `examples/animate_morph_zoo.py` + `docs/tutorials/morph_shapes_zoo.ipynb` | native per-segment titles | rewrite |
+| `docs/tutorials/{conversation_trajectories,hugging_face_embeddings,wikipedia_embeddings,modern_sklearn_dynamics,stock_forecasting,projectile_kalman,analyze,reduce}.ipynb` | the recurring fixes | modify |
+| `docs/tutorials.rst` | thumbnails for the five launch tutorials | modify |
+| `CHANGELOG.md` | the 1.1 entry for `image_palette` | modify |
+
+---
+
+## Task 1: Native palette-from-image
+
+**The gap.** `examples/animate_painting_embeddings.py:120-146` downloads a canvas, k-means-clusters its pixels, and picks `km.cluster_centers_[np.argmax(counts)]` — **the largest cluster**. In a painting the largest cluster is the background. Reproduced today on a synthetic 90%-beige/10%-vivid-red image: the helper returns `[0.784, 0.769, 0.737]` (beige). The example then applies a luminance clamp (`lum > 0.5 → rgb * 0.5/lum`, lines 141-143) to make the muted result legible — a hack that exists only because the wrong colour was chosen. Nothing in `hypertools/` does any of this; there is no image handling in the package at all.
+
+**API design, and why.** Two entry points over **one** implementation:
+
+1. **`hypertools.plot.colors.image_palette(image, n_colors=6, resize=200, random_state=0)`** → `(k, 3)` float RGB in `[0, 1]`, `k ≤ n_colors`, **most visually salient first**. It sits beside the two existing public palette helpers in the same module (`get_palette_colors`, `colors.py:227`; `continuous_colormap`, `colors.py:250`), which is where "what colour is group *i*" already lives. It accepts a **local path, a PIL image, or an (H, W, 3) array** — deliberately *not* a URL, so the library never performs a network fetch (Contract 4); the paintings example keeps its own download-and-cache (class **A**) and hands over a cached path.
+
+2. **`palette='image:<path>'`**, intercepted at the single string branch of `_get_palette` (`colors.py:305-306`). Because `_continuous_palette` (`colors.py:269`) delegates to `_get_palette`, and `mat2colors` (`colors.py:24`), `get_palette_colors` and `continuous_colormap` all route through those two functions, **one interception makes an image palette work on every path** — categorical hue, continuous hue, matrix hue, the matplotlib colorbar and the plotly colorbar — with no per-call-site change. Verified red state today: `hyp.plot(ds, '.', hue=..., palette='image:/tmp/nope.png')` → `ValueError: 'image:/tmp/nope.png' is not a valid palette name`.
+
+**The ordering rule (this is the contract, and it is what fixes the bug).** For each k-means centre compute `frac` (its share of pixels) and `chroma = max(r,g,b) - min(r,g,b)` (distance from grey — the numerator of HSV saturation). Order by **descending `frac × chroma`**. A large muted background scores near zero; a smaller vivid region wins. If *every* centre is achromatic (`max(chroma) < 0.02`, i.e. a greyscale image), fall back to descending `frac`, because a grey image genuinely has no vivid colour and "largest" is then the right answer. Near-duplicate centres (equal to 3 decimals) are dropped, so `n_colors` is an **upper** bound.
+
+Measured on the prototype: the 90/10 beige-red image → `[[0.863, 0.078, 0.078], [0.784, 0.769, 0.737]]` (red first, beige retained but demoted); a greyscale 80/20 image → `[[0.118, 0.118, 0.118], [0.784, 0.784, 0.784]]` (population order); a six-stripe image → six distinct colours; array and PIL inputs give identical results; repeated calls are bit-identical.
+
+**Pillow.** `matplotlib>=3.9.0` is a core dependency and requires `pillow>=8`, so Pillow is already present in every install (`Pillow 12.1.0` in this venv). This task declares it explicitly in `pyproject.toml` anyway — a library that imports a package should say so — at zero install cost.
+
+**Files:**
+- Modify: `hypertools/plot/colors.py`, `hypertools/plot/plot.py` (the `palette` docstring at `plot.py:807`), `pyproject.toml`, `docs/api.rst`, `CHANGELOG.md`
+- Test: `tests/plot/test_image_palette.py` (create)
+
+**Interfaces:**
+- Produces `image_palette(image, n_colors=6, resize=200, random_state=0)` → `np.ndarray (k, 3)`, `k ≤ n_colors`, salience-ordered.
+- Produces the module constants `IMAGE_PALETTE_PREFIX = 'image:'` and `IMAGE_PALETTE_N = 6`.
+- Consumed by Task 4.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/plot/test_image_palette.py
+"""Palette extraction from an image, and the `palette='image:<path>'` spelling.
+
+The ordering rule is the point: `examples/animate_painting_embeddings.py:138-140`
+picked `km.cluster_centers_[np.argmax(counts)]` -- the LARGEST cluster -- which
+in a painting is the background. Measured on the synthetic image below, that
+rule returns the beige (0.784, 0.769, 0.737); this module pins the vivid red
+(0.863, 0.078, 0.078) as the FIRST colour instead.
+
+No network: every image is written to `tmp_path` and read back.
+"""
+import matplotlib
+matplotlib.use("Agg")
+
+import numpy as np
+import pytest
+from PIL import Image
+
+import hypertools as hyp
+from hypertools.plot.colors import (IMAGE_PALETTE_N, continuous_colormap,
+                                    get_palette_colors, image_palette)
+
+BEIGE = (0.784, 0.769, 0.737)
+VIVID = (0.863, 0.078, 0.078)
+
+
+def _png(tmp_path, arr, name):
+    path = tmp_path / name
+    Image.fromarray(arr.astype(np.uint8)).save(path)
+    return str(path)
+
+
+def painting_png(tmp_path, name='painting.png'):
+    """90% muted beige 'canvas', 10% vivid red 'subject'."""
+    arr = np.zeros((100, 100, 3), np.uint8)
+    arr[:, :] = (200, 196, 188)
+    arr[:10, :] = (220, 20, 20)
+    return _png(tmp_path, arr, name)
+
+
+def grey_png(tmp_path, name='grey.png'):
+    arr = np.zeros((100, 100, 3), np.uint8)
+    arr[:, :] = (30, 30, 30)
+    arr[:20, :] = (200, 200, 200)
+    return _png(tmp_path, arr, name)
+
+
+def six_png(tmp_path, name='six.png'):
+    arr = np.zeros((120, 120, 3), np.uint8)
+    for i, c in enumerate([(255, 0, 0), (0, 255, 0), (0, 0, 255),
+                           (255, 255, 0), (255, 0, 255), (0, 255, 255)]):
+        arr[i * 20:(i + 1) * 20, :] = c
+    return _png(tmp_path, arr, name)
+
+
+def _ax(fig):
+    return [a for a in fig.axes if hasattr(a, 'zaxis')][0]
+
+
+# --- the extraction itself ---------------------------------------------------
+
+def test_returns_rgb_floats_in_the_unit_range(tmp_path):
+    pal = image_palette(painting_png(tmp_path))
+    assert pal.ndim == 2 and pal.shape[1] == 3
+    assert pal.dtype == np.float64
+    assert pal.min() >= 0.0 and pal.max() <= 1.0
+
+
+def test_a_vivid_minority_colour_beats_the_muted_background(tmp_path):
+    """THE regression test. Largest-cluster ordering returns the beige."""
+    pal = image_palette(painting_png(tmp_path))
+    assert pal[0] == pytest.approx(VIVID, abs=0.02)
+
+
+def test_the_background_is_kept_but_demoted(tmp_path):
+    """Not discarded -- just not first. A palette should still describe the
+    whole canvas."""
+    pal = image_palette(painting_png(tmp_path))
+    assert any(np.allclose(c, BEIGE, atol=0.02) for c in pal)
+    assert not np.allclose(pal[0], BEIGE, atol=0.02)
+
+
+def test_a_greyscale_image_falls_back_to_population_order(tmp_path):
+    """With no chroma anywhere, `frac * chroma` is all zeros and 'largest'
+    IS the right answer: the 80% dark tone leads."""
+    pal = image_palette(grey_png(tmp_path))
+    assert pal[0] == pytest.approx((0.118, 0.118, 0.118), abs=0.02)
+
+
+def test_n_colors_is_an_upper_bound_and_colours_are_distinct(tmp_path):
+    pal = image_palette(six_png(tmp_path), n_colors=6)
+    assert len(pal) == 6
+    assert len(np.unique(np.round(pal, 3), axis=0)) == 6
+    assert len(image_palette(six_png(tmp_path), n_colors=3)) == 3
+
+
+def test_an_image_with_fewer_unique_colours_returns_fewer(tmp_path):
+    """Two unique pixel colours cannot yield six clusters; asking for six
+    must NOT raise or emit sklearn's ConvergenceWarning."""
+    import warnings
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        pal = image_palette(painting_png(tmp_path), n_colors=6)
+    assert len(pal) == 2
+    assert not [w for w in caught if 'ConvergenceWarning' in type(w.message).__name__]
+
+
+def test_accepts_a_pil_image_and_a_numpy_array(tmp_path):
+    arr = np.zeros((100, 100, 3), np.uint8)
+    arr[:, :] = (200, 196, 188)
+    arr[:10, :] = (220, 20, 20)
+    from_path = image_palette(painting_png(tmp_path))
+    assert image_palette(arr)[0] == pytest.approx(from_path[0], abs=0.02)
+    assert image_palette(Image.fromarray(arr))[0] == pytest.approx(
+        from_path[0], abs=0.02)
+
+
+def test_a_float_array_in_unit_range_is_accepted(tmp_path):
+    arr = np.zeros((100, 100, 3), float)
+    arr[:, :] = (200 / 255, 196 / 255, 188 / 255)
+    arr[:10, :] = (220 / 255, 20 / 255, 20 / 255)
+    assert image_palette(arr)[0] == pytest.approx(VIVID, abs=0.02)
+
+
+def test_extraction_is_deterministic(tmp_path):
+    path = painting_png(tmp_path)
+    assert np.allclose(image_palette(path), image_palette(path))
+
+
+def test_a_missing_file_names_the_path(tmp_path):
+    with pytest.raises(FileNotFoundError, match='no_such_canvas.jpg'):
+        image_palette(str(tmp_path / 'no_such_canvas.jpg'))
+
+
+def test_n_colors_must_be_a_positive_integer(tmp_path):
+    with pytest.raises(ValueError, match='positive integer'):
+        image_palette(painting_png(tmp_path), n_colors=0)
+
+
+# --- the `palette='image:<path>'` spelling ------------------------------------
+
+def test_palette_string_resolves_through_get_palette_colors(tmp_path):
+    """One interception in _get_palette must serve every palette consumer."""
+    path = painting_png(tmp_path)
+    resolved = get_palette_colors(f'image:{path}', 2)
+    assert resolved[0] == pytest.approx(VIVID, abs=0.02)
+
+
+def test_palette_string_colours_a_categorical_hue(tmp_path):
+    path = painting_png(tmp_path)
+    rng = np.random.default_rng(0)
+    ds = [rng.normal(size=(10, 4)) for _ in range(2)]
+    fig = hyp.plot(ds, '.', hue=['a'] * 10 + ['b'] * 10,
+                   palette=f'image:{path}', show=False)
+    drawn = np.vstack([np.atleast_2d(c.get_facecolor())[:, :3]
+                       for c in _ax(fig).collections
+                       if len(np.atleast_2d(c.get_facecolor()))])
+    assert any(np.allclose(c, VIVID, atol=0.02) for c in drawn)
+
+
+def test_palette_string_blends_anchors_for_a_continuous_hue(tmp_path):
+    """A short list + a continuous hue is seaborn blend_palette semantics
+    (colors.py:323-331), so an image palette gives a gradient between its
+    extracted anchors -- no error about 'too few colors'."""
+    path = six_png(tmp_path)
+    cmap = continuous_colormap(f'image:{path}', n_bins=100)
+    assert cmap.N == 100
+    assert len(np.unique(np.round(cmap(np.linspace(0, 1, 100))[:, :3], 3),
+                         axis=0)) > IMAGE_PALETTE_N
+
+
+def test_palette_string_with_a_missing_file_names_the_file(tmp_path):
+    rng = np.random.default_rng(0)
+    ds = [rng.normal(size=(10, 4))]
+    with pytest.raises(FileNotFoundError, match='gone.png'):
+        hyp.plot(ds, '.', hue=np.arange(10),
+                 palette=f"image:{tmp_path / 'gone.png'}", show=False)
+
+
+def test_plotly_backend_accepts_an_image_palette(tmp_path):
+    """Backend parity: the interception is in colors.py, above both backends."""
+    pytest.importorskip('plotly')
+    path = painting_png(tmp_path)
+    rng = np.random.default_rng(0)
+    ds = [rng.normal(size=(10, 4)) for _ in range(2)]
+    hyp.set_interactive_backend('plotly')
+    try:
+        fig = hyp.plot(ds, '.', hue=['a'] * 10 + ['b'] * 10,
+                       palette=f'image:{path}', show=False)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+    assert len(fig.data) >= 2
+```
+
+- [ ] **Step 2: Run the test and confirm it fails**
+
+Run: `.venv/bin/python -m pytest tests/plot/test_image_palette.py -v`
+
+Expected: **collection FAILS** with `ImportError: cannot import name 'IMAGE_PALETTE_N' from 'hypertools.plot.colors'`. If you stub the import out to see individual failures, every `image_palette` test fails with `NameError`, and the four `palette='image:...'` tests fail with `ValueError: 'image:/.../painting.png' is not a valid palette name` (measured today).
+
+- [ ] **Step 3: Implement `image_palette`**
+
+Add to `hypertools/plot/colors.py`, immediately after `continuous_colormap` (which ends at `colors.py:260`) and before the `_CYCLIC_PALETTES` block:
+
+```python
+#: `palette='image:<path>'` extracts this many anchor colors. A CONTINUOUS
+#: mapping asks `_get_palette` for `n_bins` (100) colors, and clustering an
+#: image into 100 groups is both slow and meaningless -- so the string form
+#: always extracts this few and lets the existing short-list blending
+#: (colors.py:323-331) build the gradient. Callers who want more pass an
+#: explicit list: `palette=image_palette(path, n_colors=12)`.
+IMAGE_PALETTE_N = 6
+
+#: Prefix that marks a `palette=` string as "extract this from an image".
+#: Seaborn/matplotlib palette names never contain a colon, so there is no
+#: collision; an unmatched name still reaches seaborn and raises its own
+#: "is not a valid palette name" error.
+IMAGE_PALETTE_PREFIX = 'image:'
+
+#: Below this chroma (max(RGB) - min(RGB)) an image has no colour to be
+#: salient ABOUT, so `image_palette` orders by population instead.
+_ACHROMATIC_EPS = 0.02
+
+
+def _image_pixels(image, resize):
+    """(n_pixels, 3) float RGB in [0, 1] from a path, PIL image, or array."""
+    import os
+
+    from PIL import Image
+
+    if isinstance(image, np.ndarray):
+        arr = image
+        if arr.dtype.kind == 'f':
+            arr = np.clip(arr, 0.0, 1.0) * 255.0
+        im = Image.fromarray(arr.astype(np.uint8)).convert('RGB')
+    elif hasattr(image, 'convert'):          # a PIL.Image.Image
+        im = image.convert('RGB')
+    else:
+        path = os.path.expanduser(os.fspath(image))
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"image_palette() could not find an image at {path!r}. It "
+                "takes a LOCAL path, a PIL image, or an (H, W, 3) array -- "
+                "hypertools never downloads the image for you, so fetch and "
+                "cache it yourself first.")
+        im = Image.open(path).convert('RGB')
+    im.thumbnail((int(resize), int(resize)))
+    return np.asarray(im, dtype=np.float64).reshape(-1, 3) / 255.0
+
+
+def image_palette(image, n_colors=IMAGE_PALETTE_N, resize=200, random_state=0):
+    """Extract a color palette from an image, most VISUALLY SALIENT first.
+
+    Parameters
+    ----------
+    image : str, pathlib.Path, PIL.Image.Image, or numpy array
+        A LOCAL image file, an already-open PIL image, or an (H, W, 3) array
+        (uint8 0-255, or float 0-1). URLs are deliberately not accepted:
+        hypertools does not fetch images, so download and cache the file
+        yourself and pass the cached path.
+    n_colors : int
+        UPPER bound on how many colors to return (default 6). Fewer come
+        back when the image has fewer distinct colors, or when two cluster
+        centers coincide to 3 decimal places.
+    resize : int
+        Longest edge the image is thumbnailed to before clustering
+        (default 200). Clustering cost is linear in pixel count.
+    random_state : int
+        Seed for the k-means fit, so repeated calls are identical.
+
+    Returns
+    -------
+    palette : numpy.ndarray
+        (k, 3) float RGB in [0, 1], k <= n_colors, ordered most salient
+        first.
+
+    Notes
+    -----
+    Salience is ``pixel_fraction * chroma``, where
+    ``chroma = max(r, g, b) - min(r, g, b)`` measures distance from grey.
+    Ordering by pixel fraction ALONE returns a painting's background --
+    which is exactly the bug this function exists to avoid. When every
+    cluster is achromatic (max chroma < 0.02, i.e. a greyscale image) the
+    ordering falls back to pixel fraction, because a grey image has no
+    vivid color and "largest" is then the right answer.
+
+    Examples
+    --------
+    >>> from hypertools.plot.colors import image_palette
+    >>> image_palette('starry_night.jpg')[0]        # doctest: +SKIP
+    array([0.16, 0.24, 0.55])
+
+    The same extraction is reachable declaratively from any plotting call
+    that takes a palette::
+
+        hyp.plot(x, hue=values, palette='image:starry_night.jpg')
+    """
+    from sklearn.cluster import KMeans
+
+    if (not isinstance(n_colors, (int, np.integer))
+            or isinstance(n_colors, bool) or n_colors < 1):
+        raise ValueError(
+            f"n_colors= must be a positive integer; got {n_colors!r}")
+    px = _image_pixels(image, resize)
+    if len(px) == 0:
+        raise ValueError("image_palette() got an image with no pixels")
+    # cap k at the number of DISTINCT colors: asking k-means for more
+    # clusters than there are distinct points emits a ConvergenceWarning
+    # and returns duplicate centers
+    k = int(min(n_colors, len(np.unique(px, axis=0))))
+    km = KMeans(n_clusters=k, n_init=4, random_state=random_state).fit(px)
+    centers = np.clip(km.cluster_centers_, 0.0, 1.0)
+    frac = np.bincount(km.labels_, minlength=k) / len(px)
+    chroma = centers.max(axis=1) - centers.min(axis=1)
+    score = frac if chroma.max() < _ACHROMATIC_EPS else frac * chroma
+    out, seen = [], set()
+    for i in np.argsort(-score, kind='stable'):
+        key = tuple(np.round(centers[i], 3))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(centers[i])
+    return np.asarray(out, dtype=float)
+```
+
+- [ ] **Step 4: Intercept the `'image:<path>'` spelling in one place**
+
+In `_get_palette` (`colors.py:287`), replace the string branch (`colors.py:305-306`):
+
+```python
+    if isinstance(palette, str):
+        return sns.color_palette(palette, n_colors)
+```
+
+with:
+
+```python
+    if isinstance(palette, str):
+        if palette.startswith(IMAGE_PALETTE_PREFIX):
+            # ONE interception point serves every palette consumer:
+            # mat2colors' categorical/continuous/matrix paths, the
+            # matplotlib and plotly colorbars, and get_palette_colors --
+            # they all resolve through here or through _continuous_palette
+            # (colors.py:269), which delegates here. Resolve to a color
+            # LIST and fall through to the list handling below, so the
+            # short-list blending (continuous) and the too-few-colors
+            # error (categorical) behave exactly as for any other list.
+            palette = [tuple(c) for c in image_palette(
+                palette[len(IMAGE_PALETTE_PREFIX):].strip(),
+                n_colors=IMAGE_PALETTE_N)]
+        else:
+            return sns.color_palette(palette, n_colors)
+```
+
+Nothing else in `colors.py` changes: `_continuous_palette` already delegates here for every non-cyclic palette, and `'image:...'` is not in `_CYCLIC_PALETTES`.
+
+- [ ] **Step 5: Run the test and confirm it passes**
+
+Run: `.venv/bin/python -m pytest tests/plot/test_image_palette.py -v`
+Expected: **17 passed.**
+
+- [ ] **Step 6: Declare Pillow, and document**
+
+In `pyproject.toml`, add to `dependencies` (after `"seaborn>=0.13.0",`):
+
+```toml
+    # Pillow is already a hard requirement of matplotlib>=3.9 (`pillow>=8`),
+    # so this adds no install weight -- but hypertools now imports PIL
+    # itself (hypertools/plot/colors.py: image_palette / palette='image:...'),
+    # and a library that imports a package declares it.
+    "pillow>=8",
+```
+
+In `plot()`'s docstring, extend the `palette` entry at `plot.py:807-820` with:
+
+```
+        A palette string of the form ``'image:<path>'`` extracts colors from
+        a LOCAL image file instead (``palette='image:starry_night.jpg'``):
+        six anchor colors, ordered most visually salient first, so a
+        painting's vivid subject leads and its muted background follows.
+        For a continuous ``hue`` those anchors are blended into a gradient
+        exactly as any short color list is. See
+        ``hypertools.plot.colors.image_palette`` for the extraction itself
+        (and to choose a different number of colors). hypertools never
+        downloads the image: fetch and cache it yourself, then pass the path.
+```
+
+In `docs/api.rst`, add a **Colors** section after **Plot** (`api.rst:108-116`):
+
+```rst
+Colors
+------------------
+
+.. autofunction:: hypertools.plot.colors.image_palette
+
+.. autofunction:: hypertools.plot.colors.get_palette_colors
+
+.. autofunction:: hypertools.plot.colors.continuous_colormap
+```
+
+In `CHANGELOG.md`, under the `## 1.1.0 (unreleased)` → `### Added` heading created by the animation-core plan:
+
+```markdown
+- `hypertools.plot.colors.image_palette(image, n_colors=6)` extracts a color
+  palette from a local image (path, PIL image, or array), ordered most
+  visually salient first (`pixel_fraction * chroma`), so a painting's vivid
+  subject leads and its muted background follows -- ordering by pixel share
+  alone returns the background. Reachable declaratively from any plotting
+  call as `palette='image:<path>'`, on both backends and on every color
+  path (categorical, continuous, matrix hue, and the colorbar). hypertools
+  never downloads the image.
+```
+
+- [ ] **Step 7: Run the FULL suite (palette resolution is shared by every color path)**
+
+Run: `.venv/bin/python -m pytest -q`
+Expected: baseline + 17. Pay attention to `tests/test_colors.py`, `tests/plot/test_colors_module.py` and `tests/test_colorbar.py`: any test that asserts `_get_palette`'s string branch is a straight seaborn passthrough must still pass, because the non-`image:` path is byte-identical.
+
+- [ ] **Step 8: Rebuild the docs (a new autodoc section was added)**
+
+Run: `cd docs && make clean && make html 2>&1 | tail -20`
+Expected: build succeeds with **0 warnings** (the RTD-parity bar the 1.0 release gate enforces).
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add hypertools/plot/colors.py hypertools/plot/plot.py pyproject.toml \
+        docs/api.rst CHANGELOG.md tests/plot/test_image_palette.py
+git commit -m "feat(colors): image_palette() + palette='image:<path>', salience-ordered"
+```
+
+---
+
+## Task 2: Market — the MultiIndex showcase
+
+**BEFORE (measured):** `examples/animate_market_forecast.py` — 355 raw lines, **191 code lines, 11 native (5.8%)**. Audit classification: A=61 **B=17 C=100** D=14 NATIVE=7. `docs/tutorials/market_forecast.ipynb` — **192 code lines, 11 native (5.7%)**, 0 of 7 code cells executed.
+
+**AFTER (contracted budget):** script **≤ 115 code lines, ≥ 26% native**; notebook **≤ 120 code lines, ≥ 24% native**; **zero** defect markers.
+
+**What goes, and to what:**
+
+| deleted | replaced by |
+|-|-|
+| `_frame_of`, `SLOPE`/`np.polyfit` recovery of plot's own reduce→drawn affine, `GAIN`, `CAP`, `_scale`, `BLO`/`BHI`, `_hang` (`:197-243`, class **C**) | `predict='Kalman', t=1` — the forecast is computed in the plotted space and folded into the centre/scale statistics by the library (forecast-animation Contract 4) |
+| the 16-slot `hist_lines` fan (`:279-296`, class **C**) | `forecast_trail=16` (forecast-animation Task 5) |
+| `_smooth` + `from hypertools._shared.helpers import antialias_line` (`:265-276`, class **B**) | native forecast antialiasing (`plot.py:143-150`) |
+| hand-built `ScalarMappable` + `fig.colorbar` + `set_label` (`:297-301`, class **B**) | `colorbar={'label': ...}` (`plot.py:930`) |
+| `fig.text(...)` title (`:303-304`, class **B**) | `title=` (`plot.py:950`) |
+| `_wrapped` + `ani._func = _wrapped` + `ani._args[1][0]` (`:199-213`, `:323-356`, class **C**) | nothing — there is no per-frame work left |
+| a hand-thinned single equal-weight index over 5 FRED series | a `(Market, Sector, Ticker)` column MultiIndex over **24 tickers**, expanded natively into 6 sector traces + 1 market-mean trace, each with its own forecast |
+
+**Data.** Verified today: 24/24 tickers from `https://query1.finance.yahoo.com/v8/finance/chart/<TICKER>?range=10y&interval=1d` (User-Agent header required), 2513 trading days each, 2016-07-28 → 2026-07-28. Six sectors × 4 tickers gives **equal widths**, required by `plot.py:2750-2751`. `yfinance` 1.5.1 is installed but the raw chart endpoint is used directly, so the example has no extra dependency.
+
+**Accuracy readout.** Per Contract 5 this lives in the example. Budget measured: `hyp.predict(..., model='Kalman', t=1)` on a **60-row** rolling window, **30** anchors, **7** series (6 sectors + the market mean) = **210 fits in 7.3 s**. A 250-row window costs 30.7 s for the same loop, and the whole current example runs in 6.2 s — so 60/30 is the budget, and it is stated in the module docstring.
+
+**Files:** rewrite `examples/animate_market_forecast.py`; rewrite `docs/tutorials/market_forecast.ipynb`; create `scripts/execute_tutorial.py`.
+
+- [ ] **Step 1: Create the notebook execution helper (used by every task from here on)**
+
+```python
+# scripts/execute_tutorial.py
+"""Execute a tutorial notebook in place with THIS repo's venv.
+
+The user-level `python3` kernelspec points at an unrelated project's venv
+(verified 2026-07-28 in `~/Library/Jupyter/kernels/python3/kernel.json`),
+so `nbconvert --execute` with the default kernel does not run hypertools at
+all. Register this repo's kernel once:
+
+    .venv/bin/python -m ipykernel install --user --name hypertools-venv \
+        --display-name "hypertools (.venv)"
+
+then:
+
+    .venv/bin/python scripts/execute_tutorial.py docs/tutorials/<name>.ipynb
+
+Outputs are written back into the notebook (`nbsphinx_execute = 'never'`,
+docs/conf.py:115, means the committed outputs are what the docs render), and
+`metadata.kernelspec` is restored to the neutral python3 entry the committed
+notebooks carry, so Colab is unaffected.
+"""
+
+import json
+import sys
+
+import nbformat
+from nbclient import NotebookClient
+
+NEUTRAL_KERNELSPEC = {'display_name': 'Python 3', 'language': 'python',
+                      'name': 'python3'}
+KERNEL = 'hypertools-venv'
+TIMEOUT = 1800
+
+
+def execute(path):
+    nb = nbformat.read(path, as_version=4)
+    original = json.loads(json.dumps(nb.metadata.get('kernelspec',
+                                                     NEUTRAL_KERNELSPEC)))
+    NotebookClient(nb, timeout=TIMEOUT, kernel_name=KERNEL,
+                   resources={'metadata': {'path': str(path.rsplit('/', 1)[0])}}
+                   ).execute()
+    nb.metadata['kernelspec'] = original
+    nbformat.write(nb, path)
+    executed = sum(1 for c in nb.cells
+                   if c.cell_type == 'code' and c.get('outputs'))
+    total = sum(1 for c in nb.cells if c.cell_type == 'code')
+    print(f'{path}: {executed}/{total} code cells produced output')
+
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        raise SystemExit('usage: execute_tutorial.py <notebook> [<notebook>...]')
+    for target in sys.argv[1:]:
+        execute(target)
+```
+
+Verify it on an untouched notebook before relying on it:
+
+```bash
+.venv/bin/python -m ipykernel install --user --name hypertools-venv \
+    --display-name "hypertools (.venv)"
+git stash list   # (ensure a clean tree first)
+.venv/bin/python scripts/execute_tutorial.py docs/tutorials/reduce.ipynb
+git diff --stat docs/tutorials/reduce.ipynb
+git checkout -- docs/tutorials/reduce.ipynb
+```
+Expected: prints `docs/tutorials/reduce.ipynb: 5/9 code cells produced output` or more, `git diff --stat` shows a change, and the checkout restores it. If `metadata.kernelspec` appears in the diff, the restore is broken — fix `execute_tutorial.py`, do not proceed.
+
+- [ ] **Step 2: Rewrite the example**
+
+Replace `examples/animate_market_forecast.py` entirely:
+
+```python
+# -*- coding: utf-8 -*-
+"""
+==========================================================================
+A market, sector by sector: one hierarchy, one hue, one forecast per line
+==========================================================================
+
+Twenty-four large-cap stocks, grouped into six sectors, plotted as a single
+hierarchical DataFrame. The columns carry a ``(Market, Sector, Ticker)``
+``MultiIndex``, and that is the whole layout instruction: ``hyp.plot``
+expands the innermost level into features and every level above it into the
+drawn hierarchy, so each **sector** becomes one trajectory and the whole
+**market** becomes a second-level mean trajectory drawn heavier on top --
+the classic bold-means / faint-leaves picture, with no index bookkeeping in
+this file at all.
+
+Each line is coloured continuously by its own **price index** (a `hue` that
+mirrors the hierarchy: one value sequence per sector, with the market mean
+taking the element-wise mean of its sectors), and each line carries **its
+own next-day forecast** (``predict='Kalman', t=1``), redrawn every frame
+from the history revealed so far and left behind as a fading fan
+(``forecast_trail=16``). The camera makes one slow quarter-turn
+(``rotations=0.25``) over the clip while ``chemtrails=True`` keeps the
+traversed path glowing faintly behind each head.
+
+**Does the forecast actually work?** The panel on the right says so, per
+sector and overall, and it is computed HERE rather than in hypertools:
+forecast scoring is a research decision, not a plotting one. Each series is
+walked forward over its last 30 trading days, refitting on a trailing
+60-day window, and a "hit" is a next-day step predicted with the right
+sign. Measured cost of that loop: 210 Kalman fits, ~7 s. 50% is a coin
+flip; a single linear-Gaussian filter on a near-random-walk price series
+should not be expected to beat it by much, and reporting whatever it
+actually scores is the point.
+
+**Data & graceful degradation.** Ten years of daily closes are pulled from
+Yahoo Finance's chart endpoint and cached on disk (verified 2026-07-28:
+24/24 tickers, 2513 trading days, 2016-07-28 to 2026-07-28). If the network
+is unavailable the example falls back to a synthetic basket with the same
+sector structure, so it always renders -- the technique (hierarchy -> hue ->
+chemtrails -> per-trace forecast) is identical either way.
+"""
+
+# Code source: Contextual Dynamics Laboratory
+# License: MIT
+
+import json
+import os
+import tempfile
+import urllib.request
+
+import numpy as np
+import pandas as pd
+
+import hypertools as hyp
+
+CACHE = os.path.join(tempfile.gettempdir(), 'hypertools_gallery_cache')
+os.makedirs(CACHE, exist_ok=True)
+
+MARKET = 'Market'
+RANGE = '10y'
+# six sectors x FOUR tickers each: equal per-group widths, which the
+# analysis pipeline requires (hypertools/plot/plot.py:2750-2751)
+SECTORS = {
+    'Technology': ['AAPL', 'MSFT', 'ORCL', 'IBM'],
+    'Financials': ['JPM', 'BAC', 'GS', 'AXP'],
+    'Healthcare': ['JNJ', 'PFE', 'MRK', 'ABT'],
+    'Energy': ['XOM', 'CVX', 'COP', 'SLB'],
+    'Consumer': ['KO', 'PG', 'WMT', 'MCD'],
+    'Industrials': ['BA', 'CAT', 'GE', 'HON'],
+}
+COLUMN_NAMES = ['Market', 'Sector', 'Ticker']
+
+
+def fetch_prices():
+    """Daily closes with a ``(Market, Sector, Ticker)`` column MultiIndex,
+    or ``None`` if anything (network, parsing) goes wrong."""
+    try:
+        series = {}
+        for sector, tickers in SECTORS.items():
+            for ticker in tickers:
+                dest = os.path.join(CACHE, f'yahoo_{ticker}_{RANGE}.json')
+                if not (os.path.exists(dest) and os.path.getsize(dest) > 0):
+                    url = ('https://query1.finance.yahoo.com/v8/finance/chart/'
+                           f'{ticker}?range={RANGE}&interval=1d')
+                    req = urllib.request.Request(
+                        url, headers={'User-Agent': 'hypertools-gallery/1.1'})
+                    with urllib.request.urlopen(req, timeout=30) as response:
+                        payload = response.read()
+                    with open(dest, 'wb') as handle:
+                        handle.write(payload)
+                result = json.load(open(dest))['chart']['result'][0]
+                series[(MARKET, sector, ticker)] = pd.Series(
+                    result['indicators']['quote'][0]['close'],
+                    index=pd.to_datetime(result['timestamp'], unit='s'))
+        return _framed(series)
+    except Exception:
+        return None
+
+
+def synthetic_prices(n_days=2513, seed=0):
+    """Fallback: a market factor + per-sector factors + idiosyncratic noise,
+    laid out with exactly the same column hierarchy."""
+    rng = np.random.default_rng(seed)
+    index = pd.bdate_range(end=pd.Timestamp('today').normalize(),
+                           periods=n_days)
+    market = np.cumsum(rng.standard_normal(n_days)) * 0.4
+    series = {}
+    for s, (sector, tickers) in enumerate(SECTORS.items()):
+        factor = np.cumsum(rng.standard_normal(n_days)) * (0.3 + 0.05 * s)
+        for k, ticker in enumerate(tickers):
+            idio = np.cumsum(rng.standard_normal(n_days)) * (0.2 + 0.05 * k)
+            series[(MARKET, sector, ticker)] = pd.Series(
+                40.0 * np.exp(0.02 * (market + factor + idio) / 10),
+                index=index)
+    return _framed(series)
+
+
+def _framed(series):
+    prices = pd.DataFrame(series).ffill().dropna()
+    prices.columns = pd.MultiIndex.from_tuples(prices.columns,
+                                               names=COLUMN_NAMES)
+    return prices
+
+
+prices = fetch_prices()
+source = 'Yahoo Finance daily closes'
+if prices is None:
+    prices, source = synthetic_prices(), 'synthetic basket (offline fallback)'
+print(f'market data: {prices.shape[0]} days x {prices.shape[1]} tickers '
+      f'in {len(SECTORS)} sectors ({source})')
+
+# hue mirrors the hierarchy: ONE value sequence per sector leaf, each as long
+# as the frame. The market-mean trace takes the element-wise mean of its
+# sectors automatically, so nothing here computes it.
+sector_index = [(prices[MARKET][sector].mean(axis=1)
+                 / prices[MARKET][sector].mean(axis=1).iloc[0] * 100.0
+                 ).to_numpy() for sector in SECTORS]
+
+# THE hypertools call. The DataFrame's column MultiIndex IS the layout: six
+# sector traces plus a heavier market-mean trace, each coloured by its own
+# price index and each carrying its own next-day Kalman forecast, redrawn
+# per frame and trailed. Widths/opacities come from the hierarchy, so no
+# linewidth= is passed (it would be warned and ignored, plot.py:3039-3050).
+duration, fps = 8, 20
+fig, ani = hyp.plot(
+    prices, '-',
+    hue=sector_index, palette='plasma',
+    colorbar={'label': 'sector price index (start = 100)'},
+    manip={'model': 'Smooth', 'kwargs': {'kernel': 'boxcar',
+                                         'kernel_width': 11}},
+    normalize='across', reduce='IncrementalPCA', ndims=3,
+    predict='Kalman', t=1, forecast_trail=16,
+    animate=True, chemtrails=True, rotations=0.25,
+    title='many markets as one path',
+    duration=duration, frame_rate=fps, size=(11, 6.5), show=False)
+
+# --- does the forecast work? scored HERE, not in the library -----------------
+# Walk each series forward over its last N_SCORED days, refitting on a
+# trailing WINDOW-day history, and count next-day steps predicted with the
+# right sign. Measured: 7 series x 30 anchors = 210 Kalman fits, ~7 s.
+WINDOW, N_SCORED = 60, 30
+
+
+def directional_accuracy(y):
+    hits = 0
+    for a in range(len(y) - N_SCORED, len(y)):
+        history = y[a - WINDOW:a].reshape(-1, 1)
+        step = (float(np.asarray(hyp.predict(history, model='Kalman', t=1))[0, 0])
+                - float(history[-1, 0]))
+        hits += int(step * (y[a] - y[a - 1]) > 0)
+    return 100.0 * hits / N_SCORED
+
+
+market_curve = np.mean(sector_index, axis=0)
+scores = {sector: directional_accuracy(curve)
+          for sector, curve in zip(SECTORS, sector_index)}
+scores[MARKET] = directional_accuracy(market_curve)
+print('next-day direction correct: '
+      + ', '.join(f'{name} {pct:.0f}%' for name, pct in scores.items()))
+
+# --- which tickers make up which sector, and how each one scored -------------
+ax = [a for a in fig.axes if hasattr(a, 'zaxis')][0]
+ax.set_position([0.0, 0.03, 0.62, 0.9])
+for row, (sector, tickers) in enumerate(SECTORS.items()):
+    y = 0.88 - row * 0.135
+    fig.text(0.66, y, f'{sector}   {scores[sector]:.0f}%', ha='left',
+             va='top', fontsize=11.5, fontweight='bold', color='#1a1a1a')
+    fig.text(0.66, y - 0.042, '  '.join(tickers), ha='left', va='top',
+             fontsize=9.5, color='#666')
+fig.text(0.66, 0.055, f'whole market   {scores[MARKET]:.0f}%', ha='left',
+         va='top', fontsize=11.5, fontweight='bold', color='#1a1a1a')
+fig.text(0.66, 0.015, 'next-day direction, last 30 sessions (50% = coin flip)',
+         ha='left', va='top', fontsize=8.5, color='#8a8a8a', style='italic')
+```
+
+- [ ] **Step 3: Run the example and confirm it renders**
+
+Run: `MPLBACKEND=Agg .venv/bin/python examples/animate_market_forecast.py`
+
+Expected: exits 0, no traceback, no `UserWarning`, and prints two lines of the form
+
+```
+market data: 2513 days x 24 tickers in 6 sectors (Yahoo Finance daily closes)
+next-day direction correct: Technology NN%, Financials NN%, ..., Market NN%
+```
+
+Report whatever accuracy comes out; do **not** tune the example until a number looks good. Wall clock should be roughly the current 6.2 s plus the measured ~7 s of scoring.
+
+- [ ] **Step 4: Confirm the hierarchy actually drew what the docstring claims**
+
+Run:
+
+```bash
+MPLBACKEND=Agg .venv/bin/python - <<'PY'
+import runpy
+ns = runpy.run_path('examples/animate_market_forecast.py')
+fig, ani = ns['fig'], ns['ani']
+ax = [a for a in fig.axes if hasattr(a, 'zaxis')][0]
+ani._func(40, *ani._args)
+widths = sorted({round(float(l.get_linewidth()), 2) for l in ax.lines})
+print('axes:', len(fig.axes), '| line artists:', len(ax.lines),
+      '| distinct linewidths:', widths)
+print('title:', repr(ax.get_title()))
+PY
+```
+
+Expected: `axes: 2` (the 3-D box plus the colorbar), **7 drawn traces** (6 sectors + 1 market mean) plus their forecast artists, **at least two distinct linewidths** (the MultiIndex contract is `linewidth = 1 + (L - 1 - level_idx)`, so the market mean is wider than a sector), and `title: 'many markets as one path'`. This snippet uses `ani._func` **only as a test probe**, exactly as the sibling plans' tests do; it never enters the example.
+
+- [ ] **Step 5: Rewrite the notebook in lockstep**
+
+Rewrite `docs/tutorials/market_forecast.ipynb` so its code cells are the script's code, split at the script's own section boundaries, keeping cell 0 (the Colab install cell) untouched:
+
+| cell | type | content |
+|-|-|-|
+| 0 | code | the existing Colab install cell — **unchanged** |
+| 1 | markdown | title + the script's docstring, as prose |
+| 2 | markdown | `## 1. Imports and a disk cache` |
+| 3 | code | imports, `CACHE`, `MARKET`, `RANGE`, `SECTORS`, `COLUMN_NAMES` |
+| 4 | markdown | `## 2. Fetch 24 tickers into a (Market, Sector, Ticker) frame` |
+| 5 | code | `fetch_prices`, `synthetic_prices`, `_framed`, the dispatch and `print` |
+| 6 | markdown | `## 3. The hierarchy IS the layout` — explain that the column MultiIndex replaces every hand-built group list, and that hue mirrors the hierarchy |
+| 7 | code | the `sector_index` comprehension |
+| 8 | markdown | `## 4. One call: hierarchy, hue, chemtrails, and a forecast per trace` |
+| 9 | code | the `hyp.plot(...)` call |
+| 10 | markdown | `## 5. Scoring the forecast — deliberately NOT a library job` |
+| 11 | code | `WINDOW`, `N_SCORED`, `directional_accuracy`, `scores`, the `print` |
+| 12 | markdown | `## 6. Which tickers make up which sector` |
+| 13 | code | the side-panel block |
+| 14 | markdown | `## 7. Display the animation` |
+| 15 | code | `from IPython.display import HTML` / `HTML(ani.to_jshtml())` |
+
+- [ ] **Step 6: Execute the notebook and check the code stayed in lockstep**
+
+```bash
+.venv/bin/python scripts/execute_tutorial.py docs/tutorials/market_forecast.ipynb
+.venv/bin/python scripts/measure_native_ratio.py \
+    examples/animate_market_forecast.py docs/tutorials/market_forecast.ipynb
+```
+
+(`scripts/measure_native_ratio.py` is created in Task 8 Step 1; if you are working tasks in order, do that step first — it is standalone.)
+
+Expected: the notebook reports `7/8 code cells produced output` or better, and both files measure **≤ 115/120 code lines and ≥ 26%/24% native**. If either budget is missed, cut presentation code — never inflate the native count with redundant calls.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add examples/animate_market_forecast.py docs/tutorials/market_forecast.ipynb \
+        scripts/execute_tutorial.py
+git commit -m "docs(gallery): market example is a column-MultiIndex showcase with native per-trace forecasts"
+```
+
+---
+
+## Task 3: Weather — the paper figure, nearly all native
+
+**BEFORE (measured):** `examples/animate_weather_decades.py` — 333 raw lines, **196 code lines, 11 native (5.6%)**. Audit classification: A=72 **B=8 C=44** D=70 NATIVE=19. `docs/tutorials/weather_decades.ipynb` — **206 code lines, 10 native (4.9%)**, 0 of 7 code cells executed.
+
+**AFTER (contracted budget):** script **≤ 62 code lines, ≥ 18% native**; notebook **≤ 66 code lines, ≥ 17% native**; **zero** defect markers.
+
+**The reframe.** The current example treats 6 cities as 6 *datasets* and hand-builds a hemisphere hierarchy on top (26 lines of **C**), plus a whole second daily-temperature panel (70 lines of **D**), plus a `Line3DCollection` linewidth workaround (**C**, and a library bug that animation-core Task 2 fixes). The paper figure is a different, simpler object: **20 cities are 20 FEATURES of one trajectory through time**, coloured by the average temperature across them. That is one `hyp.plot` call, and it needs no hierarchy at all.
+
+Verified today, end to end: `hyp.plot(temps, fmt='-', hue=avg_temp, palette='RdBu_r', normalize='across', manip='Smooth', animate=True, chemtrails=True, colorbar=True, duration=8, frame_rate=20, show=False)` on the real `(1645, 20)` matrix runs in **0.3 s**, emits **no warnings**, produces **2 axes** (3-D box + colorbar), and at frame 150 the head/trail collections carry **879 distinct colours**.
+
+**Files:** rewrite `examples/animate_weather_decades.py`; rewrite `docs/tutorials/weather_decades.ipynb`.
+
+- [ ] **Step 1: Rewrite the example**
+
+Replace `examples/animate_weather_decades.py` entirely:
+
+```python
+# -*- coding: utf-8 -*-
+"""
+=======================================================================
+A century of weather: twenty cities as twenty features, one hot path
+=======================================================================
+
+The figure from the HyperTools paper, in one library call. Monthly mean
+temperatures for **twenty cities spread across both hemispheres** (Bangkok
+to Montreal, Sydney to Moscow) are treated not as twenty separate series
+but as **twenty features of one measurement**: each month is a single
+20-dimensional observation of "what the world's weather was doing", and
+``hyp.plot`` reduces that stream to a 3-D path.
+
+Every point on the path is coloured by the **average temperature across all
+twenty cities** on a diverging blue-cold / red-hot scale
+(``palette='RdBu_r'``), so the seasons show up as the path sweeping between
+the ends of the colormap and the slow warming trend shows up as where the
+sweep sits. ``manip='Smooth'`` takes out month-to-month jitter before
+anything is drawn, ``normalize='across'`` z-scores the twenty city columns
+over the stacked rows so a hot city cannot dominate the reduction purely by
+scale, and ``chemtrails=True`` leaves the traversed path glowing faintly
+behind the moving head as 138 years play.
+
+There is no hand-built hierarchy, no hand-spliced colormap, no
+``ScalarMappable``, and no per-frame callback: the colour axis, the
+colorbar and the trail are all the library's.
+
+**Data & graceful degradation.** The temperature matrix and the city
+coordinates are the ones published with the HyperTools paper (verified
+2026-07-28: 1645 complete months, 1875-2013, 20 cities), fetched once and
+cached. If the network is unavailable the example synthesizes twenty
+seasonal series in opposite hemispheric phase with a slow warming drift, so
+it always renders.
+"""
+
+# Code source: Contextual Dynamics Laboratory
+# License: MIT
+
+import io
+import os
+import tempfile
+import urllib.request
+
+import numpy as np
+import pandas as pd
+
+import hypertools as hyp
+
+CACHE = os.path.join(tempfile.gettempdir(), 'hypertools_gallery_cache')
+os.makedirs(CACHE, exist_ok=True)
+BASE = ('https://raw.githubusercontent.com/ContextLab/'
+        'hypertools-paper-notebooks/master/data/')
+
+
+def fetch_temperatures():
+    """(months x 20 cities) monthly means and the city names, or ``None``."""
+    try:
+        frames = {}
+        for name in ('temperatures.csv', 'temperature_locs.csv'):
+            dest = os.path.join(CACHE, name)
+            if not (os.path.exists(dest) and os.path.getsize(dest) > 0):
+                req = urllib.request.Request(
+                    BASE + name, headers={'User-Agent': 'hypertools-gallery/1.1'})
+                with urllib.request.urlopen(req, timeout=60) as response:
+                    payload = response.read()
+                with open(dest, 'wb') as handle:
+                    handle.write(payload)
+            frames[name] = pd.read_csv(io.BytesIO(open(dest, 'rb').read()))
+        # the CSV carries both '<City>' (absolute) and '<City>_anomaly'
+        # columns; the locations file fixes the city order
+        cities = list(frames['temperature_locs.csv']['City'])
+        complete = frames['temperatures.csv'].dropna()
+        return complete[cities].to_numpy(float), cities
+    except Exception:
+        return None
+
+
+def synthetic_temperatures(n_months=1645, n_cities=20, seed=0):
+    """Fallback: seasonal cycles in opposite hemispheric phase, drifting."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(n_months)
+    columns = []
+    for city in range(n_cities):
+        phase = 0.0 if city % 2 == 0 else np.pi          # opposite seasons
+        columns.append(14 + 11 * np.sin(2 * np.pi * t / 12 + phase)
+                       + 3 * (t / n_months)
+                       + rng.standard_normal(n_months) * 0.6)
+    return (np.column_stack(columns),
+            [f'city {i + 1}' for i in range(n_cities)])
+
+
+fetched = fetch_temperatures()
+source = 'HyperTools paper temperature archive'
+if fetched is None:
+    fetched, source = synthetic_temperatures(), 'synthetic (offline fallback)'
+temps, cities = fetched
+print(f'weather: {temps.shape[0]} months x {temps.shape[1]} cities ({source})')
+
+# THE hypertools call: twenty cities as twenty FEATURES of one path, coloured
+# by the average temperature across them on a blue-cold / red-hot scale.
+duration, fps = 8, 20
+fig, ani = hyp.plot(
+    temps, '-',
+    hue=temps.mean(axis=1), palette='RdBu_r',
+    colorbar={'label': 'average temperature across '
+                       f'{len(cities)} cities (°C)'},
+    manip='Smooth', normalize='across',
+    animate=True, chemtrails=True,
+    title=f'{len(cities)} cities, 1875–2013, as one moving path',
+    duration=duration, frame_rate=fps, size=(8, 7), show=False)
+```
+
+- [ ] **Step 2: Run the example and confirm it renders**
+
+Run: `MPLBACKEND=Agg .venv/bin/python examples/animate_weather_decades.py`
+
+Expected: exits 0, no warnings, prints
+
+```
+weather: 1645 months x 20 cities (HyperTools paper temperature archive)
+```
+
+- [ ] **Step 3: Confirm the colour sweep and colorbar are real**
+
+Run:
+
+```bash
+MPLBACKEND=Agg .venv/bin/python - <<'PY'
+import numpy as np, runpy
+ns = runpy.run_path('examples/animate_weather_decades.py')
+fig, ani = ns['fig'], ns['ani']
+ani._func(150, *ani._args)
+ax = [a for a in fig.axes if hasattr(a, 'zaxis')][0]
+cols = np.vstack([c.get_colors() for c in ax.collections
+                  if c.get_label() == '_nolegend_'])
+print('axes:', len(fig.axes), '| distinct colours:', len(np.unique(cols.round(4), axis=0)))
+print('title:', repr(ax.get_title()))
+PY
+```
+
+Expected: `axes: 2`, **several hundred distinct colours** (879 measured for these exact parameters), and the title string. If `axes` is 1, the colorbar did not render and `colorbar=` is wrong.
+
+- [ ] **Step 4: Rewrite the notebook in lockstep**
+
+Rewrite `docs/tutorials/weather_decades.ipynb`, keeping cell 0 (Colab install) unchanged:
+
+| cell | type | content |
+|-|-|-|
+| 0 | code | existing Colab install cell — unchanged |
+| 1 | markdown | title + the docstring as prose, including *why* cities are features and not datasets |
+| 2 | markdown | `## 1. Imports and a disk cache` |
+| 3 | code | imports, `CACHE`, `BASE` |
+| 4 | markdown | `## 2. Fetch the paper's temperature matrix (with a synthetic fallback)` |
+| 5 | code | `fetch_temperatures`, `synthetic_temperatures`, the dispatch and `print` |
+| 6 | markdown | `## 3. One call` — spell out each kwarg's stage: `manip` → `normalize` → `reduce` → animate |
+| 7 | code | the `hyp.plot(...)` call |
+| 8 | markdown | `## 4. Display the animation` |
+| 9 | code | `HTML(ani.to_jshtml())` |
+
+- [ ] **Step 5: Execute and measure**
+
+```bash
+.venv/bin/python scripts/execute_tutorial.py docs/tutorials/weather_decades.ipynb
+.venv/bin/python scripts/measure_native_ratio.py \
+    examples/animate_weather_decades.py docs/tutorials/weather_decades.ipynb
+```
+
+Expected: `4/4 code cells produced output` (cells 3, 5, 7, 9), and both files inside budget (**≤ 62/66 code lines, ≥ 18%/17% native**).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add examples/animate_weather_decades.py docs/tutorials/weather_decades.ipynb
+git commit -m "docs(gallery): weather example is the paper figure in one native call"
+```
+
+---
+
+## Task 4: Paintings — native text, native palette, full descriptions
+
+**BEFORE (measured):** `examples/animate_painting_embeddings.py` — 213 raw lines, **146 code lines, 11 native (7.5%)**. Audit classification: A=97 **B=25 C=6** D=13 NATIVE=8. `docs/tutorials/painting_embeddings.ipynb` — **116 code lines, 10 native (8.6%)**, 0 of 6 code cells executed.
+
+**AFTER (contracted budget):** script **≤ 118 code lines, ≥ 20% native**; notebook **≤ 110 code lines, ≥ 20% native**; **zero** defect markers. (The floor is high because the `PAINTINGS` dict alone is ~54 lines of genuine class-**A** data.)
+
+**What goes, and to what:**
+
+| deleted | replaced by |
+|-|-|
+| `embed()` — the hand-rolled `SentenceTransformer`/TF-IDF helper (`:101-111`, class **B**) | `vectorizer='all-MiniLM-L6-v2', semantic=None, corpus=None` on the plot call (`text2mat.py:89`, dispatch at `:184`, `semantic` at `:391`, `corpus` at `:404`) |
+| `all_windows`/`owners` bookkeeping + `clouds = [red[owners == name] ...]` (`:148-160`, `:181-182`, class **B**) | a **list of lists of strings** straight into `hyp.plot` — verified `hyp.reduce([[s,s,s],[s,s,s],[s,s]], ndims=3)` → `[(3,3),(3,3),(2,3)]`, so `format_data` does the splitting |
+| the k-means + `np.argmax(counts)` + luminance-clamp block inside `canvas_color` (`:136-144`, class **B** once Task 1 exists) | `image_palette(path)[0]` — and the luminance clamp is no longer needed, because the salience ordering returns a vivid colour rather than the muted background it was compensating for |
+| `fig.text(...)` title (`:198-201`, class **B**) | `title=` |
+| the 85th-percentile outlier trim (`:172-179`, class **C**) | **dropped** — see *Decisions still needed* #2 |
+| `blurb` in the side panel | the full `text` each painting already carries, which is what was embedded — the panel now shows exactly what produced the geometry |
+
+The download-and-cache half of `canvas_color` **stays** (class **A**, textbook: hypertools does not fetch images, Contract 4).
+
+**Files:** rewrite `examples/animate_painting_embeddings.py`; rewrite `docs/tutorials/painting_embeddings.ipynb`.
+
+- [ ] **Step 1: Rewrite the example**
+
+Keep the `PAINTINGS` dict verbatim (lines 43-96 of the current file) and replace everything else. The new body:
+
+```python
+# -*- coding: utf-8 -*-
+"""
+=============================================================
+Five paintings, described in words, drawn in their own colors
+=============================================================
+
+Text becomes geometry, tinted by the art itself. A full paragraph
+describing each of five famous paintings is cut into overlapping word
+windows and handed to ``hyp.plot`` **as text** -- a list of five lists of
+strings. One call embeds every window with a sentence-transformer
+(``vectorizer='all-MiniLM-L6-v2'``), reduces all of them together into one
+shared 3-D space with UMAP, keeps the five clouds separate (the nesting of
+the input is the grouping), spins the camera, and annotates each cloud with
+its painting's name.
+
+Each cloud is drawn in a colour taken from the **actual canvas**:
+``hypertools.plot.colors.image_palette`` clusters the downloaded image's
+pixels and orders the result by ``pixel_fraction * chroma``, so the vivid
+subject wins rather than the muted background -- Starry Night comes out
+cobalt, not canvas-beige. The side panels show the complete description
+that was embedded, in that painting's colour, so nothing about the geometry
+is hidden.
+
+**Data & graceful degradation.** The descriptions are bundled inline (so the
+text side is fully offline and deterministic). Each canvas is downloaded
+once from Wikimedia Commons and cached; if an image cannot be fetched, a
+hand-picked representative colour is used instead. Text embedding needs the
+``[text]`` extra (``pip install "hypertools[text]"``); without it,
+``vectorizer='TfidfVectorizer'`` is used, and the pipeline (embed -> reduce
+together -> one cloud/colour per painting -> spin) is identical either way.
+"""
+
+# Code source: Contextual Dynamics Laboratory
+# License: MIT
+
+import os
+import tempfile
+import textwrap
+import urllib.request
+
+from matplotlib.colors import to_rgb
+
+import hypertools as hyp
+from hypertools.plot.colors import image_palette
+
+CACHE = os.path.join(tempfile.gettempdir(), 'hypertools_gallery_cache')
+os.makedirs(CACHE, exist_ok=True)
+FILEPATH = 'https://commons.wikimedia.org/wiki/Special:FilePath/'
+
+PAINTINGS = {
+    ...  # UNCHANGED from the current file, lines 43-96
+}
+
+WINDOW, STEP = 10, 1
+
+
+def windows(text, size=WINDOW, step=STEP):
+    """Overlapping word windows: one observation per window."""
+    words = text.split()
+    return [' '.join(words[i:i + size])
+            for i in range(0, max(1, len(words) - size + 1), step)]
+
+
+def canvas_color(spec):
+    """The painting's most salient colour, from the real canvas.
+
+    The download and the cache are this example's job (hypertools never
+    fetches an image); choosing the colour is the library's:
+    ``image_palette`` orders clusters by ``pixel_fraction * chroma``, so a
+    small vivid region beats a large muted one. Ordering by cluster SIZE --
+    which is what this example used to do -- returns the background.
+    """
+    try:
+        dest = os.path.join(CACHE, 'paint_' + spec['file'][:20] + '.jpg')
+        if not (os.path.exists(dest) and os.path.getsize(dest) > 0):
+            req = urllib.request.Request(
+                FILEPATH + spec['file'] + '?width=400',
+                headers={'User-Agent': 'hypertools-gallery/1.1'})
+            with urllib.request.urlopen(req, timeout=30) as response:
+                payload = response.read()
+            with open(dest, 'wb') as handle:
+                handle.write(payload)
+        return tuple(image_palette(dest)[0])
+    except Exception:
+        return to_rgb(spec['fallback'])
+
+
+names = list(PAINTINGS)
+descriptions = [windows(PAINTINGS[name]['text']) for name in names]
+colors = [canvas_color(PAINTINGS[name]) for name in names]
+# labels are per-OBSERVATION (plot.py:895-910): a nested list with one
+# sub-list per cloud, carrying the painting's name on its MIDDLE window
+# (roughly the centre of a text trajectory) and None everywhere else.
+labels = [[name if i == len(cloud) // 2 else None
+           for i in range(len(cloud))]
+          for name, cloud in zip(names, descriptions)]
+print(f'paintings: {len(names)}, '
+      f'{sum(len(c) for c in descriptions)} description windows')
+
+# THE hypertools call: raw TEXT in, five clouds out. The nesting of the
+# input is the grouping, the vectorizer/semantic/corpus trio selects a
+# sentence-transformer instead of the default bag-of-words + LDA, and
+# reduce= puts every window into one shared UMAP space so the clouds are
+# directly comparable. n_neighbors=12 keeps one description's windows
+# together, min_dist=0.25 lets a clump pack closely, random_state=42 fixes
+# the stochastic layout.
+duration, fps = 12, 20
+fig, ani = hyp.plot(
+    descriptions, '.',
+    vectorizer='all-MiniLM-L6-v2', semantic=None, corpus=None,
+    reduce={'model': 'UMAP', 'kwargs': {'n_neighbors': 12, 'min_dist': 0.25,
+                                        'random_state': 42}},
+    ndims=3, color=colors, markersize=5, labels=labels,
+    animate='spin', rotations=2,
+    title='five paintings, described in words, drawn in their own colors',
+    duration=duration, frame_rate=fps, size=(13, 9), show=False)
+
+# the descriptions that were actually embedded, each in its cloud's colour
+ax = fig.axes[0]
+ax.set_position([0.0, 0.0, 0.52, 1.0])
+for i, name in enumerate(names):
+    y = 0.94 - i * 0.19
+    color = colors[i]
+    fig.text(0.55, y, name, ha='left', va='top', fontsize=12,
+             fontweight='bold', color=color)
+    body = '\n'.join(textwrap.wrap(PAINTINGS[name]['text'], 62))
+    fig.text(0.55, y - 0.028, body, ha='left', va='top', fontsize=7,
+             color=color)
+```
+
+- [ ] **Step 2: Run the example and confirm it renders**
+
+Run: `MPLBACKEND=Agg .venv/bin/python examples/animate_painting_embeddings.py`
+
+Expected: exits 0, no traceback, prints `paintings: 5, NNN description windows`. If the `[text]` extra is not installed the sentence-transformer resolution fails; per Contract 4 the example must still render, so confirm the fallback:
+
+```bash
+MPLBACKEND=Agg .venv/bin/python -c "
+import hypertools as hyp
+from hypertools.tools.text2mat import text2mat
+print(text2mat(['a red apple','a green pear'], vectorizer='all-MiniLM-L6-v2',
+               semantic=None, corpus=None).shape)"
+```
+Expected: `(2, 384)` with the extra installed. Without it, the call raises — in that case change the example's `vectorizer=` to be chosen once at the top:
+
+```python
+try:
+    import sentence_transformers  # noqa: F401
+    VECTORIZER = 'all-MiniLM-L6-v2'
+except ImportError:
+    VECTORIZER = 'TfidfVectorizer'
+```
+and pass `vectorizer=VECTORIZER`. That is 4 lines of graceful degradation using **only** documented kwargs — it is not a re-implementation, and it keeps the offline property Contract 4 requires.
+
+- [ ] **Step 3: Confirm the colour is the vivid one, not the background**
+
+Run:
+
+```bash
+MPLBACKEND=Agg .venv/bin/python - <<'PY'
+import numpy as np, runpy
+ns = runpy.run_path('examples/animate_painting_embeddings.py')
+for name, c in zip(ns['names'], ns['colors']):
+    rgb = np.asarray(c)
+    print(f'{name:16s} rgb={np.round(rgb,3)}  chroma={rgb.max()-rgb.min():.3f}')
+PY
+```
+
+Expected: five colours, each with **chroma > 0.10** for any painting whose image was fetched. A chroma near zero means the extraction returned a grey/beige — i.e. the salience ordering regressed, or the fallback hex was used because the download failed. Distinguish the two by checking `ls $TMPDIR/hypertools_gallery_cache/paint_*.jpg`.
+
+- [ ] **Step 4: Rewrite the notebook in lockstep**
+
+Rewrite `docs/tutorials/painting_embeddings.ipynb`, keeping cell 0 unchanged:
+
+| cell | type | content |
+|-|-|-|
+| 0 | code | existing Colab install cell — unchanged |
+| 1 | markdown | title + docstring prose |
+| 2 | markdown | `## 1. Imports, a disk cache, and five descriptions` |
+| 3 | code | imports, `CACHE`, `FILEPATH`, the `PAINTINGS` dict, `WINDOW`/`STEP` |
+| 4 | markdown | `## 2. A colour from each real canvas` — explain the salience ordering and why largest-cluster is wrong |
+| 5 | code | `windows`, `canvas_color`, `names`/`descriptions`/`colors`/`labels`, the `print` |
+| 6 | markdown | `## 3. One call: raw text in, five clouds out` |
+| 7 | code | the `hyp.plot(...)` call |
+| 8 | markdown | `## 4. The descriptions that were embedded` |
+| 9 | code | the side-panel block |
+| 10 | markdown | `## 5. Display the animation` |
+| 11 | code | `HTML(ani.to_jshtml())` |
+
+- [ ] **Step 5: Execute and measure**
+
+```bash
+.venv/bin/python scripts/execute_tutorial.py docs/tutorials/painting_embeddings.ipynb
+.venv/bin/python scripts/measure_native_ratio.py \
+    examples/animate_painting_embeddings.py docs/tutorials/painting_embeddings.ipynb
+```
+
+Expected: `5/5 code cells produced output`, both files inside budget (**≤ 118/110 code lines, ≥ 20% native**).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add examples/animate_painting_embeddings.py docs/tutorials/painting_embeddings.ipynb
+git commit -m "docs(gallery): paintings example uses native text embedding and native image palettes"
+```
+
+---
+
+## Task 5: Conversation — native text, serial order, per-segment titles
+
+**BEFORE (measured):** `examples/animate_conversation.py` — 316 raw lines, **166 code lines, 9 native (5.4%)**. Audit classification: A=61 **B=31 C=49** D=40 NATIVE=9. `docs/tutorials/conversation_shape.ipynb` — **186 code lines, 11 native (5.9%)**, 0 of 6 code cells executed.
+
+**AFTER (contracted budget):** script **≤ 72 code lines, ≥ 25% native**; notebook **≤ 76 code lines, ≥ 24% native**; **zero** defect markers. (The `TURNS` list alone is 29 lines of class-**A** data.)
+
+**What goes, and to what:**
+
+| deleted | replaced by |
+|-|-|
+| `embed()` (`:88-100`, class **B**) | `vectorizer='all-MiniLM-L6-v2', semantic=None, corpus=None` |
+| the manual re-split into per-turn arrays (`:144-151`, class **B**) | a **list of lists of strings** — the nesting is the grouping |
+| `mpatches.Patch` + `fig.legend` (`:168-175`, class **B**) | a categorical `hue=` + `legend=True`. **Verified**: 6 line datasets with a nested categorical hue draw **6 lines** and a **3-entry** legend, and `animate='serial'` still hands 6 datasets to the backend — so per-turn identity survives |
+| `fig.text(...)` title (`:176-177`, class **B**) | `title=` |
+| `ani._args[0]`/`[1]`, `drawn_lens`, `starts`, `total_pts`, `shown_counts`, `current_state` (`:182-237`, class **C**, and a by-hand copy of `matplotlib_backend.py:1316-1318`) | per-segment `title=` (animation-core Task 8), which is driven by the library's own schedule |
+| the speaker text artist + `caption_lines` + `set_caption` (`:179-180`, `:240-283`, class **D**) | the per-segment title itself carries `Speaker  "the line"` |
+| `_wrapped` + `ani._func = _wrapped` (`:286-316`, class **C**) | `on_frame=` (animation-core Task 7) for the recency fade only — the sole remaining per-frame effect |
+
+The `word_spans` window helper collapses to a plain `windows()` (the span bookkeeping existed only to bold the current word in the deleted caption), and `min_wins` stays: it prevents a real rendering artefact (a one-row dataset draws as a dot), and the comment at `:110-117` documents it accurately.
+
+**Files:** rewrite `examples/animate_conversation.py`; rewrite `docs/tutorials/conversation_shape.ipynb`.
+
+- [ ] **Step 1: Rewrite the example**
+
+Keep `SPEAKER_COLOR` and the `TURNS` list verbatim (lines 44-85). Replace everything below:
+
+```python
+WINDOW, STEP, MIN_WINDOWS = 6, 2, 3
+
+
+def windows(text, size=WINDOW, step=STEP, min_windows=MIN_WINDOWS):
+    """Sliding word windows over one turn.
+
+    ``min_windows`` prevents a real rendering artifact: ``hyp.plot`` draws a
+    ONE-ROW dataset as a dot (there is no line through a single point), and
+    with a fixed 6-word window, 12 of the 28 turns below collapse to a
+    single window and would show up as stray specks. Shrinking the window,
+    and the step if needed, keeps every turn a real path.
+    """
+    words = text.split()
+    n = len(words)
+    size = max(1, min(size, n - min_windows + 1))
+    step = step if (n - size) // step + 1 >= min_windows else 1
+    return [' '.join(words[i:i + size]) for i in range(0, n - size + 1, step)]
+
+
+turns = [windows(text) for _speaker, text in TURNS]
+# category order is FIRST APPEARANCE (hypertools/plot/colors.py:105), so the
+# palette must be listed in that order for each speaker to get their colour
+speakers = list(dict.fromkeys(speaker for speaker, _text in TURNS))
+print(f'conversation: {len(TURNS)} turns, {len(speakers)} speakers, '
+      f'{sum(len(t) for t in turns)} windows')
+
+# THE hypertools call: raw dialogue in, one disjoint trajectory per turn,
+# coloured by speaker, revealed ONE TURN AT A TIME (order='serial') with the
+# already-spoken path glowing faintly behind each head (chemtrails=True).
+# title= carries one string per turn, so the label under the box always names
+# the turn currently being drawn -- the library drives it from the same
+# reveal schedule it renders from.
+duration, fps = 12, 16
+FLOOR, DECAY = 0.10, 0.45
+fig, ani = hyp.plot(
+    turns, '-',
+    vectorizer='all-MiniLM-L6-v2', semantic=None, corpus=None,
+    reduce={'model': 'UMAP', 'kwargs': {'n_neighbors': 8, 'min_dist': 0.5,
+                                        'random_state': 1}},
+    ndims=3,
+    hue=[[speaker] * len(window_list)
+         for (speaker, _text), window_list in zip(TURNS, turns)],
+    palette=[SPEAKER_COLOR[s] for s in speakers], legend=True,
+    linewidth=1.6,
+    animate=True, order='serial', chemtrails=True,
+    title=[f'{speaker}   “{text}”' for speaker, text in TURNS],
+    duration=duration, frame_rate=fps, elev=16, size=(8, 8), show=False)
+
+
+def recency_fade(ctx):
+    """The one bespoke effect left: earlier turns recede as the talk moves on.
+
+    ``chemtrails``/``precog``/``bullettime`` fade WITHIN one trajectory;
+    nothing in 1.1 fades ACROSS already-revealed datasets, so this is real
+    custom work -- but it now runs on the public per-frame hook and reads the
+    library's own published schedule instead of re-deriving it.
+    """
+    current = ctx.current_index
+    if current is None:
+        return
+    for i, artist in enumerate(ctx.artists):
+        if i > current or ctx.revealed_counts[i] < 2:
+            artist.set_alpha(0.0)          # unspoken, or a single stray point
+        elif i == current:
+            artist.set_alpha(1.0)
+        else:
+            artist.set_alpha(FLOOR + (1.0 - FLOOR) * DECAY ** (current - i))
+
+
+ani.on_frame(recency_fade)
+```
+
+> **Interface check before writing this:** `FrameContext` is defined in animation-core Task 7 (`hypertools/plot/animation_context.py`) with the fields `current_index`, `revealed_counts` and `artists`, and `HyperAnimation.on_frame()` registers against the shared `FrameHooks` registry that `plot()` created (animation-core contract #3). If any field is named differently when Task 7 lands, follow the implemented names — do not add a shim here.
+
+- [ ] **Step 2: Run the example and confirm it renders**
+
+Run: `MPLBACKEND=Agg .venv/bin/python examples/animate_conversation.py`
+Expected: exits 0, prints `conversation: 28 turns, 4 speakers, NNN windows`, no warnings.
+
+- [ ] **Step 3: Confirm the reveal, the legend and the titles**
+
+Run:
+
+```bash
+MPLBACKEND=Agg .venv/bin/python - <<'PY'
+import runpy
+ns = runpy.run_path('examples/animate_conversation.py')
+fig, ani = ns['fig'], ns['ani']
+ax = [a for a in fig.axes if hasattr(a, 'zaxis')][0]
+titles = []
+for f in (0, 60, 120, 191):
+    ani._func(f, *ani._args)
+    titles.append(ax.get_title())
+legend = ax.get_legend() or (fig.legends[0] if fig.legends else None)
+print('legend:', [t.get_text() for t in legend.get_texts()])
+print('titles at frames 0/60/120/191:')
+for t in titles:
+    print('   ', t[:70])
+print('distinct alphas:', sorted({round(l.get_alpha() or 1.0, 2) for l in ax.lines}))
+PY
+```
+
+Expected: the legend has exactly **4 entries** in first-appearance order (`Alice`, `March Hare`, `Hatter`, `Dormouse`); the four titles are **different** and each begins with a speaker name; and at least three distinct alpha values are present (the fade is working). If every title is identical, `title=` did not receive the per-segment list — check `order='serial'` reached `_validate_title`.
+
+- [ ] **Step 4: Rewrite the notebook in lockstep**
+
+Rewrite `docs/tutorials/conversation_shape.ipynb`, keeping cell 0 unchanged:
+
+| cell | type | content |
+|-|-|-|
+| 0 | code | existing Colab install cell — unchanged |
+| 1 | markdown | title + docstring prose, incl. the "spoken text only" note |
+| 2 | markdown | `## 1. Imports and the dialogue` |
+| 3 | code | imports, `SPEAKER_COLOR`, `TURNS` |
+| 4 | markdown | `## 2. One trajectory per turn` |
+| 5 | code | `WINDOW`/`STEP`/`MIN_WINDOWS`, `windows`, `turns`, `speakers`, `print` |
+| 6 | markdown | `## 3. One call: text in, a serial reveal out` — name each kwarg's job, and that `title=` takes one string per turn for serial-style animations |
+| 7 | code | the `hyp.plot(...)` call |
+| 8 | markdown | `## 4. The one bespoke effect: a recency fade, on the public hook` |
+| 9 | code | `recency_fade` + `ani.on_frame(recency_fade)` |
+| 10 | markdown | `## 5. Display the animation` |
+| 11 | code | `HTML(ani.to_jshtml())` |
+
+- [ ] **Step 5: Execute and measure**
+
+```bash
+.venv/bin/python scripts/execute_tutorial.py docs/tutorials/conversation_shape.ipynb
+.venv/bin/python scripts/measure_native_ratio.py \
+    examples/animate_conversation.py docs/tutorials/conversation_shape.ipynb
+```
+
+Expected: `5/5 code cells produced output`, both inside budget (**≤ 72/76 code lines, ≥ 25%/24% native**).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add examples/animate_conversation.py docs/tutorials/conversation_shape.ipynb
+git commit -m "docs(gallery): conversation example uses native text, order='serial', and per-segment titles"
+```
+
+---
+
+## Task 6: Morph — per-segment titles, natively
+
+**BEFORE (measured):** `examples/animate_morph_zoo.py` — 129 raw lines, **40 code lines, 6 native (15.0%)**. Audit classification: A=17 **B=5 C=16** D=0 NATIVE=5 — the best-proportioned of the five, whose only defect is the missing per-segment-title feature. `docs/tutorials/morph_shapes_zoo.ipynb` — **45 code lines, 8 native (17.8%)**, 0 of 6 code cells executed.
+
+**AFTER (contracted budget):** script **≤ 30 code lines, ≥ 26% native**; notebook **≤ 34 code lines, ≥ 26% native**; **zero** defect markers.
+
+**What goes, and to what:**
+
+| deleted | replaced by |
+|-|-|
+| `from hypertools.plot import morph as _morph` (`:35`) and the `morph_schedule` recomputation with its hardcoded `azim0=-60` (`:105-107`, class **C**) | nothing — the schedule is the library's business again |
+| `shape_title`, `label`, `_wrapped`, `ani._func = _wrapped` (`:108-128`, class **C**) | `title=titles` (animation-core Task 8), which blanks morph **transitions** by segment **parity** and names every **hold** |
+
+**Kept, deliberately, with the reasons the current file already states correctly:**
+- the **teapot** (maintainer instruction), with its `hyp.load('teapot')` 1728-rows / 301-unique note (`:45-50`);
+- `CUBE_SCALE = 0.8`, because a cube normalized to ±1 fills the drawn axes box exactly and reads as noise in a wireframe (`:63-66`);
+- the closed loop `clouds.append(clouds[0])`, and the hand sampling that makes it possible — `morph_samples=` draws a **fresh** subset per dataset, so it cannot produce the identical closing sample (`:54-61`);
+- `normalize()`, because `plot()` rescales with **one shared pooled affine** (`plot.py:4040-4051`, `_shared/helpers.py:24-69`), so clouds left in their raw units would be drawn at wildly different sizes. See *Decisions still needed* #3;
+- the explicit `morph_samples=N`, now load-bearing: animation-core Task 3 makes an uncapped morph over clouds above 2000 points **raise**.
+
+**Files:** rewrite the tail of `examples/animate_morph_zoo.py`; rewrite `docs/tutorials/morph_shapes_zoo.ipynb`.
+
+- [ ] **Step 1: Rewrite the example**
+
+Delete `from hypertools.plot import morph as _morph` (line 35) and replace everything from line 94 to the end of the file with:
+
+```python
+# THE hypertools call: black pixel-sized dots morphing through the zoo, with
+# one title per shape. For a morph, title= takes one string per cloud: each
+# is shown while its cloud is fully formed and blanked through the
+# transitions, so the label never sits over a half-formed shape. hypertools
+# drives it from the same segment schedule it renders from -- this file no
+# longer recomputes that schedule, and no longer has to know plot's default
+# azimuth.
+duration, fps = 12, 20
+fig, ani = hyp.plot(clouds, fmt='.', color='k', markersize=1.6,
+                    animate='morph', rotations=rotations, morph_samples=N,
+                    title=titles, duration=duration, frame_rate=fps,
+                    size=(6, 6), show=False)
+```
+
+Update the module docstring's second paragraph (`:14-22`) to describe the native feature rather than the workaround:
+
+```
+The shape names come straight from the library: ``title=`` takes one string
+per cloud for a morph animation, shown while that cloud is fully formed and
+blanked through the transitions, so the label never sits over a half-formed
+shape. Nothing here recomputes hypertools' morph schedule or reaches into
+its private modules.
+```
+
+- [ ] **Step 2: Run the example and confirm the titles track the schedule**
+
+```bash
+MPLBACKEND=Agg .venv/bin/python examples/animate_morph_zoo.py
+MPLBACKEND=Agg .venv/bin/python - <<'PY'
+import runpy
+from hypertools.plot.morph import segment_frame_counts, frame_to_segment
+ns = runpy.run_path('examples/animate_morph_zoo.py')
+fig, ani, titles = ns['fig'], ns['ani'], ns['titles']
+ax = [a for a in fig.axes if hasattr(a, 'zaxis')][0]
+total = 12 * 20
+counts = segment_frame_counts(len(ns['clouds']), total)
+bad = []
+for frame in range(total):
+    ani._func(frame, *ani._args)
+    seg, _step, _n = frame_to_segment(counts, frame)
+    expected = titles[seg // 2] if seg % 2 == 0 else ''
+    if ax.get_title() != expected:
+        bad.append((frame, seg, ax.get_title(), expected))
+print('frames checked:', total, '| mismatches:', len(bad), bad[:5])
+PY
+```
+
+Expected: exits 0 and prints `frames checked: 240 | mismatches: 0 []`. Any mismatch means the native titles are not tracking `frame_to_segment`'s parity — that is animation-core Task 8's contract, so fix it there, not here.
+
+- [ ] **Step 3: Rewrite the notebook in lockstep**
+
+Rewrite `docs/tutorials/morph_shapes_zoo.ipynb`. The current cell 9 (24 lines of schedule recomputation and `_func` monkeypatching) is **deleted outright**, and its markdown heading (cell 8, `## 4. A title that tracks the current shape`) is folded into the plot cell's markdown:
+
+| cell | type | content |
+|-|-|-|
+| 0 | code | existing Colab install cell — unchanged |
+| 1 | markdown | title + updated docstring prose |
+| 2 | markdown | `## 1. Imports` |
+| 3 | code | `import numpy as np` / `import hypertools as hyp` |
+| 4 | markdown | `## 2. Load, normalize, sample, and close the loop` (keep the teapot note and the "why normalize by hand" note) |
+| 5 | code | `SHAPES`, `TITLES`, `N`, `CUBE_SCALE`, `rng`, `normalize`, `load`, `clouds`, `titles` |
+| 6 | markdown | `## 3. One call: morph, with one title per shape` |
+| 7 | code | `rotations`, `duration`/`fps`, the `hyp.plot(...)` call |
+| 8 | markdown | `## 4. Display (or save) the animation` |
+| 9 | code | `HTML(ani.to_jshtml())` / `# or: ani.save('morph_zoo.gif', fps=fps)` |
+
+- [ ] **Step 4: Execute and measure**
+
+```bash
+.venv/bin/python scripts/execute_tutorial.py docs/tutorials/morph_shapes_zoo.ipynb
+.venv/bin/python scripts/measure_native_ratio.py \
+    examples/animate_morph_zoo.py docs/tutorials/morph_shapes_zoo.ipynb
+```
+
+Expected: `4/4 code cells produced output`, both inside budget (**≤ 30/34 code lines, ≥ 26% native**).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add examples/animate_morph_zoo.py docs/tutorials/morph_shapes_zoo.ipynb
+git commit -m "docs(gallery): morph example uses native per-segment titles, drops the private schedule reach"
+```
+
+---
+
+## Task 7: The fifteen older tutorials
+
+Grouped by the recurring fix so each step is one reviewable diff. Every group ends by executing the touched notebooks and committing.
+
+**Baseline** (from `notes/audit/other_tutorials_audit.md`, §1): `conversation_trajectories` 2.5%, `projectile_kalman` 3.2%, `stock_forecasting` 3.7%, `wikipedia_embeddings` 7.1%, `hugging_face_embeddings` 10.0%, `modern_sklearn_dynamics` 10.2%, `analyze` 20.0% (and **never calls `hyp.plot`**), `reduce` 36.8% (never plots, never mentions `hyp.describe`). The five clean ones (`align`, `plot`, `normalize`, `cluster`, `streaming_data`, `text`, `lsl_streaming`) are **not touched**.
+
+- [ ] **Step 1 (G2): Delete the four ffmpeg cells; ask for a GIF directly**
+
+`save_path='foo.gif'` writes a GIF with **no ffmpeg at all** (`plot.py:1246`, writer dispatch at `animate.py:84`) — verified today: a real 24 832-byte GIF. Three notebooks in this same set already prove it (`streaming_data` cells 4/8, `lsl_streaming` cell 6).
+
+For each pair below, change the `save_path='*.mp4'` in the plot cell to `'*.gif'`, drop the `print(f"mp4: ...")` line that follows it, and **delete the entire next cell**:
+
+| notebook | plot cell | ffmpeg cell to delete |
+|-|-|-|
+| `conversation_trajectories.ipynb` | 14 (`save_path='conversation_serial.mp4'`) | 15 (15 lines) |
+| `hugging_face_embeddings.ipynb` | 12 (`save_path='hf_embeddings_spin.mp4'`) | 13 (16 lines) |
+| `modern_sklearn_dynamics.ipynb` | 12 (`save_path='lorenz_trajectory.mp4'`) | 13 (16 lines) |
+| `wikipedia_embeddings.ipynb` | 10 (`save_path='wikipedia_embeddings_spin.mp4'`) | 11 (15 lines) |
+
+Also delete the markdown cell immediately before each ffmpeg cell if it exists only to explain the mp4→gif conversion, and update the surviving markdown to say the GIF is written directly.
+
+Run: `.venv/bin/python scripts/execute_tutorial.py docs/tutorials/conversation_trajectories.ipynb docs/tutorials/hugging_face_embeddings.ipynb docs/tutorials/modern_sklearn_dynamics.ipynb docs/tutorials/wikipedia_embeddings.ipynb`
+Expected: each reports at least as many executed cells as before, and **no `ffmpeg not found` message appears anywhere in the outputs**:
+```bash
+grep -l "ffmpeg" docs/tutorials/*.ipynb
+```
+Expected: no output.
+
+```bash
+git add docs/tutorials/conversation_trajectories.ipynb docs/tutorials/hugging_face_embeddings.ipynb \
+        docs/tutorials/modern_sklearn_dynamics.ipynb docs/tutorials/wikipedia_embeddings.ipynb
+git commit -m "docs(tutorials): save GIFs natively; delete 62 lines of ffmpeg boilerplate"
+```
+
+- [ ] **Step 2 (G1): Delete the four hand-rolled sentence-transformer blocks**
+
+Two of these notebooks *already document the native call in adjacent markdown and then ignore it* (`hugging_face_embeddings` cell 3, `wikipedia_embeddings` cell 5). Native form, verified: `vectorizer='<hf-model-id>', semantic=None, corpus=None` (`text2mat.py:89`, dispatch `:184`, `semantic` `:391`, `corpus` `:404`).
+
+| notebook / cell | delete | replace with |
+|-|-|-|
+| `hugging_face_embeddings` cell 4 | `model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')` + `embeddings = model.encode(headlines, ...)` + `embeddings.shape` | keep the `load_dataset(...)`/`headlines`/`categories` lines; move the embedding into every downstream `hyp.plot` call as `vectorizer='all-MiniLM-L6-v2', semantic=None, corpus=None` and pass `headlines` (the raw strings) as the data |
+| `wikipedia_embeddings` cell 6 | `model = SentenceTransformer('BAAI/bge-small-en-v1.5')` + `embeddings = model.encode(truncated, ...)` | keep `truncated = [a[:2000] for a in articles]`; pass `truncated` to `hyp.plot` with `vectorizer='BAAI/bge-small-en-v1.5', semantic=None, corpus=None` |
+| `wikipedia_embeddings` cell 17 | the second `model.encode(...)` | same, on `live_truncated` |
+| `conversation_trajectories` cell 8 | `SentenceTransformer(...).encode(...)`, the running-`start` re-split loop, and `np.vstack([emb, emb])` | pass `utterance_windows` (already a **list of lists of strings**) straight to `hyp.plot`; `format_data` splits per dataset — verified `hyp.reduce([[s,s,s],[s,s,s],[s,s]], ndims=3)` → `[(3,3),(3,3),(2,3)]` |
+
+Also delete the now-unused `from sentence_transformers import SentenceTransformer` imports, and update the markdown cells that promised the native call so they now describe what the code does.
+
+> **`np.vstack([emb, emb])` caveat:** it existed to dodge a one-row dataset (audit M2). If any utterance still yields a single window after the change, the notebook must handle it in *text* space (widen or drop that utterance) and say so — never by duplicating an embedded row.
+
+Run: `.venv/bin/python scripts/execute_tutorial.py docs/tutorials/hugging_face_embeddings.ipynb docs/tutorials/wikipedia_embeddings.ipynb docs/tutorials/conversation_trajectories.ipynb`
+Then:
+```bash
+grep -l "SentenceTransformer" docs/tutorials/*.ipynb examples/*.py
+```
+Expected: no output.
+
+```bash
+git add docs/tutorials/hugging_face_embeddings.ipynb docs/tutorials/wikipedia_embeddings.ipynb \
+        docs/tutorials/conversation_trajectories.ipynb
+git commit -m "docs(tutorials): embed text with vectorizer=<hf-id> instead of hand-rolling it"
+```
+
+- [ ] **Step 3 (G3): Route the hand-drawn comparison figures through `hyp.plot(..., ax=)`**
+
+Verified today: `hyp.plot([d, d + 1, d - 1], ['-', '--', '*'], reduce=None, ndims=2, ax=axes[0, 0], legend=['train', 'held out', 'forecast'], show=False)` returns a `Figure` and draws **3 lines on the supplied axes**, with no warnings.
+
+| notebook / cell | today | becomes |
+|-|-|-|
+| `stock_forecasting` cell 14 (27 lines) | `plt.subplots(2, 2)` + 3 `ax.plot` calls per panel + manual labels/legend, **re-running `hyp.predict` inside the plotting loop** | keep `plt.subplots(2, 2)`; per panel one `hyp.plot([train, held_out, forecast], ['-', '--', '*'], reduce=None, ndims=2, ax=ax, legend=[...], show=False)`. Reuse the forecasts cell 6 already computed rather than refitting |
+| `projectile_kalman` cell 6 (9 lines) | `plt.subplots` + `ax.plot(arc['x_ft'], arc['z_ft'], marker='o')` | `hyp.plot(arc[['x_ft', 'z_ft']], '-o', reduce=None, ndims=2, xlabel='court position, x (ft)', ylabel='ball height, z (ft)', title='Real SportVU jump-shot arc (side view): a genuine parabola', show=False)` (`plot.py:1013` documents `xlabel`/`ylabel`/`zlabel`) |
+| `projectile_kalman` cell 15 (12 lines) | 3 hand-drawn series with a manual legend | `hyp.plot([first30[['x_ft', 'z_ft']], actual_tail[['x_ft', 'z_ft']], forecast[['x_ft', 'z_ft']]], ['-o', '-o', '--x'], reduce=None, ndims=2, legend=['observed (frames 0-29)', 'actual (frames 30-49)', 'Kalman forecast'], show=False)` — the exact shape `plot.ipynb` cell 32 already demonstrates |
+
+`projectile_kalman` cell 11 (the 1×3 per-feature-vs-time panel grid) is **left alone**: per-feature-vs-time panels are not what `hyp.plot` draws, and the audit classifies it as defensible.
+
+Run: `.venv/bin/python scripts/execute_tutorial.py docs/tutorials/stock_forecasting.ipynb docs/tutorials/projectile_kalman.ipynb`
+Expected: both execute; the figures render with the same series and legends as before.
+
+```bash
+git add docs/tutorials/stock_forecasting.ipynb docs/tutorials/projectile_kalman.ipynb
+git commit -m "docs(tutorials): draw comparison figures with hyp.plot(..., ax=) instead of raw matplotlib"
+```
+
+- [ ] **Step 4 (smoothing): pandas rolling mean → `manip='Smooth'`**
+
+`stock_forecasting` cell 12 builds its log-volume column with `pandas.rolling(smooth, min_periods=1).mean()` and never mentions `manip=`. Replace the rolling call with the plot-stage kwarg:
+
+```python
+manip={'model': 'Smooth', 'kwargs': {'kernel': 'boxcar', 'kernel_width': 11}}
+```
+
+on the `hyp.plot(...)` call at the end of the same cell (`plot.py:1064`; kernels at `hypertools/manip/smooth.py:14`). **Use 11, not 10**: `kernel_width=10` emits `UserWarning: Increasing smoothing kernel width by 1 (must be odd)` (`hypertools/manip/smooth.py:232`) — measured today. Update the markdown to say the smoothing now runs at the canonical first pipeline stage rather than in pandas.
+
+Run: `.venv/bin/python scripts/execute_tutorial.py docs/tutorials/stock_forecasting.ipynb`
+Expected: executes with **no `UserWarning` about kernel width** in any cell output:
+```bash
+grep -c "must be odd" docs/tutorials/stock_forecasting.ipynb
+```
+Expected: `0`.
+
+```bash
+git add docs/tutorials/stock_forecasting.ipynb
+git commit -m "docs(tutorials): smooth with manip='Smooth' at the pipeline stage, not pandas.rolling"
+```
+
+- [ ] **Step 5 (structural): make `analyze.ipynb` plot, and `reduce.ipynb` describe**
+
+`analyze.ipynb` **never calls `hyp.plot`** — a pipeline tutorial that shows `normalize → reduce → align` only as `sb.heatmap(x)` never demonstrates why the pipeline exists. Cells 18, 23 and 28 each hold the identical 3-line seaborn loop over **already-reduced 3-D output**, which is exactly what `hyp.plot` is for:
+
+```python
+# cells 18, 23, 28 -- replace
+for x in <result>:
+    sb.heatmap(x)
+    plt.show()
+# with
+hyp.plot(<result>, '.', reduce=None, show=False)
+```
+
+Cells 8 and 13 operate on the raw / normalized **high-dimensional** matrices, where a heatmap is a reasonable stand-in (there is no native matrix view; audit M10) — leave them, and add one markdown sentence saying so, so the contrast is deliberate rather than accidental.
+
+`reduce.ipynb` never plots and never mentions `hyp.describe()` (`hypertools/reduce/describe.py:13-23`, *"Useful for evaluating quality of dimensionality reduced plots"*) — the obvious companion to a reduction tutorial. Append two cells:
+
+```python
+# markdown: "## How many dimensions do you actually need?"
+scores = hyp.describe(data, show=False)
+print({k: (v if not hasattr(v, '__len__') else list(v)[:5]) for k, v in scores.items()})
+hyp.plot(hyp.reduce(data, ndims=3), '.', reduce=None, show=False)
+```
+
+(`hyp.describe(..., show=False)` returns a **dict** — verified today — so print it rather than treating it as a figure.)
+
+Run: `.venv/bin/python scripts/execute_tutorial.py docs/tutorials/analyze.ipynb docs/tutorials/reduce.ipynb`
+Then:
+```bash
+.venv/bin/python -c "
+import json
+for nb in ('analyze', 'reduce'):
+    src = ''.join(''.join(c['source']) for c in json.load(open(f'docs/tutorials/{nb}.ipynb'))['cells'] if c['cell_type']=='code')
+    print(nb, 'hyp.plot:', src.count('hyp.plot'), '| hyp.describe:', src.count('hyp.describe'))"
+```
+Expected: `analyze hyp.plot: 3 | hyp.describe: 0` and `reduce hyp.plot: 1 | hyp.describe: 1`.
+
+```bash
+git add docs/tutorials/analyze.ipynb docs/tutorials/reduce.ipynb
+git commit -m "docs(tutorials): analyze.ipynb finally plots its pipeline; reduce.ipynb gains hyp.describe"
+```
+
+- [ ] **Step 6: Re-measure the eight touched notebooks**
+
+```bash
+.venv/bin/python scripts/measure_native_ratio.py \
+    docs/tutorials/conversation_trajectories.ipynb docs/tutorials/hugging_face_embeddings.ipynb \
+    docs/tutorials/wikipedia_embeddings.ipynb docs/tutorials/modern_sklearn_dynamics.ipynb \
+    docs/tutorials/stock_forecasting.ipynb docs/tutorials/projectile_kalman.ipynb \
+    docs/tutorials/analyze.ipynb docs/tutorials/reduce.ipynb
+```
+
+Expected: every one of the eight has a **strictly higher** ratio than the audit's baseline (2.5 / 10.0 / 7.1 / 10.2 / 3.7 / 3.2 / 20.0 / 36.8 percent). Record the measured numbers in the commit message of Step 5 if they are not already there; Task 8 turns them into an assertion.
+
+---
+
+## Task 8: Verification — measure it, and keep it measured
+
+- [ ] **Step 1: Commit the measurement**
+
+```python
+# scripts/measure_native_ratio.py
+r"""Measure how much of an example or tutorial is a hypertools call.
+
+Definitions (these are the contract Task 8 of the 1.1 examples plan gates on):
+
+CODE line    -- non-blank, not comment-only, not part of a bare docstring.
+LOGICAL stmt -- consecutive code lines joined while bracket depth > 0, or
+                while a line ends in a backslash. A continuation line belongs
+                to the statement it continues, so a 10-line ``hyp.plot(...)``
+                call counts as 10 native lines rather than 1. This is the
+                whole point: the metric must reward a big native call.
+NATIVE       -- every code line of a logical statement whose text matches
+                ``\bhyp\.|\bhypertools\b``.
+
+Measured against the 2026-07-26 audit's independent NATIVE-line
+classification, this metric gives 48/739 = 6.5% for the five launch scripts
+where the audit reported 6.0% -- i.e. the two agree.
+
+    .venv/bin/python scripts/measure_native_ratio.py examples/animate_*.py
+    .venv/bin/python scripts/measure_native_ratio.py docs/tutorials/*.ipynb
+"""
+
+import json
+import re
+import sys
+
+HYP = re.compile(r'\bhyp\.|\bhypertools\b')
+
+
+def _code_lines_py(path):
+    out, in_doc, delim = [], False, None
+    for line in open(path, encoding='utf-8').read().splitlines():
+        stripped = line.strip()
+        if in_doc:
+            if delim in stripped:
+                in_doc = False
+            continue
+        if stripped.startswith(('"""', "'''")):
+            delim = stripped[:3]
+            if not (len(stripped) > 3 and stripped.endswith(delim)):
+                in_doc = True
+            continue
+        if not stripped or stripped.startswith('#'):
+            continue
+        out.append(line)
+    return out
+
+
+def _code_lines_nb(path):
+    out = []
+    for cell in json.load(open(path, encoding='utf-8'))['cells']:
+        if cell.get('cell_type') != 'code':
+            continue
+        for line in cell['source']:
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            out.append(line.rstrip('\n'))
+    return out
+
+
+def _depth_delta(line):
+    depth, quote, i = 0, None, 0
+    while i < len(line):
+        ch = line[i]
+        if quote:
+            if ch == '\\':
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+        elif ch in '"\'':
+            quote = ch
+        elif ch == '#':
+            break
+        elif ch in '([{':
+            depth += 1
+        elif ch in ')]}':
+            depth -= 1
+        i += 1
+    return depth
+
+
+def measure(path):
+    """Return ``(code_lines, native_lines)`` for one .py or .ipynb file."""
+    lines = _code_lines_nb(path) if str(path).endswith('.ipynb') \
+        else _code_lines_py(path)
+    statements, current, depth = [], [], 0
+    for line in lines:
+        current.append(line)
+        depth += _depth_delta(line)
+        if depth <= 0 and not line.rstrip().endswith('\\'):
+            statements.append(current)
+            current, depth = [], 0
+    if current:
+        statements.append(current)
+    total = sum(len(s) for s in statements)
+    native = sum(len(s) for s in statements
+                 if HYP.search('\n'.join(s)))
+    return total, native
+
+
+if __name__ == '__main__':
+    for target in sys.argv[1:]:
+        code, native = measure(target)
+        pct = 100.0 * native / code if code else 0.0
+        print(f'{target:56s} code={code:4d} native={native:4d} '
+              f'ratio={pct:5.1f}%')
+```
+
+Verify it reproduces the recorded baseline **before** any rewrite is measured against it:
+
+```bash
+git stash && .venv/bin/python scripts/measure_native_ratio.py examples/animate_conversation.py && git stash pop
+```
+Expected on the untouched file: `code= 166 native=   9 ratio=  5.4%`.
+
+- [ ] **Step 2: Write the gate as a real test**
+
+```python
+# tests/test_examples_are_native.py
+"""The gallery examples and their notebooks must SHOWCASE hypertools.
+
+Measured on 2026-07-26/28, before the 1.1 examples plan: 48 of 739 code
+lines across the five launch examples belonged to a hypertools call (6.5%),
+and 37.9% of the code either re-implemented something native or worked
+around a gap. This module makes the fix permanent -- it fails if a defect
+marker comes back, or if a file drifts back above its size budget or below
+its native-ratio floor.
+
+No network, no mocks: it reads the committed files.
+"""
+import os
+import re
+
+import pytest
+
+from scripts.measure_native_ratio import measure
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+#: (path, max_code_lines, min_native_ratio_percent)
+BUDGETS = [
+    ('examples/animate_market_forecast.py', 115, 26.0),
+    ('examples/animate_weather_decades.py', 62, 18.0),
+    ('examples/animate_painting_embeddings.py', 118, 20.0),
+    ('examples/animate_conversation.py', 72, 25.0),
+    ('examples/animate_morph_zoo.py', 30, 26.0),
+    ('docs/tutorials/market_forecast.ipynb', 120, 24.0),
+    ('docs/tutorials/weather_decades.ipynb', 66, 17.0),
+    ('docs/tutorials/painting_embeddings.ipynb', 110, 20.0),
+    ('docs/tutorials/conversation_shape.ipynb', 76, 24.0),
+    ('docs/tutorials/morph_shapes_zoo.ipynb', 34, 26.0),
+]
+
+#: Every one of these was found in the launch examples or the older
+#: tutorials and removed. Each maps to the native API that replaced it.
+DEFECT_MARKERS = {
+    r'\bSentenceTransformer\b': "use vectorizer='<hf-model-id>', semantic=None, corpus=None",
+    r'ani\._func': 'use on_frame= / HyperAnimation.on_frame()',
+    r'ani\._args': 'use the FrameContext passed to on_frame=',
+    r'hypertools\._shared': 'private module; use a documented kwarg',
+    r'from hypertools\.plot import morph': "use title=[...] for per-segment names",
+    r'\bantialias_line\b': 'plot() antialiases every drawn line already',
+    r'\bffmpeg\b': "save_path='*.gif' needs no ffmpeg (plot.py:1246)",
+    r'morph_schedule|frame_to_segment': 'the morph schedule is the library\'s business',
+}
+
+def _read(path):
+    full = os.path.join(REPO, path)
+    with open(full, encoding='utf-8') as handle:
+        return handle.read()
+
+
+def _code_text(path):
+    """Code only -- markdown/prose may still discuss a removed workaround."""
+    if path.endswith('.ipynb'):
+        import json
+        nb = json.loads(_read(path))
+        return '\n'.join(''.join(c['source']) for c in nb['cells']
+                         if c.get('cell_type') == 'code')
+    return _read(path)
+
+
+@pytest.mark.parametrize('path,max_code,min_ratio', BUDGETS)
+def test_file_is_within_its_size_budget(path, max_code, min_ratio):
+    code, _native = measure(os.path.join(REPO, path))
+    assert code <= max_code, (
+        f'{path}: {code} code lines exceeds the {max_code}-line budget')
+
+
+@pytest.mark.parametrize('path,max_code,min_ratio', BUDGETS)
+def test_file_meets_its_native_ratio_floor(path, max_code, min_ratio):
+    code, native = measure(os.path.join(REPO, path))
+    ratio = 100.0 * native / code
+    assert ratio >= min_ratio, (
+        f'{path}: {ratio:.1f}% native is below the {min_ratio}% floor '
+        f'({native}/{code} lines)')
+
+
+@pytest.mark.parametrize('path,_max,_min', BUDGETS)
+@pytest.mark.parametrize('marker,fix', sorted(DEFECT_MARKERS.items()))
+def test_no_defect_marker_in_the_launch_examples(path, _max, _min, marker, fix):
+    text = _code_text(path)
+    assert not re.search(marker, text), (
+        f'{path} contains {marker!r} again -- {fix}')
+
+
+@pytest.mark.parametrize('nb', [
+    'conversation_trajectories', 'hugging_face_embeddings',
+    'wikipedia_embeddings', 'modern_sklearn_dynamics',
+    'stock_forecasting', 'projectile_kalman',
+])
+def test_older_tutorials_dropped_their_hand_rolled_helpers(nb):
+    text = _code_text(f'docs/tutorials/{nb}.ipynb')
+    assert 'SentenceTransformer' not in text
+    assert 'ffmpeg' not in text
+
+
+def test_analyze_tutorial_actually_plots():
+    """A pipeline tutorial that never calls hyp.plot never shows why the
+    pipeline exists (audit: analyze.ipynb, 20.0% hypertools, 0 hyp.plot)."""
+    assert 'hyp.plot' in _code_text('docs/tutorials/analyze.ipynb')
+
+
+def test_reduce_tutorial_mentions_describe():
+    assert 'hyp.describe' in _code_text('docs/tutorials/reduce.ipynb')
+
+
+def test_every_launch_notebook_ships_executed_outputs():
+    """`nbsphinx_execute = 'never'` (docs/conf.py:115) renders the COMMITTED
+    outputs, so an unexecuted notebook is a figure-less docs page. Measured
+    before this plan: all five shipped 0 executed cells."""
+    import json
+    for stem in ('market_forecast', 'weather_decades', 'painting_embeddings',
+                 'conversation_shape', 'morph_shapes_zoo'):
+        nb = json.loads(_read(f'docs/tutorials/{stem}.ipynb'))
+        code = [c for c in nb['cells'] if c.get('cell_type') == 'code']
+        executed = [c for c in code if c.get('outputs')]
+        assert len(executed) >= len(code) - 2, (
+            f'{stem}.ipynb: only {len(executed)} of {len(code)} code cells '
+            'carry outputs; re-run scripts/execute_tutorial.py')
+```
+
+> **Import note:** `from scripts.measure_native_ratio import measure` requires `scripts/` to be importable. `pyproject.toml` sets `testpaths = ["tests"]` and pytest inserts the rootdir on `sys.path` under the default `rootdir`-based import mode; if the import fails, add an empty `scripts/__init__.py` in the same commit rather than duplicating the metric inside the test.
+
+- [ ] **Step 3: Run the gate and confirm it passes**
+
+Run: `.venv/bin/python -m pytest tests/test_examples_are_native.py -v`
+Expected: **10 + 10 + 80 + 6 + 1 + 1 + 1 = 109 passed** (10 budget + 10 ratio + 8 markers × 10 files + 6 older-tutorial + 3 singles). If a budget fails, cut presentation code or renegotiate the budget **in this plan** — never lower the floor silently.
+
+- [ ] **Step 4: Re-measure everything and record the result**
+
+```bash
+.venv/bin/python scripts/measure_native_ratio.py examples/animate_conversation.py \
+    examples/animate_market_forecast.py examples/animate_morph_zoo.py \
+    examples/animate_painting_embeddings.py examples/animate_weather_decades.py \
+    docs/tutorials/*.ipynb
+```
+
+Expected: every one of the five scripts and the five launch notebooks is at or above its floor, and every older tutorial touched in Task 7 is above its audit baseline. Paste the table into the commit message.
+
+- [ ] **Step 5: Run every example headless**
+
+```bash
+for f in examples/animate_conversation.py examples/animate_market_forecast.py \
+         examples/animate_morph_zoo.py examples/animate_painting_embeddings.py \
+         examples/animate_weather_decades.py; do
+  echo "== $f"; MPLBACKEND=Agg .venv/bin/python "$f" || break
+done
+```
+Expected: each exits 0, with no traceback and no `UserWarning` about an ignored kwarg.
+
+- [ ] **Step 6: Give the five launch tutorials a visible figure**
+
+Measured: none of the five has a gallery thumbnail (`scripts/generate_gallery_thumbs.py:26` hard-codes six stems). Extend it:
+
+```python
+MPL_ANIMS = ['animate', 'animate_MDS', 'animate_spin', 'chemtrails',
+             'precog', 'save_movie',
+             'animate_conversation', 'animate_market_forecast',
+             'animate_morph_zoo', 'animate_painting_embeddings',
+             'animate_weather_decades']
+```
+
+Then, after a docs build has produced `docs/auto_examples/images/`:
+
+```bash
+.venv/bin/python scripts/generate_gallery_thumbs.py
+ls -la docs/_static/thumbnails/sphx_glr_animate_{conversation,market_forecast,morph_zoo,painting_embeddings,weather_decades}_thumb.gif
+```
+
+and add an `.. image::` line to each of the five sections of `docs/tutorials.rst`, following the pattern already used for `plot_story_trajectories` (`docs/tutorials.rst`, the "Story trajectories" section):
+
+```rst
+.. image:: _static/thumbnails/sphx_glr_animate_market_forecast_thumb.gif
+   :width: 400
+   :alt: Six sector trajectories and a market mean, each with its own next-day forecast
+```
+
+Expected: five new thumbnails, each **under 1.1 MB** (the largest existing one, `sphx_glr_plot_story_trajectories_thumb.gif`, is 1 065 855 bytes).
+
+- [ ] **Step 7: Run the FULL suite**
+
+Run: `.venv/bin/python -m pytest -q`
+Expected: the baseline plus Task 1's 17 and Task 8's 109, all passing, 13 skipped. Any new failure in `tests/test_docs_thumbnails.py` or `tests/test_docs_gallery_log_filter.py` is Step 6's doing — fix it there.
+
+- [ ] **Step 8: Build the docs to the RTD-parity standard**
+
+Run: `cd docs && make clean && make html 2>&1 | tail -30`
+Expected: build succeeds with **0 warnings**. Then verify the five tutorial pages actually show something:
+
+```bash
+grep -c "sphx_glr_animate_market_forecast_thumb" docs/_build/html/tutorials.html
+.venv/bin/python -c "
+import re
+html = open('docs/_build/html/tutorials/market_forecast.html').read()
+print('output blocks:', len(re.findall(r'nboutput', html)))"
+```
+Expected: `1` for the thumbnail, and a non-zero count of `nboutput` blocks (the executed outputs are rendering).
+
+- [ ] **Step 9: Re-run everything that could have been disturbed**
+
+Per the repo rule (*"repeat **all** checks if any changes were made to fix any of the checks"*): if Steps 6–8 changed anything, re-run Steps 3, 5, 7 and 8 in that order and confirm all four are green **in the same tree**.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add scripts/measure_native_ratio.py scripts/generate_gallery_thumbs.py \
+        tests/test_examples_are_native.py docs/tutorials.rst \
+        docs/_static/thumbnails/
+git commit -m "test(docs): gate examples and tutorials on native ratio + defect markers; add launch thumbnails"
+```
+
+---
+
+## Decisions still needed
+
+Flagged rather than invented. Each states the options and the exact change to switch; the plan implements the option marked **(implemented)** so it stays runnable end to end.
+
+1. **Where `image_palette` is exported.** `hypertools/__init__.py` carries a curated `__all__` (`__init__.py:46-52`) and adding a name to it is a public-API decision.
+   - **(implemented)** `hypertools.plot.colors.image_palette`, beside the two existing public palette helpers (`get_palette_colors`, `continuous_colormap`), documented in a new `docs/api.rst` **Colors** section, plus the declarative `palette='image:<path>'` spelling that needs no import at all.
+   - *Alternative:* also export it top-level as `hyp.image_palette`. To switch: add `from .plot.colors import image_palette` to `hypertools/__init__.py` and append `'image_palette'` to `__all__`; `tests/test_d1_code_residue.py` and any star-import test will need the new name.
+   - **Needs:** maintainer preference on growing the top-level surface in a minor release.
+
+2. **The paintings example's outlier trim.** The current 85th-percentile per-cloud trim (`animate_painting_embeddings.py:172-179`) only exists between `hyp.reduce` and `hyp.plot`. Once the example is a single `hyp.plot` call over raw text, there is no such gap, and `hyp.reduce` cannot select the sentence-transformer (it has no `vectorizer=`; verified `TypeError`).
+   - **(implemented)** drop the trim. UMAP with `n_neighbors=12, min_dist=0.25` already clumps each description, and the plan does not invent a library feature to preserve a cosmetic step.
+   - *Alternative A:* add `vectorizer=`/`semantic=`/`corpus=` to `reduce()`/`analyze()` (audit recommendation #6), restoring the two-step shape. Small and independently useful, but it is library work no 1.1 plan currently owns.
+   - *Alternative B:* add a `manip='TrimOutliers'` manipulator (audit recommendation #7) so the trim becomes a native pipeline stage — but `manip` runs **before** `reduce`, so it would trim in the 384-dimensional embedding space, which is not the same operation.
+   - **Needs:** maintainer decision on whether either library addition belongs in 1.1.
+
+3. **The morph example's hand-written `normalize()`.** Per-cloud centring and isotropic rescaling is genuinely not redundant — `plot()` uses **one shared pooled affine** (`plot.py:4040-4051`, `_shared/helpers.py:24-69`) — but `normalize='within'` (`tools/normalize.py:175`, modes at `:86`) z-scores each dataset per column, which distorts a point cloud's aspect ratio.
+   - **(implemented)** keep the 5-line helper, with the comment explaining exactly why it is not redundant.
+   - *Alternative:* add an aspect-preserving `normalize='isotropic'` (or `'unit-cube'`) mode, and delete the helper. Roughly 20 lines plus tests in `hypertools/tools/normalize.py`; no 1.1 plan owns it.
+   - **Needs:** maintainer decision on adding a normalize mode in 1.1.
+
+4. **The conversation caption.** The current example bolds the words of the window being drawn, using ~44 lines of `TextArea`/`HPacker`/`VPacker` packing rebuilt every frame (`animate_conversation.py:240-283`) plus the span bookkeeping that exists solely to feed it.
+   - **(implemented)** delete it. Per-segment `title=` shows `Speaker  "the whole line"`, which is the information the caption carried; the word-level highlight is dropped.
+   - *Alternative:* keep the caption, rebuilt from `on_frame=` instead of `ani._func`. It would stay legitimate class-**D** presentation and no longer reach into private state — but it re-adds ~50 lines and would push the example past its 72-line budget, so the budget would move too.
+   - **Needs:** maintainer call on whether the word-level highlight is load-bearing for the demo.
+
+5. **How the five launch tutorials get a visible figure.** They currently ship **zero executed cells**, and `nbsphinx_execute = 'never'` means their docs pages show code and nothing else.
+   - **(implemented)** both halves: execute them (Tasks 2–6 Step "Execute and measure", pinned by `test_every_launch_notebook_ships_executed_outputs`) **and** add a gallery thumbnail to `docs/tutorials.rst` (Task 8 Step 6), the pattern the repo already uses for `plot_story_trajectories`.
+   - *Alternative A:* thumbnails only, leaving the notebooks unexecuted. Cheapest in repo size; but then the *notebook* a reader downloads still shows nothing until they run it.
+   - *Alternative B:* execute, but replace each final `HTML(ani.to_jshtml())` with `ani.save('<name>.gif')` + an `Image` display, committing the GIF. The repo already commits gallery GIFs of 9–11 MB (`docs/tutorials/conversation_serial.gif` is 9 466 849 bytes), so this is precedented but heavy.
+   - **Needs:** maintainer's repo-size preference. A `jshtml` blob for a 240-frame animation is large; if it turns out to exceed roughly 5 MB per notebook, switch to Alternative B and record the measured sizes.
+
+6. **Whether the market example should report a disappointing number.** The current example prints a 66% directional accuracy computed over 4-month horizons on a 5-series FRED basket. At `t=1` (next day, the maintainer's specified horizon) on a near-random-walk price series, a single linear-Gaussian filter should be expected to land close to 50%.
+   - **(implemented)** report whatever it measures, with "50% = coin flip" printed alongside, and make no attempt to tune the example until the number flatters the library.
+   - *Alternative:* restore a multi-day horizon, where the current example's measured 66% came from. That contradicts the explicit `t=1` instruction, so it is not implemented.
+   - **Needs:** nothing, unless the maintainer would rather the gallery not advertise a coin flip — in which case the honest fix is a different demonstrator, not a different horizon.
+
+---
+
+## Self-Review
+
+**Every requirement in the brief, mapped to where it is discharged.**
+
+| requirement | discharged by |
+|-|-|
+| Read both audits first | Both read in full; their per-file classifications drive every "what goes, and to what" table, and their headline numbers are reproduced independently (48/739 = 6.5% vs. the audit's 6.0%) in *Verification note*. |
+| Match the siblings' v2 format and rigor | Same skeleton: goal / architecture / tech stack → verification note → contracts → global constraints → prerequisites → file structure → TDD tasks with `- [ ] **Step N:**` → decisions → self-review. The "Revision note (v2)" slot is filled by a **Verification note (v1)** that plays the same role — a table of received claims against measurements — because this plan has not yet been adversarially reviewed and inventing a revision history would be a fabrication. |
+| Explicit contracts | Seven, covering the script/notebook lockstep, the no-private-reaches rule, network-in-examples-only, scoring-stays-out-of-the-library, and the "budgets are contracts, never weakened to fit the code" rule. |
+| Prerequisites, per task | A per-task table naming the *specific* tasks of Plans 1–3 each rewrite needs (e.g. Market ← MultiIndex T1/T2/T3/T4/T6 + Forecast T3/T4/T5 + Animation-core T1) and *why*, including the two tasks (1 and 7) that have none and can start immediately. |
+| Task 1 is library work, TDD, justified API, no largest-cluster bug | Task 1: 17 real tests written before the implementation; the API choice (one function + one interception point at `colors.py:305-306`) is justified against the four consumers it automatically serves; the ordering rule is `frac × chroma` with a documented achromatic fallback, and `test_a_vivid_minority_colour_beats_the_muted_background` asserts the exact colour (`0.863, 0.078, 0.078`) the buggy rule fails to produce. Both states were **run**: red = `ValueError: 'image:...' is not a valid palette name`, green = the prototype's measured output. |
+| Tasks 2–6 rewrite one example + its notebook each, in lockstep | Each task rewrites both, in one commit, and specifies the notebook's full cell table. Lockstep is enforced mechanically by `tests/test_examples_are_native.py`, which scans `.py` **and** `.ipynb`. |
+| Market = MultiIndex showcase, per-sector + market forecasts, colour by price, ticker panel, accuracy overall + per sector in the tutorial, `t=1` | Task 2: `(Market, Sector, Ticker)` columns over 24 verified tickers; 6 sector traces + 1 market-mean trace with hierarchy-derived widths; `hue=` nested one sequence per sector (MultiIndex T4 form 2); `predict='Kalman', t=1, forecast_trail=16`; a right-hand panel listing each sector's tickers and score; the accuracy loop is example code with a **measured** 210-fit / 7.3 s budget. |
+| Weather = the paper figure, nearly all native, a handful of lines | Task 3: one `hyp.plot` call, verified end to end today (0.3 s, no warnings, 2 axes, 879 distinct colours at frame 150); the 70-line second panel and the 26-line hand-built hierarchy are deleted; budget ≤ 62 code lines. |
+| Paintings = full `text` displayed, native embeddings, native palette, names via `labels=` | Task 4: the side panel renders `PAINTINGS[name]['text']` (not `blurb`); `vectorizer='all-MiniLM-L6-v2', semantic=None, corpus=None`; `color=[image_palette(path)[0] ...]` from Task 1; `labels=` nested, one non-None entry per cloud at its middle window — the per-observation semantics verified on real annotations. |
+| Conversation = native text, `animate='serial'` + `chemtrails`, per-segment titles | Task 5: list-of-lists of strings in; `animate=True, order='serial', chemtrails=True`; `title=[one per turn]`. The collision I feared (categorical hue collapsing 28 turns and breaking per-dataset titles) was **measured and disproved**: 6 datasets stay 6 datasets with a 3-entry legend. |
+| Morph = native per-segment titles, explicit `morph_samples`, keep the teapot, cube scaling, closed loop | Task 6: `title=titles` replaces the private `_morph` reach; `morph_samples=N` kept and now load-bearing; teapot, `CUBE_SCALE`, and `clouds.append(clouds[0])` all kept with the reasons restated. |
+| Task 7 groups the 15 older tutorials so each step is reviewable | Five steps, one per recurring fix (ffmpeg, HF embed, `ax=`, `manip='Smooth'`, `analyze`/`reduce`), each with its own execution check, its own `grep` assertion, and its own commit. |
+| Task 8 re-measures per file, asserts improvement, full suite, 0-warning docs | Task 8: a committed metric, a 109-test gate, a per-file re-measure, all five examples run headless, the full suite, `make clean && make html` with 0 warnings, plus a rendered-output check and a re-run-everything step. |
+| BEFORE and AFTER per example, from the audit's baseline | Each of Tasks 2–6 opens with the measured BEFORE (raw lines, code lines, native lines, ratio, **and** the audit's A/B/C/D/NATIVE classification) and the contracted AFTER budget, which Task 8 asserts. |
+| Network in examples only; keep the offline-fallback property | Contract 4, and every rewrite implements the existing shape: `try/except Exception: return None` + a deterministic synthetic substitute + a `print` naming the source. Task 1's tests write PNGs to `tmp_path`; `image_palette` refuses URLs by design. |
+| Real file:line citations | Every claim about existing code cites a line I opened in this session: `docs/conf.py:115`, `plot.py:807/882/895/930/950/1013/1064/1246/2750-2751/3039-3050`, `colors.py:24/105/227/250/269/287/305-306/323-331`, `text2mat.py:89/184/391/404`, `animate.py:84`, `smooth.py:14/232`, `morph.py:36`, `scripts/generate_gallery_thumbs.py:26`, plus per-example line ranges. |
+| Don't invent unspecified decisions | Six items in *Decisions still needed*, each with the implemented option and the exact edit to switch. |
+
+**Placeholders.** None. Every step carries runnable code or an exact command with its expected output. No step says "similar to Task N"; the five example rewrites are written out rather than cross-referenced, precisely because they differ.
+
+**Type consistency.** `image_palette` returns `np.ndarray (k, 3)` float64 in `[0, 1]`, `k ≤ n_colors`, in every path (file, PIL, uint8 array, float array) — asserted by `test_returns_rgb_floats_in_the_unit_range` and `test_accepts_a_pil_image_and_a_numpy_array`. `_get_palette` still returns a list of RGB tuples for the `'image:'` branch, because it rebinds `palette` to a colour list and falls through to the existing list handling — so the short-list blending and the too-few-colours error are the same code paths as for any user-supplied list. `measure(path)` returns `(int, int)` and is imported by both the script's `__main__` and the test module, so there is exactly one implementation of the metric.
+
+**Task dependencies.** 1 → 4 (`image_palette`). 2–6 each depend on Plans 1–3 as tabulated. Task 2 Step 1 creates `scripts/execute_tutorial.py`, which Tasks 3–7 use; Task 8 Step 1 creates `scripts/measure_native_ratio.py`, which Tasks 2–7 use in their measure steps — **do Task 8 Step 1 first** if working strictly in order, as noted in Task 2 Step 6. Tasks 1 and 7 have no dependency on Plans 1–3 and can run in parallel with them.
+
+**Suite arithmetic.** Task 1 adds **17** tests; Task 8 adds **109** (10 budget + 10 ratio + 8 markers × 10 files + 6 older-tutorial + 3 structural). Total **+126** on top of whatever Plans 1–3 leave the suite at (baseline `2551 passed, 13 skipped`, plus 97 + 94 + 88 from Plans 1, 3 and 2 respectively if all three land first).
+
+**Remaining risk.** Three places:
+
+1. **Task 2 is the largest rewrite and the most dependent** — it consumes eight tasks across two other plans. If MultiIndex T4 (`hue` through a hierarchy) slips, the example still runs but colours by group instead of by price; that is a visible regression, not a crash, so `test_file_meets_its_native_ratio_floor` would not catch it. The guard is Task 2 Step 4, which asserts `axes: 2` (a colorbar exists ⇒ a continuous hue survived) and at least two distinct linewidths.
+2. **The accuracy readout is the only unbounded cost in the plan.** It is pinned to a measured budget (210 fits / 7.3 s at `WINDOW=60, N_SCORED=30`), and the measurements at 250 rows (30.7 s) are recorded so a future change to those constants is an informed one.
+3. **Notebook execution is the step most likely to be skipped under time pressure**, and it is exactly the step that keeps the defect from staying published. `test_every_launch_notebook_ships_executed_outputs` makes skipping it a test failure rather than an oversight.
+</content>
+</invoke>
