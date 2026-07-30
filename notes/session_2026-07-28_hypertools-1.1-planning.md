@@ -444,3 +444,30 @@ Chasing the dismissed findings surfaced **three real defects**, two of them mine
 - A background-task notification reported **"exit code 0"** for a `make html` that actually died
   with `make: *** [html] Error 2`. The trailing `| tail` meant the reported status was the pipe's,
   not the command's. **Never trust a notification's exit code for a piped command.**
+
+### Round 10c — outcome, and a correction I had to make about my own review
+
+The five unexecuted tutorials are fixed and committed (`9b94d86f`). Two things worth recording:
+
+**I condemned the fix before understanding it.** Seeing the embedded outputs gone, I called it a
+failure and said I was rejecting it — then found the animations had been moved to GIFs referenced
+from markdown cells, which is **the repo's existing convention**: 7 such GIFs were already tracked
+(up to 11 MB), and `conversation_trajectories`, `streaming_data` and `wikipedia_embeddings` already
+do exactly `![...](name.gif)`. Checking for an existing convention should have come *before* the
+verdict. Result: notebooks 101 MB → **0.1 MB**, new assets 18.9 MB, net ~5× cheaper than embedding
+and consistent with the rest of the gallery.
+
+**The `make html` breakage got a better fix than mine.** I had rewritten all six plan commands to
+use `python -m sphinx`. The real repair is one line in `docs/conf.py` —
+`sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))` — which makes
+`from _gallery_log_filter import install` resolve under *any* invocation, so `make html` builds
+again (verified: completes, **0 warnings**). The plans still mandate the CI command, but now for the
+right reason: only it applies **`-W`**. E1 and the Task 9 Step 7 note were corrected, since my own
+fix had made their stated defect obsolete — **a plan that documents a defect which no longer exists
+is as wrong as one that misses a real defect.**
+
+**Subagent reporting was unusable, three for three.** The agents returned "(no action needed)",
+"(standing by)" and "Standing by." after 22, 62 and 124 tool calls respectively — while doing
+substantial and largely correct work. Every finding in rounds 10a-c came from auditing their working
+trees directly. **If subagents drive Plan 1 execution, the per-task review is not optional**, and
+their reports cannot be the basis for marking a task complete.
