@@ -6,6 +6,30 @@ Small, additive plotting features and fixes (fully backward-compatible).
 
 ### New features
 
+- **Lines are automatically smoothed (`antialias=True`, new default).** Every
+  drawn line -- static or animated, in both backends -- is upsampled along a
+  monotone PCHIP interpolant, so there are no sharp angles between successive
+  observations. PCHIP is C1 (its tangent is continuous), so the curve bends
+  smoothly *through* each sample rather than turning a corner at it, and every
+  original sample stays an exact vertex of the drawn line.
+
+  This changes only how data is DRAWN, never the data itself: returned arrays,
+  `return_model=True` bundles, forecasts, hulls, densities, and per-point
+  labels/markers are all unaffected. It is applied at the last stage before
+  drawing, so it composes with everything upstream.
+
+  In an ANIMATION, each frame draws the smooth curve for exactly the portion
+  of the trajectory that frame would have shown -- so a short animation of a
+  finely-structured trajectory (many tight loops) now renders as smooth curves
+  instead of one coarse straight segment per frame, **at any `frame_rate`**.
+  Frame counts and reveal pacing are unchanged.
+
+  Only styles that draw a line (solid or dashed/dotted, including marker+line
+  combos like `'o-'`) are affected; **marker-only styles are never touched**,
+  so markers always render at the true sample points. `predict=` forecast
+  overlays are smoothed the same way. Pass **`antialias=False`** to restore the
+  previous raw straight-segment rendering exactly.
+
 - **`animate='serial'` now composes with the trail flags**
   (`chemtrails`/`precog`/`bullettime`), in both 2-D and 3-D: datasets are
   revealed one at a time (as before), but the dataset currently being drawn

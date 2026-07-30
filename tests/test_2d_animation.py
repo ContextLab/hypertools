@@ -107,7 +107,7 @@ def test_mpl_window_exact_bounds_mid_animation_2d():
     frame_rate = 20
     bundle = hyp.plot(data, ndims=2, animate='window', duration=4,
                       frame_rate=frame_rate, focused=focused, show=False,
-                      return_model=True)
+                      return_model=True, antialias=False)
     ani = bundle['animation']
     fig = bundle['fig']
     fig.canvas.draw()

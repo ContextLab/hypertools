@@ -77,6 +77,21 @@ Why this order
   last because it depends on (and visually augments) the already-plotted
   trajectory rather than feeding back into any earlier stage.
 
+- **Antialiasing is applied last of all, at draw time.** Immediately before
+  each line is drawn (and *after* every stage above, including the
+  ``predict`` overlay), `hypertools.plot`'s ``antialias=True`` default
+  upsamples it along a monotone PCHIP interpolant so there are no sharp
+  angles between successive observations. It runs last precisely because it
+  is a *rendering* step, not an analysis step: it changes only what is
+  drawn, never the data any earlier stage produced -- every original sample
+  remains an exact vertex of the drawn line, and returned arrays,
+  ``return_model=True`` bundles, hulls, densities, per-point labels and
+  markers are all unaffected. In an animation each frame draws the smooth
+  curve for exactly the portion of the trajectory that frame would have
+  shown, leaving frame counts and reveal pacing unchanged. Only styles that
+  draw a line are affected (marker-only styles never are); pass
+  ``antialias=False`` to draw raw straight segments between samples.
+
 Overriding the order
 ----------------------
 

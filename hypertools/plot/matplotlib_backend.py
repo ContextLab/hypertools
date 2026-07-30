@@ -448,6 +448,7 @@ def _draw(
     show=True,
     kwargs_list=None,
     fmt=None,
+    antialias=True,
     raw_data=None,
     animate=False,
     tail_duration=2,
@@ -510,6 +511,56 @@ def _draw(
     chemtrails = broadcast_trail_flag(chemtrails, len(x), "chemtrails")
     precog = broadcast_trail_flag(precog, len(x), "precog")
     bullettime = broadcast_trail_flag(bullettime, len(x), "bullettime")
+
+    # antialias (see `plot`'s `antialias=`): DRAW-TIME line smoothing for
+    # ANIMATIONS. Each line-styled dataset gets a dense, PCHIP-upsampled copy
+    # built ONCE here; the `update_lines_*` callbacks below then draw, for
+    # whatever window of original rows a frame would have shown, exactly the
+    # corresponding stretch of that smooth curve (`_aa_window`). The
+    # underlying `x` rows are deliberately left untouched, so frame pacing
+    # (`_anim_window_bounds`), per-point labels (`_sync_anim_labels`), surface
+    # hulls and marker artists all keep indexing the REAL data -- only the
+    # drawn polyline is smoothed. (Static plots are antialiased upstream in
+    # `plot.py`, where the densified rows also drive label/marker handling.)
+    #
+    # Marker-only styles are excluded: `has_line_component` is True only when
+    # a linestyle token is present (solid/dashed/dotted, with or without a
+    # marker), so an 'o'/'.' plot is never touched and its markers stay on the
+    # true samples.
+    def _fmt_at(idx):
+        if isinstance(fmt, (list, tuple, np.ndarray)):
+            return fmt[idx] if idx < len(fmt) else None
+        return fmt
+
+    _aa_curves = []
+    for _i, _xi in enumerate(x):
+        _xi = np.asarray(_xi)
+        if antialias and animate and has_line_component(_fmt_at(_i)):
+            _aa_curves.append(antialias_line(_xi))
+        else:
+            _aa_curves.append((_xi, 1))
+
+    def _aa_window(i, a, b, artist=None):
+        """The smooth polyline to DRAW for the original-row window ``x[i][a:b]``.
+
+        With antialiasing off (or nothing to upsample) this is exactly
+        ``x[i][a:b]``, so the drawn vertices are unchanged.
+
+        When `artist` is given, the ORIGINAL row bounds are recorded on it as
+        ``_hyp_row_window``. Downstream renderers that re-draw the same window
+        in another form -- notably `plot._apply_multicolor_animation`, which
+        re-slices a per-segment-colored collection to match -- read that
+        instead of trying to recover the window from the artist's vertex
+        count, which antialiasing decouples from the row count.
+        """
+        if artist is not None:
+            artist._hyp_row_window = (a, b)
+        dense, step = _aa_curves[i]
+        if step == 1:
+            return dense[a:b]
+        if b <= a:
+            return dense[0:0]
+        return dense[a * step:(b - 1) * step + 1]
 
     # handle static plots
     def dispatch_static(x, ax=None):
@@ -1134,21 +1185,26 @@ def _draw(
             start, end, trail_stop = _anim_window_bounds(
                 num, total_frames, data.shape[0], tail_duration)
 
+            # antialias: each artist draws the SMOOTH curve spanning the same
+            # rows it would otherwise have drawn raw (`_aa_window`).
+            n_rows = data.shape[0]
             if trail is not None:
                 ct, pc, bt = chemtrails[i], precog[i], bullettime[i]
+                trail_seg = None
                 if (pc and ct) or bt:
-                    trail.set_data(data[:, 0:2].T)
-                    trail.set_3d_properties(data[:, 2])
+                    trail_seg = _aa_window(i, 0, n_rows, artist=trail)
                 elif ct:
-                    trail.set_data(data[0:trail_stop, 0:2].T)
-                    trail.set_3d_properties(data[0:trail_stop, 2])
+                    trail_seg = _aa_window(i, 0, trail_stop, artist=trail)
                 elif pc:
-                    trail.set_data(data[end - 1 :, 0:2].T)
-                    trail.set_3d_properties(data[end - 1 :, 2])
+                    trail_seg = _aa_window(i, end - 1, n_rows, artist=trail)
+                if trail_seg is not None:
+                    trail.set_data(trail_seg[:, 0:2].T)
+                    trail.set_3d_properties(trail_seg[:, 2])
 
-            window = data[start:end]
-            line.set_data(window[:, 0:2].T)
-            line.set_3d_properties(window[:, 2])
+            window = data[start:end]            # RAW rows: hull/point colors
+            draw_window = _aa_window(i, start, end, artist=line)  # drawn curve
+            line.set_data(draw_window[:, 0:2].T)
+            line.set_3d_properties(draw_window[:, 2])
             windows.append(window)
             window_spcs.append(_window_surface_point_colors(
                 surface_point_colors, i, start, end))
@@ -1200,9 +1256,11 @@ def _draw(
         # _anim_box_zoom for the (slightly zoomed-out) animation mapping.
         ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
 
-        for line, data in zip(lines, data_lines):
-            line.set_data(data[:, 0:2].T)
-            line.set_3d_properties(data[:, 2])
+        for i, (line, data) in enumerate(zip(lines, data_lines)):
+            # antialias: 'spin' draws the FULL trajectory every frame
+            draw_data = _aa_window(i, 0, data.shape[0], artist=line)
+            line.set_data(draw_data[:, 0:2].T)
+            line.set_3d_properties(draw_data[:, 2])
 
         # surface= (GH #109): the FULL dataset is static in 'spin' mode
         # (only the camera rotates), so the mesh itself is precomputed once
@@ -1275,18 +1333,20 @@ def _draw(
             # (created by `_wants_trail`) and a flag set this frame's window.
             has_trail = trail is not None and (ct or pc or bt)
 
-            trail_seg = data[:0]
+            # antialias: bounds are resolved as ORIGINAL-row index pairs, then
+            # `_aa_window` maps each onto the smooth curve for drawing.
+            trail_bounds = None
             if not has_trail:
                 # plain 'serial' (or a dataset with no trail flag): the whole
                 # revealed portion is drawn fully opaque -- UNCHANGED.
-                head = data[:shown]
+                head_bounds = (0, shown)
             elif shown <= 0:
                 # not started revealing yet: head + trail both empty.
-                head = data[:0]
+                head_bounds = (0, 0)
             elif shown >= n_pts:
                 # fully revealed: the whole dataset stays drawn as opaque
                 # history, trail cleared.
-                head = data[:n_pts]
+                head_bounds = (0, n_pts)
             else:
                 # currently revealing: a short opaque comet-head leads the
                 # reveal tip while the rest traces out as a faded trail.
@@ -1297,14 +1357,17 @@ def _draw(
                 # `_anim_window_bounds`' start = end - 1 - w head sizing.
                 w = max(1, int(round(window_frames * n_pts
                                      / max(1, total_points))))
-                head = data[max(0, shown - 1 - w):shown]
+                head_bounds = (max(0, shown - 1 - w), shown)
                 if (ct and pc) or bt:
-                    trail_seg = data[:n_pts]              # bullettime: whole
+                    trail_bounds = (0, n_pts)              # bullettime: whole
                 elif ct:
-                    trail_seg = data[:shown]              # chemtrails: past
+                    trail_bounds = (0, shown)              # chemtrails: past
                 else:
-                    trail_seg = data[max(0, shown - 1):]  # precog: future
+                    trail_bounds = (max(0, shown - 1), n_pts)  # precog: future
 
+            head = _aa_window(i, *head_bounds, artist=line)
+            trail_seg = (data[:0] if trail_bounds is None
+                         else _aa_window(i, *trail_bounds, artist=trail))
             line.set_data(head[:, 0:2].T)
             line.set_3d_properties(head[:, 2])
             if trail is not None:
@@ -1962,17 +2025,21 @@ def _draw(
             # path -- see `_anim_window_bounds`.
             start, end, trail_stop = _anim_window_bounds(
                 num, total_frames, data.shape[0], tail_duration)
+            # antialias: draw the smooth curve spanning the same rows
+            n_rows = data.shape[0]
             if trail is not None:
                 ct, pc, bt = chemtrails[i], precog[i], bullettime[i]
+                trail_seg = None
                 if (pc and ct) or bt:
-                    trail.set_data(data[:, 0], data[:, 1])
+                    trail_seg = _aa_window(i, 0, n_rows, artist=trail)
                 elif ct:
-                    trail.set_data(data[0:trail_stop, 0],
-                                   data[0:trail_stop, 1])
+                    trail_seg = _aa_window(i, 0, trail_stop, artist=trail)
                 elif pc:
-                    trail.set_data(data[end - 1 :, 0], data[end - 1 :, 1])
+                    trail_seg = _aa_window(i, end - 1, n_rows, artist=trail)
+                if trail_seg is not None:
+                    trail.set_data(trail_seg[:, 0], trail_seg[:, 1])
 
-            window = data[start:end]
+            window = _aa_window(i, start, end, artist=line)
             line.set_data(window[:, 0], window[:, 1])
 
         _sync_anim_labels(num, tail_duration)
@@ -2008,24 +2075,28 @@ def _draw(
             bt = bullettime[i] if bullettime is not None else False
             has_trail = trail is not None and (ct or pc or bt)
 
-            trail_seg = data[:0]
+            # antialias: resolve ORIGINAL-row bounds, draw the smooth curve
+            trail_bounds = None
             if not has_trail:
-                head = data[:shown]                       # UNCHANGED
+                head_bounds = (0, shown)                  # UNCHANGED
             elif shown <= 0:
-                head = data[:0]
+                head_bounds = (0, 0)
             elif shown >= n_pts:
-                head = data[:n_pts]
+                head_bounds = (0, n_pts)
             else:
                 w = max(1, int(round(window_frames * n_pts
                                      / max(1, total_points))))
-                head = data[max(0, shown - 1 - w):shown]
+                head_bounds = (max(0, shown - 1 - w), shown)
                 if (ct and pc) or bt:
-                    trail_seg = data[:n_pts]              # bullettime: whole
+                    trail_bounds = (0, n_pts)              # bullettime: whole
                 elif ct:
-                    trail_seg = data[:shown]              # chemtrails: past
+                    trail_bounds = (0, shown)              # chemtrails: past
                 else:
-                    trail_seg = data[max(0, shown - 1):]  # precog: future
+                    trail_bounds = (max(0, shown - 1), n_pts)  # precog: future
 
+            head = _aa_window(i, *head_bounds, artist=line)
+            trail_seg = (data[:0] if trail_bounds is None
+                         else _aa_window(i, *trail_bounds, artist=trail))
             line.set_data(head[:, 0], head[:, 1])
             if trail is not None:
                 trail.set_data(trail_seg[:, 0], trail_seg[:, 1])

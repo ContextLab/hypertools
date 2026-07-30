@@ -45,7 +45,7 @@ def _walks(n=200, d=3, k=2, seed=0):
 def test_mpl_window_draws_only_current_window():
     data = _walks()
     bundle = hyp.plot(data, animate='window', duration=4, frame_rate=30,
-                      focused=1, show=False, return_model=True)
+                      focused=1, show=False, return_model=True, antialias=False)
     ani = bundle['animation']
     fig = bundle['fig']
     assert ani is not None
@@ -80,7 +80,7 @@ def test_mpl_window_exact_bounds_mid_animation():
     frame_rate = 20
     bundle = hyp.plot(data, animate='window', duration=4,
                       frame_rate=frame_rate, focused=focused, show=False,
-                      return_model=True)
+                      return_model=True, antialias=False)
     ani = bundle['animation']
     fig = bundle['fig']
     fig.canvas.draw()
@@ -104,7 +104,7 @@ def test_mpl_window_exact_bounds_mid_animation():
 def test_mpl_window_never_shows_full_trajectory():
     data = _walks(n=90)
     bundle = hyp.plot(data, animate='window', duration=3, frame_rate=30,
-                      focused=1, show=False, return_model=True)
+                      focused=1, show=False, return_model=True, antialias=False)
     ani = bundle['animation']
     fig = bundle['fig']
     fig.canvas.draw()
@@ -179,7 +179,7 @@ def test_plotly_window_exact_bounds_mid_animation():
     focused = 0.5
     frame_rate = 20
     fig = hyp.plot(data, animate='window', duration=4, frame_rate=frame_rate,
-                   focused=focused, backend='plotly', show=False)
+                   focused=focused, backend='plotly', show=False, antialias=False)
     max_len = max(len(d) for d in [np.asarray(t) for t in
                                     [fig.data[0].x, fig.data[1].x]])
     n_frames = len(fig.frames)
@@ -347,9 +347,9 @@ def test_backends_agree_on_window_frame_count_and_pacing():
     data = _walks(n=60)
     pytest.importorskip('plotly')
     gp = hyp.plot(data, animate='window', duration=3, frame_rate=20,
-                 focused=1, backend='plotly', show=False)
+                 focused=1, backend='plotly', show=False, antialias=False)
     gm_fig, gm_ani = hyp.plot(data, animate='window', duration=3,
-                              frame_rate=20, focused=1, show=False)
+                              frame_rate=20, focused=1, show=False, antialias=False)
     n_plotly = len(gp.frames)
     n_mpl = gm_ani._save_count
     assert n_plotly == n_mpl == 60

@@ -222,10 +222,10 @@ def test_plot_bundle_forecasts_match_hyp_predict_rows():
     fc = np.asarray(bundle['predict']['forecasts'][0])
     assert standalone.shape == (t, 3)
     assert fc.shape == (t, 3)
-    # the drawn overlay still connects to the trajectory via one extra
-    # (prepended, last-observed) vertex
+    # the drawn overlay is smoothed like any line (PCHIP-densified beyond the
+    # raw t+1 vertices), while the returned forecast stays exactly t rows
     ax = bundle['fig'].axes[0]
-    assert len(ax.lines[-1].get_xdata()) == t + 1
+    assert len(ax.lines[-1].get_xdata()) > t + 1
 
 
 # --- item 13: legacy-dict deprecation attributed to user code (X4-008) -----

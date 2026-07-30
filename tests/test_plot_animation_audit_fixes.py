@@ -47,7 +47,7 @@ def _trail_artists(ax):
 
 def test_chemtrails_never_shows_future_3d():
     r = hyp.plot([_spiral()], animate=True, chemtrails=True, duration=4,
-                 tail_duration=1, frame_rate=12, show=False)
+                 tail_duration=1, frame_rate=12, show=False, antialias=False)
     ax = r.figure.axes[0]
     counts = {}
     for num in (0, 5, 10, 11, 12, 47):
@@ -67,7 +67,7 @@ def test_chemtrails_never_shows_future_3d():
 
 def test_chemtrails_never_shows_future_2d():
     r = hyp.plot([_spiral()], ndims=2, animate=True, chemtrails=True,
-                 duration=4, tail_duration=1, frame_rate=12, show=False)
+                 duration=4, tail_duration=1, frame_rate=12, show=False, antialias=False)
     ax = r.figure.axes[0]
     counts = {}
     for num in (0, 10, 12, 47):
@@ -105,7 +105,7 @@ def test_continuous_hue_window_animates_3d():
     np.random.seed(2)
     c = np.cumsum(np.random.randn(200, 6), axis=0)
     ha = hyp.plot(c, animate='window', duration=4, frame_rate=10, focused=1,
-                  hue=np.arange(200.0), show=False)
+                  hue=np.arange(200.0), show=False, antialias=False)
     ax = ha.figure.axes[0]
     # the head collection is the FIRST collection added (cube wireframe
     # collections have exactly 4 segments each)
@@ -138,7 +138,7 @@ def test_continuous_hue_chemtrails_trail_windows():
     n = 40
     r = hyp.plot(_spiral(n), animate=True, chemtrails=True, duration=2,
                  tail_duration=0.5, frame_rate=12,
-                 hue=np.linspace(0, 1, n), show=False)
+                 hue=np.linspace(0, 1, n), show=False, antialias=False)
     ax = r.figure.axes[0]
     r.animation._draw_frame(20)
     seg_counts = [len(getattr(co, '_segments3d', []))

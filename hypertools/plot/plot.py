@@ -119,7 +119,7 @@ def _fmt_draws_line(fmt):
     return has_line_component(fmt)
 
 
-def _draw_forecast_overlays(ax, raw_forecasts):
+def _draw_forecast_overlays(ax, raw_forecasts, antialias=True):
     """Overlay one dashed, low-opacity (alpha 0.6) forecast trace per input
     dataset (GH #169), in the SAME color as its source line.
 
@@ -140,6 +140,14 @@ def _draw_forecast_overlays(ax, raw_forecasts):
     artists = []
     src_lines = list(ax.lines)
     for i, fc in enumerate(raw_forecasts):
+        # antialias (see `plot`'s `antialias=`): smooth the forecast the SAME
+        # way as any other line, so a short forecast (e.g. t+1 = 5 vertices)
+        # draws as a smooth dashed curve rather than a few straight segments
+        # (the seam-prepended first point and the final point stay exact, so
+        # it still joins the trajectory).
+        fc = np.asarray(fc)
+        if antialias:
+            fc = _interp_static_line(fc)
         fc_color = src_lines[i].get_color() if i < len(src_lines) else None
         d = fc.shape[1] if fc.ndim > 1 else 1
         if d >= 3:
@@ -258,32 +266,12 @@ def _expand_styles_to_runs(fmt, mpl_kwargs, seg_dataset, n_datasets):
 def _interp_static_line(arr):
     """PCHIP-smooth a trajectory for STATIC line drawing, data-faithfully.
 
-    Subdivides each segment between consecutive samples with an equal
-    number of interpolated points so the result has roughly
-    `_STATIC_LINE_TARGET_VERTICES` vertices, while keeping EVERY original
-    sample (including the final one) as an exact vertex of the drawn line
-    (release-1.0 audit, F01-001: the historical `np.arange`-based grid
-    never reached the final sample -- lines stopped short of their true
-    endpoint, and for n > 900 samples the "interpolation" silently became
-    decimation). Interpolation only ever ADDS points between samples;
-    trajectories already at/above the target density are returned
-    unchanged (never decimated).
+    Thin wrapper over `antialias_line` (`hypertools._shared.helpers`, which
+    see) keeping only the densified array: the result has roughly
+    `_STATIC_LINE_TARGET_VERTICES` vertices and contains every original sample
+    exactly. This is the STATIC half of `plot`'s ``antialias=``.
     """
-    from scipy.interpolate import PchipInterpolator as pchip
-    arr = np.asarray(arr)
-    n = arr.shape[0]
-    if n < 2 or n >= _STATIC_LINE_TARGET_VERTICES:
-        return arr
-    # interpolated points to ADD per segment
-    k = int(np.ceil((_STATIC_LINE_TARGET_VERTICES - n) / (n - 1)))
-    seg = np.linspace(0.0, 1.0, k + 2)[:-1]  # left knot + k interior points
-    xx = np.concatenate([i + seg for i in range(n - 1)]
-                        + [np.array([n - 1.0])])
-    out = pchip(np.arange(n), arr)(xx)
-    # PCHIP passes through its knots up to floating error; enforce
-    # exactness so the drawn line provably contains every input sample.
-    out[::k + 1] = arr
-    return out
+    return antialias_line(arr, _STATIC_LINE_TARGET_VERTICES)[0]
 
 
 def _interp_anim_line(arr, n_frames):
@@ -591,6 +579,7 @@ def plot(
     return_model=False,
     surface=None,
     density=None,
+    antialias=True,
     font=None,
     label_alpha=None,
     xlabel=None,
@@ -1891,6 +1880,35 @@ def plot(
         interactive view (a live matplotlib window or plotly's browser/
         notebook widget) renders correctly; only static snapshots of
         multi-dataset 3-D density can look off.
+
+    antialias : bool
+        Automatically smooth every drawn LINE so there are no sharp angles
+        between successive observations. Default ``True`` (on for every
+        plot, static and animated, in both backends).
+
+        Trajectories are upsampled along a monotone PCHIP interpolant, which
+        is C1 -- its tangent is continuous, so the drawn curve bends smoothly
+        through each sample instead of turning a corner at it -- and every
+        original sample remains an exact vertex of the drawn line, so this
+        changes only how the data is DRAWN, never the data itself (returned
+        arrays, `return_model=True` bundles, forecasts, hulls, densities and
+        per-point labels/markers are all unaffected).
+
+        Applied at the LAST stage before drawing, so it composes with
+        everything upstream. In an ANIMATION each frame draws the smooth
+        curve for exactly the portion of the trajectory that frame would
+        have shown -- so a short animation of a finely-structured trajectory
+        (many tight loops) renders as smooth curves rather than as one coarse
+        straight segment per frame, at any `frame_rate`.
+
+        Only applies to styles that draw a LINE (solid or dashed/dotted --
+        e.g. ``'-'``, ``'--'``, ``':'``, and marker+line combos like
+        ``'o-'``). MARKER-ONLY styles (e.g. ``'o'``, ``'.'``) are never
+        touched: markers always render at the true sample points. Forecast
+        overlays drawn by `predict=` are smoothed the same way.
+
+        Pass ``antialias=False`` to draw raw straight segments between
+        consecutive samples (the pre-1.0.1 behavior).
 
         Animated plots (both backends, any `animate` style): the density
         is computed ONCE from the FULL dataset and drawn as a static
@@ -3905,7 +3923,8 @@ def plot(
                     xform = [xi if xi.shape[0] < 2
                              else _interp_anim_line(xi, _n_frames)
                              for xi in xform]
-                else:
+                elif antialias:
+                    # static antialiasing (see `plot`'s `antialias=`)
                     xform = [_interp_static_line(xi) for xi in xform]
     elif isinstance(fmt, list):
         for idx, xi in enumerate(xform):
@@ -3923,7 +3942,8 @@ def plot(
                     if animate:
                         xform[idx] = _interp_anim_line(
                             xi, max(2, int(round(frame_rate * duration))))
-                    else:
+                    elif antialias:
+                        # static antialiasing (see `plot`'s `antialias=`)
                         xform[idx] = _interp_static_line(xi)
 
     # interpolation adds points, so per-point labels must be re-mapped onto
@@ -4186,6 +4206,7 @@ def plot(
         fig = plotly_draw(
             xform,
             fmt=draw_fmt,
+            antialias=antialias,
             kwargs_list=kwargs_list,
             labels=labels,
             legend=legend,
@@ -4270,6 +4291,7 @@ def plot(
             fig, ax, data, line_ani = _draw(
                 xform,
                 fmt=draw_fmt,
+                antialias=antialias,
                 kwargs_list=kwargs_list,
                 labels=labels,
                 legend=legend,
@@ -4315,7 +4337,8 @@ def plot(
             # helper (and the SAME seam-prepended arrays) serve both the
             # static path and the animate='spin' path below.
             if raw_forecasts is not None:
-                _forecast_artists = _draw_forecast_overlays(ax, raw_forecasts)
+                _forecast_artists = _draw_forecast_overlays(
+                    ax, raw_forecasts, antialias=antialias)
                 # animate='spin' only rotates the camera around the fully-
                 # drawn static scene, so these overlays rotate with everything
                 # else once they exist -- no per-frame update needed. But they
@@ -4355,6 +4378,7 @@ def plot(
                         ax, xform, line_colors, kwargs_list, line_ani,
                         style=animate, chemtrails=chemtrails,
                         precog=precog, bullettime=bullettime,
+                        antialias=antialias,
                         total_frames=max(1, int(round(frame_rate
                                                       * duration))))
                 elif is_line(fmt):
@@ -5079,7 +5103,7 @@ def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list):
 
 def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
                                 line_ani, style, chemtrails, precog,
-                                bullettime, total_frames):
+                                bullettime, total_frames, antialias=True):
     """Per-frame multicolored (continuous/matrix hue) line rendering for
     ANIMATED matplotlib plots (release-1.0 audit, F04-001/F05-002).
 
@@ -5170,6 +5194,37 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
         coll.set_segments(segments)
         coll.set_color((colors[:-1] + colors[1:]) / 2.0)
 
+    # antialias (see `plot`'s `antialias=`): a dense, PCHIP-upsampled copy of
+    # each trajectory, with its per-point colors resampled onto the SAME
+    # parameterization, so every frame's collection draws a smooth curve over
+    # exactly the rows the backend just drew. `step == 1` means "no
+    # upsampling" and every slice below degrades to the raw rows.
+    def _dense_for(i):
+        pts = _points(i)
+        ci = np.asarray(line_colors[i], dtype=float)
+        if not antialias or pts.shape[0] < 2:
+            return pts, ci, 1
+        dense, step = antialias_line(pts)
+        if step == 1:
+            return pts, ci, 1
+        grid = np.linspace(0.0, pts.shape[0] - 1.0, dense.shape[0])
+        ci_dense = np.column_stack([
+            np.interp(grid, np.arange(pts.shape[0]), ci[:, c])
+            for c in range(ci.shape[1])])
+        return dense, ci_dense, step
+
+    _aa_cache = [_dense_for(i) for i in range(n)]
+
+    def _aa_slice(i, a, b):
+        """(points, colors) to DRAW for the original-row window ``[a:b]``."""
+        dense, ci_dense, step = _aa_cache[i]
+        if step == 1:
+            return dense[a:b], ci_dense[a:b]
+        if b <= a:
+            return dense[0:0], ci_dense[0:0]
+        return dense[a * step:(b - 1) * step + 1], \
+            ci_dense[a * step:(b - 1) * step + 1]
+
     orig_func = line_ani._func
 
     def _multicolor_frame(num, *fargs):
@@ -5178,6 +5233,23 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
             pts = _points(i)
             ci = np.asarray(line_colors[i])
             n_pts = pts.shape[0]
+            # the backend records the ORIGINAL row window each artist was just
+            # drawn over (`_hyp_row_window`); prefer it, since antialiasing
+            # decouples an artist's VERTEX count from its row count. The
+            # length-based recovery below stays as the fallback for callers
+            # that drive `_draw` without it.
+            _win = getattr(head_lines[i], '_hyp_row_window', None)
+            if _win is not None:
+                start, end = _win
+                _set_segments(head_colls[i], *_aa_slice(i, start, end))
+                trail = trail_lines.get(i)
+                if trail is not None:
+                    _twin = getattr(trail, '_hyp_row_window', None)
+                    if _twin is not None:
+                        _set_segments(trail_colls[i], *_aa_slice(i, *_twin))
+                    else:
+                        trail_colls[i].set_segments([])
+                continue
             # the hidden head artist was just set to the exact visible
             # window; recover its [start, end) indices from its length
             # plus the same frame->row mapping the backend used (see
@@ -5202,7 +5274,7 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
                                   / max(1, int(total_frames))))
                 end = max(1, min(n_pts, end))
                 start = max(0, end - head_len)
-            _set_segments(head_colls[i], pts[start:end], ci[start:end])
+            _set_segments(head_colls[i], *_aa_slice(i, start, end))
 
             trail = trail_lines.get(i)
             if trail is not None:
@@ -5211,7 +5283,7 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
                     ts, te = n_pts - trail_len, n_pts  # anchored at the end
                 else:
                     ts, te = 0, trail_len  # chemtrails/bullettime: from 0
-                _set_segments(trail_colls[i], pts[ts:te], ci[ts:te])
+                _set_segments(trail_colls[i], *_aa_slice(i, ts, te))
         return result
 
     line_ani._func = _multicolor_frame

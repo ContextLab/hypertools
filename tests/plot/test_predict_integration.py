@@ -43,9 +43,30 @@ def test_predict_adds_one_dashed_forecast_per_dataset(ndims):
         assert fc.get_alpha() == pytest.approx(0.6)
         assert fc.get_color() == src.get_color()
         assert fc.get_label() == '_nolegend_'
-        # t forecasted rows + 1 prepended (last-observed) connector row
+        # the forecast is drawn SMOOTHED like any line (PCHIP-densified well
+        # beyond the raw t+1 vertices for a short horizon), and its
+        # seam-prepended first vertex still joins the source trajectory's end.
         n_pts = len(fc.get_xdata())
-        assert n_pts == t + 1
+        assert n_pts > t + 1
+        assert fc.get_xdata()[0] == pytest.approx(src.get_xdata()[-1])
+        assert fc.get_ydata()[0] == pytest.approx(src.get_ydata()[-1])
+
+
+def test_predict_forecast_drawn_smoothed_not_straight_segments():
+    """A very short forecast is drawn as a SMOOTH (PCHIP-densified) dashed
+    curve, not a handful of straight segments -- the same auto-smoothing any
+    static line gets -- while the RETURNED forecast still has exactly t rows
+    (only the DRAWN trace is densified)."""
+    a = _walk(11)
+    t = 4  # raw drawn trace would be only t + 1 = 5 vertices without smoothing
+    bundle = hyp.plot(a, predict='Kalman', t=t, show=False, return_model=True)
+    ax = bundle['fig'].axes[0]
+    fc = [l for l in ax.lines if l.get_linestyle() == '--'][0]
+    plt.close(bundle['fig'])
+    # densified far beyond the raw 5 vertices (matches the static-line target)
+    assert len(fc.get_xdata()) >= 100
+    # ...but the returned forecast array is untouched (exactly t rows)
+    assert np.asarray(bundle['predict']['forecasts'][0]).shape[0] == t
 
 
 def test_predict_legend_unchanged_no_duplicate_entries():
@@ -174,7 +195,7 @@ def test_predict_with_spin_renders_dashed_forecast_overlay(tmp_path):
     for fc in fc_lines:
         assert fc.get_alpha() == pytest.approx(0.6)
         assert fc.get_label() == '_nolegend_'
-        assert len(fc.get_xdata()) == t + 1  # t rows + prepended seam vertex
+        assert len(fc.get_xdata()) > t + 1  # smoothed (densified) beyond raw t+1
         # unclipped like the other 3-D line artists, so a rotated camera
         # never crops the overlay (matches animate_plot3D's set_clip_on(False))
         assert fc.get_clip_on() is False

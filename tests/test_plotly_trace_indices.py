@@ -49,7 +49,7 @@ def test_trace_layout_data_forecast_trail_cube():
     groups fail loudly instead of silently mis-indexing frame updates."""
     data, forecasts = _walks_and_forecasts()
     fig = plotly_draw(data, animate=True, duration=2, tail_duration=1,
-                      chemtrails=True, forecasts=forecasts, show=False)
+                      chemtrails=True, forecasts=forecasts, show=False, antialias=False)
 
     # 2 data + 2 forecast + 2 trail + 1 cube
     assert len(fig.data) == 7
@@ -96,7 +96,7 @@ def test_forecast_traces_unaffected_by_animation_frames():
     carry an update for them, and they must never appear zeroed-out."""
     data, forecasts = _walks_and_forecasts()
     fig = plotly_draw(data, animate=True, duration=2, tail_duration=1,
-                      chemtrails=True, forecasts=forecasts, show=False)
+                      chemtrails=True, forecasts=forecasts, show=False, antialias=False)
 
     for frame in fig.frames:
         assert 2 not in frame.traces

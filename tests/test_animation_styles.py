@@ -52,8 +52,7 @@ def test_mpl_mixed_trail_styles_per_dataset():
         chemtrails=[True, False, False],
         precog=[False, True, False],
         bullettime=[False, False, True],
-        show=False, return_model=True,
-    )
+        show=False, return_model=True, antialias=False)
     line_ani = bundle['animation']
     assert line_ani is not None
 
@@ -298,9 +297,11 @@ def _serial_trail_bundle(**flags):
     data = _walks(k=3, n=20)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter('always')
+        # antialias=False: these tests assert the exact ROW window each
+        # artist is drawn over, so drawn vertices must equal drawn rows.
         bundle = hyp.plot(
             data, fmt='-', animate='serial', duration=2, frame_rate=10,
-            show=False, return_model=True, **flags,
+            show=False, return_model=True, antialias=False, **flags,
         )
     assert not any('trail styles' in str(w.message) for w in caught)
     line_ani = bundle['animation']
@@ -371,7 +372,7 @@ def test_mpl_serial_plain_still_has_no_trail_artists():
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter('always')
         bundle = hyp.plot(data, fmt='-', animate='serial', duration=2,
-                          frame_rate=10, show=False, return_model=True)
+                          frame_rate=10, show=False, return_model=True, antialias=False)
     assert not any('trail styles' in str(w.message) for w in caught)
     line_ani = bundle['animation']
     data_lines, lines, trail = (line_ani._args[0], line_ani._args[1],

@@ -50,6 +50,7 @@ from .density import (
     resolve_plotly_volume_params,
 )
 from .trails import broadcast_trail_flag
+from .._shared.helpers import antialias_line, has_line_component
 from . import morph as _morph
 
 
@@ -380,6 +381,81 @@ def _labeled_axis_layout(base, label, scene=False):
     return layout
 
 
+def _build_aa_curves(data, fmt, antialias, morph_tags=None):
+    """One ``(dense, step)`` pair per dataset, for DRAW-TIME line smoothing.
+
+    Mirrors `matplotlib_backend._draw`'s identical precomputation (see
+    `plot`'s ``antialias=``): each LINE-styled dataset gets a dense,
+    PCHIP-upsampled copy built ONCE here, so every static trace and every
+    animation frame can draw a smooth curve for whatever window of ORIGINAL
+    rows it would have shown (`_aa_window`) without re-interpolating.
+
+    Datasets that draw no line are passed through untouched with
+    ``step == 1``: `has_line_component` is True only when a linestyle token
+    is present (solid/dashed/dotted, with or without a marker), so a
+    marker-only 'o'/'.' dataset is never densified and its markers stay on
+    the true samples. `animate='morph'` datasets are skipped too -- morph
+    draws traveling point CLOUDS, not lines. ``step == 1`` makes every
+    window mapping degrade to the raw row slice, so ``antialias=False``
+    reproduces the pre-antialias figure exactly.
+    """
+    curves = []
+    for i, arr in enumerate(data):
+        arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
+        is_morph = morph_tags is not None and i < len(morph_tags) and morph_tags[i]
+        if antialias and not is_morph and has_line_component(
+                fmt[i] if i < len(fmt) else None):
+            curves.append(antialias_line(arr))
+        else:
+            curves.append((arr, 1))
+    return curves
+
+
+def _aa_window(aa_curves, i, a, b):
+    """The smooth polyline to DRAW for dataset `i`'s ORIGINAL-row window
+    ``data[i][a:b]``.
+
+    Because `antialias_line` subdivides UNIFORMLY (``dense[::step]`` is
+    exactly the original array), a window of original rows maps onto the
+    dense curve exactly as ``dense[a * step:(b - 1) * step + 1]``. With
+    antialiasing off (or nothing to upsample, ``step == 1``) this is
+    literally ``data[i][a:b]``, so the drawn vertices are unchanged.
+    """
+    dense, step = aa_curves[i]
+    if step == 1:
+        return dense[a:b]
+    if b <= a:
+        return dense[0:0]
+    return dense[a * step:(b - 1) * step + 1]
+
+
+def _aa_x(step, start_x, n_drawn):
+    """The x positions accompanying a drawn 1-D window of `n_drawn` vertices
+    whose first vertex sits at ORIGINAL row index `start_x`.
+
+    1-D plots put the row index on x, so densifying the y values has to
+    densify x the same way; `step` dense vertices span one original row.
+    ``step == 1`` returns the historical integer `np.arange`, byte-identical
+    to the pre-antialias behavior.
+    """
+    if step == 1:
+        return np.arange(start_x, start_x + n_drawn)
+    return start_x + np.arange(n_drawn) / step
+
+
+def _aa_resample_colors(colors, n_orig, n_dense):
+    """Per-point colors resampled onto a densified line's parameterization.
+
+    `colors` are plotly color STRINGS (one per original point), so each dense
+    vertex takes its NEAREST original point's color rather than a blended
+    one. Returns `colors` unchanged when there is nothing to resample.
+    """
+    if colors is None or n_dense == n_orig:
+        return colors
+    grid = np.linspace(0, n_orig - 1, n_dense)
+    return [colors[j] for j in np.round(grid).astype(int)]
+
+
 def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 title=None, animate=False, size=None, show=True,
                 save_path=None, frame_rate=30, duration=30, rotations=1,
@@ -391,7 +467,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 density=None, density_colors=None,
                 morph_tags=None, morph_colors=None, morph_samples=None,
                 font=None, font_extra=None, label_alpha=0.5, xlabel=None,
-                ylabel=None, zlabel=None):
+                ylabel=None, zlabel=None, antialias=True):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -480,6 +556,25 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         y-axis title.
     zlabel : str or None
         z-axis title (3-D only; rejected upstream otherwise).
+    antialias : bool
+        Whether to smooth every drawn LINE (default True) -- see below.
+
+    `antialias` (see `plot`'s `antialias=`): DRAW-TIME line smoothing, at
+    parity with `matplotlib_backend._draw`'s identical option. Each
+    line-styled dataset gets a dense, PCHIP-upsampled copy built ONCE
+    (`_build_aa_curves`); the static traces and every animation frame then
+    draw, for whatever window of ORIGINAL rows they would have shown,
+    exactly the corresponding stretch of that smooth curve (`_aa_window`),
+    so successive observations are joined by a smoothly bending curve
+    instead of a sharp-angled chain of straight segments. The underlying
+    `data` rows are deliberately left untouched, so frame pacing, window/row
+    index math, `labels=` annotations, hover text, colorbars, `surface=`
+    hulls and `density=` layers all keep indexing the REAL observations --
+    only the drawn coordinate arrays change. Marker-only styles (e.g. 'o',
+    '.') are never touched, so their markers stay on the true samples, and
+    `animate='morph'` (traveling point CLOUDS, not lines) is excluded too.
+    `antialias=False` reproduces the pre-antialias figure exactly (same
+    traces, same frames, same coordinate arrays).
 
     `font` (GH #205): the ALREADY-RESOLVED `matplotlib.font_manager.
     FontProperties` from `hypertools.plot.fonts.resolve_font` (or `None`
@@ -627,6 +722,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     morph_tags = (morph_tags if morph_tags is not None
                  else ([True] * len(data) if animate == "morph" else None))
 
+    # antialias= (see this function's docstring and `plot`'s `antialias=`):
+    # build each line-styled dataset's dense, PCHIP-upsampled drawing curve
+    # ONCE, here, before any trace is created -- the static traces below and
+    # every animation frame in `_add_animation` then slice the SAME curves
+    # via `_aa_window`, so a dataset is never interpolated twice and the
+    # smoothing is identical across the static figure and its frames.
+    aa_curves = _build_aa_curves(data, fmt, antialias, morph_tags=morph_tags)
+
     # density= (GH #108/#191), 2-D case: subtle KDE density layers must
     # render BELOW everything else (including surface= fills). Plotly's 2D
     # layering follows trace order in `fig.data` (no zorder), so these are
@@ -709,6 +812,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         # never hide their points: the mesh now renders with real Mesh3d
         # opacity (see `_mesh3d_trace`), so the data shows through it
         # exactly like the matplotlib reference behavior.
+        enclosed_mask = None
         if (ndims >= 3 and not hide_points and surface is not None
                 and i < len(surface) and surface[i] is not None
                 and surface[i].get('alpha', SURFACE_DEFAULTS['alpha'])
@@ -721,6 +825,33 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 if enclosed.any():
                     arr = arr.copy()
                     arr[enclosed] = np.nan
+                    enclosed_mask = enclosed
+
+        # antialias=: draw the dense (smooth) curve for this dataset's FULL
+        # row range instead of its raw rows. `arr` itself stays the original
+        # rows -- it is what the surface/enclosure logic above and the point
+        # count below reason about. Per-point colors are resampled onto the
+        # same parameterization so they stay 1:1 with the drawn vertices;
+        # a color array that does NOT align with the rows (defensive -- the
+        # caller builds both from the same post-interpolation data) disables
+        # smoothing for this trace rather than mismatching the two.
+        aa_step = aa_curves[i][1]
+        if (aa_step != 1 and trace_point_colors is not None
+                and len(trace_point_colors) != arr.shape[0]):
+            aa_step = 1
+        if aa_step == 1:
+            draw_arr = arr
+        else:
+            draw_arr = _aa_window(aa_curves, i, 0, arr.shape[0])
+            if enclosed_mask is not None:
+                # points an opaque surface hides are dropped from the drawn
+                # line (NaN); on the dense curve each vertex follows its
+                # NEAREST original point's visibility.
+                draw_arr = draw_arr.copy()
+                grid = np.linspace(0, arr.shape[0] - 1, draw_arr.shape[0])
+                draw_arr[enclosed_mask[np.round(grid).astype(int)]] = np.nan
+            trace_point_colors = _aa_resample_colors(
+                trace_point_colors, arr.shape[0], draw_arr.shape[0])
 
         common = dict(
             mode=mode,
@@ -740,26 +871,28 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 common['marker'] = dict(color=trace_point_colors,
                                         size=msize, symbol=symbol)
             traces.append(go.Scatter3d(
-                x=arr[:, 0], y=arr[:, 1], z=arr[:, 2], **common))
+                x=draw_arr[:, 0], y=draw_arr[:, 1], z=draw_arr[:, 2],
+                **common))
         elif ndims == 2:
             if trace_point_colors is not None and 'lines' in mode:
                 # 2D Scatter has no per-point line colors; draw short
                 # segment traces instead (grouped under one legend entry)
                 traces.extend(_segment_traces_2d(
-                    go, arr, trace_point_colors, width, dash, name))
+                    go, draw_arr, trace_point_colors, width, dash, name))
                 continue
             if trace_point_colors is not None:
                 common['marker'] = dict(color=trace_point_colors,
                                         size=msize, symbol=symbol)
-            traces.append(go.Scatter(x=arr[:, 0], y=arr[:, 1], **common))
+            traces.append(go.Scatter(x=draw_arr[:, 0], y=draw_arr[:, 1],
+                                     **common))
         else:
-            xs = np.arange(arr.shape[0])
+            xs = _aa_x(aa_step, 0, draw_arr.shape[0])
             if trace_point_colors is not None and 'lines' in mode:
-                pts = np.column_stack([xs, arr[:, 0]])
+                pts = np.column_stack([xs, draw_arr[:, 0]])
                 traces.extend(_segment_traces_2d(
                     go, pts, trace_point_colors, width, dash, name))
                 continue
-            traces.append(go.Scatter(x=xs, y=arr[:, 0], **common))
+            traces.append(go.Scatter(x=xs, y=draw_arr[:, 0], **common))
 
     n_data_traces = len(traces) - n_surface_traces_2d - n_density_traces_2d
 
@@ -775,18 +908,27 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             fc_common = dict(mode='lines', showlegend=False,
                              hoverinfo='skip',
                              line=dict(color=color, width=width, dash='dash'))
+            # antialias=: a forecast trace is always a LINE, so smooth it the
+            # same way as any other line (matching `plot._draw_forecast_
+            # overlays`, which does exactly this on the matplotlib side) --
+            # a short forecast (e.g. t+1 = 5 vertices) then draws as a smooth
+            # dashed curve rather than a few straight segments. The seam-
+            # prepended first point and the final point stay exact, so it
+            # still joins the trajectory.
+            fc_draw, fc_step = (antialias_line(fc) if antialias else (fc, 1))
             if ndims >= 3:
                 traces.append(go.Scatter3d(
-                    x=fc[:, 0], y=fc[:, 1], z=fc[:, 2], **fc_common))
+                    x=fc_draw[:, 0], y=fc_draw[:, 1], z=fc_draw[:, 2],
+                    **fc_common))
             elif ndims == 2:
                 traces.append(go.Scatter(
-                    x=fc[:, 0], y=fc[:, 1], **fc_common))
+                    x=fc_draw[:, 0], y=fc_draw[:, 1], **fc_common))
             else:
                 arr2 = np.atleast_2d(np.asarray(arr, dtype=np.float64))
                 start = arr2.shape[0] - 1
                 traces.append(go.Scatter(
-                    x=np.arange(start, start + fc.shape[0]), y=fc[:, 0],
-                    **fc_common))
+                    x=_aa_x(fc_step, start, fc_draw.shape[0]),
+                    y=fc_draw[:, 0], **fc_common))
 
     # low-opacity trail traces for chemtrails (past) / precog (future) /
     # bullettime (both) on window animations, mirroring the matplotlib
@@ -1154,7 +1296,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        morph_trace_start=morph_trace_start_3d,
                        morph_mesh_trace_start=morph_mesh_trace_start_3d,
                        morph_surface_spec=morph_surface_spec_3d,
-                       morph_sampled=sampled0, morph_dup_masks=dup_masks0)
+                       morph_sampled=sampled0, morph_dup_masks=dup_masks0,
+                       aa_curves=aa_curves)
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
@@ -2383,7 +2526,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    morph_tags=None, morph_colors=None, morph_samples=None,
                    morph_trace_start=None, morph_mesh_trace_start=None,
                    morph_surface_spec=None, surface_point_colors=None,
-                   morph_sampled=None, morph_dup_masks=None):
+                   morph_sampled=None, morph_dup_masks=None, aa_curves=None):
     """Attach frames + play controls: 'spin' rotates the camera; True /
     'parallel' reveals trajectories through a sliding time window; 'morph'
     eases the single traveling point-cloud trace (+ mesh, if surfaced)
@@ -2432,8 +2575,24 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     Density traces themselves are deliberately never referenced by
     `trace_indices` below (nor `surface_trace_indices`): they are computed
     once from the full data and must stay untouched by every frame update.
+
+    `aa_curves` (antialias=, see `plotly_draw`'s docstring): the per-dataset
+    ``(dense, step)`` smoothing curves `plotly_draw` built once via
+    `_build_aa_curves`. Every frame draws `_aa_window(aa_curves, idx, a, b)`
+    -- the smooth stretch spanning exactly the ORIGINAL rows ``[a:b]`` the
+    frame would otherwise have sliced -- for both its head/window traces and
+    its chemtrails/precog/bullettime trail traces. All the surrounding index
+    math (frame pacing, `window`/`start`/`end`, `revealed`, trail bounds) and
+    everything derived from it (`windows_by_index` for `surface=` meshes,
+    `_window_colors`) keeps working in ORIGINAL rows, untouched. ``None``
+    (direct callers) or ``step == 1`` means the raw row slices are drawn,
+    exactly as before `antialias=` existed.
     """
     import plotly.graph_objects as go
+
+    if aa_curves is None:
+        aa_curves = [(np.atleast_2d(np.asarray(a, dtype=np.float64)), 1)
+                     for a in data]
 
     # EXACTLY match the matplotlib renderer's pacing: frame_rate frames
     # per second of animation for the full duration (no frame cap), so the
@@ -2677,14 +2836,19 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 cols = _window_colors(idx, 0, shown)
                 if cols is not None:
                     window_colors_by_index[idx] = cols
+                # antialias=: `seg` (ORIGINAL rows) still drives the surface
+                # mesh/hue windows above; only the DRAWN vertices are smoothed
+                draw_seg = _aa_window(aa_curves, idx, 0, shown)
                 if ndims >= 3:
                     frame_traces.append(go.Scatter3d(
-                        x=seg[:, 0], y=seg[:, 1], z=seg[:, 2]))
+                        x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2]))
                 elif ndims == 2:
-                    frame_traces.append(go.Scatter(x=seg[:, 0], y=seg[:, 1]))
+                    frame_traces.append(go.Scatter(x=draw_seg[:, 0],
+                                                   y=draw_seg[:, 1]))
                 else:
                     frame_traces.append(go.Scatter(
-                        x=np.arange(seg.shape[0]), y=seg[:, 0]))
+                        x=_aa_x(aa_curves[idx][1], 0, draw_seg.shape[0]),
+                        y=draw_seg[:, 0]))
             frame_kwargs = dict(name=str(k), data=frame_traces,
                                 traces=list(trace_indices))
             if ndims >= 3:
@@ -2739,20 +2903,25 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             window_colors_by_index = {}
             for idx, arr in enumerate(data):
                 arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
-                seg = arr[start:min(end, arr.shape[0])]
+                stop = min(end, arr.shape[0])
+                seg = arr[start:stop]
                 windows_by_index[idx] = seg
-                cols = _window_colors(idx, start, min(end, arr.shape[0]))
+                cols = _window_colors(idx, start, stop)
                 if cols is not None:
                     window_colors_by_index[idx] = cols
+                # antialias=: `seg` (ORIGINAL rows) still drives the surface
+                # mesh/hue windows above; only the DRAWN vertices are smoothed
+                draw_seg = _aa_window(aa_curves, idx, start, stop)
                 if ndims >= 3:
                     frame_traces.append(go.Scatter3d(
-                        x=seg[:, 0], y=seg[:, 1], z=seg[:, 2]))
+                        x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2]))
                 elif ndims == 2:
-                    frame_traces.append(go.Scatter(x=seg[:, 0], y=seg[:, 1]))
+                    frame_traces.append(go.Scatter(x=draw_seg[:, 0],
+                                                   y=draw_seg[:, 1]))
                 else:
                     frame_traces.append(go.Scatter(
-                        x=np.arange(start, start + seg.shape[0]),
-                        y=seg[:, 0]))
+                        x=_aa_x(aa_curves[idx][1], start, draw_seg.shape[0]),
+                        y=draw_seg[:, 0]))
 
             # GH #127: trail traces exist (and are updated here) only for
             # datasets in `trail_dataset_indices`, in that SAME ascending
@@ -2768,14 +2937,14 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     arr = np.atleast_2d(np.asarray(data[idx], dtype=np.float64))
                     ct, pc, bt = chemtrails[idx], precog[idx], bullettime[idx]
                     if (ct and pc) or bt:
-                        trail = arr
-                        t0 = 0
+                        t0, t1 = 0, arr.shape[0]
                     elif ct:
-                        trail = arr[:start + 1]
-                        t0 = 0
+                        t0, t1 = 0, start + 1
                     else:
-                        trail = arr[min(end, arr.shape[0]) - 1:]
-                        t0 = min(end, arr.shape[0]) - 1
+                        t0, t1 = min(end, arr.shape[0]) - 1, arr.shape[0]
+                    # antialias=: trail bounds stay ORIGINAL-row indices; the
+                    # smooth curve spanning exactly those rows is drawn
+                    trail = _aa_window(aa_curves, idx, t0, t1)
                     if ndims >= 3:
                         trail_traces.append(go.Scatter3d(
                             x=trail[:, 0], y=trail[:, 1], z=trail[:, 2]))
@@ -2784,7 +2953,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                             x=trail[:, 0], y=trail[:, 1]))
                     else:
                         trail_traces.append(go.Scatter(
-                            x=np.arange(t0, t0 + trail.shape[0]),
+                            x=_aa_x(aa_curves[idx][1], t0, trail.shape[0]),
                             y=trail[:, 0]))
             frame_traces.extend(trail_traces)
             frame_kwargs = dict(name=str(k), data=frame_traces,

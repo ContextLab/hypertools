@@ -412,6 +412,54 @@ def has_line_component(format_str):
     return any(token in format_str for token in ('-.', '--', '-', ':'))
 
 
+#: default vertex count a drawn line is upsampled toward by `antialias_line`
+ANTIALIAS_TARGET_VERTICES = 900
+
+
+def antialias_line(arr, target=ANTIALIAS_TARGET_VERTICES):
+    """Upsample a trajectory so it DRAWS as a smooth curve ("antialiasing").
+
+    Returns ``(dense, step)``, where ``dense[::step]`` is exactly `arr`: every
+    original sample stays a vertex of the drawn line, and each original
+    segment is subdivided into `step` equal-parameter pieces along a monotone
+    PCHIP interpolant. PCHIP is C1 (its tangent is continuous), so the drawn
+    curve bends smoothly through each sample rather than turning a sharp angle
+    at it; the densification is what makes that smoothness visible instead of
+    a chain of straight segments.
+
+    Because the subdivision is UNIFORM, any window of the original trajectory
+    maps onto the dense one exactly::
+
+        arr[a:b]  ->  dense[a * step : (b - 1) * step + 1]
+
+    which is what lets an animation draw a smooth curve for precisely the
+    portion of the trajectory a given frame would have shown (see
+    `matplotlib_backend._draw`'s ``_aa_window``).
+
+    Only ever ADDS points: a trajectory already at/above `target` density is
+    returned unchanged with ``step == 1`` (never decimated), as is anything
+    with fewer than 2 rows. (Release-1.0 audit F01-001: the historical
+    `np.arange`-based grid never reached the final sample, and for n > target
+    samples the "interpolation" silently became decimation.)
+    """
+    from scipy.interpolate import PchipInterpolator as pchip
+    arr = np.asarray(arr)
+    n = arr.shape[0]
+    if n < 2 or n >= target:
+        return arr, 1
+    # interpolated points to ADD per segment
+    k = int(np.ceil((target - n) / (n - 1)))
+    step = k + 1                                # dense points per original segment
+    seg = np.linspace(0.0, 1.0, step + 1)[:-1]  # left knot + k interior points
+    xx = np.concatenate([i + seg for i in range(n - 1)]
+                        + [np.array([n - 1.0])])
+    out = pchip(np.arange(n), arr)(xx)
+    # PCHIP passes through its knots up to floating error; enforce
+    # exactness so the drawn line provably contains every input sample.
+    out[::step] = arr
+    return out, step
+
+
 def split_marker_line_fmt(format_str):
     """Split a matplotlib format string into its LINE and MARKER
     components (GH #141), so a combined style like 'o-' can be drawn as
