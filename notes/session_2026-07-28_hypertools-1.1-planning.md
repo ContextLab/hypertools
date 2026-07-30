@@ -411,3 +411,36 @@ always cries wolf trains the reader to ignore it, so a genuine failure passes un
 OMC is 4.2.15; the local marketplace copy is byte-identical, so there is no newer local copy. Fixes
 both touch Jeremy's GLOBAL config (`omc update` to 4.15.7, or override the hook), so they need his
 call — patching the plugin cache in place would be erased by the next update.
+
+### Round 10b — what the "nothing is out of scope" sweep actually turned up
+
+Chasing the dismissed findings surfaced **three real defects**, two of them mine:
+
+1. **I committed five UNEXECUTED tutorials** (`4d1d2223`). `docs/conf.py:115` sets
+   `nbsphinx_execute = 'never'`, so Read the Docs does **not** run notebooks — committed outputs are
+   the only thing that renders. Measured across all 20 tutorials: 15 carry executed outputs; the
+   only 5 that do not are exactly the 5 I added. On RTD they would have shown bare code with no
+   figures and no animations. This is what the dead background task *"Wait for tests and paintings
+   re-render"* was gating.
+2. **`tests/test_plot_audit_b2.py::test_nonfont_file_rejected_at_resolve_time` passed for the wrong
+   reason everywhere except this laptop.** It passed the hardcoded path
+   `/Users/jmanning/hypertools/README.md` to `resolve_font`, which branches on `os.path.exists`
+   (`fonts.py:401-406`): where the file exists you get *"exists but is not a loadable font file"*
+   (the branch the test names); where it does not you get *"is not a recognized installed font"* — a
+   different branch. `match='font='` matched **both**, so on CI the test never exercised its own
+   subject. Rewritten to use `tmp_path` and to assert the specific message; verified it now FAILS
+   against a non-existent path, which the old form did not.
+3. **Personal-path leakage is repo-wide, not new.** `/Users/jmanning` appears in **23 tracked
+   files**. Scrubbed the 4 pre-existing tutorials (`plot`, `projectile_kalman` ×3,
+   `streaming_data`, `conversation_trajectories`) — output cells only, source cells were clean,
+   6 → 0, byte-level replace so the diff is 6 lines and nbformat is untouched. The 13 plan/spec docs
+   and 7 notes files still carry it; cosmetic only (the username is already public via git
+   authorship on a public repo), listed here so it is tracked rather than forgotten.
+
+**Two process lessons, both about checks that report success they did not verify:**
+- I wrote `git add ...` and `git commit ...` as SEPARATE statements, so a failed `git add` did not
+  stop the commit — producing `2f26b711`, whose message described a `.gitignore` change the commit
+  did not contain. Amended to `6baee557`. **Always `&&`-chain staging to committing.**
+- A background-task notification reported **"exit code 0"** for a `make html` that actually died
+  with `make: *** [html] Error 2`. The trailing `| tail` meant the reported status was the pipe's,
+  not the command's. **Never trust a notification's exit code for a piped command.**

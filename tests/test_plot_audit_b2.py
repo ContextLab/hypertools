@@ -406,10 +406,22 @@ def test_unknown_font_family_still_raises_helpful_error():
 # F24-003: existing non-font file -> clear error at resolve time
 # ---------------------------------------------------------------------------
 
-def test_nonfont_file_rejected_at_resolve_time():
+def test_nonfont_file_rejected_at_resolve_time(tmp_path):
+    """A file that EXISTS but is not a loadable font must be rejected.
+
+    The file has to exist for this to test anything: `resolve_font` branches
+    on `os.path.exists` (fonts.py:401-406), so a non-existent path takes the
+    *installed-font-lookup* branch and raises a different error. The previous
+    version of this test passed a hardcoded absolute path that existed only
+    on one developer's machine, and `match='font='` matched BOTH messages --
+    so everywhere else it passed without exercising this branch at all.
+    """
     from hypertools.plot.fonts import resolve_font
-    with pytest.raises(ValueError, match='font='):
-        resolve_font('/Users/jmanning/hypertools/README.md', 'x')
+    not_a_font = tmp_path / 'README.md'
+    not_a_font.write_text('# not a font file\n')
+    with pytest.raises(ValueError,
+                       match='exists but is not a loadable font file'):
+        resolve_font(str(not_a_font), 'x')
 
 
 # ---------------------------------------------------------------------------
