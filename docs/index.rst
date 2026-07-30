@@ -6,10 +6,11 @@
 **HyperTools**: A python toolbox for gaining geometric insights into high-dimensional data
 ==============================================================================================
 
-.. image:: ../images/hypertools.gif
+.. image:: ../images/story_trajectories.gif
     :align: center
-    :alt: Animated hypertools plots of several example high-dimensional
-      datasets projected into 3D
+    :alt: Animated 3D trajectories of 36 subjects' hyperaligned whole-brain
+      activity while they listen to the same spoken story, tracing a shared
+      path through a low-dimensional space
 
 `HyperTools <https://github.com/ContextLab/hypertools>`_ is a library for
 visualizing and manipulating high-dimensional data in Python. It is built
