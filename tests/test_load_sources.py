@@ -4,7 +4,6 @@ builtin -> local file -> Hugging Face -> Google Sheets -> Google Drive ->
 Dropbox -> URL, and lists of strings resolve to lists of datasets. All
 tests use real files and real network calls (no mocks)."""
 
-import contextlib
 import functools
 import http.server
 import threading
@@ -42,38 +41,25 @@ GOOGLE_SHEETS_SAMPLE_URL = (
 # exercising the real load path when the host is reachable. Real (non-transient)
 # errors still propagate and fail. (2026-07: a HF ReadTimeout on
 # test_load_huggingface_dataset flaked one ubuntu-3.13 matrix cell.)
-_TRANSIENT_NETWORK = (
-    'readtimeout', 'read timed out', 'timed out', 'timeout',
-    'connectionerror', 'connection error', 'connection reset',
-    'connection aborted', 'remotedisconnected', 'incompleteread',
-    'max retries', 'service unavailable', 'temporarily unavailable',
-    ' 503', ' 502', ' 504', 'temporary failure',
-    'network is unreachable', 'failed to establish',
-    # DNS-resolution failures. urllib3 raises NameResolutionError whose message
-    # is "Failed to resolve '<host>'"; hyp.load() wraps it into its diagnostic.
-    # Keep the CamelCase-lowered class name AND the message text (neither
-    # contains the spaced "name resolution"/"failed to establish" above).
-    'name resolution', 'nameresolutionerror', 'failed to resolve',
-    'getaddrinfo',
-)
-
-
-def _is_transient_network(text):
-    """True if `text` reads like a TRANSIENT network error (timeout, dropped
-    connection, 5xx, DNS-resolution failure) rather than a real defect. Pure
-    predicate so it can be unit-tested without the skip machinery."""
-    text = text.lower()
-    return any(marker in text for marker in _TRANSIENT_NETWORK)
-
-
-@contextlib.contextmanager
-def _skip_on_transient_network(what):
-    try:
-        yield
-    except Exception as e:            # re-raised below unless it is transient
-        if _is_transient_network(str(e)):
-            pytest.skip(f'transient network error {what}: {e}')
-        raise
+#
+# 2026-07-30: applied to EVERY test in this file that fetches over the network,
+# not just the Hugging Face pair. `test_load_google_sheet_live` failed a full
+# local run when Google Sheets read-timed-out and Drive answered 500, then
+# passed on re-run 2 minutes later -- it was the only live-fetch test here
+# without the guard its siblings already had. The guarded set is now: Google
+# Sheets, Google Drive (spiral + the bigdata interstitial download), Dropbox,
+# the generic-URL pair, and plot()'s auto-load. Guarding is NOT weakening:
+# _is_transient_network is a narrow, unit-tested predicate that matches
+# timeouts / 5xx / dropped connections / DNS failures and deliberately does
+# NOT match assertion or key errors, so a genuine regression still fails.
+# Verified end-to-end both ways before shipping.
+# The classifier itself now lives in tests/_netskip.py, because more than one
+# test file needs it (tests/test_load_sklearn_seaborn.py fetches seaborn-data
+# over the network too). Imported under the original private names so this
+# file's own unit tests below keep testing the real implementation.
+from tests._netskip import (is_transient_network as _is_transient_network,
+                            skip_on_transient_network as
+                            _skip_on_transient_network)
 
 
 def test_is_transient_network_recognizes_wrapped_load_errors():
@@ -88,11 +74,30 @@ def test_is_transient_network_recognizes_wrapped_load_errors():
         "could not load 'scikit-learn/iris'. Tried, in order:\n"
         "  - Hugging Face dataset: ReadTimeout: The read operation timed out")
     unavailable = HypertoolsIOError('503 Server Error: Service Unavailable')
-    for exc in (dns, timeout, unavailable):
+    # verbatim from a real 2026-07-30 failure of test_load_google_sheet_live:
+    # every fallback failed at once, Drive with a 500 and Sheets/URL with
+    # 60s read timeouts. The test passed again on re-run 2 minutes later.
+    sheets_outage = HypertoolsIOError(
+        "could not load 'https://docs.google.com/spreadsheets/d/1BxiMV/edit'."
+        " Tried, in order:\n"
+        "  - Google Sheets: ReadTimeout: HTTPSConnectionPool("
+        "host='docs.google.com', port=443): Read timed out. (read timeout=60)\n"
+        "  - Google Drive (1BxiMV): HTTPError: 500 Server Error: Internal "
+        "Server Error for url: https://drive.usercontent.google.com/download")
+    # and a 500 on its own, with no timeout anywhere in the message
+    only_500 = HypertoolsIOError(
+        "  - Google Drive (x): HTTPError: 500 Server Error: Internal Server "
+        "Error for url: https://drive.usercontent.google.com/download")
+    for exc in (dns, timeout, unavailable, sheets_outage, only_500):
         assert _is_transient_network(str(exc)), str(exc)
     # a genuine failure is NOT transient and must still surface
     assert not _is_transient_network("AssertionError: shape (150,) != (149,)")
     assert not _is_transient_network("KeyError: 'SepalLengthCm'")
+    # ...including one whose numbers happen to look like HTTP status codes.
+    # This is why the 5xx markers are matched as phrases or with a leading
+    # space, never as a bare substring.
+    assert not _is_transient_network("AssertionError: shape 500 != 499")
+    assert not _is_transient_network("assert (502, 3) == (504, 3)")
 
 
 def test_skip_on_transient_network_skips_dns_but_reraises_real():
@@ -233,12 +238,17 @@ def test_load_google_drive_id_and_url():
     # refuses; with it, load() returns the raw data (a list of arrays),
     # never a DataGeometry.
     url = ('https://drive.google.com/uc?export=download&id=' + DRIVE_SPIRAL_ID)
-    for src in (DRIVE_SPIRAL_ID, url):
-        with pytest.raises(HypertoolsTrustError, match='refusing to unpickle'):
-            hyp.load(src)
-    data = hyp.load(DRIVE_SPIRAL_ID, trust=True)
+    with _skip_on_transient_network('loading the spiral pickle from Drive'):
+        for src in (DRIVE_SPIRAL_ID, url):
+            # a network outage here surfaces as HypertoolsIOError rather than
+            # HypertoolsTrustError, so pytest.raises lets it through to the
+            # transient guard instead of failing the trust assertion
+            with pytest.raises(HypertoolsTrustError,
+                               match='refusing to unpickle'):
+                hyp.load(src)
+        data = hyp.load(DRIVE_SPIRAL_ID, trust=True)
+        data2 = hyp.load(url, trust=True)
     assert isinstance(data, list)
-    data2 = hyp.load(url, trust=True)
     assert isinstance(data2, list)
 
 
@@ -249,16 +259,20 @@ def test_load_dropbox_url_forms():
     forms = (DROPBOX_BUNNY,                                # dl=0 -> normalized
              'www.dropbox.com/s/7d9vo9idqk1hn31/bunny.pkl',
              's/7d9vo9idqk1hn31/bunny.pkl')               # shared-link path
-    for src in forms:
-        with pytest.raises(HypertoolsTrustError, match='refusing to unpickle'):
-            hyp.load(src)
-    for src in forms:
-        assert np.asarray(hyp.load(src, trust=True)).shape[1] == 3
+    with _skip_on_transient_network('loading the bunny pickle from Dropbox'):
+        for src in forms:
+            with pytest.raises(HypertoolsTrustError,
+                               match='refusing to unpickle'):
+                hyp.load(src)
+        shapes = [np.asarray(hyp.load(src, trust=True)).shape[1]
+                  for src in forms]
+    assert shapes == [3, 3, 3]
 
 
 def test_load_generic_url_with_and_without_scheme():
-    df1 = hyp.load('https://' + IRIS_CSV)
-    df2 = hyp.load(IRIS_CSV)
+    with _skip_on_transient_network('loading iris.csv by URL'):
+        df1 = hyp.load('https://' + IRIS_CSV)
+        df2 = hyp.load(IRIS_CSV)
     assert df1.shape == df2.shape == (150, 5)
 
 
@@ -278,9 +292,10 @@ def test_plot_accepts_source_strings():
     # this mixed numeric/text CSV yields a single-observation component
     # internally, provoking the cannot-reduce-a-single-observation notice
     # (verified: the only warning this call emits)
-    with pytest.warns(UserWarning,
-                      match='Cannot reduce a single observation'):
-        fig = hyp.plot(IRIS_CSV, show=False)
+    with _skip_on_transient_network('auto-loading iris.csv through plot()'):
+        with pytest.warns(UserWarning,
+                          match='Cannot reduce a single observation'):
+            fig = hyp.plot(IRIS_CSV, show=False)
     assert type(fig).__module__.startswith('matplotlib')
     plt.close('all')
 
@@ -293,7 +308,11 @@ def test_plot_mixed_dtype_dataframe():
     from hypertools.tools.df2mat import df2mat
     m = df2mat(df)
     assert m.dtype == np.float64
-    geo = hyp.plot(df, '.', show=False)
+    # `plot()` returns a matplotlib Figure in 1.0 (the pre-1.0 DataGeometry it
+    # used to return is gone) -- assert that rather than binding an unused
+    # `geo`, so the call's result is actually checked, not just its not-raising
+    fig = hyp.plot(df, '.', show=False)
+    assert type(fig).__module__.startswith('matplotlib')
     plt.close('all')
 
 
@@ -342,7 +361,8 @@ def test_load_drive_large_file_interstitial_live():
     498,881,336 bytes -- matching Drive's own Content-Length -- in ~24s;
     shipped here as a full download since that proved fast enough to run
     routinely under the bigdata marker."""
-    arrays = hyp.load(DRIVE_BIG_FILE_ID)
+    with _skip_on_transient_network('downloading the 476MB Drive file'):
+        arrays = hyp.load(DRIVE_BIG_FILE_ID)
     assert isinstance(arrays, list) and len(arrays) == 42
     assert all(isinstance(a, np.ndarray) and a.dtype == np.float32
               for a in arrays)
@@ -366,7 +386,8 @@ def test_normalize_google_sheet_url_rewrite():
 
 
 def test_load_google_sheet_live():
-    df = hyp.load(GOOGLE_SHEETS_SAMPLE_URL)
+    with _skip_on_transient_network('loading the Google Sheets sample'):
+        df = hyp.load(GOOGLE_SHEETS_SAMPLE_URL)
     assert isinstance(df, pd.DataFrame)
     assert df.shape == (30, 6)
 

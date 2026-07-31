@@ -13,8 +13,9 @@ do the same. A file with no in-repo reference may still be load-bearing for a Gi
 body, a release note, an issue comment, or an external post. Deleting one breaks those links
 **silently** — nothing in CI would fail, and we would never see the 404.
 
-Deleting also saves nothing: git retains every blob permanently, so removing a file shrinks the
-working tree but not the repository.
+Deleting does not reduce existing git history — every blob is retained permanently — so it only
+shrinks future working trees, checkouts and source archives, while risking broken branch-based
+hot-links. For the files below that trade is not worth taking.
 
 ## Currently served by `README.md`
 

@@ -166,11 +166,25 @@ in the round-5 exchange. Both sets are recorded under *Standing decisions*.
   sets `line_ani`; verified by running it). There is no later frame to register against.
   Relatedly, `ctx.figure`/`ctx.axes`/`ctx.artists` are backend-native, so callback *bodies* are
   usually backend-specific even though the context metadata is not.
-- **`animate='spin'` shares its artists on plotly.** Spin moves only the camera and re-sends no
-  point data (`plotly_backend.py:2695-2699` — the frame payload has no `data` key), so its frames
-  publish the figure's static traces and a mutation is **figure-wide, not per-frame**. A surfaced
-  spin additionally carries per-frame `Mesh3d` updates, appended after the shared traces. This is
-  the one place `ctx.artists` is not per-frame, and it is documented rather than smoothed over.
+- **Artist lifetime differs by backend AND style, and the two failure modes are opposite.** Measured
+  2026-07-30 across every style. **Shared:** matplotlib all styles (`FuncAnimation`'s updater mutates
+  the same `Line2D`/collection objects every render — `id()` unchanged across frames 0/1/2) and
+  plotly `animate='spin'`, which moves only the camera and re-sends no point data
+  (`plotly_backend.py:2695-2699` — the frame payload has **no `data` key at all**; measured 0/4
+  frames carry data), so a mutation there is **figure-wide**. **Per-frame:** plotly
+  parallel/serial/window/morph, each of which builds an independent `frame_traces` payload —
+  measured `fig.frames[0].data[0] is not fig.frames[1].data[0]` for all four. A surfaced spin is the
+  mixed case: shared traces followed by per-frame `Mesh3d` updates. The consequence for callers is
+  that `if ctx.frame == 0: <mutate>` colours the **whole animation** where artists are shared and
+  **only frame 0** where they are not — so the portable rule is to set the complete state on every
+  frame, unconditionally. Documented rather than smoothed over, in `FrameContext.artists` and in the
+  guide, with a test on each side.
+- **`FrameContext`'s sequence fields are tuples.** `artists`, `datasets` and `revealed_counts`
+  (`None` or a tuple) are canonicalized in `FrameContext.__post_init__`, because eleven separate
+  record sites — seven matplotlib updaters and four plotly branches — each have a different sequence
+  in hand, and a public field may not change type by backend or style. The dataclass is
+  `frozen=True`, which a mutable list would make only half-true; membership is fixed, while the
+  artists *inside* stay mutable because mutating them is the entire point of the hook.
 - **`on_frame=` works on BOTH backends, as a determinism/idempotence contract rather than a timing contract.**
   The earlier claim that plotly has no Python per-frame loop was wrong: `_add_animation`
   (`plotly_backend.py:2517`) builds every frame in a Python loop, appending `go.Frame` at

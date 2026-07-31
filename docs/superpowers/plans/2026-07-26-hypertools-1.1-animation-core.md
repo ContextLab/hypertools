@@ -1,4 +1,4 @@
-# HyperTools 1.1 — Animation Core Implementation Plan (v4.2)
+# HyperTools 1.1 — Animation Core Implementation Plan (v4.3)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -9,6 +9,24 @@
 **Tech Stack:** Python 3.12.10, numpy 2.3.5, pandas, matplotlib 3.10.8 (primary backend), plotly 6.8.0 (interactive backend), scipy 1.17.0, pytest 9.0.2.
 
 ---
+
+## Revision note (v4.3)
+
+Two findings from the fourth 2026-07-30 review of v4.2, plus two the same audit turned up. **Every claim below was measured against the real backends before any edit.**
+
+| # | finding | verification | fix |
+|-|-|-|-|
+| **H1** *(High)* | the artist-persistence prose contradicted the lifetime table two paragraphs above it | **Measured, and the review is right.** Drove all five plotly styles and compared frame payload identity: `fig.frames[0].data[0] is not fig.frames[1].data[0]` for `True`, `'serial'`, `'window'` **and** `'morph'` — 4/4 isolated, data present in every frame; `'spin'` carries **no frame data at all** (0/4). So *"on both backends … `if ctx.frame == 0:` colours the entire animation"* is **false for four of the five plotly styles**, where that callback colours **only** frame 0. The guide repeated it and demonstrated it with `.set_color()`, a **matplotlib** `Artist` method that does not exist on a plotly trace | The portable rule is kept — **set the complete state for the current frame** — but re-founded on the correct per-backend reason, and both failure modes are now stated as opposites: shared artists (matplotlib all styles, plotly spin) leak a conditional mutation **forward**; per-frame payloads (plotly parallel/serial/window/morph) **confine** it. Fixed in `FrameContext.artists` and in the guide, which now carries a labelled `# MATPLOTLIB ONLY` `.set_color()` example **and** a `# PLOTLY ONLY` `.line.color` counterpart (`.line.color` verified settable on `go.Scatter` and `go.Scatter3d`; `go.Mesh3d` has no `.line`). New `test_plotly_non_spin_frames_are_isolated_per_frame` (×4) pins the mirror-image behaviour, and a new guide test fails if the one-sided claim returns |
+| **H2** *(Medium)* | `FrameContext.artists` declared `List[Any]` but plotly spin supplied a `tuple` | **Confirmed, and broader than reported.** It is not two sites but **eleven**: seven matplotlib updaters pass lists (`artists=list(lines) + [...]`, `artists=[morph_state["artist"]]`) and four plotly branches pass `frame_traces` or `tuple(fig.data[i] …)`. `type(ctx.artists)` would have varied by backend **and** style on a new public field. The same split reaches `datasets` and `revealed_counts` | Canonical containers, normalized in **one** place: `artists`/`datasets` are `Tuple[Any, ...]`, `revealed_counts` is `Optional[Tuple[int, ...]]`, and `__post_init__` coerces via `object.__setattr__` so no branch — present or future — has to remember. Tuples rather than lists because the dataclass is `frozen=True`, which a mutable list made half-true; membership is now fixed while the contained artists stay mutable, which is the point of the hook. Imports change to `from dataclasses import dataclass` / `from typing import Any, Optional, Tuple`. New `test_frame_context_containers_are_canonical_tuples` covers all six container-producing branches |
+
+**Found by the same audit, not in the review:**
+
+| # | defect | verification | fix |
+|-|-|-|-|
+| **H3** | **Task 8 referenced a helper that Task 7 never defines.** Task 8's serial-title block called `_serial_current_index` (leading underscore) and its prose said that name is *"imported from `matplotlib_backend`"*, but Task 7 Step 4 defines `serial_current_index` — **no** underscore, the spelling used at all four other sites. Task 8 would have failed with `ImportError` | Grepped every occurrence: Task 7 uses the bare name in **four** places — its Step 4 definition, its Step 5 matplotlib call, its Step 6a plotly-branch table, and the *Interfaces* list — and Task 8's two sites were alone in the underscored spelling. *(Cited by step, not by plan line number: this revision shifts every line below it, which is how five of the six recorded citation-drift instances started.)* | Renamed at both Task 8 sites. While there: Task 8 recomputed `_counts = [np.atleast_2d(a).shape[0] for a in data]`, which is a duplicate of `lengths` — verified against source that `lengths` (`plotly_backend.py:2823`) and `starts` (`:2825`) are both already bound immediately above the frame loop, so the block now uses them directly and the plan says not to recompute |
+| **H4** | `assert ctx.revealed_counts == drawn` would break under H2 | Ran it: `(17, 4, 0) == [17, 4, 0]` is **False**. H2 would have turned `test_revealed_counts_match_the_drawn_artists_with_unequal_lengths` red for a reason unrelated to what it tests | `drawn` is built as a tuple, with the reason in the docstring so nobody "fixes" it back |
+
+**Suite arithmetic:** Task 7 **31 → 41** (+4 isolation cases, +6 container cases); Task 9 **18 → 19**. Total **127 → 138**; final **2,689 passed / 13 skipped**. Checkpoints from Task 7 on: **2657, 2670, 2689**. The Task 9 `def test_` column is also corrected from 8 to 9 — a long-standing miscount in that column only; the collected figure was always right.
 
 ## Revision note (v4.2)
 
@@ -1908,7 +1926,7 @@ Four of the five new gallery examples monkeypatch matplotlib's private `FuncAnim
 **Interfaces:**
 - Consumes: `order` from `_resolve_animate_mode` (Task 5).
 - Produces:
-  - `FrameContext` — frozen dataclass, fields `frame`, `n_frames`, `figure`, `axes`, `artists`, `datasets`, `style`, `order`, `current_index`, `current_fraction`, `revealed_counts`, `segment_index`, `segment_kind`.
+  - `FrameContext` — frozen dataclass, fields `frame`, `n_frames`, `figure`, `axes`, `artists`, `datasets`, `style`, `order`, `current_index`, `current_fraction`, `revealed_counts`, `segment_index`, `segment_kind`. The three sequence fields are **tuples** on every backend and style (`revealed_counts` is `None` or a tuple), canonicalized by `__post_init__` — index and iterate them, never `.append`.
   - `FrameHooks` — `.callbacks` (list), `.record(**state)`, `.dispatch(figure, axes)`.
   - `matplotlib_backend.serial_reveal_counts(lengths, num, total_frames)`, `serial_current_index(counts, lengths)`.
   - `plot(..., on_frame=callable)`; `HyperAnimation.on_frame(callable)`.
@@ -2012,6 +2030,10 @@ def test_revealed_counts_match_the_drawn_artists_with_unequal_lengths():
     (measured: input [17, 23, 11] -> [13, 13, 13]), so only a MARKER format
     keeps them unequal. Asserted against the artists themselves, not against
     a second copy of the formula.
+
+    `revealed_counts` is a TUPLE (FrameContext.__post_init__ canonicalizes
+    it), so `drawn` is compared as a tuple -- `(17, 4, 0) == [17, 4, 0]` is
+    False and this assertion would fail for the wrong reason otherwise.
     """
     seen = []
     ds = [np.random.default_rng(s).normal(size=(n, 4)).cumsum(axis=0)
@@ -2023,7 +2045,7 @@ def test_revealed_counts_match_the_drawn_artists_with_unequal_lengths():
     assert [d.shape[0] for d in seen[-1].datasets] == [17, 23, 11]
     for ctx in seen:
         ani._func(ctx.frame, *ani._args)
-        drawn = [len(ln.get_data_3d()[0]) for ln in ax.lines[:3]]
+        drawn = tuple(len(ln.get_data_3d()[0]) for ln in ax.lines[:3])
         assert ctx.revealed_counts == drawn
 
 
@@ -2354,8 +2376,8 @@ the closure never sees. `plot()` creates ONE `FrameHooks`, threads it into
 construction reaches the same list the dispatcher reads.
 """
 
-from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from dataclasses import dataclass
+from typing import Any, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -2395,9 +2417,12 @@ class FrameContext:
         plots, a plain ``Axes`` for 2-D ones (which have no ``zaxis``).
         BACKEND-NATIVE: ``None`` on plotly, which has no axes object (its
         equivalent state lives on the figure's ``layout``).
-    artists : list
+    artists : tuple
         The drawn artists, in dataset order: the head artists first, then
         any trail artists, matching the backend's own bookkeeping.
+        The CONTAINER is always a tuple -- see "Container types" below --
+        while the artists inside it are the backend's own live objects and
+        are meant to be mutated.
         BACKEND-NATIVE: on plotly these are that frame's ``go.Scatter``/
         ``go.Scatter3d`` traces, in the same order.
 
@@ -2422,18 +2447,31 @@ class FrameContext:
         frame, so ``ctx.artists[0]`` on frame 1 and on frame 2 are the
         SAME object in different states.
 
-        The practical consequence, on both backends: a callback must set
-        the COMPLETE desired state for the current frame. Anything you set
-        persists until something else overwrites it -- so
-        ``if ctx.frame == 0: artist.set_color('red')`` colours the entire
-        animation, not frame 0. Set the value you want on every frame:
-        ``artist.set_color(COLOURS[ctx.frame])``.
+        THE PORTABLE RULE, on both backends: set the COMPLETE desired
+        state for the current frame. Never write a mutation that fires on
+        one frame only. The rule is the same on both backends but the
+        reason is NOT, and the failure modes are opposite:
+
+        * Where artists are SHARED (matplotlib all styles, plotly spin),
+          anything you set persists until something overwrites it, so
+          ``if ctx.frame == 0: artist.set_color('red')`` colours the
+          ENTIRE animation rather than frame 0.
+        * Where they are PER-FRAME (plotly parallel/serial/window/morph),
+          the same callback colours ONLY frame 0 -- each frame carries an
+          independent trace payload that the callback mutates before it
+          is stored. Measured 2026-07-30: ``fig.frames[0].data[0] is not
+          fig.frames[1].data[0]`` for every one of those four styles.
+
+        So a conditional mutation does not merely misbehave -- it
+        misbehaves DIFFERENTLY per backend, which is why the portable
+        contract is unconditional: ``artist.set_color(COLOURS[ctx.frame])``
+        on every frame is correct everywhere.
 
         Note that "a mutation is retained in the rendered frame" does NOT
         mean artists are isolated per frame. It means the backend renders
-        what you set; on matplotlib and on plotly spin, it renders it for
-        every subsequent frame too.
-    datasets : list of numpy.ndarray
+        what you set; where artists are shared, it renders it for every
+        subsequent frame too.
+    datasets : tuple of numpy.ndarray
         The arrays the animation actually DRAWS FROM, in dataset order --
         not the raw input. For a line format `plot()` pre-interpolates every
         animated dataset onto the frame grid, so these may be denser or
@@ -2456,9 +2494,10 @@ class FrameContext:
         ``None``. **This does not distinguish a morph hold from a morph
         transition** -- both sweep 0 -> 1 over their own segment. Use
         `segment_kind` for that.
-    revealed_counts : list of int or None
+    revealed_counts : tuple of int or None
         Number of rows of each dataset currently drawn. ``None`` for
-        parallel and morph animations.
+        parallel and morph animations -- ``None`` is preserved as
+        ``None``, never normalized to an empty tuple.
     segment_index : int or None
         For ``animate='morph'``, the index into the hold/morph schedule
         (``hypertools.plot.morph.frame_to_segment``). ``None`` otherwise.
@@ -2467,21 +2506,55 @@ class FrameContext:
         held) and ``'transition'`` for odd (one cloud is easing into the
         next) -- the parity rule `morph.morph_positions` implements.
         ``None`` for non-morph animations.
+
+    Container types
+    ---------------
+    ``artists``, ``datasets`` and ``revealed_counts`` are always TUPLES
+    (``revealed_counts`` is ``None`` or a tuple). This is a public
+    guarantee, not an accident of whichever branch built the frame.
+
+    Eleven separate call sites record frame state -- seven matplotlib
+    updaters and four plotly frame-build branches -- and each has a
+    different sequence in hand: ``list(lines) + [...]``, a list
+    comprehension, ``tuple(fig.data[i] for i in trace_indices)``. Left
+    alone, ``type(ctx.artists)`` would vary by backend and style, which is
+    not something a public field may do.
+
+    All eleven funnel through the SINGLE construction site --
+    `FrameHooks.dispatch`'s ``FrameContext(figure=..., axes=...,
+    **self.state)`` -- so normalizing in `__post_init__` covers every one
+    of them, and covers any branch added later without that branch having
+    to know. This is why the coercion lives here and not at the recorders.
+
+    Tuples rather than lists because the dataclass is ``frozen=True``: a
+    list would make that promise half-true, letting a caller
+    ``ctx.artists.append(...)`` or ``ctx.revealed_counts.sort()`` and
+    corrupt the context. The CONTAINED artists stay mutable on purpose --
+    mutating them is what the hook is for. What is fixed is MEMBERSHIP.
     """
 
     frame: int
     n_frames: int
     figure: Any
     axes: Any
-    artists: List[Any] = field(default_factory=list)
-    datasets: List[Any] = field(default_factory=list)
+    artists: Tuple[Any, ...] = ()
+    datasets: Tuple[Any, ...] = ()
     style: Any = None
     order: str = 'parallel'
     current_index: Optional[int] = None
     current_fraction: Optional[float] = None
-    revealed_counts: Optional[List[int]] = None
+    revealed_counts: Optional[Tuple[int, ...]] = None
     segment_index: Optional[int] = None
     segment_kind: Optional[str] = None
+
+    def __post_init__(self):
+        """Canonicalize the container types. `object.__setattr__` is the
+        documented way to assign inside a frozen dataclass."""
+        object.__setattr__(self, 'artists', tuple(self.artists))
+        object.__setattr__(self, 'datasets', tuple(self.datasets))
+        if self.revealed_counts is not None:
+            object.__setattr__(self, 'revealed_counts',
+                               tuple(self.revealed_counts))
 
 
 class FrameHooks:
@@ -2843,6 +2916,87 @@ def test_plotly_spin_mutation_is_retained_and_is_figure_wide():
         hyp.set_interactive_backend('matplotlib')
     assert fig.data[0].name == 'touched-on-frame-1', (
         'the mutation lands on the shared figure trace')
+
+
+@pytest.mark.parametrize('style', [True, 'serial', 'window', 'morph'])
+def test_plotly_non_spin_frames_are_isolated_per_frame(style):
+    """The MIRROR IMAGE of the spin test above, and the reason the guide
+    documents two opposite failure modes rather than one.
+
+    plotly's parallel/serial/window/morph branches each build their own
+    `frame_traces`, so a callback that mutates on frame 1 only affects
+    frame 1 -- the exact opposite of spin and of matplotlib, where the same
+    callback would affect the whole animation. Measured against the real
+    backend 2026-07-30 (before this plan changes anything):
+    `fig.frames[0].data[0] is not fig.frames[1].data[0]` for all four.
+
+    A caller who writes a conditional mutation therefore gets DIFFERENT
+    wrong behaviour per backend, which is why the portable contract is
+    "set the complete state every frame" and not "mutations persist".
+    """
+    pytest.importorskip('plotly')
+
+    def rename(ctx):
+        if ctx.frame == 1:
+            ctx.artists[0].name = 'touched-on-frame-1'
+
+    kwargs = dict(morph_samples=40) if style == 'morph' else {}
+    hyp.set_interactive_backend('plotly')
+    try:
+        fig = hyp.plot(_datasets(), '-', animate=style, duration=1,
+                       frame_rate=4, on_frame=rename, show=False, **kwargs)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+
+    assert fig.frames[1].data[0].name == 'touched-on-frame-1'
+    assert fig.frames[0].data[0].name != 'touched-on-frame-1', (
+        'frame 0 carries its own payload; the mutation must NOT leak back')
+    assert fig.frames[2].data[0].name != 'touched-on-frame-1', (
+        'nor forward -- this is what makes these styles per-frame')
+    assert fig.frames[0].data[0] is not fig.frames[1].data[0]
+
+
+@pytest.mark.parametrize('backend,style', [
+    ('matplotlib', True),        # revealed_counts is None
+    ('matplotlib', 'serial'),    # revealed_counts from serial_reveal_counts
+    ('matplotlib', 'morph'),     # artists=[morph_state["artist"]]
+    ('plotly', True),            # artists=frame_traces
+    ('plotly', 'serial'),        # artists=frame_traces, revealed_counts=_shown
+    ('plotly', 'spin'),          # artists=tuple(fig.data[i] ...) -- the odd one
+])
+def test_frame_context_containers_are_canonical_tuples(backend, style):
+    """`artists`, `datasets` and `revealed_counts` are TUPLES on every
+    backend and every style -- a public field may not change type
+    according to which branch built it.
+
+    This is the regression guard for `FrameContext.__post_init__`. Eleven
+    call sites record frame state and each has a different sequence in
+    hand; before the normalizer, matplotlib passed lists and plotly's spin
+    branch passed a tuple, so `type(ctx.artists)` varied by style.
+    """
+    if backend == 'plotly':
+        pytest.importorskip('plotly')
+    seen = []
+    kwargs = dict(morph_samples=40) if style == 'morph' else {}
+    hyp.set_interactive_backend(backend)
+    try:
+        result = hyp.plot(_datasets(), '.', animate=style, duration=1,
+                          frame_rate=4, on_frame=seen.append, show=False,
+                          **kwargs)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+    if backend == 'matplotlib':
+        _drive(result[1], 3)
+
+    assert seen, 'the hook must have fired'
+    for ctx in seen:
+        assert type(ctx.artists) is tuple, type(ctx.artists)
+        assert type(ctx.datasets) is tuple, type(ctx.datasets)
+        assert (ctx.revealed_counts is None
+                or type(ctx.revealed_counts) is tuple), ctx.revealed_counts
+        # frozen means MEMBERSHIP is fixed; the artists inside stay mutable
+        with pytest.raises(AttributeError):
+            ctx.artists.append(None)
 ```
 
 - [ ] **Step 6b: Put `FrameContext` on the public surface — and keep `FrameHooks` off it**
@@ -2874,6 +3028,8 @@ from .plot.animation_context import FrameContext
   HyperAnimation
   FrameContext
 ```
+
+> **Docstring-rendering check (done for you, 2026-07-30).** This is the step that puts `FrameContext`'s docstring through `autodoc` + `numpydoc` under the CI build's `-W`, where an unrecognized section header would become a build **error**, not a warning. `FrameContext` carries two non-standard numpydoc sections — *Backend note* and *Container types* — so this was built before the plan shipped: a minimal `sphinx -b html -W -E -a` project with this repo's exact extension list (`sphinx.ext.autodoc`, `numpydoc`, `sphinx.ext.autosummary`, `numpydoc_class_members_toctree = False`) and a `FrameContext` stub carrying both headers **built clean, zero warnings**. Keep the headers as written; if you add another custom section, re-run that check rather than assuming.
 
 4. In `tests/test_codeorg_licensing_audit_fixes.py`, add `'FrameContext'` to the `documented` literal inside `test_all_names_resolve_and_cover_documented_api` (`:295-300`), so the curated-surface assertion still describes reality:
 
@@ -2958,7 +3114,7 @@ Note the `return_model=True` limitation in the `return_model` entry (`plot.py:19
 - [ ] **Step 9: Run the FULL suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2647 passed, 13 skipped`. Grep for any test asserting that `on_frame=` is unavailable on plotly — there is none in the repo today, but if one appears it is asserting v2's removed premise, not a contract.
+Expected: `2657 passed, 13 skipped`. Grep for any test asserting that `on_frame=` is unavailable on plotly — there is none in the repo today, but if one appears it is asserting v2's removed premise, not a contract.
 
 - [ ] **Step 10: Commit**
 
@@ -3272,10 +3428,9 @@ For plotly, pass `segment_titles=_segment_titles` into `plotly_draw` (`plot.py:4
 
 ```python
             if segment_titles is not None:
-                _counts = [np.atleast_2d(a).shape[0] for a in data]
                 _shown = [int(np.clip(revealed - s, 0, L))
-                          for s, L in zip(starts, _counts)]
-                _idx, _ = _serial_current_index(_shown, _counts)
+                          for s, L in zip(starts, lengths)]
+                _idx, _ = serial_current_index(_shown, lengths)
                 frame_kwargs.setdefault('layout', {})['title'] = dict(
                     text=segment_titles[min(_idx, len(segment_titles) - 1)])
 ```
@@ -3290,7 +3445,7 @@ and in the `'morph'` branch (`plotly_backend.py:2773-2819`), where `seg_idx` is 
                 frame_kwargs.setdefault('layout', {})['title'] = dict(text=_text)
 ```
 
-`_serial_current_index` is imported from `matplotlib_backend` (the same helper Task 7 introduced) so the two backends share one rule.
+`serial_current_index` is imported from `matplotlib_backend` (the same helper Task 7 Step 4 introduced, under exactly that name — **no leading underscore**; it is the same import Task 7 Step 6a already adds to this branch) so the two backends share one rule. `lengths` and `starts` are already bound in this scope — `plotly_backend.py:2823-2825` computes `lengths = [np.atleast_2d(a).shape[0] for a in data]` and `starts = np.concatenate([[0], np.cumsum(lengths)[:-1]])` immediately above the frame loop (verified against source 2026-07-30), so do **not** recompute them.
 
 - [ ] **Step 5: Run the test and confirm it passes**
 
@@ -3323,7 +3478,7 @@ Extend the `title` entry written in Task 1:
 - [ ] **Step 8: Run the FULL suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2660 passed, 13 skipped`.
+Expected: `2670 passed, 13 skipped`.
 
 - [ ] **Step 9: Commit**
 
@@ -3572,27 +3727,48 @@ it moves only the camera and re-sends no point data, so its frames share
 the figure's traces.
 
 **The rule that follows applies to both backends: set the complete state
-you want for the current frame.** Anything you set persists until
-something overwrites it::
+you want for the current frame** -- never a mutation that fires on one
+frame only. The rule is portable; the *reason* is not, and the two
+failure modes are opposite.
 
+Where artists are **shared**, anything you set persists until something
+overwrites it::
+
+    # MATPLOTLIB ONLY (set_color is a matplotlib Artist method).
+    # Shared artists, so this colours the WHOLE animation, not frame 0.
     def broken(ctx):
         if ctx.frame == 0:
-            ctx.artists[0].set_color('red')   # red for the WHOLE animation
+            ctx.artists[0].set_color('red')
 
     def correct(ctx):
         ctx.artists[0].set_color(COLOURS[ctx.frame])   # set it every frame
 
+Where they are **per-frame**, the very same conditional does the opposite
+-- it touches an independent payload that only that frame keeps::
+
+    # PLOTLY ONLY -- ctx.artists are that frame's traces, and
+    # parallel/serial/window/morph frames are independent, so this
+    # colours ONLY frame 0.
+    def also_broken(ctx):
+        if ctx.frame == 0:
+            ctx.artists[0].line.color = 'red'
+
+    def also_correct(ctx):
+        ctx.artists[0].line.color = COLOURS[ctx.frame]
+
 Writing a callback as though each frame had its own artists is the common
-mistake. Under matplotlib and under plotly spin there is only ever one
-object, so a conditional mutation looks like it "sticks" -- because it
-does.
+mistake, and writing one as though they were shared is the mirror image of
+it. Under matplotlib and under plotly spin there is only ever one object,
+so a conditional mutation looks like it "sticks" -- because it does. Under
+plotly's other styles it silently does not.
 
 This is also why *"a mutation is retained in the rendered frame"* does not
 mean artists are isolated per frame. It means the backend renders what you
-set; on matplotlib and on plotly spin it renders it for every later frame
-too. A surfaced spin is the mixed case: its ``Mesh3d`` updates trail the
-shared traces in ``ctx.artists`` and those trailing entries *are*
-per-frame.
+set; where artists are shared it renders it for every later frame too. A
+surfaced spin is the mixed case: its ``Mesh3d`` updates trail the shared
+traces in ``ctx.artists`` and those trailing entries *are* per-frame.
+
+Set the state unconditionally and none of this can bite you.
 
 .. _animation-post-construction:
 
@@ -3826,6 +4002,29 @@ def test_animation_guide_documents_artist_lifetime_for_both_backends():
     assert 'spin' in text
     # the corrected claim must not come back
     assert 'every style on matplotlib, is per-frame' not in text
+
+
+def test_animation_guide_gives_both_failure_modes_not_just_persistence():
+    """The guide must not say persistence applies to both backends.
+
+    Measured 2026-07-30: plotly's parallel/serial/window/morph frames are
+    INDEPENDENT payloads (`fig.frames[0].data[0] is not
+    fig.frames[1].data[0]`), so a frame-0-only mutation there affects only
+    frame 0 -- the opposite of matplotlib and plotly spin, where it affects
+    everything. An earlier draft stated the shared behaviour as universal.
+    Both modes must be present, and the persistence claim must be scoped.
+    """
+    raw = GUIDE.read_text()
+    # collapse whitespace AND strip rst emphasis, so the assertions below
+    # survive `**shared**` being bolded or re-wrapped
+    text = ' '.join(raw.replace('*', '').split()).lower()
+    # both failure modes are described, not just the shared one
+    assert 'whole animation' in text
+    assert 'only frame 0' in text
+    # and persistence is scoped to shared artists rather than to "both backends"
+    assert 'where artists are shared' in text
+    # the plotly example uses a real plotly API, not matplotlib's set_color
+    assert '.line.color' in raw
 ```
 
 - [ ] **Step 5: Simplify the gallery examples that hand-rolled these primitives — MECHANICAL MIGRATION ONLY**
@@ -3858,7 +4057,7 @@ Expected: build succeeds with **0 warnings** (the repo holds an RTD-parity zero-
 - [ ] **Step 8: Run the FULL suite one last time**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2678 passed, 13 skipped`.
+Expected: `2689 passed, 13 skipped`.
 
 - [ ] **Step 9: Commit**
 
@@ -3919,11 +4118,13 @@ git commit -m "docs(1.1): document order=, per-dataset alpha=, on_frame, per-seg
 | 4 | 7 | 1 def × 4 cases | **10** | 11 ✗ |
 | 5 | 16 | 1 × 4, 1 × 2 | **20** | 20 ✓ |
 | 6 | 10 | — | **10** | 11 ✗ |
-| 7 | 28 | 1 def × 4 cases | **31** | 20 (v3 dropped the plotly-raises test and added 3 defs incl. the ×4 parity case; v4 added two mutation-retention tests + the `FrameContext` export test; v4.1 added three plotly-spin artist tests; **v4.2** adds `test_matplotlib_artists_are_shared_across_frame_deliveries`) |
+| 7 | 30 | 1 × 4, 1 × 4, 1 × 6 | **41** | 20 (v3 dropped the plotly-raises test and added 3 defs incl. the ×4 parity case; v4 added two mutation-retention tests + the `FrameContext` export test; v4.1 added three plotly-spin artist tests; v4.2 added `test_matplotlib_artists_are_shared_across_frame_deliveries`; **v4.3** adds `test_plotly_non_spin_frames_are_isolated_per_frame` ×4 and `test_frame_context_containers_are_canonical_tuples` ×6) |
 | 8 | 13 | — | **13** | 14 ✗ |
-| 9 | 8 | 1 def × 10 cases | **18** | 0 (**new in v4**: `tests/test_animation_guide_docs.py`; **v4.1** adds three more — post-construction qualification, backend-labelled examples, spin's shared artists) |
+| 9 | 10 | 1 def × 10 cases | **19** | 0 (**new in v4**: `tests/test_animation_guide_docs.py`; **v4.1** adds three more — post-construction qualification, backend-labelled examples, spin's shared artists; **v4.3** adds `test_animation_guide_gives_both_failure_modes_not_just_persistence`, and corrects the def count, which read 8 for a file that has always held 9) |
 
-Added (v4.2): 9 + 5 + 11 + 10 + 20 + 10 + **31** + 13 + **18** = **127**. Final expected: `2678 passed, 13 skipped`. *(v3 totalled 102 → 2,653; v4 → 120 → 2,671; v4.1 → 126 → 2,677; v4.2 adds the matplotlib shared-identity test.)* Each task's Step "run the FULL suite" states its own running total, so a drift is caught at the task that caused it.
+Added (v4.3): 9 + 5 + 11 + 10 + 20 + 10 + **41** + 13 + **19** = **138**. Final expected: `2689 passed, 13 skipped`. *(v3 totalled 102 → 2,653; v4 → 120 → 2,671; v4.1 → 126 → 2,677; v4.2 → 127 → 2,678; v4.3 adds the isolation and container-type guards.)* Each task's Step "run the FULL suite" states its own running total, so a drift is caught at the task that caused it.
+
+**A v4.3 correction to this table itself.** Task 9's `def test_` column read **8** while its test file has always contained **9** defs — the *collected* figure (18) was right, so no total was ever wrong, but the middle column contradicted this table's own stated method (*"`def test_` in each task … not estimates"*). Counted by name: `..._exists`, `..._is_in_the_toctree`, `..._covers` (the ×10 parametrize), `..._documents_both_backend_schedules`, `..._states_the_callback_contract_verbatim`, `..._does_not_call_the_contract_purity`, `..._marks_post_construction_registration_matplotlib_only`, `..._labels_its_backend_specific_examples`, `..._documents_artist_lifetime_for_both_backends` = 9, plus v4.3's new one = **10**, giving 9 plain + 10 cases = **19**.
 
 The three ✗ rows are a **v2 counting error, not a v3 change**: v2 counted a parametrized def as both one def *and* its cases (visible in its own Task 4 breakdown, *"4 plain + 4 parametrized + 3 plain"* for a file with 7 defs), and over-counted Tasks 6 and 8 by one each with no parametrization present to explain it. Nothing about those tasks' contents changed in v3.
 
