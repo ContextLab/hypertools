@@ -471,3 +471,53 @@ is as wrong as one that misses a real defect.**
 substantial and largely correct work. Every finding in rounds 10a-c came from auditing their working
 trees directly. **If subagents drive Plan 1 execution, the per-task review is not optional**, and
 their reports cannot be the basis for marking a task complete.
+
+### Round 11 (2026-07-30) — v4.2, the asset manifest, and the OMC verifier
+
+**Plan 1 → v4.2.** Two High findings, both reproduced against the real backends first:
+
+- **G1 — I had the artist model backwards.** v4.1 said *"every style on matplotlib is per-frame
+  throughout"*. Measured: drove a real animation three frames and compared `id()` of every `Line2D`
+  — **identical across frames 0/1/2**. `FuncAnimation` mutates the same objects in place;
+  matplotlib never hands out a fresh artist. I had framed plotly spin as *the* exception when
+  **shared is the majority case** and plotly's reveal/morph payloads are the exception. Replaced
+  with an explicit backend/style lifetime table in `FrameContext.artists`, Step 6a and a new guide
+  section, plus the rule that follows: **set the complete state for the current frame**, because
+  `if ctx.frame == 0: …` colours the whole animation. New test pins artist identity.
+- **G2 — my surfaced-spin test could never pass.** It used `hasattr(t, 'x')` to separate meshes from
+  scatters, but **`go.Mesh3d` has an `.x`** (verified directly), so `plain` equalled the full length
+  and `assert len(artists) > plain` was dead. Now discriminates on **type**, and additionally
+  asserts the leading entries are identical across frames *and* present in `fig.data` — which is
+  what actually pins the mixed contract.
+
+Arithmetic: Task 7 30 → **31**; total **127**; final **2,678 passed / 13 skipped**.
+
+**Assets: keep all five, and say why.** Provenance confirmed from git: the four `demo_*.png` were
+added 2026-07-18 in `437ee022`, *"1.0 feature-demonstration figures ... for embedding in the dev-1.0
+→ master release PR"* — so absence from repo prose is **expected**, not evidence they are dead.
+`hypercube.pdf` (2017-01-24, `cd774ebd`) is the only vector source for the logo. Total ~991 KB, and
+deleting saves nothing because git keeps the blobs anyway while silently breaking any branch-based
+`raw.githubusercontent` URL. New `images/README.md` records which files README serves and which are
+compatibility assets, converting *"apparently orphaned"* into a stated contract.
+
+**The PostToolUse verifier is fixed — updated, not overridden.** Backed up `settings.json`,
+`settings.local.json`, `installed_plugins.json` and `plugins/config.json` to
+`~/.claude/backups/omc-update-2026-07-30/` first. There is no `omc` on PATH, but the CLI has a
+non-interactive path: `claude plugin marketplace update omc` then
+`claude plugin update oh-my-claudecode@omc` → **4.2.15 → 4.15.7**.
+
+Verified by probing the **installed** file, not the release notes. 4.15.7 replaces bare `/error/i`
+and `/failed/i` with word-boundary patterns (`/\berror:/i`, `/\bfailed to\b/i`), adds
+`stripQuotedSpans()` so quoted prose cannot trip it, and adds `isClaudeCodeWriteSuccess()` so
+deterministic success markers override diagnostic text:
+
+| probe | 4.2.15 | 4.15.7 |
+|-|-|-|
+| edit containing *"raises NameError"* | **false positive** | clean |
+| shell output *"failed cases: 0"* | **false positive** | clean |
+| genuine `ENOENT` failure | fires | fires |
+| genuine *"permission denied"* edit failure | fires | fires |
+
+**Restart required to apply.** Until then this session still runs the 4.2.15 hook, so its
+"Edit operation failed" / "Command failed" notices remain false positives and should be ignored —
+verify tool results directly, as throughout this session.
