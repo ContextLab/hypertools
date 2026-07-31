@@ -1,4 +1,4 @@
-# HyperTools 1.1 — Animation Core Implementation Plan (v4.1)
+# HyperTools 1.1 — Animation Core Implementation Plan (v4.2)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -9,6 +9,17 @@
 **Tech Stack:** Python 3.12.10, numpy 2.3.5, pandas, matplotlib 3.10.8 (primary backend), plotly 6.8.0 (interactive backend), scipy 1.17.0, pytest 9.0.2.
 
 ---
+
+## Revision note (v4.2)
+
+Two High findings from the third 2026-07-30 review of v4.1. **Both reproduced against the real backends before editing.**
+
+| # | finding | verification | fix |
+|-|-|-|-|
+| **G1** *(High)* | v4.1 claimed *"every style on matplotlib is per-frame throughout"* — **false** | **Measured.** Drove a real animation three frames and compared artist identities: `id()` of every `Line2D` is **unchanged** across frames 0/1/2. `FuncAnimation`'s updater mutates the same objects in place; matplotlib never hands out a fresh artist. My v4.1 framing treated spin as *the* exception when in fact **shared is the majority case** and plotly's reveal/morph payloads are the exception | The spin-exception framing is **replaced by an explicit backend/style lifetime table** in `FrameContext.artists`, in the guide (new *"Artist lifetime"* section) and in Step 6a's table: *matplotlib all styles* = shared live artists; *plotly spin* = shared figure traces; *plotly surfaced spin* = shared traces + per-frame `Mesh3d`; *plotly parallel/serial/window/morph* = per-frame payloads. The consequence is stated as the rule callers need — **set the complete state for the current frame**, since `if ctx.frame == 0: …` colours the whole animation — and the guide now says explicitly that *"retained in the rendered frame"* does **not** imply isolated per-frame artists. New test `test_matplotlib_artists_are_shared_across_frame_deliveries` pins the identity, and the guide test now fails if the corrected claim regresses |
+| **G2** *(High)* | v4.1's surfaced-spin test used a **dead discriminator** | **Confirmed:** `go.Mesh3d` has an `.x` attribute (checked directly), so `hasattr(t, 'x')` matches meshes *and* scatters. `plain` therefore equalled the full length and `assert len(artists) > plain` could never pass — the test would have failed outright rather than testing the mixed contract | Discriminates on **type** now: `any(isinstance(t, go.Mesh3d) …)`, `isinstance(artists[-1], go.Mesh3d)`, the trailing mesh differs per frame, **and** the leading entries are asserted identical across frames *and* present in `fig.data` — which is what actually pins the shared/per-frame mixed contract |
+
+**Suite arithmetic:** Task 7 **30 → 31**. Total **126 → 127**; final **2,678 passed / 13 skipped**. Checkpoints from Task 7 on: **2647, 2660, 2678**.
 
 ## Revision note (v4.1)
 
@@ -2390,15 +2401,38 @@ class FrameContext:
         BACKEND-NATIVE: on plotly these are that frame's ``go.Scatter``/
         ``go.Scatter3d`` traces, in the same order.
 
-        One documented exception, on plotly only. ``animate='spin'``
-        rotates the camera and re-sends no point data, so its frames share
-        the figure's static traces rather than carrying their own. There
-        ``artists`` is those shared traces, and mutating one applies to the
-        WHOLE animation rather than a single frame. When a spin plot is
-        also surfaced, that frame's re-shaded ``Mesh3d`` updates follow the
-        shared traces, and those trailing entries ARE per-frame. Every
-        other style, and every style on matplotlib, is per-frame
-        throughout.
+        ARTIST LIFETIME -- read this before writing a callback. Whether
+        ``artists`` holds fresh objects per frame or the same objects
+        re-delivered depends on the backend and style:
+
+        ==================================  ===========================
+        backend / style                     lifetime
+        ==================================  ===========================
+        matplotlib, ALL styles              shared live artists,
+                                            mutated in place each render
+        plotly spin (no surfaces)           shared figure traces
+        plotly spin (surfaced)              shared traces, then that
+                                            frame's Mesh3d updates
+        plotly parallel/serial/window/      per-frame trace payloads
+        morph
+        ==================================  ===========================
+
+        Matplotlib never hands you a fresh artist: ``FuncAnimation``'s
+        updater mutates the same ``Line2D``/collection objects every
+        frame, so ``ctx.artists[0]`` on frame 1 and on frame 2 are the
+        SAME object in different states.
+
+        The practical consequence, on both backends: a callback must set
+        the COMPLETE desired state for the current frame. Anything you set
+        persists until something else overwrites it -- so
+        ``if ctx.frame == 0: artist.set_color('red')`` colours the entire
+        animation, not frame 0. Set the value you want on every frame:
+        ``artist.set_color(COLOURS[ctx.frame])``.
+
+        Note that "a mutation is retained in the rendered frame" does NOT
+        mean artists are isolated per frame. It means the backend renders
+        what you set; on matplotlib and on plotly spin, it renders it for
+        every subsequent frame too.
     datasets : list of numpy.ndarray
         The arrays the animation actually DRAWS FROM, in dataset order --
         not the raw input. For a line format `plot()` pre-interpolates every
@@ -2702,6 +2736,7 @@ Substituting `[]` is **not** an acceptable fallback: `FrameContext.artists` is d
 | morph, serial, parallel/window | `frame_traces` — that frame's traces, head then trail, in the order the loop already builds them | **per-frame**: mutating one affects only that frame |
 | **spin, no surfaces** | the figure's **static data traces**, `tuple(fig.data[i] for i in trace_indices)` — the traces the frame actually renders, which spin re-uses rather than re-sending | **shared**: every frame renders the same trace objects, so a mutation applies to the whole animation |
 | **spin, surfaced** | the same static data traces **followed by** that frame's `surf_data` mesh updates | **mixed**: the leading static traces are shared; the trailing `surf_data` entries are per-frame |
+| *(matplotlib, all styles — for contrast)* | the live `Line2D`/collection artists the updater mutates | **shared**: matplotlib never hands out a fresh artist, so `ctx.artists[0]` is the same object every frame. Do **not** read this table as "plotly is shared, matplotlib is per-frame" |
 
 Implement it as an explicit per-branch assignment, not a single shared expression:
 
@@ -2721,6 +2756,25 @@ This is also why the parity test can keep excluding `artists` (it compares only 
 Add these to `tests/plot/test_on_frame_hook.py`, in the backend-parity section:
 
 ```python
+def test_matplotlib_artists_are_shared_across_frame_deliveries():
+    """Matplotlib hands out the SAME artist objects every frame -- the
+    FuncAnimation updater mutates them in place. Verified against the real
+    backend: line identities are unchanged across frames 0/1/2.
+
+    This is why the contract is "set the complete state for this frame":
+    a conditional mutation persists into every later frame. The plan
+    previously claimed matplotlib was per-frame throughout; it is not.
+    """
+    seen = []
+    fig, ani = hyp.plot(_datasets(), '-', animate=True, duration=1,
+                        frame_rate=4, on_frame=seen.append, show=False)
+    _drive(ani, 3)
+    assert len(seen) == 3
+    first = tuple(id(a) for a in seen[0].artists)
+    assert all(tuple(id(a) for a in ctx.artists) == first for ctx in seen), (
+        'matplotlib re-delivers the same artist objects, not copies')
+
+
 def test_plotly_spin_artists_are_the_static_data_traces():
     """Regression: the spin branch builds no `frame_traces` (its frame payload
     is camera-layout only, plotly_backend.py:2695-2699), so a literal
@@ -2752,14 +2806,24 @@ def test_plotly_surface_spin_artists_include_the_per_frame_mesh_updates():
     seen = []
     hyp.set_interactive_backend('plotly')
     try:
-        hyp.plot([cloud], animate='spin', surface=True, duration=1,
-                 frame_rate=4, on_frame=seen.append, show=False)
+        fig = hyp.plot([cloud], animate='spin', surface=True, duration=1,
+                       frame_rate=4, on_frame=seen.append, show=False)
     finally:
         hyp.set_interactive_backend('matplotlib')
-    plain = len(tuple(t for t in seen[0].artists if hasattr(t, 'x')))
-    assert len(seen[0].artists) > plain, 'mesh updates are appended'
+    import plotly.graph_objects as go
+
+    # NOT `hasattr(t, 'x')` -- go.Mesh3d has an .x too (verified), so that
+    # predicate matches every trace and the assertion can never fail.
+    # Discriminate on TYPE.
+    assert any(isinstance(t, go.Mesh3d) for t in seen[0].artists), (
+        'the frame\'s re-shaded mesh updates are appended')
+    assert isinstance(seen[0].artists[-1], go.Mesh3d)
     # the trailing mesh entries are PER-FRAME: different objects each frame
     assert seen[0].artists[-1] is not seen[1].artists[-1]
+    # ...while the LEADING entries are the shared figure traces themselves,
+    # which is what makes this the documented mixed case
+    assert seen[0].artists[0] is seen[1].artists[0]
+    assert seen[0].artists[0] in tuple(fig.data)
 
 
 def test_plotly_spin_mutation_is_retained_and_is_figure_wide():
@@ -2836,7 +2900,7 @@ def test_frame_context_is_exported_at_top_level_but_frame_hooks_is_not():
 - [ ] **Step 7: Run the test and confirm it passes**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_on_frame_hook.py -v`
-Expected: **30 passed** (26 plain + 4 parametrized parity cases) — the 23 defs from Step 1, plus Step 6a's three spin-artist tests and Step 6b's export test.
+Expected: **31 passed** (27 plain + 4 parametrized parity cases) — the 23 defs from Step 1, plus Step 6a's four artist-lifetime tests (three plotly-spin, one matplotlib shared-identity) and Step 6b's export test.
 
 Then confirm the public-surface tests still pass, since Step 6b touched them:
 
@@ -2894,7 +2958,7 @@ Note the `return_model=True` limitation in the `return_model` entry (`plot.py:19
 - [ ] **Step 9: Run the FULL suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2646 passed, 13 skipped`. Grep for any test asserting that `on_frame=` is unavailable on plotly — there is none in the repo today, but if one appears it is asserting v2's removed premise, not a contract.
+Expected: `2647 passed, 13 skipped`. Grep for any test asserting that `on_frame=` is unavailable on plotly — there is none in the repo today, but if one appears it is asserting v2's removed premise, not a contract.
 
 - [ ] **Step 10: Commit**
 
@@ -3259,7 +3323,7 @@ Extend the `title` entry written in Task 1:
 - [ ] **Step 8: Run the FULL suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2659 passed, 13 skipped`.
+Expected: `2660 passed, 13 skipped`.
 
 - [ ] **Step 9: Commit**
 
@@ -3478,30 +3542,57 @@ and the plotly equivalent, which reaches the frame's traces instead:
     hyp.set_interactive_backend('plotly')
     fig = hyp.plot(data, '-', animate=True, on_frame=rename)
 
-.. _animation-spin-artists:
+.. _animation-artist-lifetime:
 
-``animate='spin'`` shares its artists
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Artist lifetime: what ``ctx.artists`` actually hands you
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Spin rotates the camera and re-sends no point data, so on plotly every
-frame renders the *same* trace objects. ``ctx.artists`` is therefore shared
-across frames, and a mutation applies to the **whole animation** rather
-than to one frame::
+Whether ``ctx.artists`` holds fresh objects each frame or the *same*
+objects re-delivered depends on the backend and the style:
 
-    def recolour(ctx):
+.. list-table::
+   :header-rows: 1
+
+   * - backend / style
+     - lifetime
+   * - matplotlib, **all** styles
+     - shared live artists, mutated in place on every render
+   * - plotly ``animate='spin'`` (no surfaces)
+     - shared figure traces
+   * - plotly ``animate='spin'`` (surfaced)
+     - shared traces, then that frame's ``Mesh3d`` updates
+   * - plotly parallel / serial / window / morph
+     - per-frame trace payloads
+
+Matplotlib never hands you a fresh artist. ``FuncAnimation``'s updater
+mutates the same ``Line2D`` and collection objects every frame, so
+``ctx.artists[0]`` on frame 1 and on frame 2 are the *same* object in two
+different states. Plotly's spin is the same story for a different reason:
+it moves only the camera and re-sends no point data, so its frames share
+the figure's traces.
+
+**The rule that follows applies to both backends: set the complete state
+you want for the current frame.** Anything you set persists until
+something overwrites it::
+
+    def broken(ctx):
         if ctx.frame == 0:
-            ctx.artists[0].line.color = 'red'   # red for the ENTIRE spin
+            ctx.artists[0].set_color('red')   # red for the WHOLE animation
 
-Writing a spin callback as though each frame had its own artists is the
-common mistake here -- the last frame's value would appear to win, because
-there was only ever one object. If you want something that genuinely varies
-per frame under spin, vary the layout (via the figure) rather than the
-traces, or use ``animate=True`` instead.
+    def correct(ctx):
+        ctx.artists[0].set_color(COLOURS[ctx.frame])   # set it every frame
 
-A surfaced spin is the mixed case: its frames *do* carry re-shaded
-``Mesh3d`` updates, which follow the shared traces in ``ctx.artists``, and
-those trailing entries are per-frame. Every other style, and every style on
-matplotlib, is per-frame throughout.
+Writing a callback as though each frame had its own artists is the common
+mistake. Under matplotlib and under plotly spin there is only ever one
+object, so a conditional mutation looks like it "sticks" -- because it
+does.
+
+This is also why *"a mutation is retained in the rendered frame"* does not
+mean artists are isolated per frame. It means the backend renders what you
+set; on matplotlib and on plotly spin it renders it for every later frame
+too. A surfaced spin is the mixed case: its ``Mesh3d`` updates trail the
+shared traces in ``ctx.artists`` and those trailing entries *are*
+per-frame.
 
 .. _animation-post-construction:
 
@@ -3722,13 +3813,19 @@ def test_animation_guide_labels_its_backend_specific_examples():
     assert '# PLOTLY ONLY' in text
 
 
-def test_animation_guide_documents_spin_shared_artists():
-    """animate='spin' re-sends no point data, so on plotly its frames share
-    the figure's static traces and a mutation is figure-wide. A caller who
-    does not know that will write a spin callback that appears broken."""
-    text = ' '.join(GUIDE.read_text().split())
-    assert 'spin' in text
+def test_animation_guide_documents_artist_lifetime_for_both_backends():
+    """Artists are SHARED on matplotlib (FuncAnimation mutates the same
+    Line2D objects every render) and on plotly spin (camera-only frames).
+    Only plotly's reveal/morph styles hand out per-frame trace payloads. A
+    caller who assumes per-frame artists writes a conditional mutation that
+    silently applies to the whole animation."""
+    text = ' '.join(GUIDE.read_text().split()).lower()
+    assert 'artist lifetime' in text
+    assert 'matplotlib, **all** styles' in text or 'matplotlib, all' in text
     assert 'whole animation' in text or 'figure-wide' in text
+    assert 'spin' in text
+    # the corrected claim must not come back
+    assert 'every style on matplotlib, is per-frame' not in text
 ```
 
 - [ ] **Step 5: Simplify the gallery examples that hand-rolled these primitives — MECHANICAL MIGRATION ONLY**
@@ -3761,7 +3858,7 @@ Expected: build succeeds with **0 warnings** (the repo holds an RTD-parity zero-
 - [ ] **Step 8: Run the FULL suite one last time**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2677 passed, 13 skipped`.
+Expected: `2678 passed, 13 skipped`.
 
 - [ ] **Step 9: Commit**
 
@@ -3822,11 +3919,11 @@ git commit -m "docs(1.1): document order=, per-dataset alpha=, on_frame, per-seg
 | 4 | 7 | 1 def × 4 cases | **10** | 11 ✗ |
 | 5 | 16 | 1 × 4, 1 × 2 | **20** | 20 ✓ |
 | 6 | 10 | — | **10** | 11 ✗ |
-| 7 | 27 | 1 def × 4 cases | **30** | 20 (v3 dropped the plotly-raises test and added 3 defs incl. the ×4 parity case; **v4 adds 6** — two mutation-retention tests, the `FrameContext` export test, and **v4.1**'s three plotly-spin artist tests) |
+| 7 | 28 | 1 def × 4 cases | **31** | 20 (v3 dropped the plotly-raises test and added 3 defs incl. the ×4 parity case; v4 added two mutation-retention tests + the `FrameContext` export test; v4.1 added three plotly-spin artist tests; **v4.2** adds `test_matplotlib_artists_are_shared_across_frame_deliveries`) |
 | 8 | 13 | — | **13** | 14 ✗ |
 | 9 | 8 | 1 def × 10 cases | **18** | 0 (**new in v4**: `tests/test_animation_guide_docs.py`; **v4.1** adds three more — post-construction qualification, backend-labelled examples, spin's shared artists) |
 
-Added (v4.1): 9 + 5 + 11 + 10 + 20 + 10 + **30** + 13 + **18** = **126**. Final expected: `2677 passed, 13 skipped`. *(v3 totalled 102 → 2,653; v4 made it 120 → 2,671; v4.1 adds 3 spin tests to Task 7 and 3 guide tests to Task 9.)* Each task's Step "run the FULL suite" states its own running total, so a drift is caught at the task that caused it.
+Added (v4.2): 9 + 5 + 11 + 10 + 20 + 10 + **31** + 13 + **18** = **127**. Final expected: `2678 passed, 13 skipped`. *(v3 totalled 102 → 2,653; v4 → 120 → 2,671; v4.1 → 126 → 2,677; v4.2 adds the matplotlib shared-identity test.)* Each task's Step "run the FULL suite" states its own running total, so a drift is caught at the task that caused it.
 
 The three ✗ rows are a **v2 counting error, not a v3 change**: v2 counted a parametrized def as both one def *and* its cases (visible in its own Task 4 breakdown, *"4 plain + 4 parametrized + 3 plain"* for a file with 7 defs), and over-counted Tasks 6 and 8 by one each with no parametrization present to explain it. Nothing about those tasks' contents changed in v3.
 

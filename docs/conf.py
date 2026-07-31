@@ -39,15 +39,20 @@ except Exception:  # pragma: no cover
         return ''
 sys.path.insert(0, os.path.abspath('../'))
 # `setup()` below does `from _gallery_log_filter import install` -- a sibling
-# module living right next to this file (docs/_gallery_log_filter.py). Read
-# the Docs' own build harness invokes Sphinx via `python -m sphinx`, which
-# Python implicitly puts the CURRENT WORKING DIRECTORY (docs/) onto
-# sys.path[0] for, so that import silently works there. The documented local
-# workflow (`cd docs && make html`, i.e. the installed `sphinx-build`
-# console-script) gets no such implicit entry -- console-script entry points
-# don't add cwd to sys.path -- so the same import raised ModuleNotFoundError
-# for every local/CI build using that entry point. Explicitly adding this
-# file's own directory makes the import invocation-agnostic.
+# module living right next to this file (docs/_gallery_log_filter.py).
+# Whether that import resolves depends on HOW Sphinx was invoked, which is
+# not something conf.py should have to care about:
+#   - `python -m sphinx` (what the docs-clean CI job runs, see
+#     .github/workflows/test.yml) puts the current working directory --
+#     docs/ -- on sys.path[0], so the import silently works;
+#   - the installed `sphinx-build` console script (what `cd docs &&
+#     make html`, the documented local workflow, uses) does NOT: console
+#     entry points get the script's own bin/ directory instead, so the same
+#     import raised ModuleNotFoundError and the local build could not run.
+# Read the Docs' exact invocation is deliberately not assumed here --
+# .readthedocs.yaml declares a normal Sphinx build without pinning it.
+# Explicitly adding this file's own directory makes the import
+# invocation-agnostic, so every path above behaves identically.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
