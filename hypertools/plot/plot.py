@@ -2255,9 +2255,11 @@ def plot(
                 "animate='morph'. For extra camera rotations, pass "
                 "rotations= instead.")
 
-    # fail-fast on title= BEFORE the analyze/reduce pipeline (plot.py:423-430)
-    # and before resolve_font (plot.py:2428) / the plot_stream return
-    # (plot.py:2582) both consume it.
+    # fail-fast on title= BEFORE the analyze/reduce pipeline (the same
+    # precedent _validate_extra_kwargs sets) and before resolve_font() and the
+    # plot_stream() return both consume it. Cited by SYMBOL, not line number:
+    # tasks later in this plan add code above these, and stale line citations
+    # have misdirected readers six times in this project.
     _validate_title(title, style=animate)
 
     # animations need a positive duration and frame rate (QC 2026-07: duration=0

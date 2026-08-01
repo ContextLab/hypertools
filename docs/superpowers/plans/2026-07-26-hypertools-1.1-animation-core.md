@@ -165,6 +165,15 @@ Two v1 claims the review **confirmed correct** and this plan keeps unchanged:
 - When any behavior changes, update the docstring in the same commit (repo rule: docs travel with code).
 - All `warnings.warn` calls in `plot.py` use `stacklevel=external_stacklevel()` (`hypertools/core/model.py:32`), never a literal `stacklevel=2`.
 - Commit after every task. Branch off `dev-1.0`; do not commit to `master`.
+- **`git add` any NEW file BEFORE the full-suite step, not after it.** Found by executing Task 1
+  (2026-08-01): `tests/test_packaging_artifacts.py::test_sdist_contains_only_tracked_files_plus_allowlist`
+  builds an sdist from the working tree and fails on any file that is present but untracked, so a
+  new test module costs a **wasted ~9-minute suite run** if staged only at the commit step. This is
+  the packaging gate working correctly — an untracked file really would ship in the sdist while
+  being invisible to git — so stage first and let the suite see the final state. Affects every task
+  that creates a file (1, 7 and 9 at minimum).
+- **Run the suite as `cmd > log 2>&1; rc=$?; tail log; exit $rc`, never `cmd | tail`.** A pipeline
+  reports *tail's* exit status, which has twice reported a green run for a suite that had failures.
 
 ---
 
