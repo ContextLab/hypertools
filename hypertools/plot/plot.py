@@ -5181,6 +5181,17 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
             trail_lines[i] = _trail_artists.pop(0)
 
     def _linewidth(i):
+        # the hidden head artist already carries the caller's linewidth=:
+        # `animate_plot3D`/`animate_plot2D` pop it out of kwargs_list ONCE per
+        # dataset (matplotlib_backend.py:1602-1606 / :2197-2201, so it cannot
+        # also ride along in **kwargs_list[idx] and collide) and pass it
+        # explicitly to ax.plot. Reading it back off kwargs_list here found
+        # nothing and silently fell through to rcParams['lines.linewidth'],
+        # so every animated multicolour collection rendered at 1.5 regardless
+        # of what the caller asked for. Reading the artist also guarantees the
+        # overlay always matches the artist it replaces.
+        if i < len(head_lines):
+            return head_lines[i].get_linewidth()
         tkwargs = kwargs_list[i] if i < len(kwargs_list) else {}
         return (tkwargs.get('linewidth')
                 or plt.rcParams['lines.linewidth'])
