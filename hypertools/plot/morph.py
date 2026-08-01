@@ -20,8 +20,18 @@ morphing dataset's point count so clouds could be matched 1-to-1. Every
 dataset now keeps its FULL point count instead: the target count ``n`` is
 the LARGEST (post-`morph_samples`-cap) dataset's size, and any dataset
 with ``m < n`` points is padded up to ``n`` by duplicating ``n - m`` of
-its OWN points (chosen at random, seeded). No real data point is ever
-dropped. The duplicated rows are tracked per dataset (see
+its OWN points (chosen at random, seeded). No real data point is dropped
+by the padding step itself. Whether one is dropped EARLIER, by sampling,
+is the caller's documented choice: with an explicit ``morph_samples=``,
+or with ``simplify=True`` (the default) over clouds larger than
+``plot.MORPH_SAMPLES_REQUIRED_ABOVE`` = 2000 points, each cloud is first
+downsampled to that cap -- silently, because an uncapped Hungarian match
+over ~30k-point clouds does not finish (measured: still running after 10
+minutes; capped at 2000 it renders in 8.2 s). With ``simplify=False`` and
+no ``morph_samples=``, the original guarantee holds absolutely at any
+size: every dataset keeps its FULL point count, and an intractable morph
+raises rather than approximating. The duplicated rows are tracked per
+dataset (see
 :func:`sample_and_match_clouds`'s ``dup_masks`` return value) and hidden
 during that dataset's own HOLD frames (see :func:`morph_visible_mask`) so
 alpha-compositing a hold frame looks identical to a plain plot of that

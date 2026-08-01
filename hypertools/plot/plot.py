@@ -94,6 +94,17 @@ _STATIC_LINE_TARGET_VERTICES = 900
 # "no information" reads consistently across the library.
 _UNLABELED_HUE_COLOR = (0.75, 0.75, 0.75)
 
+#: Largest morphing-cloud size `animate='morph'` will accept without an
+#: explicit `morph_samples=`. The one-to-one point matching is a Hungarian
+#: assignment (`scipy.optimize.linear_sum_assignment`) over an n x n float64
+#: cost matrix, costing roughly O(n^3): measured 0.10 s / 0.64 s / 4.99 s at
+#: n = 1000 / 2000 / 4000, so the built-in zoo shapes (~30k points each,
+#: 7.2 GB of cost matrix) do not finish in any usable time (measured: killed
+#: at 10 min; `morph_samples=2000` renders the same call in 8.2 s). Above
+#: this size `simplify=True` (the default) downsamples to it SILENTLY, and
+#: `simplify=False` raises instead. Below it, nothing happens at all.
+MORPH_SAMPLES_REQUIRED_ABOVE = 2000
+
 
 def _seaborn_palette_arg(palette, n_colors):
     """`palette` in a form seaborn's `color_palette`/`set_palette` accept.
@@ -583,6 +594,7 @@ def plot(
     frame_rate=30,
     focused=None,
     morph_samples=None,
+    simplify=True,
     interactive=False,
     explore=False,
     backend="auto",
@@ -1343,7 +1355,14 @@ def plot(
         LARGEST morphing dataset's own size (after the optional
         `morph_samples` cap below), and any dataset with `m < n` points is
         padded up to `n` by duplicating `n - m` of its OWN points, chosen
-        at random (seeded) -- no real data point is ever dropped. The
+        at random (seeded) -- the padding step itself never drops a real
+        data point. Whether one was already dropped EARLIER, by sampling,
+        is the caller's documented choice: with an explicit
+        `morph_samples=`, or with `simplify=True` (the default) over clouds
+        larger than `MORPH_SAMPLES_REQUIRED_ABOVE` = 2000 points, each cloud
+        is first downsampled to that cap; with `simplify=False` and no
+        `morph_samples=`, every dataset keeps its FULL point count and no
+        real data point is ever dropped (see `simplify` below). The
         duplicated (padding) points are hidden during that dataset's own
         HOLD segments (so semi-transparent markers alpha-composite exactly
         like a plain plot of that dataset's true points) and shown, like
@@ -1539,15 +1558,32 @@ def plot(
         An OPTIONAL cap on morphing-dataset size, applied BEFORE the
         duplicate-padding described under `animate` above: any morphing
         dataset larger than `morph_samples` is first downsampled (without
-        replacement, seeded) to exactly `morph_samples` points. Default
-        `None`: no cap -- every dataset keeps its full point count, and the
-        target count is simply the largest dataset's own size. Since the
+        replacement, seeded) to exactly `morph_samples` points.
+        Default `None`: no cap -- every dataset keeps its full point count,
+        and the target count is simply the largest dataset's own size (no
+        real data point is ever dropped; see `hypertools.plot.morph`). The
         Hungarian assignment's cost is roughly ``O(n^3)`` in the (post-cap)
-        target point count, `morph_samples` is RECOMMENDED for clouds
-        larger than ~2000 points (e.g. `morph_samples=1000`) -- the
-        uncapped default can be slow, or memory-heavy, for very large
-        datasets. Must be a positive integer (or None); anything else
+        target point count, so above 2000 points per cloud an uncapped morph
+        is intractable: with the default ``simplify=True`` hypertools caps it
+        at 2000 for you, and with ``simplify=False`` it raises ``ValueError``
+        naming this parameter rather than appearing to hang. Pass
+        ``morph_samples=1000`` (or whatever cap you want) to choose for
+        yourself; an explicit value always wins over ``simplify``. Measured
+        matching cost: 0.10 s at 1000 points, 0.64 s at 2000, 4.99 s at
+        4000; the built-in zoo shapes (~30k points) would need a 7.2 GB cost
+        matrix and were still running after 10 minutes.
+        Must be a positive integer (or None); anything else
         raises ``ValueError``. Ignored for every other `animate` mode.
+
+    simplify : bool, default True
+        Whether hypertools may silently downsample to keep a render
+        tractable. Today this governs ``animate='morph'`` **only**: a morph
+        over clouds larger than 2000 points is downsampled to 2000 with no
+        warning (see ``morph_samples``), because the alternative is a plot
+        that never appears. Pass ``simplify=False`` to get an explanatory
+        ``ValueError`` instead, so that no real data point is ever dropped
+        without you asking. Below the threshold, and whenever you pass
+        ``morph_samples=`` yourself, ``simplify`` does nothing at all.
 
     interactive : bool
         If True, display the plot using an interactive matplotlib
@@ -2261,6 +2297,16 @@ def plot(
     # tasks later in this plan add code above these, and stale line citations
     # have misdirected readers six times in this project.
     _validate_title(title, style=animate)
+
+    # fail-fast on simplify= (Contract 8, same precedent as title= above):
+    # it needs no data, only its own type, so it must not wait for the
+    # animate='morph' tractability guard further down the pipeline.
+    if not isinstance(simplify, bool):
+        raise TypeError(
+            f"simplify must be True or False, not {type(simplify).__name__}. "
+            "It controls whether hypertools may downsample to keep an "
+            "animate='morph' render tractable; it does not downsample "
+            "anything else.")
 
     # animations need a positive duration and frame rate (QC 2026-07: duration=0
     # or frame_rate=0 raised ZeroDivisionError, and a negative duration a cryptic
@@ -3694,6 +3740,37 @@ def plot(
             f"data being plotted is {xform[0].shape[1]}-D. Pass ndims=2 or "
             "ndims=3 (the default) to use animate='morph'."
         )
+
+    # animate='morph' tractability guard: `morph_tags` marks which FINAL
+    # (post cluster/hue-reshape) datasets join the morph sequence, so an
+    # untagged static backdrop of any size is irrelevant here. An explicit
+    # morph_samples= means the caller already chose, so `simplify` never
+    # engages.
+    if morph_tags is not None and morph_samples is None:
+        _morph_sizes = [int(np.asarray(xform[i]).shape[0])
+                        for i, _tagged in enumerate(morph_tags) if _tagged]
+        _largest = max(_morph_sizes)
+        if _largest > MORPH_SAMPLES_REQUIRED_ABOVE:
+            if simplify:
+                # SILENT by maintainer decision (2026-07-29): no warning, no
+                # print. Hanging is worse than approximating, and the caller
+                # who wants the guarantee back has simplify=False.
+                morph_samples = MORPH_SAMPLES_REQUIRED_ABOVE
+            else:
+                raise ValueError(
+                    f"animate='morph' received a cloud of {_largest} points. "
+                    "The one-to-one point matching is a Hungarian assignment "
+                    "(~O(n^3), with an n x n cost matrix), so this does not "
+                    "finish in usable time or memory: measured, the built-in "
+                    "zoo shapes were still running after 10 minutes, while "
+                    f"morph_samples={MORPH_SAMPLES_REQUIRED_ABOVE} renders "
+                    "the same call in 8.2 s. Set simplify=True (the default) "
+                    "to let hypertools downsample to "
+                    f"{MORPH_SAMPLES_REQUIRED_ABOVE} points per cloud "
+                    "automatically, or pass morph_samples=<int> to choose "
+                    "the cap yourself. With simplify=False and no "
+                    "morph_samples=, every dataset keeps its full point "
+                    "count and no real data point is ever dropped.")
 
     # `rotations` as a per-SEGMENT list ([hold_1, morph_1->2, hold_2, ...],
     # length 2 * n_morph_datasets - 1): the mode-mismatch check (list given
