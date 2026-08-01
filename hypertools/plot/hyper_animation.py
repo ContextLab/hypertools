@@ -48,10 +48,20 @@ class HyperAnimation(tuple):
     Indexing/unpacking behave exactly like the legacy 2-tuple
     (``fig, anim = result``; ``result[0]`` is the figure, ``result[1]`` the
     animation), so this is a drop-in replacement for the old return value.
+
+    ``.on_frame(callback)`` registers a per-frame callback (matplotlib
+    only -- see ``hyp.plot``'s ``on_frame=`` docstring for the
+    backend-portable form and the ``FrameContext`` it receives).
     """
 
-    def __new__(cls, figure, animation):
+    def __new__(cls, figure, animation, frame_hooks=None):
         self = super().__new__(cls, (figure, animation))
+        # ADOPT the registry plot() already threaded into the backend -- do
+        # NOT create one here. The per-frame updater closure was built inside
+        # `_draw` long before this wrapper existed, so a list created here
+        # would be a fresh, unreferenced object and `on_frame()` could never
+        # fire (plan 1.1 Task 7, review C7).
+        self._frame_hooks = frame_hooks
         return self
 
     @property
@@ -65,6 +75,25 @@ class HyperAnimation(tuple):
         ``FuncAnimation``). Keeping a reference to it keeps the animation
         alive."""
         return self[1]
+
+    def on_frame(self, callback):
+        """Register `callback` to run after every drawn frame.
+
+        The callback receives a
+        :class:`~hypertools.plot.animation_context.FrameContext`. Returns
+        `self`, so calls chain. Exceptions from a callback propagate.
+
+        Not available on the ``return_model=True`` bundle, which hands back
+        the raw ``FuncAnimation``; pass ``on_frame=`` to ``plot()`` instead
+        on that path.
+        """
+        if self._frame_hooks is None:
+            raise RuntimeError(
+                "this HyperAnimation carries no frame-hook registry (it was "
+                "constructed directly rather than by hyp.plot); pass "
+                "on_frame= to hyp.plot instead.")
+        self._frame_hooks.add(callback)
+        return self
 
     # --- export / display --------------------------------------------------
 

@@ -440,6 +440,38 @@ def _make_save_dpi_safe(line_ani):
     return line_ani
 
 
+def serial_reveal_counts(lengths, num, total_frames):
+    """Rows revealed per dataset at frame `num` of a serial animation.
+
+    THE reveal schedule. `update_lines_serial` (3-D), `update_lines_serial_2d`
+    and `FrameContext.revealed_counts` all read it, and
+    `plot._apply_multicolor_animation` recovers its hue window from it, so the
+    formula exists once. Equivalent to the historical inline code
+    (`revealed = total_points * num / max(1, total_frames - 1)`; per dataset
+    `shown = int(np.clip(revealed - start, 0, n_pts))`).
+    """
+    total_points = sum(lengths)
+    revealed = total_points * num / max(1, total_frames - 1)
+    counts, remaining = [], revealed
+    for length in lengths:
+        counts.append(int(max(0, min(length, remaining))))
+        remaining -= length
+    return counts
+
+
+def serial_current_index(counts, lengths):
+    """``(index, fraction)`` of the dataset mid-reveal at these counts."""
+    done = -1
+    for i, (shown, length) in enumerate(zip(counts, lengths)):
+        if 0 < shown < length:
+            return i, (shown - 1) / max(1, length - 1)
+        if shown >= length:
+            done = i
+    if done < 0:
+        return 0, 0.0
+    return done, 1.0
+
+
 def _draw(
     x,
     legend=None,
@@ -479,6 +511,7 @@ def _draw(
     xlabel=None,
     ylabel=None,
     zlabel=None,
+    frame_hooks=None,
 ):
     """
     Draws the plot
@@ -497,6 +530,17 @@ def _draw(
     currently render at the interpolated points rather than only the
     original samples; splitting the animated marker/line artists frame-by-
     frame was judged out of scope for this fix.
+
+    `frame_hooks` (the public `on_frame=` hook, plan 1.1 Task 7): a
+    `hypertools.plot.animation_context.FrameHooks` registry, created once by
+    `plot()` and threaded in here so every animated updater below can call
+    `frame_hooks.record(...)` with whatever it knows about the frame just
+    drawn. `None` (the default) when no `on_frame=` was requested, in which
+    case every updater's `if frame_hooks is not None:` guard is a no-op.
+    `plot()` installs the actual callback dispatch as the outermost wrapper
+    of the returned `FuncAnimation._func`, AFTER this function returns (see
+    `FrameHooks.dispatch`) -- updaters here only ever record state, never
+    invoke callbacks.
     """
 
     # chemtrails/precog/bullettime (GH #127): normalize to one bool per
@@ -1224,6 +1268,13 @@ def _draw(
         # per-point labels track their datapoint's visibility window (the same
         # [num - tail_duration, num] window the head line uses above)
         _sync_anim_labels(num, tail_duration)
+        if frame_hooks is not None:
+            frame_hooks.record(
+                frame=int(num), n_frames=int(total_frames),
+                artists=list(lines) + [t for t in trail_lines if t is not None],
+                datasets=list(data_lines), style=animate, order='parallel',
+                current_index=None, current_fraction=None,
+                revealed_counts=None)
         return lines, trail_lines
 
     def update_lines_spin(
@@ -1278,6 +1329,12 @@ def _draw(
         # 'spin' draws every point every frame, so labels stay visible -- but
         # still reproject them for the rotated camera
         _sync_anim_labels(num, 0, all_visible=True)
+        if frame_hooks is not None:
+            frame_hooks.record(
+                frame=int(num), n_frames=int(round(frame_rate * duration)),
+                artists=list(lines), datasets=list(data_lines), style=animate,
+                order='parallel', current_index=None, current_fraction=None,
+                revealed_counts=None)
         return lines
 
     def update_lines_serial(
@@ -1316,15 +1373,14 @@ def _draw(
         lengths = [d.shape[0] for d in data_lines]
         total_points = sum(lengths)
         revealed = total_points * num / max(1, total_frames - 1)
+        _counts = serial_reveal_counts(lengths, num, total_frames)
 
-        start = 0
         windows = []
         window_spcs = []
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
             n_pts = data.shape[0]
-            shown = int(np.clip(revealed - start, 0, n_pts))
-            start += n_pts
+            shown = _counts[i]
 
             ct = chemtrails[i] if chemtrails is not None else False
             pc = precog[i] if precog is not None else False
@@ -1393,6 +1449,14 @@ def _draw(
         # serial reveals points cumulatively: a label shows once its point has
         # been revealed (global index <= revealed), and stays
         _sync_anim_labels(num, 0, revealed=revealed)
+        if frame_hooks is not None:
+            _idx, _frac = serial_current_index(_counts, lengths)
+            frame_hooks.record(
+                frame=int(num), n_frames=int(total_frames),
+                artists=list(lines) + [t for t in trail_lines if t is not None],
+                datasets=list(data_lines), style='serial', order='serial',
+                current_index=_idx, current_fraction=_frac,
+                revealed_counts=_counts)
         return lines
 
     def update_morph(num, morph_state, cube_scale, azimuths, zoom=1, elev=10):
@@ -1473,6 +1537,18 @@ def _draw(
         # morph collapses the datasets to one traveling cloud that does not
         # correspond to the original labeled points -> hide per-point labels
         _sync_anim_labels(num, 0, hide_all=True)
+        if frame_hooks is not None:
+            frame_hooks.record(
+                frame=int(num),
+                n_frames=int(sum(morph_state["frame_counts"])),
+                artists=[morph_state["artist"]],
+                datasets=list(morph_state["sampled"]),
+                style='morph', order='serial',
+                current_index=seg_idx // 2,
+                current_fraction=step / max(1, n_steps - 1),
+                revealed_counts=None,
+                segment_index=seg_idx,
+                segment_kind='hold' if seg_idx % 2 == 0 else 'transition')
         return (artist,)
 
     def dispatch_animate(x, ani_params):
@@ -2043,6 +2119,13 @@ def _draw(
             line.set_data(window[:, 0], window[:, 1])
 
         _sync_anim_labels(num, tail_duration)
+        if frame_hooks is not None:
+            frame_hooks.record(
+                frame=int(num), n_frames=int(total_frames),
+                artists=list(lines) + [t for t in trail_lines if t is not None],
+                datasets=list(data_lines), style=animate, order='parallel',
+                current_index=None, current_fraction=None,
+                revealed_counts=None)
         return lines, trail_lines
 
     def update_lines_serial_2d(num, data_lines, lines, trail_lines,
@@ -2062,13 +2145,12 @@ def _draw(
         lengths = [d.shape[0] for d in data_lines]
         total_points = sum(lengths)
         revealed = total_points * num / max(1, total_frames - 1)
+        _counts = serial_reveal_counts(lengths, num, total_frames)
 
-        start = 0
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
             n_pts = data.shape[0]
-            shown = int(np.clip(revealed - start, 0, n_pts))
-            start += n_pts
+            shown = _counts[i]
 
             ct = chemtrails[i] if chemtrails is not None else False
             pc = precog[i] if precog is not None else False
@@ -2102,6 +2184,14 @@ def _draw(
                 trail.set_data(trail_seg[:, 0], trail_seg[:, 1])
 
         _sync_anim_labels(num, 0, revealed=revealed)
+        if frame_hooks is not None:
+            _idx, _frac = serial_current_index(_counts, lengths)
+            frame_hooks.record(
+                frame=int(num), n_frames=int(total_frames),
+                artists=list(lines) + [t for t in trail_lines if t is not None],
+                datasets=list(data_lines), style='serial', order='serial',
+                current_index=_idx, current_fraction=_frac,
+                revealed_counts=_counts)
         return lines
 
     def update_morph_2d(num, morph_state):
@@ -2127,6 +2217,18 @@ def _draw(
         artist.set_color(color)
 
         _sync_anim_labels(num, 0, hide_all=True)
+        if frame_hooks is not None:
+            frame_hooks.record(
+                frame=int(num),
+                n_frames=int(sum(morph_state["frame_counts"])),
+                artists=[morph_state["artist"]],
+                datasets=list(morph_state["sampled"]),
+                style='morph', order='serial',
+                current_index=seg_idx // 2,
+                current_fraction=step / max(1, n_steps - 1),
+                revealed_counts=None,
+                segment_index=seg_idx,
+                segment_kind='hold' if seg_idx % 2 == 0 else 'transition')
         return (artist,)
 
     def animate_plot2D(

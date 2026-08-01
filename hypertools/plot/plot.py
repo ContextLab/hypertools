@@ -25,6 +25,7 @@ from ..tools.format_data import format_data
 from .matplotlib_backend import _draw
 from .backend import manage_backend
 from .plotly_backend import resolve_backend
+from .animation_context import FrameHooks
 from .animate import _save_animation
 from .surface import broadcast_surface, normalize_surface_arg
 from .density import broadcast_density, normalize_density_arg
@@ -742,6 +743,7 @@ def plot(
     frame_rate=30,
     focused=None,
     morph_samples=None,
+    on_frame=None,
     simplify=True,
     interactive=False,
     explore=False,
@@ -1748,6 +1750,49 @@ def plot(
         Must be a positive integer (or None); anything else
         raises ``ValueError``. Ignored for every other `animate` mode.
 
+    on_frame : callable, optional
+        Called after each animation frame is drawn, with a single
+        ``FrameContext`` argument exposing the frame index, the axes and
+        drawn artists, the arrays being animated, and -- for serial-style
+        animations -- which dataset is being revealed, how far through it,
+        and the exact per-dataset reveal counts. For ``animate='morph'`` it
+        also reports ``segment_index`` and ``segment_kind`` ('hold' or
+        'transition'). Use this instead of reaching into matplotlib's
+        private ``FuncAnimation._func``. On MATPLOTLIB, callbacks may also
+        be attached afterwards via ``HyperAnimation.on_frame()``; this is
+        not available on plotly, whose animated return is a plain
+        ``go.Figure`` with its frames already built, so pass ``on_frame=``
+        here for backend-portable code.
+
+        Supported on BOTH backends, with the same per-frame context
+        metadata but different call schedules: matplotlib calls back at
+        render time, so a frame index may recur across a looping animation
+        or a save; plotly calls back exactly once per frame index, while
+        the frames are built. **Callbacks must be deterministic and
+        idempotent for a given frame context. They must not depend on call
+        count, call order, wall-clock time, or accumulated external
+        state.**
+
+        Mutating what the context hands you is the point of the hook and is
+        fully supported -- the example below sets a title every frame.
+        What is unsupported is accumulation (``count += 1``,
+        ``alpha *= 0.9``), because a repeated frame would change the
+        result. Precompute running quantities and index them by
+        ``ctx.frame``.
+
+        ``ctx.figure``, ``ctx.axes`` and ``ctx.artists`` are backend-native
+        (``ctx.axes`` is ``None`` on plotly, whose ``ctx.artists`` are that
+        frame's traces), so a callback that touches them is **not**
+        portable across backends; every other field is identical across
+        backends.
+
+        >>> import hypertools as hyp
+        >>> data = [np.cumsum(np.random.default_rng(0).standard_normal(
+        ...     (20, 3)), axis=0)]
+        >>> def annotate(ctx):
+        ...     ctx.axes.set_title(f'frame {ctx.frame} of {ctx.n_frames}')
+        >>> anim = hyp.plot(data, animate=True, on_frame=annotate, show=False)
+
     simplify : bool, default True
         Whether hypertools may silently downsample to keep a render
         tractable. Today this governs ``animate='morph'`` **only**: a morph
@@ -2158,7 +2203,10 @@ def plot(
         'models': ..., 'predict': ...}`` instead of the bare figure, where
         ``xform_data`` is the normalized/reduced/aligned data, ``animation``
         is the ``matplotlib.animation.Animation`` handle (``None`` unless
-        ``animate=True`` with the matplotlib backend), ``pipeline`` is a
+        ``animate=True`` with the matplotlib backend) -- this is the RAW
+        handle, never wrapped in a ``HyperAnimation``, so it has no
+        ``.on_frame()``; pass ``on_frame=`` to this call instead, which
+        still fires regardless of ``return_model=``. ``pipeline`` is a
         fitted `hypertools.Pipeline` covering whichever of `manip=`/
         `normalize=`/`reduce=`/`align=`/`cluster=` ran (the SAME `pipeline=`
         object passed in, if any; `None` when `transform=` was used, since
@@ -2485,6 +2533,18 @@ def plot(
     # name every OTHER downstream consumer expects) once streaming inputs
     # have already returned early, below.
     _resolved_order = _resolve_order(animate, order)
+
+    # fail-fast on on_frame= (plan 1.1 Task 7, same precedent as title=/
+    # order= above): needs only its own callability and the raw animate=
+    # truthiness, neither of which depends on the pipeline.
+    if on_frame is not None:
+        if not callable(on_frame):
+            raise TypeError(
+                f"on_frame must be callable; got {type(on_frame).__name__}.")
+        if not animate:
+            raise ValueError(
+                "on_frame requires an animated plot; pass animate=True "
+                "(or 'spin'/'serial'/'window'/'morph').")
 
     # fail-fast on simplify= (Contract 8, same precedent as title= above):
     # it needs no data, only its own type, so it must not wait for the
@@ -4575,6 +4635,17 @@ def plot(
     if raw_forecasts is not None:
         raw_forecasts = [np.nan_to_num(fc) for fc in raw_forecasts]
 
+    # on_frame= (plan 1.1 Task 7): ONE shared registry, created before
+    # either backend's per-frame closures exist, and threaded into both --
+    # `plotly_draw`/`_add_animation` dispatch it directly (plotly builds
+    # every frame in a Python loop at IMPORT time, below); the matplotlib
+    # path installs it as the outermost wrapper of `line_ani._func` further
+    # down, and `HyperAnimation` adopts this SAME object so a callback
+    # registered after construction (`anim.on_frame(cb)`) reaches the same
+    # list the dispatcher reads (review C7 -- a list created fresh inside
+    # `HyperAnimation.__new__` would never be seen by the closure).
+    _frame_hooks = FrameHooks([on_frame] if on_frame is not None else [])
+
     # interactive (plotly) backend: render with plotly and skip the
     # matplotlib pipeline entirely. backend='auto' resolves to plotly only
     # on Colab/Kaggle (see hypertools.plot.plotly_backend for the policy).
@@ -4644,6 +4715,7 @@ def plot(
             xlabel=xlabel,
             ylabel=ylabel,
             zlabel=zlabel,
+            frame_hooks=_frame_hooks,
         )
         ax = None
         data = xform
@@ -4728,6 +4800,7 @@ def plot(
                 xlabel=xlabel,
                 ylabel=ylabel,
                 zlabel=zlabel,
+                frame_hooks=_frame_hooks,
             )
 
             # predict=: overlay one dashed, low-opacity (alpha 0.6) forecast
@@ -4805,6 +4878,39 @@ def plot(
                 else:
                     _apply_multicolor_markers(ax, xform, line_colors,
                                               kwargs_list, fmt=fmt)
+
+            # on_frame= (plan 1.1 Task 7): the hook dispatcher goes on LAST,
+            # so callbacks observe the FINAL artists -- _apply_multicolor_
+            # animation (above) wraps line_ani._func itself and would
+            # otherwise run after this dispatcher, handing hooks pre-
+            # multicolor collections. Every animated updater in
+            # matplotlib_backend already called `_frame_hooks.record(...)`
+            # (a cheap no-op when there are no callbacks); this wrapper is
+            # the ONE place that turns recorded state into an actual call.
+            if line_ani is not None:
+                _orig_frame_func = line_ani._func
+
+                def _hyp_frame_with_hooks(num, *fargs,
+                                          _orig=_orig_frame_func):
+                    result = _orig(num, *fargs)
+                    # updaters stash per-frame state as attributes on
+                    # THEMSELVES (e.g. `update_morph.planes`, the just-drawn
+                    # cube wireframe -- see matplotlib_backend's own
+                    # `hasattr(update_lines_serial, "planes")` reuse-check),
+                    # and a pre-existing test (test_morph_animation.py's
+                    # TestBoxContainmentUnionHull) reads it back afterward via
+                    # `ani._func.planes`. Since this wrapper -- not the
+                    # original updater -- is now `line_ani._func`, mirror the
+                    # updater's __dict__ onto the wrapper after every call so
+                    # that access keeps working unchanged (measured: without
+                    # this, `ani._func.planes` raised AttributeError, because
+                    # a plain function wrapper carries no attributes of its
+                    # own).
+                    _hyp_frame_with_hooks.__dict__.update(_orig.__dict__)
+                    _frame_hooks.dispatch(fig, ax)
+                    return result
+
+                line_ani._func = _hyp_frame_with_hooks
 
             # tighten layout (static plots only: animated axes are given
             # the full canvas so rotating zoomed cubes don't clip, and
@@ -5012,7 +5118,7 @@ def plot(
     # `fig, anim = hyp.plot(...)` keeps working too.
     if line_ani is not None:
         from .hyper_animation import HyperAnimation
-        return HyperAnimation(fig, line_ani)
+        return HyperAnimation(fig, line_ani, frame_hooks=_frame_hooks)
 
     return fig
 
@@ -5643,7 +5749,6 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
         result = orig_func(num, *fargs)
         for i in range(n):
             pts = _points(i)
-            ci = np.asarray(line_colors[i])
             n_pts = pts.shape[0]
             # the backend records the ORIGINAL row window each artist was just
             # drawn over (`_hyp_row_window`); prefer it, since antialiasing
@@ -5670,15 +5775,14 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
             if style == 'serial':
                 # serial: the head artist is the opaque comet-head near the
                 # reveal tip (or, with no trail flag, the whole revealed
-                # span). Recover its position from this dataset's cumulative
-                # reveal count so the multicolored head sits exactly where
-                # the backend drew it (see
-                # matplotlib_backend.update_lines_serial).
+                # span). Recover its position from the SAME shared reveal
+                # schedule the backend used to draw it (see
+                # matplotlib_backend.update_lines_serial) -- a call, not a
+                # second copy of the formula.
+                from .matplotlib_backend import serial_reveal_counts
                 _lengths = [_points(j).shape[0] for j in range(n)]
-                _start_i = int(sum(_lengths[:i]))
-                revealed = (sum(_lengths) * num
-                            / max(1, int(total_frames) - 1))
-                shown = int(np.clip(revealed - _start_i, 0, n_pts))
+                shown = serial_reveal_counts(_lengths, num,
+                                             int(total_frames))[i]
                 end = shown
                 start = max(0, shown - head_len)
             else:

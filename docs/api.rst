@@ -113,6 +113,7 @@ Plot
 
   plot
   HyperAnimation
+  FrameContext
 
 Set interactive backend
 ------------------------

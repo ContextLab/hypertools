@@ -4,10 +4,11 @@
 The classic API lives at the top level: `plot`, `analyze`, `reduce`,
 `align`, `normalize`, `describe`, `cluster`, `manip`, `predict`, `impute`,
 `load`, `save`, `apply_model`, `supported_models`, `Pipeline`, and
-`set_interactive_backend`, plus the `io` submodule and `HyperAnimation`
-(the return type of animated plots). Exceptions raised by hypertools
-(`HypertoolsError`, `HypertoolsBackendError`, `HypertoolsIOError`) are
-also importable from here.
+`set_interactive_backend`, plus the `io` submodule, `HyperAnimation`
+(the return type of animated plots), and `FrameContext` (the per-frame
+state `plot(..., on_frame=...)` hands to its callback). Exceptions raised
+by hypertools (`HypertoolsError`, `HypertoolsBackendError`,
+`HypertoolsIOError`) are also importable from here.
 
 Import-form note: several top-level functions share a name with the
 subpackage they live in, so attribute access like
@@ -22,6 +23,7 @@ from .config import __version__
 from .plot.plot import plot
 from .plot.backend import set_interactive_backend
 from .plot.hyper_animation import HyperAnimation
+from .plot.animation_context import FrameContext
 from .io.load import load
 from .tools.analyze import analyze
 from .reduce.reduce import reduce
@@ -47,6 +49,6 @@ __all__ = [
     'plot', 'analyze', 'reduce', 'align', 'normalize', 'describe',
     'cluster', 'manip', 'predict', 'impute', 'load', 'save',
     'apply_model', 'supported_models', 'Pipeline',
-    'set_interactive_backend', 'HyperAnimation', 'io',
+    'set_interactive_backend', 'HyperAnimation', 'FrameContext', 'io',
     'HypertoolsError', 'HypertoolsBackendError', 'HypertoolsIOError',
 ]

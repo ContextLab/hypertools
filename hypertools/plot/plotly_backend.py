@@ -467,7 +467,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 density=None, density_colors=None,
                 morph_tags=None, morph_colors=None, morph_samples=None,
                 font=None, font_extra=None, label_alpha=0.5, xlabel=None,
-                ylabel=None, zlabel=None, antialias=True):
+                ylabel=None, zlabel=None, antialias=True, frame_hooks=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -564,6 +564,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         z-axis title (3-D only; rejected upstream otherwise).
     antialias : bool
         Whether to smooth every drawn LINE (default True) -- see below.
+    frame_hooks : hypertools.plot.animation_context.FrameHooks or None
+        The public `on_frame=` registry (plan 1.1 Task 7), created once by
+        `plot()` and threaded straight through to `_add_animation`, which
+        records each frame's state and dispatches every registered
+        callback immediately before that frame is appended to
+        `fig.frames` -- see `_add_animation`'s docstring. `None` (the
+        default) when no `on_frame=` was requested.
 
     `antialias` (see `plot`'s `antialias=`): DRAW-TIME line smoothing, at
     parity with `matplotlib_backend._draw`'s identical option. Each
@@ -1311,7 +1318,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        morph_mesh_trace_start=morph_mesh_trace_start_3d,
                        morph_surface_spec=morph_surface_spec_3d,
                        morph_sampled=sampled0, morph_dup_masks=dup_masks0,
-                       aa_curves=aa_curves)
+                       aa_curves=aa_curves, frame_hooks=frame_hooks)
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
@@ -2540,7 +2547,8 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    morph_tags=None, morph_colors=None, morph_samples=None,
                    morph_trace_start=None, morph_mesh_trace_start=None,
                    morph_surface_spec=None, surface_point_colors=None,
-                   morph_sampled=None, morph_dup_masks=None, aa_curves=None):
+                   morph_sampled=None, morph_dup_masks=None, aa_curves=None,
+                   frame_hooks=None):
     """Attach frames + play controls: 'spin' rotates the camera; True /
     'parallel' reveals trajectories through a sliding time window; 'morph'
     eases the single traveling point-cloud trace (+ mesh, if surfaced)
@@ -2607,6 +2615,21 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     `_window_colors`) keeps working in ORIGINAL rows, untouched. ``None``
     (direct callers) or ``step == 1`` means the raw row slices are drawn,
     exactly as before `antialias=` existed.
+
+    `frame_hooks` (plan 1.1 Task 7, the public `on_frame=` hook): unlike
+    matplotlib, where a per-frame updater is CALLED by `FuncAnimation`
+    later, plotly builds every frame in the Python loops below, right now,
+    before this function returns -- so `on_frame=` fires here too, once
+    per frame index, in order. Each of the four branches below (`'spin'`,
+    `'morph'`, `'serial'`, and the trailing `else:` covering the shared
+    parallel/serial-window/'window' reveal) calls
+    ``frame_hooks.record(...)`` then ``frame_hooks.dispatch(fig, None)``
+    (plotly has no `Axes` object) immediately BEFORE its own
+    ``frames.append(go.Frame(**frame_kwargs))`` -- dispatching before the
+    append means a callback that mutates a trace object is captured by the
+    `go.Frame` that stores it (mutating afterward would be silently
+    dropped). `None` (the default) short-circuits every one of these
+    blocks to a no-op via `FrameHooks.dispatch`'s own guard.
     """
     import plotly.graph_objects as go
 
@@ -2746,6 +2769,25 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                             go, v, f, base_rgb, spec['alpha'], view, light_kw))
                 frame_kwargs['data'] = surf_data
                 frame_kwargs['traces'] = surface_trace_indices
+            # on_frame= (plan 1.1 Task 7): 'spin' never builds a
+            # `frame_traces` list of its own (the FULL dataset is static;
+            # only the camera/lighting move) -- publish the traces the
+            # frame ACTUALLY renders instead: the figure's shared static
+            # data traces, plus (when surfaced) this frame's own re-shaded
+            # Mesh3d updates. The leading traces are SHARED across every
+            # frame (mutating one is figure-wide); the trailing mesh
+            # entries, if any, are per-frame -- see FrameContext's
+            # artist-lifetime table.
+            _frame_artists = tuple(fig.data[i] for i in trace_indices)
+            if surface_trace_indices:
+                _frame_artists = _frame_artists + tuple(surf_data)
+            if frame_hooks is not None:
+                frame_hooks.record(
+                    frame=k, n_frames=n_frames, artists=_frame_artists,
+                    datasets=tuple(data), style='spin', order='parallel',
+                    current_index=None, current_fraction=None,
+                    revealed_counts=None)
+                frame_hooks.dispatch(fig, None)
             frames.append(go.Frame(**frame_kwargs))
     elif animate == 'morph' and ndims in (2, 3):
         # Hungarian-matched point-cloud morph (maintainer request): ONE
@@ -2836,6 +2878,15 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             if ndims >= 3:
                 frame_kwargs['layout'] = dict(scene_camera=dict(
                     eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
+            if frame_hooks is not None:
+                frame_hooks.record(
+                    frame=k, n_frames=n_frames, artists=tuple(frame_traces),
+                    datasets=tuple(data), style='morph', order='serial',
+                    current_index=seg_idx // 2,
+                    current_fraction=step / max(1, n_steps - 1),
+                    revealed_counts=None, segment_index=seg_idx,
+                    segment_kind='hold' if seg_idx % 2 == 0 else 'transition')
+                frame_hooks.dispatch(fig, None)
             frames.append(go.Frame(**frame_kwargs))
     elif animate == 'serial':
         # datasets appear one at a time, each growing into place while
@@ -2868,10 +2919,12 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             windows_by_index = {}
             window_colors_by_index = {}
             head_bounds_by_index = {}
+            _shown = []
             for idx, (arr, start) in enumerate(zip(data, starts)):
                 arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
                 n_pts = arr.shape[0]
                 shown = int(np.clip(revealed - start, 0, n_pts))
+                _shown.append(shown)
                 ct, pc, bt = chemtrails[idx], precog[idx], bullettime[idx]
                 has_trail = has_trails and (ct or pc or bt)
 
@@ -2950,6 +3003,15 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                                             window_colors_by_index))
                 frame_kwargs['traces'] = (list(frame_kwargs['traces'])
                                           + surface_trace_indices)
+            if frame_hooks is not None:
+                from .matplotlib_backend import serial_current_index
+                _idx, _frac = serial_current_index(_shown, lengths)
+                frame_hooks.record(
+                    frame=k, n_frames=n_frames, artists=tuple(frame_traces),
+                    datasets=tuple(data), style='serial', order='serial',
+                    current_index=_idx, current_fraction=_frac,
+                    revealed_counts=tuple(_shown))
+                frame_hooks.dispatch(fig, None)
             frames.append(go.Frame(**frame_kwargs))
     else:
         max_len = max(arr.shape[0] for arr in data)
@@ -3067,6 +3129,13 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                                             window_colors_by_index))
                 frame_kwargs['traces'] = (list(frame_kwargs['traces'])
                                           + surface_trace_indices)
+            if frame_hooks is not None:
+                frame_hooks.record(
+                    frame=k, n_frames=n_frames, artists=tuple(frame_traces),
+                    datasets=tuple(data), style=animate, order='parallel',
+                    current_index=None, current_fraction=None,
+                    revealed_counts=None)
+                frame_hooks.dispatch(fig, None)
             frames.append(go.Frame(**frame_kwargs))
 
     fig.frames = frames

@@ -46,6 +46,24 @@ Small, additive plotting features and fixes (fully backward-compatible).
   still raise `NotImplementedError` with `predict=`, since a growing forecast
   trace over those remains follow-up work.
 
+- **`plot(..., on_frame=...)`: a public per-frame hook, on both backends.**
+  `on_frame` is called once per drawn animation frame with a single
+  `FrameContext` argument -- the frame index and total, the axes and drawn
+  artists, the animated arrays, and (for serial-style reveals and
+  `animate='morph'`) which dataset/segment is current and how far through
+  it. This replaces reaching into matplotlib's private
+  `FuncAnimation._func`/`._args` and re-deriving hypertools' own
+  serial-reveal schedule by hand, which four of the five animated gallery
+  examples previously did. `FrameContext` is exported as
+  `hypertools.FrameContext`. On matplotlib, callbacks can also be attached
+  after the fact via `HyperAnimation.on_frame(callback)` (chainable); on
+  plotly, whose animated return is a plain `go.Figure` with its frames
+  already built, pass `on_frame=` to `plot()` instead. Callbacks must be
+  deterministic and idempotent for a given `FrameContext`: matplotlib calls
+  back at render time (so a frame index may recur across a loop or a save)
+  while plotly calls back exactly once per frame index at build time --
+  same per-frame metadata on both backends, different schedules.
+
 ### Bug fixes
 
 - **Animated MultiIndex plots with trails no longer crash.** Animating a
