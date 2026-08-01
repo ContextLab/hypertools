@@ -3154,7 +3154,7 @@ Note the `return_model=True` limitation in the `return_model` entry (`plot.py:19
 - [ ] **Step 9: Run the FULL suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2660 passed, 13 skipped`. Grep for any test asserting that `on_frame=` is unavailable on plotly — there is none in the repo today, but if one appears it is asserting v2's removed premise, not a contract.
+Expected: `2672 passed, 13 skipped`. Grep for any test asserting that `on_frame=` is unavailable on plotly — there is none in the repo today, but if one appears it is asserting v2's removed premise, not a contract.
 
 - [ ] **Step 10: Commit**
 
@@ -3518,7 +3518,7 @@ Extend the `title` entry written in Task 1:
 - [ ] **Step 8: Run the FULL suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2673 passed, 13 skipped`.
+Expected: `2685 passed, 13 skipped`.
 
 - [ ] **Step 9: Commit**
 
@@ -4118,7 +4118,7 @@ Expected: build succeeds with **0 warnings** (the repo holds an RTD-parity zero-
 - [ ] **Step 8: Run the FULL suite one last time**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2692 passed, 13 skipped`.
+Expected: `2704 passed, 13 skipped`.
 
 - [ ] **Step 9: Commit**
 
