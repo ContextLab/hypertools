@@ -483,7 +483,80 @@ def _validate_extra_plot_kwargs(extra_kwargs):
             "line artists -- see the **kwargs entry in plot's docstring).")
 
 
-def _resolve_animate_mode(animate, n_datasets):
+#: Animate STYLES that implement a dataset-by-dataset (serial) reveal.
+#: Membership is tested against the RESOLVED style, never the raw argument:
+#: `animate=['morph', None, 'morph']` resolves to 'morph', which is here.
+_SERIAL_CAPABLE_STYLES = (True, 'parallel', 'serial', 'morph')
+#: Styles that are serial by construction, so `order='parallel'` contradicts.
+_INHERENTLY_SERIAL_STYLES = ('serial', 'morph')
+
+
+def _raw_animate_style(animate):
+    """The STYLE `animate=` names, before dataset-count-dependent resolution.
+
+    A per-dataset list/tuple only ever tags datasets for a morph (see the
+    list/tuple branch of `_resolve_animate_mode`, immediately below), so its
+    style is 'morph' regardless of length or contents. Knowing this WITHOUT
+    `n_datasets` is what lets ordering be validated fail-fast, before the
+    pipeline.
+    """
+    if isinstance(animate, (list, tuple)):
+        return 'morph'
+    return animate
+
+
+def _resolve_order(animate, order):
+    """Validate and resolve ``order=`` against the requested animate STYLE.
+
+    ``animate=`` names the STYLE ('spin'/'window'/'morph'/a parallel reveal)
+    and ``order=`` names the ORDERING (all datasets at once, or one after
+    another). ``animate='serial'`` predates this split and is a permanent
+    alias for ``animate=True, order='serial'``.
+
+    ``order=None`` (the default) means "whatever the style implies": parallel
+    for the reveal styles, serial for 'serial'/'morph'. An EXPLICIT
+    ``order='parallel'`` therefore contradicts an inherently serial style,
+    and says so instead of being silently overridden.
+
+    Returns 'parallel' or 'serial'. Called once, fail-fast, in `plot()`
+    beside `_validate_title`, before the analyze/reduce pipeline runs.
+    """
+    if order is not None and order not in ('parallel', 'serial'):
+        hint = (" (for matplotlib's draw-order property, pass zorder=)"
+                if isinstance(order, (int, float, np.integer, np.floating))
+                and not isinstance(order, bool) else "")
+        raise ValueError(
+            f"order must be 'parallel' or 'serial' (or None); got "
+            f"{order!r}{hint}.")
+
+    style = _raw_animate_style(animate)
+
+    if style in _INHERENTLY_SERIAL_STYLES:
+        if order == 'parallel':
+            if style == 'serial':
+                raise ValueError(
+                    "animate='serial' is an alias for animate=True, "
+                    "order='serial', so it conflicts with order='parallel'. "
+                    "Pass animate=True, order='parallel' for a parallel "
+                    "reveal.")
+            raise ValueError(
+                "animate='morph' is inherently serial (one cloud eases into "
+                "the next), so it conflicts with order='parallel'. Drop "
+                "order=, or pass animate=True, order='parallel' for a "
+                "parallel reveal.")
+        return 'serial'
+
+    if order is None:
+        return 'parallel'
+    if order == 'serial' and not style:
+        raise ValueError(
+            "order='serial' requires an animated plot; pass animate=True "
+            "(or 'serial'/'morph') alongside it. A static plot draws every "
+            "dataset at once by definition.")
+    return order
+
+
+def _resolve_animate_mode(animate, n_datasets, order='parallel'):
     """Resolve ``animate=`` for ``animate='morph'`` support (Hungarian
     point-cloud morphs between datasets, maintainer request): `animate` may
     be a single GLOBAL mode (``False``/``True``/``'parallel'``/``'spin'``/
@@ -493,15 +566,27 @@ def _resolve_animate_mode(animate, n_datasets):
     ``'morph'``-tagged datasets join the morph sequence IN LIST ORDER;
     untagged datasets render as static (unanimated) backdrops.
 
+    `order` is `_resolve_order`'s already-validated result. It is folded
+    INTO the returned `mode`, so `animate` from this function's call site in
+    `plot()` onward is exactly what every backend and every downstream
+    consumer should see -- the trail-ignore check (`_trail_ignoring_modes`),
+    plotly draw (`plotly_draw`), matplotlib draw (`_draw`), and
+    `_apply_multicolor_animation(style=...)` all read that one value, with
+    no per-site substitution. `order` is ALSO returned, for consumers that
+    need the ordering itself (FrameContext.order, per-segment titles).
+
     Returns
     -------
-    (mode, morph_tags)
+    (mode, morph_tags, order)
         `mode` is what every backend actually receives: the raw scalar
-        `animate` unchanged, or ``'morph'`` if a list was given. `morph_tags`
-        is ``None`` for every non-morph mode, or a list of `n_datasets` bool
-        (``True`` where that dataset joins the morph sequence) whenever
-        `mode` is ``'morph'`` (scalar ``animate='morph'`` tags every
-        dataset).
+        `animate` unchanged, ``'morph'`` if a list was given, or ``'serial'``
+        when `order='serial'` folds a parallel-reveal style into the serial
+        backend mode. `morph_tags` is ``None`` for every non-morph mode, or a
+        list of `n_datasets` bool (``True`` where that dataset joins the
+        morph sequence) whenever `mode` is ``'morph'`` (scalar
+        ``animate='morph'`` tags every dataset). `order` is `'parallel'` or
+        `'serial'`, folded back to `'parallel'` (with a warning) when it does
+        not apply to the resolved `mode` (e.g. 'spin'/'window').
 
     Raises
     ------
@@ -535,15 +620,36 @@ def _resolve_animate_mode(animate, n_datasets):
                 "animate='morph' (per-dataset list form) requires at "
                 f"least 2 datasets tagged 'morph'; got {sum(tags)}."
             )
-        return "morph", tags
-    if animate == "morph":
+        mode, morph_tags = "morph", tags
+    elif animate == "morph":
         if n_datasets < 2:
             raise ValueError(
                 "animate='morph' requires at least 2 datasets to morph "
                 f"between; got {n_datasets}."
             )
-        return "morph", [True] * n_datasets
-    return animate, None
+        mode, morph_tags = "morph", [True] * n_datasets
+    else:
+        mode, morph_tags = animate, None
+
+    if order == 'serial':
+        if mode in (True, 'parallel'):
+            # the whole point: a serial ORDERING of a parallel STYLE is
+            # exactly the existing 'serial' backend mode
+            mode = 'serial'
+        elif mode not in _SERIAL_CAPABLE_STYLES:
+            # 'spin'/'window' have no dataset-by-dataset reveal. Warn and
+            # ignore, matching the established convention for a flag with no
+            # meaning in the requested mode (`_trail_ignoring_modes` above)
+            # rather than introducing a new hard error class.
+            warnings.warn(
+                f"animate={mode!r} has no serial ordering (it does not "
+                f"reveal datasets one at a time); ignoring order='serial'. "
+                "Use animate=True, order='serial' for a serial reveal.",
+                UserWarning,
+                stacklevel=external_stacklevel(),
+            )
+            order = 'parallel'
+    return mode, morph_tags, order
 
 
 @manage_backend
@@ -584,6 +690,7 @@ def plot(
     t=10,
     save_path=None,
     animate=False,
+    order=None,
     duration=30,
     tail_duration=2,
     rotations=1,
@@ -1429,6 +1536,21 @@ def plot(
         morph lists) reveals/appends data over time, where a growing forecast
         trace is out-of-scope follow-up work, so combining `predict=` with any
         of those raises `NotImplementedError`.
+
+    order : {'parallel', 'serial'}, optional
+        Whether animated datasets are revealed all at once ('parallel') or
+        one after another ('serial'). This is ORTHOGONAL to ``animate=``,
+        which names the style, so it composes with the trail flags:
+        ``animate=True, order='serial', chemtrails=True`` is the serial
+        version of chemtrails, and renders identically on the matplotlib and
+        plotly backends. The default (``None``) means "whatever the style
+        implies": parallel for the reveal styles, serial for
+        ``animate='serial'`` (a permanent alias for ``animate=True,
+        order='serial'``) and ``animate='morph'`` (inherently serial).
+        Passing ``order='parallel'`` alongside either of those raises
+        ``ValueError``. ``'spin'`` and ``'window'`` have no dataset-by-dataset
+        reveal, so ``order='serial'`` warns and is ignored there.
+        ``order='serial'`` without an animation raises ``ValueError``.
 
     backend : str
         Rendering backend: 'matplotlib' (the classic renderer),
@@ -2295,6 +2417,21 @@ def plot(
     # tasks later in this plan add code above these, and stale line citations
     # have misdirected readers six times in this project.
     _validate_title(title, style=animate)
+
+    # fail-fast on order= (same precedent as title= above): it depends only
+    # on the raw animate= argument (via `_raw_animate_style`), never on
+    # `n_datasets`, so it validates/resolves here. Stored under a PRIVATE
+    # name, not `order` itself: the streaming-kwarg diff check further down
+    # this function compares each plot() parameter's locals()-visible value
+    # against its literal signature default to detect explicit user input
+    # (same mechanism the `cluster=False` note below it describes), and
+    # `_resolve_order` always turns the default `order=None` into a
+    # concrete 'parallel'/'serial' -- reassigning `order` itself here would
+    # make every streaming call look like it had explicitly passed order=.
+    # `_resolve_animate_mode` folds this resolved value into `order` (the
+    # name every OTHER downstream consumer expects) once streaming inputs
+    # have already returned early, below.
+    _resolved_order = _resolve_order(animate, order)
 
     # fail-fast on simplify= (Contract 8, same precedent as title= above):
     # it needs no data, only its own type, so it must not wait for the
@@ -3727,7 +3864,8 @@ def plot(
     # the morph sequence), now that `xform` reflects the final (post
     # cluster/hue-reshape) dataset count -- same timing as
     # surface_list/density_list above.
-    animate, morph_tags = _resolve_animate_mode(animate, len(xform))
+    animate, morph_tags, order = _resolve_animate_mode(animate, len(xform),
+                                                        order=_resolved_order)
     # round17 #9 (GH #123): animate='morph' now supports 2-D as well as
     # 3-D data, matching every other animate style -- only 1-D (and any
     # higher-than-3-D result, which `plot.py` never actually produces for
