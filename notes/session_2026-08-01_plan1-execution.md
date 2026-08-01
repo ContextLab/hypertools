@@ -95,7 +95,7 @@ unless it matched exactly once.
 
 All confirmed, all **shipped in 1.0**, all one architectural gap: plotly computes ONE `end`/`window`
 per frame from `max_len` and clamps everyone into it, instead of per-dataset like
-`_anim_window_bounds`. Full diagnosis:
+`trails.anim_window_bounds` (then `matplotlib_backend.trails.anim_window_bounds`). Full diagnosis:
 `.superpowers/sdd/2026-07-26-hypertools-1.1-animation-core/plotly-window-parity-diagnosis.md`.
 
 | | defect | measured |

@@ -38,7 +38,7 @@ from .surface import (
     surface_cube_scale,
     view_vector,
 )
-from .trails import broadcast_trail_flag
+from .trails import anim_window_bounds, broadcast_trail_flag
 from . import morph as _morph
 from .density import (
     DENSITY_DEFAULTS,
@@ -316,54 +316,10 @@ def _anim_box_zoom(zoom):
     return 9.0 / max(0.5, 9.0 - zoom)
 
 
-def _anim_window_bounds(num, total_frames, n_points, window_frames):
-    """Map animation frame `num` (of `total_frames`) onto one dataset's
-    row indices for the parallel/'window' styles.
-
-    Animations are paced by the FRAME grid (``total_frames ==
-    round(frame_rate * duration)``), not by any single dataset's row count:
-    line datasets are pre-interpolated onto that exact grid by ``plot.py``
-    (identity mapping), while marker-only and 1-point datasets keep their
-    raw rows and are paced here instead (release-1.0 audit: F04-003
-    multi-dataset truncation, F04-005/F05-010 marker-only pacing, F05-012
-    single-point datasets).
-
-    Parameters
-    ----------
-    num : int
-        Current frame index, ``0 <= num < total_frames``.
-    total_frames : int
-        Total number of animation frames.
-    n_points : int
-        This dataset's row count.
-    window_frames : int
-        The opaque head window's length in frames.
-
-    Returns
-    -------
-    tuple of (int, int, int)
-        ``(start, end, trail_stop)``: the head window is ``data[start:end]``
-        (up to ``window_frames + 1`` rows, frozen at the trajectory's end
-        once the dataset is fully revealed -- a shorter dataset never
-        vanishes mid-animation), and a chemtrails trail is
-        ``data[0:trail_stop]`` -- 0 rows until the head window actually
-        starts sliding (F05-001: the historical ``num - window + 1`` stop
-        went NEGATIVE for early frames, so Python's negative indexing drew
-        nearly the whole FUTURE trajectory as a "past" trail, then blinked
-        empty). A precog trail is ``data[end - 1:]`` (sharing the head's
-        last vertex, so there is no one-segment gap -- F05-008).
-    """
-    total = max(1, int(total_frames))
-    end = int(np.ceil((num + 1) * n_points / total))
-    end = max(1, min(n_points, end))
-    if n_points == total:
-        w = int(window_frames)
-    else:
-        # rescale the window (given in frames) onto this dataset's rows
-        w = int(round(window_frames * n_points / total))
-    start = max(0, end - 1 - w)
-    trail_stop = max(0, end - w)
-    return start, end, trail_stop
+# NOTE: the parallel/'window' head + trail geometry lives in
+# `trails.anim_window_bounds` (imported above), not here, because the PLOTLY
+# renderer calls that same function on the same arguments. See its docstring
+# for the backend divergences a shared callee closed.
 
 
 def _make_save_dpi_safe(line_ani):
@@ -562,7 +518,7 @@ def _draw(
     # whatever window of original rows a frame would have shown, exactly the
     # corresponding stretch of that smooth curve (`_aa_window`). The
     # underlying `x` rows are deliberately left untouched, so frame pacing
-    # (`_anim_window_bounds`), per-point labels (`_sync_anim_labels`), surface
+    # (`anim_window_bounds`), per-point labels (`_sync_anim_labels`), surface
     # hulls and marker artists all keep indexing the REAL data -- only the
     # drawn polyline is smoothed. (Static plots are antialiased upstream in
     # `plot.py`, where the densified rows also drive label/marker handling.)
@@ -1198,7 +1154,7 @@ def _draw(
         # 'serial'/'morph'/static plots) and pace the rotation over the
         # FRAME count rather than the first dataset's row count (the two
         # are no longer interchangeable for marker-only datasets, which
-        # keep their raw rows -- see `_anim_window_bounds`).
+        # keep their raw rows -- see `anim_window_bounds`).
         total_frames = max(1, int(round(frame_rate * duration)))
         azim_now = azim + rotations * (360 * (num / total_frames))
         ax.view_init(elev=elev, azim=azim_now)
@@ -1222,11 +1178,11 @@ def _draw(
                 lines, data_lines, trail_lines)):
 
             # head/trail slicing (release-1.0 audit): every dataset is paced
-            # onto the shared frame grid -- see `_anim_window_bounds` for the
+            # onto the shared frame grid -- see `anim_window_bounds` for the
             # F05-001 (negative chemtrails slice), F05-008 (precog gap),
             # F04-003/F05-012 (shorter/1-point datasets vanishing or driving
             # the frame count) fixes it encodes.
-            start, end, trail_stop = _anim_window_bounds(
+            start, end, trail_stop = anim_window_bounds(
                 num, total_frames, data.shape[0], tail_duration)
 
             # antialias: each artist draws the SMOOTH curve spanning the same
@@ -1299,8 +1255,19 @@ def _draw(
         update_lines_spin.planes = plot_cube(cube_scale, **frame_kwargs)
         # honor the user's azim= as the starting camera angle (F05-003:
         # 'spin' previously always started at azimuth 0, so azim=45 was
-        # silently ignored and rotations=0 could not pick a viewing angle)
-        azim_now = azim + rotations * (360 * (num / (frame_rate * duration)))
+        # silently ignored and rotations=0 could not pick a viewing angle).
+        # Pace the orbit over the ROUNDED frame count -- the number of frames
+        # actually drawn -- exactly as `update_lines_parallel` and the plotly
+        # renderer do. Spin was the ONLY path dividing by the raw
+        # `frame_rate * duration` product, which differs from the drawn frame
+        # count whenever that product is not a whole number: at frame_rate=7,
+        # duration=2.5 (18 frames drawn, product 17.5) the last frame landed
+        # at 289.71 deg here against plotly's 280.0 -- the same call, a 9.71
+        # deg disagreement, and 349.71 deg of travel for a `rotations=1` turn.
+        # Frames 0..N-1 are meant to span [0, 360) so a looping animation does
+        # not draw the same angle twice; dividing by 17.5 overshot that.
+        total_frames = max(1, int(round(frame_rate * duration)))
+        azim_now = azim + rotations * (360 * (num / total_frames))
         ax.view_init(elev=elev, azim=azim_now)
         # Axes3D.dist was removed in matplotlib >= 3.8, silently disabling
         # zoom; set_box_aspect(zoom=...) is the supported equivalent. See
@@ -1331,7 +1298,7 @@ def _draw(
         _sync_anim_labels(num, 0, all_visible=True)
         if frame_hooks is not None:
             frame_hooks.record(
-                frame=int(num), n_frames=int(round(frame_rate * duration)),
+                frame=int(num), n_frames=int(total_frames),
                 artists=list(lines), datasets=list(data_lines), style=animate,
                 order='parallel', current_index=None, current_fraction=None,
                 revealed_counts=None)
@@ -1354,7 +1321,7 @@ def _draw(
         chemtrails fades its revealed-so-far past (``data[:shown]``), precog
         fades its not-yet-revealed future (``data[shown - 1:]``, sharing the
         head's last vertex so there is no one-segment gap, cf.
-        `_anim_window_bounds`' F05-008), and bullettime (or chemtrails AND
+        `anim_window_bounds`' F05-008), and bullettime (or chemtrails AND
         precog together) fades the WHOLE trajectory. Already-revealed
         datasets stay fully drawn (accumulated history) and future ones stay
         invisible. With NO trail flag set for a dataset (plain 'serial'), its
@@ -1365,7 +1332,7 @@ def _draw(
                 plane.remove()
         update_lines_serial.planes = plot_cube(cube_scale, **frame_kwargs)
 
-        total_frames = int(round(frame_rate * duration))
+        total_frames = max(1, int(round(frame_rate * duration)))
         azim_now = azim + rotations * 360.0 * num / total_frames
         ax.view_init(elev=elev, azim=azim_now)
         ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
@@ -1410,7 +1377,7 @@ def _draw(
                 # this dataset's SHARE of the serial timeline
                 # (`n_pts / total_points`, since the serial sweep packs every
                 # dataset's rows into the same frame grid), mirroring
-                # `_anim_window_bounds`' start = end - 1 - w head sizing.
+                # `anim_window_bounds`' start = end - 1 - w head sizing.
                 w = max(1, int(round(window_frames * n_pts
                                      / max(1, total_points))))
                 head_bounds = (max(0, shown - 1 - w), shown)
@@ -2013,7 +1980,7 @@ def _draw(
             # frames == round(frame_rate * duration), the documented frame
             # count, for EVERY dataset mix (release-1.0 audit): line datasets
             # are pre-interpolated onto exactly this grid, and marker-only/
-            # 1-point datasets are paced onto it by `_anim_window_bounds` --
+            # 1-point datasets are paced onto it by `anim_window_bounds` --
             # previously frames came from x[0].shape[0] alone, so a longer
             # LATER dataset was silently truncated (F04-003), marker-only
             # animations ignored duration= entirely (F04-005/F05-010), and a
@@ -2043,7 +2010,7 @@ def _draw(
             line_ani = animation.FuncAnimation(
                 fig,
                 update_lines_serial,
-                int(round(frame_rate * duration)),
+                max(1, int(round(frame_rate * duration))),
                 fargs=(x, lines, trail, cube_scale_anim, window_frames,
                        rotations, zoom, chemtrails, precog, bullettime, elev),
                 interval=1000 / frame_rate,
@@ -2054,7 +2021,7 @@ def _draw(
             line_ani = animation.FuncAnimation(
                 fig,
                 update_lines_spin,
-                int(round(frame_rate * duration)),
+                max(1, int(round(frame_rate * duration))),
                 fargs=(x, lines, cube_scale_anim, rotations, zoom, elev),
                 interval=1000 / frame_rate,
                 blit=False,
@@ -2062,7 +2029,7 @@ def _draw(
             )
         elif style == "morph":
             n_morph_datasets = len(morph_state["indices"])
-            total_frames = int(round(frame_rate * duration))
+            total_frames = max(1, int(round(frame_rate * duration)))
             frame_counts, _, azimuths = _morph.morph_schedule(
                 n_morph_datasets, total_frames, rotations, azim)
             morph_state["frame_counts"] = frame_counts
@@ -2108,8 +2075,8 @@ def _draw(
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
             # same F05-001/F05-008/F04-003/F05-012 slicing fixes as the 3-D
-            # path -- see `_anim_window_bounds`.
-            start, end, trail_stop = _anim_window_bounds(
+            # path -- see `anim_window_bounds`.
+            start, end, trail_stop = anim_window_bounds(
                 num, total_frames, data.shape[0], tail_duration)
             # antialias: draw the smooth curve spanning the same rows
             n_rows = data.shape[0]
@@ -2151,7 +2118,7 @@ def _draw(
         list
             The updated matplotlib line artists, for `blit=True` animation.
         """
-        total_frames = int(round(frame_rate * duration))
+        total_frames = max(1, int(round(frame_rate * duration)))
         lengths = [d.shape[0] for d in data_lines]
         total_points = sum(lengths)
         revealed = total_points * num / max(1, total_frames - 1)
@@ -2459,7 +2426,7 @@ def _draw(
             line_ani = animation.FuncAnimation(
                 fig,
                 update_lines_serial_2d,
-                int(round(frame_rate * duration)),
+                max(1, int(round(frame_rate * duration))),
                 fargs=(x, lines, trail, window_frames, chemtrails, precog,
                       bullettime),
                 interval=1000 / frame_rate,
@@ -2474,7 +2441,7 @@ def _draw(
             # control), but is ignored uniformly for every 2-D style for
             # consistency (and `plot.py` has already warned about it).
             n_morph_datasets = len(morph_state["indices"])
-            total_frames = int(round(frame_rate * duration))
+            total_frames = max(1, int(round(frame_rate * duration)))
             frame_counts, _, _ = _morph.morph_schedule(
                 n_morph_datasets, total_frames, 1, 0)
             morph_state["frame_counts"] = frame_counts

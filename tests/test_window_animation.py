@@ -174,21 +174,32 @@ def test_plotly_window_draws_only_current_window():
 
 
 def test_plotly_window_exact_bounds_mid_animation():
+    """The in-focus window is `focused` SECONDS long on both backends.
+
+    This used to re-transcribe the plotly renderer's own arithmetic
+    (`max(2, ...)` floors and all) as its "expected" value, so it pinned
+    whatever that code did rather than what the window MEANS -- and it
+    passed while plotly's window ran one point shorter than matplotlib's at
+    every steady-state frame. The expectation below is derived from the
+    public knobs alone: `focused` seconds at `frame_rate` frames per second
+    spans `focused * frame_rate` frames, plus the vertex the window opens
+    on. Both backends must land on it.
+    """
     pytest.importorskip('plotly')
     data = _walks()
     focused = 0.5
     frame_rate = 20
-    fig = hyp.plot(data, animate='window', duration=4, frame_rate=frame_rate,
-                   focused=focused, backend='plotly', show=False, antialias=False)
-    max_len = max(len(d) for d in [np.asarray(t) for t in
-                                    [fig.data[0].x, fig.data[1].x]])
+    kw = dict(animate='window', duration=4, frame_rate=frame_rate,
+              focused=focused, show=False, antialias=False)
+    fig = hyp.plot(data, backend='plotly', **kw)
     n_frames = len(fig.frames)
     mid_k = n_frames // 2
-    window = max(2, int(round(max_len * focused / 4.0)))
-    end = max(2, int(np.ceil((mid_k + 1) * max_len / n_frames)))
-    start = max(0, end - window)
-    f = fig.frames[mid_k]
-    assert len(f.data[0].x) == min(end, max_len) - start
+    expected = int(frame_rate * focused) + 1
+    assert len(fig.frames[mid_k].data[0].x) == expected
+
+    ani = hyp.plot(data, return_model=True, **kw)['animation']
+    lines, _ = ani._func(mid_k, *ani._args)
+    assert len(lines[0].get_data()[0]) == expected
 
 
 def test_plotly_window_ignores_trail_flags():

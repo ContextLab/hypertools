@@ -109,6 +109,57 @@ Small, additive plotting features and fixes (fully backward-compatible).
 
 ### Bug fixes
 
+- **The plotly backend's sliding animation window now matches matplotlib's,
+  frame for frame.** `animate=True`/`'parallel'`/`'window'` paced every
+  dataset against the LONGEST dataset in the plot and merely clamped the
+  shorter ones into that one shared window, where matplotlib rescales the
+  window onto each dataset's own rows. Four divergences came out of that,
+  all of them plotly-only:
+
+  - A **shorter dataset went blank for most of its own animation.** A 5-row
+    marker dataset plotted beside a 15-row line drew nothing at all for 9 of
+    its 15 frames -- 60% of the animation -- because the shared window slid
+    off its end, while matplotlib kept a correctly-paced 2-point window alive
+    to the final frame. Short and long datasets now advance side by side on
+    both backends.
+  - The **head window ran one point short** at every steady-state frame (a
+    missing `- 1` in the window's start index). Beyond the count, this opened
+    a one-segment **gap between a `chemtrails` trail and the opaque head it
+    is supposed to join** -- the trail now ends exactly on the head's first
+    vertex, as it always has in matplotlib.
+  - **Frame 0 of a `precog` trail was one point short** (the revealed-row
+    count floored at 2 where matplotlib floors at 1).
+  - A **sub-frame request** (`duration * frame_rate` rounding below 1)
+    produced a 2-frame plotly animation against matplotlib's single still.
+    Because that count is also the denominator each dataset's window is
+    paced against, the floor shifted the pacing of every frame, not just the
+    frame count.
+
+  Both backends now call one shared function
+  (`hypertools.plot.trails.anim_window_bounds`), per dataset, per frame, so
+  the two cannot drift apart again. Point counts in existing plotly
+  `animate=`/`'window'` animations may shift by a point at some frames; no
+  documented behavior changes.
+
+- **A very short animation no longer comes out empty.** When
+  `duration * frame_rate` rounded below 1, matplotlib asked for **zero
+  frames** under `animate='serial'` and `animate='spin'` -- an animation
+  that draws nothing at all -- because only its parallel/`'window'` path
+  floored the count at one frame. Every style now floors at one frame on
+  both backends.
+
+- **`animate='spin'` paces its orbit over the frames it actually draws.** The
+  matplotlib spin camera divided its rotation by the raw `frame_rate *
+  duration` product rather than the number of frames drawn, so whenever that
+  product was not a whole number the two backends pointed the camera
+  somewhere different on the same call: at `frame_rate=7, duration=2.5` (18
+  frames, product 17.5) matplotlib's last frame sat at 289.7 degrees and
+  plotly's at 280.0. Overshooting also spoils a looping `rotations=1` spin --
+  frames 0..N-1 are meant to span a full turn *exclusive*, so the animation
+  does not draw the same angle twice when it wraps. Both backends now divide
+  by the rounded frame count, which is what every other matplotlib animation
+  path already did.
+
 - **Animated MultiIndex plots with trails no longer crash.** Animating a
   row-`MultiIndex` `DataFrame` with `chemtrails`/`precog`/`bullettime` raised
   `TypeError: ... got multiple values for keyword argument 'alpha'`: the trail

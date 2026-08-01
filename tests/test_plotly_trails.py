@@ -37,9 +37,18 @@ def test_plotly_chemtrails_past_trail():
     f = _mid_frame(fig)
     assert len(f.data) == 4
     head, trail = f.data[0], f.data[2]
-    # past trail: starts at the beginning, ends where the window starts
+    # past trail: starts at the beginning, ends where the window starts --
+    # sharing that one vertex, so the faded trail and the opaque head join
+    # with no visible gap. This used to assert `len(trail) > len(head)`,
+    # which held only by a coincidental margin of one point: the head window
+    # was a point short of matplotlib's at the time, and the "trail is
+    # longer" inequality was what that missing point bought. The shared
+    # vertex is the actual contract (`trails.anim_window_bounds`:
+    # trail_stop == start + 1), and it cannot be satisfied by an off-by-one.
     assert trail.x[0] == fig.data[0].x[0]
-    assert len(trail.x) > len(head.x)
+    assert trail.x[-1] == head.x[0]
+    assert trail.y[-1] == head.y[0]
+    assert trail.z[-1] == head.z[0]
 
 
 def test_plotly_precog_future_trail():

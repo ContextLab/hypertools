@@ -118,7 +118,7 @@ IMPLEMENTED:
   dense curve ONCE (gated on `antialias and animate and has_line_component(fmt)`);
   new closure **`_aa_window(i, a, b, artist=None)`** used at EVERY animated draw
   site (parallel/serial/spin 3-D + parallel/serial 2-D, heads AND trails).
-  **Data rows are left untouched** → `_anim_window_bounds`, `_sync_anim_labels`,
+  **Data rows are left untouched** → `trails.anim_window_bounds` (then `matplotlib_backend.trails.anim_window_bounds`), `_sync_anim_labels`,
   surface hulls, markers all keep indexing real rows (this is what avoids the
   label regression that killed the earlier data-level attempt).
 - `_aa_window` also records **`artist._hyp_row_window = (a, b)`** (ORIGINAL row

@@ -1773,9 +1773,11 @@ def plot(
 
     frame_rate (animation only) : int or float
         Frame rate for animation in frames per second (default: 30).
-        Both backends generate exactly frame_rate * duration frames, so
-        matplotlib and plotly animations play at identical speed,
-        duration, and framerate. Has no effect on static plots (static
+        Both backends generate exactly ``round(frame_rate * duration)``
+        frames -- or a single still frame when that rounds below one -- and
+        both play them at ``1000 / frame_rate`` ms per frame, so matplotlib
+        and plotly animations play at identical speed, duration, and
+        framerate. Has no effect on static plots (static
         line smoothing uses a fixed density, independent of the animation
         kwargs).
 
@@ -6094,7 +6096,7 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
             # the hidden head artist was just set to the exact visible
             # window; recover its [start, end) indices from its length
             # plus the same frame->row mapping the backend used (see
-            # matplotlib_backend._anim_window_bounds)
+            # hypertools.plot.trails.anim_window_bounds)
             head_len = _artist_len(head_lines[i])
             if style == 'serial':
                 # serial: the head artist is the opaque comet-head near the

@@ -19,7 +19,7 @@ v1 of this plan was adversarially reviewed (`notes/audit/review_plan3_forecast_a
 | Task 2 Step 6: `tests/plot/test_predict_integration.py` "all pass, unchanged" | `test_predict_integration.py:169-178` parametrizes over `True/'parallel'/'serial'/'window'/'morph'` asserting `NotImplementedError`. Narrowing the refusal breaks **4 of 5**. The file must be **edited** (Task 3), not asserted-unchanged. |
 | Task 2 Step 6 runs `tests/test_predict.py` | That file does not exist (`ls` → `No such file or directory`); pytest exits with a collection ERROR. Dropped from every command. |
 | Removing the refusal is enough to draw a per-frame forecast | `plot.py:4339-4341` draws the **static full-history overlay** with no `animate` guard, inside the shared matplotlib branch after `_draw()`. Measured on `animate='spin'`, n=3: `ax.lines` = 3 solid `_childN` + 3 dashed `_nolegend_` alpha=0.6, **901 vertices each**, and the setup overlays land **first**. Task 3 gates line 4339 on `animate in (False, None, 'spin')`. |
-| "Use `FrameContext.revealed_counts` for the history slice" | Animation-core defines `revealed_counts: Optional[Tuple[int, ...]] = None` (v4.3; `List[int]` before that) and documents *"``None`` for parallel animations"* — the mode every test uses. Replaced by `_anim_window_bounds` (`matplotlib_backend.py:319-366`), which **is** the parallel reveal and is what `update_lines_parallel` itself calls (`matplotlib_backend.py:1185`). |
+| "Use `FrameContext.revealed_counts` for the history slice" | Animation-core defines `revealed_counts: Optional[Tuple[int, ...]] = None` (v4.3; `List[int]` before that) and documents *"``None`` for parallel animations"* — the mode every test uses. Replaced by `anim_window_bounds` (`trails.py:24-89`), which **is** the parallel reveal and is what `update_lines_parallel` itself calls (`matplotlib_backend.py:1185`). |
 | Prerequisite is animation-core Task 7 alone | `order=` is animation-core **Task 5**. Verified today: `'order' in inspect.signature(hyp.plot).parameters` → `False`; `'on_frame'` → `False`. Both tasks are prerequisites. |
 | Forecasts "pass through the same center/scale transform as the data … so they cannot render outside the cube" | `plot.py:4015-4032` runs **once**, before any figure exists, and `_mean`/`_m1`/`_m2` are function-locals. Animated limits are hard-set to `[-1, 1]` before `FuncAnimation` is built (`matplotlib_backend.py:1785`, `1888-1890`; measured `ax.get_xlim3d()` → `(-1.0, 1.0)`). Measured: **1 of 7** partial-history Kalman forecasts fell outside the cube. Fixed by precomputing the schedule and including it in the joint statistics — see the maintainer correction below. |
 | `t=1` draws exactly 2 vertices | Measured: `t=1` draws **900** vertices at `antialias=True` (the default), 2 at `antialias=False`. `plot.py:1904-1908` documents this as contract (*"Forecast overlays drawn by `predict=` are smoothed the same way"*), `_draw_forecast_overlays` applies `_interp_static_line` (`plot.py:149-150`), and `test_predict_with_spin_renders_dashed_forecast_overlay` pins `len(fc.get_xdata()) > t + 1` (`test_predict_integration.py:198`). The v1 test is replaced by an antialias-aware pair. |
@@ -102,7 +102,7 @@ Task 1 is fully standalone. Task 2 is standalone **except** for `ForecastSchedul
 
    *Wording matters here, and matches animation-core's contract 3:* drawing necessarily **mutates** artists, so this is not "purity" in the functional sense and must not be written that way. What is forbidden is **accumulation**, not effects. (The forecast *schedule* computed in Task 1 **is** genuinely pure — index in, displacement out, no effects — and that plan text is correct as written; the distinction is between computing the frame and drawing it.)
 
-7. **`return_model=True`'s `predict.forecasts` is unchanged**: the full-history forecast, exactly `t` rows, analyze space, one per input dataset (`plot.py:1935-1941`). For a time-progressing animation this is *also* the forecast drawn at the **final** frame, because at the last frame the revealed history **is** the full history (`_anim_window_bounds(total-1, total, n, w)` → `end = n`). One sentence of the docstring is amended; the value is not.
+7. **`return_model=True`'s `predict.forecasts` is unchanged**: the full-history forecast, exactly `t` rows, analyze space, one per input dataset (`plot.py:1935-1941`). For a time-progressing animation this is *also* the forecast drawn at the **final** frame, because at the last frame the revealed history **is** the full history (`anim_window_bounds(total-1, total, n, w)` → `end = n`). One sentence of the docstring is amended; the value is not.
 
 8. **Backend parity.** matplotlib and plotly consume the same `ForecastSchedule` and draw the same polylines, asserted by a cross-backend test at the final frame.
 
@@ -323,7 +323,7 @@ The heart of the plan. Static data ⇒ the whole schedule is knowable at setup, 
 - Test: `tests/plot/test_forecast_schedule.py`
 
 **Interfaces:**
-- `revealed_raw_counts(n_raw, n_grid, num, total_frames)` → int: RAW analyze-space rows revealed at frame `num` of a parallel/window animation. Delegates to `matplotlib_backend._anim_window_bounds` — the single library implementation, which `update_lines_parallel` itself calls (`matplotlib_backend.py:1185`). `end` does **not** depend on `window_frames` (`matplotlib_backend.py:357-358`: `end = int(np.ceil((num + 1) * n_points / total)); end = max(1, min(n_points, end))`), so `0` is passed for it.
+- `revealed_raw_counts(n_raw, n_grid, num, total_frames)` → int: RAW analyze-space rows revealed at frame `num` of a parallel/window animation. Delegates to `trails.anim_window_bounds` — the single library implementation, which `update_lines_parallel` itself calls (`matplotlib_backend.py:1185`). `end` does **not** depend on `window_frames` (`trails.py:80-81`: `end = int(np.ceil((num + 1) * n_points / total)); end = max(1, min(n_points, end))`), so `0` is passed for it.
 - `DisplayTransform(mean, offset, scale)` with `__call__(a)` reproducing `plot.py:4018-4031` exactly.
 - `ForecastSchedule.for_parallel(histories, grid_lengths, model, t, n_frames, min_history=2)` and `.for_serial(...)`; `.path(dataset, frame)` → analyze-space `(t+1, d)` or `None`; `.stacked_paths()` → one array of every forecast vertex, for the bounding box; `.to_display(transform)` → the same table in display coordinates; `.n_fits` → int.
 
@@ -367,9 +367,9 @@ def test_the_last_frame_reveals_the_whole_history():
 
 
 def test_reveal_matches_the_library_formula_not_a_second_copy_of_it():
-    from hypertools.plot.matplotlib_backend import _anim_window_bounds
+    from hypertools.plot.trails import anim_window_bounds
     for f in range(N_FRAMES):
-        _, end, _ = _anim_window_bounds(f, N_FRAMES, N_GRID, 0)
+        _, end, _ = anim_window_bounds(f, N_FRAMES, N_GRID, 0)
         pos = (end - 1) * (N_RAW - 1) / (N_GRID - 1)
         assert revealed_raw_counts(N_RAW, N_GRID, f, N_FRAMES) == int(pos) + 1
 
@@ -501,7 +501,7 @@ def revealed_raw_counts(n_raw, n_grid, num, total_frames):
     """RAW analyze-space rows revealed at frame `num` (parallel/window).
 
     `update_lines_parallel` reveals `data[start:end]` of the FRAME-GRID array,
-    where `end` comes from `matplotlib_backend._anim_window_bounds` -- the one
+    where `end` comes from `trails.anim_window_bounds` -- the one
     implementation of the reveal, called from `matplotlib_backend.py:1185`. It
     is reused here rather than re-derived (`FrameContext.revealed_counts` is
     documented ``None`` for parallel animations, so it cannot serve). `end`
@@ -512,12 +512,12 @@ def revealed_raw_counts(n_raw, n_grid, num, total_frames):
     last raw sample at or before the drawn head (grid row ``end - 1``) is
     index ``floor(pos)`` and ``floor(pos) + 1`` rows are revealed.
     """
-    from .matplotlib_backend import _anim_window_bounds
+    from .trails import anim_window_bounds
     n_raw = int(n_raw)
     n_grid = int(n_grid)
     if n_grid < 2 or n_raw < 2:
         return n_raw
-    _, end, _ = _anim_window_bounds(num, total_frames, n_grid, 0)
+    _, end, _ = anim_window_bounds(num, total_frames, n_grid, 0)
     pos = (end - 1) * (n_raw - 1) / (n_grid - 1)
     return min(n_raw, int(np.floor(pos)) + 1)
 
@@ -1206,7 +1206,7 @@ After `_draw(...)` returns (`plot.py:4291-4330`), when `forecast_schedule is not
 
 Two invariants the tests pin down:
 
-- The reveal comes from `revealed_raw_counts`, which delegates to `_anim_window_bounds` — the library's single reveal implementation. Never re-derive it locally, and never read `FrameContext.revealed_counts` (documented `None` for parallel animations).
+- The reveal comes from `revealed_raw_counts`, which delegates to `anim_window_bounds` — the library's single reveal implementation. Never re-derive it locally, and never read `FrameContext.revealed_counts` (documented `None` for parallel animations).
 - The callback **reads** the schedule and never mutates it, so frames stay idempotent.
 
 For 2-D and 1-D animations use `set_data` alone (no `set_3d_properties`), mirroring `_draw_forecast_overlays`' `d >= 3 / d == 2 / else` dispatch (`plot.py:152-164`).
@@ -1701,7 +1701,7 @@ Add `forecast_schedule=None` and `forecast_trail=0` to `plotly_draw`'s signature
 
 In `_add_animation`'s parallel/serial frame loops, extend `trace_indices` with the forecast trace range (the same way `has_trails` extends it at `plotly_backend.py:2895-2897`) and append the schedule's polylines to `frame_traces` in that order. Use `trail_frames(k, n_retained, n_frames)` for the fan, and an empty `x/y/z` for a frame with no forecast — matching matplotlib's hidden-artist state.
 
-Plotly's parallel reveal is `end = max(2, ceil((k + 1) * max_len / n_frames))` (`plotly_backend.py:2898`) against `max_len`, whereas matplotlib's is per dataset (`matplotlib_backend.py:357-358`); they coincide when the animated arrays share a length, which they always do for line datasets (`plot.py:3922-3925` resamples every one to `round(frame_rate*duration)` rows). Index the schedule by the **frame** `k`, not by a re-derived row count, so the two backends read the same table.
+**Updated 2026-08-01 (Jeremy's parity ruling).** Plotly's parallel reveal used to be its own transcription — `end = max(2, ceil((k + 1) * max_len / n_frames))` against the LONGEST dataset — which coincided with matplotlib's per-dataset reveal only when the animated arrays shared a length. It no longer exists: both backends now call `trails.anim_window_bounds(k, n_frames, n_points, window_frames)` per dataset (`plotly_backend.py`'s `_add_animation` head loop). There is one reveal, so there is nothing left to coincide. Index the schedule by the **frame** `k` anyway, not by a re-derived row count, so the two backends read the same table.
 
 - [ ] **Step 6: Run the test and confirm it passes**
 
@@ -1725,7 +1725,7 @@ git commit -m "feat(plot): plotly parity for animated predict= and forecast_trai
 
 ## Task 7: The `return_model=` bundle contract
 
-The review's headline question: what does `bundle['predict']['forecasts']` hold when the forecast is recomputed for every frame? Contract 7's answer needs no new value, because at the final frame the revealed history **is** the full history (`_anim_window_bounds(total-1, total, n, w)` → `end = n`), so the documented full-history forecast **is** the final-frame forecast. Only one sentence of `plot.py:1937-1941` is now imprecise, and no test covers `return_model=` for an animated forecast at all.
+The review's headline question: what does `bundle['predict']['forecasts']` hold when the forecast is recomputed for every frame? Contract 7's answer needs no new value, because at the final frame the revealed history **is** the full history (`anim_window_bounds(total-1, total, n, w)` → `end = n`), so the documented full-history forecast **is** the final-frame forecast. Only one sentence of `plot.py:1937-1941` is now imprecise, and no test covers `return_model=` for an animated forecast at all.
 
 **Files:**
 - Modify: `hypertools/plot/plot.py:1920-1941`, `:1955`
@@ -1899,7 +1899,7 @@ These came out of the review and are **not** settled by any instruction so far. 
 |-|-|
 | **C1** existing parametrize asserts the opposite; `tests/test_predict.py` does not exist | **Task 3 Step 6** edits `test_predict_integration.py:167-178` down to `['morph', ['morph','morph']]` as an explicit step. No command anywhere in this plan names `tests/test_predict.py`. |
 | **C2** static full-history overlay never suppressed | **Task 3 Step 5** gates `plot.py:4339` on `animate in (False, None, 'spin')`; **Task 3 Step 1** tests it for all four time-progressing modes, and separately pins that static and `'spin'` keep theirs (styling, alpha, label, clip). |
-| **C3** `revealed_counts` is `None` for parallel; `order=` is animation-core Task 5 | **Task 2** uses `_anim_window_bounds` (`matplotlib_backend.py:319-366`) — the mechanism that exists for parallel and that `update_lines_parallel` itself calls — and `test_reveal_matches_the_library_formula_not_a_second_copy_of_it` pins it to that one implementation. **Prerequisites** lists animation-core Tasks 5 **and** 7, with the interface each supplies. |
+| **C3** `revealed_counts` is `None` for parallel; `order=` is animation-core Task 5 | **Task 2** uses `anim_window_bounds` (`trails.py:24-89`) — the mechanism that exists for parallel and that `update_lines_parallel` itself calls — and `test_reveal_matches_the_library_formula_not_a_second_copy_of_it` pins it to that one implementation. **Prerequisites** lists animation-core Tasks 5 **and** 7, with the interface each supplies. |
 | **C4** centre/scale invariant arithmetically impossible; forecasts fall outside the cube | **Task 2** records the transform as `DisplayTransform` instead of leaning on dead function-locals; **Task 4 Step 4** folds the whole schedule into both joint stacks, so every forecast is in `[-1, 1]` by construction (Contract 4). Per the maintainer correction there is **no clamp** — the box is fixed, not the drawing. Guards: `test_to_display_maps_every_scheduled_forecast_into_the_cube`, `test_forecast_stays_inside_the_axes_limits` (every frame, not one), `test_plotly_forecast_stays_inside_the_scene_range`. |
 | **C5** `t=1` vs the documented antialias contract | **Task 4** keeps documented parity (`plot.py:1904-1908`, `:149-150`) and tests both halves: `antialias=False` → exactly `t + 1` vertices; `antialias=True` → more. |
 | **C6** which array the history comes from; `t`'s unit | **Contract 1 + 2** name all three spaces with the measurements; **Task 4 Step 3** snapshots analyze space before `_interp_anim_line`; `test_t_is_measured_in_raw_samples_not_frames_or_vertices` and `test_forecast_is_anchored_near_the_drawn_head` (whose tolerance is derived from one raw step, with the discriminating comparison against final-observation anchoring) pin it. |

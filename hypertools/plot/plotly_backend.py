@@ -49,7 +49,7 @@ from .density import (
     resolve_grid,
     resolve_plotly_volume_params,
 )
-from .trails import broadcast_trail_flag
+from .trails import anim_window_bounds, broadcast_trail_flag
 from .._shared.helpers import antialias_line, has_line_component
 from . import morph as _morph
 
@@ -2652,7 +2652,8 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     -- the smooth stretch spanning exactly the ORIGINAL rows ``[a:b]`` the
     frame would otherwise have sliced -- for both its head/window traces and
     its chemtrails/precog/bullettime trail traces. All the surrounding index
-    math (frame pacing, `window`/`start`/`end`, `revealed`, trail bounds) and
+    math (frame pacing, `window_frames`/`start`/`end`, `revealed`, trail
+    bounds) and
     everything derived from it (`windows_by_index` for `surface=` meshes,
     `_window_colors`) keeps working in ORIGINAL rows, untouched. ``None``
     (direct callers) or ``step == 1`` means the raw row slices are drawn,
@@ -2695,10 +2696,22 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
         aa_curves = [(np.atleast_2d(np.asarray(a, dtype=np.float64)), 1)
                      for a in data]
 
-    # EXACTLY match the matplotlib renderer's pacing: frame_rate frames
-    # per second of animation for the full duration (no frame cap), so the
-    # two backends play at identical speed, duration, and framerate
-    n_frames = max(2, int(round(frame_rate * duration)))
+    # EXACTLY match the matplotlib renderer's pacing: frame_rate frames per
+    # second of animation for the full duration (no frame cap), so the two
+    # backends play at identical speed, duration, and framerate -- down to
+    # the `max(1, ...)` floor, which this used to spell `max(2, ...)`. That
+    # lone character made a sub-frame request (`duration * frame_rate`
+    # rounding below 1) a 2-frame plotly animation against matplotlib's
+    # single still, and -- because this count is also the `total_frames`
+    # every dataset's window is paced against -- shifted the pacing itself.
+    #
+    # This ONE count is resolved before the style branches below, so the
+    # floor necessarily applies to all four styles. Matplotlib floored only
+    # its parallel/'window' path, so aligning here surfaced that its
+    # 'serial' and 'spin' asked `FuncAnimation` for ZERO frames on the same
+    # input -- an animation that draws nothing. Both were given the same
+    # floor rather than reproducing them here; see `matplotlib_backend`.
+    n_frames = max(1, int(round(frame_rate * duration)))
     frames = []
     trace_indices = list(range(data_trace_start, data_trace_start + n_data_traces))
     trail_dataset_indices = trail_dataset_indices or []
@@ -3122,7 +3135,6 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 frame_hooks.dispatch(fig, None)
             frames.append(go.Frame(**frame_kwargs))
     else:
-        max_len = max(arr.shape[0] for arr in data)
         # focused=/tail_duration= (round17 #8, GH #275): `focused` governs
         # the visible window for `animate='window'` and for any dataset with
         # a chemtrails/precog/bullettime trail; plain `animate=True`/
@@ -3140,11 +3152,18 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             or any(bullettime)
         )
         _window_duration = _focused if _uses_focus_window else tail_duration
-        # the visible window covers `_window_duration` seconds of the
-        # duration-second animation, matching the matplotlib renderer's
-        # window_frames = frame_rate * _window_duration frame window
-        window = max(2, int(round(max_len * float(_window_duration)
-                                  / max(float(duration), 1e-6))))
+        # the visible head window is `window_frames` FRAMES long, resolved
+        # byte-identically to `matplotlib_backend.animate_plot3D`/`2D` (same
+        # int() truncation, same `_window_duration == 0` special case) and
+        # then mapped onto each dataset's own rows by `anim_window_bounds`.
+        # It used to be derived from the LONGEST dataset's row count and
+        # rounded, which mis-sized the window whenever that count was not the
+        # frame count AND left every dataset sharing one window -- see
+        # `trails.anim_window_bounds`.
+        if _window_duration == 0:
+            window_frames = 1
+        else:
+            window_frames = int(frame_rate * float(_window_duration))
         has_trails = n_trail_traces > 0
         if has_trails:
             # trail traces are NOT guaranteed to sit right after the data
@@ -3154,22 +3173,26 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             trace_indices = list(trace_indices) + list(range(
                 trail_trace_start, trail_trace_start + n_trail_traces))
         for k in range(n_frames):
-            end = max(2, int(np.ceil((k + 1) * max_len / n_frames)))
-            start = max(0, end - window)
             frame_traces = []
             windows_by_index = {}
             window_colors_by_index = {}
             for idx, arr in enumerate(data):
                 arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
-                stop = min(end, arr.shape[0])
-                seg = arr[start:stop]
+                # PER DATASET, exactly as the matplotlib renderer paces it:
+                # a 5-row marker dataset beside a 15-row line gets its own
+                # rescaled window instead of being clamped into the longest
+                # dataset's, which used to slide off its end and leave it
+                # blank for most of the animation (`trails` docstring).
+                start, end, _ = anim_window_bounds(
+                    k, n_frames, arr.shape[0], window_frames)
+                seg = arr[start:end]
                 windows_by_index[idx] = seg
-                cols = _window_colors(idx, start, stop)
+                cols = _window_colors(idx, start, end)
                 if cols is not None:
                     window_colors_by_index[idx] = cols
                 # antialias=: `seg` (ORIGINAL rows) still drives the surface
                 # mesh/hue windows above; only the DRAWN vertices are smoothed
-                draw_seg = _aa_window(aa_curves, idx, start, stop)
+                draw_seg = _aa_window(aa_curves, idx, start, end)
                 if ndims >= 3:
                     frame_traces.append(go.Scatter3d(
                         x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2]))
@@ -3194,19 +3217,24 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 for idx in trail_dataset_indices:
                     arr = np.atleast_2d(np.asarray(data[idx], dtype=np.float64))
                     ct, pc, bt = chemtrails[idx], precog[idx], bullettime[idx]
+                    # this dataset's OWN bounds again -- the head loop above
+                    # computed the same triple, but only the trailed datasets
+                    # need `trail_stop`, and re-deriving beats threading a
+                    # parallel dict through the head loop for it
+                    _, end, trail_stop = anim_window_bounds(
+                        k, n_frames, arr.shape[0], window_frames)
                     if (ct and pc) or bt:
                         t0, t1 = 0, arr.shape[0]
                     elif ct:
-                        # matches `matplotlib_backend._anim_window_bounds`'s
-                        # `trail_stop = max(0, end - w)` exactly: independently
-                        # clamped at 0, NOT derived from the ALREADY-clamped
-                        # `start` above (a `start + 1` off-by-one that used to
+                        # `trail_stop = max(0, end - w)`, independently clamped
+                        # at 0 rather than derived from the already-clamped
+                        # `start` (a `start + 1` off-by-one that used to
                         # overstate this trail by one point at every frame,
-                        # not just the early, fully-clamped ones -- caught by
-                        # the cross-backend parity assertions this task adds).
-                        t0, t1 = 0, max(0, min(end, arr.shape[0]) - window)
+                        # not just the early, fully-clamped ones)
+                        t0, t1 = 0, trail_stop
                     else:
-                        t0, t1 = min(end, arr.shape[0]) - 1, arr.shape[0]
+                        # precog shares the head's last vertex (F05-008)
+                        t0, t1 = end - 1, arr.shape[0]
                     # antialias=: trail bounds stay ORIGINAL-row indices; the
                     # smooth curve spanning exactly those rows is drawn
                     trail = _aa_window(aa_curves, idx, t0, t1)
@@ -3247,7 +3275,16 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             frames.append(go.Frame(**frame_kwargs))
 
     fig.frames = frames
-    frame_ms = max(10, int(1000.0 * duration / n_frames))
+    # Play-button pacing is the TRUE inter-frame interval, `1000 / frame_rate`
+    # -- byte-identical to the `interval=` matplotlib hands `FuncAnimation`,
+    # and the same rule the GIF/APNG export path above already documents ("NOT
+    # 1000*duration/n_frames"). This used to be that forbidden form, which
+    # agrees only when `frame_rate * duration` is a whole number: at
+    # frame_rate=3, duration=1.4 the browser played 350 ms/frame against
+    # matplotlib's 333.33 (5% slow), and a sub-frame request played 50 against
+    # matplotlib's 100 (2x fast). The export path was right; this was the one
+    # place left deriving playback speed from the frame count.
+    frame_ms = 1000.0 / float(frame_rate)
     # Play/Pause controls: laid out horizontally BELOW the plotting area
     # (y < 0 in paper coords, anchored by their top edge) rather than at paper
     # (0, 0). In 3-D the scene floats above that corner so the old placement
