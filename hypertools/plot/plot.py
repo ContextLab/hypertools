@@ -405,6 +405,28 @@ def _validate_labels_length(labels, dataset_lengths):
             "points that should not be labeled).")
 
 
+def _validate_title(title, style=None, order=None, n_datasets=None):
+    """`title=` is a single string for the whole figure.
+
+    A list/tuple used to be silently stringified onto the axes (a caller
+    passing one title per dataset got the literal text "['a', 'b', 'c']"
+    drawn on their figure). Reject anything that is not a string so the
+    mistake is visible, and point at the kwargs that ARE per-dataset.
+
+    Returns None for the scalar/None forms. Task 8 of the 1.1 animation-core
+    plan widens this to return a list of per-segment titles for serial-style
+    animations; `style`/`order`/`n_datasets` are accepted (and ignored) from
+    the start so that widening never changes the signature or its call site.
+    """
+    if title is None or isinstance(title, str):
+        return None
+    raise TypeError(
+        f"title must be a string (or None), not {type(title).__name__}. "
+        "For a per-dataset legend entry use names=; for a per-observation "
+        "annotation use labels=."
+    )
+
+
 def _valid_line2d_kwargs():
     """The set of keyword-argument names matplotlib line artists accept
     (full property names plus their aliases, e.g. both 'linewidth' and
@@ -948,7 +970,11 @@ def plot(
         dataset with no `hue`/`cluster`). Default None (no colorbar).
 
     title : str
-        A title for the plot
+        A title for the plot. Must be a string; passing a list, tuple, int
+        or dict raises ``TypeError`` (it used to be stringified onto the
+        axes). Use ``names=`` for per-dataset legend entries, or ``labels=``
+        for per-observation annotations. See ``order='serial'`` for
+        per-segment titles during serial-style animations.
 
     font : None, str, or matplotlib.font_manager.FontProperties
         Controls the font used for every text surface hypertools draws,
@@ -2228,6 +2254,11 @@ def plot(
                 "(animate={'style': ..., ...}), or a per-dataset list for "
                 "animate='morph'. For extra camera rotations, pass "
                 "rotations= instead.")
+
+    # fail-fast on title= BEFORE the analyze/reduce pipeline (plot.py:423-430)
+    # and before resolve_font (plot.py:2428) / the plot_stream return
+    # (plot.py:2582) both consume it.
+    _validate_title(title, style=animate)
 
     # animations need a positive duration and frame rate (QC 2026-07: duration=0
     # or frame_rate=0 raised ZeroDivisionError, and a negative duration a cryptic
