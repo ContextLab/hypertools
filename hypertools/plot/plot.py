@@ -4979,6 +4979,21 @@ def plot(
             if _segment_titles is not None and line_ani is not None:
                 _frame_hooks.add(_make_title_updater(_segment_titles, ax))
 
+            # animated 3-D titles need a reserved top margin or they render
+            # entirely off-canvas -- animate_plot3D's full-canvas axes
+            # leave zero room above the axes box, which IS the figure's own
+            # top edge there (see _reserve_animated_3d_title_margin's
+            # docstring for the full root-cause evidence). Gated on
+            # "will a title actually be drawn" (scalar OR per-segment, same
+            # condition the plotly fix uses) so a titleless 3-D animation
+            # keeps the exact same maximised canvas as before -- and on
+            # ndims >= 3 so 2-D animations (whose default, non-maximised
+            # axes already leave normal title room) are never touched.
+            if (ax is not None and line_ani is not None
+                    and xform[0].shape[1] >= 3
+                    and (title is not None or _segment_titles is not None)):
+                _reserve_animated_3d_title_margin(fig, ax)
+
             # tighten layout (static plots only: animated axes are given
             # the full canvas so rotating zoomed cubes don't clip, and
             # tight_layout would shrink them back into subplot margins)
@@ -5384,6 +5399,57 @@ def _add_colorbar(fig, ax, colorbar_info, font=None):
     return cbar
 
 
+def _measurement_renderer(fig):
+    """A real Agg `renderer` for `fig`, from a real draw of `fig` itself --
+    needed by `_tight_right_edge_in`/`_legend_right_edge_in`, which measure
+    ACTUAL legend/label extents that only exist once the real content is
+    laid out (unlike `_animated_3d_title_line_height_in`, which measures a
+    font-metrics-only property and can use a throwaway figure instead).
+
+    Guards the draw exactly like matplotlib's OWN `Animation.save()` and
+    `FigureCanvasBase.print_figure()` already guard THEIR internal draws
+    (see `Animation.save`'s ``cbook._setattr_cm(self._fig.canvas,
+    _is_saving=True, ...)`` and `print_figure`'s identical guard, both in
+    `matplotlib/animation.py`/`matplotlib/backend_bases.py`): setting
+    ``canvas._is_saving = True`` for the duration of this draw makes
+    `Animation._start` (connected to every animated figure's
+    ``'draw_event'`` at `FuncAnimation` construction time -- see
+    `Animation.__init__`) a no-op (`if self._fig.canvas.is_saving():
+    return`, deliberately WITHOUT disconnecting its own listener), which
+    defers the animation's real "first draw" start to the next NON-
+    measurement draw instead of firing it here.
+
+    Without this guard (release-1.0.1 QC, found while verifying the 3-D
+    title-margin fix's "neighbours"): a measurement draw here is often
+    `fig`'s first draw ever, since `hyp.plot(..., show=False)` never draws
+    the canvas itself -- and an unguarded first draw silently ran
+    `FuncAnimation._init_draw()` -> a real, premature frame-0 update
+    through `line_ani._func`, dispatching any `on_frame=` callback (and any
+    `_frame_hooks`-driven per-segment `title=` schedule) one extra time,
+    before the animation had otherwise started and before `plot()` even
+    returned -- confirmed empirically (an animated 3-D plot with
+    `legend=`/`colorbar=` plus `on_frame=` recorded one spurious call
+    during construction, before any real frame was ever driven) and locked
+    in by `tests/test_animation_margins.py::
+    TestMeasurementDrawsDoNotStartTheAnimation`.
+
+    `FigureCanvasAgg(fig)` (like every `FigureCanvasBase` subclass) rebinds
+    `fig.canvas` to itself (`Figure.set_canvas`), so the guard applies to
+    the canvas THIS CALL just created -- the same object `Figure.draw()`
+    reads back via `self.canvas` when it fires `'draw_event'` at the end
+    of the draw (`Figure.draw`, matplotlib source), not stale state left on
+    whatever canvas existed before.
+    """
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    canvas = FigureCanvasAgg(fig)
+    canvas._is_saving = True
+    try:
+        canvas.draw()
+    finally:
+        canvas._is_saving = False
+    return canvas.get_renderer()
+
+
 def _tight_right_edge_in(fig):
     """The TRUE required figure width (inches) to avoid clipping ANY artist
     off the right edge -- e.g. a legend and/or a colorbar's tick labels/axis
@@ -5410,11 +5476,8 @@ def _tight_right_edge_in(fig):
     to match what actually gets saved/displayed.
     """
     import matplotlib
-    from matplotlib.backends.backend_agg import FigureCanvasAgg
     with plt.rc_context(matplotlib.rcParamsDefault):
-        canvas = FigureCanvasAgg(fig)
-        canvas.draw()
-        renderer = canvas.get_renderer()
+        renderer = _measurement_renderer(fig)
         return float(fig.get_tightbbox(renderer).x1)
 
 
@@ -5426,11 +5489,8 @@ def _legend_right_edge_in(fig, legend):
     artists whose projected extent overshoots the canvas cannot inflate
     the legend fit (release-1.0 audit, F04-002)."""
     import matplotlib
-    from matplotlib.backends.backend_agg import FigureCanvasAgg
     with plt.rc_context(matplotlib.rcParamsDefault):
-        canvas = FigureCanvasAgg(fig)
-        canvas.draw()
-        renderer = canvas.get_renderer()
+        renderer = _measurement_renderer(fig)
         return float(legend.get_window_extent(renderer).x1) / fig.dpi
 
 
@@ -5505,6 +5565,149 @@ def _add_right_colorbar(fig, ax, mappable, pad_in=0.2, width_in=0.35,
         cbar_ax.set_position([cbar_left_in / new_w, cbar_pos.y0,
                               cbar_w_in / new_w, cbar_pos.height])
     return cbar
+
+
+def _animated_3d_title_line_height_in(ax, probe='Xygj'):
+    """The true rendered height (inches) of one line of `ax.title`'s
+    resolved font.
+
+    Measured on a THROWAWAY `Figure`/`Axes` -- never `ax`'s own real
+    figure. The first attempt at this measured directly against the real
+    `fig` (`FigureCanvasAgg(fig)` + `canvas.draw()`), which is wrong in a
+    way that only shows up on an ANIMATED figure: `FuncAnimation.__init__`
+    connects `fig.canvas.mpl_connect('draw_event', self._start)` so the
+    animation only "starts" once the figure has genuinely been drawn for
+    the first time (see `matplotlib.animation.Animation.__init__`) --
+    `hyp.plot(..., show=False)` never draws the canvas itself, so that
+    probe draw WAS the figure's first draw, firing `draw_event` ->
+    `Animation._start()` -> `FuncAnimation._init_draw()` ->
+    `self._draw_frame(next(self.new_frame_seq()))` -- i.e. a REAL,
+    premature frame-0 update through `line_ani._func` (the
+    `_hyp_frame_with_hooks` wrapper below), dispatching any `on_frame=`
+    callback once, BEFORE the animation has otherwise started and before
+    `plot()` even returns. Confirmed empirically (and locked in by
+    `tests/test_animation_margins.py::
+    TestMeasurementDrawsDoNotStartTheAnimation::
+    test_reserving_the_title_margin_does_not_fire_on_frame`): this made
+    `on_frame=` see one extra call, and made
+    `_frame_hooks`-driven state (e.g. a per-segment `title=` list's
+    schedule) drift out of sync with a caller's own frame count -- a real
+    regression, not a measurement nicety. `figure.canvas`/its callback
+    registry live on the FIGURE (`Figure._canvas_callbacks`), not on any
+    one canvas object, so even swapping `fig.canvas` for a new one does
+    not sidestep this -- a throwaway `Figure()` that `line_ani` never
+    connected anything to is the only clean way to measure.
+
+    Measured under `matplotlib.rcParamsDefault`, not whatever rcParams are
+    active right now -- same reasoning as `_tight_right_edge_in` (see its
+    docstring): hypertools's own font resolution (`resolve_font`, called
+    from `plot()`) only ever sets a FontProperties `family=`, never a
+    `size=`, so the title's actual rendered point size always comes from
+    rcParams (`axes.titlesize`), resolved dynamically, and hypertools draws
+    inside a seaborn/font `rc_context` that has already been exited by the
+    time the figure is actually saved or displayed (confirmed there to be a
+    real, not theoretical, discrepancy) -- and, for a per-segment `title=`
+    list specifically, `_make_title_updater` sets the title with NO
+    `fontproperties=` override at all (see its call site), so it is never
+    anything BUT rcParams-driven. `ax.title`'s OWN resolved
+    `FontProperties` (family only, per above) is copied onto the probe so
+    the measurement still reflects whatever family the real title would
+    use.
+
+    `probe` (default ``'Xygj'``) replaces the probe title's text: a capital
+    ascender, an x-height glyph, and two descenders, so the measured height
+    is a safe upper bound regardless of the REAL title text's own
+    ascender/descender mix -- this must work before any real per-frame
+    title text exists at all (a per-segment list's first entry is only
+    ever set once the animation actually plays; see `_make_title_updater`),
+    and, even for an already-known scalar title, a representative probe
+    avoids reserving a margin sized to that one string when OTHER
+    per-segment strings sharing the same reserved margin might need
+    slightly more.
+    """
+    import matplotlib
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    probe_fig = Figure()
+    probe_ax = probe_fig.add_subplot()
+    probe_ax.set_title(probe, fontproperties=ax.title.get_fontproperties())
+    with plt.rc_context(matplotlib.rcParamsDefault):
+        canvas = FigureCanvasAgg(probe_fig)
+        canvas.draw()
+        renderer = canvas.get_renderer()
+        height_px = probe_ax.title.get_window_extent(renderer).height
+    return height_px / probe_fig.dpi
+
+
+def _reserve_animated_3d_title_margin(fig, ax, pad_in=0.08):
+    """Grow the figure so an animated 3-D plot's title has room to render.
+
+    `matplotlib_backend.animate_plot3D` deliberately maximises the 3-D axes
+    to ``ax.set_position([0, 0, 1, 1])`` (full canvas -- see its own
+    comment) so a rotating zoomed cube never overflows the axes viewport
+    and clips at some rotation angles. `Axes.set_title()` draws ABOVE the
+    axes' own bounding box; with zero margin left above a full-canvas axes,
+    that box top IS the figure's own top edge, so the title Text lands
+    entirely off-canvas and never renders -- confirmed empirically
+    (`tests/test_animation_margins.py`'s `TestAnimated3DTitleMargin`):
+    `ax.title.get_window_extent().y0` sits past the canvas height, and a
+    before/after pixel diff between a real title and an empty one shows
+    ZERO changed pixels. This is true for BOTH a scalar `title=` (set once,
+    statically, by the shared "add title" block in
+    `matplotlib_backend._draw`) and a per-segment `title=` list (set every
+    frame by `_make_title_updater` below) -- neither path ever reserved any
+    margin, so both are reached the same way; the caller here gates on
+    "will EITHER ever draw a non-empty title" (`title is not None or
+    _segment_titles is not None`), mirroring the plotly-side fix
+    (`plotly_backend.py`'s ``t=40 if (title or segment_titles) else 10``,
+    `ccbb28c3`) exactly.
+
+    Fix: grow the FIGURE height by the real measured title-line height
+    (`_animated_3d_title_line_height_in`) plus `pad_in`, and reposition the
+    already-created, already-populated axes to occupy exactly the same
+    ABSOLUTE size it already had -- not a smaller, re-shrunk one -- at the
+    BOTTOM of the now-taller canvas, leaving a blank strip above it for the
+    title. This mirrors `_fit_right_legend`/`_add_right_colorbar` (same
+    file), which already grow the canvas rather than shrink the maximised
+    axes to make room for a legend/right-side colorbar, for the identical
+    reason (see their docstrings).
+
+    Why grow rather than shrink the existing full-canvas axes in place (the
+    more "obvious" fix): `mpl_toolkits.mplot3d.axes3d.Axes3D.apply_aspect`
+    derives its centered-square viewport from `ax.get_position(original=
+    True)` and the FIGURE's own aspect ratio (`fig_aspect`). Shrinking the
+    axes position's height fraction in place (e.g. `set_position([0, 0, 1,
+    1 - m])`) shrinks the derived square -- and therefore the rendered cube
+    -- by the same factor in both dimensions; that is provably proportional
+    and safe IN ISOLATION (re-derived by hand against
+    `Bbox.shrunk_to_aspect`), but it stacks with an already near-zero
+    worst-case margin on wide/flat data at some rotation angles (the exact
+    scenario `tests/test_animation_margins.py::TestAxesBoxNoClipping`
+    stress-tests), risking reintroducing the very clipping bug the
+    full-canvas positioning exists to prevent. Growing the figure instead
+    and repositioning the axes to the SAME absolute inches keeps the cube's
+    rendered geometry byte-for-byte identical to the title-less baseline at
+    every rotation angle (verified: `TestAnimated3DTitleMargin` reruns
+    `TestAxesBoxNoClipping`'s own wide/flat + chemtrails worst case, now
+    WITH a title, and gets the same healthy margins) -- it cannot
+    reintroduce that clipping bug, because nothing about the cube's own
+    viewport changes at all.
+    """
+    w_in, h_in = fig.get_size_inches()
+    pos = ax.get_position()
+    bottom_in, height_in = pos.y0 * h_in, pos.height * h_in
+    new_h_in = h_in + _animated_3d_title_line_height_in(ax) + pad_in
+    # a persistent layout engine would silently undo the manual
+    # set_position below on the next draw/save (see _fit_right_legend's
+    # identical guard, same reasoning).
+    try:
+        fig.set_layout_engine('none')
+    except Exception:
+        pass
+    fig.set_size_inches(w_in, new_h_in)
+    ax.set_position([pos.x0, bottom_in / new_h_in,
+                     pos.width, height_in / new_h_in])
 
 
 def _fit_right_legend(fig, ax, pad_in=0.15, max_iter=3):

@@ -642,3 +642,296 @@ class TestAxesBoxNoClipping:
                 f"wide chemtrails trajectory: {edge} margin only {val}px "
                 f"(floor {NOCLIP_MARGIN_FLOOR_PX}px)"
             )
+
+
+# --- 3-D animated title= margin (release-1.1 QC, mirrors the plotly fix in
+# ccbb28c3) -------------------------------------------------------------
+#
+# `animate_plot3D`'s full-canvas `ax.set_position([0, 0, 1, 1])` (this
+# whole file's subject) leaves ZERO margin above the axes box for
+# `axes.set_title()` to render into -- with the axes filling the entire
+# canvas, the axes' own top edge IS the figure's top edge, so the title
+# Text lands entirely off-canvas. `ax.get_title()` still returns the right
+# string (the STATE is correct), which is why this escaped: every existing
+# title test in `tests/plot/test_serial_titles.py` only ever checks
+# `ax.get_title()`, never whether the title is actually RENDERED. These
+# tests would all FAIL red under the pre-fix code (confirmed directly: a
+# `git stash` of the fix commit, re-run against this exact file, fails
+# `test_segment_titled_3d_morph_title_is_actually_rendered` and
+# `test_scalar_titled_3d_animation_title_is_actually_rendered` with a
+# before/after title pixel diff of 0). Fixed by
+# `_reserve_animated_3d_title_margin` (plot.py): grows the FIGURE height
+# (never the axes' own viewport) so the 3-D scene's absolute rendered
+# geometry -- and therefore every margin this file's OTHER tests guard --
+# is unaffected; see that function's docstring for the full derivation.
+
+def _title_pixel_diff(fig, ax, on_text, off_text=''):
+    """Real pixel evidence that TEXT (not just axes state) changed: render
+    once with `ax.title` set to `on_text`, once to `off_text`, and return
+    the count of differing RGBA pixels between the two -- the technique
+    `tests/plot/test_serial_titles.py`'s plotly pixel test uses (a real
+    kaleido render), adapted for matplotlib. `_measure_margins`'s
+    `bg_thresh` scan alone cannot tell "title ink" from "cube ink" apart
+    (the cube can legitimately paint the very top rows too, at some
+    rotation angles, independent of any title -- confirmed while
+    investigating this fix); a before/after diff isolates exactly the
+    pixels the title text itself is responsible for.
+    """
+    ax.set_title(off_text)
+    fig.canvas.draw()
+    buf_off = np.asarray(fig.canvas.buffer_rgba()).copy()
+    ax.set_title(on_text)
+    fig.canvas.draw()
+    buf_on = np.asarray(fig.canvas.buffer_rgba()).copy()
+    diff = np.abs(buf_on.astype(int) - buf_off.astype(int))
+    return int((diff.sum(axis=2) > 0).sum())
+
+
+class TestAnimated3DTitleMargin:
+    """Pixel-level regression guard for the invisible-3-D-animated-title
+    defect -- see the module comment above this class for the full
+    before/after evidence."""
+
+    def test_segment_titled_3d_morph_title_is_actually_rendered(self):
+        clouds = _blob_clouds(2, n=30, seed=11)
+        fig, ani = hyp.plot(clouds, animate='morph', title=['Alpha', 'Beta'],
+                            duration=2, frame_rate=10, show=False)
+        ax = fig.axes[0]
+        ani._func(0, *ani._args)
+        assert ax.get_title() == 'Alpha', 'sanity: state must be correct first'
+
+        n_diff = _title_pixel_diff(fig, ax, 'Alpha')
+        plt.close(fig)
+        assert n_diff > 0, (
+            "the per-segment title text has ZERO effect on the rendered "
+            "pixels -- it is being drawn entirely off-canvas")
+
+    def test_scalar_titled_3d_animation_title_is_actually_rendered(self):
+        clouds = _blob_clouds(2, n=30, seed=12)
+        fig, ani = hyp.plot(clouds, animate=True, title='My Plot',
+                            duration=2, frame_rate=10, show=False)
+        ax = fig.axes[0]
+        assert ax.get_title() == 'My Plot'
+
+        n_diff = _title_pixel_diff(fig, ax, 'My Plot')
+        plt.close(fig)
+        assert n_diff > 0, (
+            "the scalar title text has ZERO effect on the rendered pixels "
+            "-- it is being drawn entirely off-canvas")
+
+    def test_title_text_bbox_is_fully_within_the_canvas(self):
+        """Direct geometric evidence, alongside the pixel-diff checks
+        above: the title Text artist's own rendered bounding box must sit
+        entirely within [0, canvas_height], not partly or fully above
+        it."""
+        clouds = _blob_clouds(2, n=30, seed=13)
+        fig, ani = hyp.plot(clouds, animate=True, title='Bounded',
+                            duration=2, frame_rate=10, show=False)
+        ax = fig.axes[0]
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        bbox = ax.title.get_window_extent(renderer)
+        h = fig.canvas.get_width_height()[1]
+        plt.close(fig)
+        assert bbox.y1 <= h, (
+            f"title bbox top (y1={bbox.y1}) exceeds the canvas height "
+            f"({h}) -- the title renders above the visible canvas")
+
+    def test_titleless_3d_animation_keeps_the_exact_full_canvas_position(
+            self):
+        """Regression guard on the fix's own gating: a 3-D animation with
+        NO title= must keep `animate_plot3D`'s ORIGINAL, unmodified
+        full-canvas positioning -- the exact behaviour this whole file
+        already locks in for every OTHER test. Asserted directly against
+        `get_position(original=True)`, the value `apply_aspect` derives
+        its per-frame square viewport from (see this file's D4
+        docstring)."""
+        clouds = _blob_clouds(2, n=30, seed=14)
+        fig, ani = hyp.plot(clouds, animate=True, duration=2, frame_rate=10,
+                            show=False)
+        ax = fig.axes[0]
+        pos = ax.get_position(original=True)
+        size = tuple(fig.get_size_inches())
+        plt.close(fig)
+        assert (pos.x0, pos.y0, pos.x1, pos.y1) == (0.0, 0.0, 1.0, 1.0), (
+            f"a titleless 3-D animation's axes position changed to {pos} "
+            f"-- the full-canvas maximisation must be untouched when no "
+            f"title will ever be drawn")
+        assert size == (6.4, 4.8), (
+            f"a titleless 3-D animation's figure size changed to {size} "
+            f"-- nothing should grow the canvas when no title is "
+            f"requested")
+
+    def test_static_3d_titled_plot_is_unaffected(self):
+        """The static path never used the full-canvas hack (see `plot3D`'s
+        own comment in matplotlib_backend.py) and was never broken -- this
+        locks in that the fix does not touch it either."""
+        clouds = _blob_clouds(2, n=30, seed=15)
+        fig = hyp.plot(clouds, title='Static', show=False)
+        ax = fig.axes[0]
+        size = tuple(fig.get_size_inches())
+        n_diff = _title_pixel_diff(fig, ax, 'Static')
+        plt.close(fig)
+        assert size == (6.4, 4.8), (
+            f"a static 3-D titled plot's figure size changed to {size}")
+        assert n_diff > 0, 'the static title must still render (it always did)'
+
+    def test_2d_animated_titled_plot_is_unaffected(self):
+        """2-D animations never used the full-canvas hack either (only
+        `animate_plot3D` does) -- confirms the fix's `ndims >= 3` gate."""
+        clouds = [c[:, :2] for c in _blob_clouds(2, n=30, seed=16)]
+        fig, ani = hyp.plot(clouds, animate='morph', title=['A', 'B'],
+                            duration=2, frame_rate=10, show=False)
+        ax = fig.axes[0]
+        ani._func(0, *ani._args)
+        size = tuple(fig.get_size_inches())
+        n_diff = _title_pixel_diff(fig, ax, 'A')
+        plt.close(fig)
+        assert size == (6.4, 4.8), (
+            f"a 2-D animated titled plot's figure size changed to {size}")
+        assert n_diff > 0, (
+            '2-D animated titles must still render (they always did)')
+
+    def test_wide_flat_chemtrails_with_title_keeps_healthy_cube_margins(
+            self):
+        """The critical safety check (does the fix reintroduce the
+        axes-box-slicing clipping bug `TestAxesBoxNoClipping` (above)
+        guards against?): reruns that class's exact worst-case wide/flat +
+        chemtrails trajectory, across a full rotation, now WITH a title --
+        masking the title's own ink out (mirroring `_measure_margins`'s
+        legend mask) so the measurement is of the CUBE alone, the thing
+        that actually matters for clipping. `_reserve_animated_3d_title_
+        margin` grows the figure and keeps the axes' absolute geometry
+        identical to the title-less baseline, so these margins must clear
+        the SAME floor `TestAxesBoxNoClipping` uses, not a relaxed one."""
+        traj = TestAxesBoxNoClipping._wide_flat_trajectory(seed=20)
+        traj2 = TestAxesBoxNoClipping._wide_flat_trajectory(seed=21)
+        fig, ani = hyp.plot([traj, traj2], animate=True, chemtrails=True,
+                            title='Wide flat chemtrails', duration=3,
+                            frame_rate=10, show=False)
+        ax = fig.axes[0]
+        fig.canvas.draw()
+
+        idx, total = _full_rotation_frames(ani, n_samples=24)
+        assert len(idx) >= 24
+        mins = dict(left=10**9, right=10**9, top=10**9, bottom=10**9)
+        for k in idx:
+            ani._func(k, *ani._args)
+            fig.canvas.draw()
+            inked = _inked_mask(fig)
+            # mask the title's own ink out -- see _measure_margins's
+            # identical legend-masking pattern above
+            renderer = fig.canvas.get_renderer()
+            tb = ax.title.get_window_extent(renderer)
+            h_full, w_full = inked.shape
+            tx0 = max(0, int(tb.x0) - 2)
+            tx1 = min(w_full, int(tb.x1) + 2)
+            ty0 = max(0, int(h_full - tb.y1) - 2)
+            ty1 = min(h_full, int(h_full - tb.y0) + 2)
+            inked[ty0:ty1, tx0:tx1] = False
+            cols = np.where(inked.any(axis=0))[0]
+            rows = np.where(inked.any(axis=1))[0]
+            assert len(cols) and len(rows), f"frame {k}: canvas is blank"
+            frame_mins = dict(
+                left=int(cols.min()), right=int(w_full - 1 - cols.max()),
+                top=int(rows.min()), bottom=int(h_full - 1 - rows.max()),
+            )
+            for edge in mins:
+                mins[edge] = min(mins[edge], frame_mins[edge])
+        plt.close(fig)
+        for edge, val in mins.items():
+            assert val >= NOCLIP_MARGIN_FLOOR_PX, (
+                f"wide chemtrails trajectory WITH a title: {edge} margin "
+                f"only {val}px (floor {NOCLIP_MARGIN_FLOOR_PX}px) -- the "
+                f"title-margin fix may be shrinking/clipping the cube")
+
+
+# --- measurement draws must never start the animation early -------------
+#
+# Found and fixed while verifying the title fix's safety (checking whether
+# `_fit_right_legend`/`_add_right_colorbar` -- this file's own
+# "neighbours" -- had the same "full canvas hides something" problem the
+# title did). They didn't have a rendering bug, but sneaking a
+# `FigureCanvasAgg(fig); canvas.draw()` measurement draw against the REAL,
+# ANIMATED figure (both already did this, for the legend/colorbar width
+# fit; `_animated_3d_title_line_height_in`, the new title fix, initially
+# did too) turned out to have an unrelated, genuinely dangerous side
+# effect: it IS the figure's first-ever draw (`hyp.plot(..., show=False)`
+# never draws the canvas itself), which fires `FuncAnimation`'s deferred
+# `'draw_event'` -> `Animation._start()` -> `_init_draw()` -> a REAL
+# frame-0 update through `line_ani._func`, dispatching any `on_frame=`
+# callback (and the `_frame_hooks`-driven per-segment `title=` schedule)
+# one extra time -- silently, during figure CONSTRUCTION, before the
+# caller has done anything at all. This broke
+# `tests/plot/test_serial_titles.py::
+# test_title_list_matches_the_published_current_index` the first time the
+# title-margin fix was attempted (confirmed: 17 recorded on_frame calls
+# for a 16-frame animation, one-frame-shifted from `_titles_over`'s own
+# count). Fixed by `_measurement_renderer` (plot.py), which guards every
+# such measurement draw with `canvas._is_saving = True` -- matplotlib's
+# own, officially-supported escape hatch for exactly this ("makes the
+# draw_event animation-starting callback a no-op", `Animation.save`'s own
+# comment) -- and by `_animated_3d_title_line_height_in` measuring on a
+# throwaway `Figure` that was never connected to the real animation at
+# all.
+
+class TestMeasurementDrawsDoNotStartTheAnimation:
+
+    @staticmethod
+    def _n_on_frame_calls_before_any_manual_drive(**plot_kwargs):
+        seen = []
+        clouds = _blob_clouds(2, n=20, seed=30)
+        fig, ani = hyp.plot(clouds, animate=True, duration=2, frame_rate=10,
+                            on_frame=seen.append, show=False, **plot_kwargs)
+        plt.close(fig)
+        return len(seen)
+
+    def test_reserving_the_title_margin_does_not_fire_on_frame(self):
+        n = self._n_on_frame_calls_before_any_manual_drive(title='T')
+        assert n == 0, (
+            f"{n} on_frame call(s) fired during hyp.plot() construction, "
+            f"before any frame was manually driven -- the title-margin "
+            f"measurement draw started the animation prematurely")
+
+    def test_fitting_the_right_side_legend_does_not_fire_on_frame(self):
+        n = self._n_on_frame_calls_before_any_manual_drive(
+            legend=['a', 'b'])
+        assert n == 0, (
+            f"{n} on_frame call(s) fired during hyp.plot() construction "
+            f"-- the legend-fit measurement draw started the animation "
+            f"prematurely")
+
+    def test_fitting_the_right_colorbar_does_not_fire_on_frame(self):
+        clouds = _blob_clouds(2, n=20, seed=31)
+        seen = []
+        fig, ani = hyp.plot(
+            clouds, animate=True,
+            hue=[np.linspace(0, 1, 20), np.linspace(0, 1, 20)],
+            colorbar=True, duration=2, frame_rate=10, on_frame=seen.append,
+            show=False)
+        plt.close(fig)
+        assert len(seen) == 0, (
+            f"{len(seen)} on_frame call(s) fired during hyp.plot() "
+            f"construction -- the right-colorbar-fit measurement draw "
+            f"started the animation prematurely")
+
+    def test_frame_schedule_is_not_shifted_after_construction(self):
+        """End-to-end: with the guard in place, manually driving N frames
+        after construction must report exactly N on_frame calls (not N+1
+        from a leaked construction-time call) -- the exact symptom that
+        broke `tests/plot/test_serial_titles.py::
+        test_title_list_matches_the_published_current_index` before this
+        was fixed (a per-segment title= list + on_frame= drifted out of
+        sync by one frame)."""
+        seen = []
+        clouds = _blob_clouds(2, n=20, seed=32)
+        fig, ani = hyp.plot(clouds, animate=True, title='T',
+                            legend=['a', 'b'], duration=2, frame_rate=10,
+                            on_frame=seen.append, show=False)
+        assert len(seen) == 0, 'construction itself must not fire on_frame'
+        for f in range(16):
+            ani._func(f, *ani._args)
+        plt.close(fig)
+        assert len(seen) == 16, (
+            f"expected exactly 16 on_frame calls after manually driving "
+            f"16 frames, got {len(seen)}")

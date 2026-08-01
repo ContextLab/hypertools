@@ -146,6 +146,30 @@ Small, additive plotting features and fixes (fully backward-compatible).
   `morph_samples=` and `simplify=True` when you pass `simplify=False`. See
   `simplify=` above for which of your data actually reaches the plot.
 
+- **`title=` is now actually visible on animated 3-D matplotlib plots.**
+  `animate_plot3D` maximises the 3-D axes to the full canvas (so a rotating
+  zoomed cube never clips at some rotation angles) -- but that left zero
+  margin above the axes for `axes.set_title()` to render into, so both a
+  scalar `title=` and a per-segment `title=` list rendered entirely
+  off-canvas (the title *state* was always correct; only the pixels were
+  missing). Matplotlib animated 3-D plots now reserve a top strip -- sized
+  to the real measured title-line height, growing the figure rather than
+  shrinking the maximised axes -- whenever a title will actually be drawn;
+  a titleless 3-D animation, a static 3-D plot, and 2-D animations (which
+  never had this problem) are all unaffected. The plotly backend already
+  had the equivalent fix.
+
+- **Fitting a legend/colorbar/title around an animated plot no longer fires
+  `on_frame=` (or a per-segment `title=` schedule) one extra time before
+  the animation has started.** The margin-fitting helpers this release adds
+  or already had (right-side legend/colorbar fitting, the new 3-D title
+  margin above) each draw the figure once to measure real content -- which,
+  for an animated figure that has never been drawn yet, is enough to
+  trigger matplotlib's own "first draw starts the animation" mechanism,
+  silently running a premature frame-0 update. These measurement draws are
+  now guarded the same way matplotlib's own `Animation.save()` guards its
+  internal draws, so the animation's real first frame is never fired early.
+
 ## 1.0.0 (unreleased)
 
 HyperTools 1.0 is a ground-up modernization of the toolbox. The familiar
