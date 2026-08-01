@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib as mpl
 import matplotlib.backend_bases as bb
-import pytest
 
 import hypertools as hyp
 from hypertools.plot import plot
@@ -179,6 +178,11 @@ def test_cluster_line_animate_parallel_labels_land_at_correct_frame():
     p0_idx = by_text["p0"]._hyp_global_idx
     p10_idx = by_text["p10"]._hyp_global_idx
     p20_idx = by_text["p20"]._hyp_global_idx
+    # EXACT, not approx. This was written as `pytest.approx(30, abs=3)` /
+    # `approx(60, abs=3)`, but the pre-fix values were 29 and 59 -- inside that
+    # tolerance -- so the test passed with and without the fix and could not
+    # fail on the bug it documents. Measured post-fix: exactly 30 and 60, which
+    # is what "the HEAD of frames [30, 60)" means.
     assert p0_idx == 0
-    assert p10_idx == pytest.approx(30, abs=3)
-    assert p20_idx == pytest.approx(60, abs=3)
+    assert p10_idx == 30
+    assert p20_idx == 60
