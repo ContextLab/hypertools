@@ -4118,7 +4118,7 @@ Expected: build succeeds with **0 warnings** (the repo holds an RTD-parity zero-
 - [ ] **Step 8: Run the FULL suite one last time**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2712 passed, 13 skipped`.
+Expected: `2717 passed, 13 skipped`.
 
 - [ ] **Step 9: Commit**
 
