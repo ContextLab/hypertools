@@ -173,11 +173,10 @@ class FrameContext:
     alone, ``type(ctx.artists)`` would vary by backend and style, which is
     not something a public field may do.
 
-    All eleven funnel through the SINGLE construction site --
-    `FrameHooks.dispatch`'s ``FrameContext(figure=..., axes=...,
-    **self.state)`` -- so normalizing in `__post_init__` covers every one
-    of them, and covers any branch added later without that branch having
-    to know. This is why the coercion lives here and not at the recorders.
+    All eleven funnel through a SINGLE internal construction site, so
+    normalizing in `__post_init__` covers every one of them, and covers any
+    branch added later without that branch having to know. This is why the
+    coercion lives here and not at the recorders.
 
     Tuples rather than lists because the dataclass is ``frozen=True``: a
     list would make that promise half-true, letting a caller
