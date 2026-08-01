@@ -3,7 +3,8 @@
 Branch `dev-1.0`. Nothing pushed. Started from `0f999c77` (round-13 fixes), which is the last commit
 of `notes/session_2026-07-31_plan1-v4.4-review-round13.md`.
 
-**All 9 tasks complete, every one reviewed.** Suite **2554 → 2728**. Sphinx `-W` clean, 0 warnings.
+**All 9 tasks complete, every one reviewed, plus a whole-branch review and its fixes.**
+Suite **2554 → 2740**. Sphinx `-W` clean, 0 warnings.
 
 ## Task-by-task
 
