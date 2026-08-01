@@ -56,6 +56,20 @@ Small, additive plotting features and fixes (fully backward-compatible).
   group means). The 0.3 trail fade is now folded into whatever `alpha` the
   trace already carries, in both the 3-D and 2-D animation paths.
 
+- **`cluster=`/`hue=` line plots spanning more than one run per dataset no
+  longer crash, or silently misplace, point `labels=`.** A categorical
+  `cluster=`/`hue=` line plot that needs to bridge two same-dataset runs into
+  one continuous line (`_regroup_categorical_lines`) duplicated a data point
+  onto the end of the earlier run without adding a matching entry to the
+  parallel `labels=` list, permanently leaving `labels` one entry short per
+  bridge point relative to the drawn data. This crashed `annotate_plot` with
+  `IndexError: list index out of range` whenever nothing else happened to
+  rebuild `labels` from scratch afterward (`animate='morph'`, or a static
+  plot with `antialias=False`) -- and, even when it didn't crash, silently
+  misattributed real point labels to the wrong point (every other animated
+  style, or a static plot with the default `antialias=True`). Bridged labels
+  now grow in lockstep with the bridged data.
+
 ## 1.0.0 (unreleased)
 
 HyperTools 1.0 is a ground-up modernization of the toolbox. The familiar

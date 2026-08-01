@@ -229,7 +229,7 @@ def _regroup_categorical_lines(xform, hue, labels, cat_color, cat_label):
     segments, seg_labels, seg_cat, seg_bridge, seg_dataset = segment_by_run(
         xform, hue, labels)
     breaks = {i + 1 for i in range(len(segments) - 1) if not seg_bridge[i]}
-    segments = patch_lines(segments, breaks=breaks)
+    segments = patch_lines(segments, breaks=breaks, labels=seg_labels)
     run_colors = [cat_color[c] for c in seg_cat]
     seen = set()
     run_group_labels = []

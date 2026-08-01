@@ -343,7 +343,7 @@ def segment_by_run(x, hue, labels=None):
     return segments, seg_labels, seg_category, seg_bridge, seg_dataset
 
 
-def patch_lines(x, breaks=None):
+def patch_lines(x, breaks=None, labels=None):
     """Bridge each group's line to the start of the next group.
 
     Extending every group with the first point of the NEXT group makes a
@@ -352,12 +352,30 @@ def patch_lines(x, breaks=None):
     NOT be bridged INTO from their predecessor -- used to keep a line from
     crossing a dataset boundary (GH #291), e.g. the run segments produced by
     `segment_by_run` are bridged only where ``seg_bridge`` is True.
+
+    `labels`, if given, is a list of per-group label lists (parallel to
+    `x`, e.g. `segment_by_run`'s ``seg_labels``) that is bridged IN
+    LOCKSTEP, mutated in place: whenever `x[idx]` gains a duplicated bridge
+    point, `labels[idx]` gains a matching `None` entry (the bridge point is
+    a DUPLICATE observation, not a new one, mirroring how `_expand_labels`
+    -- plot.py -- marks synthetic interpolated points). Without this,
+    `labels[idx]` stays one entry short of `x[idx]` for every bridged
+    group, permanently under-counting it relative to the data: masked
+    whenever a later step happens to rebuild `labels` from scratch anyway
+    (`_expand_labels`, run when animation frame-gridding or static
+    antialiasing changes the point count) -- silently mis-slicing real
+    labels onto the wrong points when it does -- but reaching
+    `annotate_plot` (matplotlib_backend.py) unrebuilt and crashing it with
+    a bare ``IndexError`` when it doesn't (``animate='morph'``, which never
+    resamples `x` here, or a static plot with ``antialias=False``).
     """
     breaks = set() if breaks is None else set(breaks)
     for idx in range(len(x)-1):
         if (idx + 1) in breaks:
             continue
         x[idx] = np.vstack([x[idx], x[idx+1][0,:]])
+        if labels is not None:
+            labels[idx] = list(labels[idx]) + [None]
     return x
 
 
