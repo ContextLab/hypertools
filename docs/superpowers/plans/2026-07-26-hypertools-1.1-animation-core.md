@@ -174,6 +174,14 @@ Two v1 claims the review **confirmed correct** and this plan keeps unchanged:
   that creates a file (1, 7 and 9 at minimum).
 - **Run the suite as `cmd > log 2>&1; rc=$?; tail log; exit $rc`, never `cmd | tail`.** A pipeline
   reports *tail's* exit status, which has twice reported a green run for a suite that had failures.
+- **Every `plot.py` line number in this plan is PRE-TASK-1 and will have drifted.** All nine tasks
+  edit that one file, so each task shifts the citations of the tasks after it — Task 2 already found
+  its target at `:5183-5186` where the plan said `:5150-5153`. **Locate by content or symbol, never
+  by line number**, and confirm the surrounding code matches the plan's description before editing.
+  When you WRITE a comment or docstring, cite the **symbol**, not a line number, for the same reason:
+  stale line citations have misdirected readers in this project six times.
+- **`pyflakes` is not a usable gate for `hypertools/plot/plot.py`** — `from .._shared.helpers import *`
+  yields ~150 spurious "may be undefined" lines. Review that file by reading the diff.
 
 ---
 

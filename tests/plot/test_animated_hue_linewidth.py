@@ -1,7 +1,17 @@
 """The animated continuous-hue overlay must render at the width of the
-artist it replaces (plot.py:5150-5153 read `linewidth` off kwargs_list after
-matplotlib_backend.py:1602-1606 had already popped it, so every collection
-fell back to rcParams['lines.linewidth'] == 1.5)."""
+artist it replaces.
+
+The bug: `_apply_multicolor_animation`'s `_linewidth` closure read `linewidth`
+off `kwargs_list`, but `animate_plot3D`/`animate_plot2D` had already popped it
+and passed it explicitly to the artist -- so by the time `_linewidth` ran the
+entry was empty and every collection fell back to
+`rcParams['lines.linewidth'] == 1.5`. That broke the DEFAULT *and* an explicit
+`linewidth=`; both are covered below.
+
+Cited by SYMBOL, not line number: every task in this plan edits plot.py, so
+line citations here drift within days. This project has been misdirected by
+stale line references six times.
+"""
 import matplotlib
 matplotlib.use("Agg")
 
