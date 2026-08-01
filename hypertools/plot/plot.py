@@ -451,10 +451,10 @@ def _validate_alpha(alpha, n_datasets):
     backdrops behind a highlighted dataset without re-applying `set_alpha`
     on every frame. `n_datasets` is the dataset count at the CALL SITE --
     the INPUT dataset count when called before cluster/hue-reshape (see the
-    call beside `linewidth`'s own `mpl_kwargs` write, above), so that a
-    per-dataset list is left at INPUT-dataset length for
-    `_expand_styles_to_runs` (plot.py, which see) to widen to run length
-    exactly like `color`/`linewidth` already are.
+    call just before the MultiIndex/cluster/hue/nested_groups chain,
+    below, in `plot()`), so that a per-dataset list is left at
+    INPUT-dataset length for `_expand_styles_to_runs` (plot.py, which see)
+    to widen to run length exactly like `color`/`linewidth` already are.
     """
     if alpha is None:
         return None
@@ -3151,51 +3151,17 @@ def plot(
     if linewidth is not None:
         mpl_kwargs["linewidth"] = linewidth
 
-    # alpha= (1.1): a first-class per-dataset style, promoted out of the
-    # GH #206 `**kwargs` passthrough (where a list raised matplotlib's bare
-    # "alpha must be numeric or None"). Resolved against the INPUT dataset
-    # count and written here, alongside color/linewidth/marker/markersize
-    # above -- NOT beside surface_list/density_list below, which broadcast
-    # against the FINAL (post cluster/hue-reshape) count. Writing it this
-    # early means a per-input-dataset list is still at INPUT-dataset length
-    # when `_expand_styles_to_runs` (see its docstring) runs during hue/
-    # cluster contiguous-run segmentation, so it gets widened to run length
-    # exactly like color/linewidth already are, instead of being
-    # length-checked against a run count it was never sized for.
-    #
-    # Internal per-trace alpha (row-MultiIndex level fading, nested-list
-    # depth fading, further below) still wins over this -- the documented
-    # rule at `_apply_extra_kwargs`'s docstring -- and each of those
-    # branches warns before overwriting it, mirroring the MultiIndex
-    # branch's existing linewidth= precedent (the `_multiindex_meta`
-    # branch).
-    #
-    # Collision check BEFORE validation (task-6 review, Important finding):
-    # this write runs before either overriding branch, so "alpha" is never
-    # yet a key in mpl_kwargs here -- the brief's literal `"alpha" in
-    # mpl_kwargs` check would always be False at this point and can't be
-    # used. Instead, look ahead using the exact conditions those two
-    # branches themselves gate on (mirrored, not called -- calling them
-    # here would be premature) to decide whether one of them WILL fire and
-    # overwrite alpha further down. When one will, a bad user alpha=
-    # (wrong length, non-numeric, out of range) must not raise here: the
-    # value is about to be discarded (with a warning, from the branch that
-    # wins) regardless of whether it was valid, exactly as it was silently
-    # discarded pre-1.1 -- raising here instead would change the meaning of
-    # an existing call (a regression caught in review). The nested-list arm
-    # mirrors `elif nested_groups is not None and color is None and colors
-    # is None:` (plot.py, below) plus its own `if any(d != min_depth ...)`
-    # guard, AND the fact that it only runs when neither of the two earlier
-    # `elif` arms in that chain (cluster/n_clusters, hue) claims the input
-    # first.
-    _alpha_overridden_internally = (
-        _multiindex_meta is not None
-        or (nested_groups is not None and color is None and colors is None
-            and cluster is None and n_clusters is None and hue is None
-            and any(d != min(nested_depths) for d in nested_depths))
-    )
-    if alpha is not None and not _alpha_overridden_internally:
-        mpl_kwargs["alpha"] = _validate_alpha(alpha, len(xform))
+    # alpha= (1.1): a first-class per-dataset style (GH #206 follow-up).
+    # NOT validated/written here (unlike color/linewidth/marker/
+    # markersize above), even though it is resolved against this same
+    # INPUT dataset count -- validating here would run BEFORE `hue` is
+    # finalised (the animate='morph' hue-drop, below, can still null it)
+    # and BEFORE the MultiIndex/cluster/hue/nested_groups chain that may
+    # override alpha internally has picked its branch, either of which
+    # can disagree with a lookahead taken this early (task-6 second
+    # review, NEW ISSUE). See the alpha= block right before that chain,
+    # after hue is finalised, for the validation, the
+    # `_alpha_overridden_internally` lookahead, and the full explanation.
 
     # reduce data to <=3 dims for DISPLAY. `analyze` above already applied
     # the requested reduce= spec; this pass only enforces the display
@@ -3340,6 +3306,83 @@ def plot(
     # return_model bundle's pipeline encodes the parameters the figure
     # was actually drawn with (F13-004)
     _bundle_cluster_stage = None
+
+    # alpha= (1.1): a first-class per-dataset style, promoted out of the
+    # GH #206 `**kwargs` passthrough (where a list raised matplotlib's bare
+    # "alpha must be numeric or None"). Resolved against the INPUT dataset
+    # count and validated/written HERE -- after `hue` has been finalised
+    # (the animate='morph'/list-animate hue-drop just above already ran)
+    # but still before the MultiIndex/cluster/hue/nested_groups chain
+    # below, and still before `_expand_styles_to_runs` (see its
+    # docstring), which only ever runs INSIDE that chain. Writing it here
+    # means a per-input-dataset list is still at INPUT-dataset length when
+    # `_expand_styles_to_runs` runs during hue/cluster contiguous-run
+    # segmentation, so it gets widened to run length exactly like
+    # color/linewidth already are, instead of being length-checked against
+    # a run count it was never sized for.
+    #
+    # Internal per-trace alpha (row-MultiIndex level fading, nested-list
+    # depth fading, further below) still wins over this -- the documented
+    # rule at `_apply_extra_kwargs`'s docstring -- and each of those
+    # branches warns before overwriting it, mirroring the MultiIndex
+    # branch's existing linewidth= precedent (the `_multiindex_meta`
+    # branch).
+    #
+    # Collision check BEFORE validation (task-6 review, Important finding):
+    # this write runs before either overriding branch, so "alpha" is never
+    # yet a key in mpl_kwargs here -- the brief's literal `"alpha" in
+    # mpl_kwargs` check would always be False at this point and can't be
+    # used. Instead, look ahead using the exact conditions those two
+    # branches themselves gate on (mirrored, not called -- calling them
+    # here would be premature) to decide whether one of them WILL fire and
+    # overwrite alpha further down. When one will, a bad user alpha=
+    # (wrong length, non-numeric, out of range) must not raise here: the
+    # value is about to be discarded (with a warning, from the branch that
+    # wins) regardless of whether it was valid, exactly as it was silently
+    # discarded pre-1.1 -- raising here instead would change the meaning of
+    # an existing call (a regression caught in review). The nested-list arm
+    # mirrors `elif nested_groups is not None and color is None and colors
+    # is None:` (plot.py, below) plus its own `if any(d != min_depth ...)`
+    # guard, AND the fact that it only runs when neither of the two earlier
+    # `elif` arms in that chain (cluster/n_clusters, hue) claims the input
+    # first.
+    #
+    # Evaluated HERE, not beside color/linewidth above (task-6 SECOND
+    # review, NEW ISSUE): the lookahead below reads `hue`, and `hue` is
+    # NOT stable between that earlier site and the chain -- animate=
+    # 'morph' (or a list animate=) nulls it (just above) AFTER that
+    # earlier site but BEFORE the chain picks its branch, so a lookahead
+    # computed that early judges the nested-list arm against the PRE-null
+    # `hue`, disagreeing with the chain's actual POST-null choice:
+    # nested_groups + hue=<array> + animate='morph' + a bad-length/
+    # non-numeric alpha raised at the early site instead of losing (with a
+    # warning) to depth fading, exactly like it did pre-1.1. Confirmed via
+    # a scratch worktree at db02c64e (pre-task-6): that exact combination
+    # succeeds silently there (no exception, no warning -- alpha was a
+    # bare, unvalidated, unconditionally-overwritten **kwargs entry).
+    #
+    # The fix is timing, not a morph-specific special case: evaluate the
+    # lookahead from the LAST point every value it reads is guaranteed
+    # final, i.e. immediately before the chain whose choice it predicts.
+    # Every other value the predicate reads was checked for the same class
+    # of staleness: `_multiindex_meta`, `nested_groups` and
+    # `nested_depths` are each assigned exactly once, during input
+    # parsing, long before either alpha site; `color`/`colors` are plain
+    # passed-through parameters, never reassigned anywhere in `plot()`.
+    # `cluster`/`n_clusters` ARE reassigned (e.g. `cluster = "KMeans"`),
+    # but only INSIDE the `elif cluster is not None or n_clusters is not
+    # None:` arm itself, i.e. after that arm has already won the chain --
+    # too late to change which arm wins, so it cannot desync the
+    # lookahead. `hue` -- mutated by the morph-drop directly above, which
+    # now runs BEFORE this point -- was the only one still live.
+    _alpha_overridden_internally = (
+        _multiindex_meta is not None
+        or (nested_groups is not None and color is None and colors is None
+            and cluster is None and n_clusters is None and hue is None
+            and any(d != min(nested_depths) for d in nested_depths))
+    )
+    if alpha is not None and not _alpha_overridden_internally:
+        mpl_kwargs["alpha"] = _validate_alpha(alpha, len(xform))
 
     # MultiIndex DataFrames (GH #95): xform currently holds the TRANSFORMED
     # leaf trajectories (post normalize/reduce/align), in the same order as

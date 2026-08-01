@@ -230,3 +230,160 @@ def test_alpha_survives_cluster_run_segmentation():
               if a is not None]
     assert set(np.round(alphas, 6)) <= {0.15, 0.85}
     assert len(alphas) > 2, 'expected more runs than datasets'
+
+
+# --- fix-pass 2: the lookahead read `hue` before animate='morph' nulled it
+# (task-6 second review, NEW ISSUE) -----------------------------------------
+#
+# `_alpha_overridden_internally`'s nested-list arm snapshotted `hue` at its
+# (former) write site, but `animate='morph'` (or a per-dataset list
+# `animate=`) nulls `hue` LATER, immediately before the
+# MultiIndex/cluster/hue/nested_groups chain picks its branch. A lookahead
+# evaluated before that null judges the nested-list arm against the
+# PRE-null `hue` (non-None -> arm False -> eager validation), disagreeing
+# with the chain's actual POST-null choice (hue None -> nested_groups arm
+# fires -> depth fading overrides alpha). The fix moved the lookahead (and
+# the validate/write it guards) to right before the chain, after the
+# hue-drop, so it always sees the FINAL `hue`.
+
+def _varying_depth_nested(seed=0):
+    """Same fixture as test_nested_list_depth_fading_wins_and_says_so /
+    test_nested_list_depth_fading_wins_over_invalid_list_alpha_without_raising
+    above: 3 leaves (2 at depth 2 under one outer group, 1 at depth 1 under
+    another), so nested_groups is set and depths vary."""
+    rng = np.random.default_rng(seed)
+    return [[rng.normal(size=(10, 4)).cumsum(axis=0) for _ in range(2)],
+            rng.normal(size=(10, 4)).cumsum(axis=0)]
+
+
+def test_nested_list_depth_fading_wins_with_hue_and_morph_over_invalid_alpha_without_raising():
+    """THE confirmed regression (task-6 second review, NEW ISSUE):
+    nested_groups + hue=<array> + animate='morph' + a bad-length alpha
+    list RAISED ValueError('alpha has 5 entries but there are 3 datasets
+    to plot') at 8d089c23 (the lookahead read `hue` before the
+    animate='morph' hue-drop nulled it, so it wrongly believed the
+    nested-list branch would not fire) but SUCCEEDED SILENTLY at db02c64e
+    (pre-task-6: alpha was an unvalidated, unconditionally-overwritten
+    **kwargs entry) -- confirmed live in a scratch worktree at db02c64e.
+    Must warn (for both the dropped hue and the overridden alpha) and
+    apply the depth-derived alpha, not raise."""
+    nested = _varying_depth_nested()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        fig, ani = hyp.plot(nested, '-', hue=np.array([0.2, 0.5, 0.9]),
+                            animate='morph',
+                            alpha=[0.1, 0.2, 0.3, 0.4, 0.5],
+                            duration=1, show=False)
+    messages = [str(w.message) for w in caught]
+    assert any("hue is not supported with animate='morph'" in m
+               for m in messages), messages
+    assert any('nested list with varying nesting depth' in m
+               for m in messages), messages
+    alphas = [a for a in (ln.get_alpha() for ln in _ax(fig).lines)
+              if a is not None]
+    assert alphas, 'expected drawn lines with a resolved (internal) alpha'
+    assert all(0.0 <= a <= 1.0 for a in alphas)
+
+
+def test_nested_list_depth_fading_wins_with_hue_and_morph_over_non_numeric_alpha_without_raising():
+    """Non-numeric sibling of the test above (mirrors the MultiIndex
+    branch's own scalar/list-non-numeric pairing)."""
+    nested = _varying_depth_nested()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        fig, ani = hyp.plot(nested, '-', hue=np.array([0.2, 0.5, 0.9]),
+                            animate='morph', alpha=['a', 'b', 'c'],
+                            duration=1, show=False)
+    messages = [str(w.message) for w in caught]
+    assert any("hue is not supported with animate='morph'" in m
+               for m in messages), messages
+    assert any('nested list with varying nesting depth' in m
+               for m in messages), messages
+    alphas = [a for a in (ln.get_alpha() for ln in _ax(fig).lines)
+              if a is not None]
+    assert alphas, 'expected drawn lines with a resolved (internal) alpha'
+    assert all(0.0 <= a <= 1.0 for a in alphas)
+
+
+def test_nested_list_depth_fading_wins_with_hue_and_valid_alpha_under_morph():
+    """Positive-control sibling: a VALID (correct-length, in-range) list
+    alpha must still lose to depth fading under morph, exactly like an
+    invalid one does above -- mirrors
+    test_multiindex_level_fading_wins_with_list_alpha_and_says_so for the
+    MultiIndex branch. Guards against a fix that only special-cases
+    invalid alpha instead of the general override."""
+    nested = _varying_depth_nested()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        fig, ani = hyp.plot(nested, '-', hue=np.array([0.2, 0.5, 0.9]),
+                            animate='morph', alpha=[0.9, 0.9, 0.9],
+                            duration=1, show=False)
+    assert [w for w in caught if 'nested list with varying nesting depth'
+            in str(w.message)]
+    alphas = [a for a in (ln.get_alpha() for ln in _ax(fig).lines)
+              if a is not None]
+    assert alphas
+    assert not all(a == pytest.approx(0.9) for a in alphas)
+
+
+def test_nested_list_depth_fading_wins_with_hue_and_list_animate_without_raising():
+    """Sibling of the primary regression test exercising the OTHER
+    disjunct of the hue-drop's own gate (`(animate == 'morph') or
+    isinstance(animate, list)`, plot.py): a per-dataset list `animate=`
+    also nulls hue LATER than the (now-relocated) lookahead reads it, so
+    the fix must generalise rather than special-case the literal string
+    'morph'."""
+    nested = _varying_depth_nested()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        fig, ani = hyp.plot(nested, '-', hue=np.array([0.2, 0.5, 0.9]),
+                            animate=['morph', None, 'morph'],
+                            alpha=[0.1, 0.2, 0.3, 0.4, 0.5],
+                            duration=1, show=False)
+    messages = [str(w.message) for w in caught]
+    assert any("hue is not supported with animate='morph'" in m
+               for m in messages), messages
+    assert any('nested list with varying nesting depth' in m
+               for m in messages), messages
+    alphas = [a for a in (ln.get_alpha() for ln in _ax(fig).lines)
+              if a is not None]
+    assert alphas
+    assert all(0.0 <= a <= 1.0 for a in alphas)
+
+
+def test_cluster_still_wins_over_depth_fading_and_bad_length_alpha_raises():
+    """Over-correction guard (task-6 second review, fix-pass instructions):
+    the fix must not make `cluster=` cases look internally-overridden.
+    `_alpha_overridden_internally`'s nested-list arm requires `cluster is
+    None and n_clusters is None`, so cluster= must still win the elif
+    chain over nested-list depth fading (even though nested_groups is
+    set) and a bad-length alpha must still raise fast, exactly as the
+    reviewer manually verified for the non-nested case in the original
+    task-6 review."""
+    nested = _varying_depth_nested()
+    with pytest.raises(ValueError, match='alpha has 5 entries'):
+        hyp.plot(nested, '-', cluster='KMeans', n_clusters=2,
+                 alpha=[0.1, 0.2, 0.3, 0.4, 0.5], show=False)
+
+
+def test_cluster_still_wins_over_depth_fading_and_non_numeric_alpha_raises():
+    """Non-numeric sibling of the test above."""
+    nested = _varying_depth_nested()
+    with pytest.raises(ValueError, match='alpha must be a number'):
+        hyp.plot(nested, '-', cluster='KMeans', n_clusters=2,
+                 alpha=['a', 'b', 'c'], show=False)
+
+
+def test_cluster_still_wins_over_depth_fading_with_valid_alpha():
+    """Positive control: cluster= is NOT an override branch (only
+    MultiIndex and nested-list depth fading are), so a VALID list alpha
+    must actually apply (widened to run length by
+    `_expand_styles_to_runs`, like test_alpha_survives_cluster_run_
+    segmentation above), not be silently dropped."""
+    nested = _varying_depth_nested()
+    fig = hyp.plot(nested, '-', cluster='KMeans', n_clusters=2,
+                   alpha=[0.2, 0.4, 0.6], show=False)
+    alphas = [a for a in (ln.get_alpha() for ln in _ax(fig).lines)
+              if a is not None]
+    assert alphas
+    assert set(np.round(alphas, 6)) <= {0.2, 0.4, 0.6}
