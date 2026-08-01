@@ -494,7 +494,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         Figure title.
     animate : bool or str
         Animation style (False for static; True/'parallel'/'spin'/
-        'serial'/'window'/'morph').
+        'serial'/'window'/'morph'). 'serial' composes with the
+        chemtrails/precog/bullettime trail flags below, at parity with the
+        matplotlib backend (backend parity, Task 4) -- see those params.
     size : (width, height) or None
         Figure size in inches (converted to pixels at 100 dpi).
     show : bool
@@ -519,11 +521,15 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     focused : float or None
         In-focus (opaque) window length in seconds; None -> tail_duration.
     chemtrails : bool or list of bool
-        Past-trail flag(s), per trace.
+        Past-trail flag(s), per trace. Applies to `animate=True`/
+        `'parallel'` AND `animate='serial'` (the currently-revealing
+        dataset traces its own past), matching the matplotlib backend.
     precog : bool or list of bool
-        Future-trail flag(s), per trace.
+        Future-trail flag(s), per trace. Same `animate='serial'` support
+        as `chemtrails` above.
     bullettime : bool or list of bool
-        Past+future trail flag(s), per trace.
+        Past+future trail flag(s), per trace. Same `animate='serial'`
+        support as `chemtrails` above.
     zoom : float
         3-D camera zoom factor.
     forecasts : list of numpy.ndarray or None
@@ -941,12 +947,20 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # `trail_dataset_indices[k]` is the ORIGINAL dataset index that produced
     # `traces[trail_trace_start + k]`, so `_add_animation` can look up the
     # right dataset's data per frame.
+    #
+    # Backend parity (Task 4): 'serial' builds these too, not just
+    # True/'parallel' -- each currently-revealing dataset traces out its own
+    # trail as it grows, matching `matplotlib_backend.update_lines_serial`
+    # exactly (the serial frame loop in `_add_animation` below is what
+    # decides each frame's actual trail geometry per dataset; this list only
+    # decides which datasets get a trail TRACE at all, same flags/rule as
+    # parallel).
     n_trail_traces = 0
     trail_trace_start = len(traces)
     trail_dataset_indices = [
         i for i in range(len(data))
         if chemtrails[i] or precog[i] or bullettime[i]
-    ] if animate in (True, 'parallel') else []
+    ] if animate in (True, 'parallel', 'serial') else []
     for i in trail_dataset_indices:
         tkwargs = kwargs_list[i] or {}
         mode, symbol, dash, marker_char = _resolve_fmt(fmt[i], tkwargs)
@@ -2566,7 +2580,13 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     produced the trail trace at `fig.data[trail_trace_start + k]`, so each
     frame's trail geometry is built from `chemtrails[i]`/`precog[i]`/
     `bullettime[i]` for that SAME original dataset index `i`, not from the
-    trail trace's own position `k`.
+    trail trace's own position `k`. This applies to `animate=True`/
+    `'parallel'` AND `animate='serial'` (backend parity, Task 4): the
+    `'serial'` branch below builds the SAME per-dataset trail semantics as
+    `matplotlib_backend.update_lines_serial` (the ONE currently-revealing
+    dataset carries a trail; already-revealed/not-yet-started datasets
+    don't), rather than the sliding-window semantics used elsewhere in this
+    function.
 
     `data_trace_start` (GH #108/#191): the actual `fig.data` index where the
     DATA traces begin -- 0, UNLESS a 2-D `density=`/`surface=` layer was
@@ -2819,26 +2839,70 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             frames.append(go.Frame(**frame_kwargs))
     elif animate == 'serial':
         # datasets appear one at a time, each growing into place while
-        # earlier ones stay fully drawn (never connected to each other)
+        # earlier ones stay fully drawn (never connected to each other).
+        # Trail composition mirrors `matplotlib_backend.update_lines_serial`
+        # (backend parity, Task 4): the ONE dataset currently being revealed
+        # leads with a short opaque comet-head and trails the rest at 0.3
+        # opacity; already-revealed datasets stay fully drawn, and
+        # not-yet-started ones stay empty.
         lengths = [np.atleast_2d(a).shape[0] for a in data]
         total_points = sum(lengths)
         starts = np.concatenate([[0], np.cumsum(lengths)[:-1]])
+        has_trails = n_trail_traces > 0
+        if has_trails:
+            trace_indices = list(trace_indices) + list(range(
+                trail_trace_start, trail_trace_start + n_trail_traces))
+        # head length in FRAMES, resolved exactly as
+        # `matplotlib_backend.animate_plot3D` resolves its own `window_frames`
+        _focused = focused if focused is not None else tail_duration
+        _uses_focus_window = (any(chemtrails) or any(precog)
+                              or any(bullettime))
+        _window_duration = _focused if _uses_focus_window else tail_duration
+        window_frames = (1 if _window_duration == 0
+                         else int(frame_rate * _window_duration))
+
         for k in range(n_frames):
             revealed = total_points * k / max(1, n_frames - 1)
             frame_traces = []
+            trail_traces = []
             windows_by_index = {}
             window_colors_by_index = {}
+            head_bounds_by_index = {}
             for idx, (arr, start) in enumerate(zip(data, starts)):
                 arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
-                shown = int(np.clip(revealed - start, 0, arr.shape[0]))
-                seg = arr[:shown]
-                windows_by_index[idx] = seg
+                n_pts = arr.shape[0]
+                shown = int(np.clip(revealed - start, 0, n_pts))
+                ct, pc, bt = chemtrails[idx], precog[idx], bullettime[idx]
+                has_trail = has_trails and (ct or pc or bt)
+
+                trail_bounds = None
+                if not has_trail:
+                    head_bounds = (0, shown)          # plain serial, UNCHANGED
+                elif shown <= 0:
+                    head_bounds = (0, 0)
+                elif shown >= n_pts:
+                    head_bounds = (0, n_pts)
+                else:
+                    w = max(1, int(round(window_frames * n_pts
+                                         / max(1, total_points))))
+                    head_bounds = (max(0, shown - 1 - w), shown)
+                    if (ct and pc) or bt:
+                        trail_bounds = (0, n_pts)              # bullettime
+                    elif ct:
+                        trail_bounds = (0, shown)              # chemtrails
+                    else:
+                        trail_bounds = (max(0, shown - 1), n_pts)  # precog
+                head_bounds_by_index[idx] = head_bounds
+
+                # surface/hue windows follow the FULL revealed portion, as in
+                # `matplotlib_backend.update_lines_serial` -- independent of
+                # the comet-head trimming above
+                windows_by_index[idx] = arr[:shown]
                 cols = _window_colors(idx, 0, shown)
                 if cols is not None:
                     window_colors_by_index[idx] = cols
-                # antialias=: `seg` (ORIGINAL rows) still drives the surface
-                # mesh/hue windows above; only the DRAWN vertices are smoothed
-                draw_seg = _aa_window(aa_curves, idx, 0, shown)
+
+                draw_seg = _aa_window(aa_curves, idx, *head_bounds)
                 if ndims >= 3:
                     frame_traces.append(go.Scatter3d(
                         x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2]))
@@ -2847,14 +2911,38 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                                                    y=draw_seg[:, 1]))
                 else:
                     frame_traces.append(go.Scatter(
-                        x=_aa_x(aa_curves[idx][1], 0, draw_seg.shape[0]),
+                        x=_aa_x(aa_curves[idx][1], head_bounds[0],
+                                draw_seg.shape[0]),
                         y=draw_seg[:, 0]))
+
+                if has_trail:
+                    t0, t1 = trail_bounds if trail_bounds is not None else (0, 0)
+                    trail = _aa_window(aa_curves, idx, t0, t1)
+                    if ndims >= 3:
+                        trail_traces.append(go.Scatter3d(
+                            x=trail[:, 0], y=trail[:, 1], z=trail[:, 2]))
+                    elif ndims == 2:
+                        trail_traces.append(go.Scatter(x=trail[:, 0],
+                                                       y=trail[:, 1]))
+                    else:
+                        trail_traces.append(go.Scatter(
+                            x=_aa_x(aa_curves[idx][1], t0, trail.shape[0]),
+                            y=trail[:, 0]))
+                elif has_trails and idx in trail_dataset_indices:
+                    # this dataset has a trail TRACE but no trail THIS frame
+                    empty = np.zeros((0, max(2, min(3, ndims))))
+                    trail_traces.append(
+                        go.Scatter3d(x=empty[:, 0], y=empty[:, 0],
+                                     z=empty[:, 0]) if ndims >= 3
+                        else go.Scatter(x=empty[:, 0], y=empty[:, 0]))
+
+            frame_traces.extend(trail_traces)
             frame_kwargs = dict(name=str(k), data=frame_traces,
                                 traces=list(trace_indices))
             if ndims >= 3:
                 angle = azim + 360.0 * rotations * k / n_frames
-                frame_kwargs['layout'] = dict(
-                    scene_camera=dict(eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
+                frame_kwargs['layout'] = dict(scene_camera=dict(
+                    eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
             if surface_trace_indices:
                 frame_kwargs['data'] = (list(frame_kwargs['data'])
                                         + _surface_frame_data(
@@ -2939,7 +3027,14 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     if (ct and pc) or bt:
                         t0, t1 = 0, arr.shape[0]
                     elif ct:
-                        t0, t1 = 0, start + 1
+                        # matches `matplotlib_backend._anim_window_bounds`'s
+                        # `trail_stop = max(0, end - w)` exactly: independently
+                        # clamped at 0, NOT derived from the ALREADY-clamped
+                        # `start` above (a `start + 1` off-by-one that used to
+                        # overstate this trail by one point at every frame,
+                        # not just the early, fully-clamped ones -- caught by
+                        # the cross-backend parity assertions this task adds).
+                        t0, t1 = 0, max(0, min(end, arr.shape[0]) - window)
                     else:
                         t0, t1 = min(end, arr.shape[0]) - 1, arr.shape[0]
                     # antialias=: trail bounds stay ORIGINAL-row indices; the

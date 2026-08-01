@@ -239,10 +239,10 @@ def test_bad_length_list_names_actual_counts():
 # (naming the mode, the ignored flag(s), and which dataset indices had them
 # set) and neither backend creates a trail artist/trace at all in these modes.
 #
-# 'serial' is the EXCEPTION on the matplotlib backend: it now COMPOSES with
-# the trail flags (chemtrails-serial / precog-serial / bullettime-serial),
-# tested separately below. The plotly backend still reveals 'serial' fully
-# opaque with no trail, so it keeps warning there.
+# 'serial' COMPOSES with the trail flags (chemtrails-serial / precog-serial /
+# bullettime-serial) on BOTH backends (backend parity, Task 4 -- plotly used
+# to warn-and-skip here exactly like spin/morph/window; that was the gap,
+# not an intentional limitation), tested separately below.
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize('mode', ['spin'])
@@ -454,17 +454,40 @@ def test_mpl_serial_2d_composes_with_trail_flags():
     plt.close('all')
 
 
-@pytest.mark.parametrize('mode', ['spin', 'serial'])
-def test_plotly_spin_serial_warns_and_skips_trail_traces(mode):
+def test_plotly_spin_warns_and_skips_trail_traces():
+    """'spin' has no per-dataset "current position" (only the camera moves),
+    so trail styles stay semantically meaningless there -- plotly keeps
+    warning and skipping trail traces, unchanged by Task 4."""
     pytest.importorskip('plotly')
     data = _walks(k=2, n=20)
     with pytest.warns(UserWarning,
-                       match=r"animate=%r.*bullettime.*\[0\]" % mode):
-        fig = hyp.plot(data, animate=mode, duration=1, tail_duration=1,
+                       match=r"animate='spin'.*bullettime.*\[0\]"):
+        fig = hyp.plot(data, animate='spin', duration=1, tail_duration=1,
                        frame_rate=5, bullettime=[True, False],
                        backend='plotly', show=False)
-    # no trail traces in spin/serial mode -- only 'parallel'/True builds them
+    # no trail traces in spin mode -- only 'parallel'/True/'serial' build them
     assert len(fig.data) == 3  # 2 data + cube
+    assert len(fig.frames) > 0
+
+
+def test_plotly_serial_composes_with_trail_traces():
+    """Backend parity (Task 4): plotly's 'serial' used to warn-and-skip
+    trail traces exactly like 'spin' (see the OLD parametrized version of
+    this test, replaced here) -- that was the GAP this task closes, since
+    the matplotlib backend already composed 'serial' with trail flags (see
+    test_mpl_serial_composes_with_trail_flags above), not an intentional
+    per-backend limitation. plotly's 'serial' now matches: no warning, and a
+    trail trace IS built for the flagged dataset."""
+    pytest.importorskip('plotly')
+    data = _walks(k=2, n=20)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        fig = hyp.plot(data, animate='serial', duration=1, tail_duration=1,
+                       frame_rate=5, bullettime=[True, False],
+                       backend='plotly', show=False)
+    assert not any('trail styles' in str(w.message) for w in caught)
+    # 2 data + cube + 1 trail trace (bullettime set on dataset 0 only)
+    assert len(fig.data) == 4
     assert len(fig.frames) > 0
 
 

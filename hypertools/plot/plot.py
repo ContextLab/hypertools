@@ -1308,13 +1308,12 @@ def plot(
         is always GLOBAL -- there is exactly one camera and one frame loop
         driving every dataset in the animation, so it cannot vary per
         dataset (unlike `chemtrails`/`precog`/`bullettime` below, which CAN).
-        On the matplotlib backend, 'serial' COMPOSES with those per-dataset
-        trail flags (chemtrails-serial / precog-serial / bullettime-serial):
-        the ONE dataset currently being revealed also traces out its own
+        'serial' COMPOSES with those per-dataset trail flags (chemtrails-
+        serial / precog-serial / bullettime-serial) on BOTH backends: the
+        ONE dataset currently being revealed also traces out its own
         low-opacity trail (past / future / whole, per its flag) led by a
         short opaque comet-head, while already-revealed datasets stay fully
-        drawn and future ones stay invisible -- see `bullettime` below. (The
-        plotly backend still reveals 'serial' fully opaque with no trail.)
+        drawn and future ones stay invisible -- see `bullettime` below.
 
         2-D animations (round17 #9, GH #123): every style EXCEPT `'spin'`
         works for `ndims=2` as well as `ndims=3`, in both backends, using a
@@ -1494,8 +1493,8 @@ def plot(
         dataset. Raises `ValueError` if a list's length does not match the
         number of drawn datasets (naming both counts). Trail styles
         (`chemtrails`/`precog`/`bullettime`) apply to `animate=True`/
-        `'parallel'` and, on the matplotlib backend, to `animate='serial'`
-        (see the note under `bullettime` below).
+        `'parallel'` and to `animate='serial'`, on BOTH backends (see the
+        note under `bullettime` below).
 
     precog (animation only) : bool or list of bool
         A low-opacity trail is plotted ahead of the trajectory (default:
@@ -1511,18 +1510,17 @@ def plot(
         `chemtrails` alone shows only the past window; `precog` alone shows
         only the future window; none of the three shows just the moving
         window (no separate trail artist/trace at all for that dataset).
-        GH #127: trail styles apply to `animate=True`/`'parallel'` and, on
-        the matplotlib backend, to `animate='serial'` -- where they COMPOSE
-        with the serial reveal: only the ONE dataset currently being revealed
-        carries a trail (chemtrails = its revealed-so-far past, precog = its
+        GH #127: trail styles apply to `animate=True`/`'parallel'` and to
+        `animate='serial'`, on BOTH backends -- where they COMPOSE with the
+        serial reveal: only the ONE dataset currently being revealed carries
+        a trail (chemtrails = its revealed-so-far past, precog = its
         not-yet-revealed future, bullettime / chemtrails+precog = its whole
         trajectory), led by a short opaque comet-head near the reveal tip,
         while already-revealed datasets stay fully drawn and future ones stay
         invisible. `'spin'` has no "current position" for a trail to lead/
         follow (only the camera moves), `'morph'` draws a single traveling
         cloud, and `'window'` is bullettime MINUS its trail by definition, so
-        `animate='spin'`/`'morph'`/`'window'` (and `'serial'` on the plotly
-        backend, which reveals fully opaque) ignore `chemtrails`/`precog`/
+        `animate='spin'`/`'morph'`/`'window'` ignore `chemtrails`/`precog`/
         `bullettime` entirely (no trail artist/trace is created) and emit a
         `UserWarning` naming the mode, the ignored flag(s), and which dataset
         indices had them set.
@@ -3858,15 +3856,13 @@ def plot(
     # artists entirely for these modes (see their own `style`/`animate`
     # branches), so this is purely informational -- no flags are mutated here.
     #
-    # 'serial' now COMPOSES with the trail flags on the MATPLOTLIB backend
+    # 'serial' COMPOSES with the trail flags on BOTH backends
     # (chemtrails-serial / precog-serial / bullettime-serial -- the currently-
     # revealing dataset traces out its own trail; see
-    # `matplotlib_backend.update_lines_serial`), so it is NOT ignored there.
-    # The plotly backend still reveals serial fully-opaque with no trail, so
-    # 'serial' stays in the ignore list only for that backend.
+    # `matplotlib_backend.update_lines_serial` and the matching serial branch
+    # in `plotly_backend._add_animation`), so it is never ignored. Only the
+    # styles that draw no per-dataset reveal at all still ignore trails.
     _trail_ignoring_modes = ("spin", "morph", "window")
-    if resolve_backend(backend) == "plotly":
-        _trail_ignoring_modes = _trail_ignoring_modes + ("serial",)
     if animate in _trail_ignoring_modes:
         _ignored_trail_flags = [
             (_name, [i for i, v in enumerate(_flags) if v])
