@@ -61,6 +61,16 @@ was not ceremony — each review found defects that would have failed on first e
 | 1 | maintainer, round 5 (decisions) | all 4 open decisions resolved; investigating one of them disproved the plan's own "plotly cannot do this" premise → **v3** |
 | 1 | [review](../../../notes/audit/review_plan1_animation_core.md) | 9 critical findings → **v2** |
 | 3 | [review](../../../notes/audit/review_plan3_forecast_animation.md) | 8 defects, 4 fatal → **v2** |
+| 3 | [re-review of v2 vs later contracts](../../../notes/audit/review_plan3_v2_recheck.md) | 11 findings, **1 fatal** (a `FrameHooks` callback with the wrong signature) + 2 high → v3 pending |
+| 4 | [first adversarial review](../../../notes/audit/review_plan4_examples_and_tutorials.md) | 13 findings, **2 fatal** (4 of 5 rewrites miss their own ratio floors; a `recency_fade` IndexError) + 3 high → v2 pending |
+
+**What this table does and does not cover**, because a session note got it wrong on 2026-07-31 by
+reading the absence of a row as the absence of a review. It lists reviews that produced a **standalone
+audit file** under `notes/audit/`. Plan 1's later maintainer rounds (6–13) were delivered
+conversationally and are recorded in `notes/session_*.md` instead, so its true round count is far
+higher than its rows above. As of 2026-07-31 every plan has now been reviewed at least once, and
+Plans 3 and 4 carry **unaddressed fatal findings** — neither is implementation-ready. Check
+`notes/audit/` and the session notes together before claiming anything about a plan's review history.
 
 The recurring defect was writing tests that *looked* correct without tracing whether they could
 actually pass. Three examples, all caught by review rather than by reading:
@@ -176,9 +186,12 @@ in the round-5 exchange. Both sets are recorded under *Standing decisions*.
   measured `fig.frames[0].data[0] is not fig.frames[1].data[0]` for all four. A surfaced spin is the
   mixed case: shared traces followed by per-frame `Mesh3d` updates. The consequence for callers is
   that `if ctx.frame == 0: <mutate>` colours the **whole animation** where artists are shared and
-  **only frame 0** where they are not — so the portable rule is to set the complete state on every
-  frame, unconditionally. Documented rather than smoothed over, in `FrameContext.artists` and in the
-  guide, with a test on each side.
+  **only frame 0** where they are not — so the portable rule is to **assign** the complete value on
+  every invocation, including the default. The rule bans a per-frame *assignment*, not a per-frame
+  *decision*: highlighting one frame stays portable when the condition sits in the value
+  (`set_color(HIGHLIGHT if ctx.frame == target else DEFAULT)`) rather than around the call.
+  Documented rather than smoothed over, in `FrameContext.artists` and in the guide, with a test on
+  each side.
 - **`FrameContext`'s sequence fields are tuples.** `artists`, `datasets` and `revealed_counts`
   (`None` or a tuple) are canonicalized in `FrameContext.__post_init__`, because eleven separate
   record sites — seven matplotlib updaters and four plotly branches — each have a different sequence
@@ -284,6 +297,14 @@ in the round-5 exchange. Both sets are recorded under *Standing decisions*.
 
 ## Verified baseline
 
-`2564 collected`, **2551 passed, 13 skipped**. Every task ends by re-running the full suite; the
-pass count may only grow. Use `.venv/bin/python -m pytest` — the base anaconda python is broken
-(numpy/matplotlib mismatch).
+`2567 collected`, **2554 passed, 13 skipped** (2026-07-31; was 2551 before round 13 added three
+live-source classifier tests). Every task ends by re-running the full suite; the pass count may only
+grow. Use `.venv/bin/python -m pytest` — the base anaconda python is broken (numpy/matplotlib
+mismatch).
+
+**The venv's hypertools must be an EDITABLE install.** On 2026-07-31 it held a stale, *copied*
+`hypertools 1.0.0` in `site-packages`, so `import hypertools` resolved to the repo tree from the
+repo root (1.0.1, correct) but to the released 1.0.0 — with no `antialias=` — from any other
+directory. `pytest` runs from the root and was never affected, but directly-run scripts silently
+measured the wrong package. Fixed with `pip uninstall -y hypertools && pip install -e . --no-deps`;
+re-check with `cd /tmp && <repo>/.venv/bin/python -c "import hypertools; print(hypertools.__file__)"`.

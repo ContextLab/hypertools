@@ -57,6 +57,14 @@ GOOGLE_SHEETS_SAMPLE_URL = (
 # test file needs it (tests/test_load_sklearn_seaborn.py fetches seaborn-data
 # over the network too). Imported under the original private names so this
 # file's own unit tests below keep testing the real implementation.
+#
+# 2026-07-31 (review round 13): that predicate was substring-matching the whole
+# lowercased message, including a bare 'timeout', so THREE classes of real
+# defect read as transient -- most seriously an aggregate holding both the
+# intended resolver's genuine failure and an unrelated fallback's timeout,
+# which load_source() produces routinely (sources.py:664-670). Classification is
+# now structural (exception type + HTTP status), and any defect-shaped attempt
+# line vetoes the whole aggregate. The cases below pin all three.
 from tests._netskip import (is_transient_network as _is_transient_network,
                             skip_on_transient_network as
                             _skip_on_transient_network)
@@ -89,18 +97,99 @@ def test_is_transient_network_recognizes_wrapped_load_errors():
         "  - Google Drive (x): HTTPError: 500 Server Error: Internal Server "
         "Error for url: https://drive.usercontent.google.com/download")
     for exc in (dns, timeout, unavailable, sheets_outage, only_500):
+        # the exception itself is the supported input; str() is the wrapped
+        # aggregate case, where per-resolver detail exists only as text
+        assert _is_transient_network(exc), str(exc)
         assert _is_transient_network(str(exc)), str(exc)
     # a genuine failure is NOT transient and must still surface
     assert not _is_transient_network("AssertionError: shape (150,) != (149,)")
     assert not _is_transient_network("KeyError: 'SepalLengthCm'")
     # ...including one whose numbers happen to look like HTTP status codes.
-    # This is why the 5xx markers are matched as phrases or with a leading
-    # space, never as a bare substring.
+    # This is why 5xx is matched as `\b5\d\d server error\b`, never a bare '500'.
     assert not _is_transient_network("AssertionError: shape 500 != 499")
     assert not _is_transient_network("assert (502, 3) == (504, 3)")
 
 
-def test_skip_on_transient_network_skips_dns_but_reraises_real():
+def test_transient_classifier_does_not_excuse_a_real_resolver_failure():
+    """Review round 13. load_source() lists EVERY resolver it tried in one
+    HypertoolsIOError (sources.py:664-670), so the resolver a test actually
+    wanted can fail for a real reason while an unrelated fallback times out.
+    The old predicate substring-matched the whole message and skipped on the
+    timeout, hiding the regression. Any defect-shaped attempt line must veto."""
+    mixed = HypertoolsIOError(
+        "could not load 'penguins'. Tried, in order:\n"
+        "  - seaborn dataset: KeyError: parser regression\n"
+        "  - Hugging Face dataset: ReadTimeout: timed out")
+    assert not _is_transient_network(mixed)
+    assert not _is_transient_network(str(mixed))
+
+    # 'timeout' is also a keyword argument and ordinary English -- it must
+    # carry no verdict on its own, as an exception OR as text.
+    for exc in (ValueError('timeout must be positive'),
+                AssertionError('timeout metadata missing'),
+                AssertionError('request timed out')):
+        assert not _is_transient_network(exc), exc
+        assert not _is_transient_network(f'{type(exc).__name__}: {exc}'), exc
+
+    # a 4xx is OUR bug (the dataset URL moved), not the host having a bad day
+    assert not _is_transient_network(
+        '  - URL (http://x/iris.csv): HTTPError: 404 Client Error: '
+        'Not Found for url: http://x/iris.csv')
+
+    # expected chain noise ('local file: not found') must not be read as a
+    # defect, or a genuine outage would stop skipping
+    assert _is_transient_network(HypertoolsIOError(
+        "could not load 'https://x/iris.csv'. Tried, in order:\n"
+        "  - local file: not found at /nonexistent/https:/x/iris.csv\n"
+        "  - URL (https://x/iris.csv): ReadTimeout: Read timed out."))
+
+
+def test_transient_classifier_uses_exception_type_not_message_text():
+    """A real requests/urllib3 stack is recognized by TYPE, so a host that
+    words its outage unusually is still caught -- and a defect raised inside an
+    `except Timeout:` block does not inherit that timeout's verdict."""
+    requests = pytest.importorskip('requests')
+
+    assert _is_transient_network(requests.exceptions.ReadTimeout('...'))
+    assert _is_transient_network(requests.exceptions.ConnectionError('...'))
+
+    # requests wrapping urllib3, the shape real failures actually arrive in
+    try:
+        try:
+            raise requests.exceptions.ConnectTimeout('urllib3 said so')
+        except Exception as inner:
+            raise requests.exceptions.ConnectionError('wrapped') from inner
+    except Exception as wrapped:
+        assert _is_transient_network(wrapped)
+
+    # 5xx is the host; 4xx is us. The old '5xx' marker list could not tell them
+    # apart because it only ever saw text.
+    class _Resp:
+        def __init__(self, code):
+            self.status_code = code
+
+    for code, transient in ((500, True), (503, True), (404, False),
+                            (403, False)):
+        err = requests.exceptions.HTTPError(f'{code} Server Error')
+        err.response = _Resp(code)
+        assert _is_transient_network(err) is transient, code
+
+    # a genuine defect raised while handling a timeout is still a defect
+    try:
+        try:
+            raise requests.exceptions.ReadTimeout('read timed out')
+        except Exception:
+            raise KeyError('SepalLengthCm')
+    except Exception as during:
+        assert not _is_transient_network(during)
+
+
+def test_skip_on_transient_network_skips_dns_but_reraises_real(monkeypatch):
+    # pin the DEFAULT (non-strict) behaviour explicitly: this is a unit test of
+    # the machinery, so it must not change verdict with the ambient
+    # environment. Without this the `live-source-gate` job, which exports
+    # HYPERTOOLS_REQUIRE_LIVE_SOURCES=1 to disable skipping, fails it.
+    monkeypatch.delenv('HYPERTOOLS_REQUIRE_LIVE_SOURCES', raising=False)
     dns = HypertoolsIOError("NameResolutionError: Failed to resolve 'huggingface.co'")
     with pytest.raises(BaseException) as excinfo:      # pytest.skip -> Skipped
         with _skip_on_transient_network('loading x'):
@@ -110,6 +199,25 @@ def test_skip_on_transient_network_skips_dns_but_reraises_real():
     with pytest.raises(ValueError, match='genuine bug'):
         with _skip_on_transient_network('loading x'):
             raise ValueError('genuine bug')
+
+
+def test_require_live_sources_turns_every_skip_into_a_failure(monkeypatch):
+    """HYPERTOOLS_REQUIRE_LIVE_SOURCES=1 (set by the `live-source-gate` CI job)
+    must re-raise even a genuine outage, so a live source that has been
+    unreachable for a week cannot hide behind a green suite. Real environment
+    variable, real context manager -- nothing is stubbed."""
+    dns = HypertoolsIOError("NameResolutionError: Failed to resolve 'x'")
+
+    monkeypatch.delenv('HYPERTOOLS_REQUIRE_LIVE_SOURCES', raising=False)
+    with pytest.raises(BaseException) as excinfo:
+        with _skip_on_transient_network('loading x'):
+            raise dns
+    assert excinfo.type.__name__ == 'Skipped'
+
+    monkeypatch.setenv('HYPERTOOLS_REQUIRE_LIVE_SOURCES', '1')
+    with pytest.raises(HypertoolsIOError, match='Failed to resolve'):
+        with _skip_on_transient_network('loading x'):
+            raise dns
 
 
 @pytest.fixture

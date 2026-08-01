@@ -1,4 +1,4 @@
-# HyperTools 1.1 — Animation Core Implementation Plan (v4.3)
+# HyperTools 1.1 — Animation Core Implementation Plan (v4.4)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -7,6 +7,17 @@
 **Architecture:** Three defects are fixed first (title stringification, animated-hue `linewidth`, morph intractability); they are independent and cheap. Then the plotly backend gains the serial trail composition matplotlib already has, so the two backends are at parity **before** a new spelling is layered on top. Only then is `order=` introduced — and it is **folded into the resolved backend mode** inside `_resolve_animate_mode`, so every one of the four downstream `animate` consumers gets the right value without a per-site substitution. Per-dataset `alpha=` joins the existing named-kwarg machinery with an explicit precedence rule. A public per-frame hook is added on **one shared mutable callback registry** created in `plot()` and adopted (never re-created) by `HyperAnimation`. Per-segment titles are built on that registry, discriminating morph holds from transitions by **segment parity**, not by a float. The hook's receipt type, `FrameContext`, joins the curated public surface; the `FrameHooks` registry stays internal. The plan closes with a written **animation guide** (`docs/animation.rst`), linked into the site navigation and pinned by its own tests. Every change is additive: no existing call signature changes meaning.
 
 **Tech Stack:** Python 3.12.10, numpy 2.3.5, pandas, matplotlib 3.10.8 (primary backend), plotly 6.8.0 (interactive backend), scipy 1.17.0, pytest 9.0.2.
+
+---
+
+## Revision note (v4.4)
+
+One finding from the 2026-07-31 review of v4.3 (round 13). Wording only — no task, code block, test count or interface changed, so v4.3's arithmetic and checkpoints below stand unaltered.
+
+| # | finding | fix |
+|-|-|-|
+| **B1** *(baseline)* | round 13's own fix added **3 tests** to `tests/test_load_sources.py` (mixed-aggregate, exception-type, and strict-live-source cases), so the verified baseline moved **2551 → 2554** | **Every derived checkpoint shifted by +3**, because the plan's drift detection compares each task's run against its stated running total — leaving them would have fired a false drift at *every* checkpoint and masked a real one. New chain, re-derived from the additions rather than hand-edited: **2563, 2568, 2579, 2589, 2609, 2619, 2660, 2673, 2692**. The additions themselves are unchanged (9+5+11+10+20+10+41+13+19 = **138**), so 2554 + 138 = **2692** |
+| **W1** *(Low)* | v4.3's portable callback rule read *"never write a mutation that fires on one frame only"*, which **forbids a legitimate thing** — highlighting exactly one frame — rather than the defect it meant to ban | The rule is restated as an **assignment** rule: *assign the complete desired value on every invocation, including the default*. It bans a per-frame **assignment**, not a per-frame **decision** — putting the condition in the value (`set_color(HIGHLIGHT if ctx.frame == target else DEFAULT)`) is portable across both artist-lifetime regimes and is now shown as a worked example in `FrameContext.artists` **and** in the guide. `test_animation_guide_gives_both_failure_modes_not_just_persistence` gains two assertions (`'assign the complete value'`, `'highlighting exactly one frame'`) so the absolute form cannot return; it stays **one** test, so no count moves |
 
 ---
 
@@ -146,7 +157,7 @@ Two v1 claims the review **confirmed correct** and this plan keeps unchanged:
 - Target release: **1.1**. Nothing here ships to users until the whole 1.1 line is working; the Bluesky announcement waits.
 - Run everything with the repo venv: `.venv/bin/python -m pytest`. The base anaconda python is broken (numpy/matplotlib mismatch).
 - Run pytest from the repo root; `pyproject.toml` sets `testpaths = ["tests"]` and `timeout = 1200` (`pytest-timeout` 2.4.0 **is** installed).
-- **Verified baseline: `2564 collected`, `2551 passed, 13 skipped`.** Every task below ends by re-running the whole suite; the pass count may only grow.
+- **Verified baseline: `2567 collected`, `2554 passed, 13 skipped`.** Every task below ends by re-running the whole suite; the pass count may only grow.
 - **Never simplify a test to make it pass.** If a test fails repeatedly, fix the code.
 - **No mock objects.** Every test drives real `hyp.plot` calls and asserts on real matplotlib artists or real plotly frames. (`monkeypatch` of a hypertools function to *observe* it is not a mock and is used nowhere in this plan.)
 - Matplotlib must be forced to `Agg` in every test module: `import matplotlib; matplotlib.use("Agg")`. There is **no** `conftest.py` in this repo — each module does it itself.
@@ -333,7 +344,7 @@ In `plot()`'s docstring, replace the `title` entry at `plot.py:950-951` (`title 
 - [ ] **Step 6: Run the FULL suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2560 passed, 13 skipped` (baseline 2551 + this task's 9). If an existing test passed a non-string title, fix the **test's** call to use a string — do not weaken the validator. (The audit found none; `tests/test_multibyte.py:711` passes a `str`.)
+Expected: `2563 passed, 13 skipped` (baseline 2554 + this task's 9). If an existing test passed a non-string title, fix the **test's** call to use a string — do not weaken the validator. (The audit found none; `tests/test_multibyte.py:711` passes a `str`.)
 
 - [ ] **Step 7: Commit**
 
@@ -520,7 +531,7 @@ Expected: **5 passed.**
 - [ ] **Step 5: Run the FULL suite**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2565 passed, 13 skipped`. Pay particular attention to `tests/test_animation_hue.py`, `tests/test_animation_styles.py` and `tests/test_2d_animation.py`; any test asserting an animated-hue width of `1.5` with no explicit `linewidth=` is asserting the bug and must be updated to `1.0` with a comment pointing here.
+Expected: `2568 passed, 13 skipped`. Pay particular attention to `tests/test_animation_hue.py`, `tests/test_animation_styles.py` and `tests/test_2d_animation.py`; any test asserting an animated-hue width of `1.5` with no explicit `linewidth=` is asserting the bug and must be updated to `1.0` with a comment pointing here.
 
 - [ ] **Step 6: Commit**
 
@@ -880,7 +891,7 @@ Also check `plot.py:1516-1518`, which restates the same guarantee, and give it t
 - [ ] **Step 7: Run the FULL suite**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2576 passed, 13 skipped`. `tests/test_morph_animation.py:121-131 ::test_default_is_uncapped_target_is_largest_cloud` calls `morph.sample_and_match_clouds` **directly**, below `plot()`, so it is unaffected by a `plot()`-level flag; confirm it still passes unmodified. If any existing test drives an *uncapped* `plot(..., animate='morph')` over more than 2000 points and asserts full point counts, it is now asserting `simplify=False` behaviour — add `simplify=False` to that call rather than weakening the assertion.
+Expected: `2579 passed, 13 skipped`. `tests/test_morph_animation.py:121-131 ::test_default_is_uncapped_target_is_largest_cloud` calls `morph.sample_and_match_clouds` **directly**, below `plot()`, so it is unaffected by a `plot()`-level flag; confirm it still passes unmodified. If any existing test drives an *uncapped* `plot(..., animate='morph')` over more than 2000 points and asserts full point counts, it is now asserting `simplify=False` behaviour — add `simplify=False` to that call rather than weakening the assertion.
 
 - [ ] **Step 8: Commit**
 
@@ -1222,7 +1233,7 @@ In `plot()`'s docstring, in the `chemtrails`/`precog`/`bullettime` entries and t
 - [ ] **Step 8: Run the FULL suite**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2586 passed, 13 skipped`. Any existing test asserting the *"animate='serial' does not support trail styles"* warning on plotly is asserting the gap and must be updated to assert composition instead; grep for it: `grep -rn "does not support trail" tests/`.
+Expected: `2589 passed, 13 skipped`. Any existing test asserting the *"animate='serial' does not support trail styles"* warning on plotly is asserting the gap and must be updated to assert composition instead; grep for it: `grep -rn "does not support trail" tests/`.
 
 - [ ] **Step 9: Commit**
 
@@ -1634,7 +1645,7 @@ Add an `order` entry to `plot()`'s docstring immediately after `animate`:
 - [ ] **Step 6: Run the FULL suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2606 passed, 13 skipped`.
+Expected: `2609 passed, 13 skipped`.
 
 - [ ] **Step 7: Commit**
 
@@ -1883,7 +1894,7 @@ And correct `_expand_styles_to_runs`'s docstring at `plot.py:242-244`, which cur
 - [ ] **Step 6: Run the FULL suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2616 passed, 13 skipped`. Specifically confirm `tests/test_gh206_extra_kwargs.py::...::test_alpha_kwarg_reaches_line_artists` (`:71-78`) still passes; its *placement* in the passthrough suite is now misleading, so add a one-line comment there pointing at the named parameter.
+Expected: `2619 passed, 13 skipped`. Specifically confirm `tests/test_gh206_extra_kwargs.py::...::test_alpha_kwarg_reaches_line_artists` (`:71-78`) still passes; its *placement* in the passthrough suite is now misleading, so add a one-line comment there pointing at the named parameter.
 
 - [ ] **Step 7: Commit**
 
@@ -2447,10 +2458,12 @@ class FrameContext:
         frame, so ``ctx.artists[0]`` on frame 1 and on frame 2 are the
         SAME object in different states.
 
-        THE PORTABLE RULE, on both backends: set the COMPLETE desired
-        state for the current frame. Never write a mutation that fires on
-        one frame only. The rule is the same on both backends but the
-        reason is NOT, and the failure modes are opposite:
+        THE PORTABLE RULE, on both backends: ASSIGN the complete desired
+        value on EVERY invocation, including the default. What breaks is
+        not a per-frame DECISION, it is a per-frame ASSIGNMENT -- writing
+        the attribute on some frames and leaving it untouched on others.
+        The rule is the same on both backends but the reason is NOT, and
+        the failure modes are opposite:
 
         * Where artists are SHARED (matplotlib all styles, plotly spin),
           anything you set persists until something overwrites it, so
@@ -2462,10 +2475,20 @@ class FrameContext:
           is stored. Measured 2026-07-30: ``fig.frames[0].data[0] is not
           fig.frames[1].data[0]`` for every one of those four styles.
 
-        So a conditional mutation does not merely misbehave -- it
-        misbehaves DIFFERENTLY per backend, which is why the portable
-        contract is unconditional: ``artist.set_color(COLOURS[ctx.frame])``
-        on every frame is correct everywhere.
+        So a skipped assignment does not merely misbehave -- it misbehaves
+        DIFFERENTLY per backend. Highlighting exactly one frame is
+        perfectly legitimate; just put the condition in the VALUE, not
+        around the call::
+
+            # correct everywhere -- assigns on every frame
+            artist.set_color('red' if ctx.frame == target else DEFAULT)
+
+            # correct everywhere -- also assigns on every frame
+            artist.set_color(COLOURS[ctx.frame])
+
+            # BROKEN -- assigns on one frame, leaves the rest to chance
+            if ctx.frame == target:
+                artist.set_color('red')
 
         Note that "a mutation is retained in the rendered frame" does NOT
         mean artists are isolated per frame. It means the backend renders
@@ -3114,7 +3137,7 @@ Note the `return_model=True` limitation in the `return_model` entry (`plot.py:19
 - [ ] **Step 9: Run the FULL suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2657 passed, 13 skipped`. Grep for any test asserting that `on_frame=` is unavailable on plotly — there is none in the repo today, but if one appears it is asserting v2's removed premise, not a contract.
+Expected: `2660 passed, 13 skipped`. Grep for any test asserting that `on_frame=` is unavailable on plotly — there is none in the repo today, but if one appears it is asserting v2's removed premise, not a contract.
 
 - [ ] **Step 10: Commit**
 
@@ -3478,7 +3501,7 @@ Extend the `title` entry written in Task 1:
 - [ ] **Step 8: Run the FULL suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2670 passed, 13 skipped`.
+Expected: `2673 passed, 13 skipped`.
 
 - [ ] **Step 9: Commit**
 
@@ -3726,10 +3749,11 @@ different states. Plotly's spin is the same story for a different reason:
 it moves only the camera and re-sends no point data, so its frames share
 the figure's traces.
 
-**The rule that follows applies to both backends: set the complete state
-you want for the current frame** -- never a mutation that fires on one
-frame only. The rule is portable; the *reason* is not, and the two
-failure modes are opposite.
+**The rule that follows applies to both backends: assign the complete
+value you want on every invocation, including the default** -- never
+write the attribute on some frames and leave it untouched on others. The
+rule is portable; the *reason* is not, and the two failure modes are
+opposite.
 
 Where artists are **shared**, anything you set persists until something
 overwrites it::
@@ -3768,7 +3792,17 @@ set; where artists are shared it renders it for every later frame too. A
 surfaced spin is the mixed case: its ``Mesh3d`` updates trail the shared
 traces in ``ctx.artists`` and those trailing entries *are* per-frame.
 
-Set the state unconditionally and none of this can bite you.
+Highlighting exactly one frame is a perfectly good thing to want, and none
+of this forbids it. Put the condition in the **value**, not around the
+call, so the attribute is still assigned on every frame::
+
+    HIGHLIGHT, DEFAULT = 'red', 'steelblue'
+
+    def highlight_one_frame(ctx):                   # correct on both backends
+        colour = HIGHLIGHT if ctx.frame == TARGET else DEFAULT
+        ctx.artists[0].set_color(colour)            # matplotlib spelling
+
+Assign on every invocation and none of this can bite you.
 
 .. _animation-post-construction:
 
@@ -4013,6 +4047,12 @@ def test_animation_guide_gives_both_failure_modes_not_just_persistence():
     frame 0 -- the opposite of matplotlib and plotly spin, where it affects
     everything. An earlier draft stated the shared behaviour as universal.
     Both modes must be present, and the persistence claim must be scoped.
+
+    The rule must also stay stated as an ASSIGNMENT rule, not a ban on
+    per-frame decisions: v4.3 said "never write a mutation that fires on
+    one frame only", which forbids highlighting a single frame -- a
+    legitimate thing to want, and portable when the condition sits in the
+    value rather than around the call.
     """
     raw = GUIDE.read_text()
     # collapse whitespace AND strip rst emphasis, so the assertions below
@@ -4025,6 +4065,10 @@ def test_animation_guide_gives_both_failure_modes_not_just_persistence():
     assert 'where artists are shared' in text
     # the plotly example uses a real plotly API, not matplotlib's set_color
     assert '.line.color' in raw
+    # the rule is about assigning every invocation, and single-frame
+    # highlighting is shown as supported rather than forbidden
+    assert 'assign the complete value' in text
+    assert 'highlighting exactly one frame' in text
 ```
 
 - [ ] **Step 5: Simplify the gallery examples that hand-rolled these primitives — MECHANICAL MIGRATION ONLY**
@@ -4057,7 +4101,7 @@ Expected: build succeeds with **0 warnings** (the repo holds an RTD-parity zero-
 - [ ] **Step 8: Run the FULL suite one last time**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: `2689 passed, 13 skipped`.
+Expected: `2692 passed, 13 skipped`.
 
 - [ ] **Step 9: Commit**
 
@@ -4108,7 +4152,7 @@ git commit -m "docs(1.1): document order=, per-dataset alpha=, on_frame, per-seg
 
 **Task dependencies.** 1 → 8 (`_validate_title`); 4 → 5 (parity before the new spelling, so `order='serial'` never inherits a backend hole); 5 → 7 (`order` in `FrameContext`) → 8 (`FrameHooks` + `segment_kind`). Tasks 2, 3 and 6 are independent and may be done in any order. **4 → 7 as well, one-way:** Task 7 Step 6a adds the plotly hook dispatch to all four `_add_animation` frame-build sites, one of which is the serial branch Task 4 rewrites, so Task 4 must land first — and Task 4 explicitly does *not* anticipate the hook, so the dispatch block exists in exactly one place in this plan.
 
-**Suite arithmetic (recomputed for v3 — v2's total was wrong).** Baseline `2551 passed, 13 skipped` (2564 collected). Counts below are `def test_` in each task, with every `@pytest.mark.parametrize` expanded to its case count — not estimates:
+**Suite arithmetic (recomputed for v3 — v2's total was wrong).** Baseline `2554 passed, 13 skipped` (2567 collected). Counts below are `def test_` in each task, with every `@pytest.mark.parametrize` expanded to its case count — not estimates:
 
 | task | `def test_` | parametrize | collected | v2 said |
 |-|-|-|-|-|
@@ -4122,7 +4166,7 @@ git commit -m "docs(1.1): document order=, per-dataset alpha=, on_frame, per-seg
 | 8 | 13 | — | **13** | 14 ✗ |
 | 9 | 10 | 1 def × 10 cases | **19** | 0 (**new in v4**: `tests/test_animation_guide_docs.py`; **v4.1** adds three more — post-construction qualification, backend-labelled examples, spin's shared artists; **v4.3** adds `test_animation_guide_gives_both_failure_modes_not_just_persistence`, and corrects the def count, which read 8 for a file that has always held 9) |
 
-Added (v4.3): 9 + 5 + 11 + 10 + 20 + 10 + **41** + 13 + **19** = **138**. Final expected: `2689 passed, 13 skipped`. *(v3 totalled 102 → 2,653; v4 → 120 → 2,671; v4.1 → 126 → 2,677; v4.2 → 127 → 2,678; v4.3 adds the isolation and container-type guards.)* Each task's Step "run the FULL suite" states its own running total, so a drift is caught at the task that caused it.
+Added: 9 + 5 + 11 + 10 + 20 + 10 + **41** + 13 + **19** = **138**. Final expected: `2692 passed, 13 skipped` (v4.4 baseline 2554). *(v3 totalled 102 → 2,653; v4 → 120 → 2,671; v4.1 → 126 → 2,677; v4.2 → 127 → 2,678; v4.3 adds the isolation and container-type guards.)* Each task's Step "run the FULL suite" states its own running total, so a drift is caught at the task that caused it.
 
 **A v4.3 correction to this table itself.** Task 9's `def test_` column read **8** while its test file has always contained **9** defs — the *collected* figure (18) was right, so no total was ever wrong, but the middle column contradicted this table's own stated method (*"`def test_` in each task … not estimates"*). Counted by name: `..._exists`, `..._is_in_the_toctree`, `..._covers` (the ×10 parametrize), `..._documents_both_backend_schedules`, `..._states_the_callback_contract_verbatim`, `..._does_not_call_the_contract_purity`, `..._marks_post_construction_registration_matplotlib_only`, `..._labels_its_backend_specific_examples`, `..._documents_artist_lifetime_for_both_backends` = 9, plus v4.3's new one = **10**, giving 9 plain + 10 cases = **19**.
 

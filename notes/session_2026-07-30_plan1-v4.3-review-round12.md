@@ -117,9 +117,17 @@ piped straight into `tail`.
   Adopting a linter suite-wide is a separate call.
 - **Restart** for OMC 4.15.7 — the loaded 4.2.15 hook emitted ~20 false "Command failed" /
   "Edit operation failed" notices this session, every one on a call that succeeded.
-- Plans 3 and 4 still have **never had a review round**. Plan 3 is v2, predating `FrameHooks`,
-  the both-axis precondition and the `trace_data` contract. It adds forecast rendering to the same
-  four plotly branches where the `:2975` undercount and the spin-artists defect were found.
+- ~~Plans 3 and 4 still have **never had a review round**.~~ **Wrong, corrected 2026-07-31 (round
+  13, finding #3).** Plan 3 *has* been reviewed once — `notes/audit/review_plan3_forecast_animation.md`
+  (8 defects, 4 fatal → v2), recorded in the plan-set README's review table. The sentence even called
+  Plan 3 "v2" while claiming no review had happened, which is what a v2 *is*. The accurate claim,
+  and the one that sets priority:
+  - **Plan 3 has not been RE-reviewed** against the contracts decided after its v2 — `FrameHooks`,
+    tuple-valued `FrameContext` fields, the both-axis precondition, and `trace_data` vs `xform_data`.
+    It adds forecast rendering to the same four plotly branches where the `:2975` undercount and the
+    spin-artists defect were found.
+  - **Plan 4 has genuinely never been reviewed** — there is no `review_plan4_*.md`, verified against
+    `notes/audit/`, which holds review files for plans 1, 2 (×3) and 3 only.
 
 ## Files touched
 
