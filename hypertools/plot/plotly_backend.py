@@ -985,7 +985,19 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     for i in trail_dataset_indices:
         tkwargs = kwargs_list[i] or {}
         mode, symbol, dash, marker_char = _resolve_fmt(fmt[i], tkwargs)
-        color = _to_plotly_color(tkwargs.get('color'), 0.3)
+        # fold the 0.3 trail-fade factor into whatever alpha= this dataset
+        # carries (default 1.0 -> 0.3, unchanged for the common no-alpha
+        # case) -- mirrors matplotlib_backend.animate_plot3D/2D's
+        # `_trail_kwargs` (`kw["alpha"] = 0.3 * kw.pop("alpha", 1.0)`)
+        # exactly. Previously hardcoded to 0.3 regardless of alpha=, so a
+        # per-dataset alpha list (unreachable before per-dataset alpha=
+        # existed) never reached plotly's trail traces even though the
+        # matching head trace already honors it (see `tkwargs.get('alpha')`
+        # a few dozen lines above, in the head-trace loop).
+        _trail_alpha = tkwargs.get('alpha')
+        _trail_alpha = (0.3 if _trail_alpha is None
+                        else 0.3 * float(_trail_alpha))
+        color = _to_plotly_color(tkwargs.get('color'), _trail_alpha)
         width = float(tkwargs.get('linewidth')
                       or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
         msize = _marker_size_px(
@@ -2919,6 +2931,17 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                         go, v, f, color, morph_surface_spec['alpha'],
                         view, light_kw))
 
+            # `seg_idx // 2` is a position WITHIN THE MORPH SEQUENCE (0, 1,
+            # 2, ... for the 1st, 2nd, 3rd morph-tagged dataset), not a
+            # FINAL dataset index -- those only coincide when every dataset
+            # is tagged (scalar animate='morph'). `morph_indices` (built
+            # above from `morph_tags`) maps sequence position back to the
+            # actual dataset index for a partial-tag list (e.g.
+            # animate=[None, 'morph', 'morph']), exactly like the simplify
+            # guard in `plot.py` already does -- so `title=`'s per-segment
+            # lookup and `FrameContext.current_index` agree with each other
+            # and with the matplotlib backend's `update_morph`.
+            _dataset_idx = morph_indices[seg_idx // 2]
             frame_kwargs = dict(
                 name=str(k), data=frame_traces, traces=morph_trace_indices)
             if ndims >= 3:
@@ -2934,14 +2957,20 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 # scene_camera layout key the ndims>=3 block above may have
                 # just set, and is not clobbered by it either.
                 _text = ('' if seg_idx % 2 else
-                         segment_titles[min(seg_idx // 2,
+                         segment_titles[min(_dataset_idx,
                                             len(segment_titles) - 1)])
                 frame_kwargs.setdefault('layout', {})['title'] = dict(text=_text)
             if frame_hooks is not None:
                 frame_hooks.record(
                     frame=k, n_frames=n_frames, artists=tuple(frame_traces),
-                    datasets=tuple(data), style='morph', order='serial',
-                    current_index=seg_idx // 2,
+                    # the morph-SAMPLED (morph_samples-capped/matched)
+                    # clouds -- what this loop actually draws from -- not
+                    # the raw `data`, matching matplotlib's `update_morph`
+                    # (`FrameContext.datasets`' own contract: "the arrays
+                    # the animation actually DRAWS FROM ... not the raw
+                    # input").
+                    datasets=tuple(sampled), style='morph', order='serial',
+                    current_index=_dataset_idx,
                     current_fraction=step / max(1, n_steps - 1),
                     revealed_counts=None, segment_index=seg_idx,
                     segment_kind='hold' if seg_idx % 2 == 0 else 'transition')

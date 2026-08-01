@@ -13,7 +13,7 @@ Style and order are independent
 -------------------------------
 
 ``animate=`` names a *style*; ``order=`` names the *ordering*. They are
-orthogonal, which is new in 1.1:
+orthogonal, which is new in 1.0.1:
 
 .. code-block:: python
 
@@ -34,7 +34,7 @@ Trails
 ------
 
 ``chemtrails=``, ``precog=`` and ``bullettime=`` leave a visible history
-behind (or ahead of) the moving head. As of 1.1 they compose with a serial
+behind (or ahead of) the moving head. As of 1.0.1 they compose with a serial
 reveal on **both** backends:
 
 .. code-block:: python
@@ -60,7 +60,7 @@ annotations.
 Per-dataset styling
 -------------------
 
-``color=``, ``linewidth=`` and -- new in 1.1 -- ``alpha=`` accept one value
+``color=``, ``linewidth=`` and -- new in 1.0.1 -- ``alpha=`` accept one value
 per dataset:
 
 .. code-block:: python
@@ -305,7 +305,7 @@ the frame it renders.
 Migrating from ``_func``/``_args``
 ----------------------------------
 
-Before 1.1 the only way to run code per frame was to monkeypatch
+Before 1.0.1 the only way to run code per frame was to monkeypatch
 matplotlib's private ``FuncAnimation._func`` and read ``_args``. That
 reached into matplotlib internals, worked on one backend only, and broke
 whenever the private signature changed. Replace it:

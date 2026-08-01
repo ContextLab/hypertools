@@ -19,6 +19,12 @@ def _walks(n=120, d=6):
     return [w, w + 4]
 
 
+def _three_walks(n=120, d=6):
+    rng = np.random.default_rng(0)
+    return [np.cumsum(rng.standard_normal((n, d)), axis=0) + i * 4.0
+           for i in range(3)]
+
+
 def _mid_frame(fig):
     return fig.frames[len(fig.frames) // 2]
 
@@ -100,6 +106,40 @@ def test_plotly_animation_zooms_out_vs_static():
     # frames store the camera as scene.camera (the scene_camera= setter in
     # _add_animation expands to scene.camera)
     assert r(mid.layout.scene.camera.eye) == pytest.approx(_anim_zoom_r(1))
+
+
+def test_plotly_trail_alpha_honors_per_dataset_alpha():
+    """Important finding 3 (whole-branch review): plotly trail traces
+    hardcoded `_to_plotly_color(color, 0.3)`, dropping alpha= entirely,
+    while matplotlib folds the 0.3 trail-fade factor into whatever alpha
+    the dataset carries (`0.3 * kw.pop('alpha', 1.0)`). Repro:
+    alpha=[1.0, 0.5, 0.2], chemtrails=True -> matplotlib trails are
+    0.3/0.15/0.06 (heads stay 1.0/0.5/0.2); plotly used to give 0.3/0.3/0.3
+    for every trail regardless of alpha=."""
+    walks = _three_walks()
+    alphas_in = [1.0, 0.5, 0.2]
+    expected = [0.3 * a for a in alphas_in]
+
+    fig, ani = hyp.plot(walks, animate=True, duration=2, tail_duration=1,
+                        chemtrails=True, alpha=alphas_in, show=False)
+    trail = ani._args[2]
+    assert all(t is not None for t in trail), 'expected a trail per dataset'
+    mpl_trail_alphas = [t.get_alpha() for t in trail]
+    assert mpl_trail_alphas == pytest.approx(expected)
+
+    pfig = hyp.plot(walks, animate=True, duration=2, tail_duration=1,
+                    chemtrails=True, alpha=alphas_in, backend='plotly',
+                    show=False)
+    n = len(walks)
+    trail_traces = pfig.data[n:2 * n]
+    assert len(trail_traces) == n
+    ply_trail_alphas = [
+        float(t.line.color.rsplit(',', 1)[1].rstrip(') '))
+        for t in trail_traces]
+    assert ply_trail_alphas == pytest.approx(expected), (
+        "plotly trail traces must honor per-dataset alpha= (0.3 * alpha), "
+        "matching matplotlib, not a hardcoded 0.3")
+    assert ply_trail_alphas == pytest.approx(mpl_trail_alphas)
 
 
 def test_plotly_static_has_no_trails():

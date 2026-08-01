@@ -98,6 +98,28 @@ def test_animation_guide_documents_artist_lifetime_for_both_backends():
     assert 'every style on matplotlib, is per-frame' not in text
 
 
+def test_animation_guide_version_claims_match_the_package_version():
+    """Minor finding (whole-branch review): the guide said 'new in 1.1'
+    (x2), 'As of 1.1' and 'Before 1.1' -- but CHANGELOG.md's own section
+    for this work is "## 1.0.1 (unreleased)" and `hypertools.__version__`
+    / pyproject.toml agree on 1.0.1. There is no 1.1 release on this
+    branch; these features shipped in 1.0.1, so the guide -- not the
+    version -- was wrong."""
+    import hypertools as hyp
+
+    text = GUIDE.read_text()
+    stale = [s for s in ('new in 1.1', 'As of 1.1', 'Before 1.1') if s in text]
+    assert not stale, (
+        f"docs/animation.rst still claims {stale}, but CHANGELOG.md and "
+        f"hypertools.__version__ ({hyp.__version__}) agree these features "
+        "are 1.0.1, not 1.1")
+
+    changelog = (DOCS.parent / 'CHANGELOG.md').read_text()
+    assert '## 1.0.1' in changelog, (
+        "sanity check: CHANGELOG.md's own unreleased section must still "
+        "say 1.0.1 for the assertion above to mean anything")
+
+
 def test_animation_guide_gives_both_failure_modes_not_just_persistence():
     """The guide must not say persistence applies to both backends.
 

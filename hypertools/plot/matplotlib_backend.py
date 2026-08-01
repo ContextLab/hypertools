@@ -1544,7 +1544,17 @@ def _draw(
                 artists=[morph_state["artist"]],
                 datasets=list(morph_state["sampled"]),
                 style='morph', order='serial',
-                current_index=seg_idx // 2,
+                # `seg_idx // 2` is a position WITHIN THE MORPH SEQUENCE
+                # (0, 1, 2, ... for the 1st, 2nd, 3rd morph-tagged dataset),
+                # not a FINAL dataset index -- those only coincide when
+                # every dataset is tagged (scalar animate='morph'). For a
+                # partial-tag list (e.g. animate=[None, 'morph', 'morph']),
+                # `morph_state["indices"]` (built from `morph_tags` in
+                # `animate_plot3D` above) maps sequence position back to the
+                # actual dataset index, exactly like the simplify guard in
+                # `plot.py` already does -- so this agrees with `title=`'s
+                # per-segment lookup, which indexes by FINAL dataset.
+                current_index=morph_state["indices"][seg_idx // 2],
                 current_fraction=step / max(1, n_steps - 1),
                 revealed_counts=None,
                 segment_index=seg_idx,
@@ -2224,7 +2234,12 @@ def _draw(
                 artists=[morph_state["artist"]],
                 datasets=list(morph_state["sampled"]),
                 style='morph', order='serial',
-                current_index=seg_idx // 2,
+                # see the identical note in `update_morph` (3-D): `seg_idx
+                # // 2` is a position within the morph SEQUENCE, which only
+                # equals the FINAL dataset index when every dataset is
+                # tagged -- `morph_state["indices"]` maps sequence position
+                # back to the actual dataset index for partial-tag lists.
+                current_index=morph_state["indices"][seg_idx // 2],
                 current_fraction=step / max(1, n_steps - 1),
                 revealed_counts=None,
                 segment_index=seg_idx,

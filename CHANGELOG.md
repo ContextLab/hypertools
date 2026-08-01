@@ -170,6 +170,39 @@ Small, additive plotting features and fixes (fully backward-compatible).
   now guarded the same way matplotlib's own `Animation.save()` guards its
   internal draws, so the animation's real first frame is never fired early.
 
+- **A partial-tag `animate='morph'` list (e.g. `animate=[None, 'morph',
+  'morph']`) now names and reports the DATASET actually being shown, on
+  both backends.** Per-segment `title=` and `FrameContext.current_index`
+  used to index the morph hold/transition schedule by its position WITHIN
+  THE MORPH SEQUENCE rather than mapping through the tag list, so an
+  untagged (static) leading dataset silently shifted every title/index
+  down by one -- the first hold was titled with the untagged dataset's
+  name (never shown) and the true final dataset's title was unreachable.
+  Scalar `animate='morph'` (every dataset tagged) was never affected,
+  since sequence position and dataset index coincide there by
+  construction.
+
+- **`ctx.datasets` for `animate='morph'` is now the same, morph-sampled
+  arrays on both backends.** plotly recorded the raw, uncapped input
+  arrays; matplotlib already recorded the Hungarian-matched,
+  `morph_samples`-capped clouds actually drawn from, per `FrameContext`'s
+  own documented contract. The two now agree.
+
+- **plotly trail traces (`chemtrails`/`precog`/`bullettime`) honor
+  per-dataset `alpha=`.** They previously hardcoded a flat 0.3 opacity
+  regardless of `alpha=`, while matplotlib already folded `alpha` into the
+  0.3 trail fade (`0.3 * alpha`). A per-dataset `alpha=` list now fades
+  plotly trails the same way.
+
+- **`animate='spin'`/`'window'`, `order='serial'`, and a per-dataset
+  `title=` list together now raise immediately with an accurate message.**
+  Previously this combination ran the whole analyze/reduce pipeline,
+  warned that `order='serial'` was being ignored (because `'spin'`/
+  `'window'` have no serial reveal), and only then raised `TypeError`
+  advising `order='serial'` -- exactly what had already been passed. The
+  error now fires fail-fast and names the real reason (the style has no
+  serial ordering to name segments by).
+
 ## 1.0.0 (unreleased)
 
 HyperTools 1.0 is a ground-up modernization of the toolbox. The familiar

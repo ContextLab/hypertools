@@ -96,3 +96,49 @@ def test_manip_dispatcher_has_docstring():
     assert hypertools.manip.__doc__ is not None
     assert hypertools.manip.__doc__.strip() != ''
     assert len(hypertools.manip.__doc__.strip()) > 20
+
+
+def _plot_docstring_parameters_section():
+    """Return `hyp.plot`'s docstring "Parameters" section as a list of
+    `(name, type_line)` pairs, one per TOP-LEVEL documented parameter
+    (numpydoc `name : type` lines indented exactly 4 spaces -- nested
+    sub-keys, e.g. a dict spec's own entries, are indented 8+ and so are
+    excluded)."""
+    import re
+
+    doc = hypertools.plot.__doc__
+    lines = doc.split('\n')
+    start = next(i for i, l in enumerate(lines) if l.strip() == 'Parameters')
+    end = next(i for i in range(start + 1, len(lines))
+              if lines[i].strip() == 'Returns')
+    param_re = re.compile(r'^    (\S[^:]*?)\s*:\s*(.+)$')
+    params = []
+    for l in lines[start:end]:
+        if l.startswith('    ') and not l.startswith('     '):
+            m = param_re.match(l)
+            if m:
+                params.append((m.group(1), m.group(2)))
+    return params
+
+
+def test_plot_docstring_type_lines_have_no_stray_optional_default_markers():
+    """Minor finding (whole-branch review): of plot()'s ~70 documented
+    top-level parameters, only 4 -- alpha, order, on_frame, simplify --
+    carried a numpydoc `, optional`/`, default <value>` type-line marker,
+    split inconsistently (three said ", optional", simplify said ",
+    default True") -- while every other parameter, including ones that
+    also default to True (`show`, `antialias`), uses a bare `name : type`
+    line and describes its default in prose instead (e.g. `linewidth :
+    int or float` / "Width of plotted lines in points (default: ...)").
+    These four must match that established convention, not carry their
+    own one-off markers."""
+    params = _plot_docstring_parameters_section()
+    assert len(params) > 50, (
+        f'expected dozens of top-level parameters, found {len(params)} -- '
+        'the Parameters-section scan above may be broken')
+    marked = [(name, t) for name, t in params
+             if ', optional' in t or 'default' in t]
+    assert marked == [], (
+        'plot() docstring type-line(s) still carry a stray optional/'
+        f'default marker (bare "name : type" is this file\'s established '
+        f'convention -- see e.g. `linewidth`/`show`/`antialias`): {marked}')

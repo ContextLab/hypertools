@@ -128,18 +128,33 @@ class FrameContext:
         not the raw input. For a line format `plot()` pre-interpolates every
         animated dataset onto the frame grid, so these may be denser or
         coarser than what you passed in; `revealed_counts[i]` indexes into
-        ``datasets[i]``.
+        ``datasets[i]``. For ``animate='morph'`` these are instead the
+        Hungarian-matched, ``morph_samples``-capped clouds
+        (`hypertools.plot.morph.sample_and_match_clouds`'s own ``sampled``
+        return value) for the morph-TAGGED datasets only, in morph order --
+        not the raw per-dataset points, and not one entry per FINAL dataset
+        when an untagged static backdrop is present. Identical on both
+        backends (both call the same seeded, deterministic function on the
+        same input arrays). `revealed_counts` is always ``None`` here --
+        there is no cumulative reveal to index.
     style : bool or str
-        The resolved backend animate mode (``True``/``'serial'``/``'spin'``/
-        ``'window'``/``'morph'``) -- i.e. after ``order=`` has been folded in.
+        The resolved backend animate mode (``True``/``'parallel'``/
+        ``'serial'``/``'spin'``/``'window'``/``'morph'``) -- i.e. after
+        ``order=`` has been folded in.
     order : {'parallel', 'serial'}
         The resolved ordering.
     current_index : int or None
         For serial-style animations, the index of the dataset currently
-        being revealed. For ``animate='morph'`` it is the dataset the
-        current segment belongs to (``segment_index // 2``: the shape being
-        held, or the SOURCE of the transition). ``None`` for parallel
-        animations, where every dataset advances together.
+        being revealed. For ``animate='morph'`` it is the FINAL dataset
+        index the current segment belongs to (the shape being held, or the
+        SOURCE of the transition) -- ``segment_index // 2`` is a position
+        WITHIN THE MORPH SEQUENCE, which only equals this when every
+        dataset is tagged for the morph (scalar ``animate='morph'``); a
+        partial-tag list (e.g. ``animate=[None, 'morph', 'morph']``) maps
+        sequence position back to the actual dataset index first, so
+        ``current_index`` always names a dataset that is really part of the
+        morph. ``None`` for parallel animations, where every dataset
+        advances together.
     current_fraction : float or None
         Progress through the current dataset (serial) or the current
         SEGMENT (morph), in [0, 1]. ``None`` when `current_index` is

@@ -449,14 +449,47 @@ def _validate_title(title, style=None, order=None, n_datasets=None):
     `_resolve_animate_mode`) passes the resolved values and performs the
     length check below.
 
+    `order == 'serial'` alone is only treated as "this will end up serial"
+    when `style` could actually HONOR it: 'spin'/'window' have no
+    dataset-by-dataset reveal, so `order='serial'` alongside either of them
+    is silently folded back to 'parallel' (with a warning) by
+    `_resolve_animate_mode` -- a per-dataset title list would then never be
+    meaningful, so this raises immediately, at the FIRST (fail-fast) call,
+    instead of letting the pipeline run and only discovering it once the
+    SECOND call sees the already-folded-back `order`.
+
     Returns None for the scalar/None forms, or a list of `n_datasets`
     per-segment strings.
     """
     if title is None or isinstance(title, str):
         return None
-    serial_style = (_raw_animate_style(style) in _SERIAL_TITLE_STYLES
-                    or order == 'serial')
+    _style = _raw_animate_style(style)
+    _order_wants_serial = order == 'serial'
+    # truthy (animated) style that CANNOT honor order='serial' -- 'spin'/
+    # 'window' today; `_resolve_animate_mode` warns and folds `order` back
+    # to 'parallel' for exactly these, so a title list is never reachable
+    # once that fold happens. A FALSY style (no animation at all) is left
+    # alone here: `_resolve_order` already raises a clearer, dedicated
+    # ValueError ("order='serial' requires an animated plot") for that
+    # combination, and this function must not preempt it with a less
+    # specific TypeError.
+    _style_cannot_go_serial = (
+        _order_wants_serial and bool(_style)
+        and _style not in _SERIAL_CAPABLE_STYLES
+    )
+    serial_style = (_style in _SERIAL_TITLE_STYLES
+                    or (_order_wants_serial and not _style_cannot_go_serial))
     if not serial_style or not isinstance(title, (list, tuple)):
+        if _style_cannot_go_serial and isinstance(title, (list, tuple)):
+            raise TypeError(
+                f"title must be a string (or None), not "
+                f"{type(title).__name__}. animate={_style!r} has no serial "
+                "ordering (it does not reveal datasets one at a time), so "
+                "order='serial' is ignored and per-dataset title lists are "
+                "not meaningful for it -- pass a single string title "
+                "instead, or use animate=True/'parallel'/'serial'/'morph' "
+                "for a style that supports per-dataset titles."
+            )
         raise TypeError(
             f"title must be a string (or None), not {type(title).__name__}. "
             "Per-dataset titles are only meaningful for serial-style "
@@ -961,7 +994,7 @@ def plot(
         Width of plotted lines in points (default: matplotlib's 1.5 for
         static plots, 1 for animations). Applies to both backends.
 
-    alpha : float or list of float, optional
+    alpha : float or list of float
         Opacity in [0, 1], either one value for every dataset or one value
         per dataset (e.g. ``alpha=[0.1, 0.1, 1.0]`` to fade two backdrops
         behind a highlighted third). Inputs that assign alpha internally --
@@ -1628,7 +1661,7 @@ def plot(
         trace is out-of-scope follow-up work, so combining `predict=` with any
         of those raises `NotImplementedError`.
 
-    order : {'parallel', 'serial'}, optional
+    order : {'parallel', 'serial'}
         Whether animated datasets are revealed all at once ('parallel') or
         one after another ('serial'). This is ORTHOGONAL to ``animate=``,
         which names the style, so it composes with the trail flags:
@@ -1786,7 +1819,7 @@ def plot(
         Must be a positive integer (or None); anything else
         raises ``ValueError``. Ignored for every other `animate` mode.
 
-    on_frame : callable, optional
+    on_frame : callable
         Called after each animation frame is drawn, with a single
         ``FrameContext`` argument exposing the frame index, the axes and
         drawn artists, the arrays being animated, and -- for serial-style
@@ -1829,7 +1862,7 @@ def plot(
         ...     ctx.axes.set_title(f'frame {ctx.frame} of {ctx.n_frames}')
         >>> anim = hyp.plot(data, animate=True, on_frame=annotate, show=False)
 
-    simplify : bool, default True
+    simplify : bool
         Whether hypertools may silently downsample to keep a render
         tractable. Today this governs ``animate='morph'`` **only**: a morph
         over clouds larger than 2000 points is downsampled to 2000 with no

@@ -67,6 +67,24 @@ def test_parallel_mode_reports_no_serial_position():
     assert all(ctx.order == 'parallel' for ctx in seen)
 
 
+def test_frame_context_style_docstring_lists_parallel():
+    """Minor finding (whole-branch review): animate='parallel' is a real,
+    runtime-reachable value of ctx.style (see the previous test's
+    animate=True, which resolves to the same backend mode), but the
+    FrameContext.style docstring only enumerated True/'serial'/'spin'/
+    'window'/'morph' -- 'parallel' was undocumented."""
+    seen = []
+    fig, ani = hyp.plot(_datasets(), '-', animate='parallel', duration=1,
+                        frame_rate=2, on_frame=seen.append, show=False)
+    _drive(ani, 2)
+    assert all(ctx.style == 'parallel' for ctx in seen)
+
+    doc = FrameContext.__doc__
+    style_doc = doc.split('style : bool or str', 1)[1].split('order :', 1)[0]
+    assert "'parallel'" in style_doc, (
+        f"FrameContext.style docstring omits 'parallel': {style_doc!r}")
+
+
 def test_frame_context_is_exported_at_top_level_but_frame_hooks_is_not():
     """`FrameContext` is public: users receive one per callback and will
     annotate and isinstance-check it. `FrameHooks` is the internal registry
@@ -212,6 +230,42 @@ def test_morph_holds_and_transitions_are_not_separable_by_fraction_alone():
     assert holds & moves, 'fractions overlap, so they cannot discriminate'
 
 
+def test_partial_tag_morph_current_index_only_names_tagged_datasets():
+    """Important finding 1 (whole-branch review): a partial-tag morph list
+    (`animate=[None, 'morph', 'morph']`) used to report `ctx.current_index`
+    as `segment_index // 2` -- a position WITHIN THE MORPH SEQUENCE, not
+    the FINAL dataset index -- so with dataset 0 untagged, current_index
+    took values {0, 1} (dataset 0 is never the one shown) instead of the
+    correct {1, 2}. `test_morph_reports_segment_index_and_kind` above only
+    ever used a scalar animate='morph' (every dataset tagged), where
+    sequence position and final index coincide by construction and so
+    cannot catch this. Checked on both backends."""
+    pytest.importorskip('plotly')
+    ds = _datasets(n=3)
+
+    mpl_seen = []
+    fig, ani = hyp.plot(ds, '.', animate=[None, 'morph', 'morph'],
+                        duration=8, frame_rate=1, on_frame=mpl_seen.append,
+                        show=False)
+    _drive(ani, mpl_seen[0].n_frames if mpl_seen else 8)
+    mpl_indices = {ctx.current_index for ctx in mpl_seen}
+    assert mpl_indices == {1, 2}, (
+        "partial-tag morph (animate=[None,'morph','morph']) must only "
+        f"report the TAGGED dataset indices {{1, 2}}; saw {mpl_indices}")
+
+    ply_seen = []
+    hyp.set_interactive_backend('plotly')
+    try:
+        hyp.plot(ds, '.', animate=[None, 'morph', 'morph'], duration=8,
+                 frame_rate=1, on_frame=ply_seen.append, show=False)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+    ply_indices = {ctx.current_index for ctx in ply_seen}
+    assert ply_indices == {1, 2}, (
+        "partial-tag morph must only report the TAGGED dataset indices "
+        f"{{1, 2}} on plotly too; saw {ply_indices}")
+
+
 # --- 2-D --------------------------------------------------------------------
 
 def test_hook_fires_for_2d_animations():
@@ -349,7 +403,15 @@ def test_on_frame_context_metadata_parity_across_backends(style, order):
     kwargs = dict(animate=style, order=order, duration=2, frame_rate=4,
                   show=False)
     if style == 'morph':
-        kwargs['morph_samples'] = 50
+        # BELOW `_datasets()`'s row count (20), so the cap actually
+        # engages: at morph_samples=50 (> 20) it never triggered at all,
+        # so `ctx.datasets` came out (20, dims) either way regardless of
+        # whether a backend used the morph-SAMPLED clouds or the raw
+        # input -- the exact gap that let plotly's `datasets=tuple(data)`
+        # (raw input, whole-branch-review Important finding 2) slip past
+        # this "parity" check without ever actually comparing sampled vs.
+        # raw shapes.
+        kwargs['morph_samples'] = 8
 
     mpl_seen = []
     fig, ani = hyp.plot(_datasets(), '.', on_frame=mpl_seen.append, **kwargs)
@@ -368,6 +430,42 @@ def test_on_frame_context_metadata_parity_across_backends(style, order):
     ply_by_index = {ctx.frame: _portable(ctx) for ctx in ply_seen}
     assert sorted(ply_by_index) == sorted(mpl_by_index)
     assert ply_by_index == mpl_by_index
+
+
+def test_morph_datasets_are_the_sampled_clouds_not_the_raw_input():
+    """Important finding 2 (whole-branch review): ctx.datasets for
+    animate='morph' must be the morph-SAMPLED (morph_samples-capped)
+    clouds on BOTH backends, matching the FrameContext.datasets contract
+    ("the arrays the animation actually DRAWS FROM ... not the raw
+    input"). plotly used to record `tuple(data)` -- the RAW, uncapped
+    input -- while matplotlib already recorded the sampled clouds; the
+    parametrized parity test above only pinned morph_samples=50 on
+    20-row data (no cap ever engaged), so it could never catch this."""
+    pytest.importorskip('plotly')
+    clouds = [np.random.default_rng(i).normal(size=(60, 3)) + i * 4.0
+             for i in range(3)]
+
+    mpl_seen = []
+    fig, ani = hyp.plot(clouds, '.', animate='morph', morph_samples=10,
+                        duration=6, frame_rate=2, on_frame=mpl_seen.append,
+                        show=False)
+    _drive(ani, mpl_seen[0].n_frames if mpl_seen else 12)
+    assert mpl_seen, 'expected at least one recorded frame'
+    assert all(d.shape[0] == 10 for ctx in mpl_seen for d in ctx.datasets), (
+        'matplotlib ctx.datasets must be the morph_samples-capped clouds')
+
+    ply_seen = []
+    hyp.set_interactive_backend('plotly')
+    try:
+        hyp.plot(clouds, '.', animate='morph', morph_samples=10,
+                 duration=6, frame_rate=2, on_frame=ply_seen.append,
+                 show=False)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+    assert ply_seen, 'expected at least one recorded frame'
+    assert all(d.shape[0] == 10 for ctx in ply_seen for d in ctx.datasets), (
+        "plotly ctx.datasets for animate='morph' must be the "
+        "morph_samples-capped clouds, not the raw 60-row input")
 
 
 def test_plotly_frame_context_carries_backend_native_objects():

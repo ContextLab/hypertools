@@ -129,6 +129,58 @@ def test_every_hold_frame_is_named():
     assert all(seen[f] != '' for f in holds)
 
 
+# --- partial-tag morph: titles must follow morph_tags, not segment position
+#
+# whole-branch review, Important finding 1: `plot([a, b, c],
+# animate=[None, 'morph', 'morph'], title=['a', 'b', 'c'])` morphs datasets
+# 1 and 2 -- but the title updater indexed by SEGMENT POSITION
+# (`seg_idx // 2`), never through `morph_tags`, so the hold titles came out
+# 'a' then 'b' (dataset 0 -- untagged, never shown -- and dataset 1) while
+# 'c' (the actual second hold) was unreachable. Every test above uses a
+# scalar animate='morph' (every dataset tagged), where segment position and
+# final dataset index coincide by construction, so none of them exercise
+# this gap.
+
+def test_partial_tag_morph_titles_name_the_actual_dataset():
+    names = ['a', 'b', 'c']
+    fig, ani = hyp.plot(_clouds(n=3), '.', animate=[None, 'morph', 'morph'],
+                        title=names, morph_samples=120, duration=8,
+                        frame_rate=1, show=False)
+    counts = segment_frame_counts(2, 8)   # 2 TAGGED datasets -> 3 segments
+    seen = _titles_over(ani, fig, sum(counts))
+    hold_titles = {t for t in seen if t != ''}
+    assert hold_titles == {'b', 'c'}, (
+        "a partial-tag morph must only ever title the TAGGED datasets "
+        f"('b', 'c'); dataset 'a' is untagged and never shown -- saw "
+        f"{hold_titles}")
+    assert seen[0] == 'b', 'the first hold must name the FIRST TAGGED dataset'
+
+
+def test_partial_tag_morph_titles_match_across_backends():
+    """Parity companion to the matplotlib-only test above: the same bug
+    (segment position instead of morph_tags) was independently present in
+    the plotly backend's own per-frame title lookup."""
+    pytest.importorskip('plotly')
+    names = ['a', 'b', 'c']
+    clouds = _clouds(n=3)
+    fig, ani = hyp.plot(clouds, '.', animate=[None, 'morph', 'morph'],
+                        title=names, morph_samples=120, duration=8,
+                        frame_rate=1, show=False)
+    mpl_titles = _titles_over(ani, fig, sum(segment_frame_counts(2, 8)))
+
+    hyp.set_interactive_backend('plotly')
+    try:
+        pfig = hyp.plot(clouds, '.', animate=[None, 'morph', 'morph'],
+                        title=names, morph_samples=120, duration=8,
+                        frame_rate=1, show=False)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+    ply_titles = [f.layout.title.text for f in pfig.frames]
+
+    assert ply_titles == mpl_titles
+    assert {t for t in ply_titles if t} == {'b', 'c'}
+
+
 # --- backend parity ---------------------------------------------------------
 
 def test_serial_titles_render_on_plotly_frames():
