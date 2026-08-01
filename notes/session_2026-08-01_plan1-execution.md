@@ -124,3 +124,43 @@ material, not 1.1**.
 - **Restart for OMC 4.15.7** — the loaded 4.2.15 hook emitted false "Command failed" notices all
   session, every one on a call that succeeded.
 - 44 pre-existing pyflakes findings across `tests/`; no linter in CI.
+
+## Final whole-branch review — and why it was worth running
+
+The nine per-task reviews all passed. The whole-branch review over all 21 commits then returned
+**CHANGES NEEDED** with 3 Important findings, every one a **cross-task interaction** that no
+single-task review could have seen:
+
+1. **Partial-tag morph mislabelled clouds.** Task 8's per-segment `title=` and Task 7's
+   `current_index` indexed a morph by SEGMENT POSITION (`seg_idx // 2`) and never consulted
+   `morph_tags` — while Task 3's simplify guard *did*. Of three new morph-tag consumers, **one got it
+   right and two drifted**. Repro: `plot([a,b,c], animate=[None,'morph','morph'], title=['a','b','c'])`
+   morphs datasets 1→2 but titles the holds `'a','b'`, leaving `'c'` unreachable. Both backends.
+2. **`FrameContext.datasets` diverged by backend** — plotly recorded the raw input, matplotlib the
+   morph-sampled arrays, falsifying the field's own docstring *and* `animation.rst`.
+3. **Plotly trail traces dropped `alpha=`** — hardcoded `0.3` where matplotlib uses `alpha * 0.3`.
+   Only reachable because Task 6 added the per-dataset list form.
+
+**A second toothless test.** Finding 2's existing parity test compared dataset shapes but pinned
+`morph_samples=50` on 20-row data, so it could never fail on the divergence it nominally covered.
+Repaired, and the repair was **confirmed red at the pre-fix commit**.
+
+All six findings fixed in `f6084c7d` (+12 tests). Re-review verdict: **READY TO MERGE**, with
+Important 1's class confirmed closed by enumerating all five segment→dataset consumers repo-wide and
+running four partial-tag shapes the original repro never covered — **3 of 5 failed at the pre-fix
+commit**, so the fix is real rather than coincidental.
+
+## Final state
+
+- **Suite: `2740 passed, 13 skipped, 2 deselected`** (from 2554 at session start).
+- **Sphinx `-W -E -a`: exit 0, 0 warnings.**
+- Packaging + release + notebook gates: 21 passed, 6 skipped.
+- Live-source gate: 41 passed in BOTH default and strict modes.
+- `git diff --check` clean.
+- 23 commits ahead of `origin/dev-1.0`. **Nothing pushed.**
+
+The pattern worth carrying forward: **per-task review and whole-branch review catch different
+defect classes, and neither substitutes for the other.** Nine clean per-task reviews still left three
+Important cross-task defects. Equally, a fix is not done when it is written — Task 6's first fix and
+this branch's findings both needed a re-review to confirm the CLASS was closed, not just the cited
+case.
