@@ -94,6 +94,67 @@ def test_multiindex_level_fading_wins_and_says_so():
     assert not all(a == pytest.approx(0.9) for a in alphas if a is not None)
 
 
+# --- fix-pass: list-case precedence (task-6 review, Important finding) ----
+#
+# The two tests above only ever passed a *scalar* alpha=0.9, so the
+# precedence path was never exercised with a *list* -- which is exactly how
+# the regression below escaped review: `_validate_alpha` ran eagerly at the
+# early write site, BEFORE these branches decide whether they will
+# override alpha, so a wrong-length or non-numeric list RAISED instead of
+# being silently superseded (with a warning) like a scalar already was.
+
+def test_multiindex_level_fading_wins_with_list_alpha_and_says_so():
+    """List form of test_multiindex_level_fading_wins_and_says_so: a
+    same-length, individually-valid list must still lose to MultiIndex
+    fading and warn, exactly like the scalar case."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        fig = hyp.plot(_multiindex_frame(), '-',
+                       alpha=[0.9, 0.9, 0.9, 0.9, 0.9, 0.9], show=False)
+    assert [w for w in caught
+            if 'alpha' in str(w.message) and 'MultiIndex' in str(w.message)]
+    alphas = [a for a in _alphas(fig) if a is not None]
+    assert not all(a == pytest.approx(0.9) for a in alphas)
+
+
+def test_multiindex_level_fading_wins_over_wrong_length_alpha_without_raising():
+    """THE confirmed regression (task-6 review, Important finding):
+    `hyp.plot(multiindex_df, '-', alpha=[0.1, 0.2, 0.3])` (3 values, 6
+    leaves) succeeded silently at db02c64e (pre-task-6: alpha was a plain
+    **kwargs passthrough, dropped by the internal-wins-over-extra-kwarg
+    rule) and raised ValueError('alpha has 3 entries but there are 6
+    datasets to plot') at 76c4f27f. It must warn and be ignored, not
+    raise: whether alpha will be used has to be decided before it is
+    validated, since MultiIndex fading overrides it unconditionally."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        fig = hyp.plot(_multiindex_frame(), '-',
+                       alpha=[0.1, 0.2, 0.3], show=False)
+    assert [w for w in caught
+            if 'alpha' in str(w.message) and 'MultiIndex' in str(w.message)]
+    alphas = [a for a in _alphas(fig) if a is not None]
+    assert alphas, 'expected drawn lines with a resolved (internal) alpha'
+    assert all(0.0 <= a <= 1.0 for a in alphas)
+
+
+def test_multiindex_level_fading_wins_over_non_numeric_alpha_without_raising():
+    """Second half of the same confirmed regression:
+    `alpha=['a', 'b', 'c']` also succeeded silently at db02c64e and raised
+    ValueError('alpha must be a number...') at 76c4f27f. Must warn and be
+    ignored, not raise -- and the *internal* (numeric) alpha must be what
+    reaches matplotlib, not the raw user strings (which would themselves
+    crash matplotlib if they ever leaked through)."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        fig = hyp.plot(_multiindex_frame(), '-',
+                       alpha=['a', 'b', 'c'], show=False)
+    assert [w for w in caught
+            if 'alpha' in str(w.message) and 'MultiIndex' in str(w.message)]
+    alphas = [a for a in _alphas(fig) if a is not None]
+    assert alphas, 'expected drawn lines with a resolved (internal) alpha'
+    assert all(0.0 <= a <= 1.0 for a in alphas)
+
+
 def test_nested_list_depth_fading_wins_and_says_so():
     """plot.py:3629 writes a depth-derived alpha list for nested inputs."""
     rng = np.random.default_rng(0)
@@ -103,6 +164,25 @@ def test_nested_list_depth_fading_wins_and_says_so():
         warnings.simplefilter('always')
         hyp.plot(nested, '-', alpha=0.9, show=False)
     assert [w for w in caught if 'alpha' in str(w.message)]
+
+
+def test_nested_list_depth_fading_wins_over_invalid_list_alpha_without_raising():
+    """List-shaped analog of test_nested_list_depth_fading_wins_and_says_so
+    -- the nested-input half of the task-6 review's Important finding
+    ('Same for nested varying-depth input'): a wrong-length alpha list
+    must warn and be ignored, not raise, once depth fading is known to
+    override it (mirrors the two MultiIndex regression tests above)."""
+    rng = np.random.default_rng(0)
+    nested = [[rng.normal(size=(10, 4)).cumsum(axis=0) for _ in range(2)],
+              rng.normal(size=(10, 4)).cumsum(axis=0)]
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        fig = hyp.plot(nested, '-', alpha=[0.1, 0.2, 0.3, 0.4, 0.5],
+                       show=False)
+    assert [w for w in caught if 'alpha' in str(w.message)]
+    alphas = [a for a in _alphas(fig) if a is not None]
+    assert alphas, 'expected drawn lines with a resolved (internal) alpha'
+    assert all(0.0 <= a <= 1.0 for a in alphas)
 
 
 def test_alpha_survives_contiguous_run_segmentation():
@@ -115,4 +195,38 @@ def test_alpha_survives_contiguous_run_segmentation():
     alphas = [a for a in (ln.get_alpha() for ln in _ax(fig).lines)
               if a is not None]
     assert set(np.round(alphas, 6)) <= {0.2, 0.8}
+    assert len(alphas) > 2, 'expected more runs than datasets'
+
+
+def _clusterable_datasets(n=2, rows=20, dims=4, seed=0, shift=12.0):
+    """Two datasets, each with a sharp mid-trajectory jump so a 2-cluster
+    KMeans fit assigns cluster labels that are contiguous within each
+    dataset (first half one cluster, second half the other): the discrete
+    (non-mixture) clustering + line-format branch (plot.py, the
+    `elif _fmt_draws_line(fmt):` sibling of the `_mixture_name(model) in
+    mixture_models` check) segments each dataset into contiguous
+    same-cluster runs, same as hue= does above."""
+    rng = np.random.default_rng(seed)
+    half = rows // 2
+    out = []
+    for _ in range(n):
+        first = rng.normal(loc=0.0, scale=0.5, size=(half, dims))
+        second = rng.normal(loc=shift, scale=0.5, size=(rows - half, dims))
+        out.append(np.vstack([first, second]))
+    return out
+
+
+def test_alpha_survives_cluster_run_segmentation():
+    """cluster= analog of test_alpha_survives_contiguous_run_segmentation
+    (task-6 review, Minor finding: the suite covered hue= run-expansion
+    but not cluster=, even though both go through the same
+    `_expand_styles_to_runs` call at plot.py ~3597). The reviewer manually
+    verified this works (KMeans, 2 datasets -> 3 runs, alphas {0.15,
+    0.85}); this is that same check made automatic."""
+    ds = _clusterable_datasets(n=2, rows=20)
+    fig = hyp.plot(ds, '-', cluster='KMeans', n_clusters=2,
+                   alpha=[0.15, 0.85], show=False)
+    alphas = [a for a in (ln.get_alpha() for ln in _ax(fig).lines)
+              if a is not None]
+    assert set(np.round(alphas, 6)) <= {0.15, 0.85}
     assert len(alphas) > 2, 'expected more runs than datasets'

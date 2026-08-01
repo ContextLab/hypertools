@@ -935,7 +935,11 @@ def plot(
         behind a highlighted third). Inputs that assign alpha internally --
         a row MultiIndex (per-level fading) or a nested list with varying
         nesting depth (per-depth fading) -- keep their own values and warn
-        that ``alpha=`` was ignored, rather than silently dropping it.
+        that ``alpha=`` was ignored, rather than silently dropping it. This
+        is unconditional: an otherwise-invalid ``alpha=`` (wrong number of
+        entries, non-numeric, out of range) is also just ignored-with-a-
+        warning in this case, not validated against and raised on --
+        whether ``alpha=`` will be used is decided before it is checked.
 
     color(s) : str or list of str
         A list of colors
@@ -3157,13 +3161,40 @@ def plot(
     # when `_expand_styles_to_runs` (see its docstring) runs during hue/
     # cluster contiguous-run segmentation, so it gets widened to run length
     # exactly like color/linewidth already are, instead of being
-    # length-checked against a run count it was never sized for. Internal
-    # per-trace alpha (row-MultiIndex level fading, nested-list depth
-    # fading, further below) still wins over this -- the documented rule at
-    # `_apply_extra_kwargs`'s docstring -- and each of those branches warns
-    # before overwriting it, mirroring the MultiIndex branch's existing
-    # linewidth= precedent (the `_multiindex_meta` branch).
-    if alpha is not None:
+    # length-checked against a run count it was never sized for.
+    #
+    # Internal per-trace alpha (row-MultiIndex level fading, nested-list
+    # depth fading, further below) still wins over this -- the documented
+    # rule at `_apply_extra_kwargs`'s docstring -- and each of those
+    # branches warns before overwriting it, mirroring the MultiIndex
+    # branch's existing linewidth= precedent (the `_multiindex_meta`
+    # branch).
+    #
+    # Collision check BEFORE validation (task-6 review, Important finding):
+    # this write runs before either overriding branch, so "alpha" is never
+    # yet a key in mpl_kwargs here -- the brief's literal `"alpha" in
+    # mpl_kwargs` check would always be False at this point and can't be
+    # used. Instead, look ahead using the exact conditions those two
+    # branches themselves gate on (mirrored, not called -- calling them
+    # here would be premature) to decide whether one of them WILL fire and
+    # overwrite alpha further down. When one will, a bad user alpha=
+    # (wrong length, non-numeric, out of range) must not raise here: the
+    # value is about to be discarded (with a warning, from the branch that
+    # wins) regardless of whether it was valid, exactly as it was silently
+    # discarded pre-1.1 -- raising here instead would change the meaning of
+    # an existing call (a regression caught in review). The nested-list arm
+    # mirrors `elif nested_groups is not None and color is None and colors
+    # is None:` (plot.py, below) plus its own `if any(d != min_depth ...)`
+    # guard, AND the fact that it only runs when neither of the two earlier
+    # `elif` arms in that chain (cluster/n_clusters, hue) claims the input
+    # first.
+    _alpha_overridden_internally = (
+        _multiindex_meta is not None
+        or (nested_groups is not None and color is None and colors is None
+            and cluster is None and n_clusters is None and hue is None
+            and any(d != min(nested_depths) for d in nested_depths))
+    )
+    if alpha is not None and not _alpha_overridden_internally:
         mpl_kwargs["alpha"] = _validate_alpha(alpha, len(xform))
 
     # reduce data to <=3 dims for DISPLAY. `analyze` above already applied
