@@ -421,26 +421,56 @@ def _validate_labels_length(labels, dataset_lengths):
             "points that should not be labeled).")
 
 
+#: Resolved animate modes for which a per-dataset `title=` sequence means
+#: "name each segment while it is the one being shown".
+_SERIAL_TITLE_STYLES = ('serial', 'morph')
+
+
 def _validate_title(title, style=None, order=None, n_datasets=None):
-    """`title=` is a single string for the whole figure.
+    """`title=` is one string for the whole figure, or -- for serial-style
+    animations -- one string per dataset, shown while that dataset is the
+    one being revealed (and blanked through morph transitions, so only
+    fully formed clouds are named).
 
     A list/tuple used to be silently stringified onto the axes (a caller
     passing one title per dataset got the literal text "['a', 'b', 'c']"
-    drawn on their figure). Reject anything that is not a string so the
-    mistake is visible, and point at the kwargs that ARE per-dataset.
+    drawn on their figure) before per-dataset titles existed at all; a
+    non-serial-style list still gets exactly that TypeError today, and so
+    does any non-list/tuple type regardless of style (plan 1.1 Task 8 widens
+    WHAT is accepted, but never lets a non-sequence -- e.g. a dict --
+    silently iterate into a garbage one-entry title list).
 
-    Returns None for the scalar/None forms. Task 8 of the 1.1 animation-core
-    plan widens this to return a list of per-segment titles for serial-style
-    animations; `style`/`order`/`n_datasets` are accepted (and ignored) from
-    the start so that widening never changes the signature or its call site.
+    `style` is the raw (pre-`_resolve_animate_mode`) or resolved `animate=`
+    value -- `_raw_animate_style` normalizes either. `order` is the raw or
+    resolved `order=` value. The FIRST call (fail-fast, before the
+    analyze/reduce pipeline) passes the raw values, which is enough for the
+    type check; the SECOND call (once `len(xform)` -- the FINAL, post
+    cluster/hue-reshape dataset count -- is known, beside
+    `_resolve_animate_mode`) passes the resolved values and performs the
+    length check below.
+
+    Returns None for the scalar/None forms, or a list of `n_datasets`
+    per-segment strings.
     """
     if title is None or isinstance(title, str):
         return None
-    raise TypeError(
-        f"title must be a string (or None), not {type(title).__name__}. "
-        "For a per-dataset legend entry use names=; for a per-observation "
-        "annotation use labels=."
-    )
+    serial_style = (_raw_animate_style(style) in _SERIAL_TITLE_STYLES
+                    or order == 'serial')
+    if not serial_style or not isinstance(title, (list, tuple)):
+        raise TypeError(
+            f"title must be a string (or None), not {type(title).__name__}. "
+            "Per-dataset titles are only meaningful for serial-style "
+            "animations (order='serial' or animate='morph'), and must be a "
+            "list/tuple there. For a per-dataset legend entry use names=; "
+            "for a per-observation annotation use labels=."
+        )
+    titles = [str(t) for t in title]
+    if n_datasets is not None and len(titles) != n_datasets:
+        raise ValueError(
+            f"title has {len(titles)} entries but there are {n_datasets} "
+            "datasets to plot; pass a single string for a fixed title, or "
+            "one string per dataset.")
+    return titles
 
 
 def _validate_alpha(alpha, n_datasets):
@@ -1143,12 +1173,18 @@ def plot(
         requested with no color mapping available at all (e.g. a single
         dataset with no `hue`/`cluster`). Default None (no colorbar).
 
-    title : str
-        A title for the plot. Must be a string; passing a list, tuple, int
-        or dict raises ``TypeError`` (it used to be stringified onto the
-        axes). Use ``names=`` for per-dataset legend entries, or ``labels=``
-        for per-observation annotations. See ``order='serial'`` for
-        per-segment titles during serial-style animations.
+    title : str or list of str
+        A title for the plot. Normally a single string. For serial-style
+        animations (``order='serial'``, ``animate='serial'`` or
+        ``animate='morph'``) you may pass one string per dataset: each is
+        shown while its dataset is the one being revealed, and morph
+        TRANSITIONS show a blank title so only fully-formed clouds are
+        named (a hold and a transition both progress 0 -> 1, so the
+        distinction is the segment itself, not how far through it you
+        are). Anywhere else a non-string raises ``TypeError``: use
+        ``names=`` for per-dataset legend entries, or ``labels=`` for
+        per-observation annotations. Rendered identically on the
+        matplotlib and plotly backends.
 
     font : None, str, or matplotlib.font_manager.FontProperties
         Controls the font used for every text surface hypertools draws,
@@ -2516,8 +2552,12 @@ def plot(
     # precedent _validate_extra_kwargs sets) and before resolve_font() and the
     # plot_stream() return both consume it. Cited by SYMBOL, not line number:
     # tasks later in this plan add code above these, and stale line citations
-    # have misdirected readers six times in this project.
-    _validate_title(title, style=animate)
+    # have misdirected readers six times in this project. Passes the RAW
+    # order= (not yet `_resolve_order`'d): a serial-style `title=` LIST needs
+    # only that raw value to pass this early TYPE check (`n_datasets` isn't
+    # known yet, so the length check is deferred to the second call, beside
+    # `_resolve_animate_mode`, once `len(xform)` exists -- plan 1.1 Task 8).
+    _segment_titles = _validate_title(title, style=animate, order=order)
 
     # fail-fast on order= (same precedent as title= above): it depends only
     # on the raw animate= argument (via `_raw_animate_style`), never on
@@ -4082,6 +4122,24 @@ def plot(
     # surface_list/density_list above.
     animate, morph_tags, order = _resolve_animate_mode(animate, len(xform),
                                                         order=_resolved_order)
+
+    # title= per-segment sequence (plan 1.1 Task 8): re-validate/resolve now
+    # that `len(xform)` (the FINAL, post cluster/hue-reshape dataset count)
+    # and the FOLDED `animate`/`order` are both known -- the fail-fast call
+    # above only confirmed title='s TYPE. `_segment_titles` is None for
+    # every scalar/None title (the overwhelmingly common case); otherwise a
+    # list of `len(xform)` per-dataset strings, and the STATIC axes title is
+    # cleared (it is driven per frame instead, by `_make_title_updater`
+    # below, through the SAME `_frame_hooks` registry Task 7 built for
+    # `on_frame=`). See `_make_title_updater` for why segment PARITY
+    # (`ctx.segment_kind`), never `ctx.current_fraction`, is the
+    # hold/transition discriminator -- both sweep 0->1 over their own
+    # segment, so a fraction alone cannot tell them apart.
+    _segment_titles = _validate_title(title, style=animate, order=order,
+                                      n_datasets=len(xform))
+    if _segment_titles is not None:
+        title = None      # the axes title is driven per frame, not statically
+
     # round17 #9 (GH #123): animate='morph' now supports 2-D as well as
     # 3-D data, matching every other animate style -- only 1-D (and any
     # higher-than-3-D result, which `plot.py` never actually produces for
@@ -4716,6 +4774,7 @@ def plot(
             ylabel=ylabel,
             zlabel=zlabel,
             frame_hooks=_frame_hooks,
+            segment_titles=_segment_titles,
         )
         ax = None
         data = xform
@@ -4911,6 +4970,14 @@ def plot(
                     return result
 
                 line_ani._func = _hyp_frame_with_hooks
+
+            # title= per-segment sequence (plan 1.1 Task 8): registered on
+            # the SAME `_frame_hooks` registry as `on_frame=` (added last
+            # above, so this callback also only ever sees final artists --
+            # though it touches the title, not the artists, so ordering
+            # relative to `on_frame=`'s own callbacks does not matter).
+            if _segment_titles is not None and line_ani is not None:
+                _frame_hooks.add(_make_title_updater(_segment_titles, ax))
 
             # tighten layout (static plots only: animated axes are given
             # the full canvas so rotating zoomed cubes don't clip, and
@@ -5606,6 +5673,27 @@ def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list):
             coll = LineCollection(segments, colors=seg_colors,
                                   linewidths=lw)
             ax.add_collection(coll)
+
+
+def _make_title_updater(titles, axes):
+    """Set the axes title from the frame context (plan 1.1 Task 8).
+
+    Morph transitions are blanked so only fully-formed clouds are named. The
+    discriminator is `segment_kind` (from `morph.frame_to_segment`'s segment
+    PARITY), never `current_fraction`: holds and transitions both sweep
+    0->1 over their own segment, so a fraction cannot tell them apart. For
+    non-morph serial reveals `segment_kind` is always None, so every frame
+    falls through to the `current_index` branch below.
+    """
+    def _update(ctx):
+        if ctx.segment_kind == 'transition':
+            axes.set_title('')
+            return
+        idx = ctx.current_index
+        if idx is None:
+            return
+        axes.set_title(titles[min(idx, len(titles) - 1)])
+    return _update
 
 
 def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,

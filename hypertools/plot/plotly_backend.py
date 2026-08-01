@@ -467,7 +467,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 density=None, density_colors=None,
                 morph_tags=None, morph_colors=None, morph_samples=None,
                 font=None, font_extra=None, label_alpha=0.5, xlabel=None,
-                ylabel=None, zlabel=None, antialias=True, frame_hooks=None):
+                ylabel=None, zlabel=None, antialias=True, frame_hooks=None,
+                segment_titles=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -571,6 +572,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         callback immediately before that frame is appended to
         `fig.frames` -- see `_add_animation`'s docstring. `None` (the
         default) when no `on_frame=` was requested.
+    segment_titles : list of str or None
+        Per-segment titles for serial-style animations (`_validate_title`'s
+        resolved list, plan 1.1 Task 8) -- `None` for every static or
+        scalar-title plot (the overwhelmingly common case). Threaded
+        straight through to `_add_animation`, which sets each frame's
+        `layout.title` from the SAME hold/transition rule the matplotlib
+        backend's `_make_title_updater` uses (segment PARITY, never a
+        fraction) -- see `_add_animation`'s docstring.
 
     `antialias` (see `plot`'s `antialias=`): DRAW-TIME line smoothing, at
     parity with `matplotlib_backend._draw`'s identical option. Each
@@ -1318,7 +1327,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        morph_mesh_trace_start=morph_mesh_trace_start_3d,
                        morph_surface_spec=morph_surface_spec_3d,
                        morph_sampled=sampled0, morph_dup_masks=dup_masks0,
-                       aa_curves=aa_curves, frame_hooks=frame_hooks)
+                       aa_curves=aa_curves, frame_hooks=frame_hooks,
+                       segment_titles=segment_titles)
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
@@ -2548,7 +2558,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    morph_trace_start=None, morph_mesh_trace_start=None,
                    morph_surface_spec=None, surface_point_colors=None,
                    morph_sampled=None, morph_dup_masks=None, aa_curves=None,
-                   frame_hooks=None):
+                   frame_hooks=None, segment_titles=None):
     """Attach frames + play controls: 'spin' rotates the camera; True /
     'parallel' reveals trajectories through a sliding time window; 'morph'
     eases the single traveling point-cloud trace (+ mesh, if surfaced)
@@ -2630,6 +2640,17 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     `go.Frame` that stores it (mutating afterward would be silently
     dropped). `None` (the default) short-circuits every one of these
     blocks to a no-op via `FrameHooks.dispatch`'s own guard.
+
+    `segment_titles` (plan 1.1 Task 8, `title=` as a per-dataset sequence
+    for serial-style animations): only the `'morph'` and `'serial'`
+    branches below set a per-frame `layout.title` from it -- `'spin'` and
+    the trailing `else:` (parallel/window) never receive a non-`None` value
+    here, because `_validate_title` rejects a `title=` list for those
+    styles long before `plotly_draw` is even called. Each branch derives
+    its OWN segment/dataset index from data it already has in hand
+    (`seg_idx` in `'morph'`, `serial_current_index` over the already-built
+    `_shown`/`lengths` in `'serial'`) rather than sharing state with the
+    `frame_hooks` block below it, since either may run without the other.
     """
     import plotly.graph_objects as go
 
@@ -2878,6 +2899,19 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             if ndims >= 3:
                 frame_kwargs['layout'] = dict(scene_camera=dict(
                     eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
+            if segment_titles is not None:
+                # segment PARITY discriminates hold vs. transition, never a
+                # fraction (both sweep 0->1 over their own segment) -- the
+                # same rule `_make_title_updater` uses on the matplotlib
+                # backend, applied here via `seg_idx % 2` directly since
+                # this branch already has it in hand. `.setdefault` (not a
+                # plain assignment) so this does not clobber the
+                # scene_camera layout key the ndims>=3 block above may have
+                # just set, and is not clobbered by it either.
+                _text = ('' if seg_idx % 2 else
+                         segment_titles[min(seg_idx // 2,
+                                            len(segment_titles) - 1)])
+                frame_kwargs.setdefault('layout', {})['title'] = dict(text=_text)
             if frame_hooks is not None:
                 frame_hooks.record(
                     frame=k, n_frames=n_frames, artists=tuple(frame_traces),
@@ -3003,6 +3037,19 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                                             window_colors_by_index))
                 frame_kwargs['traces'] = (list(frame_kwargs['traces'])
                                           + surface_trace_indices)
+            if segment_titles is not None:
+                # `_shown`/`lengths` are ALREADY built above (one entry per
+                # dataset, from the per-idx loop just above) -- reused here
+                # rather than re-derived, same as `lengths`/`starts`
+                # themselves are never re-derived from `data` a second time
+                # anywhere in this branch. `.setdefault` (not a plain
+                # assignment) so a 3-D scene_camera layout set by the
+                # ndims>=3 block above is preserved, not clobbered.
+                from .matplotlib_backend import serial_current_index
+                _title_idx, _ = serial_current_index(_shown, lengths)
+                frame_kwargs.setdefault('layout', {})['title'] = dict(
+                    text=segment_titles[min(_title_idx,
+                                            len(segment_titles) - 1)])
             if frame_hooks is not None:
                 from .matplotlib_backend import serial_current_index
                 _idx, _frac = serial_current_index(_shown, lengths)
