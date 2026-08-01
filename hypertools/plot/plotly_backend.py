@@ -579,7 +579,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         straight through to `_add_animation`, which sets each frame's
         `layout.title` from the SAME hold/transition rule the matplotlib
         backend's `_make_title_updater` uses (segment PARITY, never a
-        fraction) -- see `_add_animation`'s docstring.
+        fraction) -- see `_add_animation`'s docstring. Also reserves the
+        same top `margin` a scalar `title=` would (task-8 review, margin
+        finding) -- `title` itself is None here (the static title text is
+        never drawn), but a per-frame title still renders on every hold
+        frame and needs the same vertical room or it clips at the canvas
+        top edge; see the `margin=` local below.
 
     `antialias` (see `plot`'s `antialias=`): DRAW-TIME line smoothing, at
     parity with `matplotlib_backend._draw`'s identical option. Each
@@ -1224,11 +1229,26 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         explicit=font.get_name() if font is not None else None,
         extra=font_extra)
 
+    # t=40 reserves room for a title; t=10 assumes no title will ever be
+    # drawn. `segment_titles` (plan 1.1 Task 8) must ALSO trigger the wider
+    # margin: `plot.py` nulls the static `title` for segment-titled
+    # serial/morph animations (the title is drawn PER FRAME instead, by the
+    # 'morph'/'serial' branches of `_add_animation`, below), but a title
+    # still renders on every hold frame -- keying this off `title` alone
+    # left those figures at the "no title" t=10 margin even though most
+    # frames DO show one (task-8 review, margin finding: measured via a
+    # real kaleido PNG render of the first hold frame -- ink starting at
+    # canvas row 0 of a 480px-tall render at t=10 (clipped), vs. row 6+ at
+    # t=40 (clean); reproduced in
+    # tests/plot/test_serial_titles.py). This only reserves the SPACE a
+    # per-frame title will use -- it does not un-null `title` itself, so no
+    # stray static title is drawn (see `if title is not None:` below).
     layout = dict(
         paper_bgcolor='white',
         plot_bgcolor='white',
         showlegend=legend is not None,
-        margin=dict(l=10, r=margin_r, t=40 if title else 10, b=10),
+        margin=dict(l=10, r=margin_r,
+                    t=40 if (title or segment_titles) else 10, b=10),
         legend=dict(bgcolor='rgba(255,255,255,0.8)',
                     x=1.02, y=0.5, xanchor='left', yanchor='middle'),
         # layout.font is plotly's inherited default for every text surface
@@ -2646,11 +2666,16 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     branches below set a per-frame `layout.title` from it -- `'spin'` and
     the trailing `else:` (parallel/window) never receive a non-`None` value
     here, because `_validate_title` rejects a `title=` list for those
-    styles long before `plotly_draw` is even called. Each branch derives
-    its OWN segment/dataset index from data it already has in hand
-    (`seg_idx` in `'morph'`, `serial_current_index` over the already-built
-    `_shown`/`lengths` in `'serial'`) rather than sharing state with the
-    `frame_hooks` block below it, since either may run without the other.
+    styles long before `plotly_draw` is even called. The `'morph'` branch
+    derives its own segment index from data it already has in hand
+    (`seg_idx`) independently of the `frame_hooks` block below it, since
+    either may run without the other. The `'serial'` branch instead calls
+    `serial_current_index` over the already-built `_shown`/`lengths` AT
+    MOST ONCE per frame and shares the result between its `segment_titles`
+    and `frame_hooks` consumers (task-8 review, minor finding: these used
+    to each call it separately with identical arguments -- byte-identical,
+    purely duplicate work) -- guarded so the call itself is still skipped
+    entirely when neither consumer is active.
     """
     import plotly.graph_objects as go
 
@@ -3037,26 +3062,33 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                                             window_colors_by_index))
                 frame_kwargs['traces'] = (list(frame_kwargs['traces'])
                                           + surface_trace_indices)
-            if segment_titles is not None:
-                # `_shown`/`lengths` are ALREADY built above (one entry per
-                # dataset, from the per-idx loop just above) -- reused here
-                # rather than re-derived, same as `lengths`/`starts`
-                # themselves are never re-derived from `data` a second time
-                # anywhere in this branch. `.setdefault` (not a plain
-                # assignment) so a 3-D scene_camera layout set by the
-                # ndims>=3 block above is preserved, not clobbered.
+            # `_shown`/`lengths` are ALREADY built above (one entry per
+            # dataset, from the per-idx loop just above) -- reused here
+            # rather than re-derived, same as `lengths`/`starts` themselves
+            # are never re-derived from `data` a second time anywhere in
+            # this branch. Computed AT MOST ONCE per frame and shared
+            # between the `segment_titles`/`frame_hooks` consumers below
+            # (task-8 review, minor finding: these used to each call
+            # `serial_current_index` separately with the identical
+            # `(_shown, lengths)` arguments -- byte-identical results, so
+            # purely duplicate work).
+            _serial_idx = _serial_frac = None
+            if segment_titles is not None or frame_hooks is not None:
                 from .matplotlib_backend import serial_current_index
-                _title_idx, _ = serial_current_index(_shown, lengths)
+                _serial_idx, _serial_frac = serial_current_index(_shown,
+                                                                  lengths)
+            if segment_titles is not None:
+                # `.setdefault` (not a plain assignment) so a 3-D
+                # scene_camera layout set by the ndims>=3 block above is
+                # preserved, not clobbered.
                 frame_kwargs.setdefault('layout', {})['title'] = dict(
-                    text=segment_titles[min(_title_idx,
+                    text=segment_titles[min(_serial_idx,
                                             len(segment_titles) - 1)])
             if frame_hooks is not None:
-                from .matplotlib_backend import serial_current_index
-                _idx, _frac = serial_current_index(_shown, lengths)
                 frame_hooks.record(
                     frame=k, n_frames=n_frames, artists=tuple(frame_traces),
                     datasets=tuple(data), style='serial', order='serial',
-                    current_index=_idx, current_fraction=_frac,
+                    current_index=_serial_idx, current_fraction=_serial_frac,
                     revealed_counts=tuple(_shown))
                 frame_hooks.dispatch(fig, None)
             frames.append(go.Frame(**frame_kwargs))

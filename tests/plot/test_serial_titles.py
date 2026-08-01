@@ -172,3 +172,146 @@ def test_serial_titles_compose_with_chemtrails():
                         duration=4, frame_rate=4, show=False)
     seen = _titles_over(ani, fig, 16)
     assert seen[0] == 'first' and 'third' in seen
+
+
+# --- plotly top margin (task-8 review, "MARGIN CONCERN: FUNCTIONAL DEFECT")-
+#
+# `plotly_backend.py`'s figure-level top margin used to key off the STATIC
+# `title` alone (`t=40 if title else 10`). `plot.py` nulls `title` for
+# segment-titled serial/morph animations -- the title is drawn PER FRAME
+# instead (see the 'morph'/'serial' branches of `_add_animation`) -- so
+# every one of these figures fell back to the "no title" t=10 margin even
+# though a title renders on most frames. A real kaleido render proved that
+# clips the title text at the canvas top edge (see the pixel-level test
+# below); these layout-margin checks would all FAIL under the pre-fix rule,
+# which produced t=10 for a segment-titled animation.
+
+def test_segment_titled_serial_animation_reserves_the_title_margin():
+    pytest.importorskip('plotly')
+    hyp.set_interactive_backend('plotly')
+    try:
+        fig = hyp.plot(_datasets(), '-', animate=True, order='serial',
+                       title=['first', 'second', 'third'],
+                       duration=4, frame_rate=4, show=False)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+    assert fig.layout.margin.t == 40, (
+        "a segment-titled plotly animation must reserve the SAME top "
+        "margin as a statically-titled figure -- a per-frame title still "
+        "renders on every hold frame even though the static `title` is "
+        "None")
+
+
+def test_segment_titled_margin_matches_a_scalar_titled_margin():
+    """Not just non-default -- the reserved margin must match a plain
+    scalar-titled figure's, since both draw an identical 12pt title."""
+    pytest.importorskip('plotly')
+    hyp.set_interactive_backend('plotly')
+    try:
+        scalar = hyp.plot(_datasets(), '-', animate=True, order='serial',
+                          title='constant', duration=4, frame_rate=4,
+                          show=False)
+        segment = hyp.plot(_datasets(), '-', animate=True, order='serial',
+                           title=['first', 'second', 'third'],
+                           duration=4, frame_rate=4, show=False)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+    assert segment.layout.margin.t == scalar.layout.margin.t == 40
+
+
+def test_titleless_serial_animation_keeps_the_smaller_margin():
+    """Regression guard on the fix itself: it must key off whether a
+    per-frame title will actually be drawn (`segment_titles`), not just
+    reserve a title margin for every serial-style animation regardless of
+    whether `title=` was ever passed."""
+    pytest.importorskip('plotly')
+    hyp.set_interactive_backend('plotly')
+    try:
+        fig = hyp.plot(_datasets(), '-', animate=True, order='serial',
+                       duration=4, frame_rate=4, show=False)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+    assert fig.layout.margin.t == 10
+
+
+def test_segment_titled_hold_frame_title_is_not_clipped_at_canvas_top(
+        tmp_path):
+    """Real kaleido PNG evidence, not just a layout-dict assertion (task-8
+    review: "a layout-dict assertion alone does not prove the pixels").
+
+    `_frame_snapshots` is the same helper the real GIF/video export path
+    (`_export_animation_file`) uses to turn one animation frame into a
+    static, standalone `go.Figure` -- applying it to frame 0 of a serial
+    reveal gives the first HOLD frame, titled 'first' (nothing has been
+    revealed yet, so `serial_current_index` picks dataset 0; see
+    `test_title_list_tracks_the_revealed_dataset` above). Rendering that
+    snapshot for real and inspecting the actual pixels is the only way to
+    prove the title text isn't cut off.
+
+    Measured concretely (this file's fix pass): at the pre-fix t=10 margin,
+    row 0 of the rendered 640x480 canvas already contained dark ink (min
+    RGB channel value 42 -- the title glyphs start being drawn AT the
+    canvas edge, i.e. clipped). With the margin reserved (t=40, this test),
+    row 0 is clean background (min channel value 255) and the title's ink
+    only begins at row 6, safely inside the canvas.
+    """
+    pytest.importorskip('plotly')
+    from PIL import Image
+
+    from hypertools.plot.plotly_backend import _frame_snapshots
+
+    hyp.set_interactive_backend('plotly')
+    try:
+        fig = hyp.plot(_datasets(), '-', animate=True, order='serial',
+                       title=['first', 'second', 'third'],
+                       duration=4, frame_rate=4, show=False)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+
+    snapshot = next(iter(_frame_snapshots(fig)))
+    assert snapshot.layout.title.text == 'first', (
+        'sanity check: this must be the real titled hold frame (frame 0), '
+        'not an untitled one -- otherwise the pixel check below would '
+        'trivially pass for the wrong reason')
+
+    png_path = str(tmp_path / 'hold_frame.png')
+    snapshot.write_image(png_path, width=640, height=480)
+    arr = np.asarray(Image.open(png_path).convert('RGB'))
+
+    assert arr[0].min() >= 250, (
+        f"canvas row 0 contains ink (min RGB channel value "
+        f"{arr[0].min()}) -- the hold-frame title text is being clipped "
+        "at the canvas top edge instead of sitting inside the reserved "
+        "top margin")
+    # and the title text must actually be drawn SOMEWHERE in that reserved
+    # band -- otherwise a "fix" that reserved the margin but silently
+    # stopped drawing the per-frame title would also pass the check above,
+    # for the wrong reason
+    top_band = arr[:40]
+    assert top_band.min() < 250, (
+        "no ink anywhere in the reserved top-margin band (rows 0-39) -- "
+        "the hold-frame title does not appear to be rendering at all")
+
+
+def test_plotly_title_and_on_frame_stay_in_sync():
+    """Task-8 review, minor finding: the plotly 'serial' branch used to call
+    `serial_current_index(_shown, lengths)` separately for `segment_titles`
+    and for `frame_hooks` -- same arguments, byte-identical results, so
+    purely duplicate work -- now computed once and shared. This locks in
+    that the two consumers still agree post-dedup, on the PLOTLY backend
+    specifically: the existing matplotlib-only version of this check
+    (`test_title_list_matches_the_published_current_index` above) never
+    exercised the plotly code path this finding was about."""
+    pytest.importorskip('plotly')
+    names = ['first', 'second', 'third']
+    seen_ctx = []
+    hyp.set_interactive_backend('plotly')
+    try:
+        fig = hyp.plot(_datasets(), '-', animate=True, order='serial',
+                       title=names, duration=4, frame_rate=4,
+                       on_frame=seen_ctx.append, show=False)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+    titles = [f.layout.title.text for f in fig.frames]
+    assert len(seen_ctx) == len(fig.frames) > 0
+    assert [names[c.current_index] for c in seen_ctx] == titles
