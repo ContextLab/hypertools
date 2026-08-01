@@ -69,6 +69,12 @@ class TestExtraKwargsPassthroughMatplotlib:
             assert on1 == pytest.approx(2 * off1)
 
     def test_alpha_kwarg_reaches_line_artists(self):
+        # alpha= became a first-class named parameter in 1.1 (see
+        # plot()'s `alpha` and `_validate_alpha` in hypertools/plot/
+        # plot.py) rather than a generic **kwargs passthrough value; this
+        # test now guards the scalar case via that named-parameter path
+        # (see tests/plot/test_per_dataset_alpha.py for the per-dataset
+        # list form and its precedence rules).
         data = _two_datasets(2)
         fig = hyp.plot(data, alpha=0.42, show=False)
         lines = fig.axes[0].get_lines()

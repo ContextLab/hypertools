@@ -66,13 +66,16 @@ def _apply_extra_kwargs(kwargs_list, extra):
     wrong for a kwarg whose natural value just happens to be tuple/list
     shaped. Callers needing genuine PER-DATASET control over an arbitrary
     property can already reach for the dedicated, per-dataset-aware kwargs
-    (`color`/`marker`/`linestyle`/`markersize`/`linewidth`).
+    (`color`/`marker`/`linestyle`/`markersize`/`linewidth`/`alpha`).
 
     A key already present in a given dataset's dict (set by a named
-    parameter, e.g. `color=`, or by internal styling logic, e.g.
-    MultiIndex/mixture-cluster `alpha`, `legend=`'s `label`, `explore=`'s
-    `picker`) is left untouched -- named/internal styling always wins over
-    a same-named extra kwarg.
+    parameter, e.g. `color=` or `alpha=`, or by internal styling logic,
+    e.g. MultiIndex grouping's `color`/`linewidth`/`alpha`, `legend=`'s
+    `label`, `explore=`'s `picker`) is left untouched -- named/internal
+    styling always wins over a same-named extra kwarg. `alpha` was itself
+    a generic extra kwarg before 1.1; now that it is a named parameter, it
+    can never appear in `extra` at all (Python binds `alpha=` to the
+    parameter before `**kwargs` is assembled).
     """
     if not extra:
         return
@@ -246,14 +249,15 @@ def _expand_styles_to_runs(fmt, mpl_kwargs, seg_dataset, n_datasets):
     Contiguous-run segmentation turns N input datasets into >= N drawn runs,
     so a caller's per-dataset style list (`fmt` plus the NAMED styling kwargs
     that reach `mpl_kwargs` -- ``color``/``marker``/``linestyle``/
-    ``markersize``/``linewidth``) would otherwise fail the later one-value-
-    per-trace length checks. Any such list/tuple whose length equals the
-    INPUT-dataset count is expanded to run length by repeating each dataset's
-    value across the runs it produced; a list already at run length is left
-    untouched (explicit per-run styling). Generic ``**kwargs`` passthrough
-    values (e.g. ``alpha=``) never reach `mpl_kwargs` -- they are applied
-    verbatim per trace, never broadcast -- so they are unaffected here.
-    Returns the (possibly expanded) `fmt`; mutates `mpl_kwargs` in place.
+    ``markersize``/``linewidth``/``alpha``) would otherwise fail the later
+    one-value-per-trace length checks. Any such list/tuple whose length
+    equals the INPUT-dataset count is expanded to run length by repeating
+    each dataset's value across the runs it produced; a list already at run
+    length is left untouched (explicit per-run styling). ``alpha`` joined
+    this set in 1.1 (it used to be a generic ``**kwargs`` passthrough
+    applied verbatim per trace); any REMAINING generic passthrough value
+    still never reaches `mpl_kwargs` and is unaffected here. Returns the
+    (possibly expanded) `fmt`; mutates `mpl_kwargs` in place.
 
     `seg_dataset` gives each run's source-dataset index. When there is one
     run per dataset (``len(seg_dataset) == n_datasets``) the two layouts
@@ -436,6 +440,42 @@ def _validate_title(title, style=None, order=None, n_datasets=None):
         "For a per-dataset legend entry use names=; for a per-observation "
         "annotation use labels=."
     )
+
+
+def _validate_alpha(alpha, n_datasets):
+    """`alpha=` is a scalar applied to every dataset, or one value per
+    dataset. Returns a list of `n_datasets` floats, or None.
+
+    Promoted out of the GH #206 `**kwargs` passthrough (where a list raised
+    matplotlib's bare "alpha must be numeric or None") so callers can fade
+    backdrops behind a highlighted dataset without re-applying `set_alpha`
+    on every frame. `n_datasets` is the dataset count at the CALL SITE --
+    the INPUT dataset count when called before cluster/hue-reshape (see the
+    call beside `linewidth`'s own `mpl_kwargs` write, above), so that a
+    per-dataset list is left at INPUT-dataset length for
+    `_expand_styles_to_runs` (plot.py, which see) to widen to run length
+    exactly like `color`/`linewidth` already are.
+    """
+    if alpha is None:
+        return None
+    values = [alpha] if np.isscalar(alpha) else list(alpha)
+    try:
+        values = [float(a) for a in values]
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"alpha must be a number, or one number per dataset; got "
+            f"{alpha!r}.") from None
+    if len(values) == 1:
+        values = values * n_datasets
+    if len(values) != n_datasets:
+        raise ValueError(
+            f"alpha has {len(values)} entries but there are {n_datasets} "
+            "datasets to plot; pass a single value to apply it to every "
+            "dataset, or one value per dataset.")
+    for a in values:
+        if not (0.0 <= a <= 1.0):
+            raise ValueError(f"alpha values must be between 0 and 1; got {a}.")
+    return values
 
 
 def _valid_line2d_kwargs():
@@ -660,6 +700,7 @@ def plot(
     markers=None,
     markersize=None,
     linewidth=None,
+    alpha=None,
     linestyle=None,
     linestyles=None,
     color=None,
@@ -888,26 +929,34 @@ def plot(
         Width of plotted lines in points (default: matplotlib's 1.5 for
         static plots, 1 for animations). Applies to both backends.
 
+    alpha : float or list of float, optional
+        Opacity in [0, 1], either one value for every dataset or one value
+        per dataset (e.g. ``alpha=[0.1, 0.1, 1.0]`` to fade two backdrops
+        behind a highlighted third). Inputs that assign alpha internally --
+        a row MultiIndex (per-level fading) or a nested list with varying
+        nesting depth (per-depth fading) -- keep their own values and warn
+        that ``alpha=`` was ignored, rather than silently dropping it.
+
     color(s) : str or list of str
         A list of colors
 
     **kwargs : any other matplotlib-style keyword argument
         GH #206: any keyword argument that isn't one of `plot()`'s own
         named parameters above is passed straight through to each drawn
-        artist -- e.g. `zorder=3`, `alpha=0.5`, `dashes=(4, 2)`,
-        `markeredgecolor='k'`. Applied VERBATIM, identically, to every
-        drawn dataset -- unlike `color`/`marker`/`linestyle`/etc. (see
-        below), an extra kwarg's value is NEVER interpreted as "one entry
-        per dataset" even if it happens to be a list/tuple (e.g.
-        `dashes=(4, 2)` is a single dash-pattern VALUE, not per-dataset
-        values `4` and `2`) -- so there is no per-dataset form for an
-        extra kwarg; use one of the dedicated per-dataset-aware kwargs
-        (`color`/`marker`/`linestyle`/`markersize`/`linewidth`) for that.
+        artist -- e.g. `zorder=3`, `dashes=(4, 2)`, `markeredgecolor='k'`.
+        Applied VERBATIM, identically, to every drawn dataset -- unlike
+        `color`/`marker`/`linestyle`/etc. (see below), an extra kwarg's
+        value is NEVER interpreted as "one entry per dataset" even if it
+        happens to be a list/tuple (e.g. `dashes=(4, 2)` is a single
+        dash-pattern VALUE, not per-dataset values `4` and `2`) -- so there
+        is no per-dataset form for an extra kwarg; use one of the dedicated
+        per-dataset-aware kwargs (`color`/`marker`/`linestyle`/
+        `markersize`/`linewidth`/`alpha`) for that.
         Merged in AFTER the named style kwargs are resolved, so an
-        explicit named kwarg (or internal styling logic, e.g. MultiIndex/
-        mixture-cluster `alpha`, `legend=`'s `label`, `explore=`'s
-        `picker`) always wins on a naming collision. A kwarg that no
-        backend can use (not a matplotlib line-artist property or alias,
+        explicit named kwarg (or internal styling logic, e.g. MultiIndex
+        grouping's `color`/`linewidth`/`alpha`, `legend=`'s `label`,
+        `explore=`'s `picker`) always wins on a naming collision. A kwarg
+        that no backend can use (not a matplotlib line-artist property or alias,
         nor a plotly-mappable name) raises ``TypeError`` naming it -- with
         a did-you-mean hint for near-misses of plot's own parameters
         (e.g. ``n_dims`` -> ``ndims``) -- BEFORE the pipeline runs, rather
@@ -923,13 +972,13 @@ def plot(
 
         Every list/tuple-valued NAMED styling kwarg `plot()` itself
         broadcasts (`color`/`colors`, `marker`/`markers`, `linestyle`/
-        `linestyles`, `linewidth`, `markersize` -- NOT the generic `**kwargs`
-        passthrough above, which is applied verbatim and never broadcast, so
-        `alpha=`, `zorder=`, etc. must be a single value) is distributed
-        one-entry-per-DRAWN-TRACE and its length is validated against the
-        FINAL drawn-trace count (GH #206); a mismatch raises a ``ValueError``
-        naming the kwarg, the length given, and that count (previously it
-        silently degraded to `None` for every trace).
+        `linestyles`, `linewidth`, `markersize`, `alpha` -- NOT the generic
+        `**kwargs` passthrough above, which is applied verbatim and never
+        broadcast, so `zorder=`, `dashes=`, etc. must be a single value) is
+        distributed one-entry-per-DRAWN-TRACE and its length is validated
+        against the FINAL drawn-trace count (GH #206); a mismatch raises a
+        ``ValueError`` naming the kwarg, the length given, and that count
+        (previously it silently degraded to `None` for every trace).
 
         `cluster=`/`hue=`/`n_clusters=`/MultiIndex regroup the data, so the
         final drawn-trace count can differ from the number of INPUT datasets.
@@ -3098,6 +3147,25 @@ def plot(
     if linewidth is not None:
         mpl_kwargs["linewidth"] = linewidth
 
+    # alpha= (1.1): a first-class per-dataset style, promoted out of the
+    # GH #206 `**kwargs` passthrough (where a list raised matplotlib's bare
+    # "alpha must be numeric or None"). Resolved against the INPUT dataset
+    # count and written here, alongside color/linewidth/marker/markersize
+    # above -- NOT beside surface_list/density_list below, which broadcast
+    # against the FINAL (post cluster/hue-reshape) count. Writing it this
+    # early means a per-input-dataset list is still at INPUT-dataset length
+    # when `_expand_styles_to_runs` (see its docstring) runs during hue/
+    # cluster contiguous-run segmentation, so it gets widened to run length
+    # exactly like color/linewidth already are, instead of being
+    # length-checked against a run count it was never sized for. Internal
+    # per-trace alpha (row-MultiIndex level fading, nested-list depth
+    # fading, further below) still wins over this -- the documented rule at
+    # `_apply_extra_kwargs`'s docstring -- and each of those branches warns
+    # before overwriting it, mirroring the MultiIndex branch's existing
+    # linewidth= precedent (the `_multiindex_meta` branch).
+    if alpha is not None:
+        mpl_kwargs["alpha"] = _validate_alpha(alpha, len(xform))
+
     # reduce data to <=3 dims for DISPLAY. `analyze` above already applied
     # the requested reduce= spec; this pass only enforces the display
     # dimensionality (3, or ndims if lower) and is SKIPPED when the data is
@@ -3261,6 +3329,12 @@ def plot(
                 "x has a row MultiIndex (GH #95): MultiIndex grouping "
                 "assigns linewidth by level (leaves=1, thicker per level "
                 "averaged over); ignoring linewidth."
+            , stacklevel=external_stacklevel())
+        if alpha is not None:
+            warnings.warn(
+                "x has a row MultiIndex (GH #95): MultiIndex grouping "
+                "assigns alpha by level (leaves most transparent, "
+                "top-level means fully opaque); ignoring alpha."
             , stacklevel=external_stacklevel())
         xform, _mi_style = build_multiindex_styles(
             xform, _multiindex_meta, palette=palette,
@@ -3840,6 +3914,14 @@ def plot(
             mpl_kwargs["linewidth"] = [
                 max(0.5, 2.0 * (0.7 ** (d - min_depth))) for d in nested_depths
             ]
+            if alpha is not None:
+                warnings.warn(
+                    "x is a nested list with varying nesting depth: depth "
+                    "fading assigns alpha by depth (summary levels "
+                    "opaque, deeper/detail levels fainter); ignoring "
+                    "alpha. Flatten the input if you want to set alpha "
+                    "yourself.",
+                    UserWarning, stacklevel=external_stacklevel())
             mpl_kwargs["alpha"] = [
                 max(0.3, 0.9 ** (d - min_depth)) for d in nested_depths
             ]
@@ -4316,10 +4398,11 @@ def plot(
 
     # GH #206: arbitrary extra matplotlib-style kwargs (anything not one
     # of plot()'s own named parameters, e.g. `zorder=`, `dashes=`,
-    # `alpha=`, `markeredgecolor=`) are merged in AFTER the named/internal
-    # style kwargs above (`_apply_extra_kwargs` never overwrites a key
-    # already set), verbatim -- no per-dataset list broadcasting is
-    # attempted for these (see `_apply_extra_kwargs`'s docstring for why).
+    # `markeredgecolor=`) are merged in AFTER the named/internal style
+    # kwargs above (`_apply_extra_kwargs` never overwrites a key already
+    # set), verbatim -- no per-dataset list broadcasting is attempted for
+    # these (see `_apply_extra_kwargs`'s docstring for why). `alpha=` is a
+    # named parameter as of 1.1, so it never reaches this generic path.
     _apply_extra_kwargs(kwargs_list, kwargs)
 
     def _resolve_dataset_colors():
