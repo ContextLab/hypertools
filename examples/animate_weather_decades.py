@@ -183,11 +183,12 @@ date_labels = pd.date_range(START, periods=min_len, freq='MS')
 # colorbar=False suppress the library's own annotations because this figure
 # draws its own two per-hemisphere colorbars (one colorbar cannot describe two
 # different colormaps).
-fig, ani = hyp.plot(datasets, fmt='-', hue=hue, palette=combined,
-                    colorbar=False, linewidth=lws, animate=True,
-                    chemtrails=True, manip='Smooth', duration=duration,
-                    frame_rate=fps, legend=False, elev=20, azim=-70,
-                    size=(13, 6), show=False)
+anim = hyp.plot(datasets, fmt='-', hue=hue, palette=combined,
+                colorbar=False, linewidth=lws, animate=True,
+                chemtrails=True, manip='Smooth', duration=duration,
+                frame_rate=fps, legend=False, elev=20, azim=-70,
+                size=(13, 6), show=False)
+fig = anim.figure
 ax = [a for a in fig.axes if hasattr(a, 'zaxis')][0]
 ax.set_position([-0.01, 0.03, 0.52, 0.90])       # 3-D view: left half
 
@@ -306,13 +307,17 @@ cbS.set_label('Southern temp (°C)', fontsize=9)
 title = fig.text(0.47, 0.965, '', ha='center', va='top', fontsize=13.5,
                  fontweight='bold', color='#1a1a1a')
 total = int(round(fps * duration))
-_orig = ani._func
 
 
-def _wrapped(frame, *args):
-    result = _orig(frame, *args)
-    # bold means opaque, faint cities receded -- re-applied each frame since the
-    # multicolor updater re-sets per-segment colors (which resets alpha)
+def decorate(ctx):
+    """Per-frame decoration: bold hemisphere means vs. faint cities (the
+    multicolor updater resets per-segment alpha every frame, so it is
+    re-applied here), and the 2nd panel's lockstep reveal + "now" cursor.
+    Registered below via ``anim.on_frame`` -- by the time this runs,
+    hyp.plot() has already drawn the frame, so (unlike the pre-1.1
+    ``ani._func`` monkeypatch this replaces) there is no original updater
+    to call through to, and nothing to return."""
+    frame = ctx.frame
     for k, c in enumerate(heads):
         c.set_alpha(1.0 if k in MEAN_IDX else 0.16)
     for c in trails:
@@ -326,7 +331,6 @@ def _wrapped(frame, *args):
     now_line.set_xdata([idx, idx])
     title.set_text('decades of weather, 6 cities  '
                    f'{date_labels[idx].strftime("%b %Y")}')
-    return result
 
 
-ani._func = _wrapped
+anim.on_frame(decorate)

@@ -25,8 +25,7 @@ from typing import Any, Optional, Tuple
 class FrameContext:
     """State of one drawn animation frame.
 
-    Backend note
-    ------------
+    **Backend note.**
     The same `on_frame` runs on both backends and sees the same values in
     every field below EXCEPT `figure`, `axes` and `artists`, which are
     backend-native: matplotlib `Figure`/`Axes`/artists, or the `go.Figure`
@@ -61,7 +60,7 @@ class FrameContext:
     artists : tuple
         The drawn artists, in dataset order: the head artists first, then
         any trail artists, matching the backend's own bookkeeping.
-        The CONTAINER is always a tuple -- see "Container types" below --
+        The CONTAINER is always a tuple -- see "Notes" below --
         while the artists inside it are the backend's own live objects and
         are meant to be mutated.
         BACKEND-NATIVE: on plotly these are that frame's ``go.Scatter``/
@@ -160,8 +159,8 @@ class FrameContext:
         next) -- the parity rule `morph.morph_positions` implements.
         ``None`` for non-morph animations.
 
-    Container types
-    ---------------
+    Notes
+    -----
     ``artists``, ``datasets`` and ``revealed_counts`` are always TUPLES
     (``revealed_counts`` is ``None`` or a tuple). This is a public
     guarantee, not an accident of whichever branch built the frame.

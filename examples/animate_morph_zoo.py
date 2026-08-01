@@ -11,15 +11,12 @@ following one. HyperTools ships a "shapes zoo" of classic 3-D point clouds
 cached in ``~/hypertools_data`` -- so this example is fully offline and
 deterministic after the first run.
 
-The only thing added on top of the library is a **title that tracks the
-current shape**, driven by hypertools' *own* morph schedule
-(:func:`hypertools.plot.morph.morph_schedule` /
-:func:`hypertools.plot.morph.frame_to_segment`). A morph animation alternates
-"hold" segments (the camera slowly orbits a finished shape) with "transition"
-segments (one shape flowing into the next); we name the shape while holding and
-show nothing mid-transition, so the label never sits over a half-formed cloud,
-reading the segment for the current frame straight out of the same schedule
-``hyp.plot`` uses to render.
+The **title that tracks the current shape** comes straight from the library:
+passing a list of per-shape names as ``title=`` to ``hyp.plot`` is enough. A
+morph animation alternates "hold" segments (the camera slowly orbits a
+finished shape) with "transition" segments (one shape flowing into the next);
+``hyp.plot`` names the shape while holding and shows nothing mid-transition,
+so the label never sits over a half-formed cloud.
 
 To keep the gallery build quick, each shape is capped at 2000 points (the cap
 the morph's point matching then runs on) and the zoo's five shapes are
@@ -32,7 +29,6 @@ morphed; the technique is identical for the full clouds.
 import numpy as np
 
 import hypertools as hyp
-from hypertools.plot import morph as _morph
 
 
 def normalize(points):
@@ -91,38 +87,10 @@ titles = TITLES + [TITLES[0]]
 rotations = [0.75] + [0.5, 1.0] * (len(SHAPES) - 1) + [0.5, 0.75]
 duration, fps = 12, 20
 
-# THE hypertools call: black pixel-sized dots morphing through the zoo
+# THE hypertools call: black pixel-sized dots morphing through the zoo.
+# title= names each shape while its hold plays and is left blank by
+# hyp.plot itself during every transition -- no hand-rolled schedule needed.
 fig, ani = hyp.plot(clouds, fmt='.', color='k', markersize=1.6,
                     animate='morph', rotations=rotations, morph_samples=N,
-                    duration=duration, frame_rate=fps, size=(6, 6), show=False)
-
-# title that tracks the current shape, using hypertools' OWN morph schedule so
-# the label is always in lock-step with what is on screen. azim0 must equal
-# hyp.plot's default azim (-60): the schedule is RECOMPUTED here rather than
-# read back off the figure, and its per-frame azimuth track accumulates from
-# azim0, so another starting angle would return a schedule that no longer
-# tracks the rendered camera.
-total_frames = int(round(fps * duration))
-frame_counts, _, _ = _morph.morph_schedule(len(clouds), total_frames,
-                                            rotations, azim0=-60)
-label = fig.text(0.5, 0.95, '', ha='center', va='top', fontsize=16,
-                 fontweight='bold', color='#1a1a1a')
-
-
-def shape_title(frame):
-    """Name the shape while HOLDING on it (even segments). Transition segments
-    (odd) show NOTHING, so the label never sits over a half-formed cloud."""
-    seg, _step, _n = _morph.frame_to_segment(frame_counts, frame)
-    return titles[seg // 2] if seg % 2 == 0 else ''
-
-
-_orig = ani._func
-
-
-def _wrapped(frame, *args):
-    result = _orig(frame, *args)
-    label.set_text(shape_title(frame))
-    return result
-
-
-ani._func = _wrapped
+                    duration=duration, frame_rate=fps, size=(6, 6), show=False,
+                    title=titles)

@@ -188,17 +188,29 @@ for a in anchors:
 # duration/frame_rate MUST be passed: otherwise hyp falls back to its 30s/30fps
 # defaults while this script's `total` says otherwise, desyncing the forecasts.
 duration, fps = 8, 20
-fig, ani = hyp.plot(red, fmt='-', reduce=None, hue=idx_level, colorbar=False,
-                    palette='plasma', animate=True, chemtrails=True,
-                    rotations=0.25, duration=duration, frame_rate=fps,
-                    linewidth=2.2, size=(9, 6.5), show=False)
+anim = hyp.plot(red, fmt='-', reduce=None, hue=idx_level, colorbar=False,
+                palette='plasma', animate=True, chemtrails=True,
+                rotations=0.25, duration=duration, frame_rate=fps,
+                linewidth=2.2, size=(9, 6.5), show=False)
+fig, ani = anim
 ax = [a for a in fig.axes if hasattr(a, 'zaxis')][0]
 ax.set_position([0.0, 0.03, 0.78, 0.9])
 total = int(round(fps * duration))
 
 # read the visible line artist so forecasts anchor at the TRUE drawn head, and
 # fit the (reduce -> drawn) per-axis scale so the reduce-space delta lands in
-# drawn units (see the module docstring for why this is necessary)
+# drawn units (see the module docstring for why this is necessary).
+#
+# This ONE-TIME setup step is the one place this example still reaches into
+# matplotlib's private FuncAnimation internals (`ani._args`/`ani._func`),
+# deliberately: it needs the fully-revealed, ANTIALIASED on-screen line (this
+# is a synchronous "force a render, then read it back" operation, not a
+# per-frame callback), and there is no public equivalent -- `ctx.datasets`
+# (from `on_frame=`) is the pre-antialiasing array at a coarser resolution
+# and fits a measurably different (~2-8%, checked empirically) slope. The
+# RECURRING per-frame decoration below has a clean public replacement and
+# uses it (`anim.on_frame`); this setup step does not, so it is left alone
+# rather than silently changing the fitted forecast geometry.
 market_line = ani._args[1][0]
 _orig = ani._func
 _orig(total - 1, *ani._args)                              # reveal fully, once
@@ -268,6 +280,11 @@ def _smooth(pts, n=80):
     ``antialias_line`` is the exact routine ``hyp.plot(antialias=True)`` runs
     on every library-drawn line; we call it directly here because this
     forecast overlay is hand-drawn matplotlib rather than a plotted dataset.
+    There is no public re-export of it (unlike ``title=``/``on_frame=``, this
+    is smoothing, not a per-frame callback, so it is outside plan 1.1's
+    scope) -- reimplementing PCHIP antialiasing by hand here would risk
+    silently drifting from what ``hyp.plot`` actually draws, so the private
+    import stays.
     """
     from hypertools._shared.helpers import antialias_line
     pts = np.asarray(pts, float)
@@ -320,8 +337,13 @@ fig.text(0.40, 0.005, 'arrows amplified for visibility; length is relative, '
          color='#8a8a8a', style='italic')
 
 
-def _wrapped(num, *args):
-    result = _orig(num, *args)
+def decorate(ctx):
+    """Per-frame decoration: the live forecast arrow, the past-forecast fan,
+    and the running accuracy subtitle. Registered below via ``anim.on_frame``
+    -- hyp.plot() has already moved the market path's head for this frame by
+    the time this runs, so (unlike the pre-1.1 ``ani._func`` monkeypatch this
+    replaces) there is no original updater to call through to."""
+    num = ctx.frame
     hx, hy, hz = market_line.get_data_3d()
     head = np.array([hx[-1], hy[-1], hz[-1]])
     HEAD_CACHE[num] = head
@@ -349,7 +371,6 @@ def _wrapped(num, *args):
         'forecast direction correct so far: waiting for the first horizon'
         if np.isnan(acc) else
         f'forecast direction correct so far: {acc:.0f}%   (50% = coin flip)')
-    return result
 
 
-ani._func = _wrapped
+anim.on_frame(decorate)

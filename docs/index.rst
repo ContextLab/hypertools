@@ -45,6 +45,7 @@ Some key features of HyperTools are:
 
    api
    pipeline_order
+   animation
    tutorials
    auto_examples/index
 

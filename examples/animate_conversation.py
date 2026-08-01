@@ -160,10 +160,11 @@ for (spk, _text), nw in zip(TURNS, n_wins):
 # product (`total` below) is the frame index every custom per-frame hook here
 # is driven by, which is why both are passed explicitly.
 duration, fps = 12, 16
-fig, ani = hyp.plot(trajectories, fmt='-', color=colors, linewidth=1.6,
-                    animate='serial',
-                    duration=duration, frame_rate=fps,
-                    elev=16, size=(7.6, 7.4), show=False)
+anim = hyp.plot(trajectories, fmt='-', color=colors, linewidth=1.6,
+                animate='serial',
+                duration=duration, frame_rate=fps,
+                elev=16, size=(7.6, 7.4), show=False)
+fig = anim.figure
 
 import matplotlib.patches as mpatches
 from matplotlib.offsetbox import TextArea, HPacker, VPacker, AnchoredOffsetbox
@@ -181,25 +182,15 @@ speaker = fig.text(0.5, 0.923, '', ha='center', va='top', fontsize=13,
 
 n_turns = len(trajectories)
 total = int(round(fps * duration))
-lines = ani._args[1]                                       # one Line3D per turn
-# NOTE: ``hyp.plot`` resamples every multi-row LINE dataset onto the frame
-# grid, so the DRAWN per-turn row counts are not the original turn lengths
-# (1-row turns are left as-is). The serial reveal is paced by those DRAWN
-# lengths, so the active turn must be derived from them -- using the original
-# lengths makes the opaque highlight lag the turn actually being drawn.
-drawn_lens = [np.asarray(a).shape[0] for a in ani._args[0]]
-starts = np.cumsum([0] + drawn_lens[:-1])
-total_pts = int(sum(drawn_lens))
 FLOOR, DECAY = 0.10, 0.45                                   # oldest-turn floor; per-turn fade
 # Over the final stretch the whole conversation is lifted back up, so the clip
 # ends on the shape it spent the whole run building rather than on one lit turn
 # against near-invisible history.
 FINALE = int(1.4 * fps)
 FINALE_FLOOR = 0.62
-_orig = ani._func
 
 
-def shown_counts(num):
+def shown_counts(num, starts, drawn_lens, total_pts):
     """Per-turn drawn row counts at this frame, mirroring
     ``update_lines_serial``: ``revealed = total_points * num /
     (total_frames - 1)``."""
@@ -208,7 +199,7 @@ def shown_counts(num):
             for st, n in zip(starts, drawn_lens)]
 
 
-def current_state(num):
+def current_state(num, starts, drawn_lens, total_pts):
     """The (turn, window) being revealed right now, mirroring
     ``update_lines_serial``: ``revealed = total_points * num /
     (total_frames - 1)``, and a turn is ACTIVE while ``0 < its shown-count <
@@ -283,13 +274,28 @@ def set_caption(rows, color):
     caption[0] = box
 
 
-def _wrapped(num, *args):
-    result = _orig(num, *args)
-    ti, wi = current_state(num)
+def decorate(ctx):
+    """Per-frame decoration: recency fade across turns, the speaker label,
+    and the bolded caption. Registered below via ``anim.on_frame`` -- by the
+    time this runs, ``hyp.plot`` has already drawn the frame, so (unlike
+    the pre-1.1 ``ani._func`` monkeypatch this replaces) there is no
+    original updater to call through to, and nothing to return."""
+    lines = ctx.artists                                     # one Line3D per turn
+    # NOTE: ``hyp.plot`` resamples every multi-row LINE dataset onto the frame
+    # grid, so the DRAWN per-turn row counts are not the original turn lengths
+    # (1-row turns are left as-is). The serial reveal is paced by those DRAWN
+    # lengths, so the active turn must be derived from them -- using the
+    # original lengths makes the opaque highlight lag the turn actually being
+    # drawn.
+    drawn_lens = [np.asarray(a).shape[0] for a in ctx.datasets]
+    starts = np.cumsum([0] + drawn_lens[:-1])
+    total_pts = int(sum(drawn_lens))
+    num = ctx.frame
+    ti, wi = current_state(num, starts, drawn_lens, total_pts)
     # recency fade: the current turn is opaque; earlier turns get progressively
     # more transparent (a fading tail) down to a floor so the whole shape stays
     # visible; not-yet-spoken turns are hidden.
-    counts = shown_counts(num)
+    counts = shown_counts(num, starts, drawn_lens, total_pts)
     ramp = min(1.0, max(0.0, (num - (total - 1 - FINALE)) / max(1, FINALE)))
     floor = FLOOR + (FINALE_FLOOR - FLOOR) * ramp
     for j, ln in enumerate(lines):
@@ -309,7 +315,6 @@ def _wrapped(num, *args):
     speaker.set_text(spk)
     speaker.set_color(SPEAKER_COLOR[spk])
     set_caption(caption_lines(ti, wi), SPEAKER_COLOR[spk])
-    return result
 
 
-ani._func = _wrapped
+anim.on_frame(decorate)

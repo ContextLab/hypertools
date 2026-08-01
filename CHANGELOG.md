@@ -37,7 +37,9 @@ Small, additive plotting features and fixes (fully backward-compatible).
   (e.g. a fading chemtrail) while already-revealed datasets stay fully drawn
   -- "chemtrails-serial", "precog-serial", "bullettime-serial". Plain
   `animate='serial'` (no trail flag) is unchanged; a windowed serial is left
-  as follow-up.
+  as follow-up. This also fixes plotly, which previously warned and dropped
+  the trails for a serial reveal instead of drawing them -- the two backends
+  now match frame for frame.
 
 - **`predict=` now works with `animate='spin'`.** A spinning 3-D plot can
   carry its `predict=` forecast overlay -- the dashed, low-opacity forecast
@@ -49,20 +51,61 @@ Small, additive plotting features and fixes (fully backward-compatible).
 - **`plot(..., on_frame=...)`: a public per-frame hook, on both backends.**
   `on_frame` is called once per drawn animation frame with a single
   `FrameContext` argument -- the frame index and total, the axes and drawn
-  artists, the animated arrays, and (for serial-style reveals and
-  `animate='morph'`) which dataset/segment is current and how far through
-  it. This replaces reaching into matplotlib's private
-  `FuncAnimation._func`/`._args` and re-deriving hypertools' own
-  serial-reveal schedule by hand, which four of the five animated gallery
-  examples previously did. `FrameContext` is exported as
-  `hypertools.FrameContext`. On matplotlib, callbacks can also be attached
-  after the fact via `HyperAnimation.on_frame(callback)` (chainable); on
-  plotly, whose animated return is a plain `go.Figure` with its frames
-  already built, pass `on_frame=` to `plot()` instead. Callbacks must be
-  deterministic and idempotent for a given `FrameContext`: matplotlib calls
-  back at render time (so a frame index may recur across a loop or a save)
-  while plotly calls back exactly once per frame index at build time --
-  same per-frame metadata on both backends, different schedules.
+  artists, the animated arrays, the serial-reveal counts, and -- for
+  `animate='morph'` -- `segment_index`/`segment_kind`. This replaces
+  reaching into matplotlib's private `FuncAnimation._func`/`._args` and
+  re-deriving hypertools' own serial-reveal schedule by hand, which four of
+  the five animated gallery examples previously did. `FrameContext` is
+  exported as `hypertools.FrameContext`. On matplotlib, callbacks can also
+  be attached after construction via `HyperAnimation.on_frame(callback)`
+  (chainable); this is **not** available on plotly, whose animated return is
+  a plain `go.Figure` with its frames already built, so pass `on_frame=` to
+  `plot()` instead for backend-portable code. **Callbacks must be
+  deterministic and idempotent for a given frame context. They must not
+  depend on call count, call order, wall-clock time, or accumulated
+  external state.** Mutating artists is supported and expected; accumulating
+  is not. Matplotlib calls back at render time (so a frame index may recur
+  across a loop or a save) while plotly calls back exactly once per frame
+  index at build time -- same per-frame metadata on both backends, but
+  `ctx.figure`/`ctx.axes`/`ctx.artists` are backend-native (`ctx.axes` is
+  `None` on plotly, whose `ctx.artists` are that frame's traces), so a
+  callback that mutates them is not portable across backends.
+
+- **`order='parallel'|'serial'` on `plot()`, orthogonal to `animate=`.** So
+  trail styles compose with a serial reveal (`animate=True,
+  order='serial', chemtrails=True`). `animate='serial'` remains a permanent
+  alias for `animate=True, order='serial'`, and `animate='morph'` is
+  inherently serial. `order=` is resolved into the backend mode, so hue
+  overlays and trail handling stay in sync.
+
+- **Per-dataset `alpha=`, alongside the existing per-dataset
+  `color=`/`linewidth=`.** Inputs that assign alpha internally (row
+  `MultiIndex` frames, nested lists) keep their own values and now say so
+  with a warning instead of losing silently.
+
+- **Per-segment `title=` for serial-style animations, on both backends.**
+  Pass a list of strings (one per dataset) to name each segment of a
+  serial-style animation as it is revealed; for `animate='morph'` the holds
+  are named and the transitions are left blank automatically. Anywhere else
+  a non-string `title=` raises `TypeError`.
+
+- **`simplify=` on `plot()` (default `True`).** Today it governs
+  `animate='morph'` tractability only: over clouds larger than 2000 points
+  an uncapped morph is downsampled to 2000 **silently**, because the
+  alternative is a render that never finishes (measured: killed at 10
+  minutes uncapped; 8.2 s at `morph_samples=2000`). Pass `simplify=False`
+  for an explanatory `ValueError` instead, which restores the guarantee
+  that no real data point is ever dropped. An explicit `morph_samples=`
+  always wins, and below the threshold `simplify` does nothing at all.
+
+### Changed
+
+- **Animated continuous-hue line plots with no explicit `linewidth=` now
+  render at `1.0` instead of `1.5`.** This is a **visible change to
+  existing animated hue figures**: the overlay now matches the width of the
+  artist it replaces, which is what animated no-hue lines already used, so
+  hue and no-hue animations finally agree. Pass `linewidth=1.5` to keep the
+  old look.
 
 ### Bug fixes
 
@@ -87,6 +130,21 @@ Small, additive plotting features and fixes (fully backward-compatible).
   misattributed real point labels to the wrong point (every other animated
   style, or a static plot with the default `antialias=True`). Bridged labels
   now grow in lockstep with the bridged data.
+
+- **`title=` no longer stringifies a list onto the axes.** A non-string
+  `title=` now raises `TypeError` instead of drawing the literal
+  `"['a', 'b', 'c']"` text, and the check runs before the analyze pipeline,
+  so streaming plots (`plot_stream`) get it too.
+
+- **`linewidth=` is honored in animated continuous-hue line plots.** The
+  overlay now always renders at the width of the artist it replaces
+  (previously it fell back to `rcParams['lines.linewidth']` regardless of
+  what you passed).
+
+- **`animate='morph'` over clouds larger than 2000 points no longer appears
+  to hang.** It is capped at 2000 points by default, or raises naming
+  `morph_samples=` and `simplify=True` when you pass `simplify=False`. See
+  `simplify=` above for which of your data actually reaches the plot.
 
 ## 1.0.0 (unreleased)
 
