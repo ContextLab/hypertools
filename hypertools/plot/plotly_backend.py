@@ -462,7 +462,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 elev=10, azim=-60, point_colors=None, tail_duration=2,
                 focused=None,
                 chemtrails=False, precog=False, bullettime=False, zoom=1,
-                forecasts=None, colorbar_info=None, surface=None,
+                forecasts=None, forecast_schedule=None, forecast_trail=0,
+                colorbar_info=None, surface=None,
                 surface_colors=None, surface_point_colors=None,
                 density=None, density_colors=None,
                 morph_tags=None, morph_colors=None, morph_samples=None,
@@ -535,6 +536,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         3-D camera zoom factor.
     forecasts : list of numpy.ndarray or None
         predict= forecast traces (see below).
+    forecast_schedule : hypertools.plot.forecast.ForecastSchedule or None
+        Every forecast a TIME-PROGRESSING animation will draw, precomputed by
+        `plot()` and already mapped into the display box (see below). `None`
+        for static plots and `animate='spin'`, which draw the frozen
+        full-history `forecasts` overlay instead.
+    forecast_trail : int
+        Past forecasts kept on screen as a fading fan (`forecast_trail=`),
+        0 (the default) for none. Only meaningful with `forecast_schedule`.
     colorbar_info : dict or None
         Colorbar spec from `plot._build_colorbar_info` (see below).
     surface : list of dict or None
@@ -635,6 +644,21 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     dataset's final observed row so the trace connects. Rendered as one
     dashed (`dash='dash'`), 0.6-opacity, `showlegend=False` trace per
     dataset, in the SAME color as its source trace.
+
+    `forecast_schedule`/`forecast_trail` (predict= during a TIME-PROGRESSING
+    animation, 1.1): a frozen full-history overlay would show a prediction
+    made from data the viewer has not been revealed yet, so when a schedule
+    is given the static `forecasts` block above is skipped entirely (the same
+    gate `plot.py` applies to the matplotlib overlay) and this function
+    creates one EMPTY dashed `live` trace per dataset -- plus `forecast_trail`
+    fading `trail` traces per dataset, newest-first, exactly like matplotlib's
+    preallocated trail artists -- which `_add_animation` then rewrites every
+    frame from the schedule. Every one of them carries
+    ``meta['hyp_forecast_role']`` (``'static'``/``'live'``/``'trail'``),
+    ``meta['hyp_dataset']``, ``meta['hyp_forecast_age']`` and
+    ``meta['hyp_forecast_alpha']``, so forecast traces are identifiable
+    without guessing from `dash` (user data drawn with `fmt='--'` is dashed
+    too) -- the plotly half of matplotlib's `_hyp_forecast_role` artist tag.
 
     `colorbar_info` (GH #100): optional dict from
     `hypertools.plot.plot._build_colorbar_info` (``kind='continuous'`` with
@@ -925,7 +949,15 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
     # predict=: one dashed, low-opacity forecast trace per dataset, in the
     # same color as its source trace (GH #169; matplotlib parity).
-    if forecasts is not None:
+    # `forecast_trace_start`/`forecast_trace_specs` do for these traces what
+    # `trail_trace_start`/`trail_dataset_indices` (just below) do for the
+    # chemtrail traces: record the block's REAL position in `traces` and what
+    # each entry draws, so `_add_animation` can rewrite them every frame.
+    # `forecast_trace_specs[k]` is the ``(dataset, age)`` pair that produced
+    # `traces[forecast_trace_start + k]`; age 0 is the live forecast.
+    forecast_trace_start = len(traces)
+    forecast_trace_specs = []
+    if forecasts is not None and forecast_schedule is None:
         for i, arr in enumerate(data):
             tkwargs = kwargs_list[i] or {}
             fc = np.atleast_2d(np.asarray(forecasts[i], dtype=np.float64))
@@ -934,7 +966,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                           or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
             fc_common = dict(mode='lines', showlegend=False,
                              hoverinfo='skip',
-                             line=dict(color=color, width=width, dash='dash'))
+                             line=dict(color=color, width=width, dash='dash'),
+                             meta=dict(hyp_forecast_role='static',
+                                       hyp_dataset=i, hyp_forecast_age=0,
+                                       hyp_forecast_alpha=0.6))
             # antialias=: a forecast trace is always a LINE, so smooth it the
             # same way as any other line (matching `plot._draw_forecast_
             # overlays`, which does exactly this on the matplotlib side) --
@@ -956,6 +991,41 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 traces.append(go.Scatter(
                     x=_aa_x(fc_step, start, fc_draw.shape[0]),
                     y=fc_draw[:, 0], **fc_common))
+            forecast_trace_specs.append((i, 0))
+    elif forecast_schedule is not None:
+        # A time-progressing animation must draw the forecast made from the
+        # history revealed SO FAR, so the full-history overlay above is
+        # skipped and these EMPTY traces take its place, rewritten every
+        # frame by `_add_animation`. Empty -- not zero-alpha -- is how
+        # "nothing to draw here yet" is said, exactly as on the matplotlib
+        # side: `trail_alpha` never returns 0, so a stale trace and an
+        # unwritten one would otherwise be indistinguishable.
+        from .forecast import trail_alpha
+        n_retained = int(forecast_trail or 0)
+        for i in range(len(data)):
+            tkwargs = kwargs_list[i] or {}
+            width = float(tkwargs.get('linewidth')
+                          or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
+            # trails FIRST, so the live forecast draws on top of its own fan
+            # rather than under it (matplotlib parity)
+            for age in list(range(1, n_retained + 1)) + [0]:
+                # the declared alpha and the one baked into the rgba string
+                # are the SAME float, so a reader of `meta` can trust it
+                alpha = trail_alpha(age, n_retained)
+                fc_common = dict(
+                    mode='lines', showlegend=False, hoverinfo='skip',
+                    line=dict(color=_to_plotly_color(tkwargs.get('color'),
+                                                     alpha),
+                              width=width, dash='dash'),
+                    meta=dict(
+                        hyp_forecast_role='live' if age == 0 else 'trail',
+                        hyp_dataset=i, hyp_forecast_age=age,
+                        hyp_forecast_alpha=alpha))
+                if ndims >= 3:
+                    traces.append(go.Scatter3d(x=[], y=[], z=[], **fc_common))
+                else:
+                    traces.append(go.Scatter(x=[], y=[], **fc_common))
+                forecast_trace_specs.append((i, age))
 
     # low-opacity trail traces for chemtrails (past) / precog (future) /
     # bullettime (both) on window animations, mirroring the matplotlib
@@ -1348,6 +1418,11 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        n_trail_traces=n_trail_traces,
                        trail_trace_start=trail_trace_start,
                        trail_dataset_indices=trail_dataset_indices,
+                       forecast_schedule=forecast_schedule,
+                       forecast_trace_start=forecast_trace_start,
+                       forecast_trace_specs=forecast_trace_specs,
+                       forecast_trail=forecast_trail,
+                       forecast_antialias=antialias,
                        surface=surface, surface_colors=surface_colors,
                        surface_trace_start=surface_trace_start_3d,
                        surface_dataset_indices=surface_dataset_indices,
@@ -2583,6 +2658,9 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    chemtrails=None, precog=None, bullettime=None,
                    zoom=1, n_trail_traces=0, trail_trace_start=None,
                    trail_dataset_indices=None,
+                   forecast_schedule=None, forecast_trace_start=None,
+                   forecast_trace_specs=None, forecast_trail=0,
+                   forecast_antialias=True,
                    surface=None, surface_colors=None,
                    surface_trace_start=None,
                    surface_dataset_indices=None, data_trace_start=0,
@@ -2637,6 +2715,25 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     dataset carries a trail; already-revealed/not-yet-started datasets
     don't), rather than the sliding-window semantics used elsewhere in this
     function.
+
+    `forecast_schedule`/`forecast_trace_start`/`forecast_trace_specs`/
+    `forecast_trail`/`forecast_antialias` (predict= during a time-progressing
+    animation, 1.1): the forecast traces `plotly_draw` created empty are
+    rewritten every frame from the precomputed schedule, by the SAME
+    mechanism the chemtrail traces use -- a recorded trace range whose data
+    each frame replaces. `forecast_trace_specs[k]` is the ``(dataset, age)``
+    pair for `fig.data[forecast_trace_start + k]`; age 0 draws
+    ``schedule.polyline(dataset, frame)`` and age N draws the forecast from
+    ``trail_frames(frame, forecast_trail)[N - 1]``, so the fan is a PURE
+    function of the frame index -- never accumulated -- and an exported
+    animation is identical to an interactively-played one. A frame with no
+    forecast for a slot (too little history revealed, or fewer past frames
+    than the fan is deep) gets EMPTY x/y/z, matching matplotlib's
+    hidden-artist state. Wired into BOTH the `'serial'` branch and the
+    trailing parallel/`'window'` branch below: a forecast wired into only one
+    would be frozen in the other. `'spin'` never receives a schedule (it
+    reveals nothing over time, so it keeps the static full-history overlay)
+    and `'morph'` refuses `predict=` outright.
 
     `data_trace_start` (GH #108/#191): the actual `fig.data` index where the
     DATA traces begin -- 0, UNLESS a 2-D `density=`/`surface=` layer was
@@ -2762,6 +2859,59 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     base_rgb = vertex_colors_from_points(v, pts, cols)
                 out.append(_mesh3d_geometry_update(
                     go, v, f, base_rgb, spec['alpha'], view, light_kw))
+        return out
+
+    forecast_trace_specs = forecast_trace_specs or []
+    has_forecasts = (forecast_schedule is not None
+                     and forecast_trace_start is not None
+                     and bool(forecast_trace_specs))
+    forecast_trace_indices = (
+        list(range(forecast_trace_start,
+                   forecast_trace_start + len(forecast_trace_specs)))
+        if has_forecasts else [])
+
+    def _forecast_frame_data(k, anchor_rows):
+        """One geometry update per forecast trace at frame `k`, in
+        `forecast_trace_specs` order (so it lines up with
+        `forecast_trace_indices`).
+
+        `anchor_rows[dataset]` is that dataset's last REVEALED row this
+        frame -- the 1-D x offset the forecast hangs off, generalizing the
+        static path's `start = arr.shape[0] - 1` (where everything is
+        revealed) to a partially-revealed one. Unused for 2-D/3-D, which
+        carry their own coordinates.
+        """
+        from .forecast import trail_frames
+        past = trail_frames(k, forecast_trail) if forecast_trail else []
+        out = []
+        for dataset, age in forecast_trace_specs:
+            if age == 0:
+                pts = forecast_schedule.polyline(dataset, k)
+            elif age <= len(past):
+                pts = forecast_schedule.polyline(dataset, past[age - 1])
+            else:
+                pts = None          # fewer past frames than the fan is deep
+            if pts is None or len(pts) < 2:
+                out.append(go.Scatter3d(x=[], y=[], z=[]) if ndims >= 3
+                           else go.Scatter(x=[], y=[]))
+                continue
+            # antialias=: a forecast is a LINE, smoothed exactly like the
+            # static overlay above (and like matplotlib's per-frame artist,
+            # whose `_interp_static_line` is this same call at this same
+            # 900-vertex target), so a paused animation is indistinguishable
+            # from a static plot
+            draw, step = (antialias_line(pts) if forecast_antialias
+                          else (pts, 1))
+            if ndims >= 3:
+                out.append(go.Scatter3d(x=draw[:, 0], y=draw[:, 1],
+                                        z=draw[:, 2]))
+            elif ndims == 2:
+                out.append(go.Scatter(x=draw[:, 0], y=draw[:, 1]))
+            else:
+                out.append(go.Scatter(
+                    x=_aa_x(step, anchor_rows.get(dataset, 0),
+                            draw.shape[0]),
+                    y=draw[:, 0]))
         return out
 
     def _window_colors(idx, start, stop):
@@ -3020,6 +3170,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             windows_by_index = {}
             window_colors_by_index = {}
             head_bounds_by_index = {}
+            forecast_anchors = {}
             _shown = []
             for idx, (arr, start) in enumerate(zip(data, starts)):
                 arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
@@ -3052,6 +3203,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 # `matplotlib_backend.update_lines_serial` -- independent of
                 # the comet-head trimming above
                 windows_by_index[idx] = arr[:shown]
+                forecast_anchors[idx] = max(0, shown - 1)
                 cols = _window_colors(idx, 0, shown)
                 if cols is not None:
                     window_colors_by_index[idx] = cols
@@ -3104,6 +3256,18 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                                             window_colors_by_index))
                 frame_kwargs['traces'] = (list(frame_kwargs['traces'])
                                           + surface_trace_indices)
+            if has_forecasts:
+                # appended to `frame_kwargs` rather than to `frame_traces`,
+                # exactly like the surface meshes above: `frame_traces` is
+                # what `frame_hooks.record` publishes as `ctx.artists`, and
+                # matplotlib's `ctx.artists` does not include its forecast
+                # artists either (they are added by `plot.py` after the
+                # animation's own artist list is built).
+                frame_kwargs['data'] = (list(frame_kwargs['data'])
+                                        + _forecast_frame_data(
+                                            k, forecast_anchors))
+                frame_kwargs['traces'] = (list(frame_kwargs['traces'])
+                                          + forecast_trace_indices)
             # `_shown`/`lengths` are ALREADY built above (one entry per
             # dataset, from the per-idx loop just above) -- reused here
             # rather than re-derived, same as `lengths`/`starts` themselves
@@ -3176,6 +3340,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             frame_traces = []
             windows_by_index = {}
             window_colors_by_index = {}
+            forecast_anchors = {}
             for idx, arr in enumerate(data):
                 arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
                 # PER DATASET, exactly as the matplotlib renderer paces it:
@@ -3187,6 +3352,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     k, n_frames, arr.shape[0], window_frames)
                 seg = arr[start:end]
                 windows_by_index[idx] = seg
+                forecast_anchors[idx] = max(0, end - 1)
                 cols = _window_colors(idx, start, end)
                 if cols is not None:
                     window_colors_by_index[idx] = cols
@@ -3265,6 +3431,14 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                                             window_colors_by_index))
                 frame_kwargs['traces'] = (list(frame_kwargs['traces'])
                                           + surface_trace_indices)
+            if has_forecasts:
+                # see the identical block in the 'serial' branch above for
+                # why this appends to `frame_kwargs`, not to `frame_traces`
+                frame_kwargs['data'] = (list(frame_kwargs['data'])
+                                        + _forecast_frame_data(
+                                            k, forecast_anchors))
+                frame_kwargs['traces'] = (list(frame_kwargs['traces'])
+                                          + forecast_trace_indices)
             if frame_hooks is not None:
                 frame_hooks.record(
                     frame=k, n_frames=n_frames, artists=tuple(frame_traces),

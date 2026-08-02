@@ -4937,6 +4937,11 @@ def plot(
             bullettime=bullettime,
             zoom=zoom,
             forecasts=raw_forecasts,
+            # the SAME precomputed, display-mapped schedule the matplotlib
+            # path drives its per-frame forecast artists from, so the two
+            # backends read one table instead of two transcriptions of it
+            forecast_schedule=forecast_schedule,
+            forecast_trail=_n_forecast_trail,
             colorbar_info=colorbar_info,
             surface=surface_list,
             surface_colors=surface_colors,
