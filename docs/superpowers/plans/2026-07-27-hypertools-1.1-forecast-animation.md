@@ -2302,14 +2302,32 @@ def test_the_final_frame_draws_exactly_the_bundled_forecast():
 
 def test_return_model_xform_data_is_untouched_by_the_schedule():
     """The schedule snapshots analyze-space copies; it must not alias or
-    mutate what the user gets back."""
+    mutate what the user gets back.
+
+    Compare VALUES, not shapes. An earlier version of this test asserted
+    only that the two `xform_data` arrays had the same SHAPE -- which every
+    mutation in place also satisfies, since mutating an array does not
+    resize it. It could not detect the defect named in its own docstring.
+    """
     plain = hyp.plot(_series(n=1), '-', animate=True, duration=2,
                      frame_rate=4, show=False, return_model=True)
     forecast = hyp.plot(_series(n=1), '-', predict='Kalman', t=3,
                         animate=True, duration=2, frame_rate=4, show=False,
                         return_model=True)
-    assert (np.asarray(plain['xform_data'][0]).shape
-            == np.asarray(forecast['xform_data'][0]).shape)
+    a = np.asarray(plain['xform_data'][0], dtype=float)
+    b = np.asarray(forecast['xform_data'][0], dtype=float)
+    assert a.shape == b.shape
+    assert np.allclose(a, b), (
+        'predict= changed the returned xform_data; the schedule must take '
+        'its own copies (np.array(..., copy=True)) and never write back')
+    # ...and driving the animation must not mutate it either: the updater
+    # READS the schedule, so a frame render cannot move the user's data
+    before = np.array(forecast['xform_data'][0], dtype=float, copy=True)
+    ani = forecast['animation']
+    for f in (0, 4, 7):
+        ani._func(f, *ani._args)
+    assert np.allclose(np.asarray(forecast['xform_data'][0], dtype=float),
+                       before), 'rendering frames mutated the returned data'
 ```
 
 - [ ] **Step 2: Run the test and confirm it fails**
