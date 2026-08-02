@@ -66,7 +66,22 @@ history. `ForecastSchedule` fits at EVERY revealed length, so it samples the uns
 Dispatched to a debugger subagent: root cause in `hypertools/predict/kalman.py`, per-model
 comparison table, TDD fix, full suite. Report → `notes/audit/kalman_instability_2026-08-02.md`.
 
-**Open design question this raises, independent of the bug** (for the maintainer):
+**RESOLVED 2026-08-02, by the root-cause fix.** After the stability constraint landed
+(`notes/audit/kalman_instability_2026-08-02.md`), the same measurement gives:
+
+```
+data     min/max:  -26.086   26.107
+schedule min/max:  -27.059   27.445      (was -3.5e18 / 2.0e18)
+box widened by 0.97 below / 1.34 above -- a forecast-sized amount
+```
+
+Independently re-run end to end: **0/432 fits exceed 100x the data range, worst 1.17x** (was
+19/432, worst 1.03e7x). So Contract 2's "the box contains every forecast, nothing is clamped" is
+sound exactly as written, and **`min_history` needs no change**. The fold-in was never the
+problem; the forecaster was. Recording the superseded question below, because the reasoning is
+still the right reasoning if a future forecaster misbehaves:
+
+~~Open design question (for the maintainer):~~
 Contract 2 says the box contains every forecast so nothing is clamped. But the schedule fits from
 as little as `DEFAULT_MIN_HISTORY = 2` observations, so even with a perfectly stable forecaster
 the frame is sized by the LEAST-informed forecast the animation ever draws. Options are (a) keep

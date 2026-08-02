@@ -921,7 +921,14 @@ The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVER
 
 **Files:** rewrite `examples/animate_market_forecast.py`; rewrite `docs/tutorials/market_forecast.ipynb`; create `scripts/execute_tutorial.py`.
 
-- [ ] **Step 0: Split the loader from the figure builder (Contract 4 / Step 0b)**
+- [ ] **Step 0: Split the loader from the figure builder (Contract 4 / Step 0b) — DO THIS *AFTER* THE REWRITE STEP BELOW**
+
+> **Ordering, and it is not cosmetic.** This step restructures the file the rewrite step produces.
+> Run it first and the rewrite deletes it: the prescribed rewrite blocks are monolithic — measured,
+> not one of the four defines `construct_artifact`, `fixture_data`, or a `__main__` guard — so a
+> "replace the file entirely" applied on top of a completed split obliterates it, and every later
+> step then calls names that no longer exist. Sequence for this task is therefore:
+> **rewrite → this split → verify → measure → commit.**
 
 **Do this FIRST, before the rewrite below.** Task 8 Step 0b defines the contract and works the whole pattern through on weather; this step applies it to `examples/animate_market_forecast.py`. Without it `test_examples_produce_their_stated_artifact` fails on this example, and importing it fetches.
 
@@ -1029,7 +1036,7 @@ Expected: prints `docs/tutorials/reduce.ipynb: 5/9 code cells produced output` o
 
 - [ ] **Step 2: Rewrite the example**
 
-Replace `examples/animate_market_forecast.py` entirely:
+Replace the body of `examples/animate_market_forecast.py` (reconciling against what `d730a085` already landed — see the banner above). **Step 0's loader/builder split is applied to the result of this step, not before it.**
 
 ```python
 # -*- coding: utf-8 -*-
@@ -1247,11 +1254,22 @@ Run:
 
 ```bash
 MPLBACKEND=Agg .venv/bin/python - <<'PY'
-import runpy
-ns = runpy.run_path('examples/animate_market_forecast.py')
-fig, ani = ns['fig'], ns['ani']
+# Load the example WITHOUT running its loaders: after Step 0 every binding
+# lives inside construct_artifact()/__main__, and runpy.run_path does NOT set
+# __name__ to '__main__' (verified: it sets '<run_path>'), so ns['fig'] would
+# raise KeyError. Drive frames through the public draw_frame(), not ani._func.
+import importlib.util, os
+os.environ['HYPERTOOLS_OFFLINE'] = '1'
+def load(stem):
+    spec = importlib.util.spec_from_file_location(stem, f'examples/{stem}.py')
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+m = load('animate_market_forecast')
+anim = m.construct_artifact(m.fixture_data())
+fig = anim.figure
 ax = [a for a in fig.axes if hasattr(a, 'zaxis')][0]
-ani._func(40, *ani._args)
+anim.draw_frame(40)
 widths = sorted({round(float(l.get_linewidth()), 2) for l in ax.lines})
 print('axes:', len(fig.axes), '| line artists:', len(ax.lines),
       '| distinct linewidths:', widths)
@@ -1331,7 +1349,14 @@ Verified today, end to end: `hyp.plot(temps, fmt='-', hue=avg_temp, palette='RdB
 
 **Files:** rewrite `examples/animate_weather_decades.py`; rewrite `docs/tutorials/weather_decades.ipynb`.
 
-- [ ] **Step 0: Split the loader from the figure builder (Contract 4 / Step 0b)**
+- [ ] **Step 0: Split the loader from the figure builder (Contract 4 / Step 0b) — DO THIS *AFTER* THE REWRITE STEP BELOW**
+
+> **Ordering, and it is not cosmetic.** This step restructures the file the rewrite step produces.
+> Run it first and the rewrite deletes it: the prescribed rewrite blocks are monolithic — measured,
+> not one of the four defines `construct_artifact`, `fixture_data`, or a `__main__` guard — so a
+> "replace the file entirely" applied on top of a completed split obliterates it, and every later
+> step then calls names that no longer exist. Sequence for this task is therefore:
+> **rewrite → this split → verify → measure → commit.**
 
 **Do this FIRST, before the rewrite below.** Task 8 Step 0b defines the contract and works the whole pattern through on weather; this step applies it to `examples/animate_weather_decades.py`. Without it `test_examples_produce_their_stated_artifact` fails on this example, and importing it fetches.
 
@@ -1369,7 +1394,7 @@ Expected: it imports without touching the network and prints both names plus a f
 
 - [ ] **Step 1: Rewrite the example**
 
-Replace `examples/animate_weather_decades.py` entirely:
+Replace the body of `examples/animate_weather_decades.py`. **Step 0's loader/builder split is applied to the result of this step, not before it.**
 
 ```python
 # -*- coding: utf-8 -*-
@@ -1500,10 +1525,22 @@ Run:
 
 ```bash
 MPLBACKEND=Agg .venv/bin/python - <<'PY'
-import numpy as np, runpy
-ns = runpy.run_path('examples/animate_weather_decades.py')
-fig, ani = ns['fig'], ns['ani']
-ani._func(150, *ani._args)
+import numpy as np
+# Load the example WITHOUT running its loaders: after Step 0 every binding
+# lives inside construct_artifact()/__main__, and runpy.run_path does NOT set
+# __name__ to '__main__' (verified: it sets '<run_path>'), so ns['fig'] would
+# raise KeyError. Drive frames through the public draw_frame(), not ani._func.
+import importlib.util, os
+os.environ['HYPERTOOLS_OFFLINE'] = '1'
+def load(stem):
+    spec = importlib.util.spec_from_file_location(stem, f'examples/{stem}.py')
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+m = load('animate_weather_decades')
+anim = m.construct_artifact(m.fixture_data())
+fig = anim.figure
+anim.draw_frame(150)
 ax = [a for a in fig.axes if hasattr(a, 'zaxis')][0]
 cols = np.vstack([c.get_colors() for c in ax.collections
                   if c.get_label() == '_nolegend_'])
@@ -1580,7 +1617,14 @@ The download-and-cache half of `canvas_color` **stays** (class **A**, textbook: 
 
 **Files:** rewrite `examples/animate_painting_embeddings.py`; rewrite `docs/tutorials/painting_embeddings.ipynb`.
 
-- [ ] **Step 0: Split the loader from the figure builder (Contract 4 / Step 0b)**
+- [ ] **Step 0: Split the loader from the figure builder (Contract 4 / Step 0b) — DO THIS *AFTER* THE REWRITE STEP BELOW**
+
+> **Ordering, and it is not cosmetic.** This step restructures the file the rewrite step produces.
+> Run it first and the rewrite deletes it: the prescribed rewrite blocks are monolithic — measured,
+> not one of the four defines `construct_artifact`, `fixture_data`, or a `__main__` guard — so a
+> "replace the file entirely" applied on top of a completed split obliterates it, and every later
+> step then calls names that no longer exist. Sequence for this task is therefore:
+> **rewrite → this split → verify → measure → commit.**
 
 **Do this FIRST, before the rewrite below.** Task 8 Step 0b defines the contract and works the whole pattern through on weather; this step applies it to `examples/animate_painting_embeddings.py`. Without it `test_examples_produce_their_stated_artifact` fails on this example, and importing it fetches.
 
@@ -1618,7 +1662,7 @@ Expected: it imports without touching the network and prints both names plus a f
 
 - [ ] **Step 1: Rewrite the example**
 
-Keep the `PAINTINGS` dict verbatim (lines 43-96 of the current file) and replace everything else. The new body:
+Keep the `PAINTINGS` dict verbatim (lines 43-96 of the current file) and replace everything else. **Step 0's loader/builder split is applied to the result of this step, not before it.** The new body:
 
 ```python
 # -*- coding: utf-8 -*-
@@ -1781,9 +1825,21 @@ Run:
 
 ```bash
 MPLBACKEND=Agg .venv/bin/python - <<'PY'
-import numpy as np, runpy
-ns = runpy.run_path('examples/animate_painting_embeddings.py')
-for name, c in zip(ns['names'], ns['colors']):
+import numpy as np
+# Load the example WITHOUT running its loaders: after Step 0 every binding
+# lives inside construct_artifact()/__main__, and runpy.run_path does NOT set
+# __name__ to '__main__' (verified: it sets '<run_path>'), so ns['fig'] would
+# raise KeyError. Drive frames through the public draw_frame(), not ani._func.
+import importlib.util, os
+os.environ['HYPERTOOLS_OFFLINE'] = '1'
+def load(stem):
+    spec = importlib.util.spec_from_file_location(stem, f'examples/{stem}.py')
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+m = load('animate_painting_embeddings')
+data = m.fixture_data()
+for name, c in zip(data.owners, data.colors):
     rgb = np.asarray(c)
     print(f'{name:16s} rgb={np.round(rgb,3)}  chroma={rgb.max()-rgb.min():.3f}')
 PY
@@ -1867,7 +1923,14 @@ The `word_spans` window helper collapses to a plain `windows()` (the span bookke
 
 **Files:** rewrite `examples/animate_conversation.py`; rewrite `docs/tutorials/conversation_shape.ipynb`.
 
-- [ ] **Step 0: Split the loader from the figure builder (Contract 4 / Step 0b)**
+- [ ] **Step 0: Split the loader from the figure builder (Contract 4 / Step 0b) — DO THIS *AFTER* THE REWRITE STEP BELOW**
+
+> **Ordering, and it is not cosmetic.** This step restructures the file the rewrite step produces.
+> Run it first and the rewrite deletes it: the prescribed rewrite blocks are monolithic — measured,
+> not one of the four defines `construct_artifact`, `fixture_data`, or a `__main__` guard — so a
+> "replace the file entirely" applied on top of a completed split obliterates it, and every later
+> step then calls names that no longer exist. Sequence for this task is therefore:
+> **rewrite → this split → verify → measure → commit.**
 
 **Do this FIRST, before the rewrite below.** Task 8 Step 0b defines the contract and works the whole pattern through on weather; this step applies it to `examples/animate_conversation.py`. Without it `test_examples_produce_their_stated_artifact` fails on this example, and importing it fetches.
 
@@ -1905,7 +1968,7 @@ Expected: it imports without touching the network and prints both names plus a f
 
 - [ ] **Step 1: Rewrite the example**
 
-Keep `SPEAKER_COLOR` and the `TURNS` list verbatim (lines 44-85). Replace everything below:
+Keep `SPEAKER_COLOR` and the `TURNS` list verbatim (lines 44-85). Replace everything below. **Step 0's loader/builder split is applied to the result of this step, not before it.**
 
 ```python
 WINDOW, STEP, MIN_WINDOWS = 6, 2, 3
@@ -2041,7 +2104,8 @@ UMAP reduction, so this is not cheap -- and every case then runs against
 synthetic FrameContexts, which is what makes frame ORDER testable at all.
 """
 
-import runpy
+import importlib.util
+import os
 
 import matplotlib
 matplotlib.use('Agg')
@@ -2072,9 +2136,22 @@ N_DATASETS = 6      # the default for tests that do not vary it
 
 @pytest.fixture(scope='module')
 def example():
-    ns = runpy.run_path('examples/animate_conversation.py')
-    yield ns
-    plt.close('all')
+    # Import the module rather than `runpy.run_path`: after the Contract 4
+    # split, `runpy` does not set `__name__` to `'__main__'` (it sets
+    # `'<run_path>'`), so the module-level names this fixture used to read
+    # no longer exist -- and before the split, importing it FETCHES.
+    # HYPERTOOLS_OFFLINE makes a stray loader call fail loudly instead of
+    # quietly going to the network from the test suite.
+    os.environ['HYPERTOOLS_OFFLINE'] = '1'
+    try:
+        spec = importlib.util.spec_from_file_location(
+            'animate_conversation', 'examples/animate_conversation.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        yield module
+    finally:
+        os.environ.pop('HYPERTOOLS_OFFLINE', None)
+        plt.close('all')
 
 
 def _ctx(current, revealed=None, n=N_DATASETS, trails=True):
@@ -2100,7 +2177,7 @@ def test_every_head_and_trail_is_assigned_on_every_frame(example):
     """The portable rule: assign the complete value on every invocation.
     A skipped assignment leaves matplotlib's shared artists at the previous
     frame's value, which is how a fade becomes a smear."""
-    fade = example['recency_fade']
+    fade = example.recency_fade
     ctx = _ctx(current=2)
     for art in ctx.artists:
         art.set_alpha(None)
@@ -2111,7 +2188,7 @@ def test_every_head_and_trail_is_assigned_on_every_frame(example):
 
 @pytest.mark.parametrize('current', [0, N_DATASETS // 2, N_DATASETS - 1])
 def test_first_middle_and_last_turn(example, current):
-    fade = example['recency_fade']
+    fade = example.recency_fade
     ctx = _ctx(current=current)
     fade(ctx)
     heads = ctx.artists[:N_DATASETS]
@@ -2123,7 +2200,7 @@ def test_first_middle_and_last_turn(example, current):
 
 
 def test_trails_track_their_own_head(example):
-    fade = example['recency_fade']
+    fade = example.recency_fade
     ctx = _ctx(current=3)
     fade(ctx)
     heads, trails = ctx.artists[:N_DATASETS], ctx.artists[N_DATASETS:]
@@ -2134,19 +2211,19 @@ def test_trails_track_their_own_head(example):
 def test_the_callback_never_indexes_past_revealed_counts(example):
     """The v1 defect: iterating ctx.artists (2N under chemtrails) while
     indexing ctx.revealed_counts (N) raised IndexError on the N+1th artist."""
-    fade = example['recency_fade']
+    fade = example.recency_fade
     fade(_ctx(current=N_DATASETS - 1))  # must not raise
 
 
 def test_a_missing_trail_artist_is_an_explicit_error(example):
     """Rather than silently pairing head i with head i+1."""
-    fade = example['recency_fade']
+    fade = example.recency_fade
     with pytest.raises(RuntimeError, match='one trail artist per dataset'):
         fade(_ctx(current=1, trails=False))
 
 
 def test_a_parallel_animation_is_an_explicit_error(example):
-    fade = example['recency_fade']
+    fade = example.recency_fade
     with pytest.raises(RuntimeError, match='serial'):
         fade(_ctx(current=None))
 
@@ -2160,7 +2237,7 @@ def test_alpha_depends_only_on_the_frame_not_on_history(example, order):
     """matplotlib re-delivers frame indices on loop and on save(), so the
     same current_index must always give the same alphas regardless of what
     ran before it."""
-    fade = example['recency_fade']
+    fade = example.recency_fade
     reference = {}
     for current in range(N_DATASETS):
         ctx = _ctx(current=current)
@@ -2175,7 +2252,7 @@ def test_alpha_depends_only_on_the_frame_not_on_history(example, order):
 
 def test_a_single_point_turn_stays_invisible(example):
     """revealed < 2 is a stray point, not a drawn trajectory."""
-    fade = example['recency_fade']
+    fade = example.recency_fade
     revealed = [10] * N_DATASETS
     revealed[1] = 1
     ctx = _ctx(current=N_DATASETS - 1, revealed=revealed)
@@ -2209,13 +2286,24 @@ Run:
 
 ```bash
 MPLBACKEND=Agg .venv/bin/python - <<'PY'
-import runpy
-ns = runpy.run_path('examples/animate_conversation.py')
-fig, ani = ns['fig'], ns['ani']
+# Load the example WITHOUT running its loaders: after Step 0 every binding
+# lives inside construct_artifact()/__main__, and runpy.run_path does NOT set
+# __name__ to '__main__' (verified: it sets '<run_path>'), so ns['fig'] would
+# raise KeyError. Drive frames through the public draw_frame(), not ani._func.
+import importlib.util, os
+os.environ['HYPERTOOLS_OFFLINE'] = '1'
+def load(stem):
+    spec = importlib.util.spec_from_file_location(stem, f'examples/{stem}.py')
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+m = load('animate_conversation')
+anim = m.construct_artifact(m.fixture_data())
+fig = anim.figure
 ax = [a for a in fig.axes if hasattr(a, 'zaxis')][0]
 titles = []
 for f in (0, 60, 120, 191):
-    ani._func(f, *ani._args)
+    anim.draw_frame(f)
     titles.append(ax.get_title())
 legend = ax.get_legend() or (fig.legends[0] if fig.legends else None)
 print('legend:', [t.get_text() for t in legend.get_texts()])
@@ -2342,7 +2430,14 @@ shape. Nothing here recomputes hypertools' morph schedule or reaches into
 its private modules.
 ```
 
-- [ ] **Step 0: Split the loader from the figure builder (Contract 4 / Step 0b)**
+- [ ] **Step 0: Split the loader from the figure builder (Contract 4 / Step 0b) — DO THIS *AFTER* THE REWRITE STEP BELOW**
+
+> **Ordering, and it is not cosmetic.** This step restructures the file the rewrite step produces.
+> Run it first and the rewrite deletes it: the prescribed rewrite blocks are monolithic — measured,
+> not one of the four defines `construct_artifact`, `fixture_data`, or a `__main__` guard — so a
+> "replace the file entirely" applied on top of a completed split obliterates it, and every later
+> step then calls names that no longer exist. Sequence for this task is therefore:
+> **rewrite → this split → verify → measure → commit.**
 
 **Do this FIRST, before the rewrite below.** Task 8 Step 0b defines the contract and works the whole pattern through on weather; this step applies it to `examples/animate_morph_zoo.py`. Without it `test_examples_produce_their_stated_artifact` fails on this example, and importing it fetches.
 
@@ -2383,16 +2478,25 @@ Expected: it imports without touching the network and prints both names plus a f
 ```bash
 MPLBACKEND=Agg .venv/bin/python examples/animate_morph_zoo.py
 MPLBACKEND=Agg .venv/bin/python - <<'PY'
-import runpy
+# Load without running the loaders, and drive frames through the public
+# draw_frame() -- `ani._func` is a DEFECT_MARKERS pattern and Task 8 Step 0
+# exists precisely so this reach is unnecessary here too.
+import importlib.util, os
 from hypertools.plot.morph import segment_frame_counts, frame_to_segment
-ns = runpy.run_path('examples/animate_morph_zoo.py')
-fig, ani, titles = ns['fig'], ns['ani'], ns['titles']
+os.environ['HYPERTOOLS_OFFLINE'] = '1'
+spec = importlib.util.spec_from_file_location(
+    'animate_morph_zoo', 'examples/animate_morph_zoo.py')
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+data = m.fixture_data()
+anim = m.construct_artifact(data)
+fig, titles = anim.figure, m.TITLES + [m.TITLES[0]]
 ax = [a for a in fig.axes if hasattr(a, 'zaxis')][0]
 total = 12 * 20
-counts = segment_frame_counts(len(ns['clouds']), total)
+counts = segment_frame_counts(len(data.clouds), total)
 bad = []
 for frame in range(total):
-    ani._func(frame, *ani._args)
+    anim.draw_frame(frame)
     seg, _step, _n = frame_to_segment(counts, frame)
     expected = titles[seg // 2] if seg % 2 == 0 else ''
     if ax.get_title() != expected:
@@ -3292,7 +3396,15 @@ def test_a_docstring_naming_a_removed_pattern_is_not_a_defect():
     """Pins the above. `d730a085` explains each migration by naming what it
     removed; that is documentation, not a reach. Red before the docstring
     strip: weather and conversation both failed the marker scan for their
-    own prose."""
+    own prose.
+
+    **The migration docstrings are KEPT deliberately, by Tasks 3 and 5.**
+    They are the record of why these files no longer monkeypatch
+    `ani._func`, and this test is what stops the docstring-stripping in
+    `_code_text` from being "fixed" in a way that starts counting prose as
+    a reach again. If a rewrite drops the prose, this fails -- and the
+    right response is to put the sentence back, not to delete the test.
+    """
     for path in ('examples/animate_weather_decades.py',
                  'examples/animate_conversation.py'):
         assert 'ani._func' in _read(path), (
@@ -3411,7 +3523,25 @@ def test_every_allowlisted_reach_is_still_present_and_still_explained():
     satisfies by accident -- it would have passed even if the explanation
     were 200 lines from the code it explains, or explained something else
     entirely.
+
+    **An EMPTY allowlist is the GOAL state, not a failure** -- Task 2's
+    rewrite is supposed to remove market's two reaches, at which point
+    Contract 3's ban is absolute and there is nothing left to allowlist.
+    But "empty" must mean *the reaches are gone*, not *someone deleted the
+    entries*, and a `for` loop over an empty dict asserts nothing at all --
+    the vacuous-gate class this plan has shipped repeatedly. So the empty
+    case gets its own real assertion.
     """
+    if not PRIVATE_API_EXCEPTIONS:
+        for path, _max in BUDGETS:
+            for marker in (r'ani\._args', r'hypertools\._shared'):
+                assert not re.search(marker, _code_text(path)), (
+                    f'{path} reaches {marker!r} but PRIVATE_API_EXCEPTIONS '
+                    f'is empty. Either restore the allowlist entry (with '
+                    f'its recorded reason and MAINTAINER SIGN-OFF) or '
+                    f'remove the reach; an empty allowlist must mean the '
+                    f'reaches are gone.')
+        return
     for (path, marker), reason in PRIVATE_API_EXCEPTIONS.items():
         lines = _read(path).split('\n')
         # Skip matches inside docstrings: `animate_market_forecast.py`'s
@@ -4226,7 +4356,25 @@ Expected: **139 collected — 127 passed, 5 failed, 7 skipped** on the FIRST run
 
 **Ordering, which v3 got wrong at first:** Tasks 2–6 each say to record their measured index set into `EXPECTED_VISIBLE_OUTPUTS`, but Task 8 Step 2 is what CREATES that file — so on a strict Task-2-through-8 pass there is nothing to edit yet. Resolve by running **Step 2 before Tasks 2–6** (it is a pure test-module addition with no dependency on the rewrites), or, if Task 8 is genuinely run last, by treating the five failures as this step's to-do list and populating them here. Either way the dict is filled from a real `scripts/execute_tutorial.py` run, never from arithmetic.
 
-**The 2 skips are the `PRIVATE_API_EXCEPTIONS` pairs** (`ani\._args` and `hypertools\._shared`, both on `animate_market_forecast.py`) — allowlisted by Contract 3, and each skip prints its recorded reason. Plus Step 0's `tests/plot/test_hyper_animation_accessors.py` → **9 passed** (8 + the 2-D morph case from M7), so Task 8 contributes **148** in total.
+**Two runs, two different numbers — do not conflate them.** The figures above are the FIRST
+run, at Task 8 Steps 1–2, before Tasks 2–6 have rewritten anything. The FINAL run, after every
+task, is different and should be stated separately:
+
+| run | collected | passed | failed | skipped |
+|-|-|-|-|-|
+| first (Task 8 Steps 1–2, nothing rewritten yet) | 139 | 127 | 5 | 7 |
+| first, after the 5 index sets are recorded | 139 | 132 | 0 | 7 |
+| **final (all tasks done)** | **139** | **134** | **0** | **5** |
+
+The final run gains 2 passes and loses 2 skips because Task 2's rewrite removes market's two
+private reaches, so `PRIVATE_API_EXCEPTIONS` is emptied in that task and the two allowlisted
+`test_no_defect_marker_in_the_launch_examples` IDs stop skipping and start passing. The remaining
+5 skips are the opt-in `test_example_runs_end_to_end` smoke tests. An earlier revision left the
+allowlist populated while the rewrite deleted the reaches it named, which would have failed
+`test_every_allowlisted_reach_is_still_present_and_still_explained` — a regression the plan wrote
+into itself.
+
+**The 2 first-run skips are the `PRIVATE_API_EXCEPTIONS` pairs** (`ani\._args` and `hypertools\._shared`, both on `animate_market_forecast.py`) — allowlisted by Contract 3, and each skip prints its recorded reason. Plus Step 0's `tests/plot/test_hyper_animation_accessors.py` → **9 passed** (8 + the 2-D morph case from M7), so Task 8 contributes **148** in total.
 
 v1 expected 109 by counting a 10-ID ratio gate that this revision removed; v2 expected 106 before this revision split the notebook gate into execution / index-set / artifact and added the Contract 3 and Contract 8 guards. **Verify by real collection, not by this table** — `pytest tests/test_examples_are_native.py --collect-only -q` — because `BUDGETS` is now computed from `SCRIPT_BUDGETS`, and a naive AST count of the parametrize argument returns 1 for it rather than 10.
 
