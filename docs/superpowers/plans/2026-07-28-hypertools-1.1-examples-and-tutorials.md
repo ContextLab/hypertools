@@ -26,12 +26,14 @@ v2 was adversarially re-reviewed (`notes/audit/review_plan4_v2.md`: 4 Fatal, 4 H
 | `test_examples_produce_their_stated_artifact` ran examples with `runpy`. | Network/model-download work is split out; the suite drives a fixture-fed construction boundary, and the whole-example run becomes an opt-in smoke test. |
 | The morph assertion `assert 'morph' in str(ns.get('ANIMATE', 'morph'))`. | `ANIMATE` does not exist in the example; the expression reduces to `'morph' in 'morph'` and **cannot fail** (proven by execution). Replaced with driven-frame assertions. |
 | `git stash && measure && git stash pop` to read the BEFORE state. | **Data-loss hazard**, demonstrated: with a clean tree `stash` saves nothing and `pop` then restores *and drops* an unrelated pre-existing stash. Replaced with `git show <base>:<path>`, which is read-only. |
-| Task 5 "13 tests"; suite delta "+135". | **12** and **+178** (Task 1 **19** + Task 5 **12** + Task 8 **147**). The plan already said 12 at the step level and 13 in the revision note — it disagreed with itself. Task 8 (106) was correct; Task 1 rises 16 → **19** with the three new colour-count tests this revision adds. All three derived by AST parametrize-expansion and cross-checked against a real collection. |
+| Task 5 "13 tests"; suite delta "+135". | **12** and **+179** (Task 1 **19** + Task 5 **12** + Task 8 **148**). The plan already said 12 at the step level and 13 in the revision note — it disagreed with itself. Task 8 (106) was correct; Task 1 rises 16 → **19** with the three new colour-count tests this revision adds. All three derived by AST parametrize-expansion and cross-checked against a real collection. |
 | Ratio floor "removed as a v1 Fatal". | It was removed from the *gate* but **ten lines still promise it** as a budget (634, 990, 1006, 1186, 1201, 1420, 1435, 1792, 1807, 1904). All corrected. L1435 was doubly stale (`≤ 72` where the enforced dict said 90). |
 | "'0 executed outputs' corrected wherever it appears." | It was not — all five BEFORE headers still said it. Real values: 4/7, 2/7, 2/6, 2/6, 1/6. |
 | Baseline `2564 collected`; "the working tree is not clean". | **2782/2784 collected (2 deselected)**; the tree is clean at `065c841e`; the note claiming the five examples are untouched is false (see above). |
 
 **One review finding REJECTED, with evidence.** The v3 adversarial review reported (M2) that the equal-feature-width citation `plot.py:3152-3153` is stale and the real location is `3164-3165`. Checked against the repo: `sed -n '3152,3153p'` gives exactly `_widths = [ri.shape[1] for ri in raw]` / `if len(set(_widths)) > 1:`, and `3164-3165` is unrelated (`return False` / `_text_hint = (`). The citation is correct as written. The likely cause is instructive and worth guarding against: that review measured inside a worktree with **Task 1's patches already applied**, and those insert lines into `plot.py` above this point, shifting everything below. **A line number verified in a patched tree is not verified.** Re-check citations against a clean checkout.
+
+**…and then the number moved anyway, for a different reason.** While the next review round ran, Plan 3's Tasks 2–3 landed on `dev-1.0` (`e1aa1144`, +50 lines to `plot.py`) and pushed the check from `3152-3153` to `3165-3166` — the reviewer's *number* became right by accident, having been wrong in *method*. Both facts matter and neither excuses the other. The durable fix is not a better number: **this plan is sequenced after Plans 1–3, so every `plot.py:`/`colors.py:` line number in it is guaranteed stale before it is executed.** Prose now cites symbols (`_widths`, `_is_morph_request`, `_seaborn_palette_arg`), and no line number survives into shipped example source — a comment in a gallery file that points at a line number is a maintenance bug shipped to users, who cannot tell it has rotted. See Global Constraints.
 
 **New Fatal found during this revision, not present in any prior review:** `hyp.plot(..., animate=...)` returns a `HyperAnimation`, a `(figure, animation)` **tuple subclass**. `fig, ani = hyp.plot(...)` binds `ani` to element `[1]` — the raw `FuncAnimation` — **discarding the wrapper that carries `.on_frame()`**. v2's Task 5 notebook does exactly this and dies with `AttributeError` at the cell that calls `ani.on_frame(recency_fade)`, so `nbclient` halts and the notebook never finishes. The already-landed script avoids it by binding `anim = hyp.plot(...)` without unpacking. Contract 8 below now states the rule, and a Task 8 test enforces it. Blast radius was measured across `docs/`, `examples/`, `hypertools/`, README and CHANGELOG: **the trap existed only in plan documents** — the shipped library and `docs/animation.rst` are correct.
 
@@ -46,7 +48,7 @@ v1 was adversarially reviewed for the first time (`notes/audit/review_plan4_exam
 | **Fatal.** `recency_fade` iterated `ctx.artists` while indexing `ctx.revealed_counts[i]`. `ctx.artists` is heads-then-trails, so with `chemtrails=True` it holds 2N entries against N counts — `IndexError` on the N+1th artist, on the first frame. | Splits by role first (`heads = ctx.artists[:n]`, `trails = ctx.artists[n:]`), asserts one trail per dataset rather than assuming it, and drives head and trail together. `n` comes from `len(ctx.revealed_counts)`, which is authoritative after `hue=` reshaping. Task 0 of Plan 3 documents the same class as **Contract 9** (forecast artists deliberately stay OUT of `ctx.artists` for exactly this reason). |
 | **Fatal.** Task 8's `BUDGETS` gated a per-file native-code ratio, and 4 of 5 rewrites missed their own floors when the reviewer ran the plan's own script against the plan's own proposed code (market 14.7 vs 26, paintings 12.5 vs 20, conversation 18.9 vs 25, morph 22.2 vs 26). The gate could not have gone green. | The ratio is **reported, not gated** (maintainer's call): it is easy to game by reformatting and says little about quality. The gates that remain cannot be met by formatting — defect markers, a maximum code-line budget, executable semantic checks that each example still produces the artifact it advertises, and exact notebook execution success. |
 | The callback returned early when `ctx.current_index is None`, and skipped assignment on some artists. | Every head and every trail is assigned on **every** frame, including unspoken turns; the condition moved into the VALUE (`turn_alpha`). A parallel animation now raises instead of silently doing nothing. |
-| No tests for the callback at all. | `tests/plot/test_recency_fade.py` — 13 tests: first/middle/last turn, repeated and out-of-order frames, the trail pairing, the cardinality guard, and the single-point case. |
+| No tests for the callback at all. | `tests/plot/test_recency_fade.py` — **12** collected (8 `def`s, two of them parametrized 3 ways): first/middle/last turn, repeated and out-of-order frames, the trail pairing, the cardinality guard, and the single-point case. |
 | Notebook-execution gate allowed `len(code) - 2` unexecuted cells. | Exact: every code cell must carry outputs, and none may carry a committed traceback. **(v3: this was itself unattainable — an imports-only cell and a `fig, ani = …` cell emit nothing however well they run, and the install cell is exempt besides. Superseded by the three-part gate in v3's note above.)** |
 | "all five launch notebooks ship ZERO executed outputs" | False when written — measured 2/6, 4/7, 1/6, 2/6, 2/7 (`git log 9b94d86f`, 2026-07-30). Corrected wherever it appears. |
 | Task 1 "17 passed"; Task 8 "109 passed"; suite delta +126. | **16**, **106**, and **+135** (Task 5 now contributes 13). Each derived in a table at its step. |
@@ -61,13 +63,13 @@ This is the first revision of this plan, so there is no prior version to correct
 | claim as received | what I measured (`/Users/jmanning/hypertools/.venv/bin/python`, 2026-07-28) |
 |-|-|
 | "`nbsphinx_execute = 'never'` means committed outputs ship verbatim" | True (`docs/conf.py:131`). The five launch notebooks are **partially** executed — re-measured 2026-08-01: `conversation_shape` **2**/6 code cells carry outputs, `market_forecast` **4**/7, `morph_shapes_zoo` **1**/6, `painting_embeddings` **2**/6, `weather_decades` **2**/7. (v1 said 0 for all five; `git log 9b94d86f`, 2026-07-30, "execute the five new tutorials" had already landed.) The 15 older tutorials carry 3–15 executed cells each. So the five launch tutorial pages render **most of their code with no figure**, not none of it — the fix is the same. **(v3: "Task 8's gate is now exact (every code cell)" was wrong; see v3's note. The gate now checks execution, a measured output INDEX SET, and the committed GIF artifact separately.)** There is also **no gallery thumbnail** for any of the five (`docs/_static/thumbnails/` holds 12 files; `scripts/generate_gallery_thumbs.py:26` hard-codes `MPL_ANIMS = ['animate', 'animate_MDS', 'animate_spin', 'chemtrails', 'precog', 'save_movie']`). Task 8 fixes both. |
-| Equal per-dataset feature widths required by `plot.py:2748-2756` | The comment block starts at `plot.py:2748-2756`; the **check** is `plot.py:3152-3153` (`_widths = [ri.shape[1] for ri in raw]` / `if len(set(_widths)) > 1:`). Cite 2750-2751. |
-| Market panel: 24/24 tickers, 2513 trading days, 2016-07-28 → 2026-07-28 | **Confirmed exactly.** All 24 tickers fetched from `https://query1.finance.yahoo.com/v8/finance/chart/<T>?range=10y&interval=1d` with a `User-Agent` header; every one returned `len(timestamp) == 2513`; AAPL first 2016-07-28, last 2026-07-28. Six sectors × 4 tickers = equal widths, satisfying `plot.py:3152-3153`. |
+| Equal per-dataset feature widths required by `plot.py:2748-2756` | **The claim is right; the citation was wrong twice over.** `2748-2756` is the `predict=`/`animate=` refusal, and `2750-2751` are two f-string fragments inside its message — neither has anything to do with feature widths. The real check is the `_widths = [ri.shape[1] for ri in raw]` / `if len(set(_widths)) > 1:` pair in `plot()`; find it with `grep -n '_widths = \[ri.shape\[1\]' hypertools/plot/plot.py` (it was `3152-3153` before Plan 3 landed and `3165-3166` after — which is exactly why this row now cites the symbol). |
+| Market panel: 24/24 tickers, 2513 trading days, 2016-07-28 → 2026-07-28 | **Confirmed exactly.** All 24 tickers fetched from `https://query1.finance.yahoo.com/v8/finance/chart/<T>?range=10y&interval=1d` with a `User-Agent` header; every one returned `len(timestamp) == 2513`; AAPL first 2016-07-28, last 2026-07-28. Six sectors × 4 tickers = equal widths, satisfying the `_widths` check in `plot()`. |
 | Weather: `temperatures.csv` is (1645 months, 20 cities) | The raw CSV is **(1965, 43)**: `Unnamed: 0`, `Year`, `Month`, then **both** `<City>_anomaly` and `<City>` for 20 cities. `dropna()` → **1645 complete rows, 1875–2013**. The 20 absolute-temperature columns are selected by `raw[list(locs['City'])]` → `(1645, 20)`. `temperature_locs.csv` is (20, 4): `Unnamed: 0`, `City`, `Lat`, `Long`. |
 | The weather paper call is "essentially ONE native call", 516 distinct colours | Confirmed, and stronger. `hyp.plot(temps, fmt='-', hue=avg_temp, palette='RdBu_r', normalize='across', manip='Smooth', animate=True, chemtrails=True, colorbar=True, duration=8, frame_rate=20, show=False)` runs in **0.3 s**, emits **no warnings**, and produces **2 axes** (`Axes3D` + the colorbar `Axes`). After driving frame 150 the head+trail collections carry **879 distinct RGBA values**. (516 was presumably a different frame/duration; the qualitative claim holds and is now pinned to exact parameters.) |
 | `hyp.reduce(list_of_strings, ndims=3)` → (8, 3) | Confirmed. Also confirmed: `hyp.reduce([[s,s,s],[s,s,s],[s,s]], ndims=3)` → `[(3,3), (3,3), (2,3)]`, so grouped text needs no manual re-split; and `hyp.plot(texts, '.', ndims=3, vectorizer='TfidfVectorizer', semantic=None, corpus=None)` → `Figure`. |
 | `labels=` is per-OBSERVATION, flat or nested | Confirmed on real artists. Flat `[None]*15` with 2 non-None entries → 2 annotations; nested `[[...5], [...5], [...5]]` with 2 non-None entries → 2 annotations. |
-| GIF saving is native | Confirmed end to end: `hyp.plot(..., animate=True, save_path='x.gif')` wrote a **24 832-byte** real GIF with no ffmpeg (`plot.py:1513-1520`, dispatch at `animate.py:84`). |
+| GIF saving is native | Confirmed end to end: `hyp.plot(..., animate=True, save_path='x.gif')` wrote a **24 832-byte** real GIF with no ffmpeg (`plot()`'s `save_path` docstring states it; `animate.py` routes `.gif`/`.png`/`.apng` to `PillowWriter`). |
 | Palette-from-image is ABSENT | Confirmed. `hyp.plot(..., palette='image:/tmp/nope.png')` → `ValueError: 'image:/tmp/nope.png' is not a valid palette name` (raised by seaborn through `colors.py:306`). No `PIL`/image handling anywhere in `hypertools/`. |
 | The existing `image_palette()` orders k-means clusters BY SIZE and so returns the background tone | Confirmed and reproduced. On a synthetic 90%-beige / 10%-vivid-red image, `km.cluster_centers_[np.argmax(counts)]` (`examples/animate_painting_embeddings.py:138-140`) → `[0.784, 0.769, 0.737]` (the beige). Ordering by `population × chroma` → `[0.863, 0.078, 0.078]` (the red) first. Task 1 encodes this as a test. |
 | Verified baseline `2564 collected`, `2551 passed, 13 skipped` | `pytest --collect-only -q` → **`2564/2566 tests collected (2 deselected)`**. Consistent. |
@@ -76,23 +78,38 @@ This is the first revision of this plan, so there is no prior version to correct
 | *(my own first guess)* a categorical `hue=` would collapse the conversation's 28 turns and break per-segment `title=` | **False, verified.** With 6 line datasets and a nested categorical `hue`, `hyp.plot(...)` draws **6 lines** and a **3-entry legend** (`['Alice', 'Hatter', 'March Hare']`); `animate='serial'` still passes **6 datasets** to the backend (`len(ani._args[0]) == 6`). So per-turn `title=` and per-speaker `hue=`/`legend=True` compose. (``_regroup_categorical_lines`, plot.py:219` regroups *contiguous runs*, not whole categories.) |
 | *(unstated)* the market accuracy readout is cheap | **It is not, and the budget is now measured.** `hyp.predict(x, model='Kalman', t=1)` costs 274 ms at 60 rows, 217–472 ms at 250, 445 ms at 500, 873 ms at 1000, **2178 ms at 2500**. The full walk-forward loop was timed: 7 series × 30 anchors on a **60-row rolling window = 210 fits in 7.3 s**; the same loop at a 250-row window costs 30.7 s. The current example's whole run is **6.2 s**. Task 2 therefore fixes `WINDOW = 60`, `N_SCORED = 30` and states the measured cost. |
 | *(unstated)* `manip={'model':'Smooth','kwargs':{'kernel_width':10}}` is a clean drop-in for the pandas rolling mean | It works, but emits `UserWarning: Increasing smoothing kernel width by 1 (must be odd)` (`hypertools/manip/smooth.py:232`). Task 7 uses **11**, not 10, so the tutorial produces no warning. |
-| *(unstated)* the measurement metric | The audit's "% hypertools" counts *lines matching* `\bhyp\.|\bhypertools\b`, which scores a 10-line `hyp.plot(...)` call as **1** native line. This plan uses a **logical-statement** metric (a continuation line belongs to the statement it continues). Measured on the same five scripts it gives 48 native of 739 code lines = **6.5%**, reproducing the audit's 6.0% NATIVE-line classification to within rounding — so the two agree, and the logical-statement metric is the one Task 8 gates on because it is the one that rewards a big native call. |
+| *(unstated)* the measurement metric | The audit's "% hypertools" counts *lines matching* `\bhyp\.|\bhypertools\b`, which scores a 10-line `hyp.plot(...)` call as **1** native line. This plan uses a **logical-statement** metric (a continuation line belongs to the statement it continues). Measured on the same five scripts **as they stood on 2026-07-28** it gives 48 native of 739 code lines = **6.5%**, reproducing the audit's 6.0% NATIVE-line classification to within rounding (today the same five measure 48/723 = 6.6%, `d730a085` having shrunk morph; the point of this row is the agreement between the two metrics, not the absolute) — so the two agree, and the logical-statement metric is the one Task 8 gates on because it is the one that rewards a big native call. |
 
-**Measured baseline, logical-statement metric** (the numbers every task below is held to):
+**Measured baseline, logical-statement metric.** Re-measured **2026-08-02** by extracting Task 8
+Step 1's `measure_native_ratio.py` from this document and running it, so these are the numbers that
+script produces — not a hand tally. Two things moved them since v1:
+
+- `d730a085` already landed the morph script rewrite (`40 → 26` code lines), so the morph row is a
+  **post**-migration number and Task 6 is a reconciliation, not a rewrite. See Task 6's Step 0.
+- The **metric itself was wrong** for notebooks in v1/v2 (`_code_lines_nb` did not strip docstrings,
+  so the same source measured differently as `.py` and `.ipynb`). Every notebook row moved. The
+  five notebook budgets in Task 8 were re-derived from these numbers, not carried forward.
+
+**Do not hand-edit this table.** Re-run the command and paste. It is stale the moment any of the ten
+files changes:
+
+```bash
+.venv/bin/python scripts/measure_native_ratio.py examples/animate_*.py docs/tutorials/*.ipynb
+```
 
 | file | code lines | native lines | ratio |
 |-|-|-|-|
-| `examples/animate_conversation.py` | 166 | 9 | 5.4% |
+| `examples/animate_conversation.py` | 165 | 9 | 5.5% |
 | `examples/animate_market_forecast.py` | 191 | 11 | 5.8% |
-| `examples/animate_morph_zoo.py` | 40 | 6 | 15.0% |
+| `examples/animate_morph_zoo.py` | 26 | 6 | 23.1% |
 | `examples/animate_painting_embeddings.py` | 146 | 11 | 7.5% |
-| `examples/animate_weather_decades.py` | 196 | 11 | 5.6% |
-| **five scripts, total** | **739** | **48** | **6.5%** |
-| `docs/tutorials/conversation_shape.ipynb` | 186 | 11 | 5.9% |
-| `docs/tutorials/market_forecast.ipynb` | 192 | 11 | 5.7% |
-| `docs/tutorials/morph_shapes_zoo.ipynb` | 45 | 8 | 17.8% |
-| `docs/tutorials/painting_embeddings.ipynb` | 116 | 10 | 8.6% |
-| `docs/tutorials/weather_decades.ipynb` | 206 | 10 | 4.9% |
+| `examples/animate_weather_decades.py` | 195 | 11 | 5.6% |
+| **five scripts, total** | **723** | **48** | **6.6%** |
+| `docs/tutorials/conversation_shape.ipynb` | 176 | 11 | 6.2% |
+| `docs/tutorials/market_forecast.ipynb` | 187 | 11 | 5.9% |
+| `docs/tutorials/morph_shapes_zoo.ipynb` | 46 | 9 | 19.6% |
+| `docs/tutorials/painting_embeddings.ipynb` | 121 | 11 | 9.1% |
+| `docs/tutorials/weather_decades.ipynb` | 194 | 11 | 5.7% |
 
 ---
 
@@ -193,6 +210,7 @@ This is the first revision of this plan, so there is no prior version to correct
 - **Baseline: MEASURE IT WHEN THIS PLAN STARTS. Do not trust any number written here.** For reference only, it was `2564` in v2 (~7 months stale by the time anyone read it), `2782/2784` at `065c841e`, and `2799/2801` on 2026-08-02 after Plan 3's Tasks 0–1 added 17. Each of those was correct when written and wrong within days, because Plans 1–3 are landing concurrently. This plan states its own deltas relative to whatever the suite is when it starts, and each task re-runs the whole suite.
 - **Reading a file's BEFORE state: use `git show <base>:<path>`, never `git stash`.** v2 prescribed `git stash && measure && git stash pop`. That is a **data-loss hazard**, demonstrated end-to-end: with a clean tree — exactly the state at `065c841e` — `git stash` saves nothing and returns 0, and the following `git stash pop` then restores *and drops* an unrelated pre-existing stash (`Dropped refs/stash@{0}`; stash count 1 → 0; the unrelated file appears in the tree). `git show` is read-only, needs no clean tree, and leaves `git status --porcelain` byte-identical before and after.
 - **New test files must be `git add`ed before running the full suite.** `tests/test_packaging_artifacts.py::test_sdist_contains_only_tracked_files_plus_allowlist` fails on any untracked file that lands in the sdist. This is the guard working, not a false positive — but it will look like an unrelated failure if the new test file is still untracked. (Observed twice while preparing this revision.)
+- **Every `plot.py:` / `colors.py:` line number in this plan is stale. Re-derive, don't trust.** This plan is sequenced *after* Plans 1–3, all of which insert lines into `plot.py`; a citation that was exact when written is wrong by the time it is executed. Two rules follow. **(a)** In prose, cite the **symbol** (`_widths`, `_is_morph_request`, `_seaborn_palette_arg`, `_draw_forecast_overlays`, `FrameHooks.dispatch`, `HyperAnimation.on_frame`) and find it with `grep -n`; a line number may accompany a symbol but never replace it. **(b)** **No line number ships into example or notebook source.** A gallery file that tells a reader to look at `plot.py:3152` is a maintenance bug delivered to someone with no way to know it has rotted — describe the *behaviour* instead. Both rules were added after this plan cited the same check at three different line numbers within one review cycle.
 - **Never simplify a test to make it pass.** If a test fails repeatedly, fix the code.
 - **No mock objects.** Task 1's tests write real PNGs and read them back; the example-hygiene tests in Task 8 read the real committed files.
 - Force `matplotlib.use("Agg")` in every matplotlib test module. There is **no** `conftest.py` in this repo.
@@ -234,7 +252,7 @@ Plans 1, 2 and 3 must land first. Per task:
 | this plan's task | depends on | why |
 |-|-|-|
 | **Task 1** (palette from image) | *(code: none; docs: animation-core)* | The code is a pure library addition to `hypertools/plot/colors.py` and `plot.py`, and can start immediately in parallel with Plans 1–3. **Its Step 6 cannot**: it writes under a `## 1.1.0 (unreleased)` → `### Added` heading that the animation-core plan creates, and `CHANGELOG.md` has neither today (`grep -n "1.1.0\|### Added" CHANGELOG.md` → nothing). Either land animation-core's CHANGELOG step first, or have Step 6 create the heading if it is missing. |
-| **Task 2** (Market) | **MultiIndex** T1 (`group_columns`), T2 (final-trace builder), T5 (column MultiIndex in `plot()`), T6 (hue as a per-trace auxiliary value), T8 (`predict=` over final traces); **Forecast-animation** T3 (narrow the `predict=` refusal), T4 (draw the per-frame forecast), T5 (`forecast_trail=`); **Animation-core** T1 (`title=` type contract) | The whole example *is* a column MultiIndex + a continuous hue through a hierarchy + one forecast per trace during a time-progressing animation. Without MultiIndex T6 the hue is discarded (`plot.py:3080-3086`); without Forecast-animation T3 the call raises `NotImplementedError` (`plot.py:2748-2756`). |
+| **Task 2** (Market) | **MultiIndex** T1 (`group_columns`), T2 (final-trace builder), T5 (column MultiIndex in `plot()`), T6 (hue as a per-trace auxiliary value), T8 (`predict=` over final traces); **Forecast-animation** T3 (narrow the `predict=` refusal), T4 (draw the per-frame forecast), T5 (`forecast_trail=`); **Animation-core** T1 (`title=` type contract) | The whole example *is* a column MultiIndex + a continuous hue through a hierarchy + one forecast per trace during a time-progressing animation. Without MultiIndex T6 the hue is discarded (the `_multiindex_meta is not None` hue branch in `plot()`); without Forecast-animation T3 the call raises `NotImplementedError` (the `predict is not None and animate` refusal in `plot()` — since Plan 3 Task 3 landed, narrowed to `_is_morph_request`). |
 | **Task 3** (Weather) | *(none strictly)* — verified to run on today's `dev-1.0`; **Animation-core** T1 for the `title=` contract | The paper-style call already works today. Sequence it after Plan 1 only so the whole 1.1 line is tested together. |
 | **Task 4** (Paintings) | **Task 1** (palette from image); **Animation-core** T1 (`title=`) | `color=` per cloud comes from `image_palette`; the hand-rolled title becomes `title=`. |
 | **Task 5** (Conversation) | **Animation-core** T5 (`order='serial'`), T7 (`on_frame=` + `HyperAnimation.on_frame`), T8 (per-segment `title=`), T4 (plotly serial+trail parity) | `animate=True, order='serial', chemtrails=True` is exactly Animation-core T4+T5; the recency fade moves onto the public `on_frame=` hook; the caption/speaker artists are replaced by per-segment `title=`. |
@@ -501,7 +519,8 @@ def test_a_categorical_hue_is_not_capped_at_six_categories(tmp_path):
 def test_an_image_with_too_few_colours_interpolates_rather_than_repeats(
         tmp_path):
     """Cycling would give two categories the SAME colour -- the ambiguity
-    the short-list error exists to prevent (colors.py:332-335). A caller
+    the short-list error exists to prevent (the `raise ValueError` arm of
+    `_get_palette`'s `len(colors) < n_colors` branch). A caller
     cannot add colours to an image, so the anchors are blended up instead.
     `painting_png` is genuinely two-tone, so 5 categories need 3 blended."""
     path = painting_png(tmp_path)
@@ -529,7 +548,7 @@ def test_a_single_colour_image_raises_rather_than_inventing_colours(
 
 def test_palette_string_blends_anchors_for_a_continuous_hue(tmp_path):
     """A short list + a continuous hue is seaborn blend_palette semantics
-    (colors.py:323-331), so an image palette gives a gradient between its
+    (the `continuous` arm of `_get_palette`'s `len(colors) < n_colors` branch), so an image palette gives a gradient between its
     extracted anchors -- no error about 'too few colors'."""
     path = six_png(tmp_path)
     cmap = continuous_colormap(f'image:{path}', n_bins=100)
@@ -575,7 +594,7 @@ Add to `hypertools/plot/colors.py`, immediately after `continuous_colormap` (whi
 #: How many anchor colors `palette='image:<path>'` extracts for a CONTINUOUS
 #: mapping, which asks `_get_palette` for `n_bins` (100) colors -- clustering
 #: an image into 100 groups is both slow and meaningless, so it takes this
-#: few and lets the short-list blending (colors.py:323-331) build the
+#: few and lets the short-list blending (the `continuous` arm of `_get_palette`'s `len(colors) < n_colors` branch) build the
 #: gradient. A CATEGORICAL or matrix mapping instead extracts exactly as many
 #: colors as it has categories, so the number of groups is NOT capped at this
 #: value; see `_image_palette_list`.
@@ -895,7 +914,7 @@ The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVER
 | `_wrapped` + `ani._func = _wrapped` + `ani._args[1][0]` (`:199-213`, `:323-356`, class **C**) | nothing — there is no per-frame work left |
 | a hand-thinned single equal-weight index over 5 FRED series | a `(Market, Sector, Ticker)` column MultiIndex over **24 tickers**, expanded natively into 6 sector traces + 1 market-mean trace, each with its own forecast |
 
-**Data.** Verified today: 24/24 tickers from `https://query1.finance.yahoo.com/v8/finance/chart/<TICKER>?range=10y&interval=1d` (User-Agent header required), 2513 trading days each, 2016-07-28 → 2026-07-28. Six sectors × 4 tickers gives **equal widths**, required by `plot.py:3152-3153`. `yfinance` 1.5.1 is installed but the raw chart endpoint is used directly, so the example has no extra dependency.
+**Data.** Verified today: 24/24 tickers from `https://query1.finance.yahoo.com/v8/finance/chart/<TICKER>?range=10y&interval=1d` (User-Agent header required), 2513 trading days each, 2016-07-28 → 2026-07-28. Six sectors × 4 tickers gives **equal widths**, required by the `_widths` check in `plot()`. `yfinance` 1.5.1 is installed but the raw chart endpoint is used directly, so the example has no extra dependency.
 
 **Accuracy readout.** Per Contract 5 this lives in the example. Budget measured: `hyp.predict(..., model='Kalman', t=1)` on a **60-row** rolling window, **30** anchors, **7** series (6 sectors + the market mean) = **210 fits in 7.3 s**. A 250-row window costs 30.7 s for the same loop, and the whole current example runs in 6.2 s — so 60/30 is the budget, and it is stated in the module docstring.
 
@@ -1073,7 +1092,7 @@ os.makedirs(CACHE, exist_ok=True)
 MARKET = 'Market'
 RANGE = '10y'
 # six sectors x FOUR tickers each: equal per-group widths, which the
-# analysis pipeline requires (hypertools/plot/plot.py:3152-3153)
+# analysis pipeline requires (unequal widths raise before the pipeline runs)
 SECTORS = {
     'Technology': ['AAPL', 'MSFT', 'ORCL', 'IBM'],
     'Financials': ['JPM', 'BAC', 'GS', 'AXP'],
@@ -1154,7 +1173,8 @@ sector_index = [(prices[MARKET][sector].mean(axis=1)
 # sector traces plus a heavier market-mean trace, each coloured by its own
 # price index and each carrying its own next-day Kalman forecast, redrawn
 # per frame and trailed. Widths/opacities come from the hierarchy, so no
-# linewidth= is passed (it would be warned and ignored, plot.py:3037-3043).
+# linewidth= is passed: with a MultiIndex, plot() warns and ignores it
+# (documented in plot()'s docstring under the MultiIndex kwarg rules).
 duration, fps = 8, 20
 fig, ani = hyp.plot(
     prices, '-',
@@ -1690,7 +1710,7 @@ def canvas_color(spec):
 names = list(PAINTINGS)
 descriptions = [windows(PAINTINGS[name]['text']) for name in names]
 colors = [canvas_color(PAINTINGS[name]) for name in names]
-# labels are per-OBSERVATION (plot.py:1154-1159): a nested list with one
+# labels= annotates per OBSERVATION, not per dataset: a nested list with one
 # sub-list per cloud, carrying the painting's name on its MIDDLE window
 # (roughly the centre of a text trajectory) and None everywhere else.
 labels = [[name if i == len(cloud) // 2 else None
@@ -1904,7 +1924,7 @@ def windows(text, size=WINDOW, step=STEP, min_windows=MIN_WINDOWS):
 
 
 turns = [windows(text) for _speaker, text in TURNS]
-# category order is FIRST APPEARANCE (hypertools/plot/colors.py:105), so the
+# category order is FIRST APPEARANCE, not alphabetical, so the
 # palette must be listed in that order for each speaker to get their colour
 speakers = list(dict.fromkeys(speaker for speaker, _text in TURNS))
 print(f'conversation: {len(TURNS)} turns, {len(speakers)} speakers, '
@@ -2236,7 +2256,12 @@ Expected: both files inside budget (**≤ 90 / ≤ 95 code lines**). Record the 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add examples/animate_conversation.py docs/tutorials/conversation_shape.ipynb
+# tests/plot/test_recency_fade.py is CREATED by this task (Step 4). An
+# untracked new test file makes test_sdist_contains_only_tracked_files_plus_
+# allowlist fail, which reads like an unrelated breakage -- see Global
+# Constraints.
+git add examples/animate_conversation.py docs/tutorials/conversation_shape.ipynb \
+        tests/plot/test_recency_fade.py
 git commit -m "docs(gallery): conversation example uses native text, order='serial', and per-segment titles"
 ```
 
@@ -2578,7 +2603,7 @@ Expected: every one of the eight has a **strictly higher** ratio than the audit'
 
 **Files:** Modify `hypertools/plot/hyper_animation.py`; test `tests/plot/test_hyper_animation_accessors.py` (create).
 
-**Why this is library work and not test-only.** The v2 gate inspected `ani._save_count` — matplotlib's private field — which Contract 3 forbids and `DEFECT_MARKERS` lists ten lines above the gate that used it. A gate may not reach for what it bans. `HyperAnimation` today exposes only `figure` and `animation` (`hyp_animation.py:67`, `:72`), so the supported accessors have to exist first.
+**Why this is library work and not test-only.** The v2 gate inspected `ani._save_count` — matplotlib's private field — which Contract 3 forbids and `DEFECT_MARKERS` lists ten lines above the gate that used it. A gate may not reach for what it bans. `HyperAnimation` today exposes only the `figure` and `animation` properties (`hypertools/plot/hyper_animation.py`), so the supported accessors have to exist first.
 
 Write these tests first:
 
@@ -2870,7 +2895,8 @@ NATIVE       -- every code line of a logical statement whose text matches
                 ``\bhyp\.|\bhypertools\b``.
 
 Measured against the 2026-07-26 audit's independent NATIVE-line
-classification, this metric gives 48/739 = 6.5% for the five launch scripts
+classification, this metric gave 48/739 = 6.5% for the five launch scripts
+on 2026-07-28 (48/723 = 6.6% today, after `d730a085`)
 where the audit reported 6.0% -- i.e. the two agree.
 
     .venv/bin/python scripts/measure_native_ratio.py examples/animate_*.py
@@ -3042,7 +3068,8 @@ Expected on the pre-`d730a085` file: `code= 166 native=   9 ratio=  5.4%`. On th
 """The gallery examples and their notebooks must SHOWCASE hypertools.
 
 Measured on 2026-07-26/28, before the 1.1 examples plan: 48 of 739 code
-lines across the five launch examples belonged to a hypertools call (6.5%),
+lines across the five launch examples belonged to a hypertools call (6.5%;
+the same five measure 48/723 = 6.6% since `d730a085` shrank morph),
 and 37.9% of the code either re-implemented something native or worked
 around a gap. This module makes the fix permanent -- it fails if a defect
 marker comes back, or if a file drifts back above its size budget.
@@ -3189,7 +3216,9 @@ DEFECT_MARKERS = {
     r'hypertools\._shared': 'private module; use a documented kwarg',
     r'from hypertools\.plot import morph': "use title=[...] for per-segment names",
     r'\bantialias_line\b': 'plot() antialiases every drawn line already',
-    r'\bffmpeg\b': "save_path='*.gif' needs no ffmpeg (plot.py:1513-1520)",
+    r'\bffmpeg\b': ("save_path='*.gif' needs no ffmpeg -- .gif/.png/.apng "
+                    "go through PillowWriter; see animate.py's writer "
+                    "dispatch and plot()'s save_path docstring"),
     r'morph_schedule|frame_to_segment': 'the morph schedule is the library\'s business',
 }
 
@@ -3258,13 +3287,27 @@ def _docstring_lines(path):
 
     Used to tell a real private reach from a docstring that merely NAMES
     one while explaining why it was removed (or why it has to stay).
+
+    Unparseable input RAISES here, unlike `strip_docstrings`, which keeps
+    every line. The polarity is opposite and so is the safe default:
+    `strip_docstrings` *removes* lines, so failing open keeps code in the
+    scan; this function *excludes* lines from a search, so failing open
+    silently converts every docstring mention into a reported reach --
+    which is precisely what happened when this was tested with the file
+    made unparseable. It blamed line 34 (prose in the market example's
+    Coordinate note) for a defect that did not exist, while the real
+    problem -- a file that does not parse -- went unnamed. An example that
+    does not parse is a hard failure in its own right; say so.
     """
     if not path.endswith('.py'):
         return set()
     try:
         tree = ast.parse(_read(path))
-    except SyntaxError:
-        return set()
+    except SyntaxError as exc:
+        raise AssertionError(
+            f'{path} does not parse ({exc.msg} at line {exc.lineno}), so '
+            f'docstring spans cannot be computed. Fix the file: every '
+            f'shipped example must be importable and executable.') from exc
     spans = set()
     for node in ast.walk(tree):
         if not isinstance(node, (ast.Module, ast.FunctionDef,
@@ -3364,8 +3407,10 @@ def test_every_allowlisted_reach_is_still_present_and_still_explained():
             f'PRIVATE_API_EXCEPTIONS entry rather than leaving it to permit '
             f'a pattern that is gone')
         for i in hits:
+            # +1 on the upper bound: a slice end is exclusive, so without it
+            # the window reaches 15 lines back and only 14 forward.
             window = '\n'.join(lines[max(0, i - RATIONALE_WINDOW):
-                                     i + RATIONALE_WINDOW])
+                                     i + RATIONALE_WINDOW + 1])
             explained = ('deliberately' in window or 'no public' in window
                          or 'no publicly' in window)
             assert explained, (
@@ -3419,6 +3464,24 @@ def _hypertools_names(tree):
     return mods, bare
 
 
+def _bindings(node):
+    """`(targets, value)` for every node kind that binds a NAME.
+
+    `ast.Assign` is not the only one, and a guard that walks only `Assign`
+    is evaded by three ordinary spellings -- measured, not imagined:
+    `ani: object = anim[1]` (`AnnAssign`), `fig, ani = (anim := hyp.plot(d))`
+    (`NamedExpr`), and `for fig, ani in [...]` (handled separately, since
+    its value is an ITERABLE of wrappers rather than a wrapper).
+    """
+    if isinstance(node, ast.Assign):
+        return node.targets, node.value
+    if isinstance(node, ast.AnnAssign) and node.value is not None:
+        return [node.target], node.value
+    if isinstance(node, ast.NamedExpr):
+        return [node.target], node.value
+    return (), None
+
+
 def _unpacked_wrapper_uses(source):
     """[(name, attr), ...] for names holding an UNPACKED plot result that
     then reach a wrapper-only member.
@@ -3428,6 +3491,17 @@ def _unpacked_wrapper_uses(source):
     exactly the files most likely to be odd, which is the
     assertion-that-cannot-fail class this plan has shipped four revisions
     running.
+
+    **What this deliberately does NOT catch**, verified by
+    `test_the_contract_8_guard_actually_detects` so the list cannot rot:
+    `getattr(hyp, 'plot')(d)` (dynamic dispatch), a wrapper stored in and
+    read back out of a dict or list, `fig, *rest = hyp.plot(d)` then
+    `rest[0]`, and `with hyp.plot(d) as (fig, ani)` (which cannot run at
+    all -- `HyperAnimation` is not a context manager). No AST pass is
+    complete against arbitrary Python; the honest move is to name the
+    holes rather than imply there are none. Each of these would take a
+    value-tracking pass to catch and none of them is a spelling a gallery
+    example would plausibly use.
     """
     tree = ast.parse(source)
     mods, bare = _hypertools_names(tree)
@@ -3442,44 +3516,155 @@ def _unpacked_wrapper_uses(source):
 
     wrappers, unpacked = set(), set()
 
+    def yields_wrapper(value):
+        """`value` evaluates to the `HyperAnimation` wrapper itself."""
+        if is_plot_call(value):
+            return True
+        if isinstance(value, ast.Name) and value.id in wrappers:
+            return True
+        if isinstance(value, ast.NamedExpr):        # (anim := hyp.plot(d))
+            return yields_wrapper(value.value)
+        return False
+
     def unwraps(value):
         """`hyp.plot(...).animation` or `<wrapper>.animation` -- the
         documented property that hands back the raw FuncAnimation, and so
         the most plausible form of this bug after direct unpacking."""
-        if isinstance(value, ast.Attribute) and value.attr in UNWRAPPING_ATTRS:
-            base = value.value
-            return is_plot_call(base) or (isinstance(base, ast.Name)
-                                          and base.id in wrappers)
-        return False
+        return (isinstance(value, ast.Attribute)
+                and value.attr in UNWRAPPING_ATTRS
+                and yields_wrapper(value.value))
+
+    def note_unpack(target):
+        if isinstance(target, (ast.Tuple, ast.List)):
+            unpacked.update(e.id for e in target.elts
+                            if isinstance(e, ast.Name))
 
     for _ in range(3):          # propagate `b = a` aliases to a fixed point
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Assign):
+            if isinstance(node, (ast.For, ast.AsyncFor)):
+                it = node.iter
+                elts = it.elts if isinstance(
+                    it, (ast.List, ast.Tuple, ast.Set)) else []
+                if any(yields_wrapper(e) for e in elts):
+                    note_unpack(node.target)
                 continue
-            value = node.value
-            for target in node.targets:
+            targets, value = _bindings(node)
+            for target in targets:
                 if isinstance(target, ast.Name):
-                    if is_plot_call(value):
-                        wrappers.add(target.id)
-                    elif isinstance(value, ast.Name) and value.id in wrappers:
+                    if is_plot_call(value) \
+                            or (isinstance(value, ast.Name)
+                                and value.id in wrappers) \
+                            or (isinstance(value, ast.NamedExpr)
+                                and yields_wrapper(value)):
                         wrappers.add(target.id)
                     elif unwraps(value):
                         unpacked.add(target.id)
-                    elif isinstance(value, ast.Subscript):
-                        base = value.value
-                        if (isinstance(base, ast.Name) and base.id in wrappers) \
-                                or is_plot_call(base):
-                            unpacked.add(target.id)
+                    elif isinstance(value, ast.Subscript) \
+                            and yields_wrapper(value.value):
+                        unpacked.add(target.id)
                 elif isinstance(target, (ast.Tuple, ast.List)):
-                    if is_plot_call(value) or (isinstance(value, ast.Name)
-                                               and value.id in wrappers):
-                        unpacked.update(e.id for e in target.elts
-                                        if isinstance(e, ast.Name))
+                    if yields_wrapper(value):
+                        note_unpack(target)
     return sorted({(n.value.id, n.attr) for n in ast.walk(tree)
                    if isinstance(n, ast.Attribute)
                    and n.attr in WRAPPER_ONLY
                    and isinstance(n.value, ast.Name)
                    and n.value.id in unpacked})
+
+
+#: Sources the guard MUST flag, MUST leave alone, and is DOCUMENTED not to
+#: catch. Every entry was constructed and run; `note` records why it exists.
+GUARD_MUST_FLAG = {
+    'direct unpack then on_frame': 'fig, ani = hyp.plot(d)\nani.on_frame(cb)\n',
+    'unpack from a wrapper variable':
+        'anim = hyp.plot(d)\nfig, ani = anim\nani.on_frame(cb)\n',
+    'draw_frame on an unpacked name': 'fig, ani = hyp.plot(d)\nani.draw_frame(0)\n',
+    'n_frames on an unpacked name': 'fig, ani = hyp.plot(d)\nprint(ani.n_frames)\n',
+    'index instead of unpack': 'res = hyp.plot(d)\nani = res[1]\nani.on_frame(cb)\n',
+    'chained assignment': 'a = b = hyp.plot(d)\nfig, ani = b\nani.on_frame(cb)\n',
+    'alias chain': 'a = hyp.plot(d)\nb = a\nfig, ani = b\nani.on_frame(cb)\n',
+    '.animation property then on_frame':
+        'ani = hyp.plot(d).animation\nani.on_frame(cb)\n',
+    'walrus inside the tuple target':
+        'fig, ani = (anim := hyp.plot(d))\nani.on_frame(cb)\n',
+    'walrus in an if test':
+        'if (anim := hyp.plot(d)):\n    fig, ani = anim\n    ani.on_frame(cb)\n',
+    'annotated assignment':
+        'anim = hyp.plot(d)\nani: object = anim[1]\nani.on_frame(cb)\n',
+    'for-loop unpack': 'for fig, ani in [hyp.plot(d)]:\n    ani.on_frame(cb)\n',
+    'use appears BEFORE the unpack':
+        'def go():\n    ani.on_frame(cb)\nfig, ani = hyp.plot(d)\n',
+}
+GUARD_MUST_IGNORE = {
+    'the blessed idiom':
+        'anim = hyp.plot(d)\nfig, ani = anim\nanim.on_frame(cb)\n',
+    'wrapper used without unpacking': 'anim = hyp.plot(d)\nanim.draw_frame(0)\n',
+    'FuncAnimation.save on an unpacked name (legal)':
+        "fig, ani = hyp.plot(d)\nani.save('x.gif')\n",
+}
+#: matplotlib's `Line2D.figure` and pandas' `.plot` are real public API.
+GUARD_MUST_IGNORE_FOREIGN = {
+    'matplotlib ax.plot then .figure':
+        'import matplotlib.pyplot as plt\nln, = ax.plot(x, y)\nprint(ln.figure)\n',
+    'pandas df.plot then .figure':
+        'import pandas as pd\nfig, axx = df.plot(subplots=True)\nprint(axx.figure)\n',
+}
+GUARD_KNOWN_UNCAUGHT = {
+    'dynamic getattr dispatch':
+        "fig, ani = getattr(hyp, 'plot')(d)\nani.on_frame(cb)\n",
+    'stored in and read back from a dict':
+        "d2 = {'a': hyp.plot(d)}\nfig, ani = d2['a']\nani.on_frame(cb)\n",
+    'stored in and read back from a list':
+        'L = [hyp.plot(d)]\nfig, ani = L[0]\nani.on_frame(cb)\n',
+    'starred remainder': 'fig, *rest = hyp.plot(d)\nrest[0].on_frame(cb)\n',
+    'with-as unpack (cannot run: not a context manager)':
+        'with hyp.plot(d) as (fig, ani):\n    ani.on_frame(cb)\n',
+}
+
+
+def test_the_contract_8_guard_actually_detects():
+    """A detector that has never detected anything is indistinguishable
+    from one that cannot.
+
+    `test_no_example_or_notebook_unpacks_then_uses_the_wrapper` passes on
+    all ten shipped files, so on its own it proves nothing about the
+    guard. These constructed sources do: each MUST-FLAG case is the bug,
+    each MUST-IGNORE case is correct code the guard must not punish, and
+    the KNOWN-UNCAUGHT set pins the documented limits so that
+    strengthening the guard forces its docstring to be updated in the same
+    commit.
+    """
+    hyp_import = 'import hypertools as hyp\n'
+    for note, body in GUARD_MUST_FLAG.items():
+        assert _unpacked_wrapper_uses(hyp_import + body), (
+            f'guard missed a real Contract 8 violation ({note}):\n{body}')
+    # the alias spelling has to bring its own import
+    assert _unpacked_wrapper_uses(
+        'import hypertools as ht\nfig, ani = ht.plot(d)\nani.on_frame(cb)\n')
+    assert _unpacked_wrapper_uses(
+        'from hypertools import plot as p\nfig, ani = p(d)\nani.on_frame(cb)\n')
+
+    for note, body in GUARD_MUST_IGNORE.items():
+        hits = _unpacked_wrapper_uses(hyp_import + body)
+        assert not hits, f'guard false-positived on {note}: {hits}'
+    for note, source in GUARD_MUST_IGNORE_FOREIGN.items():
+        hits = _unpacked_wrapper_uses(source)
+        assert not hits, (
+            f'guard flagged non-hypertools API ({note}): {hits}. '
+            f'`Line2D.figure` and `DataFrame.plot` are public; a guard that '
+            f'reports them gives a factually wrong reason and cannot be '
+            f'relaxed without weakening the real check.')
+    # a `hyp` call in one function must not launder an `ax.plot` unpack in
+    # another
+    assert not _unpacked_wrapper_uses(
+        hyp_import + 'def a():\n    fig, ani = ax.plot(x)\n'
+                     'def b():\n    anim = hyp.plot(d)\n    anim.on_frame(cb)\n')
+
+    for note, body in GUARD_KNOWN_UNCAUGHT.items():
+        assert not _unpacked_wrapper_uses(hyp_import + body), (
+            f'the guard now catches {note!r}, which its docstring lists as '
+            f'a known limitation. Good -- update the docstring and move this '
+            f'case into GUARD_MUST_FLAG.')
 
 
 @pytest.mark.parametrize('path,_max', BUDGETS)
@@ -3868,17 +4053,18 @@ def test_no_launch_notebook_committed_an_error_output():
 
 Run: `.venv/bin/python -m pytest tests/test_examples_are_native.py -v`
 
-Expected: **138 collected — 126 passed, 5 failed, 7 skipped** on the FIRST run, then 131 passed once the index sets are recorded. Derived:
+Expected: **139 collected — 127 passed, 5 failed, 7 skipped** on the FIRST run, then 132 passed once the index sets are recorded. Derived:
 
 | test | IDs |
 |-|-|
-| `test_no_notebook_budget_is_below_its_own_scripts` | 1 |
+| `test_notebook_budgets_are_derived_not_written_down` | 1 |
 | `test_a_docstring_naming_a_removed_pattern_is_not_a_defect` | 1 |
 | `test_file_is_within_its_size_budget` (10 files) | 10 |
 | `test_native_ratio_is_reported` | 1 |
 | `test_no_defect_marker_in_the_launch_examples` (8 markers × 10 files) | 80 |
 | `test_every_allowlisted_reach_is_still_present_and_still_explained` | 1 |
 | `test_no_example_or_notebook_unpacks_then_uses_the_wrapper` (10 files) | 10 |
+| `test_the_contract_8_guard_actually_detects` | 1 |
 | `test_older_tutorials_dropped_their_hand_rolled_helpers` | 6 |
 | `test_analyze_tutorial_actually_plots` / `test_reduce_tutorial_mentions_describe` | 2 |
 | `test_examples_produce_their_stated_artifact` (5 examples) | 5 |
@@ -3887,13 +4073,13 @@ Expected: **138 collected — 126 passed, 5 failed, 7 skipped** on the FIRST run
 | `test_each_notebook_ships_its_rendered_artifact` (5 notebooks) | 5 |
 | `test_example_runs_end_to_end` (5 examples, opt-in) | 5 |
 | `test_no_launch_notebook_committed_an_error_output` | 1 |
-| **total** | **138** |
+| **total** | **139** |
 
 **The 5 first-run failures are `test_the_right_cells_carry_visible_output`, and they are intentional.** `EXPECTED_VISIBLE_OUTPUTS` ships EMPTY, and the test calls `pytest.fail()` naming the notebook and telling you to paste in the measured set. That is the whole design — a number written before the artifact exists is a guess, and this plan has now been wrong five times that way. The red is the instruction.
 
 **Ordering, which v3 got wrong at first:** Tasks 2–6 each say to record their measured index set into `EXPECTED_VISIBLE_OUTPUTS`, but Task 8 Step 2 is what CREATES that file — so on a strict Task-2-through-8 pass there is nothing to edit yet. Resolve by running **Step 2 before Tasks 2–6** (it is a pure test-module addition with no dependency on the rewrites), or, if Task 8 is genuinely run last, by treating the five failures as this step's to-do list and populating them here. Either way the dict is filled from a real `scripts/execute_tutorial.py` run, never from arithmetic.
 
-**The 2 skips are the `PRIVATE_API_EXCEPTIONS` pairs** (`ani\._args` and `hypertools\._shared`, both on `animate_market_forecast.py`) — allowlisted by Contract 3, and each skip prints its recorded reason. Plus Step 0's `tests/plot/test_hyper_animation_accessors.py` → **9 passed** (8 + the 2-D morph case from M7), so Task 8 contributes **147** in total.
+**The 2 skips are the `PRIVATE_API_EXCEPTIONS` pairs** (`ani\._args` and `hypertools\._shared`, both on `animate_market_forecast.py`) — allowlisted by Contract 3, and each skip prints its recorded reason. Plus Step 0's `tests/plot/test_hyper_animation_accessors.py` → **9 passed** (8 + the 2-D morph case from M7), so Task 8 contributes **148** in total.
 
 v1 expected 109 by counting a 10-ID ratio gate that this revision removed; v2 expected 106 before this revision split the notebook gate into execution / index-set / artifact and added the Contract 3 and Contract 8 guards. **Verify by real collection, not by this table** — `pytest tests/test_examples_are_native.py --collect-only -q` — because `BUDGETS` is now computed from `SCRIPT_BUDGETS`, and a naive AST count of the parametrize argument returns 1 for it rather than 10.
 
@@ -3908,7 +4094,7 @@ If a size budget fails, cut presentation code or renegotiate the budget **in thi
     docs/tutorials/*.ipynb
 ```
 
-Paste the table into the commit message. **This is a record, not a gate** — there is no floor to be "at or above" any more. Read it as a trend against the pre-plan audit baseline (five launch examples: 48/739 native code lines, 6.5%), and if a rewrite lands far below what its siblings manage, ask why *in review* rather than letting a threshold decide. The v1 floors (26/18/20/25/26%) were set before the rewrites existed and four of the five missed them; keeping them would have blocked the plan on a number that measures formatting as much as content.
+Paste the table into the commit message. **This is a record, not a gate** — there is no floor to be "at or above" any more. Read it as a trend against the pre-plan audit baseline (five launch examples on 2026-07-28: 48/739 native code lines, 6.5%; 48/723 = 6.6% as of 2026-08-02), and if a rewrite lands far below what its siblings manage, ask why *in review* rather than letting a threshold decide. The v1 floors (26/18/20/25/26%) were set before the rewrites existed and four of the five missed them; keeping them would have blocked the plan on a number that measures formatting as much as content.
 
 - [ ] **Step 5: Run every example headless**
 
@@ -3953,7 +4139,7 @@ Expected: five new thumbnails, each **under 1.1 MB** (the largest existing one, 
 - [ ] **Step 7: Run the FULL suite**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: the baseline plus **178** — Task 1's **19** (`test_image_palette.py`), Task 5's **12** (`test_recency_fade.py`), and Task 8's **147** (138 in `test_examples_are_native.py` + 9 in `test_hyper_animation_accessors.py`) — all passing, 13 skipped, plus **7 more skips** (2 `PRIVATE_API_EXCEPTIONS` + 5 opt-in smoke tests).
+Expected: the baseline plus **179** — Task 1's **19** (`test_image_palette.py`), Task 5's **12** (`test_recency_fade.py`), and Task 8's **148** (139 in `test_examples_are_native.py` + 9 in `test_hyper_animation_accessors.py`) — all passing, 13 skipped, plus **7 more skips** (2 `PRIVATE_API_EXCEPTIONS` + 5 opt-in smoke tests).
 
 **Verify by real collection, never by this number.** Three revisions running, the stated figure here has been stale: v1 said 17 + 109 = +126, v2 said 16 + 106 = +134, and both were wrong. Run `pytest <file> --collect-only -q` per file and add them up. Any new failure in `tests/test_docs_thumbnails.py` or `tests/test_docs_gallery_log_filter.py` is Step 6's doing — fix it there.
 
@@ -3978,7 +4164,18 @@ Per the repo rule (*"repeat **all** checks if any changes were made to fix any o
 - [ ] **Step 10: Commit**
 
 ```bash
+# Everything Step 0 touched belongs in this commit too: the accessors are
+# library code the gate depends on, and `n_segments` is tagged in BOTH the
+# 3-D and 2-D morph paths of matplotlib_backend.py. `scripts/__init__.py` is
+# the belt-and-braces import guard (the Import note explains why the import
+# works without it today -- add it anyway, so the gate does not depend on a
+# pytest import-mode side effect). New test files must be tracked before the
+# suite runs; see Global Constraints.
 git add scripts/measure_native_ratio.py scripts/generate_gallery_thumbs.py \
+        scripts/__init__.py \
+        hypertools/plot/hyper_animation.py \
+        hypertools/plot/matplotlib_backend.py \
+        tests/plot/test_hyper_animation_accessors.py \
         tests/test_examples_are_native.py docs/tutorials.rst \
         docs/_static/thumbnails/
 git commit -m "test(docs): gate examples and tutorials on native ratio + defect markers; add launch thumbnails"
@@ -4032,7 +4229,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
 
 | requirement | discharged by |
 |-|-|
-| Read both audits first | Both read in full; their per-file classifications drive every "what goes, and to what" table, and their headline numbers are reproduced independently (48/739 = 6.5% vs. the audit's 6.0%) in *Verification note*. |
+| Read both audits first | Both read in full; their per-file classifications drive every "what goes, and to what" table, and their headline numbers are reproduced independently (48/739 = 6.5% on the 2026-07-28 tree vs. the audit's 6.0%) in *Verification note*. |
 | Match the siblings' v2 format and rigor | Same skeleton: goal / architecture / tech stack → verification note → contracts → global constraints → prerequisites → file structure → TDD tasks with `- [ ] **Step N:**` → decisions → self-review. The "Revision note (v2)" slot is filled by a **Verification note (v1)** that plays the same role — a table of received claims against measurements — because this plan has not yet been adversarially reviewed and inventing a revision history would be a fabrication. |
 | Explicit contracts | Seven, covering the script/notebook lockstep, the no-private-reaches rule, network-in-examples-only, scoring-stays-out-of-the-library, and the "budgets are contracts, never weakened to fit the code" rule. |
 | Prerequisites, per task | A per-task table naming the *specific* tasks of Plans 1–3 each rewrite needs (e.g. Market ← MultiIndex T1/T2/T5/T6/T8 + Forecast T3/T4/T5 + Animation-core T1) and *why*, including the two tasks (1 and 7) that have none and can start immediately. |
@@ -4056,7 +4253,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
 
 **Task dependencies.** 1 → 4 (`image_palette`). 2–6 each depend on Plans 1–3 as tabulated. Task 2 Step 1 creates `scripts/execute_tutorial.py`, which Tasks 3–7 use; Task 8 Step 1 creates `scripts/measure_native_ratio.py`, which Tasks 2–7 use in their measure steps — **do Task 8 Step 1 first** if working strictly in order, as noted in Task 2 Step 6. Tasks 1 and 7 have no dependency on Plans 1–3 and can run in parallel with them.
 
-**Suite arithmetic.** Task 1 adds **19**; Task 5 adds **12**; Task 8 adds **147** (138 in `test_examples_are_native.py`, itemised in its Step 3 table, plus 9 in `test_hyper_animation_accessors.py`). Total **+178**. That is a DELTA; the absolute is whatever the suite measures when this plan starts, per Global Constraints. Verify each of the three by real collection rather than by this sum — the stated figure has been stale in every revision of this plan so far.
+**Suite arithmetic.** Task 1 adds **19**; Task 5 adds **12**; Task 8 adds **148** (139 in `test_examples_are_native.py`, itemised in its Step 3 table, plus 9 in `test_hyper_animation_accessors.py`). Total **+179**. That is a DELTA; the absolute is whatever the suite measures when this plan starts, per Global Constraints. Verify each of the three by real collection rather than by this sum — the stated figure has been stale in every revision of this plan so far.
 
 **Remaining risk.** Three places:
 

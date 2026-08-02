@@ -436,5 +436,72 @@ Seven parallel audits dispatched (reports land in `notes/audit/`):
 `plan3_closure_audit.md`, `plan4_metric_remeasure.md`, `plan4_landed_state.md`,
 `plan4_image_palette.md`, `plan4_notebook_gate.md`, `plan4_network_decoupling.md`,
 `plan4_citations_and_ci.md`.
-</content>
-</invoke>
+
+---
+
+# Round 3 (2026-08-02): N9, N10, N12, N12b, N13-N18 + three found while fixing
+
+Everything below was MEASURED. Commands and outputs are in the transcript.
+
+## N9 -- the baseline table, re-measured rather than patched
+
+Extracted Task 8 Step 1's `measure_native_ratio.py` from the plan and ran it. All ten rows now
+come from that script, not a hand tally:
+
+```
+animate_conversation.py        165  9   5.5%      conversation_shape.ipynb   176  11   6.2%
+animate_market_forecast.py     191 11   5.8%      market_forecast.ipynb      187  11   5.9%
+animate_morph_zoo.py            26  6  23.1%      morph_shapes_zoo.ipynb      46   9  19.6%
+animate_painting_embeddings.py 146 11   7.5%      painting_embeddings.ipynb  121  11   9.1%
+animate_weather_decades.py     195 11   5.6%      weather_decades.ipynb      194  11   5.7%
+five scripts total             723 48   6.6%
+```
+
+Two distinct causes, and conflating them would have hidden one: `d730a085` shrank morph 40 -> 26
+(a real file change, scripts only), and the metric fix moved every NOTEBOOK row (docstrings were
+not stripped from `.ipynb` before). The table now says which is which and carries the command to
+regenerate it.
+
+## N12 -- the guard, re-measured before and after
+
+Before: 3 of 12 evasions caught. After adding `AnnAssign`, `NamedExpr` (walrus), and `For`
+handling: **15 of 15** must-flag cases caught, 6 must-ignore cases still clean, and 5 cases
+DOCUMENTED as uncaught (dynamic `getattr`, dict/list round-trip, starred remainder, `with-as`).
+
+The more important change: **the guard had never been proven able to fail.** It passed on all ten
+shipped files, which is equally consistent with a guard that works and one that returns `[]`
+unconditionally. Added `test_the_contract_8_guard_actually_detects` -- 26 constructed sources,
+three sets:
+
+- `GUARD_MUST_FLAG` (15) -- the bug in every spelling that matters
+- `GUARD_MUST_IGNORE` + `_FOREIGN` (6) -- correct code, incl. `Line2D.figure` and `df.plot`
+- `GUARD_KNOWN_UNCAUGHT` (5) -- asserts they stay uncaught, so strengthening the guard forces
+  its docstring to be corrected in the same commit
+
+**A detector that has never detected anything is indistinguishable from one that cannot.**
+
+## N12b -- line numbers do not survive this plan's own sequencing
+
+`plot.py:3152-3153` was correct at review time and is `3165-3166` now, because Plan 3 landed
+mid-review. This is structural: Plan 4 is sequenced after Plans 1-3, all of which insert into
+`plot.py`. Two rules added to Global Constraints: cite the SYMBOL in prose, and ship NO line
+number into example or notebook source. Then verified the rule holds by scanning every fenced
+python block -- found and fixed two violations in shipped source, one of which
+(`plot.py:1154-1159` for "labels are per-OBSERVATION") pointed at the `legend=` docstring instead.
+
+## Found while fixing (not in the review)
+
+- **N19** -- `test_recency_fade.py` counted 13 in the summary table and 12 at the step. Counted the
+  prescribed source: 8 `def`s, two parametrized 3 ways = **12**. The summary was wrong.
+- **N20** -- the gate's own module docstring still quoted `48 of 739 / 6.5%` as if current; five
+  more sites did the same. All now marked as the 2026-07-28 historical baseline.
+- **N21** -- `notes/session_2026-08-01_plan4-v3.md` ended with stray `</content></invoke>` markup
+  from a tool-call mishap. Removed.
+
+## Verification of this round
+
+- gate re-extracted from the plan and run at the correct repo depth: **139 collected, 39 failed,
+  93 passed, 7 skipped** (was 138/39/92/7 -- exactly the +1 the new test adds, and it passes)
+- measure script re-extracted after its docstring edit: all ten numbers unchanged
+- `test_the_contract_8_guard_actually_detects` extracted and executed: PASS
+- all ten shipped files still clean under the extended guard
