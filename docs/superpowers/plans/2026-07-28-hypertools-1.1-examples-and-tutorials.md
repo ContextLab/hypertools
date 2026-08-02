@@ -2510,9 +2510,16 @@ Then implement, beside the existing `figure`/`animation` properties:
     @property
     def n_segments(self):
         """Hold/transition segments for ``animate='morph'``; ``None``
-        otherwise. `n` clouds give `2n` segments -- one hold and one
-        transition each, the closing transition back to the first cloud
-        included."""
+        otherwise.
+
+        `n` clouds give ``2n - 1`` segments: `n` holds interleaved with
+        `n - 1` transitions, beginning and ending on a hold. There is NO
+        implicit closing transition back to the first cloud -- a caller who
+        wants the animation to loop seamlessly appends ``clouds[0]``
+        themselves, as ``examples/animate_morph_zoo.py`` does (5 shapes plus
+        the repeat = 6 clouds = 11 segments). Measured against
+        ``morph.segment_frame_counts``: 2 clouds -> 3, 3 -> 5, 5 -> 9.
+        """
         return getattr(self[1], '_hyp_morph_segments', None)
 
     def draw_frame(self, frame):
@@ -2571,6 +2578,19 @@ fetch/load data  ->  load_<thing>()          # the ONLY code that may touch the 
 | `animate_painting_embeddings` | `load_paintings(PAINTINGS)` | `Paintings(vectors, owners, colors, source)` | **one 1.7 KB** 64-px thumbnail (measured: 48 px = 1258 B, 64 px = 1744 B, 96 px = 2967 B) |
 | `animate_morph_zoo` | `load_shapes(SHAPES, n=N)` | `Shapes(clouds, titles)` | **0** — deterministic parametric clouds |
 
+**`HYPERTOOLS_OFFLINE` has to be made real — nothing reads it today.** (`grep -rn HYPERTOOLS_OFFLINE examples/ hypertools/ scripts/ tests/` returns nothing.) Each fetcher gains one line at its top, so the variable actually does something:
+
+```python
+def fetch_city_months(name, lat, lon):
+    if os.environ.get('HYPERTOOLS_OFFLINE'):
+        raise RuntimeError(
+            'HYPERTOOLS_OFFLINE is set; refusing to fetch. This is the '
+            'gate proving the import path performs no network access.')
+    ...                                     # existing body unchanged
+```
+
+Without this the env var is decoration and the Task 8 helper's guarantee is false. **And no example has a `__main__` guard today** (measured: `grep -c "__main__" examples/animate_*.py` → 0 for all ten), so every loader currently runs at module scope — moving those calls behind the guard is the other half of this step, not an optional tidy-up.
+
 Every one of these `fixture_data()` bodies calls synthetic functions **the example already has**, because Contract 4's offline fallback shape means the deterministic substitute is already written. `fixture_data()` is a two-or-three-line function that assembles the payload from them; it is not a second implementation.
 
 **Worked example — `examples/animate_weather_decades.py`.** Structure only; every body is the existing code, moved:
@@ -2595,9 +2615,7 @@ def synthetic_city_daily(hemi, n_days, ...): ...    # unchanged
 
 
 def load_weather(cities=CITIES):
-    """The two existing fetch loops, now named. Honours HYPERTOOLS_OFFLINE:
-    with it set, a fetch failure RAISES instead of silently substituting, so
-    a loader called by accident at import time fails loudly."""
+    """The two existing fetch loops, now named."""
     ...
 
 
@@ -3077,25 +3095,46 @@ STATED_ARTIFACT = {
 
 
 def _import_example_without_fetching(stem):
-    """Import an example as a module, and prove the import performed no
-    network access.
+    """Import an example as a module, and prove the import fetched nothing.
 
-    `runpy.run_path` (v2) executes the whole file, fetches included. Import
-    must be side-effect-free: the example's `if __name__ == '__main__':`
-    guard runs the loaders, the module body only defines them. Setting
-    HYPERTOOLS_OFFLINE makes any fetcher raise rather than silently fall
-    back, so a loader accidentally called at import time fails loudly here
-    instead of quietly hitting the network in CI.
+    **This depends on Step 0b having been done, and fails loudly if it has
+    not.** Measured 2026-08-02: NO example currently has a
+    `if __name__ == '__main__':` guard (`grep -c __main__ examples/animate_*.py`
+    -> 0 for all ten), so today every loader runs at module scope --
+    `animate_morph_zoo.py:74` and `animate_market_forecast.py:113` fetch
+    during import. `runpy.run_path` (v2) had the same problem for the same
+    reason.
+
+    Step 0b is what makes the premise true: it moves every loader call
+    behind the `__main__` guard so the module body only DEFINES things, and
+    it makes each fetcher honour `HYPERTOOLS_OFFLINE` by raising instead of
+    silently substituting. Until then this helper is not merely ineffective
+    -- it would download Dropbox shape files, FRED CSVs and HuggingFace
+    models inside the default suite.
+
+    The guard below turns that from a silent regression into a failure that
+    names the file.
     """
     import importlib.util
     import matplotlib
     matplotlib.use('Agg')
+    path = os.path.join(REPO, 'examples', f'{stem}.py')
+    source = _read(f'examples/{stem}.py')
+    # Refuse to import an example that has not been split yet, rather than
+    # letting it fetch. Checked BEFORE exec, because after exec the damage
+    # is done.
+    assert "__name__ == '__main__'" in source, (
+        f'examples/{stem}.py has no __main__ guard, so importing it would '
+        f'run its loaders and hit the network (Step 0b). Do the loader / '
+        f'construct_artifact split before enabling this gate.')
     os.environ['HYPERTOOLS_OFFLINE'] = '1'
     try:
-        path = os.path.join(REPO, 'examples', f'{stem}.py')
         spec = importlib.util.spec_from_file_location(stem, path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        for required in ('construct_artifact', 'fixture_data'):
+            assert hasattr(module, required), (
+                f'examples/{stem}.py does not define {required}() (Step 0b)')
         return module
     finally:
         os.environ.pop('HYPERTOOLS_OFFLINE', None)
@@ -3283,8 +3322,16 @@ def test_each_notebook_ships_its_rendered_artifact(stem):
     by an unrelated print() in the same cell.
 
     This asserts the artifact that actually exists, and that its reference
-    resolves -- which also catches morph_shapes_zoo.ipynb embedding
-    `morph_zoo.gif` rather than `morph_shapes_zoo.gif`.
+    resolves.
+
+    **It PASSES today, on all five -- it is a CONTROL, not coverage.**
+    Measured 2026-08-02: every reference resolves, `morph_zoo.gif` included
+    (4.5 MB, present). An earlier draft of this plan claimed the test
+    "catches morph_shapes_zoo.ipynb embedding morph_zoo.gif"; it does not,
+    because that file exists -- the stem mismatch is a naming
+    inconsistency, not a broken link. What this test does is stop a rewrite
+    from DROPPING the GIF or breaking its reference, which is worth having
+    and is why it stays. Do not read five green IDs as five things fixed.
     """
     import json
     import os
