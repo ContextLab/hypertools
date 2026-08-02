@@ -2414,19 +2414,134 @@ git commit -m "docs(1.1): document animated predict= and forecast_trail="
 
 ---
 
-## Decisions still needed
+## Decisions — SETTLED by the maintainer, 2026-08-02
 
-These came out of the review and are **not** settled by any instruction so far. Each is stated with its options; none is invented in the plan.
+All four are answered. Recorded with the reasoning, because two of them turned on evidence that
+changed after the plan was written.
 
-1. **The silent forecast drop at `plot.py:4552` (review G2).** With `hue=`/`cluster=`, `xform` is regrouped by category and `raw_forecasts` is nulled with **no warning**; the animated path inherits that behaviour verbatim (Task 4, `test_hue_regrouping_drops_forecasts_exactly_like_the_static_path`), so a user asking for `predict=` silently gets no forecast. Options: **(a)** keep the silent drop (status quo, zero risk to shipped figures); **(b)** emit a `UserWarning` naming `hue=`/`cluster=`, for both the static and animated paths; **(c)** raise for the newly-enabled animated path only, keeping static silent. The plan implements **(a)** and pins it with a test; changing it is a one-line follow-up.
+1. **Silent forecast drop under `hue=`/`cluster=` — RESOLVED: support forecasts here.** Not a
+   warning, not a raise: the forecast should be DRAWN. Plus parallel arguments so forecasts can be
+   coloured/clustered in their own right. See "Forecast styling refactor" below; this is the one
+   decision that became new work.
 
-2. **Further throttling beyond memoization (review G3).** Memoizing by revealed-history length caps a 900-frame, 3-dataset, 60-row animation at ≤ 177 fits instead of 2700 — measured at ~54 ms per 60-row Kalman fit, that is ~10 s of setup instead of ~146 s. But a 500-row history costs ~440 ms per fit, so a long real-world series is still minutes. Options: **(a)** memoization only (what the plan implements); **(b)** add `forecast_every=<n frames>` so the schedule samples the reveal instead of tracking it exactly, with a default to be chosen; **(c)** stride the schedule automatically once the projected fit count exceeds some ceiling. (b)/(c) both need a default value that is a product decision, so neither is invented here.
+2. **Throttling beyond memoization — RESOLVED: no striding, ever.** *"The critical thing is the
+   OUTCOME, not the speed. Increasing stride length would change what is plotted, which is not
+   acceptable. What IS acceptable is the performance hit."* So `forecast_every=`/auto-striding are
+   rejected outright — they would silently render a different animation than the one asked for.
+   Large data may simply take longer. What the library owes the user is **notice**: warn when a
+   schedule will take a long time to build, so a slow render is expected rather than mysterious.
+   Measured basis: 3 datasets x 500 rows x 900 frames = 1497 fits at ~220 ms = **330 s** before the
+   first frame. (The happy case is untouched: 3 x 60 x 900 = 177 fits, 5.4 s.)
 
-3. **`min_history` (review G4).** A 2-row history produces a degenerate flat stub (measured: every forecast step identical), drawn for the opening frames of every animation. The plan keeps `min_history=2` — matching what `hyp.predict` itself accepts — and hides the artist below it. Options: **(a)** keep 2; **(b)** raise the floor (e.g. 5 or 10) so the opening frames show nothing rather than a stub; **(c)** expose it as a `predict_min_history=` kwarg. Whether a flat stub is worse than no forecast is a taste call.
+3. **`min_history` — RESOLVED: dropped from the list; the premise no longer holds.** The plan
+   claimed a 2-row history yields "a degenerate flat stub (every forecast step identical)". That was
+   measured BEFORE the Kalman stability fix (`d6a2ccdb`) and is no longer true — re-measured, the
+   steps are not identical. What remains is milder and not a defect: a short-history forecast is a
+   small nub (0.7-2.2% of the data range at k=2..5, against 17-29% at k>=10). `min_history` stays
+   at 2. **A decision resting on a measurement that has since been invalidated is not a decision;
+   re-measure before deciding.**
 
-4. **Fully-revealed datasets under `order='serial'` (review G6).** Once a dataset is fully revealed, its forecast stops changing (the history stops growing), so it freezes on screen while later datasets animate. The plan does this by construction and tests it (`test_forecast_composes_with_order_serial`). Options: **(a)** freeze (implemented); **(b)** fade a finished dataset's forecast out; **(c)** hide it once the next dataset starts. Purely a visual-design call.
+4. **Frozen forecasts under `order='serial'` — RESOLVED: correct behaviour, leave it.** *"Once a
+   dataset is fully revealed, the forecast doesn't change. That's the correct behavior, not a bug.
+   No fading/hiding needed."* Measured for the record: with 3 datasets over 30 frames, dataset 0 is
+   fully revealed at frame 10 and its forecast is static for the remaining 19 frames (63% of the
+   animation). That is the final forecast, correctly shown.
 
 ---
+
+## Forecast styling refactor (from decision 1)
+
+**The requirement, as given:**
+
+> if left unspecified, let's set forecast colors and styles to the same as the corresponding
+> "observed" data, but with 50% more alpha transparency. if specified, then the `forecast_hue`
+> and/or `forecast_cluster` overrides the default styling for the forecasts. it could potentially
+> even be the case that observed vs. forecasted data have different styles and/or different
+> clustering and/or different colormaps/palettes
+
+**Why this is a refactor and not a patch.** The styling decision is currently duplicated at FIVE
+construction sites, each hard-coding `linestyle='--'` and `alpha=0.6`:
+
+| site | what it draws |
+|-|-|
+| `_draw_forecast_overlays` (3 branches, 1-D/2-D/3-D) | static + `animate='spin'` |
+| the live-artist block in `plot()` | per-frame forecast |
+| the trail-artist block in `plot()` | `forecast_trail=` fan |
+| `plotly_backend` static forecast trace | static |
+| `plotly_backend` live/trail traces | animated |
+
+Five copies of one decision is exactly the shape that lets a fix land in one place and not the other
+four. One helper, used by all five.
+
+**Measured starting state:** observed alpha is `None` (i.e. opaque) by default, or whatever the user
+passed to `alpha=`; forecast alpha is hard-coded `0.6` regardless. So today `alpha=[1.0, 0.4]` gives
+forecasts `[0.6, 0.6]` — the more transparent dataset gets a LESS transparent forecast. The new rule
+(`observed * 0.5`) makes the relationship hold by construction: `[0.5, 0.2]`.
+
+**Which paths drop forecasts today, measured** (the gate is `len(raw_forecasts) != len(xform)`,
+pure cardinality):
+
+| case | data traces | forecasts drawn |
+|-|-|-|
+| plain | 2 | 2 |
+| categorical hue, 1 run per dataset | 2 | 2 (count happens to match) |
+| categorical hue, alternating runs | 8 | **0** |
+| 4 categories | 4 | **0** |
+| continuous hue | -- | **0** |
+| `cluster=` | -- | **0** |
+
+Checked whether the surviving case can mis-attach a forecast to the wrong trace: it cannot. Runs are
+emitted in dataset order, so a count match implies exactly one run per dataset.
+
+**A bug this surfaced:** with forecasts dropped, `return_model=True` still reports `forecasts` with
+one entry per dataset. The bundle says the forecast exists; the figure shows none.
+
+### The two drop cases have DIFFERENT mechanisms
+
+Measured by artist type, 2 datasets:
+
+| case | `ax.lines` | `ax.collections` | why the forecast is lost |
+|-|-|-|-|
+| plain | 4 (2 data + 2 forecast) | 6 | -- |
+| `cluster=` | 6 | 6 | regrouped into 6 traces; `2 != 6` trips the cardinality gate |
+| categorical hue (alternating) | 8 | -- | same gate |
+| **continuous hue** | **0** | 8 | **the data is drawn as a `LineCollection`, not `Line2D` at all** |
+
+So a single fix does not cover both:
+
+- **Categorical hue / `cluster=`** is a MAPPING problem. `segment_by_run` already returns
+  `seg_dataset` (each run's source dataset), so the run that owns dataset *i*'s final observation is
+  `max(j for j where seg_dataset[j] == i)` -- and that is exactly the trace the forecast continues,
+  so it is also the trace whose style it should inherit. Verified: 2 datasets x alternating hue ->
+  8 runs, `seg_dataset = [0,0,0,0,1,1,1,1]`, so dataset 0's forecast attaches to run 3 and
+  dataset 1's to run 7 (both category `'b'`, correctly the category of each dataset's last point).
+- **Continuous hue** is a DIFFERENT problem: there are no line artists to inherit from. The
+  forecast's colour has to come from the colour of the observed data AT THE ANCHOR -- i.e. the
+  last segment's colour in the `LineCollection` -- rather than from a `Line2D.get_color()`.
+
+`_draw_forecast_overlays` reads `ax.lines` for its colours, which is why continuous hue was never
+going to work regardless of the cardinality gate.
+
+### API surface for the overrides
+
+Flat kwargs, matching this codebase's documented direction (GH #154: "flat kwargs remain the
+primary/documented direction"):
+
+| kwarg | mirrors | effect |
+|-|-|-|
+| `forecast_hue=` | `hue=` | colour the forecasts by their OWN grouping instead of inheriting |
+| `forecast_cluster=` | `cluster=` | cluster the forecasts independently of the observed data |
+| `forecast_palette=` | `palette=` | a separate palette/colormap for forecasts |
+| `forecast_fmt=` | `fmt=` | a separate linestyle/marker for forecasts |
+
+Each defaults to `None` = inherit from the observed trace. Specifying any one overrides only that
+aspect, so `forecast_palette='viridis'` alone re-colours without changing linestyle.
+
+**OPEN, for the maintainer:** `forecast_cluster=` needs its operand pinned. A forecast is a short
+`(t, d)` trajectory, so "cluster the forecasts" most plausibly means clustering those trajectories
+(by direction/endpoint) and colouring each forecast by the cluster it lands in. The alternative
+reading -- inherit the observed data's cluster assignment -- is what inheritance already gives, so
+it would add nothing. Confirm before building.
 
 ## Self-Review
 
