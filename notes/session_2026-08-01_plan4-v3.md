@@ -127,6 +127,55 @@ It is read-only, needs no clean tree, and mutates nothing — `git status --porc
 before and after. `git show 4d1d2223:examples/animate_conversation.py` → 315 lines vs 320 in the
 tree today, i.e. it reads the true BEFORE state that the stash recipe was groping for.
 
+### 8. The prescribed replacement gate repeats the flaw it replaces
+
+The maintainer prescribed, as the fix for the unattainable "every code cell has outputs" gate:
+
+```python
+assert all(cell["execution_count"] is not None for cell in code_cells)
+```
+
+Measured: **this fails on all five notebooks**, because code cell 0 of every one is the Colab
+install cell and is deliberately never executed:
+
+```
+market_forecast  cell 0  execution_count=None
+    # Install hypertools (dev-1.0 preview) -- run this first on Colab.
+    %pip install -q "hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@dev-1.0"
+```
+
+`scripts/add_colab_install_cell.py` injects it on purpose and re-targets it per branch. Executing
+it locally would pip-install during a docs build. So the prescribed gate is *another* universal
+quantifier over a set containing a deliberately-exempt member — the same class of error as v2's
+"every code cell", just relocated from outputs to execution_count. Measured index sets:
+`exec_idx` is `[1..6]` or `[1..5]` for all five; never includes 0.
+
+**Better gate — derive the rule from cell content instead of recording a constant.** A recorded
+index set risks rubber-stamping whatever the notebook happens to do. A rule keyed on what a cell
+*calls* can be written before the artifact exists and still has teeth:
+
+> every code cell whose source calls a rendering API (`hyp.plot(`, `plt.show(`, `display(`,
+> `plt.imshow(`) must carry a visible output.
+
+Measured against today's committed notebooks — it is RED on 4 of 5:
+
+| notebook | code cells | rendering cell | has output? |
+|-|-|-|-|
+| market_forecast | 7 | 5 | yes — **passes** (control) |
+| weather_decades | 7 | 5 | **no — FAILS** |
+| painting_embeddings | 6 | 4 | **no — FAILS** |
+| conversation_shape | 6 | 4 | **no — FAILS** |
+| morph_shapes_zoo | 6 | 3 | **no — FAILS** |
+
+It needs no measured constant, cannot be satisfied by a stray `print()` in the wrong cell, and goes
+green exactly when the notebooks are properly executed. `market_forecast` is the non-red control
+and should be labelled as one.
+
+Resulting four-part gate for v3: (a) exempt the install cell **by content, not index**; (b) every
+remaining code cell has non-null `execution_count`; (c) no cell carries an `output_type == "error"`;
+(d) the derived render-implies-output rule. An exact index-set pin may be added on top as
+drift-detection, but it is not the load-bearing assertion.
+
 ## Status
 
 Seven parallel audits dispatched (reports land in `notes/audit/`):
