@@ -45,7 +45,7 @@ v1 was adversarially reviewed for the first time (`notes/audit/review_plan4_exam
 | **Fatal.** Task 8's `BUDGETS` gated a per-file native-code ratio, and 4 of 5 rewrites missed their own floors when the reviewer ran the plan's own script against the plan's own proposed code (market 14.7 vs 26, paintings 12.5 vs 20, conversation 18.9 vs 25, morph 22.2 vs 26). The gate could not have gone green. | The ratio is **reported, not gated** (maintainer's call): it is easy to game by reformatting and says little about quality. The gates that remain cannot be met by formatting — defect markers, a maximum code-line budget, executable semantic checks that each example still produces the artifact it advertises, and exact notebook execution success. |
 | The callback returned early when `ctx.current_index is None`, and skipped assignment on some artists. | Every head and every trail is assigned on **every** frame, including unspoken turns; the condition moved into the VALUE (`turn_alpha`). A parallel animation now raises instead of silently doing nothing. |
 | No tests for the callback at all. | `tests/plot/test_recency_fade.py` — 13 tests: first/middle/last turn, repeated and out-of-order frames, the trail pairing, the cardinality guard, and the single-point case. |
-| Notebook-execution gate allowed `len(code) - 2` unexecuted cells. | Exact: every code cell must carry outputs, and none may carry a committed traceback. |
+| Notebook-execution gate allowed `len(code) - 2` unexecuted cells. | Exact: every code cell must carry outputs, and none may carry a committed traceback. **(v3: this was itself unattainable — an imports-only cell and a `fig, ani = …` cell emit nothing however well they run, and the install cell is exempt besides. Superseded by the three-part gate in v3's note above.)** |
 | "all five launch notebooks ship ZERO executed outputs" | False when written — measured 2/6, 4/7, 1/6, 2/6, 2/7 (`git log 9b94d86f`, 2026-07-30). Corrected wherever it appears. |
 | Task 1 "17 passed"; Task 8 "109 passed"; suite delta +126. | **16**, **106**, and **+135** (Task 5 now contributes 13). Each derived in a table at its step. |
 | `docs/conf.py:131` for `nbsphinx_execute='never'` (cited 5×) | `docs/conf.py:131`; `:115` is blank. |
@@ -58,20 +58,20 @@ This is the first revision of this plan, so there is no prior version to correct
 
 | claim as received | what I measured (`/Users/jmanning/hypertools/.venv/bin/python`, 2026-07-28) |
 |-|-|
-| "`nbsphinx_execute = 'never'` means committed outputs ship verbatim" | True (`docs/conf.py:131`). The five launch notebooks are **partially** executed — re-measured 2026-08-01: `conversation_shape` **2**/6 code cells carry outputs, `market_forecast` **4**/7, `morph_shapes_zoo` **1**/6, `painting_embeddings` **2**/6, `weather_decades` **2**/7. (v1 said 0 for all five; `git log 9b94d86f`, 2026-07-30, "execute the five new tutorials" had already landed.) The 15 older tutorials carry 3–15 executed cells each. So the five launch tutorial pages render **most of their code with no figure**, not none of it — the fix is the same, and Task 8's gate is now exact (every code cell, no committed tracebacks). There is also **no gallery thumbnail** for any of the five (`docs/_static/thumbnails/` holds 12 files; `scripts/generate_gallery_thumbs.py:26` hard-codes `MPL_ANIMS = ['animate', 'animate_MDS', 'animate_spin', 'chemtrails', 'precog', 'save_movie']`). Task 8 fixes both. |
-| Equal per-dataset feature widths required by `plot.py:2745` | The comment block starts at `plot.py:2744`; the **check** is `plot.py:2750-2751` (`_widths = [ri.shape[1] for ri in raw]` / `if len(set(_widths)) > 1:`). Cite 2750-2751. |
-| Market panel: 24/24 tickers, 2513 trading days, 2016-07-28 → 2026-07-28 | **Confirmed exactly.** All 24 tickers fetched from `https://query1.finance.yahoo.com/v8/finance/chart/<T>?range=10y&interval=1d` with a `User-Agent` header; every one returned `len(timestamp) == 2513`; AAPL first 2016-07-28, last 2026-07-28. Six sectors × 4 tickers = equal widths, satisfying `plot.py:2750-2751`. |
+| "`nbsphinx_execute = 'never'` means committed outputs ship verbatim" | True (`docs/conf.py:131`). The five launch notebooks are **partially** executed — re-measured 2026-08-01: `conversation_shape` **2**/6 code cells carry outputs, `market_forecast` **4**/7, `morph_shapes_zoo` **1**/6, `painting_embeddings` **2**/6, `weather_decades` **2**/7. (v1 said 0 for all five; `git log 9b94d86f`, 2026-07-30, "execute the five new tutorials" had already landed.) The 15 older tutorials carry 3–15 executed cells each. So the five launch tutorial pages render **most of their code with no figure**, not none of it — the fix is the same. **(v3: "Task 8's gate is now exact (every code cell)" was wrong; see v3's note. The gate now checks execution, a measured output INDEX SET, and the committed GIF artifact separately.)** There is also **no gallery thumbnail** for any of the five (`docs/_static/thumbnails/` holds 12 files; `scripts/generate_gallery_thumbs.py:26` hard-codes `MPL_ANIMS = ['animate', 'animate_MDS', 'animate_spin', 'chemtrails', 'precog', 'save_movie']`). Task 8 fixes both. |
+| Equal per-dataset feature widths required by `plot.py:2748-2756` | The comment block starts at `plot.py:2748-2756`; the **check** is `plot.py:3152-3153` (`_widths = [ri.shape[1] for ri in raw]` / `if len(set(_widths)) > 1:`). Cite 2750-2751. |
+| Market panel: 24/24 tickers, 2513 trading days, 2016-07-28 → 2026-07-28 | **Confirmed exactly.** All 24 tickers fetched from `https://query1.finance.yahoo.com/v8/finance/chart/<T>?range=10y&interval=1d` with a `User-Agent` header; every one returned `len(timestamp) == 2513`; AAPL first 2016-07-28, last 2026-07-28. Six sectors × 4 tickers = equal widths, satisfying `plot.py:3152-3153`. |
 | Weather: `temperatures.csv` is (1645 months, 20 cities) | The raw CSV is **(1965, 43)**: `Unnamed: 0`, `Year`, `Month`, then **both** `<City>_anomaly` and `<City>` for 20 cities. `dropna()` → **1645 complete rows, 1875–2013**. The 20 absolute-temperature columns are selected by `raw[list(locs['City'])]` → `(1645, 20)`. `temperature_locs.csv` is (20, 4): `Unnamed: 0`, `City`, `Lat`, `Long`. |
 | The weather paper call is "essentially ONE native call", 516 distinct colours | Confirmed, and stronger. `hyp.plot(temps, fmt='-', hue=avg_temp, palette='RdBu_r', normalize='across', manip='Smooth', animate=True, chemtrails=True, colorbar=True, duration=8, frame_rate=20, show=False)` runs in **0.3 s**, emits **no warnings**, and produces **2 axes** (`Axes3D` + the colorbar `Axes`). After driving frame 150 the head+trail collections carry **879 distinct RGBA values**. (516 was presumably a different frame/duration; the qualitative claim holds and is now pinned to exact parameters.) |
 | `hyp.reduce(list_of_strings, ndims=3)` → (8, 3) | Confirmed. Also confirmed: `hyp.reduce([[s,s,s],[s,s,s],[s,s]], ndims=3)` → `[(3,3), (3,3), (2,3)]`, so grouped text needs no manual re-split; and `hyp.plot(texts, '.', ndims=3, vectorizer='TfidfVectorizer', semantic=None, corpus=None)` → `Figure`. |
 | `labels=` is per-OBSERVATION, flat or nested | Confirmed on real artists. Flat `[None]*15` with 2 non-None entries → 2 annotations; nested `[[...5], [...5], [...5]]` with 2 non-None entries → 2 annotations. |
-| GIF saving is native | Confirmed end to end: `hyp.plot(..., animate=True, save_path='x.gif')` wrote a **24 832-byte** real GIF with no ffmpeg (`plot.py:1246`, dispatch at `animate.py:84`). |
+| GIF saving is native | Confirmed end to end: `hyp.plot(..., animate=True, save_path='x.gif')` wrote a **24 832-byte** real GIF with no ffmpeg (`plot.py:1513-1520`, dispatch at `animate.py:84`). |
 | Palette-from-image is ABSENT | Confirmed. `hyp.plot(..., palette='image:/tmp/nope.png')` → `ValueError: 'image:/tmp/nope.png' is not a valid palette name` (raised by seaborn through `colors.py:306`). No `PIL`/image handling anywhere in `hypertools/`. |
 | The existing `image_palette()` orders k-means clusters BY SIZE and so returns the background tone | Confirmed and reproduced. On a synthetic 90%-beige / 10%-vivid-red image, `km.cluster_centers_[np.argmax(counts)]` (`examples/animate_painting_embeddings.py:138-140`) → `[0.784, 0.769, 0.737]` (the beige). Ordering by `population × chroma` → `[0.863, 0.078, 0.078]` (the red) first. Task 1 encodes this as a test. |
 | Verified baseline `2564 collected`, `2551 passed, 13 skipped` | `pytest --collect-only -q` → **`2564/2566 tests collected (2 deselected)`**. Consistent. |
 | *(my own first guess)* the notebooks can be re-executed with the `python3` kernel | **False.** `~/Library/Jupyter/kernels/python3/kernel.json` points at an unrelated project's `.venv/bin/python`, not this repo's. Notebook execution needs a kernel registered from **this** repo's venv (`ipykernel` 7.3.0 is installed there). Global Constraints carry the exact recipe. |
 | *(my own first guess)* a new `image_palette` needs a Pillow extra | **Unnecessary.** `matplotlib>=3.9.0` is a core dependency and itself requires `pillow>=8` (`importlib.metadata.requires('matplotlib')` → `['pillow>=8...']`), so Pillow is already guaranteed in every hypertools install. Task 1 declares it explicitly anyway (one line, zero new install weight). |
-| *(my own first guess)* a categorical `hue=` would collapse the conversation's 28 turns and break per-segment `title=` | **False, verified.** With 6 line datasets and a nested categorical `hue`, `hyp.plot(...)` draws **6 lines** and a **3-entry legend** (`['Alice', 'Hatter', 'March Hare']`); `animate='serial'` still passes **6 datasets** to the backend (`len(ani._args[0]) == 6`). So per-turn `title=` and per-speaker `hue=`/`legend=True` compose. (`plot.py:204-228` regroups *contiguous runs*, not whole categories.) |
+| *(my own first guess)* a categorical `hue=` would collapse the conversation's 28 turns and break per-segment `title=` | **False, verified.** With 6 line datasets and a nested categorical `hue`, `hyp.plot(...)` draws **6 lines** and a **3-entry legend** (`['Alice', 'Hatter', 'March Hare']`); `animate='serial'` still passes **6 datasets** to the backend (`len(ani._args[0]) == 6`). So per-turn `title=` and per-speaker `hue=`/`legend=True` compose. (``_regroup_categorical_lines`, plot.py:219` regroups *contiguous runs*, not whole categories.) |
 | *(unstated)* the market accuracy readout is cheap | **It is not, and the budget is now measured.** `hyp.predict(x, model='Kalman', t=1)` costs 274 ms at 60 rows, 217–472 ms at 250, 445 ms at 500, 873 ms at 1000, **2178 ms at 2500**. The full walk-forward loop was timed: 7 series × 30 anchors on a **60-row rolling window = 210 fits in 7.3 s**; the same loop at a 250-row window costs 30.7 s. The current example's whole run is **6.2 s**. Task 2 therefore fixes `WINDOW = 60`, `N_SCORED = 30` and states the measured cost. |
 | *(unstated)* `manip={'model':'Smooth','kwargs':{'kernel_width':10}}` is a clean drop-in for the pandas rolling mean | It works, but emits `UserWarning: Increasing smoothing kernel width by 1 (must be odd)` (`hypertools/manip/smooth.py:232`). Task 7 uses **11**, not 10, so the tutorial produces no warning. |
 | *(unstated)* the measurement metric | The audit's "% hypertools" counts *lines matching* `\bhyp\.|\bhypertools\b`, which scores a 10-line `hyp.plot(...)` call as **1** native line. This plan uses a **logical-statement** metric (a continuation line belongs to the statement it continues). Measured on the same five scripts it gives 48 native of 739 code lines = **6.5%**, reproducing the audit's 6.0% NATIVE-line classification to within rounding — so the two agree, and the logical-statement metric is the one Task 8 gates on because it is the one that rewards a big native call. |
@@ -232,7 +232,7 @@ Plans 1, 2 and 3 must land first. Per task:
 | this plan's task | depends on | why |
 |-|-|-|
 | **Task 1** (palette from image) | *(none)* | Pure library addition in `hypertools/plot/colors.py`. Can start immediately, in parallel with Plans 1–3. |
-| **Task 2** (Market) | **MultiIndex** T1 (`group_columns`), T2 (final-trace builder), T5 (column MultiIndex in `plot()`), T6 (hue as a per-trace auxiliary value), T8 (`predict=` over final traces); **Forecast-animation** T3 (narrow the `predict=` refusal), T4 (draw the per-frame forecast), T5 (`forecast_trail=`); **Animation-core** T1 (`title=` type contract) | The whole example *is* a column MultiIndex + a continuous hue through a hierarchy + one forecast per trace during a time-progressing animation. Without MultiIndex T6 the hue is discarded (`plot.py:2678-2684`); without Forecast-animation T3 the call raises `NotImplementedError` (`plot.py:2347-2354`). |
+| **Task 2** (Market) | **MultiIndex** T1 (`group_columns`), T2 (final-trace builder), T5 (column MultiIndex in `plot()`), T6 (hue as a per-trace auxiliary value), T8 (`predict=` over final traces); **Forecast-animation** T3 (narrow the `predict=` refusal), T4 (draw the per-frame forecast), T5 (`forecast_trail=`); **Animation-core** T1 (`title=` type contract) | The whole example *is* a column MultiIndex + a continuous hue through a hierarchy + one forecast per trace during a time-progressing animation. Without MultiIndex T6 the hue is discarded (`plot.py:3080-3086`); without Forecast-animation T3 the call raises `NotImplementedError` (`plot.py:2748-2756`). |
 | **Task 3** (Weather) | *(none strictly)* — verified to run on today's `dev-1.0`; **Animation-core** T1 for the `title=` contract | The paper-style call already works today. Sequence it after Plan 1 only so the whole 1.1 line is tested together. |
 | **Task 4** (Paintings) | **Task 1** (palette from image); **Animation-core** T1 (`title=`) | `color=` per cloud comes from `image_palette`; the hand-rolled title becomes `title=`. |
 | **Task 5** (Conversation) | **Animation-core** T5 (`order='serial'`), T7 (`on_frame=` + `HyperAnimation.on_frame`), T8 (per-segment `title=`), T4 (plotly serial+trail parity) | `animate=True, order='serial', chemtrails=True` is exactly Animation-core T4+T5; the recency fade moves onto the public `on_frame=` hook; the caption/speaker artists are replaced by per-segment `title=`. |
@@ -247,7 +247,7 @@ Plans 1, 2 and 3 must land first. Per task:
 | file | responsibility | change |
 |-|-|-|
 | `hypertools/plot/colors.py` | `image_palette()` + the `'image:<path>'` palette spelling | modify |
-| `hypertools/plot/plot.py` | `palette=` docstring entry (`plot.py:807`) | modify |
+| `hypertools/plot/plot.py` | `palette=` docstring entry (`plot.py:1066`) | modify |
 | `pyproject.toml` | declare `pillow>=8` explicitly (already transitive via matplotlib) | modify |
 | `docs/api.rst` | document `image_palette` under a new "Colors" section | modify |
 | `tests/plot/test_image_palette.py` | palette-from-image, incl. the largest-cluster regression | create |
@@ -289,7 +289,7 @@ Measured on the prototype: the 90/10 beige-red image → `[[0.863, 0.078, 0.078]
 **Pillow.** `matplotlib>=3.9.0` is a core dependency and requires `pillow>=8`, so Pillow is already present in every install (`Pillow 12.1.0` in this venv). This task declares it explicitly in `pyproject.toml` anyway — a library that imports a package should say so — at zero install cost.
 
 **Files:**
-- Modify: `hypertools/plot/colors.py`, `hypertools/plot/plot.py` (the `palette` docstring at `plot.py:807`), `pyproject.toml`, `docs/api.rst`, `CHANGELOG.md`
+- Modify: `hypertools/plot/colors.py`, `hypertools/plot/plot.py` (the `palette` docstring at `plot.py:1066`), `pyproject.toml`, `docs/api.rst`, `CHANGELOG.md`
 - Test: `tests/plot/test_image_palette.py` (create)
 
 **Interfaces:**
@@ -800,7 +800,7 @@ In `pyproject.toml`, add to `dependencies` (after `"seaborn>=0.13.0",`):
     "pillow>=8",
 ```
 
-In `plot()`'s docstring, extend the `palette` entry at `plot.py:807-820` with:
+In `plot()`'s docstring, extend the `palette` entry at ``_seaborn_palette_arg`'s neighbour, plot.py:1066-1078` with:
 
 ```
         A palette string of the form ``'image:<path>'`` extracts colors from
@@ -887,13 +887,13 @@ The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVER
 |-|-|
 | `_frame_of`, `SLOPE`/`np.polyfit` recovery of plot's own reduce→drawn affine, `GAIN`, `CAP`, `_scale`, `BLO`/`BHI`, `_hang` (`:197-243`, class **C**) | `predict='Kalman', t=1` — the forecast is computed in the plotted space and folded into the centre/scale statistics by the library (forecast-animation Contract 4) |
 | the 16-slot `hist_lines` fan (`:279-296`, class **C**) | `forecast_trail=16` (forecast-animation Task 5) |
-| `_smooth` + `from hypertools._shared.helpers import antialias_line` (`:265-276`, class **B**) | native forecast antialiasing (`plot.py:143-150`) |
-| hand-built `ScalarMappable` + `fig.colorbar` + `set_label` (`:297-301`, class **B**) | `colorbar={'label': ...}` (`plot.py:930`) |
-| `fig.text(...)` title (`:303-304`, class **B**) | `title=` (`plot.py:950`) |
+| `_smooth` + `from hypertools._shared.helpers import antialias_line` (`:265-276`, class **B**) | native forecast antialiasing (``_draw_forecast_overlays`, plot.py:158-165`) |
+| hand-built `ScalarMappable` + `fig.colorbar` + `set_label` (`:297-301`, class **B**) | `colorbar={'label': ...}` (`plot.py:1189`) |
+| `fig.text(...)` title (`:303-304`, class **B**) | `title=` (`plot.py:1209`) |
 | `_wrapped` + `ani._func = _wrapped` + `ani._args[1][0]` (`:199-213`, `:323-356`, class **C**) | nothing — there is no per-frame work left |
 | a hand-thinned single equal-weight index over 5 FRED series | a `(Market, Sector, Ticker)` column MultiIndex over **24 tickers**, expanded natively into 6 sector traces + 1 market-mean trace, each with its own forecast |
 
-**Data.** Verified today: 24/24 tickers from `https://query1.finance.yahoo.com/v8/finance/chart/<TICKER>?range=10y&interval=1d` (User-Agent header required), 2513 trading days each, 2016-07-28 → 2026-07-28. Six sectors × 4 tickers gives **equal widths**, required by `plot.py:2750-2751`. `yfinance` 1.5.1 is installed but the raw chart endpoint is used directly, so the example has no extra dependency.
+**Data.** Verified today: 24/24 tickers from `https://query1.finance.yahoo.com/v8/finance/chart/<TICKER>?range=10y&interval=1d` (User-Agent header required), 2513 trading days each, 2016-07-28 → 2026-07-28. Six sectors × 4 tickers gives **equal widths**, required by `plot.py:3152-3153`. `yfinance` 1.5.1 is installed but the raw chart endpoint is used directly, so the example has no extra dependency.
 
 **Accuracy readout.** Per Contract 5 this lives in the example. Budget measured: `hyp.predict(..., model='Kalman', t=1)` on a **60-row** rolling window, **30** anchors, **7** series (6 sectors + the market mean) = **210 fits in 7.3 s**. A 250-row window costs 30.7 s for the same loop, and the whole current example runs in 6.2 s — so 60/30 is the budget, and it is stated in the module docstring.
 
@@ -1035,7 +1035,7 @@ os.makedirs(CACHE, exist_ok=True)
 MARKET = 'Market'
 RANGE = '10y'
 # six sectors x FOUR tickers each: equal per-group widths, which the
-# analysis pipeline requires (hypertools/plot/plot.py:2750-2751)
+# analysis pipeline requires (hypertools/plot/plot.py:3152-3153)
 SECTORS = {
     'Technology': ['AAPL', 'MSFT', 'ORCL', 'IBM'],
     'Financials': ['JPM', 'BAC', 'GS', 'AXP'],
@@ -1116,7 +1116,7 @@ sector_index = [(prices[MARKET][sector].mean(axis=1)
 # sector traces plus a heavier market-mean trace, each coloured by its own
 # price index and each carrying its own next-day Kalman forecast, redrawn
 # per frame and trailed. Widths/opacities come from the hierarchy, so no
-# linewidth= is passed (it would be warned and ignored, plot.py:3039-3050).
+# linewidth= is passed (it would be warned and ignored, plot.py:3037-3043).
 duration, fps = 8, 20
 fig, ani = hyp.plot(
     prices, '-',
@@ -1580,7 +1580,7 @@ def canvas_color(spec):
 names = list(PAINTINGS)
 descriptions = [windows(PAINTINGS[name]['text']) for name in names]
 colors = [canvas_color(PAINTINGS[name]) for name in names]
-# labels are per-OBSERVATION (plot.py:895-910): a nested list with one
+# labels are per-OBSERVATION (plot.py:1154-1159): a nested list with one
 # sub-list per cloud, carrying the painting's name on its MIDDLE window
 # (roughly the centre of a text trajectory) and None everywhere else.
 labels = [[name if i == len(cloud) // 2 else None
@@ -1725,7 +1725,7 @@ The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVER
 | the manual re-split into per-turn arrays (`:144-151`, class **B**) | a **list of lists of strings** — the nesting is the grouping |
 | `mpatches.Patch` + `fig.legend` (`:173-176`, class **B**) | a categorical `hue=` + `legend=True`. **Verified**: 6 line datasets with a nested categorical hue draw **6 lines** and a **3-entry** legend, and `animate='serial'` still hands 6 datasets to the backend — so per-turn identity survives |
 | `fig.text(...)` title (`:177-178`, class **B**) | `title=` |
-| `ani._args[0]`/`[1]`, `drawn_lens`, `starts`, `total_pts`, `shown_counts`, `current_state` (`:182-237`, class **C**, and a by-hand copy of `matplotlib_backend.py:1316-1318`) | per-segment `title=` (animation-core Task 8), which is driven by the library's own schedule |
+| `ani._args[0]`/`[1]`, `drawn_lens`, `starts`, `total_pts`, `shown_counts`, `current_state` (`:182-237`, class **C**, and a by-hand copy of ``_trail_kwargs` in matplotlib_backend.py:1667-1669`) | per-segment `title=` (animation-core Task 8), which is driven by the library's own schedule |
 | the speaker text artist + `caption_lines` + `set_caption` (`:180-181`, `:240-283`, class **D**) | the per-segment title itself carries `Speaker  "the line"` |
 | `_wrapped` + `ani._func = _wrapped` (`:286-316`, class **C**) | `on_frame=` (animation-core Task 7) for the recency fade only — the sole remaining per-frame effect |
 
@@ -1884,7 +1884,20 @@ pytest.importorskip('umap')
 
 from hypertools.plot.animation_context import FrameContext
 
-N_DATASETS = 6
+#: `recency_fade` is dataset-count agnostic, so the fixture exercises a
+#: RANGE rather than one number. v2 pinned a single `N_DATASETS = 6` while
+#: telling the implementer it "must equal the number of FINAL drawn datasets
+#: the example produces" -- and the example produces **28** (`TURNS` has 28
+#: entries; its own docstring says "12 of the 28 turns"). So the constant
+#: contradicted its own rule.
+#:
+#: Parametrising fixes that and covers strictly more: 1 is the degenerate
+#: single-turn case, 6 keeps the fast default, and 28 is the real
+#: conversation. The reviewer's exhaustive n = 1..29 sweep found no
+#: n-dependent behaviour, so this formalises what was already checked ad
+#: hoc rather than adding speculative coverage.
+DATASET_COUNTS = (1, 6, 28)
+N_DATASETS = 6      # the default for tests that do not vary it
 
 
 @pytest.fixture(scope='module')
@@ -2018,7 +2031,7 @@ Expected: **12 passed**, derived from the block above (8 `def test_` functions, 
 | `test_a_single_point_turn_stays_invisible` | 1 |
 | **total** | **12** |
 
-`N_DATASETS` must equal the number of FINAL drawn datasets the example produces — `hue=` reshapes, so confirm it against `len(ctx.revealed_counts)` from the Step 3 script below and adjust the constant if it differs.
+`DATASET_COUNTS` deliberately does **not** have to track the example: `recency_fade` is dataset-count agnostic and the fixture parametrises over 1, 6 and 28 to prove it. What *does* have to be checked against the real example is that 28 is still its FINAL drawn dataset count — `hue=` reshapes, so confirm with `len(ctx.revealed_counts)` from the Step 3 script below and update the tuple if the example's turn count changes.
 
 - [ ] **Step 3: Confirm the reveal, the legend and the titles**
 
@@ -2109,7 +2122,7 @@ git commit -m "docs(gallery): conversation example uses native text, order='seri
 - the **teapot** (maintainer instruction), with its `hyp.load('teapot')` 1728-rows / 301-unique note (`:45-50`);
 - `CUBE_SCALE = 0.8`, because a cube normalized to ±1 fills the drawn axes box exactly and reads as noise in a wireframe (`:63-66`);
 - the closed loop `clouds.append(clouds[0])`, and the hand sampling that makes it possible — `morph_samples=` draws a **fresh** subset per dataset, so it cannot produce the identical closing sample (`:54-61`);
-- `normalize()`, because `plot()` rescales with **one shared pooled affine** (`plot.py:4040-4051`, `_shared/helpers.py:24-69`), so clouds left in their raw units would be drawn at wildly different sizes. See the *Decisions still needed* entry named **"The morph example's hand-written `normalize()`"**;
+- `normalize()`, because `plot()` rescales with **one shared pooled affine** (`plot.py:4568-4605`, `_shared/helpers.py:24-69`), so clouds left in their raw units would be drawn at wildly different sizes. See the *Decisions still needed* entry named **"The morph example's hand-written `normalize()`"**;
 - the explicit `morph_samples=N`. **Corrected 2026-07-30 — this bullet previously said animation-core Task 3 makes an uncapped morph above 2000 points "raise", which is the pre-`simplify=` behaviour and is no longer true.** Under the resolved decision, the default `simplify=True` **silently downsamples** to the cap; only `simplify=False` raises. So `morph_samples=N` is *not* load-bearing in the "or it errors" sense — the example would still run without it. Keep it anyway, and for a better reason: it makes the sampling **explicit and reproducible** rather than leaving the reader to discover that a silent cap was applied. State that in the prose.
 
 **Files:** rewrite the tail of `examples/animate_morph_zoo.py`; rewrite `docs/tutorials/morph_shapes_zoo.ipynb`.
@@ -2223,7 +2236,7 @@ Grouped by the recurring fix so each step is one reviewable diff. Every group en
 
 - [ ] **Step 1 (G2): Delete the four ffmpeg cells; ask for a GIF directly**
 
-`save_path='foo.gif'` writes a GIF with **no ffmpeg at all** (`plot.py:1246`, writer dispatch at `animate.py:84`) — verified today: a real 24 832-byte GIF. Three notebooks in this same set already prove it (`streaming_data` cells 4/8, `lsl_streaming` cell 6).
+`save_path='foo.gif'` writes a GIF with **no ffmpeg at all** (`plot.py:1513-1520`, writer dispatch at `animate.py:84`) — verified today: a real 24 832-byte GIF. Three notebooks in this same set already prove it (`streaming_data` cells 4/8, `lsl_streaming` cell 6).
 
 For each pair below, change the `save_path='*.mp4'` in the plot cell to `'*.gif'`, drop the `print(f"mp4: ...")` line that follows it, and **delete the entire next cell**:
 
@@ -2775,7 +2788,7 @@ DEFECT_MARKERS = {
     r'hypertools\._shared': 'private module; use a documented kwarg',
     r'from hypertools\.plot import morph': "use title=[...] for per-segment names",
     r'\bantialias_line\b': 'plot() antialiases every drawn line already',
-    r'\bffmpeg\b': "save_path='*.gif' needs no ffmpeg (plot.py:1246)",
+    r'\bffmpeg\b': "save_path='*.gif' needs no ffmpeg (plot.py:1513-1520)",
     r'morph_schedule|frame_to_segment': 'the morph schedule is the library\'s business',
 }
 
@@ -2897,10 +2910,19 @@ def test_no_example_or_notebook_unpacks_then_uses_the_wrapper():
                 f'`fig, {name} = anim`.')
 
 
+#: Measured 2026-08-02 against the committed notebooks, so a reader can
+#: tell coverage from controls at a glance. RED today (Task 7 turns them
+#: green): conversation_trajectories, hugging_face_embeddings and
+#: wikipedia_embeddings fail BOTH assertions; modern_sklearn_dynamics fails
+#: on ffmpeg only. ALREADY GREEN, and therefore CONTROLS rather than
+#: coverage: stock_forecasting and projectile_kalman -- they are here to
+#: prove Task 7 does not REGRESS a clean notebook, not to prove it fixed
+#: one. Do not read six passing IDs as six notebooks repaired.
 @pytest.mark.parametrize('nb', [
     'conversation_trajectories', 'hugging_face_embeddings',
     'wikipedia_embeddings', 'modern_sklearn_dynamics',
-    'stock_forecasting', 'projectile_kalman',
+    'stock_forecasting',        # control -- already clean
+    'projectile_kalman',        # control -- already clean
 ])
 def test_older_tutorials_dropped_their_hand_rolled_helpers(nb):
     text = _code_text(f'docs/tutorials/{nb}.ipynb')
@@ -3175,7 +3197,11 @@ def test_no_launch_notebook_committed_an_error_output():
                     f"({out.get('ename')})")
 ```
 
-> **Import note:** `from scripts.measure_native_ratio import measure` requires `scripts/` to be importable. `pyproject.toml` sets `testpaths = ["tests"]` and pytest inserts the rootdir on `sys.path` under the default `rootdir`-based import mode; if the import fails, add an empty `scripts/__init__.py` in the same commit rather than duplicating the metric inside the test.
+> **Import note — measured, and the hedge resolves to "it already works".** `from scripts.measure_native_ratio import measure` was reproduced under CI's exact invocation (`.github/workflows/test.yml` runs the bare `pytest` **console script** from the repo root, no `--import-mode`, no `PYTHONPATH`) and it **passes today without `scripts/__init__.py`**. The mechanism: `tests/__init__.py` exists, so pytest's default *prepend* import mode walks up to the first directory without an `__init__.py` — the repo root — and inserts it on `sys.path`; `scripts` then resolves as an implicit PEP 420 namespace package. So v2's "if the import fails, add…" hedge was correct to hedge, and the answer is that it does not fail.
+>
+> **But that is an accident, not a guarantee**, and one flag breaks it: `--import-mode=importlib` makes the same import fail with `ModuleNotFoundError: No module named 'scripts'` — **confirmed both with and without `scripts/__init__.py`**, because that mode does no rootdir-walk-and-insert at all. Nothing in this repo uses it today, so this is not an active bug.
+>
+> **Add `scripts/__init__.py` anyway, in the same commit.** It costs one empty file, it makes the dependency explicit rather than incidental, and nothing else in the repo imports from `scripts.` yet (`grep -rn "from scripts\.\|import scripts\b"` returns nothing) — so this is the first use and the right moment to declare it. Do **not** reach for `pythonpath = ["."]`: it is a global change to every test's `sys.path` for the sake of one helper. Whichever is chosen, verify with the **same bare `pytest` invocation CI uses**, not `python -m pytest`, which puts the CWD on `sys.path` and would mask the difference.
 
 - [ ] **Step 3: Run the gate and confirm it passes**
 
@@ -3309,7 +3335,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
    - *Alternative B:* add a `manip='TrimOutliers'` manipulator (audit recommendation #7) so the trim becomes a native pipeline stage — but `manip` runs **before** `reduce`, so it would trim in the 384-dimensional embedding space, which is not the same operation.
    - **Needs:** maintainer decision on whether either library addition belongs in 1.1.
 
-- **The morph example's hand-written `normalize()`.** Per-cloud centring and isotropic rescaling is genuinely not redundant — `plot()` uses **one shared pooled affine** (`plot.py:4040-4051`, `_shared/helpers.py:24-69`) — but `normalize='within'` (`tools/normalize.py:175`, modes at `:86`) z-scores each dataset per column, which distorts a point cloud's aspect ratio.
+- **The morph example's hand-written `normalize()`.** Per-cloud centring and isotropic rescaling is genuinely not redundant — `plot()` uses **one shared pooled affine** (`plot.py:4568-4605`, `_shared/helpers.py:24-69`) — but `normalize='within'` (`tools/normalize.py:175`, modes at `:86`) z-scores each dataset per column, which distorts a point cloud's aspect ratio.
    - **(implemented)** keep the 5-line helper, with the comment explaining exactly why it is not redundant.
    - *Alternative:* add an aspect-preserving `normalize='isotropic'` (or `'unit-cube'`) mode, and delete the helper. Roughly 20 lines plus tests in `hypertools/tools/normalize.py`; no 1.1 plan owns it.
    - **Needs:** maintainer decision on adding a normalize mode in 1.1.
@@ -3353,7 +3379,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
 | Task 8 re-measures per file, asserts improvement, full suite, 0-warning docs | Task 8: a committed metric, a 109-test gate, a per-file re-measure, all five examples run headless, the full suite, the CI-parity `python -m sphinx -b html -W -E -a` build with 0 warnings, plus a rendered-output check and a re-run-everything step. |
 | BEFORE and AFTER per example, from the audit's baseline | Each of Tasks 2–6 opens with the measured BEFORE (raw lines, code lines, native lines, ratio, **and** the audit's A/B/C/D/NATIVE classification) and the contracted AFTER budget, which Task 8 asserts. |
 | Network in examples only; keep the offline-fallback property | Contract 4, and every rewrite implements the existing shape: `try/except Exception: return None` + a deterministic synthetic substitute + a `print` naming the source. Task 1's tests write PNGs to `tmp_path`; `image_palette` refuses URLs by design. |
-| Real file:line citations | Every claim about existing code cites a line I opened in this session: `docs/conf.py:131`, `plot.py:807/882/895/930/950/1013/1064/1246/2750-2751/3039-3050`, `colors.py:24/105/227/250/269/287/305-306/323-331`, `text2mat.py:89/184/391/404`, `animate.py:84`, `smooth.py:14/232`, `morph.py:36`, `scripts/generate_gallery_thumbs.py:26`, plus per-example line ranges. |
+| Real file:line citations | Every claim about existing code cites a line I opened in this session: `docs/conf.py:131`, `plot.py:1066/882/895/930/950/1013/1064/1246/2750-2751/3039-3050`, `colors.py:24/105/227/250/269/287/305-306/323-331`, `text2mat.py:89/184/391/404`, `animate.py:84`, `smooth.py:14/232`, `morph.py:36`, `scripts/generate_gallery_thumbs.py:26`, plus per-example line ranges. |
 | Don't invent unspecified decisions | Six items in *Decisions still needed*, each with the implemented option and the exact edit to switch. |
 
 **Placeholders.** None. Every step carries runnable code or an exact command with its expected output. No step says "similar to Task N"; the five example rewrites are written out rather than cross-referenced, precisely because they differ.
@@ -3366,6 +3392,6 @@ Flagged rather than invented. Each states the options and the exact change to sw
 
 **Remaining risk.** Three places:
 
-1. **Task 2 is the largest rewrite and the most dependent** — it consumes eight tasks across two other plans. If MultiIndex T6 (`hue` through a hierarchy) slips, the example still runs but colours by group instead of by price; that is a visible regression, not a crash, so `test_file_meets_its_native_ratio_floor` would not catch it. The guard is Task 2 Step 4, which asserts `axes: 2` (a colorbar exists ⇒ a continuous hue survived) and at least two distinct linewidths.
+1. **Task 2 is the largest rewrite and the most dependent** — it consumes eight tasks across two other plans. If MultiIndex T6 (`hue` through a hierarchy) slips, the example still runs but colours by group instead of by price; that is a visible regression, not a crash, so no size or defect-marker gate would catch it. The guard is Task 2 Step 4, which asserts `axes: 2` (a colorbar exists ⇒ a continuous hue survived) and at least two distinct linewidths.
 2. **The accuracy readout is the only unbounded cost in the plan.** It is pinned to a measured budget (210 fits / 7.3 s at `WINDOW=60, N_SCORED=30`), and the measurements at 250 rows (30.7 s) are recorded so a future change to those constants is an informed one.
 3. **Notebook execution is the step most likely to be skipped under time pressure**, and it is exactly the step that keeps the defect from staying published. `test_every_launch_notebook_ships_executed_outputs` makes skipping it a test failure rather than an oversight.
