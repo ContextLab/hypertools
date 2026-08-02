@@ -83,6 +83,50 @@ reachable target"*, while the revision-note table (line 23) still promises *"Exa
 must carry outputs"* and line 36 repeats *"Task 8's gate is now exact (every code cell, no
 committed tracebacks)"*. Prose and code disagree inside one document.
 
+### 6. Test-count arithmetic: ONE off-by-one, and the plan contradicts itself
+
+Derived with an AST counter that expands `@pytest.mark.parametrize`, including
+`sorted(DICT.items())` and module-level `pytest.param` lists. **The counter was itself wrong first**
+— it scored `sorted(DEFECT_MARKERS.items())` as 1 case instead of 8, giving Task 8 = 36. Fixed by
+unwrapping `.items()/.keys()/.values()` inside the `sorted(...)` call, then validated against a
+hand-built known-answer fixture (expected 17, got 17) before any number below was trusted.
+
+| block | derived | plan claims | |
+|-|-|-|-|
+| Task 1 | 16 | 16 (L25, L613) | ✓ |
+| Task 5 | **12** | **13** (L25 revision note) | ✗ off by one |
+| Task 5 | **12** | **12** (L1724 step text) | ✓ — the plan disagrees with *itself* |
+| Task 8 | 106 | 106 (L25) | ✓ |
+| total delta | **134** | **+135** (L25) | ✗ propagates the same off-by-one |
+
+Cross-check: 3 python blocks define 16 + 8 + 9 = 33 `def test_`; the file has 35 occurrences of
+`def test_`, the other 2 being prose mentions at L613 and L1724. No test block hides under a
+non-python fence. The reviewer independently derived 12 / 106 / +134 — agreement.
+
+Fix: the step-level number (12) is right; the revision note (13, +135) is wrong.
+
+### 7. The `git stash` recipe is a data-loss hazard, not just broken
+
+Plan L2195: `git stash && .venv/bin/python scripts/measure_native_ratio.py <file> && git stash pop`.
+
+Demonstrated in a scratch repo with a clean tree — the exact state at `065c841e`:
+
+```
+--- stashes before recipe: 1        (a PRE-EXISTING unrelated stash)
+git stash  ->  "No local changes to save"  (exit 0, saves nothing)
+git stash pop  ->  POP SUCCEEDED, Dropped refs/stash@{0}
+--- after recipe the tree contains: f.txt  other.txt   <-- other.txt is the unrelated work
+--- stashes remaining: 0
+```
+
+With nothing to stash, `pop` restores and then **drops a different, pre-existing stash**. The
+recipe silently applies and destroys unrelated work. Upgrade this from Low to a real hazard.
+
+Replacement (maintainer's suggestion, verified in the real repo): `git show <base>:<path>`.
+It is read-only, needs no clean tree, and mutates nothing — `git status --porcelain` count is 0
+before and after. `git show 4d1d2223:examples/animate_conversation.py` → 315 lines vs 320 in the
+tree today, i.e. it reads the true BEFORE state that the stash recipe was groping for.
+
 ## Status
 
 Seven parallel audits dispatched (reports land in `notes/audit/`):
