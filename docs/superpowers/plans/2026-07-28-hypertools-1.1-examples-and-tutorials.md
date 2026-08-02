@@ -26,7 +26,7 @@ v2 was adversarially re-reviewed (`notes/audit/review_plan4_v2.md`: 4 Fatal, 4 H
 | `test_examples_produce_their_stated_artifact` ran examples with `runpy`. | Network/model-download work is split out; the suite drives a fixture-fed construction boundary, and the whole-example run becomes an opt-in smoke test. |
 | The morph assertion `assert 'morph' in str(ns.get('ANIMATE', 'morph'))`. | `ANIMATE` does not exist in the example; the expression reduces to `'morph' in 'morph'` and **cannot fail** (proven by execution). Replaced with driven-frame assertions. |
 | `git stash && measure && git stash pop` to read the BEFORE state. | **Data-loss hazard**, demonstrated: with a clean tree `stash` saves nothing and `pop` then restores *and drops* an unrelated pre-existing stash. Replaced with `git show <base>:<path>`, which is read-only. |
-| Task 5 "13 tests"; suite delta "+135". | **12** and **+163** (Task 1 **19** + Task 5 **12** + Task 8 **132**). The plan already said 12 at the step level and 13 in the revision note — it disagreed with itself. Task 8 (106) was correct; Task 1 rises 16 → **19** with the three new colour-count tests this revision adds. All three derived by AST parametrize-expansion and cross-checked against a real collection. |
+| Task 5 "13 tests"; suite delta "+135". | **12** and **+172** (Task 1 **19** + Task 5 **12** + Task 8 **141**). The plan already said 12 at the step level and 13 in the revision note — it disagreed with itself. Task 8 (106) was correct; Task 1 rises 16 → **19** with the three new colour-count tests this revision adds. All three derived by AST parametrize-expansion and cross-checked against a real collection. |
 | Ratio floor "removed as a v1 Fatal". | It was removed from the *gate* but **ten lines still promise it** as a budget (634, 990, 1006, 1186, 1201, 1420, 1435, 1792, 1807, 1904). All corrected. L1435 was doubly stale (`≤ 72` where the enforced dict said 90). |
 | "'0 executed outputs' corrected wherever it appears." | It was not — all five BEFORE headers still said it. Real values: 4/7, 2/7, 2/6, 2/6, 1/6. |
 | Baseline `2564 collected`; "the working tree is not clean". | **2782/2784 collected (2 deselected)**; the tree is clean at `065c841e`; the note claiming the five examples are untouched is false (see above). |
@@ -2829,6 +2829,7 @@ only things that cannot be satisfied by reformatting:
 
 No network, no mocks: it reads the committed files.
 """
+import ast
 import os
 import re
 
@@ -2975,6 +2976,45 @@ def test_a_docstring_naming_a_removed_pattern_is_not_a_defect():
             f'{path}: the docstring mention leaked into the scanned code')
 
 
+def _docstring_lines(path):
+    """1-based line numbers occupied by docstrings in a .py file.
+
+    Used to tell a real private reach from a docstring that merely NAMES
+    one while explaining why it was removed (or why it has to stay).
+    """
+    if not path.endswith('.py'):
+        return set()
+    try:
+        tree = ast.parse(_read(path))
+    except SyntaxError:
+        return set()
+    spans = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.FunctionDef,
+                                 ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        body = getattr(node, 'body', None)
+        if not body:
+            continue
+        first = body[0]
+        if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) \
+                and isinstance(first.value.value, str):
+            spans.update(range(first.lineno, (first.end_lineno or first.lineno) + 1))
+    return spans
+
+
+def _parsable_code(path):
+    """Code text that `ast.parse` will accept.
+
+    Notebook cells legitimately contain IPython magics (`%pip install`,
+    `%matplotlib inline`) and shell escapes (`!cmd`), which are not Python
+    and raise SyntaxError. Commenting them out preserves line numbering,
+    which keeps any reported position meaningful.
+    """
+    return '\n'.join(('# ' + line) if line.lstrip()[:1] in ('%', '!') else line
+                      for line in _code_text(path).split('\n'))
+
+
 @pytest.mark.parametrize('path,max_code', BUDGETS)
 def test_file_is_within_its_size_budget(path, max_code):
     code, _native = measure(os.path.join(REPO, path))
@@ -3007,41 +3047,135 @@ def test_no_defect_marker_in_the_launch_examples(path, _max, marker, fix):
         f'{path} contains {marker!r} again -- {fix}')
 
 
+#: How far from an allowlisted private reach its rationale may sit. 15 lines
+#: is the size of a comment block plus the statement it explains -- close
+#: enough that a reader who lands on the reach sees the reason without
+#: scrolling.
+RATIONALE_WINDOW = 15
+
+
 def test_every_allowlisted_reach_is_still_present_and_still_explained():
     """An allowlist entry that no longer matches anything is dead weight --
     it would silently permit a pattern nobody uses. And an allowlisted reach
     with no inline rationale is exactly the 'private API taught as normal'
-    that Contract 3 exists to prevent, so the source must explain itself
-    where a reader will find it."""
+    that Contract 3 exists to prevent.
+
+    The rationale must sit WITHIN `RATIONALE_WINDOW` lines of the reach, not
+    merely somewhere in the file. An earlier version searched the whole file
+    for the words 'deliberately' or 'no public', which a 380-line example
+    satisfies by accident -- it would have passed even if the explanation
+    were 200 lines from the code it explains, or explained something else
+    entirely.
+    """
     for (path, marker), reason in PRIVATE_API_EXCEPTIONS.items():
-        raw = _read(path)
-        assert re.search(marker, raw), (
+        lines = _read(path).split('\n')
+        # Skip matches inside docstrings: `animate_market_forecast.py`'s
+        # module docstring explains the reach by NAMING it
+        # (`ani._args[1][0]`, in the "Coordinate note" paragraph), and that
+        # prose is documentation, not a second reach. Same reason
+        # `_code_text` strips docstrings before the marker scan.
+        doc_lines = _docstring_lines(path)
+        hits = [i for i, line in enumerate(lines)
+                if re.search(marker, line) and (i + 1) not in doc_lines]
+        assert hits, (
             f'{path} no longer contains {marker!r}; drop the '
             f'PRIVATE_API_EXCEPTIONS entry rather than leaving it to permit '
             f'a pattern that is gone')
-        assert 'deliberately' in raw or 'no public' in raw, (
-            f'{path} keeps an allowlisted private reach but no longer '
-            f'explains why in the source (reason on record: {reason})')
+        for i in hits:
+            window = '\n'.join(lines[max(0, i - RATIONALE_WINDOW):
+                                     i + RATIONALE_WINDOW])
+            explained = ('deliberately' in window or 'no public' in window
+                         or 'no publicly' in window)
+            assert explained, (
+                f'{path}:{i + 1} reaches {marker!r} with no rationale within '
+                f'{RATIONALE_WINDOW} lines. Contract 3 allowlists it only '
+                f'because the source explains itself where a reader will '
+                f'find it (reason on record: {reason})')
 
 
-def test_no_example_or_notebook_unpacks_then_uses_the_wrapper():
-    """Contract 8. `fig, ani = hyp.plot(...)` binds `ani` to the raw
-    FuncAnimation, so `.on_frame()` raises AttributeError -- and
-    `_save_count` SURVIVES the unpack, so a gate written against that
-    attribute passes while the public API is being discarded. Bind the
-    HyperAnimation first (`anim = hyp.plot(...)`), then destructure it
-    (`fig, ani = anim`) if the parts are wanted.
+#: Members that live ONLY on the `HyperAnimation` wrapper. Unpacking or
+#: indexing a plot result throws the wrapper away, so reaching any of these
+#: on a name that came out of a tuple is an `AttributeError`.
+#:
+#: `figure`/`animation` are included because they are wrapper properties
+#: too, and `n_frames`/`n_segments`/`draw_frame` because Step 0 ADDS them --
+#: a guard that greps only for `.on_frame(` would widen the trap and leave
+#: the check where it was.
+WRAPPER_ONLY = ('on_frame', 'n_frames', 'n_segments', 'draw_frame',
+                'figure', 'animation')
+
+
+def _is_plot_call(node):
+    """`hyp.plot(...)`, `hypertools.plot(...)`, `ht.plot(...)`, `plot(...)`
+    -- matched on the attribute name, so an import alias cannot evade it."""
+    if not isinstance(node, ast.Call):
+        return False
+    fn = node.func
+    if isinstance(fn, ast.Attribute):
+        return fn.attr == 'plot'
+    return isinstance(fn, ast.Name) and fn.id == 'plot'
+
+
+def _unpacked_wrapper_uses(source):
+    """[(name, attr), ...] for every name that holds an UNPACKED plot result
+    and then reaches a wrapper-only member.
+
+    AST, not regex. A regex version of this missed five of nine cases,
+    including `anim = hyp.plot(...)` / `fig, ani = anim` / `ani.on_frame(cb)`
+    -- which is the SAME AttributeError, one line away from the idiom
+    Contract 8 recommends.
     """
-    unpack = re.compile(r'^\s*\w+\s*,\s*(\w+)\s*=\s*(?:hyp|hypertools)\.plot\(',
-                        re.M)
-    for path, _max in BUDGETS:
-        text = _code_text(path)
-        for name in unpack.findall(text):
-            assert not re.search(rf'\b{re.escape(name)}\.on_frame\s*\(', text), (
-                f'{path}: `{name}` comes from unpacking hyp.plot(), so it is '
-                f'a raw FuncAnimation and has no .on_frame(). Bind the '
-                f'HyperAnimation first: `anim = hyp.plot(...)`, then '
-                f'`fig, {name} = anim`.')
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    wrappers, unpacked = set(), set()
+    # Two passes so the result does not depend on source order.
+    for _ in range(2):
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            value = node.value
+            for target in node.targets:
+                if isinstance(target, ast.Name) and _is_plot_call(value):
+                    wrappers.add(target.id)                 # anim = hyp.plot()
+                elif isinstance(target, ast.Name) and isinstance(
+                        value, ast.Subscript):              # ani = anim[1]
+                    base = value.value
+                    if (isinstance(base, ast.Name) and base.id in wrappers) \
+                            or _is_plot_call(base):
+                        unpacked.add(target.id)
+                elif isinstance(target, (ast.Tuple, ast.List)):
+                    if _is_plot_call(value) or (
+                            isinstance(value, ast.Name)
+                            and value.id in wrappers):      # fig, ani = ...
+                        unpacked.update(e.id for e in target.elts
+                                        if isinstance(e, ast.Name))
+    return sorted({(n.value.id, n.attr) for n in ast.walk(tree)
+                   if isinstance(n, ast.Attribute)
+                   and n.attr in WRAPPER_ONLY
+                   and isinstance(n.value, ast.Name)
+                   and n.value.id in unpacked})
+
+
+@pytest.mark.parametrize('path,_max', BUDGETS)
+def test_no_example_or_notebook_unpacks_then_uses_the_wrapper(path, _max):
+    """Contract 8. `fig, ani = hyp.plot(...)` binds `ani` to the raw
+    FuncAnimation, so every wrapper member raises AttributeError -- while
+    `_save_count` SURVIVES the unpack, so a gate written against that
+    attribute passes as the public API is discarded.
+
+    PASSES on all ten files today: it is a CONTROL against regression, not
+    coverage of a present defect. It would have caught v2's prescribed
+    conversation notebook, which unpacked and then called `.on_frame()`.
+    """
+    hits = _unpacked_wrapper_uses(_parsable_code(path))
+    assert not hits, (
+        f'{path}: ' + '; '.join(
+            f'`{name}` comes from unpacking a hyp.plot() result, so it is a '
+            f'raw FuncAnimation and has no .{attr}' for name, attr in hits)
+        + '. Bind the HyperAnimation first (`anim = hyp.plot(...)`), then '
+          '`fig, ani = anim` if the parts are wanted.')
 
 
 #: Measured 2026-08-02 against the committed notebooks, so a reader can
@@ -3370,7 +3504,7 @@ def test_no_launch_notebook_committed_an_error_output():
 
 Run: `.venv/bin/python -m pytest tests/test_examples_are_native.py -v`
 
-Expected: **124 collected — 117 passed, 5 failed, 2 skipped** on the FIRST run, then 122 passed once the index sets are recorded. Derived:
+Expected: **133 collected — 126 passed, 5 failed, 2 skipped** on the FIRST run, then 131 passed once the index sets are recorded. Derived:
 
 | test | IDs |
 |-|-|
@@ -3380,7 +3514,7 @@ Expected: **124 collected — 117 passed, 5 failed, 2 skipped** on the FIRST run
 | `test_native_ratio_is_reported` | 1 |
 | `test_no_defect_marker_in_the_launch_examples` (8 markers × 10 files) | 80 |
 | `test_every_allowlisted_reach_is_still_present_and_still_explained` | 1 |
-| `test_no_example_or_notebook_unpacks_then_uses_the_wrapper` | 1 |
+| `test_no_example_or_notebook_unpacks_then_uses_the_wrapper` (10 files) | 10 |
 | `test_older_tutorials_dropped_their_hand_rolled_helpers` | 6 |
 | `test_analyze_tutorial_actually_plots` / `test_reduce_tutorial_mentions_describe` | 2 |
 | `test_examples_produce_their_stated_artifact` (5 examples) | 5 |
@@ -3388,13 +3522,13 @@ Expected: **124 collected — 117 passed, 5 failed, 2 skipped** on the FIRST run
 | `test_the_right_cells_carry_visible_output` (5 notebooks) | 5 |
 | `test_each_notebook_ships_its_rendered_artifact` (5 notebooks) | 5 |
 | `test_no_launch_notebook_committed_an_error_output` | 1 |
-| **total** | **124** |
+| **total** | **133** |
 
 **The 5 first-run failures are `test_the_right_cells_carry_visible_output`, and they are intentional.** `EXPECTED_VISIBLE_OUTPUTS` ships EMPTY, and the test calls `pytest.fail()` naming the notebook and telling you to paste in the measured set. That is the whole design — a number written before the artifact exists is a guess, and this plan has now been wrong five times that way. The red is the instruction.
 
 **Ordering, which v3 got wrong at first:** Tasks 2–6 each say to record their measured index set into `EXPECTED_VISIBLE_OUTPUTS`, but Task 8 Step 2 is what CREATES that file — so on a strict Task-2-through-8 pass there is nothing to edit yet. Resolve by running **Step 2 before Tasks 2–6** (it is a pure test-module addition with no dependency on the rewrites), or, if Task 8 is genuinely run last, by treating the five failures as this step's to-do list and populating them here. Either way the dict is filled from a real `scripts/execute_tutorial.py` run, never from arithmetic.
 
-**The 2 skips are the `PRIVATE_API_EXCEPTIONS` pairs** (`ani\._args` and `hypertools\._shared`, both on `animate_market_forecast.py`) — allowlisted by Contract 3, and each skip prints its recorded reason. Plus Step 0's `tests/plot/test_hyper_animation_accessors.py` → **8 passed**, so Task 8 contributes **132** in total.
+**The 2 skips are the `PRIVATE_API_EXCEPTIONS` pairs** (`ani\._args` and `hypertools\._shared`, both on `animate_market_forecast.py`) — allowlisted by Contract 3, and each skip prints its recorded reason. Plus Step 0's `tests/plot/test_hyper_animation_accessors.py` → **8 passed**, so Task 8 contributes **141** in total.
 
 v1 expected 109 by counting a 10-ID ratio gate that this revision removed; v2 expected 106 before this revision split the notebook gate into execution / index-set / artifact and added the Contract 3 and Contract 8 guards. **Verify by real collection, not by this table** — `pytest tests/test_examples_are_native.py --collect-only -q` — because `BUDGETS` is now computed from `SCRIPT_BUDGETS`, and a naive AST count of the parametrize argument returns 1 for it rather than 10.
 
@@ -3454,7 +3588,9 @@ Expected: five new thumbnails, each **under 1.1 MB** (the largest existing one, 
 - [ ] **Step 7: Run the FULL suite**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: the baseline plus **134** — Task 1's 16, Task 5's 12 (`test_recency_fade.py`) and Task 8's 106 — all passing, 13 skipped. (v1 said 17 + 109; both were wrong, and Task 5 contributed no tests at all.) Any new failure in `tests/test_docs_thumbnails.py` or `tests/test_docs_gallery_log_filter.py` is Step 6's doing — fix it there.
+Expected: the baseline plus **172** — Task 1's **19** (`test_image_palette.py`), Task 5's **12** (`test_recency_fade.py`), and Task 8's **141** (133 in `test_examples_are_native.py` + 8 in `test_hyper_animation_accessors.py`) — all passing, 13 skipped, plus the **2 allowlist skips** from `PRIVATE_API_EXCEPTIONS`.
+
+**Verify by real collection, never by this number.** Three revisions running, the stated figure here has been stale: v1 said 17 + 109 = +126, v2 said 16 + 106 = +134, and both were wrong. Run `pytest <file> --collect-only -q` per file and add them up. Any new failure in `tests/test_docs_thumbnails.py` or `tests/test_docs_gallery_log_filter.py` is Step 6's doing — fix it there.
 
 - [ ] **Step 8: Build the docs to the RTD-parity standard**
 
@@ -3535,7 +3671,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
 | Match the siblings' v2 format and rigor | Same skeleton: goal / architecture / tech stack → verification note → contracts → global constraints → prerequisites → file structure → TDD tasks with `- [ ] **Step N:**` → decisions → self-review. The "Revision note (v2)" slot is filled by a **Verification note (v1)** that plays the same role — a table of received claims against measurements — because this plan has not yet been adversarially reviewed and inventing a revision history would be a fabrication. |
 | Explicit contracts | Seven, covering the script/notebook lockstep, the no-private-reaches rule, network-in-examples-only, scoring-stays-out-of-the-library, and the "budgets are contracts, never weakened to fit the code" rule. |
 | Prerequisites, per task | A per-task table naming the *specific* tasks of Plans 1–3 each rewrite needs (e.g. Market ← MultiIndex T1/T2/T5/T6/T8 + Forecast T3/T4/T5 + Animation-core T1) and *why*, including the two tasks (1 and 7) that have none and can start immediately. |
-| Task 1 is library work, TDD, justified API, no largest-cluster bug | Task 1: 17 real tests written before the implementation; the API choice (one function + one interception point at `colors.py:305-306`) is justified against the four consumers it automatically serves; the ordering rule is `frac × chroma` with a documented achromatic fallback, and `test_a_vivid_minority_colour_beats_the_muted_background` asserts the exact colour (`0.863, 0.078, 0.078`) the buggy rule fails to produce. Both states were **run**: red = `ValueError: 'image:...' is not a valid palette name`, green = the prototype's measured output. |
+| Task 1 is library work, TDD, justified API, no largest-cluster bug | Task 1: **19** real tests written before the implementation; the API choice (one function + **two** interception points — `_get_palette`'s string branch at `colors.py:305-306` and `_seaborn_palette_arg` at `plot.py:113`) is justified against the consumers each serves; the ordering rule is `frac × chroma` with a documented achromatic fallback, and `test_a_vivid_minority_colour_beats_the_muted_background` asserts the exact colour (`0.863, 0.078, 0.078`) the buggy rule fails to produce. Both states were **run**: red = `ValueError: 'image:...' is not a valid palette name`, green = the prototype's measured output. |
 | Tasks 2–6 rewrite one example + its notebook each, in lockstep | Each task rewrites both, in one commit, and specifies the notebook's full cell table. Lockstep is enforced mechanically by `tests/test_examples_are_native.py`, which scans `.py` **and** `.ipynb`. |
 | Market = MultiIndex showcase, per-sector + market forecasts, colour by price, ticker panel, accuracy overall + per sector in the tutorial, `t=1` | Task 2: `(Market, Sector, Ticker)` columns over 24 verified tickers; 6 sector traces + 1 market-mean trace with hierarchy-derived widths; `hue=` nested one sequence per sector (MultiIndex T6 form 2); `predict='Kalman', t=1, forecast_trail=16`; a right-hand panel listing each sector's tickers and score; the accuracy loop is example code with a **measured** 210-fit / 7.3 s budget. |
 | Weather = the paper figure, nearly all native, a handful of lines | Task 3: one `hyp.plot` call, verified end to end today (0.3 s, no warnings, 2 axes, 879 distinct colours at frame 150); the 70-line second panel and the 26-line hand-built hierarchy are deleted; budget ≤ 62 code lines. |
@@ -3555,7 +3691,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
 
 **Task dependencies.** 1 → 4 (`image_palette`). 2–6 each depend on Plans 1–3 as tabulated. Task 2 Step 1 creates `scripts/execute_tutorial.py`, which Tasks 3–7 use; Task 8 Step 1 creates `scripts/measure_native_ratio.py`, which Tasks 2–7 use in their measure steps — **do Task 8 Step 1 first** if working strictly in order, as noted in Task 2 Step 6. Tasks 1 and 7 have no dependency on Plans 1–3 and can run in parallel with them.
 
-**Suite arithmetic.** Task 1 adds **17** tests; Task 8 adds **109** (10 budget + 10 ratio + 8 markers × 10 files + 6 older-tutorial + 3 structural). Total **+126** on top of whatever Plans 1–3 leave the suite at (baseline `2551 passed, 13 skipped`, plus 97 + 94 + 88 from Plans 1, 3 and 2 respectively if all three land first).
+**Suite arithmetic.** Task 1 adds **19**; Task 5 adds **12**; Task 8 adds **141** (133 in `test_examples_are_native.py`, itemised in its Step 3 table, plus 8 in `test_hyper_animation_accessors.py`). Total **+172**, on top of whatever Plans 1–3 leave the suite at. The baseline itself is moving — re-measured 2026-08-02 at `2782/2784 collected`, and Plan 3's Tasks 0–1 have since added 17 — so measure it when this plan starts rather than trusting any number written here.
 
 **Remaining risk.** Three places:
 
