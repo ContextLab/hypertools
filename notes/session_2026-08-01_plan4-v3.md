@@ -176,6 +176,65 @@ remaining code cell has non-null `execution_count`; (c) no cell carries an `outp
 (d) the derived render-implies-output rule. An exact index-set pin may be added on top as
 drift-detection, but it is not the load-bearing assertion.
 
+### 9. Landed-state audit (`notes/audit/plan4_landed_state.md`) — independently re-verified
+
+| task | script | notebook | action |
+|-|-|-|-|
+| 2 market | partially landed | out of sync | REBASE + **BLOCKED** |
+| 3 weather | partially landed | out of sync | REBASE |
+| 4 paintings | untouched, baseline accurate | in sync | WRITE-AS-IS (gated on Task 1) |
+| 5 conversation | partially landed | out of sync | REBASE |
+| 6 morph | **fully landed** — Step 1 already done verbatim | out of sync | REBASE: delete Step 1 |
+
+Four claims re-checked by hand rather than accepted:
+
+1. **`forecast_trail=` is ABSENT** from `plot()`'s 75 parameters (`inspect.signature`). It comes from
+   Plan 3 Task 5. So Task 2 is **blocked, not merely stale** — its prescribed `hyp.plot(...)` call
+   cannot run today. This independently confirms the maintainer's ordering: Plan 3 must land first.
+2. `HyperAnimation` is a `tuple` subclass and has no `_func`; the old monkeypatch reached
+   `result[1]`.
+3. In weather and conversation, `ani._func` now appears **only inside docstrings** (`:318`, `:281`)
+   explaining the migration away from it. Real code is gone.
+4. All five notebooks still carry the private reaches their scripts dropped:
+   market `[ani._func, ani._args, hypertools._shared]`, weather `[ani._func]`,
+   conversation `[ani._func, ani._args, SentenceTransformer]`,
+   morph `[ani._func, from hypertools.plot import morph]`, paintings `[SentenceTransformer]`.
+   **The notebooks now teach the private-API approach the scripts just abandoned.**
+
+### 10. The metric bug and the gate bug are ONE bug in two places
+
+`measure_native_ratio._code_lines_nb` doesn't strip docstrings (finding: the .py/.ipynb asymmetry),
+and Task 8's `_code_text()` doesn't either — so the `DEFECT_MARKERS` gate reads docstrings as code
+and would fail weather and conversation **for their own documentation**, since `d730a085` wrote
+prose naming `ani._func` while explaining its removal. Same missing docstring-strip, two call sites.
+Fix once, as a shared callee both use — the `anim_window_bounds` lesson: a shared callee cannot
+drift from itself.
+
+### 11. NEEDS A RULING — Contract 3 vs. `d730a085`
+
+Plan 4 Contract 3 (L78): *"After this plan, no example or notebook contains `ani._func`,
+`ani._args`, `hypertools._shared` …"*. But `d730a085` deliberately **kept** two private usages in
+the market example and recorded why, with measurements:
+
+> `:204-213` — "the one place this example still reaches into matplotlib's private FuncAnimation
+> internals (`ani._args`/`ani._func`), deliberately: it needs the fully-revealed, ANTIALIASED
+> on-screen line … `ctx.datasets` is the pre-antialiasing array at a coarser resolution and fits a
+> measurably different (~2-8%, checked empirically) slope."
+
+> `:283-287` — "There is no public re-export of it … reimplementing PCHIP antialiasing by hand here
+> would risk silently drifting from what `hyp.plot` actually draws, so the private import stays."
+
+One of the two positions must be withdrawn explicitly; the rebase cannot paper over it.
+
+**My recommendation — the `d730a085` position governs and Contract 3 narrows.** It is newer, it
+carries measurement, and Contract 3's real purpose (examples must not *teach* private API as the way
+to do things) is not served by banning a one-time setup step that has no public equivalent and says
+so inline. Proposed replacement contract, which keeps teeth: *no private API where a public
+equivalent exists; any remaining private use must appear in an explicit
+`PRIVATE_API_EXCEPTIONS = {(path, marker): reason}` allowlist.* Any unlisted private reach still
+fails the gate, so new ones cannot creep in, and each retained one is reviewed rather than assumed.
+Proceeding on this assumption; flagging it for the maintainer.
+
 ## Status
 
 Seven parallel audits dispatched (reports land in `notes/audit/`):

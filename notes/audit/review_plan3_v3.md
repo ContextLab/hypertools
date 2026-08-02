@@ -1,3 +1,55 @@
+# ADDENDUM 2026-08-01 — VERDICT: IMPLEMENTABLE
+
+*(This supersedes the "NOT IMPLEMENTABLE" verdict below, which was written against commit
+`4ecb3b6d`. The eleven findings it raised were fixed in `3f94c5bf`; this addendum records the
+closure audit the maintainer required before implementation, run against `065c841e`.)*
+
+Closure audit: `notes/audit/plan3_closure_audit.md`. All five maintainer-specified checks PASS.
+
+| # | check | result |
+|-|-|-|
+| 1 | Task 4 test + `_update_forecasts` blocks extracted and executed verbatim | **PASS** |
+| 2 | 27 Task 4 / 31 cumulative confirmed by REAL collection, not AST | **PASS** |
+| 3 | Task 0 applied in a disposable worktree; `on_frame` + parity suites re-run | **PASS** |
+| 4 | no stale `matplotlib_backend._anim_window_bounds` anywhere in the plan | **PASS** |
+| 5 | verdict | **IMPLEMENTABLE** |
+
+Evidence that mattered:
+
+- **Check 1 went past static analysis.** `forecast.py` was built from Tasks 1+2 verbatim, Task 0
+  applied, and the `_update_forecasts` block executed against real `Line3D`/`Line2D` artists and a
+  real `ForecastSchedule` (14 real Kalman fits). All three `_ndims` branches run; the out-of-order
+  replay `0,4,7,4,0` is byte-identical; user callbacks observe the current frame. All 18 Task 4
+  tests fail for exactly ONE cause — the shipped refusal at `plot.py:2749` that Task 3 removes —
+  with no `NameError` and no signature mismatch. v2's Fatal is genuinely dead.
+- **Check 2 needed no stubbing.** Real collection gave 9 / 18 / **27** / 4 / **31**, matching an
+  independent AST parametrize expansion. (The `STYLES` construct that trips naive counters lives in
+  Task 6's file, not these blocks.)
+- **Check 3**: BEFORE 73 passed (44 + 29); Task 0's own tests 7 failed / 2 passed exactly as the
+  plan predicts; AFTER 9 passed with 73 unchanged. Wider `tests/plot` sweep 209 → 218 (+9 = the new
+  file). No regression.
+- **Check 4**: zero hits in the plan. `anim_window_bounds` is defined only at `trails.py:24`;
+  `matplotlib_backend.py` merely imports it at `:41`.
+
+## Findings from the closure audit, and their disposition
+
+| sev | finding | disposition |
+|-|-|-|
+| MEDIUM | `_live_forecast_artists` was **consumed** by Task 4 Step 5's code block but only **described in prose** — the creation code was never written. A plan may not reference an object no task defines. | **FIXED.** The artist-creation block is now written out in full. It snapshots `list(ax.lines)` *before* the loop — otherwise artist *i* would take its colour from forecast *i-1*, the same guard `_draw_forecast_overlays` opens with (`plot.py:157`). Executed against real 1-D, 2-D and 3-D axes: 3 artists each, forecast colours identical to trajectory colours, `role='live'`, `clip_on=False`, `ls='--'`, `alpha=0.6`, and the artists drive correctly afterwards. |
+| LOW | a test docstring quoted `duration=2` densification figures while the test runs `duration=4` | **FIXED.** The test's real grid is 16 rows, not 8; the docstring's own derivation (`59/15 ≈ 3.9`) was already the 16-row figure, so the citation was wrong, not the arithmetic. The ~15.1x figure is now explicitly attributed to the other configuration. |
+| LOW | Step 4 re-binds `_n_frames`, shadowing `plot.py:4477` | **NO CHANGE.** Same value, and the local binding is the safer of the two. |
+| LOW | a stale artifact retains the old `_anim_window_bounds` name | **NO CHANGE NEEDED.** Verified it is only `docs/_build/html/_modules/hypertools/plot/plot.html`, which `.gitignore:15` ignores. It is regenerated on the next docs build and never ships. No live source or committed doc references the old symbol. |
+
+Plan counts re-derived after these edits: unchanged at 9 / 8 / 14 / 11 / **18** / 11 / 18 / 4,
+grand total **93**. The added block contains no tests and parses as valid Python (31 lines).
+
+**Implementation order** (maintainer's, with their Task 4 split):
+Task 0 → Tasks 1-2 → Task 3 → **Task 4a** (schedule + bounding box) → **Task 4b** (live drawing) →
+Task 5 → Task 6 → Task 7. Task 4 is split into two commits because the two halves have different
+failure modes and can be reviewed independently.
+
+---
+
 VERDICT: NOT IMPLEMENTABLE
 
 Adversarial re-review of Plan 3 v3 (`docs/superpowers/plans/2026-07-27-hypertools-1.1-forecast-animation.md`,

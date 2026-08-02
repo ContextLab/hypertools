@@ -1326,11 +1326,14 @@ def test_forecast_head_tracks_the_animation():
 def test_forecast_is_anchored_near_the_drawn_head():
     """Contract 2. `t` is in RAW analyze-space samples, but the drawn head
     sits on the FRAME GRID: plot.py:4460-4478 resamples a 60-row input to
-    round(frame_rate*duration) rows, which matplotlib_backend then densifies
-    (measured: 60 raw rows -> 8 grid rows -> 904 drawn vertices at
-    duration=2/frame_rate=4, the review's ~15.1x). So the forecast anchors on
-    the last revealed RAW sample, which is at most ONE raw step behind the
-    drawn head -- an exact atol=1e-6 anchor is impossible by construction.
+    round(frame_rate*duration) rows, which matplotlib_backend then densifies.
+    This test runs duration=4/frame_rate=4, so 60 raw rows -> **16** grid
+    rows. (The review's "60 -> 8 grid rows -> 904 drawn vertices, ~15.1x" was
+    measured at duration=2/frame_rate=4 -- half the grid, a different
+    configuration from this one; the densification ratio is quoted there, not
+    here.) So the forecast anchors on the last revealed RAW sample, which is
+    at most ONE raw step behind the drawn head -- an exact atol=1e-6 anchor is
+    impossible by construction.
 
     The tolerance is DERIVED, not guessed. With antialias=False the drawn head
     line's vertices are consecutive FRAME-GRID rows, and one frame-grid step
@@ -1567,7 +1570,42 @@ Immediately before the centre/scale block (`plot.py:4555`), build the schedule; 
 
 - [ ] **Step 5: Create the live artists and drive them from the schedule**
 
-After `_draw(...)` returns (`plot.py:4858-4898`), when `forecast_schedule is not None`, create one dashed artist per dataset in that dataset's colour with `alpha=0.6`, `label='_nolegend_'`, `set_clip_on(False)` and `_hyp_forecast_role = 'live'` — the same styling `_draw_forecast_overlays` applies (`plot.py:168-171`), so a paused animation looks like a static plot. Then register the updater on the **internal** phase of the shared `FrameHooks` registry (Task 0):
+After `_draw(...)` returns (`plot.py:4858-4898`), when `forecast_schedule is not None`, create one dashed artist per dataset in that dataset's colour with `alpha=0.6`, `label='_nolegend_'`, `set_clip_on(False)` and `_hyp_forecast_role = 'live'` — the same styling `_draw_forecast_overlays` applies (`plot.py:166-179`), so a paused animation looks like a static plot:
+
+```python
+                # One dashed artist per dataset, created EMPTY -- the updater
+                # below fills them per frame. Colours come from the trajectory
+                # lines as they stand BEFORE any forecast artist is added:
+                # `ax.lines` grows as this loop runs, so snapshot it first or
+                # artist i would take its colour from forecast i-1. (This is
+                # the same `src_lines = list(ax.lines)` guard that
+                # `_draw_forecast_overlays` opens with, plot.py:157.)
+                _src_lines = list(ax.lines)
+                _live_forecast_artists = []
+                for _i in range(len(xform)):
+                    _fc_color = (_src_lines[_i].get_color()
+                                 if _i < len(_src_lines) else None)
+                    # the SAME three-way split, linestyle, alpha and label
+                    # `_draw_forecast_overlays` uses (plot.py:167-179), so a
+                    # paused animation is indistinguishable from the static
+                    # plot. 1-D is a real branch: `_display_ndims` can be 1.
+                    if _display_ndims >= 3:
+                        _art, = ax.plot([], [], [], linestyle='--',
+                                        color=_fc_color, alpha=0.6,
+                                        label='_nolegend_')
+                    elif _display_ndims == 2:
+                        _art, = ax.plot([], [], linestyle='--',
+                                        color=_fc_color, alpha=0.6,
+                                        label='_nolegend_')
+                    else:
+                        _art, = ax.plot([], linestyle='--', color=_fc_color,
+                                        alpha=0.6, label='_nolegend_')
+                    _art.set_clip_on(False)
+                    _art._hyp_forecast_role = 'live'
+                    _live_forecast_artists.append(_art)
+```
+
+Then register the updater on the **internal** phase of the shared `FrameHooks` registry (Task 0):
 
 ```python
                 def _update_forecasts(ctx, _sched=forecast_schedule,
