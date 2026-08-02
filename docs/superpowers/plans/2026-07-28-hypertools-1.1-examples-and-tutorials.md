@@ -166,7 +166,7 @@ files changes:
 
    So the contract's "wrapped in a fallback" clause is **already violated by morph**: `hyp.load(name)` has no offline path and takes the whole example down. Task 6 must give it one.
 
-   **The consequence for the gate:** a test that executes an example executes its fetches. Task 8 therefore drives a **`construct_artifact(data)` boundary** — loaders on one side, figure construction on the other — and tests only the construction half, fed by fixtures. Four of the five need **zero committed bytes** (their existing seeded synthetic fallbacks *are* the fixture); paintings needs one committed **1.7 KB** 64-px thumbnail. The whole-example run survives as an opt-in smoke test, never in the default suite. Importing an example must not fetch.
+   **The consequence for the gate:** a test that executes an example executes its fetches. Task 8 therefore drives a **`construct_artifact(data)` boundary** — loaders on one side, figure construction on the other — and tests only the construction half, fed by fixtures. Four of the five need **zero committed bytes** (their existing seeded synthetic fallbacks *are* the fixture); paintings needs one committed **1.7 KB** 64-px thumbnail, `examples/data/painting_palette_fixture.png`, exposed by the example as `PALETTE_FIXTURE` so the gate reads it through the module rather than hard-coding a path. The whole-example run survives as an opt-in smoke test, never in the default suite. Importing an example must not fetch.
 
 5. **Forecast scoring stays out of the library.** Standing maintainer decision, restated by the forecast-animation plan's Global Constraints (*"Forecast scoring stays OUT of the library ... accuracy/backtest logic belongs in the tutorial as legitimately custom code"*). Task 2's per-sector and overall accuracy is example code, and is budgeted and timed rather than left open-ended.
 
@@ -182,7 +182,7 @@ files changes:
    notebook_budget = script_budget + NOTEBOOK_OVERHEAD      # NOTEBOOK_OVERHEAD = 5
    ```
 
-   `NOTEBOOK_OVERHEAD` is measured, not guessed: the largest install cell across the five is 3 code lines, plus a 2-line display cell (`from IPython.display import HTML` + `HTML(ani.to_jshtml())`). One number is chosen per task — the script budget — and the notebook's follows. Verified against the prescribed content: market 113 ≤ 120, weather 60 ≤ 67, paintings 116 ≤ 123, conversation 93 ≤ 95, morph 30 ≤ 35. Still tight, and a notebook budget can never again be set below its script's.
+   `NOTEBOOK_OVERHEAD` is measured, not guessed: the largest install cell across the five is 3 code lines, plus a 2-line display cell (`from IPython.display import HTML` + `HTML(ani.to_jshtml())`). One number is chosen per task — the script budget — and the notebook's follows. Verified against the prescribed content, with the loader/builder split's ~15 lines included (these were pre-split figures and were wrong the moment Step 0b was added): market 128 ≤ 135, weather 71 ≤ 82, paintings 126 ≤ 138, conversation 103 ≤ 110, morph 41 ≤ 50. Still tight, and a notebook budget can never again be set below its script's.
 
 7. **Behaviour parity with today, except where a defect is being removed.** Each rewrite keeps its example's visual identity (the market's quarter-turn and forecast fan, the weather figure's blue-cold/red-hot sweep, the paintings' spin, the conversation's one-turn-at-a-time reveal, the morph's closed loop and teapot). Where an effect is deliberately dropped because no 1.1 API expresses it, it is named in *Decisions still needed*, never quietly lost.
 
@@ -278,6 +278,7 @@ Plans 1, 2 and 3 must land first. Per task:
 | `examples/animate_market_forecast.py` + `docs/tutorials/market_forecast.ipynb` | the MultiIndex showcase | rewrite |
 | `examples/animate_weather_decades.py` + `docs/tutorials/weather_decades.ipynb` | the paper figure | rewrite |
 | `examples/animate_painting_embeddings.py` + `docs/tutorials/painting_embeddings.ipynb` | native text + native palette | rewrite |
+| `examples/data/painting_palette_fixture.png` | the 64-px, 1.7 KB thumbnail `fixture_data()` extracts its palette from — the plan's only committed fixture bytes; `PALETTE_FIXTURE` in the example points at it | create |
 | `examples/animate_conversation.py` + `docs/tutorials/conversation_shape.ipynb` | native text + serial + per-segment titles | rewrite |
 | `examples/animate_morph_zoo.py` + `docs/tutorials/morph_shapes_zoo.ipynb` | native per-segment titles | rewrite |
 | `docs/tutorials/{conversation_trajectories,hugging_face_embeddings,wikipedia_embeddings,modern_sklearn_dynamics,stock_forecasting,projectile_kalman,analyze,reduce}.ipynb` | the recurring fixes | modify |
@@ -1293,7 +1294,7 @@ Rewrite `docs/tutorials/market_forecast.ipynb` so its code cells are the script'
 
 (`scripts/measure_native_ratio.py` is created in Task 8 Step 1; if you are working tasks in order, do that step first — it is standalone.)
 
-Expected: both files inside budget (**≤ 115 / ≤ 120 code lines**). If either is missed, cut presentation code. **Do not predict an output-cell count here** — v2 guessed `7/8` and every one of its five per-task guesses was wrong. Record the measured visible-output INDEX SET from this run into `EXPECTED_VISIBLE_OUTPUTS` (Task 8), which names the offending cell when it drifts.
+Expected: both files inside budget (**≤ 130 / ≤ 135 code lines**) -- the rewrite measures 109, plus the ~15 the loader/builder split costs. If either is missed, cut presentation code. **Do not predict an output-cell count here** — v2 guessed `7/8` and every one of its five per-task guesses was wrong. Record the measured visible-output INDEX SET from this run into `EXPECTED_VISIBLE_OUTPUTS` (Task 8), which names the offending cell when it drifts. **Ordering:** that dict lives in `tests/test_examples_are_native.py`, which Task 8 Step 2 creates — so **do Task 8 Steps 1–2 before Tasks 2–6**, exactly as you must for `scripts/measure_native_ratio.py`. Both are pure additions with no dependency on the rewrites. If you genuinely run Task 8 last instead, then Tasks 2–6 have nowhere to record anything and Task 8 Step 3's five reds become the to-do list; pick one of those two procedures and do not half-do both.
 
 - [ ] **Step 7: Commit**
 
@@ -1538,7 +1539,7 @@ Rewrite `docs/tutorials/weather_decades.ipynb`, keeping cell 0 (Colab install) u
     examples/animate_weather_decades.py docs/tutorials/weather_decades.ipynb
 ```
 
-Expected: both files inside budget (**≤ 62 / ≤ 67 code lines**). Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` rather than asserting a predicted count — v2's `4/5` named cells 3/5/7/9, and the real emitting cells are a different set entirely.
+Expected: both files inside budget (**≤ 77 / ≤ 82 code lines**) -- the rewrite alone measures 56, and 56 + 15 = 71 ≤ 77. (This line said `≤ 62` while the AFTER line and the enforced `SCRIPT_BUDGETS` both said 77: a file that measures 71 could not satisfy it. The unsatisfiable-gate class, reintroduced in the one place the fix was not propagated.) Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires) rather than asserting a predicted count — v2's `4/5` named cells 3/5/7/9, and the real emitting cells are a different set entirely.
 
 - [ ] **Step 6: Commit**
 
@@ -1589,7 +1590,7 @@ Produce exactly these three names in `examples/animate_painting_embeddings.py`:
 |-|-|-|
 | payload | `class Paintings(NamedTuple)` with fields `vectors, owners, colors, source` | self-documenting; `source` records which path was used |
 | loader | `load_paintings(PAINTINGS) -> Paintings` | the ONLY code here that may touch the network (canvas_color, the SentenceTransformer load) |
-| fixture | `fixture_data() -> Paintings` | the one committed 1.7 KB 64-px thumbnail — no network, no committed bytes unless stated |
+| fixture | `fixture_data() -> Paintings` | the one committed 1.7 KB 64-px thumbnail, `examples/data/painting_palette_fixture.png`, named by the module constant `PALETTE_FIXTURE`. This is the ONLY committed fixture byte in the plan; the other four examples reuse their seeded synthetic fallbacks. |
 | builder | `construct_artifact(data) -> HyperAnimation` | everything else, reading `data.<field>` instead of module globals. **Returns the wrapper, never the unpacked pair** (Contract 8) |
 
 Then move every loader CALL behind a `__main__` guard, and make each fetcher honour `HYPERTOOLS_OFFLINE` by raising:
@@ -1817,12 +1818,15 @@ Rewrite `docs/tutorials/painting_embeddings.ipynb`, keeping cell 0 unchanged:
     examples/animate_painting_embeddings.py docs/tutorials/painting_embeddings.ipynb
 ```
 
-Expected: both files inside budget (**≤ 118 / ≤ 123 code lines**). Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS`; do not assert a predicted count.
+Expected: both files inside budget (**≤ 133 / ≤ 138 code lines**) -- the rewrite measures 111, plus the split. Paintings has TWO fetch sites, so measure its real overhead here rather than assuming 15. Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires); do not assert a predicted count.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add examples/animate_painting_embeddings.py docs/tutorials/painting_embeddings.ipynb
+# the fixture PNG is new and binary; an untracked file in the sdist fails
+# test_sdist_contains_only_tracked_files_plus_allowlist (Global Constraints)
+git add examples/animate_painting_embeddings.py docs/tutorials/painting_embeddings.ipynb \
+        examples/data/painting_palette_fixture.png
 git commit -m "docs(gallery): paintings example uses native text embedding and native image palettes"
 ```
 
@@ -2251,7 +2255,7 @@ Rewrite `docs/tutorials/conversation_shape.ipynb`, keeping cell 0 unchanged:
     examples/animate_conversation.py docs/tutorials/conversation_shape.ipynb
 ```
 
-Expected: both files inside budget (**≤ 90 / ≤ 95 code lines**). Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS`; do not assert a predicted count.
+Expected: both files inside budget (**≤ 105 / ≤ 110 code lines**) -- the rewrite measures 88, plus the split. Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires); do not assert a predicted count.
 
 - [ ] **Step 6: Commit**
 
@@ -2424,7 +2428,7 @@ Rewrite `docs/tutorials/morph_shapes_zoo.ipynb`. The current cell 9 (24 lines of
     examples/animate_morph_zoo.py docs/tutorials/morph_shapes_zoo.ipynb
 ```
 
-Expected: both files inside budget (**≤ 30 / ≤ 35 code lines**). Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS`; do not assert a predicted count.
+Expected: both files inside budget (**≤ 45 / ≤ 50 code lines**) -- morph measures 26 today, plus the split. Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires); do not assert a predicted count.
 
 - [ ] **Step 5: Commit**
 
@@ -2697,7 +2701,7 @@ def test_draw_frame_rejects_an_out_of_range_index():
 ```
 
 Run: `.venv/bin/python -m pytest tests/plot/test_hyper_animation_accessors.py -v`
-Expected: **9 failed** — `AttributeError: 'HyperAnimation' object has no attribute 'n_frames'` and the same for `n_segments`/`draw_frame`.
+Expected: **8 failed** — `AttributeError: 'HyperAnimation' object has no attribute 'n_frames'` and the same for `n_segments`/`draw_frame`. (Eight, not nine: the block above defines eight `def test_`. The ninth, `test_n_segments_is_set_for_a_2d_morph_too`, is added further down this same step once the 2-D tagging site is known, which is why the finished file collects 9 and Task 8 contributes 148 = 139 + 9.)
 
 Then implement, beside the existing `figure`/`animation` properties:
 
@@ -2794,7 +2798,7 @@ fetch/load data  ->  load_<thing>()          # the ONLY code that may touch the 
 | `animate_weather_decades` | `load_weather(cities=CITIES)` | `Weather(monthly, daily, hemispheres, source)` | **0** — its own seeded `synthetic_city_months`/`synthetic_city_daily` |
 | `animate_market_forecast` | `load_market(ids=FRED_IDS)` | `Market(dates, prices, source)` | **0** — its own seeded `synthetic_basket()` |
 | `animate_conversation` | `embed_turns(TURNS)` | `Conversation(vectors, speakers, spans, source)` | **0** — the TF-IDF branch is a real `sklearn` fit, already deterministic |
-| `animate_painting_embeddings` | `load_paintings(PAINTINGS)` | `Paintings(vectors, owners, colors, source)` | **one 1.7 KB** 64-px thumbnail (measured: 48 px = 1258 B, 64 px = 1744 B, 96 px = 2967 B) |
+| `animate_painting_embeddings` | `load_paintings(PAINTINGS)` | `Paintings(vectors, owners, colors, source)` | **one 1.7 KB** 64-px thumbnail at `examples/data/painting_palette_fixture.png`, module constant `PALETTE_FIXTURE` (measured: 48 px = 1258 B, 64 px = 1744 B, 96 px = 2967 B) |
 | `animate_morph_zoo` | `load_shapes(SHAPES, n=N)` | `Shapes(clouds, titles)` | **0** — deterministic parametric clouds |
 
 **`HYPERTOOLS_OFFLINE` has to be made real — nothing reads it today.** (`grep -rn HYPERTOOLS_OFFLINE examples/ hypertools/ scripts/ tests/` returns nothing.) Each fetcher gains one line at its top, so the variable actually does something:
@@ -2841,9 +2845,22 @@ def load_weather(cities=CITIES):
 def fixture_data():
     """The same payload from the seeded synthetic path. No network, no
     committed bytes -- this is what the Task 8 gate drives."""
-    hemis = [hemi for _n, _lat, _lon, hemi in cities_spec()]
-    return Weather([synthetic_city_months(h) for h in hemis],
-                   [synthetic_city_daily(h, N_DAYS) for h in hemis],
+    # CITIES is a dict of name -> (lat, lon, hemisphere), so the hemisphere
+    # is the third element of each VALUE. (An earlier draft of this block
+    # unpacked a 4-tuple from a `cities_spec()` that does not exist, and
+    # passed an `N_DAYS` that does not exist either -- two invented names in
+    # the one block the plan tells you to copy. Both are real functions with
+    # real signatures: `synthetic_city_months(hemi, n_months=420, seed=0)`
+    # and `synthetic_city_daily(hemi, n_days, seed=0)`; only `n_days` is
+    # required positionally.)
+    hemis = [hemi for _lat, _lon, hemi in CITIES.values()]
+    months = [synthetic_city_months(h) for h in hemis]
+    # the example derives its daily length from the monthly one the same
+    # way (`int(round(min_len * 365.25 / 12))`); keep that relationship
+    # rather than inventing a constant, so the fixture stays in proportion
+    n_days = int(round(min(len(m) for m in months) * 365.25 / 12))
+    return Weather(months,
+                   [synthetic_city_daily(h, n_days) for h in hemis],
                    hemis, 'synthetic (fixture)')
 
 
@@ -3095,6 +3112,9 @@ only things that cannot be satisfied by reformatting:
 No network, no mocks: it reads the committed files.
 """
 import ast
+import contextlib
+import importlib.util
+import json
 import os
 import re
 
@@ -3494,14 +3514,24 @@ def _unpacked_wrapper_uses(source):
 
     **What this deliberately does NOT catch**, verified by
     `test_the_contract_8_guard_actually_detects` so the list cannot rot:
-    `getattr(hyp, 'plot')(d)` (dynamic dispatch), a wrapper stored in and
-    read back out of a dict or list, `fig, *rest = hyp.plot(d)` then
-    `rest[0]`, and `with hyp.plot(d) as (fig, ani)` (which cannot run at
-    all -- `HyperAnimation` is not a context manager). No AST pass is
-    complete against arbitrary Python; the honest move is to name the
-    holes rather than imply there are none. Each of these would take a
-    value-tracking pass to catch and none of them is a spelling a gallery
-    example would plausibly use.
+    `getattr(hyp, 'plot')(d)` (dynamic dispatch); a wrapper stored in and
+    read back out of a dict or list; `fig, *rest = hyp.plot(d)` then
+    `rest[0]`; `with hyp.plot(d) as (fig, ani)` (which cannot run at all --
+    `HyperAnimation` is not a context manager); an unpacked name passed
+    into a function and used there (interprocedural); a nested target
+    (`(fig, ani), z = hyp.plot(d), 1`); and `for fig, ani in R` where `R`
+    is a NAME bound to a list of results rather than a literal. No AST pass
+    is complete against arbitrary Python; the honest move is to name the
+    holes rather than imply there are none.
+
+    That list was itself wrong once, which is worth recording: it named
+    five exotic spellings while omitting the plainest of all -- a bare
+    `b = ani` after an unpack. The guard propagated aliases in the WRAPPER
+    direction (`a = hyp.plot(d)`, `b = a`) but not in the UNPACKED
+    direction, so a reader who assumed the obvious symmetry was wrong, and
+    the docstring implied a completeness the code did not have. Both
+    directions now propagate, to a real fixed point rather than a fixed
+    three passes.
     """
     tree = ast.parse(source)
     mods, bare = _hypertools_names(tree)
@@ -3535,11 +3565,28 @@ def _unpacked_wrapper_uses(source):
                 and yields_wrapper(value.value))
 
     def note_unpack(target):
+        """Record the elements that LOSE the wrapper -- index >= 1 only.
+
+        `HyperAnimation` is `(figure, animation)`, so element 0 of an
+        unpack is a genuine `matplotlib.figure.Figure`. Recording it makes
+        `fig.figure` -- real, public matplotlib API -- a violation, and
+        reports it as "`fig` ... is a raw FuncAnimation and has no
+        .figure", which is wrong twice over. That is the same
+        factually-wrong-message class `_hypertools_names` was written to
+        kill for `ax.plot`/`df.plot`; it survived here because
+        `WRAPPER_ONLY` contains `figure` and this function did not care
+        which slot a name came from. It cares now.
+        """
         if isinstance(target, (ast.Tuple, ast.List)):
-            unpacked.update(e.id for e in target.elts
+            unpacked.update(e.id for e in target.elts[1:]
                             if isinstance(e, ast.Name))
 
-    for _ in range(3):          # propagate `b = a` aliases to a fixed point
+    # Iterate to a real fixed point rather than a fixed number of passes: a
+    # long alias chain needs one pass per hop, and `range(3)` silently
+    # stopped resolving at the fourth.
+    changed = True
+    while changed:
+        before = (len(wrappers), len(unpacked))
         for node in ast.walk(tree):
             if isinstance(node, (ast.For, ast.AsyncFor)):
                 it = node.iter
@@ -3562,9 +3609,17 @@ def _unpacked_wrapper_uses(source):
                     elif isinstance(value, ast.Subscript) \
                             and yields_wrapper(value.value):
                         unpacked.add(target.id)
+                    elif isinstance(value, ast.Name) and value.id in unpacked:
+                        # `b = ani` -- the UNPACKED direction of the alias
+                        # propagation above. The plainest evasion there is,
+                        # and the one an earlier version missed while
+                        # handling the wrapper direction.
+                        unpacked.add(target.id)
                 elif isinstance(target, (ast.Tuple, ast.List)):
                     if yields_wrapper(value):
                         note_unpack(target)
+        if (len(wrappers), len(unpacked)) == before:
+            changed = False
     return sorted({(n.value.id, n.attr) for n in ast.walk(tree)
                    if isinstance(n, ast.Attribute)
                    and n.attr in WRAPPER_ONLY
@@ -3594,6 +3649,15 @@ GUARD_MUST_FLAG = {
     'for-loop unpack': 'for fig, ani in [hyp.plot(d)]:\n    ani.on_frame(cb)\n',
     'use appears BEFORE the unpack':
         'def go():\n    ani.on_frame(cb)\nfig, ani = hyp.plot(d)\n',
+    'alias OF an unpacked name':
+        'fig, ani = hyp.plot(d)\nb = ani\nb.on_frame(cb)\n',
+    'alias of a subscript result':
+        'anim = hyp.plot(d)\nani = anim[1]\nb = ani\nb.on_frame(cb)\n',
+    'alias of .animation':
+        'ani = hyp.plot(d).animation\nb = ani\nb.on_frame(cb)\n',
+    'five-hop alias chain written bottom-up':
+        'e.on_frame(cb)\ne = d_\nd_ = c\nc = b\nb = ani\n'
+        'fig, ani = hyp.plot(dat)\n',
 }
 GUARD_MUST_IGNORE = {
     'the blessed idiom':
@@ -3601,6 +3665,11 @@ GUARD_MUST_IGNORE = {
     'wrapper used without unpacking': 'anim = hyp.plot(d)\nanim.draw_frame(0)\n',
     'FuncAnimation.save on an unpacked name (legal)':
         "fig, ani = hyp.plot(d)\nani.save('x.gif')\n",
+    # element 0 of the unpack is a genuine Figure, and Figure.figure is
+    # real public matplotlib API -- see note_unpack
+    'Figure.figure on the FIGURE half of an unpack':
+        'fig, ani = hyp.plot(d)\nprint(fig.figure)\n',
+    'savefig on the figure half': "fig, ani = hyp.plot(d)\nfig.savefig('x.png')\n",
 }
 #: matplotlib's `Line2D.figure` and pandas' `.plot` are real public API.
 GUARD_MUST_IGNORE_FOREIGN = {
@@ -3619,6 +3688,12 @@ GUARD_KNOWN_UNCAUGHT = {
     'starred remainder': 'fig, *rest = hyp.plot(d)\nrest[0].on_frame(cb)\n',
     'with-as unpack (cannot run: not a context manager)':
         'with hyp.plot(d) as (fig, ani):\n    ani.on_frame(cb)\n',
+    'passed into a function and used there (interprocedural)':
+        'def use(a):\n    a.on_frame(cb)\nfig, ani = hyp.plot(d)\nuse(ani)\n',
+    'nested tuple target':
+        '(fig, ani), z = hyp.plot(d), 1\nani.on_frame(cb)\n',
+    'for over a NAME bound to a list, not a literal':
+        'R = [hyp.plot(d)]\nfor fig, ani in R:\n    ani.on_frame(cb)\n',
 }
 
 
@@ -3741,7 +3816,8 @@ STATED_ARTIFACT = {
     # clouds -> 2*6 - 1 = 11 segments, matching the example's own
     # 11-entry `rotations` list. (Measured; NOT 10 -- the schedule has no
     # implicit closing transition, and the example's inline comment
-    # "for the 5 clouds = 9 segments" counts the shapes, not what it passes.)
+    # comment used to say "for the 5 clouds = 9 segments", counting the
+    # shapes rather than what the call receives; corrected in the file.)
     'animate_morph_zoo': dict(min_frames=200, morph=11),
 }
 
@@ -3775,7 +3851,19 @@ def _import_example_without_fetching(stem):
     # Refuse to import an example that has not been split yet, rather than
     # letting it fetch. Checked BEFORE exec, because after exec the damage
     # is done.
-    assert "__name__ == '__main__'" in source, (
+    # Match the guard STRUCTURALLY, not as a literal string: `__name__ ==
+    # "__main__"` with double quotes is the same guard, and a literal
+    # substring test would reject it while blaming the missing split -- a
+    # wrong reason for a real-looking failure.
+    _guarded = any(
+        isinstance(node, ast.If)
+        and isinstance(node.test, ast.Compare)
+        and isinstance(node.test.left, ast.Name)
+        and node.test.left.id == '__name__'
+        and any(isinstance(c, ast.Constant) and c.value == '__main__'
+                for c in node.test.comparators)
+        for node in ast.walk(ast.parse(source)))
+    assert _guarded, (
         f'examples/{stem}.py has no __main__ guard, so importing it would '
         f'run its loaders and hit the network (Step 0b). Do the loader / '
         f'construct_artifact split before enabling this gate.')
@@ -3788,6 +3876,26 @@ def _import_example_without_fetching(stem):
             assert hasattr(module, required), (
                 f'examples/{stem}.py does not define {required}() (Step 0b)')
         return module
+    finally:
+        # NOTE: the caller runs `construct_artifact(fixture_data())` AFTER
+        # this returns, so leaving the variable set only for the import
+        # would guard the cheap half and not the expensive one. The caller
+        # re-arms it around the construction; see `_offline`.
+        os.environ.pop('HYPERTOOLS_OFFLINE', None)
+
+
+@contextlib.contextmanager
+def _offline():
+    """Assert no fetch happens inside the block, not merely at import.
+
+    Belt AND braces: `_import_example_without_fetching` covers module
+    import; this covers `fixture_data()` + `construct_artifact()`, which is
+    where the loaders would actually be called from if the split were done
+    wrong.
+    """
+    os.environ['HYPERTOOLS_OFFLINE'] = '1'
+    try:
+        yield
     finally:
         os.environ.pop('HYPERTOOLS_OFFLINE', None)
 
@@ -3840,7 +3948,8 @@ def test_examples_produce_their_stated_artifact(stem):
     """
     module = _import_example_without_fetching(stem)
     want = STATED_ARTIFACT[stem]
-    anim = module.construct_artifact(module.fixture_data())
+    with _offline():
+        anim = module.construct_artifact(module.fixture_data())
     fig = anim.figure
 
     assert anim.n_frames >= want['min_frames'], (
@@ -3874,6 +3983,32 @@ def test_examples_produce_their_stated_artifact(stem):
         _drive(anim, frame=anim.n_frames // 2)
         assert fig.axes[0].collections or fig.axes[0].lines, (
             'a driven mid-morph frame drew nothing')
+    if want.get('palette'):
+        # Paintings is the ONLY example whose whole point is Task 1's native
+        # `palette='image:<path>'`, and the only one that costs a committed
+        # fixture -- and for one revision this key was in STATED_ARTIFACT
+        # with no branch reading it, so the example was gated by nothing but
+        # its frame count. A key that no code reads is a claim with no gate
+        # behind it.
+        from hypertools.plot.colors import image_palette
+        anchors = image_palette(module.PALETTE_FIXTURE, n_colors=6)
+        drawn = {tuple(np.round(a.get_color()[:3], 3))
+                 if not isinstance(a.get_color(), str) else a.get_color()
+                 for a in fig.axes[0].lines}
+        assert drawn, 'no line artists to take a colour from'
+        # every drawn colour must be one of the image's extracted anchors
+        # (or a blend of them) -- i.e. inside the anchors' convex range per
+        # channel, with a small tolerance for blending
+        arr = np.asarray([np.asarray(a.get_color()[:3], dtype=float)
+                          for a in fig.axes[0].lines
+                          if not isinstance(a.get_color(), str)])
+        if arr.size:
+            lo = np.asarray(anchors, dtype=float).min(0) - 0.02
+            hi = np.asarray(anchors, dtype=float).max(0) + 0.02
+            assert ((arr >= lo) & (arr <= hi)).all(), (
+                f'{stem}: drawn colours fall outside the palette extracted '
+                f'from {module.PALETTE_FIXTURE} -- the example is not '
+                f'actually using the image palette it exists to demonstrate')
 
 
 LAUNCH_NOTEBOOKS = ('market_forecast', 'weather_decades',
@@ -3930,6 +4065,18 @@ def test_every_launch_notebook_ran_every_cell_it_should(stem):
     both failed; v2 demanded every code cell carry output, which no notebook
     can satisfy. This asserts what is actually required -- every cell ran --
     and leaves what each cell EMITS to the index-set test below.
+
+    **CONTROL, not coverage.** It PASSES on all five notebooks TODAY:
+    measured, every non-install code cell already carries an
+    `execution_count` (market and weather `[None,2,3,4,5,6,7]`,
+    paintings/conversation/morph `[None,2,3,4,5,6]`), and
+    `_is_install_cell` exempts the one `None`. The defect this plan exists
+    to fix is missing OUTPUTS, not missing execution -- so this test cannot
+    detect it, and two places in this document previously claimed it could.
+    It is here to stop a FUTURE half-executed notebook from shipping, which
+    is worth having; it is not the gate on the present defect. That is
+    `test_the_right_cells_carry_visible_output` plus
+    `test_each_notebook_ships_its_rendered_artifact`.
     """
     cells = _code_cells(stem)
     unrun = [i for i, c in enumerate(cells)
@@ -4211,7 +4358,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
    - **Needs:** maintainer call on whether the word-level highlight is load-bearing for the demo.
 
 - **How the five launch tutorials get a visible figure.** They currently ship only **1–4 executed cells each** (re-measured 2026-08-01: 2/6, 4/7, 1/6, 2/6, 2/7), and `nbsphinx_execute = 'never'` means their docs pages show the rest as code and nothing else.
-   - **(implemented)** both halves: execute them (Tasks 2–6 Step "Execute and measure", pinned by `test_every_launch_notebook_ran_every_cell_it_should`) **and** add a gallery thumbnail to `docs/tutorials.rst` (Task 8 Step 6), the pattern the repo already uses for `plot_story_trajectories`.
+   - **(implemented)** both halves: execute them (Tasks 2–6 Step "Execute and measure", with the RESULT pinned by `test_the_right_cells_carry_visible_output` and `test_each_notebook_ships_its_rendered_artifact` -- **not** by `test_every_launch_notebook_ran_every_cell_it_should`, which already passes today and so cannot detect this) **and** add a gallery thumbnail to `docs/tutorials.rst` (Task 8 Step 6), the pattern the repo already uses for `plot_story_trajectories`.
    - *Alternative A:* thumbnails only, leaving the notebooks unexecuted. Cheapest in repo size; but then the *notebook* a reader downloads still shows nothing until they run it.
    - *Alternative B:* execute, but replace each final `HTML(ani.to_jshtml())` with `ani.save('<name>.gif')` + an `Image` display, committing the GIF. The repo already commits gallery GIFs of 9–11 MB (`docs/tutorials/conversation_serial.gif` is 9 466 849 bytes), so this is precedented but heavy.
    - **Needs:** maintainer's repo-size preference. A `jshtml` blob for a 240-frame animation is large; if it turns out to exceed roughly 5 MB per notebook, switch to Alternative B and record the measured sizes.
@@ -4236,15 +4383,15 @@ Flagged rather than invented. Each states the options and the exact change to sw
 | Task 1 is library work, TDD, justified API, no largest-cluster bug | Task 1: **19** real tests written before the implementation; the API choice (one function + **two** interception points — `_get_palette`'s string branch at `colors.py:305-306` and `_seaborn_palette_arg` at `plot.py:113`) is justified against the consumers each serves; the ordering rule is `frac × chroma` with a documented achromatic fallback, and `test_a_vivid_minority_colour_beats_the_muted_background` asserts the exact colour (`0.863, 0.078, 0.078`) the buggy rule fails to produce. Both states were **run**: red = `ValueError: 'image:...' is not a valid palette name`, green = the prototype's measured output. |
 | Tasks 2–6 rewrite one example + its notebook each, in lockstep | Each task rewrites both, in one commit, and specifies the notebook's full cell table. Lockstep is enforced mechanically by `tests/test_examples_are_native.py`, which scans `.py` **and** `.ipynb`. |
 | Market = MultiIndex showcase, per-sector + market forecasts, colour by price, ticker panel, accuracy overall + per sector in the tutorial, `t=1` | Task 2: `(Market, Sector, Ticker)` columns over 24 verified tickers; 6 sector traces + 1 market-mean trace with hierarchy-derived widths; `hue=` nested one sequence per sector (MultiIndex T6 form 2); `predict='Kalman', t=1, forecast_trail=16`; a right-hand panel listing each sector's tickers and score; the accuracy loop is example code with a **measured** 210-fit / 7.3 s budget. |
-| Weather = the paper figure, nearly all native, a handful of lines | Task 3: one `hyp.plot` call, verified end to end today (0.3 s, no warnings, 2 axes, 879 distinct colours at frame 150); the 70-line second panel and the 26-line hand-built hierarchy are deleted; budget ≤ 62 code lines. |
+| Weather = the paper figure, nearly all native, a handful of lines | Task 3: one `hyp.plot` call, verified end to end today (0.3 s, no warnings, 2 axes, 879 distinct colours at frame 150); the 70-line second panel and the 26-line hand-built hierarchy are deleted; budget ≤ 77 code lines (62 pre-split). |
 | Paintings = full `text` displayed, native embeddings, native palette, names via `labels=` | Task 4: the side panel renders `PAINTINGS[name]['text']` (not `blurb`); `vectorizer='all-MiniLM-L6-v2', semantic=None, corpus=None`; `color=[image_palette(path)[0] ...]` from Task 1; `labels=` nested, one non-None entry per cloud at its middle window — the per-observation semantics verified on real annotations. |
 | Conversation = native text, `animate='serial'` + `chemtrails`, per-segment titles | Task 5: list-of-lists of strings in; `animate=True, order='serial', chemtrails=True`; `title=[one per turn]`. The collision I feared (categorical hue collapsing 28 turns and breaking per-dataset titles) was **measured and disproved**: 6 datasets stay 6 datasets with a 3-entry legend. |
 | Morph = native per-segment titles, explicit `morph_samples`, keep the teapot, cube scaling, closed loop | Task 6: `title=titles` replaces the private `_morph` reach; `morph_samples=N` kept and now load-bearing; teapot, `CUBE_SCALE`, and `clouds.append(clouds[0])` all kept with the reasons restated. |
 | Task 7 groups the 15 older tutorials so each step is reviewable | Five steps, one per recurring fix (ffmpeg, HF embed, `ax=`, `manip='Smooth'`, `analyze`/`reduce`), each with its own execution check, its own `grep` assertion, and its own commit. |
-| Task 8 re-measures per file, asserts improvement, full suite, 0-warning docs | Task 8: a committed metric, a 109-test gate, a per-file re-measure, all five examples run headless, the full suite, the CI-parity `python -m sphinx -b html -W -E -a` build with 0 warnings, plus a rendered-output check and a re-run-everything step. |
+| Task 8 re-measures per file, asserts improvement, full suite, 0-warning docs | Task 8: a committed metric, a 139-test gate, a per-file re-measure, all five examples run headless, the full suite, the CI-parity `python -m sphinx -b html -W -E -a` build with 0 warnings, plus a rendered-output check and a re-run-everything step. |
 | BEFORE and AFTER per example, from the audit's baseline | Each of Tasks 2–6 opens with the measured BEFORE (raw lines, code lines, native lines, ratio, **and** the audit's A/B/C/D/NATIVE classification) and the contracted AFTER budget, which Task 8 asserts. |
 | Network in examples only; keep the offline-fallback property | Contract 4, and every rewrite implements the existing shape: `try/except Exception: return None` + a deterministic synthetic substitute + a `print` naming the source. Task 1's tests write PNGs to `tmp_path`; `image_palette` refuses URLs by design. |
-| Real file:line citations | Every claim about existing code cites a line I opened in this session: `docs/conf.py:131`, `plot.py:1066/882/895/930/950/1013/1064/1246/2750-2751/3039-3050`, `colors.py:24/105/227/250/269/287/305-306/323-331`, `text2mat.py:89/184/391/404`, `animate.py:84`, `smooth.py:14/232`, `morph.py:36`, `scripts/generate_gallery_thumbs.py:26`, plus per-example line ranges. |
+| Real file:line citations | Every claim about existing code cites a line I opened in this session: `docs/conf.py:131`, `plot.py:882/895/930/950/1013/1064/1074/1246` (symbol-qualified elsewhere, per Global Constraints — the former `1066` landed inside the `linewidth` entry, not `palette :` at 1074, and `2750-2751` named the predict/animate refusal rather than the feature-width check), `colors.py:24/105/227/250/269/287/305-306/323-331`, `text2mat.py:89/184/391/404`, `animate.py:84`, `smooth.py:14/232`, `morph.py:36`, `scripts/generate_gallery_thumbs.py:26`, plus per-example line ranges. |
 | Don't invent unspecified decisions | Six items in *Decisions still needed*, each with the implemented option and the exact edit to switch. |
 
 **Placeholders.** None. Every step carries runnable code or an exact command with its expected output. No step says "similar to Task N"; the five example rewrites are written out rather than cross-referenced, precisely because they differ.
@@ -4259,4 +4406,4 @@ Flagged rather than invented. Each states the options and the exact change to sw
 
 1. **Task 2 is the largest rewrite and the most dependent** — it consumes eight tasks across two other plans. If MultiIndex T6 (`hue` through a hierarchy) slips, the example still runs but colours by group instead of by price; that is a visible regression, not a crash, so no size or defect-marker gate would catch it. The guard is Task 2 Step 4, which asserts `axes: 2` (a colorbar exists ⇒ a continuous hue survived) and at least two distinct linewidths.
 2. **The accuracy readout is the only unbounded cost in the plan.** It is pinned to a measured budget (210 fits / 7.3 s at `WINDOW=60, N_SCORED=30`), and the measurements at 250 rows (30.7 s) are recorded so a future change to those constants is an informed one.
-3. **Notebook execution is the step most likely to be skipped under time pressure**, and it is exactly the step that keeps the defect from staying published. `test_every_launch_notebook_ran_every_cell_it_should` makes skipping it a test failure rather than an oversight.
+3. **Notebook execution is the step most likely to be skipped under time pressure**, and it is exactly the step that keeps the defect from staying published. What makes skipping it a test failure rather than an oversight is `test_each_notebook_ships_its_rendered_artifact` (the notebook must carry a rendered image/animation) together with `test_the_right_cells_carry_visible_output`. It is NOT `test_every_launch_notebook_ran_every_cell_it_should`: that one passes on all five notebooks in their current, figure-less state, so it would sit green through exactly the failure it was cited for. Naming the wrong test as the guard is its own risk -- it makes an unguarded step look guarded.

@@ -78,7 +78,9 @@ clouds = [load(name) for name in SHAPES]
 clouds.append(clouds[0])
 titles = TITLES + [TITLES[0]]
 
-# [hold_1, morph_1->2, hold_2, ..., hold_N] for the 5 clouds = 9 segments.
+# [hold_1, morph_1->2, hold_2, ..., hold_N]: with the loop-closing copy
+# appended above there are 6 clouds, so 2*6 - 1 = 11 segments (5 shapes alone
+# would give 9 -- the count below follows what is PASSED, not SHAPES).
 # Camera speed is constant, so these ratios set each segment's SCREEN TIME: a
 # full turn per shape, half a turn per transition. The first shape's hold is
 # split in half across the two ends (they play back-to-back on repeat, giving
