@@ -108,6 +108,40 @@ def test_singleton_first_category_still_works():
     assert fig is not None
 
 
+def test_singleton_warning_names_the_category_not_the_legend_sentinel():
+    """The warning must name the user's own category.
+
+    It used to read `hue category '_nolegend_' has only one observation`.
+    `'_nolegend_'` is matplotlib's sentinel for "keep this artist out of the
+    legend", which `_regroup_categorical_lines` assigns to every REPEAT run
+    of a category so each category gets exactly one legend entry. The
+    warning was reading that legend-label list, so any singleton after the
+    first run of its category was reported under a name no user could ever
+    have supplied -- and there is no category called `_nolegend_` to go
+    looking for.
+
+    Alternating labels under a pure line format make every run a singleton,
+    so the runs that get the sentinel are exactly the ones warned about.
+    """
+    np.random.seed(3)
+    with pytest.warns(UserWarning, match='only one observation') as record:
+        hyp.plot(np.random.randn(60, 3), '-', hue=['a', 'b'] * 30,
+                 show=False)
+    messages = [str(w.message) for w in record
+                if 'only one observation' in str(w.message)]
+    assert messages, 'expected the singleton-category warning'
+    joined = ' '.join(messages)
+    assert '_nolegend_' not in joined, (
+        f"the warning leaked matplotlib's legend sentinel to the user: "
+        f'{joined!r}')
+    # it names a category the caller actually passed
+    assert "'a'" in joined or "'b'" in joined, (
+        f'the warning names no real category: {joined!r}')
+    # ...and not a numpy scalar repr like np.str_('b')
+    assert 'np.str_' not in joined, (
+        f'numpy scalar repr leaked into a user-facing message: {joined!r}')
+
+
 # ---------------------------------------------------------------------------
 # F02-plot-hue-003: pandas Series hue with ANY index (positional semantics)
 # ---------------------------------------------------------------------------

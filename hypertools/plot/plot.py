@@ -232,9 +232,18 @@ def _regroup_categorical_lines(xform, hue, labels, cat_color, cat_label):
     runs adjacent WITHIN one input dataset, and gives each category exactly
     ONE legend entry (the first run carries the label; later runs of the same
     category get ``'_nolegend_'``). Returns
-    ``(segments, seg_labels, run_colors, run_group_labels, seg_dataset)``;
-    `seg_dataset` is each run's source input-dataset index (for propagating
-    per-dataset styles via `_expand_styles_to_runs`)."""
+    ``(segments, seg_labels, run_colors, run_group_labels, seg_dataset,
+    run_category_names)``; `seg_dataset` is each run's source input-dataset
+    index (for propagating per-dataset styles via `_expand_styles_to_runs`).
+
+    `run_category_names` carries every run's CATEGORY, which
+    `run_group_labels` deliberately does not: that list is matplotlib's
+    legend-label list, so every repeat run of a category holds the sentinel
+    ``'_nolegend_'``. Reading a user-facing message out of it produced
+    "hue category '_nolegend_' has only one observation" -- a sentinel
+    meaning "keep this artist out of the legend", presented to a user as
+    the name of a category that does not exist. One list cannot serve both
+    matplotlib and a human; this is the human one."""
     segments, seg_labels, seg_cat, seg_bridge, seg_dataset = segment_by_run(
         xform, hue, labels)
     breaks = {i + 1 for i in range(len(segments) - 1) if not seg_bridge[i]}
@@ -242,13 +251,18 @@ def _regroup_categorical_lines(xform, hue, labels, cat_color, cat_label):
     run_colors = [cat_color[c] for c in seg_cat]
     seen = set()
     run_group_labels = []
+    # str() on the way out: a numpy string scalar reprs as
+    # `np.str_('b')`, which is not what a reader should see in a
+    # warning about their own data
+    run_category_names = [str(cat_label.get(c, c)) for c in seg_cat]
     for c in seg_cat:
         if c in seen:
             run_group_labels.append('_nolegend_')
         else:
             seen.add(c)
             run_group_labels.append(cat_label.get(c, str(c)))
-    return segments, seg_labels, run_colors, run_group_labels, seg_dataset
+    return (segments, seg_labels, run_colors, run_group_labels, seg_dataset,
+            run_category_names)
 
 
 def _expand_styles_to_runs(fmt, mpl_kwargs, seg_dataset, n_datasets):
@@ -3467,6 +3481,10 @@ def plot(
     # entries of a partially-labeled hue; F02-013), so legend=True and the
     # discrete colorbar can label every trace without a length mismatch.
     hue_group_labels = None
+    # HUMAN-readable name per drawn group, parallel to
+    # `hue_group_labels` but never carrying matplotlib's
+    # `'_nolegend_'` sentinel -- see `_regroup_categorical_lines`.
+    _run_cat_names = None
     # (n_input_datasets, n_hue_groups) when a categorical hue regrouped the
     # data by category -- names= (one name per INPUT dataset) cannot apply
     # after that regrouping (F02-009).
@@ -3778,9 +3796,9 @@ def plot(
                               for gid in dict.fromkeys(group_ids)}
                 _cat_label = {gid: str(gid) for gid in dict.fromkeys(group_ids)}
                 _nd = len(xform)
-                xform, labels, _run_colors, hue_group_labels, _seg_ds = \
-                    _regroup_categorical_lines(
-                        xform, group_ids, labels, _cat_color, _cat_label)
+                (xform, labels, _run_colors, hue_group_labels, _seg_ds,
+                 _run_cat_names) = _regroup_categorical_lines(
+                     xform, group_ids, labels, _cat_color, _cat_label)
                 fmt = _expand_styles_to_runs(fmt, mpl_kwargs, _seg_ds, _nd)
                 mpl_kwargs["color"] = _run_colors
                 hue = group_ids
@@ -3804,9 +3822,9 @@ def plot(
             _cat_color, _cat_label = _categorical_color_label_maps(
                 cluster_labels, palette, None, None, sort_numeric=True)
             _nd = len(xform)
-            xform, labels, _run_colors, hue_group_labels, _seg_ds = \
-                _regroup_categorical_lines(
-                    xform, cluster_labels, labels, _cat_color, _cat_label)
+            (xform, labels, _run_colors, hue_group_labels, _seg_ds,
+             _run_cat_names) = _regroup_categorical_lines(
+                 xform, cluster_labels, labels, _cat_color, _cat_label)
             fmt = _expand_styles_to_runs(fmt, mpl_kwargs, _seg_ds, _nd)
             mpl_kwargs["color"] = _run_colors
             hue = cluster_labels
@@ -4065,6 +4083,11 @@ def plot(
                     hue_category_names = [c for c in _cats if c is not None]
                     hue_group_labels = ['_nolegend_' if c is None else c
                                         for c in _cats]
+                    # `None` marks UNLABELED points; they are a real group
+                    # with no name, so say that rather than echoing the
+                    # legend sentinel at the reader
+                    _run_cat_names = ['the unlabeled group' if c is None
+                                      else str(c) for c in _cats]
                     _base = get_palette_colors(palette,
                                                len(hue_category_names))
                     _named_idx = {c: i for i, c
@@ -4103,9 +4126,9 @@ def plot(
                 _cat_color, _cat_label = _categorical_color_label_maps(
                     hue, palette, mpl_kwargs.get("color"),
                     hue_group_labels, _hue_sort_numeric)
-                xform, labels, _run_colors, hue_group_labels, _seg_ds = \
-                    _regroup_categorical_lines(
-                        xform, hue, labels, _cat_color, _cat_label)
+                (xform, labels, _run_colors, hue_group_labels, _seg_ds,
+                 _run_cat_names) = _regroup_categorical_lines(
+                     xform, hue, labels, _cat_color, _cat_label)
                 fmt = _expand_styles_to_runs(
                     fmt, mpl_kwargs, _seg_ds, _n_datasets_before_hue)
                 mpl_kwargs["color"] = _run_colors
@@ -4131,10 +4154,14 @@ def plot(
             if is_line(fmt):
                 _tiny = [i for i, xi in enumerate(xform) if xi.shape[0] < 2]
                 if _tiny:
+                    # name each singleton by its CATEGORY. Reading
+                    # `hue_group_labels` here reported '_nolegend_' -- the
+                    # matplotlib sentinel every repeat run of a category
+                    # carries -- as though it were a category name.
                     _tiny_names = ", ".join(
-                        repr(hue_group_labels[i])
-                        if (hue_group_labels is not None
-                            and i < len(hue_group_labels))
+                        repr(_run_cat_names[i])
+                        if (_run_cat_names is not None
+                            and i < len(_run_cat_names))
                         else f"group {i}" for i in _tiny)
                     warnings.warn(
                         f"hue categor{'y' if len(_tiny) == 1 else 'ies'} "
