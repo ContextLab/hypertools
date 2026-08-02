@@ -26,7 +26,7 @@ v2 was adversarially re-reviewed (`notes/audit/review_plan4_v2.md`: 4 Fatal, 4 H
 | `test_examples_produce_their_stated_artifact` ran examples with `runpy`. | Network/model-download work is split out; the suite drives a fixture-fed construction boundary, and the whole-example run becomes an opt-in smoke test. |
 | The morph assertion `assert 'morph' in str(ns.get('ANIMATE', 'morph'))`. | `ANIMATE` does not exist in the example; the expression reduces to `'morph' in 'morph'` and **cannot fail** (proven by execution). Replaced with driven-frame assertions. |
 | `git stash && measure && git stash pop` to read the BEFORE state. | **Data-loss hazard**, demonstrated: with a clean tree `stash` saves nothing and `pop` then restores *and drops* an unrelated pre-existing stash. Replaced with `git show <base>:<path>`, which is read-only. |
-| Task 5 "13 tests"; suite delta "+135". | **12** and **+134**. The plan already said 12 at the step level and 13 in the revision note — it disagreed with itself. Task 1 (16) and Task 8 (106) were correct. |
+| Task 5 "13 tests"; suite delta "+135". | **12** and **+137**. The plan already said 12 at the step level and 13 in the revision note — it disagreed with itself. Task 8 (106) was correct; Task 1 rises 16 → **19** with the three new colour-count tests this revision adds. All three derived by AST parametrize-expansion and cross-checked against a real collection. |
 | Ratio floor "removed as a v1 Fatal". | It was removed from the *gate* but **ten lines still promise it** as a budget (634, 990, 1006, 1186, 1201, 1420, 1435, 1792, 1807, 1904). All corrected. L1435 was doubly stale (`≤ 72` where the enforced dict said 90). |
 | "'0 executed outputs' corrected wherever it appears." | It was not — all five BEFORE headers still said it. Real values: 4/7, 2/7, 2/6, 2/6, 1/6. |
 | Baseline `2564 collected`; "the working tree is not clean". | **2782/2784 collected (2 deselected)**; the tree is clean at `065c841e`; the note claiming the five examples are untouched is false (see above). |
@@ -274,7 +274,13 @@ Plans 1, 2 and 3 must land first. Per task:
 
 1. **`hypertools.plot.colors.image_palette(image, n_colors=6, resize=200, random_state=0)`** → `(k, 3)` float RGB in `[0, 1]`, `k ≤ n_colors`, **most visually salient first**. It sits beside the two existing public palette helpers in the same module (`get_palette_colors`, `colors.py:227`; `continuous_colormap`, `colors.py:250`), which is where "what colour is group *i*" already lives. It accepts a **local path, a PIL image, or an (H, W, 3) array** — deliberately *not* a URL, so the library never performs a network fetch (Contract 4); the paintings example keeps its own download-and-cache (class **A**) and hands over a cached path.
 
-2. **`palette='image:<path>'`**, intercepted at the single string branch of `_get_palette` (`colors.py:305-306`). Because `_continuous_palette` (`colors.py:269`) delegates to `_get_palette`, and `mat2colors` (`colors.py:24`), `get_palette_colors` and `continuous_colormap` all route through those two functions, **one interception makes an image palette work on every path** — categorical hue, continuous hue, matrix hue, the matplotlib colorbar and the plotly colorbar — with no per-call-site change. Verified red state today: `hyp.plot(ds, '.', hue=..., palette='image:/tmp/nope.png')` → `ValueError: 'image:/tmp/nope.png' is not a valid palette name`.
+2. **`palette='image:<path>'`**, intercepted in **two** places, because `palette=` reaches seaborn by two independent routes. *(v2 claimed one. That was measured and is false — see below.)*
+
+   **(a) `_get_palette`'s string branch** (`colors.py:305-306`) serves everything that resolves colours through `colors.py`: `mat2colors`' categorical (`colors.py:106`), continuous (`:118`) and matrix (`:158`) paths, `get_palette_colors` (`:246`), `continuous_colormap` (`:259`), the MultiIndex colours (`multiindex.py:151`), and both colorbars (`plotly_backend.py:2468`, `plot.py:5383`).
+
+   **(b) `_seaborn_palette_arg`** (`plot.py:113`) serves the five call sites that hand `palette=` to seaborn **raw**, never touching `colors.py`: `plot.py:208-209`, `:4118-4119`, `:4657-4658`, `:4767-4768`, and — the fatal one — **`:4825-4826`'s `sns.set_palette`, which runs on EVERY matplotlib plot call regardless of hue**.
+
+   **Measured red state with only (a) patched: 0 of 6 scenarios pass.** Categorical/matplotlib, categorical/plotly, continuous, matrix, direct `palette=`, and 9-category all raise `ValueError: 'image:…' is not a valid palette name` from `seaborn/palettes.py:237` via `plot.py:4825`. v2's own test file reported only 2 failures, which flattered it — its "continuous hue" case called `continuous_colormap()` directly rather than `hyp.plot()`, and its "missing file" case asserted an error anyway. With both interceptions and a dynamic colour count: **6 of 6**.
 
 **The ordering rule (this is the contract, and it is what fixes the bug).** For each k-means centre compute `frac` (its share of pixels) and `chroma = max(r,g,b) - min(r,g,b)` (distance from grey — the numerator of HSV saturation). Order by **descending `frac × chroma`**. A large muted background scores near zero; a smaller vivid region wins. If *every* centre is achromatic (`max(chroma) < 0.02`, i.e. a greyscale image), fall back to descending `frac`, because a grey image genuinely has no vivid colour and "largest" is then the right answer. Near-duplicate centres (equal to 3 decimals) are dropped, so `n_colors` is an **upper** bound.
 
@@ -311,6 +317,7 @@ matplotlib.use("Agg")
 import numpy as np
 import pytest
 from PIL import Image
+from matplotlib.colors import to_rgb
 
 import hypertools as hyp
 from hypertools.plot.colors import (IMAGE_PALETTE_N, continuous_colormap,
@@ -346,6 +353,22 @@ def six_png(tmp_path, name='six.png'):
     for i, c in enumerate([(255, 0, 0), (0, 255, 0), (0, 0, 255),
                            (255, 255, 0), (255, 0, 255), (0, 255, 255)]):
         arr[i * 20:(i + 1) * 20, :] = c
+    return _png(tmp_path, arr, name)
+
+
+def nine_png(tmp_path, name='nine.png'):
+    """NINE genuinely distinct bands, so 'not capped at six' tests the cap
+    rather than the interpolation fallback."""
+    arr = np.zeros((180, 180, 3), np.uint8)
+    for i, c in enumerate([(255, 0, 0), (0, 255, 0), (0, 0, 255),
+                           (255, 255, 0), (255, 0, 255), (0, 255, 255),
+                           (255, 128, 0), (128, 0, 255), (0, 128, 128)]):
+        arr[i * 20:(i + 1) * 20, :] = c
+    return _png(tmp_path, arr, name)
+
+
+def one_colour_png(tmp_path, name='one.png'):
+    arr = np.full((60, 60, 3), 200, np.uint8)
     return _png(tmp_path, arr, name)
 
 
@@ -443,15 +466,63 @@ def test_palette_string_resolves_through_get_palette_colors(tmp_path):
 
 
 def test_palette_string_colours_a_categorical_hue(tmp_path):
+    """Reads ax.LINES, not ax.collections. A `fmt='.'` plot draws `Line2D`
+    into `ax.lines`; the only collections on a 3-D axes are pane/grid
+    artists whose facecolor array is EMPTY. v2 harvested those instead, so
+    the filter emptied the list and `np.vstack([])` raised `need at least
+    one array to concatenate` -- against a CORRECT implementation. Measured
+    while auditing: the line colors were exactly right the whole time."""
     path = painting_png(tmp_path)
     rng = np.random.default_rng(0)
     ds = [rng.normal(size=(10, 4)) for _ in range(2)]
     fig = hyp.plot(ds, '.', hue=['a'] * 10 + ['b'] * 10,
                    palette=f'image:{path}', show=False)
-    drawn = np.vstack([np.atleast_2d(c.get_facecolor())[:, :3]
-                       for c in _ax(fig).collections
-                       if len(np.atleast_2d(c.get_facecolor()))])
+    drawn = [to_rgb(ln.get_color()) for ln in _ax(fig).lines]
+    assert drawn, 'no line artists were drawn'
     assert any(np.allclose(c, VIVID, atol=0.02) for c in drawn)
+
+
+def test_a_categorical_hue_is_not_capped_at_six_categories(tmp_path):
+    """`IMAGE_PALETTE_N = 6` is the CONTINUOUS anchor count, not a limit on
+    categories. With a fixed count this raised `palette= supplies 6 color(s)
+    but 9 are required`. Uses a NINE-colour image, so this tests the cap and
+    not the interpolation fallback."""
+    path = nine_png(tmp_path)
+    rng = np.random.default_rng(0)
+    labels = [c for c in 'abcdefghi' for _ in range(4)]
+    fig = hyp.plot([rng.normal(size=(36, 4))], '.', hue=labels,
+                   palette=f'image:{path}', show=False)
+    drawn = {to_rgb(ln.get_color()) for ln in _ax(fig).lines}
+    assert len(drawn) == 9, f'expected 9 distinct colours, got {len(drawn)}'
+
+
+def test_an_image_with_too_few_colours_interpolates_rather_than_repeats(
+        tmp_path):
+    """Cycling would give two categories the SAME colour -- the ambiguity
+    the short-list error exists to prevent (colors.py:332-335). A caller
+    cannot add colours to an image, so the anchors are blended up instead.
+    `painting_png` is genuinely two-tone, so 5 categories need 3 blended."""
+    path = painting_png(tmp_path)
+    rng = np.random.default_rng(0)
+    labels = [c for c in 'abcde' for _ in range(4)]
+    fig = hyp.plot([rng.normal(size=(20, 4))], '.', hue=labels,
+                   palette=f'image:{path}', show=False)
+    drawn = [to_rgb(ln.get_color()) for ln in _ax(fig).lines]
+    assert len({tuple(np.round(c, 6)) for c in drawn}) == 5, (
+        'repeated colours would make two categories indistinguishable')
+    assert np.allclose(drawn[0], VIVID, atol=0.02), (
+        'the most salient anchor must survive interpolation, and lead')
+
+
+def test_a_single_colour_image_raises_rather_than_inventing_colours(
+        tmp_path):
+    """The one case interpolation cannot honestly serve."""
+    path = one_colour_png(tmp_path)
+    rng = np.random.default_rng(0)
+    with pytest.raises(ValueError, match='single dominant color'):
+        hyp.plot([rng.normal(size=(20, 4))], '.',
+                 hue=[c for c in 'abcde' for _ in range(4)],
+                 palette=f'image:{path}', show=False)
 
 
 def test_palette_string_blends_anchors_for_a_continuous_hue(tmp_path):
@@ -499,12 +570,13 @@ Expected: **collection FAILS** with `ImportError: cannot import name 'IMAGE_PALE
 Add to `hypertools/plot/colors.py`, immediately after `continuous_colormap` (which ends at `colors.py:260`) and before the `_CYCLIC_PALETTES` block:
 
 ```python
-#: `palette='image:<path>'` extracts this many anchor colors. A CONTINUOUS
-#: mapping asks `_get_palette` for `n_bins` (100) colors, and clustering an
-#: image into 100 groups is both slow and meaningless -- so the string form
-#: always extracts this few and lets the existing short-list blending
-#: (colors.py:323-331) build the gradient. Callers who want more pass an
-#: explicit list: `palette=image_palette(path, n_colors=12)`.
+#: How many anchor colors `palette='image:<path>'` extracts for a CONTINUOUS
+#: mapping, which asks `_get_palette` for `n_bins` (100) colors -- clustering
+#: an image into 100 groups is both slow and meaningless, so it takes this
+#: few and lets the short-list blending (colors.py:323-331) build the
+#: gradient. A CATEGORICAL or matrix mapping instead extracts exactly as many
+#: colors as it has categories, so the number of groups is NOT capped at this
+#: value; see `_image_palette_list`.
 IMAGE_PALETTE_N = 6
 
 #: Prefix that marks a `palette=` string as "extract this from an image".
@@ -619,41 +691,102 @@ def image_palette(image, n_colors=IMAGE_PALETTE_N, resize=200, random_state=0):
     return np.asarray(out, dtype=float)
 ```
 
-- [ ] **Step 4: Intercept the `'image:<path>'` spelling in one place**
+- [ ] **Step 4: Intercept the `'image:<path>'` spelling at BOTH resolvers**
 
-In `_get_palette` (`colors.py:287`), replace the string branch (`colors.py:305-306`):
+Three patches. Patches 1–2 are `colors.py`; patch 3 is the one v2 missed entirely, without which every scenario still fails.
+
+**Patch 1 of 3 — `hypertools/plot/colors.py`, new helper.** Insert immediately **before** `def _get_palette` (`colors.py:287`):
 
 ```python
-    if isinstance(palette, str):
-        return sns.color_palette(palette, n_colors)
+def _image_palette_list(source, n_colors, sns, continuous):
+    """Colors for a `palette='image:<path>'` string, as a list `_get_palette`
+    can then handle exactly like any other color list.
+
+    How many colors are EXTRACTED depends on the mapping. A categorical or
+    matrix mapping needs one color per category, so exactly `n_colors`
+    anchors are pulled: k-means with k = the number of categories is the
+    best k-color summary of that image, and extracting a FIXED count would
+    instead cap every plot at that many categories. A CONTINUOUS mapping
+    asks for `n_bins` (100) colors, and clustering an image into 100 groups
+    is both slow and meaningless, so it takes `IMAGE_PALETTE_N` anchors and
+    lets the short-list blending below build the gradient from them.
+
+    An image can hold FEWER distinct colors than there are categories (a
+    two-tone image, nine groups). Unlike a user-supplied short list -- which
+    raises, because the user can simply pass more colors -- a caller cannot
+    add colors to an image, so the anchors are interpolated up to `n_colors`
+    with the same ``blend_palette`` semantics the continuous path already
+    uses (F02-006/F24-017). Interpolating keeps every category a DIFFERENT
+    color and leaves the most salient anchor first; cycling the anchors
+    would silently give two categories the same color, which is the
+    ambiguity the short-list error exists to prevent. A single-color image
+    is the one case interpolation cannot serve, and it raises."""
+    colors = [tuple(c) for c in image_palette(
+        source, n_colors=IMAGE_PALETTE_N if continuous else max(n_colors, 1))]
+    if continuous or len(colors) >= n_colors:
+        return colors
+    if len(colors) == 1:
+        raise ValueError(
+            f"palette='{IMAGE_PALETTE_PREFIX}{source}' yielded 1 color but "
+            f"{n_colors} are required (one per category/component); that "
+            "image has a single dominant color, so pass a more colorful "
+            "image, an explicit list of colors, or a palette name")
+    return [tuple(np.asarray(c)[:3])
+            for c in sns.blend_palette(colors, n_colors)]
 ```
 
-with:
+**Patch 2 of 3 — `hypertools/plot/colors.py`, the `_get_palette` string branch.** Replaces `colors.py:305-306`:
 
 ```python
     if isinstance(palette, str):
         if palette.startswith(IMAGE_PALETTE_PREFIX):
-            # ONE interception point serves every palette consumer:
-            # mat2colors' categorical/continuous/matrix paths, the
-            # matplotlib and plotly colorbars, and get_palette_colors --
-            # they all resolve through here or through _continuous_palette
-            # (colors.py:269), which delegates here. Resolve to a color
-            # LIST and fall through to the list handling below, so the
-            # short-list blending (continuous) and the too-few-colors
-            # error (categorical) behave exactly as for any other list.
-            palette = [tuple(c) for c in image_palette(
+            # resolve to a color LIST and fall through to the list handling
+            # below, so a continuous mapping blends the extracted anchors
+            # into its gradient exactly as it would any short list
+            palette = _image_palette_list(
                 palette[len(IMAGE_PALETTE_PREFIX):].strip(),
-                n_colors=IMAGE_PALETTE_N)]
+                n_colors, sns, continuous)
         else:
             return sns.color_palette(palette, n_colors)
 ```
 
-Nothing else in `colors.py` changes: `_continuous_palette` already delegates here for every non-cyclic palette, and `'image:...'` is not in `_CYCLIC_PALETTES`.
+> **The fall-through is load-bearing.** Returning `_image_palette_list(...)` directly from this branch instead of falling through breaks continuous hue with `IndexError: index 10 is out of bounds for axis 0 with size 6` — the 6 anchors never get blended up to `n_bins`. This was caught by *running* scenario 3, not by inspection.
+
+**Patch 3 of 3 — `hypertools/plot/plot.py`, `_seaborn_palette_arg`.** Replaces `plot.py:113-124`. **This is the patch v2 lacked**, and without it all six scenarios still raise, because `sns.set_palette` at `plot.py:4825` runs on every matplotlib plot call:
+
+```python
+def _seaborn_palette_arg(palette, n_colors):
+    """`palette` in a form seaborn's `color_palette`/`set_palette` accept.
+
+    plot() documents palette= as a name, a list of colors, or a matplotlib
+    `Colormap` (F02-011); seaborn handles the first two natively but not a
+    Colormap INSTANCE, so that one is pre-sampled to `n_colors` RGB tuples
+    via `get_palette_colors` (the same resolution `mat2colors`/the colorbar
+    use, keeping every path's colors identical).
+
+    An ``'image:<path>'`` string is the same kind of case: seaborn has no
+    idea what it means and raises "is not a valid palette name", so it is
+    pre-resolved through `get_palette_colors` too. This is the SECOND
+    interception `palette=` needs -- every call site below hands its palette
+    straight to seaborn without going through `colors._get_palette`, so
+    intercepting only there would leave `sns.set_palette` (and so EVERY
+    matplotlib plot call) raising on an image palette."""
+    from matplotlib.colors import Colormap
+
+    from .colors import IMAGE_PALETTE_PREFIX
+    if isinstance(palette, Colormap) or (
+            isinstance(palette, str)
+            and palette.startswith(IMAGE_PALETTE_PREFIX)):
+        return [tuple(c) for c in get_palette_colors(palette, n_colors)]
+    return palette
+```
+
+Nothing else in `colors.py` changes: `_continuous_palette` already delegates here for every non-cyclic palette, and `'image:...'` is not in `_CYCLIC_PALETTES`. `plot.py` changes in exactly one function — `_seaborn_palette_arg` — because all five raw-seaborn call sites already route through it.
 
 - [ ] **Step 5: Run the test and confirm it passes**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_image_palette.py -v`
-Expected: **16 passed.**
+Expected: **19 passed.**
 
 - [ ] **Step 6: Declare Pillow, and document**
 
@@ -710,7 +843,7 @@ In `CHANGELOG.md`, under the `## 1.1.0 (unreleased)` → `### Added` heading cre
 - [ ] **Step 7: Run the FULL suite (palette resolution is shared by every color path)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: baseline + 16 (the block above defines 16 `def test_` functions and parametrizes none of them; v1 said 17). Pay attention to `tests/test_colors.py`, `tests/plot/test_colors_module.py` and `tests/test_colorbar.py`: any test that asserts `_get_palette`'s string branch is a straight seaborn passthrough must still pass, because the non-`image:` path is byte-identical.
+Expected: baseline + 19 (the block above defines 19 `def test_` functions and parametrizes none of them; v1 said 17, v2 said 16 — this revision adds the three colour-count tests). **`git add tests/plot/test_image_palette.py` before running the full suite**, or `test_sdist_contains_only_tracked_files_plus_allowlist` fails on the untracked file; that is the packaging guard working, not a false positive. Pay attention to `tests/test_colors.py`, `tests/plot/test_colors_module.py` and `tests/test_colorbar.py`: any test that asserts `_get_palette`'s string branch is a straight seaborn passthrough must still pass, because the non-`image:` path is byte-identical.
 
 - [ ] **Step 8: Rebuild the docs (a new autodoc section was added)**
 
