@@ -299,6 +299,100 @@ exemption that breaks the prescribed `execution_count` gate (finding 8) was **do
 same file four times** and simply never made it into the assertion. Same shape as the plotly
 Play-button defect: the rule was written down in the file and violated in the file.
 
+### 16. NEW FATAL — `fig, ani = hyp.plot(...)` throws the public API away
+
+`hyp.plot(..., animate=...)` returns a `HyperAnimation`, a **2-tuple subclass** of
+`(figure, animation)`. Unpacking it binds `ani` to element `[1]` — the raw
+`matplotlib.animation.FuncAnimation` — and discards the wrapper that carries `.on_frame()`.
+Reproduced directly:
+
+```
+whole result : HyperAnimation   | has on_frame: True
+unpacked ani : FuncAnimation    | has on_frame: False
+on_frame on unpacked: AttributeError -> 'FuncAnimation' object has no attribute 'on_frame'
+on_frame on whole result: OK, returns self: True
+```
+
+Plan 4 Task 5's prescribed notebook does exactly this: cell 3 does `fig, ani = hyp.plot(...)`, then
+cell 4 calls `ani.on_frame(recency_fade)` → **`AttributeError`**, and `nbclient` halts there, so
+cell 5 never runs. No "N of 6" prediction can be derived for `conversation_shape` from the plan's
+text, because the notebook does not execute at all.
+
+Worse: the **already-landed** `examples/animate_conversation.py` avoids this by binding
+`anim = hyp.plot(...)` with no unpacking. So applying Task 5 verbatim would not merely fail to add
+titles — it would **regress working code into a crash**.
+
+**Blast radius measured, and it is confined to the plans.** Scanned every `.py`/`.rst`/`.ipynb`/`.md`
+under `docs/`, `examples/`, `hypertools/`, plus README and CHANGELOG, for "unpack, then call a
+wrapper-only method". Hits: only `2026-07-28-...examples-and-tutorials.md` (Plan 4) and
+`2026-07-26-...animation-core.md` (Plan 1). The shipped library and docs are correct —
+`plot.py:1865` uses `anim = hyp.plot(...)`; `plot.py:2304` accurately documents that the tuple
+unpacking works; `docs/animation.rst` unpacks only where it passes `on_frame=` as a **kwarg**
+(`:122`, `:326`) and uses the un-unpacked `anim` before calling `.on_frame()` (`:230`, `:248`).
+The defect is in the plan text, not the product.
+
+Note `_save_count` survives unpacking (the raw `FuncAnimation` has it), so the `STATED_ARTIFACT`
+test would have passed — for the wrong reason.
+
+### 17. CORRECTION to my finding 8 — "render implies output" is weaker than I said
+
+I claimed a cell calling a rendering API must carry visible output, and that the rule was red on 4
+of 5 notebooks. The arithmetic was right; **the interpretation was wrong**. Measured MIME types
+across all five notebooks: there is **no `image/png` and no `text/html` output anywhere**. The
+outputs that exist are `stream` (i.e. `print`) plus, in paintings and conversation, tqdm
+progress-bar widgets from `sentence_transformers`. So market's render cell "passes" my rule purely
+because it also prints — the rule measures *did this cell print*, not *did a figure render*.
+
+The real convention (commit `9b94d86f`) is a **companion GIF**: the last code cell calls
+`ani.save('<stem>.gif', fps=fps)` and the final **markdown** cell embeds it — matching how
+`conversation_trajectories`, `streaming_data` and `wikipedia_embeddings` already ship. So the
+"intended rendered artifact" assertion must check *the GIF exists and the markdown reference
+resolves*, not that a cell emitted an image. That also catches a real oddity the audit found:
+`morph_shapes_zoo.ipynb` embeds `morph_zoo.gif`, not `morph_shapes_zoo.gif`.
+
+Keep the derived rule as a cheap sanity check if it earns its place, but the load-bearing artifact
+assertion is the GIF-plus-reference one.
+
+### 18. Image palette: "ONE interception point" is FALSE, and the real score is 0/6
+
+`notes/audit/plan4_image_palette.md`. Ten consumers *do* route through `_get_palette` as the plan
+says — but there is a whole second family it never mentions: `_seaborn_palette_arg`
+(`plot.py:113`) plus **five raw seaborn call sites**, of which `sns.set_palette` (`plot.py:4825`)
+runs on **every matplotlib plot call, unconditionally**.
+
+The plan's own test file reports only 2 failures, which flatters it. Run as real `hyp.plot` calls,
+the maintainer's six scenarios score **0/6** — every one dies on
+`ValueError: 'image:…' is not a valid palette name`. The plan's suite misses four because its
+"continuous hue" case calls `continuous_colormap()` directly instead of `hyp.plot()`, and its
+"missing file" case asserts an error anyway.
+
+**A third defect, in the plan's own test.** `test_palette_string_colours_a_categorical_hue` can
+never pass, against any implementation: it harvests colours from `ax.collections`, but a `fmt='.'`
+plot draws `Line2D` into `ax.lines`. The only collections on a 3-D axes are pane/grid artists with
+**empty** facecolor arrays, so the filter empties the list and `np.vstack([])` raises. Measured: the
+implementation was producing exactly the right colours (vivid `[0.863 0.078 0.078]` first); the
+assertion was looking in the wrong place.
+
+**Fix, with measurements.** Route through both interception points, and make the count dynamic via
+the `continuous` flag `_get_palette` already carries — categorical/matrix extract exactly
+`n_colors` (removing the 6-category cap); continuous keeps 6 anchors and lets the module's existing
+short-list blending build the gradient. `IMAGE_PALETTE_N` survives, demoted from "the count" to
+"the continuous-anchor count". For images with fewer distinct colours than requested: **deterministic
+interpolation via `sns.blend_palette`**, not cycling — cycling would give two categories the same
+colour, the exact ambiguity `_get_palette` already refuses for short user lists (`colors.py:332-335`),
+and blending is already this module's answer to too-few anchors (`colors.py:323-331`). A
+single-colour image raises, naming the file and three fixes. Verified bit-identical across 5 repeats;
+most-salient anchor stays first at n = 2, 5, 9, 12; k-means costs 10-15 ms so no caching is needed.
+
+Result: **0/6 → 6/6**, checked on rendered pixels not just objects (a 9-category PNG contains 9
+distinguishable colours). Full suite **2788 passed, 13 skipped, 0 failed** — which reconciles exactly
+with my baseline: 2784 collected + 19 new tests = 2803, and 2769 + 19 = 2788 passing.
+
+Incidental find worth keeping: a first `-x` run failed
+`test_packaging_artifacts.py::test_sdist_contains_only_tracked_files_plus_allowlist` because the new
+test file was untracked. That is the guard working, not a false positive — but Task 1's Step 7 needs
+a line saying to `git add` the new test before running the suite.
+
 ## Status
 
 Seven parallel audits dispatched (reports land in `notes/audit/`):

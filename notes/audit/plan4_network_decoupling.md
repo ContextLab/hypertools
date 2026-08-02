@@ -7,6 +7,13 @@
 **Python:** `/Users/jmanning/hypertools/.venv/bin/python` (3.12.10, matplotlib 3.10.8, sphinx-gallery 0.21.0)
 
 > The plan file was NOT edited. `examples/` and `tests/` in the main worktree were NOT modified.
+>
+> **Concurrency note.** Other agents were working this repo during the audit; `dev-1.0` advanced
+> `065c841e → 39edb7bf` while it ran, and one of those commits swept this report file in. All
+> measurements below are against `065c841e` (the pinned worktree), which is the commit the brief
+> named. The concurrent changes (`hypertools/plot/forecast.py`, `hypertools/plot/animation_context.py`,
+> `tests/plot/test_forecast_core.py`, `tests/plot/test_frame_hooks_ordering.py`) are not mine and do
+> not touch anything measured here.
 
 ---
 
@@ -157,7 +164,7 @@ declared in the example, so `construct_artifact` reads `data.monthly`, not `data
 | `animate_weather_decades` | `load_weather(cities=CITIES)` | `Weather(monthly, daily, hemispheres, source)` | **synthetic, 0 bytes committed** — the example's own `synthetic_city_months` / `synthetic_city_daily` (seeded `default_rng`) |
 | `animate_market_forecast` | `load_market(ids=FRED_IDS, ...)` | `Market(dates, prices, source)` | **synthetic, 0 bytes** — the example's own `synthetic_basket()` (seeded) |
 | `animate_conversation` | `embed_turns(TURNS)` | `Conversation(vectors, speakers, spans, source)` | **synthetic, 0 bytes** — the TF-IDF branch is already the deterministic offline path and is a real `sklearn` fit, not a stand-in |
-| `animate_painting_embeddings` | `load_paintings(PAINTINGS)` | `Paintings(vectors, owners, colors, source)` | **one committed fixture, ~3 KB** — see below |
+| `animate_painting_embeddings` | `load_paintings(PAINTINGS)` | `Paintings(vectors, owners, colors, source)` | **one committed fixture, 1.7 KB measured** — see below |
 | `animate_morph_zoo` | `load_shapes(SHAPES, n=N)` | `Shapes(clouds, titles)` | **synthetic, 0 bytes** — deterministic parametric clouds; see the caveat below |
 
 ### Fixture sizing, and why four of five need none
@@ -173,11 +180,19 @@ for free.
 
 The one place a committed fixture *is* warranted is **paintings**: `canvas_color` runs k-means over
 real JPEG pixels, and synthetic pixels would not exercise the decode-and-cluster path. Commit one
-64×64 JPEG (**≈ 2–4 KB**, measured range for a 64×64 quality-80 JPEG) under
-`tests/fixtures/paintings/`, and drive `canvas_color`/`image_palette` from that local path. Note
-Plan 4 Task 1 already establishes exactly this pattern for `image_palette()` — *"every image is
-written to `tmp_path` and read back"* (plan line 206) — so this is consistent with, not new to, the
-plan.
+small JPEG under `tests/fixtures/paintings/`, and drive `canvas_color`/`image_palette` from that
+local path. Sizes **measured** by downscaling the real cached Starry Night (500×396, 100,168 bytes)
+at quality 80:
+
+| longest edge | bytes |
+|-|-|
+| 48 px | **1,258** |
+| 64 px | **1,744** ← recommended |
+| 96 px | **2,967** |
+
+64 px keeps six k-means clusters meaningful while costing under 2 KB. Note Plan 4 Task 1 already
+establishes exactly this pattern for `image_palette()` — *"every image is written to `tmp_path` and
+read back"* (plan line 206) — so this is consistent with, not new to, the plan.
 
 **Caveat for `animate_morph_zoo`.** Its input is `hyp.load('bunny')` etc. — *library* example data,
 not example-owned data. A synthetic cloud tests the morph but not `hyp.load`. Two honest options:
@@ -307,6 +322,28 @@ is an int, matplotlib 3.10.8). `hyp.plot` always passes an int —
 (`hypertools/plot/matplotlib_backend.py:1991, 2013, 2024`) and `sum(frame_counts)` for a morph
 (`:2039`) — so the value is always known and always equals `frame_rate × duration`.
 
+### A second tautology in the same gate
+
+While verifying the above: the morph branch
+
+```python
+    if want.get('morph'):
+        assert 'morph' in str(ns.get('ANIMATE', 'morph'))
+```
+
+is also unconditionally true. **No example binds `ANIMATE`** — `grep -n "ANIMATE" examples/animate_*.py`
+returns nothing; `animate_morph_zoo.py:94` passes `animate='morph'` inline as a literal. So
+`ns.get('ANIMATE', 'morph')` always falls through to the default `'morph'`, and `'morph' in 'morph'`
+is `True`. Verified:
+
+```
+assert 'morph' in str(ns.get('ANIMATE', 'morph')) -> True     # ns = {}, i.e. today
+with ANIMATE='spin' ->                              False     # only if a name that doesn't exist did
+```
+
+So of the five `STATED_ARTIFACT` entries, two (`animated`, `morph`) assert nothing at all, two more
+(`weather`, `conversation`) cannot run, and only `predicts`/`axes` carry real signal.
+
 ### Two defects in the plan's use of it
 
 1. **It reaches for a private matplotlib field from a test** — which Plan 4's own Contract 3 forbids
@@ -382,6 +419,16 @@ the public matplotlib iterator, and the `TypeError` branch is exercised.
 Note this also **fixes the `ns['ani']` breakage for free**: `n_frames` lives on the `HyperAnimation`,
 which every example has (whether it binds it as `anim` or unpacks it as `fig, ani`), so the gate no
 longer depends on which name an example happens to use.
+
+**Regression check.** `HyperAnimation` is already autodoc'd (`docs/api.rst:115`), so the new property
+is documented with no further docs edit. The animation-facing suite passes unchanged against it:
+
+```
+$ cd /tmp/netsplit_audit && MPLBACKEND=Agg .venv/bin/python -m pytest \
+    tests/test_hyper_animation.py tests/plot/test_on_frame_hook.py \
+    tests/test_animation_export.py tests/test_animation_styles.py -q -p no:randomly
+121 passed in 211.65s (0:03:31)
+```
 
 ---
 
@@ -483,6 +530,48 @@ $ HYPERTOOLS_EXAMPLE_SMOKE=1 MPLBACKEND=Agg .venv/bin/python -m pytest \
 .                                                                        [100%]
 1 passed in 2.85s
 ```
+
+### Full-suite regression run, and a real finding it surfaced
+
+Running the whole suite in the worktree failed one test on the first pass:
+
+```
+FAILED tests/test_packaging_artifacts.py::test_sdist_contains_only_tracked_files_plus_allowlist
+E   AssertionError: 2 untracked file(s) leaked into the sdist (first 10):
+E   ['tests/test_examples_produce_their_stated_artifact.py', 'tests/test_examples_smoke.py']
+1 failed, 2098 passed, 7 skipped, 2 deselected in 496.21s (0:08:16)
+```
+
+**Diagnosed, not dismissed.** `tests/test_packaging_artifacts.py:244` builds an sdist and asserts
+every file in it is git-tracked. My two new test modules were written but never `git add`ed, so
+`setuptools-scm`'s file finder swept them into the sdist while git did not know them. Confirmed by
+staging them and re-running:
+
+```
+$ cd /tmp/netsplit_audit && git add tests/test_examples_produce_their_stated_artifact.py \
+      tests/test_examples_smoke.py
+$ MPLBACKEND=Agg .venv/bin/python -m pytest tests/test_packaging_artifacts.py -q -p no:randomly
+13 passed in 3.67s
+```
+
+**This is an actionable constraint for Plan 4, not an artifact of this audit.** Plan 4 adds several
+new files (`scripts/measure_native_ratio.py`, `scripts/execute_tutorial.py`,
+`tests/test_examples_are_native.py`, `tests/plot/test_recency_fade.py`, plus the two proposed here).
+Every task step that runs the suite must `git add` its new files **first**, or
+`test_sdist_contains_only_tracked_files_plus_allowlist` fails for a reason that has nothing to do
+with the work. Plan 4's task steps place `git add` in the *Commit* step, which runs **after** the
+verification step — so as written, each task's own suite run will hit this.
+
+Concrete instance, checkable against the plan text: **Task 1** creates
+`tests/plot/test_image_palette.py` (plan lines 153, 187, 197 — *"create"*), runs the **full** suite at
+**Step 7** — *"Run: `.venv/bin/python -m pytest -q`. Expected: baseline + 16"* (plan line 610) — and
+only `git add`s the file at **Step 9** (plan line 620). Step 7 will report `baseline + 16` **plus one
+packaging failure**. Same pattern in Tasks 2-6 (Step "Execute and measure" then Step "Commit") and in
+Task 8.
+
+Fix: move `git add` ahead of the suite run in each task, or add to Global Constraints —
+*"`git add` every new file before running the suite; `tests/test_packaging_artifacts.py` asserts the
+sdist contains only git-tracked files."*
 
 ### Cost comparison
 
@@ -650,6 +739,17 @@ when a key is absent):
 | `animate_conversation` | serial reveal + a per-frame hook | `n_frames == 192`; the hook fires and alphas change between frames |
 | `animate_morph_zoo` | a morph with per-segment titles | `n_frames == 240`; titles blank on transitions, named on holds |
 
+Every expected count above is `duration × frame_rate` read off the example's own call
+(`market` 8×20, `weather` 8×20, `paintings` 12×20, `conversation` 12×16, `morph` 12×20). The morph
+case is the one that could have differed, since it uses `sum(frame_counts)` from `morph_schedule`
+rather than the product — verified with the zoo's actual 11-segment `rotations` list:
+
+```
+rotations: [0.75, 0.5, 1.0, 0.5, 1.0, 0.5, 1.0, 0.5, 1.0, 0.5, 0.75]  len 11
+n_datasets: 6   requested total: 240
+sum(frame_counts) = 240   segments: 11
+```
+
 ### 5d. The opt-in smoke test (new file)
 
 ```python
@@ -724,10 +824,11 @@ rather than patching the number in the test file.
 | 2 | **Fatal** | The same test fails on day one for an unrelated reason: `ns['ani']` is unbound in `animate_weather_decades.py` and `animate_conversation.py` (they bind `anim`). Verified: `AssertionError: no animation was produced`. Expected 5 passing IDs is at best 3. |
 | 3 | **High** | `animate_morph_zoo.py` has **no** offline fallback: `hyp.load()` raises `HypertoolsIOError` on a cold cache with no network (exit 17). Cold-cache CI crashes, it does not degrade. Contract 4 asserts all fetches follow the fallback shape; this one does not. |
 | 4 | **High** | `tests/plot/test_recency_fade.py` (Task 5) is a second committed `runpy` test, and its `pytest.importorskip('sentence_transformers')` *selects for* the ~90 MB model download. |
-| 5 | **Medium** | `assert ns['ani']._save_count >= 1` is a tautology — the value is `max(1, ...)` by construction and can never be `< 1`. The gate gates nothing. |
+| 5 | **Medium** | **Two** of the gate's assertions are tautologies. `assert ns['ani']._save_count >= 1` — the value is `max(1, ...)` by construction, never `< 1`. `assert 'morph' in str(ns.get('ANIMATE', 'morph'))` — no example binds `ANIMATE` (verified: `grep ANIMATE examples/animate_*.py` is empty; `animate_morph_zoo.py:94` passes the literal inline), so the default `'morph'` is always used and the check is `'morph' in 'morph'`. Of the five `STATED_ARTIFACT` entries only `predicts`/`axes` carry signal. |
 | 6 | **Medium** | The gate reaches a private matplotlib attribute while the same module lists `ani._func`/`ani._args` as `DEFECT_MARKERS` (plan 2262-2263). No `HyperAnimation` frame-count property exists; one must be added. |
 | 7 | **Low** | Weather's 62-line budget (plan 2243) does not account for the ~15-line split overhead. Renegotiate in the plan per Contract 6. |
-| 8 | **Low** | Task 8's expected counts (106 at plan 2438-2452; +134 at 2508; +126 at 2609) all shift; re-derive. |
+| 8 | **Medium** | Every task creates new test/script files but `git add`s them only in its *Commit* step, **after** its suite run. `tests/test_packaging_artifacts.py:244` asserts the sdist contains only git-tracked files, so each task's own verification step fails on its own new file. Verified: Task 1 Step 7 (`pytest -q`, plan 610) precedes Task 1 Step 9 (`git add tests/plot/test_image_palette.py`, plan 620). Reproduced and fixed by staging (1 failed → 13 passed). |
+| 9 | **Low** | Task 8's expected counts (106 at plan 2438-2452; +134 at 2508; +126 at 2609) all shift; re-derive. |
 
 ---
 

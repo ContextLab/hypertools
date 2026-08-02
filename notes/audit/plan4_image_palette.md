@@ -419,9 +419,11 @@ blue, orange, purple, cyan, light green, magenta, grey). Continuous colorbar:
 | Suite | Before fix | After fix |
 |-|-|-|
 | Plan's prescribed `tests/plot/test_image_palette.py` | 2 failed, 14 passed | **16 passed** (with the §2c assertion corrected) |
+| …plus the 3 new tests from §5 Change D2 | n/a | **19 passed** |
 | Maintainer's 6 scenarios | 0/6 | **6/6** |
+| Full suite (`pytest tests`) | n/a | **2788 passed, 13 skipped, 0 failed** |
 
-Full-suite regression result is recorded in §6.
+Full-suite detail, including one failure hit and fixed during the audit, is in §6.
 
 ### Not tested, and why
 
@@ -639,7 +641,40 @@ See the appended result below. Non-`image:` palette handling is byte-identical: 
 `_seaborn_palette_arg` returns `palette` untouched for every string that does not
 start with `image:`.
 
-<!--SUITE-->
+```
+2788 passed, 13 skipped, 2 deselected, 1 warning in 587.45s (0:09:47)
+```
+
+**Zero failures.** 2788 = 2769 pre-existing + the 19 tests of this task (the 16 from
+the plan, corrected per §5 Change D1, plus the 3 new ones from Change D2 — verified
+independently as `19 passed in 2.36s`). The one pre-existing warning
+(`Animation was deleted without rendering anything` in
+`test_plot_animation_audit_fixes.py`) is unrelated to color resolution and is present
+without these changes.
+
+The suites the plan's Step 7 flags as most at risk — `tests/test_colors.py`,
+`tests/plot/test_colors_module.py`, `tests/test_colorbar.py` — all pass, confirming
+the non-`image:` string branch is unchanged.
+
+Colon-prefixed seaborn palette spellings were spot-checked directly and still resolve
+(see §5 Change E).
+
+### One failure was hit and fixed during the audit
+
+A first run with `-x` gave `1 failed, 2107 passed`:
+
+```
+FAILED tests/test_packaging_artifacts.py::test_sdist_contains_only_tracked_files_plus_allowlist
+AssertionError: 1 untracked file(s) leaked into the sdist (first 10):
+  ['tests/plot/test_image_palette.py']
+```
+
+This is a real guard doing its job, not a false positive: the new test file was
+untracked in the audit worktree. `git add tests/plot/test_image_palette.py` — which
+Task 1's own Step 9 already prescribes — fixes it, and the re-run is fully green.
+**Implication for the plan:** if Task 1 is implemented without staging the new test
+file before running the suite, Step 7 will report this failure. Worth a one-line note
+in Step 7.
 
 ---
 
