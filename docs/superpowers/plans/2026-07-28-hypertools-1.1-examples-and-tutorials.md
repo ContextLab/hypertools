@@ -3218,14 +3218,22 @@ def _code_text(path):
     if path.endswith('.ipynb'):
         import json
         nb = json.loads(_read(path))
-        source = '\n'.join(''.join(c['source']) for c in nb['cells']
-                           if c.get('cell_type') == 'code')
-    else:
-        source = _read(path)
-    # `strip_docstrings` takes LINES and yields lines -- hand it
-    # `splitlines()`, not the raw string (which would iterate characters),
-    # and join the result back into text for `re.search`.
-    return '\n'.join(strip_docstrings(source.splitlines()))
+        # PER CELL, exactly as `_code_lines_nb` does -- not concatenated
+        # first. Concatenating makes the two disagree on the same file: a
+        # notebook whose first cell holds an unclosed bare `"""` note
+        # measured 5 code lines under the budget test while this function
+        # returned '' and the defect-marker ban passed unconditionally on an
+        # empty string. That is the F2 defect class -- two counters
+        # disagreeing on identical input -- relocated into the code written
+        # to eliminate it.
+        kept = []
+        for cell in nb['cells']:
+            if cell.get('cell_type') != 'code':
+                continue
+            kept.extend(strip_docstrings(
+                ''.join(cell['source']).split('\n')))
+        return '\n'.join(kept)
+    return '\n'.join(strip_docstrings(_read(path).split('\n')))
 
 
 def test_a_docstring_naming_a_removed_pattern_is_not_a_defect():
@@ -3376,50 +3384,92 @@ WRAPPER_ONLY = ('on_frame', 'n_frames', 'n_segments', 'draw_frame',
                 'figure', 'animation')
 
 
-def _is_plot_call(node):
-    """`hyp.plot(...)`, `hypertools.plot(...)`, `ht.plot(...)`, `plot(...)`
-    -- matched on the attribute name, so an import alias cannot evade it."""
-    if not isinstance(node, ast.Call):
-        return False
-    fn = node.func
-    if isinstance(fn, ast.Attribute):
-        return fn.attr == 'plot'
-    return isinstance(fn, ast.Name) and fn.id == 'plot'
+#: Properties that hand back the RAW FuncAnimation, discarding the wrapper.
+UNWRAPPING_ATTRS = ('animation',)
+
+
+def _hypertools_names(tree):
+    """(module aliases, bare names) in this file that refer to hypertools.
+
+    Learned from the file's OWN imports. An earlier version matched any
+    attribute call named `plot`, which made matplotlib's `ax.plot` and
+    pandas' `df.plot` collateral -- and `Line2D.figure`/`Axes.figure` are
+    real public attributes, so `WRAPPER_ONLY` containing `figure` turned
+    them into false positives with a factually wrong message. The trigger
+    was already present in a gated file:
+    `examples/animate_market_forecast.py` does
+    `fc_line, = ax.plot([], [], [], '--', ...)`, so `fc_line` already
+    entered the unpacked set, and the test passed only because nothing
+    happened to read `fc_line.figure`.
+    """
+    mods, bare = set(), set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split('.')[0] == 'hypertools':
+                    mods.add(alias.asname or alias.name.split('.')[0])
+        elif isinstance(node, ast.ImportFrom):
+            if (node.module or '').split('.')[0] == 'hypertools':
+                for alias in node.names:
+                    if alias.name == 'plot':
+                        bare.add(alias.asname or alias.name)
+    return mods, bare
 
 
 def _unpacked_wrapper_uses(source):
-    """[(name, attr), ...] for every name that holds an UNPACKED plot result
-    and then reaches a wrapper-only member.
+    """[(name, attr), ...] for names holding an UNPACKED plot result that
+    then reach a wrapper-only member.
 
-    AST, not regex. A regex version of this missed five of nine cases,
-    including `anim = hyp.plot(...)` / `fig, ani = anim` / `ani.on_frame(cb)`
-    -- which is the SAME AttributeError, one line away from the idiom
-    Contract 8 recommends.
+    Raises `SyntaxError` if `source` will not parse -- the caller must
+    handle it. Returning `[]` there would make this silently vacuous on
+    exactly the files most likely to be odd, which is the
+    assertion-that-cannot-fail class this plan has shipped four revisions
+    running.
     """
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return []
+    tree = ast.parse(source)
+    mods, bare = _hypertools_names(tree)
+
+    def is_plot_call(node):
+        if not isinstance(node, ast.Call):
+            return False
+        fn = node.func
+        if isinstance(fn, ast.Attribute) and fn.attr == 'plot':
+            return isinstance(fn.value, ast.Name) and fn.value.id in mods
+        return isinstance(fn, ast.Name) and fn.id in bare
+
     wrappers, unpacked = set(), set()
-    # Two passes so the result does not depend on source order.
-    for _ in range(2):
+
+    def unwraps(value):
+        """`hyp.plot(...).animation` or `<wrapper>.animation` -- the
+        documented property that hands back the raw FuncAnimation, and so
+        the most plausible form of this bug after direct unpacking."""
+        if isinstance(value, ast.Attribute) and value.attr in UNWRAPPING_ATTRS:
+            base = value.value
+            return is_plot_call(base) or (isinstance(base, ast.Name)
+                                          and base.id in wrappers)
+        return False
+
+    for _ in range(3):          # propagate `b = a` aliases to a fixed point
         for node in ast.walk(tree):
             if not isinstance(node, ast.Assign):
                 continue
             value = node.value
             for target in node.targets:
-                if isinstance(target, ast.Name) and _is_plot_call(value):
-                    wrappers.add(target.id)                 # anim = hyp.plot()
-                elif isinstance(target, ast.Name) and isinstance(
-                        value, ast.Subscript):              # ani = anim[1]
-                    base = value.value
-                    if (isinstance(base, ast.Name) and base.id in wrappers) \
-                            or _is_plot_call(base):
+                if isinstance(target, ast.Name):
+                    if is_plot_call(value):
+                        wrappers.add(target.id)
+                    elif isinstance(value, ast.Name) and value.id in wrappers:
+                        wrappers.add(target.id)
+                    elif unwraps(value):
                         unpacked.add(target.id)
+                    elif isinstance(value, ast.Subscript):
+                        base = value.value
+                        if (isinstance(base, ast.Name) and base.id in wrappers) \
+                                or is_plot_call(base):
+                            unpacked.add(target.id)
                 elif isinstance(target, (ast.Tuple, ast.List)):
-                    if _is_plot_call(value) or (
-                            isinstance(value, ast.Name)
-                            and value.id in wrappers):      # fig, ani = ...
+                    if is_plot_call(value) or (isinstance(value, ast.Name)
+                                               and value.id in wrappers):
                         unpacked.update(e.id for e in target.elts
                                         if isinstance(e, ast.Name))
     return sorted({(n.value.id, n.attr) for n in ast.walk(tree)
@@ -3440,7 +3490,16 @@ def test_no_example_or_notebook_unpacks_then_uses_the_wrapper(path, _max):
     coverage of a present defect. It would have caught v2's prescribed
     conversation notebook, which unpacked and then called `.on_frame()`.
     """
-    hits = _unpacked_wrapper_uses(_parsable_code(path))
+    try:
+        hits = _unpacked_wrapper_uses(_parsable_code(path))
+    except SyntaxError as exc:
+        pytest.fail(
+            f'{path}: could not be parsed ({exc}), so this guard would be '
+            f'silently vacuous on it. `_parsable_code` comments out magics '
+            f'that start a line; a cell magic (%%bash), an INDENTED magic '
+            f'inside a block, or a `hyp.plot?` help suffix still defeats it. '
+            f'Fix the notebook or extend `_parsable_code` -- do not let the '
+            f'file through unchecked.')
     assert not hits, (
         f'{path}: ' + '; '.join(
             f'`{name}` comes from unpacking a hyp.plot() result, so it is a '
