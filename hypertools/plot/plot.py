@@ -177,6 +177,14 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True):
             artists.extend(ax.plot(
                 fc[:, 0], linestyle='--', color=fc_color,
                 alpha=0.6, label='_nolegend_'))
+    # role tag (see hypertools/plot/forecast.py): forecast artists must be
+    # identifiable WITHOUT guessing from linestyle -- user data drawn with
+    # fmt='--' is dashed too, and trail artists also carry '_nolegend_'.
+    # Tagged once over the whole list rather than per iteration, so an
+    # `ax.plot` call that ever returns more than one artist cannot leave any
+    # of them untagged.
+    for _a in artists:
+        _a._hyp_forecast_role = 'static'
     return artists
 
 
@@ -2737,22 +2745,27 @@ def plot(
     else:
         resolved_focused = tail_duration
 
-    # predict= + animate: a forecast is a FIXED overlay, so it is coherent
-    # with any animate mode that only moves the CAMERA over an otherwise
-    # static scene -- that is exactly animate='spin' (it rotates `view_init`
-    # per frame; it never appends or reveals data over time). The overlay is
-    # drawn once and simply rotates with everything else. Every OTHER mode
-    # (True/'parallel'/'serial'/'window'/'morph', and per-dataset morph
-    # lists) DOES progress/reveal data over time, where appending a growing
-    # forecast trace is out-of-scope follow-up work -- so those still raise.
-    if predict is not None and animate and animate != "spin":
+    # predict= + animate: a forecast over a STATIC scene is a fixed overlay,
+    # which is why animate='spin' (camera-only) draws it once and rotates it.
+    # Time-progressing modes now precompute a forecast per frame from the
+    # history revealed so far (see hypertools/plot/forecast.py). 'morph' is
+    # the one mode still refused: it interpolates between point clouds rather
+    # than progressing along a time axis, so there is no history to forecast
+    # from.
+    #
+    # BOTH morph spellings must be caught HERE. `_resolve_animate_mode` (which
+    # maps a per-dataset list onto 'morph') is not called until much further
+    # down this function, so at this point `animate` is still the raw list and
+    # `animate == "morph"` is False for the list form.
+    _is_morph_request = (animate == "morph"
+                         or isinstance(animate, (list, tuple)))
+    if predict is not None and _is_morph_request:
         raise NotImplementedError(
-            "predict= is only supported with static plots and with "
-            "animate='spin' (which just rotates the camera around the static "
-            f"forecast overlay); it is not yet supported with animate="
-            f"{animate!r}, which reveals/appends data over time. Pass "
-            "animate=False or animate='spin' to use predict=, or omit "
-            "predict= for a time-progressing animation."
+            "predict= is not supported with animate='morph' (including the "
+            "per-dataset morph list form): a morph interpolates between "
+            "point clouds rather than progressing along a time axis, so "
+            "there is no history to forecast from. Use animate=True/"
+            "'parallel'/'serial'/'window'/'spin', or omit predict=."
         )
 
     # rotations= as a per-SEGMENT list is only meaningful for
@@ -4904,7 +4917,12 @@ def plot(
             # `_draw`), so these traces never gain a legend entry. The SAME
             # helper (and the SAME seam-prepended arrays) serve both the
             # static path and the animate='spin' path below.
-            if raw_forecasts is not None:
+            # The STATIC full-history overlay belongs only to modes that do
+            # not reveal data over time: a static plot, or animate='spin'
+            # (camera-only). Time-progressing modes get the per-frame artist
+            # built below instead -- drawing both would put a frozen
+            # full-history forecast on screen from frame 0.
+            if raw_forecasts is not None and animate in (False, None, 'spin'):
                 _forecast_artists = _draw_forecast_overlays(
                     ax, raw_forecasts, antialias=antialias)
                 # animate='spin' only rotates the camera around the fully-

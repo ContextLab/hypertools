@@ -852,6 +852,13 @@ class ForecastSchedule:
     @classmethod
     def for_parallel(cls, histories, grid_lengths, model, t, n_frames,
                      min_history=DEFAULT_MIN_HISTORY):
+        """Schedule for a parallel/`'window'` animation.
+
+        Every dataset advances together, so each one's revealed row count
+        comes straight from `revealed_raw_counts` -- i.e. from the library's
+        own `trails.anim_window_bounds`, not a second copy of the reveal
+        arithmetic.
+        """
         counts = [[revealed_raw_counts(len(h), g, f, n_frames)
                    for h, g in zip(histories, grid_lengths)]
                   for f in range(n_frames)]
@@ -880,6 +887,12 @@ class ForecastSchedule:
 
     # -- lookups -----------------------------------------------------------
     def revealed(self, dataset, frame):
+        """RAW analyze-space rows `dataset` has revealed at `frame`.
+
+        Frames past the end clamp to the last scheduled frame, so a backend
+        that renders one frame beyond `n_frames` (matplotlib can, on a loop
+        or a save) gets the final forecast rather than an IndexError.
+        """
         return self.counts[min(frame, self.n_frames - 1)][dataset]
 
     def anchor(self, dataset, frame):
@@ -934,6 +947,8 @@ class ForecastSchedule:
 ```
 
 - [ ] **Step 4: Run the test and confirm it passes**
+
+> **Every public def needs a docstring.** `tests/test_docstrings.py::test_no_undocumented_public_definitions` is a repo-wide GH #276 regression gate, and it fails the WHOLE suite for a missing one. An earlier draft of this block omitted them on `for_parallel` and `revealed`; both are written out above. Check any method added later against that gate before running the full suite.
 
 Run: `.venv/bin/python -m pytest tests/plot/test_forecast_schedule.py -v`
 Expected: **14 passed** — *once animation-core Task 7 has landed* (it has, as of 2026-08-01). The v2 module (13 of these 14 tests) was run against `dev-1.0` while writing that revision: **12 passed, 1 failed**, the single failure being `test_serial_schedule_reveals_datasets_in_order` with `ImportError: cannot import name 'serial_reveal_counts' from 'hypertools.plot.matplotlib_backend'` — i.e. the prerequisite, not a defect. The 14th is v3's `test_display_paths_are_displacements_not_positions`. It **has** been run against the plan's own Task 1 + Task 2 implementation, extracted verbatim into a scratch location (only the intra-package imports rewritten as absolute): **22 passed**, that test included. (The object it drives is whatever `ForecastSchedule.to_display(...)` returns — there is no `ForecastDisplay` class in this plan or the codebase.) Measured module runtime **8.6s**, including `test_fits_are_memoized_by_revealed_history_length`, which builds a 900-frame schedule over 3 datasets (177 real Kalman fits at ~54 ms each).

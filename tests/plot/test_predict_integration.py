@@ -164,18 +164,22 @@ def test_forecast_vertices_stay_inside_frame(ndims, model):
         assert pts.max() <= 1.0 + 1e-9
 
 
-# --- animate + predict: allowed for 'spin' (camera-only), else raises -------
+# --- animate + predict: 'morph' has no time axis, so it still refuses -------
+# (True/'parallel'/'serial'/'window' became supported in 1.1: the forecast is
+# precomputed per frame from the history revealed so far -- see
+# tests/plot/test_predict_animation.py. 'spin' was always allowed; see below.)
 
-@pytest.mark.parametrize('mode', [True, 'parallel', 'serial', 'window',
-                                  'morph'])
-def test_time_progressing_animate_and_predict_raises_not_implemented(mode):
-    # every animate mode that REVEALS/APPENDS data over time still rejects
-    # predict= (appending a growing forecast trace is out-of-scope follow-up);
-    # only the camera-only 'spin' mode is allowed (see the spin test below).
-    a = _walk(9)
-    b = _walk(10, offset=1.0)
-    with pytest.raises(NotImplementedError):
-        hyp.plot([a, b], predict='Kalman', animate=mode, show=False)
+@pytest.mark.parametrize('mode', ['morph', ['morph', 'morph']])
+def test_morph_animate_and_predict_raises_not_implemented(mode):
+    # a morph interpolates between point CLOUDS rather than progressing along
+    # a time axis, so there is no history to forecast from. The list form is
+    # covered explicitly because `_resolve_animate_mode` does not run until
+    # long after the refusal, so at the check `animate` is still a raw list.
+    rng = np.random.default_rng(0)
+    a, b = (rng.normal(size=(120, 3)) + off for off in (0.0, 4.0))
+    with pytest.raises(NotImplementedError, match='morph'):
+        hyp.plot([a, b], '.', predict='Kalman', animate=mode,
+                 morph_samples=120, duration=1, frame_rate=2, show=False)
 
 
 def test_predict_with_spin_renders_dashed_forecast_overlay(tmp_path):
