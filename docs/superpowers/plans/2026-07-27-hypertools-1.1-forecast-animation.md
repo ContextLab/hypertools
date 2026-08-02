@@ -1,4 +1,4 @@
-# HyperTools 1.1 — Forecast Animation Implementation Plan (v2)
+# HyperTools 1.1 — Forecast Animation Implementation Plan (v3)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -9,6 +9,21 @@
 **Tech Stack:** Python 3.10+, numpy, scipy (PCHIP), matplotlib, plotly, `hypertools.predict` (Kalman / ARIMA / GP / Laplace / Chronos), pytest.
 
 ---
+
+## Revision note (v3)
+
+v2 was re-reviewed against the contracts settled after it (`notes/audit/review_plan3_v2_recheck.md`: 1 Fatal, 2 High, 5 Med/Low), and the maintainer ruled on every finding on 2026-08-01. This revision applies those rulings. **v2 was not implementable**: its prescribed callback could not run.
+
+| v2 | v3 |
+|-|-|
+| **Fatal.** `def _update_forecasts(frame, …)` registered on `hooks.callbacks`, which `FrameHooks.dispatch` calls as `callback(ctx)` — a `FrameContext`, not an index. `_sched.polyline(i, frame)` would raise `TypeError` on the first frame of every animated `predict=`. | The updater takes `ctx` and reads `ctx.frame` (Task 4 Step 5). The signature is stated as the contract, with v2's exact mistake named so it is not re-introduced. |
+| Registered by appending to the shared `callbacks` list, so it ran **after** every user `on_frame=` callback and each of them observed the **previous** frame's forecast. | **New Task 0**: `FrameHooks.add_internal`, an explicit internal phase that runs before user callbacks on the same `FrameContext`. Chosen over `callbacks.insert(0, …)` because it fixes the class and gives every future internal animation feature a defined slot. Includes the three silent failure modes (`__slots__`, the early-return guard, phase order) as named tests. |
+| **High.** `test_to_display_maps_every_scheduled_forecast_into_the_cube` asserted on `disp.path()` — the DISPLACEMENT — so Contract 4 was never tested. Measured: paths peak 0.86 while polylines hit exactly ±1.000. | Asserts on `.polyline()`, counts what it checked (a fully-`continue`d loop asserts nothing), and adds `test_display_paths_are_displacements_not_positions` so the two can never silently converge. |
+| **High.** Step 7 expected `test_predict_integration.py` **17 passed**; the arithmetic double-counted. | **15**, derived in a table from a measured `18 passed` baseline. `test_predict_animation.py` is likewise re-derived to **15** for this revision's six new tests. |
+| **Med.** Plotly parity tested `animate=True` only, though serial is a separate frame branch. | Parametrized over `parallel` / `serial` / `window` / `order='serial'` — the four frame-building branches — plus a serial-specific reveal test. animation-core **Task 4** added to Prerequisites. |
+| Silent on whether forecast artists join `FrameContext.artists`. | **Contract 9**: they do not. `ctx.artists` keeps its animation-core meaning; forecast artists are separately managed internal overlays, reached by their `_hyp_forecast_role` tag. Reasons (cardinality, ownership) and the documented alternative are stated, and Plan 4's `recency_fade` Fatal is the same class. |
+| 3-D artist updates via `set_data` + `set_3d_properties`, 2-D unstated in the code block. | Explicit `_ndims >= 3` dispatch using `set_data_3d`, both branches tested, with the silent-failure reason (`set_data` alone leaves z-data stale). |
+| No out-of-order frame coverage. | `test_frames_drawn_out_of_order_give_the_same_geometry`, two orderings including a repeat — Contract 6 was asserted but never exercised. |
 
 ## Revision note (v2)
 
@@ -72,10 +87,11 @@ This is stronger than the requested "fit on data, `transform` the forecasts": th
 
 ## Prerequisites
 
-Both from `docs/superpowers/plans/2026-07-26-hypertools-1.1-animation-core.md`:
+All from `docs/superpowers/plans/2026-07-26-hypertools-1.1-animation-core.md`, **all three now implemented and merged** (animation-core executed 2026-08-01, commits `7c859581`..`f6084c7d`) — so these are satisfied, not pending:
 
+- **Task 4 — plotly `animate='serial'` × trail plumbing.** Task 6 here parametrizes its parity tests over `serial` and `order='serial'`, which reach plotly's SERIAL frame-building branch (a different branch from the parallel one). Before animation-core Task 4, plotly warned and dropped trails for a serial reveal instead of drawing them, so those parametrizations could not have passed.
 - **Task 5 — `order='parallel'|'serial'`.** Needed because `test_forecast_composes_with_serial_order` (Task 4 Step 1 here) passes `order='serial'`. Verified today: `'order' in inspect.signature(hyp.plot).parameters` → `False`, so that test would die with `TypeError: plot() got an unexpected keyword argument 'order'` without it.
-- **Task 7 — the per-frame hook.** This plan needs the *internal* half of it: a single registration point so there is exactly one per-frame dispatch, not two. Animation-core Task 7 ships this as `FrameHooks` -- `.callbacks` (list), `.record(**state)`, `.dispatch(figure, axes)` -- created in `plot()`, closed over by `_draw`, and adopted by `HyperAnimation.__new__`. This plan appends its internal updater to `hooks.callbacks` rather than introducing a second registration function. **Cross-plan interface note:** this plan does **not** consume `FrameContext.revealed_counts` (documented `None` for parallel animations), so animation-core needs no change on that account.
+- **Task 7 — the per-frame hook.** This plan needs the *internal* half of it: a single registration point so there is exactly one per-frame dispatch, not two. Animation-core Task 7 ships this as `FrameHooks` -- `.callbacks` (list), `.record(**state)`, `.dispatch(figure, axes)` -- created in `plot()`, closed over by `_draw`, and adopted by `HyperAnimation.__new__`. This plan does **not** append its internal updater to `hooks.callbacks`: doing so would run it after every user callback, leaving each of them one frame stale. **Task 0 of this plan** adds the internal phase (`add_internal`) that the updater registers on — the only change this plan makes to animation-core's shipped code. **Cross-plan interface note:** this plan does **not** consume `FrameContext.revealed_counts` (documented `None` for parallel animations), so animation-core needs no change on that account.
 
 Task 1 is fully standalone. Task 2 is standalone **except** for `ForecastSchedule.for_serial`, which calls `serial_reveal_counts` — defined in animation-core Task 7. Verified by running Task 1's and Task 2's modules against today's `dev-1.0` while writing this plan: **Task 1 → 8 passed**; **Task 2 → 12 passed, 1 failed**, the failure being exactly `ImportError: cannot import name 'serial_reveal_counts'`. Implement Tasks 1-2 first regardless; that one test goes green when the prerequisite lands.
 
@@ -106,16 +122,36 @@ Task 1 is fully standalone. Task 2 is standalone **except** for `ForecastSchedul
 
 8. **Backend parity.** matplotlib and plotly consume the same `ForecastSchedule` and draw the same polylines, asserted by a cross-backend test at the final frame.
 
+9. **Forecast artists are NOT in `FrameContext.artists`.** That tuple keeps the meaning animation-core gave it — *"the drawn artists, in dataset order: the head artists first, then any trail artists, matching the backend's own bookkeeping"* — and forecast overlays are documented as **separately managed internal overlays**, reached through `ax.lines` by their `_hyp_forecast_role` tag (Contract 5), never by position in `ctx.artists`.
+
+   Two reasons, both load-bearing:
+
+   - **Cardinality.** Every consumer that zips `ctx.artists` against `ctx.revealed_counts` or `ctx.datasets` assumes a head-then-trail layout with one entry per dataset per role. Appending `n_datasets` forecast artists — and, with `forecast_trail=`, `n_retained * n_datasets` more — silently lengthens that tuple for `predict=` callers only, so a callback that works without `predict=` starts indexing the wrong artist with it. Plan 4's `recency_fade` is exactly such a consumer, and its Fatal finding was this same class of mismatch.
+   - **Ownership.** `ctx.artists` are artists the user is invited to mutate. Forecast artists are driven every frame by an internal updater (Task 0), so a user mutation would be overwritten on the next frame — a hook that looks like it works and does not.
+
+   **This is a documented limitation, not an oversight.** A callback that genuinely wants the forecast artists gets them from the axes:
+
+   ```python
+   def dim_the_forecast(ctx):
+       for art in ctx.axes.lines:
+           if getattr(art, '_hyp_forecast_role', None) == 'live':
+               art.set_alpha(0.2)
+   ```
+
+   Task 8 documents this in `animation.rst` beside the `artists` table. Giving `FrameContext` a richer artist mapping (roles, per-dataset grouping) is the general fix, and is **out of scope for 1.1** — it is a public-API expansion that every backend branch would have to populate identically.
+
 ---
 
 ## File Structure
 
 | file | responsibility | change |
 |-|-|-|
+| `hypertools/plot/animation_context.py` | `FrameHooks.add_internal` + the internal-before-user dispatch order (Task 0) | modify |
 | `hypertools/plot/forecast.py` | **new** — `forecast_from_history`, `revealed_raw_counts`, `DisplayTransform`, `ForecastSchedule` | create |
 | `hypertools/plot/plot.py` | narrow the refusal; gate the static overlay; build the schedule; fold it into the bounding box; `forecast_trail=`; docstrings | modify |
 | `hypertools/plot/matplotlib_backend.py` | live/trail forecast artists, updated per frame from the schedule | modify |
 | `hypertools/plot/plotly_backend.py` | forecast traces addressable per frame; forecast trail traces | modify |
+| `tests/plot/test_frame_hooks_ordering.py` | the internal-before-user dispatch contract (Task 0) | create |
 | `tests/plot/test_forecast_core.py` | the pure forecast helper | create |
 | `tests/plot/test_forecast_schedule.py` | reveal mapping, memoization, purity, display transform | create |
 | `tests/plot/test_predict_animation.py` | `predict=` with time-progressing animations; bundle contract | create |
@@ -123,6 +159,201 @@ Task 1 is fully standalone. Task 2 is standalone **except** for `ForecastSchedul
 | `tests/plot/test_forecast_animation_plotly.py` | cross-backend parity | create |
 | `tests/plot/test_predict_integration.py` | **edit** the `NotImplementedError` parametrize (Task 3) | modify |
 | `CHANGELOG.md`, `docs/` | user-facing documentation | modify |
+
+---
+
+## Task 0: `FrameHooks.add_internal` — library updaters run before user callbacks
+
+**Files:**
+- Modify: `hypertools/plot/animation_context.py` (`FrameHooks`)
+- Test: `tests/plot/test_frame_hooks_ordering.py` (create)
+
+**Interfaces:**
+- Consumes: `FrameHooks`/`FrameContext` as shipped by animation-core Task 7.
+- Produces: `FrameHooks.add_internal(updater) -> self`, and the guarantee that every internal updater runs, on the SAME `FrameContext`, before any user `on_frame=` callback. Task 4 Step 5 and Task 5 both register through it.
+
+**Why this exists.** The forecast updater is a *library* frame updater: it moves an artist that `plot()` owns. A user callback that reads that artist is entitled to see the current frame's geometry. If the forecast updater is merely appended to the same list the user's callbacks live in, it lands *after* them, and every user callback observes the **previous** frame's forecast — an off-by-one that no exception announces. `callbacks.insert(0, ...)` would fix this one case by accident; an explicit phase fixes the class, and gives every future internal animation feature a defined slot.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `tests/plot/test_frame_hooks_ordering.py`:
+
+```python
+# -*- coding: utf-8 -*-
+"""FrameHooks runs LIBRARY updaters before USER callbacks, on one context."""
+
+import pytest
+
+from hypertools.plot.animation_context import FrameContext, FrameHooks
+
+
+def _hooks(**state):
+    h = FrameHooks()
+    h.record(frame=3, n_frames=10, **state)
+    return h
+
+
+def test_internal_updaters_run_before_user_callbacks():
+    order = []
+    h = _hooks()
+    h.add(lambda ctx: order.append('user'))
+    h.add_internal(lambda ctx: order.append('internal'))
+    h.dispatch(figure=None, axes=None)
+    # registered user-first on purpose: the PHASE decides, not the order
+    assert order == ['internal', 'user']
+
+
+def test_a_user_callback_sees_what_the_internal_updater_just_wrote():
+    """The whole point: no user callback may observe a stale frame."""
+    written = {}
+    seen = []
+    h = _hooks()
+    h.add(lambda ctx: seen.append(written.get('frame')))
+    h.add_internal(lambda ctx: written.__setitem__('frame', ctx.frame))
+    h.dispatch(figure=None, axes=None)
+    assert seen == [3]
+
+
+def test_both_phases_share_one_frame_context():
+    got = []
+    h = _hooks()
+    h.add(lambda ctx: got.append(ctx))
+    h.add_internal(lambda ctx: got.append(ctx))
+    h.dispatch(figure=None, axes=None)
+    assert len(got) == 2 and got[0] is got[1]
+
+
+def test_internal_updaters_run_with_no_user_callbacks_registered():
+    """The guard that decides whether to dispatch must consider BOTH phases.
+
+    An animated `predict=` with no `on_frame=` is the common case; if the
+    early-return still asks only about user callbacks, the forecast never
+    advances and nothing raises.
+    """
+    ran = []
+    h = _hooks()
+    h.add_internal(lambda ctx: ran.append(ctx.frame))
+    h.dispatch(figure=None, axes=None)
+    assert ran == [3]
+
+
+def test_dispatch_is_a_no_op_when_nothing_is_registered():
+    FrameHooks().dispatch(figure=None, axes=None)  # must not raise
+
+
+def test_an_internal_updater_must_be_callable():
+    with pytest.raises(TypeError, match='callable'):
+        FrameHooks().add_internal(object())
+
+
+def test_add_internal_returns_self_for_chaining():
+    h = FrameHooks()
+    assert h.add_internal(lambda ctx: None) is h
+
+
+def test_an_exception_in_an_internal_updater_propagates():
+    """Same contract as user callbacks: a broken hook is visible, never
+    swallowed into a silently-wrong animation."""
+    h = _hooks()
+    h.add_internal(_raise)
+    h.add(lambda ctx: pytest.fail('user callbacks must not run after a '
+                                  'failed internal updater'))
+    with pytest.raises(ValueError, match='boom'):
+        h.dispatch(figure=None, axes=None)
+
+
+def _raise(ctx):
+    raise ValueError('boom')
+
+
+def test_user_callbacks_still_run_in_registration_order():
+    order = []
+    h = _hooks()
+    h.add(lambda ctx: order.append('a'))
+    h.add(lambda ctx: order.append('b'))
+    h.dispatch(figure=None, axes=None)
+    assert order == ['a', 'b']
+```
+
+- [ ] **Step 2: Run the tests and confirm they fail**
+
+Run: `.venv/bin/python -m pytest tests/plot/test_frame_hooks_ordering.py -v`
+Expected: FAIL — `AttributeError: 'FrameHooks' object has no attribute 'add_internal'` on every test that calls it (`test_dispatch_is_a_no_op_when_nothing_is_registered` and `test_user_callbacks_still_run_in_registration_order` pass already; that is correct — they pin behavior this task must not break).
+
+- [ ] **Step 3: Implement the internal phase**
+
+In `hypertools/plot/animation_context.py`, `FrameHooks`:
+
+```python
+    __slots__ = ('callbacks', 'internal', 'state')
+
+    def __init__(self, callbacks=None):
+        self.callbacks = list(callbacks or [])
+        self.internal = []
+        self.state = {}
+```
+
+```python
+    def add_internal(self, updater):
+        """Register a LIBRARY frame updater, to run before every user
+        callback on the same `FrameContext`.
+
+        This is the internal counterpart of `add`. `plot()` uses it for
+        artists it owns and drives itself -- the `predict=` forecast
+        overlay is the first -- so that a user `on_frame=` callback always
+        observes the CURRENT frame's geometry. Appending such an updater to
+        `callbacks` instead would run it after the user's, and every user
+        callback would read the previous frame's artists with nothing
+        raising to say so.
+
+        Not public API: users reach `add` (via `plot(on_frame=...)` or
+        `HyperAnimation.on_frame`), never this.
+        """
+        if not callable(updater):
+            raise TypeError(
+                f"internal frame updater must be callable; "
+                f"got {type(updater).__name__}.")
+        self.internal.append(updater)
+        return self
+```
+
+```python
+    def dispatch(self, figure, axes):
+        """Build a FrameContext from the recorded state, run every internal
+        updater, then every user callback. Exceptions propagate -- a broken
+        hook must be visible, not swallowed into a silently-wrong
+        animation."""
+        if not (self.internal or self.callbacks) or not self.state:
+            return
+        ctx = FrameContext(figure=figure, axes=axes, **self.state)
+        for updater in self.internal:
+            updater(ctx)
+        for callback in self.callbacks:
+            callback(ctx)
+```
+
+**Three ways this goes wrong silently — each has a test above:**
+
+1. Forgetting `'internal'` in `__slots__`. `FrameHooks` declares `__slots__`, so `self.internal = []` raises `AttributeError` at construction — loud, but only if you run it.
+2. Leaving the early return as `if not self.callbacks`. An animated `predict=` with no `on_frame=` then never dispatches: the forecast artist keeps frame 0's geometry for the whole animation and nothing raises. This is the failure the fourth test exists for.
+3. Running user callbacks first. Nothing raises; every user callback is simply one frame stale.
+
+- [ ] **Step 4: Run the tests and confirm they pass**
+
+Run: `.venv/bin/python -m pytest tests/plot/test_frame_hooks_ordering.py -v`
+Expected: **9 passed**
+
+- [ ] **Step 5: Confirm nothing that already used the registry changed**
+
+Run: `.venv/bin/python -m pytest tests/plot/test_on_frame_hook.py tests/test_backend_window_parity.py -q`
+Expected: **44 passed** + **29 passed** = 73, unchanged (both counts measured 2026-08-01; re-derive if either file grows before this task runs). `add`, `record`, `dispatch`'s exception behavior and the user-callback ordering are untouched by this task; only a phase that runs before them is added. There is no `tests/plot/test_animation_context.py` — `FrameContext`/`FrameHooks` are covered by `test_on_frame_hook.py`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add hypertools/plot/animation_context.py tests/plot/test_frame_hooks_ordering.py
+git commit -m "feat(plot): FrameHooks.add_internal, ordered before user callbacks"
+```
 
 ---
 
@@ -469,7 +700,18 @@ def test_display_transform_reproduces_plot_s_centre_scale_arithmetic():
 
 def test_to_display_maps_every_scheduled_forecast_into_the_cube():
     """Contract 4: no clamping is needed because the box was built to hold
-    them. Build the transform from data + schedule, exactly as Task 4 does."""
+    them. Build the transform from data + schedule, exactly as Task 4 does.
+
+    Assert on `.polyline()`, NOT `.path()`. `path()` is the DISPLACEMENT
+    (`to_display` rescales it by `2 / scale` only -- the mean cancels), so
+    it is bounded by +/-2 and says nothing about where the forecast lands.
+    `polyline()` is the drawn POSITION -- the anchor plus the displacement --
+    and is the only thing the cube can contain. Measured on this exact
+    fixture: paths peak at 0.86 while polylines reach exactly +/-1.000, so a
+    path-based assertion passes no matter where the forecast is drawn, and
+    can also fail spuriously on a large displacement that never leaves the
+    box. `polyline()` is what Task 4 Step 5 feeds to the artists.
+    """
     hists = [_history(seed=s) for s in range(2)]
     sched = ForecastSchedule.for_parallel(hists, [N_GRID] * 2, model='Kalman',
                                           t=5, n_frames=N_FRAMES)
@@ -479,12 +721,38 @@ def test_to_display_maps_every_scheduled_forecast_into_the_cube():
     m1 = joint_c.min()
     m2 = (joint_c - m1).max() or 1.0
     disp = sched.to_display(DisplayTransform(mean, m1, m2))
+    checked = 0
     for i in range(2):
         for f in range(N_FRAMES):
-            p = disp.path(i, f)
+            p = disp.polyline(i, f)
             if p is None:
                 continue
             assert p.min() >= -1.0 - 1e-9 and p.max() <= 1.0 + 1e-9
+            checked += 1
+    # a loop that `continue`d every iteration would assert nothing
+    assert checked > 0
+
+
+def test_display_paths_are_displacements_not_positions():
+    """Pins WHY the test above uses `polyline()`: `path()` is a difference,
+    so it is not the quantity the cube bounds. If these two ever return the
+    same thing, the test above has silently stopped testing Contract 4."""
+    hists = [_history(seed=s) for s in range(2)]
+    sched = ForecastSchedule.for_parallel(hists, [N_GRID] * 2, model='Kalman',
+                                          t=5, n_frames=N_FRAMES)
+    joint = np.vstack([np.vstack(hists), sched.stacked_paths()])
+    mean = joint.mean(axis=0)
+    m1 = (joint - mean).min()
+    m2 = ((joint - mean) - m1).max() or 1.0
+    disp = sched.to_display(DisplayTransform(mean, m1, m2))
+    for i in range(2):
+        for f in range(N_FRAMES):
+            path, poly = disp.path(i, f), disp.polyline(i, f)
+            if path is None:
+                continue
+            assert not np.allclose(path, poly)
+            # the polyline IS the anchor plus the displacement
+            assert np.allclose(poly - poly[0], path)
 ```
 
 - [ ] **Step 2: Run the test and confirm it fails**
@@ -668,7 +936,7 @@ class ForecastSchedule:
 - [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_forecast_schedule.py -v`
-Expected: **13 passed** — *once animation-core Task 7 has landed*. This exact module and implementation were run against today's `dev-1.0` while writing the plan: **12 passed, 1 failed**, the single failure being `test_serial_schedule_reveals_datasets_in_order` with `ImportError: cannot import name 'serial_reveal_counts' from 'hypertools.plot.matplotlib_backend'` — i.e. the prerequisite, not a defect. Measured module runtime **8.6s**, including `test_fits_are_memoized_by_revealed_history_length`, which builds a 900-frame schedule over 3 datasets (177 real Kalman fits at ~54 ms each).
+Expected: **14 passed** — *once animation-core Task 7 has landed* (it has, as of 2026-08-01). The v2 module (13 of these 14 tests) was run against `dev-1.0` while writing that revision: **12 passed, 1 failed**, the single failure being `test_serial_schedule_reveals_datasets_in_order` with `ImportError: cannot import name 'serial_reveal_counts' from 'hypertools.plot.matplotlib_backend'` — i.e. the prerequisite, not a defect. The 14th is v3's `test_display_paths_are_displacements_not_positions`, which has **not** been run against an implementation and is expected to fail until `ForecastDisplay` exists. Measured module runtime **8.6s**, including `test_fits_are_memoized_by_revealed_history_length`, which builds a 900-frame schedule over 3 datasets (177 real Kalman fits at ~54 ms each).
 
 - [ ] **Step 5: Commit**
 
@@ -878,7 +1146,19 @@ def test_morph_animate_and_predict_raises_not_implemented(mode):
 - [ ] **Step 7: Run both test files**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_predict_animation.py tests/plot/test_predict_integration.py -v`
-Expected: `test_predict_animation.py` **9 passed** (6 named tests, one parametrized over 4 modes); `test_predict_integration.py` **17 passed** (18 before, minus 5 old parametrizations, plus 2 new + the 2 removed non-morph cases → 15 unchanged + 2 = 17).
+
+Expected: `test_predict_animation.py` **9 passed** (this task's own block, which is the whole file at this point — Task 4 and Task 5 append to it later); `test_predict_integration.py` **15 passed**.
+
+`test_predict_integration.py` = 15:
+
+| step | IDs |
+|-|-|
+| measured today (2026-08-01, `pytest -q` → `18 passed`) | 18 |
+| **minus** `test_time_progressing_animate_and_predict_raises_not_implemented`, parametrized over `True/'parallel'/'serial'/'window'/'morph'` (`:169-170`) — the behaviour it asserts is what this plan removes | −5 |
+| **plus** the two replacements from Step 6 (morph still refused; the list form of morph refused) | +2 |
+| **total** | **15** |
+
+v2 claimed 17 by writing "15 unchanged + 2", which double-counted: the 15 already had the 5 parametrizations removed. The file has 12 `def test_` functions and 18 collected IDs; only the 5-param refusal test goes.
 
 - [ ] **Step 8: Run the WHOLE suite (central dispatch changed)**
 
@@ -923,6 +1203,96 @@ def test_a_live_forecast_artist_exists_per_dataset():
     ax = _ax(fig)
     ani._func(6, *ani._args)
     assert len(_forecasts(ax, role='live')) == 3
+
+
+# --- the internal-phase contract, from the consumer's side (Task 0) -------
+
+def test_a_user_callback_sees_this_frames_forecast_not_the_last_ones():
+    """Regression for the ordering defect: the forecast updater is a LIBRARY
+    updater and must run before user `on_frame=` callbacks. Registered on the
+    same list, it lands after them and every callback reads the PREVIOUS
+    frame's forecast geometry -- an off-by-one nothing raises about.
+
+    Compares what the callback SAW at frame f against what the artist holds
+    after frame f is fully drawn. Stale-by-one fails on the first frame that
+    moves the forecast.
+    """
+    seen = []
+
+    def watch(ctx):
+        art = _forecasts(_ax(ctx.figure), role='live')[0]
+        seen.append(np.array(art.get_data_3d()))
+
+    fig, ani = hyp.plot(_series(n=1), '-', predict='Kalman', t=3,
+                        animate=True, duration=4, frame_rate=4, show=False,
+                        on_frame=watch)
+    ax = _ax(fig)
+    for frame in (4, 8, 12):
+        ani._func(frame, *ani._args)
+        after = np.array(_forecasts(ax, role='live')[0].get_data_3d())
+        assert np.allclose(seen[-1], after), (
+            'the user callback observed a different forecast than the one '
+            'drawn for this frame -- internal updaters ran too late')
+    # and the forecast really did move, so the assertion had something to bite
+    assert not np.allclose(seen[0], seen[-1])
+
+
+def test_the_forecast_updater_runs_with_no_user_callback_registered():
+    """The common case: animated `predict=` and no `on_frame=` at all. If
+    dispatch's early return still asks only about USER callbacks, the
+    forecast silently freezes at frame 0."""
+    fig, ani = hyp.plot(_series(n=1), '-', predict='Kalman', t=3,
+                        animate=True, duration=4, frame_rate=4, show=False)
+    ax = _ax(fig)
+    seen = []
+    for frame in (2, 10):
+        ani._func(frame, *ani._args)
+        seen.append(np.array(_forecasts(ax, role='live')[0].get_data_3d()))
+    assert not np.allclose(seen[0], seen[1]), 'forecast never advanced'
+
+
+@pytest.mark.parametrize('frames', [
+    (12, 8, 4, 0),           # strictly backwards
+    (0, 12, 4, 8, 4),        # shuffled, with a repeat
+])
+def test_frames_drawn_out_of_order_give_the_same_geometry(frames):
+    """A frame must be a pure function of its index. matplotlib re-delivers
+    frame indices on loop and on `save()`, so any hidden accumulation shows
+    up as a different artist for the same index."""
+    fig, ani = hyp.plot(_series(n=1), '-', predict='Kalman', t=3,
+                        animate=True, duration=4, frame_rate=4, show=False)
+    ax = _ax(fig)
+    forward = {}
+    for frame in sorted(set(frames)):
+        ani._func(frame, *ani._args)
+        forward[frame] = np.array(_forecasts(ax, role='live')[0].get_data_3d())
+    for frame in frames:
+        ani._func(frame, *ani._args)
+        got = np.array(_forecasts(ax, role='live')[0].get_data_3d())
+        assert np.allclose(got, forward[frame]), (
+            f'frame {frame} drew differently out of order')
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_the_live_forecast_updates_in_both_2d_and_3d(ndims):
+    """A 3-D forecast artist is a `Line3D`: `set_data` alone leaves its
+    z-data untouched, so a 3-D forecast would silently draw in the wrong
+    place. Both branches of the updater's `_ndims >= 3` dispatch are
+    exercised here, and each is checked on the axis the other cannot see."""
+    fig, ani = hyp.plot(_series(n=1, d=max(ndims, 2)), '-', predict='Kalman',
+                        t=3, animate=True, duration=4, frame_rate=4,
+                        ndims=ndims, show=False)
+    ax = _ax(fig)
+    got = []
+    for frame in (4, 12):
+        ani._func(frame, *ani._args)
+        art = _forecasts(ax, role='live')[0]
+        got.append(np.array(art.get_data_3d() if ndims >= 3
+                            else art.get_data()))
+    assert got[0].shape[0] == (3 if ndims >= 3 else 2)
+    for axis in range(got[0].shape[0]):
+        assert not np.allclose(got[0][axis], got[1][axis]), (
+            f'axis {axis} never moved -- 3-D artists need set_data_3d')
 
 
 def test_forecast_head_tracks_the_animation():
@@ -1182,27 +1552,39 @@ Immediately before the centre/scale block (`plot.py:4002`), build the schedule; 
 
 - [ ] **Step 5: Create the live artists and drive them from the schedule**
 
-After `_draw(...)` returns (`plot.py:4291-4330`), when `forecast_schedule is not None`, create one dashed artist per dataset in that dataset's colour with `alpha=0.6`, `label='_nolegend_'`, `set_clip_on(False)` and `_hyp_forecast_role = 'live'` — the same styling `_draw_forecast_overlays` applies (`plot.py:154-156`), so a paused animation looks like a static plot. Then register a frame callback on `line_ani` via animation-core Task 7's `FrameHooks.callbacks`:
+After `_draw(...)` returns (`plot.py:4291-4330`), when `forecast_schedule is not None`, create one dashed artist per dataset in that dataset's colour with `alpha=0.6`, `label='_nolegend_'`, `set_clip_on(False)` and `_hyp_forecast_role = 'live'` — the same styling `_draw_forecast_overlays` applies (`plot.py:154-156`), so a paused animation looks like a static plot. Then register the updater on the **internal** phase of the shared `FrameHooks` registry (Task 0):
 
 ```python
-                def _update_forecasts(frame, _sched=forecast_schedule,
+                def _update_forecasts(ctx, _sched=forecast_schedule,
                                       _artists=_live_forecast_artists,
-                                      _antialias=antialias):
+                                      _antialias=antialias, _ndims=ndims):
                     for i, art in enumerate(_artists):
-                        pts = _sched.polyline(i, frame)
+                        pts = _sched.polyline(i, ctx.frame)
                         if pts is None or len(pts) < 2:
+                            # a frame with no forecast: emptiness, not alpha,
+                            # is the "unwritten" signal (Contract 5)
                             art.set_visible(False)
-                            art.set_data([], [])
-                            art.set_3d_properties([])
+                            if _ndims >= 3:
+                                art.set_data_3d([], [], [])
+                            else:
+                                art.set_data([], [])
                             continue
                         if _antialias:
                             # documented parity with the static overlay
                             # (plot.py:1904-1908, :149-150)
                             pts = _interp_static_line(pts)
                         art.set_visible(True)
-                        art.set_data(pts[:, 0:2].T)
-                        art.set_3d_properties(pts[:, 2])
+                        if _ndims >= 3:
+                            art.set_data_3d(pts[:, 0], pts[:, 1], pts[:, 2])
+                        else:
+                            art.set_data(pts[:, 0], pts[:, 1])
+
+                hooks.add_internal(_update_forecasts)
 ```
+
+**The signature is the contract.** `FrameHooks.dispatch` calls every registered callable with ONE argument, a `FrameContext` — never a frame index (`animation_context.py`, `dispatch`). v2 of this plan prescribed `def _update_forecasts(frame, ...)` and then `_sched.polyline(i, frame)`, which passes a `FrameContext` where an int is expected: a `TypeError` on the first frame of every animated `predict=` call. Read the frame index off the context (`ctx.frame`) and nothing else — do not re-derive it, and do not accept an index parameter "for testing".
+
+**The 3-D/2-D split is not optional.** A 3-D forecast artist is a `Line3D`; `set_data` alone leaves its z-data at whatever it held last, so a 3-D forecast silently draws in the wrong place instead of failing. Mirror `_draw_forecast_overlays`' own `d >= 3 / d == 2 / else` dispatch (`plot.py:152-164`). Both branches are tested (Task 4 Step 1a).
 
 Two invariants the tests pin down:
 
@@ -1214,7 +1596,7 @@ For 2-D and 1-D animations use `set_data` alone (no `set_3d_properties`), mirror
 - [ ] **Step 6: Run the test and confirm it passes**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_predict_animation.py -v`
-Expected: **21 passed** (9 from Task 3 + 12 here).
+Expected: **27 passed** (9 from Task 3 + **18** here). v2 said 12 for this block; this revision adds six IDs — `test_a_user_callback_sees_this_frames_forecast_not_the_last_ones`, `test_the_forecast_updater_runs_with_no_user_callback_registered`, `test_frames_drawn_out_of_order_give_the_same_geometry` (2 params) and `test_the_live_forecast_updates_in_both_2d_and_3d` (2 params).
 
 - [ ] **Step 7: Run the WHOLE suite (central dispatch changed)**
 
@@ -1582,29 +1964,49 @@ def _mpl_live(fig, frame, ani):
     return [np.array(ln.get_data_3d()).T for ln in live]
 
 
-def test_plotly_animated_plot_has_a_live_forecast_trace_per_dataset():
-    fig = hyp.plot(_series(), '-', predict='Kalman', t=3, animate=True,
-                   duration=2, frame_rate=4, backend='plotly', show=False)
+# Every time-progressing style this plan newly accepts, because
+# `_add_animation` builds frames in FOUR separate branches and a forecast
+# wired into only one of them is frozen in the others. `order='serial'` is
+# the fourth case: animation-core Task 5 made `order=` orthogonal to
+# `animate=`, so `animate=True, order='serial'` reaches the SERIAL branch
+# while spelling a parallel style.
+STYLES = [
+    pytest.param(dict(animate=True), id='parallel'),
+    pytest.param(dict(animate='serial'), id='serial'),
+    pytest.param(dict(animate='window'), id='window'),
+    pytest.param(dict(animate=True, order='serial'), id='order-serial'),
+]
+
+
+@pytest.mark.parametrize('style', STYLES)
+def test_plotly_animated_plot_has_a_live_forecast_trace_per_dataset(style):
+    fig = hyp.plot(_series(), '-', predict='Kalman', t=3,
+                   duration=2, frame_rate=4, backend='plotly', show=False,
+                   **style)
     assert len(_fc_role(fig, 'live')) == 2
 
 
-def test_plotly_forecast_traces_are_updated_per_frame_not_frozen():
+@pytest.mark.parametrize('style', STYLES)
+def test_plotly_forecast_traces_are_updated_per_frame_not_frozen(style):
     """plotly's frame updates address only the data + trail trace ranges
     (plotly_backend.py:2896-2897), so an un-wired forecast trace stays
-    frozen at its setup value."""
-    fig = hyp.plot(_series(n=1), '-', predict='Kalman', t=3, animate=True,
-                   duration=4, frame_rate=4, backend='plotly', show=False)
+    frozen at its setup value -- and it must be wired in EVERY branch, not
+    just the parallel one."""
+    fig = hyp.plot(_series(n=1), '-', predict='Kalman', t=3,
+                   duration=4, frame_rate=4, backend='plotly', show=False,
+                   **style)
     early = _fc_role(_frame_snapshot(fig, 4), 'live')[0]
     late = _fc_role(_frame_snapshot(fig, 12), 'live')[0]
     assert not np.allclose(np.asarray(early.x, dtype=float),
                            np.asarray(late.x, dtype=float))
 
 
-def test_plotly_and_matplotlib_draw_the_same_final_frame_forecast():
+@pytest.mark.parametrize('style', STYLES)
+def test_plotly_and_matplotlib_draw_the_same_final_frame_forecast(style):
     """Contract 8. At the final frame both backends have revealed the whole
     history, so both draw the full-history forecast in the same display box."""
-    kw = dict(predict='Kalman', t=3, animate=True, duration=4, frame_rate=4,
-              antialias=False, show=False)
+    kw = dict(predict='Kalman', t=3, duration=4, frame_rate=4,
+              antialias=False, show=False, **style)
     data = _series(n=1)
     pl = hyp.plot(data, '-', backend='plotly', **kw)
     mpl_fig, ani = hyp.plot(data, '-', backend='matplotlib', **kw)
@@ -1616,6 +2018,23 @@ def test_plotly_and_matplotlib_draw_the_same_final_frame_forecast():
     mpl_pts = _mpl_live(mpl_fig, 15, ani)[0]
     assert plotly_pts.shape == mpl_pts.shape
     assert np.allclose(plotly_pts, mpl_pts, atol=1e-6)
+
+
+def test_plotly_serial_reveals_one_datasets_forecast_at_a_time():
+    """Under a serial reveal only the CURRENTLY-revealing dataset has a
+    growing forecast; datasets not yet reached have none, and finished ones
+    are frozen at their full-history forecast (the 'freeze' decision). This
+    is the behaviour the parallel branch cannot exercise at all."""
+    fig = hyp.plot(_series(n=3), '-', predict='Kalman', t=3,
+                   animate='serial', duration=6, frame_rate=4,
+                   backend='plotly', show=False)
+    early = _fc_role(_frame_snapshot(fig, 2), 'live')
+    drawn_early = [tr for tr in early
+                   if np.asarray(tr.x, dtype=float).size]
+    assert len(drawn_early) == 1, 'only the first dataset is being revealed'
+    late = _fc_role(_frame_snapshot(fig, 23), 'live')
+    drawn_late = [tr for tr in late if np.asarray(tr.x, dtype=float).size]
+    assert len(drawn_late) == 3, 'every dataset is revealed by the last frame'
 
 
 def test_plotly_forecast_stays_inside_the_scene_range():
@@ -1706,7 +2125,7 @@ In `_add_animation`'s parallel/serial frame loops, extend `trace_indices` with t
 - [ ] **Step 6: Run the test and confirm it passes**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_forecast_animation_plotly.py -v`
-Expected: **8 passed.**
+Expected: **18 passed** — 6 unparametrized tests + 3 parametrized over the 4 entries of `STYLES` (`parallel`/`serial`/`window`/`order-serial`). v2 expected 8 here, when every test ran `animate=True` only.
 
 - [ ] **Step 7: Run the WHOLE suite**
 
@@ -1820,7 +2239,7 @@ In `plot.py:1937-1941`, replace the sentence about the drawn overlay:
 - [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_predict_animation.py -v`
-Expected: **25 passed** (9 from Task 3 + 12 from Task 4 + 4 here).
+Expected: **31 passed** (9 from Task 3 + 18 from Task 4 + 4 here).
 
 - [ ] **Step 5: Run the WHOLE suite**
 

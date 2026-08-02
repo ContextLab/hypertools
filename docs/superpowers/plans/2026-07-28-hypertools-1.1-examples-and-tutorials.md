@@ -1,12 +1,29 @@
-# HyperTools 1.1 — Examples and Tutorials Implementation Plan (v1)
+# HyperTools 1.1 — Examples and Tutorials Implementation Plan (v2)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the five launch examples and the fifteen older tutorials *showcase* hypertools instead of working around it. Measured today, **6.5% of the code in the five launch examples belongs to a hypertools call** (48 of 739 code lines) and **37.9% is defect** — it either re-implements something native or fills a gap Plans 1–3 close. This plan rewrites every one of them against the 1.1 API, in lockstep with its notebook, and adds the one library feature the examples still need that no other 1.1 plan owns.
 
-**Architecture:** One library task first (Task 1: palette-from-image), because two example rewrites consume it and it is the last orphaned feature from the audit. Then five example rewrites, each *paired with its notebook in the same task and the same commit* — a script fixed without its notebook leaves the defect published, because `nbsphinx_execute = 'never'` (`docs/conf.py:115`) ships the committed notebook verbatim. Then the fifteen older tutorials, grouped by the recurring fix so each step is one reviewable diff. Finally a verification task that makes the improvement **permanent**: a committed measurement script, a real pytest module that fails if any defect marker reappears, the full suite, every example executed, every notebook re-executed, and a zero-warning docs build.
+**Architecture:** One library task first (Task 1: palette-from-image), because two example rewrites consume it and it is the last orphaned feature from the audit. Then five example rewrites, each *paired with its notebook in the same task and the same commit* — a script fixed without its notebook leaves the defect published, because `nbsphinx_execute = 'never'` (`docs/conf.py:131`) ships the committed notebook verbatim. Then the fifteen older tutorials, grouped by the recurring fix so each step is one reviewable diff. Finally a verification task that makes the improvement **permanent**: a committed measurement script, a real pytest module that fails if any defect marker reappears, the full suite, every example executed, every notebook re-executed, and a zero-warning docs build.
 
 **Tech Stack:** Python 3.12.10, numpy 2.3.5, pandas 3.0.3, matplotlib 3.10.8, plotly 6.8.0, scikit-learn, Pillow 12.1.0, nbconvert 7.17.1, ipykernel 7.3.0, pytest 9.0.2.
+
+---
+
+## Revision note (v2)
+
+v1 was adversarially reviewed for the first time (`notes/audit/review_plan4_examples_and_tutorials.md`: 2 Fatal, 3 High, 5 Med/Low) and the maintainer ruled on 2026-08-01. Both Fatals are fixed here.
+
+| v1 | v2 |
+|-|-|
+| **Fatal.** `recency_fade` iterated `ctx.artists` while indexing `ctx.revealed_counts[i]`. `ctx.artists` is heads-then-trails, so with `chemtrails=True` it holds 2N entries against N counts — `IndexError` on the N+1th artist, on the first frame. | Splits by role first (`heads = ctx.artists[:n]`, `trails = ctx.artists[n:]`), asserts one trail per dataset rather than assuming it, and drives head and trail together. `n` comes from `len(ctx.revealed_counts)`, which is authoritative after `hue=` reshaping. Task 0 of Plan 3 documents the same class as **Contract 9** (forecast artists deliberately stay OUT of `ctx.artists` for exactly this reason). |
+| **Fatal.** Task 8's `BUDGETS` gated a per-file native-code ratio, and 4 of 5 rewrites missed their own floors when the reviewer ran the plan's own script against the plan's own proposed code (market 14.7 vs 26, paintings 12.5 vs 20, conversation 18.9 vs 25, morph 22.2 vs 26). The gate could not have gone green. | The ratio is **reported, not gated** (maintainer's call): it is easy to game by reformatting and says little about quality. The gates that remain cannot be met by formatting — defect markers, a maximum code-line budget, executable semantic checks that each example still produces the artifact it advertises, and exact notebook execution success. |
+| The callback returned early when `ctx.current_index is None`, and skipped assignment on some artists. | Every head and every trail is assigned on **every** frame, including unspoken turns; the condition moved into the VALUE (`turn_alpha`). A parallel animation now raises instead of silently doing nothing. |
+| No tests for the callback at all. | `tests/plot/test_recency_fade.py` — 13 tests: first/middle/last turn, repeated and out-of-order frames, the trail pairing, the cardinality guard, and the single-point case. |
+| Notebook-execution gate allowed `len(code) - 2` unexecuted cells. | Exact: every code cell must carry outputs, and none may carry a committed traceback. |
+| "all five launch notebooks ship ZERO executed outputs" | False when written — measured 2/6, 4/7, 1/6, 2/6, 2/7 (`git log 9b94d86f`, 2026-07-30). Corrected wherever it appears. |
+| Task 1 "17 passed"; Task 8 "109 passed"; suite delta +126. | **16**, **106**, and **+135** (Task 5 now contributes 13). Each derived in a table at its step. |
+| `docs/conf.py:131` for `nbsphinx_execute='never'` (cited 5×) | `docs/conf.py:131`; `:115` is blank. |
 
 ---
 
@@ -16,7 +33,7 @@ This is the first revision of this plan, so there is no prior version to correct
 
 | claim as received | what I measured (`/Users/jmanning/hypertools/.venv/bin/python`, 2026-07-28) |
 |-|-|
-| "`nbsphinx_execute = 'never'` means committed outputs ship verbatim" | True (`docs/conf.py:115`) — but **all five launch notebooks ship with ZERO executed outputs**: `conversation_shape` 0/6 code cells, `market_forecast` 0/7, `morph_shapes_zoo` 0/6, `painting_embeddings` 0/6, `weather_decades` 0/7. The 15 older tutorials carry 3–15 executed cells each. So the five launch tutorial pages currently render as **code with no figure at all**. There is also **no gallery thumbnail** for any of the five (`docs/_static/thumbnails/` holds 12 files; `scripts/generate_gallery_thumbs.py:26` hard-codes `MPL_ANIMS = ['animate', 'animate_MDS', 'animate_spin', 'chemtrails', 'precog', 'save_movie']`). Task 8 fixes both. |
+| "`nbsphinx_execute = 'never'` means committed outputs ship verbatim" | True (`docs/conf.py:131`). The five launch notebooks are **partially** executed — re-measured 2026-08-01: `conversation_shape` **2**/6 code cells carry outputs, `market_forecast` **4**/7, `morph_shapes_zoo` **1**/6, `painting_embeddings` **2**/6, `weather_decades` **2**/7. (v1 said 0 for all five; `git log 9b94d86f`, 2026-07-30, "execute the five new tutorials" had already landed.) The 15 older tutorials carry 3–15 executed cells each. So the five launch tutorial pages render **most of their code with no figure**, not none of it — the fix is the same, and Task 8's gate is now exact (every code cell, no committed tracebacks). There is also **no gallery thumbnail** for any of the five (`docs/_static/thumbnails/` holds 12 files; `scripts/generate_gallery_thumbs.py:26` hard-codes `MPL_ANIMS = ['animate', 'animate_MDS', 'animate_spin', 'chemtrails', 'precog', 'save_movie']`). Task 8 fixes both. |
 | Equal per-dataset feature widths required by `plot.py:2745` | The comment block starts at `plot.py:2744`; the **check** is `plot.py:2750-2751` (`_widths = [ri.shape[1] for ri in raw]` / `if len(set(_widths)) > 1:`). Cite 2750-2751. |
 | Market panel: 24/24 tickers, 2513 trading days, 2016-07-28 → 2026-07-28 | **Confirmed exactly.** All 24 tickers fetched from `https://query1.finance.yahoo.com/v8/finance/chart/<T>?range=10y&interval=1d` with a `User-Agent` header; every one returned `len(timestamp) == 2513`; AAPL first 2016-07-28, last 2026-07-28. Six sectors × 4 tickers = equal widths, satisfying `plot.py:2750-2751`. |
 | Weather: `temperatures.csv` is (1645 months, 20 cities) | The raw CSV is **(1965, 43)**: `Unnamed: 0`, `Year`, `Month`, then **both** `<City>_anomaly` and `<City>` for 20 cities. `dropna()` → **1645 complete rows, 1875–2013**. The 20 absolute-temperature columns are selected by `raw[list(locs['City'])]` → `(1645, 20)`. `temperature_locs.csv` is (20, 4): `Unnamed: 0`, `City`, `Lat`, `Long`. |
@@ -593,7 +610,7 @@ In `CHANGELOG.md`, under the `## 1.1.0 (unreleased)` → `### Added` heading cre
 - [ ] **Step 7: Run the FULL suite (palette resolution is shared by every color path)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: baseline + 17. Pay attention to `tests/test_colors.py`, `tests/plot/test_colors_module.py` and `tests/test_colorbar.py`: any test that asserts `_get_palette`'s string branch is a straight seaborn passthrough must still pass, because the non-`image:` path is byte-identical.
+Expected: baseline + 16 (the block above defines 16 `def test_` functions and parametrizes none of them; v1 said 17). Pay attention to `tests/test_colors.py`, `tests/plot/test_colors_module.py` and `tests/test_colorbar.py`: any test that asserts `_get_palette`'s string branch is a straight seaborn passthrough must still pass, because the non-`image:` path is byte-identical.
 
 - [ ] **Step 8: Rebuild the docs (a new autodoc section was added)**
 
@@ -653,7 +670,7 @@ then:
     .venv/bin/python scripts/execute_tutorial.py docs/tutorials/<name>.ipynb
 
 Outputs are written back into the notebook (`nbsphinx_execute = 'never'`,
-docs/conf.py:115, means the committed outputs are what the docs render), and
+docs/conf.py:131, means the committed outputs are what the docs render), and
 `metadata.kernelspec` is restored to the neutral python3 entry the committed
 notebooks carry, so Colab is unaffected.
 """
@@ -1487,6 +1504,22 @@ fig, ani = hyp.plot(
     duration=duration, frame_rate=fps, elev=16, size=(8, 8), show=False)
 
 
+def turn_alpha(i, revealed, current):
+    """How visible turn `i` should be while turn `current` is being drawn.
+
+    Assigns a value for EVERY dataset on EVERY frame, including turns not
+    yet spoken -- the portable callback rule (animation.rst): put the
+    condition in the VALUE, never around the assignment. A skipped
+    assignment leaves matplotlib's shared artists at whatever the previous
+    frame set, which is how a fade turns into a smear.
+    """
+    if i > current or revealed < 2:
+        return 0.0                     # unspoken, or a single stray point
+    if i == current:
+        return 1.0
+    return FLOOR + (1.0 - FLOOR) * DECAY ** (current - i)
+
+
 def recency_fade(ctx):
     """The one bespoke effect left: earlier turns recede as the talk moves on.
 
@@ -1494,21 +1527,44 @@ def recency_fade(ctx):
     nothing in 1.1 fades ACROSS already-revealed datasets, so this is real
     custom work -- but it now runs on the public per-frame hook and reads the
     library's own published schedule instead of re-deriving it.
+
+    ``ctx.artists`` is NOT one artist per dataset. It is heads first, then
+    trails (animation_context.FrameContext), so with ``chemtrails=True`` it
+    holds 2N entries against ``revealed_counts``' N. Zipping the two
+    directly walks off the end of the counts. Split by role first.
     """
     current = ctx.current_index
     if current is None:
-        return
-    for i, artist in enumerate(ctx.artists):
-        if i > current or ctx.revealed_counts[i] < 2:
-            artist.set_alpha(0.0)          # unspoken, or a single stray point
-        elif i == current:
-            artist.set_alpha(1.0)
-        else:
-            artist.set_alpha(FLOOR + (1.0 - FLOOR) * DECAY ** (current - i))
+        raise RuntimeError(
+            "recency_fade needs a serial reveal: ctx.current_index is None, "
+            "which means this plot is animating in parallel. Keep "
+            "order='serial' (or animate='serial') on the plot() call above.")
+
+    n_datasets = len(ctx.revealed_counts)
+    heads = ctx.artists[:n_datasets]
+    trails = ctx.artists[n_datasets:]
+    # chemtrails=True is broadcast to every dataset, so this holds here. It
+    # is asserted rather than assumed because a dataset drawn marker-only
+    # gets no trail artist, and the mismatch would otherwise show up as a
+    # silently mis-paired head/trail rather than an error.
+    if len(trails) != n_datasets:
+        raise RuntimeError(
+            f"expected one trail artist per dataset, got {len(trails)} "
+            f"trails for {n_datasets} datasets")
+
+    for i, (head, trail, revealed) in enumerate(
+            zip(heads, trails, ctx.revealed_counts)):
+        alpha = turn_alpha(i, revealed, current)
+        head.set_alpha(alpha)
+        # the library's own trail convention: 0.3x the head it belongs to
+        # (matplotlib_backend draws trails at alpha * 0.3)
+        trail.set_alpha(0.3 * alpha)
 
 
 ani.on_frame(recency_fade)
 ```
+
+**Why not a general head/trail mapping.** `FrameContext` publishes artists as a flat tuple with a documented order, not as a role-tagged mapping. Making the split general — every backend branch populating per-role, per-dataset artist groups identically — is a public-API expansion, and it is not needed for this example: the plot sets `chemtrails=True` for every dataset, so the layout is known and the guard above proves it at runtime. If a future example needs a mix of trailed and untrailed datasets in one plot, that is when the richer metadata earns its cost.
 
 > **Interface check before writing this:** `FrameContext` is defined in animation-core Task 7 (`hypertools/plot/animation_context.py`) with the fields `current_index`, `revealed_counts` and `artists`, and `HyperAnimation.on_frame()` registers against the shared `FrameHooks` registry that `plot()` created (animation-core contract #3). If any field is named differently when Task 7 lands, follow the implemented names — do not add a shim here.
 
@@ -1516,6 +1572,165 @@ ani.on_frame(recency_fade)
 
 Run: `MPLBACKEND=Agg .venv/bin/python examples/animate_conversation.py`
 Expected: exits 0, prints `conversation: 28 turns, 4 speakers, NNN windows`, no warnings.
+
+- [ ] **Step 2a: Write the callback's tests**
+
+The head/trail split is the part that was wrong in v1 and the part a future edit is most likely to break, so it gets real tests rather than an eyeball check. Create `tests/plot/test_recency_fade.py`:
+
+```python
+# -*- coding: utf-8 -*-
+"""The conversation example's recency_fade callback.
+
+Drives the REAL callback from the REAL example module (no reimplementation:
+a copy of the logic here would pass while the example was broken). The
+example is executed once per module -- it builds sentence embeddings and a
+UMAP reduction, so this is not cheap -- and every case then runs against
+synthetic FrameContexts, which is what makes frame ORDER testable at all.
+"""
+
+import runpy
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import numpy as np
+import pytest
+
+pytest.importorskip('sentence_transformers')
+pytest.importorskip('umap')
+
+from hypertools.plot.animation_context import FrameContext
+
+N_DATASETS = 6
+
+
+@pytest.fixture(scope='module')
+def example():
+    ns = runpy.run_path('examples/animate_conversation.py')
+    yield ns
+    plt.close('all')
+
+
+def _ctx(current, revealed=None, n=N_DATASETS, trails=True):
+    """A FrameContext shaped exactly like the example's own plot: heads
+    first, then one trail per dataset (chemtrails=True)."""
+    heads = [plt.Line2D([], []) for _ in range(n)]
+    tails = [plt.Line2D([], []) for _ in range(n)] if trails else []
+    if revealed is None:
+        revealed = tuple(10 if i <= current else 0 for i in range(n))
+    return FrameContext(
+        frame=0, n_frames=100, figure=None, axes=None,
+        artists=tuple(heads + tails), datasets=(),
+        style=True, order='serial', current_index=current,
+        current_fraction=0.5, revealed_counts=tuple(revealed))
+
+
+def test_every_head_and_trail_is_assigned_on_every_frame(example):
+    """The portable rule: assign the complete value on every invocation.
+    A skipped assignment leaves matplotlib's shared artists at the previous
+    frame's value, which is how a fade becomes a smear."""
+    fade = example['recency_fade']
+    ctx = _ctx(current=2)
+    for art in ctx.artists:
+        art.set_alpha(None)
+    fade(ctx)
+    assert all(a.get_alpha() is not None for a in ctx.artists), (
+        'some artist was left unassigned')
+
+
+@pytest.mark.parametrize('current', [0, N_DATASETS // 2, N_DATASETS - 1])
+def test_first_middle_and_last_turn(example, current):
+    fade = example['recency_fade']
+    ctx = _ctx(current=current)
+    fade(ctx)
+    heads = ctx.artists[:N_DATASETS]
+    assert heads[current].get_alpha() == 1.0, 'the current turn is opaque'
+    for i in range(current + 1, N_DATASETS):
+        assert heads[i].get_alpha() == 0.0, 'unspoken turns are invisible'
+    earlier = [heads[i].get_alpha() for i in range(current)]
+    assert earlier == sorted(earlier), 'older turns must not be brighter'
+
+
+def test_trails_track_their_own_head(example):
+    fade = example['recency_fade']
+    ctx = _ctx(current=3)
+    fade(ctx)
+    heads, trails = ctx.artists[:N_DATASETS], ctx.artists[N_DATASETS:]
+    for head, trail in zip(heads, trails):
+        assert trail.get_alpha() == pytest.approx(0.3 * head.get_alpha())
+
+
+def test_the_callback_never_indexes_past_revealed_counts(example):
+    """The v1 defect: iterating ctx.artists (2N under chemtrails) while
+    indexing ctx.revealed_counts (N) raised IndexError on the N+1th artist."""
+    fade = example['recency_fade']
+    fade(_ctx(current=N_DATASETS - 1))  # must not raise
+
+
+def test_a_missing_trail_artist_is_an_explicit_error(example):
+    """Rather than silently pairing head i with head i+1."""
+    fade = example['recency_fade']
+    with pytest.raises(RuntimeError, match='one trail artist per dataset'):
+        fade(_ctx(current=1, trails=False))
+
+
+def test_a_parallel_animation_is_an_explicit_error(example):
+    fade = example['recency_fade']
+    with pytest.raises(RuntimeError, match='serial'):
+        fade(_ctx(current=None))
+
+
+@pytest.mark.parametrize('order', [
+    [0, 1, 2, 3, 4, 5],              # forward
+    [5, 4, 3, 2, 1, 0],              # backward
+    [3, 0, 5, 3, 1, 3],              # shuffled, with repeats
+])
+def test_alpha_depends_only_on_the_frame_not_on_history(example, order):
+    """matplotlib re-delivers frame indices on loop and on save(), so the
+    same current_index must always give the same alphas regardless of what
+    ran before it."""
+    fade = example['recency_fade']
+    reference = {}
+    for current in range(N_DATASETS):
+        ctx = _ctx(current=current)
+        fade(ctx)
+        reference[current] = [a.get_alpha() for a in ctx.artists]
+    for current in order:
+        ctx = _ctx(current=current)
+        fade(ctx)
+        assert [a.get_alpha() for a in ctx.artists] == reference[current], (
+            f'current_index={current} faded differently out of order')
+
+
+def test_a_single_point_turn_stays_invisible(example):
+    """revealed < 2 is a stray point, not a drawn trajectory."""
+    fade = example['recency_fade']
+    revealed = [10] * N_DATASETS
+    revealed[1] = 1
+    ctx = _ctx(current=N_DATASETS - 1, revealed=revealed)
+    fade(ctx)
+    assert ctx.artists[1].get_alpha() == 0.0
+```
+
+- [ ] **Step 2b: Run the callback's tests**
+
+Run: `.venv/bin/python -m pytest tests/plot/test_recency_fade.py -v`
+
+Expected: **12 passed**, derived from the block above (8 `def test_` functions, 2 of them parametrized):
+
+| test | IDs |
+|-|-|
+| `test_every_head_and_trail_is_assigned_on_every_frame` | 1 |
+| `test_first_middle_and_last_turn` (3 params) | 3 |
+| `test_trails_track_their_own_head` | 1 |
+| `test_the_callback_never_indexes_past_revealed_counts` | 1 |
+| `test_a_missing_trail_artist_is_an_explicit_error` | 1 |
+| `test_a_parallel_animation_is_an_explicit_error` | 1 |
+| `test_alpha_depends_only_on_the_frame_not_on_history` (3 orders) | 3 |
+| `test_a_single_point_turn_stays_invisible` | 1 |
+| **total** | **12** |
+
+`N_DATASETS` must equal the number of FINAL drawn datasets the example produces — `hue=` reshapes, so confirm it against `len(ctx.revealed_counts)` from the Step 3 script below and adjust the constant if it differs.
 
 - [ ] **Step 3: Confirm the reveal, the legend and the titles**
 
@@ -1984,8 +2199,25 @@ Measured on 2026-07-26/28, before the 1.1 examples plan: 48 of 739 code
 lines across the five launch examples belonged to a hypertools call (6.5%),
 and 37.9% of the code either re-implemented something native or worked
 around a gap. This module makes the fix permanent -- it fails if a defect
-marker comes back, or if a file drifts back above its size budget or below
-its native-ratio floor.
+marker comes back, or if a file drifts back above its size budget.
+
+**The native-code ratio is REPORTED, not gated.** v1 of this plan asserted a
+per-file minimum ratio and picked the floors before the rewrites existed;
+measured against the plan's own proposed code, four of the five missed their
+own floors (market 14.7% vs 26, paintings 12.5% vs 20, conversation 18.9% vs
+25, morph 22.2% vs 26), so the gate could not have gone green no matter how
+good the rewrite was. Raising the floors to whatever the code happens to
+measure would make the gate tautological, and the ratio is trivially gamed
+in the wrong direction anyway -- splitting one `hyp.plot(...)` call across
+six lines "improves" it, and so does deleting a comment. What the ratio is
+genuinely good for is watching a trend, so this module PRINTS it and asserts
+only things that cannot be satisfied by reformatting:
+
+1. no private API or named defect pattern (`DEFECT_MARKERS`);
+2. a maximum code-line budget per file;
+3. executable semantic checks -- the example actually produces the artifact
+   it claims (`test_examples_produce_their_stated_artifact`);
+4. exact notebook execution success (Step 2c).
 
 No network, no mocks: it reads the committed files.
 """
@@ -1998,18 +2230,18 @@ from scripts.measure_native_ratio import measure
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-#: (path, max_code_lines, min_native_ratio_percent)
+#: (path, max_code_lines)
 BUDGETS = [
-    ('examples/animate_market_forecast.py', 115, 26.0),
-    ('examples/animate_weather_decades.py', 62, 18.0),
-    ('examples/animate_painting_embeddings.py', 118, 20.0),
-    ('examples/animate_conversation.py', 72, 25.0),
-    ('examples/animate_morph_zoo.py', 30, 26.0),
-    ('docs/tutorials/market_forecast.ipynb', 120, 24.0),
-    ('docs/tutorials/weather_decades.ipynb', 66, 17.0),
-    ('docs/tutorials/painting_embeddings.ipynb', 110, 20.0),
-    ('docs/tutorials/conversation_shape.ipynb', 76, 24.0),
-    ('docs/tutorials/morph_shapes_zoo.ipynb', 34, 26.0),
+    ('examples/animate_market_forecast.py', 115),
+    ('examples/animate_weather_decades.py', 62),
+    ('examples/animate_painting_embeddings.py', 118),
+    ('examples/animate_conversation.py', 72),
+    ('examples/animate_morph_zoo.py', 30),
+    ('docs/tutorials/market_forecast.ipynb', 120),
+    ('docs/tutorials/weather_decades.ipynb', 66),
+    ('docs/tutorials/painting_embeddings.ipynb', 110),
+    ('docs/tutorials/conversation_shape.ipynb', 76),
+    ('docs/tutorials/morph_shapes_zoo.ipynb', 34),
 ]
 
 #: Every one of these was found in the launch examples or the older
@@ -2041,25 +2273,31 @@ def _code_text(path):
     return _read(path)
 
 
-@pytest.mark.parametrize('path,max_code,min_ratio', BUDGETS)
-def test_file_is_within_its_size_budget(path, max_code, min_ratio):
+@pytest.mark.parametrize('path,max_code', BUDGETS)
+def test_file_is_within_its_size_budget(path, max_code):
     code, _native = measure(os.path.join(REPO, path))
     assert code <= max_code, (
         f'{path}: {code} code lines exceeds the {max_code}-line budget')
 
 
-@pytest.mark.parametrize('path,max_code,min_ratio', BUDGETS)
-def test_file_meets_its_native_ratio_floor(path, max_code, min_ratio):
-    code, native = measure(os.path.join(REPO, path))
-    ratio = 100.0 * native / code
-    assert ratio >= min_ratio, (
-        f'{path}: {ratio:.1f}% native is below the {min_ratio}% floor '
-        f'({native}/{code} lines)')
+def test_native_ratio_is_reported(capsys):
+    """REPORTED, not gated -- see the module docstring. Fails only if a file
+    is missing or unparseable, so the number can never be met by
+    reformatting. Read it with `pytest -s` or in the CI log."""
+    rows = []
+    for path, _max_code in BUDGETS:
+        code, native = measure(os.path.join(REPO, path))
+        assert code > 0, f'{path}: no code lines found -- moved or renamed?'
+        rows.append((path, code, native, 100.0 * native / code))
+    with capsys.disabled():
+        print('\nnative-code ratio (reported, not gated):')
+        for path, code, native, ratio in rows:
+            print(f'  {ratio:5.1f}%  {native:3d}/{code:3d}  {path}')
 
 
-@pytest.mark.parametrize('path,_max,_min', BUDGETS)
+@pytest.mark.parametrize('path,_max', BUDGETS)
 @pytest.mark.parametrize('marker,fix', sorted(DEFECT_MARKERS.items()))
-def test_no_defect_marker_in_the_launch_examples(path, _max, _min, marker, fix):
+def test_no_defect_marker_in_the_launch_examples(path, _max, marker, fix):
     text = _code_text(path)
     assert not re.search(marker, text), (
         f'{path} contains {marker!r} again -- {fix}')
@@ -2086,19 +2324,77 @@ def test_reduce_tutorial_mentions_describe():
     assert 'hyp.describe' in _code_text('docs/tutorials/reduce.ipynb')
 
 
+#: The artifact each example exists to produce. These are the SEMANTIC
+#: gates that replaced the native-ratio floor: unlike a line-count ratio,
+#: none of them can be satisfied by reformatting, and each fails loudly if
+#: the rewrite drops the thing the example is for.
+STATED_ARTIFACT = {
+    'animate_market_forecast': dict(animated=True, predicts=True),
+    'animate_weather_decades': dict(animated=True, axes=2),
+    'animate_painting_embeddings': dict(animated=True, palette=True),
+    'animate_conversation': dict(animated=True, on_frame=True),
+    'animate_morph_zoo': dict(animated=True, morph=True),
+}
+
+
+@pytest.mark.parametrize('stem', sorted(STATED_ARTIFACT))
+def test_examples_produce_their_stated_artifact(stem):
+    """Executable semantics, not source-shape. Each example is RUN and the
+    object it advertises is inspected."""
+    import runpy
+    import matplotlib
+    matplotlib.use('Agg')
+    want = STATED_ARTIFACT[stem]
+    ns = runpy.run_path(f'examples/{stem}.py')
+    if want.get('animated'):
+        assert ns.get('ani') is not None, 'no animation was produced'
+        assert ns['ani']._save_count >= 1, 'animation has no frames'
+    if want.get('axes'):
+        assert len(ns['fig'].axes) >= want['axes']
+    if want.get('predicts'):
+        ax = ns['fig'].axes[0]
+        assert any(ln.get_linestyle() in ('--', ':') for ln in ax.lines), (
+            'no forecast overlay drawn')
+    if want.get('on_frame'):
+        assert 'recency_fade' in ns, 'the per-frame hook was dropped'
+    if want.get('morph'):
+        assert 'morph' in str(ns.get('ANIMATE', 'morph'))
+
+
 def test_every_launch_notebook_ships_executed_outputs():
-    """`nbsphinx_execute = 'never'` (docs/conf.py:115) renders the COMMITTED
-    outputs, so an unexecuted notebook is a figure-less docs page. Measured
-    before this plan: all five shipped 0 executed cells."""
+    """`nbsphinx_execute = 'never'` (docs/conf.py:131) renders the COMMITTED
+    outputs, so an unexecuted notebook is a figure-less docs page.
+
+    EXACT, not approximate: v1 allowed `len(code) - 2` unexecuted cells,
+    which would pass a notebook whose only two code cells both failed. Every
+    code cell must carry outputs. (`git log 9b94d86f`, 2026-07-30, executed
+    the five tutorials; measured then: 2/6, 4/7, 1/6, 2/6, 2/7 -- so the
+    plan's "all five ship ZERO executed outputs" was already false, and this
+    gate is what keeps the number from drifting back down.)
+    """
     import json
     for stem in ('market_forecast', 'weather_decades', 'painting_embeddings',
                  'conversation_shape', 'morph_shapes_zoo'):
         nb = json.loads(_read(f'docs/tutorials/{stem}.ipynb'))
         code = [c for c in nb['cells'] if c.get('cell_type') == 'code']
-        executed = [c for c in code if c.get('outputs')]
-        assert len(executed) >= len(code) - 2, (
-            f'{stem}.ipynb: only {len(executed)} of {len(code)} code cells '
-            'carry outputs; re-run scripts/execute_tutorial.py')
+        unexecuted = [i for i, c in enumerate(code) if not c.get('outputs')]
+        assert not unexecuted, (
+            f'{stem}.ipynb: code cells {unexecuted} carry no outputs '
+            f'({len(code) - len(unexecuted)}/{len(code)} executed); '
+            're-run scripts/execute_tutorial.py')
+
+
+def test_no_launch_notebook_committed_an_error_output():
+    """A notebook can be fully executed and still be broken."""
+    import json
+    for stem in ('market_forecast', 'weather_decades', 'painting_embeddings',
+                 'conversation_shape', 'morph_shapes_zoo'):
+        nb = json.loads(_read(f'docs/tutorials/{stem}.ipynb'))
+        for cell in nb['cells']:
+            for out in cell.get('outputs', []):
+                assert out.get('output_type') != 'error', (
+                    f"{stem}.ipynb: committed a traceback "
+                    f"({out.get('ename')})")
 ```
 
 > **Import note:** `from scripts.measure_native_ratio import measure` requires `scripts/` to be importable. `pyproject.toml` sets `testpaths = ["tests"]` and pytest inserts the rootdir on `sys.path` under the default `rootdir`-based import mode; if the import fails, add an empty `scripts/__init__.py` in the same commit rather than duplicating the metric inside the test.
@@ -2106,7 +2402,22 @@ def test_every_launch_notebook_ships_executed_outputs():
 - [ ] **Step 3: Run the gate and confirm it passes**
 
 Run: `.venv/bin/python -m pytest tests/test_examples_are_native.py -v`
-Expected: **10 + 10 + 80 + 6 + 1 + 1 + 1 = 109 passed** (10 budget + 10 ratio + 8 markers × 10 files + 6 older-tutorial + 3 singles). If a budget fails, cut presentation code or renegotiate the budget **in this plan** — never lower the floor silently.
+
+Expected: **106 passed**, derived:
+
+| test | IDs |
+|-|-|
+| `test_file_is_within_its_size_budget` (10 files) | 10 |
+| `test_native_ratio_is_reported` | 1 |
+| `test_no_defect_marker_in_the_launch_examples` (8 markers × 10 files) | 80 |
+| `test_older_tutorials_dropped_their_hand_rolled_helpers` | 6 |
+| `test_analyze_tutorial_actually_plots` / `test_reduce_tutorial_mentions_describe` | 2 |
+| `test_examples_produce_their_stated_artifact` (5 examples) | 5 |
+| `test_every_launch_notebook_ships_executed_outputs` | 1 |
+| `test_no_launch_notebook_committed_an_error_output` | 1 |
+| **total** | **106** |
+
+v1 expected 109 by counting a 10-ID ratio gate that this revision removed. If a size budget fails, cut presentation code or renegotiate the budget **in this plan** — never raise it silently in the test file.
 
 - [ ] **Step 4: Re-measure everything and record the result**
 
@@ -2117,7 +2428,7 @@ Expected: **10 + 10 + 80 + 6 + 1 + 1 + 1 = 109 passed** (10 budget + 10 ratio + 
     docs/tutorials/*.ipynb
 ```
 
-Expected: every one of the five scripts and the five launch notebooks is at or above its floor, and every older tutorial touched in Task 7 is above its audit baseline. Paste the table into the commit message.
+Paste the table into the commit message. **This is a record, not a gate** — there is no floor to be "at or above" any more. Read it as a trend against the pre-plan audit baseline (five launch examples: 48/739 native code lines, 6.5%), and if a rewrite lands far below what its siblings manage, ask why *in review* rather than letting a threshold decide. The v1 floors (26/18/20/25/26%) were set before the rewrites existed and four of the five missed them; keeping them would have blocked the plan on a number that measures formatting as much as content.
 
 - [ ] **Step 5: Run every example headless**
 
@@ -2162,7 +2473,7 @@ Expected: five new thumbnails, each **under 1.1 MB** (the largest existing one, 
 - [ ] **Step 7: Run the FULL suite**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: the baseline plus Task 1's 17 and Task 8's 109, all passing, 13 skipped. Any new failure in `tests/test_docs_thumbnails.py` or `tests/test_docs_gallery_log_filter.py` is Step 6's doing — fix it there.
+Expected: the baseline plus **134** — Task 1's 16, Task 5's 12 (`test_recency_fade.py`) and Task 8's 106 — all passing, 13 skipped. (v1 said 17 + 109; both were wrong, and Task 5 contributed no tests at all.) Any new failure in `tests/test_docs_thumbnails.py` or `tests/test_docs_gallery_log_filter.py` is Step 6's doing — fix it there.
 
 - [ ] **Step 8: Build the docs to the RTD-parity standard**
 
@@ -2220,7 +2531,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
    - *Alternative:* keep the caption, rebuilt from `on_frame=` instead of `ani._func`. It would stay legitimate class-**D** presentation and no longer reach into private state — but it re-adds ~50 lines and would push the example past its 72-line budget, so the budget would move too.
    - **Needs:** maintainer call on whether the word-level highlight is load-bearing for the demo.
 
-5. **How the five launch tutorials get a visible figure.** They currently ship **zero executed cells**, and `nbsphinx_execute = 'never'` means their docs pages show code and nothing else.
+5. **How the five launch tutorials get a visible figure.** They currently ship only **1–4 executed cells each** (re-measured 2026-08-01: 2/6, 4/7, 1/6, 2/6, 2/7), and `nbsphinx_execute = 'never'` means their docs pages show the rest as code and nothing else.
    - **(implemented)** both halves: execute them (Tasks 2–6 Step "Execute and measure", pinned by `test_every_launch_notebook_ships_executed_outputs`) **and** add a gallery thumbnail to `docs/tutorials.rst` (Task 8 Step 6), the pattern the repo already uses for `plot_story_trajectories`.
    - *Alternative A:* thumbnails only, leaving the notebooks unexecuted. Cheapest in repo size; but then the *notebook* a reader downloads still shows nothing until they run it.
    - *Alternative B:* execute, but replace each final `HTML(ani.to_jshtml())` with `ani.save('<name>.gif')` + an `Image` display, committing the GIF. The repo already commits gallery GIFs of 9–11 MB (`docs/tutorials/conversation_serial.gif` is 9 466 849 bytes), so this is precedented but heavy.
@@ -2254,7 +2565,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
 | Task 8 re-measures per file, asserts improvement, full suite, 0-warning docs | Task 8: a committed metric, a 109-test gate, a per-file re-measure, all five examples run headless, the full suite, the CI-parity `python -m sphinx -b html -W -E -a` build with 0 warnings, plus a rendered-output check and a re-run-everything step. |
 | BEFORE and AFTER per example, from the audit's baseline | Each of Tasks 2–6 opens with the measured BEFORE (raw lines, code lines, native lines, ratio, **and** the audit's A/B/C/D/NATIVE classification) and the contracted AFTER budget, which Task 8 asserts. |
 | Network in examples only; keep the offline-fallback property | Contract 4, and every rewrite implements the existing shape: `try/except Exception: return None` + a deterministic synthetic substitute + a `print` naming the source. Task 1's tests write PNGs to `tmp_path`; `image_palette` refuses URLs by design. |
-| Real file:line citations | Every claim about existing code cites a line I opened in this session: `docs/conf.py:115`, `plot.py:807/882/895/930/950/1013/1064/1246/2750-2751/3039-3050`, `colors.py:24/105/227/250/269/287/305-306/323-331`, `text2mat.py:89/184/391/404`, `animate.py:84`, `smooth.py:14/232`, `morph.py:36`, `scripts/generate_gallery_thumbs.py:26`, plus per-example line ranges. |
+| Real file:line citations | Every claim about existing code cites a line I opened in this session: `docs/conf.py:131`, `plot.py:807/882/895/930/950/1013/1064/1246/2750-2751/3039-3050`, `colors.py:24/105/227/250/269/287/305-306/323-331`, `text2mat.py:89/184/391/404`, `animate.py:84`, `smooth.py:14/232`, `morph.py:36`, `scripts/generate_gallery_thumbs.py:26`, plus per-example line ranges. |
 | Don't invent unspecified decisions | Six items in *Decisions still needed*, each with the implemented option and the exact edit to switch. |
 
 **Placeholders.** None. Every step carries runnable code or an exact command with its expected output. No step says "similar to Task N"; the five example rewrites are written out rather than cross-referenced, precisely because they differ.
