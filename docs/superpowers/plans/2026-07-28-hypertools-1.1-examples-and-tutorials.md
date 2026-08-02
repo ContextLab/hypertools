@@ -143,7 +143,7 @@ This is the first revision of this plan, so there is no prior version to correct
    |-|-|-|-|
    | `animate_weather_decades` | 6 | `archive-api.open-meteo.com` | degrades, exit 0 |
    | `animate_painting_embeddings` | 7 | `commons.wikimedia.org`, `huggingface.co` | degrades, exit 0 |
-   | `animate_morph_zoo` | 4 | `www.dropbox.com` (via `hyp.load`) | **HARD FAILS — `HypertoolsIOError`, exit 17** |
+   | `animate_morph_zoo` | 4 | `www.dropbox.com` (via `hyp.load`) | **HARD FAILS — `HypertoolsIOError`, exit 1** |
    | `animate_conversation` | 2 | `huggingface.co` | degrades, exit 0 |
    | `animate_market_forecast` | 1 | `fred.stlouisfed.org` | degrades, exit 0 |
 
@@ -190,7 +190,7 @@ This is the first revision of this plan, so there is no prior version to correct
 - Target release: **1.1**. Nothing here ships to users until the whole 1.1 line is working.
 - Run everything with the repo venv: `.venv/bin/python`. **The base anaconda python is BROKEN** (numpy/matplotlib mismatch); a bare `python`/`pytest` will fail confusingly.
 - Run pytest from the repo root; `pyproject.toml` sets `testpaths = ["tests"]` and `timeout = 1200`.
-- **Baseline, re-measured 2026-08-02 at `065c841e`: `2782/2784 tests collected (2 deselected)`, `2769 passed, 13 skipped`.** (v2 said `2564`; that number was ~7 months of commits stale.) Plan 3's Tasks 0–1 have since landed (+17), so measure again at the moment this plan starts rather than trusting any number written here — the suite is moving while Plans 1–3 are implemented. This plan states its own deltas relative to whatever the suite is when it starts, and each task re-runs the whole suite.
+- **Baseline, re-measured 2026-08-02: `2799/2801 tests collected (2 deselected)`.** (It was `2782/2784` at `065c841e`; Plan 3's Tasks 0-1 have since added 17 — 9 for `FrameHooks.add_internal`, 8 for `forecast_from_history`. The arithmetic reconciles exactly, which is the point: measure, do not carry a number forward.) (v2 said `2564`; that number was ~7 months of commits stale.) Plan 3's Tasks 0–1 have since landed (+17), so measure again at the moment this plan starts rather than trusting any number written here — the suite is moving while Plans 1–3 are implemented. This plan states its own deltas relative to whatever the suite is when it starts, and each task re-runs the whole suite.
 - **Reading a file's BEFORE state: use `git show <base>:<path>`, never `git stash`.** v2 prescribed `git stash && measure && git stash pop`. That is a **data-loss hazard**, demonstrated end-to-end: with a clean tree — exactly the state at `065c841e` — `git stash` saves nothing and returns 0, and the following `git stash pop` then restores *and drops* an unrelated pre-existing stash (`Dropped refs/stash@{0}`; stash count 1 → 0; the unrelated file appears in the tree). `git show` is read-only, needs no clean tree, and leaves `git status --porcelain` byte-identical before and after.
 - **New test files must be `git add`ed before running the full suite.** `tests/test_packaging_artifacts.py::test_sdist_contains_only_tracked_files_plus_allowlist` fails on any untracked file that lands in the sdist. This is the guard working, not a false positive — but it will look like an unrelated failure if the new test file is still untracked. (Observed twice while preparing this revision.)
 - **Never simplify a test to make it pass.** If a test fails repeatedly, fix the code.
@@ -3061,8 +3061,13 @@ def test_native_ratio_is_reported(capsys):
     reformatting. Read it with `pytest -s` or in the CI log."""
     rows = []
     for path, _max_code in BUDGETS:
-        code, native = measure(os.path.join(REPO, path))
-        assert code > 0, f'{path}: no code lines found -- moved or renamed?'
+        full = os.path.join(REPO, path)
+        # `measure()` raises FileNotFoundError on a moved/renamed file long
+        # before any assert here could report it, so check existence first
+        # -- otherwise the "moved or renamed?" message is unreachable.
+        assert os.path.exists(full), f'{path}: moved or renamed?'
+        code, native = measure(full)
+        assert code > 0, f'{path}: parsed to zero code lines'
         rows.append((path, code, native, 100.0 * native / code))
     with capsys.disabled():
         print('\nnative-code ratio (reported, not gated):')
@@ -3714,7 +3719,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
    - **Needs:** maintainer call on whether the word-level highlight is load-bearing for the demo.
 
 - **How the five launch tutorials get a visible figure.** They currently ship only **1–4 executed cells each** (re-measured 2026-08-01: 2/6, 4/7, 1/6, 2/6, 2/7), and `nbsphinx_execute = 'never'` means their docs pages show the rest as code and nothing else.
-   - **(implemented)** both halves: execute them (Tasks 2–6 Step "Execute and measure", pinned by `test_every_launch_notebook_ships_executed_outputs`) **and** add a gallery thumbnail to `docs/tutorials.rst` (Task 8 Step 6), the pattern the repo already uses for `plot_story_trajectories`.
+   - **(implemented)** both halves: execute them (Tasks 2–6 Step "Execute and measure", pinned by `test_every_launch_notebook_ran_every_cell_it_should`) **and** add a gallery thumbnail to `docs/tutorials.rst` (Task 8 Step 6), the pattern the repo already uses for `plot_story_trajectories`.
    - *Alternative A:* thumbnails only, leaving the notebooks unexecuted. Cheapest in repo size; but then the *notebook* a reader downloads still shows nothing until they run it.
    - *Alternative B:* execute, but replace each final `HTML(ani.to_jshtml())` with `ani.save('<name>.gif')` + an `Image` display, committing the GIF. The repo already commits gallery GIFs of 9–11 MB (`docs/tutorials/conversation_serial.gif` is 9 466 849 bytes), so this is precedented but heavy.
    - **Needs:** maintainer's repo-size preference. A `jshtml` blob for a 240-frame animation is large; if it turns out to exceed roughly 5 MB per notebook, switch to Alternative B and record the measured sizes.
@@ -3762,4 +3767,4 @@ Flagged rather than invented. Each states the options and the exact change to sw
 
 1. **Task 2 is the largest rewrite and the most dependent** — it consumes eight tasks across two other plans. If MultiIndex T6 (`hue` through a hierarchy) slips, the example still runs but colours by group instead of by price; that is a visible regression, not a crash, so no size or defect-marker gate would catch it. The guard is Task 2 Step 4, which asserts `axes: 2` (a colorbar exists ⇒ a continuous hue survived) and at least two distinct linewidths.
 2. **The accuracy readout is the only unbounded cost in the plan.** It is pinned to a measured budget (210 fits / 7.3 s at `WINDOW=60, N_SCORED=30`), and the measurements at 250 rows (30.7 s) are recorded so a future change to those constants is an informed one.
-3. **Notebook execution is the step most likely to be skipped under time pressure**, and it is exactly the step that keeps the defect from staying published. `test_every_launch_notebook_ships_executed_outputs` makes skipping it a test failure rather than an oversight.
+3. **Notebook execution is the step most likely to be skipped under time pressure**, and it is exactly the step that keeps the defect from staying published. `test_every_launch_notebook_ran_every_cell_it_should` makes skipping it a test failure rather than an oversight.
