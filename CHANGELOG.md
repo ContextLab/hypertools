@@ -101,6 +101,26 @@ items under **Changed** below alter how existing figures LOOK.
   render a different animation than the one asked for. The outcome is not
   negotiable, so the time is.
 
+- **`predict=` now works with `hue=` and `cluster=` on static plots.**
+  Previously a forecast survived regrouping only by accident: the guard was a
+  cardinality check, so two datasets falling into two category runs kept their
+  forecasts while the same data in eight runs lost them silently. A forecast
+  belongs to a DATASET and is anchored at that dataset's last observation, so
+  it is now matched to whichever drawn trace holds that observation -- which
+  is also the trace whose style it inherits.
+
+  This uncovered two further ways a forecast could vanish. Under a continuous
+  `hue=` the overlays were drawn and then **deleted**: the code that swaps
+  data lines for a colour-graded `LineCollection` cleared every line on the
+  axes, forecasts included. And `return_model=True` reported forecasts even
+  when none had been drawn -- data claiming a forecast beside a picture
+  without one. Both fixed; the bundle now always agrees with the figure.
+
+  ANIMATED plots still draw no forecast under `hue=`/`cluster=`, but now say
+  so instead of failing silently. The per-frame schedule maps frame-grid rows
+  onto each dataset's raw observations, and regrouping leaves only per-run
+  traces to reveal.
+
 - **Forecast artists and traces are tagged, so callbacks can find them.**
   `artist._hyp_forecast_role` on matplotlib (`'static'`, `'live'` or
   `'trail'`) and `trace.meta['hyp_forecast_role']` on plotly, with

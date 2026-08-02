@@ -288,3 +288,69 @@ in `hypertools/`, `CHANGELOG.md` or `docs/*.rst`.
 an earlier revision to stop a specific misstatement, caught a new instance of that phrase over a
 month later, in prose written by someone (me) who did not know the rule existed. That is a test
 earning its keep — and the exact opposite of the eight assertions in this plan that could not fail.
+
+---
+
+# Maintainer decisions, and the work that followed (2026-08-02, later)
+
+All four open decisions answered. Two of them turned on evidence that had changed since the plan
+was written, which is the lesson worth keeping.
+
+| decision | outcome |
+|-|-|
+| striding vs. speed | **No striding, ever.** "The critical thing is the outcome, not the speed." |
+| `min_history` | **Dropped** — its premise died with the Kalman fix |
+| serial freeze | **Correct behaviour**, not a bug |
+| `hue=`/`cluster=` | **Support forecasts**, plus parallel styling arguments |
+
+## THREE mechanisms, not one
+
+I twice characterised the forecast drop from artist counts and twice got the mechanism wrong.
+Only tracing it found all three:
+
+| case | mechanism | how it was found |
+|-|-|-|
+| categorical hue, `cluster=` | cardinality gate `len(raw_forecasts) != len(xform)` | reading the code |
+| continuous hue | **artists drawn, then DELETED** by `_apply_multicolor_lines`, which cleared every line on the axes to swap in a `LineCollection` | instrumenting the call — the overlay reported creating 2 artists on a figure that ended with 0 |
+| animated + regrouping | schedule maps grid rows to per-DATASET raw rows; regrouping gives per-RUN traces | **a crash I introduced**, caught by an existing control test |
+
+**Counting artists tells you THAT something is missing, never WHY.** The continuous-hue case looked
+like "no `Line2D` to inherit from" and was actually "created and then destroyed" — a completely
+different fix.
+
+## The control test that earned a year of its keep
+
+`test_hue_regrouping_drops_forecasts_exactly_like_the_static_path` was written during Task 4 as an
+explicit CONTROL: it asserts an ABSENCE, passes before and after, and its own docstring says it is
+"not to demonstrate the feature". Exactly the shape that looks like dead weight.
+
+It caught an `IndexError` I introduced a week later, in unrelated work, by removing the gate it was
+guarding. Without it the crash ships.
+
+Set beside the eight prescribed assertions in this plan that could not fail no matter what the code
+did, the distinction is not "control vs. real test" — it is whether the assertion can DISCRIMINATE.
+A control that pins a real invariant discriminates the moment the invariant breaks. A loop over an
+empty collection never does.
+
+## And I wrote a vacuous test myself, in the same session
+
+`test_the_forecast_starts_where_its_dataset_ends` opened with `for f in fc:` over a possibly-empty
+list — passing when nothing was drawn, which is precisely the state it existed to detect. Written
+by the same person who spent the day auditing others for this. Guarded now.
+
+## Decision 4 status — PARTIAL, deliberately
+
+| | static | animated |
+|-|-|-|
+| categorical hue | drawn, anchored on the owning run | not drawn, WARNS |
+| `cluster=` | drawn | not drawn, WARNS |
+| continuous hue | drawn, coloured from the anchor segment | not drawn, WARNS |
+
+The animated case needs a run-reveal -> dataset-reveal mapping that does not exist. Guessing at it
+produced the crash above. Scoped and named rather than half-built.
+
+## Still open for the maintainer
+
+`forecast_cluster=` needs its operand pinned before the override kwargs can be built: cluster the
+forecast TRAJECTORIES (so a forecast is coloured by where it is predicted to head), or inherit the
+observed data's cluster assignment (which plain inheritance already gives, so it would add nothing).

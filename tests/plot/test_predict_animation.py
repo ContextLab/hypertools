@@ -377,21 +377,39 @@ def test_forecast_artists_are_not_identified_by_linestyle():
     assert len(_forecasts(ax, role='live')) == 3
 
 
-def test_hue_regrouping_drops_forecasts_exactly_like_the_static_path():
-    """plot.py:4552 nulls raw_forecasts when hue=/cluster= regroups xform, so
-    the 1:1 dataset<->forecast correspondence is gone. The animated path
-    inherits that guard verbatim: no forecast is drawn, and nothing crashes.
+def test_hue_regrouping_still_has_no_ANIMATED_forecast_but_says_so():
+    """The static and animated paths NO LONGER agree here, deliberately.
 
-    CONTROL, not coverage: this asserts an ABSENCE, so it passes both before
-    and after this task. It is here to prove the hue guard still holds once
-    live forecasts exist, not to demonstrate the feature."""
+    A static plot now draws forecasts under `hue=`/`cluster=`: each one is
+    anchored on the run holding its dataset's last observation. The animated
+    path cannot do that yet -- its schedule maps frame-grid rows onto each
+    DATASET's raw rows, and regrouping replaces the per-dataset traces with
+    per-RUN ones, so there is no per-dataset reveal to schedule against.
+
+    Building the schedule anyway is not a harmless approximation: it raised
+    `IndexError` partway through the first frame (1 history zipped against 60
+    run lengths). That is how this was found, by this test, after the static
+    fix landed.
+
+    So the contract is: no animated forecast under regrouping, and the user
+    is TOLD. The absence alone is not enough -- silence is what made the
+    original bug invisible."""
     data = _series(n=1, rows=60)
     labels = np.array(['a', 'b'] * 30)
-    fig, ani = hyp.plot(data, '-', predict='Kalman', t=3, hue=labels,
-                        animate=True, duration=2, frame_rate=4, show=False)
+    with pytest.warns(UserWarning, match='ANIMATED'):
+        fig, ani = hyp.plot(data, '-', predict='Kalman', t=3, hue=labels,
+                            animate=True, duration=2, frame_rate=4,
+                            show=False)
     ax = _ax(fig)
-    ani._func(6, *ani._args)
+    ani._func(6, *ani._args)          # must not raise
     assert _forecasts(ax) == []
+
+    # ...and the STATIC plot of the same data DOES draw them, which is the
+    # asymmetry this test exists to pin
+    static = hyp.plot(data, '-', predict='Kalman', t=3, hue=labels,
+                      show=False)
+    assert [ln for ln in static.axes[0].lines
+            if getattr(ln, '_hyp_forecast_role', None) == 'static']
 
 
 def test_bundle_forecasts_are_the_full_history_forecast():

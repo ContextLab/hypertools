@@ -182,7 +182,8 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE):
                 alpha=forecast_alpha(src_line.get_alpha(), alpha_scale))
 
 
-def _draw_forecast_overlays(ax, raw_forecasts, antialias=True):
+def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
+                            owner=None):
     """Overlay one forecast trace per input dataset (GH #169), styled to
     match its source line (`_forecast_style_from`): same colour, linestyle
     and linewidth, at half its alpha.
@@ -212,8 +213,11 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True):
         fc = np.asarray(fc)
         if antialias:
             fc = _interp_static_line(fc)
+        # `owner` maps forecast -> the RUN it continues, when hue=/cluster=
+        # regrouped the traces. Without it, forecast i continues trace i.
+        _src = owner[i] if owner is not None and i < len(owner) else i
         style = _forecast_style_from(
-            src_lines[i] if i < len(src_lines) else None)
+            src_lines[_src] if _src < len(src_lines) else None)
         d = fc.shape[1] if fc.ndim > 1 else 1
         if d >= 3:
             artists.extend(ax.plot(
@@ -2456,7 +2460,22 @@ def plot(
         forecast array per input dataset, in the analyzed/plotted --
         pre-center/scale -- space). Each bundled forecast has exactly `t`
         rows, matching what ``hyp.predict(xform_data, model=..., t=t)``
-        returns. This holds for ANIMATED plots too, and needs no separate
+        returns.
+
+        **With `hue=` or `cluster=`.** These regroup the drawn traces by
+        category rather than by dataset, so there is no longer one trace per
+        dataset. A STATIC plot still draws one forecast per dataset: each is
+        anchored at that dataset's last observation and takes the style of
+        the trace holding it, which is the trace it visually continues. That
+        holds for a categorical `hue=`, a continuous `hue=` (where the
+        colour is taken at the anchor, since the trace has many) and
+        `cluster=`.
+
+        An ANIMATED plot does not, and warns: the per-frame schedule maps
+        frame-grid rows onto each DATASET's raw observations, and regrouping
+        leaves only per-run traces to reveal, with no per-dataset reveal to
+        schedule against. Plot statically to see forecasts alongside
+        `hue=`/`cluster=`. This holds for ANIMATED plots too, and needs no separate
         definition: at the final frame the revealed history *is* the full
         history, so the full-history forecast the bundle carries is exactly
         the one the last frame draws. At every EARLIER frame the drawn
@@ -3629,6 +3648,9 @@ def plot(
     # `hue_group_labels` but never carrying matplotlib's
     # `'_nolegend_'` sentinel -- see `_regroup_categorical_lines`.
     _run_cat_names = None
+    #: Each drawn run's SOURCE dataset index, when `hue=`/`cluster=`
+    #: regrouped the traces. `None` when no regrouping happened.
+    _seg_ds = None
     # (n_input_datasets, n_hue_groups) when a categorical hue regrouped the
     # data by category -- names= (one name per INPUT dataset) cannot apply
     # after that regrouping (F02-009).
@@ -4755,9 +4777,40 @@ def plot(
     # cluster/hue reshaping regrouped `xform` into a different number of
     # traces (by category rather than by dataset), the 1:1 correspondence
     # no longer holds -- skip drawing forecasts rather than mismatch traces.
+    _forecast_owner = None
     if raw_forecasts is not None and len(raw_forecasts) != len(xform):
-        raw_forecasts = None
-        analyze_histories = None
+        # A forecast belongs to a DATASET and is anchored at that dataset's
+        # last observation, so after regrouping it belongs to whichever run
+        # holds that observation -- which is also the trace it visually
+        # continues, and so the trace whose style it should inherit.
+        # `segment_by_run` reports each run's source dataset, so that run is
+        # the LAST one carrying this dataset's index.
+        #
+        # Dropping on a count mismatch (what this did before) made survival
+        # an accident of how the categories happened to fall: 2 datasets
+        # split into 2 runs kept their forecasts, into 8 runs lost them.
+        if _seg_ds is not None and len(_seg_ds) == len(xform):
+            _owner = {}
+            for _run, _ds in enumerate(_seg_ds):
+                _owner[_ds] = _run           # last write wins = final run
+            if set(_owner) == set(range(len(raw_forecasts))):
+                _forecast_owner = [_owner[i]
+                                   for i in range(len(raw_forecasts))]
+        if _forecast_owner is None:
+            # No usable mapping -- e.g. a CONTINUOUS hue, which draws the
+            # data as a LineCollection, so there is no per-dataset trace to
+            # anchor or inherit from at all. Say so: a forecast the user
+            # asked for and did not get must not vanish in silence.
+            warnings.warn(
+                f"predict= was given, but the forecast overlays could not be "
+                f"matched to the {len(xform)} drawn trace(s): hue=/cluster= "
+                f"regrouped the data and left no per-dataset trace to anchor "
+                f"them to. No forecast is drawn. Plot without hue=/cluster=, "
+                f"or use a CATEGORICAL hue (which keeps one trace per run "
+                f"and so keeps its forecasts).",
+                stacklevel=external_stacklevel())
+            raw_forecasts = None
+            analyze_histories = None
 
     # center + scale. When forecasts are drawn, the frame must contain
     # EVERYTHING drawn: compute the center/scale statistics from the FULL
@@ -4781,6 +4834,25 @@ def plot(
     # head samples -- and (b) every frame is a pure lookup, so ani.save() and
     # to_jshtml() replays render identically.
     forecast_schedule = None
+    # The ANIMATED forecast needs one drawn trace per dataset: the schedule
+    # maps frame-grid rows onto each dataset's raw rows, and `hue=`/`cluster=`
+    # regrouping replaces the per-dataset traces with per-RUN ones. The static
+    # overlay copes (it draws once, anchored on the run holding each dataset's
+    # last observation), but a per-frame reveal defined over runs cannot yet
+    # be mapped back onto per-dataset histories -- building the schedule
+    # anyway raises IndexError partway through the first frame, which is how
+    # this was found.
+    if (raw_forecasts is not None and analyze_histories is not None
+            and animate and animate not in ('spin',)
+            and len(analyze_histories) != len(xform)):
+        warnings.warn(
+            f"predict= with an ANIMATED plot needs one drawn trace per "
+            f"dataset, but hue=/cluster= regrouped {len(analyze_histories)} "
+            f"dataset(s) into {len(xform)} trace(s), so no per-frame forecast "
+            f"is drawn. A STATIC plot (no animate=) does draw forecasts "
+            f"here.",
+            stacklevel=external_stacklevel())
+        analyze_histories = None
     if (raw_forecasts is not None and analyze_histories is not None
             and animate and animate not in ('spin',)):
         from .forecast import ForecastSchedule
@@ -5160,7 +5232,8 @@ def plot(
             # full-history forecast on screen from frame 0.
             if raw_forecasts is not None and animate in (False, None, 'spin'):
                 _forecast_artists = _draw_forecast_overlays(
-                    ax, raw_forecasts, antialias=antialias)
+                    ax, raw_forecasts, antialias=antialias,
+                    owner=_forecast_owner)
                 # animate='spin' only rotates the camera around the fully-
                 # drawn static scene, so these overlays rotate with everything
                 # else once they exist -- no per-frame update needed. But they
@@ -6272,8 +6345,25 @@ def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list):
     from matplotlib.collections import LineCollection
     from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
+    # Remove the DATA lines this function replaces -- not every line on the
+    # axes. `predict=` overlays are already drawn by now, and clearing them
+    # here is why a continuous `hue=` silently produced no forecast: the
+    # artists were created and then destroyed a few lines later. They are
+    # tagged precisely so they can be told apart.
+    _kept_forecasts = []
     for line in list(ax.lines):
-        line.remove()
+        if getattr(line, '_hyp_forecast_role', None) is None:
+            line.remove()
+        else:
+            _kept_forecasts.append(line)
+
+    # A continuous hue gives the observed data MANY colours, so "the same
+    # colour as its trace" resolves to the colour where the forecast starts:
+    # the last segment of the trace it continues.
+    for _fi, _fc_line in enumerate(_kept_forecasts):
+        if _fi < len(line_colors) and len(line_colors[_fi]):
+            _anchor_color = line_colors[_fi][-1]
+            _fc_line.set_color(_anchor_color)
 
     is_3d = xform[0].shape[1] >= 3
     for i, (xi, ci) in enumerate(zip(xform, line_colors)):
@@ -6559,8 +6649,11 @@ def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list,
     `fmt` is a single format string carrying a marker character (e.g. the
     'o' of 'o-'), that marker glyph is used for the scatter points
     (F02-004); otherwise the default circle is drawn."""
+    # as in `_apply_multicolor_lines`: replace the DATA artists, keep the
+    # tagged forecast overlays
     for line in list(ax.lines):
-        line.remove()
+        if getattr(line, '_hyp_forecast_role', None) is None:
+            line.remove()
 
     marker = None
     if fmt is not None and not isinstance(fmt, (list, tuple, np.ndarray)):

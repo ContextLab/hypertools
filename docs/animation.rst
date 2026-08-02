@@ -385,6 +385,30 @@ line colour and echoed in ``meta['hyp_forecast_alpha']``).
 a floor proportional to it -- so a retained forecast is never more opaque than
 the live forecast it decays from, however faint the dataset.
 
+``hue=`` and ``cluster=``: static only
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``hue=`` and ``cluster=`` regroup the drawn traces by category rather than by
+dataset, so there is no longer one trace per dataset. A **static** plot copes:
+it draws one forecast per dataset, anchored at that dataset's last
+observation and styled like the trace holding it.
+
+An **animated** plot does not, and warns rather than failing quietly:
+
+.. code-block:: python
+
+    # draws forecasts
+    hyp.plot(data, '-', predict='Kalman', t=10, hue=categories)
+
+    # warns; no per-frame forecast is drawn
+    hyp.plot(data, '-', predict='Kalman', t=10, hue=categories, animate=True)
+
+The reason is structural rather than an oversight. The per-frame schedule
+maps frame-grid rows onto each **dataset's** raw observations, so it needs a
+per-dataset reveal to schedule against; regrouping leaves only per-run traces
+revealing themselves, and a run is not a dataset. Plot statically to see
+forecasts alongside ``hue=``/``cluster=``.
+
 Identifying forecast artists
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
