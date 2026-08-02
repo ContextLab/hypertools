@@ -115,3 +115,55 @@ I used `git stash push <path>` to test whether the warning predated Task 4 — t
 Plan 4 documents as a data-loss hazard and that I removed from Plan 4 two commits earlier.
 Nothing was lost (verified: stash list empty, both hunks present), but the correct command was
 `git show <ref>:<path>`. Writing a rule down is not the same as following it.
+
+
+---
+
+# Tasks 5 and 6 (same day)
+
+## Task 5 — `forecast_trail=` (`90a63a1a`)
+
+11 passed, exactly the plan's predicted count. Full suite **2846 passed, 13 skipped, 0 failed**
+(2835 + 11). Docs build clean at `-W -E -a`. Fan visually verified: at frame 20 a cap of 8 is
+saturated, alphas 0.6 → 0.138 monotonically, all inside the cube.
+
+**Three of the plan's own prescribed tests could not fail without the feature.** Same class as
+Task 4's two vacuous tests, found by the same check (does this assertion discriminate?):
+
+| test | why it passed without the feature | fix |
+|-|-|-|
+| `test_trail_is_capped_by_an_integer` | asserted only `<= 5` / `<= 4`; a plot with NO trail satisfies both | assert the cap is SATURATED (`== 4`, `== 5`) |
+| `test_the_fan_is_a_pure_function_of_the_frame_index` | compared two lists through `zip()`, which iterates zero times when both are empty | require `len(sequential) > 1` first |
+| `test_trail_alpha_decreases_with_age` | `[] == sorted([])` is True; then `min([])` raises a confusing error rather than naming the real problem | require at least two trail artists |
+
+Red state went from 4 failures to 7. **That difference is the measure of what those three tests
+were worth.**
+
+Also fixed a stale docstring block Task 4b missed: the `animate=` entry still said every non-spin
+mode raises `NotImplementedError`. I had updated the `predict :` entry and not that one — the same
+documented-but-not-done shape I have been auditing Plan 4 for. Grep for the claim, not just the fix.
+
+## Task 6 — Plotly parity (delegated)
+
+**Found by asking what `forecast_trail=` does on plotly** (answer: silently nothing) and then
+asking the better question — what does animated `predict=` do on plotly at all:
+
+```
+plotly ANIMATED predict= : traces = 3 | frames = 8
+dashed traces in f.data  : 1
+  frame 0: no dashed trace   frame 4: no dashed trace   frame 7: no dashed trace
+```
+
+One dashed trace exists at build time and **no frame contains one**, so the full-history forecast
+is on screen from frame 0 and never updates. This is the exact defect Task 3 fixed for matplotlib
+("drawing both would put a frozen full-history forecast on screen from frame 0"), still live on
+the other backend. It is worse than drawing nothing: it shows the viewer a prediction made from
+data they have not been shown.
+
+The plan predicted this ("a plotly animation would show a **frozen** full-history overlay"), which
+is a good sign for the plan — but it was written as a parity checklist item, not as a live defect.
+It is a live defect.
+
+Test file extracted and strengthened the same way (two more that could not fail: an in-range check
+whose loop `continue`d past every empty trace, and a parity check satisfied by both backends
+drawing nothing). Red at **17 failed, 1 passed**; delegated with that as the contract.
