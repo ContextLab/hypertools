@@ -54,19 +54,22 @@ def test_trace_layout_data_forecast_trail_cube():
     # 2 data + 2 forecast + 2 trail + 1 cube
     assert len(fig.data) == 7
 
-    dash = [getattr(tr.line, 'dash', None) for tr in fig.data]
+    # forecast traces identify THEMSELVES via meta['hyp_forecast_role'] --
+    # `dash` cannot serve, because since 1.0.1 a forecast INHERITS its
+    # observed trace's dash (here: solid, like the data it continues).
+    role = [(tr.meta or {}).get('hyp_forecast_role') for tr in fig.data]
     x_lens = [len(tr.x) if tr.x is not None else 0 for tr in fig.data]
 
-    # data traces: solid, full-length
-    assert dash[0] == dash[1] == 'solid'
+    # data traces: not forecasts, full-length
+    assert role[0] is role[1] is None
     assert x_lens[0] == x_lens[1] == 30
 
-    # forecast traces: dashed, t+1 points, sandwiched between data and trail
-    assert dash[2] == dash[3] == 'dash'
+    # forecast traces: t+1 points, sandwiched between data and trail
+    assert role[2] == role[3] == 'static'
     assert x_lens[2] == x_lens[3] == 6
 
-    # trail traces: solid, start EMPTY (populated only via frame updates)
-    assert dash[4] == dash[5] == 'solid'
+    # trail traces: not forecasts, start EMPTY (populated via frame updates)
+    assert role[4] is role[5] is None
     assert x_lens[4] == x_lens[5] == 0
 
 

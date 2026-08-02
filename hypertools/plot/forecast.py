@@ -25,6 +25,51 @@ from ..predict.predict import predict as _predict
 #: Fewest observations we will fit a forecaster to.
 DEFAULT_MIN_HISTORY = 2
 
+#: A forecast is drawn at this fraction of its OBSERVED trace's alpha.
+#:
+#: Maintainer decision (1.0.1): a forecast should read as the same series
+#: projected forward, so it inherits its observed trace's identity --
+#: colour, linestyle AND linewidth -- and differs ONLY in transparency.
+#: This deliberately replaces the pre-1.0.1 rule (always ``linestyle='--'``
+#: at a hard-coded ``alpha=0.6`` regardless of how the data was drawn),
+#: under which a forecast of a dotted, hairline or already-translucent
+#: dataset looked like a different series rather than its continuation.
+#:
+#: This constant is the single source of truth for BOTH backends:
+#: `hypertools.plot.plot._forecast_style_from` (matplotlib) and
+#: `hypertools.plot.plotly_backend._forecast_style_from` (plotly) express
+#: the same policy in their own terms, so the two cannot drift.
+FORECAST_ALPHA_SCALE = 0.5
+
+#: `trail_alpha`'s floor, as a FRACTION of the LIVE forecast's alpha.
+#:
+#: Relative, not absolute: an absolute floor on a faint dataset would make
+#: an OLD trail more opaque than the live forecast it decays from (with
+#: `alpha=0.05` the live forecast is 0.025, well under the old absolute
+#: 0.08 floor). 0.16 of the default live alpha (0.5) is 0.08 -- the same
+#: floor the absolute constant gave for a fully-opaque dataset.
+TRAIL_FLOOR_FRACTION = 0.16
+
+
+def forecast_alpha(observed_alpha, alpha_scale=FORECAST_ALPHA_SCALE):
+    """The alpha to draw a forecast at, given its observed trace's alpha.
+
+    Parameters
+    ----------
+    observed_alpha : float or None
+        The observed trace's alpha. ``None`` is matplotlib's "no alpha set",
+        i.e. fully opaque, and counts as 1.0 (so the default forecast alpha
+        is `alpha_scale` itself).
+    alpha_scale : float, default `FORECAST_ALPHA_SCALE`
+        Fraction of the observed alpha to draw the forecast at.
+
+    Returns
+    -------
+    float
+    """
+    base = 1.0 if observed_alpha is None else float(observed_alpha)
+    return base * float(alpha_scale)
+
 
 def forecast_from_history(history, model, t, min_history=DEFAULT_MIN_HISTORY):
     """Forecast `t` steps on from `history`, as a displacement path.
@@ -294,15 +339,43 @@ def trail_frames(frame, n_retained, stride=1):
     return out
 
 
-def trail_alpha(age, n_retained, live_alpha=0.6, floor=0.08):
+def trail_alpha(age, n_retained, live_alpha=None, floor=None):
     """Alpha for a forecast `age` frames old. Age 0 is the live forecast.
 
-    `live_alpha` matches the static overlay's 0.6, so a paused animation
-    looks like a static plot. The result never reaches 0 -- an unwritten
-    artist is hidden with EMPTY data instead, because alpha cannot express
-    "nothing here" and a floor of 0 would make a stale artist and an empty
-    one indistinguishable.
+    Parameters
+    ----------
+    age : int
+        Frames since the forecast was live. ``0`` IS the live forecast.
+    n_retained : int
+        Depth of the fan (`forecast_trail=`).
+    live_alpha : float, optional
+        Alpha of the LIVE forecast this fan decays from -- i.e.
+        ``forecast_alpha(observed_alpha)``, NOT the observed alpha itself.
+        Defaults to `FORECAST_ALPHA_SCALE` (the live alpha of a fully-opaque
+        dataset), so a paused animation of default-styled data looks exactly
+        like the static plot.
+    floor : float, optional
+        Absolute alpha the fan decays down to. Defaults to
+        ``TRAIL_FLOOR_FRACTION * live_alpha`` -- RELATIVE to the live alpha,
+        so a trail can never come out more opaque than the live forecast it
+        decays from (which an absolute floor would do on a faint dataset).
+
+    Returns
+    -------
+    float
+
+    Notes
+    -----
+    The result never reaches 0 -- an unwritten artist is hidden with EMPTY
+    data instead, because alpha cannot express "nothing here" and a floor of
+    0 would make a stale artist and an empty one indistinguishable.
     """
+    if live_alpha is None:
+        live_alpha = FORECAST_ALPHA_SCALE
+    live_alpha = float(live_alpha)
+    if floor is None:
+        floor = TRAIL_FLOOR_FRACTION * live_alpha
+    floor = min(float(floor), live_alpha)
     if age <= 0:
         return live_alpha
     decay = 1.0 - (age / max(1, int(n_retained) + 1))

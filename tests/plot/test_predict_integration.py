@@ -17,16 +17,50 @@ def _walk(seed, n=30, d=3, offset=0.0):
     return np.cumsum(rng.standard_normal((n, d)), axis=0) + offset
 
 
+def _forecasts(ax, role=None):
+    """Forecast artists identify THEMSELVES via `_hyp_forecast_role`.
+
+    Linestyle is NOT a discriminator: since 1.0.1 a forecast INHERITS its
+    observed trace's linestyle (so a solid dataset's forecast is solid), and
+    user data drawn with fmt='--' was always dashed too. See docs/animation.rst
+    ("Identifying forecast artists").
+    """
+    out = [ln for ln in ax.lines
+           if getattr(ln, '_hyp_forecast_role', None) is not None]
+    if role is not None:
+        out = [ln for ln in out if ln._hyp_forecast_role == role]
+    return out
+
+
+def _plotly_forecasts(fig, role=None):
+    """The plotly twin of `_forecasts` -- `meta['hyp_forecast_role']`."""
+    out = [tr for tr in fig.data
+           if (tr.meta or {}).get('hyp_forecast_role') is not None]
+    if role is not None:
+        out = [tr for tr in out
+               if (tr.meta or {})['hyp_forecast_role'] == role]
+    return out
+
+
+def _plotly_alpha(trace):
+    """The alpha baked into a plotly trace's ``rgba(...)`` line colour."""
+    return float(trace.line.color.rsplit(',', 1)[1].rstrip(') '))
+
+
 def _legend_labels(fig):
     lg = fig.axes[0].get_legend()
     assert lg is not None, 'no legend was drawn'
     return [t.get_text() for t in lg.get_texts()]
 
 
-# --- matplotlib: artist count, dash/alpha/color, legend, forecast length ---
+# --- matplotlib: artist count, style/alpha/color, legend, forecast length ---
 
 @pytest.mark.parametrize('ndims', [2, 3])
-def test_predict_adds_one_dashed_forecast_per_dataset(ndims):
+def test_predict_adds_one_forecast_per_dataset_styled_like_its_source(ndims):
+    """A forecast is the same series projected forward, so it inherits its
+    observed trace's colour, linestyle AND linewidth, differing only in
+    transparency (observed * 0.5). Replaces the pre-1.0.1 contract, under
+    which every forecast was dashed at a hard-coded alpha=0.6."""
     a = _walk(1, d=max(ndims, 2))
     b = _walk(2, d=max(ndims, 2), offset=5.0)
     t = 15
@@ -38,9 +72,13 @@ def test_predict_adds_one_dashed_forecast_per_dataset(ndims):
     assert len(ax.lines) == 2 * len([a, b])
 
     src_lines, fc_lines = ax.lines[:2], ax.lines[2:]
+    assert fc_lines == _forecasts(ax, role='static')
     for src, fc in zip(src_lines, fc_lines):
-        assert fc.get_linestyle() == '--'
-        assert fc.get_alpha() == pytest.approx(0.6)
+        assert fc.get_linestyle() == src.get_linestyle()
+        assert fc.get_linewidth() == pytest.approx(src.get_linewidth())
+        # observed alpha is unset (matplotlib's "opaque", i.e. 1.0) -> 0.5
+        assert src.get_alpha() is None
+        assert fc.get_alpha() == pytest.approx(0.5)
         assert fc.get_color() == src.get_color()
         assert fc.get_label() == '_nolegend_'
         # the forecast is drawn SMOOTHED like any line (PCHIP-densified well
@@ -53,15 +91,15 @@ def test_predict_adds_one_dashed_forecast_per_dataset(ndims):
 
 
 def test_predict_forecast_drawn_smoothed_not_straight_segments():
-    """A very short forecast is drawn as a SMOOTH (PCHIP-densified) dashed
-    curve, not a handful of straight segments -- the same auto-smoothing any
+    """A very short forecast is drawn as a SMOOTH (PCHIP-densified) curve,
+    not a handful of straight segments -- the same auto-smoothing any
     static line gets -- while the RETURNED forecast still has exactly t rows
     (only the DRAWN trace is densified)."""
     a = _walk(11)
     t = 4  # raw drawn trace would be only t + 1 = 5 vertices without smoothing
     bundle = hyp.plot(a, predict='Kalman', t=t, show=False, return_model=True)
     ax = bundle['fig'].axes[0]
-    fc = [l for l in ax.lines if l.get_linestyle() == '--'][0]
+    fc = _forecasts(ax, role='static')[0]
     plt.close(bundle['fig'])
     # densified far beyond the raw 5 vertices (matches the static-line target)
     assert len(fc.get_xdata()) >= 100
@@ -182,9 +220,9 @@ def test_morph_animate_and_predict_raises_not_implemented(mode):
                  morph_samples=120, duration=1, frame_rate=2, show=False)
 
 
-def test_predict_with_spin_renders_dashed_forecast_overlay(tmp_path):
+def test_predict_with_spin_renders_static_forecast_overlay(tmp_path):
     # animate='spin' only rotates the camera around the STATIC scene, so the
-    # fixed dashed forecast overlay is coherent: it is drawn once and rotates
+    # fixed forecast overlay is coherent: it is drawn once and rotates
     # with everything else (GH #169 follow-up).
     a = _walk(9)
     b = _walk(10, offset=1.0)
@@ -193,11 +231,11 @@ def test_predict_with_spin_renders_dashed_forecast_overlay(tmp_path):
                         rotations=1, duration=1, frame_rate=5, show=False)
     ax = fig.axes[0]
 
-    # one dashed forecast overlay per dataset, same styling as the static path
-    fc_lines = [l for l in ax.lines if l.get_linestyle() == '--']
+    # one forecast overlay per dataset, same styling as the static path
+    fc_lines = _forecasts(ax, role='static')
     assert len(fc_lines) == len([a, b])
     for fc in fc_lines:
-        assert fc.get_alpha() == pytest.approx(0.6)
+        assert fc.get_alpha() == pytest.approx(0.5)
         assert fc.get_label() == '_nolegend_'
         assert len(fc.get_xdata()) > t + 1  # smoothed (densified) beyond raw t+1
         # unclipped like the other 3-D line artists, so a rotated camera
@@ -227,7 +265,7 @@ def test_predict_with_spin_return_model_bundle_carries_forecasts():
     plt.close(bundle['fig'])
 
 
-# --- plotly backend parity: trace count / dash / showlegend ---------------
+# --- plotly backend parity: trace count / style / showlegend --------------
 
 def test_plotly_predict_trace_parity():
     pytest.importorskip('plotly')
@@ -240,9 +278,14 @@ def test_plotly_predict_trace_parity():
 
     # 2D plot: 2 data traces + 2 forecast traces, no wireframe cube (3D only)
     assert len(fig.data) == 4
-    fc_traces = fig.data[2:4]
-    for tr in fc_traces:
-        assert tr.line.dash == 'dash'
+    src_traces, fc_traces = fig.data[:2], fig.data[2:4]
+    assert list(fc_traces) == _plotly_forecasts(fig, role='static')
+    for src, tr in zip(src_traces, fc_traces):
+        # inherits the observed trace's dash and width, half its opacity
+        assert tr.line.dash == src.line.dash
+        assert tr.line.width == pytest.approx(src.line.width)
+        assert _plotly_alpha(tr) == pytest.approx(0.5 * _plotly_alpha(src))
+        assert tr.meta['hyp_forecast_alpha'] == pytest.approx(0.5)
         assert tr.showlegend is False
 
 

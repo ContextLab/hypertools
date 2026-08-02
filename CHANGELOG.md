@@ -2,7 +2,8 @@
 
 ## 1.0.1 (unreleased)
 
-Small, additive plotting features and fixes (fully backward-compatible).
+Small, additive plotting features and fixes. Public APIs are unchanged; two
+items under **Changed** below alter how existing figures LOOK.
 
 ### New features
 
@@ -42,13 +43,13 @@ Small, additive plotting features and fixes (fully backward-compatible).
   now match frame for frame.
 
 - **`predict=` now works with `animate='spin'`.** A spinning 3-D plot can
-  carry its `predict=` forecast overlay -- the dashed, low-opacity forecast
-  trace(s) are drawn once and rotate with the scene.
+  carry its `predict=` forecast overlay -- the forecast trace(s) are drawn
+  once and rotate with the scene.
 
 - **`predict=` now works with the time-progressing animations too**
   (`animate=True`/`'parallel'`/`'serial'`/`'window'`). The forecast is
   recomputed from the history revealed so far and re-anchored on the last
-  revealed observation, so the dashed trace grows with the animation instead
+  revealed observation, so the forecast trace grows with the animation instead
   of standing still. Because the data is static -- all of it known before the
   first frame, merely revealed over time -- every forecast the animation will
   ever draw is computed up front. Two things follow: the whole fan is folded
@@ -67,8 +68,9 @@ Small, additive plotting features and fixes (fully backward-compatible).
 - **`forecast_trail=`: keep earlier forecasts on screen as a fading fan.** The
   forecast analogue of `chemtrails=`. With `predict=` and a time-progressing
   animation, `forecast_trail=True` retains the last 16 forecasts (an int sets
-  the cap), each in its dataset's colour and dashed like the live one, at an
-  alpha that decays with age to a floor of 0.08. What it shows is how the
+  the cap), each in its dataset's style, exactly like the live one, at an
+  alpha that decays with age from that dataset's live forecast alpha down to
+  a floor proportional to it. What it shows is how the
   prediction *changed* as history accumulated -- a forecast that keeps
   revising points somewhere different from one that settles.
 
@@ -143,6 +145,38 @@ Small, additive plotting features and fixes (fully backward-compatible).
   always wins, and below the threshold `simplify` does nothing at all.
 
 ### Changed
+
+- **`predict=` forecast overlays now inherit the style of the observed trace
+  they continue.** A forecast reads as the *same series projected forward*,
+  so it takes that trace's **colour, linestyle and linewidth**, and differs
+  only in transparency: `forecast_alpha = observed_alpha * 0.5` (an unset
+  `alpha=` is matplotlib's opaque 1.0, so the default forecast alpha is
+  `0.5`). Per-dataset styling carries through dataset by dataset --
+  `alpha=[1.0, 0.4]` gives forecasts at `[0.5, 0.2]`, and a dotted dataset
+  gets a dotted forecast.
+
+  This is a **visible change to existing forecast figures**, and it
+  deliberately replaces the previous rule: every forecast used to be drawn
+  `linestyle='--'` at a hard-coded `alpha=0.6` whatever its data looked
+  like, so a forecast of a dotted, hairline or already-translucent dataset
+  read as a *different* series rather than as its continuation. Both
+  backends apply the identical policy (one shared constant,
+  `hypertools.plot.forecast.FORECAST_ALPHA_SCALE`), so matplotlib and plotly
+  cannot drift.
+
+  `forecast_trail=` now fades from **that dataset's** live forecast alpha,
+  down to a floor proportional to it rather than a fixed `0.08` — so a
+  retained forecast can never come out *more* opaque than the live forecast
+  it decays from, however faint the dataset. Depth, decay shape and the
+  frame-index-derived (non-accumulating) fan are unchanged.
+
+  Code that located forecast artists by their dashed linestyle must switch
+  to the role tags, which exist for exactly this and are unchanged:
+  `artist._hyp_forecast_role` (`'static'`/`'live'`/`'trail'`, plus
+  `_hyp_forecast_age` on trails) on matplotlib, and
+  `trace.meta['hyp_forecast_role']` / `hyp_forecast_age` /
+  `hyp_forecast_alpha` on plotly. See "Identifying forecast artists" in
+  `docs/animation.rst`.
 
 - **Animated continuous-hue line plots with no explicit `linewidth=` now
   render at `1.0` instead of `1.5`.** This is a **visible change to

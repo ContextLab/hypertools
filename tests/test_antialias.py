@@ -235,8 +235,11 @@ def test_predict_forecast_overlay_is_antialiased_and_toggleable():
     off = hyp.plot(data, predict='Kalman', t=t, antialias=False, show=False)
 
     def fc_len(fig):
+        # forecast artists identify THEMSELVES (`_hyp_forecast_role`);
+        # linestyle is not a discriminator -- since 1.0.1 a forecast inherits
+        # its observed trace's linestyle, so it is solid here.
         fc = [l for l in fig.axes[0].get_lines()
-              if l.get_linestyle() == '--']
+              if getattr(l, '_hyp_forecast_role', None) == 'static']
         assert fc, 'no forecast overlay drawn'
         return len(fc[0].get_xdata())
 

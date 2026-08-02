@@ -308,7 +308,7 @@ Forecasting during an animation
 ``predict=`` works with the time-progressing animation styles
 (``animate=True``, ``'parallel'``, ``'serial'``, ``'window'``) on **both**
 backends. The forecast is recomputed from the history revealed so far and
-re-anchored on the last revealed observation, so the dashed trace grows with
+re-anchored on the last revealed observation, so the forecast trace grows with
 the animation instead of standing still:
 
 .. code-block:: python
@@ -357,11 +357,41 @@ in a buffer, so it depends only on which frame is being drawn -- a saved
 animation and an interactively-played one are identical, and asking for
 frames out of order (which ``save()`` does) gives the same picture.
 
+How a forecast is styled
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+A forecast is the *same series projected forward*, so it inherits the identity
+of the observed trace it continues -- the same **colour**, **linestyle** and
+**linewidth** -- and differs only in transparency:
+
+.. code-block:: text
+
+    forecast_alpha = observed_alpha * 0.5
+
+An observed line with no ``alpha=`` set is matplotlib's *opaque*, i.e. 1.0, so
+the default forecast alpha is 0.5. Per-dataset styling carries through
+dataset by dataset: ``alpha=[1.0, 0.4]`` gives forecasts at ``[0.5, 0.2]``, and
+a dotted dataset gets a dotted forecast. Both backends apply the identical
+rule (on plotly, colour/width/dash with the alpha baked into the ``rgba(...)``
+line colour and echoed in ``meta['hyp_forecast_alpha']``).
+
+.. versionchanged:: 1.0.1
+   Before 1.0.1 every forecast was drawn ``linestyle='--'`` at a hard-coded
+   ``alpha=0.6``, whatever its data looked like -- so a forecast of a dotted,
+   hairline or already-translucent dataset read as a *different* series rather
+   than as its continuation.
+
+``forecast_trail=`` fades from **that** dataset's live forecast alpha, down to
+a floor proportional to it -- so a retained forecast is never more opaque than
+the live forecast it decays from, however faint the dataset.
+
 Identifying forecast artists
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Forecast artists carry an explicit tag, so a per-frame callback can find them
-without guessing from linestyle -- ``artist._hyp_forecast_role`` on matplotlib
+without guessing from linestyle (which, since a forecast now inherits its
+trace's linestyle, no longer distinguishes them at all) --
+``artist._hyp_forecast_role`` on matplotlib
 (``'static'``, ``'live'`` or ``'trail'``) and ``trace.meta['hyp_forecast_role']``
 on plotly. Trail artists additionally carry ``_hyp_forecast_age``.
 

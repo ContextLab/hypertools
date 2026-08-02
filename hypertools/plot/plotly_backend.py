@@ -642,15 +642,16 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     one per dataset in `data` (same length, same coordinate space -- already
     center/scale-matched to `data` by the caller), each starting with the
     dataset's final observed row so the trace connects. Rendered as one
-    dashed (`dash='dash'`), 0.6-opacity, `showlegend=False` trace per
-    dataset, in the SAME color as its source trace.
+    `showlegend=False` trace per dataset, styled to match its source trace
+    (`_forecast_style_from`): the SAME colour, width and dash, at half its
+    opacity.
 
     `forecast_schedule`/`forecast_trail` (predict= during a TIME-PROGRESSING
     animation, 1.1): a frozen full-history overlay would show a prediction
     made from data the viewer has not been revealed yet, so when a schedule
     is given the static `forecasts` block above is skipped entirely (the same
     gate `plot.py` applies to the matplotlib overlay) and this function
-    creates one EMPTY dashed `live` trace per dataset -- plus `forecast_trail`
+    creates one EMPTY `live` trace per dataset -- plus `forecast_trail`
     fading `trail` traces per dataset, newest-first, exactly like matplotlib's
     preallocated trail artists -- which `_add_animation` then rewrites every
     frame from the schedule. Every one of them carries
@@ -947,8 +948,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
     n_data_traces = len(traces) - n_surface_traces_2d - n_density_traces_2d
 
-    # predict=: one dashed, low-opacity forecast trace per dataset, in the
-    # same color as its source trace (GH #169; matplotlib parity).
+    # predict=: one forecast trace per dataset, styled to match its source
+    # trace -- same colour, width and dash, at half its opacity
+    # (`_forecast_style_from`; GH #169, matplotlib parity).
     # `forecast_trace_start`/`forecast_trace_specs` do for these traces what
     # `trail_trace_start`/`trail_dataset_indices` (just below) do for the
     # chemtrail traces: record the block's REAL position in `traces` and what
@@ -961,20 +963,18 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         for i, arr in enumerate(data):
             tkwargs = kwargs_list[i] or {}
             fc = np.atleast_2d(np.asarray(forecasts[i], dtype=np.float64))
-            color = _to_plotly_color(tkwargs.get('color'), 0.6)
-            width = float(tkwargs.get('linewidth')
-                          or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
+            fc_line, fc_alpha = _forecast_style_from(tkwargs, fmt[i])
             fc_common = dict(mode='lines', showlegend=False,
                              hoverinfo='skip',
-                             line=dict(color=color, width=width, dash='dash'),
+                             line=fc_line,
                              meta=dict(hyp_forecast_role='static',
                                        hyp_dataset=i, hyp_forecast_age=0,
-                                       hyp_forecast_alpha=0.6))
+                                       hyp_forecast_alpha=fc_alpha))
             # antialias=: a forecast trace is always a LINE, so smooth it the
             # same way as any other line (matching `plot._draw_forecast_
             # overlays`, which does exactly this on the matplotlib side) --
             # a short forecast (e.g. t+1 = 5 vertices) then draws as a smooth
-            # dashed curve rather than a few straight segments. The seam-
+            # curve rather than a few straight segments. The seam-
             # prepended first point and the final point stay exact, so it
             # still joins the trajectory.
             fc_draw, fc_step = (antialias_line(fc) if antialias else (fc, 1))
@@ -1000,23 +1000,25 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         # "nothing to draw here yet" is said, exactly as on the matplotlib
         # side: `trail_alpha` never returns 0, so a stale trace and an
         # unwritten one would otherwise be indistinguishable.
-        from .forecast import trail_alpha
+        from .forecast import forecast_alpha, trail_alpha
         n_retained = int(forecast_trail or 0)
         for i in range(len(data)):
             tkwargs = kwargs_list[i] or {}
-            width = float(tkwargs.get('linewidth')
-                          or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
+            # the LIVE forecast's alpha for this dataset -- the fan decays
+            # from THIS, not from a fixed value, so a trail can never be more
+            # opaque than the live forecast it fades from (matplotlib parity)
+            live_alpha = forecast_alpha(tkwargs.get('alpha'))
             # trails FIRST, so the live forecast draws on top of its own fan
             # rather than under it (matplotlib parity)
             for age in list(range(1, n_retained + 1)) + [0]:
                 # the declared alpha and the one baked into the rgba string
                 # are the SAME float, so a reader of `meta` can trust it
-                alpha = trail_alpha(age, n_retained)
+                alpha = trail_alpha(age, n_retained, live_alpha=live_alpha)
+                fc_line, alpha = _forecast_style_from(tkwargs, fmt[i],
+                                                      alpha=alpha)
                 fc_common = dict(
                     mode='lines', showlegend=False, hoverinfo='skip',
-                    line=dict(color=_to_plotly_color(tkwargs.get('color'),
-                                                     alpha),
-                              width=width, dash='dash'),
+                    line=fc_line,
                     meta=dict(
                         hyp_forecast_role='live' if age == 0 else 'trail',
                         hyp_dataset=i, hyp_forecast_age=age,
@@ -2485,6 +2487,47 @@ def _resolve_fmt(fmt_str, tkwargs):
     else:
         mode = 'lines'
     return mode, symbol, dash, marker_char
+
+
+def _forecast_style_from(tkwargs, fmt_str, alpha=None):
+    """Style a forecast trace to match the observed trace it continues.
+
+    The plotly twin of `hypertools.plot.plot._forecast_style_from`, sharing
+    its policy constant (`forecast.FORECAST_ALPHA_SCALE`) so the two backends
+    cannot drift: colour, line WIDTH and DASH are inherited verbatim from the
+    observed trace, and only the opacity changes -- ``observed_alpha *
+    FORECAST_ALPHA_SCALE``, with an unset alpha counting as fully opaque.
+    The dash comes from the same `_resolve_fmt` call the observed trace is
+    built with, so a solid dataset yields a solid forecast and a dotted one a
+    dotted forecast (pre-1.0.1 every forecast was ``dash='dash'`` at a
+    hard-coded 0.6 opacity, regardless of how the data was drawn).
+
+    Parameters
+    ----------
+    tkwargs : dict
+        This dataset's resolved per-trace kwargs (`kwargs_list[i]`).
+    fmt_str : str or None
+        This dataset's fmt (`fmt[i]`), the same value the observed trace's
+        `_resolve_fmt` gets.
+    alpha : float, optional
+        Override the computed alpha -- used by the animated TRAIL traces,
+        whose alpha is `forecast.trail_alpha` of the live one.
+
+    Returns
+    -------
+    (dict, float)
+        A trace ``line=`` dict, and the alpha baked into its rgba colour --
+        the SAME float callers record in ``meta['hyp_forecast_alpha']``, so a
+        reader of `meta` can trust it.
+    """
+    from .forecast import forecast_alpha
+    _mode, _symbol, dash, _marker_char = _resolve_fmt(fmt_str, tkwargs)
+    if alpha is None:
+        alpha = forecast_alpha(tkwargs.get('alpha'))
+    width = float(tkwargs.get('linewidth') or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
+    line = dict(color=_to_plotly_color(tkwargs.get('color'), alpha),
+                width=width, dash=dash)
+    return line, alpha
 
 
 def _marker_size_px(markersize_pt, marker_char, ndims=2):

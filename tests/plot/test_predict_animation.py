@@ -53,10 +53,12 @@ def test_spin_still_draws_the_static_overlay():
                         duration=2, frame_rate=4, show=False)
     ax = _ax(fig)
     static = _forecasts(ax, role='static')
+    solid = _solid(ax)
     assert len(static) == 3
-    for fc in static:
-        assert fc.get_linestyle() == '--'
-        assert fc.get_alpha() == pytest.approx(0.6)
+    for fc, src in zip(static, solid):
+        # 1.0.1: inherits the observed trace's style, at half its alpha
+        assert fc.get_linestyle() == src.get_linestyle()
+        assert fc.get_alpha() == pytest.approx(0.5)
         assert fc.get_label() == '_nolegend_'
         assert fc.get_clip_on() is False
     ani._func(1, *ani._args)

@@ -33,6 +33,7 @@ from .trails import broadcast_trail_flag
 from .multiindex import expand_multiindex, build_multiindex_styles
 from .morph import resolve_morph_rotations
 from .fonts import resolve_font, sans_serif_stack
+from .forecast import FORECAST_ALPHA_SCALE, forecast_alpha
 
 
 # GH #206: the subset of mpl_kwargs keys `plotly_backend.plotly_draw` (and
@@ -134,9 +135,57 @@ def _fmt_draws_line(fmt):
     return has_line_component(fmt)
 
 
+def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE):
+    """Style a forecast to match the observed trace it continues.
+
+    A forecast is the SAME series projected forward, so it inherits its
+    observed trace's identity -- colour, linestyle and linewidth -- and
+    differs only in transparency: ``alpha = observed_alpha * alpha_scale``
+    (an unset alpha is matplotlib's "opaque", i.e. 1.0). See
+    `hypertools.plot.forecast.FORECAST_ALPHA_SCALE` for why, and for the
+    pre-1.0.1 always-dashed/always-0.6 rule this replaced.
+
+    This is the ONE place matplotlib forecast styling is decided: the static
+    overlay (`_draw_forecast_overlays`, which also serves ``animate='spin'``)
+    and the per-frame live/trail artists all call it, so no two of them can
+    drift apart. `plotly_backend._forecast_style_from` is its plotly twin
+    (same policy, plotly's colour/width/dash/opacity vocabulary).
+
+    Parameters
+    ----------
+    src_line : matplotlib.lines.Line2D or None
+        The observed trace being continued. ``None`` (fewer drawn lines than
+        datasets -- the same defensive case the call sites already guarded)
+        falls back to matplotlib's own defaults, letting the colour cycle.
+    alpha_scale : float, default `FORECAST_ALPHA_SCALE`
+
+    Returns
+    -------
+    dict
+        ``color``/``linestyle``/``linewidth``/``alpha`` kwargs for `ax.plot`.
+    """
+    if src_line is None:
+        return dict(color=None, linestyle='-',
+                    linewidth=plt.rcParams['lines.linewidth'],
+                    alpha=forecast_alpha(None, alpha_scale))
+    linestyle = src_line.get_linestyle()
+    if linestyle in ('None', 'none', ' ', '', None):
+        # a MARKER-ONLY observed trace has no linestyle to inherit, and
+        # `linestyle='None'` would draw the forecast as nothing at all. A
+        # forecast is always a line, so fall back to solid -- which is also
+        # what plotly's `_resolve_fmt` yields for a marker-only fmt, keeping
+        # the two backends identical in this corner too.
+        linestyle = '-'
+    return dict(color=src_line.get_color(),
+                linestyle=linestyle,
+                linewidth=src_line.get_linewidth(),
+                alpha=forecast_alpha(src_line.get_alpha(), alpha_scale))
+
+
 def _draw_forecast_overlays(ax, raw_forecasts, antialias=True):
-    """Overlay one dashed, low-opacity (alpha 0.6) forecast trace per input
-    dataset (GH #169), in the SAME color as its source line.
+    """Overlay one forecast trace per input dataset (GH #169), styled to
+    match its source line (`_forecast_style_from`): same colour, linestyle
+    and linewidth, at half its alpha.
 
     Called AFTER `_draw` has already built the legend (from the original data
     lines only), so these traces never gain a legend entry;
@@ -157,26 +206,23 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True):
     for i, fc in enumerate(raw_forecasts):
         # antialias (see `plot`'s `antialias=`): smooth the forecast the SAME
         # way as any other line, so a short forecast (e.g. t+1 = 5 vertices)
-        # draws as a smooth dashed curve rather than a few straight segments
-        # (the seam-prepended first point and the final point stay exact, so
-        # it still joins the trajectory).
+        # draws as a smooth curve rather than a few straight segments (the
+        # seam-prepended first point and the final point stay exact, so it
+        # still joins the trajectory).
         fc = np.asarray(fc)
         if antialias:
             fc = _interp_static_line(fc)
-        fc_color = src_lines[i].get_color() if i < len(src_lines) else None
+        style = _forecast_style_from(
+            src_lines[i] if i < len(src_lines) else None)
         d = fc.shape[1] if fc.ndim > 1 else 1
         if d >= 3:
             artists.extend(ax.plot(
-                fc[:, 0], fc[:, 1], fc[:, 2], linestyle='--',
-                color=fc_color, alpha=0.6, label='_nolegend_'))
+                fc[:, 0], fc[:, 1], fc[:, 2], label='_nolegend_', **style))
         elif d == 2:
             artists.extend(ax.plot(
-                fc[:, 0], fc[:, 1], linestyle='--',
-                color=fc_color, alpha=0.6, label='_nolegend_'))
+                fc[:, 0], fc[:, 1], label='_nolegend_', **style))
         else:
-            artists.extend(ax.plot(
-                fc[:, 0], linestyle='--', color=fc_color,
-                alpha=0.6, label='_nolegend_'))
+            artists.extend(ax.plot(fc[:, 0], label='_nolegend_', **style))
     # role tag (see hypertools/plot/forecast.py): forecast artists must be
     # identifiable WITHOUT guessing from linestyle -- user data drawn with
     # fmt='--' is dashed too, and trail artists also carry '_nolegend_'.
@@ -1057,6 +1103,11 @@ def plot(
         warning in this case, not validated against and raised on --
         whether ``alpha=`` will be used is decided before it is checked.
 
+        A `predict=` forecast overlay is drawn at HALF its dataset's alpha
+        (``alpha=[1.0, 0.4]`` gives forecasts at ``[0.5, 0.2]``); an unset
+        alpha counts as opaque, so the default forecast alpha is 0.5. See
+        `predict` below.
+
     color(s) : str or list of str
         A list of colors
 
@@ -1535,14 +1586,22 @@ def plot(
         post normalize/reduce/align space) using the specified
         `hypertools.predict` model, e.g. 'Kalman', 'ARIMA', 'GaussianProcess'
         (see `hypertools.predict.predict` for accepted forms), and overlays
-        one dashed, low-opacity (alpha 0.6) forecast trace per dataset in the
-        SAME color as its source line (no separate legend entry). The
-        drawn overlay prepends the last observed row so the dashed trace
-        connects to the trajectory (`t + 1` drawn vertices); the forecast
+        one forecast trace per dataset (no separate legend entry). A forecast
+        is the SAME series projected forward, so it INHERITS the style of the
+        observed trace it continues -- same color, same linestyle, same
+        linewidth -- and differs only in transparency: ``forecast_alpha =
+        observed_alpha * 0.5`` (an unset `alpha` is matplotlib's opaque 1.0,
+        so the default is 0.5). Per-dataset styling carries through dataset
+        by dataset, e.g. ``alpha=[1.0, 0.4]`` gives forecasts at
+        ``[0.5, 0.2]``, and a dotted dataset gets a dotted forecast. Both
+        backends apply the identical rule. (Before 1.0.1 every forecast was
+        drawn dashed at a hard-coded alpha of 0.6 regardless of how its data
+        was drawn.) The drawn overlay prepends the last observed row so the
+        trace connects to the trajectory (`t + 1` drawn vertices); the forecast
         DATA itself -- e.g. in the ``return_model=True`` bundle -- has
         exactly `t` rows, matching `hyp.predict`. Supported for STATIC plots,
         for ``animate='spin'`` (which only rotates the camera around the
-        static forecast overlay, so the dashed trace simply rotates with the
+        static forecast overlay, so the trace simply rotates with the
         rest of the scene), and for the TIME-PROGRESSING animate modes
         (``True``/``'parallel'``/``'serial'``/``'window'``), where the
         forecast is recomputed from the history revealed so far and
@@ -1718,7 +1777,7 @@ def plot(
 
         `predict=` (forecast overlays; see below) is compatible with
         `animate='spin'` (which renders a STATIC scene and merely rotates the
-        camera, so the fixed dashed overlay is drawn once and rotates along
+        camera, so the fixed forecast overlay is drawn once and rotates along
         with everything else) AND with the time-progressing modes
         (`True`/`'parallel'`/`'serial'`/`'window'`), where the forecast is
         recomputed from the history revealed so far and re-anchored on the
@@ -1843,9 +1902,12 @@ def plot(
         analogue of `chemtrails` (default: False). Requires `predict=`;
         without it, `ValueError`. `True` retains 16 past forecasts; an int
         sets the cap (must be >= 1). Each retained forecast is drawn in its
-        dataset's colour, dashed like the live one, at an alpha that decays
-        with age down to a floor of 0.08, so a viewer can see how the
-        prediction CHANGED as history accumulated.
+        dataset's style, exactly like the live one, at an alpha that decays
+        with age from THAT dataset's live forecast alpha down to a floor
+        proportional to it -- so a retained forecast is never more opaque
+        than the live forecast it fades from, however faint the dataset.
+        A viewer can then see how the prediction CHANGED as history
+        accumulated.
 
         The fan is recomputed from the frame index rather than accumulated
         in a buffer, so it depends only on which frame is being drawn: a
@@ -2383,7 +2445,7 @@ def plot(
         deliberately different -- the bundle is the end state, not a
         per-frame record.
 
-        The DRAWN dashed overlay is not vertex-for-vertex the bundled
+        The DRAWN overlay is not vertex-for-vertex the bundled
         array: it prepends the last observed row as a connector (`t + 1`
         vertices), and with `antialias=True` (the default) it is then
         PCHIP-densified well beyond that, so a short forecast still renders
@@ -3481,7 +3543,7 @@ def plot(
     # (post normalize->reduce->align) space (GH #169). Computed here -- one
     # forecast per ORIGINAL input dataset, before any cluster/hue reshaping
     # -- so the forecasts correspond 1:1 with the datasets about to be
-    # drawn. For the DRAWN dashed trace only, the final observed row of
+    # drawn. For the DRAWN forecast trace only, the final observed row of
     # each dataset is prepended so the trace connects to the plotted
     # trajectory (drawn trace length is therefore t + 1).
     # `bundle_forecasts` keeps the UNPREPENDED analyze-space forecasts --
@@ -3489,7 +3551,7 @@ def plot(
     # returns (release-1.0 audit, X1-api-consistency-016: the bundle used
     # to include the seam row, an off-by-one vs. hyp.predict);
     # `raw_forecasts` is the seam-prepended working copy that gets the
-    # SAME center/scale transform as `xform` below, so the drawn dashed
+    # SAME center/scale transform as `xform` below, so the drawn forecast
     # trace lines up with the drawn (centered/scaled) data.
     raw_forecasts = None
     bundle_forecasts = None
@@ -5059,9 +5121,11 @@ def plot(
                 frame_hooks=_frame_hooks,
             )
 
-            # predict=: overlay one dashed, low-opacity (alpha 0.6) forecast
-            # trace per input dataset (GH #169), in the SAME color as its
-            # source line. Added AFTER `_draw` has already built the legend
+            # predict=: overlay one forecast trace per input dataset
+            # (GH #169), styled to match its source line -- same colour,
+            # linestyle and linewidth, at half its alpha
+            # (`_forecast_style_from`). Added AFTER `_draw` has built the
+            # legend
             # (from the original data lines only, via ax.legend() inside
             # `_draw`), so these traces never gain a legend entry. The SAME
             # helper (and the SAME seam-prepended arrays) serve both the
@@ -5106,43 +5170,48 @@ def plot(
                 # would otherwise be indistinguishable from an empty one.
                 _trail_forecast_artists = []
                 for _i in range(len(xform)):
-                    _fc_color = (_src_lines[_i].get_color()
-                                 if _i < len(_src_lines) else None)
+                    # the SAME styling policy `_draw_forecast_overlays` uses
+                    # (colour/linestyle/linewidth inherited from the observed
+                    # trace, alpha halved), from the SAME helper -- so a
+                    # paused animation is indistinguishable from the static
+                    # plot and the two paths cannot drift.
+                    _fc_style = _forecast_style_from(
+                        _src_lines[_i] if _i < len(_src_lines) else None)
                     # trails FIRST, so the live forecast draws on top of its
                     # own fan rather than under it
                     _row = []
                     for _age in range(1, _n_forecast_trail + 1):
                         if _display_ndims >= 3:
-                            _t, = ax.plot([], [], [], linestyle='--',
-                                          color=_fc_color, label='_nolegend_')
+                            _t, = ax.plot([], [], [], label='_nolegend_',
+                                          **_fc_style)
                         elif _display_ndims == 2:
-                            _t, = ax.plot([], [], linestyle='--',
-                                          color=_fc_color, label='_nolegend_')
+                            _t, = ax.plot([], [], label='_nolegend_',
+                                          **_fc_style)
                         else:
-                            _t, = ax.plot([], linestyle='--', color=_fc_color,
-                                          label='_nolegend_')
-                        _t.set_alpha(trail_alpha(_age, _n_forecast_trail))
+                            _t, = ax.plot([], label='_nolegend_', **_fc_style)
+                        # the fan decays from THIS dataset's live forecast
+                        # alpha, not from a fixed one: a trail must never be
+                        # more opaque than the live forecast it fades from.
+                        _t.set_alpha(trail_alpha(
+                            _age, _n_forecast_trail,
+                            live_alpha=_fc_style['alpha']))
                         _t.set_clip_on(False)
                         _t.set_visible(False)
                         _t._hyp_forecast_role = 'trail'
                         _t._hyp_forecast_age = _age
                         _row.append(_t)
                     _trail_forecast_artists.append(_row)
-                    # the SAME three-way split, linestyle, alpha and label
-                    # `_draw_forecast_overlays` uses, so a paused animation
-                    # is indistinguishable from the static plot. 1-D is a
-                    # real branch: `_display_ndims` can be 1.
+                    # the SAME three-way split and label
+                    # `_draw_forecast_overlays` uses. 1-D is a real branch:
+                    # `_display_ndims` can be 1.
                     if _display_ndims >= 3:
-                        _art, = ax.plot([], [], [], linestyle='--',
-                                        color=_fc_color, alpha=0.6,
-                                        label='_nolegend_')
+                        _art, = ax.plot([], [], [], label='_nolegend_',
+                                        **_fc_style)
                     elif _display_ndims == 2:
-                        _art, = ax.plot([], [], linestyle='--',
-                                        color=_fc_color, alpha=0.6,
-                                        label='_nolegend_')
+                        _art, = ax.plot([], [], label='_nolegend_',
+                                        **_fc_style)
                     else:
-                        _art, = ax.plot([], linestyle='--', color=_fc_color,
-                                        alpha=0.6, label='_nolegend_')
+                        _art, = ax.plot([], label='_nolegend_', **_fc_style)
                     _art.set_clip_on(False)
                     _art._hyp_forecast_role = 'live'
                     _live_forecast_artists.append(_art)
