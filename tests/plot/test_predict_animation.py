@@ -92,3 +92,301 @@ def test_list_form_morph_still_refuses_predict():
         hyp.plot(clouds, '.', predict='Kalman', t=3,
                  animate=['morph', 'morph'], morph_samples=120,
                  duration=1, frame_rate=2, show=False)
+
+
+def _solid(ax):
+    return [ln for ln in ax.lines
+            if getattr(ln, '_hyp_forecast_role', None) is None
+            and ln.get_linestyle() in ('-', 'solid')]
+
+
+def test_a_live_forecast_artist_exists_per_dataset():
+    fig, ani = hyp.plot(_series(), '-', predict='Kalman', t=3, animate=True,
+                        duration=2, frame_rate=4, show=False)
+    ax = _ax(fig)
+    ani._func(6, *ani._args)
+    assert len(_forecasts(ax, role='live')) == 3
+
+
+# --- the internal-phase contract, from the consumer's side (Task 0) -------
+
+def test_a_user_callback_sees_this_frames_forecast_not_the_last_ones():
+    """Regression for the ordering defect: the forecast updater is a LIBRARY
+    updater and must run before user `on_frame=` callbacks. Registered on the
+    same list, it lands after them and every callback reads the PREVIOUS
+    frame's forecast geometry -- an off-by-one nothing raises about.
+
+    Compares what the callback SAW at frame f against what the artist holds
+    after frame f is fully drawn. Stale-by-one fails on the first frame that
+    moves the forecast.
+    """
+    seen = []
+
+    def watch(ctx):
+        art = _forecasts(_ax(ctx.figure), role='live')[0]
+        seen.append(np.array(art.get_data_3d()))
+
+    fig, ani = hyp.plot(_series(n=1), '-', predict='Kalman', t=3,
+                        animate=True, duration=4, frame_rate=4, show=False,
+                        on_frame=watch)
+    ax = _ax(fig)
+    for frame in (4, 8, 12):
+        ani._func(frame, *ani._args)
+        after = np.array(_forecasts(ax, role='live')[0].get_data_3d())
+        assert np.allclose(seen[-1], after), (
+            'the user callback observed a different forecast than the one '
+            'drawn for this frame -- internal updaters ran too late')
+    # and the forecast really did move, so the assertion had something to bite
+    assert not np.allclose(seen[0], seen[-1])
+
+
+def test_the_forecast_updater_runs_with_no_user_callback_registered():
+    """The common case: animated `predict=` and no `on_frame=` at all. If
+    dispatch's early return still asks only about USER callbacks, the
+    forecast silently freezes at frame 0."""
+    fig, ani = hyp.plot(_series(n=1), '-', predict='Kalman', t=3,
+                        animate=True, duration=4, frame_rate=4, show=False)
+    ax = _ax(fig)
+    seen = []
+    for frame in (2, 10):
+        ani._func(frame, *ani._args)
+        seen.append(np.array(_forecasts(ax, role='live')[0].get_data_3d()))
+    assert not np.allclose(seen[0], seen[1]), 'forecast never advanced'
+
+
+@pytest.mark.parametrize('frames', [
+    (12, 8, 4, 0),           # strictly backwards
+    (0, 12, 4, 8, 4),        # shuffled, with a repeat
+])
+def test_frames_drawn_out_of_order_give_the_same_geometry(frames):
+    """A frame must be a pure function of its index. matplotlib re-delivers
+    frame indices on loop and on `save()`, so any hidden accumulation shows
+    up as a different artist for the same index."""
+    fig, ani = hyp.plot(_series(n=1), '-', predict='Kalman', t=3,
+                        animate=True, duration=4, frame_rate=4, show=False)
+    ax = _ax(fig)
+    forward = {}
+    for frame in sorted(set(frames)):
+        ani._func(frame, *ani._args)
+        forward[frame] = np.array(_forecasts(ax, role='live')[0].get_data_3d())
+    for frame in frames:
+        ani._func(frame, *ani._args)
+        got = np.array(_forecasts(ax, role='live')[0].get_data_3d())
+        assert np.allclose(got, forward[frame]), (
+            f'frame {frame} drew differently out of order')
+
+
+def _plot_ax(fig):
+    """The axes the trajectories are drawn on, for EITHER dimensionality.
+
+    `_ax` above hard-selects the 3-D axes (`hasattr(a, 'zaxis')`) and
+    raises `IndexError` on a 2-D figure, which has no zaxis at all -- so a
+    2-D test cannot use it.
+    """
+    solid = [a for a in fig.axes if hasattr(a, 'zaxis')]
+    return solid[0] if solid else fig.axes[0]
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_the_live_forecast_updates_in_both_2d_and_3d(ndims):
+    """A 3-D forecast artist is a `Line3D`: `set_data` alone leaves its
+    z-data untouched, so a 3-D forecast would silently draw in the wrong
+    place. Both branches of the updater's `_ndims >= 3` dispatch are
+    exercised here, and each is checked on every axis it owns.
+
+    Note `dims=` (the INPUT feature count) is separate from `ndims=` (the
+    display dimensionality): `_series` names it `dims`, and it must stay
+    >= 2 so there is something to reduce.
+    """
+    fig, ani = hyp.plot(_series(n=1, dims=max(ndims, 2)), '-',
+                        predict='Kalman', t=3, animate=True, duration=4,
+                        frame_rate=4, ndims=ndims, show=False)
+    ax = _plot_ax(fig)
+    got = []
+    for frame in (4, 12):
+        ani._func(frame, *ani._args)
+        art = _forecasts(ax, role='live')[0]
+        got.append(np.array(art.get_data_3d() if ndims >= 3
+                            else art.get_data()))
+    assert got[0].shape[0] == (3 if ndims >= 3 else 2)
+    for axis in range(got[0].shape[0]):
+        assert not np.allclose(got[0][axis], got[1][axis]), (
+            f'axis {axis} never moved -- 3-D artists need set_data_3d')
+
+
+def test_forecast_head_tracks_the_animation():
+    """The forecast must start at the CURRENT head, not at the final point."""
+    fig, ani = hyp.plot(_series(n=1), '-', predict='Kalman', t=3, animate=True,
+                        duration=4, frame_rate=4, show=False)
+    ax = _ax(fig)
+    heads = []
+    for frame in (4, 8, 12):
+        ani._func(frame, *ani._args)
+        heads.append(np.array(_forecasts(ax, role='live')[0].get_data_3d())[:, 0])
+    assert not np.allclose(heads[0], heads[1]), 'forecast head did not move'
+    assert not np.allclose(heads[1], heads[2]), 'forecast head did not move'
+
+
+def test_forecast_is_anchored_near_the_drawn_head():
+    """Contract 2. `t` is in RAW analyze-space samples, but the drawn head
+    sits on the FRAME GRID: plot.py:4460-4478 resamples a 60-row input to
+    round(frame_rate*duration) rows, which matplotlib_backend then densifies.
+    This test runs duration=4/frame_rate=4, so 60 raw rows -> **16** grid
+    rows. (The review's "60 -> 8 grid rows -> 904 drawn vertices, ~15.1x" was
+    measured at duration=2/frame_rate=4 -- half the grid, a different
+    configuration from this one; the densification ratio is quoted there, not
+    here.) So the forecast anchors on the last revealed RAW sample, which is
+    at most ONE raw step behind the drawn head -- an exact atol=1e-6 anchor is
+    impossible by construction.
+
+    The tolerance is DERIVED, not guessed. With antialias=False the drawn head
+    line's vertices are consecutive FRAME-GRID rows, and one frame-grid step
+    spans 59/15 ~= 3.9 raw steps here -- comfortably more than the <= 1 raw
+    step of anchor separation -- so the largest drawn vertex spacing is a
+    valid upper bound that needs no magic number.
+
+    The discriminating assertion is the second one: anchoring on the FINAL
+    observation (what the static overlay does) puts the gap many raw steps
+    away and fails."""
+    data = _series(n=1)
+    fig, ani = hyp.plot(data, '-', predict='Kalman', t=3, animate=True,
+                        antialias=False, duration=4, frame_rate=4, show=False)
+    ax = _ax(fig)
+    ani._func(8, *ani._args)
+    drawn = np.array(_solid(ax)[0].get_data_3d())
+    fc = np.array(_forecasts(ax, role='live')[0].get_data_3d())
+    head = drawn[:, -1]
+    gap = np.linalg.norm(fc[:, 0] - head)
+
+    one_grid_step = np.linalg.norm(np.diff(drawn, axis=1), axis=0).max()
+    assert gap <= one_grid_step, (
+        f'anchor gap {gap} exceeds one frame-grid step {one_grid_step}')
+
+    # the same data drawn statically: its forecast hangs off the FINAL
+    # observation, which at frame 8 of 16 is far from the current head
+    static = hyp.plot(data, '-', predict='Kalman', t=3, antialias=False,
+                      show=False)
+    static_fc = np.array(
+        _forecasts(_ax(static), role='static')[0].get_data_3d())
+    assert gap < np.linalg.norm(static_fc[:, 0] - head), (
+        'forecast is anchored on the FINAL observation, not the current head')
+
+
+def test_forecast_stays_inside_the_axes_limits():
+    """Contract 4: the box is built from data + the WHOLE schedule, so this
+    holds by construction and nothing is clamped. Measured before the fix:
+    1 of 7 partial-history Kalman forecasts fell outside the fixed [-1, 1]
+    animated cube."""
+    fig, ani = hyp.plot(_series(), '-', predict='Kalman', t=5, animate=True,
+                        duration=4, frame_rate=4, show=False)
+    ax = _ax(fig)
+    lims = np.array([ax.get_xlim3d(), ax.get_ylim3d(), ax.get_zlim3d()])
+    assert _forecasts(ax, role='live'), (
+        'no live forecast artists, so the per-frame assertions below would '
+        'iterate an empty list and pass vacuously')
+    for frame in range(16):
+        ani._func(frame, *ani._args)
+        for fc in _forecasts(ax, role='live'):
+            pts = np.array(fc.get_data_3d())
+            if pts.size == 0:
+                continue
+            assert (pts.min(axis=1) >= lims[:, 0] - 1e-6).all()
+            assert (pts.max(axis=1) <= lims[:, 1] + 1e-6).all()
+
+
+def test_t_is_measured_in_raw_samples_not_frames_or_vertices():
+    """antialias=False draws the raw vertices, so the count is checkable."""
+    fig, ani = hyp.plot(_series(n=1), '-', predict='Kalman', t=3, animate=True,
+                        antialias=False, duration=4, frame_rate=4, show=False)
+    ax = _ax(fig)
+    ani._func(8, *ani._args)
+    assert np.array(_forecasts(ax, role='live')[0].get_data_3d()).shape[1] == 4
+
+
+def test_t_equals_one_is_the_next_raw_step():
+    fig, ani = hyp.plot(_series(n=1), '-', predict='Kalman', t=1, animate=True,
+                        antialias=False, duration=4, frame_rate=4, show=False)
+    ax = _ax(fig)
+    ani._func(8, *ani._args)
+    assert np.array(_forecasts(ax, role='live')[0].get_data_3d()).shape[1] == 2
+
+
+def test_antialias_true_smooths_the_forecast_like_any_other_line():
+    """plot.py:2255-2259 documents this as contract ('Forecast overlays drawn
+    by predict= are smoothed the same way'), and the spin overlay is pinned to
+    it at test_predict_integration.py:198. Measured today: t=1 draws 900
+    vertices at antialias=True, 2 at antialias=False."""
+    fig, ani = hyp.plot(_series(n=1), '-', predict='Kalman', t=1, animate=True,
+                        duration=4, frame_rate=4, show=False)
+    ax = _ax(fig)
+    ani._func(8, *ani._args)
+    assert np.array(_forecasts(ax, role='live')[0].get_data_3d()).shape[1] > 2
+
+
+def test_frames_are_idempotent():
+    """Contract 6: ani.save()/to_jshtml() replay from frame 0, and these tests
+    drive frames out of order."""
+    fig, ani = hyp.plot(_series(n=1), '-', predict='Kalman', t=3, animate=True,
+                        duration=4, frame_rate=4, show=False)
+    ax = _ax(fig)
+    ani._func(9, *ani._args)
+    first = np.array(_forecasts(ax, role='live')[0].get_data_3d())
+    for f in (0, 3, 15, 2, 9):
+        ani._func(f, *ani._args)
+    assert np.allclose(first,
+                       np.array(_forecasts(ax, role='live')[0].get_data_3d()))
+
+
+def test_forecast_composes_with_order_serial():
+    """Requires animation-core Task 5 (order=)."""
+    fig, ani = hyp.plot(_series(), '-', predict='Kalman', t=3, animate=True,
+                        order='serial', duration=4, frame_rate=4, show=False)
+    ax = _ax(fig)
+    ani._func(15, *ani._args)
+    drawn = [fc for fc in _forecasts(ax, role='live')
+             if np.array(fc.get_data_3d()).size]
+    assert len(drawn) == 3, 'every dataset is fully revealed by the last frame'
+
+
+def test_a_dataset_with_too_little_history_hides_its_forecast():
+    """Frame 0 reveals one raw row; a forecaster cannot be fitted to it, and
+    an empty/garbage trace must not be drawn instead."""
+    fig, ani = hyp.plot(_series(), '-', predict='Kalman', t=3, animate=True,
+                        duration=4, frame_rate=4, show=False)
+    ax = _ax(fig)
+    ani._func(0, *ani._args)
+    live = _forecasts(ax, role='live')
+    assert live, (
+        'no live forecast artists, so "the forecast is hidden" would hold '
+        'vacuously -- this must distinguish hidden from absent')
+    for fc in live:
+        assert not fc.get_visible() or np.array(fc.get_data_3d()).size == 0
+
+
+def test_forecast_artists_are_not_identified_by_linestyle():
+    """T5: user data drawn with fmt='--' is dashed but is NOT a forecast."""
+    fig, ani = hyp.plot(_series(), '--', predict='Kalman', t=3, animate=True,
+                        duration=2, frame_rate=4, show=False)
+    ax = _ax(fig)
+    ani._func(6, *ani._args)
+    dashed = [ln for ln in ax.lines if ln.get_linestyle() not in ('-', 'solid')]
+    assert len(dashed) > len(_forecasts(ax)), \
+        'the dashed-linestyle heuristic would have swept up the data lines'
+    assert len(_forecasts(ax, role='live')) == 3
+
+
+def test_hue_regrouping_drops_forecasts_exactly_like_the_static_path():
+    """plot.py:4552 nulls raw_forecasts when hue=/cluster= regroups xform, so
+    the 1:1 dataset<->forecast correspondence is gone. The animated path
+    inherits that guard verbatim: no forecast is drawn, and nothing crashes.
+
+    CONTROL, not coverage: this asserts an ABSENCE, so it passes both before
+    and after this task. It is here to prove the hue guard still holds once
+    live forecasts exist, not to demonstrate the feature."""
+    data = _series(n=1, rows=60)
+    labels = np.array(['a', 'b'] * 30)
+    fig, ani = hyp.plot(data, '-', predict='Kalman', t=3, hue=labels,
+                        animate=True, duration=2, frame_rate=4, show=False)
+    ax = _ax(fig)
+    ani._func(6, *ani._args)
+    assert _forecasts(ax) == []

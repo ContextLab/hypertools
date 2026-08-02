@@ -1392,6 +1392,9 @@ def test_forecast_stays_inside_the_axes_limits():
                         duration=4, frame_rate=4, show=False)
     ax = _ax(fig)
     lims = np.array([ax.get_xlim3d(), ax.get_ylim3d(), ax.get_zlim3d()])
+    assert _forecasts(ax, role='live'), (
+        'no live forecast artists, so the per-frame assertions below would '
+        'iterate an empty list and pass vacuously')
     for frame in range(16):
         ani._func(frame, *ani._args)
         for fc in _forecasts(ax, role='live'):
@@ -1463,7 +1466,11 @@ def test_a_dataset_with_too_little_history_hides_its_forecast():
                         duration=4, frame_rate=4, show=False)
     ax = _ax(fig)
     ani._func(0, *ani._args)
-    for fc in _forecasts(ax, role='live'):
+    live = _forecasts(ax, role='live')
+    assert live, (
+        'no live forecast artists, so "the forecast is hidden" would hold '
+        'vacuously -- this must distinguish hidden from absent')
+    for fc in live:
         assert not fc.get_visible() or np.array(fc.get_data_3d()).size == 0
 
 
@@ -1482,7 +1489,11 @@ def test_forecast_artists_are_not_identified_by_linestyle():
 def test_hue_regrouping_drops_forecasts_exactly_like_the_static_path():
     """plot.py:4552 nulls raw_forecasts when hue=/cluster= regroups xform, so
     the 1:1 dataset<->forecast correspondence is gone. The animated path
-    inherits that guard verbatim: no forecast is drawn, and nothing crashes."""
+    inherits that guard verbatim: no forecast is drawn, and nothing crashes.
+
+    CONTROL, not coverage: this asserts an ABSENCE, so it passes both before
+    and after this task. It is here to prove the hue guard still holds once
+    live forecasts exist, not to demonstrate the feature."""
     data = _series(n=1, rows=60)
     labels = np.array(['a', 'b'] * 30)
     fig, ani = hyp.plot(data, '-', predict='Kalman', t=3, hue=labels,
@@ -1495,7 +1506,11 @@ def test_hue_regrouping_drops_forecasts_exactly_like_the_static_path():
 - [ ] **Step 2: Run the test and confirm it fails**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_predict_animation.py -v`
-Expected: the **18** new tests FAIL — `_forecasts(ax, role='live')` returns `[]`, so most fail with `IndexError: list index out of range` and the count assertions fail at `0 != 3`. The 9 Task 3 tests still pass. (v2 said 12 here; this block gained six IDs in v3 — see Step 6's derivation.)
+Expected: **17 failed, 10 passed** — measured, not predicted. `_forecasts(ax, role='live')` returns `[]`, so most of the 18 new tests fail with `IndexError: list index out of range` or count assertions at `0 != 3`, and the 9 Task 3 tests still pass.
+
+**The 10th pass is `test_hue_regrouping_drops_forecasts_exactly_like_the_static_path`, and that is correct.** It asserts an ABSENCE (`_forecasts(ax) == []`), so it holds both before and after this task — a CONTROL proving the `hue=` guard still nulls forecasts once live ones exist, not a demonstration of the feature. It is labelled as such in its docstring.
+
+> **Two other tests here were vacuous and were fixed rather than accepted.** `test_forecast_stays_inside_the_axes_limits` and `test_a_dataset_with_too_little_history_hides_its_forecast` both looped `for fc in _forecasts(ax, role='live')`, which is empty before this task — so their bodies never ran and they passed for no reason, giving 15 failed / 12 passed. Neither could distinguish "not implemented" from "implemented correctly". Each now asserts the collection is non-empty first, which is what makes the red state 17 rather than 15. A loop over a possibly-empty collection is not an assertion; check the collection first.
 
 - [ ] **Step 3: Snapshot the analyze-space history alongside the forecasts**
 
