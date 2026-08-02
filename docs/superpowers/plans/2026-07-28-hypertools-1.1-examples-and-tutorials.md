@@ -1,4 +1,4 @@
-# HyperTools 1.1 — Examples and Tutorials Implementation Plan (v2)
+# HyperTools 1.1 — Examples and Tutorials Implementation Plan (v3)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -7,6 +7,31 @@
 **Architecture:** One library task first (Task 1: palette-from-image), because two example rewrites consume it and it is the last orphaned feature from the audit. Then five example rewrites, each *paired with its notebook in the same task and the same commit* — a script fixed without its notebook leaves the defect published, because `nbsphinx_execute = 'never'` (`docs/conf.py:131`) ships the committed notebook verbatim. Then the fifteen older tutorials, grouped by the recurring fix so each step is one reviewable diff. Finally a verification task that makes the improvement **permanent**: a committed measurement script, a real pytest module that fails if any defect marker reappears, the full suite, every example executed, every notebook re-executed, and a zero-warning docs build.
 
 **Tech Stack:** Python 3.12.10, numpy 2.3.5, pandas 3.0.3, matplotlib 3.10.8, plotly 6.8.0, scikit-learn, Pillow 12.1.0, nbconvert 7.17.1, ipykernel 7.3.0, pytest 9.0.2.
+
+---
+
+## Revision note (v3)
+
+v2 was adversarially re-reviewed (`notes/audit/review_plan4_v2.md`: 4 Fatal, 4 High, 5 Med, 4 Low) and seven measurement audits were then run against the real repo (`notes/audit/plan4_metric_remeasure.md`, `plan4_landed_state.md`, `plan4_image_palette.md`, `plan4_notebook_gate.md`, `plan4_network_decoupling.md`, `plan4_citations_and_ci.md`, and `plan3_closure_audit.md`). Everything below is measured, not estimated.
+
+**The single biggest change: four of the five example scripts were rewritten out from under this plan.** Commit `d730a085` (2026-08-01 09:46) migrated market, weather, conversation and morph off the private `ani._func`/`ani._args` monkeypatch and onto the public `anim.on_frame(...)`. Only paintings is untouched. Tasks 2, 3, 5 and 6 are therefore **rebases**, not rewrites, and Task 6's Step 1 is already done verbatim. Applying v2's prescribed text as written would overwrite newer code with older text — in Task 5's case, replacing working code with a crash.
+
+| v2 | v3 |
+|-|-|
+| **Fatal.** Notebook budgets were derived with a metric that stripped docstrings for `.py` but not `.ipynb`, so identical source measured `(3,2)` vs `(11,2)`. | `_code_lines_nb` and `_code_lines_py` now share ONE docstring-stripping callee (a shared callee cannot drift from itself). Re-measured: market 193→187, weather 207→194, conversation 191→176. The refactor is proven safe — `_code_lines_py` is identical line-for-line on all five scripts. |
+| **Fatal.** Two notebook budgets were unsatisfiable. | The real cause was simpler than the metric: **paintings (110) and conversation (76) were set BELOW their own script budgets (118, 90)**, and a notebook holds its script's code plus an install cell plus a display cell. Budgets are no longer written down — `notebook_budget = script_budget + NOTEBOOK_OVERHEAD` with `NOTEBOOK_OVERHEAD = 5` measured. All ten now pass, tightly (headroom 7/7/7/2/5), and the error class is structurally impossible. |
+| **Fatal.** `EXPECTED_OUTPUT_CELLS` guessed five counts; 4 of 5 looked unattainable. | **All five were wrong, and so is every per-task "Execute and measure" claim in Tasks 2–6** — each assumed every non-install cell emits, when several are bare imports, bare assignments, or `fig, ani = hyp.plot(..., show=False)`. Weather's total matched *for the wrong reason*: the real emitting cells are the exact complement of the assumed ones. Replaced by an index-set gate that names the offending cell. |
+| **Fatal.** The image palette patched one resolver; categorical hue reached seaborn without it. | **"ONE interception point" is false**: `_seaborn_palette_arg` plus five raw seaborn sites, one of which (`sns.set_palette`) runs on *every* matplotlib call. Measured as real `hyp.plot` calls the maintainer's six scenarios scored **0/6**, not the 2 failures v2's own tests reported. Fixed at both interception points with a dynamic colour count: **6/6**. |
+| Task 6 described as unimplemented. | Task 6 Step 1 **already landed** in `d730a085`, verbatim, including the prescribed docstring. Only the notebook remains. |
+| `test_examples_produce_their_stated_artifact` ran examples with `runpy`. | Network/model-download work is split out; the suite drives a fixture-fed construction boundary, and the whole-example run becomes an opt-in smoke test. |
+| The morph assertion `assert 'morph' in str(ns.get('ANIMATE', 'morph'))`. | `ANIMATE` does not exist in the example; the expression reduces to `'morph' in 'morph'` and **cannot fail** (proven by execution). Replaced with driven-frame assertions. |
+| `git stash && measure && git stash pop` to read the BEFORE state. | **Data-loss hazard**, demonstrated: with a clean tree `stash` saves nothing and `pop` then restores *and drops* an unrelated pre-existing stash. Replaced with `git show <base>:<path>`, which is read-only. |
+| Task 5 "13 tests"; suite delta "+135". | **12** and **+134**. The plan already said 12 at the step level and 13 in the revision note — it disagreed with itself. Task 1 (16) and Task 8 (106) were correct. |
+| Ratio floor "removed as a v1 Fatal". | It was removed from the *gate* but **ten lines still promise it** as a budget (634, 990, 1006, 1186, 1201, 1420, 1435, 1792, 1807, 1904). All corrected. L1435 was doubly stale (`≤ 72` where the enforced dict said 90). |
+| "'0 executed outputs' corrected wherever it appears." | It was not — all five BEFORE headers still said it. Real values: 4/7, 2/7, 2/6, 2/6, 1/6. |
+| Baseline `2564 collected`; "the working tree is not clean". | **2782/2784 collected (2 deselected)**; the tree is clean at `065c841e`; the note claiming the five examples are untouched is false (see above). |
+
+**New Fatal found during this revision, not present in any prior review:** `hyp.plot(..., animate=...)` returns a `HyperAnimation`, a `(figure, animation)` **tuple subclass**. `fig, ani = hyp.plot(...)` binds `ani` to element `[1]` — the raw `FuncAnimation` — **discarding the wrapper that carries `.on_frame()`**. v2's Task 5 notebook does exactly this and dies with `AttributeError` at the cell that calls `ani.on_frame(recency_fade)`, so `nbclient` halts and the notebook never finishes. The already-landed script avoids it by binding `anim = hyp.plot(...)` without unpacking. Contract 8 below now states the rule, and a Task 8 test enforces it. Blast radius was measured across `docs/`, `examples/`, `hypertools/`, README and CHANGELOG: **the trap existed only in plan documents** — the shipped library and `docs/animation.rst` are correct.
 
 ---
 
@@ -73,9 +98,28 @@ This is the first revision of this plan, so there is no prior version to correct
 
 1. **A gallery example's job is to demonstrate the library, not to substitute for it.** Every line that re-implements a native capability (audit class **B**) or works around a gap Plans 1–3 close (class **C**) is deleted. What remains is data acquisition (**A**) and deliberate presentation (**D**), and each surviving **D** block must be something hypertools genuinely does not claim to do.
 
-2. **Script and notebook are one deliverable.** They are edited in the same task and land in the same commit. Task 8 enforces this mechanically: the defect-marker scan and the ratio gate run over `examples/animate_*.py` **and** `docs/tutorials/*.ipynb`, so a script fixed alone fails the gate.
+2. **Script and notebook are one deliverable.** They are edited in the same task and land in the same commit. Task 8 enforces this mechanically: the defect-marker scan and the size-budget check run over `examples/animate_*.py` **and** `docs/tutorials/*.ipynb`, so a script fixed alone fails the gate.
 
-3. **No private reaches.** After this plan, no example or notebook contains `ani._func`, `ani._args`, `hypertools._shared`, `hypertools.plot.morph`, or any other name not documented in `plot()`'s docstring or `docs/api.rst`. Per-frame work goes through the public `on_frame=` hook (animation-core Task 7); per-segment naming goes through `title=` (animation-core Task 8).
+   **This is currently violated on all five pairs, and that is the largest single piece of work in this plan.** `d730a085` modernised four scripts and left every notebook behind, so the notebooks now *teach the private-API approach their own scripts just abandoned*. Measured:
+
+   | notebook | private reaches still present |
+   |-|-|
+   | `market_forecast.ipynb` | `ani._func`, `ani._args`, `hypertools._shared` |
+   | `weather_decades.ipynb` | `ani._func` |
+   | `conversation_shape.ipynb` | `ani._func`, `ani._args`, `SentenceTransformer` |
+   | `morph_shapes_zoo.ipynb` | `ani._func`, `from hypertools.plot import morph` |
+   | `painting_embeddings.ipynb` | `SentenceTransformer` |
+
+3. **No private reaches where a public equivalent exists.** After this plan, no example or notebook contains `ani._func`, `ani._args`, `hypertools._shared`, `hypertools.plot.morph`, or any other undocumented name — **except** the entries of the `PRIVATE_API_EXCEPTIONS` allowlist in Task 8, each of which must carry an inline rationale in the source naming why no public path exists. Per-frame work goes through the public `on_frame=` hook (animation-core Task 7); per-segment naming goes through `title=` (animation-core Task 8).
+
+   **Why an allowlist rather than an absolute ban (changed in v3).** v2's Contract 3 was absolute, and `d730a085` then deliberately kept two private usages in the market example *with recorded measurements*:
+
+   - `examples/animate_market_forecast.py:204-213` — the one-time setup step that reads back the fully-revealed **antialiased** on-screen line. `ctx.datasets` is the pre-antialiasing array at a coarser resolution and fits a measurably different slope (**~2–8%, checked empirically**), so substituting it would silently change the fitted forecast geometry.
+   - `examples/animate_market_forecast.py:283-287` — the PCHIP smoothing helper, which has no public re-export; reimplementing it by hand would risk drifting from what `hyp.plot` actually draws.
+
+   Both are one-time setup, not per-frame work, and both are documented in place. The purpose of this contract is that examples must not *teach* private API as the way to do things — which a documented, allowlisted, no-public-equivalent setup step does not do. An unlisted private reach still fails the gate, so nothing new can creep in, and each retained one is reviewed rather than assumed.
+
+   **MAINTAINER SIGN-OFF REQUIRED.** This narrows a contract the maintainer wrote. If they prefer the absolute ban, the two retentions above must be reverted in `d730a085` and this contract restored — but that trade must be made explicitly, because the measurement says the public path changes the result.
 
    **Ownership split with animation-core Task 9 Step 5 — both plans touch the same four `examples/animate_*.py` files, so this is explicit and reciprocal:**
 
@@ -89,13 +133,53 @@ This is the first revision of this plan, so there is no prior version to correct
 
    *Do not enforce this plan's metrics from Plan 1*: measuring a file Plan 1 has migrated but this plan has not yet rewritten fails for the wrong reason, and would push Plan 1's implementer into doing editorial work that gets discarded here.
 
-4. **Network fetches live in examples, wrapped in a fallback, never in a library test.** Every fetch follows the shape the current examples already use (`animate_market_forecast.py:70-97`, `animate_weather_decades.py:74-95`): a `try/except Exception: return None` fetcher, a deterministic synthetic substitute, and a `print(...)` naming which source was used. Task 1's tests write real image files to `tmp_path` and touch no network. `image_palette()` deliberately does **not** accept a URL, so the library never fetches.
+4. **Network fetches live in examples, wrapped in a fallback, never in a library test.** Every fetch follows the shape the current examples already use (`fetch_fred` in `animate_market_forecast.py`, `fetch_city_months` in `animate_weather_decades.py`): a `try/except Exception: return None` fetcher, a deterministic synthetic substitute, and a `print(...)` naming which source was used. Task 1's tests write real image files to `tmp_path` and touch no network. `image_palette()` deliberately does **not** accept a URL, so the library never fetches.
+
+   **v3 — measured, and stronger than v2 assumed. All five examples are network-coupled**, not three, in three different severities. Blocked-connection counts are real (measured by refusing outbound sockets and running each example to completion):
+
+   | example | blocked events | host | offline outcome |
+   |-|-|-|-|
+   | `animate_weather_decades` | 6 | `archive-api.open-meteo.com` | degrades, exit 0 |
+   | `animate_painting_embeddings` | 7 | `commons.wikimedia.org`, `huggingface.co` | degrades, exit 0 |
+   | `animate_morph_zoo` | 4 | `www.dropbox.com` (via `hyp.load`) | **HARD FAILS — `HypertoolsIOError`, exit 17** |
+   | `animate_conversation` | 2 | `huggingface.co` | degrades, exit 0 |
+   | `animate_market_forecast` | 1 | `fred.stlouisfed.org` | degrades, exit 0 |
+
+   So the contract's "wrapped in a fallback" clause is **already violated by morph**: `hyp.load(name)` has no offline path and takes the whole example down. Task 6 must give it one.
+
+   **The consequence for the gate:** a test that executes an example executes its fetches. Task 8 therefore drives a **`construct_artifact(data)` boundary** — loaders on one side, figure construction on the other — and tests only the construction half, fed by fixtures. Four of the five need **zero committed bytes** (their existing seeded synthetic fallbacks *are* the fixture); paintings needs one committed **1.7 KB** 64-px thumbnail. The whole-example run survives as an opt-in smoke test, never in the default suite. Importing an example must not fetch.
 
 5. **Forecast scoring stays out of the library.** Standing maintainer decision, restated by the forecast-animation plan's Global Constraints (*"Forecast scoring stays OUT of the library ... accuracy/backtest logic belongs in the tutorial as legitimately custom code"*). Task 2's per-sector and overall accuracy is example code, and is budgeted and timed rather than left open-ended.
 
-6. **Every "AFTER" number in this plan is a contracted budget, not a measurement of code that does not exist yet.** Each rewrite states `code ≤ N` and `ratio ≥ P%`; Task 8 asserts them with a committed script and a pytest module. If a rewrite cannot meet its budget, the budget is renegotiated in the plan — the assertion is never weakened to fit the code.
+6. **Every "AFTER" number in this plan is a contracted budget, not a measurement of code that does not exist yet.** Each rewrite states `code ≤ N`; Task 8 asserts it with a committed script and a pytest module. If a rewrite cannot meet its budget, the budget is renegotiated in the plan — the assertion is never weakened to fit the code.
+
+   **v3 changes two things here.**
+
+   *(a) The `ratio ≥ P%` half is gone.* The per-file native-ratio floor was deleted from the gate as one of v1's Fatals (it is trivially gamed by reformatting), but ten lines went on promising it as a budget anyway. Ratio is now **reported, never gated**, and no "AFTER" line states one.
+
+   *(b) Notebook budgets are derived, not written down.* Two of them were set *below their own script budgets* — paintings 110 vs 118, conversation 76 vs 90 — which no notebook containing that script's code can satisfy, whatever the metric does. So:
+
+   ```
+   notebook_budget = script_budget + NOTEBOOK_OVERHEAD      # NOTEBOOK_OVERHEAD = 5
+   ```
+
+   `NOTEBOOK_OVERHEAD` is measured, not guessed: the largest install cell across the five is 3 code lines, plus a 2-line display cell (`from IPython.display import HTML` + `HTML(ani.to_jshtml())`). One number is chosen per task — the script budget — and the notebook's follows. Verified against the prescribed content: market 113 ≤ 120, weather 60 ≤ 67, paintings 116 ≤ 123, conversation 93 ≤ 95, morph 30 ≤ 35. Still tight, and a notebook budget can never again be set below its script's.
 
 7. **Behaviour parity with today, except where a defect is being removed.** Each rewrite keeps its example's visual identity (the market's quarter-turn and forecast fan, the weather figure's blue-cold/red-hot sweep, the paintings' spin, the conversation's one-turn-at-a-time reveal, the morph's closed loop and teapot). Where an effect is deliberately dropped because no 1.1 API expresses it, it is named in *Decisions still needed*, never quietly lost.
+
+8. **Bind the animation, then destructure it — never the reverse.** `hyp.plot(..., animate=...)` returns a `HyperAnimation`, a `(figure, animation)` **tuple subclass**. Unpacking it directly throws the wrapper away:
+
+   ```python
+   anim = hyp.plot(...)          # a HyperAnimation -- has .on_frame(), .figure, .animation
+   fig, ani = anim               # and ALSO destructures, when you want the parts
+
+   fig, ani = hyp.plot(...)      # WRONG if you then need the wrapper:
+   ani.on_frame(cb)              # AttributeError -- `ani` is a raw FuncAnimation
+   ```
+
+   `examples/animate_market_forecast.py` already shows the right idiom (`anim = hyp.plot(...)` at `:191`, then `fig, ani = anim` at `:195`), and every example that calls `.on_frame()` must use it. Task 8 enforces this: an example or notebook may not call a `HyperAnimation`-only method on a name produced by unpacking.
+
+   The trap is genuinely easy to miss — `_save_count` *survives* unpacking, because the raw `FuncAnimation` has it — so a gate written against `ani._save_count` passes while the public API is being silently discarded.
 
 ---
 
@@ -104,7 +188,9 @@ This is the first revision of this plan, so there is no prior version to correct
 - Target release: **1.1**. Nothing here ships to users until the whole 1.1 line is working.
 - Run everything with the repo venv: `.venv/bin/python`. **The base anaconda python is BROKEN** (numpy/matplotlib mismatch); a bare `python`/`pytest` will fail confusingly.
 - Run pytest from the repo root; `pyproject.toml` sets `testpaths = ["tests"]` and `timeout = 1200`.
-- **Verified baseline: `2564 collected` (2 deselected), `2551 passed, 13 skipped`.** Plans 1–3 add 97 + 94 + 88 tests of their own; this plan states its own deltas relative to whatever the suite is when it starts, and each task re-runs the whole suite.
+- **Baseline, re-measured 2026-08-02 at `065c841e`: `2782/2784 tests collected (2 deselected)`, `2769 passed, 13 skipped`.** (v2 said `2564`; that number was ~7 months of commits stale.) Plan 3's Tasks 0–1 have since landed (+17), so measure again at the moment this plan starts rather than trusting any number written here — the suite is moving while Plans 1–3 are implemented. This plan states its own deltas relative to whatever the suite is when it starts, and each task re-runs the whole suite.
+- **Reading a file's BEFORE state: use `git show <base>:<path>`, never `git stash`.** v2 prescribed `git stash && measure && git stash pop`. That is a **data-loss hazard**, demonstrated end-to-end: with a clean tree — exactly the state at `065c841e` — `git stash` saves nothing and returns 0, and the following `git stash pop` then restores *and drops* an unrelated pre-existing stash (`Dropped refs/stash@{0}`; stash count 1 → 0; the unrelated file appears in the tree). `git show` is read-only, needs no clean tree, and leaves `git status --porcelain` byte-identical before and after.
+- **New test files must be `git add`ed before running the full suite.** `tests/test_packaging_artifacts.py::test_sdist_contains_only_tracked_files_plus_allowlist` fails on any untracked file that lands in the sdist. This is the guard working, not a false positive — but it will look like an unrelated failure if the new test file is still untracked. (Observed twice while preparing this revision.)
 - **Never simplify a test to make it pass.** If a test fails repeatedly, fix the code.
 - **No mock objects.** Task 1's tests write real PNGs and read them back; the example-hygiene tests in Task 8 read the real committed files.
 - Force `matplotlib.use("Agg")` in every matplotlib test module. There is **no** `conftest.py` in this repo.
@@ -121,7 +207,21 @@ This is the first revision of this plan, so there is no prior version to correct
 - When any behaviour changes, update the docstring/markdown in the same commit (repo rule: docs travel with code).
 - Commit after every task. Branch off `dev-1.0`; never commit to `master`.
 - Re-run **all** checks after any fix made to satisfy another check.
-- **The working tree is not clean, and that is expected.** As of 2026-07-28 15:48, Plans 1–3 are being implemented concurrently: `hypertools/plot/plot.py`, `plotly_backend.py`, `matplotlib_backend.py`, `_shared/helpers.py`, `pyproject.toml` and eight test modules are already modified, and `tests/test_antialias.py` is staged. Before starting any task here, `git status` and confirm which of Plans 1–3 have landed — the *Prerequisites* table says which tasks each rewrite needs. Two concurrent edits to `docs/tutorials/analyze.ipynb` and `reduce.ipynb` were checked while writing this plan and are **markdown-prose only**; the code cells this plan cites (analyze cells 8/13/18/23/28, all still the `for x in ...: sb.heatmap(x)` loop) are unchanged, and the five launch examples and their notebooks are untouched.
+- **The working tree is clean, and four of the five examples have already moved.** (v2 said the tree was dirty with concurrent Plan 1–3 edits, and that "the five launch examples and their notebooks are untouched". Both statements were true when written and are false now.) At `065c841e` the tree is clean. Commit **`d730a085`** (2026-08-01 09:46) rewrote **market, weather, conversation and morph** — migrating each off the `ani._func`/`ani._args` monkeypatch onto the public `anim.on_frame(...)` — and left **paintings** untouched (its last change is `4d1d2223`). It also touched `hypertools/plot/animation_context.py`.
+
+  Consequences, and they are structural rather than cosmetic:
+
+  | task | script | notebook | what this plan must do |
+  |-|-|-|-|
+  | **2** market | partially landed | unchanged — **out of sync** | **REBASE**, and it is **BLOCKED**: see below |
+  | **3** weather | partially landed | unchanged — **out of sync** | **REBASE** (light) |
+  | **4** paintings | untouched; v2's baseline verified still accurate | in sync with its script | **WRITE AS-IS** (still gated on Task 1) |
+  | **5** conversation | partially landed | unchanged — **out of sync** | **REBASE** |
+  | **6** morph | **fully landed** — Step 1 is already done verbatim, docstring included | unchanged — **out of sync** | **REBASE**: delete Step 1, keep the rest |
+
+  **Before starting any task, read the current file** (`git show d730a085~1:<path>` for the pre-migration state) and treat what is on disk as the baseline. Do **not** apply a prescribed "replace the file entirely" block without first reconciling it against what landed — for Task 5 that would replace working code with a crash (Contract 8).
+
+- **Task 2 is blocked until Plan 3 Task 5 lands.** Its prescribed call passes `forecast_trail=16`, and `forecast_trail` is **absent** from `plot()`'s 75 parameters today (verified with `inspect.signature`). This is the concrete reason for the maintainer's ordering — **Plan 3 before Plan 4**.
 
 ---
 

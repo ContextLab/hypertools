@@ -31,7 +31,13 @@ preference.
 - **45 ACCURATE**, **28 DRIFTED**, **0 WRONG** (strict sense: pointing at a
   different file / content genuinely absent from the cited file), **1
   unverifiable** (cites a real line but no plan prose makes a checkable claim
-  about it).
+  about it: `morph.py:36`). 45+28+1 = 74.
+- One more line number, `plot.py:882`, turned up while reading the
+  self-review's compressed sentence at plan line 2600
+  (`` plot.py:807/882/895/930/950/1013/1064/1246/2750-2751/3039-3050 ``) but
+  is **not** one of the 74 — the regex only captures the first number after
+  `.py:` in a slash-joined run, so `882` was never pattern-matched. Noted
+  separately at the end of the main table rather than folded into the count.
 - Every single drift is an **intra-file line shift** — the claimed content is
   still in the cited *file*, just at a different line, because other 1.1
   plans (animation-core, forecast-animation, MultiIndex) are concurrently
@@ -152,7 +158,6 @@ unverifiable (no prose claim to check).
 | 2589 | `colors.py:305-306` | A | — |
 | 2600 | `docs/conf.py:131` | A | — |
 | 2600 | `plot.py:807` | D | **`plot.py:1066`** (palette docstring) |
-| 2600 | `plot.py:882` | U | real content (MultiIndex per-level alpha-formula docstring text), but no separate plan prose makes a checkable claim about this specific line — it only appears compressed into this one self-review sentence. Not obviously wrong, but not verifiable as "accurate to a claim" either |
 | 2600 | `plot.py:895` (part of 895-910) | D | **`plot.py:1154-1159`** (labels docstring) — see plan line 1313 |
 | 2600 | `plot.py:930` | D | **`plot.py:1189`** (colorbar docstring) |
 | 2600 | `plot.py:950` | D | **`plot.py:1209`** (title docstring) |
@@ -169,9 +174,14 @@ unverifiable (no prose claim to check).
 | 2600 | `scripts/generate_gallery_thumbs.py:26` | A | — |
 
 **Tally check:** 74 rows above (counting each `plan line` × `citation`
-pair once) = 45 A + 28 D + 1 U (the `plot.py:882` and `morph.py:36`
-occurrences are two separate rows, both U, but I list 74 total citation
-instances and both are within that count).
+pair once) = 45 A + 28 D + 1 U (`morph.py:36`, plan line 2600).
+
+**Bonus, not one of the 74:** `plot.py:882` (see summary above for why it's
+excluded from the count) falls inside the MultiIndex per-level docstring's
+alpha formula ("the top-level mean is fully opaque (1.0), with intermediate
+levels smoothly in between") — real content, still there, but no plan prose
+anywhere makes a specific claim about line 882 to check it against, so it's
+neither accurate nor drifted in a verifiable sense.
 
 ---
 

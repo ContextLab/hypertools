@@ -573,6 +573,18 @@ Fix: move `git add` ahead of the suite run in each task, or add to Global Constr
 *"`git add` every new file before running the suite; `tests/test_packaging_artifacts.py` asserts the
 sdist contains only git-tracked files."*
 
+With that resolved, the **whole suite is green** in the worktree, with the split example, the new
+`n_frames` property and both new test modules in place:
+
+```
+$ cd /tmp/netsplit_audit && MPLBACKEND=Agg .venv/bin/python -m pytest tests/ -q -p no:randomly --timeout=1200
+2776 passed, 18 skipped, 2 deselected, 1 warning in 574.43s (0:09:34)
+```
+
+(The single warning is pre-existing and unrelated — matplotlib's "Animation was deleted without
+rendering anything" from `tests/test_plot_animation_audit_fixes.py::test_gif_wall_clock_matches_requested_duration`.
+The 18 skips include the 5 opt-in smoke tests added here; the baseline was 13.)
+
 ### Cost comparison
 
 | | plan's `runpy` gate | this gate |
