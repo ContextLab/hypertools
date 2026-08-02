@@ -241,10 +241,11 @@ class FrameHooks:
     backend note.
     """
 
-    __slots__ = ('callbacks', 'state')
+    __slots__ = ('callbacks', 'internal', 'state')
 
     def __init__(self, callbacks=None):
         self.callbacks = list(callbacks or [])
+        self.internal = []
         self.state = {}
 
     def add(self, callback):
@@ -259,17 +260,42 @@ class FrameHooks:
         self.callbacks.append(callback)
         return self
 
+    def add_internal(self, updater):
+        """Register a LIBRARY frame updater, to run before every user
+        callback on the same `FrameContext`.
+
+        This is the internal counterpart of `add`. `plot()` uses it for
+        artists it owns and drives itself -- the `predict=` forecast
+        overlay is the first -- so that a user `on_frame=` callback always
+        observes the CURRENT frame's geometry. Appending such an updater to
+        `callbacks` instead would run it after the user's, and every user
+        callback would read the previous frame's artists with nothing
+        raising to say so.
+
+        Not public API: users reach `add` (via `plot(on_frame=...)` or
+        `HyperAnimation.on_frame`), never this.
+        """
+        if not callable(updater):
+            raise TypeError(
+                f"internal frame updater must be callable; "
+                f"got {type(updater).__name__}.")
+        self.internal.append(updater)
+        return self
+
     def record(self, **state):
         """Store this frame's state. Cheap and unconditional: a no-callback
         animation pays one dict assignment per frame."""
         self.state = state
 
     def dispatch(self, figure, axes):
-        """Build a FrameContext from the recorded state and run every
-        callback. Exceptions propagate -- a broken hook must be visible, not
-        swallowed into a silently-wrong animation."""
-        if not self.callbacks or not self.state:
+        """Build a FrameContext from the recorded state, run every internal
+        updater, then every user callback. Exceptions propagate -- a broken
+        hook must be visible, not swallowed into a silently-wrong
+        animation."""
+        if not (self.internal or self.callbacks) or not self.state:
             return
         ctx = FrameContext(figure=figure, axes=axes, **self.state)
+        for updater in self.internal:
+            updater(ctx)
         for callback in self.callbacks:
             callback(ctx)
