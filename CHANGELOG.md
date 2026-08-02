@@ -64,6 +64,27 @@ Small, additive plotting features and fixes (fully backward-compatible).
   follow-up: a morph interpolates between point CLOUDS, so there is no time
   axis to forecast along.
 
+- **`forecast_trail=`: keep earlier forecasts on screen as a fading fan.** The
+  forecast analogue of `chemtrails=`. With `predict=` and a time-progressing
+  animation, `forecast_trail=True` retains the last 16 forecasts (an int sets
+  the cap), each in its dataset's colour and dashed like the live one, at an
+  alpha that decays with age to a floor of 0.08. What it shows is how the
+  prediction *changed* as history accumulated -- a forecast that keeps
+  revising points somewhere different from one that settles.
+
+  The fan at frame *f* is a pure function of *f*, recomputed from the
+  precomputed schedule rather than accumulated in a buffer, so a saved GIF and
+  an interactively-played animation are identical and frames delivered out of
+  order (which `save()` and `to_jshtml()` do) give the same picture. Artists
+  are preallocated at setup, since allocating them mid-animation is what makes
+  matplotlib animations stutter, and an unwritten slot is hidden with EMPTY
+  data rather than zero alpha. Retained forecasts need no extra room in the
+  plot box: a retained forecast is just an earlier frame's, and the box
+  already contains every forecast the animation will draw.
+
+  Without `predict=` it raises `ValueError` rather than silently doing
+  nothing.
+
 - **`plot(..., on_frame=...)`: a public per-frame hook, on both backends.**
   `on_frame` is called once per drawn animation frame with a single
   `FrameContext` argument -- the frame index and total, the axes and drawn

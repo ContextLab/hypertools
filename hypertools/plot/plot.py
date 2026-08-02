@@ -579,6 +579,34 @@ def _valid_line2d_kwargs():
     return valid
 
 
+def _validate_forecast_trail(forecast_trail, predict):
+    """`forecast_trail=` keeps earlier forecasts on screen as a fading fan.
+
+    Returns the number of past forecasts to retain (0 = trail disabled).
+    Validated early, beside the other fail-fast checks, so a bad value is
+    reported before the analyze/reduce pipeline runs rather than after.
+    """
+    if forecast_trail in (False, None, 0):
+        return 0
+    if predict is None:
+        raise ValueError(
+            "forecast_trail= requires predict=; there are no forecasts to "
+            "retain without a forecast model.")
+    if forecast_trail is True:
+        from .forecast import DEFAULT_FORECAST_TRAIL
+        return DEFAULT_FORECAST_TRAIL
+    if isinstance(forecast_trail, bool) or not isinstance(
+            forecast_trail, (int, np.integer)):
+        raise TypeError(
+            "forecast_trail must be True/False or a positive int (the number "
+            f"of past forecasts to keep); got {forecast_trail!r}.")
+    if forecast_trail < 1:
+        raise ValueError(
+            f"forecast_trail must be >= 1 when given as an int; got "
+            f"{forecast_trail}.")
+    return forecast_trail
+
+
 def _validate_extra_plot_kwargs(extra_kwargs):
     """Fail fast, BEFORE the analyze/reduce pipeline runs, on extra kwargs
     that no backend can use (release-1.0 audit, F01-012/F03-005):
@@ -825,6 +853,7 @@ def plot(
     chemtrails=False,
     precog=False,
     bullettime=False,
+    forecast_trail=False,
     frame_rate=30,
     focused=None,
     morph_samples=None,
@@ -1688,13 +1717,16 @@ def plot(
         churn.
 
         `predict=` (forecast overlays; see below) is compatible with
-        `animate='spin'` ONLY: spin renders a STATIC scene and merely rotates
-        the camera, so the fixed dashed forecast overlay is drawn once and
-        rotates along with everything else. Every OTHER animate mode
-        (`True`/`'parallel'`/`'serial'`/`'window'`/`'morph'`, and per-dataset
-        morph lists) reveals/appends data over time, where a growing forecast
-        trace is out-of-scope follow-up work, so combining `predict=` with any
-        of those raises `NotImplementedError`.
+        `animate='spin'` (which renders a STATIC scene and merely rotates the
+        camera, so the fixed dashed overlay is drawn once and rotates along
+        with everything else) AND with the time-progressing modes
+        (`True`/`'parallel'`/`'serial'`/`'window'`), where the forecast is
+        recomputed from the history revealed so far and re-anchored on the
+        last revealed observation, so it grows with the animation. Only
+        `'morph'` (including per-dataset morph lists) raises
+        `NotImplementedError`: a morph interpolates between point CLOUDS, so
+        there is no time axis to forecast along. See `forecast_trail=` to
+        keep earlier forecasts on screen as a fading fan.
 
     order : {'parallel', 'serial'}
         Whether animated datasets are revealed all at once ('parallel') or
@@ -1805,6 +1837,23 @@ def plot(
         `bullettime` entirely (no trail artist/trace is created) and emit a
         `UserWarning` naming the mode, the ignored flag(s), and which dataset
         indices had them set.
+
+    forecast_trail (animation only) : bool or int
+        Keep earlier forecasts on screen as a fading fan -- the forecast
+        analogue of `chemtrails` (default: False). Requires `predict=`;
+        without it, `ValueError`. `True` retains 16 past forecasts; an int
+        sets the cap (must be >= 1). Each retained forecast is drawn in its
+        dataset's colour, dashed like the live one, at an alpha that decays
+        with age down to a floor of 0.08, so a viewer can see how the
+        prediction CHANGED as history accumulated.
+
+        The fan at frame *f* is a pure function of *f* -- recomputed from the
+        precomputed schedule, never accumulated -- so a saved GIF and an
+        interactively-played animation are identical, and driving frames out
+        of order (which `save()`/`to_jshtml()` do) gives the same picture.
+        Retained forecasts need no extra room in the plot box: a retained
+        forecast is just an earlier frame's, and the box is already built to
+        contain every forecast the animation will draw.
 
     frame_rate (animation only) : int or float
         Frame rate for animation in frames per second (default: 30).
@@ -2627,6 +2676,7 @@ def plot(
     # only that raw value to pass this early TYPE check (`n_datasets` isn't
     # known yet, so the length check is deferred to the second call, beside
     # `_resolve_animate_mode`, once `len(xform)` exists -- plan 1.1 Task 8).
+    _n_forecast_trail = _validate_forecast_trail(forecast_trail, predict)
     _segment_titles = _validate_title(title, style=animate, order=order)
 
     # fail-fast on order= (same precedent as title= above): it depends only
@@ -5027,11 +5077,39 @@ def plot(
                 # this loop runs, so snapshot it first or artist i would take
                 # its colour from forecast i-1. (Same guard
                 # `_draw_forecast_overlays` opens with.)
+                from .forecast import trail_alpha, trail_frames
                 _src_lines = list(ax.lines)
                 _live_forecast_artists = []
+                # [dataset][age-1] -> artist. Preallocated: allocating
+                # artists mid-animation is what makes matplotlib animations
+                # stutter. Every slot starts HIDDEN WITH EMPTY DATA --
+                # emptiness, not alpha, is the "not yet written" signal,
+                # because `trail_alpha` never returns 0 and a stale artist
+                # would otherwise be indistinguishable from an empty one.
+                _trail_forecast_artists = []
                 for _i in range(len(xform)):
                     _fc_color = (_src_lines[_i].get_color()
                                  if _i < len(_src_lines) else None)
+                    # trails FIRST, so the live forecast draws on top of its
+                    # own fan rather than under it
+                    _row = []
+                    for _age in range(1, _n_forecast_trail + 1):
+                        if _display_ndims >= 3:
+                            _t, = ax.plot([], [], [], linestyle='--',
+                                          color=_fc_color, label='_nolegend_')
+                        elif _display_ndims == 2:
+                            _t, = ax.plot([], [], linestyle='--',
+                                          color=_fc_color, label='_nolegend_')
+                        else:
+                            _t, = ax.plot([], linestyle='--', color=_fc_color,
+                                          label='_nolegend_')
+                        _t.set_alpha(trail_alpha(_age, _n_forecast_trail))
+                        _t.set_clip_on(False)
+                        _t.set_visible(False)
+                        _t._hyp_forecast_role = 'trail'
+                        _t._hyp_forecast_age = _age
+                        _row.append(_t)
+                    _trail_forecast_artists.append(_row)
                     # the SAME three-way split, linestyle, alpha and label
                     # `_draw_forecast_overlays` uses, so a paused animation
                     # is indistinguishable from the static plot. 1-D is a
@@ -5053,17 +5131,18 @@ def plot(
 
                 def _update_forecasts(ctx, _sched=forecast_schedule,
                                       _artists=_live_forecast_artists,
+                                      _trails=_trail_forecast_artists,
+                                      _retained=_n_forecast_trail,
                                       _antialias=antialias,
                                       _ndims=_display_ndims):
-                    for i, art in enumerate(_artists):
-                        pts = _sched.polyline(i, ctx.frame)
-                        if pts is None or len(pts) < 2:
-                            art.set_visible(False)
-                            if _ndims >= 3:
-                                art.set_data_3d([], [], [])
-                            else:
-                                art.set_data([], [])
-                            continue
+                    def _blank(art):
+                        art.set_visible(False)
+                        if _ndims >= 3:
+                            art.set_data_3d([], [], [])
+                        else:
+                            art.set_data([], [])
+
+                    def _fill(art, pts):
                         if _antialias:
                             # documented parity with the static overlay
                             pts = _interp_static_line(pts)
@@ -5078,6 +5157,32 @@ def plot(
                             art.set_data(pts[:, 0], pts[:, 1])
                         else:
                             art.set_data(np.arange(len(pts)), pts[:, 0])
+
+                    # the fan is a PURE function of ctx.frame -- recomputed,
+                    # never accumulated. FuncAnimation replays from frame 0
+                    # for save()/to_jshtml() and may deliver frames out of
+                    # order; a ring buffer would make a saved GIF differ from
+                    # an interactively-played animation.
+                    past = trail_frames(ctx.frame, _retained) if _retained \
+                        else []
+                    for i, art in enumerate(_artists):
+                        pts = _sched.polyline(i, ctx.frame)
+                        if pts is None or len(pts) < 2:
+                            _blank(art)
+                        else:
+                            _fill(art, pts)
+                        for _age, slot in enumerate(_trails[i], start=1):
+                            # `past` is newest-first, so age N is past[N-1];
+                            # ages beyond the frames available are blanked
+                            # rather than left showing a stale fan
+                            if _age > len(past):
+                                _blank(slot)
+                                continue
+                            old_pts = _sched.polyline(i, past[_age - 1])
+                            if old_pts is None or len(old_pts) < 2:
+                                _blank(slot)
+                            else:
+                                _fill(slot, old_pts)
 
                 # INTERNAL phase: library updaters run before user callbacks,
                 # so an on_frame= callback observes this frame's completed

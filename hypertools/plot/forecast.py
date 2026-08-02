@@ -253,3 +253,57 @@ class ForecastSchedule:
         out._paths = {key: (None if p is None else 2.0 * p / transform.scale)
                       for key, p in self._paths.items()}
         return out
+
+
+#: Past forecasts retained by `forecast_trail=True`.
+DEFAULT_FORECAST_TRAIL = 16
+
+
+def trail_frames(frame, n_retained, stride=1):
+    """Frames whose forecasts are retained at `frame`, NEWEST FIRST.
+
+    Takes no `n_frames`: the fan is bounded below by 0 and above by `frame`
+    itself, so the animation's length never enters.
+
+    Pure -- the fan at frame N depends only on N. There is deliberately no
+    accumulating buffer: `FuncAnimation` replays from frame 0 for
+    ``save()``/``to_jshtml()`` and may deliver frames out of order, and a
+    stateful fan would make a saved GIF differ from an interactively-played
+    animation.
+
+    Parameters
+    ----------
+    frame : int
+        The frame being drawn.
+    n_retained : int
+        How many past forecasts to keep.
+    stride : int, default 1
+        Frames between retained forecasts. ``1`` keeps every frame.
+
+    Returns
+    -------
+    list of int
+        Retained frame indices, newest first; empty at frame 0.
+    """
+    out = []
+    for age in range(1, int(n_retained) + 1):
+        past = frame - age * int(stride)
+        if past < 0:
+            break
+        out.append(past)
+    return out
+
+
+def trail_alpha(age, n_retained, live_alpha=0.6, floor=0.08):
+    """Alpha for a forecast `age` frames old. Age 0 is the live forecast.
+
+    `live_alpha` matches the static overlay's 0.6, so a paused animation
+    looks like a static plot. The result never reaches 0 -- an unwritten
+    artist is hidden with EMPTY data instead, because alpha cannot express
+    "nothing here" and a floor of 0 would make a stale artist and an empty
+    one indistinguishable.
+    """
+    if age <= 0:
+        return live_alpha
+    decay = 1.0 - (age / max(1, int(n_retained) + 1))
+    return max(floor, floor + (live_alpha - floor) * decay)
