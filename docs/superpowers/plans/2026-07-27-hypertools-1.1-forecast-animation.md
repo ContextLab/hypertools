@@ -79,7 +79,7 @@ This is stronger than the requested "fit on data, `transform` the forecasts": th
 - Additive only. `predict=` with `animate=False` and with `animate='spin'` keep their current behaviour **exactly**, including the static overlay path, its `alpha=0.6`/`--`/`_nolegend_` styling, its antialiasing, and its `set_clip_on(False)`.
 - **No clamping is introduced** (see maintainer correction 2). If a forecast ever renders outside the cube, the bounding box is wrong — fix the box, not the drawing.
 - **Both backends, same behaviour.** Any task that changes what matplotlib draws must land plotly in the same task or in Task 6, with a cross-backend test.
-- Every task that touches central dispatch (Tasks 3-7) runs the **whole** suite: `.venv/bin/python -m pytest -q`. Baseline today: **2564 collected / 2 deselected**; `tests/plot/test_predict_integration.py` → **18 passed in 3.30s**.
+- Every task that touches central dispatch (Tasks 3-7) runs the **whole** suite: `.venv/bin/python -m pytest -q`. Baseline today: **2784 collected / 2 deselected**; `tests/plot/test_predict_integration.py` → **18 passed in 3.30s**.
 - Update docstrings in the same commit as the behaviour.
 - Branch off `dev-1.0`; never commit to `master`.
 
@@ -90,7 +90,7 @@ This is stronger than the requested "fit on data, `transform` the forecasts": th
 All from `docs/superpowers/plans/2026-07-26-hypertools-1.1-animation-core.md`, **all three now implemented and merged** (animation-core executed 2026-08-01, commits `7c859581`..`f6084c7d`) — so these are satisfied, not pending:
 
 - **Task 4 — plotly `animate='serial'` × trail plumbing.** Task 6 here parametrizes its parity tests over `serial` and `order='serial'`, which reach plotly's SERIAL frame-building branch (a different branch from the parallel one). Before animation-core Task 4, plotly warned and dropped trails for a serial reveal instead of drawing them, so those parametrizations could not have passed.
-- **Task 5 — `order='parallel'|'serial'`.** Needed because `test_forecast_composes_with_serial_order` (Task 4 Step 1 here) passes `order='serial'`. Verified today: `'order' in inspect.signature(hyp.plot).parameters` → `False`, so that test would die with `TypeError: plot() got an unexpected keyword argument 'order'` without it.
+- **Task 5 — `order='parallel'|'serial'`.** Needed because `test_forecast_composes_with_order_serial` (Task 4 Step 1 here) passes `order='serial'`. Verified today: `'order' in inspect.signature(hyp.plot).parameters` → `False`, so that test would die with `TypeError: plot() got an unexpected keyword argument 'order'` without it.
 - **Task 7 — the per-frame hook.** This plan needs the *internal* half of it: a single registration point so there is exactly one per-frame dispatch, not two. Animation-core Task 7 ships this as `FrameHooks` -- `.callbacks` (list), `.record(**state)`, `.dispatch(figure, axes)` -- created in `plot()`, closed over by `_draw`, and adopted by `HyperAnimation.__new__`. This plan does **not** append its internal updater to `hooks.callbacks`: doing so would run it after every user callback, leaving each of them one frame stale. **Task 0 of this plan** adds the internal phase (`add_internal`) that the updater registers on — the only change this plan makes to animation-core's shipped code. **Cross-plan interface note:** this plan does **not** consume `FrameContext.revealed_counts` (documented `None` for parallel animations), so animation-core needs no change on that account.
 
 Task 1 is fully standalone. Task 2 is standalone **except** for `ForecastSchedule.for_serial`, which calls `serial_reveal_counts` — defined in animation-core Task 7. Verified by running Task 1's and Task 2's modules against today's `dev-1.0` while writing this plan: **Task 1 → 8 passed**; **Task 2 → 12 passed, 1 failed**, the failure being exactly `ImportError: cannot import name 'serial_reveal_counts'`. Implement Tasks 1-2 first regardless; that one test goes green when the prerequisite lands.
@@ -936,7 +936,7 @@ class ForecastSchedule:
 - [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_forecast_schedule.py -v`
-Expected: **14 passed** — *once animation-core Task 7 has landed* (it has, as of 2026-08-01). The v2 module (13 of these 14 tests) was run against `dev-1.0` while writing that revision: **12 passed, 1 failed**, the single failure being `test_serial_schedule_reveals_datasets_in_order` with `ImportError: cannot import name 'serial_reveal_counts' from 'hypertools.plot.matplotlib_backend'` — i.e. the prerequisite, not a defect. The 14th is v3's `test_display_paths_are_displacements_not_positions`, which has **not** been run against an implementation and is expected to fail until `ForecastDisplay` exists. Measured module runtime **8.6s**, including `test_fits_are_memoized_by_revealed_history_length`, which builds a 900-frame schedule over 3 datasets (177 real Kalman fits at ~54 ms each).
+Expected: **14 passed** — *once animation-core Task 7 has landed* (it has, as of 2026-08-01). The v2 module (13 of these 14 tests) was run against `dev-1.0` while writing that revision: **12 passed, 1 failed**, the single failure being `test_serial_schedule_reveals_datasets_in_order` with `ImportError: cannot import name 'serial_reveal_counts' from 'hypertools.plot.matplotlib_backend'` — i.e. the prerequisite, not a defect. The 14th is v3's `test_display_paths_are_displacements_not_positions`. It **has** been run against the plan's own Task 1 + Task 2 implementation, extracted verbatim into a scratch location (only the intra-package imports rewritten as absolute): **22 passed**, that test included. (The object it drives is whatever `ForecastSchedule.to_display(...)` returns — there is no `ForecastDisplay` class in this plan or the codebase.) Measured module runtime **8.6s**, including `test_fits_are_memoized_by_revealed_history_length`, which builds a 900-frame schedule over 3 datasets (177 real Kalman fits at ~54 ms each).
 
 - [ ] **Step 5: Commit**
 
@@ -1163,7 +1163,7 @@ v2 claimed 17 by writing "15 unchanged + 2", which double-counted: the 15 alread
 - [ ] **Step 8: Run the WHOLE suite (central dispatch changed)**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: all pass. Baseline before this plan: 2564 collected, 2 deselected.
+Expected: all pass. Baseline before this plan: 2784 collected, 2 deselected.
 
 - [ ] **Step 9: Commit**
 
@@ -1272,16 +1272,32 @@ def test_frames_drawn_out_of_order_give_the_same_geometry(frames):
             f'frame {frame} drew differently out of order')
 
 
+def _plot_ax(fig):
+    """The axes the trajectories are drawn on, for EITHER dimensionality.
+
+    `_ax` above hard-selects the 3-D axes (`hasattr(a, 'zaxis')`) and
+    raises `IndexError` on a 2-D figure, which has no zaxis at all -- so a
+    2-D test cannot use it.
+    """
+    solid = [a for a in fig.axes if hasattr(a, 'zaxis')]
+    return solid[0] if solid else fig.axes[0]
+
+
 @pytest.mark.parametrize('ndims', [2, 3])
 def test_the_live_forecast_updates_in_both_2d_and_3d(ndims):
     """A 3-D forecast artist is a `Line3D`: `set_data` alone leaves its
     z-data untouched, so a 3-D forecast would silently draw in the wrong
     place. Both branches of the updater's `_ndims >= 3` dispatch are
-    exercised here, and each is checked on the axis the other cannot see."""
-    fig, ani = hyp.plot(_series(n=1, d=max(ndims, 2)), '-', predict='Kalman',
-                        t=3, animate=True, duration=4, frame_rate=4,
-                        ndims=ndims, show=False)
-    ax = _ax(fig)
+    exercised here, and each is checked on every axis it owns.
+
+    Note `dims=` (the INPUT feature count) is separate from `ndims=` (the
+    display dimensionality): `_series` names it `dims`, and it must stay
+    >= 2 so there is something to reduce.
+    """
+    fig, ani = hyp.plot(_series(n=1, dims=max(ndims, 2)), '-',
+                        predict='Kalman', t=3, animate=True, duration=4,
+                        frame_rate=4, ndims=ndims, show=False)
+    ax = _plot_ax(fig)
     got = []
     for frame in (4, 12):
         ani._func(frame, *ani._args)
@@ -1461,7 +1477,7 @@ def test_hue_regrouping_drops_forecasts_exactly_like_the_static_path():
 - [ ] **Step 2: Run the test and confirm it fails**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_predict_animation.py -v`
-Expected: the 12 new tests FAIL — `_forecasts(ax, role='live')` returns `[]`, so most fail with `IndexError: list index out of range` and the count assertions fail at `0 != 3`. The 9 Task 3 tests still pass.
+Expected: the **18** new tests FAIL — `_forecasts(ax, role='live')` returns `[]`, so most fail with `IndexError: list index out of range` and the count assertions fail at `0 != 3`. The 9 Task 3 tests still pass. (v2 said 12 here; this block gained six IDs in v3 — see Step 6's derivation.)
 
 - [ ] **Step 3: Snapshot the analyze-space history alongside the forecasts**
 
@@ -1516,7 +1532,7 @@ Immediately before the centre/scale block (`plot.py:4555`), build the schedule; 
     if (raw_forecasts is not None and animate
             and animate not in ('spin',)):
         from .forecast import ForecastSchedule
-        _n_frames = max(1, int(round(frame_rate * duration)))
+        _n_frames = max(2, int(round(frame_rate * duration)))
         _grid_lengths = [len(xi) for xi in xform]
         _builder = (ForecastSchedule.for_serial
                     if (animate == 'serial' or order == 'serial')
@@ -1556,7 +1572,8 @@ After `_draw(...)` returns (`plot.py:4858-4898`), when `forecast_schedule is not
 ```python
                 def _update_forecasts(ctx, _sched=forecast_schedule,
                                       _artists=_live_forecast_artists,
-                                      _antialias=antialias, _ndims=ndims):
+                                      _antialias=antialias,
+                                      _ndims=_display_ndims):
                     for i, art in enumerate(_artists):
                         pts = _sched.polyline(i, ctx.frame)
                         if pts is None or len(pts) < 2:
@@ -1573,13 +1590,24 @@ After `_draw(...)` returns (`plot.py:4858-4898`), when `forecast_schedule is not
                             # (plot.py:2255-2259, :164-165)
                             pts = _interp_static_line(pts)
                         art.set_visible(True)
+                        # the SAME three-way split `_draw_forecast_overlays`
+                        # uses (`d >= 3` / `d == 2` / else, plot.py:167-179).
+                        # 1-D is a real branch there -- `_display_ndims` can
+                        # be 1 -- and `pts[:, 1]` would raise on it.
                         if _ndims >= 3:
                             art.set_data_3d(pts[:, 0], pts[:, 1], pts[:, 2])
-                        else:
+                        elif _ndims == 2:
                             art.set_data(pts[:, 0], pts[:, 1])
+                        else:
+                            art.set_data(np.arange(len(pts)), pts[:, 0])
 
-                hooks.add_internal(_update_forecasts)
+                _frame_hooks.add_internal(_update_forecasts)
 ```
+
+**Two names to get right, both verified against `plot.py` at HEAD:**
+
+- The registry local is **`_frame_hooks`** (`plot.py:4740`: `_frame_hooks = FrameHooks(...)`), not `hooks`. It is already in scope at this insertion point — it is threaded into `_draw` at `:4811`/`:4897` and dispatched at `:5004`.
+- Bind **`_display_ndims`**, not `ndims`. `ndims` is the user's raw kwarg and may legitimately be `None`; `plot.py:3310` resolves it as `_display_ndims = ndims if (ndims and ndims < 3) else 3`. Closing over the raw value makes `_ndims >= 3` raise `TypeError: '>=' not supported between 'NoneType' and 'int'` on the first frame of `hyp.plot(..., ndims=None, predict=..., animate=True)`.
 
 **The signature is the contract.** `FrameHooks.dispatch` calls every registered callable with ONE argument, a `FrameContext` — never a frame index (`animation_context.py`, `dispatch`). v2 of this plan prescribed `def _update_forecasts(frame, ...)` and then `_sched.polyline(i, frame)`, which passes a `FrameContext` where an int is expected: a `TypeError` on the first frame of every animated `predict=` call. Read the frame index off the context (`ctx.frame`) and nothing else — do not re-derive it, and do not accept an index parameter "for testing".
 
@@ -1590,7 +1618,7 @@ Two invariants the tests pin down:
 - The reveal comes from `revealed_raw_counts`, which delegates to `anim_window_bounds` — the library's single reveal implementation. Never re-derive it locally, and never read `FrameContext.revealed_counts` (documented `None` for parallel animations).
 - The callback **reads** the schedule and never mutates it, so frames stay idempotent.
 
-For 2-D and 1-D animations use `set_data` alone (no `set_3d_properties`), mirroring `_draw_forecast_overlays`' `d >= 3 / d == 2 / else` dispatch (`plot.py:167-179`).
+The code block above implements all three of `_draw_forecast_overlays`' branches (`plot.py:167-179`): `set_data_3d` for 3-D, `set_data(x, y)` for 2-D, and `set_data(arange(n), y)` for 1-D — where the static path plots a single column against its index. `_display_ndims` really can be 1 (`plot.py:3310` resolves any `ndims < 3` through unchanged), so the 1-D branch is reachable, not defensive.
 
 - [ ] **Step 6: Run the test and confirm it passes**
 
@@ -1650,7 +1678,7 @@ The forecast analogue of `chemtrails=`: earlier forecasts stay visible as a fadi
 **Interfaces:**
 - `plot(..., forecast_trail=False | True | int)`. `True` retains `DEFAULT_FORECAST_TRAIL = 16` past forecasts; an int sets the cap.
 - `trail_alpha(age, n_retained, live_alpha=0.6, floor=0.08)`; age 0 is the live forecast.
-- `trail_frames(frame, n_retained, n_frames)` → the frame indices whose forecasts are retained at `frame`, newest first. Pure.
+- `trail_frames(frame, n_retained)` → the frame indices whose forecasts are retained at `frame`, newest first. Pure.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1839,8 +1867,13 @@ def _validate_forecast_trail(forecast_trail, predict):
 Add to `hypertools/plot/forecast.py`:
 
 ```python
-def trail_frames(frame, n_retained, n_frames, stride=1):
+def trail_frames(frame, n_retained, stride=1):
     """Frames whose forecasts are retained at `frame`, NEWEST FIRST.
+
+    Takes no `n_frames`: the fan is bounded below by 0 and above by `frame`
+    itself, so the animation's length never enters. v2's signature carried
+    an `n_frames` parameter that the body never referenced, while the
+    Interfaces contract described it as if it constrained the result.
 
     Pure: the fan at frame N depends only on N. There is deliberately no
     accumulating buffer -- `FuncAnimation` replays from frame 0 for
@@ -1868,7 +1901,7 @@ def trail_alpha(age, n_retained, live_alpha=0.6, floor=0.08):
     return max(floor, floor + (live_alpha - floor) * decay)
 ```
 
-At setup, preallocate `n_retained` dashed artists per dataset (allocating artists mid-animation is what makes matplotlib animations stutter), each tagged `_hyp_forecast_role='trail'` and `_hyp_forecast_age=age`, at `trail_alpha(age, n_retained)`. Every preallocated slot starts **hidden with empty data** — emptiness, not alpha, is the "not yet written" signal, because `trail_alpha` never returns 0. Each frame, write `schedule.polyline(i, past_frame)` into the slot for each entry of `trail_frames(frame, n_retained, n_frames)`, and hide any slot with no corresponding past frame.
+At setup, preallocate `n_retained` dashed artists per dataset (allocating artists mid-animation is what makes matplotlib animations stutter), each tagged `_hyp_forecast_role='trail'` and `_hyp_forecast_age=age`, at `trail_alpha(age, n_retained)`. Every preallocated slot starts **hidden with empty data** — emptiness, not alpha, is the "not yet written" signal, because `trail_alpha` never returns 0. Each frame, write `schedule.polyline(i, past_frame)` into the slot for each entry of `trail_frames(frame, n_retained)`, and hide any slot with no corresponding past frame.
 
 Note that `stacked_paths()` (Task 2) already covers every retained forecast, because a retained forecast is just an earlier frame's forecast — so `forecast_trail=` needs **no** change to the bounding box, and the fan cannot leave the cube.
 
@@ -2117,7 +2150,7 @@ Add `forecast_schedule=None` and `forecast_trail=0` to `plotly_draw`'s signature
 
 - [ ] **Step 5: Update the traces every frame**
 
-In `_add_animation`'s parallel/serial frame loops, extend `trace_indices` with the forecast trace range (the same way `has_trails` extends it at `plotly_backend.py:3003-3006`) and append the schedule's polylines to `frame_traces` in that order. Use `trail_frames(k, n_retained, n_frames)` for the fan, and an empty `x/y/z` for a frame with no forecast — matching matplotlib's hidden-artist state.
+In `_add_animation`'s parallel/serial frame loops, extend `trace_indices` with the forecast trace range (the same way `has_trails` extends it at `plotly_backend.py:3003-3006`) and append the schedule's polylines to `frame_traces` in that order. Use `trail_frames(k, n_retained)` for the fan, and an empty `x/y/z` for a frame with no forecast — matching matplotlib's hidden-artist state.
 
 **Updated 2026-08-01 (Jeremy's parity ruling).** Plotly's parallel reveal used to be its own transcription — `end = max(2, ceil((k + 1) * max_len / n_frames))` against the LONGEST dataset — which coincided with matplotlib's per-dataset reveal only when the animated arrays shared a length. It no longer exists: both backends now call `trails.anim_window_bounds(k, n_frames, n_points, window_frames)` per dataset (`plotly_backend.py`'s `_add_animation` head loop). There is one reveal, so there is nothing left to coincide. Index the schedule by the **frame** `k` anyway, not by a re-derived row count, so the two backends read the same table.
 
@@ -2338,8 +2371,16 @@ These came out of the review and are **not** settled by any instruction so far. 
 
 **Also verified and deliberately unchanged** (so it is not re-litigated): Task 1's import path, its `(t, n_dims)` return shape, its all-future-steps claim (Kalman/ARIMA/GP reproduce a unit ramp; Laplace does not, and is excluded rather than having the tolerance loosened), `ani._func(frame, *ani._args)` as the drive mechanism, `get_data_3d()` on 3-D artists, and `_validate_forecast_trail`'s routing of `-1`/`'yes'`/`2.5`.
 
-**Placeholders.** None: every step carries runnable code, an exact command, and an expected result.
+**Placeholders.** Every step carries an exact command and an expected result, and every test is written out in full. **Three steps are specified in prose rather than code**, and an executor should treat them as the places to slow down and check the gating tests before writing:
 
-**Type consistency.** `forecast_from_history` → `(t + 1, n_dims)` float64 with a zero first row, or `None`. `ForecastSchedule.path` returns that same array or `None`; `.polyline` adds the anchor; `.to_display` rescales displacements by `2 / transform.scale` only, because a displacement is a difference of positions and the mean cancels. `DisplayTransform(mean, offset, scale)` reproduces `plot.py:4569-4582` and is asserted against it directly. `_validate_forecast_trail` returns an int consumed by `trail_alpha(age, n_retained, ...)` and `trail_frames(frame, n_retained, n_frames)`. Both backends index the schedule by **frame**, never by a re-derived row count.
+| step | what is prose, not code |
+|-|-|
+| Task 4 Step 5 | the live-artist **creation** (styling, colour, `_hyp_forecast_role` tagging). Only the updater closure is written out. |
+| Task 5 Step 4 | the trail preallocation and the per-frame write into the ring of slots. |
+| Task 6 Steps 3-5 | the plotly forecast trace wiring, in full — bullet specifications. |
+
+Each is specific about *what* must be true, and each is gated by tests that are written out in full — but Tasks 5 and 6 are where an executor has the most latitude to diverge from the tests that gate them. v3 states this rather than claiming, as v2 did, that there are no placeholders at all.
+
+**Type consistency.** `forecast_from_history` → `(t + 1, n_dims)` float64 with a zero first row, or `None`. `ForecastSchedule.path` returns that same array or `None`; `.polyline` adds the anchor; `.to_display` rescales displacements by `2 / transform.scale` only, because a displacement is a difference of positions and the mean cancels. `DisplayTransform(mean, offset, scale)` reproduces `plot.py:4569-4582` and is asserted against it directly. `_validate_forecast_trail` returns an int consumed by `trail_alpha(age, n_retained, ...)` and `trail_frames(frame, n_retained)`. Both backends index the schedule by **frame**, never by a re-derived row count.
 
 **Remaining risk.** Task 4 Step 4 changes what the centre/scale statistics are computed over for **every** `predict=` plot that is also animated. A static or `'spin'` plot is untouched (`forecast_schedule is None`, so `_fc_rows` is the single pre-existing entry and the arithmetic is byte-identical to today's). The guards are the unchanged static tests — `test_forecast_vertices_stay_inside_frame`, `test_predict_adds_one_dashed_forecast_per_dataset`, `test_predict_with_spin_renders_dashed_forecast_overlay` — plus the full-suite run in Step 7. If Task 4 grows beyond one reviewable diff, split it at Step 4/Step 5: "fold the schedule into the bounding box" and "draw from the schedule" are independently testable.
