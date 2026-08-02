@@ -132,7 +132,7 @@ Plans 1, 2 and 3 must land first. Per task:
 | this plan's task | depends on | why |
 |-|-|-|
 | **Task 1** (palette from image) | *(none)* | Pure library addition in `hypertools/plot/colors.py`. Can start immediately, in parallel with Plans 1–3. |
-| **Task 2** (Market) | **MultiIndex** T1 (`group_columns`), T2 (final-trace builder), T5 (column MultiIndex in `plot()`), T6 (hue as a per-trace auxiliary value), T8 (`predict=` over final traces); **Forecast-animation** T3 (narrow the `predict=` refusal), T4 (draw the per-frame forecast), T5 (`forecast_trail=`); **Animation-core** T1 (`title=` type contract) | The whole example *is* a column MultiIndex + a continuous hue through a hierarchy + one forecast per trace during a time-progressing animation. Without MultiIndex T4 the hue is discarded (`plot.py:2678-2684`); without Forecast-animation T3 the call raises `NotImplementedError` (`plot.py:2347-2354`). |
+| **Task 2** (Market) | **MultiIndex** T1 (`group_columns`), T2 (final-trace builder), T5 (column MultiIndex in `plot()`), T6 (hue as a per-trace auxiliary value), T8 (`predict=` over final traces); **Forecast-animation** T3 (narrow the `predict=` refusal), T4 (draw the per-frame forecast), T5 (`forecast_trail=`); **Animation-core** T1 (`title=` type contract) | The whole example *is* a column MultiIndex + a continuous hue through a hierarchy + one forecast per trace during a time-progressing animation. Without MultiIndex T6 the hue is discarded (`plot.py:2678-2684`); without Forecast-animation T3 the call raises `NotImplementedError` (`plot.py:2347-2354`). |
 | **Task 3** (Weather) | *(none strictly)* — verified to run on today's `dev-1.0`; **Animation-core** T1 for the `title=` contract | The paper-style call already works today. Sequence it after Plan 1 only so the whole 1.1 line is tested together. |
 | **Task 4** (Paintings) | **Task 1** (palette from image); **Animation-core** T1 (`title=`) | `color=` per cloud comes from `image_palette`; the hand-rolled title becomes `title=`. |
 | **Task 5** (Conversation) | **Animation-core** T5 (`order='serial'`), T7 (`on_frame=` + `HyperAnimation.on_frame`), T8 (per-segment `title=`), T4 (plotly serial+trail parity) | `animate=True, order='serial', chemtrails=True` is exactly Animation-core T4+T5; the recency fade moves onto the public `on_frame=` hook; the caption/speaker artists are replaced by per-segment `title=`. |
@@ -553,7 +553,7 @@ Nothing else in `colors.py` changes: `_continuous_palette` already delegates her
 - [ ] **Step 5: Run the test and confirm it passes**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_image_palette.py -v`
-Expected: **17 passed.**
+Expected: **16 passed.**
 
 - [ ] **Step 6: Declare Pillow, and document**
 
@@ -1183,7 +1183,7 @@ Rewrite `docs/tutorials/weather_decades.ipynb`, keeping cell 0 (Colab install) u
     examples/animate_weather_decades.py docs/tutorials/weather_decades.ipynb
 ```
 
-Expected: `4/4 code cells produced output` (cells 3, 5, 7, 9), and both files inside budget (**≤ 62/66 code lines, ≥ 18%/17% native**).
+Expected: `4/5 code cells produced output` (cells 3, 5, 7, 9; cell 0's Colab install cell produces none), and both files inside budget (**≤ 62/66 code lines, ≥ 18%/17% native**).
 
 - [ ] **Step 6: Commit**
 
@@ -1417,7 +1417,7 @@ Rewrite `docs/tutorials/painting_embeddings.ipynb`, keeping cell 0 unchanged:
     examples/animate_painting_embeddings.py docs/tutorials/painting_embeddings.ipynb
 ```
 
-Expected: `5/5 code cells produced output`, both files inside budget (**≤ 118/110 code lines, ≥ 20% native**).
+Expected: `5/6 code cells produced output` (cell 0's Colab install cell produces none), both files inside budget (**≤ 118/110 code lines, ≥ 20% native**).
 
 - [ ] **Step 6: Commit**
 
@@ -1440,10 +1440,10 @@ git commit -m "docs(gallery): paintings example uses native text embedding and n
 |-|-|
 | `embed()` (`:88-100`, class **B**) | `vectorizer='all-MiniLM-L6-v2', semantic=None, corpus=None` |
 | the manual re-split into per-turn arrays (`:144-151`, class **B**) | a **list of lists of strings** — the nesting is the grouping |
-| `mpatches.Patch` + `fig.legend` (`:168-175`, class **B**) | a categorical `hue=` + `legend=True`. **Verified**: 6 line datasets with a nested categorical hue draw **6 lines** and a **3-entry** legend, and `animate='serial'` still hands 6 datasets to the backend — so per-turn identity survives |
-| `fig.text(...)` title (`:176-177`, class **B**) | `title=` |
+| `mpatches.Patch` + `fig.legend` (`:173-176`, class **B**) | a categorical `hue=` + `legend=True`. **Verified**: 6 line datasets with a nested categorical hue draw **6 lines** and a **3-entry** legend, and `animate='serial'` still hands 6 datasets to the backend — so per-turn identity survives |
+| `fig.text(...)` title (`:177-178`, class **B**) | `title=` |
 | `ani._args[0]`/`[1]`, `drawn_lens`, `starts`, `total_pts`, `shown_counts`, `current_state` (`:182-237`, class **C**, and a by-hand copy of `matplotlib_backend.py:1316-1318`) | per-segment `title=` (animation-core Task 8), which is driven by the library's own schedule |
-| the speaker text artist + `caption_lines` + `set_caption` (`:179-180`, `:240-283`, class **D**) | the per-segment title itself carries `Speaker  "the line"` |
+| the speaker text artist + `caption_lines` + `set_caption` (`:180-181`, `:240-283`, class **D**) | the per-segment title itself carries `Speaker  "the line"` |
 | `_wrapped` + `ani._func = _wrapped` (`:286-316`, class **C**) | `on_frame=` (animation-core Task 7) for the recency fade only — the sole remaining per-frame effect |
 
 The `word_spans` window helper collapses to a plain `windows()` (the span bookkeeping existed only to bold the current word in the deleted caption), and `min_wins` stays: it prevents a real rendering artefact (a one-row dataset draws as a dot), and the comment at `:110-117` documents it accurately.
@@ -1784,7 +1784,7 @@ Rewrite `docs/tutorials/conversation_shape.ipynb`, keeping cell 0 unchanged:
     examples/animate_conversation.py docs/tutorials/conversation_shape.ipynb
 ```
 
-Expected: `5/5 code cells produced output`, both inside budget (**≤ 72/76 code lines, ≥ 25%/24% native**).
+Expected: `5/6 code cells produced output` (cell 0's Colab install cell produces none), both inside budget (**≤ 72/76 code lines, ≥ 25%/24% native**).
 
 - [ ] **Step 6: Commit**
 
@@ -1896,7 +1896,7 @@ Rewrite `docs/tutorials/morph_shapes_zoo.ipynb`. The current cell 9 (24 lines of
     examples/animate_morph_zoo.py docs/tutorials/morph_shapes_zoo.ipynb
 ```
 
-Expected: `4/4 code cells produced output`, both inside budget (**≤ 30/34 code lines, ≥ 26% native**).
+Expected: `4/5 code cells produced output` (cell 0's Colab install cell produces none), both inside budget (**≤ 30/34 code lines, ≥ 26% native**).
 
 - [ ] **Step 5: Commit**
 
@@ -1911,7 +1911,7 @@ git commit -m "docs(gallery): morph example uses native per-segment titles, drop
 
 Grouped by the recurring fix so each step is one reviewable diff. Every group ends by executing the touched notebooks and committing.
 
-**Baseline** (from `notes/audit/other_tutorials_audit.md`, §1): `conversation_trajectories` 2.5%, `projectile_kalman` 3.2%, `stock_forecasting` 3.7%, `wikipedia_embeddings` 7.1%, `hugging_face_embeddings` 10.0%, `modern_sklearn_dynamics` 10.2%, `analyze` 20.0% (and **never calls `hyp.plot`**), `reduce` 36.8% (never plots, never mentions `hyp.describe`). The five clean ones (`align`, `plot`, `normalize`, `cluster`, `streaming_data`, `text`, `lsl_streaming`) are **not touched**.
+**Baseline** (from `notes/audit/other_tutorials_audit.md`, §1): `conversation_trajectories` 2.5%, `projectile_kalman` 3.2%, `stock_forecasting` 3.7%, `wikipedia_embeddings` 7.1%, `hugging_face_embeddings` 10.0%, `modern_sklearn_dynamics` 10.2%, `analyze` 20.0% (and **never calls `hyp.plot`**), `reduce` 36.8% (never plots, never mentions `hyp.describe`). The seven clean ones (`align`, `plot`, `normalize`, `cluster`, `streaming_data`, `text`, `lsl_streaming`) are **not touched**.
 
 - [ ] **Step 1 (G2): Delete the four ffmpeg cells; ask for a GIF directly**
 
@@ -1961,6 +1961,8 @@ Then:
 ```bash
 grep -l "SentenceTransformer" docs/tutorials/*.ipynb examples/*.py
 ```
+
+**Dependency note:** unlike the rest of Task 7, this gate is not runnable in isolation -- it globs `examples/*.py`, and `examples/animate_conversation.py` and `examples/animate_painting_embeddings.py` both still hand-roll `SentenceTransformer` today (verified: `grep -l SentenceTransformer examples/*.py` currently matches both). The gate only reports "no output" once Task 4 (Paintings) and Task 5 (Conversation) have rewritten those two files to use `vectorizer=`. Run this check after Tasks 4-5 land, not in parallel with them.
 Expected: no output.
 
 ```bash
@@ -2526,18 +2528,18 @@ Flagged rather than invented. Each states the options and the exact change to sw
    - *Alternative:* add an aspect-preserving `normalize='isotropic'` (or `'unit-cube'`) mode, and delete the helper. Roughly 20 lines plus tests in `hypertools/tools/normalize.py`; no 1.1 plan owns it.
    - **Needs:** maintainer decision on adding a normalize mode in 1.1.
 
-4. **The conversation caption.** The current example bolds the words of the window being drawn, using ~44 lines of `TextArea`/`HPacker`/`VPacker` packing rebuilt every frame (`animate_conversation.py:240-283`) plus the span bookkeeping that exists solely to feed it.
+- **The conversation caption.** The current example bolds the words of the window being drawn, using ~44 lines of `TextArea`/`HPacker`/`VPacker` packing rebuilt every frame (`animate_conversation.py:240-283`) plus the span bookkeeping that exists solely to feed it.
    - **(implemented)** delete it. Per-segment `title=` shows `Speaker  "the whole line"`, which is the information the caption carried; the word-level highlight is dropped.
    - *Alternative:* keep the caption, rebuilt from `on_frame=` instead of `ani._func`. It would stay legitimate class-**D** presentation and no longer reach into private state — but it re-adds ~50 lines and would push the example past its 72-line budget, so the budget would move too.
    - **Needs:** maintainer call on whether the word-level highlight is load-bearing for the demo.
 
-5. **How the five launch tutorials get a visible figure.** They currently ship only **1–4 executed cells each** (re-measured 2026-08-01: 2/6, 4/7, 1/6, 2/6, 2/7), and `nbsphinx_execute = 'never'` means their docs pages show the rest as code and nothing else.
+- **How the five launch tutorials get a visible figure.** They currently ship only **1–4 executed cells each** (re-measured 2026-08-01: 2/6, 4/7, 1/6, 2/6, 2/7), and `nbsphinx_execute = 'never'` means their docs pages show the rest as code and nothing else.
    - **(implemented)** both halves: execute them (Tasks 2–6 Step "Execute and measure", pinned by `test_every_launch_notebook_ships_executed_outputs`) **and** add a gallery thumbnail to `docs/tutorials.rst` (Task 8 Step 6), the pattern the repo already uses for `plot_story_trajectories`.
    - *Alternative A:* thumbnails only, leaving the notebooks unexecuted. Cheapest in repo size; but then the *notebook* a reader downloads still shows nothing until they run it.
    - *Alternative B:* execute, but replace each final `HTML(ani.to_jshtml())` with `ani.save('<name>.gif')` + an `Image` display, committing the GIF. The repo already commits gallery GIFs of 9–11 MB (`docs/tutorials/conversation_serial.gif` is 9 466 849 bytes), so this is precedented but heavy.
    - **Needs:** maintainer's repo-size preference. A `jshtml` blob for a 240-frame animation is large; if it turns out to exceed roughly 5 MB per notebook, switch to Alternative B and record the measured sizes.
 
-6. **Whether the market example should report a disappointing number.** The current example prints a 66% directional accuracy computed over 4-month horizons on a 5-series FRED basket. At `t=1` (next day, the maintainer's specified horizon) on a near-random-walk price series, a single linear-Gaussian filter should be expected to land close to 50%.
+- **Whether the market example should report a disappointing number.** The current example prints a 66% directional accuracy computed over 4-month horizons on a 5-series FRED basket. At `t=1` (next day, the maintainer's specified horizon) on a near-random-walk price series, a single linear-Gaussian filter should be expected to land close to 50%.
    - **(implemented)** report whatever it measures, with "50% = coin flip" printed alongside, and make no attempt to tune the example until the number flatters the library.
    - *Alternative:* restore a multi-day horizon, where the current example's measured 66% came from. That contradicts the explicit `t=1` instruction, so it is not implemented.
    - **Needs:** nothing, unless the maintainer would rather the gallery not advertise a coin flip — in which case the honest fix is a different demonstrator, not a different horizon.
@@ -2553,10 +2555,10 @@ Flagged rather than invented. Each states the options and the exact change to sw
 | Read both audits first | Both read in full; their per-file classifications drive every "what goes, and to what" table, and their headline numbers are reproduced independently (48/739 = 6.5% vs. the audit's 6.0%) in *Verification note*. |
 | Match the siblings' v2 format and rigor | Same skeleton: goal / architecture / tech stack → verification note → contracts → global constraints → prerequisites → file structure → TDD tasks with `- [ ] **Step N:**` → decisions → self-review. The "Revision note (v2)" slot is filled by a **Verification note (v1)** that plays the same role — a table of received claims against measurements — because this plan has not yet been adversarially reviewed and inventing a revision history would be a fabrication. |
 | Explicit contracts | Seven, covering the script/notebook lockstep, the no-private-reaches rule, network-in-examples-only, scoring-stays-out-of-the-library, and the "budgets are contracts, never weakened to fit the code" rule. |
-| Prerequisites, per task | A per-task table naming the *specific* tasks of Plans 1–3 each rewrite needs (e.g. Market ← MultiIndex T1/T2/T3/T4/T6 + Forecast T3/T4/T5 + Animation-core T1) and *why*, including the two tasks (1 and 7) that have none and can start immediately. |
+| Prerequisites, per task | A per-task table naming the *specific* tasks of Plans 1–3 each rewrite needs (e.g. Market ← MultiIndex T1/T2/T5/T6/T8 + Forecast T3/T4/T5 + Animation-core T1) and *why*, including the two tasks (1 and 7) that have none and can start immediately. |
 | Task 1 is library work, TDD, justified API, no largest-cluster bug | Task 1: 17 real tests written before the implementation; the API choice (one function + one interception point at `colors.py:305-306`) is justified against the four consumers it automatically serves; the ordering rule is `frac × chroma` with a documented achromatic fallback, and `test_a_vivid_minority_colour_beats_the_muted_background` asserts the exact colour (`0.863, 0.078, 0.078`) the buggy rule fails to produce. Both states were **run**: red = `ValueError: 'image:...' is not a valid palette name`, green = the prototype's measured output. |
 | Tasks 2–6 rewrite one example + its notebook each, in lockstep | Each task rewrites both, in one commit, and specifies the notebook's full cell table. Lockstep is enforced mechanically by `tests/test_examples_are_native.py`, which scans `.py` **and** `.ipynb`. |
-| Market = MultiIndex showcase, per-sector + market forecasts, colour by price, ticker panel, accuracy overall + per sector in the tutorial, `t=1` | Task 2: `(Market, Sector, Ticker)` columns over 24 verified tickers; 6 sector traces + 1 market-mean trace with hierarchy-derived widths; `hue=` nested one sequence per sector (MultiIndex T4 form 2); `predict='Kalman', t=1, forecast_trail=16`; a right-hand panel listing each sector's tickers and score; the accuracy loop is example code with a **measured** 210-fit / 7.3 s budget. |
+| Market = MultiIndex showcase, per-sector + market forecasts, colour by price, ticker panel, accuracy overall + per sector in the tutorial, `t=1` | Task 2: `(Market, Sector, Ticker)` columns over 24 verified tickers; 6 sector traces + 1 market-mean trace with hierarchy-derived widths; `hue=` nested one sequence per sector (MultiIndex T6 form 2); `predict='Kalman', t=1, forecast_trail=16`; a right-hand panel listing each sector's tickers and score; the accuracy loop is example code with a **measured** 210-fit / 7.3 s budget. |
 | Weather = the paper figure, nearly all native, a handful of lines | Task 3: one `hyp.plot` call, verified end to end today (0.3 s, no warnings, 2 axes, 879 distinct colours at frame 150); the 70-line second panel and the 26-line hand-built hierarchy are deleted; budget ≤ 62 code lines. |
 | Paintings = full `text` displayed, native embeddings, native palette, names via `labels=` | Task 4: the side panel renders `PAINTINGS[name]['text']` (not `blurb`); `vectorizer='all-MiniLM-L6-v2', semantic=None, corpus=None`; `color=[image_palette(path)[0] ...]` from Task 1; `labels=` nested, one non-None entry per cloud at its middle window — the per-observation semantics verified on real annotations. |
 | Conversation = native text, `animate='serial'` + `chemtrails`, per-segment titles | Task 5: list-of-lists of strings in; `animate=True, order='serial', chemtrails=True`; `title=[one per turn]`. The collision I feared (categorical hue collapsing 28 turns and breaking per-dataset titles) was **measured and disproved**: 6 datasets stay 6 datasets with a 3-entry legend. |
@@ -2578,7 +2580,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
 
 **Remaining risk.** Three places:
 
-1. **Task 2 is the largest rewrite and the most dependent** — it consumes eight tasks across two other plans. If MultiIndex T4 (`hue` through a hierarchy) slips, the example still runs but colours by group instead of by price; that is a visible regression, not a crash, so `test_file_meets_its_native_ratio_floor` would not catch it. The guard is Task 2 Step 4, which asserts `axes: 2` (a colorbar exists ⇒ a continuous hue survived) and at least two distinct linewidths.
+1. **Task 2 is the largest rewrite and the most dependent** — it consumes eight tasks across two other plans. If MultiIndex T6 (`hue` through a hierarchy) slips, the example still runs but colours by group instead of by price; that is a visible regression, not a crash, so `test_file_meets_its_native_ratio_floor` would not catch it. The guard is Task 2 Step 4, which asserts `axes: 2` (a colorbar exists ⇒ a continuous hue survived) and at least two distinct linewidths.
 2. **The accuracy readout is the only unbounded cost in the plan.** It is pinned to a measured budget (210 fits / 7.3 s at `WINDOW=60, N_SCORED=30`), and the measurements at 250 rows (30.7 s) are recorded so a future change to those constants is an informed one.
 3. **Notebook execution is the step most likely to be skipped under time pressure**, and it is exactly the step that keeps the defect from staying published. `test_every_launch_notebook_ships_executed_outputs` makes skipping it a test failure rather than an oversight.
 </content>

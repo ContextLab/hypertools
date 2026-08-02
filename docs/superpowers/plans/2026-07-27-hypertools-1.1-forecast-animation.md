@@ -4,7 +4,7 @@
 
 **Goal:** Let `predict=` run with time-progressing animations, so a forecast grows ahead of the animated head and earlier forecasts can be retained as a fading fan — removing the ~100 lines of hand-rolled forecast machinery in the market gallery example, at parity across both backends.
 
-**Architecture:** `plot()` refuses `predict=` for every animate mode except `'spin'` (`plot.py:2346-2354`), because a forecast is drawn once as a fixed overlay (`plot.py:4339-4341`). This plan does **not** make the forecast a lazily-recomputed per-frame artifact. The market animation is **static data revealed over time**: every observation is known before the first frame, so every forecast the animation will ever draw is also knowable before the first frame. So the plan **precomputes the whole forecast schedule at setup**, folds all of it into the display bounding box alongside the real data, and then each frame is a table lookup. That single decision resolves the review's four fatal findings at once: forecasts are inside the box *by construction* (no clamp), every frame is a pure function of its index (idempotent under `ani.save()`/`to_jshtml()` replay), the per-frame cost collapses to a memoized fit per distinct revealed-history length, and plotly reaches parity by consuming the same precomputed table its trail traces already consume.
+**Architecture:** `plot()` refuses `predict=` for every animate mode except `'spin'` (`plot.py:2748-2756`), because a forecast is drawn once as a fixed overlay (`plot.py:4907-4909`). This plan does **not** make the forecast a lazily-recomputed per-frame artifact. The market animation is **static data revealed over time**: every observation is known before the first frame, so every forecast the animation will ever draw is also knowable before the first frame. So the plan **precomputes the whole forecast schedule at setup**, folds all of it into the display bounding box alongside the real data, and then each frame is a table lookup. That single decision resolves the review's four fatal findings at once: forecasts are inside the box *by construction* (no clamp), every frame is a pure function of its index (idempotent under `ani.save()`/`to_jshtml()` replay), the per-frame cost collapses to a memoized fit per distinct revealed-history length, and plotly reaches parity by consuming the same precomputed table its trail traces already consume.
 
 **Tech Stack:** Python 3.10+, numpy, scipy (PCHIP), matplotlib, plotly, `hypertools.predict` (Kalman / ARIMA / GP / Laplace / Chronos), pytest.
 
@@ -33,19 +33,19 @@ v1 of this plan was adversarially reviewed (`notes/audit/review_plan3_forecast_a
 |-|-|
 | Task 2 Step 6: `tests/plot/test_predict_integration.py` "all pass, unchanged" | `test_predict_integration.py:169-178` parametrizes over `True/'parallel'/'serial'/'window'/'morph'` asserting `NotImplementedError`. Narrowing the refusal breaks **4 of 5**. The file must be **edited** (Task 3), not asserted-unchanged. |
 | Task 2 Step 6 runs `tests/test_predict.py` | That file does not exist (`ls` → `No such file or directory`); pytest exits with a collection ERROR. Dropped from every command. |
-| Removing the refusal is enough to draw a per-frame forecast | `plot.py:4339-4341` draws the **static full-history overlay** with no `animate` guard, inside the shared matplotlib branch after `_draw()`. Measured on `animate='spin'`, n=3: `ax.lines` = 3 solid `_childN` + 3 dashed `_nolegend_` alpha=0.6, **901 vertices each**, and the setup overlays land **first**. Task 3 gates line 4339 on `animate in (False, None, 'spin')`. |
-| "Use `FrameContext.revealed_counts` for the history slice" | Animation-core defines `revealed_counts: Optional[Tuple[int, ...]] = None` (v4.3; `List[int]` before that) and documents *"``None`` for parallel animations"* — the mode every test uses. Replaced by `anim_window_bounds` (`trails.py:24-89`), which **is** the parallel reveal and is what `update_lines_parallel` itself calls (`matplotlib_backend.py:1185`). |
+| Removing the refusal is enough to draw a per-frame forecast | `plot.py:4907-4909` draws the **static full-history overlay** with no `animate` guard, inside the shared matplotlib branch after `_draw()`. Measured on `animate='spin'`, n=3: `ax.lines` = 3 solid `_childN` + 3 dashed `_nolegend_` alpha=0.6, **901 vertices each**, and the setup overlays land **first**. Task 3 gates line 4907 on `animate in (False, None, 'spin')`. |
+| "Use `FrameContext.revealed_counts` for the history slice" | Animation-core defines `revealed_counts: Optional[Tuple[int, ...]] = None` (v4.3; `List[int]` before that) and documents *"``None`` for parallel animations"* — the mode every test uses. Replaced by `anim_window_bounds` (`trails.py:24-94`), which **is** the parallel reveal and is what `update_lines_parallel` itself calls (`matplotlib_backend.py:1185`). |
 | Prerequisite is animation-core Task 7 alone | `order=` is animation-core **Task 5**. Verified today: `'order' in inspect.signature(hyp.plot).parameters` → `False`; `'on_frame'` → `False`. Both tasks are prerequisites. |
-| Forecasts "pass through the same center/scale transform as the data … so they cannot render outside the cube" | `plot.py:4015-4032` runs **once**, before any figure exists, and `_mean`/`_m1`/`_m2` are function-locals. Animated limits are hard-set to `[-1, 1]` before `FuncAnimation` is built (`matplotlib_backend.py:1785`, `1888-1890`; measured `ax.get_xlim3d()` → `(-1.0, 1.0)`). Measured: **1 of 7** partial-history Kalman forecasts fell outside the cube. Fixed by precomputing the schedule and including it in the joint statistics — see the maintainer correction below. |
-| `t=1` draws exactly 2 vertices | Measured: `t=1` draws **900** vertices at `antialias=True` (the default), 2 at `antialias=False`. `plot.py:1904-1908` documents this as contract (*"Forecast overlays drawn by `predict=` are smoothed the same way"*), `_draw_forecast_overlays` applies `_interp_static_line` (`plot.py:149-150`), and `test_predict_with_spin_renders_dashed_forecast_overlay` pins `len(fc.get_xdata()) > t + 1` (`test_predict_integration.py:198`). The v1 test is replaced by an antialias-aware pair. |
-| Forecasting "from the history revealed so far, in the already-reduced plotting space" (array unspecified) | There are **three** distinct arrays. `plot.py:3907-3925` resamples every animated line dataset onto **exactly `round(frame_rate*duration)` rows** (`_interp_anim_line`, `plot.py:277-299`), then `matplotlib_backend._aa_window` densifies that onto ~900 drawn vertices. Measured on 60 raw rows at `duration=2, frame_rate=4`: analyze 60 rows → frame grid 8 rows → drawn 904 vertices (the review's "15.1x"). Contract 1 below pins `t` to RAW analyze-space samples. |
-| `if predict is not None and animate == "morph":` refuses morph | `_resolve_animate_mode` is called at `plot.py:3653`, ~1300 lines **after** the refusal at `plot.py:2338`, so at the check `animate` is still the raw list and `animate == "morph"` is `False`. Verified: `animate=['morph','morph'] + predict='Kalman'` raises **today** only via the truthiness of a non-empty list. Task 3 guards both forms and tests the list form. |
-| Plotly "just works" once the refusal is removed | `plotly_backend.py:901-931` draws forecasts unconditionally and statically; `_add_animation` (`plotly_backend.py:2517-2529`) takes no forecast argument and its frame updates address only `trace_indices` (data) + `trail_trace_start..+n_trail_traces` (`plotly_backend.py:2896-2897`). A newly-accepted call would render a **frozen** full-history overlay. Task 6 brings plotly to real parity. |
+| Forecasts "pass through the same center/scale transform as the data … so they cannot render outside the cube" | `plot.py:4568-4585` runs **once**, before any figure exists, and `_mean`/`_m1`/`_m2` are function-locals. Animated limits are hard-set to `[-1, 1]` before `FuncAnimation` is built (`matplotlib_backend.py:1941-1943`; measured `ax.get_xlim3d()` → `(-1.0, 1.0)`). Measured: **1 of 7** partial-history Kalman forecasts fell outside the cube. Fixed by precomputing the schedule and including it in the joint statistics — see the maintainer correction below. |
+| `t=1` draws exactly 2 vertices | Measured: `t=1` draws **900** vertices at `antialias=True` (the default), 2 at `antialias=False`. `plot.py:2255-2259` documents this as contract (*"Forecast overlays drawn by `predict=` are smoothed the same way"*), `_draw_forecast_overlays` applies `_interp_static_line` (`plot.py:164-165`), and `test_predict_with_spin_renders_dashed_forecast_overlay` pins `len(fc.get_xdata()) > t + 1` (`test_predict_integration.py:198`). The v1 test is replaced by an antialias-aware pair. |
+| Forecasting "from the history revealed so far, in the already-reduced plotting space" (array unspecified) | There are **three** distinct arrays. `plot.py:4460-4478` resamples every animated line dataset onto **exactly `round(frame_rate*duration)` rows** (`_interp_anim_line`, `plot.py:293-315`), then `matplotlib_backend._aa_window` densifies that onto ~900 drawn vertices. Measured on 60 raw rows at `duration=2, frame_rate=4`: analyze 60 rows → frame grid 8 rows → drawn 904 vertices (the review's "15.1x"). Contract 1 below pins `t` to RAW analyze-space samples. |
+| `if predict is not None and animate == "morph":` refuses morph | `_resolve_animate_mode` is called at `plot.py:4158`, ~1400 lines **after** the refusal at `plot.py:2740`, so at the check `animate` is still the raw list and `animate == "morph"` is `False`. Verified: `animate=['morph','morph'] + predict='Kalman'` raises **today** only via the truthiness of a non-empty list. Task 3 guards both forms and tests the list form. |
+| Plotly "just works" once the refusal is removed | `plotly_backend.py:928-958` draws forecasts unconditionally and statically; `_add_animation` (`plotly_backend.py:2580-2593`) takes no forecast argument and its frame updates address only `trace_indices` (data) + `trail_trace_start..+n_trail_traces` (`plotly_backend.py:3005-3006`). A newly-accepted call would render a **frozen** full-history overlay. Task 6 brings plotly to real parity. |
 | `forecast_from_history` "Returns … numpy.ndarray" | `hyp.predict` returns a **`pandas.DataFrame`** (verified: `type(_predict(ramp, model='Kalman', t=3))` → `<class 'pandas.DataFrame'>`). Documented and tested in Task 1. |
 | Task 3 preallocates artists whose `trail_alpha` floor is `0.08`, and `test_trail_accumulates_past_forecasts` counts `get_alpha() > 0` | Contradictory: every preallocated artist is already `alpha=0.08 > 0` at frame 0, so `late > early` can never hold. Fixed by an explicit unwritten state (`set_visible(False)` + empty data). |
 | `assert max(alphas) == alphas[0] or max(alphas) >= sorted(alphas)[-1]` | `sorted(alphas)[-1]` **is** `max(alphas)`, so the disjunct is `max >= max` → always `True`. Replaced by a role-tagged comparison. |
 | `test_trail_is_capped_by_an_integer` drives one frame | A single `_func(20)` call leaves at most one entry in a per-frame ring buffer, so the cap assertion holds vacuously. All trail tests now drive frames **sequentially**. |
-| `_dashed(ax)` identifies forecasts | Any user data drawn with `'--'`/`':'` is misclassified. `_draw_forecast_overlays` already sets `label='_nolegend_'` + `alpha=0.6` (`plot.py:156`), but trail artists share `_nolegend_`. Contract 5 tags forecast artists explicitly and Task 4 tests the false-positive case. |
+| `_dashed(ax)` identifies forecasts | Any user data drawn with `'--'`/`':'` is misclassified. `_draw_forecast_overlays` already sets `label='_nolegend_'` + `alpha=0.6` (`plot.py:171`), but trail artists share `_nolegend_`. Contract 5 tags forecast artists explicitly and Task 4 tests the false-positive case. |
 | Task 2 Step 5 "Expected: 13 passed" | Task 1 created 5 + Task 2 appended 9 = 14. All pass counts in v2 are itemised per module. |
 
 ### Maintainer corrections applied (supersede the v1 design)
@@ -54,15 +54,15 @@ v1 of this plan was adversarially reviewed (`notes/audit/review_plan3_forecast_a
 2. **No clamping for static data.** The blanket "clamp animated forecasts to the axes limits" decision is **withdrawn**. There are two cases:
    - **CASE A — static data (this plan).** All observations known up front, merely *revealed* over time. Compute every forecast in advance; compute the bounding box from real data **and** every forecast together, so every forecast is inside the box by construction. **No clamp.**
    - **CASE B — streaming data (out of scope; already shipped).** `hypertools/io/streaming.py:382-401` freezes the box from the head samples and clamps: `t = 2.0*((pts - head_mu) - box_m1)/box_m2 - 1.0; return np.clip(t, -1.0, 1.0)`, with a `RuntimeWarning` when >25% of post-head samples are clamped (`streaming.py:498-508`). Clamping stays there. This plan neither adds nor changes a clamp.
-3. **Plotly must be identical to matplotlib.** The "gate plotly with `NotImplementedError`" instruction is **withdrawn**. Task 6 delivers real parity, reusing the mechanism plotly already uses for chemtrails/precog/bullettime: separate traces at a fixed alpha whose row-window data is rewritten each frame (`plotly_backend.py:945-975` creates them at `_to_plotly_color(color, 0.3)`; `plotly_backend.py:2929-2960` rewrites them per frame).
+3. **Plotly must be identical to matplotlib.** The "gate plotly with `NotImplementedError`" instruction is **withdrawn**. Task 6 delivers real parity, reusing the mechanism plotly already uses for chemtrails/precog/bullettime: separate traces at a fixed alpha whose row-window data is rewritten each frame (`plotly_backend.py:980-1013` creates them at `_to_plotly_color(color, 0.3)`; `plotly_backend.py:3215-3251` rewrites them per frame).
 
 ### Finding requested by the maintainer: is the reduction fit on data + forecasts?
 
 **No — and no defect exists.** Verified reading order in `plot()`:
 
-- `plot.py:2803-2823` — `xform = analyze(raw, ..., reduce=reduce, align=align, ...)`: the reduction is fit on the **real data only**.
-- `plot.py:2913` — `xform = reducer(xform, ndims=_display_ndims, reduce=_display_reduce, ...)`: the display-ndims pass, still data only.
-- `plot.py:2979-2988` — `_fc = _predictor(xform, model=predict, t=t)`: the forecast is produced **inside the already-reduced space**, so it never enters the reducer at all. The code comment states it: *"forecast `t` new rows per input dataset, in the plotted (post normalize->reduce->align) space (GH #169)"* (`plot.py:2963-2964`), and the public contract repeats it: *"one forecast array per input dataset, in the analyzed/plotted -- pre-center/scale -- space"* (`plot.py:1935-1937`).
+- `plot.py:3208-3225` — `xform = analyze(raw, ..., reduce=reduce, align=align, ...)`: the reduction is fit on the **real data only**.
+- `plot.py:3327` — `xform = reducer(xform, ndims=_display_ndims, reduce=_display_reduce, ...)`: the display-ndims pass, still data only.
+- `plot.py:3393-3402` — `_fc = _predictor(xform, model=predict, t=t)`: the forecast is produced **inside the already-reduced space**, so it never enters the reducer at all. The code comment states it: *"forecast `t` new rows per input dataset, in the plotted (post normalize->reduce->align) space (GH #169)"* (`plot.py:3377-3378`), and the public contract repeats it: *"one forecast array per input dataset, in the analyzed/plotted -- pre-center/scale -- space"* (`plot.py:2289-2291`).
 
 This is stronger than the requested "fit on data, `transform` the forecasts": the forecasts are never given to the reducer in either direction. It is shipped 1.0 behaviour pinned by `test_predict_return_model_bundle` (`test_predict_integration.py:82-100`), which asserts the bundle matches `hyp.predict(xform_data, ...)`. **No change is made here.** The one thing that *was* wrong under the CASE A spec — the bounding box not containing the animation's forecasts — is fixed in Task 4 Step 4.
 
@@ -102,15 +102,15 @@ Task 1 is fully standalone. Task 2 is standalone **except** for `ForecastSchedul
 1. **`t` is in RAW analyze-space samples.** `t=1` means "one more observation", matching the shipped docstring (*"Forecast horizon in steps"*) and what a user means by "forecast the next day". It is **not** in animation frames and **not** in drawn vertices.
 
 2. **Three coordinate spaces, named, with one mapping between them.**
-   - **analyze space** — `xform` after `normalize→reduce→align`, before the animation resample and before centre/scale (`plot.py:2979`, lengths captured at `plot.py:2998` as `pre_interp_lengths`). Forecasts are computed here.
-   - **frame grid** — `_interp_anim_line(xi, round(frame_rate*duration))` (`plot.py:3907-3925`); exactly one row per animation frame, endpoints exact.
-   - **display box** — the centred/rescaled `[-1, 1]` cube produced at `plot.py:4015-4032`.
+   - **analyze space** — `xform` after `normalize→reduce→align`, before the animation resample and before centre/scale (`plot.py:3391`, lengths captured at `plot.py:3412` as `pre_interp_lengths`). Forecasts are computed here.
+   - **frame grid** — `_interp_anim_line(xi, round(frame_rate*duration))` (`plot.py:4460-4478`); exactly one row per animation frame, endpoints exact.
+   - **display box** — the centred/rescaled `[-1, 1]` cube produced at `plot.py:4568-4585`.
 
    Because the forecast is anchored on the last revealed **raw** sample while the drawn head sits on the **frame grid**, the forecast joins the trajectory to within **at most one raw sample**, not exactly. This is deliberate (it is what keeps every forecast inside the box by construction) and it is what `test_forecast_is_anchored_near_the_drawn_head` measures.
 
 3. **`ForecastSchedule` — every forecast is computed before the first frame is drawn.** Static data means the whole schedule is knowable at setup. Each frame is a table lookup. Fits are memoized by revealed-history length, so a 900-frame animation of a 60-row dataset costs ≤ 59 fits, not 900.
 
-4. **The display box contains every drawn forecast by construction; nothing is clamped.** `plot.py:4015-4031` already stacks the full-history forecast into the joint statistics; Task 4 stacks the *entire schedule* in as well. Since `_rescale(a) = 2*(a - _m1)/_m2 - 1` with `_m1 = min(_joint)`, `_m2 = max(_joint - _m1)`, every element of `_joint` lands in `[-1, 1]`. PCHIP densification is monotone-preserving, so drawn vertices do not overshoot their control points either — the shipped static test `test_forecast_vertices_stay_inside_frame` (`test_predict_integration.py:143-164`) already relies on exactly this.
+4. **The display box contains every drawn forecast by construction; nothing is clamped.** `plot.py:4568-4584` already stacks the full-history forecast into the joint statistics; Task 4 stacks the *entire schedule* in as well. Since `_rescale(a) = 2*(a - _m1)/_m2 - 1` with `_m1 = min(_joint)`, `_m2 = max(_joint - _m1)`, every element of `_joint` lands in `[-1, 1]`. PCHIP densification is monotone-preserving, so drawn vertices do not overshoot their control points either — the shipped static test `test_forecast_vertices_stay_inside_frame` (`test_predict_integration.py:143-164`) already relies on exactly this.
 
 5. **Forecast artists identify themselves.** Every forecast artist carries `_hyp_forecast_role ∈ {'static', 'live', 'trail'}` (matplotlib) / `trace.meta = {'hyp_forecast_role': ...}` (plotly), plus `_hyp_forecast_age` on trail artists. Linestyle is **not** a discriminator: user data drawn with `fmt='--'` is dashed too.
 
@@ -118,7 +118,7 @@ Task 1 is fully standalone. Task 2 is standalone **except** for `ForecastSchedul
 
    *Wording matters here, and matches animation-core's contract 3:* drawing necessarily **mutates** artists, so this is not "purity" in the functional sense and must not be written that way. What is forbidden is **accumulation**, not effects. (The forecast *schedule* computed in Task 1 **is** genuinely pure — index in, displacement out, no effects — and that plan text is correct as written; the distinction is between computing the frame and drawing it.)
 
-7. **`return_model=True`'s `predict.forecasts` is unchanged**: the full-history forecast, exactly `t` rows, analyze space, one per input dataset (`plot.py:1935-1941`). For a time-progressing animation this is *also* the forecast drawn at the **final** frame, because at the last frame the revealed history **is** the full history (`anim_window_bounds(total-1, total, n, w)` → `end = n`). One sentence of the docstring is amended; the value is not.
+7. **`return_model=True`'s `predict.forecasts` is unchanged**: the full-history forecast, exactly `t` rows, analyze space, one per input dataset (`plot.py:2289-2295`). For a time-progressing animation this is *also* the forecast drawn at the **final** frame, because at the last frame the revealed history **is** the full history (`anim_window_bounds(total-1, total, n, w)` → `end = n`). One sentence of the docstring is amended; the value is not.
 
 8. **Backend parity.** matplotlib and plotly consume the same `ForecastSchedule` and draw the same polylines, asserted by a cross-backend test at the final frame.
 
@@ -472,7 +472,7 @@ Three spaces, never conflated (see the plan's Contract 2):
                     measured in these RAW samples.
 - FRAME GRID     -- `plot._interp_anim_line` resamples every animated line
                     dataset to exactly `round(frame_rate * duration)` rows.
-- DISPLAY box    -- the centred/rescaled [-1, 1] cube (`plot.py:4015-4032`).
+- DISPLAY box    -- the centred/rescaled [-1, 1] cube (`plot.py:4568-4585`).
 """
 
 import numpy as np
@@ -534,7 +534,7 @@ def forecast_from_history(history, model, t, min_history=DEFAULT_MIN_HISTORY):
 - [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_forecast_core.py -v`
-Expected: **8 passed** (6 named tests, one of them parametrized over 2 models), or 7 passed + 1 skipped if `statsmodels` is absent.
+Expected: **8 passed** (7 named tests, one of them parametrized over 2 models), or 7 passed + 1 skipped if `statsmodels` is absent.
 
 - [ ] **Step 5: Commit**
 
@@ -554,8 +554,8 @@ The heart of the plan. Static data ⇒ the whole schedule is knowable at setup, 
 - Test: `tests/plot/test_forecast_schedule.py`
 
 **Interfaces:**
-- `revealed_raw_counts(n_raw, n_grid, num, total_frames)` → int: RAW analyze-space rows revealed at frame `num` of a parallel/window animation. Delegates to `trails.anim_window_bounds` — the single library implementation, which `update_lines_parallel` itself calls (`matplotlib_backend.py:1185`). `end` does **not** depend on `window_frames` (`trails.py:80-81`: `end = int(np.ceil((num + 1) * n_points / total)); end = max(1, min(n_points, end))`), so `0` is passed for it.
-- `DisplayTransform(mean, offset, scale)` with `__call__(a)` reproducing `plot.py:4018-4031` exactly.
+- `revealed_raw_counts(n_raw, n_grid, num, total_frames)` → int: RAW analyze-space rows revealed at frame `num` of a parallel/window animation. Delegates to `trails.anim_window_bounds` — the single library implementation, which `update_lines_parallel` itself calls (`matplotlib_backend.py:1185`). `end` does **not** depend on `window_frames` (`trails.py:85-86`: `end = int(np.ceil((num + 1) * n_points / total)); end = max(1, min(n_points, end))`), so `0` is passed for it.
+- `DisplayTransform(mean, offset, scale)` with `__call__(a)` reproducing `plot.py:4569-4582` exactly.
 - `ForecastSchedule.for_parallel(histories, grid_lengths, model, t, n_frames, min_history=2)` and `.for_serial(...)`; `.path(dataset, frame)` → analyze-space `(t+1, d)` or `None`; `.stacked_paths()` → one array of every forecast vertex, for the bounding box; `.to_display(transform)` → the same table in display coordinates; `.n_fits` → int.
 
 - [ ] **Step 1: Write the failing test**
@@ -685,7 +685,7 @@ def test_serial_schedule_reveals_datasets_in_order():
 # --- the display transform -------------------------------------------------
 
 def test_display_transform_reproduces_plot_s_centre_scale_arithmetic():
-    """Mirrors plot.py:4018-4031 exactly, on the same inputs."""
+    """Mirrors plot.py:4569-4582 exactly, on the same inputs."""
     rng = np.random.default_rng(4)
     data = rng.normal(size=(40, 3))
     mean = data.mean(axis=0)
@@ -791,7 +791,7 @@ def revealed_raw_counts(n_raw, n_grid, num, total_frames):
 
 
 class DisplayTransform:
-    """The centre/scale affine `plot()` applies at `plot.py:4018-4031`.
+    """The centre/scale affine `plot()` applies at `plot.py:4569-4582`.
 
     ``2 * (((a - mean) - offset) / scale) - 1``. Recorded at setup so a
     forecast computed in ANALYZE space can be mapped into the SAME display
@@ -952,7 +952,7 @@ git commit -m "feat(plot): precomputed ForecastSchedule + display transform"
 This task changes what `plot()` accepts and what it draws, but does **not** yet draw a per-frame forecast. The intermediate state is precise and testable: a time-progressing `predict=` call is accepted and draws **no** forecast at all. That isolates the review's C2 finding (the un-gated static overlay) from Task 4's new rendering, so a regression in either is attributable.
 
 **Files:**
-- Modify: `hypertools/plot/plot.py:2338-2354` (the refusal), `plot.py:4339-4350` (the static overlay), `plot.py:122-165` (`_draw_forecast_overlays`, role tag only)
+- Modify: `hypertools/plot/plot.py:2740-2756` (the refusal), `plot.py:4907-4918` (the static overlay), `plot.py:137-180` (`_draw_forecast_overlays`, role tag only)
 - Modify: `tests/plot/test_predict_integration.py:167-178`
 - Test: `tests/plot/test_predict_animation.py` (create)
 
@@ -998,7 +998,7 @@ def test_predict_with_animate_true_no_longer_raises():
 
 @pytest.mark.parametrize('mode', [True, 'parallel', 'serial', 'window'])
 def test_time_progressing_animation_draws_no_static_full_history_overlay(mode):
-    """plot.py:4339 had no `animate` guard, so a time-progressing animation
+    """plot.py:4907 had no `animate` guard, so a time-progressing animation
     would draw BOTH a frozen full-history overlay AND the per-frame one.
     Measured before the fix on animate='spin': 3 dashed 901-vertex overlays,
     landing FIRST in ax.lines."""
@@ -1043,8 +1043,8 @@ def test_scalar_morph_still_refuses_predict():
 
 
 def test_list_form_morph_still_refuses_predict():
-    """`_resolve_animate_mode` runs at plot.py:3653, ~1300 lines AFTER the
-    refusal at plot.py:2338 -- so at the check `animate` is still a raw list
+    """`_resolve_animate_mode` runs at plot.py:4158, ~1400 lines AFTER the
+    refusal at plot.py:2740 -- so at the check `animate` is still a raw list
     and `animate == 'morph'` is False. Naive narrowing would silently ACCEPT
     a per-dataset morph list into the forecast path."""
     rng = np.random.default_rng(0)
@@ -1058,11 +1058,11 @@ def test_list_form_morph_still_refuses_predict():
 - [ ] **Step 2: Run the tests and confirm the expected failures**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_predict_animation.py -v`
-Expected: `test_predict_with_animate_true_no_longer_raises` and the 4 parametrized `..._no_static_full_history_overlay` cases FAIL with `NotImplementedError: predict= is only supported with static plots and with animate='spin'`. The two morph tests and the two static/spin tests FAIL on the missing `_hyp_forecast_role` tag (morph raises today, but with the tag helper returning `[]` the spin/static assertions fail at `len(...) == 3`).
+Expected: `test_predict_with_animate_true_no_longer_raises` and the 4 parametrized `..._no_static_full_history_overlay` cases FAIL with `NotImplementedError: predict= is only supported with static plots and with animate='spin'`. `test_spin_still_draws_the_static_overlay` and `test_static_plot_still_draws_the_static_overlay` FAIL on the missing `_hyp_forecast_role` tag (the tag helper returns `[]`, so the `len(...) == 3` assertions fail at `0 != 3`). The two morph tests (`test_scalar_morph_still_refuses_predict`, `test_list_form_morph_still_refuses_predict`) already PASS today, unmodified: morph already raises `NotImplementedError` before this task, and the shipped message interpolates `animate={animate!r}`, which already contains the substring "morph" -- so `pytest.raises(..., match='morph')` matches without any code change. Measured: **7 failed, 2 passed** (the 2 passes are the morph tests).
 
 - [ ] **Step 3: Tag forecast artists so tests can identify them reliably**
 
-In `_draw_forecast_overlays` (`plot.py:140-165`), after each `ax.plot(...)` call, tag the created artists. Add to the `Returns` docstring that artists carry `_hyp_forecast_role = 'static'`. Rendering is unchanged:
+In `_draw_forecast_overlays` (`plot.py:137-180`), after each `ax.plot(...)` call, tag the created artists. Add to the `Returns` docstring that artists carry `_hyp_forecast_role = 'static'`. Rendering is unchanged:
 
 ```python
     artists = []
@@ -1079,7 +1079,7 @@ In `_draw_forecast_overlays` (`plot.py:140-165`), after each `ax.plot(...)` call
 
 - [ ] **Step 4: Narrow the refusal, covering BOTH morph spellings**
 
-Replace `plot.py:2338-2354`:
+Replace `plot.py:2740-2756`:
 
 ```python
     # predict= + animate: a forecast over a STATIC scene is a fixed overlay,
@@ -1091,8 +1091,8 @@ Replace `plot.py:2338-2354`:
     # from.
     #
     # BOTH morph spellings must be caught HERE. `_resolve_animate_mode` (which
-    # maps a per-dataset list onto 'morph') is not called until plot.py:3653,
-    # ~1300 lines below, so at this point `animate` is still the raw list and
+    # maps a per-dataset list onto 'morph') is not called until plot.py:4158,
+    # ~1400 lines below, so at this point `animate` is still the raw list and
     # `animate == "morph"` is False for the list form.
     _is_morph_request = (animate == "morph"
                          or isinstance(animate, (list, tuple)))
@@ -1108,7 +1108,7 @@ Replace `plot.py:2338-2354`:
 
 - [ ] **Step 5: Gate the static overlay on non-time-progressing modes**
 
-At `plot.py:4339`, replace `if raw_forecasts is not None:` with:
+At `plot.py:4907`, replace `if raw_forecasts is not None:` with:
 
 ```python
             # The STATIC full-history overlay belongs only to modes that do
@@ -1133,8 +1133,8 @@ At `plot.py:4339`, replace `if raw_forecasts is not None:` with:
 def test_morph_animate_and_predict_raises_not_implemented(mode):
     # a morph interpolates between point CLOUDS rather than progressing along
     # a time axis, so there is no history to forecast from. The list form is
-    # covered explicitly because `_resolve_animate_mode` (plot.py:3653) does
-    # not run until long after the refusal at plot.py:2338, so at the check
+    # covered explicitly because `_resolve_animate_mode` (plot.py:4158) does
+    # not run until long after the refusal at plot.py:2740, so at the check
     # `animate` is still a raw list.
     rng = np.random.default_rng(0)
     a, b = (rng.normal(size=(120, 3)) + off for off in (0.0, 4.0))
@@ -1178,8 +1178,7 @@ git commit -m "feat(plot): accept predict= with time-progressing animations; gat
 ## Task 4: Draw the per-frame forecast, and build the box to contain it
 
 **Files:**
-- Modify: `hypertools/plot/plot.py` (schedule construction, bounding box, artist creation, frame callback)
-- Modify: `hypertools/plot/matplotlib_backend.py` (the live forecast artists)
+- Modify: `hypertools/plot/plot.py` (schedule construction, bounding box, live forecast artist creation and per-frame update, all in the matplotlib branch)
 - Test: `tests/plot/test_predict_animation.py` (append)
 
 **Interfaces:**
@@ -1310,7 +1309,7 @@ def test_forecast_head_tracks_the_animation():
 
 def test_forecast_is_anchored_near_the_drawn_head():
     """Contract 2. `t` is in RAW analyze-space samples, but the drawn head
-    sits on the FRAME GRID: plot.py:3907-3925 resamples a 60-row input to
+    sits on the FRAME GRID: plot.py:4460-4478 resamples a 60-row input to
     round(frame_rate*duration) rows, which matplotlib_backend then densifies
     (measured: 60 raw rows -> 8 grid rows -> 904 drawn vertices at
     duration=2/frame_rate=4, the review's ~15.1x). So the forecast anchors on
@@ -1387,7 +1386,7 @@ def test_t_equals_one_is_the_next_raw_step():
 
 
 def test_antialias_true_smooths_the_forecast_like_any_other_line():
-    """plot.py:1904-1908 documents this as contract ('Forecast overlays drawn
+    """plot.py:2255-2259 documents this as contract ('Forecast overlays drawn
     by predict= are smoothed the same way'), and the spin overlay is pinned to
     it at test_predict_integration.py:198. Measured today: t=1 draws 900
     vertices at antialias=True, 2 at antialias=False."""
@@ -1447,7 +1446,7 @@ def test_forecast_artists_are_not_identified_by_linestyle():
 
 
 def test_hue_regrouping_drops_forecasts_exactly_like_the_static_path():
-    """plot.py:3999 nulls raw_forecasts when hue=/cluster= regroups xform, so
+    """plot.py:4552 nulls raw_forecasts when hue=/cluster= regroups xform, so
     the 1:1 dataset<->forecast correspondence is gone. The animated path
     inherits that guard verbatim: no forecast is drawn, and nothing crashes."""
     data = _series(n=1, rows=60)
@@ -1466,7 +1465,7 @@ Expected: the 12 new tests FAIL — `_forecasts(ax, role='live')` returns `[]`, 
 
 - [ ] **Step 3: Snapshot the analyze-space history alongside the forecasts**
 
-At `plot.py:2977-2988`, where `raw_forecasts`/`bundle_forecasts` are built, also keep the analyze-space arrays the schedule will forecast from. They are captured here, beside `raw_forecasts`, so the existing correspondence guard at `plot.py:3999` covers them too:
+At `plot.py:3391-3402`, where `raw_forecasts`/`bundle_forecasts` are built, also keep the analyze-space arrays the schedule will forecast from. They are captured here, beside `raw_forecasts`, so the existing correspondence guard at `plot.py:4552` covers them too:
 
 ```python
     raw_forecasts = None
@@ -1485,14 +1484,14 @@ At `plot.py:2977-2988`, where `raw_forecasts`/`bundle_forecasts` are built, also
         # ANALYZE-space copies for the animated per-frame schedule (see
         # hypertools/plot/forecast.py). Taken HERE, beside raw_forecasts, so
         # they keep the same 1:1 dataset correspondence the guard at
-        # plot.py:3999 checks -- and BEFORE `_interp_anim_line` resamples
-        # `xform` onto the frame grid (plot.py:3907-3925), because `t` is
+        # plot.py:4552 checks -- and BEFORE `_interp_anim_line` resamples
+        # `xform` onto the frame grid (plot.py:4460-4478), because `t` is
         # measured in RAW analyze-space samples.
         analyze_histories = [np.array(xi, dtype=float, copy=True)
                              for xi in xform]
 ```
 
-Extend the guard at `plot.py:3999` so the snapshot is dropped with the forecasts:
+Extend the guard at `plot.py:4552` so the snapshot is dropped with the forecasts:
 
 ```python
     if raw_forecasts is not None and len(raw_forecasts) != len(xform):
@@ -1502,7 +1501,7 @@ Extend the guard at `plot.py:3999` so the snapshot is dropped with the forecasts
 
 - [ ] **Step 4: Build the schedule and fold it into the bounding box**
 
-Immediately before the centre/scale block (`plot.py:4002`), build the schedule; then include it in **both** joint stacks so the box contains every forecast by construction, and hand the resulting `DisplayTransform` back to the schedule:
+Immediately before the centre/scale block (`plot.py:4555`), build the schedule; then include it in **both** joint stacks so the box contains every forecast by construction, and hand the resulting `DisplayTransform` back to the schedule:
 
 ```python
     # Animated predict= (CASE A -- STATIC data revealed over time): every
@@ -1552,7 +1551,7 @@ Immediately before the centre/scale block (`plot.py:4002`), build the schedule; 
 
 - [ ] **Step 5: Create the live artists and drive them from the schedule**
 
-After `_draw(...)` returns (`plot.py:4291-4330`), when `forecast_schedule is not None`, create one dashed artist per dataset in that dataset's colour with `alpha=0.6`, `label='_nolegend_'`, `set_clip_on(False)` and `_hyp_forecast_role = 'live'` — the same styling `_draw_forecast_overlays` applies (`plot.py:154-156`), so a paused animation looks like a static plot. Then register the updater on the **internal** phase of the shared `FrameHooks` registry (Task 0):
+After `_draw(...)` returns (`plot.py:4858-4898`), when `forecast_schedule is not None`, create one dashed artist per dataset in that dataset's colour with `alpha=0.6`, `label='_nolegend_'`, `set_clip_on(False)` and `_hyp_forecast_role = 'live'` — the same styling `_draw_forecast_overlays` applies (`plot.py:168-171`), so a paused animation looks like a static plot. Then register the updater on the **internal** phase of the shared `FrameHooks` registry (Task 0):
 
 ```python
                 def _update_forecasts(ctx, _sched=forecast_schedule,
@@ -1571,7 +1570,7 @@ After `_draw(...)` returns (`plot.py:4291-4330`), when `forecast_schedule is not
                             continue
                         if _antialias:
                             # documented parity with the static overlay
-                            # (plot.py:1904-1908, :149-150)
+                            # (plot.py:2255-2259, :164-165)
                             pts = _interp_static_line(pts)
                         art.set_visible(True)
                         if _ndims >= 3:
@@ -1584,14 +1583,14 @@ After `_draw(...)` returns (`plot.py:4291-4330`), when `forecast_schedule is not
 
 **The signature is the contract.** `FrameHooks.dispatch` calls every registered callable with ONE argument, a `FrameContext` — never a frame index (`animation_context.py`, `dispatch`). v2 of this plan prescribed `def _update_forecasts(frame, ...)` and then `_sched.polyline(i, frame)`, which passes a `FrameContext` where an int is expected: a `TypeError` on the first frame of every animated `predict=` call. Read the frame index off the context (`ctx.frame`) and nothing else — do not re-derive it, and do not accept an index parameter "for testing".
 
-**The 3-D/2-D split is not optional.** A 3-D forecast artist is a `Line3D`; `set_data` alone leaves its z-data at whatever it held last, so a 3-D forecast silently draws in the wrong place instead of failing. Mirror `_draw_forecast_overlays`' own `d >= 3 / d == 2 / else` dispatch (`plot.py:152-164`). Both branches are tested (Task 4 Step 1a).
+**The 3-D/2-D split is not optional.** A 3-D forecast artist is a `Line3D`; `set_data` alone leaves its z-data at whatever it held last, so a 3-D forecast silently draws in the wrong place instead of failing. Mirror `_draw_forecast_overlays`' own `d >= 3 / d == 2 / else` dispatch (`plot.py:167-179`). Both branches are tested (Task 4 Step 1a).
 
 Two invariants the tests pin down:
 
 - The reveal comes from `revealed_raw_counts`, which delegates to `anim_window_bounds` — the library's single reveal implementation. Never re-derive it locally, and never read `FrameContext.revealed_counts` (documented `None` for parallel animations).
 - The callback **reads** the schedule and never mutates it, so frames stay idempotent.
 
-For 2-D and 1-D animations use `set_data` alone (no `set_3d_properties`), mirroring `_draw_forecast_overlays`' `d >= 3 / d == 2 / else` dispatch (`plot.py:152-164`).
+For 2-D and 1-D animations use `set_data` alone (no `set_3d_properties`), mirroring `_draw_forecast_overlays`' `d >= 3 / d == 2 / else` dispatch (`plot.py:167-179`).
 
 - [ ] **Step 6: Run the test and confirm it passes**
 
@@ -1800,11 +1799,11 @@ def test_invalid_forecast_trail_raises(bad):
 - [ ] **Step 2: Run the test and confirm it fails**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_forecast_trail.py -v`
-Expected: every test FAILS with `TypeError: plot() got an unexpected keyword argument 'forecast_trail'` (10 items: 9 named tests, one parametrized over 3 values).
+Expected: every test FAILS with `TypeError: plot() got an unexpected keyword argument 'forecast_trail'` (11 items: 9 named tests, one parametrized over 3 values).
 
 - [ ] **Step 3: Add and validate the kwarg**
 
-Add `forecast_trail=False` to the `plot()` signature next to `chemtrails=` (`plot.py:558`), and validate it early, beside the other fail-fast validations:
+Add `forecast_trail=False` to the `plot()` signature next to `chemtrails=` (`plot.py:803`), and validate it early, beside the other fail-fast validations:
 
 ```python
 #: Past forecasts retained by `forecast_trail=True`.
@@ -1860,7 +1859,7 @@ def trail_frames(frame, n_retained, n_frames, stride=1):
 def trail_alpha(age, n_retained, live_alpha=0.6, floor=0.08):
     """Alpha for a forecast `age` frames old. Age 0 is the live forecast.
 
-    `live_alpha` matches the static overlay's 0.6 (`plot.py:156`), so a paused
+    `live_alpha` matches the static overlay's 0.6 (`plot.py:171`), so a paused
     animation looks like a static plot.
     """
     if age <= 0:
@@ -1908,12 +1907,12 @@ git commit -m "feat(plot): forecast_trail= retains earlier forecasts as a fading
 
 ## Task 6: Plotly parity
 
-Removing the refusal at `plot.py:2346` is backend-agnostic, so `backend='plotly', animate=True, predict=` becomes reachable too — but `plotly_backend.py:901-931` draws forecasts statically and `_add_animation` (`plotly_backend.py:2517-2529`) takes no forecast argument, so a plotly animation would show a **frozen** full-history overlay. Plotly must be identical to matplotlib.
+Removing the refusal at `plot.py:2748` is backend-agnostic, so `backend='plotly', animate=True, predict=` becomes reachable too — but `plotly_backend.py:928-958` draws forecasts statically and `_add_animation` (`plotly_backend.py:2580-2593`) takes no forecast argument, so a plotly animation would show a **frozen** full-history overlay. Plotly must be identical to matplotlib.
 
-The mechanism already exists. Plotly renders chemtrails/precog/bullettime as **separate traces at a fixed alpha whose row-window data is rewritten every frame**: created at `_to_plotly_color(color, 0.3)` (`plotly_backend.py:951`), positioned via `trail_trace_start` (`plotly_backend.py:945`, needed precisely *because* forecast traces are appended in between — the code says so at `plotly_backend.py:936-943`), addressed per frame at `plotly_backend.py:2896-2897`, and rewritten at `plotly_backend.py:2947-2956`. The forecast live trace and the forecast trail traces use exactly that pattern, driven by the same precomputed `ForecastSchedule`.
+The mechanism already exists. Plotly renders chemtrails/precog/bullettime as **separate traces at a fixed alpha whose row-window data is rewritten every frame**: created at `_to_plotly_color(color, 0.3)` (`plotly_backend.py:1000`), positioned via `trail_trace_start` (`plotly_backend.py:980`, needed precisely *because* forecast traces are appended in between — the code says so at `plotly_backend.py:965-970`), addressed per frame at `plotly_backend.py:3005-3006`, and rewritten at `plotly_backend.py:3241-3250`. The forecast live trace and the forecast trail traces use exactly that pattern, driven by the same precomputed `ForecastSchedule`.
 
 **Files:**
-- Modify: `hypertools/plot/plotly_backend.py`, `hypertools/plot/plot.py` (pass the schedule to `plotly_draw`, `plot.py:4181-4230`)
+- Modify: `hypertools/plot/plotly_backend.py`, `hypertools/plot/plot.py` (pass the schedule to `plotly_draw`, `plot.py:4771-4813`)
 - Test: `tests/plot/test_forecast_animation_plotly.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -1989,7 +1988,7 @@ def test_plotly_animated_plot_has_a_live_forecast_trace_per_dataset(style):
 @pytest.mark.parametrize('style', STYLES)
 def test_plotly_forecast_traces_are_updated_per_frame_not_frozen(style):
     """plotly's frame updates address only the data + trail trace ranges
-    (plotly_backend.py:2896-2897), so an un-wired forecast trace stays
+    (plotly_backend.py:3005-3006), so an un-wired forecast trace stays
     frozen at its setup value -- and it must be wired in EVERY branch, not
     just the parallel one."""
     fig = hyp.plot(_series(n=1), '-', predict='Kalman', t=3,
@@ -2052,7 +2051,7 @@ def test_plotly_forecast_stays_inside_the_scene_range():
 
 def test_plotly_forecast_trail_traces_carry_decreasing_opacity():
     """Mirrors the chemtrails mechanism: separate traces at a fixed alpha,
-    data rewritten per frame (plotly_backend.py:951, :2947-2956)."""
+    data rewritten per frame (plotly_backend.py:1000, :3241-3250)."""
     fig = hyp.plot(_series(n=1), '-', predict='Kalman', t=3, animate=True,
                    forecast_trail=4, duration=4, frame_rate=4,
                    backend='plotly', show=False)
@@ -2105,20 +2104,20 @@ Expected: the parity tests FAIL — `_fc_role(fig, 'live')` is empty (plotly's f
 
 - [ ] **Step 3: Tag the existing static forecast traces**
 
-In `plotly_backend.py:901-931`, add `meta=dict(hyp_forecast_role='static')` to `fc_common`. Rendering is unchanged; `test_plotly_predict_trace_parity` (`test_predict_integration.py:228-243`) must still pass untouched.
+In `plotly_backend.py:928-958`, add `meta=dict(hyp_forecast_role='static')` to `fc_common`. Rendering is unchanged; `test_plotly_predict_trace_parity` (`test_predict_integration.py:228-243`) must still pass untouched.
 
 - [ ] **Step 4: Accept the schedule and create the animated traces**
 
-Add `forecast_schedule=None` and `forecast_trail=0` to `plotly_draw`'s signature (beside `forecasts=None`, `plotly_backend.py:465`) and pass them from `plot.py:4230` alongside `forecasts=raw_forecasts`. When `forecast_schedule is not None`:
+Add `forecast_schedule=None` and `forecast_trail=0` to `plotly_draw`'s signature (beside `forecasts=None`, `plotly_backend.py:465`) and pass them from `plot.py:4795` alongside `forecasts=raw_forecasts`. When `forecast_schedule is not None`:
 
-- Skip the static block (parity with `plot.py:4339`'s gate).
+- Skip the static block (parity with `plot.py:4907`'s gate).
 - Create one `live` trace per dataset — `dash='dash'`, `_to_plotly_color(color, 0.6)`, `showlegend=False`, `hoverinfo='skip'`, `meta=dict(hyp_forecast_role='live', hyp_dataset=i, hyp_forecast_age=0, hyp_forecast_alpha=trail_alpha(0, n_retained))`.
 - Create `forecast_trail` trail traces per dataset at `_to_plotly_color(color, trail_alpha(age, n_retained))`, `meta=dict(hyp_forecast_role='trail', hyp_forecast_age=age, hyp_dataset=i, hyp_forecast_alpha=trail_alpha(age, n_retained))`. The declared `hyp_forecast_alpha` must be the exact value baked into the rgba string — the parity test asserts both.
-- Record `forecast_trace_start = <index of the first live trace>` and the per-trace `(dataset, age)` map, exactly as `trail_trace_start`/`trail_dataset_indices` do (`plotly_backend.py:936-947`), and pass both into `_add_animation`.
+- Record `forecast_trace_start = <index of the first live trace>` and the per-trace `(dataset, age)` map, exactly as `trail_trace_start`/`trail_dataset_indices` do (`plotly_backend.py:980-984`), and pass both into `_add_animation`.
 
 - [ ] **Step 5: Update the traces every frame**
 
-In `_add_animation`'s parallel/serial frame loops, extend `trace_indices` with the forecast trace range (the same way `has_trails` extends it at `plotly_backend.py:2895-2897`) and append the schedule's polylines to `frame_traces` in that order. Use `trail_frames(k, n_retained, n_frames)` for the fan, and an empty `x/y/z` for a frame with no forecast — matching matplotlib's hidden-artist state.
+In `_add_animation`'s parallel/serial frame loops, extend `trace_indices` with the forecast trace range (the same way `has_trails` extends it at `plotly_backend.py:3003-3006`) and append the schedule's polylines to `frame_traces` in that order. Use `trail_frames(k, n_retained, n_frames)` for the fan, and an empty `x/y/z` for a frame with no forecast — matching matplotlib's hidden-artist state.
 
 **Updated 2026-08-01 (Jeremy's parity ruling).** Plotly's parallel reveal used to be its own transcription — `end = max(2, ceil((k + 1) * max_len / n_frames))` against the LONGEST dataset — which coincided with matplotlib's per-dataset reveal only when the animated arrays shared a length. It no longer exists: both backends now call `trails.anim_window_bounds(k, n_frames, n_points, window_frames)` per dataset (`plotly_backend.py`'s `_add_animation` head loop). There is one reveal, so there is nothing left to coincide. Index the schedule by the **frame** `k` anyway, not by a re-derived row count, so the two backends read the same table.
 
@@ -2144,10 +2143,10 @@ git commit -m "feat(plot): plotly parity for animated predict= and forecast_trai
 
 ## Task 7: The `return_model=` bundle contract
 
-The review's headline question: what does `bundle['predict']['forecasts']` hold when the forecast is recomputed for every frame? Contract 7's answer needs no new value, because at the final frame the revealed history **is** the full history (`anim_window_bounds(total-1, total, n, w)` → `end = n`), so the documented full-history forecast **is** the final-frame forecast. Only one sentence of `plot.py:1937-1941` is now imprecise, and no test covers `return_model=` for an animated forecast at all.
+The review's headline question: what does `bundle['predict']['forecasts']` hold when the forecast is recomputed for every frame? Contract 7's answer needs no new value, because at the final frame the revealed history **is** the full history (`anim_window_bounds(total-1, total, n, w)` → `end = n`), so the documented full-history forecast **is** the final-frame forecast. Only one sentence of `plot.py:2291-2295` is now imprecise, and no test covers `return_model=` for an animated forecast at all.
 
 **Files:**
-- Modify: `hypertools/plot/plot.py:1920-1941`, `:1955`
+- Modify: `hypertools/plot/plot.py:2271-2295`
 - Test: `tests/plot/test_predict_animation.py` (append)
 
 - [ ] **Step 1: Write the failing test**
@@ -2157,7 +2156,7 @@ The review's headline question: what does `bundle['predict']['forecasts']` hold 
 
 def test_bundle_forecasts_are_the_full_history_forecast():
     """Unchanged from static/spin: exactly t rows, analyze space, one per
-    input dataset (plot.py:1935-1941)."""
+    input dataset (plot.py:2289-2295)."""
     data = _series(n=2)
     out = hyp.plot(data, '-', predict='Kalman', t=4, animate=True,
                    duration=2, frame_rate=4, show=False, return_model=True)
@@ -2219,7 +2218,7 @@ Expected: before Tasks 3-4 these fail with `NotImplementedError`; run at this po
 
 - [ ] **Step 3: Amend the docstring**
 
-In `plot.py:1937-1941`, replace the sentence about the drawn overlay:
+In `plot.py:2291-2295`, replace the sentence about the drawn overlay:
 
 ```
         ``predict`` is ``None`` unless `predict` was set, in which case it is
@@ -2300,7 +2299,7 @@ git commit -m "docs(1.1): document animated predict= and forecast_trail="
 
 These came out of the review and are **not** settled by any instruction so far. Each is stated with its options; none is invented in the plan.
 
-1. **The silent forecast drop at `plot.py:3999` (review G2).** With `hue=`/`cluster=`, `xform` is regrouped by category and `raw_forecasts` is nulled with **no warning**; the animated path inherits that behaviour verbatim (Task 4, `test_hue_regrouping_drops_forecasts_exactly_like_the_static_path`), so a user asking for `predict=` silently gets no forecast. Options: **(a)** keep the silent drop (status quo, zero risk to shipped figures); **(b)** emit a `UserWarning` naming `hue=`/`cluster=`, for both the static and animated paths; **(c)** raise for the newly-enabled animated path only, keeping static silent. The plan implements **(a)** and pins it with a test; changing it is a one-line follow-up.
+1. **The silent forecast drop at `plot.py:4552` (review G2).** With `hue=`/`cluster=`, `xform` is regrouped by category and `raw_forecasts` is nulled with **no warning**; the animated path inherits that behaviour verbatim (Task 4, `test_hue_regrouping_drops_forecasts_exactly_like_the_static_path`), so a user asking for `predict=` silently gets no forecast. Options: **(a)** keep the silent drop (status quo, zero risk to shipped figures); **(b)** emit a `UserWarning` naming `hue=`/`cluster=`, for both the static and animated paths; **(c)** raise for the newly-enabled animated path only, keeping static silent. The plan implements **(a)** and pins it with a test; changing it is a one-line follow-up.
 
 2. **Further throttling beyond memoization (review G3).** Memoizing by revealed-history length caps a 900-frame, 3-dataset, 60-row animation at ≤ 177 fits instead of 2700 — measured at ~54 ms per 60-row Kalman fit, that is ~10 s of setup instead of ~146 s. But a 500-row history costs ~440 ms per fit, so a long real-world series is still minutes. Options: **(a)** memoization only (what the plan implements); **(b)** add `forecast_every=<n frames>` so the schedule samples the reveal instead of tracking it exactly, with a default to be chosen; **(c)** stride the schedule automatically once the projected fit count exceeds some ceiling. (b)/(c) both need a default value that is a product decision, so neither is invented here.
 
@@ -2317,15 +2316,15 @@ These came out of the review and are **not** settled by any instruction so far. 
 | finding | closed by |
 |-|-|
 | **C1** existing parametrize asserts the opposite; `tests/test_predict.py` does not exist | **Task 3 Step 6** edits `test_predict_integration.py:167-178` down to `['morph', ['morph','morph']]` as an explicit step. No command anywhere in this plan names `tests/test_predict.py`. |
-| **C2** static full-history overlay never suppressed | **Task 3 Step 5** gates `plot.py:4339` on `animate in (False, None, 'spin')`; **Task 3 Step 1** tests it for all four time-progressing modes, and separately pins that static and `'spin'` keep theirs (styling, alpha, label, clip). |
-| **C3** `revealed_counts` is `None` for parallel; `order=` is animation-core Task 5 | **Task 2** uses `anim_window_bounds` (`trails.py:24-89`) — the mechanism that exists for parallel and that `update_lines_parallel` itself calls — and `test_reveal_matches_the_library_formula_not_a_second_copy_of_it` pins it to that one implementation. **Prerequisites** lists animation-core Tasks 5 **and** 7, with the interface each supplies. |
+| **C2** static full-history overlay never suppressed | **Task 3 Step 5** gates `plot.py:4907` on `animate in (False, None, 'spin')`; **Task 3 Step 1** tests it for all four time-progressing modes, and separately pins that static and `'spin'` keep theirs (styling, alpha, label, clip). |
+| **C3** `revealed_counts` is `None` for parallel; `order=` is animation-core Task 5 | **Task 2** uses `anim_window_bounds` (`trails.py:24-94`) — the mechanism that exists for parallel and that `update_lines_parallel` itself calls — and `test_reveal_matches_the_library_formula_not_a_second_copy_of_it` pins it to that one implementation. **Prerequisites** lists animation-core Tasks 5 **and** 7, with the interface each supplies. |
 | **C4** centre/scale invariant arithmetically impossible; forecasts fall outside the cube | **Task 2** records the transform as `DisplayTransform` instead of leaning on dead function-locals; **Task 4 Step 4** folds the whole schedule into both joint stacks, so every forecast is in `[-1, 1]` by construction (Contract 4). Per the maintainer correction there is **no clamp** — the box is fixed, not the drawing. Guards: `test_to_display_maps_every_scheduled_forecast_into_the_cube`, `test_forecast_stays_inside_the_axes_limits` (every frame, not one), `test_plotly_forecast_stays_inside_the_scene_range`. |
-| **C5** `t=1` vs the documented antialias contract | **Task 4** keeps documented parity (`plot.py:1904-1908`, `:149-150`) and tests both halves: `antialias=False` → exactly `t + 1` vertices; `antialias=True` → more. |
+| **C5** `t=1` vs the documented antialias contract | **Task 4** keeps documented parity (`plot.py:2255-2259`, `:164-165`) and tests both halves: `antialias=False` → exactly `t + 1` vertices; `antialias=True` → more. |
 | **C6** which array the history comes from; `t`'s unit | **Contract 1 + 2** name all three spaces with the measurements; **Task 4 Step 3** snapshots analyze space before `_interp_anim_line`; `test_t_is_measured_in_raw_samples_not_frames_or_vertices` and `test_forecast_is_anchored_near_the_drawn_head` (whose tolerance is derived from one raw step, with the discriminating comparison against final-observation anchoring) pin it. |
-| **C7** list-form morph regression | **Task 3 Step 4** guards `animate == "morph" or isinstance(animate, (list, tuple))`, with the `plot.py:3653` vs `plot.py:2338` ordering in the comment; tested in both `test_predict_animation.py` and the edited `test_predict_integration.py` parametrize. |
+| **C7** list-form morph regression | **Task 3 Step 4** guards `animate == "morph" or isinstance(animate, (list, tuple))`, with the `plot.py:4158` vs `plot.py:2740` ordering in the comment; tested in both `test_predict_animation.py` and the edited `test_predict_integration.py` parametrize. |
 | **C8** plotly advertised with nothing behind it | **Task 6** delivers real parity via plotly's own trail mechanism, with a final-frame numeric equality test against matplotlib. The "gate it" instruction was withdrawn by the maintainer. |
 | **G1** `return_model` contract undefined | **Contract 7 + Task 7**: the value is unchanged because the final frame reveals the whole history; one docstring sentence amended; four new tests including `test_the_final_frame_draws_exactly_the_bundled_forecast`. |
-| **G2** silent drop at `plot.py:3999` has no per-frame analogue | **Task 4 Step 3** extends the guard to the snapshot; `test_hue_regrouping_drops_forecasts_exactly_like_the_static_path` pins it. Whether to keep it silent is **Decision 1**. |
+| **G2** silent drop at `plot.py:4552` has no per-frame analogue | **Task 4 Step 3** extends the guard to the snapshot; `test_hue_regrouping_drops_forecasts_exactly_like_the_static_path` pins it. Whether to keep it silent is **Decision 1**. |
 | **G3** per-frame refit cost | **Task 2** memoizes by revealed-history length; `test_fits_are_memoized_by_revealed_history_length` asserts a real bound (≤ 60 per dataset for a 900-frame animation) with the measured 54 ms/fit in the comment. Further throttling is **Decision 2**. |
 | **G4** `min_history=2` stub; `None` unspecified | `forecast_from_history` returns `None` (documented); `test_a_dataset_with_too_little_history_hides_its_forecast` and `test_early_frames_have_no_forecast` pin the hidden-artist behaviour. The floor value is **Decision 3**. |
 | **G5** ring buffer not idempotent, never reset | **Contract 6**: no buffer at all. `trail_frames(frame, ...)` is pure; `test_frames_are_idempotent` and `test_the_fan_is_a_pure_function_of_the_frame_index` drive frames out of order and compare. |
@@ -2334,13 +2333,13 @@ These came out of the review and are **not** settled by any instruction so far. 
 | **T1** tautological opacity assertion | Replaced by `test_live_forecast_is_strictly_more_opaque_than_every_trail` (role-tagged) plus `test_trail_alpha_decreases_with_age` (sorted by `_hyp_forecast_age`). |
 | **T2** preallocation vs `alpha > 0` | Emptiness, not alpha, is the unwritten signal: `_drawn()` filters on `get_visible()` **and** non-empty data. `trail_alpha`'s `0.08` floor is now irrelevant to the count. |
 | **T3** vacuous cap test | All trail tests use `_drive(ani, N)`, which walks frames `0..N` sequentially. `test_an_uncapped_trail_retains_more_than_a_capped_one` proves the cap is what limits the fan. |
-| **T4** wrong pass counts | Itemised per module: Task 1 → 8, Task 2 → 12, Task 3 → 9 (+17 in the edited integration file), Task 4 → 21 cumulative, Task 5 → 11, Task 6 → 8, Task 7 → 25 cumulative. |
+| **T4** wrong pass counts | Itemised per module: Task 1 → 8, Task 2 → 14, Task 3 → 9 (+15 in the edited integration file), Task 4 → 27 cumulative, Task 5 → 11, Task 6 → 18, Task 7 → 31 cumulative. |
 | **T5** `_dashed()` is not forecast-specific | **Contract 5**: `_hyp_forecast_role` / `meta['hyp_forecast_role']`, set in `_draw_forecast_overlays` (Task 3 Step 3) and on every new artist/trace. `test_forecast_artists_are_not_identified_by_linestyle` plots the data with `fmt='--'` and asserts the linestyle heuristic would have over-counted. |
 
 **Also verified and deliberately unchanged** (so it is not re-litigated): Task 1's import path, its `(t, n_dims)` return shape, its all-future-steps claim (Kalman/ARIMA/GP reproduce a unit ramp; Laplace does not, and is excluded rather than having the tolerance loosened), `ani._func(frame, *ani._args)` as the drive mechanism, `get_data_3d()` on 3-D artists, and `_validate_forecast_trail`'s routing of `-1`/`'yes'`/`2.5`.
 
 **Placeholders.** None: every step carries runnable code, an exact command, and an expected result.
 
-**Type consistency.** `forecast_from_history` → `(t + 1, n_dims)` float64 with a zero first row, or `None`. `ForecastSchedule.path` returns that same array or `None`; `.polyline` adds the anchor; `.to_display` rescales displacements by `2 / transform.scale` only, because a displacement is a difference of positions and the mean cancels. `DisplayTransform(mean, offset, scale)` reproduces `plot.py:4018-4031` and is asserted against it directly. `_validate_forecast_trail` returns an int consumed by `trail_alpha(age, n_retained, ...)` and `trail_frames(frame, n_retained, n_frames)`. Both backends index the schedule by **frame**, never by a re-derived row count.
+**Type consistency.** `forecast_from_history` → `(t + 1, n_dims)` float64 with a zero first row, or `None`. `ForecastSchedule.path` returns that same array or `None`; `.polyline` adds the anchor; `.to_display` rescales displacements by `2 / transform.scale` only, because a displacement is a difference of positions and the mean cancels. `DisplayTransform(mean, offset, scale)` reproduces `plot.py:4569-4582` and is asserted against it directly. `_validate_forecast_trail` returns an int consumed by `trail_alpha(age, n_retained, ...)` and `trail_frames(frame, n_retained, n_frames)`. Both backends index the schedule by **frame**, never by a re-derived row count.
 
 **Remaining risk.** Task 4 Step 4 changes what the centre/scale statistics are computed over for **every** `predict=` plot that is also animated. A static or `'spin'` plot is untouched (`forecast_schedule is None`, so `_fc_rows` is the single pre-existing entry and the arithmetic is byte-identical to today's). The guards are the unchanged static tests — `test_forecast_vertices_stay_inside_frame`, `test_predict_adds_one_dashed_forecast_per_dataset`, `test_predict_with_spin_renders_dashed_forecast_overlay` — plus the full-suite run in Step 7. If Task 4 grows beyond one reviewable diff, split it at Step 4/Step 5: "fold the schedule into the bounding box" and "draw from the schedule" are independently testable.
