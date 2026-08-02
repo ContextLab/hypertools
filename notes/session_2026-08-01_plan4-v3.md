@@ -235,6 +235,70 @@ equivalent exists; any remaining private use must appear in an explicit
 fails the gate, so new ones cannot creep in, and each retained one is reviewed rather than assumed.
 Proceeding on this assumption; flagging it for the maintainer.
 
+### 12. Metric audit (`notes/audit/plan4_metric_remeasure.md`)
+
+The docstring-strip fix is safe: `_code_lines_py` results are **identical line-for-line** on all five
+scripts after refactoring the shared state machine out. Notebook counts move where docstrings exist:
+market 193→187, weather 207→194, conversation 191→176; paintings and morph unchanged.
+
+**All five script budgets are ATTAINABLE** by the plan's own prescribed content — market 109≤115,
+weather 56≤62, paintings 111≤118, conversation 88≤90, morph 26≤30 (morph is already under budget
+today at 26).
+
+**Two notebook budgets are not, and the reason is simpler than docstrings** — they are set *below
+their own script budgets*:
+
+| task | script ≤ | notebook ≤ | headroom |
+|-|-|-|-|
+| market | 115 | 120 | +5 |
+| weather | 62 | 66 | +4 |
+| paintings | 118 | **110** | **−8 — impossible** |
+| conversation | 90 | **76** | **−14 — impossible** |
+| morph | 30 | 34 | +4 |
+
+A notebook contains its script's code plus an install cell plus a display cell. A notebook budget
+below the script budget cannot be met by any correct notebook, whatever the metric does.
+
+**Fix — derive the notebook budget instead of writing it down.**
+`notebook_budget = script_budget + NOTEBOOK_OVERHEAD`, with `NOTEBOOK_OVERHEAD = 5` measured
+(max cell-0 code lines across the five = 3, plus a 2-line `from IPython.display import HTML` +
+`HTML(ani.to_jshtml())` cell). Then every notebook budget is computed from the one number per task
+that is actually chosen, it can never again be set below its script's, and it self-updates. Checked
+against the prescribed content — all ten now pass, and still tightly:
+
+| task | derived nb ≤ | prescribed | headroom |
+|-|-|-|-|
+| market | 120 | 113 | 7 |
+| weather | 67 | 60 | 7 |
+| paintings | 123 | 116 | 7 |
+| conversation | 95 | 93 | **2** |
+| morph | 35 | 30 | 5 |
+
+This is not weakening a contract to fit the code (Contract 6): two of the ten were unsatisfiable by
+construction, and the replacement is a derivation, not a fitted number.
+
+### 13. The removed ratio floor is still promised in ten places
+
+The revision note records that the per-file native-ratio floor was **deleted** as one of v1's two
+Fatals, and Task 8's module docstring confirms ratio is "REPORTED, not gated". But ten lines still
+state it as a budget: **634, 990, 1006, 1186, 1201, 1420, 1435, 1792, 1807, 1904** — e.g. L634
+*"script ≤ 115 code lines, ≥ 26% native"*. The plan promises floors its own gate no longer enforces.
+L1435 is doubly stale: it also still says *"script ≤ 72"* where the enforced `BUDGETS` dict says 90.
+
+### 14. "Corrected wherever it appears" — it wasn't
+
+Revision-note L24 claims the false *"all five launch notebooks ship ZERO executed outputs"* was
+"Corrected wherever it appears." All five per-task BEFORE headers still say it — **632, 1004, 1199,
+1433, 1805**, each reading "0 of N code cells executed". Measured reality is 4/7, 2/7, 2/6, 2/6, 1/6.
+
+### 15. The plan already knew about the install cell — the gate just didn't
+
+Four "Expected:" lines say it outright, e.g. L1186: *"`4/5 code cells produced output` (cells 3, 5,
+7, 9; **cell 0's Colab install cell produces none**)"*, and likewise at L1420, L1792, L1904. So the
+exemption that breaks the prescribed `execution_count` gate (finding 8) was **documented in this
+same file four times** and simply never made it into the assertion. Same shape as the plotly
+Play-button defect: the rule was written down in the file and violated in the file.
+
 ## Status
 
 Seven parallel audits dispatched (reports land in `notes/audit/`):
