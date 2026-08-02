@@ -390,3 +390,78 @@ def test_hue_regrouping_drops_forecasts_exactly_like_the_static_path():
     ax = _ax(fig)
     ani._func(6, *ani._args)
     assert _forecasts(ax) == []
+
+
+def test_bundle_forecasts_are_the_full_history_forecast():
+    """Unchanged from static/spin: exactly t rows, analyze space, one per
+    input dataset (plot.py:2289-2295)."""
+    data = _series(n=2)
+    out = hyp.plot(data, '-', predict='Kalman', t=4, animate=True,
+                   duration=2, frame_rate=4, show=False, return_model=True)
+    assert out['animation'] is not None
+    assert out['predict']['model'] == 'Kalman'
+    assert out['predict']['params'] == {'t': 4}
+    forecasts = out['predict']['forecasts']
+    assert len(forecasts) == 2
+    for fc in forecasts:
+        assert np.asarray(fc).shape == (4, 3)
+
+
+def test_bundle_forecast_matches_hyp_predict_on_the_returned_xform_data():
+    """Contract 7: the bundle stays interchangeable with hyp.predict, exactly
+    as the static path promises and test_predict_return_model_bundle pins."""
+    out = hyp.plot(_series(n=1), '-', predict='Kalman', t=4, animate=True,
+                   duration=2, frame_rate=4, show=False, return_model=True)
+    direct = np.asarray(hyp.predict(np.asarray(out['xform_data'][0]),
+                                    model='Kalman', t=4), dtype=float)
+    assert np.allclose(np.asarray(out['predict']['forecasts'][0]), direct,
+                       rtol=1e-6, atol=1e-6)
+
+
+def test_the_final_frame_draws_exactly_the_bundled_forecast():
+    """The final frame reveals the whole history, so the drawn per-frame
+    forecast IS the bundled full-history one -- which is why the bundle needs
+    no redefinition for animated plots."""
+    out = hyp.plot(_series(n=1), '-', predict='Kalman', t=4, animate=True,
+                   antialias=False, duration=4, frame_rate=4, show=False,
+                   return_model=True)
+    fig, ani = out['fig'], out['animation']
+    ani._func(15, *ani._args)
+    ax = _ax(fig)
+    drawn = np.array(_forecasts(ax, role='live')[0].get_data_3d()).T
+    # t + 1 vertices: the anchor plus t forecast steps
+    assert drawn.shape == (5, 3)
+    # and the t forecast steps advance in the same directions as the bundle
+    bundled = np.asarray(out['predict']['forecasts'][0], dtype=float)
+    assert np.allclose(np.sign(np.diff(drawn[1:], axis=0)),
+                       np.sign(np.diff(bundled, axis=0)))
+
+
+def test_return_model_xform_data_is_untouched_by_the_schedule():
+    """The schedule snapshots analyze-space copies; it must not alias or
+    mutate what the user gets back.
+
+    Compare VALUES, not shapes. An earlier version of this test asserted
+    only that the two `xform_data` arrays had the same SHAPE -- which every
+    mutation in place also satisfies, since mutating an array does not
+    resize it. It could not detect the defect named in its own docstring.
+    """
+    plain = hyp.plot(_series(n=1), '-', animate=True, duration=2,
+                     frame_rate=4, show=False, return_model=True)
+    forecast = hyp.plot(_series(n=1), '-', predict='Kalman', t=3,
+                        animate=True, duration=2, frame_rate=4, show=False,
+                        return_model=True)
+    a = np.asarray(plain['xform_data'][0], dtype=float)
+    b = np.asarray(forecast['xform_data'][0], dtype=float)
+    assert a.shape == b.shape
+    assert np.allclose(a, b), (
+        'predict= changed the returned xform_data; the schedule must take '
+        'its own copies (np.array(..., copy=True)) and never write back')
+    # ...and driving the animation must not mutate it either: the updater
+    # READS the schedule, so a frame render cannot move the user's data
+    before = np.array(forecast['xform_data'][0], dtype=float, copy=True)
+    ani = forecast['animation']
+    for f in (0, 4, 7):
+        ani._func(f, *ani._args)
+    assert np.allclose(np.asarray(forecast['xform_data'][0], dtype=float),
+                       before), 'rendering frames mutated the returned data'

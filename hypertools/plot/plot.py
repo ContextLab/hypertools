@@ -2374,9 +2374,21 @@ def plot(
         forecast array per input dataset, in the analyzed/plotted --
         pre-center/scale -- space). Each bundled forecast has exactly `t`
         rows, matching what ``hyp.predict(xform_data, model=..., t=t)``
-        returns; the DRAWN dashed overlay additionally prepends the last
-        observed row as a connector, so the drawn trace has `t + 1`
-        vertices. Default False.
+        returns. This holds for ANIMATED plots too, and needs no separate
+        definition: at the final frame the revealed history *is* the full
+        history, so the full-history forecast the bundle carries is exactly
+        the one the last frame draws. At every EARLIER frame the drawn
+        forecast is computed from the history revealed so far and so is
+        deliberately different -- the bundle is the end state, not a
+        per-frame record.
+
+        The DRAWN dashed overlay is not vertex-for-vertex the bundled
+        array: it prepends the last observed row as a connector (`t + 1`
+        vertices), and with `antialias=True` (the default) it is then
+        PCHIP-densified well beyond that, so a short forecast still renders
+        as a smooth curve rather than a few straight segments. Pass
+        `antialias=False` to draw exactly the `t + 1` raw vertices.
+        Default False.
 
     Returns
     -------
