@@ -2546,6 +2546,100 @@ Then the whole suite, since `hyper_animation.py` is on every animated path:
 
 > **The private access is now in ONE place, inside the library, where it belongs.** `draw_frame` and `n_frames` still touch `_func`/`_args`/`_save_count` — that is unavoidable, because matplotlib exposes no public equivalent — but the library is entitled to know its own backend's internals, and every example, notebook and test now goes through the documented accessor instead of repeating the reach. That is the same reasoning as Contract 3's allowlist, applied one layer down.
 
+- [ ] **Step 0b: The loader / builder split each example must expose**
+
+**This step defines two functions per example. Tasks 2–6 each WRITE them; nothing else in the plan defines them, so skipping this step leaves `test_examples_produce_their_stated_artifact` calling names that do not exist.**
+
+Every example splits in half:
+
+```
+fetch/load data  ->  load_<thing>()          # the ONLY code that may touch the network
+                          |
+                     construct_artifact(data) -> HyperAnimation   # no network, no I/O
+                          |
+                     fixture_data()          # the same payload, built from the example's
+                                             # OWN seeded synthetic fallback -- what tests drive
+```
+
+**Required signatures, per example.** Each returns a `NamedTuple` so the fields are self-documenting:
+
+| example | loader | payload fields | fixture bytes |
+|-|-|-|-|
+| `animate_weather_decades` | `load_weather(cities=CITIES)` | `Weather(monthly, daily, hemispheres, source)` | **0** — its own seeded `synthetic_city_months`/`synthetic_city_daily` |
+| `animate_market_forecast` | `load_market(ids=FRED_IDS)` | `Market(dates, prices, source)` | **0** — its own seeded `synthetic_basket()` |
+| `animate_conversation` | `embed_turns(TURNS)` | `Conversation(vectors, speakers, spans, source)` | **0** — the TF-IDF branch is a real `sklearn` fit, already deterministic |
+| `animate_painting_embeddings` | `load_paintings(PAINTINGS)` | `Paintings(vectors, owners, colors, source)` | **one 1.7 KB** 64-px thumbnail (measured: 48 px = 1258 B, 64 px = 1744 B, 96 px = 2967 B) |
+| `animate_morph_zoo` | `load_shapes(SHAPES, n=N)` | `Shapes(clouds, titles)` | **0** — deterministic parametric clouds |
+
+Every one of these `fixture_data()` bodies calls synthetic functions **the example already has**, because Contract 4's offline fallback shape means the deterministic substitute is already written. `fixture_data()` is a two-or-three-line function that assembles the payload from them; it is not a second implementation.
+
+**Worked example — `examples/animate_weather_decades.py`.** Structure only; every body is the existing code, moved:
+
+```python
+"""...existing docstring, plus one new paragraph, "Shape of this file"..."""
+# imports; CACHE; START/END; CITIES; FEATS          -- unchanged
+
+
+class Weather(NamedTuple):
+    monthly: list
+    daily: list
+    hemispheres: list
+    source: str
+
+
+# --- the data half: the ONLY code here that reaches the network -------------
+def fetch_city_months(name, lat, lon): ...          # unchanged
+def fetch_city_daily_temp(name): ...                # unchanged, moved up beside its sibling
+def synthetic_city_months(hemi, ...): ...           # unchanged
+def synthetic_city_daily(hemi, n_days, ...): ...    # unchanged
+
+
+def load_weather(cities=CITIES):
+    """The two existing fetch loops, now named. Honours HYPERTOOLS_OFFLINE:
+    with it set, a fetch failure RAISES instead of silently substituting, so
+    a loader called by accident at import time fails loudly."""
+    ...
+
+
+def fixture_data():
+    """The same payload from the seeded synthetic path. No network, no
+    committed bytes -- this is what the Task 8 gate drives."""
+    hemis = [hemi for _n, _lat, _lon, hemi in cities_spec()]
+    return Weather([synthetic_city_months(h) for h in hemis],
+                   [synthetic_city_daily(h, N_DAYS) for h in hemis],
+                   hemis, 'synthetic (fixture)')
+
+
+# --- the figure half: no network, no I/O, deterministic given its input -----
+def construct_artifact(data):
+    """Everything from `min_len = ...` to `anim.on_frame(decorate)`, verbatim,
+    indented one level, reading `data.monthly` / `data.daily` /
+    `data.hemispheres` instead of module globals. RETURNS the HyperAnimation
+    (Contract 8: return the wrapper, never the unpacked pair)."""
+    ...
+    return anim
+
+
+if __name__ == '__main__':
+    weather = load_weather()
+    print(f'weather: {len(CITIES)} cities ({weather.source})')
+    anim = construct_artifact(weather)
+    fig = anim.figure
+```
+
+**Verified, not assumed:**
+
+- **Readability is preserved.** All five examples contain **zero** sphinx-gallery narration blocks (`grep -c "^# %%\|^####"` → 0 for each), so sphinx-gallery already renders each as one docstring plus one code block; the split cannot fragment interleaved narration because there is none. The reader gains two labelled halves in place of a 336-line straight line whose two fetch loops sit 125 lines apart.
+- **sphinx-gallery still runs the guarded driver.** It executes each example inside a *fake `__main__` module* (`sphinx_gallery/gen_rst.py:1271-1280`), so `if __name__ == '__main__':` fires at docs build. Confirmed end-to-end on the split file: `weather: 6 cities (open-meteo archive)`, `EXIT=0`.
+
+- [ ] **Step 0c: Renegotiate the budgets the split costs**
+
+The split is not free, and Contract 6 says a budget is renegotiated **in the plan**, never weakened in the test. Measured on weather: **+15 code lines** (195 → 210), being the `NamedTuple` (6), two `def` lines, `load_weather`'s scaffolding, and the 4-line `__main__` guard. That is ~24% of its 62-line budget.
+
+So each of Tasks 2–6 raises its script budget by its own measured split overhead, and the notebook budget follows automatically (Contract 6b). **Measure it, do not copy weather's 15** — the overhead depends on how many loaders an example has and how big its payload is. Weather's is the worked figure; paintings has two fetch sites and morph has one, so theirs will differ.
+
+Record each measured overhead in `SCRIPT_BUDGETS` with a one-line comment naming it, exactly as the conversation entry already does.
+
 - [ ] **Step 1: Commit the measurement**
 
 ```python
@@ -2578,9 +2672,24 @@ import sys
 HYP = re.compile(r'\bhyp\.|\bhypertools\b')
 
 
-def _code_lines_py(path):
-    out, in_doc, delim = [], False, None
-    for line in open(path, encoding='utf-8').read().splitlines():
+def strip_docstrings(lines):
+    """Yield the CODE lines from an iterable of source lines.
+
+    Drops blank lines, comment-only lines, and any bare triple-quoted
+    docstring block. This is the ONE place that logic lives -- shared by
+    both counters below AND by `tests/test_examples_are_native.py`'s
+    `_code_text`, so none of the three can drift out of sync.
+
+    Public (no leading underscore) precisely because the test module
+    imports it. Before this fix, `_code_lines_py` and `_code_lines_nb`
+    carried two INDEPENDENT copies of this state machine and the notebook
+    copy was never written -- it dropped only blanks and comments, so a
+    bare docstring inside a code cell counted every one of its lines as
+    CODE, and identical source measured (code=3, native=2) as `.py` but
+    (code=11, native=2) as `.ipynb`.
+    """
+    in_doc, delim = False, None
+    for line in lines:
         stripped = line.strip()
         if in_doc:
             if delim in stripped:
@@ -2593,8 +2702,12 @@ def _code_lines_py(path):
             continue
         if not stripped or stripped.startswith('#'):
             continue
-        out.append(line)
-    return out
+        yield line
+
+
+def _code_lines_py(path):
+    return list(strip_docstrings(
+        open(path, encoding='utf-8').read().splitlines()))
 
 
 def _code_lines_nb(path):
@@ -2602,11 +2715,11 @@ def _code_lines_nb(path):
     for cell in json.load(open(path, encoding='utf-8'))['cells']:
         if cell.get('cell_type') != 'code':
             continue
-        for line in cell['source']:
-            stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
-                continue
-            out.append(line.rstrip('\n'))
+        # Reset per cell: a bare docstring cannot span a cell boundary (each
+        # cell is parsed and executed independently), so carrying in_doc /
+        # delim across cells would be wrong, not merely unnecessary.
+        out.extend(strip_docstrings(
+            line.rstrip('\n') for line in cell['source']))
     return out
 
 
@@ -2824,7 +2937,10 @@ def _code_text(path):
                            if c.get('cell_type') == 'code')
     else:
         source = _read(path)
-    return strip_docstrings(source)
+    # `strip_docstrings` takes LINES and yields lines -- hand it
+    # `splitlines()`, not the raw string (which would iterate characters),
+    # and join the result back into text for `re.search`.
+    return '\n'.join(strip_docstrings(source.splitlines()))
 
 
 def test_a_docstring_naming_a_removed_pattern_is_not_a_defect():
@@ -3207,7 +3323,7 @@ def test_no_launch_notebook_committed_an_error_output():
 
 Run: `.venv/bin/python -m pytest tests/test_examples_are_native.py -v`
 
-Expected: **124 collected — 122 passed, 2 skipped**, derived:
+Expected: **124 collected — 117 passed, 5 failed, 2 skipped** on the FIRST run, then 122 passed once the index sets are recorded. Derived:
 
 | test | IDs |
 |-|-|
@@ -3226,6 +3342,10 @@ Expected: **124 collected — 122 passed, 2 skipped**, derived:
 | `test_each_notebook_ships_its_rendered_artifact` (5 notebooks) | 5 |
 | `test_no_launch_notebook_committed_an_error_output` | 1 |
 | **total** | **124** |
+
+**The 5 first-run failures are `test_the_right_cells_carry_visible_output`, and they are intentional.** `EXPECTED_VISIBLE_OUTPUTS` ships EMPTY, and the test calls `pytest.fail()` naming the notebook and telling you to paste in the measured set. That is the whole design — a number written before the artifact exists is a guess, and this plan has now been wrong five times that way. The red is the instruction.
+
+**Ordering, which v3 got wrong at first:** Tasks 2–6 each say to record their measured index set into `EXPECTED_VISIBLE_OUTPUTS`, but Task 8 Step 2 is what CREATES that file — so on a strict Task-2-through-8 pass there is nothing to edit yet. Resolve by running **Step 2 before Tasks 2–6** (it is a pure test-module addition with no dependency on the rewrites), or, if Task 8 is genuinely run last, by treating the five failures as this step's to-do list and populating them here. Either way the dict is filled from a real `scripts/execute_tutorial.py` run, never from arithmetic.
 
 **The 2 skips are the `PRIVATE_API_EXCEPTIONS` pairs** (`ani\._args` and `hypertools\._shared`, both on `animate_market_forecast.py`) — allowlisted by Contract 3, and each skip prints its recorded reason. Plus Step 0's `tests/plot/test_hyper_animation_accessors.py` → **8 passed**, so Task 8 contributes **132** in total.
 
