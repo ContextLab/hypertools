@@ -18,9 +18,26 @@ Three spaces, never conflated (see the plan's Contract 2):
 - DISPLAY box    -- the centred/rescaled [-1, 1] cube (`plot.py:4568-4585`).
 """
 
+import time
+import warnings
+
 import numpy as np
 
 from ..predict.predict import predict as _predict
+
+#: Project a schedule's build time once the first fit has been timed, and say
+#: so if it exceeds this many seconds. Striding the schedule to make it
+#: cheaper was ruled out deliberately -- sampling the reveal would change
+#: WHAT IS PLOTTED, and the outcome matters more than the speed. So a large
+#: dataset is simply slow, and the library's obligation is notice rather than
+#: a quietly different animation.
+#:
+#: The projection is extrapolated from the first REAL fit, which carries
+#: one-time warm-up, so it tends to over-state: measured 427 s projected
+#: against 330 s actual for 3 x 500 rows x 900 frames. Over-stating is the
+#: safe direction for a notice, but it is why the message calls itself a
+#: rough figure rather than a countdown.
+DEFAULT_SLOW_WARNING_SECONDS = 10.0
 
 #: Fewest observations we will fit a forecaster to.
 DEFAULT_MIN_HISTORY = 2
@@ -180,7 +197,8 @@ class ForecastSchedule:
     """
 
     def __init__(self, histories, counts, model, t,
-                 min_history=DEFAULT_MIN_HISTORY, transform=None):
+                 min_history=DEFAULT_MIN_HISTORY, transform=None,
+                 slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS):
         self.histories = [np.asarray(h, dtype=float) for h in histories]
         self.counts = [list(row) for row in counts]
         self.model = model
@@ -191,21 +209,60 @@ class ForecastSchedule:
         self.n_datasets = len(self.histories)
         self.n_fits = 0
         self._paths = {}
+
+        # Every DISTINCT (dataset, revealed-count) pair needs one fit; the
+        # rest are cache hits. Known before any work is done, so the size of
+        # the job is knowable up front even though its cost is not.
+        todo = []
         for frame_counts in self.counts:
             for i, k in enumerate(frame_counts):
-                if (i, k) in self._paths:
-                    continue
-                hist = self.histories[i][:k]
-                path = forecast_from_history(hist, self.model, self.t,
-                                             min_history=self.min_history)
-                if path is not None:
-                    self.n_fits += 1
-                self._paths[(i, k)] = path
+                if (i, k) not in self._paths:
+                    self._paths[(i, k)] = None
+                    todo.append((i, k))
+        self._paths.clear()
+
+        warned = slow_warning_seconds is None
+        for n_done, (i, k) in enumerate(todo):
+            start = time.perf_counter()
+            path = forecast_from_history(self.histories[i][:k], self.model,
+                                         self.t, min_history=self.min_history)
+            elapsed = time.perf_counter() - start
+            if path is not None:
+                self.n_fits += 1
+            self._paths[(i, k)] = path
+            # Project off the first REAL fit, not the first ITEM. The earliest
+            # (dataset, count) pairs are histories shorter than min_history,
+            # where forecast_from_history returns None without fitting
+            # anything -- timing one of those projects 0.0 s for a job that
+            # may take minutes, which is worse than not warning at all.
+            if not warned and path is not None:
+                # Project from a MEASURED fit rather than a hard-coded
+                # per-fit constant: cost scales hard with history length and
+                # width (~30 ms at 60x3, ~220 ms at 500x3 measured), so a
+                # constant would be an order of magnitude wrong on exactly
+                # the datasets this warning exists for.
+                projected = elapsed * (len(todo) - n_done)
+                if projected > slow_warning_seconds:
+                    warnings.warn(
+                        f"predict= over this animation needs {len(todo)} "
+                        f"forecast fits (one per distinct revealed history "
+                        f"length), projected at roughly {projected:.1f} s "
+                        f"before the first frame can be drawn. That is a "
+                        f"rough figure extrapolated from one timed fit, so "
+                        f"treat it as an order of magnitude rather than a "
+                        f"countdown. Every fit is kept: sampling the "
+                        f"reveal instead would change what is plotted. To "
+                        f"speed it up, shorten the series or lower "
+                        f"frame_rate/duration; to silence this notice, pass "
+                        f"slow_warning_seconds=None.",
+                        stacklevel=3)
+                warned = True
 
     # -- construction ------------------------------------------------------
     @classmethod
     def for_parallel(cls, histories, grid_lengths, model, t, n_frames,
-                     min_history=DEFAULT_MIN_HISTORY):
+                     min_history=DEFAULT_MIN_HISTORY,
+                     slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS):
         """Schedule for a parallel/`'window'` animation.
 
         Every dataset advances together, so each one's revealed row count
@@ -216,11 +273,13 @@ class ForecastSchedule:
         counts = [[revealed_raw_counts(len(h), g, f, n_frames)
                    for h, g in zip(histories, grid_lengths)]
                   for f in range(n_frames)]
-        return cls(histories, counts, model, t, min_history=min_history)
+        return cls(histories, counts, model, t, min_history=min_history,
+                   slow_warning_seconds=slow_warning_seconds)
 
     @classmethod
     def for_serial(cls, histories, grid_lengths, model, t, n_frames,
-                   min_history=DEFAULT_MIN_HISTORY):
+                   min_history=DEFAULT_MIN_HISTORY,
+                   slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS):
         """Serial reveals one dataset at a time, so its schedule comes from
         the backend's own `serial_reveal_counts` (animation-core Task 7),
         mapped from frame-grid rows onto raw rows dataset by dataset."""
@@ -237,7 +296,8 @@ class ForecastSchedule:
                     pos = (min(shown, g) - 1) * (n_raw - 1) / (g - 1)
                     row.append(min(n_raw, int(np.floor(pos)) + 1))
             counts.append(row)
-        return cls(histories, counts, model, t, min_history=min_history)
+        return cls(histories, counts, model, t, min_history=min_history,
+                   slow_warning_seconds=slow_warning_seconds)
 
     # -- lookups -----------------------------------------------------------
     def revealed(self, dataset, frame):

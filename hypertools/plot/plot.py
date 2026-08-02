@@ -625,6 +625,10 @@ def _valid_line2d_kwargs():
     return valid
 
 
+#: Sentinel: `slow_warning_seconds` was not passed, so use the default.
+_UNSET_SLOW_WARNING = object()
+
+
 def _validate_forecast_trail(forecast_trail, predict):
     """`forecast_trail=` keeps earlier forecasts on screen as a fading fan.
 
@@ -900,6 +904,7 @@ def plot(
     precog=False,
     bullettime=False,
     forecast_trail=False,
+    slow_warning_seconds=_UNSET_SLOW_WARNING,
     frame_rate=30,
     focused=None,
     morph_samples=None,
@@ -1917,6 +1922,20 @@ def plot(
         Retained forecasts need no extra room in the plot box: a retained
         forecast is just an earlier frame's, and the box is already built to
         contain every forecast the animation will draw.
+
+    slow_warning_seconds (animation only) : float or None
+        Warn when an animated `predict=` schedule looks like it will take a
+        long time to build (default: 10 seconds). Pass `None` to silence it.
+
+        An animated forecast needs one fit per DISTINCT revealed history
+        length, so cost grows with the data rather than with the frame
+        count: 3 datasets x 60 rows x 900 frames is 177 fits (~5 s), but
+        3 x 500 x 900 is 1497 fits (~330 s) because a longer series has both
+        more distinct histories AND a costlier fit each. Nothing is skipped
+        to make that faster -- sampling the reveal would change what is
+        plotted -- so the notice exists to make a long wait expected rather
+        than mysterious. It is emitted as soon as one real fit has been
+        timed, not after the wait.
 
     frame_rate (animation only) : int or float
         Frame rate for animation in frames per second (default: 30).
@@ -4770,9 +4789,13 @@ def plot(
         _builder = (ForecastSchedule.for_serial
                     if (animate == 'serial' or order == 'serial')
                     else ForecastSchedule.for_parallel)
+        from .forecast import DEFAULT_SLOW_WARNING_SECONDS
+        _slow_secs = (DEFAULT_SLOW_WARNING_SECONDS
+                      if slow_warning_seconds is _UNSET_SLOW_WARNING
+                      else slow_warning_seconds)
         forecast_schedule = _builder(
             analyze_histories, _grid_lengths, model=predict, t=t,
-            n_frames=_n_frames)
+            n_frames=_n_frames, slow_warning_seconds=_slow_secs)
 
     if raw_forecasts is not None:
         _fc_rows = [np.vstack(raw_forecasts)]

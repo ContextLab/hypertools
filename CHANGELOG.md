@@ -87,6 +87,20 @@ items under **Changed** below alter how existing figures LOOK.
   Without `predict=` it raises `ValueError` rather than silently doing
   nothing.
 
+- **An animated `predict=` says when it will be slow to start.** A forecast
+  animation needs one fit per distinct revealed history length, so its cost
+  grows with the DATA, not the frame count: 3 datasets x 60 rows x 900 frames
+  is 177 fits (~5 s), while 3 x 500 x 900 is 1497 fits (~330 s) -- a longer
+  series has both more distinct histories and a costlier fit each. `plot()`
+  now times the first real fit and warns if the projection exceeds
+  `slow_warning_seconds=` (default 10; pass `None` to silence), so a long
+  wait is expected rather than mysterious. The notice arrives before the
+  wait, not after it.
+
+  Deliberately NOT solved by sampling the reveal: striding the schedule would
+  render a different animation than the one asked for. The outcome is not
+  negotiable, so the time is.
+
 - **Forecast artists and traces are tagged, so callbacks can find them.**
   `artist._hyp_forecast_role` on matplotlib (`'static'`, `'live'` or
   `'trail'`) and `trace.meta['hyp_forecast_role']` on plotly, with
