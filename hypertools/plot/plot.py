@@ -3403,6 +3403,7 @@ def plot(
     # trace lines up with the drawn (centered/scaled) data.
     raw_forecasts = None
     bundle_forecasts = None
+    analyze_histories = None
     if predict is not None:
         from ..predict.predict import predict as _predictor
         _fc = _predictor(xform, model=predict, t=t)
@@ -3413,6 +3414,14 @@ def plot(
             np.vstack([np.asarray(xi[-1:]), np.asarray(fc)])
             for xi, fc in zip(xform, _fc)
         ]
+        # ANALYZE-space copies for the animated per-frame schedule (see
+        # hypertools/plot/forecast.py). Taken HERE, beside raw_forecasts, so
+        # they keep the same 1:1 dataset correspondence the regrouping guard
+        # below checks -- and BEFORE `_interp_anim_line` resamples `xform`
+        # onto the frame grid, because `t` is measured in RAW analyze-space
+        # samples, not frame-grid rows.
+        analyze_histories = [np.array(xi, dtype=float, copy=True)
+                             for xi in xform]
 
     # per-point colors for multicolored lines (set by the hue branch below;
     # computed after interpolation). Dataset lengths are captured now so hue
@@ -4564,6 +4573,7 @@ def plot(
     # no longer holds -- skip drawing forecasts rather than mismatch traces.
     if raw_forecasts is not None and len(raw_forecasts) != len(xform):
         raw_forecasts = None
+        analyze_histories = None
 
     # center + scale. When forecasts are drawn, the frame must contain
     # EVERYTHING drawn: compute the center/scale statistics from the FULL
@@ -4578,14 +4588,39 @@ def plot(
     # coordinate space as `xform`, so it is carried through the identical
     # center/scale statistics computed from `xform` (+ forecasts, when
     # present) below -- never its OWN, independently-computed stats.
+    # Animated predict= (CASE A -- STATIC data revealed over time): every
+    # observation is known before the first frame, so every forecast the
+    # animation will ever draw is knowable now. Precompute the whole schedule
+    # HERE so (a) it can go into the centre/scale statistics below and land
+    # inside the cube BY CONSTRUCTION -- no clamping, unlike the streaming
+    # path in hypertools/io/streaming.py, where the box is frozen from the
+    # head samples -- and (b) every frame is a pure lookup, so ani.save() and
+    # to_jshtml() replays render identically.
+    forecast_schedule = None
+    if (raw_forecasts is not None and analyze_histories is not None
+            and animate and animate not in ('spin',)):
+        from .forecast import ForecastSchedule
+        _n_frames = max(2, int(round(frame_rate * duration)))
+        _grid_lengths = [len(xi) for xi in xform]
+        _builder = (ForecastSchedule.for_serial
+                    if (animate == 'serial' or order == 'serial')
+                    else ForecastSchedule.for_parallel)
+        forecast_schedule = _builder(
+            analyze_histories, _grid_lengths, model=predict, t=t,
+            n_frames=_n_frames)
+
     if raw_forecasts is not None:
-        _joint = np.vstack([np.vstack(xform), np.vstack(raw_forecasts)])
+        _fc_rows = [np.vstack(raw_forecasts)]
+        if forecast_schedule is not None:
+            _fc_rows.append(forecast_schedule.stacked_paths())
+        _joint = np.vstack([np.vstack(xform)] + _fc_rows)
         _mean = np.mean(_joint, 0)
         xform = [xi - _mean for xi in xform]
         raw_forecasts = [fc - _mean for fc in raw_forecasts]
         raw_xform = [xi - _mean for xi in raw_xform]
 
-        _joint = np.vstack([np.vstack(xform), np.vstack(raw_forecasts)])
+        _joint = np.vstack([np.vstack(xform)]
+                           + [r - _mean for r in _fc_rows])
         _m1 = np.min(_joint)
         _m2 = np.max(_joint - _m1) or 1.0  # degenerate (constant) data has
         # zero range: dividing by it emitted an 'invalid value encountered
@@ -4596,6 +4631,12 @@ def plot(
         xform = [_rescale(xi) for xi in xform]
         raw_forecasts = [_rescale(fc) for fc in raw_forecasts]
         raw_xform = [_rescale(xi) for xi in raw_xform]
+        if forecast_schedule is not None:
+            # hand the schedule the SAME affine the data went through, so
+            # `polyline()` returns display-box coordinates
+            from .forecast import DisplayTransform
+            forecast_schedule = forecast_schedule.to_display(
+                DisplayTransform(_mean, _m1, _m2))
     else:
         # no forecasts: identical to the historical center()/scale() path,
         # but with the SAME stats also applied to raw_xform (rather than
