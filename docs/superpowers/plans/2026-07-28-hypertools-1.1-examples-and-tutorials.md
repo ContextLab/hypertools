@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the five launch examples and the fifteen older tutorials *showcase* hypertools instead of working around it. Measured today, **6.5% of the code in the five launch examples belongs to a hypertools call** (48 of 739 code lines) and **37.9% is defect** — it either re-implements something native or fills a gap Plans 1–3 close. This plan rewrites every one of them against the 1.1 API, in lockstep with its notebook, and adds the one library feature the examples still need that no other 1.1 plan owns.
+**Goal:** Make the five launch examples and the fifteen older tutorials *showcase* hypertools instead of working around it. Measured 2026-08-02 with the docstring-aware metric, **6.6% of the code in the five launch examples belongs to a hypertools call** (48 of 723 code lines; v2 said 48 of 739, which predates `d730a085` shrinking morph from 40 code lines to 26) and **37.9% is defect** — it either re-implements something native or fills a gap Plans 1–3 close. This plan rewrites every one of them against the 1.1 API, in lockstep with its notebook, and adds the one library feature the examples still need that no other 1.1 plan owns.
 
 **Architecture:** One library task first (Task 1: palette-from-image), because two example rewrites consume it and it is the last orphaned feature from the audit. Then five example rewrites, each *paired with its notebook in the same task and the same commit* — a script fixed without its notebook leaves the defect published, because `nbsphinx_execute = 'never'` (`docs/conf.py:131`) ships the committed notebook verbatim. Then the fifteen older tutorials, grouped by the recurring fix so each step is one reviewable diff. Finally a verification task that makes the improvement **permanent**: a committed measurement script, a real pytest module that fails if any defect marker reappears, the full suite, every example executed, every notebook re-executed, and a zero-warning docs build.
 
@@ -26,10 +26,12 @@ v2 was adversarially re-reviewed (`notes/audit/review_plan4_v2.md`: 4 Fatal, 4 H
 | `test_examples_produce_their_stated_artifact` ran examples with `runpy`. | Network/model-download work is split out; the suite drives a fixture-fed construction boundary, and the whole-example run becomes an opt-in smoke test. |
 | The morph assertion `assert 'morph' in str(ns.get('ANIMATE', 'morph'))`. | `ANIMATE` does not exist in the example; the expression reduces to `'morph' in 'morph'` and **cannot fail** (proven by execution). Replaced with driven-frame assertions. |
 | `git stash && measure && git stash pop` to read the BEFORE state. | **Data-loss hazard**, demonstrated: with a clean tree `stash` saves nothing and `pop` then restores *and drops* an unrelated pre-existing stash. Replaced with `git show <base>:<path>`, which is read-only. |
-| Task 5 "13 tests"; suite delta "+135". | **12** and **+172** (Task 1 **19** + Task 5 **12** + Task 8 **141**). The plan already said 12 at the step level and 13 in the revision note — it disagreed with itself. Task 8 (106) was correct; Task 1 rises 16 → **19** with the three new colour-count tests this revision adds. All three derived by AST parametrize-expansion and cross-checked against a real collection. |
+| Task 5 "13 tests"; suite delta "+135". | **12** and **+178** (Task 1 **19** + Task 5 **12** + Task 8 **147**). The plan already said 12 at the step level and 13 in the revision note — it disagreed with itself. Task 8 (106) was correct; Task 1 rises 16 → **19** with the three new colour-count tests this revision adds. All three derived by AST parametrize-expansion and cross-checked against a real collection. |
 | Ratio floor "removed as a v1 Fatal". | It was removed from the *gate* but **ten lines still promise it** as a budget (634, 990, 1006, 1186, 1201, 1420, 1435, 1792, 1807, 1904). All corrected. L1435 was doubly stale (`≤ 72` where the enforced dict said 90). |
 | "'0 executed outputs' corrected wherever it appears." | It was not — all five BEFORE headers still said it. Real values: 4/7, 2/7, 2/6, 2/6, 1/6. |
 | Baseline `2564 collected`; "the working tree is not clean". | **2782/2784 collected (2 deselected)**; the tree is clean at `065c841e`; the note claiming the five examples are untouched is false (see above). |
+
+**One review finding REJECTED, with evidence.** The v3 adversarial review reported (M2) that the equal-feature-width citation `plot.py:3152-3153` is stale and the real location is `3164-3165`. Checked against the repo: `sed -n '3152,3153p'` gives exactly `_widths = [ri.shape[1] for ri in raw]` / `if len(set(_widths)) > 1:`, and `3164-3165` is unrelated (`return False` / `_text_hint = (`). The citation is correct as written. The likely cause is instructive and worth guarding against: that review measured inside a worktree with **Task 1's patches already applied**, and those insert lines into `plot.py` above this point, shifting everything below. **A line number verified in a patched tree is not verified.** Re-check citations against a clean checkout.
 
 **New Fatal found during this revision, not present in any prior review:** `hyp.plot(..., animate=...)` returns a `HyperAnimation`, a `(figure, animation)` **tuple subclass**. `fig, ani = hyp.plot(...)` binds `ani` to element `[1]` — the raw `FuncAnimation` — **discarding the wrapper that carries `.on_frame()`**. v2's Task 5 notebook does exactly this and dies with `AttributeError` at the cell that calls `ani.on_frame(recency_fade)`, so `nbclient` halts and the notebook never finishes. The already-landed script avoids it by binding `anim = hyp.plot(...)` without unpacking. Contract 8 below now states the rule, and a Task 8 test enforces it. Blast radius was measured across `docs/`, `examples/`, `hypertools/`, README and CHANGELOG: **the trap existed only in plan documents** — the shipped library and `docs/animation.rst` are correct.
 
@@ -231,7 +233,7 @@ Plans 1, 2 and 3 must land first. Per task:
 
 | this plan's task | depends on | why |
 |-|-|-|
-| **Task 1** (palette from image) | *(none)* | Pure library addition in `hypertools/plot/colors.py`. Can start immediately, in parallel with Plans 1–3. |
+| **Task 1** (palette from image) | *(code: none; docs: animation-core)* | The code is a pure library addition to `hypertools/plot/colors.py` and `plot.py`, and can start immediately in parallel with Plans 1–3. **Its Step 6 cannot**: it writes under a `## 1.1.0 (unreleased)` → `### Added` heading that the animation-core plan creates, and `CHANGELOG.md` has neither today (`grep -n "1.1.0\|### Added" CHANGELOG.md` → nothing). Either land animation-core's CHANGELOG step first, or have Step 6 create the heading if it is missing. |
 | **Task 2** (Market) | **MultiIndex** T1 (`group_columns`), T2 (final-trace builder), T5 (column MultiIndex in `plot()`), T6 (hue as a per-trace auxiliary value), T8 (`predict=` over final traces); **Forecast-animation** T3 (narrow the `predict=` refusal), T4 (draw the per-frame forecast), T5 (`forecast_trail=`); **Animation-core** T1 (`title=` type contract) | The whole example *is* a column MultiIndex + a continuous hue through a hierarchy + one forecast per trace during a time-progressing animation. Without MultiIndex T6 the hue is discarded (`plot.py:3080-3086`); without Forecast-animation T3 the call raises `NotImplementedError` (`plot.py:2748-2756`). |
 | **Task 3** (Weather) | *(none strictly)* — verified to run on today's `dev-1.0`; **Animation-core** T1 for the `title=` contract | The paper-style call already works today. Sequence it after Plan 1 only so the whole 1.1 line is tested together. |
 | **Task 4** (Paintings) | **Task 1** (palette from image); **Animation-core** T1 (`title=`) | `color=` per cloud comes from `image_palette`; the hand-rolled title becomes `title=`. |
@@ -2490,7 +2492,7 @@ def test_draw_frame_rejects_an_out_of_range_index():
 ```
 
 Run: `.venv/bin/python -m pytest tests/plot/test_hyper_animation_accessors.py -v`
-Expected: **8 failed** — `AttributeError: 'HyperAnimation' object has no attribute 'n_frames'` and the same for `n_segments`/`draw_frame`.
+Expected: **9 failed** — `AttributeError: 'HyperAnimation' object has no attribute 'n_frames'` and the same for `n_segments`/`draw_frame`.
 
 Then implement, beside the existing `figure`/`animation` properties:
 
@@ -2539,14 +2541,26 @@ Then implement, beside the existing `figure`/`animation` properties:
         return self
 ```
 
-`_hyp_morph_segments` is tagged where the morph frame counts are already computed, in `matplotlib_backend`'s morph branch (beside the `sum(frame_counts)` that becomes `_save_count`):
+`_hyp_morph_segments` is tagged where the morph frame counts are already computed, beside the `sum(frame_counts)` that becomes `_save_count`:
 
 ```python
     line_ani._hyp_morph_segments = len(frame_counts)
 ```
 
+**There are TWO such sites, and both must be tagged** — 3-D at `matplotlib_backend.py:2036` (`sum(frame_counts)` at `:2039`) and 2-D at `:2448` (`:2451`). Tagging only the 3-D one leaves `anim.n_segments is None` for every 2-D morph, which is worse than an error: `test_n_segments_is_none_for_a_non_morph_animation` would then PASS on a 2-D morph, so the gate would confirm a wrong answer. Add a 2-D case to that test:
+
+```python
+def test_n_segments_is_set_for_a_2d_morph_too():
+    """Two FuncAnimation morph branches exist (3-D and 2-D); a tag on only
+    one makes n_segments silently None for half of them."""
+    clouds = [_data(40, 2, s) for s in range(3)]
+    anim = hyp.plot(clouds, '.', animate='morph', duration=6, frame_rate=5,
+                    reduce=None, show=False)
+    assert anim.n_segments == 5
+```
+
 Run: `.venv/bin/python -m pytest tests/plot/test_hyper_animation_accessors.py -v`
-Expected: **8 passed**.
+Expected: **9 passed** (the 8 above plus the 2-D morph case).
 
 Then the whole suite, since `hyper_animation.py` is on every animated path:
 `.venv/bin/python -m pytest -q` → baseline + 8, no failures.
@@ -2841,9 +2855,18 @@ from scripts.measure_native_ratio import measure
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 #: A notebook holds its script's code, plus a Colab install cell, plus a
-#: display cell. Measured: the largest install cell across the five is 3
-#: code lines, and the display cell is 2 (`from IPython.display import HTML`
-#: + `HTML(ani.to_jshtml())`).
+#: display cell.
+#:
+#: MEASURED: the largest install cell across the five is 3 code lines
+#: (paintings and conversation are 3, the other three are 2).
+#: NOT MEASURED -- a design decision: the 2-line display cell
+#: (`from IPython.display import HTML` + `HTML(ani.to_jshtml())`). No
+#: current notebook has one (`grep -l "to_jshtml\|IPython.display"` over
+#: the five returns nothing), so this is a budget for a cell that does not
+#: exist yet, and it is LOAD-BEARING: conversation has only 2 lines of
+#: headroom. If the display cell turns out to be 3 lines, or a second one
+#: is added, raise NOTEBOOK_OVERHEAD here -- in the plan -- rather than
+#: letting a task quietly exceed its budget.
 #:
 #: This is why the notebook budgets are DERIVED rather than written down. v2
 #: wrote them down and set two of them BELOW their own script's -- paintings
@@ -2883,16 +2906,26 @@ BUDGETS = ([(p, n) for p, n in SCRIPT_BUDGETS.items()]
               for p, n in SCRIPT_BUDGETS.items()])
 
 
-def test_no_notebook_budget_is_below_its_own_scripts():
-    """The v2 defect, pinned so it cannot return. A notebook contains its
-    script's code, so a notebook budget under the script's is unsatisfiable
-    by construction -- it fails for a reason no rewrite can address."""
+def test_notebook_budgets_are_derived_not_written_down():
+    """The v2 defect, pinned so it cannot return.
+
+    Asserts the DERIVATION is still in force -- each notebook limit equals
+    its script's plus exactly `NOTEBOOK_OVERHEAD` -- not merely that it is
+    larger. `>= limits[script]` would be `n + 5 >= n`, true for every `n`,
+    a comment wearing a test's clothes and the same inert-assertion defect
+    this plan has now hit twice (`_save_count >= 1`, `'morph' in 'morph'`).
+
+    Equality CAN fail, and fails on the thing actually worth catching:
+    someone replacing the comprehension with hand-written numbers, which is
+    how paintings ended up at 110 against a script of 118.
+    """
     limits = dict(BUDGETS)
     for script, nb in NOTEBOOKS.items():
-        assert limits[nb] >= limits[script], (
-            f'{nb} is budgeted at {limits[nb]} but {script} at '
-            f'{limits[script]}; a notebook cannot be smaller than the script '
-            f'it contains')
+        assert limits[nb] == limits[script] + NOTEBOOK_OVERHEAD, (
+            f'{nb} is budgeted at {limits[nb]}, but the derivation says '
+            f'{limits[script]} + {NOTEBOOK_OVERHEAD} = '
+            f'{limits[script] + NOTEBOOK_OVERHEAD}. Change the SCRIPT budget '
+            f'and let the notebook follow; do not hand-write this one.')
 
 
 #: Private reaches that are DELIBERATELY retained, with the reason. Contract
@@ -3481,6 +3514,37 @@ def test_each_notebook_ships_its_rendered_artifact(stem):
             f'{stem}.ipynb embeds {ref!r}, which does not exist')
 
 
+@pytest.mark.skipif(not os.environ.get('HYPERTOOLS_EXAMPLE_SMOKE'),
+                    reason='set HYPERTOOLS_EXAMPLE_SMOKE=1 to run the '
+                           'examples end to end (network + model downloads)')
+@pytest.mark.parametrize('stem', sorted(STATED_ARTIFACT))
+def test_example_runs_end_to_end(stem):
+    """The whole-example run, OPT-IN.
+
+    v2 ran every example in the default suite via `runpy`, which put model
+    downloads and remote fetches on every CI run. v3 moved the default gate
+    onto `construct_artifact(fixture_data())`, and this is what replaces the
+    coverage that removed -- the loaders, the `__main__` guard, and the real
+    data path, exercised on demand rather than never.
+
+    Enable with `HYPERTOOLS_EXAMPLE_SMOKE=1 pytest -k end_to_end`. Run it
+    before a release and whenever a loader changes; a failure here means the
+    example is broken for a user even though the fixture-driven gate is
+    green.
+    """
+    import subprocess
+    import sys as _sys
+    path = os.path.join(REPO, 'examples', f'{stem}.py')
+    env = dict(os.environ, MPLBACKEND='Agg')
+    env.pop('HYPERTOOLS_OFFLINE', None)
+    proc = subprocess.run([_sys.executable, path], env=env, cwd=REPO,
+                          capture_output=True, text=True, timeout=900)
+    assert proc.returncode == 0, (
+        f'examples/{stem}.py exited {proc.returncode}\n'
+        f'--- stdout ---\n{proc.stdout[-2000:]}\n'
+        f'--- stderr ---\n{proc.stderr[-2000:]}')
+
+
 def test_no_launch_notebook_committed_an_error_output():
     """A notebook can be fully executed and still be broken."""
     import json
@@ -3504,7 +3568,7 @@ def test_no_launch_notebook_committed_an_error_output():
 
 Run: `.venv/bin/python -m pytest tests/test_examples_are_native.py -v`
 
-Expected: **133 collected — 126 passed, 5 failed, 2 skipped** on the FIRST run, then 131 passed once the index sets are recorded. Derived:
+Expected: **138 collected — 126 passed, 5 failed, 7 skipped** on the FIRST run, then 131 passed once the index sets are recorded. Derived:
 
 | test | IDs |
 |-|-|
@@ -3521,14 +3585,15 @@ Expected: **133 collected — 126 passed, 5 failed, 2 skipped** on the FIRST run
 | `test_every_launch_notebook_ran_every_cell_it_should` (5 notebooks) | 5 |
 | `test_the_right_cells_carry_visible_output` (5 notebooks) | 5 |
 | `test_each_notebook_ships_its_rendered_artifact` (5 notebooks) | 5 |
+| `test_example_runs_end_to_end` (5 examples, opt-in) | 5 |
 | `test_no_launch_notebook_committed_an_error_output` | 1 |
-| **total** | **133** |
+| **total** | **138** |
 
 **The 5 first-run failures are `test_the_right_cells_carry_visible_output`, and they are intentional.** `EXPECTED_VISIBLE_OUTPUTS` ships EMPTY, and the test calls `pytest.fail()` naming the notebook and telling you to paste in the measured set. That is the whole design — a number written before the artifact exists is a guess, and this plan has now been wrong five times that way. The red is the instruction.
 
 **Ordering, which v3 got wrong at first:** Tasks 2–6 each say to record their measured index set into `EXPECTED_VISIBLE_OUTPUTS`, but Task 8 Step 2 is what CREATES that file — so on a strict Task-2-through-8 pass there is nothing to edit yet. Resolve by running **Step 2 before Tasks 2–6** (it is a pure test-module addition with no dependency on the rewrites), or, if Task 8 is genuinely run last, by treating the five failures as this step's to-do list and populating them here. Either way the dict is filled from a real `scripts/execute_tutorial.py` run, never from arithmetic.
 
-**The 2 skips are the `PRIVATE_API_EXCEPTIONS` pairs** (`ani\._args` and `hypertools\._shared`, both on `animate_market_forecast.py`) — allowlisted by Contract 3, and each skip prints its recorded reason. Plus Step 0's `tests/plot/test_hyper_animation_accessors.py` → **8 passed**, so Task 8 contributes **141** in total.
+**The 2 skips are the `PRIVATE_API_EXCEPTIONS` pairs** (`ani\._args` and `hypertools\._shared`, both on `animate_market_forecast.py`) — allowlisted by Contract 3, and each skip prints its recorded reason. Plus Step 0's `tests/plot/test_hyper_animation_accessors.py` → **9 passed** (8 + the 2-D morph case from M7), so Task 8 contributes **147** in total.
 
 v1 expected 109 by counting a 10-ID ratio gate that this revision removed; v2 expected 106 before this revision split the notebook gate into execution / index-set / artifact and added the Contract 3 and Contract 8 guards. **Verify by real collection, not by this table** — `pytest tests/test_examples_are_native.py --collect-only -q` — because `BUDGETS` is now computed from `SCRIPT_BUDGETS`, and a naive AST count of the parametrize argument returns 1 for it rather than 10.
 
@@ -3588,7 +3653,7 @@ Expected: five new thumbnails, each **under 1.1 MB** (the largest existing one, 
 - [ ] **Step 7: Run the FULL suite**
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: the baseline plus **172** — Task 1's **19** (`test_image_palette.py`), Task 5's **12** (`test_recency_fade.py`), and Task 8's **141** (133 in `test_examples_are_native.py` + 8 in `test_hyper_animation_accessors.py`) — all passing, 13 skipped, plus the **2 allowlist skips** from `PRIVATE_API_EXCEPTIONS`.
+Expected: the baseline plus **178** — Task 1's **19** (`test_image_palette.py`), Task 5's **12** (`test_recency_fade.py`), and Task 8's **147** (138 in `test_examples_are_native.py` + 9 in `test_hyper_animation_accessors.py`) — all passing, 13 skipped, plus **7 more skips** (2 `PRIVATE_API_EXCEPTIONS` + 5 opt-in smoke tests).
 
 **Verify by real collection, never by this number.** Three revisions running, the stated figure here has been stale: v1 said 17 + 109 = +126, v2 said 16 + 106 = +134, and both were wrong. Run `pytest <file> --collect-only -q` per file and add them up. Any new failure in `tests/test_docs_thumbnails.py` or `tests/test_docs_gallery_log_filter.py` is Step 6's doing — fix it there.
 
@@ -3691,7 +3756,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
 
 **Task dependencies.** 1 → 4 (`image_palette`). 2–6 each depend on Plans 1–3 as tabulated. Task 2 Step 1 creates `scripts/execute_tutorial.py`, which Tasks 3–7 use; Task 8 Step 1 creates `scripts/measure_native_ratio.py`, which Tasks 2–7 use in their measure steps — **do Task 8 Step 1 first** if working strictly in order, as noted in Task 2 Step 6. Tasks 1 and 7 have no dependency on Plans 1–3 and can run in parallel with them.
 
-**Suite arithmetic.** Task 1 adds **19**; Task 5 adds **12**; Task 8 adds **141** (133 in `test_examples_are_native.py`, itemised in its Step 3 table, plus 8 in `test_hyper_animation_accessors.py`). Total **+172**, on top of whatever Plans 1–3 leave the suite at. The baseline itself is moving — re-measured 2026-08-02 at `2782/2784 collected`, and Plan 3's Tasks 0–1 have since added 17 — so measure it when this plan starts rather than trusting any number written here.
+**Suite arithmetic.** Task 1 adds **19**; Task 5 adds **12**; Task 8 adds **147** (138 in `test_examples_are_native.py`, itemised in its Step 3 table, plus 9 in `test_hyper_animation_accessors.py`). Total **+178**, on top of whatever Plans 1–3 leave the suite at. The baseline itself is moving — re-measured 2026-08-02 at `2782/2784 collected`, and Plan 3's Tasks 0–1 have since added 17 — so measure it when this plan starts rather than trusting any number written here.
 
 **Remaining risk.** Three places:
 
