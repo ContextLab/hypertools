@@ -393,6 +393,43 @@ Incidental find worth keeping: a first `-x` run failed
 test file was untracked. That is the guard working, not a false positive — but Task 1's Step 7 needs
 a line saying to `git add` the new test before running the suite.
 
+### 19. Every notebook-output number in the plan is wrong — all fifteen of them
+
+`notes/audit/plan4_notebook_gate.md` Part 2. Not just Task 8's five hardcoded
+`EXPECTED_OUTPUT_CELLS` values: **every one of Tasks 2-6's own per-task "Execute and measure"
+expectations is wrong too**, for one shared reason — each assumes every non-install cell produces
+output, when several are bare imports, bare assignments, or `fig, ani = hyp.plot(..., show=False)`.
+
+Weather is the instructive case: its total (3) happens to match, **for entirely the wrong reason**.
+The plan assumed the imports cell and the plot-call cell contribute and the install cell does not;
+the real emitting cells are exactly the complement. A count-only gate cannot tell those apart. An
+index-set gate fails immediately and names the cell — which is the argument for the maintainer's
+index-set design, made concrete.
+
+### 20. A near-miss of my own: the install cell is NOT uniformly unexecuted
+
+I was about to write into the plan that the install cell is never executed, generalising from the
+five launch notebooks. Checked against all 20 notebooks in `docs/tutorials/` first:
+
+```
+9 of 20 notebooks with an install cell have it executed
+  conversation_trajectories, hugging_face_embeddings, lsl_streaming,
+  modern_sklearn_dynamics, projectile_kalman, stock_forecasting,
+  streaming_data, text, wikipedia_embeddings
+```
+
+So the convention is **not uniform**: the five launch notebooks leave it unexecuted, nine older ones
+do not. A gate asserting either polarity would fail on half the repo.
+
+Correct treatment: the install cell is **exempt from both assertions** — not required to be
+executed, and filtered out of both sides of the expected-output index-set comparison. That is robust
+to either convention and requires no guess about what `scripts/execute_tutorial.py` will do. Detect
+it by CONTENT (a `pip install` line), never by index, so a notebook whose install cell moves, or
+that has none, still behaves.
+
+Generalising from a 5-file sample to a 20-file population would have put a false claim in the plan.
+The rule that keeps paying: measure the population, not the sample in front of you.
+
 ## Status
 
 Seven parallel audits dispatched (reports land in `notes/audit/`):
