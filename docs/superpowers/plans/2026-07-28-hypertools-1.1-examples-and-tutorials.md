@@ -26,7 +26,7 @@ v2 was adversarially re-reviewed (`notes/audit/review_plan4_v2.md`: 4 Fatal, 4 H
 | `test_examples_produce_their_stated_artifact` ran examples with `runpy`. | Network/model-download work is split out; the suite drives a fixture-fed construction boundary, and the whole-example run becomes an opt-in smoke test. |
 | The morph assertion `assert 'morph' in str(ns.get('ANIMATE', 'morph'))`. | `ANIMATE` does not exist in the example; the expression reduces to `'morph' in 'morph'` and **cannot fail** (proven by execution). Replaced with driven-frame assertions. |
 | `git stash && measure && git stash pop` to read the BEFORE state. | **Data-loss hazard**, demonstrated: with a clean tree `stash` saves nothing and `pop` then restores *and drops* an unrelated pre-existing stash. Replaced with `git show <base>:<path>`, which is read-only. |
-| Task 5 "13 tests"; suite delta "+135". | **12** and **+137**. The plan already said 12 at the step level and 13 in the revision note — it disagreed with itself. Task 8 (106) was correct; Task 1 rises 16 → **19** with the three new colour-count tests this revision adds. All three derived by AST parametrize-expansion and cross-checked against a real collection. |
+| Task 5 "13 tests"; suite delta "+135". | **12** and **+163** (Task 1 **19** + Task 5 **12** + Task 8 **132**). The plan already said 12 at the step level and 13 in the revision note — it disagreed with itself. Task 8 (106) was correct; Task 1 rises 16 → **19** with the three new colour-count tests this revision adds. All three derived by AST parametrize-expansion and cross-checked against a real collection. |
 | Ratio floor "removed as a v1 Fatal". | It was removed from the *gate* but **ten lines still promise it** as a budget (634, 990, 1006, 1186, 1201, 1420, 1435, 1792, 1807, 1904). All corrected. L1435 was doubly stale (`≤ 72` where the enforced dict said 90). |
 | "'0 executed outputs' corrected wherever it appears." | It was not — all five BEFORE headers still said it. Real values: 4/7, 2/7, 2/6, 2/6, 1/6. |
 | Baseline `2564 collected`; "the working tree is not clean". | **2782/2784 collected (2 deselected)**; the tree is clean at `065c841e`; the note claiming the five examples are untouched is false (see above). |
@@ -2379,6 +2379,160 @@ Expected: every one of the eight has a **strictly higher** ratio than the audit'
 
 ## Task 8: Verification — measure it, and keep it measured
 
+- [ ] **Step 0: Give `HyperAnimation` the three accessors the gate needs**
+
+**Files:** Modify `hypertools/plot/hyper_animation.py`; test `tests/plot/test_hyper_animation_accessors.py` (create).
+
+**Why this is library work and not test-only.** The v2 gate inspected `ani._save_count` — matplotlib's private field — which Contract 3 forbids and `DEFECT_MARKERS` lists ten lines above the gate that used it. A gate may not reach for what it bans. `HyperAnimation` today exposes only `figure` and `animation` (`hyp_animation.py:67`, `:72`), so the supported accessors have to exist first.
+
+Write these tests first:
+
+```python
+# tests/plot/test_hyper_animation_accessors.py
+"""n_frames / n_segments / draw_frame -- the supported way to inspect and
+drive an animation, replacing reaches into FuncAnimation internals."""
+
+import matplotlib
+matplotlib.use('Agg')
+
+import numpy as np
+import pytest
+
+import hypertools as hyp
+
+
+def _data(n=60, d=3, seed=0):
+    return np.random.default_rng(seed).normal(size=(n, d)).cumsum(axis=0)
+
+
+def test_n_frames_matches_the_requested_rate_and_duration():
+    anim = hyp.plot(_data(), '-', animate=True, duration=4, frame_rate=10,
+                    show=False)
+    assert anim.n_frames == 40
+
+
+def test_n_frames_is_never_zero_for_a_sub_frame_request():
+    """`max(1, ...)`: an animation that asks for less than one frame still
+    draws one. Pinned because the gate's floor assertion is only meaningful
+    if this cannot silently be 0."""
+    anim = hyp.plot(_data(), '-', animate=True, duration=0.01, frame_rate=1,
+                    show=False)
+    assert anim.n_frames == 1
+
+
+def test_n_frames_survives_being_read_twice():
+    anim = hyp.plot(_data(), '-', animate=True, duration=2, frame_rate=5,
+                    show=False)
+    assert anim.n_frames == anim.n_frames == 10
+
+
+def test_n_segments_counts_holds_and_transitions():
+    """`n` clouds give `2n - 1` segments: n holds interleaved with n-1
+    transitions, ending on a hold. There is NO implicit closing transition
+    back to the first cloud -- a caller who wants the loop to close appends
+    `clouds[0]` itself, as `examples/animate_morph_zoo.py` does. Measured
+    against `morph.segment_frame_counts`: 2 clouds -> 3, 3 -> 5, 5 -> 9."""
+    clouds = [_data(40, 3, s) for s in range(3)]
+    anim = hyp.plot(clouds, '.', animate='morph', duration=6, frame_rate=5,
+                    show=False)
+    assert anim.n_segments == 5
+
+
+def test_n_segments_is_none_for_a_non_morph_animation():
+    anim = hyp.plot(_data(), '-', animate=True, duration=2, frame_rate=5,
+                    show=False)
+    assert anim.n_segments is None
+
+
+def test_draw_frame_renders_the_requested_index():
+    anim = hyp.plot(_data(), '-', animate=True, duration=2, frame_rate=5,
+                    show=False)
+    ax = anim.figure.axes[0]
+    anim.draw_frame(0)
+    early = len(np.asarray(ax.lines[0].get_data_3d())[0])
+    anim.draw_frame(anim.n_frames - 1)
+    late = len(np.asarray(ax.lines[0].get_data_3d())[0])
+    assert late > early, 'a later frame must reveal more of the trajectory'
+
+
+def test_draw_frame_is_idempotent_and_order_independent():
+    """The FrameContext contract: callbacks must be deterministic for a
+    given frame, so driving out of order must give identical geometry."""
+    anim = hyp.plot(_data(), '-', animate=True, duration=2, frame_rate=5,
+                    show=False)
+    ax = anim.figure.axes[0]
+    anim.draw_frame(3)
+    once = np.asarray(ax.lines[0].get_data_3d()).copy()
+    anim.draw_frame(7)
+    anim.draw_frame(0)
+    anim.draw_frame(3)
+    assert np.allclose(np.asarray(ax.lines[0].get_data_3d()), once)
+
+
+def test_draw_frame_rejects_an_out_of_range_index():
+    anim = hyp.plot(_data(), '-', animate=True, duration=2, frame_rate=5,
+                    show=False)
+    with pytest.raises(IndexError, match='0 and 9'):
+        anim.draw_frame(anim.n_frames)
+```
+
+Run: `.venv/bin/python -m pytest tests/plot/test_hyper_animation_accessors.py -v`
+Expected: **8 failed** — `AttributeError: 'HyperAnimation' object has no attribute 'n_frames'` and the same for `n_segments`/`draw_frame`.
+
+Then implement, beside the existing `figure`/`animation` properties:
+
+```python
+    @property
+    def n_frames(self):
+        """How many frames this animation draws.
+
+        `hyp.plot` always hands `FuncAnimation` an int frame count --
+        `max(1, round(frame_rate * duration))` for parallel/serial/spin, and
+        `sum(segment_frame_counts(...))` for a morph -- so this is exact
+        rather than an estimate. Reading it is the supported alternative to
+        matplotlib's private `_save_count`.
+        """
+        return int(self[1]._save_count)
+
+    @property
+    def n_segments(self):
+        """Hold/transition segments for ``animate='morph'``; ``None``
+        otherwise. `n` clouds give `2n` segments -- one hold and one
+        transition each, the closing transition back to the first cloud
+        included."""
+        return getattr(self[1], '_hyp_morph_segments', None)
+
+    def draw_frame(self, frame):
+        """Render frame `frame`, and return `self` so calls chain.
+
+        The supported way to drive an animation from a test or a script
+        without reaching into `FuncAnimation._func`/`._args`. Frames are
+        idempotent and order-independent by contract (see `FrameContext`),
+        so any index may be drawn at any time.
+        """
+        if not 0 <= frame < self.n_frames:
+            raise IndexError(
+                f'frame {frame} is out of range; this animation has '
+                f'{self.n_frames} frames, so valid indices are 0 and '
+                f'{self.n_frames - 1}')
+        self[1]._func(frame, *self[1]._args)
+        return self
+```
+
+`_hyp_morph_segments` is tagged where the morph frame counts are already computed, in `matplotlib_backend`'s morph branch (beside the `sum(frame_counts)` that becomes `_save_count`):
+
+```python
+    line_ani._hyp_morph_segments = len(frame_counts)
+```
+
+Run: `.venv/bin/python -m pytest tests/plot/test_hyper_animation_accessors.py -v`
+Expected: **8 passed**.
+
+Then the whole suite, since `hyper_animation.py` is on every animated path:
+`.venv/bin/python -m pytest -q` → baseline + 8, no failures.
+
+> **The private access is now in ONE place, inside the library, where it belongs.** `draw_frame` and `n_frames` still touch `_func`/`_args`/`_save_count` — that is unavoidable, because matplotlib exposes no public equivalent — but the library is entitled to know its own backend's internals, and every example, notebook and test now goes through the documented accessor instead of repeating the reach. That is the same reasoning as Contract 3's allowlist, applied one layer down.
+
 - [ ] **Step 1: Commit the measurement**
 
 ```python
@@ -2534,29 +2688,83 @@ No network, no mocks: it reads the committed files.
 import os
 import re
 
+import numpy as np
 import pytest
 
 from scripts.measure_native_ratio import measure
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-#: (path, max_code_lines)
-BUDGETS = [
-    ('examples/animate_market_forecast.py', 115),
-    ('examples/animate_weather_decades.py', 62),
-    ('examples/animate_painting_embeddings.py', 118),
-    # 90, not 72: the prescribed rewrite measures 88 code lines (87 at best,
-    # with `turn_alpha` inlined -- which v2 deliberately split OUT to fix the
-    # recency_fade Fatal). A budget set before the code existed is a guess;
-    # this one is measured against the code the plan actually prescribes.
-    ('examples/animate_conversation.py', 90),
-    ('examples/animate_morph_zoo.py', 30),
-    ('docs/tutorials/market_forecast.ipynb', 120),
-    ('docs/tutorials/weather_decades.ipynb', 66),
-    ('docs/tutorials/painting_embeddings.ipynb', 110),
-    ('docs/tutorials/conversation_shape.ipynb', 76),
-    ('docs/tutorials/morph_shapes_zoo.ipynb', 34),
-]
+#: A notebook holds its script's code, plus a Colab install cell, plus a
+#: display cell. Measured: the largest install cell across the five is 3
+#: code lines, and the display cell is 2 (`from IPython.display import HTML`
+#: + `HTML(ani.to_jshtml())`).
+#:
+#: This is why the notebook budgets are DERIVED rather than written down. v2
+#: wrote them down and set two of them BELOW their own script's -- paintings
+#: 110 against a script of 118, conversation 76 against 90 -- which no
+#: correct notebook can satisfy, whatever the metric does. Deriving makes
+#: that class of mistake impossible and means only ONE number per example is
+#: ever chosen by hand.
+NOTEBOOK_OVERHEAD = 5
+
+#: script path -> max code lines. Measured against the code this plan
+#: actually prescribes (see each task's AFTER line), never guessed ahead of
+#: it: market 109, weather 56, paintings 111, conversation 88, morph 26.
+SCRIPT_BUDGETS = {
+    'examples/animate_market_forecast.py': 115,
+    'examples/animate_weather_decades.py': 62,
+    'examples/animate_painting_embeddings.py': 118,
+    # 90, not v2's prose figure of 72: the prescribed rewrite measures 88
+    # code lines (87 at best, with `turn_alpha` inlined -- which was
+    # deliberately split OUT to fix the recency_fade Fatal).
+    'examples/animate_conversation.py': 90,
+    'examples/animate_morph_zoo.py': 30,
+}
+
+#: script stem -> notebook, so the derivation below has something to pair.
+NOTEBOOKS = {
+    'examples/animate_market_forecast.py': 'docs/tutorials/market_forecast.ipynb',
+    'examples/animate_weather_decades.py': 'docs/tutorials/weather_decades.ipynb',
+    'examples/animate_painting_embeddings.py': 'docs/tutorials/painting_embeddings.ipynb',
+    'examples/animate_conversation.py': 'docs/tutorials/conversation_shape.ipynb',
+    'examples/animate_morph_zoo.py': 'docs/tutorials/morph_shapes_zoo.ipynb',
+}
+
+#: (path, max_code_lines) for every gated file -- scripts as chosen,
+#: notebooks as derived.
+BUDGETS = ([(p, n) for p, n in SCRIPT_BUDGETS.items()]
+           + [(NOTEBOOKS[p], n + NOTEBOOK_OVERHEAD)
+              for p, n in SCRIPT_BUDGETS.items()])
+
+
+def test_no_notebook_budget_is_below_its_own_scripts():
+    """The v2 defect, pinned so it cannot return. A notebook contains its
+    script's code, so a notebook budget under the script's is unsatisfiable
+    by construction -- it fails for a reason no rewrite can address."""
+    limits = dict(BUDGETS)
+    for script, nb in NOTEBOOKS.items():
+        assert limits[nb] >= limits[script], (
+            f'{nb} is budgeted at {limits[nb]} but {script} at '
+            f'{limits[script]}; a notebook cannot be smaller than the script '
+            f'it contains')
+
+
+#: Private reaches that are DELIBERATELY retained, with the reason. Contract
+#: 3 bans private API only where a public equivalent exists; these two have
+#: none, are one-time setup rather than per-frame work, and each carries an
+#: inline rationale in the source. Anything NOT listed here still fails, so
+#: a new reach cannot creep in, and each of these was reviewed rather than
+#: assumed. Landed in `d730a085` with measurements.
+PRIVATE_API_EXCEPTIONS = {
+    ('examples/animate_market_forecast.py', r'ani\._args'):
+        'one-time readback of the fully-revealed ANTIALIASED on-screen line; '
+        'ctx.datasets is the pre-antialiasing array at a coarser resolution '
+        'and fits a measurably different slope (~2-8%, checked empirically)',
+    ('examples/animate_market_forecast.py', r'hypertools\._shared'):
+        'PCHIP smoothing has no public re-export; reimplementing it here '
+        'would risk drifting from what hyp.plot actually draws',
+}
 
 #: Every one of these was found in the launch examples or the older
 #: tutorials and removed. Each maps to the native API that replaced it.
@@ -2578,13 +2786,46 @@ def _read(path):
 
 
 def _code_text(path):
-    """Code only -- markdown/prose may still discuss a removed workaround."""
+    """Code only -- and DOCSTRINGS ARE NOT CODE here.
+
+    Two reasons, both load-bearing:
+
+    1. Markdown/prose may still discuss a removed workaround, so notebook
+       markdown cells are excluded.
+    2. `d730a085` documented each migration by NAMING the pattern it
+       removed -- `animate_weather_decades.py` and `animate_conversation.py`
+       both contain the string ``ani._func`` inside a docstring explaining
+       that the monkeypatch is gone. Scanning raw source would fail those
+       files for their own documentation.
+
+    This shares `strip_docstrings` with `scripts/measure_native_ratio.py`
+    rather than re-implementing it: the two counters previously disagreed
+    (one stripped, one did not, so identical source measured differently as
+    .py and .ipynb), and a shared callee cannot drift from itself.
+    """
+    from scripts.measure_native_ratio import strip_docstrings
     if path.endswith('.ipynb'):
         import json
         nb = json.loads(_read(path))
-        return '\n'.join(''.join(c['source']) for c in nb['cells']
-                         if c.get('cell_type') == 'code')
-    return _read(path)
+        source = '\n'.join(''.join(c['source']) for c in nb['cells']
+                           if c.get('cell_type') == 'code')
+    else:
+        source = _read(path)
+    return strip_docstrings(source)
+
+
+def test_a_docstring_naming_a_removed_pattern_is_not_a_defect():
+    """Pins the above. `d730a085` explains each migration by naming what it
+    removed; that is documentation, not a reach. Red before the docstring
+    strip: weather and conversation both failed the marker scan for their
+    own prose."""
+    for path in ('examples/animate_weather_decades.py',
+                 'examples/animate_conversation.py'):
+        assert 'ani._func' in _read(path), (
+            f'{path}: expected the migration docstring to still name the '
+            f'pattern it replaced')
+        assert 'ani._func' not in _code_text(path), (
+            f'{path}: the docstring mention leaked into the scanned code')
 
 
 @pytest.mark.parametrize('path,max_code', BUDGETS)
@@ -2612,9 +2853,48 @@ def test_native_ratio_is_reported(capsys):
 @pytest.mark.parametrize('path,_max', BUDGETS)
 @pytest.mark.parametrize('marker,fix', sorted(DEFECT_MARKERS.items()))
 def test_no_defect_marker_in_the_launch_examples(path, _max, marker, fix):
+    if (path, marker) in PRIVATE_API_EXCEPTIONS:
+        pytest.skip(f'allowlisted: {PRIVATE_API_EXCEPTIONS[(path, marker)]}')
     text = _code_text(path)
     assert not re.search(marker, text), (
         f'{path} contains {marker!r} again -- {fix}')
+
+
+def test_every_allowlisted_reach_is_still_present_and_still_explained():
+    """An allowlist entry that no longer matches anything is dead weight --
+    it would silently permit a pattern nobody uses. And an allowlisted reach
+    with no inline rationale is exactly the 'private API taught as normal'
+    that Contract 3 exists to prevent, so the source must explain itself
+    where a reader will find it."""
+    for (path, marker), reason in PRIVATE_API_EXCEPTIONS.items():
+        raw = _read(path)
+        assert re.search(marker, raw), (
+            f'{path} no longer contains {marker!r}; drop the '
+            f'PRIVATE_API_EXCEPTIONS entry rather than leaving it to permit '
+            f'a pattern that is gone')
+        assert 'deliberately' in raw or 'no public' in raw, (
+            f'{path} keeps an allowlisted private reach but no longer '
+            f'explains why in the source (reason on record: {reason})')
+
+
+def test_no_example_or_notebook_unpacks_then_uses_the_wrapper():
+    """Contract 8. `fig, ani = hyp.plot(...)` binds `ani` to the raw
+    FuncAnimation, so `.on_frame()` raises AttributeError -- and
+    `_save_count` SURVIVES the unpack, so a gate written against that
+    attribute passes while the public API is being discarded. Bind the
+    HyperAnimation first (`anim = hyp.plot(...)`), then destructure it
+    (`fig, ani = anim`) if the parts are wanted.
+    """
+    unpack = re.compile(r'^\s*\w+\s*,\s*(\w+)\s*=\s*(?:hyp|hypertools)\.plot\(',
+                        re.M)
+    for path, _max in BUDGETS:
+        text = _code_text(path)
+        for name in unpack.findall(text):
+            assert not re.search(rf'\b{re.escape(name)}\.on_frame\s*\(', text), (
+                f'{path}: `{name}` comes from unpacking hyp.plot(), so it is '
+                f'a raw FuncAnimation and has no .on_frame(). Bind the '
+                f'HyperAnimation first: `anim = hyp.plot(...)`, then '
+                f'`fig, {name} = anim`.')
 
 
 @pytest.mark.parametrize('nb', [
@@ -2643,80 +2923,243 @@ def test_reduce_tutorial_mentions_describe():
 #: none of them can be satisfied by reformatting, and each fails loudly if
 #: the rewrite drops the thing the example is for.
 STATED_ARTIFACT = {
-    'animate_market_forecast': dict(animated=True, predicts=True),
-    'animate_weather_decades': dict(animated=True, axes=2),
-    'animate_painting_embeddings': dict(animated=True, palette=True),
-    'animate_conversation': dict(animated=True, on_frame=True),
-    'animate_morph_zoo': dict(animated=True, morph=True),
+    # min_frames is a real floor per example (frame_rate x duration), not
+    # `>= 1`, which every animation satisfies by construction.
+    'animate_market_forecast': dict(min_frames=100, predicts=True),
+    'animate_weather_decades': dict(min_frames=100, axes=2),
+    'animate_painting_embeddings': dict(min_frames=60, palette=True),
+    'animate_conversation': dict(min_frames=100, on_frame=True),
+    # 5 shapes, plus `clouds.append(clouds[0])` to close the loop = 6
+    # clouds -> 2*6 - 1 = 11 segments, matching the example's own
+    # 11-entry `rotations` list. (Measured; NOT 10 -- the schedule has no
+    # implicit closing transition, and the example's inline comment
+    # "for the 5 clouds = 9 segments" counts the shapes, not what it passes.)
+    'animate_morph_zoo': dict(min_frames=200, morph=11),
 }
+
+
+def _import_example_without_fetching(stem):
+    """Import an example as a module, and prove the import performed no
+    network access.
+
+    `runpy.run_path` (v2) executes the whole file, fetches included. Import
+    must be side-effect-free: the example's `if __name__ == '__main__':`
+    guard runs the loaders, the module body only defines them. Setting
+    HYPERTOOLS_OFFLINE makes any fetcher raise rather than silently fall
+    back, so a loader accidentally called at import time fails loudly here
+    instead of quietly hitting the network in CI.
+    """
+    import importlib.util
+    import matplotlib
+    matplotlib.use('Agg')
+    os.environ['HYPERTOOLS_OFFLINE'] = '1'
+    try:
+        path = os.path.join(REPO, 'examples', f'{stem}.py')
+        spec = importlib.util.spec_from_file_location(stem, path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        os.environ.pop('HYPERTOOLS_OFFLINE', None)
+
+
+def _drive(anim, frame):
+    """Render one frame, by index, through the public animation object.
+
+    `HyperAnimation.draw_frame(i)` (Task 8 Step 0) is the supported way to
+    do this. v2 reached for matplotlib's private `ani._func(i, *ani._args)`,
+    which Contract 3 forbids and `DEFECT_MARKERS` lists.
+    """
+    anim.draw_frame(frame)
 
 
 @pytest.mark.parametrize('stem', sorted(STATED_ARTIFACT))
 def test_examples_produce_their_stated_artifact(stem):
-    """Executable semantics, not source-shape. Each example is RUN and the
-    object it advertises is inspected."""
-    import runpy
-    import matplotlib
-    matplotlib.use('Agg')
+    """Executable semantics, not source-shape -- driven by a FIXTURE.
+
+    v2 ran each example with `runpy`. Measured: **all five are
+    network-coupled** (weather 6 blocked connections, paintings 7, morph 4,
+    conversation 2, market 1), so that version put model downloads and
+    remote fetches in the default suite, contradicting Contract 4 and making
+    CI nondeterministic. Morph does not even degrade -- `hyp.load()` has no
+    offline path and takes the example down with `HypertoolsIOError`.
+
+    So each example splits its loader from its figure builder (Contract 4),
+    and this drives `construct_artifact(data)` with the example's own seeded
+    synthetic data. Four of the five need ZERO committed fixture bytes,
+    because their existing offline fallbacks already ARE deterministic
+    fixtures; paintings ships one 1.7 KB thumbnail. Importing an example
+    must not fetch. The whole-example run survives as an opt-in smoke test
+    (`HYPERTOOLS_EXAMPLE_SMOKE=1`), never in the default suite.
+
+    Every assertion below had to be rewritten, because v2's could not fail:
+
+    * `_save_count >= 1` is a TAUTOLOGY -- hyp.plot always passes
+      `max(1, round(frame_rate * duration))`, so it holds for a zero-length,
+      zero-dataset animation. Measured at duration=0.01/frame_rate=1: 1.
+      It is also a private matplotlib field, which Contract 3 forbids and
+      `DEFECT_MARKERS` lists ten lines above the gate that used it.
+    * `'morph' in str(ns.get('ANIMATE', 'morph'))` is a TAUTOLOGY -- no
+      example binds `ANIMATE`, so the default makes it `'morph' in 'morph'`.
+    * `ns['ani']` does not exist in weather or conversation, which bind
+      `anim` (Contract 8), so 2 of 5 parametrisations failed on day one for
+      a reason unrelated to what they gate.
+
+    An unsatisfiable gate and a vacuous one are the same defect wearing
+    opposite clothes: neither discriminates. v1 shipped the first, v2
+    replaced it with the second.
+    """
+    module = _import_example_without_fetching(stem)
     want = STATED_ARTIFACT[stem]
-    ns = runpy.run_path(f'examples/{stem}.py')
-    if want.get('animated'):
-        assert ns.get('ani') is not None, 'no animation was produced'
-        assert ns['ani']._save_count >= 1, 'animation has no frames'
+    anim = module.construct_artifact(module.fixture_data())
+    fig = anim.figure
+
+    assert anim.n_frames >= want['min_frames'], (
+        f'{stem}: {anim.n_frames} frames, expected at least '
+        f"{want['min_frames']}")
     if want.get('axes'):
-        assert len(ns['fig'].axes) >= want['axes']
+        assert len(fig.axes) >= want['axes']
     if want.get('predicts'):
-        ax = ns['fig'].axes[0]
-        assert any(ln.get_linestyle() in ('--', ':') for ln in ax.lines), (
-            'no forecast overlay drawn')
+        _drive(anim, frame=anim.n_frames - 1)
+        live = [a for a in fig.axes[0].lines
+                if getattr(a, '_hyp_forecast_role', None) == 'live']
+        assert live, 'no live forecast artist after driving a frame'
+        pts = np.asarray(live[0].get_data_3d()
+                         if hasattr(live[0], 'get_data_3d')
+                         else live[0].get_data())
+        assert pts.size and np.isfinite(pts).all(), (
+            'the forecast artist exists but its geometry is empty or '
+            'non-finite -- artists can be created and never filled')
     if want.get('on_frame'):
-        assert 'recency_fade' in ns, 'the per-frame hook was dropped'
+        _drive(anim, frame=0)
+        first = [a.get_alpha() for a in fig.axes[0].lines]
+        _drive(anim, frame=anim.n_frames - 1)
+        last = [a.get_alpha() for a in fig.axes[0].lines]
+        assert first != last, (
+            'the per-frame hook never changed any alpha, so the recency '
+            'fade is not actually running')
     if want.get('morph'):
-        assert 'morph' in str(ns.get('ANIMATE', 'morph'))
+        assert anim.n_segments == want['morph'], (
+            f'{stem}: {anim.n_segments} morph segments, expected '
+            f"{want['morph']}")
+        _drive(anim, frame=anim.n_frames // 2)
+        assert fig.axes[0].collections or fig.axes[0].lines, (
+            'a driven mid-morph frame drew nothing')
 
 
-#: Cells that CAN carry output, per notebook, measured by executing them
-#: (Tasks 3-6 Step "Execute and measure"). An imports-only cell and a
-#: `fig, ani = hyp.plot(...)` assignment cell emit nothing no matter how
-#: successfully they run, so "every code cell" is not a reachable target --
-#: v2 asserted exactly that and could never have gone green. Re-derive
-#: these from a real nbclient run when a notebook's cells change.
-EXPECTED_OUTPUT_CELLS = {
-    'market_forecast': 7,
-    'weather_decades': 3,
-    'painting_embeddings': 5,
-    'conversation_shape': 5,
-    'morph_shapes_zoo': 4,
+LAUNCH_NOTEBOOKS = ('market_forecast', 'weather_decades',
+                    'painting_embeddings', 'conversation_shape',
+                    'morph_shapes_zoo')
+
+
+def _is_install_cell(source):
+    """Detected by CONTENT, never by index.
+
+    Two measurements forced this. First, the install cell is NOT uniformly
+    unexecuted: 9 of the 20 notebooks in docs/tutorials/ ship it executed,
+    the five launch notebooks do not -- so a gate asserting either polarity
+    fails on half the repo, and it must simply be EXEMPT. Second, indexing
+    by position breaks the moment a cell is inserted above it, or a notebook
+    has no install cell at all.
+    """
+    return 'pip install' in source
+
+
+def _code_cells(stem):
+    import json
+    nb = json.loads(_read(f'docs/tutorials/{stem}.ipynb'))
+    return [c for c in nb['cells'] if c.get('cell_type') == 'code']
+
+
+#: Per notebook, the INDEX SET of code cells that carry a visible output --
+#: not a count. Recorded from a real nbclient run in each task's "Execute
+#: and measure" step; do not write a number here before the notebook exists.
+#:
+#: Why an index set and not a total: v2 hardcoded five counts and ALL FIVE
+#: were wrong, as was every per-task prediction in Tasks 2-6, because each
+#: assumed every non-install cell emits when several are bare imports, bare
+#: assignments, or `fig, ani = hyp.plot(..., show=False)`. Weather is the
+#: instructive one -- its TOTAL happened to be right while naming entirely
+#: the wrong cells. A count cannot tell those apart and is satisfied by a
+#: stray print() landing anywhere; an index set fails immediately and names
+#: the cell.
+#:
+#: Install-cell indices are filtered out of both sides before comparing.
+EXPECTED_VISIBLE_OUTPUTS = {
+    # 'market_forecast': {2, 5, 6, 7},   <- fill in from the measured run
 }
 
 
-def test_every_launch_notebook_ships_executed_outputs():
+@pytest.mark.parametrize('stem', LAUNCH_NOTEBOOKS)
+def test_every_launch_notebook_ran_every_cell_it_should(stem):
     """`nbsphinx_execute = 'never'` (docs/conf.py:131) renders the COMMITTED
-    outputs, so an unexecuted notebook is a figure-less docs page.
+    outputs, so a half-executed notebook is a figure-less docs page.
 
-    EXACT against a MEASURED target, not "all of them". v1 allowed
-    `len(code) - 2` unexecuted cells, which would pass a notebook whose only
-    two code cells both failed. v2 swung the other way and demanded every
-    code cell carry output, which no notebook can satisfy: an imports-only
-    cell and a `fig, ani = hyp.plot(...)` assignment cell produce nothing
-    however well they run. The reachable target is the number of cells that
-    CAN emit output, measured by executing the notebook.
+    Gates EXECUTION, which is a different property from OUTPUT: a cell can
+    run perfectly and legitimately emit nothing. v1 allowed `len(code) - 2`
+    unexecuted cells, which would pass a notebook whose only two code cells
+    both failed; v2 demanded every code cell carry output, which no notebook
+    can satisfy. This asserts what is actually required -- every cell ran --
+    and leaves what each cell EMITS to the index-set test below.
+    """
+    cells = _code_cells(stem)
+    unrun = [i for i, c in enumerate(cells)
+             if c.get('execution_count') is None
+             and not _is_install_cell(''.join(c['source']))]
+    assert not unrun, (
+        f'{stem}.ipynb: code cells {unrun} were never executed; re-run '
+        f'scripts/execute_tutorial.py')
 
-    (`git log 9b94d86f`, 2026-07-30, executed the five tutorials; measured
-    then: 2/6, 4/7, 1/6, 2/6, 2/7 -- so the plan's "all five ship ZERO
-    executed outputs" was already false, and this gate is what keeps the
-    number from drifting back down.)
+
+@pytest.mark.parametrize('stem', LAUNCH_NOTEBOOKS)
+def test_the_right_cells_carry_visible_output(stem):
+    """Which cells emit, not how many."""
+    if stem not in EXPECTED_VISIBLE_OUTPUTS:
+        pytest.fail(
+            f'{stem}: no measured index set recorded. Execute the notebook '
+            f'and paste the measured set into EXPECTED_VISIBLE_OUTPUTS -- '
+            f'do not guess it ahead of the artifact (v2 guessed five and got '
+            f'all five wrong)')
+    cells = _code_cells(stem)
+    installs = {i for i, c in enumerate(cells)
+                if _is_install_cell(''.join(c['source']))}
+    got = {i for i, c in enumerate(cells) if c.get('outputs')} - installs
+    want = set(EXPECTED_VISIBLE_OUTPUTS[stem]) - installs
+    assert got == want, (
+        f'{stem}.ipynb: cells {sorted(got)} carry output, expected '
+        f'{sorted(want)} (missing {sorted(want - got)}, unexpected '
+        f'{sorted(got - want)})')
+
+
+@pytest.mark.parametrize('stem', LAUNCH_NOTEBOOKS)
+def test_each_notebook_ships_its_rendered_artifact(stem):
+    """The artifact assertion, keyed to how these notebooks ACTUALLY ship.
+
+    Measured: there is no `image/png` and no `text/html` output anywhere in
+    any of the five -- the display_data entries are tqdm progress widgets
+    from sentence_transformers. The convention (commit 9b94d86f), shared
+    with conversation_trajectories/streaming_data/wikipedia_embeddings, is a
+    companion GIF written by the last code cell and embedded from a MARKDOWN
+    cell. So "did a figure render" is not answerable from cell outputs, and
+    a rule like "a cell calling hyp.plot must emit something" is satisfied
+    by an unrelated print() in the same cell.
+
+    This asserts the artifact that actually exists, and that its reference
+    resolves -- which also catches morph_shapes_zoo.ipynb embedding
+    `morph_zoo.gif` rather than `morph_shapes_zoo.gif`.
     """
     import json
-    for stem, expected in EXPECTED_OUTPUT_CELLS.items():
-        nb = json.loads(_read(f'docs/tutorials/{stem}.ipynb'))
-        code = [c for c in nb['cells'] if c.get('cell_type') == 'code']
-        executed = [i for i, c in enumerate(code) if c.get('outputs')]
-        assert len(executed) == expected, (
-            f'{stem}.ipynb: {len(executed)} of {len(code)} code cells carry '
-            f'outputs, expected {expected}; re-run '
-            f'scripts/execute_tutorial.py, and if a cell was added or '
-            f'removed re-derive EXPECTED_OUTPUT_CELLS from that run')
+    import os
+    import re as _re
+    nb = json.loads(_read(f'docs/tutorials/{stem}.ipynb'))
+    md = '\n'.join(''.join(c['source']) for c in nb['cells']
+                   if c.get('cell_type') == 'markdown')
+    refs = _re.findall(r'!\[[^\]]*\]\(([^)]+\.gif)\)', md)
+    assert refs, f'{stem}.ipynb: no rendered artifact is embedded'
+    for ref in refs:
+        target = os.path.join(REPO, 'docs', 'tutorials', ref)
+        assert os.path.exists(target), (
+            f'{stem}.ipynb embeds {ref!r}, which does not exist')
 
 
 def test_no_launch_notebook_committed_an_error_output():
@@ -2738,21 +3181,31 @@ def test_no_launch_notebook_committed_an_error_output():
 
 Run: `.venv/bin/python -m pytest tests/test_examples_are_native.py -v`
 
-Expected: **106 passed**, derived:
+Expected: **124 collected — 122 passed, 2 skipped**, derived:
 
 | test | IDs |
 |-|-|
+| `test_no_notebook_budget_is_below_its_own_scripts` | 1 |
+| `test_a_docstring_naming_a_removed_pattern_is_not_a_defect` | 1 |
 | `test_file_is_within_its_size_budget` (10 files) | 10 |
 | `test_native_ratio_is_reported` | 1 |
 | `test_no_defect_marker_in_the_launch_examples` (8 markers × 10 files) | 80 |
+| `test_every_allowlisted_reach_is_still_present_and_still_explained` | 1 |
+| `test_no_example_or_notebook_unpacks_then_uses_the_wrapper` | 1 |
 | `test_older_tutorials_dropped_their_hand_rolled_helpers` | 6 |
 | `test_analyze_tutorial_actually_plots` / `test_reduce_tutorial_mentions_describe` | 2 |
 | `test_examples_produce_their_stated_artifact` (5 examples) | 5 |
-| `test_every_launch_notebook_ships_executed_outputs` | 1 |
+| `test_every_launch_notebook_ran_every_cell_it_should` (5 notebooks) | 5 |
+| `test_the_right_cells_carry_visible_output` (5 notebooks) | 5 |
+| `test_each_notebook_ships_its_rendered_artifact` (5 notebooks) | 5 |
 | `test_no_launch_notebook_committed_an_error_output` | 1 |
-| **total** | **106** |
+| **total** | **124** |
 
-v1 expected 109 by counting a 10-ID ratio gate that this revision removed. If a size budget fails, cut presentation code or renegotiate the budget **in this plan** — never raise it silently in the test file.
+**The 2 skips are the `PRIVATE_API_EXCEPTIONS` pairs** (`ani\._args` and `hypertools\._shared`, both on `animate_market_forecast.py`) — allowlisted by Contract 3, and each skip prints its recorded reason. Plus Step 0's `tests/plot/test_hyper_animation_accessors.py` → **8 passed**, so Task 8 contributes **132** in total.
+
+v1 expected 109 by counting a 10-ID ratio gate that this revision removed; v2 expected 106 before this revision split the notebook gate into execution / index-set / artifact and added the Contract 3 and Contract 8 guards. **Verify by real collection, not by this table** — `pytest tests/test_examples_are_native.py --collect-only -q` — because `BUDGETS` is now computed from `SCRIPT_BUDGETS`, and a naive AST count of the parametrize argument returns 1 for it rather than 10.
+
+If a size budget fails, cut presentation code or renegotiate the budget **in this plan** — never raise it silently in the test file.
 
 - [ ] **Step 4: Re-measure everything and record the result**
 
